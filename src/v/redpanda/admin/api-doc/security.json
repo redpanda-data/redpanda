@@ -404,5 +404,41 @@
             }
         }
     }
+},
+"/v1/security/report": {
+    "get": {
+        "summary": "Get security report",
+        "operationId": "get_security_report",
+        "produces": [
+            "application/json"
+        ],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "interfaces": {
+                            "type": "object",
+                            "properties": {
+                                "kafka": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/kafka_interface_security_report"
+                                    }
+                                }
+                            }
+                        },
+                        "alerts": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "security_report_alert"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 

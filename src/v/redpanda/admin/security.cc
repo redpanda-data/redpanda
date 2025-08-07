@@ -11,6 +11,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "cluster/controller.h"
 #include "cluster/security_frontend.h"
+#include "config/broker_authn_endpoint.h"
 #include "features/enterprise_feature_messages.h"
 #include "json/document.h"
 #include "json/json.h"
@@ -36,6 +37,66 @@
 
 #include <optional>
 #include <sstream>
+
+namespace seastar::httpd::security_json {
+struct interfaces_report : public json::json_base {
+    json::json_list<kafka_interface_security_report> kafka;
+
+    void register_params() { add(&kafka, "kafka"); }
+    interfaces_report() { register_params(); }
+
+    interfaces_report(const interfaces_report& e) {
+        register_params();
+        kafka = e.kafka;
+    }
+    template<class T>
+    interfaces_report& operator=(const T& e) {
+        kafka = e.kafka;
+        return *this;
+    }
+    interfaces_report& operator=(const interfaces_report& e) {
+        kafka = e.kafka;
+        return *this;
+    }
+    template<class T>
+    interfaces_report& update(T& e) {
+        e.kafka = kafka;
+        return *this;
+    }
+};
+struct security_report : public json::json_base {
+    json::json_element<interfaces_report> interfaces;
+    json::json_list<security_report_alert> alerts;
+
+    void register_params() {
+        add(&interfaces, "interfaces");
+        add(&alerts, "alerts");
+    }
+    security_report() { register_params(); }
+    security_report(const security_report& e) {
+        register_params();
+        interfaces = e.interfaces;
+        alerts = e.alerts;
+    }
+    template<class T>
+    security_report& operator=(const T& e) {
+        interfaces = e.interfaces;
+        alerts = e.alerts;
+        return *this;
+    }
+    security_report& operator=(const security_report& e) {
+        interfaces = e.interfaces;
+        alerts = e.alerts;
+        return *this;
+    }
+    template<class T>
+    security_report& update(T& e) {
+        e.interfaces = interfaces;
+        e.alerts = alerts;
+        return *this;
+    }
+};
+} // namespace seastar::httpd::security_json
 
 namespace {
 
@@ -438,6 +499,13 @@ void admin_server::register_security_routes() {
         -> ss::future<ss::json::json_return_type> {
           check_license(features::enterprise_error_message::acl_with_rbac());
           return update_role_members_handler(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::get_security_report,
+      [this](std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return get_security_report(std::move(req));
       });
 }
 
@@ -891,4 +959,183 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::delete_role_handler(
       std::move(rep),
       ss::http::reply::status_type::no_content,
       seastar::json::json_void{});
+}
+
+namespace {
+
+using kafka_authn_method
+  = ss::httpd::security_json::kafka_interface_security_report::
+    kafka_interface_security_report_authentication_method;
+
+using affected_interface = ss::httpd::security_json::security_report_alert::
+  security_report_alert_affected_interface;
+
+using alert_issue = ss::httpd::security_json::security_report_alert::
+  security_report_alert_issue;
+kafka_authn_method to_report_type(config::broker_authn_method m) {
+    switch (m) {
+    case config::broker_authn_method::none:
+        return kafka_authn_method::None;
+    case config::broker_authn_method::sasl:
+        return kafka_authn_method::SASL;
+    case config::broker_authn_method::mtls_identity:
+        return kafka_authn_method::mTLS;
+    }
+
+    __builtin_unreachable();
+}
+
+ss::sstring get_listener_name(ss::sstring name) {
+    static const ss::sstring unnamed_interface = "{{unnamed}}";
+    if (name.empty()) {
+        return unnamed_interface;
+    }
+    return name;
+}
+
+ss::httpd::security_json::security_report_alert make_interface_alert(
+  const affected_interface interface_type,
+  const alert_issue issue,
+  std::optional<ss::sstring> listener_name = std::nullopt) {
+    listener_name = std::move(listener_name).transform(get_listener_name);
+
+    ss::httpd::security_json::security_report_alert alert;
+    alert.affected_interface = interface_type;
+    if (listener_name.has_value()) {
+        alert.listener_name = listener_name.value();
+    }
+    alert.issue = issue;
+
+    const auto make_description = [&alert,
+                                   &listener_name](std::string_view msg) {
+        return ssx::sformat(
+          "{} interface{}{}. This is insecure and not recommended.",
+          alert.affected_interface().to_json(),
+          listener_name.has_value()
+            ? ss::format(" \"{}\"", listener_name.value())
+            : "",
+          msg);
+    };
+
+    switch (issue) {
+    case alert_issue::NO_TLS:
+        alert.description = make_description(" is not using TLS");
+        break;
+    case alert_issue::NO_AUTHN:
+        alert.description = make_description(" is not using authentication");
+        break;
+    case alert_issue::NO_AUTHZ:
+        alert.description = make_description(" is not using authorization");
+        break;
+    case alert_issue::SASL_PLAIN:
+        alert.description = make_description(" is using SASL/PLAIN");
+        break;
+    default:
+        vassert(
+          false, "make_interface_alert should not be called on this value");
+    }
+
+    return alert;
+}
+
+template<typename Report, typename Endpoint>
+void set_report_advertised(
+  Report& report,
+  const ss::sstring& name,
+  const std::vector<Endpoint>& advertised_api) {
+    auto it = std::ranges::find(advertised_api, name, &Endpoint::name);
+    if (it != advertised_api.end()) {
+        report.advertised_host = it->address.host();
+        report.advertised_port = it->address.port();
+    } else {
+        report.advertised_host = report.host;
+        report.advertised_port = report.port;
+    }
+}
+
+template<typename Report, typename TlsConfig>
+void set_report_tls(
+  Report& report,
+  const ss::sstring& name,
+  const std::vector<TlsConfig>& tls_interfaces) {
+    auto it = std::ranges::find(tls_interfaces, name, &TlsConfig::name);
+    if (it != tls_interfaces.end()) {
+        report.tls_enabled = it->config.is_enabled();
+        report.mutual_tls_enabled = it->config.get_require_client_auth();
+    } else {
+        report.tls_enabled = false;
+        report.mutual_tls_enabled = false;
+    }
+}
+
+std::vector<ss::httpd::security_json::kafka_interface_security_report>
+generate_kafka_interface_report(
+  std::vector<ss::httpd::security_json::security_report_alert>& alerts) {
+    std::vector<ss::httpd::security_json::kafka_interface_security_report>
+      reports;
+    const auto& kafka_interfaces = config::node().kafka_api();
+
+    reports.reserve(kafka_interfaces.size());
+
+    for (const auto& kface : kafka_interfaces) {
+        ss::httpd::security_json::kafka_interface_security_report report;
+        report.name = kface.name;
+        report.host = kface.address.host();
+        report.port = kface.address.port();
+
+        set_report_advertised(
+          report, kface.name, config::node().advertised_kafka_api_property()());
+
+        set_report_tls(report, kface.name, config::node().kafka_api_tls());
+        if (!report.tls_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::kafka, alert_issue::NO_TLS, kface.name));
+        }
+
+        auto authn_method = config::get_authn_method(kface.name);
+        report.authentication_method = to_report_type(authn_method);
+        if (report.authentication_method().v == kafka_authn_method::None) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::kafka, alert_issue::NO_AUTHN, kface.name));
+        }
+
+        if (authn_method == config::broker_authn_method::sasl) {
+            std::vector<ss::sstring> sasl_mechs{
+              config::shard_local_cfg().sasl_mechanisms()};
+
+            if (std::ranges::contains(sasl_mechs, "PLAIN")) {
+                alerts.push_back(make_interface_alert(
+                  affected_interface::kafka,
+                  alert_issue::SASL_PLAIN,
+                  kface.name));
+            }
+
+            report.supported_sasl_mechanisms = std::move(sasl_mechs);
+        }
+
+        report.authorization_enabled = config::kafka_authz_enabled();
+        if (!report.authorization_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::kafka, alert_issue::NO_AUTHZ, kface.name));
+        }
+
+        reports.emplace_back(std::move(report));
+    }
+
+    return reports;
+}
+} // namespace
+
+ss::future<ss::json::json_return_type>
+admin_server::get_security_report(std::unique_ptr<ss::http::request>) {
+    ss::httpd::security_json::security_report report;
+    ss::httpd::security_json::interfaces_report interfaces_report;
+    std::vector<ss::httpd::security_json::security_report_alert> alerts;
+
+    interfaces_report.kafka = generate_kafka_interface_report(alerts);
+    report.interfaces = std::move(interfaces_report);
+
+    report.alerts = std::move(alerts);
+
+    return ss::make_ready_future<ss::json::json_return_type>(std::move(report));
 }

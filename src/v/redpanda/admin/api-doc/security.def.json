@@ -122,4 +122,78 @@
             "type": "int"
         }
     }
+},
+"security_report_alert": {
+    "type": "object",
+    "properties": {
+        "affected_interface": {
+          "type": "string",
+          "enum": [
+            "kafka"
+          ]
+        },
+        "listener_name": {
+          "description": "The listener name of the affected interface, if provided.",
+          "type": "string"
+        },
+        "issue": {
+          "required": true,
+          "type": "string",
+          "enum": [
+            "NO_TLS",
+            "NO_AUTHN",
+            "NO_AUTHZ",
+            "SASL_PLAIN"
+          ]
+        },
+        "description": {
+          "description": "Human-readable description of the alert",
+          "required": true,
+          "type": "string"
+        }
+      }
+},
+"kafka_interface_security_report": {
+    "description": "Security report for kafka interfaces",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        },
+        "advertised_host": {
+            "type": "string"
+        },
+        "advertised_port": {
+            "type": "int"
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        },
+        "authentication_method": {
+            "type": "string",
+            "enum": [
+                "SASL",
+                "mTLS",
+                "None"
+            ]
+        },
+        "authorization_enabled": {
+            "type": "boolean"
+        },
+        "supported_sasl_mechanisms": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        }
+    }
 }
