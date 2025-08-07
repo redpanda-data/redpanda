@@ -13,6 +13,7 @@
 #include "absl/strings/str_join.h"
 #include "absl/strings/strip.h"
 #include "bytes/streambuf.h"
+#include "config/configuration.h"
 #include "config/types.h"
 #include "datalake/credential_manager.h"
 #include "http/request_builder.h"
@@ -275,7 +276,9 @@ ss::future<expected<std::monostate>> catalog_client::maybe_add_bearer_auth(
         request.with_bearer_auth(token.value());
         break;
     }
-    case config::datalake_catalog_auth_mode::aws_sigv4: {
+    case config::datalake_catalog_auth_mode::aws_sigv4:
+        [[fallthrough]];
+    case config::datalake_catalog_auth_mode::gcp: {
         // AWS SigV4 signing will be handled after build() is called
         break;
     }
@@ -294,6 +297,14 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
     }
     retry_chain_node rtc(&parent_rtc);
     std::vector<http_call_error> retriable_errors{};
+
+    if (config::shard_local_cfg()
+          .iceberg_rest_catalog_gcp_project_id()
+          .has_value()) {
+        request_builder.header(
+          "x-goog-user-project",
+          *config::shard_local_cfg().iceberg_rest_catalog_gcp_project_id());
+    }
 
     while (true) {
         retry_permit permit{};
@@ -330,16 +341,14 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
         }
 
         // Apply AWS SigV4 authentication if needed
-        if (_auth_mode == config::datalake_catalog_auth_mode::aws_sigv4) {
-            auto auth_result = co_await _credential_manager.maybe_sign(
-              payload, request.value());
-            if (auth_result.has_error()) {
-                co_return tl::unexpected(
-                  domain_error{http_call_error{fmt::format(
-                    "Failed to sign request with credential manager: {}",
-                    auth_result.error().message())}});
-            }
+        auto auth_result = co_await _credential_manager.maybe_sign(
+          payload, request.value());
+        if (auth_result.has_error()) {
+            co_return tl::unexpected(domain_error{http_call_error{fmt::format(
+              "Failed to sign request with credential manager: {}",
+              auth_result.error().message())}});
         }
+
         auto request_target = ss::sstring{
           request->target().begin(), request->target().end()};
 

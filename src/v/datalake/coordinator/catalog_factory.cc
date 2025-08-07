@@ -179,8 +179,10 @@ rest_catalog_factory::make_credentials_or_token() {
             config_->iceberg_rest_catalog_oauth2_scope());
         break;
     }
-    case config::datalake_catalog_auth_mode::aws_sigv4: {
-        // SigV4 credentials are handled by the applier and
+    case config::datalake_catalog_auth_mode::aws_sigv4:
+        [[fallthrough]];
+    case config::datalake_catalog_auth_mode::gcp: {
+        // SigV4, GCP credentials are handled by the applier and
         // background refresh op.
         break;
     }

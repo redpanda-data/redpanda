@@ -4071,10 +4071,13 @@ configuration::configuration()
        .example = "none",
        .visibility = visibility::user},
       datalake_catalog_auth_mode::none,
-      {datalake_catalog_auth_mode::none,
-       datalake_catalog_auth_mode::bearer,
-       datalake_catalog_auth_mode::oauth2,
-       datalake_catalog_auth_mode::aws_sigv4})
+      {
+        datalake_catalog_auth_mode::none,
+        datalake_catalog_auth_mode::bearer,
+        datalake_catalog_auth_mode::oauth2,
+        datalake_catalog_auth_mode::aws_sigv4,
+        datalake_catalog_auth_mode::gcp,
+      })
   , iceberg_rest_catalog_aws_service_name(
       *this,
       "iceberg_rest_catalog_aws_service_name",
@@ -4136,6 +4139,13 @@ configuration::configuration()
         model::cloud_credentials_source::azure_aks_oidc_federation,
         model::cloud_credentials_source::azure_vm_instance_metadata,
       })
+  , iceberg_rest_catalog_gcp_project_id(
+      *this,
+      "iceberg_rest_catalog_gcp_project_id",
+      "GCP project ID for when using a GCP-based Iceberg REST catalog.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , iceberg_backlog_controller_p_coeff(
       *this,
       "iceberg_backlog_controller_p_coeff",

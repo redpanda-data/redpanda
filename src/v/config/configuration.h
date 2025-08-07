@@ -754,6 +754,7 @@ struct configuration final : public config_store {
     property<std::optional<ss::sstring>> iceberg_rest_catalog_aws_region;
     enum_property<std::optional<model::cloud_credentials_source>>
       iceberg_rest_catalog_aws_credentials_source;
+    property<std::optional<ss::sstring>> iceberg_rest_catalog_gcp_project_id;
     property<double> iceberg_backlog_controller_p_coeff;
     property<double> iceberg_backlog_controller_i_coeff;
     bounded_property<uint32_t> iceberg_target_backlog_size;

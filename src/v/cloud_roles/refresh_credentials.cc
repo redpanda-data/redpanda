@@ -55,7 +55,7 @@ refresh_credentials::refresh_credentials(
   , _probe(std::make_unique<auth_refresh_probe>()) {}
 
 void refresh_credentials::start() {
-    _probe->setup_metrics();
+    // _probe->setup_metrics();
     ssx::background = ssx::spawn_with_gate_then(
       _gate, [this]() { return do_start(); });
 }

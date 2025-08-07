@@ -69,8 +69,27 @@ create_aws_sigv4_configuration(const config::configuration& cfg) {
     return cloud_storage_clients::client_configuration{std::move(s3_config)};
 }
 
+cloud_storage_clients::client_configuration
+create_gcp_configuration(const config::configuration&) {
+    // The bg refresh op is closely tied to S3. It'd be
+    // nice to untangle it more.
+    cloud_storage_clients::s3_configuration s3_config{};
+    s3_config._probe = ss::make_shared<cloud_storage_clients::client_probe>(
+      net::metrics_disabled::yes,
+      net::public_metrics_disabled::yes,
+      cloud_roles::aws_region_name{},
+      cloud_storage_clients::endpoint_url{});
+    return cloud_storage_clients::client_configuration{std::move(s3_config)};
+}
+
 model::cloud_credentials_source
 get_credentials_source(const config::configuration& cfg) {
+    if (
+      cfg.iceberg_rest_catalog_authentication_mode()
+      == config::datalake_catalog_auth_mode::gcp) {
+        return cfg.cloud_storage_credentials_source();
+    }
+
     return cfg.iceberg_rest_catalog_aws_credentials_source().has_value()
              ? cfg.iceberg_rest_catalog_aws_credentials_source().value()
              : cfg.cloud_storage_credentials_source();
@@ -95,6 +114,8 @@ create_auth_refresh_configuration(const config::configuration& cfg) {
         return std::nullopt;
     case config::datalake_catalog_auth_mode::aws_sigv4:
         return create_aws_sigv4_configuration(cfg);
+    case config::datalake_catalog_auth_mode::gcp:
+        return create_gcp_configuration(cfg);
     }
 }
 
@@ -165,7 +186,9 @@ ss::future<result<std::monostate>> credential_manager::maybe_sign(
     const auto& cfg = config::shard_local_cfg();
     if (
       cfg.iceberg_rest_catalog_authentication_mode()
-      != config::datalake_catalog_auth_mode::aws_sigv4) {
+        != config::datalake_catalog_auth_mode::aws_sigv4
+      && cfg.iceberg_rest_catalog_authentication_mode()
+           != config::datalake_catalog_auth_mode::gcp) {
         co_return std::monostate{};
     }
 

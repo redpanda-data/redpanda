@@ -718,7 +718,10 @@ struct convert<config::datalake_catalog_auth_mode> {
                   config::datalake_catalog_auth_mode::oauth2)
                 .match(
                   to_string_view(config::datalake_catalog_auth_mode::aws_sigv4),
-                  config::datalake_catalog_auth_mode::aws_sigv4);
+                  config::datalake_catalog_auth_mode::aws_sigv4)
+                .match(
+                  to_string_view(config::datalake_catalog_auth_mode::gcp),
+                  config::datalake_catalog_auth_mode::gcp);
         return true;
     }
 };

@@ -29,4 +29,31 @@ std::istream& operator>>(std::istream& is, audit_failure_policy& policy) {
                  audit_failure_policy::permit);
     return is;
 }
+
+std::ostream& operator<<(std::ostream& os, datalake_catalog_auth_mode cam) {
+    return os << to_string_view(cam);
+}
+
+std::istream& operator>>(std::istream& is, datalake_catalog_auth_mode& cam) {
+    ss::sstring s;
+    is >> s;
+    cam = string_switch<datalake_catalog_auth_mode>(s)
+            .match(
+              to_string_view(datalake_catalog_auth_mode::none),
+              datalake_catalog_auth_mode::none)
+            .match(
+              to_string_view(datalake_catalog_auth_mode::bearer),
+              datalake_catalog_auth_mode::bearer)
+            .match(
+              to_string_view(datalake_catalog_auth_mode::oauth2),
+              datalake_catalog_auth_mode::oauth2)
+            .match(
+              to_string_view(datalake_catalog_auth_mode::aws_sigv4),
+              datalake_catalog_auth_mode::aws_sigv4)
+            .match(
+              to_string_view(datalake_catalog_auth_mode::gcp),
+              datalake_catalog_auth_mode::gcp);
+    return is;
+}
+
 } // namespace config

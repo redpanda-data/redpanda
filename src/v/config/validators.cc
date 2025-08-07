@@ -340,6 +340,23 @@ validate_iceberg_rest_catalog_auth_mode(const config::configuration& config) {
         }
         break;
     }
+    case datalake_catalog_auth_mode::gcp: {
+        // Determine effective credentials source
+        auto effective_creds_source = config.cloud_storage_credentials_source();
+
+        // For now we support only gcp_instance_metadata.
+        if (
+          effective_creds_source
+          != model::cloud_credentials_source::gcp_instance_metadata) {
+            return fmt::format(
+              "Must set iceberg_rest_catalog_gcp_credentials_source to "
+              "'gcp_instance_metadata' when "
+              "iceberg_rest_catalog_authentication_"
+              "mode is set to {}.",
+              auth_mode);
+        }
+        break;
+    }
     }
     return std::nullopt;
 }
