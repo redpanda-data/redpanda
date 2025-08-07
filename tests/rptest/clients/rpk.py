@@ -119,7 +119,8 @@ class RpkGroupPartition(typing.NamedTuple):
 
 class RpkGroup(typing.NamedTuple):
     name: str
-    coordinator: int
+    coordinator_node: int
+    coordinator_partition: str
     state: str
     balancer: str
     members: int
@@ -919,16 +920,17 @@ class RpkTool:
                     raise
 
             lines = out.splitlines()
-
             group_name = parse_field("GROUP", lines[0])
-            coordinator = parse_field("COORDINATOR", lines[1])
-            state = parse_field("STATE", lines[2])
-            balancer = parse_field("BALANCER", lines[3])
-            members = parse_field("MEMBERS", lines[4])
-            total_lag = parse_field("TOTAL-LAG", lines[5])
+            coordinator_node = parse_field("COORDINATOR-NODE", lines[1])
+            coordinator_partition = parse_field("COORDINATOR-PARTITION",
+                                                lines[2])
+            state = parse_field("STATE", lines[3])
+            balancer = parse_field("BALANCER", lines[4])
+            members = parse_field("MEMBERS", lines[5])
+            total_lag = parse_field("TOTAL-LAG", lines[6])
 
-            # lines[6] can be empty or the ERROR field, skip it either way.
-            partition_lines = [l for l in lines[7:] if len(l) > 0]
+            # lines[7] can be empty or the ERROR field, skip it either way.
+            partition_lines = [l for l in lines[8:] if len(l) > 0]
             partitions = []
             if len(partition_lines) > 0:
                 table = parse_rpk_table_lines(partition_lines)
@@ -994,7 +996,8 @@ class RpkTool:
                     partitions.append(partition)
 
             return RpkGroup(name=group_name,
-                            coordinator=int(coordinator),
+                            coordinator_node=int(coordinator_node),
+                            coordinator_partition=coordinator_partition,
                             state=state,
                             balancer=balancer,
                             members=int(members),
