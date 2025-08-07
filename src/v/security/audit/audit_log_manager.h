@@ -264,6 +264,10 @@ public:
 
     bool report_redpanda_app_event(is_started);
 
+    const kafka::client::configuration& get_client_config() const {
+        return _config;
+    }
+
 private:
     using ignore_enabled_events
       = ss::bool_class<struct ignore_enabled_events_tag>;

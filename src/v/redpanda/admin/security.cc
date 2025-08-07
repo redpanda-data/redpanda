@@ -52,6 +52,7 @@ struct interfaces_report : public json::json_base {
     json::json_list<schema_registry_interface_security_report> schema_registry;
     json::json_element<client_security_report> schema_registry_client;
     json::json_list<pandaproxy_interface_security_report> pandaproxy;
+    json::json_element<client_security_report> audit_log_client;
 
     void register_params() {
         add(&kafka, "kafka");
@@ -60,6 +61,7 @@ struct interfaces_report : public json::json_base {
         add(&schema_registry, "schema_registry");
         add(&schema_registry_client, "schema_registry_client");
         add(&pandaproxy, "pandaproxy");
+        add(&audit_log_client, "audit_log_client");
     }
 
     interfaces_report() { register_params(); }
@@ -72,6 +74,7 @@ struct interfaces_report : public json::json_base {
         schema_registry = e.schema_registry;
         schema_registry_client = e.schema_registry_client;
         pandaproxy = e.pandaproxy;
+        audit_log_client = e.audit_log_client;
     }
     template<class T>
     interfaces_report& operator=(const T& e) {
@@ -81,6 +84,7 @@ struct interfaces_report : public json::json_base {
         schema_registry = e.schema_registry;
         schema_registry_client = e.schema_registry_client;
         pandaproxy = e.pandaproxy;
+        audit_log_client = e.audit_log_client;
         return *this;
     }
     interfaces_report& operator=(const interfaces_report& e) {
@@ -90,6 +94,7 @@ struct interfaces_report : public json::json_base {
         schema_registry = e.schema_registry;
         schema_registry_client = e.schema_registry_client;
         pandaproxy = e.pandaproxy;
+        audit_log_client = e.audit_log_client;
         return *this;
     }
     template<class T>
@@ -100,6 +105,7 @@ struct interfaces_report : public json::json_base {
         e.schema_registry = schema_registry;
         e.schema_registry_client = schema_registry_client;
         e.pandaproxy = pandaproxy;
+        e.audit_log_client = audit_log_client;
         return *this;
     }
 };
@@ -1486,6 +1492,11 @@ admin_server::get_security_report(std::unique_ptr<ss::http::request>) {
             ephemeral_credentials{
               _schema_registry->has_ephemeral_credentials()});
     }
+    interfaces_report.audit_log_client = generate_kafka_client_interface_report(
+      alerts,
+      affected_interface::audit_log_client,
+      _audit_mgr.local().get_client_config(),
+      ephemeral_credentials::yes);
     report.interfaces = std::move(interfaces_report);
 
     report.alerts = std::move(alerts);

@@ -244,6 +244,11 @@ def validate_report(
     pandaproxy_expected=None,
     schema_registry_expected=None,
     schema_registry_client_expected=KafkaClientInterface.default(),
+    audit_log_expected=KafkaClientInterface(
+        tls_enabled=False,
+        mutual_tls_enabled=False,
+        configured_authentication_method="SCRAM_Ephemeral",
+    ),
     expected_alerts=[],
 ):
     assert response.status_code == 200, (
@@ -306,6 +311,9 @@ def validate_report(
         assert_interface(
             src_json, schema_registry_client_expected, KafkaClientInterface
         )
+
+    alc_json = get_key("audit_log_client", interfaces)
+    assert_interface(alc_json, audit_log_expected, KafkaClientInterface)
 
     alerts_json = get_key("alerts", report_json)
     alerts = [make_from_dict(SecurityAlert, a) for a in alerts_json]
@@ -378,6 +386,13 @@ class NoSecurityReportTest(RedpandaTest):
                 description='"admin" interface "iplistener" is not using authorization.'
                 " This is insecure and not recommended.",
             ),
+            SecurityAlert(
+                affected_interface="audit_log_client",
+                listener_name="audit_log_client",
+                issue="NO_TLS",
+                description='"audit_log_client" interface "audit_log_client" is not using TLS.'
+                " This is insecure and not recommended.",
+            ),
         ]
 
         validate_report(report, expected_alerts=expected_alerts)
@@ -434,6 +449,12 @@ class KafkaSecurityReportTest(RedpandaTest):
             supported_sasl_mechanisms=sasl_mechs,
         )
 
+        audit_log_interface = KafkaClientInterface(
+            tls_enabled=enable_tls,
+            mutual_tls_enabled=enable_tls,
+            configured_authentication_method="SCRAM_Ephemeral",
+        )
+
         expected_alerts = []
         if authz_enabled:
             expected_alerts.extend(
@@ -470,6 +491,7 @@ class KafkaSecurityReportTest(RedpandaTest):
                 "iplistener": maybe_tls_interface,
                 "kerberoslistener": no_tls_interface,
             },
+            audit_log_expected=audit_log_interface,
             expected_alerts=expected_alerts,
         )
 
@@ -523,6 +545,12 @@ class RpcTLSSecurityReportTest(RedpandaTest):
 
         rpc_inteface = RpcInterface(tls_enabled=True, mutual_tls_enabled=True)
 
+        audit_log_interface = KafkaClientInterface(
+            tls_enabled=True,
+            mutual_tls_enabled=True,
+            configured_authentication_method="SCRAM_Ephemeral",
+        )
+
         report = Admin(self.redpanda).security_report()
         validate_report(
             report,
@@ -532,6 +560,7 @@ class RpcTLSSecurityReportTest(RedpandaTest):
                 "kerberoslistener": kafka_no_tls_interface,
             },
             rpc_expected=rpc_inteface,
+            audit_log_expected=audit_log_interface,
         )
 
 
@@ -618,6 +647,12 @@ class AdminSecurityReportTest(RedpandaTest):
             authentication_methods=["BASIC", "OIDC"],
         )
 
+        audit_log_interface = KafkaClientInterface(
+            tls_enabled=True,
+            mutual_tls_enabled=True,
+            configured_authentication_method="SCRAM_Ephemeral",
+        )
+
         admin = Admin(
             self.redpanda, auth=(self.BOOTSTRAP_USERNAME, self.BOOTSTRAP_PASSWORD)
         )
@@ -633,6 +668,7 @@ class AdminSecurityReportTest(RedpandaTest):
                 "": no_tls_interface,
                 "iplistener": with_tls_inteface,
             },
+            audit_log_expected=audit_log_interface,
         )
 
 
@@ -706,6 +742,12 @@ class PandaproxyMTLSSecurityReportTest(PandaProxyMTLSBase):
             configured_authentication_method="None",
         )
 
+        audit_log_interface = KafkaClientInterface(
+            tls_enabled=True,
+            mutual_tls_enabled=True,
+            configured_authentication_method="SCRAM_Ephemeral",
+        )
+
         report = Admin(self.redpanda).security_report()
         validate_report(
             report,
@@ -715,6 +757,7 @@ class PandaproxyMTLSSecurityReportTest(PandaProxyMTLSBase):
                 "kerberoslistener": kafka_no_tls_interface,
             },
             pandaproxy_expected={"": pp_interface},
+            audit_log_expected=audit_log_interface,
         )
 
 
@@ -881,6 +924,12 @@ class SchemaRegistryMTLSSecurityReportTest(SchemaRegistryMTLSBase):
             configured_authentication_method="None",
         )
 
+        audit_log_interface = KafkaClientInterface(
+            tls_enabled=True,
+            mutual_tls_enabled=True,
+            configured_authentication_method="SCRAM_Ephemeral",
+        )
+
         report = Admin(self.redpanda).security_report()
         validate_report(
             report,
@@ -891,6 +940,7 @@ class SchemaRegistryMTLSSecurityReportTest(SchemaRegistryMTLSBase):
             },
             schema_registry_expected={"": sr_interface},
             schema_registry_client_expected=src_interface,
+            audit_log_expected=audit_log_interface,
         )
 
 

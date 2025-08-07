@@ -451,6 +451,9 @@
                                     "items": {
                                         "$ref": "#/definitions/pandaproxy_interface_security_report"
                                     }
+                                },
+                                "audit_log_client": {
+                                    "$ref": "#/definitions/client_security_report"
                                 }
                             }
                         },

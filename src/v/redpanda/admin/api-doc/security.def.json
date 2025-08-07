@@ -134,7 +134,8 @@
             "admin",
             "schema_registry",
             "schema_registry_client",
-            "pandaproxy"
+            "pandaproxy",
+            "audit_log_client"
           ]
         },
         "listener_name": {
