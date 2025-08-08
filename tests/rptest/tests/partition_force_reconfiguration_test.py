@@ -757,19 +757,20 @@ class NodeWiseRecoveryTest(RedpandaTest):
                     assert 0.8 * initial_hw <= final_hw <= initial_hw
 
     @cluster(num_nodes=6)
-    def test_recovery_local_data_missing(self):
+    @matrix(wait_for_final_manifest_uploads=[False, True])
+    def test_recovery_local_data_missing(self,
+                                         wait_for_final_manifest_uploads):
         self.redpanda._disable_cloud_storage_diagnostics = True
 
-        topic = TopicSpec(name=f"topic-0",
-                          replication_factor=3,
+        topic = TopicSpec(replication_factor=3,
                           partition_count=1,
                           redpanda_remote_read=True,
                           redpanda_remote_write=True)
-
+        local_retention = 50 * 1024 * 1024  # 50 MiB
         self.client().create_topic(topic)
         self.client().alter_topic_config(
             topic.name, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
-            2 * 1024 * 1024)
+            local_retention)
 
         admin = self.redpanda._admin
         rpk = RpkTool(self.redpanda)
@@ -781,7 +782,11 @@ class NodeWiseRecoveryTest(RedpandaTest):
 
         # produce initial data
         self.produce_until_log_eviction(topic.name)
-        self.wait_for_final_manifest_uploads(topic.name)
+        if wait_for_final_manifest_uploads:
+            self.wait_for_final_manifest_uploads(topic.name)
+        else:
+            self.client().alter_topic_config(topic.name,
+                                             "redpanda.remote.write", False)
 
         # collect topic partition high watermarks before recovery
         initial_status = self.get_topic_partition_status(topic.name, 1)
@@ -792,15 +797,15 @@ class NodeWiseRecoveryTest(RedpandaTest):
         node_to_stop = self.redpanda.get_node_by_id(node_to_stop_id)
         self.logger.debug(f"Stopping node: {node_to_stop_id}")
         self.redpanda.stop_node(node_to_stop)
-
+        msg_size = 512
+        total_bytes = 75 * 1024 * 1024  # 75 MiB
+        msg_cnt = total_bytes // msg_size
         # produce more data while node 0 is stopped
-        producer = KgoVerifierProducer(self.test_context, self.redpanda,
-                                       topic.name, 512, 5000)
-        producer.start(clean=False)
-        producer.wait()
-        producer.clean()
-        producer.free()
-        self.wait_for_final_manifest_uploads(topic.name)
+        KgoVerifierProducer.oneshot(self.test_context, self.redpanda,
+                                    topic.name, msg_size, msg_cnt)
+
+        if wait_for_final_manifest_uploads:
+            self.wait_for_final_manifest_uploads(topic.name)
 
         status_2nd_step = self.get_topic_partition_status(topic.name, 1)
 
@@ -836,13 +841,12 @@ class NodeWiseRecoveryTest(RedpandaTest):
         rpk.force_partition_recovery(from_nodes=to_kill_node_ids)
         self.wait_for_no_reconfigurations()
         # wait for quiescence
-        for part in range(0, topic.partition_count):
-            self.redpanda._admin.await_stable_leader(
-                topic=topic.name,
-                partition=part,
-                timeout_s=self.default_timeout_sec,
-                backoff_s=2,
-                hosts=self._alive_nodes())
+        self.redpanda._admin.await_stable_leader(
+            topic=topic.name,
+            partition=0,
+            timeout_s=self.default_timeout_sec,
+            backoff_s=2,
+            hosts=self._alive_nodes())
 
         status_after = self.get_topic_partition_status(topic.name,
                                                        topic.partition_count)
