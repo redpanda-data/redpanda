@@ -98,30 +98,3 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
-
-redpanda_cc_library(
-    name = "reader",
-    srcs = [
-        "reader.cc",
-    ],
-    hdrs = [
-        "reader.h",
-    ],
-    implementation_deps = [
-        "//src/v/cloud_topics:data_plane_api",
-        "//src/v/cloud_topics:logger",
-        "//src/v/cloud_topics/level_zero/stm:placeholder",
-        "//src/v/cluster",
-        "//src/v/config",
-    ],
-    include_prefix = "cloud_topics/level_zero/reader",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//src/v/base",
-        "//src/v/cloud_topics/level_zero/common:extent_meta",
-        "//src/v/model",
-        "//src/v/storage",
-        "@boost//:outcome",
-        "@seastar",
-    ],
-)

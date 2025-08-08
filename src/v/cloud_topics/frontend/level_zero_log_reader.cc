@@ -7,7 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-#include "cloud_topics/level_zero/reader/reader.h"
+#include "cloud_topics/frontend/level_zero_log_reader.h"
 
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/level_zero/stm/placeholder.h"
