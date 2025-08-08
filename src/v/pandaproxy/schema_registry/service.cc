@@ -53,8 +53,6 @@
 namespace pandaproxy::schema_registry {
 
 using server = ctx_server<service>;
-const security::acl_principal principal{
-  security::principal_type::ephemeral_user, "__schema_registry"};
 
 class wrap {
 public:
@@ -376,7 +374,7 @@ ss::future<> create_acls(cluster::security_frontend& security_fe) {
           model::schema_registry_internal_tp.topic,
           security::pattern_type::literal},
         security::acl_entry{
-          principal,
+          security::schema_registry_principal,
           security::acl_host::wildcard_host(),
           security::acl_operation::all,
           security::acl_permission::allow}}};
@@ -390,24 +388,31 @@ ss::future<> create_acls(cluster::security_frontend& security_fe) {
         vlog(
           srlog.warn,
           "Failed to create ACLs for {}, err {} - {}",
-          principal,
+          security::schema_registry_principal,
           *it,
           cluster::make_error_code(*it).message());
     } else {
-        vlog(srlog.debug, "Successfully created ACLs for {}", principal);
+        vlog(
+          srlog.debug,
+          "Successfully created ACLs for {}",
+          security::schema_registry_principal);
     }
 }
 
 ss::future<> service::configure() {
     auto sasl_config = co_await kafka::client::create_client_credentials(
-      *_controller, config::shard_local_cfg(), _client_config, principal);
+      *_controller,
+      config::shard_local_cfg(),
+      _client_config,
+      security::schema_registry_principal);
     co_await _client.invoke_on_all(
       [sasl_config = std::move(sasl_config)](kafka::client::client& c) {
           c.set_credentials(sasl_config);
       });
 
     const auto& store = _controller->get_ephemeral_credential_store().local();
-    bool has_ephemeral_credentials = store.has(store.find(principal));
+    bool has_ephemeral_credentials = store.has(
+      store.find(security::schema_registry_principal));
     co_await container().invoke_on_all(
       _ctx.smp_sg, [has_ephemeral_credentials](service& s) {
           s._has_ephemeral_credentials = has_ephemeral_credentials;
@@ -463,7 +468,7 @@ ss::future<> service::inform(model::node_id id) {
 
 ss::future<> service::do_inform(model::node_id id) {
     auto& fe = _controller->get_ephemeral_credential_frontend().local();
-    auto ec = co_await fe.inform(id, principal);
+    auto ec = co_await fe.inform(id, security::schema_registry_principal);
     vlog(srlog.info, "Informed: broker: {}, ec: {}", id, ec);
 }
 

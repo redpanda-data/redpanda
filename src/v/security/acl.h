@@ -844,6 +844,9 @@ private:
 inline const acl_principal audit_principal{
   principal_type::ephemeral_user, "__auditing"};
 
+inline const acl_principal schema_registry_principal{
+  principal_type::ephemeral_user, "__schema_registry"};
+
 namespace testing {
 
 struct acl_binding_filter_v0 : public acl_binding_filter {

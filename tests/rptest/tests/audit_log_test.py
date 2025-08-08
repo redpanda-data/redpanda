@@ -1614,6 +1614,32 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
+    def test_no_ephemeral_user(self):
+        """
+        Verifies that ephemeral users do not generate audit messages
+        """
+        self.setup_cluster()
+
+        user_rpk = self.get_rpk()
+
+        _ = user_rpk.list_topics()
+
+        try:
+            # Read all records that have the audit log user for two seconds - should not get any records
+            records = self.read_all_from_audit_log(
+                partial(self.authn_filter_function,
+                        self.kafka_rpc_service_name, "__auditing", 99,
+                        "SASL-SCRAM"),
+                lambda records: len(records) >= 1,
+                timeout_sec=5)
+
+            assert False, f"Should not have seen any records, got {len(records)} records"
+        except TimeoutError:
+            # This is good, we should not see any records
+            pass
+
+    @skip_fips_mode
+    @cluster(num_nodes=5)
     def test_authn_failure_messages(self):
         """Validates that failed authentication messages are audited
         """
@@ -1655,16 +1681,6 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
         _ = self.get_rpk_credentials(username=self.username,
                                      password=self.password,
                                      mechanism=self.algorithm).list_topics()
-
-        authn_records = self.read_all_from_audit_log(
-            partial(self.authn_filter_function, self.kafka_rpc_service_name,
-                    "__auditing", 99, "SASL-SCRAM"),
-            lambda records: self.aggregate_count(records) >= 1)
-
-        assert len(
-            authn_records
-        ) >= 1, f"Expected at least one authn record for audit user, but got none"
-
         try:
             recs = self.read_all_from_audit_log(
                 partial(self.authz_api_filter_function,
