@@ -23,6 +23,7 @@
 #include <initializer_list>
 #include <limits>
 #include <numeric>
+#include <ranges>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
@@ -556,6 +557,95 @@ TEST(ChunkedVector, FromRange) {
 
     auto vec = chunked_vector<int32_t>(buffer);
     EXPECT_THAT(vec, ElementsAreArray(buffer));
+}
+
+TEST(ChunkedVector, FromRVRefView) {
+    // Test for a regression in which chunked vector would steal/move
+    // the underlying data instead of copying it if given an RV
+    // std::ranges::ref_view.
+
+    struct v { // NOLINT
+        int32_t data;
+
+        v(int32_t v) // NOLINT
+          : data(v) {}
+
+        v(const v& other) = default;
+
+        // Move constructor available but it must not be called.
+        v(v&& other) noexcept
+          : data(other.data) {
+            other.data = -1;
+        }
+
+        bool operator==(const v& other) const = default;
+    };
+
+    std::vector<v> buffer;
+    buffer.reserve(10);
+    for (int i = 0; i < 10; ++i) {
+        buffer.emplace_back(i);
+    }
+
+    auto vec = chunked_vector<v>(buffer | std::views::all);
+    EXPECT_THAT(vec, ElementsAreArray(buffer));
+
+    for (const auto& elem : buffer) {
+        EXPECT_NE(elem.data, -1) << "Element should not have been moved";
+    }
+}
+
+TEST(ChunkedVector, FromOwningView) {
+    // Test that moving from an owning view works as expected.
+
+    struct v { // NOLINT
+        int32_t data;
+
+        v(int32_t v) // NOLINT
+          : data(v) {}
+
+        v(v&& other) noexcept
+          : data(other.data) {
+            other.data = -1;
+        }
+
+        // Not deleting to avoid missing the case when implementation does
+        // something surprising based on the presence of the copy-constructor.
+        v(const v&) { // NOLINT
+            throw std::runtime_error("Copying is not allowed");
+        };
+        v& operator=(const v&) { // NOLINT
+            throw std::runtime_error("Copying is not allowed");
+        }
+
+        bool operator==(const v& other) const = default;
+    };
+
+    std::vector<v> source;
+    std::vector<v> ref;
+
+    for (int i = 0; i < 10; ++i) {
+        // Create a source and a reference to which we'll compare the
+        // destination.
+        source.emplace_back(i);
+        ref.emplace_back(i);
+    }
+
+    auto vec = chunked_vector<v>(
+      source | std::views::as_rvalue | std::views::all);
+    EXPECT_EQ(vec.size(), ref.size());
+    EXPECT_EQ(source.size(), vec.size())
+      << "Only the values should have been moved but not the container itself.";
+
+    // Values should match.
+    for (auto i = 0; i < 10; ++i) {
+        EXPECT_EQ(ref[i].data, vec[i].data);
+    }
+
+    // Source values are set to 0.
+    for (auto i = 0; i < 10; ++i) {
+        EXPECT_EQ(source[i].data, -1);
+    }
 }
 
 TEST(ChunkedVector, InPlaceSingleElement) {

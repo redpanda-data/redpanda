@@ -113,10 +113,7 @@ public:
     template<typename Range>
     requires std::ranges::sized_range<Range>
     explicit chunked_vector(Range range)
-      : chunked_vector() {
-        reserve(std::ranges::size(range));
-        std::move(range.begin(), range.end(), std::back_inserter(*this));
-    }
+      : chunked_vector(std::ranges::begin(range), std::ranges::end(range)) {}
 
     /**
      * @brief Construct a new vector by copying from a const range
