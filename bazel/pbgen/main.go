@@ -1950,6 +1950,9 @@ func mapImport(path string) string {
 	if strings.HasPrefix(path, "proto/redpanda/pbgen") {
 		return ""
 	}
+	if strings.HasPrefix(path, "google/api") {
+		return ""
+	}
 	switch path {
 	case "google/protobuf/duration.proto",
 		"google/protobuf/timestamp.proto":
