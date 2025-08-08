@@ -3,14 +3,17 @@ load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_
 redpanda_test_cc_library(
     name = "utils",
     hdrs = [
+        "license_utils.h",
         "randoms.h",
     ],
     include_prefix = "security/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/security",
+        "//src/v/security:license",
         "//src/v/test_utils:random",
         "//src/v/test_utils:random_bytes",
+        "@abseil-cpp//absl/strings",
     ],
 )
 
@@ -103,21 +106,6 @@ redpanda_cc_btest(
         "@fmt",
         "@seastar",
         "@seastar//:testing",
-    ],
-)
-
-redpanda_cc_btest(
-    name = "license_test",
-    timeout = "short",
-    srcs = [
-        "license_test.cc",
-    ],
-    deps = [
-        "//src/v/security:license",
-        "//src/v/test_utils:seastar_boost",
-        "@boost//:date_time",
-        "@boost//:filesystem",
-        "@boost//:test",
     ],
 )
 
@@ -244,6 +232,20 @@ redpanda_cc_gtest(
         "//src/v/bytes:iobuf_parser",
         "//src/v/security",
         "//src/v/serde",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "license_test",
+    timeout = "short",
+    srcs = [
+        "license_test.cc",
+    ],
+    deps = [
+        ":utils",
+        "//src/v/security:license",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
     ],
