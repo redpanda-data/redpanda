@@ -725,6 +725,8 @@ controller_backend::force_replica_set_update(
         // will be cleaned up as a part of update_finished command.
         co_return ss::stop_iteration::yes;
     }
+    auto [voters, learners] = split_voters_learners_for_force_reconfiguration(
+      previous_replicas, new_replicas, initial_replicas_revisions, cmd_rev);
     if (partition->cloud_data_available()) {
         auto last_cloud_offset
           = co_await partition->fetch_latest_cloud_offset_from_manifest(
@@ -740,7 +742,45 @@ controller_backend::force_replica_set_update(
               last_cloud_offset.error());
             co_return last_cloud_offset.error();
         }
-        if (last_cloud_offset.value() > partition->dirty_offset()) {
+
+        vlog(
+          clusterlog.info,
+          "[{}] force-update replica set - last cloud offset {}, dirty offset: "
+          "{}",
+          partition->ntp(),
+          last_cloud_offset.value(),
+          partition->dirty_offset());
+
+        /**
+         * This variable indicates whether the partition can be recovered
+         * by the leader.
+         *
+         * When force reconfiguring partition controller backend decides which
+         * of the new replicas should be added to the partition configuration as
+         * learners. The logic here is relatively simple: if a replica is
+         * already in the replica set (it is the disaster survivor), it is
+         * added to the replica set as a voter serving as a source of truth.
+         * Nodes that join the replica set are added to the configuration as
+         * learners in order to prevent them from reaching a majority and
+         * overcoming the current minority (the survivors).
+         *
+         * After establishing which replicas are learners vs voters the
+         * condition below decides if the survivor should be treated as a
+         * source of truth or if cloud data contains more up to date state.
+         *
+         * If replica dirty offset is greater than last cloud offset it means
+         * that the replica is more up to date, otherwise data in the bucket are
+         * newer and they should be used. This condition should only be verified
+         * if a node is not a learner and can not be recovered from the cloud.
+         * Otherwise all learners would face multiple deletions while being
+         * recovered by the leader as their dirty offset may be smaller than
+         * last cloud offset for a very long time.
+         *
+         */
+        const auto can_be_recovered_by_leader = contains_node(learners, _self);
+        if (
+          !can_be_recovered_by_leader
+          && last_cloud_offset.value() > partition->dirty_offset()) {
             vlog(
               clusterlog.info,
               "[{}] force-update replica set - last cloud offset {} is greater "
@@ -762,8 +802,6 @@ controller_backend::force_replica_set_update(
         }
     }
 
-    auto [voters, learners] = split_voters_learners_for_force_reconfiguration(
-      previous_replicas, new_replicas, initial_replicas_revisions, cmd_rev);
     vlog(
       clusterlog.debug,
       "[{}] force updating replica set with: [voters: {}, learners: {}]",
