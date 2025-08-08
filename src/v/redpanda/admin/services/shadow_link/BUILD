@@ -16,10 +16,16 @@ redpanda_cc_library(
     name = "shadow_link",
     srcs = ["shadow_link.cc"],
     hdrs = ["shadow_link.h"],
+    implementation_deps = [
+        ":converter",
+        "//src/v/cluster_link",
+    ],
     include_prefix = "redpanda/admin/services/shadow_link",
     visibility = ["//src/v/redpanda:__subpackages__"],
     deps = [
         "//proto/redpanda/core/admin:shadow_link_redpanda_proto",
+        "//src/v/cluster_link:fwd",
         "//src/v/serde/protobuf:rpc",
+        "@seastar",
     ],
 )
