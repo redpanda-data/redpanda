@@ -23,6 +23,11 @@ using proto::admin::create_shadow_link_request;
 using proto::admin::name_filter;
 using proto::admin::scram_config;
 using proto::admin::scram_mechanism;
+using proto::admin::shadow_link;
+using proto::admin::shadow_link_client_options;
+using proto::admin::shadow_link_configurations;
+using proto::admin::shadow_link_status;
+using proto::admin::shadow_topic_status;
 using proto::admin::tls_file_settings;
 using proto::admin::tls_settings;
 using proto::admin::tlspem_settings;
@@ -48,6 +53,20 @@ constexpr auto to_filter_type(proto::admin::filter_type f) {
         return cluster_link::model::filter_type::include;
     case proto::admin::filter_type::exclude:
         return cluster_link::model::filter_type::exclude;
+    }
+}
+
+constexpr auto mirror_topic_state_to_shadow_topic_state(
+  cluster_link::model::mirror_topic_state s) {
+    switch (s) {
+    case cluster_link::model::mirror_topic_state::active:
+        return proto::admin::shadow_topic_state::active;
+    case cluster_link::model::mirror_topic_state::failed:
+        return proto::admin::shadow_topic_state::faulted;
+    case cluster_link::model::mirror_topic_state::paused:
+        return proto::admin::shadow_topic_state::paused;
+    case cluster_link::model::mirror_topic_state::promoted:
+        return proto::admin::shadow_topic_state::promoted;
     }
 }
 
@@ -210,7 +229,244 @@ create_connection_config(const create_shadow_link_request& req) {
 
     return config;
 }
+
+authentication_configuration create_authentication_configuration(
+  const cluster_link::model::connection_config::authn_variant& authn) {
+    return ss::visit(
+      authn,
+      [](const cluster_link::model::scram_credentials& scram)
+        -> authentication_configuration {
+          scram_config scram_proto;
+          scram_proto.set_username(ss::sstring{scram.username});
+          scram_proto.set_password_set(true);
+          scram_proto.set_scram_mechanism(
+            proto::admin::scram_mechanism::unspecified);
+          if (scram.mechanism == "SCRAM-SHA-256") {
+              scram_proto.set_scram_mechanism(
+                proto::admin::scram_mechanism::scram_sha_256);
+          } else if (scram.mechanism == "SCRAM-SHA-512") {
+              scram_proto.set_scram_mechanism(
+                proto::admin::scram_mechanism::scram_sha_512);
+          } else {
+              throw std::invalid_argument(
+                ssx::sformat("Unknown SCRAM mechanism: {}", scram.mechanism));
+          }
+          authentication_configuration authn;
+          authn.set_scram_configuration(std::move(scram_proto));
+          return authn;
+      });
+}
+
+struct tls_visitor {
+    explicit tls_visitor(tls_settings* tls_settings)
+      : _tls_settings(tls_settings) {}
+
+    void operator()(
+      const cluster_link::model::tls_file_path& key,
+      const cluster_link::model::tls_file_path& cert) {
+        _tls_settings->visit_tls_settings(
+          [&key, &cert](tls_file_settings& file_settings) {
+              file_settings.set_key_path(ss::sstring{key()});
+              file_settings.set_cert_path(ss::sstring{cert()});
+          },
+          [](tlspem_settings&) {
+              throw std::invalid_argument(
+                "Cannot set both tls_file_settings and tls_pem_settings");
+          },
+          [this, &key, &cert](std::monostate) {
+              tls_file_settings file_settings;
+              file_settings.set_key_path(ss::sstring{key()});
+              file_settings.set_cert_path(ss::sstring{cert()});
+              _tls_settings->set_tls_file_settings(std::move(file_settings));
+          });
+    }
+
+    void operator()(
+      const cluster_link::model::tls_value& key,
+      const cluster_link::model::tls_value& cert) {
+        _tls_settings->visit_tls_settings(
+          [](tls_file_settings&) {
+              throw std::invalid_argument(
+                "Cannot set both tls_file_settings and tls_pem_settings");
+          },
+          [&key, &cert](tlspem_settings& pem_settings) {
+              pem_settings.set_key(ss::sstring{key()});
+              pem_settings.set_cert(ss::sstring{cert()});
+          },
+          [this, &key, &cert](std::monostate) {
+              tlspem_settings pem_settings;
+              pem_settings.set_key(ss::sstring{key()});
+              pem_settings.set_cert(ss::sstring{cert()});
+              _tls_settings->set_tls_pem_settings(std::move(pem_settings));
+          });
+    }
+
+    template<typename T1, typename T2>
+    requires(!std::is_same_v<T1, T2>)
+    void operator()(const T1&, const T2&) {
+        throw std::invalid_argument(
+          "TLS key and cert must be of the same type");
+    }
+
+    tls_settings* _tls_settings;
+};
+
+tls_settings create_tls_settings(const cluster_link::model::metadata& md) {
+    tls_settings tls;
+    if (md.connection.ca.has_value()) {
+        ss::visit(
+          md.connection.ca.value(),
+          [&tls](const cluster_link::model::tls_file_path& path) {
+              tls_file_settings file_settings;
+              file_settings.set_ca_path(ss::sstring{path});
+              tls.set_tls_file_settings(std::move(file_settings));
+          },
+          [&tls](const cluster_link::model::tls_value& value) {
+              tlspem_settings pem_settings;
+              pem_settings.set_ca(ss::sstring{value});
+              tls.set_tls_pem_settings(std::move(pem_settings));
+          });
+    }
+
+    if (md.connection.key.has_value() && md.connection.cert.has_value()) {
+        std::visit(
+          tls_visitor(&tls),
+          md.connection.key.value(),
+          md.connection.cert.value());
+    }
+
+    return tls;
+}
+
+shadow_link_client_options
+create_shadow_link_client_options(const cluster_link::model::metadata& md) {
+    shadow_link_client_options options;
+
+    chunked_vector<ss::sstring> bootstrap_servers;
+    bootstrap_servers.reserve(md.connection.bootstrap_servers.size());
+    std::ranges::transform(
+      md.connection.bootstrap_servers,
+      std::back_inserter(bootstrap_servers),
+      [](const auto& addr) {
+          return ssx::sformat("{}:{}", addr.host(), addr.port());
+      });
+
+    options.set_bootstrap_servers(std::move(bootstrap_servers));
+    options.set_client_id(ss::sstring{md.connection.client_id});
+
+    if (
+      md.connection.ca.has_value() || md.connection.cert.has_value()
+      || md.connection.key.has_value()) {
+        options.set_tls_settings(create_tls_settings(md));
+    }
+
+    if (md.connection.authn_config.has_value()) {
+        options.set_authentication_configuration(
+          create_authentication_configuration(
+            md.connection.authn_config.value()));
+    }
+
+    return options;
+}
+
+constexpr auto
+to_proto_filter_pattern(cluster_link::model::filter_pattern_type p) {
+    switch (p) {
+    case cluster_link::model::filter_pattern_type::literal:
+        return proto::admin::pattern_type::literal;
+    case cluster_link::model::filter_pattern_type::prefix:
+        return proto::admin::pattern_type::prefix;
+    }
+}
+
+constexpr auto to_proto_filter_type(cluster_link::model::filter_type f) {
+    switch (f) {
+    case cluster_link::model::filter_type::include:
+        return proto::admin::filter_type::include;
+    case cluster_link::model::filter_type::exclude:
+        return proto::admin::filter_type::exclude;
+    }
+}
+
+chunked_vector<name_filter> to_name_filters(
+  const chunked_vector<cluster_link::model::resource_name_filter_pattern>&
+    patterns) {
+    chunked_vector<name_filter> filters;
+    filters.reserve(patterns.size());
+
+    std::ranges::transform(
+      patterns,
+      std::back_inserter(filters),
+      [](const cluster_link::model::resource_name_filter_pattern& p) {
+          name_filter filter;
+          filter.set_pattern_type(to_proto_filter_pattern(p.pattern_type));
+          filter.set_filter_type(to_proto_filter_type(p.filter));
+          filter.set_name(ss::sstring{p.pattern});
+
+          return filter;
+      });
+
+    return filters;
+}
+
+topic_metadata_sync_options create_topic_metadata_sync_options(
+  const cluster_link::model::topic_metadata_mirroring_config& cfg) {
+    topic_metadata_sync_options options;
+
+    options.set_interval(absl::FromChrono(cfg.task_interval));
+    options.set_topic_filters(to_name_filters(cfg.topic_name_filters));
+
+    chunked_vector<ss::sstring> mirrored_properties;
+    mirrored_properties.reserve(cfg.topic_properties_to_mirror.size());
+
+    for (const auto& prop : cfg.topic_properties_to_mirror) {
+        mirrored_properties.push_back(ss::sstring{prop});
+    }
+
+    options.set_shadowed_topic_properties(std::move(mirrored_properties));
+
+    return options;
+}
+
+shadow_link_configurations
+create_shadow_link_configuration(const cluster_link::model::metadata& md) {
+    shadow_link_configurations configurations;
+
+    configurations.set_client_options(create_shadow_link_client_options(md));
+    configurations.set_topic_metadata_sync_options(
+      create_topic_metadata_sync_options(
+        md.configuration.topic_metadata_mirroring_cfg));
+
+    return configurations;
+}
+
+chunked_vector<shadow_topic_status>
+create_shadow_topic_statuses(const cluster_link::model::link_state& state) {
+    chunked_vector<shadow_topic_status> statuses;
+    statuses.reserve(state.mirror_topics.size());
+
+    for (const auto& [topic, metadata] : state.mirror_topics) {
+        shadow_topic_status status;
+        status.set_name(ss::sstring{topic});
+        status.set_state(
+          mirror_topic_state_to_shadow_topic_state(metadata.state));
+        statuses.emplace_back(std::move(status));
+    }
+
+    return statuses;
+}
+
+shadow_link_status
+create_shadow_link_status(const cluster_link::model::metadata& md) {
+    shadow_link_status status;
+
+    status.set_state(proto::admin::shadow_link_state::active);
+    status.set_shadow_topic_statuses(create_shadow_topic_statuses(md.state));
+
+    return status;
+}
 } // namespace
+
 cluster_link::model::metadata
 convert_create_to_metadata(create_shadow_link_request req) {
     cluster_link::model::metadata metadata;
@@ -235,5 +491,16 @@ convert_create_to_metadata(create_shadow_link_request req) {
         throw serde::pb::rpc::unknown_exception(
           ssx::sformat("Failed to convert create cluster link request: {}", e));
     }
+}
+
+shadow_link metadata_to_shadow_link(cluster_link::model::metadata md) {
+    shadow_link sl;
+
+    sl.set_name(std::move(md.name));
+    sl.set_uid(ssx::sformat("{}", md.uuid));
+    sl.set_configurations(create_shadow_link_configuration(md));
+    sl.set_status(create_shadow_link_status(md));
+
+    return sl;
 }
 } // namespace admin

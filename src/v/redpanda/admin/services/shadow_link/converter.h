@@ -22,4 +22,8 @@ namespace admin {
 /// \throws std::invalid_argument if the request contains invalid data
 cluster_link::model::metadata
 convert_create_to_metadata(proto::admin::create_shadow_link_request req);
+
+/// \brief Converts a cluster link metadata object into a shadow link resource
+proto::admin::shadow_link
+metadata_to_shadow_link(cluster_link::model::metadata md);
 } // namespace admin
