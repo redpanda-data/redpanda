@@ -1817,7 +1817,6 @@ ss::future<std::error_code> group_manager::empty_and_delete_groups(
     });
 
     chunked_vector<std::pair<model::ntp, group_id>> groups_with_ntps{
-      std::from_range,
       groups | std::views::transform([&ntp](const group_id& group_id) {
           return std::make_pair(ntp, group_id);
       })};

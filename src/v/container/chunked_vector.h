@@ -115,17 +115,6 @@ public:
     explicit chunked_vector(Range range)
       : chunked_vector(std::ranges::begin(range), std::ranges::end(range)) {}
 
-    /**
-     * @brief Construct a new vector by copying from a const range
-     */
-    template<typename Range>
-    requires(std::ranges::sized_range<Range>)
-    chunked_vector(std::from_range_t, const Range& range)
-      : chunked_vector() {
-        reserve(std::ranges::size(range));
-        std::copy(range.begin(), range.end(), std::back_inserter(*this));
-    }
-
     chunked_vector& operator=(chunked_vector&& other) noexcept {
         if (this != &other) {
             this->_size = other._size;

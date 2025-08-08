@@ -151,7 +151,7 @@ group_tx_tracker_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
     auto offset = last_applied_offset();
     snapshot snap{
       .transactions{_all_txs},
-      .blocked_groups{std::from_range, _blocked_groups},
+      .blocked_groups{_blocked_groups},
     };
     apply_units.return_all();
     iobuf snap_buf;
