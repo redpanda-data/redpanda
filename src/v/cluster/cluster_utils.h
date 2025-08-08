@@ -282,6 +282,12 @@ inline bool contains_node(
            != replicas.end();
 }
 
+inline bool
+contains_node(const std::vector<raft::vnode>& replicas, model::node_id id) {
+    return std::ranges::any_of(
+      replicas, [id](const raft::vnode& vn) { return vn.id() == id; });
+}
+
 inline std::optional<ss::shard_id>
 find_shard_on_node(const replicas_t& replicas, model::node_id node) {
     for (const auto& bs : replicas) {
