@@ -84,7 +84,7 @@ message ShadowLink {
 // Create a new shadow link
 message CreateShadowLinkRequest {
     // The shadow link to create
-    ShadowLink cluster_link = 1;
+    ShadowLink shadow_link = 1;
 }
 // Request to delete a shadow link
 message DeleteShadowLinkRequest {
@@ -113,12 +113,12 @@ message ListShadowLinksRequest {}
 // All shadow links on the cluster
 message ListShadowLinksResponse {
     // The shadow links
-    repeated ShadowLink cluster_links = 1;
+    repeated ShadowLink shadow_links = 1;
 }
 // Updates a shadow link
 message UpdateShadowLinkRequest {
     // The shadow link to update
-    ShadowLink cluster_link = 1;
+    ShadowLink shadow_link = 1;
 
     // The list of fields to update
     // See [AIP-134](https://google.aip.dev/134) for how to use `field_mask`
@@ -166,7 +166,7 @@ message ShadowLinkClientOptions {
     // TLS settings
     optional TLSSettings tls_settings = 4;
     // Authentication settings
-    optional AuthenticationConfig authentication_configuration = 5;
+    optional AuthenticationConfiguration authentication_configuration = 5;
     // Max metadata age
     // If 0 is provided, defaults to 10 seconds
     int32 metadata_max_age_ms = 6;
@@ -234,7 +234,7 @@ message TLSSettings {
 }
 // Authentication config.  Currently only supporting SASL/SCRAM,
 // however made as a oneof for expansion
-message AuthenticationConfig {
+message AuthenticationConfiguration {
     oneof authentication {
         // SASL/SCRAM configuration
         ScramConfig scram_configuration = 1;
@@ -424,4 +424,6 @@ enum ShadowTopicState {
     SHADOW_TOPIC_STATE_PROMOTED = 2;
     // Shadow topic has faulted
     SHADOW_TOPIC_STATE_FAULTED = 3;
+    // Shadow topic has been paused
+    SHADOW_TOPIC_STATE_PAUSED = 4;
 }
