@@ -16,6 +16,7 @@ import threading
 import requests
 from typing import Any, Dict, Optional
 from requests.adapters import HTTPAdapter
+from enum import Enum
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.services.service import Service
@@ -216,10 +217,13 @@ class KgoVerifierService(Service):
     def _assert_running(self, node):
         node.account.ssh_output(f"ps -p {self._pid}", allow_fail=False)
 
-    def stop_node(self, node, **kwargs):
+    def _stop_status_thread(self, gentle=False):
         error = None
         if self._status_thread:
-            self._status_thread.stop()
+            if gentle:
+                self._status_thread.shutdown()
+            else:
+                self._status_thread.stop()
             try:
                 self._status_thread.raise_on_error()
             except Exception as e:
@@ -231,6 +235,10 @@ class KgoVerifierService(Service):
             # instance of the service. Here, we know that we are stopping the service
             # that we started because it was us who initialized the _status_thread.
             self._stopped = True
+        return error
+
+    def stop_node(self, node, gentle=False, **kwargs):
+        error = self._stop_status_thread(gentle)
 
         if self._pid is None:
             return
@@ -245,6 +253,7 @@ class KgoVerifierService(Service):
 
         self._pid = None
         self._release_port()
+
         if error:
             raise error
 
@@ -277,7 +286,7 @@ class KgoVerifierService(Service):
         if last_error:
             raise last_error
 
-    def wait_node(self, node, timeout_sec=None):
+    def wait_node(self, node, timeout_sec):
         """
         Wrapper to catch timeouts on wait, and send a `/print_stack` to the remote
         process in case it is experiencing a hang bug.
@@ -454,20 +463,29 @@ class StatusThread(threading.Thread):
         session = requests.Session()
         session.mount("http://", HTTPAdapter(max_retries=retry_strategy))
 
-        while not self._stop_requested.is_set():
-            drop_out = self._shutdown_requested.is_set()
+        class ShutdownStage(Enum):
+            NOT_STARTED = 0
+            GENTLE_REQUESTED = 1
+            LAST_CHECK = 2
+
+        shutdown_stage = ShutdownStage.NOT_STARTED
+        while True:
+            if shutdown_stage == ShutdownStage.GENTLE_REQUESTED:
+                self._stop_requested.wait(self.INTERVAL)
+                # either we've waited enough or hard stop has been requested
+                shutdown_stage = ShutdownStage.LAST_CHECK
+            elif shutdown_stage == ShutdownStage.NOT_STARTED:
+                if self._shutdown_requested.wait(self.INTERVAL):
+                    shutdown_stage = ShutdownStage.GENTLE_REQUESTED
+
             r = session.get(url=self._parent._remote_url(self._node, "status"),
                             timeout=5)
             r.raise_for_status()
             worker_statuses = r.json()
             self._ingest_status(worker_statuses)
 
-            if drop_out:
-                # We were asked to clean shutdown and we have done our final
-                # status read
-                return
-            else:
-                self._shutdown_requested.wait(self.INTERVAL)
+            if shutdown_stage == ShutdownStage.LAST_CHECK:
+                break
 
     def join_with_timeout(self):
         """
@@ -495,7 +513,8 @@ class StatusThread(threading.Thread):
 
     def shutdown(self):
         """
-        Read status one more time, then drop out of poll loop and join.
+        After waiting for acks for INTERVAL read status one more time,
+        then drop out of poll loop and join.
         """
         self._shutdown_requested.set()
         self.join_with_timeout()
