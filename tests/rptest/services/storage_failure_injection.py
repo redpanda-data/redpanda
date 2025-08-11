@@ -10,13 +10,13 @@
 import json
 
 from collections import ChainMap
-from enum import Enum
+from enum import StrEnum
 from dataclasses import dataclass
 from typing import Optional
 from functools import reduce
 
 
-class BatchType(str, Enum):
+class BatchType(StrEnum):
     raft_data = "batch_type::raft_data"
     raft_configuration = "batch_type::raft_configuration"
     controller = "batch_type::controller"
@@ -44,7 +44,7 @@ class BatchType(str, Enum):
     prefix_truncate = "batch_type::prefix_truncate"
 
 
-class Operation(str, Enum):
+class Operation(StrEnum):
     write = "write"
     falloc = "falloc"
     flush = "flush"

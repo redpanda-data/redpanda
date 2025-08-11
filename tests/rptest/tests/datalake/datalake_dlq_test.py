@@ -7,7 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from enum import Enum
+from enum import StrEnum
 import time
 from typing import Optional
 
@@ -33,7 +33,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
 
 
-class IcebergInvalidRecordAction(str, Enum):
+class IcebergInvalidRecordAction(StrEnum):
     DROP = "drop"
     DLQ_TABLE = "dlq_table"
 
@@ -41,7 +41,7 @@ class IcebergInvalidRecordAction(str, Enum):
         return self.value
 
 
-class IcebergInvalidRecordCause(str, Enum):
+class IcebergInvalidRecordCause(StrEnum):
     FAILED_KAFKA_SCHEMA_RESOLUTION = "failed_kafka_schema_resolution"
     FAILED_DATA_TRANSLATION = "failed_data_translation"
     FAILED_ICEBERG_SCHEMA_RESOLUTION = "failed_iceberg_schema_resolution"

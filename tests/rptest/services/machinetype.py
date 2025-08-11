@@ -1,8 +1,8 @@
-from enum import Enum
+from enum import StrEnum
 from dataclasses import dataclass
 
 
-class MachineTypeName(str, Enum):
+class MachineTypeName(StrEnum):
     DOCKER = 'docker'
 
     # AWS X86

@@ -59,7 +59,7 @@ flink_config = {
     "jobmanager.rpc.address": "localhost",
 
     # Python client executable
-    "python.client.executable": "python3",
+    "python.client.executable": "/opt/flink/flink_venv/bin/python3",
 
     # The RPC port where the JobManager is reachable.
     "jobmanager.rpc.port": 6123,
@@ -323,19 +323,15 @@ class FlinkService(Service):
         # Extract the workload script filename
         script = os.path.split(workload_path)[-1]
 
-        # Determine active python location
-        python3_path = n.account.ssh_output("which python3") \
-            .decode() \
-            .strip()
-
         # Start job
         run_path = os.path.join(self.FLINK_WORKLOADS_FOLDER, script)
         cmd = f"sudo {self.FLINK_BIN}flink run"
         if script.endswith(".jar"):
             cmd += f" {run_path}"
         elif script.endswith(".py"):
-            cmd += f" -pyclientexec {python3_path}"
-            cmd += f" -pyexec {python3_path}"
+            py_exec = flink_config["python.client.executable"]
+            cmd += f" -pyclientexec {py_exec}"
+            cmd += f" -pyexec {py_exec}"
             cmd += f" -py {run_path}"
 
         if detached:

@@ -12,7 +12,7 @@ from google.cloud import storage as gcs
 
 from concurrent.futures import ThreadPoolExecutor
 import datetime
-from enum import Enum
+from enum import StrEnum
 from functools import wraps
 from itertools import islice
 from time import sleep
@@ -31,7 +31,7 @@ class ObjectMetadata(NamedTuple):
     content_length: int
 
 
-class S3AddressingStyle(str, Enum):
+class S3AddressingStyle(StrEnum):
     VIRTUAL = 'virtual'
     PATH = 'path'
 
@@ -138,7 +138,7 @@ class S3Client:
                 'max_attempts': 10,
                 'mode': 'adaptive'
             },
-            s3={'addressing_style': f'{self._addressing_style}'},
+            s3={'addressing_style': self._addressing_style.value},
             use_fips_endpoint=True if self._use_fips_endpoint else None)
         cl = boto3.client('s3',
                           config=cfg,

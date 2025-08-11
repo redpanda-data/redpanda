@@ -6,7 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-from enum import Enum
+from enum import StrEnum
 import random
 import string
 from typing import Literal
@@ -47,7 +47,7 @@ class TopicSpec:
     PROPERTY_MIN_COMPACTION_LAG_MS = "min.compaction.lag.ms"
     PROPERTY_MAX_COMPACTION_LAG_MS = "max.compaction.lag.ms"
 
-    class CompressionTypes(str, Enum):
+    class CompressionTypes(StrEnum):
         """
         compression types
         """
@@ -72,7 +72,7 @@ class TopicSpec:
 
     TIMESTAMP_TYPE = Literal["CreateTime", "LogAppendTime"]
 
-    class SubjectNameStrategy(str, Enum):
+    class SubjectNameStrategy(StrEnum):
         TOPIC_NAME = "TopicNameStrategy"
         RECORD_NAME = "RecordNameStrategy"
         TOPIC_RECORD_NAME = "TopicRecordNameStrategy"
@@ -82,7 +82,7 @@ class TopicSpec:
     PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION = "redpanda.value.schema.id.validation"
     PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY = "redpanda.value.subject.name.strategy"
 
-    class SubjectNameStrategyCompat(str, Enum):
+    class SubjectNameStrategyCompat(StrEnum):
         TOPIC_NAME = "io.confluent.kafka.serializers.subject.TopicNameStrategy"
         RECORD_NAME = "io.confluent.kafka.serializers.subject.RecordNameStrategy"
         TOPIC_RECORD_NAME = "io.confluent.kafka.serializers.subject.TopicRecordNameStrategy"

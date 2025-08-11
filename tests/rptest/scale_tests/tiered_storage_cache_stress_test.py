@@ -20,12 +20,12 @@ from rptest.utils.si_utils import quiesce_uploads
 from typing import Optional
 from ducktape.mark import matrix
 import time
-from enum import Enum
+from enum import StrEnum
 
 S3_ERROR_LOGS = ['unexpected REST API error "Internal Server Error" detected']
 
 
-class LimitMode(str, Enum):
+class LimitMode(StrEnum):
     bytes = 'bytes'
     objects = 'objects'
     both = 'both'

@@ -14,7 +14,7 @@ from time import sleep
 import sys
 import json
 from rptest.util import wait_until
-from enum import Enum
+from enum import StrEnum
 
 
 class CrushedException(Exception):
@@ -28,7 +28,7 @@ class ConsistencyViolationException(Exception):
 OUTPUT_LOG = "/opt/remote/var/rw.log"
 
 
-class Workload(str, Enum):
+class Workload(StrEnum):
     IDEMPOTENCY = "IDEMPOTENCY"
     TX = "TX"
     TX_UNIQUE_KEYS = "TX_UNIQUE_KEYS"

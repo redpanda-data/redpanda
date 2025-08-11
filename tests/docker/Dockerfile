@@ -371,6 +371,11 @@ RUN --mount=type=cache,id=dl-cache,target=/dl-cache bash -c "rm -rf /dl-cache/* 
 FROM librdkafka AS final
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/python-deps /
+# For some reason distutils attempts to build with clang, which we don't have installed.
+# I think this is because it's the compiler that was used to build python, so that becomes
+# the default. Instead explicitly specify gcc.
+ENV CC=gcc
+ENV CXX=g++
 RUN /python-deps
 ENV PATH="/opt/.ducktape-venv/bin:$PATH"
 

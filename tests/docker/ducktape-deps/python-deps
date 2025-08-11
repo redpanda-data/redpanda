@@ -1,35 +1,52 @@
 #!/usr/bin/env bash
 set -e
 
-function ubuntu_version() {
-  if [ ! -f /etc/os-release ]; then
-    echo "No /etc/os-release file!"
-    exit 1
-  fi
+# Download standalone Python build for Linux. See the docs:
+# https://gregoryszorc.com/docs/python-build-standalone/main/
+INSTALL_DIR="/opt/python"
+BASE_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20250723"
+FILENAME_PREFIX="cpython-3.11.13+20250723-"
+FILENAME_SUFFIX="-unknown-linux-gnu-install_only_stripped.tar.gz"
+ARCH=$(uname -m)
+FULL_URL_FILENAME="${FILENAME_PREFIX}${ARCH}${FILENAME_SUFFIX}"
+DOWNLOAD_URL="$BASE_URL/$FULL_URL_FILENAME"
 
-  . /etc/os-release
+TEMP_DIR=$(mktemp -d)
+LOCAL_DOWNLOAD_FILENAME="python_build.tar.gz"
+DOWNLOAD_PATH="$TEMP_DIR/$LOCAL_DOWNLOAD_FILENAME"
 
-  if [ "$ID" != "ubuntu" ]; then
-    echo "Not an Ubuntu OS"
-    exit 1
-  fi
+echo "Detected architecture: $ARCH"
+echo "Download URL: $DOWNLOAD_URL"
+echo "Installing to: $INSTALL_DIR"
 
-  echo $VERSION_CODENAME
-}
+# Create installation directory
+mkdir -p "$INSTALL_DIR"
 
-ubuntu_release=$(ubuntu_version)
+echo "Downloading $FULL_URL_FILENAME..."
+curl -L -o "$DOWNLOAD_PATH" "$DOWNLOAD_URL"
 
-if [ "$ubuntu_release" == "focal" ]; then
-  add-apt-repository ppa:deadsnakes/ppa
-  apt update
-  apt install -y libpython3.10-dev python3.10 python3.10-dev python3.10-venv
-  curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
-  PYEXE="python3.10"
-else
-  PYEXE="python3"
+echo "Extracting $LOCAL_DOWNLOAD_FILENAME..."
+tar -xzf "$DOWNLOAD_PATH" -C "$TEMP_DIR"
+
+EXTRACTED_PYTHON_DIR="$TEMP_DIR/python"
+if [ ! -d "$EXTRACTED_PYTHON_DIR" ]; then
+  echo "Error: 'python' directory not found after extraction."
+  rm -rf "$TEMP_DIR"
+  exit 1
 fi
 
-$PYEXE -m venv /opt/.ducktape-venv
+# Move contents to final installation directory
+echo "Moving extracted files to $INSTALL_DIR..."
+mv "$EXTRACTED_PYTHON_DIR"/* "$INSTALL_DIR/"
+
+# Clean up
+echo "Cleaning up temporary files..."
+rm -rf "$TEMP_DIR"
+
+echo "Installation complete! Python is in $INSTALL_DIR"
+
+/opt/python/bin/python3 -m venv /opt/.ducktape-venv
+
 # This adds the above created virtual environment to the path so all shells
 # regardless of being interactive or not, will utilize the virtual environment
 sed -i 's@^\(PATH="\)\([^"]*\)"$@\1/opt/.ducktape-venv/bin:\2"@' /etc/environment

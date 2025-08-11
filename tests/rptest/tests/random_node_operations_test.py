@@ -11,7 +11,7 @@ import math
 import random
 import re
 import threading
-from enum import Enum
+from enum import StrEnum
 
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
@@ -52,7 +52,7 @@ TS_LOG_ALLOW_LIST = [
 ]
 
 
-class CompactionMode(str, Enum):
+class CompactionMode(StrEnum):
     SLIDING_WINDOW = "sliding_window"
     CHUNKED_SLIDING_WINDOW = "chunked_sliding_window"
     ADJACENT_MERGE = "adjacent_merge"

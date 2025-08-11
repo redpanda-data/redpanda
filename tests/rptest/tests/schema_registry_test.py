@@ -7,10 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from enum import Enum, auto, unique
+from enum import StrEnum
 import http.client
 import json
-from typing import Literal, NamedTuple, Optional, Dict, Callable, Any
+from typing import NamedTuple, Optional
 import uuid
 import re
 import urllib.parse
@@ -25,7 +25,6 @@ from ducktape.mark import parametrize, matrix
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.utils.util import wait_until
 
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.serde_client_utils import SchemaType, SerdeClientType
 from rptest.clients.types import TopicSpec
@@ -35,7 +34,6 @@ from rptest.services.cluster import cluster
 from rptest.services.redpanda import DEFAULT_LOG_ALLOW_LIST, MetricsEndpoint, ResourceSettings, SecurityConfig, LoggingConfig, PandaproxyConfig, SchemaRegistryConfig, RedpandaService
 from rptest.services.redpanda_types import SaslCredentials
 from rptest.services.serde_client import SerdeClient
-from rptest.tests.cluster_config_test import wait_for_version_status_sync
 from rptest.tests.pandaproxy_test import User, PandaProxyTLSProvider
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, inject_remote_script, search_logs_with_timeout
@@ -43,7 +41,7 @@ from rptest.utils.log_utils import wait_until_nag_is_set
 from rptest.utils.mode_checks import skip_fips_mode
 
 
-class SchemaIdValidationMode(str, Enum):
+class SchemaIdValidationMode(StrEnum):
     NONE = "none"
     REDPANDA = "redpanda"
     COMPAT = "compat"
@@ -2846,8 +2844,10 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             subject_name_strategy: Optional[str] = None,
             payload_class: str = "com.redpanda.Payload",
             compression_type: Optional[TopicSpec.CompressionTypes] = None):
-        self.redpanda.set_cluster_config(
-            {'enable_schema_id_validation': SchemaIdValidationMode.COMPAT})
+        self.redpanda.set_cluster_config({
+            'enable_schema_id_validation':
+            SchemaIdValidationMode.COMPAT.value
+        })
 
         def get_next_strategy(subject_name_strategy):
             all_strategies = list(TopicSpec.SubjectNameStrategyCompat)
@@ -2877,9 +2877,9 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION_COMPAT:
                 bool_alpha(validate_schema_id),
                 TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY_COMPAT:
-                get_next_strategy(subject_name_strategy),
+                get_next_strategy(subject_name_strategy).value,
                 TopicSpec.PROPERTY_COMPRESSSION:
-                TopicSpec.COMPRESSION_PRODUCER,
+                TopicSpec.COMPRESSION_PRODUCER.value,
             })
         schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
         self.logger.info(
@@ -2893,7 +2893,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             topic,
             2,
             skip_known_types,
-            subject_name_strategy=subject_name_strategy,
+            subject_name_strategy=subject_name_strategy.value,
             payload_class=payload_class,
             compression_type=compression_type)
 
@@ -2918,7 +2918,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             topic=topic,
             set_key=TopicSpec.
             PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY_COMPAT,
-            set_value=subject_name_strategy)
+            set_value=subject_name_strategy.value)
 
         self.logger.debug("Running client, expecting success")
         client.run()
@@ -5681,7 +5681,7 @@ class SchemaValidationTopicPropertiesTest(RedpandaTest):
         '''
 
         self.redpanda.set_cluster_config(
-            {'enable_schema_id_validation': SchemaIdValidationMode.NONE})
+            {'enable_schema_id_validation': SchemaIdValidationMode.NONE.value})
 
         topic = "default-topic"
         self.rpk.create_topic(topic)
@@ -5701,7 +5701,8 @@ class SchemaValidationTopicPropertiesTest(RedpandaTest):
         When the feature is active, the configs should be default
         '''
 
-        self.redpanda.set_cluster_config({'enable_schema_id_validation': mode})
+        self.redpanda.set_cluster_config(
+            {'enable_schema_id_validation': mode.value})
 
         topic = "default-topic"
         self.rpk.create_topic(topic)
@@ -5722,7 +5723,8 @@ class SchemaValidationTopicPropertiesTest(RedpandaTest):
         dynamic, so that tools with a reconcialiation loop aren't confused
         '''
 
-        self.redpanda.set_cluster_config({'enable_schema_id_validation': mode})
+        self.redpanda.set_cluster_config(
+            {'enable_schema_id_validation': mode.value})
 
         topic = "default-topic"
 

@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import os
-import time
 from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkTool, TopicSpec
 from rptest.context import cloud_storage
@@ -18,8 +17,6 @@ from rptest.services.polaris_catalog import PolarisCatalog, wait_until
 from rptest.services.redpanda import RedpandaService
 from rptest.services.tls import TLSCertManager
 from rptest.tests.crl_test import RedpandaTest
-from rptest.tests.polaris_catalog_test import PolarisCatalogTest
-import polaris.catalog
 
 from polaris.management.api.polaris_default_api import PolarisDefaultApi
 from polaris.management.models.create_catalog_request import CreateCatalogRequest
@@ -212,16 +209,17 @@ class PolarisCatalogSmokeTest(RedpandaTest):
         principal_name = "test-user"
         credentials = self._initialize_catalog(catalog_name, principal_name)
 
-        self._start_redpanda(catalog_prefix=catalog_name,
-                             client_id=credentials.client_id,
-                             client_secret=credentials.client_secret,
-                             with_tls=with_tls)
+        self._start_redpanda(
+            catalog_prefix=catalog_name,
+            client_id=credentials.client_id,
+            client_secret=credentials.client_secret.get_secret_value(),
+            with_tls=with_tls)
         catalog_properties = {
             "uri": f"{self.polaris.catalog_url}",
             'type': "rest",
             'scope': "PRINCIPAL_ROLE:ALL",
             "credential":
-            f"{credentials.client_id}:{credentials.client_secret}",
+            f"{credentials.client_id}:{credentials.client_secret.get_secret_value()}",
             "warehouse": catalog_name,
         }
 

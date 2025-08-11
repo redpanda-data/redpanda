@@ -93,7 +93,7 @@ class SerdeClient(BackgroundThreadService):
 
         if compression_type is not None:
             assert self._serde_client_type == SerdeClientType.Python
-            self._cmd_args += f" --compression-type {compression_type}"
+            self._cmd_args += f" --compression-type {compression_type.value}"
 
         if self._serde_client_type == SerdeClientType.Golang:
             self._cmd_args += f" --debug"

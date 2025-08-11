@@ -36,13 +36,10 @@ fi
 echo "Using Java home folder at $JAVA_HOME"
 
 cd /opt/flink/
-pip install virtualenv
-virtualenv flink_venv
+python3 -m venv flink_venv
 . /opt/flink/flink_venv/bin/activate
 pip install apache-flink
 deactivate
-pip uninstall -y virtualenv
 cd flink_venv
 tar -zcvf ../flink_venv.tgz ./*
 cd ..
-rm -rf flink_venv

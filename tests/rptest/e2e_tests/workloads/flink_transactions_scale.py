@@ -72,16 +72,6 @@ class FlinkWorkloadProduce:
 
     def setup(self):
         self.logger.info("Initializing Produce workload")
-        # Initialize
-        config = Configuration()
-        # This is required for ducktape EC2 run
-        config.set_string("python.client.executable", "python3")
-        config.set_string("python.executable", "python3")
-        config.set_string("pipeline.jars", self.config.connector_path)
-        # This is needed for Scalar functions work
-        # See https://nightlies.apache.org/flink/flink-docs-master/docs/dev/python/dependency_management/
-        config.set_string("pipeline.classpaths", self.config.python_lib_path)
-
         # Create flink env
         # Streaming env is user in order to add kafka connector
         env = StreamExecutionEnvironment.get_execution_environment()

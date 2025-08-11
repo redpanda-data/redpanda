@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 from logging import Logger
 import random
 import json
@@ -158,7 +158,7 @@ class RolesList:
 
 
 class RoleMember(NamedTuple):
-    class PrincipalType(str, Enum):
+    class PrincipalType(StrEnum):
         USER = 'User'
 
     principal_type: PrincipalType
@@ -365,14 +365,14 @@ class InboundDataMigration:
         }
 
 
-class MigrationAction(Enum):
+class MigrationAction(StrEnum):
     prepare = "prepare"
     execute = "execute"
     finish = "finish"
     cancel = "cancel"
 
 
-class EnterpriseLicenseStatus(Enum):
+class EnterpriseLicenseStatus(StrEnum):
     valid = "valid"
     expired = "expired"
     not_present = "not_present"
@@ -487,14 +487,15 @@ class Admin:
         if retry_codes is None:
             retry_codes = [503]
 
-        retries = Retry(status=retries_amount,
-                        connect=0,
-                        read=0,
-                        backoff_factor=1,
-                        status_forcelist=retry_codes,
-                        respect_retry_after_header=True,
-                        method_whitelist=None,
-                        remove_headers_on_redirect=[])
+        retries = Retry(
+            status=retries_amount,
+            connect=0,
+            read=0,
+            backoff_factor=1,
+            status_forcelist=retry_codes,
+            respect_retry_after_header=True,
+            allowed_methods=None,  # Retry all methods
+            remove_headers_on_redirect=[])
 
         self._session.mount("http://", HTTPAdapter(max_retries=retries))
 

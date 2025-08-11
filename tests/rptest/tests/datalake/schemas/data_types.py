@@ -7,12 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from enum import Enum
+from enum import StrEnum
 import string
 import random
 
 
-class ProducerType(str, Enum):
+class ProducerType(StrEnum):
     AVRO = 'avro'
     PROTO2 = 'proto2'
     PROTO3 = 'proto3'

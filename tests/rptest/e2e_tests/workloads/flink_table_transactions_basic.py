@@ -102,8 +102,10 @@ class FlinkWorkloadProduce:
         # Initialize
         config = Configuration()
         # This is required for ducktape EC2 run
-        config.set_string("python.client.executable", "python3")
-        config.set_string("python.executable", "python3")
+        config.set_string("python.client.executable",
+                          "/opt/flink/flink_venv/bin/python3")
+        config.set_string("python.executable",
+                          "/opt/flink/flink_venv/bin/python3")
 
         # Create flink env
         settings = EnvironmentSettings.in_streaming_mode()

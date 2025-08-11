@@ -629,7 +629,7 @@ class RpkTool:
             timeout = DEFAULT_PRODUCE_TIMEOUT
 
         cmd = [
-            'produce', '--key', key, '-z', f'{compression_type}',
+            'produce', '--key', key, '-z', compression_type.value,
             '--delivery-timeout', f'{timeout}s', topic
         ]
 
@@ -1963,7 +1963,7 @@ class RpkTool:
             f"/opt/transforms/{file}"
         ]
         if compression_type is not None:
-            cmd += ["--compression", compression_type]
+            cmd += ["--compression", compression_type.value]
         if from_offset is not None:
             cmd += ["--from-offset", from_offset]
         assert len(output_topics) > 0, "missing output topics"
