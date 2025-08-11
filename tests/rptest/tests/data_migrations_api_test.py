@@ -1275,10 +1275,9 @@ class DataMigrationsMultiClusterTest(RedpandaTest, DataMigrationTestMixin):
 
     def stop_producer(self) -> int:
         "return the number of acked messages"
-        if self.producer is None:
-            return
+        assert self.producer is not None
 
-        self.producer.stop()
+        self.producer.stop(gentle=True)
         acked = self.producer.produce_status.acked
         self.producer.free()
         self.logger.info(f"stopped producer, {acked=}")
