@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -550,6 +551,53 @@ func protoReferenceHandler() http.HandlerFunc {
 			w.WriteHeader(http.StatusBadRequest)
 		}
 	}
+}
+
+// Tests that the proto encoder is thread-safe by running multiple goroutines
+// that concurrently encode different protobuf records. This test verifies that
+// concurrent calls to EncodeRecord don't cause race conditions or panics.
+func Test_encodeProtoRecordConcurrency(t *testing.T) {
+	const testSchema = `syntax = "proto3";
+
+message Person {
+  string name = 1;
+  int32 id = 2;
+  bool isAdmin = 3;
+  optional string email = 4;
+}`
+
+	noopCl, _ := sr.NewClient()
+	schema := sr.Schema{
+		Schema: testSchema,
+		Type:   sr.TypeProtobuf,
+	}
+
+	serde, err := NewSerde(context.Background(), noopCl, &schema, 1, "Person")
+	require.NoError(t, err)
+
+	// Number of goroutines to run concurrently
+	numGoroutines := 10
+	numIterations := 100
+
+	// Use a sync.WaitGroup to wait for all goroutines
+	var wg sync.WaitGroup
+
+	// Launch multiple goroutines that encode records concurrently
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(goroutineID int) {
+			defer wg.Done()
+
+			// Each goroutine encodes the same record multiple times to simulate concurrent access.
+			for j := 0; j < numIterations; j++ {
+				_, err := serde.EncodeRecord([]byte(`{"name":"igor","id":123,"isAdmin":true,"email":"test@redpanda.com"}`))
+				require.NoError(t, err)
+			}
+		}(i)
+	}
+
+	// Wait for all goroutines to complete
+	wg.Wait()
 }
 
 // Long message, including all well-known types baked in rpk that we can
