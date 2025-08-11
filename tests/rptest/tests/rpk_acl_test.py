@@ -327,22 +327,23 @@ class RpkACLTest(RedpandaTest):
         assert len(acl_list_all['matches']) == 0
 
         # ACL with SR + Kafka = 4 in total.
-        sr_kafka_acl = RPKACLInput(allow_principal=["panda"],
-                                   topic=["foo"],
-                                   registry_subject=["foo-value"],
-                                   operation=["read", "write"],
-                                   resource_pattern_type="literal")
+        sr_kafka_acl = RPKACLInput(
+            allow_principal=["panda"],
+            topic=["foo"],
+            registry_subject=["foo-value"],
+            operation=["describe_configs", "alter_configs"],
+            resource_pattern_type="literal")
         superclient.acl_create(sr_kafka_acl)
 
         acl_list_all = superclient.acl_list(format="json")
         assert len(acl_list_all['matches']
                    ) == 4, f"Expected to have 4 ACLs created: {acl_list_all}"
 
-        # List with filter (read)
-        acl_list_filter = superclient.acl_list(format="json",
-                                               flags=["--operation", "read"])
+        # List with filter (describe_configs)
+        acl_list_filter = superclient.acl_list(
+            format="json", flags=["--operation", "describe_configs"])
         assert len(acl_list_filter['matches']
-                   ) == 2, f"Expected to have 2 ACLs created: {acl_list_all}"
+                   ) == 2, f"Expected to have 2 ACLs filtered: {acl_list_all}"
 
         # Filter by subsystem
         acl_list_filter = superclient.acl_list(format="json",
