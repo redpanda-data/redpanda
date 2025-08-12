@@ -19,7 +19,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -637,56 +636,53 @@ func requestAndSave[T1 any](ctx context.Context, ps *stepParams, filename string
 // the systemd.time specification that is used by journalctl.
 func parseJournalTime(str string, now time.Time) (time.Time, error) {
 	/*
-		From `man journalctl`:
+		Parses time strings in multiple formats:
 
-		Date specifications should be of the format "2012-10-30 18:17:16". If
-		the time part is omitted, "00:00:00" is assumed. If only the seconds
-		component is omitted, ":00" is assumed. If the date component is
-		omitted, the current day is assumed. Alternatively the strings
-		"yesterday", "today", "tomorrow" are understood, which refer to 00:00:00
-		of the day before the current day, the current day, or the day after the
-		current day, respectively. "now" refers to the current time. Finally,
-		relative times may be specified, prefixed with "-" or "+", referring to
-		times before or after the current time, respectively.
+		Standard datetime formats:
+		- "2025-08-10" (date only, assumes 00:00:00)
+		- "2025-08-10 14:30:25" (space-separated with seconds)
+		- "2025-08-10 14:30" (space-separated without seconds)
+		- "2025-08-10T14:30:25" (ISO 8601 with seconds)
+		- "2025-08-10T14:30" (ISO 8601 without seconds)
+
+		Special strings:
+		- "now" (current time)
+		- "yesterday" (00:00:00 of previous day)
+		- "today" (00:00:00 of current day)
+
+		Relative times:
+		- "+1h", "-30m", "+24h" (duration relative to current time)
 	*/
 
 	// First we ensure that we don't have any leading/trailing whitespace.
 	str = strings.TrimSpace(str)
 
-	// Will match YYYY-MM-DD, where Y,M and D are digits.
-	ymd := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`).FindStringSubmatch(str)
+	// Try common datetime formats first
+	formats := []string{
+		"2006-01-02",          // Date only
+		"2006-01-02 15:04:05", // Space-separated with seconds
+		"2006-01-02 15:04",    // Space-separated without seconds
+		"2006-01-02T15:04:05", // ISO 8601 with seconds
+		"2006-01-02T15:04",    // ISO 8601 without seconds
+	}
 
-	// Will match YYYY-MM-DD HH:MM:SS or YYYY-MM-DD HH:MM
-	//   - index 0: the full match.
-	//   - index 1: the seconds, if present.
-	ymdOptSec := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}(:\d{2})?`).FindStringSubmatch(str)
-
-	switch {
-	// YYYY-MM-DD
-	case len(ymd) > 0:
-		return time.ParseInLocation("2006-01-02", str, time.Local)
-
-	// YYYY-MM-DD HH:MM:SS or YYYY-MM-DD HH:MM
-	case len(ymdOptSec) > 0:
-		layout := "2006-01-02 15:04:05" // full match.
-		if len(ymdOptSec[1]) == 0 {
-			layout = "2006-01-02 15:04" // no seconds.
+	for _, format := range formats {
+		if t, err := time.ParseInLocation(format, str, time.Local); err == nil {
+			return t, nil
 		}
-		return time.ParseInLocation(layout, str, time.Local)
+	}
 
-	case str == "now":
+	switch str {
+	case "now":
 		return now, nil
-
-	case str == "yesterday":
+	case "yesterday":
 		y, m, d := now.AddDate(0, 0, -1).Date()
 		return time.Date(y, m, d, 0, 0, 0, 0, time.Local), nil
-
-	case str == "today":
+	case "today":
 		y, m, d := now.Date()
 		return time.Date(y, m, d, 0, 0, 0, 0, time.Local), nil
-
-	// This is either a relative time (+/-) or an error
 	default:
+		// This is either a relative time (+/-) or an error
 		dur, err := time.ParseDuration(str)
 		if err != nil {
 			return time.Time{}, fmt.Errorf("unable to parse time %q: %v", str, err)
