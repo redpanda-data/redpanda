@@ -192,6 +192,10 @@ func TestParseJournalTime(t *testing.T) {
 			name:   "unrecognized relative time",
 			inStr:  "-5trillions",
 			expErr: true,
+		}, {
+			name:  "RFC3339",
+			inStr: "2025-08-10T00:00:00",
+			exp:   time.Date(2025, 8, 10, 0, 0, 0, 0, time.Local),
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
