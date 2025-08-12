@@ -105,16 +105,14 @@ avrogen::manifest_file file_to_avro(const manifest_file& f) {
     ret.existing_rows_count = static_cast<int32_t>(f.existing_rows_count);
     ret.deleted_rows_count = static_cast<int32_t>(f.deleted_rows_count);
 
-    if (f.partitions.empty()) {
-        ret.partitions.set_null();
-    } else {
-        std::vector<avrogen::r508> partitions;
+    std::vector<avrogen::r508> partitions;
+    if (!f.partitions.empty()) {
         partitions.reserve(f.partitions.size());
         for (const auto& s : f.partitions) {
             partitions.emplace_back(summary_to_avro(s));
         }
-        ret.partitions.set_array(partitions);
     }
+    ret.partitions.set_array(partitions);
     return ret;
 }
 
