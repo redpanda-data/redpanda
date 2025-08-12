@@ -448,15 +448,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "type": "object",
-              "properties": {
-                "schemaType": {
-                  "type": "string"
-                },
-                "schema": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/definitions/schema_def"
             }
           },
           "404": {
@@ -826,7 +818,7 @@
             "name": "schema_def",
             "in": "body",
             "schema": {
-              "$ref": "#/definitions/schema_def"
+              "$ref": "#/definitions/stored_schema"
             }
           }
         ],
