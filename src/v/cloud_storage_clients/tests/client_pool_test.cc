@@ -236,13 +236,18 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_timeout) {
 
     {
         // call through acquire_with_timeout
+        // NOTE: we currently don't propage a deadline into pool::acquire, so
+        // the idea here is that acquire_with_timeout should hang indefinitely
+        // (because the pool is fully subscribed). So even after exceeding the
+        // provided lease timeout, only the abort source can short circuit
+        // client acquisition.
 
         ss::abort_source as;
-        BOOST_REQUIRE_THROW(
-          pool.local()
-            .acquire_with_timeout(as, ss::lowres_clock::now() + 100ms)
-            .get(),
-          ss::timed_out_error);
+        auto f = pool.local().acquire_with_timeout(
+          as, ss::lowres_clock::now() + 100ms);
+        ss::sleep(500ms).get();
+        as.request_abort();
+        BOOST_REQUIRE_THROW(f.get(), ss::abort_requested_exception);
     }
 
     {

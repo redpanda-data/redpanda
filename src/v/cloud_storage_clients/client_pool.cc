@@ -444,7 +444,7 @@ auto client_pool::acquire_with_timeout(
   ss::abort_source& as,
   ss::lowres_clock::time_point deadline,
   std::optional<ss::sstring> ctx) -> ss::future<client_lease> {
-    auto lease = co_await acquire(as, deadline);
+    auto lease = co_await acquire(as);
     if (deadline < ss::lowres_clock::time_point::max()) {
         // take a copy of the shared_ptr held by the lease to avoid racing with
         // client_pool teardown
