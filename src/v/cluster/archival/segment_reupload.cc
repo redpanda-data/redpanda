@@ -1091,7 +1091,7 @@ segment_collector::make_upload_candidate_stream(
        final_file_offset
        = cand.final_file_offset]() mutable -> ss::input_stream<char> {
         storage::concat_segment_reader_view crv(
-          std::move(segments), file_offset, final_file_offset);
+          segments, file_offset, final_file_offset);
         return crv.take_stream();
     };
     co_return stream;

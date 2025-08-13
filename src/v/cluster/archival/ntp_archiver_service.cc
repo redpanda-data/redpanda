@@ -1540,13 +1540,14 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
     std::optional<ss::input_stream<char>> stream_state = std::move(
       upload_stream);
 
-    auto get_stream = [&stream_state] {
-        // On first attempt to upload, the stream-ref passed in is used.
+    auto get_stream = [&stream_state, &strm] {
         using provider_t = std::unique_ptr<stream_provider>;
-        // Note that stream_state is known to be non-nullopt here.
+        if (!stream_state.has_value()) {
+            stream_state = strm.create_input_stream();
+        }
         auto prov = std::make_unique<one_time_stream_wrapper>(
-          std::move(stream_state.value()));
-        stream_state = std::nullopt;
+          std::move(stream_state).value());
+        stream_state.reset();
         return ss::make_ready_future<provider_t>(std::move(prov));
     };
 
