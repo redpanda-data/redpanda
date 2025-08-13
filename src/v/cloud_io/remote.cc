@@ -255,7 +255,7 @@ ss::future<upload_result> remote::upload_stream(
         }
         auto fut = co_await ss::coroutine::as_future(
           _pool.local().acquire_with_timeout(
-            fib.root_abort_source(), fib.get_deadline(), fib()));
+            fib.root_abort_source(), fib.get_timeout(), fib()));
         if (fut.failed()) {
             co_return throw_if_not_timeout(
               fut.get_exception(), upload_result::timedout);
@@ -368,7 +368,7 @@ ss::future<download_result> remote::download_stream(
     auto fut = co_await [this, &fib, &transfer_details] {
         transfer_details.on_client_acquire();
         return ss::coroutine::as_future(_pool.local().acquire_with_timeout(
-          fib.root_abort_source(), fib.get_deadline(), fib()));
+          fib.root_abort_source(), fib.get_timeout(), fib()));
     }();
     if (fut.failed()) {
         co_return throw_if_not_timeout(
@@ -491,7 +491,7 @@ remote::download_object(download_request download_request) {
 
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), fib.get_deadline(), fib()));
+        fib.root_abort_source(), fib.get_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), download_result::timedout);
@@ -582,7 +582,7 @@ ss::future<download_result> remote::object_exists(
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), fib.get_deadline(), fib()));
+        fib.root_abort_source(), fib.get_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), download_result::timedout);
@@ -659,7 +659,7 @@ remote::delete_object(transfer_details transfer_details) {
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), fib.get_deadline(), fib()));
+        fib.root_abort_source(), fib.get_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), upload_result::timedout);
@@ -819,7 +819,7 @@ ss::future<upload_result> remote::delete_object_batch(
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), fib.get_deadline(), fib()));
+        fib.root_abort_source(), fib.get_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), upload_result::timedout);
@@ -1010,7 +1010,7 @@ ss::future<list_result> remote::list_objects(
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), fib.get_deadline(), fib()));
+        fib.root_abort_source(), fib.get_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), cloud_storage_clients::error_outcome::retry);
@@ -1140,7 +1140,7 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto fut = co_await ss::coroutine::as_future(
           _pool.local().acquire_with_timeout(
-            fib.root_abort_source(), fib.get_deadline(), fib()));
+            fib.root_abort_source(), fib.get_timeout(), fib()));
         if (fut.failed()) {
             co_return throw_if_not_timeout(
               fut.get_exception(), upload_result::timedout);
