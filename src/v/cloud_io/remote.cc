@@ -114,7 +114,9 @@ remote::remote(
   , _cloud_storage_backend{cloud_storage_clients::
                              infer_backend_from_configuration(
                                conf, cloud_credentials_source)}
-  , _provider(infer_provider(_cloud_storage_backend, conf)) {
+  , _provider(infer_provider(_cloud_storage_backend, conf))
+  , _lease_timeout(
+      config::shard_local_cfg().cloud_storage_client_lease_timeout_ms.bind()) {
     vlog(
       log.info, "remote initialized with backend {}", _cloud_storage_backend);
     // If the credentials source is from config file, bypass the background
@@ -255,7 +257,7 @@ ss::future<upload_result> remote::upload_stream(
         }
         auto fut = co_await ss::coroutine::as_future(
           _pool.local().acquire_with_timeout(
-            fib.root_abort_source(), fib.get_timeout(), fib()));
+            fib.root_abort_source(), _lease_timeout(), fib()));
         if (fut.failed()) {
             co_return throw_if_not_timeout(
               fut.get_exception(), upload_result::timedout);
@@ -368,7 +370,7 @@ ss::future<download_result> remote::download_stream(
     auto fut = co_await [this, &fib, &transfer_details] {
         transfer_details.on_client_acquire();
         return ss::coroutine::as_future(_pool.local().acquire_with_timeout(
-          fib.root_abort_source(), fib.get_timeout(), fib()));
+          fib.root_abort_source(), _lease_timeout(), fib()));
     }();
     if (fut.failed()) {
         co_return throw_if_not_timeout(
@@ -491,7 +493,7 @@ remote::download_object(download_request download_request) {
 
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), fib.get_timeout(), fib()));
+        fib.root_abort_source(), _lease_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), download_result::timedout);
@@ -582,7 +584,7 @@ ss::future<download_result> remote::object_exists(
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), fib.get_timeout(), fib()));
+        fib.root_abort_source(), _lease_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), download_result::timedout);
@@ -659,7 +661,7 @@ remote::delete_object(transfer_details transfer_details) {
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), fib.get_timeout(), fib()));
+        fib.root_abort_source(), _lease_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), upload_result::timedout);
@@ -819,7 +821,7 @@ ss::future<upload_result> remote::delete_object_batch(
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), fib.get_timeout(), fib()));
+        fib.root_abort_source(), _lease_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), upload_result::timedout);
@@ -1010,7 +1012,7 @@ ss::future<list_result> remote::list_objects(
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), fib.get_timeout(), fib()));
+        fib.root_abort_source(), _lease_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), cloud_storage_clients::error_outcome::retry);
@@ -1140,7 +1142,7 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto fut = co_await ss::coroutine::as_future(
           _pool.local().acquire_with_timeout(
-            fib.root_abort_source(), fib.get_timeout(), fib()));
+            fib.root_abort_source(), _lease_timeout(), fib()));
         if (fut.failed()) {
             co_return throw_if_not_timeout(
               fut.get_exception(), upload_result::timedout);
