@@ -1829,21 +1829,15 @@ group::commit_tx(cluster::commit_group_tx_request r) {
 }
 
 cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx::errc ec) {
-    cluster::begin_group_tx_reply reply;
-    reply.ec = ec;
-    return reply;
+    return cluster::begin_group_tx_reply{ec};
 }
 
 cluster::commit_group_tx_reply make_commit_tx_reply(cluster::tx::errc ec) {
-    cluster::commit_group_tx_reply reply;
-    reply.ec = ec;
-    return reply;
+    return cluster::commit_group_tx_reply{ec};
 }
 
 cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx::errc ec) {
-    cluster::abort_group_tx_reply reply;
-    reply.ec = ec;
-    return reply;
+    return cluster::abort_group_tx_reply{ec};
 }
 
 ss::future<cluster::begin_group_tx_reply>
@@ -1949,7 +1943,7 @@ group::begin_tx(cluster::begin_group_tx_request r) {
           && _partition->raft()->term() == _term) {
             co_await _partition->raft()->step_down("group begin_tx failed");
         }
-        co_return map_tx_replication_error(result.error());
+        co_return make_begin_tx_reply(map_tx_replication_error(result.error()));
     }
     auto [producer_it, _] = _producers.try_emplace(
       r.pid.get_id(), r.pid.get_epoch());
@@ -3035,7 +3029,7 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
           && _partition->raft()->term() == _term) {
             co_await _partition->raft()->step_down("group do abort failed");
         }
-        co_return map_tx_replication_error(result.error());
+        co_return make_abort_tx_reply(map_tx_replication_error(result.error()));
     }
     it = _producers.find(pid.get_id());
     if (it != _producers.end()) {
@@ -3188,7 +3182,8 @@ ss::future<cluster::commit_group_tx_reply> group::do_commit(
           && _partition->raft()->term() == _term) {
             co_await _partition->raft()->step_down("group tx commit failed");
         }
-        co_return map_tx_replication_error(result.error());
+        co_return make_commit_tx_reply(
+          map_tx_replication_error(result.error()));
     }
 
     it = _producers.find(pid.get_id());

@@ -100,11 +100,12 @@ rest_catalog::load_table(const table_identifier& t_id) {
     auto rtc = create_rtc();
     auto h = co_await lock_.get_units();
 
-    co_return (co_await client_->load_table(t_id.ns, t_id.table, rtc))
-      .transform(get_metadata)
-      .transform_error([](const rest_client::domain_error& err) {
-          return map_error("load_table", err);
-      });
+    co_return checked<table_metadata, catalog::errc>{
+      (co_await client_->load_table(t_id.ns, t_id.table, rtc))
+        .transform(get_metadata)
+        .transform_error([](const rest_client::domain_error& err) {
+            return map_error("load_table", err);
+        })};
 }
 
 ss::future<checked<table_metadata, catalog::errc>> rest_catalog::create_table(
@@ -158,12 +159,13 @@ ss::future<checked<table_metadata, catalog::errc>> rest_catalog::create_table(
     set_table_location_if_needed(retry_request, t_id);
 
     auto table_retry_rtc = retry_chain_node(&parent_rtc);
-    co_return (co_await client_->create_table(
-                 t_id.ns, std::move(retry_request), table_retry_rtc))
-      .transform(get_metadata)
-      .transform_error([](const rest_client::domain_error& err) {
-          return map_error("create_table_retry", err);
-      });
+    co_return checked<table_metadata, catalog::errc>{
+      (co_await client_->create_table(
+         t_id.ns, std::move(retry_request), table_retry_rtc))
+        .transform(get_metadata)
+        .transform_error([](const rest_client::domain_error& err) {
+            return map_error("create_table_retry", err);
+        })};
 }
 
 ss::future<checked<void, catalog::errc>>
@@ -209,11 +211,12 @@ rest_catalog::commit_txn(const table_identifier& t_id, transaction txn) {
         req.updates.push_back(copy(u));
     }
     auto h = co_await lock_.get_units();
-    co_return (co_await client_->commit_table_update(std::move(req), rtc))
-      .transform([](commit_table_response&&) { return std::nullopt; })
-      .transform_error([](const rest_client::domain_error& err) {
-          return map_error("commit_txn", err);
-      });
+    co_return checked<std::nullopt_t, errc>{
+      (co_await client_->commit_table_update(std::move(req), rtc))
+        .transform([](commit_table_response&&) { return std::nullopt; })
+        .transform_error([](const rest_client::domain_error& err) {
+            return map_error("commit_txn", err);
+        })};
 }
 
 retry_chain_node rest_catalog::create_rtc() {

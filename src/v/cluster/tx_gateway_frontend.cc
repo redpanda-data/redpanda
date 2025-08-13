@@ -2864,8 +2864,8 @@ ss::future<result<tx_metadata, tx::errc>> tx_gateway_frontend::describe_tx(
     // good approximation, we already use it for that purpose in other api:
     // init_producer_id, add_offsets_to_txn etc
     auto timeout = config::shard_local_cfg().create_topic_timeout_ms();
-    co_return co_await find_and_try_progressing_transaction(
-      term, stm, tid, timeout);
+    co_return result<tx_metadata, tx::errc>{
+      co_await find_and_try_progressing_transaction(term, stm, tid, timeout)};
 }
 
 ss::future<try_abort_reply>

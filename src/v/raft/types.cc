@@ -752,8 +752,8 @@ append_entries_request_serde_wrapper::serde_async_direct_read(
         co_await ss::coroutine::maybe_yield();
     }
 
-    co_return append_entries_request(
-      node_id, target_node_id, meta, std::move(batches), batches_size, flush);
+    co_return append_entries_request_serde_wrapper{append_entries_request(
+      node_id, target_node_id, meta, std::move(batches), batches_size, flush)};
 }
 
 std::ostream& operator<<(std::ostream& o, const append_entries_request& r) {

@@ -101,7 +101,8 @@ parse_tags(ss::input_stream<char>& src) {
               fmt::format("Protocol error, duplicate tag id detected, {}", id));
         }
     }
-    co_return std::make_pair(std::move(tags), total_bytes_read);
+    co_return std::make_pair(
+      std::make_optional<tagged_fields>(std::move(tags)), total_bytes_read);
 }
 
 namespace {

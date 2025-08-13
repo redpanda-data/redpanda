@@ -52,7 +52,7 @@ ss::future<ensure_table_exists_reply> do_ensure_table_exists(
     auto ret = co_await crd->sync_ensure_table_exists(
       req.topic, req.topic_revision, std::move(req.schema_components));
     if (ret.has_error()) {
-        co_return to_rpc_errc(ret.error());
+        co_return ensure_table_exists_reply{to_rpc_errc(ret.error())};
     }
     co_return ensure_table_exists_reply{errc::ok};
 }
@@ -67,7 +67,7 @@ ss::future<ensure_dlq_table_exists_reply> do_ensure_dlq_table_exists(
     auto ret = co_await crd->sync_ensure_dlq_table_exists(
       req.topic, req.topic_revision);
     if (ret.has_error()) {
-        co_return to_rpc_errc(ret.error());
+        co_return ensure_dlq_table_exists_reply{to_rpc_errc(ret.error())};
     }
     co_return ensure_dlq_table_exists_reply{errc::ok};
 }
@@ -82,7 +82,7 @@ ss::future<add_translated_data_files_reply> add_files(
     auto ret = co_await crd->sync_add_files(
       req.tp, req.topic_revision, std::move(req.ranges));
     if (ret.has_error()) {
-        co_return to_rpc_errc(ret.error());
+        co_return add_translated_data_files_reply{to_rpc_errc(ret.error())};
     }
     co_return add_translated_data_files_reply{errc::ok};
 }
@@ -97,7 +97,8 @@ ss::future<fetch_latest_translated_offset_reply> fetch_latest_offset(
     auto ret = co_await crd->sync_get_last_added_offsets(
       req.tp, req.topic_revision);
     if (ret.has_error()) {
-        co_return to_rpc_errc(ret.error());
+        co_return fetch_latest_translated_offset_reply{
+          to_rpc_errc(ret.error())};
     }
     auto& val = ret.value();
     co_return fetch_latest_translated_offset_reply{

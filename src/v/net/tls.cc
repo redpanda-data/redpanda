@@ -15,6 +15,7 @@
 #include <seastar/core/seastar.hh>
 
 #include <array>
+#include <optional>
 
 namespace net {
 ss::future<std::optional<ss::sstring>> find_ca_file() {
@@ -30,7 +31,7 @@ ss::future<std::optional<ss::sstring>> find_ca_file() {
 
     for (auto ca_loc : ca_cert_locations) {
         if (co_await ss::file_exists(ca_loc)) {
-            co_return ca_loc;
+            co_return ss::sstring{ca_loc};
         }
     }
     co_return std::nullopt;
