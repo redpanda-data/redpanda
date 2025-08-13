@@ -442,30 +442,29 @@ ss::future<client_pool::client_lease> client_pool::acquire(
 
 auto client_pool::acquire_with_timeout(
   ss::abort_source& as,
-  ss::lowres_clock::time_point deadline,
+  ss::lowres_clock::duration timeout,
   std::optional<ss::sstring> ctx) -> ss::future<client_lease> {
     auto lease = co_await acquire(as);
-    if (deadline < ss::lowres_clock::time_point::max()) {
+    if (timeout < ss::lowres_clock::duration::max()) {
         // take a copy of the shared_ptr held by the lease to avoid racing with
         // client_pool teardown
-        auto to = deadline - ss::lowres_clock::now();
         lease._wd = std::make_unique<ssx::watchdog>(
-          to,
+          timeout,
           [probe = _probe,
            client = lease.client,
-           to,
+           timeout,
            ctx = std::move(ctx)]() mutable {
               if (ctx.has_value()) {
                   vlog(
                     pool_log.warn,
                     "{} - Lease expired after {}ms. Shutting down client...",
                     ctx.value(),
-                    to / 1ms);
+                    timeout / 1ms);
               } else {
                   vlog(
                     pool_log.warn,
                     "Lease expired after {}ms. Shutting down client...",
-                    to / 1ms);
+                    timeout / 1ms);
               }
               if (probe) {
                   probe->register_timeout();
