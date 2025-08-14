@@ -166,14 +166,6 @@ constexpr std::string_view to_string_view(datalake_catalog_auth_mode cam) {
     }
 }
 
-static constexpr auto acceptable_datalake_catalog_auth_modes() {
-    return std::to_array(
-      {to_string_view(datalake_catalog_auth_mode::none),
-       to_string_view(datalake_catalog_auth_mode::bearer),
-       to_string_view(datalake_catalog_auth_mode::oauth2),
-       to_string_view(datalake_catalog_auth_mode::aws_sigv4)});
-}
-
 inline std::ostream&
 operator<<(std::ostream& os, datalake_catalog_auth_mode cam) {
     return os << to_string_view(cam);

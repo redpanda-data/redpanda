@@ -690,35 +690,13 @@ struct convert<model::iceberg_invalid_record_action> {
 
 template<>
 struct convert<config::datalake_catalog_auth_mode> {
-    static Node encode(const config::datalake_catalog_auth_mode& rhs) {
-        return Node(fmt::format("{}", rhs));
-    }
+    using type = config::datalake_catalog_auth_mode;
 
-    static bool
-    decode(const Node& node, config::datalake_catalog_auth_mode& rhs) {
-        static constexpr auto acceptable_values
-          = config::acceptable_datalake_catalog_auth_modes();
+    static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
+
+    static bool decode(const Node& node, type& rhs) {
         auto value = node.as<std::string>();
-        if (
-          std::find(acceptable_values.begin(), acceptable_values.end(), value)
-          == acceptable_values.end()) {
-            return false;
-        }
-
-        rhs = string_switch<config::datalake_catalog_auth_mode>(
-                std::string_view{value})
-                .match(
-                  to_string_view(config::datalake_catalog_auth_mode::none),
-                  config::datalake_catalog_auth_mode::none)
-                .match(
-                  to_string_view(config::datalake_catalog_auth_mode::bearer),
-                  config::datalake_catalog_auth_mode::bearer)
-                .match(
-                  to_string_view(config::datalake_catalog_auth_mode::oauth2),
-                  config::datalake_catalog_auth_mode::oauth2)
-                .match(
-                  to_string_view(config::datalake_catalog_auth_mode::aws_sigv4),
-                  config::datalake_catalog_auth_mode::aws_sigv4);
+        rhs = boost::lexical_cast<type>(value);
         return true;
     }
 };
