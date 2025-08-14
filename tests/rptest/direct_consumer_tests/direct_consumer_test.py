@@ -21,7 +21,6 @@ from rptest.services.direct_consumer_verifier import (
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import wait_until_with_progress_check
 
 
 #TODO: This test must be enabled once the direct consumer verifier support
@@ -93,22 +92,14 @@ class DirectConsumerVerifierTest(RedpandaTest):
             state_request = GetConsumerStateRequest(
                 client_id=client_id, include_partition_states=True)
 
-            def get_consumption():
+            def check_consumption():
                 state = verifier.get_consumer_state(state_request)
                 self.logger.info(
                     f"Consumer state: consumed {state.total_consumed_messages} messages"
                 )
-                return state.total_consumed_messages
+                return state.total_consumed_messages >= msg_count
 
-            wait_until_with_progress_check(
-                get_consumption,
-                condition=lambda fn: fn() >= msg_count,
-                timeout_sec=60,
-                progress_sec=10,
-                backoff_sec=2,
-                err_msg=f"Stopped consuming",
-                logger=self.logger,
-            )
+            wait_until(check_consumption, timeout_sec=60, backoff_sec=2)
 
             final_state = verifier.get_consumer_state(state_request)
             assert final_state.total_consumed_messages == msg_count, \
