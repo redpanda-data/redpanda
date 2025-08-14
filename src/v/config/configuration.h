@@ -462,6 +462,7 @@ struct configuration final : public config_store {
     enum_property<model::recovery_validation_mode>
       cloud_storage_recovery_topic_validation_mode;
     property<uint32_t> cloud_storage_recovery_topic_validation_depth;
+    property<std::chrono::milliseconds> cloud_storage_client_lease_timeout_ms;
 
     property<std::optional<size_t>> cloud_storage_segment_size_target;
     property<std::optional<size_t>> cloud_storage_segment_size_min;
