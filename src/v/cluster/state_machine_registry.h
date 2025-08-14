@@ -37,7 +37,8 @@ struct stm_instance_config {
  * passed into `create` method. State machine factory must encapsulate all
  * dependencies required to create state machine
  */
-struct state_machine_factory {
+class state_machine_factory {
+public:
     /**
      * Must return true if STM should be created for a partition underlaid by
      * passed raft group

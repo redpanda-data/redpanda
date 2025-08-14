@@ -22,6 +22,8 @@
 
 #include <seastar/core/sstring.hh>
 
+#include <algorithm>
+
 static ss::logger logger{"request_auth"};
 
 request_authenticator::request_authenticator(
@@ -79,7 +81,7 @@ request_auth_result request_authenticator::do_authenticate(
   const security::credential_store& cred_store,
   bool require_auth) {
     constexpr auto supports = [](std::string_view m) {
-        return absl::c_any_of(
+        return std::ranges::any_of(
           config::shard_local_cfg().http_authentication(),
           [m](const auto& mech) { return m == mech; });
     };
@@ -215,6 +217,17 @@ void request_auth_result::require_authenticated() {
 }
 
 void request_auth_result::pass() { _checked = true; }
+
+request_auth_result::request_auth_result(request_auth_result&& other) noexcept
+  : _username{std::move(other._username)}
+  , _password{std::move(other._password)}
+  , _sasl_mechanism{std::move(other._sasl_mechanism)}
+  , _authenticated{other._authenticated}
+  , _superuser{other._superuser}
+  , _auth_required{other._auth_required}
+  , _checked{other._checked} {
+    other.pass();
+}
 
 /**
  * It is important to protect against someone calling authenticate()

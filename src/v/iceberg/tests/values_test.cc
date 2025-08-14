@@ -9,7 +9,7 @@
  */
 
 #include "container/chunked_hash_map.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "iceberg/tests/test_schemas.h"
 #include "iceberg/tests/value_generator.h"
 #include "iceberg/values.h"

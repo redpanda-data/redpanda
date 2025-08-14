@@ -8,6 +8,7 @@ redpanda_cc_btest_no_seastar(
         "static_str_test.cc",
         "string_switch_test.cc",
         "utf8_control_chars.cc",
+        "utf8_substring.cc",
     ],
     deps = [
         "//src/v/strings:static_str",

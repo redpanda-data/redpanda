@@ -16,6 +16,8 @@
 #include "iceberg/table_update.h"
 #include "model/timestamp.h"
 
+#include <seastar/core/coroutine.hh>
+
 namespace iceberg {
 
 namespace {

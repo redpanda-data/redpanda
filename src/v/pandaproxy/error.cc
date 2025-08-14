@@ -57,6 +57,8 @@ struct reply_error_category final : std::error_category {
             return "HTTP 305 Use Proxy";
         case reply_error_code::temporary_redirect:
             return "HTTP 307 Temporary Redirect";
+        case reply_error_code::permanent_redirect:
+            return "HTTP 308 Permanent Redirect";
         case reply_error_code::bad_request:
             return "HTTP 400 Bad Request";
         case reply_error_code::unauthorized:
@@ -404,6 +406,8 @@ std::error_condition make_error_condition(ss::http::reply::status_type st) {
         return rec::use_proxy;
     case sec::temporary_redirect:
         return rec::temporary_redirect;
+    case sec::permanent_redirect:
+        return rec::permanent_redirect;
     case sec::bad_request:
         return rec::kafka_bad_request;
     case sec::unauthorized:

@@ -15,7 +15,6 @@ redpanda_cc_gtest(
         "//src/v/random:generators",
         "//src/v/storage:record_batch_builder",
         "//src/v/test_utils:gtest",
-        "@abseil-cpp//absl/algorithm:container",
         "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@fmt",

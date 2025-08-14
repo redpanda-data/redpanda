@@ -9,7 +9,6 @@
  * by the Apache License, Version 2.0
  */
 
-#include "absl/algorithm/container.h"
 #include "absl/container/btree_map.h"
 #include "absl/container/flat_hash_map.h"
 #include "bytes/iobuf.h"
@@ -33,6 +32,8 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
+#include <algorithm>
 
 namespace kafka {
 namespace {
@@ -265,8 +266,7 @@ private:
         std::erase_if(
           _committed_log,
           [&aborted_batches](const model::record_batch& committed) {
-              return absl::c_find(aborted_batches, committed)
-                     != aborted_batches.end();
+              return std::ranges::contains(aborted_batches, committed);
           });
         _aborted.emplace_back(
           model::producer_identity(p.id, p.epoch),

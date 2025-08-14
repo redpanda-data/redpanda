@@ -9,7 +9,7 @@ redpanda_cc_gtest(
         "types_test.cc",
     ],
     deps = [
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/debug_bundle",
         "//src/v/debug_bundle:json",
         "//src/v/debug_bundle:metadata",
@@ -51,6 +51,7 @@ redpanda_cc_gtest(
         "//src/v/random:generators",
         "//src/v/ssx:sformat",
         "//src/v/storage",
+        "//src/v/storage:file_sanitizer_types",
         "//src/v/storage:resources",
         "//src/v/test_utils:gtest",
         "//src/v/utils:file_io",

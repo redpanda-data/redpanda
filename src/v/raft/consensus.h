@@ -93,6 +93,8 @@ public:
     };
     enum class vote_state { follower, candidate, leader };
     using leader_cb_t = ss::noncopyable_function<void(leadership_status)>;
+    using remake_cb_t
+      = ss::noncopyable_function<ss::future<std::error_code>(group_id)>;
 
     consensus(
       model::node_id,
@@ -104,6 +106,7 @@ public:
       config::binding<std::chrono::milliseconds> disk_timeout,
       config::binding<bool> enable_longest_log_detection,
       consensus_client_protocol,
+      remake_cb_t,
       leader_cb_t,
       storage::api&,
       std::optional<std::reference_wrapper<coordinated_recovery_throttle>>,
@@ -180,6 +183,10 @@ public:
     // previous term are behind committed index
     bool is_leader() const {
         return is_elected_leader() && _term == _confirmed_term;
+    }
+    // If this node is not yet a voter, it is a learner.
+    bool is_learner() const {
+        return !_configuration_manager.get_latest().is_voter(_self);
     }
     bool is_candidate() const { return _vstate == vote_state::candidate; }
     std::optional<model::node_id> get_leader_id() const {
@@ -418,6 +425,8 @@ public:
 
     model::offset read_last_applied() const;
 
+    ss::future<> truncate_state(model::offset);
+
     probe& get_probe() { return *_probe; };
 
     ss::shared_ptr<storage::log> log() { return _log; }
@@ -550,6 +559,17 @@ public:
           "toggle_append_entries_error_injection block={}",
           inject_error);
         _inject_error_in_append_entries = inject_error;
+    }
+
+    // Function invoked on leader side to clear state on learner node.
+    ss::future<remake_learner_state_reply> remake_learner_state(vnode target);
+
+    // Function invoked on learner side to clear local state.
+    ss::future<remake_learner_state_reply>
+      do_remake_learner_state(remake_learner_state_request);
+
+    const configuration_manager& config_manager() const {
+        return _configuration_manager;
     }
 
 private:
@@ -818,6 +838,7 @@ private:
     config::binding<std::chrono::milliseconds> _disk_timeout;
     config::binding<bool> _enable_longest_log_detection;
     consensus_client_protocol _client_protocol;
+    remake_cb_t _remake_notification;
     leader_cb_t _leader_notification;
 
     // consensus state

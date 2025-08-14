@@ -14,7 +14,6 @@ def generate_kafka_message_libs(name = "generate_kafka_messages_libs"):
             hdrs = [
                 message + ".h",
             ],
-            include_prefix = "kafka/protocol",
             visibility = ["//visibility:public"],
             deps = [
                 ":protocol",

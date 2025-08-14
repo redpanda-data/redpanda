@@ -7,7 +7,6 @@ redpanda_cc_library(
     hdrs = [
         "arch.h",
     ],
-    include_prefix = "utils",
 )
 
 redpanda_cc_library(
@@ -15,7 +14,6 @@ redpanda_cc_library(
     hdrs = [
         "auto_fmt.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/reflection:to_tuple",
         "@fmt",
@@ -27,7 +25,6 @@ redpanda_cc_library(
     hdrs = [
         "absl_sstring_hash.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "@abseil-cpp//absl/hash",
@@ -40,7 +37,6 @@ redpanda_cc_library(
     hdrs = [
         "moving_average.h",
     ],
-    include_prefix = "utils",
     deps = [
         ":named_type",
         "//src/v/base",
@@ -52,22 +48,8 @@ redpanda_cc_library(
     hdrs = [
         "stop_signal.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
-        "@seastar",
-    ],
-)
-
-redpanda_cc_library(
-    name = "rwlock",
-    hdrs = [
-        "rwlock.h",
-    ],
-    include_prefix = "utils",
-    deps = [
-        "//src/v/base",
-        "//src/v/ssx:semaphore",
         "@seastar",
     ],
 )
@@ -81,7 +63,6 @@ redpanda_cc_library(
         "vint.h",
         "vint_iostream.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/bytes",
         "//src/v/bytes:iostream",
@@ -94,7 +75,6 @@ redpanda_cc_library(
     hdrs = [
         "functional.h",
     ],
-    include_prefix = "utils",
 )
 
 redpanda_cc_library(
@@ -102,7 +82,6 @@ redpanda_cc_library(
     hdrs = [
         "inet_address_wrapper.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
     ],
@@ -113,7 +92,6 @@ redpanda_cc_library(
     hdrs = [
         "tristate.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
     ],
@@ -124,7 +102,6 @@ redpanda_cc_library(
     hdrs = [
         "token_bucket.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "//src/v/ssx:semaphore",
@@ -137,7 +114,6 @@ redpanda_cc_library(
     hdrs = [
         "memory_data_source.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -149,7 +125,6 @@ redpanda_cc_library(
     hdrs = [
         "mutex.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "//src/v/ssx:semaphore",
@@ -161,7 +136,6 @@ redpanda_cc_library(
     hdrs = [
         "static_deleter_fn.h",
     ],
-    include_prefix = "utils",
 )
 
 redpanda_cc_library(
@@ -169,7 +143,6 @@ redpanda_cc_library(
     hdrs = [
         "named_type.h",
     ],
-    include_prefix = "utils",
     deps = [
         "@fmt",
     ],
@@ -180,7 +153,6 @@ redpanda_cc_library(
     hdrs = [
         "waiter_queue.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -189,12 +161,11 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "to_string",
-    hdrs = [
-        "to_string.h",
-    ],
-    include_prefix = "utils",
+    srcs = ["to_string.cc"],
+    hdrs = ["to_string.h"],
     deps = [
         "//src/v/base",
+        "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/container:node_hash_map",
         "@fmt",
         "@seastar",
@@ -206,7 +177,6 @@ redpanda_cc_library(
     hdrs = [
         "remote.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -218,7 +188,6 @@ redpanda_cc_library(
     hdrs = [
         "object_pool.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
     ],
@@ -232,7 +201,6 @@ redpanda_cc_library(
     hdrs = [
         "human.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -244,7 +212,6 @@ redpanda_cc_library(
     hdrs = [
         "retry.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -256,7 +223,6 @@ redpanda_cc_library(
     hdrs = [
         "filtered_lower_bound.h",
     ],
-    include_prefix = "utils",
 )
 
 redpanda_cc_library(
@@ -264,7 +230,6 @@ redpanda_cc_library(
     hdrs = [
         "timed_mutex.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "//src/v/ssx:semaphore",
@@ -280,7 +245,6 @@ redpanda_cc_library(
     hdrs = [
         "file_io.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
@@ -297,7 +261,6 @@ redpanda_cc_library(
     hdrs = [
         "tracking_allocator.h",
     ],
-    include_prefix = "utils",
     deps = [
         ":human",
         "//src/v/container:intrusive",
@@ -311,7 +274,6 @@ redpanda_cc_library(
     hdrs = [
         "stream_provider.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -323,7 +285,6 @@ redpanda_cc_library(
     hdrs = [
         "stream_utils.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "//src/v/ssx:semaphore",
@@ -336,7 +297,6 @@ redpanda_cc_library(
     hdrs = [
         "unresolved_address.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/serde",
     ],
@@ -350,7 +310,6 @@ redpanda_cc_library(
     hdrs = [
         "hdr_hist.h",
     ],
-    include_prefix = "utils",
     deps = [
         ":human",
         ":static_deleter_fn",
@@ -370,9 +329,8 @@ redpanda_cc_library(
     hdrs = [
         "log_hist.h",
     ],
-    include_prefix = "utils",
     deps = [
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/reflection:type_traits",
         "@seastar",
     ],
@@ -386,7 +344,6 @@ redpanda_cc_library(
     hdrs = [
         "uuid.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "//src/v/bytes",
@@ -406,7 +363,6 @@ redpanda_cc_library(
     hdrs = [
         "xid.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf_parser",
@@ -426,7 +382,6 @@ redpanda_cc_library(
     hdrs = [
         "base64.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "//src/v/bytes",
@@ -445,7 +400,6 @@ redpanda_cc_library(
     hdrs = [
         "directory_walker.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -457,7 +411,6 @@ redpanda_cc_library(
     hdrs = [
         "expiring_promise.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -472,7 +425,6 @@ redpanda_cc_library(
     hdrs = [
         "retry_chain_node.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "//src/v/random:fast_prng",
@@ -487,7 +439,6 @@ redpanda_cc_library(
     hdrs = [
         "move_canary.h",
     ],
-    include_prefix = "utils",
 )
 
 redpanda_cc_library(
@@ -495,7 +446,6 @@ redpanda_cc_library(
     hdrs = [
         "exceptions.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -507,7 +457,6 @@ redpanda_cc_library(
     hdrs = [
         "stable_iterator_adaptor.h",
     ],
-    include_prefix = "utils",
     deps = [
         ":exceptions",
         "//src/v/base",
@@ -521,7 +470,6 @@ redpanda_cc_library(
     hdrs = [
         "delta_for.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf_parser",
@@ -538,7 +486,6 @@ redpanda_cc_library(
     hdrs = [
         "prefix_logger.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "//src/v/ssx:sformat",
@@ -551,7 +498,6 @@ redpanda_cc_library(
     hdrs = [
         "notification_list.h",
     ],
-    include_prefix = "utils",
 )
 
 redpanda_cc_library(
@@ -559,7 +505,6 @@ redpanda_cc_library(
     hdrs = [
         "adjustable_semaphore.h",
     ],
-    include_prefix = "utils",
     deps = [
         ":named_type",
         "//src/v/base",
@@ -572,7 +517,6 @@ redpanda_cc_library(
     hdrs = [
         "truncating_logger.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "//src/v/ssx:sformat",
@@ -585,7 +529,6 @@ redpanda_cc_library(
     hdrs = [
         "available_promise.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -597,7 +540,6 @@ redpanda_cc_library(
     hdrs = [
         "ema.h",
     ],
-    include_prefix = "utils",
 )
 
 redpanda_cc_library(
@@ -605,7 +547,6 @@ redpanda_cc_library(
     hdrs = [
         "lazy_abort_source.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -617,7 +558,6 @@ redpanda_cc_library(
     hdrs = [
         "queue_depth_control.h",
     ],
-    include_prefix = "utils",
     deps = [
         ":ema",
         "//src/v/base",
@@ -630,7 +570,6 @@ redpanda_cc_library(
     hdrs = [
         "fixed_string.h",
     ],
-    include_prefix = "utils",
 )
 
 redpanda_cc_library(
@@ -641,7 +580,6 @@ redpanda_cc_library(
     hdrs = [
         "external_process.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "//src/v/utils:mutex",
@@ -654,7 +592,6 @@ redpanda_cc_library(
     hdrs = [
         "copy_range.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -666,7 +603,6 @@ redpanda_cc_library(
     hdrs = [
         "s3_fifo.h",
     ],
-    include_prefix = "utils",
     deps = [
         "@boost//:intrusive",
         "@fmt",
@@ -678,7 +614,6 @@ redpanda_cc_library(
     hdrs = [
         "chunked_kv_cache.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/container:chunked_hash_map",
         "//src/v/utils:s3_fifo",
@@ -694,7 +629,6 @@ redpanda_cc_library(
     hdrs = [
         "null_output_stream.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -706,7 +640,6 @@ redpanda_cc_library(
     hdrs = [
         "variant.h",
     ],
-    include_prefix = "utils",
 )
 
 redpanda_cc_library(
@@ -714,9 +647,21 @@ redpanda_cc_library(
     hdrs = [
         "backoff_policy.h",
     ],
-    include_prefix = "utils",
     deps = [
         "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "execution_monitor",
+    hdrs = [
+        "execution_monitor.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/utils:retry_chain_node",
         "@seastar",
     ],
 )

@@ -33,6 +33,201 @@ thread_local static uint32_t fiber_count = 0;
 static constexpr size_t max_retry_chain_depth = 8;
 static constexpr uint16_t max_retry_count = std::numeric_limits<uint16_t>::max()
                                             - 1;
+namespace detail {
+rtc_circular_buffer::rtc_circular_buffer(size_t capacity)
+  : _data()
+  , _capacity(capacity) {}
+
+void rtc_circular_buffer::push_back(char value) {
+    if (_size < _capacity) {
+        _data.push_back(value);
+        ++_size;
+    } else {
+        _data[_start] = value;
+        _start = (_start + 1) % _capacity;
+    }
+    _total_added++;
+}
+
+void rtc_circular_buffer::push_back(std::string_view sv) {
+    if (sv.empty()) {
+        return;
+    }
+
+    if (sv.size() >= _capacity) {
+        // String is larger than or equal to capacity, only keep the last
+        // part
+        auto offset = sv.size() - _capacity;
+        _data.assign(sv.begin() + offset, sv.end());
+        _size = _capacity;
+        _start = 0;
+        _total_added += sv.size();
+        return;
+    }
+
+    // String fits within capacity
+    size_t bytes_to_copy = sv.size();
+
+    if (_size < _capacity) {
+        // Buffer not full, append normally
+        size_t space_available = _capacity - _size;
+        size_t n = std::min(space_available, bytes_to_copy);
+        std::copy(
+          sv.begin(), std::next(sv.begin(), n), std::back_inserter(_data));
+        std::copy(std::next(sv.begin(), n), sv.end(), _data.begin());
+        _size += n;
+        _start = (bytes_to_copy - n) % _capacity;
+    } else {
+        // Buffer is full, overwrite using circular logic
+        size_t space_to_end = _capacity - _start;
+        if (bytes_to_copy <= space_to_end) {
+            // Case one: enough space from _start to end of buffer
+            std::memcpy(_data.data() + _start, sv.data(), bytes_to_copy);
+            _start = (_start + bytes_to_copy) % _capacity;
+        } else {
+            // Case two: not enough space, need two memcpy calls
+            std::memcpy(_data.data() + _start, sv.data(), space_to_end);
+            size_t remaining = bytes_to_copy - space_to_end;
+            std::memcpy(_data.data(), sv.data() + space_to_end, remaining);
+            _start = remaining;
+        }
+    }
+
+    _total_added += bytes_to_copy;
+}
+
+/// Access element at logical index (0 is the oldest element)
+rtc_circular_buffer::reference rtc_circular_buffer::operator[](size_t index) {
+    return _data[(_start + index) % _capacity];
+}
+
+/// Access element at logical index (0 is the oldest element)
+rtc_circular_buffer::const_reference
+rtc_circular_buffer::operator[](size_t index) const {
+    return _data[(_start + index) % _capacity];
+}
+
+/// Access element at logical index with bounds checking
+rtc_circular_buffer::reference rtc_circular_buffer::at(size_t index) {
+    if (index >= _size) {
+        throw std::out_of_range("circular_buffer::at");
+    }
+    return _data[(_start + index) % _capacity];
+}
+
+/// Access element at logical index with bounds checking
+rtc_circular_buffer::const_reference
+rtc_circular_buffer::at(size_t index) const {
+    if (index >= _size) {
+        throw std::out_of_range("circular_buffer::at");
+    }
+    return _data[(_start + index) % _capacity];
+}
+
+/// Get the first (oldest) element
+rtc_circular_buffer::reference rtc_circular_buffer::front() {
+    return _data[_start];
+}
+
+/// Get the first (oldest) element
+rtc_circular_buffer::const_reference rtc_circular_buffer::front() const {
+    return _data[_start];
+}
+
+/// Get the last (newest) element
+rtc_circular_buffer::reference rtc_circular_buffer::back() {
+    if (_size < _capacity) {
+        return _data[_size - 1];
+    } else {
+        return _data[(_start + _size - 1) % _capacity];
+    }
+}
+
+/// Get the last (newest) element
+rtc_circular_buffer::const_reference rtc_circular_buffer::back() const {
+    if (_size < _capacity) {
+        return _data[_size - 1];
+    } else {
+        return _data[(_start + _size - 1) % _capacity];
+    }
+}
+
+/// Number of elements currently in the buffer
+size_t rtc_circular_buffer::size() const noexcept { return _size; }
+
+/// Maximum capacity of the buffer
+size_t rtc_circular_buffer::capacity() const noexcept { return _capacity; }
+
+/// Check if the buffer is empty
+bool rtc_circular_buffer::empty() const noexcept { return _size == 0; }
+
+/// Check if the buffer is at full capacity
+bool rtc_circular_buffer::full() const noexcept { return _size == _capacity; }
+
+/// Get the number of elements that were added to the buffer and
+/// then overwritten and lost. The count is reset if 'clear' is
+/// called.
+size_t rtc_circular_buffer::overwritten() const noexcept {
+    return _total_added > _capacity ? _total_added - _capacity : 0;
+}
+
+/// Clear all elements from the buffer
+void rtc_circular_buffer::clear() noexcept {
+    _size = 0;
+    _start = 0;
+    _total_added = 0;
+    _data.clear();
+    _data.shrink_to_fit();
+}
+} // namespace detail
+
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
+  basic_retry_chain_context<Clock>& ctx)
+  : _id(fiber_count++) // generate new head id
+  , _backoff{0}
+  , _deadline{time_point::min()}
+  , _parent(&ctx) {}
+
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
+  basic_retry_chain_context<Clock>& ctx,
+  time_point deadline,
+  duration backoff)
+  : _id(fiber_count++) // generate new head id
+  , _backoff{std::chrono::duration_cast<std::chrono::milliseconds>(backoff)}
+  , _deadline{deadline}
+  , _parent(&ctx) {
+    vassert(
+      backoff <= milliseconds_uint16_t::max(),
+      "Initial backoff {} is too large",
+      backoff);
+}
+
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
+  basic_retry_chain_context<Clock>& ctx,
+  time_point deadline,
+  duration backoff,
+  retry_strategy retry_strategy)
+  : basic_retry_chain_node(ctx, deadline, backoff) {
+    _retry_strategy = retry_strategy;
+}
+
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
+  basic_retry_chain_context<Clock>& ctx, duration timeout, duration backoff)
+  : basic_retry_chain_node(ctx, Clock::now() + timeout, backoff) {}
+
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
+  basic_retry_chain_context<Clock>& ctx,
+  duration timeout,
+  duration backoff,
+  retry_strategy retry_strategy)
+  : basic_retry_chain_node(ctx, timeout, backoff) {
+    _retry_strategy = retry_strategy;
+}
 
 template<class Clock>
 basic_retry_chain_node<Clock>::basic_retry_chain_node(ss::abort_source& as)
@@ -195,6 +390,8 @@ template<class Clock>
 ss::abort_source* basic_retry_chain_node<Clock>::get_abort_source() {
     if (std::holds_alternative<ss::abort_source*>(_parent)) {
         return std::get<ss::abort_source*>(_parent);
+    } else if (std::holds_alternative<context_t*>(_parent)) {
+        return &std::get<context_t*>(_parent)->as();
     }
     return nullptr;
 }
@@ -204,6 +401,8 @@ const ss::abort_source*
 basic_retry_chain_node<Clock>::get_abort_source() const {
     if (std::holds_alternative<ss::abort_source*>(_parent)) {
         return std::get<ss::abort_source*>(_parent);
+    } else if (std::holds_alternative<context_t*>(_parent)) {
+        return &std::get<context_t*>(_parent)->as();
     }
     return nullptr;
 }
@@ -296,6 +495,13 @@ typename Clock::duration
 basic_retry_chain_node<Clock>::get_poll_interval() const {
     duration jitter(fast_prng_source() % _backoff.count());
     return _backoff + jitter;
+}
+
+template<class Clock>
+bool basic_retry_chain_node<Clock>::has_retry_chain_context() const {
+    auto root = get_root();
+    return std::holds_alternative<basic_retry_chain_context<Clock>*>(
+      root->_parent);
 }
 
 template<class Clock>
@@ -395,6 +601,16 @@ void basic_retry_chain_node<Clock>::check_abort() const {
     if (as) {
         as->check();
     }
+}
+
+template<class Clock>
+void basic_retry_chain_node<Clock>::maybe_add_trace(
+  const ss::sstring& s) const {
+    auto root = get_root();
+    if (!root->has_retry_chain_context()) {
+        return;
+    }
+    std::get<context_t*>(root->_parent)->add_trace(s);
 }
 
 template<class Clock>

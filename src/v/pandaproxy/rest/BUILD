@@ -15,7 +15,6 @@ redpanda_cc_library(
         "handlers.h",
         "proxy.h",
     ],
-    include_prefix = "pandaproxy/rest",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",

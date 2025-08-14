@@ -8,9 +8,8 @@ redpanda_test_cc_library(
     hdrs = [
         "state_test_utils.h",
     ],
-    include_prefix = "datalake/coordinator/tests",
     deps = [
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/datalake/coordinator:file_committer",
         "//src/v/datalake/coordinator:state",
         "//src/v/datalake/coordinator:translated_offset_range",
@@ -18,6 +17,7 @@ redpanda_test_cc_library(
         "//src/v/model",
         "//src/v/random:generators",
         "@googletest//:gtest",
+        "@seastar",
     ],
 )
 
@@ -122,7 +122,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         ":state_test_utils",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/datalake/coordinator:state",
         "//src/v/datalake/coordinator:state_update",
         "//src/v/datalake/coordinator:translated_offset_range",

@@ -13,11 +13,12 @@
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/container/node_hash_map.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/client/assignment_plans.h"
 #include "kafka/client/cluster.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/consumer.h"
+#include "kafka/client/partitioners.h"
 #include "kafka/client/producer.h"
 #include "kafka/client/types.h"
 #include "kafka/client/utils.h"
@@ -95,8 +96,10 @@ public:
     }
     ss::future<typename std::invoke_result_t<Func>::api_type::response_type>
     dispatch(Func func) {
+        using api_type = std::invoke_result_t<Func>::api_type;
         return gated_retry_with_mitigation([this, func{std::move(func)}]() {
-            return _cluster.dispatch_to_any(func());
+            return _cluster.dispatch_to_any(
+              func(), api_version_for(api_type::key));
         });
     }
 
@@ -210,6 +213,8 @@ private:
       chunked_vector<model::topic> topics,
       std::optional<chunked_vector<ss::sstring>> configuration_keys);
 
+    void on_metadata_update(const metadata_response_data& res);
+
     /// \brief Connect and update metdata.
     ss::future<> do_connect(net::unresolved_address addr);
 
@@ -250,6 +255,9 @@ private:
         detail::consumer_hash,
         detail::consumer_eq>>
       _consumers;
+
+    partitioners_cache _partitioners;
+    cluster::callback_id _metadata_callback_id;
     /// \brief Wait for retries.
     ss::gate _gate;
 

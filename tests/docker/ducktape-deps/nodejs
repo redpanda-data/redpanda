@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -e
+mkdir -p /opt/nodejs/
+if [ $(uname -m) = "aarch64" ]; then
+  export ARCHID="arm64"
+else
+  export ARCHID="x64"
+fi
+curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 "https://nodejs.org/dist/v22.17.1/node-v22.17.1-linux-${ARCHID}.tar.xz" | tar -xJ -C /opt/nodejs/ --strip 1

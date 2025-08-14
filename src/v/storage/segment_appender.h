@@ -13,7 +13,7 @@
 
 #include "base/seastarx.h"
 #include "bytes/bytes.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/record.h"
 #include "ssx/semaphore.h"
 #include "storage/config.h"
@@ -185,11 +185,7 @@ private:
         }
     };
 
-    // There is one segment_appender per partition replica so we don't want to
-    // allocate too many elements by default and hence limit.
-    // Limit to 16 elements which is about 640 bytes per chunk.
-    using flush_ops_container
-      = fragmented_vector<flush_op, sizeof(flush_op) * 16>;
+    using flush_ops_container = chunked_vector<flush_op>;
     flush_ops_container _flush_ops;
     size_t _flushed_offset{0};
     size_t _stable_offset{0};

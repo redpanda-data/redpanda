@@ -14,58 +14,12 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "cluster/topic_table.h"
-#include "metrics/prometheus_sanitize.h"
 #include "ssx/async_algorithm.h"
 #include "types.h"
 
 #include <seastar/util/defer.hh>
 
 namespace cluster {
-
-class shard_placement_table::probe {
-public:
-    probe() = default;
-    probe(const probe&) = delete;
-    probe& operator=(const probe&) = delete;
-    probe(probe&&) = delete;
-    probe& operator=(probe&&) = delete;
-
-    void update_assigned(int64_t delta) { _total_assigned += delta; }
-    void update_hosted(int64_t delta) { _total_hosted += delta; }
-    void update_to_reconcile(int64_t delta) { _to_reconcile += delta; }
-
-    void setup_metrics() {
-        if (config::shard_local_cfg().disable_metrics()) {
-            return;
-        }
-
-        namespace sm = ss::metrics;
-        _metrics.add_group(
-          prometheus_sanitize::metrics_name("cluster:shard_placement"),
-          {
-            sm::make_gauge(
-              "assigned_partitions",
-              [this] { return _total_assigned; },
-              sm::description("Number of partitions assigned to this shard")),
-            sm::make_gauge(
-              "hosted_partitions",
-              [this] { return _total_hosted; },
-              sm::description("Number of partitions hosted on this shard")),
-            sm::make_gauge(
-              "partitions_to_reconcile",
-              [this] { return _to_reconcile; },
-              sm::description("Number of partitions needing reconciliation of "
-                              "shard-local state")),
-          });
-    }
-
-private:
-    int64_t _total_assigned = 0;
-    int64_t _total_hosted = 0;
-    int64_t _to_reconcile = 0;
-
-    metrics::internal_metric_groups _metrics;
-};
 
 std::ostream& operator<<(
   std::ostream& o, const shard_placement_table::shard_local_assignment& as) {
@@ -95,12 +49,27 @@ std::ostream& operator<<(
   std::ostream& o, const shard_placement_table::shard_local_state& ls) {
     fmt::print(
       o,
-      "{{group: {}, log_revision: {}, status: {}, shard_revision: {}}}",
+      "{{group: {}, log_revision: {}, status: {}, shard_revision: {}, "
+      "remake_state: {}}}",
       ls.group,
       ls.log_revision,
       ls.status,
-      ls.shard_revision);
+      ls.shard_revision,
+      ls.remake_state);
     return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, shard_placement_table::remake_partition_state s) {
+    switch (s) {
+    case shard_placement_table::remake_partition_state::none:
+        return o << "none";
+    case shard_placement_table::remake_partition_state::initiated:
+        return o << "initiated";
+    case shard_placement_table::remake_partition_state::deleted:
+        return o << "deleted";
+    }
+    __builtin_unreachable();
 }
 
 shard_placement_table::reconciliation_action
@@ -119,6 +88,13 @@ shard_placement_table::placement_state::get_reconciliation_action(
             return reconciliation_action::wait_for_target_update;
         } else if (_current->status == hosted_status::obsolete) {
             return reconciliation_action::remove_kvstore_state;
+        } else if (_current->remake_state != remake_partition_state::none) {
+            if (_current->remake_state == remake_partition_state::initiated) {
+                return reconciliation_action::remake;
+            } else if (
+              _current->remake_state == remake_partition_state::deleted) {
+                return reconciliation_action::create;
+            }
         }
     } else if (_is_initial_for) {
         if (_is_initial_for < expected_log_revision) {
@@ -232,32 +208,6 @@ bytes assignment_kvstore_key(const raft::group_id group) {
     return iobuf_to_bytes(buf);
 }
 
-struct current_state_marker
-  : serde::envelope<
-      current_state_marker,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    // NOTE: we need ntp in this marker because we want to be able to find and
-    // clean garbage kvstore state for old groups that have already been deleted
-    // from topic_table. Some of the partition kvstore state items use keys
-    // based on group id and some - based on ntp, so we need both.
-    model::ntp ntp;
-    model::revision_id log_revision;
-    model::shard_revision_id shard_revision;
-    bool is_complete = false;
-
-    auto serde_fields() {
-        return std::tie(ntp, log_revision, shard_revision, is_complete);
-    }
-};
-
-bytes current_state_kvstore_key(const raft::group_id group) {
-    iobuf buf;
-    serde::write(buf, kvstore_key_type::current_state);
-    serde::write(buf, group);
-    return iobuf_to_bytes(buf);
-}
-
 } // namespace
 
 shard_placement_table::shard_placement_table(
@@ -292,13 +242,14 @@ ss::future<> shard_placement_table::enable_persistence() {
 
     vlog(clusterlog.info, "enabling table persistence...");
 
-    auto write_locks = container().map([](shard_placement_table& local) {
-        return local._persistence_lock.hold_write_lock().then(
-          [](ss::rwlock::holder holder) {
-              return ss::make_foreign(
-                std::make_unique<ss::rwlock::holder>(std::move(holder)));
-          });
-    });
+    auto write_locks = co_await container().map(
+      [](shard_placement_table& local) {
+          return local._persistence_lock.hold_write_lock().then(
+            [](ss::rwlock::holder holder) {
+                return ss::make_foreign(
+                  std::make_unique<ss::rwlock::holder>(std::move(holder)));
+            });
+      });
 
     co_await container().invoke_on_all([](shard_placement_table& local) {
         return local.persist_shard_local_state();
@@ -351,6 +302,7 @@ ss::future<> shard_placement_table::persist_shard_local_state() {
                 .shard_revision = pstate.current()->shard_revision,
                 .is_complete = pstate.current()->status
                                == hosted_status::hosted,
+                .remake_state = pstate.current()->remake_state,
               };
               f2 = _kvstore.put(
                 kvstore_key_space,
@@ -567,12 +519,13 @@ shard_placement_table::gather_init_states(
               vlog(
                 clusterlog.trace,
                 "[{}] shard {}: recovered cur state marker, lr: {} sr: {} "
-                "complete: {}",
+                "complete: {}, remake_state: {}",
                 marker.ntp,
                 _shard,
                 marker.log_revision,
                 marker.shard_revision,
-                marker.is_complete);
+                marker.is_complete,
+                marker.remake_state);
 
               auto& state = _states[marker.ntp];
               if (state.current()) {
@@ -588,7 +541,8 @@ shard_placement_table::gather_init_states(
                   marker.log_revision,
                   marker.is_complete ? hosted_status::hosted
                                      : hosted_status::receiving,
-                  marker.shard_revision),
+                  marker.shard_revision,
+                  marker.remake_state),
                 *_probe);
               break;
           }
@@ -1148,11 +1102,16 @@ shard_placement_table::prepare_transfer(
         }
         ret.destination = maybe_dest.value();
 
+        remake_partition_state remake_state = remake_partition_state::none;
+        if (state.current()) {
+            remake_state = state.current()->remake_state;
+        }
+
         // check if destination is ready
         model::shard_revision_id shard_rev;
         co_await sharded_spt.invoke_on(
           ret.destination.value(),
-          [&ntp, &shard_rev, &ret, expected_log_rev, is_initial](
+          [&ntp, &shard_rev, &ret, expected_log_rev, is_initial, remake_state](
             shard_placement_table& dest) {
               auto dest_it = dest._states.find(ntp);
               if (
@@ -1192,6 +1151,7 @@ shard_placement_table::prepare_transfer(
                     .log_revision = expected_log_rev,
                     .shard_revision = dest_state.current()->shard_revision,
                     .is_complete = false,
+                    .remake_state = remake_state,
                   });
                   vlog(
                     clusterlog.trace,
@@ -1280,6 +1240,7 @@ ss::future<> shard_placement_table::finish_transfer(
                 .log_revision = dest_state.current()->log_revision,
                 .shard_revision = dest_state.current()->shard_revision,
                 .is_complete = true,
+                .remake_state = dest_state.current()->remake_state,
               });
               vlog(
                 clusterlog.trace,
@@ -1423,6 +1384,68 @@ void shard_placement_table::assert_is_assignment_shard() const {
       "method can only be invoked on shard {} (table for shard: {})",
       assignment_shard_id,
       _shard);
+}
+
+ss::future<std::error_code> shard_placement_table::set_remake_state(
+  const model::ntp& ntp,
+  remake_partition_state remake_state,
+  model::revision_id expected_log_rev) {
+    vlog(
+      clusterlog.trace,
+      "setting remake state {} for ntp {}",
+      remake_state,
+      ntp);
+    // ensure that there is no concurrent enable_persistence() call
+    auto persistence_lock_holder = co_await _persistence_lock.hold_read_lock();
+
+    auto it = _states.find(ntp);
+    if (it == _states.end()) {
+        co_return errc::waiting_for_shard_placement_update;
+    }
+
+    auto& state = it->second;
+    auto& current = it->second._current.value();
+
+    if (state.assigned()->log_revision != expected_log_rev) {
+        // assignments got updated while we were waiting for the lock
+        co_return errc::waiting_for_shard_placement_update;
+    }
+
+    if (state._next.has_value()) {
+        // Partition movement in progress
+        co_return errc::waiting_for_shard_placement_update;
+    }
+
+    if (current.log_revision != expected_log_rev) {
+        // wait until partition with obsolete log revision is removed
+        co_return errc::waiting_for_reconfiguration_finish;
+    }
+
+    if (current.status != hosted_status::hosted) {
+        // x-shard transfer is in progress, wait for it to end.
+        co_return errc::waiting_for_partition_shutdown;
+    }
+
+    current.remake_state = remake_state;
+
+    if (_persistence_enabled) {
+        auto marker_buf = serde::to_iobuf(current_state_marker{
+          .ntp = ntp,
+          .log_revision = current.log_revision,
+          .shard_revision = current.shard_revision,
+          .is_complete = true,
+          .remake_state = remake_state});
+        co_await _kvstore.put(
+          kvstore_key_space,
+          current_state_kvstore_key(current.group),
+          std::move(marker_buf));
+    }
+
+    if (remake_state == remake_partition_state::none) {
+        _probe->partition_remade();
+    }
+
+    co_return errc::success;
 }
 
 } // namespace cluster

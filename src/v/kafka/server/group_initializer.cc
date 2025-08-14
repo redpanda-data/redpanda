@@ -89,6 +89,8 @@ ss::future<bool> group_initializer::try_create_consumer_group_topic() {
 
     topic.properties.cleanup_policy_bitflags
       = model::cleanup_policy_bitflags::compaction;
+    // allow cretation even if a consumer group migration is in progress
+    topic.is_migrated = true;
 
     if (!_topics_frontend.local_is_initialized()) {
         vlog(

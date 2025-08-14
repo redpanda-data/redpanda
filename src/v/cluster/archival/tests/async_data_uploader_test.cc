@@ -112,6 +112,7 @@ public:
         auto client = make_kafka_client().get();
         tests::kafka_produce_transport producer(std::move(client));
         producer.start().get();
+        auto deferred_close = ss::defer([&producer] { producer.stop().get(); });
 
         for (size_t i = 0; i < num_batches; i++) {
             std::vector<tests::kv_t> records = generator();
@@ -166,6 +167,7 @@ public:
           model::timestamp::min(),
           std::nullopt,
           max_collect_offset,
+          std::nullopt,
           std::nullopt,
           std::chrono::milliseconds{0},
           as);

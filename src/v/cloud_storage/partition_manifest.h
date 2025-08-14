@@ -12,13 +12,13 @@
 
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/fwd.h"
+#include "cloud_storage/segment_meta_cstore.h"
 #include "cloud_storage/types.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timestamp.h"
-#include "segment_meta_cstore.h"
 #include "serde/rw/envelope.h"
 #include "utils/tracking_allocator.h"
 
@@ -112,7 +112,7 @@ public:
     using value = segment_meta;
     using segment_map = segment_meta_cstore;
     using spillover_manifest_map = segment_meta_cstore;
-    using replaced_segments_list = fragmented_vector<lw_segment_meta>;
+    using replaced_segments_list = chunked_vector<lw_segment_meta>;
     using const_iterator = segment_map::const_iterator;
 
     /// Generate segment name to use in the cloud
@@ -137,14 +137,14 @@ public:
       model::offset lo,
       model::offset lco,
       model::offset insync,
-      const fragmented_vector<segment_t>& segments,
-      const fragmented_vector<segment_t>& replaced,
+      const chunked_vector<segment_t>& segments,
+      const chunked_vector<segment_t>& replaced,
       kafka::offset start_kafka_offset,
       model::offset archive_start_offset,
       model::offset_delta archive_start_offset_delta,
       model::offset archive_clean_offset,
       uint64_t archive_size_bytes,
-      const fragmented_vector<segment_t>& spillover,
+      const chunked_vector<segment_t>& spillover,
       model::timestamp last_partition_scrub,
       std::optional<model::offset> last_scrubbed_offset,
       anomalies detected_anomalies,
@@ -471,11 +471,11 @@ public:
     const_iterator segment_containing(kafka::offset o) const;
 
     // Return collection of segments that were replaced in lightweight format.
-    fragmented_vector<partition_manifest::lw_segment_meta>
+    chunked_vector<partition_manifest::lw_segment_meta>
     lw_replaced_segments() const;
 
     /// Return collection of segments that were replaced by newer segments.
-    fragmented_vector<segment_meta> replaced_segments() const;
+    chunked_vector<segment_meta> replaced_segments() const;
 
     /// Return the number of replaced segments currently awaiting deletion.
     size_t replaced_segments_count() const;

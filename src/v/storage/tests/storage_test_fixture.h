@@ -16,6 +16,7 @@
 #include "config/configuration.h"
 #include "container/chunked_circular_buffer.h"
 #include "features/feature_table.h"
+#include "model/limits.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
 #include "storage/tests/batch_generators.h"

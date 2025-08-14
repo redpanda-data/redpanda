@@ -13,7 +13,7 @@
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/logger.h"
 #include "kafka/server/handlers/topics/types.h"

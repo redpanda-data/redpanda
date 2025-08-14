@@ -28,13 +28,11 @@
 namespace cluster {
 
 partition_leaders_table::partition_leaders_table(
-  ss::sharded<topic_table>& topic_table)
-  : _topic_table(topic_table) {}
+  ss::sharded<topic_table>& topic_table, ss::sharded<ss::abort_source>& as)
+  : _topic_table(topic_table)
+  , _as(as.local()) {}
 
-ss::future<> partition_leaders_table::stop() {
-    _as.request_abort();
-    return _gate.close();
-}
+ss::future<> partition_leaders_table::stop() { return _gate.close(); }
 
 std::optional<
   std::reference_wrapper<const partition_leaders_table::leader_meta>>

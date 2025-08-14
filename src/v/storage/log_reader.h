@@ -292,13 +292,13 @@ private:
  * To read more about trim-prefix:
  * https://docs.redpanda.com/current/reference/rpk/rpk-topic/rpk-topic-trim-prefix/
  *
- * \param b The batch to search in.
+ * \param batch The batch to search in.
  * \param min_offset The minimum offset to consider
  * \param t The timestamp to search for
  * \param max_offset The maximum offset to consider
  */
 ss::future<timequery_result> batch_timequery(
-  model::record_batch b,
+  model::record_batch batch,
   model::offset min_offset,
   model::timestamp t,
   model::offset max_offset);

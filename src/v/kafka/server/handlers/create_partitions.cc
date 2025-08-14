@@ -14,7 +14,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/create_partitions_request.h"
 #include "kafka/protocol/schemata/create_partitions_response.h"

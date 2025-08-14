@@ -39,6 +39,7 @@ using ::cluster_link::model::id_t;
 using ::cluster_link::model::metadata;
 using ::cluster_link::model::mirror_topic_state;
 using ::cluster_link::model::name_t;
+using ::cluster_link::model::update_mirror_topic_properties_cmd;
 using ::cluster_link::model::update_mirror_topic_state_cmd;
 using ::cluster_link::model::uuid_t;
 
@@ -313,9 +314,7 @@ TEST_F_CORO(cluster_link_table_test, with_mirror_topics) {
       .name = name_t("link1"),
       .uuid = uuid_t(::uuid_t::create()),
       .connection = connection_config{}};
-    link.state.set_mirror_topics(
-      {{test_topic,
-        testing::create_mirror_topic_metadata(mirror_state, test_topic)}});
+    testing::set_link_mirror_topics(link, test_topic, mirror_state, test_topic);
 
     ASSERT_NO_THROW_CORO(co_await _table.local().apply_update(
       testing::create_upsert_command(model::offset{1}, link.copy())));
@@ -342,17 +341,15 @@ TEST_F_CORO(cluster_link_table_test, with_multiple_links) {
       .name = name_t("link1"),
       .uuid = uuid_t(::uuid_t::create()),
       .connection = connection_config{}};
-    link1.state.set_mirror_topics(
-      {{test_topic1,
-        testing::create_mirror_topic_metadata(mirror_state1, test_topic1)}});
+    testing::set_link_mirror_topics(
+      link1, test_topic1, mirror_state1, test_topic1);
 
     metadata link2{
       .name = name_t("link2"),
       .uuid = uuid_t(::uuid_t::create()),
       .connection = connection_config{}};
-    link2.state.set_mirror_topics(
-      {{test_topic2,
-        testing::create_mirror_topic_metadata(mirror_state2, test_topic2)}});
+    testing::set_link_mirror_topics(
+      link2, test_topic2, mirror_state2, test_topic2);
 
     auto res = co_await _table.local().apply_update(
       testing::create_upsert_command(model::offset{1}, link1.copy()));
@@ -411,11 +408,14 @@ TEST_F_CORO(cluster_link_table_test, remove_mirror_topic) {
       .name = name_t("link1"),
       .uuid = uuid_t(::uuid_t::create()),
       .connection = connection_config{}};
-    link.state.set_mirror_topics(
-      {{test_topic1,
-        testing::create_mirror_topic_metadata(mirror_state1, test_topic1)},
-       {test_topic2,
-        testing::create_mirror_topic_metadata(mirror_state2, test_topic2)}});
+    ::cluster_link::model::link_state::mirror_topics_t mirror_topics;
+    mirror_topics.emplace(
+      test_topic1,
+      testing::create_mirror_topic_metadata(mirror_state1, test_topic1));
+    mirror_topics.emplace(
+      test_topic2,
+      testing::create_mirror_topic_metadata(mirror_state2, test_topic2));
+    link.state.set_mirror_topics(std::move(mirror_topics));
 
     auto res = co_await _table.local().apply_update(
       testing::create_upsert_command(model::offset{1}, link.copy()));
@@ -456,17 +456,15 @@ TEST_F_CORO(cluster_link_table_test, duplicate_topic) {
       .name = name_t("link1"),
       .uuid = uuid_t(::uuid_t::create()),
       .connection = connection_config{}};
-    link1.state.mirror_topics.insert(
-      {{test_topic,
-        testing::create_mirror_topic_metadata(mirror_state, test_topic)}});
+    testing::set_link_mirror_topics(
+      link1, test_topic, mirror_state, test_topic);
 
     metadata link2{
       .name = name_t("link2"),
       .uuid = uuid_t(::uuid_t::create()),
       .connection = connection_config{}};
-    link2.state.mirror_topics.insert(
-      {{test_topic,
-        testing::create_mirror_topic_metadata(mirror_state, test_topic)}});
+    testing::set_link_mirror_topics(
+      link2, test_topic, mirror_state, test_topic);
 
     auto res = co_await _table.local().apply_update(
       testing::create_upsert_command(model::offset{1}, link1.copy()));
@@ -746,6 +744,119 @@ TEST_F_CORO(cluster_link_table_test, update_state_mirror_topic_other_link) {
     EXPECT_EQ(res.value(), int(errc::topic_being_mirrored_by_other_link))
       << "Expected error for topic being mirrored by other link, got: "
       << res.message();
+}
+
+TEST_F_CORO(
+  cluster_link_table_test, test_add_and_update_mirror_topic_properties) {
+    model::topic test_topic("mirror-link1");
+    mirror_topic_state mirror_state = mirror_topic_state::active;
+
+    metadata link1{
+      .name = name_t("link1"),
+      .uuid = uuid_t(::uuid_t::create()),
+      .connection = connection_config{}};
+
+    auto res = co_await _table.local().apply_update(
+      testing::create_upsert_command(model::offset{1}, link1.copy()));
+    ASSERT_EQ_CORO(res.value(), int(errc::success))
+      << "Failed to upsert link1: " << res.message();
+
+    res = co_await _table.local().apply_update(
+      testing::create_add_mirror_topic_command(
+        id_t{1},
+        add_mirror_topic_cmd{
+          .topic = test_topic,
+          .metadata = testing::create_mirror_topic_metadata(
+            mirror_state, test_topic)}));
+
+    ASSERT_EQ_CORO(res.value(), int(errc::success))
+      << "Failed to add mirror topic: " << res.message();
+
+    auto link_id = _table.local().find_id_by_topic(test_topic);
+    ASSERT_EQ_CORO(link_id, id_t(1));
+
+    update_mirror_topic_properties_cmd cmd{
+      .topic = test_topic,
+      .partition_count = 5,
+      .replication_factor = 5,
+      .topic_configs = {{"key", "value"}}};
+
+    res = co_await _table.local().apply_update(
+      testing::create_update_mirror_topic_properties_command(
+        id_t{1}, std::move(cmd)));
+
+    ASSERT_EQ_CORO(res.value(), int(errc::success))
+      << "Failed to update mirror topic properties: " << res.message();
+
+    auto it = _table.local()
+                .find_link_by_id(id_t{1})
+                .value()
+                .get()
+                .state.mirror_topics.find(test_topic);
+    EXPECT_EQ(it->second.partition_count, 5);
+    EXPECT_EQ(it->second.replication_factor, 5);
+    EXPECT_EQ(it->second.topic_configs.size(), 1);
+    EXPECT_EQ(it->second.topic_configs.at("key"), "value");
+}
+
+TEST_F_CORO(
+  cluster_link_table_test,
+  test_update_mirror_topic_properties_topic_not_found) {
+    model::topic test_topic("mirror-link1");
+
+    metadata link1{
+      .name = name_t("link1"),
+      .uuid = uuid_t(::uuid_t::create()),
+      .connection = connection_config{}};
+
+    auto res = co_await _table.local().apply_update(
+      testing::create_upsert_command(model::offset{1}, link1.copy()));
+    ASSERT_EQ_CORO(res.value(), int(errc::success))
+      << "Failed to upsert link1: " << res.message();
+
+    update_mirror_topic_properties_cmd cmd{
+      .topic = test_topic,
+      .partition_count = 5,
+      .replication_factor = 5,
+      .topic_configs = {{"key", "value"}}};
+
+    res = co_await _table.local().apply_update(
+      testing::create_update_mirror_topic_properties_command(
+        id_t{1}, std::move(cmd)));
+
+    EXPECT_EQ(res.value(), int(errc::topic_not_being_mirrored))
+      << "Expected error for non-existent topic, got: " << res.message();
+}
+
+TEST_F_CORO(
+  cluster_link_table_test, test_update_mirror_topic_properties_different_link) {
+    model::topic test_topic("mirror-link1");
+    metadata link1{
+      .name = name_t("link1"),
+      .uuid = uuid_t(::uuid_t::create()),
+      .connection = connection_config{}};
+    link1.state.mirror_topics.insert(
+      {test_topic,
+       testing::create_mirror_topic_metadata(
+         mirror_topic_state::active, test_topic)});
+
+    auto res = co_await _table.local().apply_update(
+      testing::create_upsert_command(model::offset{1}, link1.copy()));
+    ASSERT_EQ_CORO(res.value(), int(errc::success))
+      << "Failed to upsert link1: " << res.message();
+
+    update_mirror_topic_properties_cmd cmd{
+      .topic = test_topic,
+      .partition_count = 5,
+      .replication_factor = 5,
+      .topic_configs = {{"key", "value"}}};
+
+    res = co_await _table.local().apply_update(
+      testing::create_update_mirror_topic_properties_command(
+        id_t{2}, std::move(cmd)));
+
+    EXPECT_EQ(res.value(), int(errc::topic_being_mirrored_by_other_link))
+      << "Expected error for mirrored by other link, got: " << res.message();
 }
 
 } // namespace cluster::cluster_link

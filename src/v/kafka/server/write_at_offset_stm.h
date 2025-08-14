@@ -99,7 +99,9 @@ public:
       model::record_batch,
       kafka::offset expected_base_offset,
       std::optional<kafka::offset> prev_log_offset,
-      model::timeout_clock::duration timeout);
+      model::timeout_clock::duration timeout,
+      std::optional<std::reference_wrapper<ss::abort_source>> as
+      = std::nullopt);
 
     ss::future<iobuf> take_raft_snapshot(model::offset) final;
     ss::future<> apply_raft_snapshot(const iobuf&) final;
@@ -135,10 +137,12 @@ private:
       kafka::offset expected_base_offset,
       std::optional<kafka::offset> prev_log_offset,
       model::timeout_clock::duration timeout,
+      std::optional<std::reference_wrapper<ss::abort_source>> as,
       ss::promise<> enqueued_promise);
 
-    raft::replicate_stages
-      try_replicate_in_stages(chunked_vector<model::record_batch>);
+    raft::replicate_stages try_replicate_in_stages(
+      chunked_vector<model::record_batch>,
+      std::optional<std::reference_wrapper<ss::abort_source>> as);
 
     kafka::offset expected_last_offset() const;
 

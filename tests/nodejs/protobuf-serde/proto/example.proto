@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package example;
+
+message User {
+    string first_name = 1;
+    string last_name = 2;
+    bool active = 3;
+    User manager = 4;
+    repeated string locations = 5;
+    map<string, string> projects = 6;
+}

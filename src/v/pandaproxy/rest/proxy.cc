@@ -10,16 +10,12 @@
 #include "pandaproxy/rest/proxy.h"
 
 #include "cluster/controller.h"
-#include "cluster/ephemeral_credential_frontend.h"
-#include "cluster/members_table.h"
-#include "cluster/security_frontend.h"
 #include "config/configuration.h"
-#include "kafka/client/config_utils.h"
+#include "kafka/client/configuration.h"
 #include "pandaproxy/api/api-doc/rest.json.hh"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/handlers.h"
-#include "security/ephemeral_credential_store.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/memory.hh>
@@ -29,9 +25,6 @@
 namespace pandaproxy::rest {
 
 using server = proxy::server;
-
-const security::acl_principal principal{
-  security::principal_type::ephemeral_user, "__pandaproxy"};
 
 class wrap {
 public:
@@ -128,8 +121,7 @@ proxy::proxy(
       json::serialization_format::application_json,
       plog,
       preqs)
-  , _ensure_started{[this]() { return do_start(); }}
-  , _controller(controller) {
+  , _ensure_started{[this]() { return do_start(); }} {
     _inflight_config_binding.watch([this]() {
         const size_t capacity = _inflight_config_binding();
         _inflight_sem.set_capacity(capacity);
@@ -172,40 +164,20 @@ ss::future<> proxy::do_start() {
 }
 
 ss::future<> proxy::configure() {
-    auto sasl_config = co_await kafka::client::create_client_credentials(
-      *_controller, config::shard_local_cfg(), _client_cfg, principal);
+    std::optional<kafka::client::sasl_configuration> sasl_config;
+    if (
+      _client_cfg.scram_username.is_overriden()
+      || _client_cfg.scram_password.is_overriden()
+      || _client_cfg.sasl_mechanism.is_overriden()) {
+        sasl_config = kafka::client::sasl_configuration{
+          .mechanism = _client_cfg.sasl_mechanism(),
+          .username = _client_cfg.scram_username(),
+          .password = _client_cfg.scram_password()};
+    }
     co_await _client.invoke_on_all(
       [sasl_config = std::move(sasl_config)](kafka::client::client& c) {
           c.set_credentials(sasl_config);
       });
-
-    const auto& store = _controller->get_ephemeral_credential_store().local();
-    bool has_ephemeral_credentials = store.has(store.find(principal));
-    co_await container().invoke_on_all(
-      _ctx.smp_sg, [has_ephemeral_credentials](proxy& p) {
-          p._has_ephemeral_credentials = has_ephemeral_credentials;
-      });
-
-    security::acl_entry acl_entry{
-      principal,
-      security::acl_host::wildcard_host(),
-      security::acl_operation::all,
-      security::acl_permission::allow};
-
-    co_await _controller->get_security_frontend().local().create_acls(
-      {security::acl_binding{
-         security::resource_pattern{
-           security::resource_type::topic,
-           security::resource_pattern::wildcard,
-           security::pattern_type::literal},
-         acl_entry},
-       security::acl_binding{
-         security::resource_pattern{
-           security::resource_type::group,
-           security::resource_pattern::wildcard,
-           security::pattern_type::literal},
-         acl_entry}},
-      5s);
 }
 
 ss::future<> proxy::mitigate_error(std::exception_ptr eptr) {
@@ -214,39 +186,7 @@ ss::future<> proxy::mitigate_error(std::exception_ptr eptr) {
         return ss::now();
     }
     vlog(plog.debug, "mitigate_error: {}", eptr);
-    return ss::make_exception_future<>(eptr).handle_exception_type(
-      [this, eptr](const kafka::client::broker_error& ex) {
-          if (
-            ex.error == kafka::error_code::sasl_authentication_failed
-            && _has_ephemeral_credentials) {
-              return inform(ex.node_id).then([this]() {
-                  // This fully mitigates, don't rethrow.
-                  return _client.local().connect();
-              });
-          }
-          // Rethrow unhandled exceptions
-          return ss::make_exception_future<>(eptr);
-      });
-}
-
-ss::future<> proxy::inform(model::node_id id) {
-    vlog(plog.trace, "inform: {}", id);
-
-    // Inform a particular node
-    if (id != kafka::client::unknown_node_id) {
-        return do_inform(id);
-    }
-
-    // Inform all nodes
-    return seastar::parallel_for_each(
-      _controller->get_members_table().local().node_ids(),
-      [this](model::node_id id) { return do_inform(id); });
-}
-
-ss::future<> proxy::do_inform(model::node_id id) {
-    auto& fe = _controller->get_ephemeral_credential_frontend().local();
-    auto ec = co_await fe.inform(id, principal);
-    vlog(plog.info, "Informed: broker: {}, ec: {}", id, ec);
+    return ss::make_exception_future<>(eptr);
 }
 
 } // namespace pandaproxy::rest

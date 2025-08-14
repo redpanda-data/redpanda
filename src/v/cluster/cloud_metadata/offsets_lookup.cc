@@ -46,8 +46,7 @@ offsets_lookup::lookup(offsets_lookup_request req) {
         co_return reply;
     }
     reply.node_id = _node_id;
-    absl::btree_map<ss::shard_id, fragmented_vector<model::ntp>>
-      lookups_per_shard;
+    absl::btree_map<ss::shard_id, chunked_vector<model::ntp>> lookups_per_shard;
 
     // Group the lookup requests by shard.
     for (auto& ntp : req.ntps) {

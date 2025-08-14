@@ -12,12 +12,8 @@
 
 #include "absl/container/btree_map.h"
 #include "base/seastarx.h"
-#include "bytes/iobuf.h"
-#include "hashing/xx.h"
 #include "recursive_directory_walker.h"
 #include "seastar/core/iostream.hh"
-#include "serde/envelope.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
 
@@ -64,12 +60,12 @@ public:
     using add_entries_t = ss::bool_class<struct trim_additive_tag>;
     /// Remove every key which isn't present in list of input files
     ss::future<> sync(
-      const fragmented_vector<file_list_item>&,
+      const chunked_vector<file_list_item>&,
       add_entries_t add_entries = add_entries_t::no);
 
     size_t size() const { return _table.size(); }
 
-    fragmented_vector<file_list_item> lru_entries() const;
+    chunked_vector<file_list_item> lru_entries() const;
 
 private:
     /// Returns true if the key's metadata should be tracked.

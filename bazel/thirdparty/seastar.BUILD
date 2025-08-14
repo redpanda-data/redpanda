@@ -74,7 +74,7 @@ int_flag(
 
 int_flag(
     name = "scheduling_groups",
-    build_setting_default = 16,
+    build_setting_default = 17,
     make_variable = "SCHEDULING_GROUPS",
 )
 
@@ -204,6 +204,7 @@ cc_library(
         "src/core/cgroup.hh",
         "src/core/condition-variable.cc",
         "src/core/cpu_profiler.cc",
+        "src/core/disk_params.cc",
         "src/core/dpdk_rte.cc",
         "src/core/exception_hacks.cc",
         "src/core/execution_stage.cc",
@@ -323,6 +324,7 @@ cc_library(
         "include/seastar/core/condition-variable.hh",
         "include/seastar/core/coroutine.hh",
         "include/seastar/core/deleter.hh",
+        "include/seastar/core/disk_params.hh",
         "include/seastar/core/distributed.hh",
         "include/seastar/core/do_with.hh",
         "include/seastar/core/dpdk_rte.hh",
@@ -506,7 +508,6 @@ cc_library(
         "include/seastar/util/backtrace.hh",
         "include/seastar/util/bool_class.hh",
         "include/seastar/util/closeable.hh",
-        "include/seastar/util/concepts.hh",
         "include/seastar/util/conversions.hh",
         "include/seastar/util/critical_alloc_section.hh",
         "include/seastar/util/defer.hh",
@@ -563,7 +564,7 @@ cc_library(
         "SEASTAR_API_LEVEL=$(API_LEVEL)",
         "SEASTAR_HAS_MEMBARRIER",
         "SEASTAR_SCHEDULING_GROUPS_COUNT=$(SCHEDULING_GROUPS)",
-        "SEASTAR_WITH_TLS_OSSL",
+        "SEASTAR_USE_OPENSSL",
         "SEASTAR_DEPRECATED_OSTREAM_FORMATTERS",
     ] + select({
         ":use_task_backtrace": ["SEASTAR_TASK_BACKTRACE"],

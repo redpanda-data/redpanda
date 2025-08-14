@@ -115,6 +115,8 @@ class ConsumerGroupTest(RedpandaTest):
 
         for c in consumers:
             c.start()
+        wait_until(self.co_topic_is_ready, 10, 1)
+
         rpk = RpkTool(self.redpanda)
 
         def group_is_ready():
@@ -123,6 +125,10 @@ class ConsumerGroupTest(RedpandaTest):
 
         wait_until(group_is_ready, 60, 1, err_msg)
         return consumers
+
+    def co_topic_is_ready(self):
+        return len(
+            self.client().describe_topic('__consumer_offsets').partitions) > 0
 
     def consumed_at_least(consumers, count):
         return all([c._message_cnt > count for c in consumers])
@@ -275,6 +281,8 @@ class ConsumerGroupTest(RedpandaTest):
 
     def wait_for_members(self, group, members_count):
         rpk = RpkTool(self.redpanda)
+
+        wait_until(self.co_topic_is_ready, 10, 1)
 
         def group_stable():
             rpk_group = rpk.group_describe(group)
@@ -613,6 +621,7 @@ class ConsumerGroupTest(RedpandaTest):
             consumer_properties={"client.id": "my-client-1"})
 
         consumer1.start()
+        wait_until(self.co_topic_is_ready, 10, 1)
 
         self.wait_for_members(group, 1)
 
@@ -1559,6 +1568,7 @@ class OffsetCommitter:
                 'auto.offset.reset': 'earliest',
                 'enable.auto.offset.store': True,
                 'enable.auto.commit': False,
+                'fetch.wait.max.ms': 50,
             },
             logger=self.logger)
 
@@ -1590,12 +1600,6 @@ class OffsetCommitter:
 
 
 class ConsumerGroupOffsetResetTest(RedpandaTest):
-    """
-    This tests simulates a large number of consumers trying to commit consumer
-    group offsets. The test doesn't produce or fetch any messages,
-    it just stress tests OffsetCommit requests and validates the final
-    state of the consumer group.
-    """
     def __init__(self, test_context):
         super(ConsumerGroupOffsetResetTest,
               self).__init__(test_context=test_context,
@@ -1604,7 +1608,7 @@ class ConsumerGroupOffsetResetTest(RedpandaTest):
                                  "group_topic_partitions": 1,
                                  "compacted_log_segment_size": 1024 * 1024,
                                  "log_compaction_interval_ms": 1000,
-                                 "group_offset_retention_sec": 20,
+                                 "group_offset_retention_sec": None
                              },
                              log_config=LoggingConfig(
                                  'info', {
@@ -1647,6 +1651,12 @@ class ConsumerGroupOffsetResetTest(RedpandaTest):
     @cluster(num_nodes=3)
     @skip_debug_mode
     def test_stress_consumer_group_commits(self):
+        """
+        This tests simulates a large number of consumers trying to commit consumer
+        group offsets. The test doesn't produce or fetch any messages,
+        it just stress tests OffsetCommit requests and validates the final
+        state of the consumer group.
+        """
         self.consumer_count = 200
 
         topic = TopicSpec(name="cg-test-topic-1",
@@ -1698,7 +1708,7 @@ class ConsumerGroupOffsetResetTest(RedpandaTest):
             self.logger.info(
                 f"Partition {tp.topic}/{tp.partition} committed offset={tp.offset}"
             )
-            assert tp.offset == expected, f"Offset mismatch for partition {tp.topic}{tp.partition}, expected: {expected} got: {tp.offset}"
+            assert tp.offset == expected, f"Offset mismatch for partition {tp.topic}/{tp.partition}, expected: {expected} got: {tp.offset}"
 
         olv = OfflineLogViewer(self.redpanda)
 
@@ -1733,3 +1743,70 @@ class ConsumerGroupOffsetResetTest(RedpandaTest):
                 err_msg=
                 f"Failed to get consumer offsets summary for node {n.account.hostname}"
             )
+
+    @cluster(num_nodes=3)
+    def test_offset_delete_manual_consumers(self):
+        """
+        Verify that OffsetDelete requests work as expected when consumers
+        are being manually managed.
+        """
+        # Magic value returned by confluent_kafka when it can't find commited offsets
+        INVALID_OFFSET = -1001
+
+        rpk = RpkTool(self.redpanda)
+
+        topic = TopicSpec(name="cg-test-topic-1", partition_count=1)
+        DefaultClient(self.redpanda).create_topic(topic)
+        self.group_id = "test-group-1"
+
+        self.consumer_count = 1
+        self.admin_client = AdminClient(
+            {"bootstrap.servers": self.redpanda.brokers()})
+
+        self.consumers = [
+            OffsetCommitter(
+                bootstrap_servers=self.redpanda.brokers(),
+                group=self.group_id,
+                topic=topic.name,
+                id=0,
+                logger=self.logger,
+                partition_id=0,
+            )
+        ]
+
+        self.wait_for_total_commits(1000)
+
+        # No consumers have subscribed. Group should be in empty state
+        desc = rpk.group_describe(self.group_id)
+        assert desc.state == "Empty", \
+                f"Expected group.state 'Empty' but got '{desc.state}', instead\n" \
+                f"Group description: {desc}"
+
+        # Try to delete offsets while there is an assigned consumer
+        # who keeps commiting offsets
+        res = rpk.offset_delete(self.group_id, {topic.name: [0]})[0]
+        assert res.status == "OK", \
+                f"Expected res.status 'OK' but got '{res.status}', instead\n" \
+                f"Response:  {res}"
+
+        def wait_for_new_commits():
+            tp = self.list_consumer_group_offsets(
+                topic.name).topic_partitions[0]
+            return tp.offset != INVALID_OFFSET
+
+        wait_until(
+            wait_for_new_commits,
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg="Timeout while waiting for consumer to commit more offsets"
+        )
+
+        self.consumers[0].stop()
+
+        res = rpk.offset_delete(self.group_id, {topic.name: [0]})
+        assert res[0].status == "OK", \
+                f"Expected res.status 'OK' but got '{res[0].status}', instead\n" \
+                f"Response:  {res[0]}"
+
+        tp = self.list_consumer_group_offsets(topic.name).topic_partitions[0]
+        assert tp.offset == INVALID_OFFSET, f"Expected offset '{INVALID_OFFSET}' but got '{tp.offset}', instead"

@@ -35,6 +35,7 @@ public:
       model::node_id self,
       std::unique_ptr<kafka::data::rpc::partition_leader_cache>,
       std::unique_ptr<kafka::data::rpc::topic_creator>,
+      std::unique_ptr<kafka::data::rpc::topic_metadata_cache>,
       ss::sharded<::rpc::connection_cache>*,
       ss::sharded<local_service>*);
 
@@ -73,11 +74,18 @@ public:
       cluster::topic_properties,
       std::optional<int32_t> partition_count);
 
+    ss::future<result<partition_offsets_map, cluster::errc>>
+      get_partition_offsets(chunked_vector<topic_partitions>);
+
 private:
     ss::future<cluster::errc> do_produce_once(produce_request);
     ss::future<produce_reply> do_local_produce(produce_request);
     ss::future<produce_reply>
       do_remote_produce(model::node_id, produce_request);
+
+    ss::future<result<partition_offsets_map, cluster::errc>>
+    get_remote_partition_offsets(
+      model::node_id, chunked_vector<topic_partitions> topics);
 
     template<typename Func>
     std::invoke_result_t<Func> retry(Func&&);
@@ -85,6 +93,7 @@ private:
     model::node_id _self;
     std::unique_ptr<kafka::data::rpc::partition_leader_cache> _leaders;
     std::unique_ptr<kafka::data::rpc::topic_creator> _topic_creator;
+    std::unique_ptr<kafka::data::rpc::topic_metadata_cache> _metadata_cache;
     ss::sharded<::rpc::connection_cache>* _connections;
     ss::sharded<local_service>* _local_service;
     ss::abort_source _as;

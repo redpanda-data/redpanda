@@ -12,6 +12,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/node_hash_map.h"
+#include "pandaproxy/schema_registry/types.h"
 #include "security/acl_store.h"
 #include "security/logger.h"
 #include "serde/envelope.h"
@@ -21,7 +22,7 @@
 
 #include <seastar/coroutine/maybe_yield.hh>
 
-#include <container/fragmented_vector.h>
+#include <container/chunked_vector.h>
 #include <fmt/format.h>
 
 namespace security {
@@ -261,8 +262,8 @@ acl_store::acls(const acl_binding_filter& filter) const {
     return result;
 }
 
-ss::future<fragmented_vector<acl_binding>> acl_store::all_bindings() const {
-    fragmented_vector<acl_binding> result;
+ss::future<chunked_vector<acl_binding>> acl_store::all_bindings() const {
+    chunked_vector<acl_binding> result;
     for (const auto& acl : _acls) {
         for (const auto& entry : acl.second) {
             result.push_back(acl_binding{acl.first, entry});
@@ -273,7 +274,7 @@ ss::future<fragmented_vector<acl_binding>> acl_store::all_bindings() const {
 }
 
 ss::future<>
-acl_store::reset_bindings(const fragmented_vector<acl_binding>& bindings) {
+acl_store::reset_bindings(const chunked_vector<acl_binding>& bindings) {
     // NOTE: not coroutinized because otherwise clang-14 crashes.
     _acls.clear();
     return ss::do_for_each(
@@ -798,5 +799,88 @@ void acl_binding_filter::testing_serde_full_read_v2(
       in, bytes_left_limit);
     *this = acl_binding_filter{res._pattern, res._acl};
 }
+
+template<typename T>
+const std::vector<acl_operation>& get_allowed_operations() {
+    static const std::vector<acl_operation> topic_resource_ops{
+      acl_operation::read,
+      acl_operation::write,
+      acl_operation::create,
+      acl_operation::describe,
+      acl_operation::remove,
+      acl_operation::alter,
+      acl_operation::describe_configs,
+      acl_operation::alter_configs,
+    };
+
+    static const std::vector<acl_operation> group_resource_ops{
+      acl_operation::read,
+      acl_operation::describe,
+      acl_operation::remove,
+    };
+
+    static const std::vector<acl_operation> transactional_id_resource_ops{
+      acl_operation::write,
+      acl_operation::describe,
+    };
+
+    static const std::vector<acl_operation> cluster_resource_ops{
+      acl_operation::create,
+      acl_operation::cluster_action,
+      acl_operation::describe_configs,
+      acl_operation::alter_configs,
+      acl_operation::idempotent_write,
+      acl_operation::alter,
+      acl_operation::describe,
+    };
+
+    static const std::vector<acl_operation> sr_subject_resource_ops{
+      acl_operation::read,
+      acl_operation::write,
+      acl_operation::remove,
+      acl_operation::describe,
+      acl_operation::alter_configs,
+      acl_operation::describe_configs,
+    };
+
+    static const std::vector<acl_operation> sr_registry_resource_ops{
+      acl_operation::read,
+      acl_operation::describe,
+      acl_operation::alter_configs,
+      acl_operation::describe_configs,
+    };
+
+    auto resource_type = get_resource_type<T>();
+
+    switch (resource_type) {
+    case resource_type::cluster:
+        return cluster_resource_ops;
+    case resource_type::group:
+        return group_resource_ops;
+    case resource_type::topic:
+        return topic_resource_ops;
+    case resource_type::transactional_id:
+        return transactional_id_resource_ops;
+    case resource_type::sr_subject:
+        return sr_subject_resource_ops;
+    case resource_type::sr_registry:
+        return sr_registry_resource_ops;
+    };
+
+    __builtin_unreachable();
+}
+
+template const std::vector<acl_operation>&
+get_allowed_operations<model::topic>();
+template const std::vector<acl_operation>&
+get_allowed_operations<kafka::group_id>();
+template const std::vector<acl_operation>&
+get_allowed_operations<acl_cluster_name>();
+template const std::vector<acl_operation>&
+get_allowed_operations<kafka::transactional_id>();
+template const std::vector<acl_operation>&
+get_allowed_operations<pandaproxy::schema_registry::subject>();
+template const std::vector<acl_operation>&
+get_allowed_operations<pandaproxy::schema_registry::registry_resource>();
 
 } // namespace security

@@ -135,7 +135,9 @@ public:
               .then([&pm, ntp](auto batches) {
                   // replicate
                   auto f = pm.get(ntp)->raft()->replicate(
-                    chunked_vector<model::record_batch>(std::move(batches)),
+                    chunked_vector<model::record_batch>(
+                      std::from_range,
+                      std::move(batches) | std::views::as_rvalue),
                     raft::replicate_options(
                       raft::consistency_level::quorum_ack));
 

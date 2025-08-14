@@ -12,6 +12,8 @@
 
 #include "iceberg/logger.h"
 
+#include <seastar/core/coroutine.hh>
+
 namespace iceberg {
 
 update_partition_spec_action::update_partition_spec_action(

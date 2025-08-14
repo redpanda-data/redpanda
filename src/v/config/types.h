@@ -233,4 +233,31 @@ inline std::istream& operator>>(std::istream& is, tls_name_format& format) {
     return is;
 }
 
+enum class audit_failure_policy : uint8_t {
+    // If the audit log is full or misconfigured, reject any request that cannot
+    // be audited
+    reject,
+    // If the audit log is full or misconfigured, permit requests that cannot be
+    // audited to proceed, but log a warning that the audit message was dropped
+    permit,
+};
+
+constexpr std::string_view to_string_view(audit_failure_policy policy) {
+    switch (policy) {
+    case audit_failure_policy::reject:
+        return "reject";
+    case audit_failure_policy::permit:
+        return "permit";
+    }
+}
+
+static constexpr auto acceptable_audit_log_failure_policy_values() {
+    return std::to_array(
+      {to_string_view(audit_failure_policy::reject),
+       to_string_view(audit_failure_policy::permit)});
+}
+
+std::ostream& operator<<(std::ostream&, audit_failure_policy);
+std::istream& operator>>(std::istream&, audit_failure_policy&);
+
 } // namespace config

@@ -194,7 +194,7 @@ ss::future<> remote::stop() {
     co_await _resources->stop();
     co_await _gate.close();
     co_await _auth_refresh_bg_op.stop();
-    vlog(log.debug, "Stopeed remote...");
+    vlog(log.debug, "Stopped remote...");
 }
 
 size_t remote::concurrency() const { return _pool.local().max_size(); }
@@ -250,7 +250,7 @@ ss::future<upload_result> remote::upload_stream(
       content_length);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result
-           && max_retries.value_or(1) > 0) {
+           && (!max_retries.has_value() || max_retries.value() > 0)) {
         if (max_retries.has_value()) {
             max_retries = max_retries.value() - 1;
         }

@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package example;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/field_mask.proto";
+import "proto/redpanda/pbgen/options.proto";
+
+option (redpanda.pbgen.cpp_namespace) = "proto::example";
+
+// Test that enums that have prefixes in their values as recommended by protobuf
+// are stripped and turned into enum classes.
+//
+// See: https://protobuf.dev/programming-guides/proto3/#enum
+enum Corpus {
+    CORPUS_UNSPECIFIED = 0;
+    CORPUS_UNIVERSAL = 1;
+    CORPUS_WEB = 2;
+    CORPUS_IMAGES = 3;
+    CORPUS_LOCAL = 4;
+    CORPUS_NEWS = 5;
+    CORPUS_PRODUCTS = 6;
+    CORPUS_VIDEO = 7;
+}
+
+enum Protobuf3Test {
+    option allow_alias = true;
+    PROTOBUF3_TEST_UNSPECIFIED = 0;
+    PROTOBUF3_TEST_STARTED = 1;
+    PROTOBUF3_TEST_RUNNING = 1;
+    PROTOBUF3_TEST_FINISHED = 2;
+}
+
+enum Proto3Test {
+    PROTO3_TEST_UNSPECIFIED = 0;
+    PROTO3_TEST_STARTED = 1;
+    PROTO3_TEST_FINISHED = 2;
+}
+
+message A {
+    C c = 1;
+}
+
+message B {
+    C c = 1;
+    A a = 2;
+}
+
+message C {}
+
+message SuperDuperSecret {
+    string value = 1 [debug_redact = true];
+}
+
+message WellKnownProtos {
+    google.protobuf.Duration single_duration = 1;
+    repeated google.protobuf.Duration repeated_duration = 2;
+    map<string, google.protobuf.Duration> duration_map = 3;
+    google.protobuf.FieldMask single_field_mask = 4;
+    repeated google.protobuf.FieldMask repeated_field_mask = 5;
+    map<string, google.protobuf.FieldMask> field_mask_map = 6;
+    google.protobuf.Timestamp single_timestamp = 7;
+    repeated google.protobuf.Timestamp repeated_timestamp = 8;
+    map<string, google.protobuf.Timestamp> timestamp_map = 9;
+}

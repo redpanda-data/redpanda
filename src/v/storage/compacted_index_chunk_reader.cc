@@ -231,7 +231,8 @@ compacted_index_chunk_reader::load_slice(model::timeout_clock::time_point t) {
                            auto [offset, _1] = p.read_varlong();
                            auto [delta, _2] = p.read_varlong();
                            auto bytes = p.read_bytes(p.bytes_left());
-                           auto key = compaction_key(std::move(bytes));
+                           auto key = compaction::compaction_key(
+                             std::move(bytes));
                            slice.push_back(compacted_index::entry(
                              compacted_index::entry_type(type),
                              std::move(key),

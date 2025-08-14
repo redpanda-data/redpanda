@@ -39,7 +39,10 @@ field_outcome from_protobuf(
 
 field_outcome success(const pb::FieldDescriptor& fd, iceberg::field_type ft) {
     return iceberg::nested_field::create(
-      fd.number(), fd.name(), iceberg::field_required::no, std::move(ft));
+      fd.number(),
+      ss::sstring(fd.name()),
+      iceberg::field_required::no,
+      std::move(ft));
 }
 
 struct_outcome struct_from_protobuf(
@@ -96,7 +99,7 @@ field_outcome from_protobuf(
           key_field->number(),
           std::move(std::move(key_nested_res).assume_value()->type),
           value_field->number(),
-          iceberg::field_required(!value_field->is_optional()),
+          iceberg::field_required(value_field->is_required()),
           std::move(std::move(value_field_nested_res).assume_value()->type));
         return success(fd, std::move(field_type));
     }

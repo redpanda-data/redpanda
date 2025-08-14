@@ -14,6 +14,7 @@
 #include "iceberg/avro_decimal.h"
 #include "serde/avro/parser.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/util/log.hh>
 
 namespace iceberg {

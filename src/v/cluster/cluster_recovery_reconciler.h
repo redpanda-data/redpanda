@@ -38,10 +38,10 @@ public:
     struct controller_actions {
         std::optional<security::license> license;
         config_update_request config;
-        fragmented_vector<cluster::user_credential> users;
-        fragmented_vector<security::acl_binding> acls;
-        fragmented_vector<topic_configuration> remote_topics;
-        fragmented_vector<topic_configuration> local_topics;
+        chunked_vector<cluster::user_credential> users;
+        chunked_vector<security::acl_binding> acls;
+        chunked_vector<topic_configuration> remote_topics;
+        chunked_vector<topic_configuration> local_topics;
         // TODO: restore wasm plugins/transforms
 
         bool empty() const {

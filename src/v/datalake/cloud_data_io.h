@@ -9,7 +9,7 @@
  */
 #pragma once
 #include "base/outcome.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "datalake/base_types.h"
 #include "model/fundamental.h"
 #include "utils/lazy_abort_source.h"

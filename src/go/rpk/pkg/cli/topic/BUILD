@@ -30,6 +30,7 @@ go_library(
         "@com_github_docker_go_units//:go-units",
         "@com_github_hashicorp_go_multierror//:go-multierror",
         "@com_github_redpanda_data_common_go_rpadmin//:rpadmin",
+        "@com_github_redpanda_data_common_go_rpsr//:rpsr",
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
         "@com_github_twmb_franz_go//pkg/kerr",

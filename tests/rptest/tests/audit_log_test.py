@@ -19,7 +19,7 @@ import requests
 import socket
 import time
 import random
-from typing import Any, Optional
+from typing import Any, Optional, Sequence, Union
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.errors import TimeoutError
@@ -36,9 +36,19 @@ from rptest.services import redpanda
 from rptest.services.keycloak import DEFAULT_REALM, KeycloakService
 from rptest.services.ocsf_server import OcsfServer
 from rptest.services.redpanda import AUDIT_LOG_ALLOW_LIST, LoggingConfig, MetricSamples, MetricsEndpoint, PandaproxyConfig, RedpandaServiceBase, SchemaRegistryConfig, SecurityConfig, TLSProvider
+from rptest.services.redpanda_types import SaslCredentials
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.schema_registry_test import (
+    SchemaRegistryRedpandaClient, ACLTestEndpoint, schema1_def, schema2_def,
+    GetConfigEndpoint, PutConfigEndpoint, GetConfigSubjectEndpoint,
+    PutConfigSubjectEndpoint, DeleteConfigSubject, GetMode, PutMode,
+    GetModeSubject, PutModeSubject, DeleteModeSubject, PostSubjectVersions,
+    GetSchemasIdsIdVersions, GetSchemasIdsIdSubjects, GetSubjectVersions,
+    PostSubject, GetSubjectVersionsVersion, GetSubjectVersionsVersionSchema,
+    GetSubjectVersionsVersionReferencedBy, DeleteSubject, DeleteSubjectVersion,
+    CompatibilitySubjectVersion, GetSchemasTypes, GetStatusReady)
 from rptest.util import expect_exception, wait_until, wait_until_result
 from rptest.utils.mode_checks import skip_fips_mode
 from rptest.utils.rpk_config import read_redpanda_cfg
@@ -91,6 +101,11 @@ class ClassUID(int, Enum):
     APPLICATION_LIFECYCLE = 6002,
     API_ACTIVITY = 6003,
     WEB_RESOURCE_ACCESS_ACTIVITY = 6004
+
+
+class AuditFailurePolicy(str, Enum):
+    PERMIT = 'permit'
+    REJECT = 'reject'
 
 
 class MTLSProvider(TLSProvider):
@@ -237,10 +252,12 @@ class RangeTestItem(BaseTestItem):
 
 class AuditLogConfig:
     """Configuration for the audit log system"""
-    def __init__(self,
-                 enabled: bool = True,
-                 num_partitions: int = 8,
-                 event_types=['management', 'admin']):
+    def __init__(
+            self,
+            enabled: bool = True,
+            num_partitions: int = 8,
+            event_types=['management', 'admin'],
+            failure_policy: AuditFailurePolicy = AuditFailurePolicy.REJECT):
         """Initializes the config
 
         Parameters
@@ -257,6 +274,7 @@ class AuditLogConfig:
         self.enabled = enabled
         self.num_partitions = num_partitions
         self.event_types = event_types
+        self.failure_policy = failure_policy
 
     def to_conf(self) -> {str, str}:
         """Converts conf to dict
@@ -269,7 +287,8 @@ class AuditLogConfig:
         return {
             'audit_enabled': self.enabled,
             'audit_log_num_partitions': self.num_partitions,
-            'audit_enabled_event_types': self.event_types
+            'audit_enabled_event_types': self.event_types,
+            'audit_failure_policy': self.failure_policy.value
         }
 
 
@@ -339,9 +358,10 @@ class AuditLogTestBase(RedpandaTest):
         default_credentials(),
             audit_log_client_config: Optional[redpanda.AuditLogConfig] = None,
             extra_rp_conf=None,
+            permit_no_auth: bool = False,
             **kwargs):
-        assert (security.check_configuration()
-                ), "No auth enabled, test harness misconfigured"
+        assert (security.check_configuration() or
+                permit_no_auth), "No auth enabled, test harness misconfigured"
         self.audit_log_config = audit_log_config
 
         self.extra_rp_conf = self.audit_log_config.to_conf()
@@ -356,13 +376,13 @@ class AuditLogTestBase(RedpandaTest):
                 self.security.principal_mapping_rules
             ]
 
-        super(AuditLogTestBase,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf=self.extra_rp_conf,
-                             log_config=self.log_config,
-                             security=self.security,
-                             audit_log_config=self.audit_log_client_config,
-                             **kwargs)
+        super(AuditLogTestBase, self).__init__(
+            test_context=test_context,
+            extra_rp_conf=self.extra_rp_conf,
+            log_config=self.log_config,
+            security=self.security if self.security else SecurityConfig(),
+            audit_log_config=self.audit_log_client_config,
+            **kwargs)
 
         self.rpk = self.get_rpk()
         self.super_rpk = self.get_super_rpk()
@@ -409,7 +429,7 @@ class AuditLogTestBase(RedpandaTest):
         else:
             return RpkTool(self.redpanda)
 
-    def setUp(self):
+    def setUp(self, wait_for_audit_log: bool = True):
         """Initializes the Redpanda node and waits for audit log to be present
         """
         super().setUp()
@@ -421,7 +441,8 @@ class AuditLogTestBase(RedpandaTest):
         self.logger.debug(
             f'Running OCSF Server Version {self.ocsf_server.get_api_version(None)}'
         )
-        self.wait_for_audit_log()
+        if wait_for_audit_log:
+            self.wait_for_audit_log()
 
     def wait_for_audit_log(self):
         """Waits for audit log to appear in the list of topics
@@ -1593,6 +1614,32 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
+    def test_no_ephemeral_user(self):
+        """
+        Verifies that ephemeral users do not generate audit messages
+        """
+        self.setup_cluster()
+
+        user_rpk = self.get_rpk()
+
+        _ = user_rpk.list_topics()
+
+        try:
+            # Read all records that have the audit log user for two seconds - should not get any records
+            records = self.read_all_from_audit_log(
+                partial(self.authn_filter_function,
+                        self.kafka_rpc_service_name, "__auditing", 99,
+                        "SASL-SCRAM"),
+                lambda records: len(records) >= 1,
+                timeout_sec=5)
+
+            assert False, f"Should not have seen any records, got {len(records)} records"
+        except TimeoutError:
+            # This is good, we should not see any records
+            pass
+
+    @skip_fips_mode
+    @cluster(num_nodes=5)
     def test_authn_failure_messages(self):
         """Validates that failed authentication messages are audited
         """
@@ -1634,16 +1681,6 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
         _ = self.get_rpk_credentials(username=self.username,
                                      password=self.password,
                                      mechanism=self.algorithm).list_topics()
-
-        authn_records = self.read_all_from_audit_log(
-            partial(self.authn_filter_function, self.kafka_rpc_service_name,
-                    "__auditing", 99, "SASL-SCRAM"),
-            lambda records: self.aggregate_count(records) >= 1)
-
-        assert len(
-            authn_records
-        ) >= 1, f"Expected at least one authn record for audit user, but got none"
-
         try:
             recs = self.read_all_from_audit_log(
                 partial(self.authz_api_filter_function,
@@ -2069,7 +2106,7 @@ class AuditLogTestOauth(AuditLogTestBase):
             ip_set), f"Expected one record but received {len(records)}"
 
 
-class AuditLogTestSchemaRegistry(AuditLogTestBase):
+class AuditLogTestSchemaRegistryBase(AuditLogTestBase):
     """
     Validates schema registry auditing
     """
@@ -2078,10 +2115,11 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
     password = 'test'
     algorithm = 'SCRAM-SHA-256'
 
-    def __init__(self, test_context):
+    def __init__(self, test_context, **kwargs):
         sr_config = SchemaRegistryConfig()
         sr_config.authn_method = 'http_basic'
-        super(AuditLogTestSchemaRegistry, self).__init__(
+        sr_config.mode_mutability = True
+        super(AuditLogTestSchemaRegistryBase, self).__init__(
             test_context=test_context,
             audit_log_config=AuditLogConfig(
                 num_partitions=1,
@@ -2091,7 +2129,8 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
                                          'auditing': 'trace',
                                          'schemaregistry': 'trace'
                                      }),
-            schema_registry_config=sr_config)
+            schema_registry_config=sr_config,
+            **kwargs)
 
     def match_authn_record(self, record, status_id: StatusID):
         if record['class_uid'] == ClassUID.AUTHENTICATION and record[
@@ -2139,6 +2178,11 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
 
         wait_until(user_exists, timeout_sec=10, backoff_sec=1)
 
+
+class AuditLogTestSchemaRegistry(AuditLogTestSchemaRegistryBase):
+    """
+    Validates schema registry auditing
+    """
     @skip_fips_mode
     @cluster(num_nodes=5)
     def test_sr_audit(self):
@@ -2211,6 +2255,361 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
             lambda record: self.match_api_record(record, "mode", StatusID.
                                                  FAILURE),
             lambda aggregate_count: aggregate_count >= 1, 'API call')
+
+
+class AuditLogTestSchemaRegistryACLs(AuditLogTestSchemaRegistryBase):
+    """
+    Validates schema registry auditing with ACL support
+    """
+
+    ENDPOINTS = [
+        GetConfigEndpoint,
+        PutConfigEndpoint,
+        GetConfigSubjectEndpoint,
+        PutConfigSubjectEndpoint,
+        DeleteConfigSubject,
+        GetMode,
+        PutMode,
+        GetModeSubject,
+        PutModeSubject,
+        DeleteModeSubject,
+        PostSubjectVersions,
+        GetSchemasIdsIdVersions,
+        GetSchemasIdsIdSubjects,
+        GetSubjectVersions,
+        PostSubject,
+        GetSubjectVersionsVersion,
+        GetSubjectVersionsVersionSchema,
+        GetSubjectVersionsVersionReferencedBy,
+        DeleteSubject,
+        DeleteSubjectVersion,
+        CompatibilitySubjectVersion,
+
+        # Tested separately:
+        # GET_SCHEMAS_IDS_ID            - custom ACL handling
+        # GET_SUBJECTS                  - custom ACL handling
+    ]
+
+    PUBLIC_ENDPOINTS = [GetSchemasTypes, GetStatusReady]
+
+    def _get_endpoint_by_name(self, name: str) -> ACLTestEndpoint:
+        for endpoint in self.ENDPOINTS + self.PUBLIC_ENDPOINTS:
+            if endpoint.name == name:
+                return endpoint(self)
+        raise ValueError(f"Endpoint {name} not found")
+
+    def __init__(self, test_context, **kwargs):
+        super().__init__(
+            test_context=test_context,
+            extra_rp_conf={"schema_registry_enable_authorization": True})
+        self.sr_client = SchemaRegistryRedpandaClient(redpanda=self.redpanda)
+
+        superuser = self.redpanda.SUPERUSER_CREDENTIALS
+        self.user = SaslCredentials(self.username, self.password,
+                                    self.algorithm)
+        self.super_auth = (superuser.username, superuser.password)
+        self.user_auth = (self.user.username, self.user.password)
+        self.subject = "test-subject"
+        self.schema_data_1 = json.dumps({"schema": schema1_def})
+        self.schema_data_2 = json.dumps({"schema": schema2_def})
+
+    def assert_equal(self, first, second, msg=None):
+        assert first == second, msg or f"{first} != {second}"
+
+    def assert_in(self, member, container, msg=None):
+        assert member in container, msg or f"{member!r} not found in {container!r}"
+
+    def _create_acl(self,
+                    resource,
+                    resource_type,
+                    pattern_type,
+                    operation,
+                    permission="ALLOW"):
+        return self.sr_client.create_acl(self.user.username, resource,
+                                         resource_type, pattern_type, "*",
+                                         operation, permission)
+
+    def _post_acl(self, acl: Union[dict, Sequence[dict]]):
+        """Grant one or more ACLs to the regular user."""
+        acl_list = [acl] if isinstance(acl, dict) else acl
+
+        resp = self.sr_client.post_security_acls(acl_list,
+                                                 auth=self.super_auth)
+        self.assert_equal(resp.status_code, 201,
+                          f"Failed to create ACL: {acl=}")
+
+        # Wait until the ACLs are propagated to all nodes
+        def acl_all_observable():
+            for node in self.redpanda.nodes:
+                resp = self.sr_client.get_security_acls(
+                    hostname=node.account.hostname, auth=self.super_auth)
+                self.assert_equal(resp.status_code, 200)
+
+                response_acls = resp.json()
+                for a in acl_list:
+                    self.redpanda.logger.debug(
+                        f"Checking if {a} in response from {node.account.hostname}: {response_acls}"
+                    )
+                    self.assert_in(a, response_acls)
+
+            return True
+
+        wait_until(
+            acl_all_observable,
+            timeout_sec=30,
+            backoff_sec=1,
+            retry_on_exc=True,
+            err_msg=f"Failed to propagate ACLs to all nodes: {acl_list}")
+
+    def _create_schema(self, subject: str) -> int:
+        response = self.sr_client.post_subjects_subject_versions(
+            subject, data=self.schema_data_1, auth=self.super_auth)
+        self.assert_equal(response.status_code, 200, "Failed to create schema")
+        return response.json()["id"]
+
+    def match_api_record(self,
+                         record,
+                         path: str,
+                         resources: Union[dict, Sequence[dict]],
+                         status_id: Optional[StatusID] = None,
+                         operation: Optional[str] = None):
+        if record['class_uid'] == ClassUID.API_ACTIVITY and \
+            record['dst_endpoint']['svc_name'] == self.sr_audit_svc_name:
+            self.logger.debug(f"Validating api activity record: {record}")
+        else:
+            return False
+
+        if status_id and record.get('status_id', '') != status_id:
+            self.logger.debug(
+                f"Validating api activity record: False (status): {record.get('status_id', '')} != {status_id:}"
+            )
+            return False
+
+        if operation and record['api']['operation'] != operation:
+            self.logger.debug(
+                f"Validating api activity record: False (api.operation): {record['api']['operation']} != {operation}"
+            )
+            return False
+
+        expected_resources = ([resources]
+                              if isinstance(resources, dict) else resources)
+
+        actual_resources = record.get('resources', [])
+
+        def normalize(resources: Sequence[dict]) -> set[tuple]:
+            return {tuple(d.items()) for d in resources}
+
+        if normalize(expected_resources) != normalize(actual_resources):
+            self.logger.debug(
+                f"Validating api activity record: False (resources): {expected_resources} != {actual_resources}"
+            )
+            return False
+
+        requires_user = not any(
+            a.get("policy", {}).get("desc") == "authorization disabled"
+            for a in record['actor']['authorizations'])
+        if (requires_user
+                and record['actor']['user']['name'] != self.username):
+            self.logger.debug(
+                f"Validating api activity record: (username): {record['actor']['user']['name']} != {self.username}"
+            )
+            return False
+
+        regex = re.compile(
+            "http:\/\/(?P<address>.*):(?P<port>\d+)\/(?P<handler>.*)(?:\?.*)?")
+        url_string = record['http_request']['url']['url_string']
+        match = regex.match(url_string)
+        self.logger.debug(f"Validating api activity record: {url_string}")
+        if match and match.group('handler') == path:
+            return True
+
+        return False
+
+    def check_matching_api_record_parts(self, path: str,
+                                        resources: Union[dict, Sequence[dict]],
+                                        operation: str, status_id: StatusID):
+
+        name = f'sr {operation} call'
+        records = self.find_matching_record(
+            lambda record: self.match_api_record(record,
+                                                 path=path,
+                                                 resources=resources,
+                                                 status_id=status_id,
+                                                 operation=operation),
+            lambda record_count: record_count >= 1, name)
+        assert self.aggregate_count(records) == 1, \
+            f'{name}: Expected one record found for {self.aggregate_count(records)}: {records}'
+
+    def check_matching_api_record(self, endpoint: ACLTestEndpoint,
+                                  status_id: StatusID):
+        return self.check_matching_api_record_parts(
+            path=endpoint.path,
+            resources=endpoint.resource(),
+            operation=endpoint.name.lower(),
+            status_id=status_id)
+
+    def _make_resources(self, subjects: Sequence[str]) -> list[dict]:
+        return [{'name': s, 'type': 'subject'} for s in subjects]
+
+    @skip_fips_mode
+    @cluster(num_nodes=5)
+    @matrix(endpoint_name=[e.name for e in ENDPOINTS])
+    def test_sr_audit_authz(self, endpoint_name):
+        self.setup_cluster()
+
+        endpoint = self._get_endpoint_by_name(endpoint_name)
+        request_ratio = endpoint.requests_per_request()
+
+        # Setup any prerequisites
+        endpoint.setup()
+        authn_success_count = 0
+
+        # Invalid AuthN — should be denied
+        result = endpoint.make_request(
+            (self.user.username, "invalid password"))
+        self.assert_equal(result.status_code, 401)
+        _ = self.find_matching_record(
+            lambda record: self.match_authn_record(record, StatusID.FAILURE),
+            lambda record_count: record_count == 1 * request_ratio,
+            'authn attempt in sr')
+
+        # No ACL — should be denied
+        result = endpoint.make_request(self.user_auth)
+        self.assert_equal(result.status_code, 403)
+        authn_success_count += 1
+
+        self.check_matching_api_record(endpoint, StatusID.FAILURE)
+
+        # Grant correct ACL
+        acl = endpoint.create_acl()
+        self._post_acl(acl)
+
+        # Try again — should now succeed
+        result = endpoint.make_request(self.user_auth)
+        self.assert_equal(result.status_code, 200)
+        authn_success_count += 1
+
+        self.check_matching_api_record(endpoint, StatusID.SUCCESS)
+
+        _ = self.find_matching_record(
+            lambda record: self.match_authn_record(record, StatusID.SUCCESS),
+            lambda record_count: record_count == authn_success_count *
+            request_ratio, 'authn attempt in sr')
+
+    @skip_fips_mode
+    @cluster(num_nodes=5)
+    def test_sr_audit_authz_get_schemas_ids_id(self):
+        self.setup_cluster()
+
+        endpoint = self.sr_client.get_schemas_ids_id
+        operation = 'get_schemas_ids_id'
+        schema_id = 42
+        authn_success_count = 0
+        # Invalid AuthN — should be denied
+        result = endpoint(schema_id,
+                          auth=(self.user.username, "invalid password"))
+        self.assert_equal(result.status_code, 401)
+        _ = self.find_matching_record(
+            lambda record: self.match_authn_record(record, StatusID.FAILURE),
+            lambda record_count: record_count == 1, 'authn attempt in sr')
+
+        # Create subjects with a schema
+        subjects = [f"test-subject-{i}" for i in range(3)]
+        schema_ids = [self._create_schema(subject) for subject in subjects]
+        assert len(set(schema_ids)) == 1, f"Schema IDs differ: {schema_ids}"
+        schema_id = schema_ids[0]
+
+        # No ACL — should be denied
+        result = endpoint(schema_id, auth=self.user_auth)
+        self.assert_equal(result.status_code, 403)
+        authn_success_count += 1
+        self.check_matching_api_record_parts(
+            path=f"schemas/ids/{schema_id}",
+            resources=self._make_resources(subjects),
+            operation=operation,
+            status_id=StatusID.FAILURE)
+
+        self._post_acl(
+            self._create_acl(subjects[1], "SUBJECT", "LITERAL", "READ"))
+
+        # Try again — should now succeed with the matching resource
+        result = endpoint(schema_id, auth=self.user_auth)
+        authn_success_count += 1
+        self.check_matching_api_record_parts(path=f"schemas/ids/{schema_id}",
+                                             resources=self._make_resources(
+                                                 [subjects[1]]),
+                                             operation=operation,
+                                             status_id=StatusID.SUCCESS)
+
+        _ = self.find_matching_record(
+            lambda record: self.match_authn_record(record, StatusID.SUCCESS),
+            lambda record_count: record_count == authn_success_count,
+            'authn attempt in sr')
+
+    @skip_fips_mode
+    @cluster(num_nodes=5)
+    def test_sr_audit_authz_get_subjects(self):
+        self.setup_cluster()
+
+        endpoint = self.sr_client.get_subjects
+        operation = 'get_subjects'
+        authn_success_count = 0
+
+        # Invalid AuthN — should be denied
+        result = endpoint(auth=(self.user.username, "invalid password"))
+        self.assert_equal(result.status_code, 401)
+        _ = self.find_matching_record(
+            lambda record: self.match_authn_record(record, StatusID.FAILURE),
+            lambda record_count: record_count == 1, 'authn attempt in sr')
+
+        # Create subjects with a schema
+        subjects = [f"test-subject-{i}" for i in range(5)]
+        schema_ids = [self._create_schema(subject) for subject in subjects]
+        assert len(set(schema_ids)) == 1, f"Schema IDs differ: {schema_ids}"
+
+        allowed_subjects = subjects[::2]
+        denied_subjects = subjects[1::2]
+
+        self._post_acl([
+            self._create_acl(subject, "SUBJECT", "LITERAL", "DESCRIBE")
+            for subject in allowed_subjects
+        ])
+
+        # Try again — should now succeed with the matching resource
+        result = endpoint(auth=self.user_auth)
+        self.assert_equal(result.status_code, 200)
+        authn_success_count += 1
+
+        for subjects, status in [(allowed_subjects, StatusID.SUCCESS),
+                                 (denied_subjects, StatusID.FAILURE)]:
+            self.check_matching_api_record_parts(
+                path="subjects",
+                resources=self._make_resources(subjects),
+                operation=operation,
+                status_id=status)
+
+        _ = self.find_matching_record(
+            lambda record: self.match_authn_record(record, StatusID.SUCCESS),
+            lambda record_count: record_count == authn_success_count,
+            'authn attempt in sr')
+
+    @cluster(num_nodes=5)
+    @matrix(endpoint_name=[e.name for e in PUBLIC_ENDPOINTS])
+    def test_sr_audit_public(self, endpoint_name):
+        """
+        Test schema registry public endpoints
+        """
+        self.setup_cluster()
+
+        endpoint = self._get_endpoint_by_name(endpoint_name)
+
+        # Setup any prerequisites
+        endpoint.setup()
+
+        result = endpoint.make_request(self.user_auth)
+        self.assert_equal(result.status_code, 200)
+
+        self.check_matching_api_record(endpoint, StatusID.SUCCESS)
 
 
 class AuditLogTestSanctionMode(AuditLogTestBase):
@@ -2314,3 +2713,134 @@ class AuditLogTestReproducer(AuditLogTestBase):
         )
         assert len(records) > 0, \
             f'Did not receive any audit records for topic {created_topic}'
+
+
+class AuditLogTestEscapeHatch(RedpandaTest):
+    def __init__(self, test_context, **kwargs):
+
+        super(AuditLogTestEscapeHatch,
+              self).__init__(test_context,
+                             extra_rp_conf={"audit_enabled": False},
+                             log_config=LoggingConfig('info',
+                                                      logger_levels={
+                                                          'auditing': 'trace',
+                                                      }),
+                             **kwargs)
+
+    @skip_fips_mode
+    @cluster(
+        num_nodes=3,
+        log_allow_list=AUDIT_LOG_ALLOW_LIST + [
+            r".*Request authenticate user to modify or view cluster configuration was not audited due to audit queues being full",
+            r".*Request to authorize user to modify or view cluster configuration was not audited due to audit queues being full"
+        ])
+    def test_escape_hatch(self):
+        rpk = RpkTool(self.redpanda)
+        admin = Admin(self.redpanda, default_node=self.redpanda.nodes[0])
+
+        test_topic = "test-topic"
+
+        rpk.create_topic(test_topic)
+
+        # Enable audit logging without a valid authentication set up.
+        admin.patch_cluster_config(upsert={"audit_enabled": True})
+        time.sleep(5)
+
+        audit_enabled = admin.get_cluster_config(key="audit_enabled")
+        assert audit_enabled, "Expected audit_enabled to be True"
+
+        with expect_exception(
+                RpkException, lambda e:
+                "Broker not available - audit system failure" in str(e)):
+            rpk.add_partitions(test_topic, 1)
+
+        # Verify that we can disable the audit logging
+        admin.patch_cluster_config(upsert={"audit_enabled": False})
+        time.sleep(5)
+
+        audit_enabled = admin.get_cluster_config(key="audit_enabled")
+        assert audit_enabled, "Expected audit_enabled to be False"
+
+        # Ensure that this doesn't throw
+        rpk.add_partitions(test_topic, 1)
+
+
+class AuditLogTestBypassBase(AuditLogTestBase):
+    """
+    Base test class that sets up the auditing tests with bad configuration.
+    """
+    def __init__(
+            self,
+            test_context,
+            security: AuditLogTestSecurityConfig = AuditLogTestSecurityConfig(
+            ),
+            extra_rp_conf=None,
+            expect_topic: bool = True,
+            permit_no_auth: bool = True,
+            **kwargs):
+
+        self.extra_rp_conf = AuditLogConfig(
+            enabled=True,
+            failure_policy=AuditFailurePolicy.PERMIT,
+            event_types=[
+                'management', 'produce', 'consume', 'describe', 'heartbeat',
+                'authenticate', 'admin', 'schema_registry'
+            ]).to_conf()
+        if extra_rp_conf is not None:
+            self.extra_rp_conf = self.extra_rp_conf | extra_rp_conf
+
+        self.expect_topic = expect_topic
+        super(AuditLogTestBypassBase, self).__init__(
+            test_context=test_context,
+            log_config=LoggingConfig('info',
+                                     logger_levels={'auditing': 'trace'}),
+            security=security,
+            permit_no_auth=permit_no_auth,
+            extra_rp_conf=self.extra_rp_conf,
+            **kwargs)
+
+    def setUp(self):
+        super().setUp(wait_for_audit_log=self.expect_topic)
+
+    @cluster(
+        num_nodes=4,
+        log_allow_list=[
+            'Failed to produce application lifecycle event: Semaphore timed out: audit_log_producer_semaphore'
+        ])
+    def test_bypass(self):
+        """
+        Validates that the Redpanda cluster is able to operate even with a misconfigured
+        audit log client
+        """
+
+        # Below is a simple set of actions that are performed to validate that Kafka commands function even when the audit log is not functioning
+        self.super_rpk.create_topic('test')
+        self.super_rpk.produce('test', key='test key', msg='test message')
+        self.super_rpk.consume('test', n=1)
+
+
+class AuditLogTestNoSecurityConfigured(AuditLogTestBypassBase):
+    """
+    Validates that the 'drop' configuration works when security credentials are not properly configured.
+    """
+    def __init__(self, test_context):
+        super(AuditLogTestNoSecurityConfigured,
+              self).__init__(test_context=test_context,
+                             expect_topic=False,
+                             permit_no_auth=True)
+
+
+class AuditLogTestSmallBuffers(AuditLogTestBypassBase):
+    """
+    Validates that the 'drop' configuraiton works when the audit log buffers are too small
+    """
+    def __init__(self, test_context):
+        super(AuditLogTestSmallBuffers, self).__init__(
+            test_context=test_context,
+            expect_topic=True,
+            security=AuditLogTestSecurityConfig.default_credentials(),
+            extra_rp_conf={
+                'audit_client_max_buffer_size': 1,
+                'audit_queue_max_buffer_size_per_shard': 1
+            },
+            permit_no_auth=False)

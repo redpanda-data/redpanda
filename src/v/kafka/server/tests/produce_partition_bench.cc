@@ -8,7 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/schemata/produce_request.h"
 #include "kafka/server/handlers/produce.h"
 #include "model/fundamental.h"

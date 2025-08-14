@@ -214,8 +214,6 @@ struct append_entries_request
       append_entries_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     // required for the cases where we will set the target node id before
     // sending request to the node
     append_entries_request(
@@ -288,7 +286,6 @@ class append_entries_request_serde_wrapper
       serde::version<0>,
       serde::compat_version<0>> {
 public:
-    using rpc_adl_exempt = std::true_type;
     explicit append_entries_request_serde_wrapper(append_entries_request req)
       : _request(std::move(req)) {}
 
@@ -314,8 +311,6 @@ struct append_entries_reply
       append_entries_reply,
       serde::version<1>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     // node id to validate on receiver
     vnode target_node_id;
     /// \brief callee's node_id; work-around for batched heartbeats
@@ -382,7 +377,6 @@ struct heartbeat_metadata {
 struct heartbeat_request
   : serde::
       envelope<heartbeat_request, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     std::vector<heartbeat_metadata> heartbeats;
 
     heartbeat_request() noexcept = default;
@@ -402,7 +396,6 @@ struct heartbeat_request
 struct heartbeat_reply
   : serde::
       envelope<heartbeat_reply, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     std::vector<append_entries_reply> meta;
 
     heartbeat_reply() noexcept = default;
@@ -420,7 +413,6 @@ struct heartbeat_reply
 
 struct vote_request
   : serde::envelope<vote_request, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     vnode node_id;
     // node id to validate on receiver
     vnode target_node_id;
@@ -455,7 +447,6 @@ struct vote_request
 
 struct vote_reply
   : serde::envelope<vote_reply, serde::version<1>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     // node id to validate on receiver
     vnode target_node_id;
     /// \brief callee's term, for the caller to upate itself
@@ -525,7 +516,6 @@ struct install_snapshot_request
       install_snapshot_request,
       serde::version<1>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     // node id to validate on receiver
     vnode target_node_id;
     // leader’s term
@@ -603,7 +593,6 @@ struct install_snapshot_reply
       install_snapshot_reply,
       serde::version<1>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     // node id to validate on receiver
     vnode target_node_id;
     // current term, for leader to update itself
@@ -654,7 +643,6 @@ struct timeout_now_request
       timeout_now_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     // node id to validate on receiver
     vnode target_node_id;
 
@@ -690,7 +678,6 @@ struct timeout_now_request
 struct timeout_now_reply
   : serde::
       envelope<timeout_now_reply, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     enum class status : uint8_t { success, failure };
     // node id to validate on receiver
     vnode target_node_id;
@@ -755,6 +742,55 @@ struct xshard_transfer_state {
     // corresponding term. It will be used to try to immediately regain the
     // leadership on the destination shard.
     std::optional<model::term_id> leader_term;
+};
+
+struct remake_learner_state_request
+  : serde::envelope<
+      remake_learner_state_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    friend std::ostream&
+    operator<<(std::ostream& o, const remake_learner_state_request& r) {
+        fmt::print(
+          o,
+          "{{node_id: {}, target_node_id: {}, group: {}, term: {}}}",
+          r.node_id,
+          r.target_node_id,
+          r.group,
+          r.term);
+        return o;
+    }
+
+    auto serde_fields() {
+        return std::tie(node_id, target_node_id, group, term);
+    }
+
+    raft::group_id target_group() const { return group; }
+    vnode source_node() const { return node_id; }
+    vnode target_node() const { return target_node_id; }
+
+    vnode node_id;
+    vnode target_node_id;
+    raft::group_id group;
+    model::term_id term;
+};
+
+struct remake_learner_state_reply
+  : serde::envelope<
+      remake_learner_state_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using is_success = ss::bool_class<struct remake_learner_state_tag>;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const remake_learner_state_reply& r) {
+        fmt::print(o, "success: {}", r.success);
+        return o;
+    }
+
+    auto serde_fields() { return std::tie(success); }
+
+    is_success success = is_success::no;
 };
 
 } // namespace raft

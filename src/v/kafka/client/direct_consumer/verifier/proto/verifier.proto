@@ -1,0 +1,148 @@
+// Copyright 2025 Redpanda Data, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package redpanda.kafka.client;
+
+import "proto/redpanda/pbgen/options.proto";
+import "proto/redpanda/pbgen/rpc.proto";
+
+option (redpanda.pbgen.cpp_namespace) = "kafka::client::verifier";
+
+message BrokerAddress {
+    string host = 1;
+    int32 port = 2;
+}
+
+message DirectConsumerConfiguration {
+    int32 min_bytes = 1;
+    int32 max_fetch_size = 3;
+    int32 partition_max_bytes = 4;
+    enum OffsetResetPolicy {
+        EARLIEST = 0;
+        LATEST = 1;
+    }
+    OffsetResetPolicy reset_policy = 5;
+    int32 max_wait_time_ms = 6;
+    enum IsolationLevel {
+        READ_UNCOMMITTED = 0;
+        READ_COMMITTED = 1;
+    }
+    IsolationLevel isolation_level = 7;
+
+    // Queue settings
+    int64 max_buffered_bytes = 8;     // in bytes
+    int32 max_buffered_elements = 9;  // number of elements
+}
+
+message CreateDirectConsumerRequest {
+    string client_id = 1;
+    repeated BrokerAddress initial_brokers = 3;
+    DirectConsumerConfiguration consumer_configuration = 4;
+}
+
+message PartitionAssignment {
+    int32 partition_id = 1;     // Partition ID
+    optional int32 offset = 2;  // Offset to start consuming from
+}
+
+message TopicAssignment {
+    string topic = 1;
+    repeated PartitionAssignment partitions = 2;
+}
+
+message AssignPartitionsRequest {
+    string client_id = 1;
+    repeated TopicAssignment topic_assignments = 3;
+}
+
+message TopicPartitions {
+    string topic = 1;
+    repeated int32 partitions = 2;  // List of partition IDs
+}
+
+message UnassignPartitionsRequest {
+    string client_id = 1;
+    repeated TopicPartitions topics = 2;  // List of topic names to unassign
+}
+
+message PartitionState {
+    int32 partition_id = 1;          // Partition ID
+    int64 last_fetch_offset = 2;     // Last fetched offset
+    int64 last_fetch_timestamp = 3;  // Last fetched timestamp
+    int64 fetched_records = 4;       // Total bytes consumed from this partition
+    int64 fetched_bytes = 5;  // Total messages consumed from this partition
+    int32 error_code = 6;     // Error code if any error occurred
+}
+
+message TopicState {
+    string topic = 1;  // Topic name
+    repeated PartitionState partitions =
+        2;  // List of partition states for this topic
+}
+
+message GetConsumerStateRequest {
+    string client_id = 1;               // Client ID of the consumer
+    bool include_partition_states = 2;  // Whether to include partition states
+}
+
+message ConsumerStateResponse {
+    string client_id = 1;
+    repeated TopicState assigned_topics =
+        2;  // List of topics with their assigned partitions
+    int64 total_consumed_bytes = 3;  // Total bytes consumed by the consumer
+    int64 total_consumed_messages =
+        4;                            // Total messages consumed by the consumer
+    int32 last_error_code = 5;        // Error code if any error occurred
+    int64 non_monotonic_fetches = 6;  // Number of non-monotonic fetches
+}
+
+message StatusRequest {}
+
+message ApiResponse {}
+
+service VerifierService {
+    rpc Status(StatusRequest) returns (ApiResponse) {
+        option (redpanda.pbgen.rpc) = {
+            authz: PUBLIC,
+            http_route: "/status",
+        };
+    }
+    rpc CreateConsumer(CreateDirectConsumerRequest) returns (ApiResponse) {
+        option (redpanda.pbgen.rpc) = {
+            authz: PUBLIC,
+            http_route: "/consumers",
+        };
+    }
+    rpc AssignPartitions(AssignPartitionsRequest) returns (ApiResponse) {
+        option (redpanda.pbgen.rpc) = {
+            authz: PUBLIC,
+            http_route: "/consumers/partitions/assign",
+        };
+    }
+    rpc UnassignPartitions(UnassignPartitionsRequest) returns (ApiResponse) {
+        option (redpanda.pbgen.rpc) = {
+            authz: PUBLIC,
+            http_route: "/consumers/partitions/unassign",
+        };
+    }
+    rpc GetConsumerState(GetConsumerStateRequest)
+        returns (ConsumerStateResponse) {
+        option (redpanda.pbgen.rpc) = {
+            authz: PUBLIC,
+            http_route: "/consumers/state",
+        };
+    }
+}

@@ -27,7 +27,7 @@
 
 #include "base/vassert.h"
 
-namespace experimental::serde::json::detail {
+namespace serde::json::detail {
 
 //! Computes integer powers of 10 in double (10.0^n).
 /*! This function uses lookup table for fast and accurate results.
@@ -76,4 +76,4 @@ inline double pow10(int n) {
     return e[n];
 }
 
-} // namespace experimental::serde::json::detail
+} // namespace serde::json::detail

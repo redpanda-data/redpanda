@@ -16,9 +16,9 @@
 
 #include <gtest/gtest.h>
 
-using namespace experimental::serde::json;
+using namespace serde::json;
 
-// Parse DOM model using both experimental::serde::json and rapidjson
+// Parse DOM model using both serde::json and rapidjson
 // and compare the results.
 TEST_CORO(json_test_suite, conformance) {
     auto doc = co_await test::dom::parse_document_serde(

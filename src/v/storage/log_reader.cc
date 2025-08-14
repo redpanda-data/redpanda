@@ -12,6 +12,7 @@
 #include "base/vassert.h"
 #include "base/vlog.h"
 #include "bytes/iobuf.h"
+#include "model/batch_compression.h"
 #include "model/batch_utils.h"
 #include "model/fundamental.h"
 #include "model/offset_interval.h"
@@ -19,7 +20,6 @@
 #include "storage/logger.h"
 #include "storage/offset_translator_state.h"
 #include "storage/parser_errc.h"
-#include "storage/parser_utils.h"
 #include "storage/segment_set.h"
 #include "storage/types.h"
 
@@ -555,7 +555,7 @@ bool log_reader::is_done() {
 }
 
 ss::future<timequery_result> batch_timequery(
-  model::record_batch b,
+  model::record_batch batch,
   model::offset min_offset,
   model::timestamp t,
   model::offset max_offset) {
@@ -566,9 +566,9 @@ ss::future<timequery_result> batch_timequery(
     // parse into the batch far enough to find it: this
     // happens when we had CreateTime input, such that
     // records in the batch have different timestamps.
-    model::offset result_o = b.base_offset();
-    model::timestamp result_t = b.header().first_timestamp;
-    auto batch = co_await internal::decompress_batch(std::move(b));
+    model::offset result_o = batch.base_offset();
+    model::timestamp result_t = batch.header().first_timestamp;
+    batch = co_await model::decompress_batch(std::move(batch));
     co_await batch.for_each_record_async(
       [&result_o, &result_t, &batch, query_interval, t](
         const model::record& r) -> ss::future<ss::stop_iteration> {
@@ -586,7 +586,7 @@ ss::future<timequery_result> batch_timequery(
           }
       });
 
-    co_return timequery_result{result_o, result_t};
+    co_return timequery_result{batch.term(), result_o, result_t};
 }
 
 } // namespace storage

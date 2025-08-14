@@ -139,8 +139,9 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
       _configuration.raft_io_timeout_ms,
       _configuration.enable_longest_log_detection,
       consensus_client_protocol(_buffered_protocol),
+      [this](raft::group_id g) { return trigger_remake_notification(g); },
       [this](raft::leadership_status st) {
-          trigger_leadership_notification(std::move(st));
+          return trigger_leadership_notification(std::move(st));
       },
       _storage,
       enable_learner_recovery_throttle
@@ -194,6 +195,16 @@ ss::future<xshard_transfer_state> group_manager::do_shutdown(
       group_id);
     _groups.erase(it);
     co_return transfer_state;
+}
+
+ss::future<std::error_code>
+group_manager::trigger_remake_notification(raft::group_id g) {
+    if (!_remake_cb || _remake_cb_gate.is_closed()) {
+        co_return raft::errc::shutting_down;
+    }
+
+    auto holder = _remake_cb_gate.hold();
+    co_return co_await (*_remake_cb)(g);
 }
 
 void group_manager::trigger_leadership_notification(

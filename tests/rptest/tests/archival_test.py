@@ -218,6 +218,10 @@ class ArchivalTest(RedpandaTest):
             extra_rp_conf.update(
                 cloud_storage_segment_max_upload_interval_sec=1)
 
+        if test_context.function_name == "test_all_partitions_leadership_transfer":
+            extra_rp_conf.update(
+                cloud_storage_manifest_max_upload_interval_sec=30)
+
         super().__init__(test_context=test_context,
                          extra_rp_conf=extra_rp_conf,
                          si_settings=si_settings)
@@ -235,21 +239,6 @@ class ArchivalTest(RedpandaTest):
         for topic in self.topics:
             self.rpk.alter_topic_config(topic.name, 'redpanda.remote.write',
                                         'true')
-
-    # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
-    @skip_fips_mode
-    @cluster(num_nodes=3)
-    @matrix(
-        cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(
-        ))
-    def test_write(
-            self,
-            cloud_storage_type_and_url_style: List[CloudStorageTypeAndUrlStyle]
-    ):
-        """Simple smoke test, write data to redpanda and check if the
-        data hit the S3 storage bucket"""
-        self.kafka_tools.produce(self.topic, 10000, 1024)
-        validate(self._quick_verify, self.logger, 90)
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
     @matrix(cloud_storage_type=get_cloud_storage_type())
@@ -363,113 +352,6 @@ class ArchivalTest(RedpandaTest):
         time.sleep(10)
         validate(self._quick_verify, self.logger, 90)
 
-    @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_single_partition_leadership_transfer(self, cloud_storage_type):
-        """Start uploading data, restart leader node of the partition 0 to trigger the
-        leadership transfer, continue upload, verify S3 bucket content"""
-        self.kafka_tools.produce(self.topic, 5000, 1024)
-        time.sleep(5)
-        leaders = self._get_partition_leaders()
-        node = leaders[0]
-        self.redpanda.stop_node(node)
-        time.sleep(1)
-        self.redpanda.start_node(node)
-        time.sleep(5)
-        self.kafka_tools.produce(self.topic, 5000, 1024)
-        validate(self._cross_node_verify, self.logger, 120)
-
-    @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_all_partitions_leadership_transfer(self, cloud_storage_type):
-        """Start uploading data, restart leader nodes of all partitions to trigger the
-        leadership transfer, continue upload, verify S3 bucket content"""
-        self.kafka_tools.produce(self.topic, 5000, 1024)
-        time.sleep(5)
-        leaders = self._get_partition_leaders()
-        for ip, node in leaders.items():
-            self.logger.debug(f"going to restart node {ip}")
-            self.redpanda.stop_node(node)
-            time.sleep(1)
-            self.redpanda.start_node(node)
-        time.sleep(5)
-        self.kafka_tools.produce(self.topic, 5000, 1024)
-        validate(self._cross_node_verify, self.logger, 120)
-
-    @cluster(num_nodes=3)
-    @matrix(acks=[-1, 0, 1], cloud_storage_type=get_cloud_storage_type())
-    def test_timeboxed_uploads(self, acks, cloud_storage_type):
-        """This test checks segment upload time limit. The feature is enabled in the
-        configuration. The configuration defines maximum time interval between uploads.
-        If the option is set then redpanda will start uploading a segment partially if
-        configured amount of time passed since previous upload and the segment has some
-        new data.
-        The test sets the timeout value to 1s. Then it uploads data in batches with delays
-        between the batches. The segment size is set to 1GiB. We upload 10MiB total. So
-        normally, there won't be any data uploaded to Minio. But since the time limit for
-        a segment is set to 1s we will see a bunch of segments in the bucket. The offsets
-        of the segments won't align with the segment in the redpanda data directory. But
-        their respective offset ranges should align and the sizes should make sense.
-        """
-
-        # The offsets of the segments in the Minio bucket won't necessary
-        # correlate with the write bursts here. The upload depends on the
-        # timeout but also on raft and current high_watermark. So we can
-        # expect that the bucket won't have 9 segments with 1000 offsets.
-        # The actual segments will be larger.
-        for _ in range(0, 10):
-            self.kafka_tools.produce(self.topic, 1000, 1024, acks)
-            time.sleep(1)
-        time.sleep(5)
-
-        def check_upload():
-            # check that the upload happened
-            ntps = set()
-            sizes = {}
-
-            for node in self.redpanda.nodes:
-                lst = self.segment_paths_from_checksums(node)
-                segments = defaultdict(int)
-                sz = defaultdict(int)
-                for it in lst:
-                    ntps.add(it.ntp)
-                    sz[it.ntp] += it.size
-                    segments[it.ntp] += 1
-                for ntp, s in segments.items():
-                    assert s != 0, f"expected to have at least one segment per partition, got {s}"
-                for ntp, s in sz.items():
-                    if ntp not in sizes:
-                        sizes[ntp] = s
-
-            # Download manifest for partitions
-            for ntp in ntps:
-                manifest = BucketView(self.redpanda).get_partition_manifest(
-                    ntp.to_ntp())
-                self.logger.info(f"downloaded manifest {manifest}")
-                segments = []
-                for _, segment in manifest.get('segments', {}).items():
-                    segments.append(segment)
-
-                segments = sorted(segments, key=lambda s: s['base_offset'])
-                self.logger.info(f"sorted segments {segments}")
-
-                prev_committed_offset = -1
-                size = 0
-                for segment in segments:
-                    self.logger.info(
-                        f"checking {segment} prev: {prev_committed_offset}")
-                    base_offset = segment['base_offset']
-                    assert prev_committed_offset + 1 == base_offset, "inconsistent segments, " \
-                                                                     f"expected base_offset: " \
-                                                                     f"{prev_committed_offset + 1}, " \
-                                                                     f"actual: {base_offset}"
-                    prev_committed_offset = segment['committed_offset']
-                    size += segment['size_bytes']
-                assert sizes[ntp] >= size
-                assert size > 0
-
-        validate(check_upload, self.logger, 90)
-
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
     @matrix(acks=[1, -1], cloud_storage_type=get_cloud_storage_type())
     def test_retention_archival_coordination(self, acks, cloud_storage_type):
@@ -556,155 +438,6 @@ class ArchivalTest(RedpandaTest):
                 num_gaps += 1
             last_offset = committed
         assert num_gaps == 0
-
-    def _cross_node_verify(self):
-        """Verify data on all nodes taking into account possible alignment issues
-        caused by leadership transitions.
-        The verification algorithm is following:
-        - Download and verify partition manifest;
-        - Partition manifest has all segments and metadata like committed offset
-          and base offset. We can also retrieve MD5 hash of every segment;
-        - Load segment metadata for every redpanda node.
-        - Scan every node's metadata and match segments with manifest, on success
-          remove matched segment from the partition manifest.
-        The goal #1 is to remove all segments from the manifest. The goal #2 is to
-        find the last segment that's supposed to be uploaded from the leader node,
-        it's base offset should be equal to manifest's last offset + 1.
-        The segments match if:
-        - The base offset and md5 hashes are the same;
-        - The committed offset of both segments are the same, md5 hashes are different,
-          and base offset of the segment from manifest is larger than base offset of the
-          segment from redpanda node. In this case we should also compare the data
-          directly by scanning both segments.
-        """
-        nodes = {}
-        ntps = set()
-
-        for node in self.redpanda.nodes:
-            lst = self.segment_paths_from_checksums(node)
-            nodes[node.account.hostname] = lst
-            for it in lst:
-                ntps.add(it.ntp)
-
-        # Download metadata from S3
-        remote = self._get_redpanda_s3_checksums()
-
-        # Download manifest for partitions
-        manifests = {}
-        for ntp in ntps:
-            manifest = BucketView(self.redpanda).get_partition_manifest(ntp)
-            manifests[ntp] = manifest
-            self._verify_manifest(ntp, manifest, remote)
-
-        for ntp in ntps:
-            self.logger.debug(f"verifying {ntp}")
-            manifest = manifests[ntp]
-            segments = manifest['segments']
-            manifest_segments = [
-                _parse_manifest_segment(manifest, sname, meta, remote,
-                                        self.logger)
-                for sname, meta in segments.items()
-            ]
-            manifest_segments = sorted(manifest_segments,
-                                       key=lambda x: x.base_offset)
-
-            for node_key, node_segments in nodes.items():
-                self.logger.debug(f"checking {ntp} on {node_key}")
-                for mix, msegm in enumerate(manifest_segments):
-                    if not msegm is None:
-                        segments = sorted([
-                            segment
-                            for segment in node_segments if segment.ntp == ntp
-                        ],
-                                          key=lambda x: x.base_offset)
-                        self.logger.debug(
-                            f"checking manifest segment {msegm} over {node_key} segments {segments}"
-                        )
-                        found = False
-                        for ix in range(0, len(segments)):
-                            nsegm = segments[ix]
-                            if nsegm.ntp != ntp:
-                                continue
-                            nsegm_co = -1 if (ix + 1) == len(segments) else (
-                                segments[ix + 1].base_offset - 1)
-                            self.logger.debug(
-                                f"comparing {msegm.base_offset}:{msegm.committed_offset}:{msegm.md5} to {nsegm.base_offset}:{nsegm_co}:{nsegm.md5}"
-                            )
-                            if msegm.base_offset == nsegm.base_offset and msegm.md5 == nsegm.md5:
-                                # Success
-                                self.logger.info(
-                                    f"found match for segment {msegm.ntp} {msegm.base_offset} on {node_key}"
-                                )
-                                manifest_segments[mix] = None
-                                found = True
-                                break
-                            if msegm.committed_offset == nsegm_co and msegm.base_offset > nsegm.base_offset:
-                                # Found segment with truncated head (due to leadership transition)
-                                actual_hash = self._get_partial_checksum(
-                                    node_key, nsegm.normalized_path,
-                                    msegm.size)
-                                self.logger.info(
-                                    f"partial hash {actual_hash} retreived, s3 hash {msegm.md5}"
-                                )
-                                if actual_hash == msegm.md5:
-                                    manifest_segments[mix] = None
-                                    self.logger.info(
-                                        f"partial match for segment {msegm.ntp} {msegm.base_offset}-"
-                                        +
-                                        f"{msegm.committed_offset} on {node_key}"
-                                    )
-                                    found = True
-                                    break
-                        if not found:
-                            self.logger.debug(
-                                f"failed to match {msegm.base_offset}:{msegm.committed_offset}"
-                            )
-                        else:
-                            self.logger.debug(
-                                f"matched {msegm.base_offset}:{msegm.committed_offset} successfully"
-                            )
-
-            # All segments should be matched and set to None
-            if any(manifest_segments):
-                self.logger.debug(
-                    f"manifest segments that fail to validate: {manifest_segments}"
-                )
-            assert not any(manifest_segments)
-            # Verify goal #2, the last segment on a leader node is manifest.last_offset + 1
-            ntp_offsets = []
-            for node_key, node_segments in nodes.items():
-                offsets = [
-                    segm.base_offset for segm in node_segments
-                    if segm.ntp == ntp
-                ]
-                if offsets:
-                    max_offset = max([
-                        segm.base_offset for segm in node_segments
-                        if segm.ntp == ntp
-                    ])
-                    ntp_offsets.append(max_offset)
-                    self.logger.debug(
-                        f"NTP {ntp} has the largest offset {max_offset} on node {node_key}"
-                    )
-                else:
-                    self.logger.debug(
-                        f"NTP {ntp} has no offsets on node {node_key}")
-
-            last_offset = int(manifest['last_offset'])
-            self.logger.debug(
-                f"last offset: {last_offset}, ntp offsets: {ntp_offsets}")
-            assert (last_offset + 1) in ntp_offsets
-
-    def segment_paths_from_checksums(self, node):
-        checksums = self._get_redpanda_log_segment_checksums(node)
-        self.logger.info(
-            f"Node: {node.account.hostname} checksums: {checksums}")
-        lst = [
-            _parse_normalized_segment_path(path, md5, size)
-            for path, (md5, size) in checksums.items()
-        ]
-        lst = sorted(lst, key=lambda x: x.base_offset)
-        return lst
 
     def _quick_verify(self):
         """Verification algorithm that works only if no leadership
@@ -844,19 +577,6 @@ class ArchivalTest(RedpandaTest):
             normalize(it.key): (it.etag, it.content_length)
             for it in objects if included(it.key)
         }
-
-    def _get_partial_checksum(self, hostname, normalized_path, tail_bytes):
-        """Compute md5 checksum of the last 'tail_bytes' of the file located
-        on a node."""
-        node = None
-        for n in self.redpanda.nodes:
-            if n.account.hostname == hostname:
-                node = n
-        full_path = os.path.join(RedpandaService.DATA_DIR, normalized_path)
-        cmd = f"tail -c {tail_bytes} {full_path} | md5sum"
-        line = node.account.ssh_output(cmd)
-        tokens = line.split()
-        return tokens[0].decode()
 
     def _archiver_restart_msg_seen(self, reason: Optional[str] = None) -> bool:
         return self.redpanda.search_log_any(

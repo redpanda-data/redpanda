@@ -14,7 +14,6 @@ redpanda_cc_library(
         "details/out_of_range.h",
         "iobuf.h",
     ],
-    include_prefix = "bytes",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -31,7 +30,6 @@ redpanda_cc_library(
     hdrs = [
         "bytes.h",
     ],
-    include_prefix = "bytes",
     visibility = ["//visibility:public"],
     deps = [
         ":iobuf",
@@ -46,7 +44,6 @@ redpanda_cc_library(
     hdrs = [
         "hash.h",
     ],
-    include_prefix = "bytes",
     visibility = ["//visibility:public"],
     deps = [
         ":iobuf",
@@ -65,7 +62,6 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/random:generators",
     ],
-    include_prefix = "bytes",
     visibility = ["//visibility:public"],
     deps = [
         ":bytes",
@@ -81,7 +77,6 @@ redpanda_cc_library(
     hdrs = [
         "iostream.h",
     ],
-    include_prefix = "bytes",
     visibility = ["//visibility:public"],
     deps = [
         ":iobuf",
@@ -97,7 +92,6 @@ redpanda_cc_library(
     hdrs = [
         "scattered_message.h",
     ],
-    include_prefix = "bytes",
     visibility = ["//visibility:public"],
     deps = [
         ":iobuf",
@@ -110,7 +104,6 @@ redpanda_cc_library(
     hdrs = [
         "iobuf_parser.h",
     ],
-    include_prefix = "bytes",
     visibility = ["//visibility:public"],
     deps = [
         ":bytes",
@@ -124,7 +117,6 @@ redpanda_cc_library(
     hdrs = [
         "streambuf.h",
     ],
-    include_prefix = "bytes",
     visibility = ["//visibility:public"],
     deps = [
         ":iobuf",

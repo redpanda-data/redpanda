@@ -216,13 +216,8 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
             "currently being updated",
             ntp);
 
-          auto to_add = subtract(
-            *new_target_replicas, current_assignment->replicas);
-          _partition_allocator.local().add_final_counts(to_add);
-
-          auto to_remove = subtract(
+          update_final_counts(
             current_assignment->replicas, *new_target_replicas);
-          _partition_allocator.local().remove_final_counts(to_remove);
 
           _partition_balancer_state.local().handle_ntp_move_begin_or_cancel(
             ntp.ns,
@@ -402,12 +397,10 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
             "currently being cancelled",
             ntp);
 
-          auto to_add = subtract(*target_replicas, *previous_replicas);
-          _partition_allocator.local().add_final_counts(to_add);
+          update_final_counts(*previous_replicas, *target_replicas);
 
           auto to_delete = subtract(*previous_replicas, *target_replicas);
           _partition_allocator.local().remove_allocations(to_delete);
-          _partition_allocator.local().remove_final_counts(to_delete);
 
           _partition_balancer_state.local().handle_ntp_move_begin_or_cancel(
             ntp.ns,
@@ -422,6 +415,10 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
 ss::future<std::error_code> topic_updates_dispatcher::apply(
   force_partition_reconfiguration_cmd cmd, model::offset base_offset) {
     auto p_as = _topic_table.local().get_partition_assignment(cmd.key);
+    // make a copy of the current in progress state, if any
+    auto maybe_in_progress_state_before
+      = _topic_table.local().update_in_progress(cmd.key);
+
     auto ec = co_await dispatch_updates_to_cores(cmd, base_offset);
     if (ec) {
         co_return ec;
@@ -433,7 +430,77 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
       "Partition {} have to exist before successful force-reconfiguration",
       ntp);
 
-    update_allocations_for_reconfiguration(p_as->replicas, cmd.value.replicas);
+    if (maybe_in_progress_state_before) {
+        auto& before_state = maybe_in_progress_state_before.value();
+
+        // undo any allocations from in progress move.
+
+        // For example, consider the following move
+        // --- (A (prev) -> B (target)) -> C (force)
+
+        // During the move A -> B, allocations amounting to (B - A) are added
+        // to account for the in progress move. Here we undo those allocations.
+        //
+        // note: A cancellation only updates final moves, so no allocator
+        // changes are made.
+
+        // Detailed example:
+
+        // Say a partition is being force reconfigured from [1, 2, 3] -> [2, 3,
+        // 4] and then force reconfigured to [4, 6, 8] while the reconfiguration
+        // is stuck.
+
+        // To make it more interesting, say there was a cancellation of the
+        // reconfiguration which is stuck too because [2, 3] are not available.
+
+        // Initial state:
+        // allocations (A) and final counts (F) follow {broker: allocations}
+        // dict notation.
+
+        // [1, 2, 3], allocations: [1:1, 2:1, 3:1], final counts: [1:1, 2:1,
+        // 3:1]
+        //
+        // reconfiguration [1, 2, 3] -> [2, 3, 4], A: [1:1, 2:1, 3:1, 4:1], F:
+        // [1:0, 2:1, 3:1, 4:1]
+        //
+        // reconfiguration is stuck and canceled
+        //
+        // reconfiguration [1, 2, 3] <- (cancel) [2, 3, 4] A: [1:1, 2:1, 3:1,
+        // 4:1], F: [1:1, 2:1, 3:1, 4:0]
+
+        // force reconfiguration to [4, 6, 8] while the canceling
+        // reconfiguration is stuck
+
+        // force reconfiguration [1, 2, 3] -> [4, 6, 8]
+        //  -- step 1 -- undo allocations from [1, 2, 3] -> [2, 3, 4] --
+        //  to_remove = [4] A: [1:1, 2:1, 3:1, 4:0]
+        //  -- step 2 -- add allocations for [4, 6, 8] -- to_add = [4:1, 6:1,
+        //  8:1]  A: [1:1, 2:1, 3:1, 4:1, 6:1, 8:1]
+        //  -- step 3 -- update final counts : F [1:0, 2:0, 3:0, 4:1, 6:1, 8:1]
+
+        // step 1:
+        auto to_remove = subtract(
+          before_state.get_target_replicas(),
+          before_state.get_previous_replicas());
+        _partition_allocator.local().remove_allocations(to_remove);
+
+        // Now add any new allocations from the force reconfiguration
+
+        // step 2:
+        auto to_add = subtract(
+          cmd.value.replicas, before_state.get_previous_replicas());
+        _partition_allocator.local().add_allocations(to_add);
+
+        // step 3:
+        // update final counts.
+        update_final_counts(p_as->replicas, cmd.value.replicas);
+
+    } else {
+        // This is a force reconfiguration of a partition that was not
+        // being moved before. This is equivalent to a plain (unforced) move.
+        update_allocations_for_reconfiguration(
+          p_as->replicas, cmd.value.replicas);
+    }
 
     _partition_balancer_state.local().handle_ntp_move_begin_or_cancel(
       ntp.ns,
@@ -543,15 +610,22 @@ void topic_updates_dispatcher::add_allocations_for_new_partitions(
     }
 }
 
+void topic_updates_dispatcher::update_final_counts(
+  const std::vector<model::broker_shard>& previous,
+  const std::vector<model::broker_shard>& target) {
+    auto to_add = subtract(target, previous);
+    _partition_allocator.local().add_final_counts(to_add);
+
+    auto to_remove = subtract(previous, target);
+    _partition_allocator.local().remove_final_counts(to_remove);
+}
+
 void topic_updates_dispatcher::update_allocations_for_reconfiguration(
   const std::vector<model::broker_shard>& previous,
   const std::vector<model::broker_shard>& target) {
     auto to_add = subtract(target, previous);
     _partition_allocator.local().add_allocations(to_add);
-    _partition_allocator.local().add_final_counts(to_add);
-
-    auto to_remove = subtract(previous, target);
-    _partition_allocator.local().remove_final_counts(to_remove);
+    update_final_counts(previous, target);
 }
 
 ss::future<>

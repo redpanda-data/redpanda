@@ -16,10 +16,10 @@
 
 #include <seastar/core/future.hh>
 
-namespace experimental::serde::json::test::dom {
+namespace serde::json::test::dom {
 
-/// Parse a JSON document into a DOM tree using the experimental::serde::json
+/// Parse a JSON document into a DOM tree using the serde::json
 /// parser.
 ss::future<value> parse_document_serde(iobuf buf);
 
-} // namespace experimental::serde::json::test::dom
+} // namespace serde::json::test::dom

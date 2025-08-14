@@ -9,17 +9,15 @@
 
 #include "kafka/client/consumer.h"
 
-#include "bytes/iobuf_parser.h"
 #include "kafka/client/assignment_plans.h"
 #include "kafka/client/broker.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/exceptions.h"
-#include "kafka/client/logger.h"
+#include "kafka/client/types.h"
 #include "kafka/client/utils.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
-#include "kafka/protocol/find_coordinator.h"
 #include "kafka/protocol/heartbeat.h"
 #include "kafka/protocol/join_group.h"
 #include "kafka/protocol/leave_group.h"
@@ -27,7 +25,7 @@
 #include "kafka/protocol/sync_group.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "model/record_utils.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>
@@ -418,7 +416,9 @@ ss::future<fetch_response>
 consumer::dispatch_fetch(broker_reqs_t::value_type br) {
     auto& [broker, req] = br;
     vlog(_logger->trace, "Consumer: {}, fetch_req: {}", *this, req);
-    auto res = co_await broker->dispatch(std::move(req), _as);
+    auto res_v = co_await broker->dispatch(
+      std::move(req), api_version_for(fetch_api::key), _as);
+    auto res = std::get<fetch_response>(std::move(res_v));
     vlog(_logger->trace, "Consumer: {}, fetch_res: {}", *this, res);
 
     if (res.data.error_code != error_code::none) {
@@ -438,7 +438,11 @@ ss::future<fetch_response> consumer::fetch(
         for (const auto& p : ps) {
             auto tp = model::topic_partition{t, p};
             auto leader = _topic_cache.leader(tp);
-            auto broker = _brokers.find(leader);
+            if (!leader) {
+                throw partition_error(
+                  tp, error_code::unknown_topic_or_partition);
+            }
+            auto broker = _brokers.find(*leader);
             auto& session = _fetch_sessions[broker];
 
             auto& req = broker_reqs

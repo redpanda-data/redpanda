@@ -8,11 +8,12 @@
 // by the Apache License, Version 2.0
 #pragma once
 
-#include "absl/algorithm/container.h"
 #include "absl/container/node_hash_map.h"
 #include "cluster/client_quota_serde.h"
 #include "cluster/controller_snapshot.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
+
+#include <algorithm>
 
 namespace cluster::client_quota {
 
@@ -69,7 +70,7 @@ public:
       [](
         const std::pair<entity_key, entity_value>& kv,
         const entity_key::part& target_part) {
-          return absl::c_any_of(
+          return std::ranges::any_of(
             kv.first.parts, [&target_part](const entity_key::part& key_part) {
                 return key_part == target_part;
             });
@@ -77,7 +78,7 @@ public:
 
     static constexpr auto prefix_group_filter(std::string_view client_id) {
         return [client_id](const std::pair<entity_key, entity_value>& kv) {
-            return absl::c_any_of(
+            return std::ranges::any_of(
               kv.first.parts, [client_id](const entity_key::part& key_part) {
                   return ss::visit(
                     key_part.part,

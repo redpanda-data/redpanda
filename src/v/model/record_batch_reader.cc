@@ -9,11 +9,12 @@
 
 #include "model/record_batch_reader.h"
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
@@ -173,7 +174,7 @@ record_batch_reader make_generating_record_batch_reader(
 }
 
 namespace {
-record_batch_reader make_fragmented_memory_record_batch_reader(
+record_batch_reader make_chunked_memory_record_batch_reader(
   std::vector<record_batch_reader::storage_t> data) {
     class reader final : public record_batch_reader::impl {
     public:
@@ -206,10 +207,10 @@ record_batch_reader make_fragmented_memory_record_batch_reader(
 
 template<typename Container>
 std::vector<record_batch_reader::storage_t>
-make_fragmented_memory_storage_batches(Container batches) {
+make_chunked_memory_storage_batches(Container batches) {
     std::vector<record_batch_reader::storage_t> data;
     size_t elements_per_fragment
-      = fragmented_vector<model::record_batch>::elements_per_fragment();
+      = chunked_vector<model::record_batch>::elements_per_fragment();
     data.reserve(batches.size() / elements_per_fragment);
     record_batch_reader::data_t data_chunk;
     size_t i = 0;
@@ -246,45 +247,31 @@ ss::future<Container> consume_reader_to_fragmented_memory(
 }
 } // namespace
 
-record_batch_reader make_fragmented_memory_record_batch_reader(
-  fragmented_vector<model::record_batch> batches) {
-    return make_fragmented_memory_record_batch_reader(
-      make_fragmented_memory_storage_batches<
-        fragmented_vector<model::record_batch>>(std::move(batches)));
-}
-
-record_batch_reader make_fragmented_memory_record_batch_reader(
+record_batch_reader make_chunked_memory_record_batch_reader(
   chunked_vector<model::record_batch> batches) {
-    return make_fragmented_memory_record_batch_reader(
-      make_fragmented_memory_storage_batches<
-        chunked_vector<model::record_batch>>(std::move(batches)));
+    return make_chunked_memory_record_batch_reader(
+      make_chunked_memory_storage_batches<chunked_vector<model::record_batch>>(
+        std::move(batches)));
 }
 
-record_batch_reader make_foreign_fragmented_memory_record_batch_reader(
-  fragmented_vector<model::record_batch> batches) {
-    return make_fragmented_memory_record_batch_reader(
-      make_fragmented_memory_storage_batches<
-        fragmented_vector<model::record_batch>>(std::move(batches)));
-}
-
-record_batch_reader make_foreign_fragmented_memory_record_batch_reader(
+record_batch_reader make_foreign_chunked_memory_record_batch_reader(
   chunked_vector<model::record_batch> batches) {
-    return make_fragmented_memory_record_batch_reader(
-      make_fragmented_memory_storage_batches<
-        chunked_vector<model::record_batch>>(std::move(batches)));
+    return make_chunked_memory_record_batch_reader(
+      make_chunked_memory_storage_batches<chunked_vector<model::record_batch>>(
+        std::move(batches)));
 }
 
-record_batch_reader make_foreign_fragmented_memory_record_batch_reader(
+record_batch_reader make_chunked_fragmented_memory_record_batch_reader(
   ss::chunked_fifo<model::record_batch> batches) {
-    return make_fragmented_memory_record_batch_reader(
-      make_fragmented_memory_storage_batches<
+    return make_chunked_memory_record_batch_reader(
+      make_chunked_memory_storage_batches<
         ss::chunked_fifo<model::record_batch>>(std::move(batches)));
 }
 
-record_batch_reader make_fragmented_memory_record_batch_reader(
+record_batch_reader make_chunked_memory_record_batch_reader(
   ss::chunked_fifo<model::record_batch> batches) {
-    return make_fragmented_memory_record_batch_reader(
-      make_fragmented_memory_storage_batches<
+    return make_chunked_memory_record_batch_reader(
+      make_chunked_memory_storage_batches<
         ss::chunked_fifo<model::record_batch>>(std::move(batches)));
 }
 
@@ -305,11 +292,11 @@ ss::future<record_batch_reader::data_t> consume_reader_to_memory(
     return std::move(reader).consume(memory_batch_consumer{}, timeout);
 }
 
-ss::future<fragmented_vector<model::record_batch>>
+ss::future<chunked_vector<model::record_batch>>
 consume_reader_to_fragmented_memory(
   record_batch_reader reader, timeout_clock::time_point timeout) {
     return consume_reader_to_fragmented_memory<
-      fragmented_vector<model::record_batch>>(std::move(reader), timeout);
+      chunked_vector<model::record_batch>>(std::move(reader), timeout);
 }
 
 ss::future<chunked_vector<model::record_batch>>

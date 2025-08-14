@@ -11,7 +11,7 @@
 
 #include "base/vlog.h"
 #include "bytes/iobuf.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/produce.h"

@@ -14,7 +14,6 @@ redpanda_cc_library(
     hdrs = [
         "registry.h",
     ],
-    include_prefix = "schema",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",

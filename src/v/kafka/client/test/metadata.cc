@@ -15,6 +15,8 @@
 #include "kafka/server/handlers/details/security.h"
 #include "security/acl.h"
 
+#include <algorithm>
+
 class metadata_fixture : public kafka_client_fixture {
 public:
     void create_user(
@@ -94,7 +96,7 @@ FIXTURE_TEST(test_authz_response, metadata_fixture) {
                         .get();
     const auto errors_in_acl_results =
       [](const std::vector<cluster::errc>& errs) {
-          return absl::c_any_of(errs, [](const cluster::errc& e) {
+          return std::ranges::any_of(errs, [](const cluster::errc& e) {
               return e != cluster::errc::success;
           });
       };

@@ -8,7 +8,6 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "absl/algorithm/container.h"
 #include "cluster/commands.h"
 #include "cluster/feature_manager.h"
 #include "cluster/fwd.h"

@@ -194,10 +194,9 @@ TEST_F_CORO(tm_stm_test_fixture, test_tm_stm_re_tx) {
 
     model::producer_identity pid2{1, 1};
     model::producer_identity expected_pid(3, 5);
-    co_await retry_with_term([tx_id, pid1, expected_pid, pid2](
+    co_await retry_with_term([tx_id, expected_pid, pid2](
                                stm_cssshptrr_t stm, model::term_id term) {
-        return stm->update_tx_producer(
-          term, tx_id, 0s, pid2, expected_pid, pid1);
+        return stm->update_tx_producer(term, tx_id, 0s, pid2, expected_pid);
     }).then(assert_success);
     auto tx7 = co_await get_tx(tx_id);
     ASSERT_EQ_CORO(tx7.pid, pid2);

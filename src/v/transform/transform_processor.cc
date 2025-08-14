@@ -11,6 +11,7 @@
 #include "transform_processor.h"
 
 #include "logger.h"
+#include "model/batch_compression.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
@@ -18,7 +19,6 @@
 #include "model/transform.h"
 #include "random/simple_time_jitter.h"
 #include "ssx/future-util.h"
-#include "storage/parser_utils.h"
 #include "wasm/engine.h"
 
 #include <seastar/core/abort_source.hh>
@@ -413,7 +413,7 @@ ss::future<> processor::run_producer_loop(
             auto batch = model::transformed_data::make_batch(
               model::timestamp::now(), std::move(batch_records));
             if (_meta.compression_mode != model::compression::none) {
-                batch = co_await storage::internal::compress_batch(
+                batch = co_await model::compress_batch(
                   _meta.compression_mode, std::move(batch));
             }
             _probe->increment_write_bytes(index, batch.size_bytes());

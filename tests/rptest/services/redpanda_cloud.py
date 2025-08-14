@@ -4,6 +4,7 @@ from functools import cache
 import json
 import os
 import requests
+import time
 import uuid
 import yaml
 import ipaddress
@@ -1624,3 +1625,50 @@ class CloudCluster():
     def _get_dataplane_api_url(self):
         cluster = self.rpcloud.get_cluster(self.current.cluster_id)
         return cluster['dataplane_api']['url']
+
+    def wait_for_operation_complete(
+            self,
+            cluster_id: str,
+            operation_id: str,
+            timeout_sec: int = 1200,  # 20 minutes
+            target_state: str = 'STATE_COMPLETED') -> bool:
+        """
+        Polls the /v1/operations/{operation_id} endpoint until it reaches the target_state.
+        Logs and alerts if the operation does not complete in the given timeout.
+
+        Returns True if completed successfully, False otherwise.
+        """
+        start_time = datetime.utcnow().isoformat()
+        start_ts = time.time()
+        poll_interval = 30
+
+        self._logger.debug(f"Starting poll for operation {operation_id} "
+                           f"on cluster {cluster_id} at {start_ts}")
+
+        while time.time() - start_ts < timeout_sec:
+            try:
+                resp = self.public_api._http_get(
+                    endpoint=f"/v1/operations/{operation_id}")
+            except Exception as e:
+                self._logger.warning(f"Failed to fetch operation status: {e}")
+                time.sleep(poll_interval)
+                continue
+
+            op = resp.get("operation", {})
+            state = op.get("state")
+            self._logger.debug(f"Operation {operation_id} state: {state}")
+
+            if state == target_state:
+                duration_sec = int(time.time() - start_ts)
+                self._logger.info(
+                    f"Operation {operation_id} for cluster {cluster_id} completed successfully in {duration_sec} seconds."
+                )
+                return True
+
+            time.sleep(poll_interval)
+
+        self._logger.error(
+            f"Operation {operation_id} for cluster {cluster_id} "
+            f"did not reach {target_state} within {timeout_sec // 60} minutes."
+        )
+        return False

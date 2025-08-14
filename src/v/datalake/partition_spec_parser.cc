@@ -11,7 +11,7 @@
 #include "datalake/partition_spec_parser.h"
 
 #include "base/vassert.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "iceberg/transform.h"
 #include "iceberg/unresolved_partition_spec.h"
 #include "utils/fixed_string.h"

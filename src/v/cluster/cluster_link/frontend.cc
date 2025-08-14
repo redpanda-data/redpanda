@@ -17,6 +17,7 @@
 #include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
 #include "cluster_link/model/types.h"
+#include "config/configuration.h"
 #include "model/validation.h"
 #include "rpc/connection_cache.h"
 
@@ -26,6 +27,7 @@ using ::cluster_link::model::add_mirror_topic_cmd;
 using ::cluster_link::model::id_t;
 using ::cluster_link::model::metadata;
 using ::cluster_link::model::name_t;
+using ::cluster_link::model::update_mirror_topic_properties_cmd;
 using ::cluster_link::model::update_mirror_topic_state_cmd;
 
 namespace {
@@ -89,7 +91,7 @@ frontend::frontend(
 ss::future<errc> frontend::upsert_cluster_link(
   ::cluster_link::model::metadata meta,
   model::timeout_clock::time_point timeout) {
-    if (!cluster_link_active(true)) {
+    if (!cluster_link_active()) {
         co_return errc::feature_disabled;
     }
     cluster_link_cmd c{cluster::cluster_link_upsert_cmd{0, std::move(meta)}};
@@ -99,7 +101,7 @@ ss::future<errc> frontend::upsert_cluster_link(
 ss::future<errc> frontend::remove_cluster_link(
   ::cluster_link::model::name_t name,
   model::timeout_clock::time_point timeout) {
-    if (!cluster_link_active(false)) {
+    if (!cluster_link_active()) {
         co_return errc::feature_disabled;
     }
     cluster_link_cmd c{cluster::cluster_link_remove_cmd(std::move(name), 0)};
@@ -108,7 +110,7 @@ ss::future<errc> frontend::remove_cluster_link(
 
 ss::future<errc> frontend::add_mirror_topic(
   id_t id, add_mirror_topic_cmd cmd, model::timeout_clock::time_point timeout) {
-    if (!cluster_link_active(false)) {
+    if (!cluster_link_active()) {
         co_return errc::feature_disabled;
     }
     cluster_link_cmd c{
@@ -120,7 +122,7 @@ ss::future<errc> frontend::update_mirror_topic_state(
   id_t id,
   update_mirror_topic_state_cmd cmd,
   model::timeout_clock::time_point timeout) {
-    if (!cluster_link_active(false)) {
+    if (!cluster_link_active()) {
         co_return errc::feature_disabled;
     }
     cluster_link_cmd c{
@@ -128,9 +130,20 @@ ss::future<errc> frontend::update_mirror_topic_state(
     co_return co_await do_mutation(std::move(c), timeout);
 }
 
-bool frontend::cluster_link_active(bool check_license) const {
-    return _features->is_active(features::feature::cluster_linking_dr)
-           && !(check_license && _features->should_sanction());
+ss::future<errc> frontend::update_mirror_topic_properties(
+  id_t id,
+  update_mirror_topic_properties_cmd cmd,
+  model::timeout_clock::time_point timeout) {
+    if (!cluster_link_active()) {
+        co_return errc::feature_disabled;
+    }
+    cluster_link_cmd c{cluster::cluster_link_update_mirror_topic_properties_cmd(
+      id, std::move(cmd))};
+    co_return co_await do_mutation(std::move(c), timeout);
+}
+
+bool frontend::cluster_link_active() const {
+    return config::shard_local_cfg().development_enable_cluster_link();
 }
 
 frontend::notification_id
@@ -154,6 +167,25 @@ frontend::find_link_by_name(const name_t& name) const {
 
 chunked_vector<id_t> frontend::get_all_link_ids() const {
     return _table->get_all_link_ids();
+}
+
+std::optional<chunked_hash_map<
+  ::model::topic,
+  ::cluster_link::model::mirror_topic_metadata>>
+frontend::get_mirror_topics_for_link(id_t id) const {
+    auto link = _table->find_link_by_id(id);
+    if (!link) {
+        return std::nullopt;
+    }
+    chunked_hash_map<
+      ::model::topic,
+      ::cluster_link::model::mirror_topic_metadata>
+      mirror_topics;
+    mirror_topics.reserve(link->get().state.mirror_topics.size());
+    for (const auto& [topic, metadata] : link->get().state.mirror_topics) {
+        mirror_topics.emplace(topic, metadata.copy());
+    }
+    return mirror_topics;
 }
 
 ss::future<errc> frontend::do_mutation(
@@ -258,6 +290,28 @@ ss::future<errc> frontend::dispatch_mutation_to_remote(
                           }
                           return result<void>(r.value().ec);
                       });
+              },
+              [client,
+               timeout](cluster::cluster_link_update_mirror_topic_properties_cmd
+                          cmd) mutable {
+                  return client
+                    .update_mirror_topic_properties(
+                      cluster::update_mirror_topic_properties_request{
+                        .link_id = cmd.key,
+                        .cmd = std::move(cmd.value),
+                        .timeout = timeout},
+                      rpc::client_opts(timeout))
+                    .then(&rpc::get_ctx_data<
+                          cluster::update_mirror_topic_properties_response>)
+                    .then(
+                      [](
+                        result<cluster::update_mirror_topic_properties_response>
+                          r) {
+                          if (r.has_error()) {
+                              return result<void>(r.error());
+                          }
+                          return result<void>(r.value().ec);
+                      });
               });
         })
       .then([](result<void> r) {
@@ -300,13 +354,20 @@ ss::future<errc> frontend::do_local_mutation(
 errc frontend::validate_mutation(const cluster_link_cmd& cmd) const {
     // Initially for DR, we will only support a single cluster link at a time.
     static constexpr size_t max_links = 1;
-    validator v{_table, max_links};
+    validator v{
+      _table,
+      max_links,
+      {"redpanda.remote.readreplica", "redpanda.remote.recovery"}};
     return v.validate_mutation(cmd);
 }
 
-frontend::validator::validator(table* table, size_t max_links)
+frontend::validator::validator(
+  table* table,
+  size_t max_links,
+  chunked_vector<ss::sstring> excluded_topic_properties)
   : _table(table)
-  , _max_links(max_links) {}
+  , _max_links(max_links)
+  , _excluded_topic_properties(std::move(excluded_topic_properties)) {}
 
 errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
     return ss::visit(
@@ -320,66 +381,65 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
                   // If the UUIDs do not match, it means we are trying to
                   // update an existing link with a different UUID.
                   vlog(
-                    cluster::clusterlog.info,
-                    "Attempting to upsert a panda link with name {} with a "
+                    cluster::clusterlog.warn,
+                    "Attempting to upsert a cluster link with name {} with a "
                     "different UUID ({}) than the existing one ({})",
                     cmd.value.name,
                     cmd.value.uuid,
                     meta.uuid);
-                  return errc::invalid_update;
+                  return errc::uuid_conflict;
               }
-              if (cmd.value.connection.bootstrap_servers.empty()) {
-                  vlog(
-                    cluster::clusterlog.info,
-                    "Attempting to update a panda link without bootstrap "
-                    "servers");
-                  return errc::invalid_update;
+              auto ec = validate_connection_config(cmd.value.connection);
+              if (ec != errc::success) {
+                  return ec;
               }
-              return errc::success;
+
+              return validate_metadata_mirroring_config(
+                cmd.value.configuration.topic_metadata_mirroring_cfg);
           }
           // New item!
           if (cmd.value.name().empty()) {
               vlog(
-                cluster::clusterlog.info,
-                "Attempting to create a panda link without a name");
-              return errc::invalid_create;
+                cluster::clusterlog.warn,
+                "Attempting to create a cluster link without a name");
+              return errc::link_name_invalid;
           }
           constexpr static size_t max_name_size = 128;
           if (cmd.value.name().size() > max_name_size) {
               vlog(
-                cluster::clusterlog.info,
-                "Attempting to create a panda link with too large of a "
+                cluster::clusterlog.warn,
+                "Attempting to create a cluster link with too large of a "
                 "name "
                 "{} > {}",
                 cmd.value.name().size(),
                 max_name_size);
-              return errc::invalid_create;
+              return errc::link_name_invalid;
           }
           if (!std::ranges::all_of(cmd.value.name(), [](char c) {
                   return std::isalnum(c) || c == '.' || c == '-' || c == '_';
               })) {
               vlog(
-                cluster::clusterlog.info,
-                "Attempting to create a panda link with a name containing "
+                cluster::clusterlog.warn,
+                "Attempting to create a cluster link with a name containing "
                 "invalid characters");
-              return errc::invalid_create;
-          }
-          if (cmd.value.connection.bootstrap_servers.empty()) {
-              vlog(
-                cluster::clusterlog.info,
-                "Attempting to create a panda link without bootstrap servers");
-              return errc::invalid_create;
+              return errc::link_name_invalid;
           }
           if (_table->size() >= _max_links) {
               vlog(
-                cluster::clusterlog.info,
-                "Attempting to create a panda link when the maximum number of "
-                "links ({}) is already reached",
+                cluster::clusterlog.warn,
+                "Attempting to create a cluster link when the maximum number "
+                "of links ({}) is already reached",
                 _max_links);
               return errc::limit_exceeded;
           }
 
-          return errc::success;
+          auto ec = validate_connection_config(cmd.value.connection);
+          if (ec != errc::success) {
+              return ec;
+          }
+
+          return validate_metadata_mirroring_config(
+            cmd.value.configuration.topic_metadata_mirroring_cfg);
       },
       [this](const cluster::cluster_link_remove_cmd& cmd) {
           auto meta = _table->find_link_by_name(cmd.key);
@@ -391,7 +451,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
       [this](const cluster::cluster_link_add_mirror_topic_cmd& cmd) {
           auto ec = model::validate_kafka_topic_name(cmd.value.topic);
           if (ec) {
-              vlog(cluster::clusterlog.info, "Invalid topic name: {}", ec);
+              vlog(cluster::clusterlog.warn, "Invalid topic name: {}", ec);
               return errc::mirror_topic_name_invalid;
           }
           auto meta = _table->find_link_by_id(cmd.key);
@@ -402,19 +462,16 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
           if (id.has_value()) {
               if (id.value() != cmd.key) {
                   vlog(
-                    cluster::clusterlog.info,
+                    cluster::clusterlog.warn,
                     "Attempting to add mirror topic '{}' to '{}', however it "
-                    "is "
-                    "already mirrored by another link",
+                    "is already mirrored by another link",
                     cmd.value.topic,
                     meta->get().name);
                   return errc::topic_being_mirrored_by_other_link;
               } else {
                   vlog(
-                    cluster::clusterlog.info,
-                    "Topic '{}' is "
-                    "already mirrored by link "
-                    "'{}'",
+                    cluster::clusterlog.warn,
+                    "Topic '{}' is already mirrored by link '{}'",
                     cmd.value.topic,
                     meta->get().name);
                   return errc::topic_already_being_mirrored;
@@ -425,7 +482,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
       [this](const cluster::cluster_link_update_mirror_topic_state_cmd& cmd) {
           auto ec = model::validate_kafka_topic_name(cmd.value.topic);
           if (ec) {
-              vlog(cluster::clusterlog.info, "Invalid topic name: {}", ec);
+              vlog(cluster::clusterlog.warn, "Invalid topic name: {}", ec);
               return errc::mirror_topic_name_invalid;
           }
           auto meta = _table->find_link_by_id(cmd.key);
@@ -435,18 +492,180 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
           auto id = _table->find_id_by_topic(cmd.value.topic);
           if (!id.has_value()) {
               vlog(
-                cluster::clusterlog.info,
+                cluster::clusterlog.warn,
                 "Topic '{}' is not being mirrored",
                 cmd.value.topic);
               return errc::topic_not_being_mirrored;
           } else if (id.value() != cmd.key) {
               vlog(
-                cluster::clusterlog.info,
+                cluster::clusterlog.warn,
                 "Topic '{}' is being mirrored by another link",
                 cmd.value.topic);
               return errc::topic_being_mirrored_by_other_link;
           }
           return errc::success;
+      },
+      [this](
+        const cluster::cluster_link_update_mirror_topic_properties_cmd& cmd) {
+          auto ec = model::validate_kafka_topic_name(cmd.value.topic);
+          if (ec) {
+              vlog(cluster::clusterlog.warn, "Invalid topic name: {}", ec);
+              return errc::mirror_topic_name_invalid;
+          }
+          auto meta = _table->find_link_by_id(cmd.key);
+          if (!meta.has_value()) {
+              return errc::does_not_exist;
+          }
+          auto id = _table->find_id_by_topic(cmd.value.topic);
+          if (!id.has_value()) {
+              vlog(
+                cluster::clusterlog.warn,
+                "Topic '{}' is not being mirrored",
+                cmd.value.topic);
+              return errc::topic_not_being_mirrored;
+          }
+          if (id.value() != cmd.key) {
+              vlog(
+                cluster::clusterlog.warn,
+                "Topic '{}' is being mirrored by another link",
+                cmd.value.topic);
+              return errc::topic_being_mirrored_by_other_link;
+          }
+          const auto& mirror_state = meta->get().state;
+          const auto it = mirror_state.mirror_topics.find(cmd.value.topic);
+
+          vassert(
+            it != mirror_state.mirror_topics.end(),
+            "State inconsistency detected, should have been able to find {}",
+            cmd.value.topic);
+
+          if (cmd.value.partition_count < it->second.partition_count) {
+              vlog(
+                cluster::clusterlog.warn,
+                "Attempting to update partition count of topic '{}' to {}, "
+                "which is less than the current partition count {}",
+                cmd.value.topic,
+                cmd.value.partition_count,
+                it->second.partition_count);
+              return errc::invalid_update;
+          }
+
+          if (cmd.value.replication_factor < 1) {
+              vlog(
+                cluster::clusterlog.warn,
+                "Invalid replication factor: {}",
+                cmd.value.replication_factor);
+              return errc::invalid_update;
+          }
+
+          return errc::success;
       });
+}
+
+errc frontend::validator::validate_connection_config(
+  const ::cluster_link::model::connection_config& config) const {
+    if (config.bootstrap_servers.empty()) {
+        vlog(
+          cluster::clusterlog.warn,
+          "Attempting to create a cluster link without bootstrap servers");
+        return errc::bootstrap_servers_empty;
+    }
+
+    if (config.cert.has_value() != config.key.has_value()) {
+        vlog(
+          cluster::clusterlog.warn,
+          "If providing a certificate or key, both must be provided or "
+          "neither");
+        return errc::tls_configuration_invalid;
+    }
+
+    if (
+      config.cert.has_value()
+      && config.cert.value().index() != config.key.value().index()) {
+        vlog(
+          cluster::clusterlog.warn,
+          "If providing a certificate or key, both must be file paths or "
+          "both must be values");
+        return errc::tls_configuration_invalid;
+    }
+
+    return errc::success;
+}
+
+errc frontend::validator::validate_metadata_mirroring_config(
+  const ::cluster_link::model::topic_metadata_mirroring_config& config) const {
+    // Validates that the pattern:
+    // - is not empty
+    // - does not contain the wildcard character '*' unless it is the only
+    //   character in the pattern
+    // - the characters are valid UTF-8
+    // - wildcard only present in 'literal' patterns
+    const auto check_filter_pattern =
+      [](const ::cluster_link::model::resource_name_filter_pattern& p) {
+          if (p.pattern.empty()) {
+              vlog(cluster::clusterlog.info, "Filter pattern is empty");
+              return true;
+          }
+          if (
+            p.pattern.contains(
+              ::cluster_link::model::resource_name_filter_pattern::wildcard)
+            && p.pattern
+                 != ::cluster_link::model::resource_name_filter_pattern::
+                   wildcard) {
+              vlog(
+                cluster::clusterlog.info,
+                "Filter pattern is invalid: Contains '*'");
+              return true;
+          }
+          if (
+            p.pattern
+              == ::cluster_link::model::resource_name_filter_pattern::wildcard
+            && p.pattern_type
+                 != ::cluster_link::model::filter_pattern_type::literal) {
+              vlog(
+                cluster::clusterlog.info,
+                "Filter pattern is invalid: Wildcard '*' can only be used in "
+                "literal patterns");
+              return true;
+          }
+          if (
+            p.pattern
+              != ::cluster_link::model::resource_name_filter_pattern::wildcard
+            && !std::ranges::all_of(p.pattern, [](char c) {
+                   return std::isalnum(c) || c == '.' || c == '-' || c == '_';
+               })) {
+              vlog(
+                cluster::clusterlog.info,
+                "Filter pattern contains invalid characters");
+              return true;
+          }
+          if (
+            p.pattern.starts_with("_redpanda")
+            || p.pattern.starts_with("__redpanda")
+            || p.pattern == ::model::kafka_consumer_offsets_topic()) {
+              vlog(
+                cluster::clusterlog.info,
+                "Filter pattern filtering on invalid topic name: {}",
+                p.pattern);
+              return true;
+          }
+          return false;
+      };
+    if (std::ranges::any_of(config.topic_name_filters, check_filter_pattern)) {
+        return errc::topic_filter_invalid;
+    }
+    for (const auto& prop : config.topic_properties_to_mirror) {
+        if (
+          std::ranges::find(_excluded_topic_properties, prop)
+          != _excluded_topic_properties.end()) {
+            vlog(
+              cluster::clusterlog.info,
+              "Topic property '{}' is excluded from mirroring",
+              prop);
+            return errc::topic_property_excluded_from_mirroring;
+        }
+    }
+
+    return errc::success;
 }
 } // namespace cluster::cluster_link

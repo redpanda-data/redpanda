@@ -12,7 +12,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/data/partition_proxy.h"
 #include "kafka/data/replicated_partition.h"
 #include "kafka/protocol/errors.h"

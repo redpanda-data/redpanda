@@ -20,7 +20,7 @@
 
 namespace cluster::cluster_link {
 /**
- * @brief Table that holds information about panda links
+ * @brief Table that holds information about cluster links
  */
 class table : public ss::peering_sharded_service<table> {
 public:
@@ -73,9 +73,9 @@ public:
     void unregister_for_updates(notification_id);
 
 private:
-    /// Snapshot copy of all the panda links
+    /// Snapshot copy of all the cluster links
     map_t all_links() const;
-    /// Restores a panda link table from a snapshot
+    /// Restores a cluster link table from a snapshot
     void reset_links(map_t);
 
     /// Upserts a link, if the ID classes, throws a std::logic_error
@@ -92,6 +92,10 @@ private:
     cluster::cluster_link::errc update_mirror_topic_state(
       ::cluster_link::model::id_t,
       const ::cluster_link::model::update_mirror_topic_state_cmd& cmd);
+
+    cluster::cluster_link::errc update_mirror_topic_properties(
+      ::cluster_link::model::id_t,
+      const ::cluster_link::model::update_mirror_topic_properties_cmd&);
 
     void run_callbacks(::cluster_link::model::id_t);
 

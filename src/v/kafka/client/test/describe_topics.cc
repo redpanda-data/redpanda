@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/client/client.h"
 #include "kafka/client/test/fixture.h"
 #include "kafka/protocol/create_topics.h"
@@ -72,7 +72,7 @@ FIXTURE_TEST(test_describe_with_configuration_keys, describe_topic_fixture) {
       .replication_factor = 1,
       .configs = {custom_config},
     };
-    const auto created_topic = client.create_topic(std::move(req));
+    const auto created_topic = client.create_topic(std::move(req)).get();
 
     {
         info("Checking if describing the topic returns the custom config");

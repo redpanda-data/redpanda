@@ -291,7 +291,7 @@ func Test_encodeDecodeAvroRecordWithReferences(t *testing.T) {
 			require.NoError(t, err)
 
 			tt.schema.Type = sr.TypeAvro
-			serde, err := NewSerde(context.Background(), client, tt.schema, tt.schemaID, "")
+			serde, err := NewSerde(context.Background(), client.Client, tt.schema, tt.schemaID, "")
 			require.NoError(t, err)
 
 			got, err := serde.EncodeRecord([]byte(tt.record))

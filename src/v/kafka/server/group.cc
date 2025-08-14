@@ -19,7 +19,7 @@
 #include "cluster/tx_utils.h"
 #include "config/configuration.h"
 #include "config/types.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/heartbeat.h"
 #include "kafka/protocol/leave_group.h"
@@ -112,7 +112,7 @@ group::group(
   kafka::group_id id,
   group_state s,
   config::configuration& conf,
-  ss::lw_shared_ptr<ssx::rwlock> catchup_lock,
+  ss::lw_shared_ptr<ss::rwlock> catchup_lock,
   ss::lw_shared_ptr<cluster::partition> partition,
   model::term_id term,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
@@ -145,7 +145,7 @@ group::group(
   kafka::group_id id,
   group_metadata_value& md,
   config::configuration& conf,
-  ss::lw_shared_ptr<ssx::rwlock> catchup_lock,
+  ss::lw_shared_ptr<ss::rwlock> catchup_lock,
   ss::lw_shared_ptr<cluster::partition> partition,
   model::term_id term,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
@@ -328,7 +328,8 @@ void group::add_member_no_join(member_ptr member) {
           *member->group_instance_id(), member->id());
         if (!success) {
             throw std::runtime_error(fmt::format(
-              "group already contains member with group instance id: {}, group "
+              "group already contains member with group instance id: {}, "
+              "group "
               "state: {}",
               member,
               *this));
@@ -1474,6 +1475,14 @@ void group::remove_member(member_ptr member) {
     }
 }
 
+void group::remove_full_members() {
+    while (!_members.empty()) {
+        auto member = _members.begin()->second;
+        member->expire_timer().cancel();
+        remove_member(member);
+    }
+}
+
 group::sync_group_stages group::handle_sync_group(sync_group_request&& r) {
     vlog(_ctxlog.trace, "Handling sync group request {}", r);
 
@@ -2138,6 +2147,7 @@ kafka::error_code map_store_offset_error_code(std::error_code ec) {
         case raft::errc::group_not_exists:
         case raft::errc::replicate_first_stage_exception:
         case raft::errc::transfer_to_current_leader:
+        case raft::errc::not_learner:
             return error_code::unknown_server_error;
         }
     }
@@ -2497,7 +2507,7 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
     if (!r.data.topics) {
         absl::flat_hash_map<
           model::topic,
-          small_fragment_vector<offset_fetch_response_partition>>
+          chunked_vector<offset_fetch_response_partition>>
           tmp;
         for (const auto& e : _offsets) {
             offset_fetch_response_partition p = {
@@ -3250,7 +3260,7 @@ ss::future<> group::do_abort_old_txes() {
 }
 
 ss::future<cluster::tx::errc> group::abort_txes(bool expired_only) {
-    auto unit = _catchup_lock->attempt_read_lock();
+    auto unit = _catchup_lock->try_hold_read_lock();
     if (!unit) {
         vlog(
           _ctx_txlog.trace, "can't abort txes: coordinator_load_in_progress");
@@ -3384,11 +3394,11 @@ std::ostream& operator<<(std::ostream& o, const group::offset_metadata& md) {
 }
 
 bool group::subscribed(const model::topic& topic) const {
-    if (_subscriptions.has_value()) {
-        return _subscriptions.value().contains(topic);
+    if (!_subscriptions.has_value()) {
+        return is_consumer_group();
     }
-    // answer conservatively
-    return true;
+
+    return _subscriptions.value().contains(topic);
 }
 
 /*
@@ -3428,7 +3438,8 @@ group::decode_consumer_subscriptions(iobuf data) {
               "consumer metadata contains negative topic name length {}", len));
         } else if (static_cast<size_t>(len) > max_topic_name_length) {
             throw std::out_of_range(fmt::format(
-              "consumer metadata contains topic name that exceeds maximum size "
+              "consumer metadata contains topic name that exceeds maximum "
+              "size "
               "{} > {}",
               len,
               max_topic_name_length));

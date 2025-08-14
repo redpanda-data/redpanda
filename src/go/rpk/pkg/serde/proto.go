@@ -28,7 +28,7 @@ import (
 // generated while compiling the schema.
 const inMemFileName = "tmp.proto"
 
-// newAvroEncoder will generate a serializer function using the specified
+// newProtoEncoder will generate a serializer function using the specified
 // schema. It utilizes the message type identified by protoFQN. If the schema
 // includes references, it retrieves them using the supplied client. The
 // generated function returns the record encoded in the protobuf wire format.
@@ -42,12 +42,14 @@ func newProtoEncoder(compiledFiles linker.Files, protoFQN string, schemaID int) 
 	if !ok {
 		return nil, fmt.Errorf("unable to process message with name %q", protoFQN)
 	}
-	message := dynamicpb.NewMessage(msgDescriptor)
 
 	o := protojson.UnmarshalOptions{
 		Resolver: compiledFiles.AsResolver(),
 	}
 	return func(record []byte) ([]byte, error) {
+		// Create a new message instance for each encode call to avoid concurrent map write issues. //
+		message := dynamicpb.NewMessage(msgDescriptor)
+
 		// Unmarshal the record into the proto message. //
 		err := o.Unmarshal(record, message)
 		if err != nil {

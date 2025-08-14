@@ -76,11 +76,13 @@ public:
             co_return std::nullopt;
         }
         auto& table = load_res.value();
-        EXPECT_NE(table.current_schema_id, schema::unassigned_id);
         auto schema_it = std::ranges::find(
           table.schemas, table.current_schema_id, &schema::schema_id);
         if (schema_it == table.schemas.end()) {
-            co_return std::nullopt;
+            throw std::runtime_error(fmt::format(
+              "Schema {} not found in table {}",
+              table.current_schema_id,
+              table_ident));
         }
         co_return std::move(*schema_it);
     }

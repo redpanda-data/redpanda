@@ -37,6 +37,8 @@ struct error_category final : std::error_category {
             return "Empty schema";
         case error_code::schema_missing_reference:
             return "Schema references a schema that doesn't exist";
+        case error_code::schema_version_not_next:
+            return "Version is not one more than previous version";
         case error_code::schema_incompatible:
             return "Schema being registered is incompatible with an earlier "
                    "schema for subject";
@@ -79,7 +81,7 @@ struct error_category final : std::error_category {
                    "BACKWARD, FORWARD, FULL, BACKWARD_TRANSITIVE, "
                    "FORWARD_TRANSITIVE, and FULL_TRANSITIVE";
         case error_code::mode_invalid:
-            return "Invalid mode. Valid values are READWRITE, READONLY";
+            return "Invalid mode. Valid values are READWRITE, READONLY, IMPORT";
         case error_code::version_exhausted:
             return "Versions exhausted, maximum 2147483647 reached";
         case error_code::format_not_supported:
@@ -122,6 +124,7 @@ struct error_category final : std::error_category {
             return reply_error_code::unprocessable_entity;
         case error_code::schema_empty:
         case error_code::schema_missing_reference:
+        case error_code::schema_version_not_next:
             return reply_error_code::schema_empty; // 42201
         case error_code::schema_version_invalid:
             return reply_error_code::schema_version_invalid; // 42202

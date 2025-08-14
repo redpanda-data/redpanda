@@ -14,13 +14,13 @@
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "features/fwd.h"
-#include "model/metadata.h"
 #include "model/transform.h"
 #include "raft/fwd.h"
 #include "transform/fwd.h"
 #include "transform/logging/fwd.h"
 #include "wasm/fwd.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>

@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redpanda-data/common-go/rpsr"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -67,7 +68,7 @@ type consumer struct {
 	partStarts map[string]map[int32]int64
 
 	cl   *kgo.Client
-	srCl *sr.Client
+	srCl *rpsr.Client
 }
 
 func newConsumeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -840,7 +841,7 @@ func (c *consumer) formatSchemaRegistryFlag() error {
 	return nil
 }
 
-func handleDecode(ctx context.Context, cl *sr.Client, record []byte, serdeCache map[int]*serde.Serde) ([]byte, error) {
+func handleDecode(ctx context.Context, cl *rpsr.Client, record []byte, serdeCache map[int]*serde.Serde) ([]byte, error) {
 	var serdeHeader sr.ConfluentHeader
 	id, toDecode, err := serdeHeader.DecodeID(record)
 	if err != nil {
@@ -854,7 +855,7 @@ func handleDecode(ctx context.Context, cl *sr.Client, record []byte, serdeCache 
 		if err != nil {
 			return nil, fmt.Errorf("unable to get schema with index %v from the schema registry: %v", id, err)
 		}
-		rpkSerde, err = serde.NewSerde(ctx, cl, &schema, id, "")
+		rpkSerde, err = serde.NewSerde(ctx, cl.Client, &schema, id, "")
 		if err != nil {
 			return nil, err
 		}

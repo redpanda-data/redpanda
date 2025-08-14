@@ -20,8 +20,9 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/configuration.h"
-#include "cloud_topics/data_plane_impl.h"
-#include "cloud_topics/dl_stm/dl_stm_factory.h"
+#include "cloud_topics/level_one/metastore/service.h"
+#include "cloud_topics/level_one/metastore/simple_stm.h"
+#include "cloud_topics/level_zero/stm/ctp_stm_factory.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/archiver_manager.h"
 #include "cluster/archival/ntp_archiver_service.h"
@@ -80,6 +81,7 @@
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/tx_topic_manager.h"
 #include "cluster/types.h"
+#include "cluster/utils/partition_change_notifier_impl.h"
 #include "compression/async_stream_zstd.h"
 #include "compression/lz4_decompression_buffers.h"
 #include "compression/stream_zstd.h"
@@ -107,6 +109,7 @@
 #include "kafka/server/consumer_group_lag_metrics_frontend.h"
 #include "kafka/server/consumer_group_lag_metrics_service.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
+#include "kafka/server/data_migration_group_proxy_impl.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/group_tx_tracker_stm.h"
@@ -131,6 +134,8 @@
 #include "raft/group_manager.h"
 #include "raft/service.h"
 #include "redpanda/admin/server.h"
+#include "redpanda/admin/services/internal/debug.h"
+#include "redpanda/admin/services/shadow_link/shadow_link.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "resource_mgmt/scheduling_groups_probe.h"
@@ -138,6 +143,7 @@
 #include "rpc/rpc_utils.h"
 #include "security/audit/audit_log_manager.h"
 #include "ssx/abort_source.h"
+#include "ssx/sharded_service_container.h"
 #include "ssx/thread_worker.h"
 #include "storage/backlog_controller.h"
 #include "storage/chunk_cache.h"
@@ -275,35 +281,36 @@ static void set_auditing_kafka_client_defaults(
 }
 
 application::application(ss::sstring logger_name)
-  : _log(std::move(logger_name)) {};
+  : ssx::sharded_service_container(logger_name) {}
 
-application::~application() {
-    while (!_deferred.empty()) {
-        _deferred.pop_back();
-    }
-}
+application::~application() {}
 
 void application::shutdown() {
     storage.invoke_on_all(&storage::api::stop_cluster_uuid_waiters).get();
     // Stop accepting new requests.
     if (_kafka_server.ref().local_is_initialized()) {
-        _kafka_server.shutdown_input().get();
+        shutdown_with_watchdog(_kafka_server, [](auto& kafka_server) {
+            return kafka_server.shutdown_input();
+        });
     }
     if (_rpc.local_is_initialized()) {
-        _rpc.invoke_on_all(&rpc::rpc_server::shutdown_input).get();
+        shutdown_with_watchdog(_rpc, [](auto& rpc_server) {
+            return rpc_server.invoke_on_all(&rpc::rpc_server::shutdown_input);
+        });
     }
     // Stop routing upload requests, as each may take a while to finish.
     if (offsets_upload_router.local_is_initialized()) {
-        offsets_upload_router
-          .invoke_on_all(
-            &cluster::cloud_metadata::offsets_upload_router::request_stop)
-          .get();
+        shutdown_with_watchdog(
+          offsets_upload_router, [](auto& offsets_upload_router) {
+              return offsets_upload_router.invoke_on_all(
+                &cluster::cloud_metadata::offsets_upload_router::request_stop);
+          });
     }
     if (offsets_uploader.local_is_initialized()) {
-        offsets_uploader
-          .invoke_on_all(
-            &cluster::cloud_metadata::offsets_uploader::request_stop)
-          .get();
+        shutdown_with_watchdog(offsets_uploader, [](auto& offsets_uploader) {
+            return offsets_uploader.invoke_on_all(
+              &cluster::cloud_metadata::offsets_uploader::request_stop);
+        });
     }
 
     // We schedule shutting down controller input and aborting its operation as
@@ -311,41 +318,48 @@ void application::shutdown() {
     // operations before shutting down the RPC server, preventing it from
     // waiting on background dispatch gate `close` call.
     if (controller) {
-        controller->shutdown_input().get();
+        shutdown_with_watchdog(controller, [](auto& controller) {
+            return controller->shutdown_input();
+        });
     }
 
-    ss::do_for_each(
-      _migrators,
-      [](std::unique_ptr<features::feature_migrator>& fm) {
-          return fm->stop();
-      })
-      .get();
+    shutdown_with_watchdog(_migrators, [](auto& migrators) {
+        return ss::do_for_each(
+          migrators, [](std::unique_ptr<features::feature_migrator>& fm) {
+              return fm->stop();
+          });
+    });
 
     // Stop processing heartbeats before stopping the partition manager (and
     // the underlying Raft consensus instances). Otherwise we'd process
     // heartbeats for consensus objects that no longer exist.
     if (raft_group_manager.local_is_initialized()) {
-        raft_group_manager.invoke_on_all(&raft::group_manager::stop_heartbeats)
-          .get();
+        shutdown_with_watchdog(raft_group_manager, [](auto& mgr) {
+            return mgr.invoke_on_all(&raft::group_manager::stop_heartbeats);
+        });
     }
 
     if (topic_recovery_service.local_is_initialized()) {
-        topic_recovery_service
-          .invoke_on_all(
-            &cloud_storage::topic_recovery_service::shutdown_recovery)
-          .get();
+        shutdown_with_watchdog(
+          topic_recovery_service, [](auto& topic_recovery_service) {
+              return topic_recovery_service.invoke_on_all(
+                &cloud_storage::topic_recovery_service::shutdown_recovery);
+          });
     }
 
     // Stop any I/O to object store: this will cause any readers in flight
     // to abort and enables partition shutdown to proceed reliably.
     if (cloud_storage_clients.local_is_initialized()) {
-        cloud_storage_clients
-          .invoke_on_all(
-            &cloud_storage_clients::client_pool::shutdown_connections)
-          .get();
+        shutdown_with_watchdog(
+          cloud_storage_clients, [](auto& cloud_storage_clients) {
+              return cloud_storage_clients.invoke_on_all(
+                &cloud_storage_clients::client_pool::shutdown_connections);
+          });
     }
     if (cloud_io.local_is_initialized()) {
-        cloud_io.invoke_on_all(&cloud_io::remote::request_stop).get();
+        shutdown_with_watchdog(cloud_io, [](auto& cloud_io) {
+            return cloud_io.invoke_on_all(&cloud_io::remote::request_stop);
+        });
     }
     /**
      * Shutdown the datalake services before stopping all the partitions.
@@ -354,47 +368,61 @@ void application::shutdown() {
      * possible.
      */
     if (_datalake_coordinator_mgr.local_is_initialized()) {
-        _datalake_coordinator_mgr
-          .invoke_on_all(&datalake::coordinator::coordinator_manager::shutdown)
-          .get();
+        shutdown_with_watchdog(_datalake_coordinator_mgr, [](auto& mgr) {
+            return mgr.invoke_on_all(
+              &datalake::coordinator::coordinator_manager::shutdown);
+        });
     }
     if (_datalake_manager.local_is_initialized()) {
-        _datalake_manager.invoke_on_all(&datalake::datalake_manager::shutdown)
-          .get();
+        shutdown_with_watchdog(_datalake_manager, [](auto& mgr) {
+            return mgr.invoke_on_all(&datalake::datalake_manager::shutdown);
+        });
     }
     if (_datalake_credential_mgr.local_is_initialized()) {
-        _datalake_credential_mgr
-          .invoke_on_all(&datalake::credential_manager::stop)
-          .get();
+        shutdown_with_watchdog(_datalake_credential_mgr, [](auto& mgr) {
+            return mgr.invoke_on_all(&datalake::credential_manager::stop);
+        });
     }
-
+    if (cloud_topics_app) {
+        shutdown_with_watchdog(
+          cloud_topics_app, [](auto& app) { return app->stop(); });
+    }
     // Stop all partitions before destructing the subsystems (transaction
     // coordinator, etc). This interrupts ongoing replication requests,
     // allowing higher level state machines to shutdown cleanly.
     if (partition_manager.local_is_initialized()) {
-        partition_manager
-          .invoke_on_all(&cluster::partition_manager::stop_partitions)
-          .get();
+        shutdown_with_watchdog(partition_manager, [](auto& partition_manager) {
+            return partition_manager.invoke_on_all(
+              &cluster::partition_manager::stop_partitions);
+        });
     }
 
     // Wait for all requests to finish before destructing services that may be
     // used by pending requests.
     if (_kafka_server.ref().local_is_initialized()) {
-        _kafka_server.wait_for_shutdown().get();
-        _kafka_server.stop().get();
+        shutdown_with_watchdog(_kafka_server, [](auto& kafka_server) {
+            return kafka_server.wait_for_shutdown();
+        });
+        shutdown_with_watchdog(_kafka_server, [](auto& kafka_server) {
+            return kafka_server.stop();
+        });
     }
     if (_kafka_conn_quotas.local_is_initialized()) {
-        _kafka_conn_quotas.stop().get();
+        shutdown_with_watchdog(_kafka_conn_quotas, [](auto& conn_quotas) {
+            return conn_quotas.stop();
+        });
     }
     if (_rpc.local_is_initialized()) {
-        _rpc.invoke_on_all(&rpc::rpc_server::wait_for_shutdown).get();
-        _rpc.stop().get();
+        shutdown_with_watchdog(_rpc, [](auto& rpc_server) {
+            return rpc_server.invoke_on_all(
+              &rpc::rpc_server::wait_for_shutdown);
+        });
+        shutdown_with_watchdog(_rpc, [](auto& rpc_server) {
+            return rpc_server.invoke_on_all(&rpc::rpc_server::stop);
+        });
     }
 
-    // Shut down services in reverse order to which they were registered.
-    while (!_deferred.empty()) {
-        _deferred.pop_back();
-    }
+    ssx::sharded_service_container::shutdown();
 }
 
 static void log_system_resources(
@@ -1113,6 +1141,14 @@ void application::configure_admin_server() {
       std::ref(tx_gateway_frontend),
       std::ref(_debug_bundle_service))
       .get();
+    _admin
+      .invoke_on_all([this](admin_server& s) {
+          // Add RPC services
+          s.add_service(
+            std::make_unique<admin::debug_service_impl>(stress_fiber_manager));
+          s.add_service(std::make_unique<admin::shadow_link_service_impl>());
+      })
+      .get();
 }
 
 static std::optional<storage::file_sanitize_config>
@@ -1381,8 +1417,7 @@ void application::wire_up_runtime_services(
             std::ref(cloud_io),
             std::ref(_datalake_credential_mgr)),
           std::ref(cloud_io),
-          std::ref(*bucket),
-          std::ref(_datalake_credential_mgr))
+          std::ref(*bucket))
           .get();
         construct_service(
           _datalake_coordinator_fe,
@@ -1400,7 +1435,12 @@ void application::wire_up_runtime_services(
         construct_service(
           _datalake_manager,
           node_id,
-          &raft_group_manager,
+          ss::sharded_parameter([this] {
+              return cluster::partition_change_notifier_impl::make_default(
+                raft_group_manager,
+                partition_manager,
+                controller->get_topics_state());
+          }),
           &partition_manager,
           &controller->get_topics_state(),
           &feature_table,
@@ -1626,8 +1666,7 @@ void application::wire_up_redpanda_services(
           ss::sharded_parameter([&cloud_configs] {
               return cloud_configs.local().cloud_credentials_source;
           }),
-          ss::sharded_parameter(
-            [this] { return sched_groups.archival_upload(); }))
+          ss::sharded_parameter([this] { return sched_groups.ts_read_sg(); }))
           .get();
         cloud_io.invoke_on_all(&cloud_io::remote::start).get();
         bucket_name = cloud_configs.local().bucket_name;
@@ -1686,6 +1725,20 @@ void application::wire_up_redpanda_services(
     producer_manager.invoke_on_all(&cluster::tx::producer_state_manager::start)
       .get();
 
+    if (config::shard_local_cfg().development_enable_cloud_topics()) {
+        vassert(
+          archival_storage_enabled(),
+          "cloud topics currently requires archival storage to be enabled");
+        syschecks::systemd_message("Initializing cloud topics subsystems")
+          .get();
+
+        // Initialize the cloud topics app to be able to pass it around to the
+        // partition manager.
+        // NOTE: this only instantiates the app; underlying services are
+        // constructed separately once more of the subsystems are available.
+        construct_single_service(
+          cloud_topics_app, fmt::format("{}/cloud_topics", _log.name()));
+    }
     syschecks::systemd_message("Adding partition manager").get();
     construct_service(
       partition_manager,
@@ -1711,7 +1764,7 @@ void application::wire_up_redpanda_services(
           return config::shard_local_cfg()
             .partition_manager_shutdown_watchdog_timeout.bind();
       }),
-      std::ref(cloud_topics_api))
+      cloud_topics_app ? cloud_topics_app->get_state() : nullptr)
       .get();
     vlog(_log.info, "Partition manager started");
     construct_service(
@@ -1910,6 +1963,10 @@ void application::wire_up_redpanda_services(
               return kafka::data::rpc::topic_creator::make_default(
                 controller.get());
           }),
+          ss::sharded_parameter([this] {
+              return kafka::data::rpc::topic_metadata_cache::make_default(
+                &metadata_cache);
+          }),
           &_connection_cache,
           &_kafka_data_rpc_service)
           .get();
@@ -2081,19 +2138,21 @@ void application::wire_up_redpanda_services(
       &shadow_index_cache,
       &partition_manager);
 
-    if (config::shard_local_cfg().development_enable_cloud_topics()) {
-        vassert(
-          archival_storage_enabled(),
-          "cloud topics currently requires archival storage to be enabled");
-
-        construct_service(
-          cloud_topics_api, ss::sharded_parameter([this, bucket] {
-              return experimental::cloud_topics::make_data_plane(
-                &partition_manager, &cloud_io, &shadow_index_cache, bucket);
-          }))
-          .get();
-
-        cloud_topics_api.invoke_on_all([](auto& app) { return app.start(); })
+    if (cloud_topics_app) {
+        syschecks::systemd_message("Starting cloud topics subsystems").get();
+        cloud_topics_app
+          ->construct(
+            node_id,
+            controller.get(),
+            &controller->get_partition_manager(),
+            &controller->get_partition_leaders(),
+            &controller->get_shard_table(),
+            &cloud_io,
+            &shadow_index_cache,
+            &metadata_cache,
+            &_connection_cache,
+            bucket,
+            &storage)
           .get();
     }
 
@@ -2149,15 +2208,18 @@ void application::wire_up_redpanda_services(
       std::ref(controller->get_members_table()),
       std::ref(controller->get_api()))
       .get();
+    construct_service(
+      _data_migrations_group_proxy, ss::sharded_parameter([&]() {
+          return std::make_unique<kafka::data_migration_group_proxy_impl>(
+            coordinator_ntp_mapper.local(),
+            _group_manager.local(),
+            group_initializer.local());
+      }))
+      .get();
 
     offsets_recovery_manager
       = ss::make_shared<cluster::cloud_metadata::offsets_recovery_manager>(
-        std::ref(offsets_recovery_router),
-        std::ref(coordinator_ntp_mapper),
-        controller->get_members_table(),
-        controller->get_api(),
-        std::ref(controller->get_topics_frontend()),
-        group_initializer.local());
+        std::ref(offsets_recovery_router), group_initializer.local());
 
     syschecks::systemd_message("Creating kafka group router").get();
     construct_service(
@@ -3039,7 +3101,10 @@ void application::start_runtime_services(
           pm.register_factory<datalake::translation::stm_factory>(
             config::shard_local_cfg().iceberg_enabled());
           if (config::shard_local_cfg().development_enable_cloud_topics()) {
-              pm.register_factory<experimental::cloud_topics::dl_stm_factory>();
+              pm.register_factory<
+                experimental::cloud_topics::ctp_stm_factory>();
+              pm.register_factory<
+                experimental::cloud_topics::l1::stm_factory>();
           }
       })
       .get();
@@ -3102,7 +3167,8 @@ void application::start_runtime_services(
         std::move(offsets_upload_requestor),
         producer_id_recovery_manager,
         std::move(offsets_recovery_requestor),
-        redpanda_start_time)
+        redpanda_start_time,
+        _data_migrations_group_proxy)
       .get();
 
     if (archiver_manager.local_is_initialized()) {
@@ -3258,6 +3324,15 @@ void application::start_runtime_services(
               sched_groups.cluster_sg(),
               smp_service_groups.cluster_smp_sg(),
               std::ref(_consumer_group_lag_metrics_frontend)));
+          if (
+            config::shard_local_cfg().development_enable_cloud_topics()
+            && cloud_topics_app) {
+              runtime_services.push_back(
+                std::make_unique<experimental::cloud_topics::l1::rpc::service>(
+                  sched_groups.datalake_sg(),
+                  smp_service_groups.datalake_sg(),
+                  cloud_topics_app->get_sharded_l1_metastore_fe()));
+          }
 
           s.add_services(std::move(runtime_services));
 
@@ -3309,6 +3384,10 @@ void application::start_runtime_services(
             return fm.verify_enterprise_license();
         })
       .get();
+
+    if (cloud_topics_app) {
+        cloud_topics_app->start().get();
+    }
 
     _debug_bundle_service.invoke_on_all(&debug_bundle::service::start).get();
 

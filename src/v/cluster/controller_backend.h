@@ -244,6 +244,8 @@ public:
     ss::future<> transfer_partitions_from_extra_shard(
       storage::kvstore&, shard_placement_table&);
 
+    ss::future<std::error_code> remake_partition(const model::ntp&);
+
 private:
     struct ntp_reconciliation_state;
     using force_reconfiguration
@@ -381,6 +383,8 @@ private:
     std::optional<model::offset> calculate_learner_initial_offset(
       reconfiguration_policy policy,
       const ss::lw_shared_ptr<partition>& partition) const;
+
+    ss::future<std::error_code> do_remake_partition(const model::ntp&);
 
     ss::sharded<topic_table>& _topics;
     shard_placement_table& _shard_placement;

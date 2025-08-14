@@ -10,8 +10,10 @@
 
 #include "cloud_storage_clients/s3_client.h"
 
+#include "base/units.h"
 #include "base/vlog.h"
 #include "bytes/bytes.h"
+#include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/s3_error.h"
@@ -400,6 +402,7 @@ std::string request_creator::make_target(
 
 // client //
 
+namespace {
 inline cloud_storage_clients::s3_error_code
 status_to_error_code(boost::beast::http::status s) {
     // According to this https://repost.aws/knowledge-center/http-5xx-errors-s3
@@ -428,9 +431,48 @@ rest_error_response parse_xml_rest_error_response(iobuf&& buf) {
     }
 }
 
+rest_error_response parse_unknown_format_error_response(
+  boost::beast::http::status status, iobuf buf) {
+    static constexpr auto max_body_size = static_cast<size_t>(4_KiB);
+    static constexpr auto truncation_warning_segment = " [truncated~4096]";
+
+    auto maybe_truncation_warning = "";
+    auto read_size = buf.size_bytes();
+
+    // if the error message exceeds reasonable size (4k), truncate it and
+    // indicate a truncation to the recipient
+    if (read_size > max_body_size) {
+        maybe_truncation_warning = truncation_warning_segment;
+        read_size = max_body_size;
+    }
+
+    ss::sstring error_body = "";
+    iobuf_parser parser{std::move(buf)};
+
+    // this is the unhappy unhappy path, handle potentially invalid utf8
+    try {
+        error_body = parser.read_string_safe(read_size);
+    } catch (const invalid_utf8_exception& e) {
+        vlog(s3_log.info, "response body contains invalid utf8 {}", e);
+    } catch (...) {
+        vlog(s3_log.error, "error parse error {}", std::current_exception());
+        throw;
+    }
+
+    return rest_error_response{
+      fmt::format("{}", status_to_error_code(status)),
+      fmt::format(
+        "http status: {}, error body{}: {}",
+        status,
+        maybe_truncation_warning,
+        error_body),
+      "",
+      ""};
+}
+
 template<typename ResultT = void>
 ss::future<ResultT> parse_rest_error_response(
-  response_content_type type, boost::beast::http::status result, iobuf&& buf) {
+  response_content_type type, boost::beast::http::status result, iobuf buf) {
     // AWS errors occasionally come with an empty body
     // (See https://github.com/redpanda-data/redpanda/issues/6061)
     // Without a proper code, we treat it as a hint to gracefully retry
@@ -443,16 +485,18 @@ ss::future<ResultT> parse_rest_error_response(
             // https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
             return ss::make_exception_future<ResultT>(
               parse_xml_rest_error_response(std::move(buf)));
+        } else {
+            // render out up to 4k of plaintext or json errors
+            return ss::make_exception_future<ResultT>(
+              parse_unknown_format_error_response(result, std::move(buf)));
         }
     }
 
-    auto result_prefix = buf.empty() ? "Empty error response, " : "";
-    rest_error_response err(
+    return ss::make_exception_future<ResultT>(rest_error_response(
       fmt::format("{}", status_to_error_code(result)),
-      fmt::format("{}status code {}", result_prefix, result),
+      fmt::format("Empty error response, status code {}", result),
       "",
-      "");
-    return ss::make_exception_future<ResultT>(err);
+      ""));
 }
 
 /// Head response doesn't give us an XML encoded error object in
@@ -489,6 +533,7 @@ ss::future<ResultT> parse_head_error_response(
         throw;
     }
 }
+} // namespace
 
 template<typename T>
 ss::future<result<T, error_outcome>> s3_client::send_request(
@@ -580,8 +625,27 @@ s3_client::self_configure() {
     // but self-configuration will misconfigure to virtual-host style due to a
     // ListObjects request that happens to succeed. Override for this
     // specific case.
+    //
+    // Similarily, MinIO supports `virtual_host` only iff the property
+    // MINIO_DOMAIN is set, see:
+    // (https://min.io/docs/minio/linux/reference/minio-server/settings/core.html#envvar.MINIO_DOMAIN).
+    // If it is not, API calls with `virtual_host` will fail, though the
+    // ListObjects request used for self configuration still manages to succeed,
+    // leading to a similarily bad state as Oracle. Override for this case as
+    // well.
+    auto backend = config::shard_local_cfg().cloud_storage_backend();
+    if (
+      backend == model::cloud_storage_backend::oracle_s3_compat
+      || backend == model::cloud_storage_backend::minio) {
+        result.url_style = s3_url_style::path;
+        co_return result;
+    }
+
+    // Also handle possibly inferred backend.
     auto inferred_backend = infer_backend_from_uri(_requestor._ap);
-    if (inferred_backend == model::cloud_storage_backend::oracle_s3_compat) {
+    if (
+      inferred_backend == model::cloud_storage_backend::oracle_s3_compat
+      || inferred_backend == model::cloud_storage_backend::minio) {
         result.url_style = s3_url_style::path;
         co_return result;
     }
@@ -865,8 +929,15 @@ ss::future<> s3_client::do_put_object(
               [](const ss::abort_requested_exception& err) {
                   return ss::make_exception_future<>(err);
               })
-            .handle_exception_type([this](const rest_error_response& err) {
+            .handle_exception_type([this, id](const rest_error_response& err) {
                 _probe->register_failure(err.code(), op_type_tag::upload);
+                if (err.code() == s3_error_code::_unknown) {
+                    vlog(
+                      s3_log.error,
+                      "S3 PUT request failed with error for key {}: {}",
+                      id,
+                      err);
+                }
                 return ss::make_exception_future<>(err);
             })
             .handle_exception([id](std::exception_ptr eptr) {

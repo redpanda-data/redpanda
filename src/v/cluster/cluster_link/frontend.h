@@ -30,7 +30,8 @@ class frontend : public ss::peering_sharded_service<frontend> {
       cluster::cluster_link_upsert_cmd,
       cluster::cluster_link_remove_cmd,
       cluster::cluster_link_add_mirror_topic_cmd,
-      cluster::cluster_link_update_mirror_topic_state_cmd>;
+      cluster::cluster_link_update_mirror_topic_state_cmd,
+      cluster::cluster_link_update_mirror_topic_properties_cmd>;
 
 public:
     frontend(
@@ -57,8 +58,12 @@ public:
       ::cluster_link::model::id_t,
       ::cluster_link::model::update_mirror_topic_state_cmd,
       model::timeout_clock::time_point);
+    ss::future<errc> update_mirror_topic_properties(
+      ::cluster_link::model::id_t,
+      ::cluster_link::model::update_mirror_topic_properties_cmd,
+      model::timeout_clock::time_point);
 
-    bool cluster_link_active(bool check_license) const;
+    bool cluster_link_active() const;
 
     notification_id register_for_updates(notification_callback);
     void unregister_for_updates(notification_id);
@@ -70,6 +75,11 @@ public:
     find_link_by_name(const ::cluster_link::model::name_t& name) const;
 
     chunked_vector<::cluster_link::model::id_t> get_all_link_ids() const;
+
+    std::optional<chunked_hash_map<
+      ::model::topic,
+      ::cluster_link::model::mirror_topic_metadata>>
+    get_mirror_topics_for_link(::cluster_link::model::id_t id) const;
 
 private:
     ss::future<errc>
@@ -87,14 +97,25 @@ public:
     /// Made public for testing purposes
     class validator {
     public:
-        explicit validator(table*, size_t max_links);
+        explicit validator(
+          table*,
+          size_t max_links,
+          chunked_vector<ss::sstring> excluded_topic_properties);
 
         cluster::cluster_link::errc
         validate_mutation(const cluster_link_cmd&) const;
 
     private:
+        cluster::cluster_link::errc validate_connection_config(
+          const ::cluster_link::model::connection_config& config) const;
+        cluster::cluster_link::errc validate_metadata_mirroring_config(
+          const ::cluster_link::model::topic_metadata_mirroring_config& config)
+          const;
+
+    private:
         table* _table;
         size_t _max_links;
+        chunked_vector<ss::sstring> _excluded_topic_properties;
     };
 
 private:
@@ -104,7 +125,7 @@ private:
     table* _table;
     ss::abort_source* _as;
     cluster::controller_stm* _controller;
-    features::feature_table* _features;
+    [[maybe_unused]] features::feature_table* _features;
 
     mutex _mu{"panda-link::frontend::mu"};
 };

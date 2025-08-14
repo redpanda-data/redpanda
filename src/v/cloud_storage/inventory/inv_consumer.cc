@@ -43,7 +43,7 @@ struct flush_entry {
     model::ntp ntp;
     // The vector of hashes which will be written to disk in the file_name on
     // next flush.
-    fragmented_vector<uint64_t> hashes;
+    chunked_vector<uint64_t> hashes;
     // The file to which hashes will be written. The file name is incremented on
     // each flush, so each file name contains some hashes, and we may end up
     // with multiple files per NTP. The hash loader will read all the files and
@@ -92,7 +92,7 @@ std::vector<ss::sstring> inventory_consumer::parse_row(ss::sstring row) {
 }
 
 ss::future<>
-inventory_consumer::process_paths(fragmented_vector<ss::sstring> paths) {
+inventory_consumer::process_paths(chunked_vector<ss::sstring> paths) {
     for (const auto& path : paths) {
         // The row is expected to be in the form:
         // "bucket","path"
@@ -150,7 +150,7 @@ inventory_consumer::flush(inventory_consumer::write_all_t write_all_entries) {
 
     // Set up a vector to sort entries. The ntp and next filename are not moved
     // out of the map, only the hashes are moved out.
-    fragmented_vector<flush_entry> entries;
+    chunked_vector<flush_entry> entries;
     ranges::transform(
       _ntp_flush_states, std::back_inserter(entries), [](auto& e) {
           return flush_entry{

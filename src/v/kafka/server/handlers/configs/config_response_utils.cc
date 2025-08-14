@@ -26,7 +26,98 @@ using namespace std::chrono_literals;
 
 namespace kafka {
 
-static bool config_property_requested(
+model::compression metadata_cache_adapter::get_default_compression() const {
+    return _metadata_cache.get_default_compression();
+}
+model::cleanup_policy_bitflags
+metadata_cache_adapter::get_default_cleanup_policy_bitflags() const {
+    return _metadata_cache.get_default_cleanup_policy_bitflags();
+}
+size_t
+metadata_cache_adapter::get_default_compacted_topic_segment_size() const {
+    return _metadata_cache.get_default_compacted_topic_segment_size();
+}
+size_t metadata_cache_adapter::get_default_segment_size() const {
+    return _metadata_cache.get_default_segment_size();
+}
+std::optional<std::chrono::milliseconds>
+metadata_cache_adapter::get_default_retention_duration() const {
+    return _metadata_cache.get_default_retention_duration();
+}
+std::optional<size_t>
+metadata_cache_adapter::get_default_retention_bytes() const {
+    return _metadata_cache.get_default_retention_bytes();
+}
+model::timestamp_type
+metadata_cache_adapter::get_default_timestamp_type() const {
+    return _metadata_cache.get_default_timestamp_type();
+}
+uint32_t metadata_cache_adapter::get_default_batch_max_bytes() const {
+    return _metadata_cache.get_default_batch_max_bytes();
+}
+model::shadow_indexing_mode
+metadata_cache_adapter::get_default_shadow_indexing_mode() const {
+    return _metadata_cache.get_default_shadow_indexing_mode();
+}
+std::optional<size_t>
+metadata_cache_adapter::get_default_retention_local_target_bytes() const {
+    return _metadata_cache.get_default_retention_local_target_bytes();
+}
+std::chrono::milliseconds
+metadata_cache_adapter::get_default_retention_local_target_ms() const {
+    return _metadata_cache.get_default_retention_local_target_ms();
+}
+std::optional<std::chrono::milliseconds>
+metadata_cache_adapter::get_default_segment_ms() const {
+    return _metadata_cache.get_default_segment_ms();
+}
+std::optional<std::chrono::milliseconds>
+metadata_cache_adapter::get_default_delete_retention_ms() const {
+    return _metadata_cache.get_default_delete_retention_ms();
+}
+bool metadata_cache_adapter::get_default_record_key_schema_id_validation()
+  const {
+    return _metadata_cache.get_default_record_key_schema_id_validation();
+}
+pandaproxy::schema_registry::subject_name_strategy
+metadata_cache_adapter::get_default_record_key_subject_name_strategy() const {
+    return _metadata_cache.get_default_record_key_subject_name_strategy();
+}
+bool metadata_cache_adapter::get_default_record_value_schema_id_validation()
+  const {
+    return _metadata_cache.get_default_record_value_schema_id_validation();
+}
+pandaproxy::schema_registry::subject_name_strategy
+metadata_cache_adapter::get_default_record_value_subject_name_strategy() const {
+    return _metadata_cache.get_default_record_value_subject_name_strategy();
+}
+std::optional<size_t>
+metadata_cache_adapter::get_default_initial_retention_local_target_bytes()
+  const {
+    return _metadata_cache.get_default_initial_retention_local_target_bytes();
+}
+std::optional<std::chrono::milliseconds>
+metadata_cache_adapter::get_default_initial_retention_local_target_ms() const {
+    return _metadata_cache.get_default_initial_retention_local_target_ms();
+}
+std::chrono::milliseconds
+metadata_cache_adapter::get_default_iceberg_target_lag_ms() const {
+    return _metadata_cache.get_default_iceberg_target_lag_ms();
+}
+std::optional<double>
+metadata_cache_adapter::get_default_min_cleanable_dirty_ratio() const {
+    return _metadata_cache.get_default_min_cleanable_dirty_ratio();
+}
+std::chrono::milliseconds
+metadata_cache_adapter::get_default_min_compaction_lag_ms() const {
+    return _metadata_cache.get_default_min_compaction_lag_ms();
+}
+std::chrono::milliseconds
+metadata_cache_adapter::get_default_max_compaction_lag_ms() const {
+    return _metadata_cache.get_default_max_compaction_lag_ms();
+}
+
+bool config_property_requested(
   const config_key_t& configuration_keys,
   const std::string_view property_name) {
     return !configuration_keys.has_value()
@@ -487,7 +578,7 @@ static inline std::optional<ss::sstring> maybe_make_documentation(
 }
 
 config_response_container_t make_topic_configs(
-  const cluster::metadata_cache& metadata_cache,
+  const metadata_cache_info& metadata_cache,
   const cluster::topic_properties& topic_properties,
   const config_key_t& config_keys,
   bool include_synonyms,

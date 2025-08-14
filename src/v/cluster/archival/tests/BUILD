@@ -4,13 +4,13 @@ redpanda_test_cc_library(
     name = "service_fixture",
     srcs = ["service_fixture.cc"],
     hdrs = ["service_fixture.h"],
-    include_prefix = "cluster/archival/tests",
     visibility = ["//visibility:private"],
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
         "//src/v/cloud_storage",
+        "//src/v/cloud_storage:types",
         "//src/v/cloud_storage_clients",
         "//src/v/cluster",
         "//src/v/config",
@@ -58,6 +58,7 @@ redpanda_cc_btest(
     ],
     deps = [
         "//src/v/cloud_storage",
+        "//src/v/cloud_storage:types",
         "//src/v/cluster",
         "//src/v/config",
         "//src/v/http/tests:utils",
@@ -82,6 +83,7 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/cloud_io:remote",
         "//src/v/cloud_storage",
+        "//src/v/cloud_storage:types",
         "//src/v/cloud_storage_clients",
         "//src/v/cluster",
         "//src/v/config",
@@ -110,6 +112,7 @@ redpanda_cc_btest(
     deps = [
         ":service_fixture",
         "//src/v/cloud_storage",
+        "//src/v/cloud_storage:types",
         "//src/v/cluster",
         "//src/v/model",
         "//src/v/random:generators",
@@ -136,6 +139,7 @@ redpanda_cc_btest(
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iostream",
         "//src/v/cloud_storage",
+        "//src/v/cloud_storage:types",
         "//src/v/cloud_storage/tests:common",
         "//src/v/cloud_storage_clients",
         "//src/v/cluster",
@@ -225,7 +229,6 @@ redpanda_cc_btest(
 redpanda_test_cc_library(
     name = "archival_service_fixture",
     hdrs = ["archival_service_fixture.h"],
-    include_prefix = "cluster/archival/tests",
     visibility = ["//visibility:public"],
     deps = [
         ":service_fixture",
@@ -233,7 +236,7 @@ redpanda_test_cc_library(
         "//src/v/cluster",
         "//src/v/cluster/tests:cluster_test_fixture",
         "//src/v/config",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/http/tests:utils",
         "//src/v/model",
         "//src/v/random:generators",
@@ -258,7 +261,7 @@ redpanda_cc_btest(
         "//src/v/cluster/tests:cluster_test_fixture",
         "//src/v/cluster/tests:utils",
         "//src/v/config",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/http/tests:utils",
         "//src/v/model",
         "//src/v/random:generators",

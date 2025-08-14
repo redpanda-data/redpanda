@@ -13,7 +13,7 @@
 
 #include "absl/container/btree_set.h"
 #include "base/seastarx.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/metadata.h"
 #include "security/types.h"
 #include "utils/named_type.h"

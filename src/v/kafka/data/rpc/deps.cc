@@ -100,6 +100,15 @@ public:
         return _proxy->invoke_on_shard_impl(shard, ntp, std::move(fn));
     }
 
+    ss::future<result<partition_offsets, cluster::errc>> get_offsets_from_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<
+        ss::future<result<partition_offsets, cluster::errc>>(
+          kafka::partition_proxy*)> fn) final {
+        return _proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
+    }
+
 private:
     std::unique_ptr<partition_manager_proxy> _proxy;
 };

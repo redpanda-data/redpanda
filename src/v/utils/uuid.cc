@@ -54,6 +54,10 @@ std::istream& operator>>(std::istream& is, uuid_t& u) {
     return is;
 }
 
+std::strong_ordering operator<=>(const uuid_t& u, const uuid_t& v) {
+    return std::memcmp(u._uuid.begin(), v._uuid.begin(), uuid_t::length) <=> 0;
+}
+
 uuid_t::operator ss::sstring() const { return fmt::format("{}", _uuid); }
 
 bool operator<(const uuid_t& l, const uuid_t& r) { return l.uuid() < r.uuid(); }

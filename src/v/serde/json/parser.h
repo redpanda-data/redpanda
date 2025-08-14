@@ -20,7 +20,7 @@
 #include <memory>
 #include <utility>
 
-namespace experimental::serde::json {
+namespace serde::json {
 
 struct parser_config {
     /// Default max depth is very liberal.
@@ -92,6 +92,35 @@ public:
     /// parser reached the end of the input or if an error occurred.
     ss::future<bool> next();
 
+    /// Skip a JSON value based on the current token.
+    ///
+    /// The behavior of this function is designed to work nicely with the
+    /// following pattern:
+    ///
+    ///     while (p.next()) {
+    ///        ...
+    ///        if (cond) parser.skip_value();
+    ///        ...
+    ///     }
+    ///
+    /// So the skip_value() call will leave the parser in a state where the
+    /// next call to next() will return the next token after the skipped value.
+    ///
+    /// - If the current token is a start of an object or an array, the parser
+    /// will skip all the nested values until the end of the object or array is
+    /// reached. The parser will then be positioned at end of the object or
+    /// array token.
+    /// - If the current token is a key, the parser will skip both the key and
+    /// the value associated with it.
+    ///   - For primitive values (null, true, false, int, double, string),
+    ///     the parser will stop at the value such that the next call to next()
+    ///     will either advance to the next key or the end of the
+    ///     enclosing object/array.
+    ///   - For objects and arrays, the parser will stop at the end of the
+    ///     object or array such that the next call to next() will either
+    ///     advance to the next key or the end of the enclosing object/array.
+    ss::future<> skip_value();
+
     /// Return the current token without advancing the parser.
     token token() const;
 
@@ -115,4 +144,4 @@ private:
     std::unique_ptr<impl> _impl;
 };
 
-}; // namespace experimental::serde::json
+}; // namespace serde::json

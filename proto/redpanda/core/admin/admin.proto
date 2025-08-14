@@ -1,0 +1,74 @@
+// Copyright 2025 Redpanda Data, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package redpanda.core.admin;
+
+import "proto/redpanda/pbgen/options.proto";
+import "proto/redpanda/pbgen/rpc.proto";
+
+option (redpanda.pbgen.cpp_namespace) = "proto::admin";
+
+// The AdminService is used to get information about the Redpanda cluster.
+//
+// NOTE: This should be very small and only hold a few RPCs that are core to the
+// Admin API, other APIs should be split out into seperate services.
+service AdminService {
+    // Return the build version and git commit SHA of the Redpanda cluster.
+    rpc GetBuildInfo(GetBuildInfoRequest) returns (BuildInfo) {
+        option (redpanda.pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+    // Return the supported routes for the Admin API. This RPC can be used to
+    // determine what RPCs are available in the Admin API.
+    rpc ListRPCRoutes(ListRPCRoutesRequest) returns (ListRPCRoutesResponse) {
+        option (redpanda.pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+}
+
+// GetBuildInfoRequest is used to request the build information of the Redpanda
+// cluster.
+message GetBuildInfoRequest {}
+// BuildInfo contains information about the Redpanda build.
+message BuildInfo {
+    // A version string of Redpanda like "v25.2.1"
+    string version = 1;
+    // The git commit SHA of the build.
+    string build_sha = 2;
+}
+
+// A route in the Admin API RPC server.
+message RPCRoute {
+    // The name of the RPC method.
+    //
+    // For example `redpanda.core.admin.AdminService.GetVersion`
+    string name = 1;
+    // The HTTP route for this RPC method.
+    //
+    // For example `/v2/redpanda.core.admin.AdminService/GetVersion`
+    string http_route = 2;
+}
+// ListRPCRoutesRequest is used to request the list of available RPC routes in
+// the Admin API.
+message ListRPCRoutesRequest {}
+// ListRPCRoutesResponse contains the list of available RPC routes in the Admin
+// API.
+message ListRPCRoutesResponse {
+    // All the routes available in the Admin API.
+    repeated RPCRoute routes = 1;
+}

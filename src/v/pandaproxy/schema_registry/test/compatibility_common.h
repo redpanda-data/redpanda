@@ -11,6 +11,8 @@
 #include "pandaproxy/schema_registry/compatibility.h"
 #include "pandaproxy/schema_registry/types.h"
 
+#include <algorithm>
+
 namespace pps = pandaproxy::schema_registry;
 
 template<typename incompatibility>
@@ -23,7 +25,7 @@ struct compat_test_data {
       , writer(std::move(writer))
       , expected([&exp]() {
           pps::raw_compatibility_result raw;
-          absl::c_for_each(std::move(exp), [&raw](auto e) {
+          std::ranges::for_each(std::move(exp), [&raw](auto e) {
               raw.emplace<incompatibility>(std::move(e));
           });
           return std::move(raw)(pps::verbose::yes);

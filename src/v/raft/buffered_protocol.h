@@ -125,7 +125,8 @@ public:
       ss::scheduling_group sg,
       consensus_client_protocol base,
       config::binding<size_t> max_inflight_requests,
-      config::binding<size_t> max_buffered_bytes);
+      config::binding<size_t> max_buffered_bytes,
+      std::chrono::milliseconds gc_interval = 10s);
 
     ss::future<result<vote_reply>>
       vote(model::node_id, vote_request, rpc::client_opts) final;
@@ -150,6 +151,9 @@ public:
       model::node_id, transfer_leadership_request, rpc::client_opts) final;
 
     ss::future<> reset_backoff(model::node_id n) final;
+
+    ss::future<result<remake_learner_state_reply>> remake_learner_state(
+      model::node_id, remake_learner_state_request, rpc::client_opts) final;
 
     ss::future<> stop();
 

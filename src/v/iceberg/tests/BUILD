@@ -8,7 +8,6 @@ redpanda_test_cc_library(
     hdrs = [
         "test_schemas.h",
     ],
-    include_prefix = "iceberg/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/iceberg:datatypes",
@@ -23,7 +22,6 @@ redpanda_test_cc_library(
     hdrs = [
         "test_table_metadata.h",
     ],
-    include_prefix = "iceberg/tests",
 )
 
 redpanda_test_cc_library(
@@ -34,7 +32,6 @@ redpanda_test_cc_library(
     hdrs = [
         "value_generator.h",
     ],
-    include_prefix = "iceberg/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/iceberg:datatypes",
@@ -143,7 +140,7 @@ redpanda_cc_gtest(
         "manifest_file_packer_test.cc",
     ],
     deps = [
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/iceberg:manifest_file_packer",
         "//src/v/iceberg:manifest_list",
         "//src/v/test_utils:gtest",
@@ -189,7 +186,7 @@ redpanda_cc_gtest(
         ":test_schemas",
         "//src/v/base",
         "//src/v/bytes:iobuf",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/iceberg:avro_utils",
         "//src/v/iceberg:manifest",
         "//src/v/iceberg:manifest_avro",
@@ -258,7 +255,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         ":test_schemas",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/iceberg:partition",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
@@ -569,7 +566,7 @@ redpanda_cc_gtest(
         ":test_schemas",
         ":value_generator",
         "//src/v/container:chunked_hash_map",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/iceberg:values",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
@@ -589,7 +586,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_io/tests:s3_imposter",
         "//src/v/cloud_io/tests:scoped_remote",
         "//src/v/container:chunked_hash_map",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/iceberg:merge_append_action",
         "//src/v/iceberg:metadata_query",
         "//src/v/iceberg:partition",

@@ -11,7 +11,8 @@
 
 #pragma once
 #include "cluster/node/local_monitor.h"
-#include "storage/api.h"
+#include "features/feature_table.h"
+#include "storage/disk.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/log.hh>

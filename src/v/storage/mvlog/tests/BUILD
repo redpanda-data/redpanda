@@ -82,7 +82,7 @@ redpanda_cc_gtest(
         "file_test.cc",
     ],
     deps = [
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/storage/mvlog",
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:random_bytes",

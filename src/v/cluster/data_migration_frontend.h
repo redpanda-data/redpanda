@@ -13,6 +13,7 @@
 #include "base/outcome.h"
 #include "cloud_storage/remote_label.h"
 #include "cloud_storage/topic_mount_manifest_path.h"
+#include "cluster/data_migration_group_proxy.h"
 #include "cluster/data_migration_types.h"
 #include "cluster/fwd.h"
 #include "features/fwd.h"
@@ -38,6 +39,7 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<controller_stm>&,
       ss::sharded<partition_leaders_table>&,
+      group_proxy& group_proxy,
       ss::sharded<rpc::connection_cache>&,
       std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>,
       ss::sharded<ss::abort_source>&);
@@ -101,6 +103,7 @@ private:
     features::feature_table& _features;
     ss::sharded<controller_stm>& _controller;
     partition_leaders_table& _leaders_table;
+    group_proxy& _group_proxy;
     rpc::connection_cache& _connections;
     std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>
       _topic_mount_handler;

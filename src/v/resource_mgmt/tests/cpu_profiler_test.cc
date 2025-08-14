@@ -230,6 +230,7 @@ SEASTAR_THREAD_TEST_CASE(test_cpu_profiler_enable_override_abort) {
     auto end = ss::steady_clock_type::now();
 
     BOOST_REQUIRE(end - start < 1min);
+    res_fut.get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_cpu_profiler_enable_override_filter_old_samples) {

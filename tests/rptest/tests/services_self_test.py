@@ -9,6 +9,7 @@
 
 import signal
 from subprocess import CalledProcessError
+from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.mark import matrix
 from ducktape.mark.resource import cluster as dt_cluster
 from ducktape.tests.test import Test
@@ -447,7 +448,7 @@ class FailureInjectorSelfTest(Test):
 
 
 class RedpandaServiceSelfTest(RedpandaTest):
-    @cluster(num_nodes=1, log_allow_list=["Segmentation fault"])
+    @cluster(num_nodes=1)
     @matrix(simple_backtrace=[True, False])
     def test_backtrace(self, simple_backtrace: bool):
         rp = self.redpanda
@@ -459,10 +460,59 @@ class RedpandaServiceSelfTest(RedpandaTest):
 
         rp._admin.log_backtrace(node, simple_backtrace=simple_backtrace)
         rp.decode_backtraces(raise_on_failure=True)
-        backtrace_contents = node.account.ssh_output(
+        self._assert_expected_backtrace_contents()
+
+    @cluster(num_nodes=1)
+    @matrix(fail_test=[False, True])
+    def test_cluster_decorator_backtrace(self, fail_test: bool):
+        """This test checks that the @cluster decorator successfully captures the
+        backtrace when the wrapped test failed, and only if it fails."""
+        rp = self.redpanda
+        node = rp.nodes[0]
+        tc = self.test_context
+
+        # before anything happens, the backtrace capture file should not exist
+        assert not node.account.exists(RedpandaService.BACKTRACE_CAPTURE), \
+            "Backtrace capture file should not exist before test"
+
+        rp._admin.log_backtrace(node)
+
+        class FailThisTest(Exception):
+            pass
+
+        # We need something that looks like a RedpandaTest to use the @cluster decorator
+        class DummyTest:
+            def __init__(self):
+                self.redpanda = rp
+                self.test_context = tc
+
+            @cluster(num_nodes=1)
+            def run(self):
+                if fail_test:
+                    raise FailThisTest()
+
+        try:
+            DummyTest().run()
+            assert not fail_test, "inner test passed when it shouldn't"
+        except FailThisTest:
+            assert fail_test, "inner test failed when it shouldn't"
+
+        try:
+            self._assert_expected_backtrace_contents()
+            assert fail_test
+        except RemoteCommandError:
+            # expected when the inner test passed, as if the inner test passed,
+            # the backtrace capture file should not exist
+            assert not fail_test
+
+    def _assert_expected_backtrace_contents(self):
+        """
+        Assert that the backtrace capture file contains expected contents.
+        """
+        backtrace_contents = self.redpanda.nodes[0].account.ssh_output(
             f"cat {RedpandaService.BACKTRACE_CAPTURE}").decode()
         self.logger.debug(f"Backtrace contents: {backtrace_contents}")
         # we look for this characteristic string in the backtrace, which is
-        # the method int he admin API that was called to capture the backtrace
+        # the method in the admin API that was called to capture the backtrace
         assert "::log_backtrace" in backtrace_contents, \
             "Didn't find expected string in backtrace (see debug log for contents)"

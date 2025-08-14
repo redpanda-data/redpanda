@@ -124,7 +124,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             lambda: self.metrics_correct(prev_assignment, assignmets),
             timeout_sec=10)
 
-    def _random_move_and_cancel(self, unclean_abort):
+    def _random_move_and_cancel(self, unclean_abort, force_back):
         metadata = self.client().describe_topics()
         topic, partition = self._random_partition(metadata)
         prev_assignment, assignments = self._dispatch_random_partition_move(
@@ -133,6 +133,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         self._wait_for_move_in_progress(topic, partition)
         self.check_metrics(prev_assignment, assignments)
         self._request_move_cancel(unclean_abort=unclean_abort,
+                                  force_back=force_back,
                                   topic=topic,
                                   partition=partition,
                                   previous_assignment=prev_assignment)
@@ -147,10 +148,11 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(replication_factor=[1, 3],
             unclean_abort=[True, False],
+            force_back=[True, False],
             recovery=[NO_RECOVERY, RESTART_RECOVERY],
             compacted=[False, True])
     def test_cancelling_partition_move(self, replication_factor, unclean_abort,
-                                       recovery, compacted):
+                                       force_back, recovery, compacted):
         """
         Cancel partition moving with active consumer / producer
         """
@@ -183,7 +185,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         self._throttle_recovery(10)
 
         for _ in range(self.moves):
-            self._random_move_and_cancel(unclean_abort)
+            self._random_move_and_cancel(unclean_abort=unclean_abort,
+                                         force_back=force_back)
             if recovery == RESTART_RECOVERY:
                 # restart one of the nodes after each move
                 self.redpanda.restart_nodes(
@@ -191,7 +194,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         # start consumer late in the process for the compaction to trigger
         if compacted:
             self.start_consumer(1, verify_offsets=False)
-        if unclean_abort:
+        if unclean_abort or force_back:
             # do not run offsets validation as we may experience data loss since partition movement is forcibly cancelling
             wait_until(lambda: self.producer.num_acked > 20000, timeout_sec=60)
 

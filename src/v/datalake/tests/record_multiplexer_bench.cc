@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #include "cloud_io/provider.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "datalake/catalog_schema_manager.h"
 #include "datalake/location.h"
 #include "datalake/record_multiplexer.h"
@@ -19,12 +19,12 @@
 #include "datalake/tests/record_generator.h"
 #include "datalake/tests/test_data_writer.h"
 #include "datalake/tests/test_utils.h"
+#include "model/batch_compression.h"
 #include "model/compression.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "serde/avro/tests/data_generator.h"
 #include "serde/protobuf/tests/data_generator.h"
-#include "storage/parser_utils.h"
 
 #include <seastar/testing/perf_tests.hh>
 
@@ -36,8 +36,8 @@ namespace {
 std::string generate_nested_proto_internal(size_t total_depth) {
     constexpr auto proto_template = R"(
     message Foo{} {{
-        {} 
-        string a{} = {}; 
+        {}
+        string a{} = {};
         {}
     }})";
 
@@ -308,7 +308,7 @@ public:
     }
 
     ss::future<size_t> run_bench() {
-        auto reader = model::make_fragmented_memory_record_batch_reader(
+        auto reader = model::make_chunked_memory_record_batch_reader(
           share_batches(_batch_data));
         auto consumer = counting_consumer{.mux = create_mux(), .as = _as};
 
@@ -408,7 +408,7 @@ private:
 
             auto batch = std::move(batch_builder).build();
             if (compression_type != model::compression::none) {
-                batch = co_await storage::internal::compress_batch(
+                batch = co_await model::compress_batch(
                   compression_type, std::move(batch));
             }
             ret.emplace_back(std::move(batch));

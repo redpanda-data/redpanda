@@ -92,7 +92,7 @@ struct walk_accumulator {
     const access_time_tracker& tracker;
     std::deque<ss::sstring> dirlist;
     std::optional<recursive_directory_walker::filter_type> filter;
-    fragmented_vector<file_list_item> files;
+    chunked_vector<file_list_item> files;
     uint64_t current_cache_size{0};
     size_t filtered_out_files{0};
     size_t tmp_files_size{0};
@@ -104,7 +104,7 @@ ss::future<> walker_process_directory(
   const ss::sstring& start_dir,
   ss::sstring target,
   cloud_storage::walk_accumulator& state,
-  fragmented_vector<ss::sstring>& empty_dirs) {
+  chunked_vector<ss::sstring>& empty_dirs) {
     try {
         ss::file target_dir = co_await open_directory(target);
 
@@ -151,7 +151,7 @@ ss::future<walk_result> recursive_directory_walker::walk(
     // Object to accumulate data as we walk directories
     walk_accumulator state(start_dir, tracker, std::move(collect_filter));
 
-    fragmented_vector<ss::sstring> empty_dirs;
+    chunked_vector<ss::sstring> empty_dirs;
 
     // Listing directories involves blocking I/O which in Seastar is serviced by
     // a dedicated thread pool and workqueue. When listing directories with

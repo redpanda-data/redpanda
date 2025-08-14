@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/redpanda-data/common-go/rpsr"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -162,7 +163,7 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			defer cl.Flush(context.Background())
 
 			var defaultKeySerde, defaultValSerde *serde.Serde
-			var srCl *sr.Client
+			var srCl *rpsr.Client
 			if isSchemaRegistry {
 				srCl, err = schemaregistry.NewClient(fs, p)
 				out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
@@ -171,11 +172,11 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.MaybeDie(err, "unable to query schemas from the registry: %v", err)
 
 				if keySchema != nil {
-					defaultKeySerde, err = serde.NewSerde(cmd.Context(), srCl, keySchema, keySchemaID, protoKeyFQN)
+					defaultKeySerde, err = serde.NewSerde(cmd.Context(), srCl.Client, keySchema, keySchemaID, protoKeyFQN)
 					out.MaybeDie(err, "unable to build serializer for the key schema: %v", err)
 				}
 				if valSchema != nil {
-					defaultValSerde, err = serde.NewSerde(cmd.Context(), srCl, valSchema, schemaID, protoFQN)
+					defaultValSerde, err = serde.NewSerde(cmd.Context(), srCl.Client, valSchema, schemaID, protoFQN)
 					out.MaybeDie(err, "unable to build serializer for the value schema: %v", err)
 				}
 			}
@@ -283,7 +284,7 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return cmd
 }
 
-func querySchemas(ctx context.Context, cl *sr.Client, keySchemaID, valSchemaID int) (keySchema *sr.Schema, valSchema *sr.Schema, err error) {
+func querySchemas(ctx context.Context, cl *rpsr.Client, keySchemaID, valSchemaID int) (keySchema *sr.Schema, valSchema *sr.Schema, err error) {
 	if keySchemaID > 0 {
 		keySch, err := cl.SchemaByID(ctx, keySchemaID)
 		if err != nil {
@@ -318,7 +319,7 @@ func parseSchemaIDFlag(flag string) (int, bool, error) {
 // serdeFromTopicName returns a new serde.Serde based on the topicName strategy.
 // First, it searches if the serde is cached, if not, it will query the latest
 // schema with subject name: <topic>-<suffix> and cache the result.
-func serdeFromTopicName(ctx context.Context, cl *sr.Client, topic, suffix, protoFQN string, serdeCache map[string]*serde.Serde) (*serde.Serde, error) {
+func serdeFromTopicName(ctx context.Context, cl *rpsr.Client, topic, suffix, protoFQN string, serdeCache map[string]*serde.Serde) (*serde.Serde, error) {
 	var newSerde *serde.Serde
 	schSubjectName := topic + "-" + suffix
 	if s, ok := serdeCache[schSubjectName]; ok {
@@ -328,7 +329,7 @@ func serdeFromTopicName(ctx context.Context, cl *sr.Client, topic, suffix, proto
 		if err != nil {
 			return nil, fmt.Errorf("unable to get schema with name %q using TopicName strategy: %v", schSubjectName, err)
 		}
-		newSerde, err = serde.NewSerde(ctx, cl, &schema.Schema, schema.ID, protoFQN)
+		newSerde, err = serde.NewSerde(ctx, cl.Client, &schema.Schema, schema.ID, protoFQN)
 		if err != nil {
 			return nil, fmt.Errorf("unable to build serializer for the schema: %v", err)
 		}

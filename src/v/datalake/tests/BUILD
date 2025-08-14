@@ -3,7 +3,6 @@ load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_
 redpanda_test_cc_library(
     name = "catalog_and_registry_fixture",
     hdrs = ["catalog_and_registry_fixture.h"],
-    include_prefix = "datalake/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cloud_io:remote",
@@ -17,7 +16,6 @@ redpanda_test_cc_library(
 redpanda_test_cc_library(
     name = "test_data",
     hdrs = ["test_data.h"],
-    include_prefix = "datalake/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/iceberg:datatypes",
@@ -41,12 +39,11 @@ redpanda_test_cc_library(
         "@avro",
         "@protobuf",
     ],
-    include_prefix = "datalake/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/pandaproxy/schema_registry:server",
         "//src/v/serde/avro/tests:data_generator",
@@ -62,7 +59,6 @@ redpanda_test_cc_library(
     hdrs = [
         "test_data_writer.h",
     ],
-    include_prefix = "datalake/tests",
     deps = [
         "//src/v/datalake:serde_parquet_writer",
         "//src/v/datalake:writer",
@@ -86,7 +82,6 @@ redpanda_test_cc_library(
         "//src/v/datalake:table_definition",
         "//src/v/datalake:table_id_provider",
     ],
-    include_prefix = "datalake/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/datalake:catalog_schema_manager",
@@ -279,7 +274,7 @@ redpanda_cc_bench(
         ":test_data_writer",
         ":test_utils",
         "//src/v/cloud_io:provider",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/datalake:catalog_schema_manager",
         "//src/v/datalake:location",
         "//src/v/datalake:record_multiplexer",
@@ -287,9 +282,9 @@ redpanda_cc_bench(
         "//src/v/datalake:record_translator",
         "//src/v/datalake:table_creator",
         "//src/v/model",
+        "//src/v/model:batch_compression",
         "//src/v/serde/avro/tests:data_generator",
         "//src/v/serde/protobuf/tests:data_generator",
-        "//src/v/storage:parser_utils",
         "@seastar",
         "@seastar//:benchmark",
     ],
@@ -384,7 +379,6 @@ redpanda_cc_gtest(
 redpanda_test_cc_library(
     name = "translator_fixture",
     hdrs = ["fixture.h"],
-    include_prefix = "datalake/tests",
     visibility = [":__subpackages__"],
     deps = [
         "//src/v/cluster/archival/tests:archival_service_fixture",

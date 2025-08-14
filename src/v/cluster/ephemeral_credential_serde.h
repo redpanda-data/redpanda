@@ -24,8 +24,6 @@ struct put_ephemeral_credential_request
       put_ephemeral_credential_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     put_ephemeral_credential_request() = default;
     explicit put_ephemeral_credential_request(
       security::acl_principal principal,
@@ -47,8 +45,6 @@ struct put_ephemeral_credential_reply
       put_ephemeral_credential_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     put_ephemeral_credential_reply() = default;
     explicit put_ephemeral_credential_reply(errc err)
       : err(err) {}

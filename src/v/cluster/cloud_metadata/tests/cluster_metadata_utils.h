@@ -21,15 +21,6 @@
 
 namespace cluster::cloud_metadata {
 
-inline security::license get_test_license() {
-    const char* sample_valid_license = std::getenv("REDPANDA_SAMPLE_LICENSE");
-    vassert(
-      sample_valid_license != nullptr,
-      "Expected REDPANDA_SAMPLE_LICENSE to be set");
-    const ss::sstring license_str{sample_valid_license};
-    return security::make_license(license_str);
-}
-
 inline security::acl_binding binding_for_user(const ss::sstring& user) {
     const security::acl_principal principal{
       security::principal_type::ephemeral_user, user};

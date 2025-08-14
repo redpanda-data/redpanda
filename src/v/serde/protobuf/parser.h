@@ -14,7 +14,7 @@
 #include "bytes/hash.h"
 #include "bytes/iobuf.h"
 #include "container/chunked_hash_map.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 
 #include <cstdint>
 

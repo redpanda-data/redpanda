@@ -18,7 +18,7 @@ SEASTAR_THREAD_TEST_CASE(collections_interop) {
     auto vector = tests::random_vector(
       []() { return random_generators::gen_alphanum_string(32); }, 1024);
     ss::chunked_fifo<ss::sstring> fifo;
-    fragmented_vector<ss::sstring> f_vector;
+    chunked_vector<ss::sstring> f_vector;
     std::copy(vector.begin(), vector.end(), std::back_inserter(fifo));
     std::copy(vector.begin(), vector.end(), std::back_inserter(f_vector));
 

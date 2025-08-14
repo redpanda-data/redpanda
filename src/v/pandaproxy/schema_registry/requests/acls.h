@@ -11,6 +11,7 @@
 #pragma once
 
 #include "absl/strings/ascii.h"
+#include "container/chunked_vector.h"
 #include "json/chunked_buffer.h"
 #include "json/types.h"
 #include "pandaproxy/json/rjson_parse.h"
@@ -91,7 +92,7 @@ class acl_handler : public json::base_handler<Encoding> {
 public:
     using require_fields = ss::bool_class<struct require_fields_tag>;
     using Ch = typename json::base_handler<Encoding>::Ch;
-    using rjson_parse_result = std::vector<acl>;
+    using rjson_parse_result = chunked_vector<acl>;
 
     explicit acl_handler(require_fields require_fields)
       : json::base_handler<Encoding>{json::serialization_format::none}

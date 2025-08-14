@@ -5,7 +5,6 @@ redpanda_cc_library(
     hdrs = [
         "types.h",
     ],
-    include_prefix = "datalake/translation",
     visibility = [":__subpackages__"],
     deps = [
         "//src/v/model",
@@ -21,7 +20,6 @@ redpanda_cc_library(
     hdrs = [
         "utils.h",
     ],
-    include_prefix = "datalake/translation",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/model",
@@ -41,12 +39,11 @@ redpanda_cc_library(
         "scheduling.h",
         "scheduling_policies.h",
     ],
-    include_prefix = "datalake/translation",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/config",
         "//src/v/container:chunked_hash_map",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/container:intrusive",
         "//src/v/datalake:logger",
         "//src/v/model",
@@ -69,7 +66,6 @@ redpanda_cc_library(
     hdrs = [
         "state_machine.h",
     ],
-    include_prefix = "datalake/translation",
     visibility = ["//visibility:public"],
     deps = [
         ":model",
@@ -92,7 +88,6 @@ redpanda_cc_library(
     hdrs = [
         "deps.h",
     ],
-    include_prefix = "datalake/translation",
     visibility = [":__subpackages__"],
     deps = [
         ":scheduler",
@@ -134,7 +129,6 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/ssx:watchdog",
     ],
-    include_prefix = "datalake/translation",
     visibility = ["//visibility:public"],
     deps = [
         ":model",
@@ -166,7 +160,6 @@ redpanda_cc_library(
     hdrs = [
         "translation_probe.h",
     ],
-    include_prefix = "datalake/translation",
     visibility = [
         "//src/v/datalake:__subpackages__",
     ],

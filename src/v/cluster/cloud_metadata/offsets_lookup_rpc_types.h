@@ -10,7 +10,7 @@
 #pragma once
 
 #include "cluster/errc.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "serde/envelope.h"
@@ -22,14 +22,13 @@ struct offsets_lookup_request
       offsets_lookup_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     cluster::errc error;
 
     // Node ID to which this request is sent.
     model::node_id node_id;
 
     // List of NTPs being looked up.
-    fragmented_vector<model::ntp> ntps;
+    chunked_vector<model::ntp> ntps;
 
     auto serde_fields() { return std::tie(node_id, ntps); }
 
@@ -43,13 +42,9 @@ struct offsets_lookup_reply
       offsets_lookup_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     struct ntp_offset
       : public serde::
           envelope<ntp_offset, serde::version<0>, serde::compat_version<0>> {
-        using rpc_adl_exempt = std::true_type;
-
         model::ntp ntp;
         kafka::offset offset;
 
@@ -66,7 +61,7 @@ struct offsets_lookup_reply
     model::node_id node_id;
 
     // Kakfa end offsets per NTP.
-    fragmented_vector<ntp_offset> ntp_and_offset;
+    chunked_vector<ntp_offset> ntp_and_offset;
 
     auto serde_fields() { return std::tie(node_id, ntp_and_offset); }
 

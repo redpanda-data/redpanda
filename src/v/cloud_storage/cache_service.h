@@ -11,7 +11,6 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "base/units.h"
 #include "cloud_io/basic_cache_service_api.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/cache_probe.h"
@@ -19,8 +18,9 @@
 #include "config/configuration.h"
 #include "config/property.h"
 #include "ssx/semaphore.h"
-#include "storage/types.h"
+#include "storage/disk.h"
 
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
@@ -29,7 +29,6 @@
 #include <seastar/core/thread.hh>
 
 #include <filesystem>
-#include <iterator>
 #include <optional>
 #include <set>
 #include <string_view>
@@ -40,7 +39,6 @@ namespace cloud_storage {
 
 // These timeout/backoff settings are for S3 requests
 using namespace std::chrono_literals;
-inline const ss::lowres_clock::duration cache_hydration_timeout = 60s;
 inline const ss::lowres_clock::duration cache_hydration_backoff = 250ms;
 
 // This backoff is for failure of the local cache to retain recently
@@ -207,12 +205,12 @@ private:
     /// Ordinary trim: prioritze trimming data chunks, only delete indices etc
     /// if all their chunks are dropped.
     ss::future<trim_result> trim_fast(
-      const fragmented_vector<file_list_item>& candidates,
+      const chunked_vector<file_list_item>& candidates,
       uint64_t delete_bytes,
       size_t delete_objects);
 
     ss::future<trim_result> do_trim(
-      const fragmented_vector<file_list_item>& candidates,
+      const chunked_vector<file_list_item>& candidates,
       uint64_t delete_bytes,
       size_t delete_objects);
 
@@ -361,7 +359,7 @@ private:
     friend struct ::cloud_storage_fixture;
 
     // List of probable deletion candidates from the last trim.
-    std::optional<fragmented_vector<file_list_item>> _last_trim_carryover;
+    std::optional<chunked_vector<file_list_item>> _last_trim_carryover;
 
     ss::timer<ss::lowres_clock> _tracker_sync_timer;
     ssx::semaphore _tracker_sync_timer_sem{

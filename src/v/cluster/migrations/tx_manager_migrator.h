@@ -13,7 +13,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/tx_manager_migrator_service.h"
 #include "config/property.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"

@@ -17,7 +17,7 @@
 
 #include <seastar/util/variant_utils.hh>
 
-namespace experimental::serde::json::test::dom {
+namespace serde::json::test::dom {
 
 namespace {
 
@@ -74,4 +74,4 @@ std::ostream& operator<<(std::ostream& os, const value& v) {
     return os << ")";
 }
 
-} // namespace experimental::serde::json::test::dom
+} // namespace serde::json::test::dom

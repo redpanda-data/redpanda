@@ -5,7 +5,6 @@ redpanda_test_cc_library(
     hdrs = [
         "avro_payloads.h",
     ],
-    include_prefix = "pandaproxy/schema_registry/test",
     deps = [
         "//src/v/pandaproxy/schema_registry:core",
     ],
@@ -16,13 +15,11 @@ redpanda_test_cc_library(
     hdrs = [
         "client_utils.h",
     ],
-    include_prefix = "pandaproxy/schema_registry/test",
     deps = [
         "//src/v/http",
         "//src/v/json",
         "//src/v/pandaproxy/schema_registry:core",
         "//src/v/pandaproxy/test:utils",
-        "@abseil-cpp//absl/algorithm:container",
         "@boost//:beast",
     ],
 )
@@ -32,7 +29,6 @@ redpanda_test_cc_library(
     hdrs = [
         "compatibility_avro.h",
     ],
-    include_prefix = "pandaproxy/schema_registry/test",
     deps = [
         "//src/v/pandaproxy/schema_registry:core",
     ],
@@ -43,7 +39,6 @@ redpanda_test_cc_library(
     hdrs = [
         "compatibility_protobuf.h",
     ],
-    include_prefix = "pandaproxy/schema_registry/test",
     deps = [
         "//src/v/pandaproxy/schema_registry:core",
     ],
@@ -54,7 +49,6 @@ redpanda_test_cc_library(
     hdrs = [
         "compatibility_common.h",
     ],
-    include_prefix = "pandaproxy/schema_registry/test",
     deps = [
         "//src/v/pandaproxy/schema_registry:core",
     ],
@@ -116,7 +110,6 @@ redpanda_cc_btest(
         "//src/v/pandaproxy/schema_registry:core",
         "//src/v/pandaproxy/schema_registry/test:compatibility_avro",
         "//src/v/test_utils:seastar_boost",
-        "@abseil-cpp//absl/algorithm:container",
         "@boost//:test",
         "@seastar//:testing",
     ],
@@ -400,7 +393,6 @@ redpanda_test_cc_library(
     hdrs = [
         "random.h",
     ],
-    include_prefix = "pandaproxy/schema_registry/test",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/pandaproxy/schema_registry:subject_name_strategy",

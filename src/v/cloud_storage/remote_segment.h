@@ -179,6 +179,12 @@ public:
 
     size_t concurrency() { return _api.concurrency(); }
 
+    template<class Fn>
+    auto with_scheduling_group(Fn&& fn) {
+        return ss::with_scheduling_group(
+          _api.resources().get_scheduling_group(), std::forward<Fn>(fn));
+    }
+
 private:
     /// get a file offset for the corresponding kafka offset
     /// if the index is available
@@ -291,7 +297,7 @@ private:
     ss::file _data_file;
     std::optional<offset_index> _index;
 
-    using tx_range_vec = fragmented_vector<model::tx_range>;
+    using tx_range_vec = chunked_vector<model::tx_range>;
     std::optional<tx_range_vec> _tx_range;
 
     // For backing off on apparent thrash/saturation of the local cache
@@ -329,14 +335,14 @@ private:
     /// failed to materialize (possibly due to cache eviction), and returns the
     /// collected set of such failed requests. These should then be requeued by
     /// the caller.
-    ss::future<fragmented_vector<chunk_request>> service_chunk_requests();
+    ss::future<chunked_vector<chunk_request>> service_chunk_requests();
 
     /// Waiters pending chunk downloads. Only the first hydration request for a
     /// given chunk ends up here. All following requests for that chunk are
     /// stored by the chunk API in its own wait list. This way only a single
     /// file handle is created for a given chunk, and the chunk API distributes
     /// shared ptrs to that handle to consumers.
-    fragmented_vector<chunk_request> _chunk_waiters;
+    chunked_vector<chunk_request> _chunk_waiters;
 
     friend class remote_segment_test_helper;
 };
@@ -427,6 +433,10 @@ public:
 private:
     friend class single_record_consumer;
     ss::future<std::unique_ptr<storage::continuous_batch_parser>> init_parser();
+
+    ss::future<result<chunked_circular_buffer<model::record_batch>>>
+    do_read_some(
+      model::timeout_clock::time_point, storage::offset_translator_state&);
 
     size_t produce(model::record_batch batch);
 

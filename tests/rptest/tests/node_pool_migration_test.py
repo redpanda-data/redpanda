@@ -10,6 +10,7 @@
 from concurrent.futures import ThreadPoolExecutor
 import random
 import re
+import json
 
 import requests
 from rptest.clients.kafka_cat import KafkaCat
@@ -23,9 +24,13 @@ from ducktape.mark import matrix
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
+from rptest.util import expect_exception
 from rptest.utils.mode_checks import cleanup_on_early_exit
 from rptest.utils.node_operations import NodeDecommissionWaiter
+from rptest.utils.mode_checks import skip_debug_mode
+from rptest.tests.redpanda_test import RedpandaTest
 from enum import Enum
+import ducktape.errors
 
 TS_LOG_ALLOW_LIST = [
     re.compile(
@@ -43,21 +48,10 @@ class TestMode(str, Enum):
         return self.value == self.TIRED_STORAGE or self.value == self.FAST_MOVES
 
 
-class NodePoolMigrationTest(PreallocNodesTest):
-    """
-    Basic nodes decommissioning test.
-    """
-    def __init__(self, test_context):
+class NodePoolMigrationTestBase(PreallocNodesTest):
+    def __init__(self, *args, **kwargs):
         self._topic = None
-
-        super(NodePoolMigrationTest, self).__init__(
-            test_context=test_context,
-            num_brokers=10,
-            node_prealloc_count=1,
-            si_settings=SISettings(test_context,
-                                   cloud_storage_enable_remote_read=True,
-                                   cloud_storage_enable_remote_write=True,
-                                   fast_uploads=True))
+        super(NodePoolMigrationTestBase, self).__init__(*args, **kwargs)
 
     def setup(self):
         # defer starting redpanda to test body
@@ -267,6 +261,27 @@ class NodePoolMigrationTest(PreallocNodesTest):
 
         return node_replicas
 
+
+class NodePoolMigrationTest(NodePoolMigrationTestBase):
+    """
+    Basic nodes decommissioning test.
+    """
+    def __init__(self, test_context):
+        self._topic = None
+
+        super(NodePoolMigrationTest, self).__init__(
+            test_context=test_context,
+            num_brokers=10,
+            node_prealloc_count=1,
+            si_settings=SISettings(test_context,
+                                   cloud_storage_enable_remote_read=True,
+                                   cloud_storage_enable_remote_write=True,
+                                   fast_uploads=True))
+
+    def setup(self):
+        # defer starting redpanda to test body
+        pass
+
     @cluster(num_nodes=11,
              log_allow_list=RESTART_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST)
     @matrix(balancing_mode=["off", 'node_add'],
@@ -397,3 +412,181 @@ class NodePoolMigrationTest(PreallocNodesTest):
             self.redpanda.stop_node(n)
 
         self.verify()
+
+
+class DisableTestMode(str, Enum):
+    DISABLE = "disable tiered storage"
+    PAUSE = "pause uploads"
+
+    def do_disable(self, test: RedpandaTest, topic_name: str):
+        if self.value == self.DISABLE:
+            test.client().alter_topic_config(topic_name,
+                                             'redpanda.remote.read', 'false')
+            test.client().alter_topic_config(topic_name,
+                                             'redpanda.remote.write', 'false')
+        elif self.value == self.PAUSE:
+            test.client().alter_topic_config(topic_name,
+                                             'redpanda.remote.allowgaps',
+                                             'true')
+            test.redpanda.set_cluster_config(
+                {"cloud_storage_enable_segment_uploads": False})
+
+
+class DisableTieredStorageTest(NodePoolMigrationTestBase):
+    def __init__(self, test_context):
+        self._topic = None
+
+        super(DisableTieredStorageTest, self).__init__(
+            test_context=test_context,
+            num_brokers=3,
+            node_prealloc_count=1,
+            si_settings=SISettings(test_context,
+                                   cloud_storage_enable_remote_read=True,
+                                   cloud_storage_enable_remote_write=True,
+                                   fast_uploads=True))
+
+    def setup(self):
+        # defer starting redpanda to test body
+        pass
+
+    @cluster(num_nodes=4,
+             log_allow_list=RESTART_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST)
+    @matrix(disable_mode=[
+        DisableTestMode.DISABLE,
+        DisableTestMode.PAUSE,
+    ])
+    def test_disable_tiered_storage(self, disable_mode: DisableTestMode):
+        '''
+        This test performs the following actions:
+          - Create a tiered storage topic
+          - Produce some data and wait for cloud storage upload
+          - Disable tiered storage on the topic
+          - Produce some more data (note no additional upload)
+          - Decommission leader to force leadership transfer
+          - Check that start offset and high watermark on the new leader reflect
+            the full content of the original leader's raft log prior to decom.
+        '''
+
+        self.redpanda.start()
+        cfg = {"partition_autobalancing_mode": 'node_add'}
+        cfg["cloud_storage_enable_remote_write"] = True
+        cfg["cloud_storage_enable_remote_read"] = True
+        # we want data to be actually deleted
+        cfg["retention_local_strict"] = True
+
+        # we need to configure a small amount of initial local retention,
+        # otherwise we get the hwm, batch boundary adjustment fails, and we
+        # fall back to  setting the learner to start at offset 0
+        self.redpanda.set_cluster_config({
+            "initial_retention_local_target_bytes_default":
+            self.segment_size * 2
+        })
+
+        self.admin.patch_cluster_config(upsert=cfg)
+
+        spec = TopicSpec(
+            name=f"migration-test",
+            partition_count=1,
+            replication_factor=1,
+            cleanup_policy='compact',
+            segment_bytes=self.segment_size,
+        )
+        self.client().create_topic(spec)
+        self._topic = spec.name
+        rpk = RpkTool(self.redpanda)
+
+        def describe_topic():
+            info = None
+            while info is None:
+                for i in rpk.describe_topic(spec.name):
+                    info = i
+            self.logger.debug(f"{info}")
+            return info
+
+        self.start_producer()
+        self.producer.wait(timeout_sec=60)
+
+        info = describe_topic()
+
+        initial_start_offset = info.start_offset
+        initial_hwm = info.high_watermark
+
+        def pm_last_offset():
+            v = self.admin.get_partition_manifest(spec.name, 0)['last_offset']
+            return v
+
+        self.logger.debug("Wait until most of the topic is uploaded")
+
+        wait_until(lambda: pm_last_offset() >= initial_hwm,
+                   timeout_sec=30,
+                   backoff_sec=2,
+                   err_msg="Partition never uploaded")
+
+        self.logger.debug(
+            f"Now {disable_mode} and produce some more to put HWM well above the last uploaded offset"
+        )
+        disable_mode.do_disable(self, spec.name)
+
+        last_uploaded = pm_last_offset()
+
+        self.start_producer()
+        self.producer.wait(timeout_sec=60)
+
+        info = describe_topic()
+        second_start_offset = info.start_offset
+        second_hwm = info.high_watermark
+
+        assert pm_last_offset() == last_uploaded, \
+            f"Unexpectedly uploaded more data {pm_last_offset()} > {last_uploaded}"
+
+        self.logger.debug(
+            "Decommission the partition's leader and wait for leadership transfer"
+        )
+
+        leader_id = self.admin.get_partition_leader(namespace='kafka',
+                                                    topic=spec.name,
+                                                    partition=0)
+
+        self._decommission(leader_id, decommissioned_ids=[leader_id])
+
+        def new_leader_id():
+            partition_info = self.admin.get_partitions(topic=spec.name,
+                                                       partition=0,
+                                                       namespace='kafka',
+                                                       node=None)
+            self.logger.debug(f"{partition_info=}")
+            new_id = self.admin.get_partition_leader(namespace='kafka',
+                                                     topic=spec.name,
+                                                     partition=0)
+            self.logger.debug(f"{new_id=}")
+            return new_id
+
+        wait_until(lambda: new_leader_id() not in [leader_id, -1],
+                   timeout_sec=60,
+                   backoff_sec=2,
+                   err_msg="Partition didn't move")
+
+        if disable_mode == DisableTestMode.DISABLE:
+            self.logger.debug(
+                "With tiered storage disabled, we should skip FPM truncation and transfer the whole log via raft"
+            )
+        elif disable_mode == DisableTestMode.PAUSE:
+            self.logger.debug(
+                "With uploads paused, FPM should truncate only up to the last uploaded offset to avoid introducing a gap in the log"
+            )
+
+        with expect_exception(ducktape.errors.TimeoutError, lambda e: True):
+            wait_until(
+                lambda: describe_topic().start_offset > initial_start_offset,
+                timeout_sec=30,
+                backoff_sec=2,
+                err_msg="Start offset never jumped")
+
+        final_start_offset = describe_topic().start_offset
+        final_hwm = describe_topic().high_watermark
+
+        assert final_start_offset == initial_start_offset, \
+            f"Expected final_start_offset == {initial_start_offset}, got {final_start_offset=}"
+
+        assert final_hwm == second_hwm, \
+            f"Expected final_hwm == {second_hwm}, got {final_hwm=}"

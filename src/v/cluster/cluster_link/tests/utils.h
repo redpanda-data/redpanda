@@ -23,10 +23,27 @@ model::record_batch create_add_mirror_topic_command(
 model::record_batch create_update_mirror_topic_state_command(
   ::cluster_link::model::id_t,
   ::cluster_link::model::update_mirror_topic_state_cmd);
+model::record_batch create_update_mirror_topic_properties_command(
+  ::cluster_link::model::id_t,
+  ::cluster_link::model::update_mirror_topic_properties_cmd);
 
 ::cluster_link::model::mirror_topic_metadata create_mirror_topic_metadata(
   ::cluster_link::model::mirror_topic_state,
   ::model::topic source_topic_name,
   std::optional<::model::topic_id> source_topic_id = std::nullopt,
-  std::optional<::model::topic_id> destination_topoic_id = std::nullopt);
+  std::optional<::model::topic_id> destination_topoic_id = std::nullopt,
+  chunked_hash_map<ss::sstring, ss::sstring> topic_configs = {});
+
+template<typename... Args>
+void set_link_mirror_topics(
+  ::cluster_link::model::metadata& link,
+  const ::model::topic& topic,
+  Args&&... args) {
+    auto mirror_topic_metadata = testing::create_mirror_topic_metadata(
+      std::forward<Args>(args)...);
+
+    ::cluster_link::model::link_state::mirror_topics_t mirror_topics;
+    mirror_topics.emplace(topic, std::move(mirror_topic_metadata));
+    link.state.set_mirror_topics(std::move(mirror_topics));
+}
 } // namespace cluster::cluster_link::testing

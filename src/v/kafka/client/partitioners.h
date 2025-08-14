@@ -11,10 +11,13 @@
 
 #pragma once
 
+#include "container/chunked_hash_map.h"
 #include "kafka/client/types.h"
 #include "model/fundamental.h"
 
-namespace kafka::client {
+namespace kafka {
+struct metadata_response_data;
+namespace client {
 
 class partitioner_impl {
 public:
@@ -62,4 +65,21 @@ partitioner roundrobin_partitioner(model::partition_id initial);
 /// returns partition_id based on round-robin.
 partitioner default_partitioner(model::partition_id initial);
 
-} // namespace kafka::client
+class partitioners_cache {
+public:
+    void apply_metadata(const metadata_response_data& data);
+
+    model::partition_id
+    partition_for(model::topic_view tv, const record_essence& rec);
+
+private:
+    struct entry {
+        size_t partition_count;
+        partitioner partitioner;
+    };
+
+    chunked_hash_map<model::topic, entry> _partitioners;
+};
+
+} // namespace client
+} // namespace kafka

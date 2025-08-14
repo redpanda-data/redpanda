@@ -194,6 +194,16 @@ ss::future<> channel::do_dispatch_message(msg msg) {
             msg.resp_data.set_value(std::move(resp_buf));
             break;
         }
+        case msg_type::remake_learner_state: {
+            auto req = co_await serde::read_async<remake_learner_state_request>(
+              req_parser);
+            auto resp = co_await get_service().remake_learner_state(
+              std::move(req), ctx);
+            iobuf resp_buf;
+            co_await serde::write_async(resp_buf, std::move(resp));
+            msg.resp_data.set_value(std::move(resp_buf));
+            break;
+        }
         }
     } catch (...) {
         msg.resp_data.set_to_current_exception();
@@ -256,6 +266,8 @@ static constexpr msg_type map_msg_type() {
         return msg_type::timeout_now;
     } else if constexpr (std::is_same_v<ReqT, transfer_leadership_request>) {
         return msg_type::transfer_leadership;
+    } else if constexpr (std::is_same_v<ReqT, remake_learner_state_request>) {
+        return msg_type::remake_learner_state;
     }
     __builtin_unreachable();
 }
@@ -355,6 +367,13 @@ ss::future<result<transfer_leadership_reply>>
 in_memory_test_protocol::transfer_leadership(
   model::node_id id, transfer_leadership_request req, rpc::client_opts opts) {
     return dispatch<transfer_leadership_request, transfer_leadership_reply>(
+      id, std::move(req), std::move(opts));
+}
+
+ss::future<result<remake_learner_state_reply>>
+in_memory_test_protocol::remake_learner_state(
+  model::node_id id, remake_learner_state_request req, rpc::client_opts opts) {
+    return dispatch<remake_learner_state_request, remake_learner_state_reply>(
       id, std::move(req), std::move(opts));
 }
 
@@ -476,6 +495,7 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
       config::mock_binding<std::chrono::milliseconds>(1s),
       config::mock_binding<bool>(_enable_longest_log_detection),
       consensus_client_protocol(_buffered_protocol),
+      [this](group_id g) { return remake_learner_callback(g); },
       [this](leadership_status ls) { leadership_notification_callback(ls); },
       _storage.local(),
       _recovery_throttle.local(),
@@ -531,6 +551,18 @@ ss::future<> raft_node_instance::stop() {
 ss::future<> raft_node_instance::remove_data() {
     return ss::recursive_remove_directory(
       std::filesystem::path(_base_directory));
+}
+
+ss::future<std::error_code>
+raft_node_instance::remake_learner_callback(group_id g) {
+    _logger.info("remake learner notification for group: {}", g);
+    try {
+        co_await _raft->truncate_state(model::offset{0});
+        co_await _raft->remove_persistent_state();
+    } catch (...) {
+        co_return errc::timeout;
+    }
+    co_return errc::success;
 }
 
 void raft_node_instance::leadership_notification_callback(
@@ -842,6 +874,9 @@ std::ostream& operator<<(std::ostream& o, msg_type type) {
         return o;
     case msg_type::transfer_leadership:
         o << "transfer_leadership";
+        return o;
+    case msg_type::remake_learner_state:
+        o << "remake_learner_state";
         return o;
     }
 }

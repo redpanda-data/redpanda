@@ -56,7 +56,6 @@ ss::future<ctx_server<service>::reply_t> get_schemas_types(
 ss::future<ctx_server<service>::reply_t> get_schemas_ids_id(
   ctx_server<service>::request_t rq,
   ctx_server<service>::reply_t rp,
-  auth auth,
   std::optional<request_auth_result> auth_result);
 
 ss::future<ctx_server<service>::reply_t> get_schemas_ids_id_versions(
@@ -68,7 +67,6 @@ ss::future<ctx_server<service>::reply_t> get_schemas_ids_id_subjects(
 ss::future<ctx_server<service>::reply_t> get_subjects(
   ctx_server<service>::request_t rq,
   ctx_server<service>::reply_t rp,
-  auth auth,
   std::optional<request_auth_result> auth_result);
 
 ss::future<ctx_server<service>::reply_t> get_subject_versions(

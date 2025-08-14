@@ -99,7 +99,7 @@ class LogSearch(ABC):
     RAISE_ON_ERRORS_KEY = "raise_on_error"
 
     # Largest allocation allowed in during a test
-    MAX_ALLOCATION_SIZE = 400 * 1024  # 400KiB
+    MAX_ALLOCATION_SIZE = 200 * 1024  # 200KiB
 
     DEFAULT_MATCH_TERMS = [
         "Segmentation fault",

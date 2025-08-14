@@ -17,7 +17,7 @@ from rptest.services.redpanda import RedpandaService
 from rptest.services.redpanda import SISettings
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import Scale
-from rptest.util import wait_for_removal_of_n_segments
+from rptest.util import produce_until_segments, wait_for_removal_of_n_segments
 from rptest.utils.si_utils import nodes_report_cloud_segments
 
 
@@ -115,15 +115,23 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
                                        msg_count=msg_count,
                                        custom_node=self.preallocated_nodes)
         producer.start()
-        wait_until(
-            lambda: nodes_report_cloud_segments(self.redpanda, n_segments),
-            timeout_sec=180,
-            backoff_sec=3)
+        produce_until_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            count=n_segments,
+        )
+        snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
+            "kafka", self.topic, 0)
+
         producer.stop()
         producer.wait()
 
-        snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
-            "kafka", self.topic, 0)
+        wait_until(lambda: nodes_report_cloud_segments(
+            self.redpanda, n_segments, topic_name=self.topic),
+                   timeout_sec=180,
+                   backoff_sec=3)
+
         for t in self.topics:
             self.client().alter_topic_config(
                 t.name, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,

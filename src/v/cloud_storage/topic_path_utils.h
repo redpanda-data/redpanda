@@ -10,7 +10,7 @@
 
 #include "base/seastarx.h"
 #include "cloud_storage/remote_label.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 

@@ -139,6 +139,20 @@ public:
         return batches_for(leader_node(), ntp);
     }
 
+    result<partition_offsets_map, cluster::errc>
+    get_partition_offsets(model::ktp ktp) {
+        chunked_vector<topic_partitions> requested_topics;
+        requested_topics.push_back(topic_partitions{
+          .topic = ktp.get_topic(),
+          .partitions = chunked_vector<model::partition_id>::single(
+            ktp.get_partition()),
+        });
+        return _kd->client()
+          .local()
+          .get_partition_offsets(std::move(requested_topics))
+          .get();
+    }
+
 private:
     record_batches batches_for(model::node_id node, const model::ntp& ntp) {
         auto manager = node == self_node ? _kd->local_partition_manager()
@@ -204,6 +218,36 @@ TEST_P(KafkaDataRpcTest, ClientCanUpdateTopics) {
           cfg.value().properties.batch_max_bytes,
           update.properties.batch_max_bytes.value);
     }
+}
+
+TEST_P(KafkaDataRpcTest, ClientCanRequestPartitionOffsets) {
+    auto ntp = make_ntp("foo");
+
+    create_topic(model::topic_namespace(ntp.ns, ntp.tp.topic));
+
+    auto res = get_partition_offsets(
+      model::ktp(ntp.tp.topic, ntp.tp.partition));
+    ASSERT_TRUE(res.has_value());
+    auto offsets = std::move(res.value());
+    EXPECT_EQ(offsets.size(), 1);
+
+    auto p_offsets = offsets[ntp.tp.topic][ntp.tp.partition];
+
+    EXPECT_EQ(p_offsets.err, cluster::errc::success);
+    // expect the hardcoded values from the in-memory proxy
+    EXPECT_EQ(p_offsets.offsets.high_watermark, kafka::offset(102));
+    EXPECT_EQ(p_offsets.offsets.last_stable_offset, kafka::offset(101));
+
+    auto not_existing = make_ntp("bar");
+
+    auto ne_res = get_partition_offsets(
+      model::ktp(not_existing.tp.topic, model::partition_id(0)));
+    ASSERT_TRUE(ne_res.has_value());
+    auto offsets_2 = std::move(ne_res.value());
+    EXPECT_EQ(offsets_2.size(), 1);
+    auto p_offsets_2
+      = offsets_2[not_existing.tp.topic][not_existing.tp.partition];
+    EXPECT_EQ(p_offsets_2.err, cluster::errc::topic_not_exists);
 }
 
 INSTANTIATE_TEST_SUITE_P(

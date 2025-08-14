@@ -1,3 +1,25 @@
+```mermaid
+sequenceDiagram
+    box Kafka Partition Leader (Client Perspective)
+    participant Kafka
+    participant Frontend
+    participant Batcher
+    end
+    box
+    participant Object Storage
+    end
+    box CT Partition Leader
+    participant Partition Leader
+    end
+    participant Frontend as CT Frontend
+    Kafka->>Frontend: Produce Batch
+    Frontend->>Batcher: Batch Payload
+    Batcher->>Object Storage: L0 Upload
+    Object Storage-->>Frontend: Upload Ack
+    Frontend->>Partition Leader: Replicate placeholder
+    Partition Leader-->>Kafka: Produce Ack
+```
+
 ### Missing bits
 
 * In the write path we should populate batch cache with `raft_data` batches

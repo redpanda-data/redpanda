@@ -14,10 +14,10 @@
 #include "base/seastarx.h"
 #include "cluster/cluster_link/fwd.h"
 #include "cluster/fwd.h"
+#include "cluster/utils/partition_change_notifier.h"
 #include "cluster_link/fwd.h"
 #include "model/fundamental.h"
 #include "raft/fundamental.h"
-#include "raft/fwd.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
@@ -25,15 +25,19 @@
 
 namespace cluster_link {
 /**
- * @brief API access for panda link service
+ * @brief API access for cluster link service
  */
 class service {
 public:
     service(
       ::model::node_id self,
       ss::sharded<::cluster::cluster_link::frontend>* plf,
+      std::unique_ptr<cluster::partition_change_notifier> notifications,
       ss::sharded<cluster::partition_manager>* partition_manager,
-      ss::sharded<raft::group_manager>* group_manager);
+      ss::sharded<cluster::partition_leaders_table>* partition_leaders_table,
+      ss::sharded<cluster::shard_table>* shard_table,
+      ss::sharded<cluster::metadata_cache>* metadata_cache,
+      ss::smp_service_group smp_group);
 
     service(const service&) = delete;
     service(service&&) = delete;
@@ -48,20 +52,16 @@ private:
     void register_notifications();
     void unregister_notifications();
 
-    void on_leadership_change(
-      raft::group_id group_id,
-      model::term_id term,
-      std::optional<model::node_id> leader);
-
-    void on_unmanage_notification(model::topic_partition_view tp);
-    void on_manage_notification(const ss::lw_shared_ptr<cluster::partition>& p);
-
 private:
     ss::gate _gate;
     model::node_id _self;
     ss::sharded<::cluster::cluster_link::frontend>* _plf;
+    std::unique_ptr<cluster::partition_change_notifier> _notifications;
     ss::sharded<cluster::partition_manager>* _partition_manager;
-    ss::sharded<raft::group_manager>* _group_manager;
+    ss::sharded<cluster::partition_leaders_table>* _partition_leaders_table;
+    ss::sharded<cluster::shard_table>* _shard_table;
+    ss::sharded<cluster::metadata_cache>* _metadata_cache;
+    ss::smp_service_group _smp_group;
     std::unique_ptr<manager> _manager;
     std::vector<ss::deferred_action<ss::noncopyable_function<void()>>>
       _notification_cleanups;

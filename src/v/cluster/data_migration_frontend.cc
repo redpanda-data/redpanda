@@ -41,6 +41,7 @@ frontend::frontend(
   ss::sharded<features::feature_table>& features,
   ss::sharded<controller_stm>& stm,
   ss::sharded<partition_leaders_table>& leaders,
+  group_proxy& group_proxy,
   ss::sharded<rpc::connection_cache>& connections,
   std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>
     topic_mount_handler,
@@ -51,6 +52,7 @@ frontend::frontend(
   , _features(features.local())
   , _controller(stm)
   , _leaders_table(leaders.local())
+  , _group_proxy(group_proxy)
   , _connections(connections.local())
   , _topic_mount_handler(topic_mount_handler)
   , _as(as)
@@ -253,6 +255,20 @@ ss::future<check_ntp_states_reply> frontend::check_ntp_states_on_foreign_node(
 
 ss::future<result<id>> frontend::do_create_migration(data_migration migration) {
     validate_migration_shard();
+
+    if (std::visit(
+          [](const auto& migration) { return !empty(migration.groups); },
+          migration)) {
+        auto deadline = model::timeout_clock::now() + _operation_timeout;
+        if (!co_await _group_proxy.assure_topic_exists(deadline)) {
+            vlog(
+              dm_log.warn,
+              "data migration involving consumer groups failed to create "
+              "consumer offsets topic.");
+            co_return errc::topic_not_exists;
+        };
+    }
+
     auto ec = co_await insert_barrier();
     if (ec) {
         co_return ec;

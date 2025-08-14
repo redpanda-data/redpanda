@@ -14,19 +14,19 @@
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 
-#include <string>
+#include <string_view>
 
 namespace json {
 
 struct validator {
-    explicit validator(const std::string& schema_text)
+    explicit validator(const std::string_view schema_text)
       : schema(make_schema_document(schema_text))
       , schema_validator(schema) {}
 
     static json::SchemaDocument
-    make_schema_document(const std::string& schema) {
+    make_schema_document(const std::string_view schema) {
         json::Document doc;
-        if (doc.Parse(schema).HasParseError()) {
+        if (doc.Parse(schema.data(), schema.size()).HasParseError()) {
             throw std::runtime_error(
               fmt::format("Invalid schema document: {}", schema));
         }

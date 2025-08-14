@@ -9,6 +9,7 @@
 
 #include "storage/tests/utils/disk_log_builder.h"
 
+#include "compaction/types.h"
 #include "model/record_batch_types.h"
 #include "storage/disk_log_appender.h"
 #include "storage/types.h"
@@ -129,6 +130,7 @@ ss::future<> disk_log_builder::gc(
         max_partition_retention_size,
         model::offset::max(),
         tombstone_retention_ms,
+        std::nullopt,
         std::chrono::milliseconds{0},
         _abort_source))
       .get();
@@ -158,13 +160,15 @@ disk_log_builder::apply_retention(gc_config cfg) {
 }
 
 ss::future<> disk_log_builder::apply_adjacent_merge_compaction(
-  compaction_config cfg, std::optional<model::offset> new_start_offset) {
+  compaction::compaction_config cfg,
+  std::optional<model::offset> new_start_offset) {
     return get_disk_log_impl().adjacent_merge_compact(
       get_disk_log_impl().segments(), cfg, new_start_offset);
 }
 
 ss::future<bool> disk_log_builder::apply_sliding_window_compaction(
-  compaction_config cfg, std::optional<model::offset> new_start_offset) {
+  compaction::compaction_config cfg,
+  std::optional<model::offset> new_start_offset) {
     return get_disk_log_impl().sliding_window_compact(cfg, new_start_offset);
 }
 

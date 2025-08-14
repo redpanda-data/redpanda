@@ -10,7 +10,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 
 #include <seastar/core/temporary_buffer.hh>
 

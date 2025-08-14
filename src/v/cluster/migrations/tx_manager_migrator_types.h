@@ -9,7 +9,7 @@
 #pragma once
 
 #include "cluster/errc.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -29,8 +29,6 @@ struct tx_manager_read_request
       tx_manager_read_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     model::ntp ntp;
     model::offset start_offset;
 
@@ -46,8 +44,6 @@ struct tx_manager_read_reply
       tx_manager_read_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     tx_manager_read_reply() = default;
     explicit tx_manager_read_reply(errc ec)
       : ec(ec) {}
@@ -91,8 +87,6 @@ struct tx_manager_replicate_request
       tx_manager_replicate_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     tx_manager_replicate_request() = default;
 
     tx_manager_replicate_request(
@@ -137,7 +131,6 @@ struct tx_manager_replicate_reply
       tx_manager_replicate_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     errc ec;
 
     friend bool operator==(

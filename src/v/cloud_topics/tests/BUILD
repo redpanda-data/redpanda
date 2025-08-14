@@ -1,15 +1,16 @@
-load("//bazel:test.bzl", "redpanda_cc_gtest")
+load("//bazel:test.bzl", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
-redpanda_cc_gtest(
-    name = "types_test",
-    timeout = "short",
-    srcs = [
-        "types_test.cc",
-    ],
+redpanda_test_cc_library(
+    name = "cluster_fixture",
+    hdrs = ["cluster_fixture.h"],
+    visibility = ["//visibility:public"],
     deps = [
-        "//src/v/cloud_topics:types",
-        "//src/v/test_utils:gtest",
-        "@googletest//:gtest",
+        "//src/v/cloud_io/tests:s3_imposter",
+        "//src/v/cloud_topics:app",
+        "//src/v/cloud_topics/level_one/metastore:simple_stm",
+        "//src/v/cluster/tests:cluster_test_fixture",
+        "//src/v/model",
+        "//src/v/raft",
     ],
 )
 
@@ -26,6 +27,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_io/tests:s3_imposter",
         "//src/v/cloud_storage",
         "//src/v/cloud_storage_clients",
+        "//src/v/cloud_topics/level_zero/stm:ctp_stm",
         "//src/v/config",
         "//src/v/kafka/server/tests:kafka_test_utils",
         "//src/v/model",
@@ -38,5 +40,18 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
         "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "object_utils_test",
+    timeout = "short",
+    srcs = [
+        "object_utils_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_topics:object_utils",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
     ],
 )

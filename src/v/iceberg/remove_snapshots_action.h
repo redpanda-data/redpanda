@@ -9,7 +9,7 @@
  */
 #pragma once
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "iceberg/action.h"
 #include "iceberg/table_metadata.h"
 #include "model/timestamp.h"

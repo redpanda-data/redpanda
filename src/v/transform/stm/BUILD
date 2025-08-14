@@ -11,7 +11,6 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/cluster",
     ],
-    include_prefix = "transform/stm",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cluster:state_machine_registry",

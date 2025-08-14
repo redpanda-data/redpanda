@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "debug_bundle/metadata.h"
 #include "utils/uuid.h"
 

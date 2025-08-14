@@ -9,6 +9,11 @@
             "name": "produce",
             "input_type": "produce_request",
             "output_type": "produce_reply"
+        },
+        {
+            "name": "get_offsets",
+            "input_type": "get_offsets_request",
+            "output_type": "get_offsets_reply"
         }
     ]
 }

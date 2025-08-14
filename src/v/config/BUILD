@@ -13,6 +13,7 @@ redpanda_cc_library(
         "rjson_serialization.cc",
         "throughput_control_group.cc",
         "tls_config.cc",
+        "types.cc",
         "validators.cc",
     ],
     hdrs = [
@@ -45,7 +46,6 @@ redpanda_cc_library(
         "//src/v/cluster:topic_memory_per_partition_default",
         "//src/v/datalake:partition_spec_parser",
     ],
-    include_prefix = "config",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -66,7 +66,6 @@ redpanda_cc_library(
         "//src/v/utils:named_type",
         "//src/v/utils:to_string",
         "//src/v/utils:unresolved_address",
-        "@abseil-cpp//absl/algorithm:container",
         "@abseil-cpp//absl/container:flat_hash_set",
         "@abseil-cpp//absl/container:node_hash_set",
         "@boost//:algorithm",

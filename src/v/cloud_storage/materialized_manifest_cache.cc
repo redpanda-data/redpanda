@@ -32,7 +32,6 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/smp.hh>
-#include <seastar/core/with_scheduling_group.hh>
 #include <seastar/util/defer.hh>
 
 #include <boost/algorithm/string/classification.hpp>

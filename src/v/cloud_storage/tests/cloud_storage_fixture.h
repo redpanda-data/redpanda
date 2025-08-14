@@ -16,6 +16,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/tests/common_def.h"
 #include "cloud_storage/types.h"
+#include "storage/disk.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/future.hh>

@@ -24,7 +24,7 @@ from rptest.util import wait_until_result
 from rptest.services import tls
 from rptest.clients.types import TopicSpec
 from ducktape.errors import TimeoutError
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 DEFAULT_TIMEOUT = 30
 
@@ -119,7 +119,8 @@ class RpkGroupPartition(typing.NamedTuple):
 
 class RpkGroup(typing.NamedTuple):
     name: str
-    coordinator: int
+    coordinator_node: int
+    coordinator_partition: str
     state: str
     balancer: str
     members: int
@@ -207,6 +208,26 @@ class RpkColumnHeader:
 class RpkTable:
     columns: list[RpkColumnHeader]
     rows: list[list[str]]
+
+
+@dataclass
+class RPKACLInput:
+    # Can't use mutables in defaults of dataclass
+    # https://docs.python.org/3/library/dataclasses.html#dataclasses.field
+    allow_principal: list[str] = field(default_factory=list)
+    deny_principal: list[str] = field(default_factory=list)
+    allow_role: list[str] = field(default_factory=list)
+    deny_role: list[str] = field(default_factory=list)
+    allow_host: list[str] = field(default_factory=list)
+    deny_host: list[str] = field(default_factory=list)
+    topic: list[str] = field(default_factory=list)
+    group: list[str] = field(default_factory=list)
+    operation: list[str] = field(default_factory=list)
+    txn_id: list[str] = field(default_factory=list)
+    cluster: bool = False
+    resource_pattern_type: str = ""
+    registry_subject: list[str] = field(default_factory=list)
+    registry_global: bool = False
 
 
 def parse_rpk_table(out):
@@ -899,16 +920,17 @@ class RpkTool:
                     raise
 
             lines = out.splitlines()
-
             group_name = parse_field("GROUP", lines[0])
-            coordinator = parse_field("COORDINATOR", lines[1])
-            state = parse_field("STATE", lines[2])
-            balancer = parse_field("BALANCER", lines[3])
-            members = parse_field("MEMBERS", lines[4])
-            total_lag = parse_field("TOTAL-LAG", lines[5])
+            coordinator_node = parse_field("COORDINATOR-NODE", lines[1])
+            coordinator_partition = parse_field("COORDINATOR-PARTITION",
+                                                lines[2])
+            state = parse_field("STATE", lines[3])
+            balancer = parse_field("BALANCER", lines[4])
+            members = parse_field("MEMBERS", lines[5])
+            total_lag = parse_field("TOTAL-LAG", lines[6])
 
-            # lines[6] can be empty or the ERROR field, skip it either way.
-            partition_lines = [l for l in lines[7:] if len(l) > 0]
+            # lines[7] can be empty or the ERROR field, skip it either way.
+            partition_lines = [l for l in lines[8:] if len(l) > 0]
             partitions = []
             if len(partition_lines) > 0:
                 table = parse_rpk_table_lines(partition_lines)
@@ -974,7 +996,8 @@ class RpkTool:
                     partitions.append(partition)
 
             return RpkGroup(name=group_name,
-                            coordinator=int(coordinator),
+                            coordinator_node=int(coordinator_node),
+                            coordinator_partition=coordinator_partition,
                             state=state,
                             balancer=balancer,
                             members=int(members),
@@ -1186,6 +1209,16 @@ class RpkTool:
         ]
         return self._execute(cmd).strip()
 
+    def cluster_config_list(self,
+                            output_format: str = "json",
+                            output_filter=".*"):
+        cmd = [
+            self._rpk_binary(), "--api-urls",
+            self._admin_host(), "cluster", "config", "list", "--format",
+            output_format, "--filter", output_filter
+        ]
+        return self._execute(cmd).strip()
+
     def cluster_config_set(self, key: str, value):
         """
         Note: This method returns without waiting for the configuration to be
@@ -1364,7 +1397,8 @@ class RpkTool:
 
     def acl_list(self,
                  flags: list[str] = [],
-                 node: Optional[ClusterNode] = None):
+                 node: Optional[ClusterNode] = None,
+                 format: str = "text"):
         """
         Run `rpk acl list` and return the results.
 
@@ -1377,11 +1411,18 @@ class RpkTool:
         """
         cmd = [
             self._rpk_binary(),
+            "security",
             "acl",
             "list",
-        ] + flags + self._kafka_conn_settings(node)
+            "--format",
+            format,
+        ] + flags + self._schema_registry_conn_settings(
+        ) + self._kafka_conn_settings(node)
 
         output = self._execute(cmd)
+
+        if format == "json":
+            return json.loads(output)
 
         if "CLUSTER_AUTHORIZATION_FAILED" in output:
             raise ClusterAuthorizationError("acl list")
@@ -1397,6 +1438,7 @@ class RpkTool:
         """
         cmd = [
             self._rpk_binary(),
+            "security",
             "acl",
             "create",
             "--allow-principal",
@@ -1425,6 +1467,80 @@ class RpkTool:
                 f"acl_create_allow_cluster failed with {table.rows[0][-1]}")
 
         return output
+
+    def acl_create(self, acl: RPKACLInput):
+
+        cmd = [
+            self._rpk_binary(),
+            "security",
+            "acl",
+            "create",
+        ] + self._schema_registry_conn_settings() + self._kafka_conn_settings(
+        )
+
+        def append_flag(flag: str, values: list[str]):
+            if values:
+                cmd.extend([flag, ",".join(values)])
+
+        def append_bool_flag(flag: str, value: bool):
+            if value:
+                cmd.append(flag)
+
+        append_flag("--allow-principal", acl.allow_principal)
+        append_flag("--deny-principal", acl.deny_principal)
+        append_flag("--allow-role", acl.allow_role)
+        append_flag("--deny-role", acl.deny_role)
+        append_flag("--allow-host", acl.allow_host)
+        append_flag("--deny-host", acl.deny_host)
+        append_flag("--topic", acl.topic)
+        append_flag("--group", acl.group)
+        append_flag("--operation", acl.operation)
+        append_flag("--transactional-id", acl.txn_id)
+        append_bool_flag("--cluster", acl.cluster)
+        append_flag("--registry-subject", acl.registry_subject)
+        append_bool_flag("--registry-global", acl.registry_global)
+
+        if acl.resource_pattern_type:
+            cmd += ["--resource-pattern-type", acl.resource_pattern_type]
+
+        return self._execute(cmd)
+
+    def acl_delete(self, acl: RPKACLInput):
+        cmd = [
+            self._rpk_binary(),
+            "security",
+            "acl",
+            "delete",
+            "--no-confirm",
+        ] + self._schema_registry_conn_settings() + self._kafka_conn_settings(
+        )
+
+        def append_flag(flag: str, values: list[str]):
+            if values:
+                cmd.extend([flag, ",".join(values)])
+
+        def append_bool_flag(flag: str, value: bool):
+            if value:
+                cmd.append(flag)
+
+        append_flag("--allow-principal", acl.allow_principal)
+        append_flag("--deny-principal", acl.deny_principal)
+        append_flag("--allow-role", acl.allow_role)
+        append_flag("--deny-role", acl.deny_role)
+        append_flag("--allow-host", acl.allow_host)
+        append_flag("--deny-host", acl.deny_host)
+        append_flag("--topic", acl.topic)
+        append_flag("--group", acl.group)
+        append_flag("--operation", acl.operation)
+        append_flag("--transactional-id", acl.txn_id)
+        append_bool_flag("--cluster", acl.cluster)
+        append_flag("--registry-subject", acl.registry_subject)
+        append_bool_flag("--registry-global", acl.registry_global)
+
+        if acl.resource_pattern_type:
+            cmd += ["--resource-pattern-type", acl.resource_pattern_type]
+
+        return self._execute(cmd)
 
     def cluster_metadata_id(self):
         """
@@ -1582,7 +1698,7 @@ class RpkTool:
 
         return result
 
-    def trim_prefix(self, topic, offset, partitions=[]):
+    def trim_prefix(self, topic: str, offset: int, partitions: list[int] = []):
         def parse(line):
             if line.startswith("Request error") or not line.strip():
                 # RPK may print messages about request errors, which it internally
@@ -1708,11 +1824,22 @@ class RpkTool:
 
         return self._run_registry(cmd)
 
-    def create_schema(self, subject, schema_path, references=None):
+    def create_schema(self,
+                      subject,
+                      schema_path,
+                      references=None,
+                      id=None,
+                      version=None):
         cmd = ["schema", "create", subject, "--schema", schema_path]
 
         if references is not None:
             cmd += ["--references", references]
+
+        if id is not None:
+            cmd += ["--id", str(id)]
+
+        if version is not None:
+            cmd += ["--schema-version", str(version)]
 
         return self._run_registry(cmd)
 

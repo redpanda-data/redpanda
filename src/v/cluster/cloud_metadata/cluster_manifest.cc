@@ -15,6 +15,7 @@
 #include "cluster/cloud_metadata/key_utils.h"
 #include "utils/uuid.h"
 
+#include <boost/lexical_cast.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>

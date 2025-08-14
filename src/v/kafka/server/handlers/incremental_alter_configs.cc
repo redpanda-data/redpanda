@@ -17,6 +17,7 @@
 #include "kafka/protocol/schemata/incremental_alter_configs_request.h"
 #include "kafka/protocol/schemata/incremental_alter_configs_response.h"
 #include "kafka/server//handlers/configs/config_utils.h"
+#include "kafka/server/handlers/details/alter_config_utils.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
@@ -363,10 +364,7 @@ create_topic_properties_update(
             }
             if (cfg.name == topic_property_delete_retention_ms) {
                 parse_and_set_tristate(
-                  update.properties.delete_retention_ms,
-                  cfg.value,
-                  op,
-                  delete_retention_ms_validator{});
+                  update.properties.delete_retention_ms, cfg.value, op);
                 continue;
             }
             if (cfg.name == topic_property_iceberg_delete) {

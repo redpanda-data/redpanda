@@ -9,7 +9,7 @@
 
 #include "storage/mvlog/versioned_log.h"
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/offset_interval.h"
 #include "storage/mvlog/file.h"
 #include "storage/mvlog/logger.h"

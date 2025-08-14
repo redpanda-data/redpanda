@@ -195,7 +195,7 @@ actor actor_from_request_auth_result(
 }
 
 actor actor_from_user_string(
-  const ss::sstring& user, const ss::sstring& svc_name) {
+  const ss::sstring& user, std::string_view svc_name) {
     struct user u = {
       .name = user.empty() ? "{{anonymous}}" : user,
       .type_id = user.empty() ? user::type::unknown : user::type::user,
@@ -203,7 +203,8 @@ actor actor_from_user_string(
     std::vector<authorization_result> auths{
       {.decision = "authorized",
        .policy = policy{
-         .desc = user.empty() ? "Auth Disabled" : "", .name = svc_name}}};
+         .desc = user.empty() ? "Auth Disabled" : "",
+         .name = ss::sstring{svc_name}}}};
 
     return {.authorizations = std::move(auths), .user = std::move(u)};
 }
@@ -513,6 +514,59 @@ api_activity api_activity::construct(
                  : api_activity::status_id::failure,
       create_timestamp_t(),
       unmapped_data()};
+}
+
+api_activity api_activity::construct(
+  std::string_view svc_name,
+  ss::httpd::const_req req,
+  std::string_view operation_name,
+  const auth_result& auth_result) {
+    return {
+      op_to_crud(auth_result.operation),
+      result_to_actor(auth_result),
+      api{
+        .operation = ss::sstring{operation_name},
+        .service = {.name = ss::sstring{svc_name}}},
+      from_ss_endpoint(req.get_server_address(), svc_name),
+      from_ss_http_request(req),
+      {resource_detail{
+        .name = auth_result.resource_name,
+        .type = fmt::format("{}", auth_result.resource_type)}},
+      severity_id::informational,
+      from_ss_endpoint(req.get_client_address()),
+      auth_result.is_authorized() ? api_activity::status_id::success
+                                  : api_activity::status_id::failure,
+      create_timestamp_t(),
+      unmapped_data(auth_result)};
+}
+
+api_activity api_activity::construct(
+  std::string_view svc_name,
+  ss::httpd::const_req req,
+  std::string_view operation_name,
+  const request_auth_result& auth_result,
+  bool is_authorized,
+  security::acl_operation operation,
+  std::optional<std::string_view> reason,
+  chunked_vector<resource_detail>&& resources) {
+    return {
+      op_to_crud(operation),
+      actor_from_request_auth_result(
+        auth_result, is_authorized, ss::sstring{svc_name}, reason),
+      api{
+        .operation = ss::sstring{operation_name},
+        .service = {.name = ss::sstring{svc_name}}},
+      from_ss_endpoint(req.get_server_address(), svc_name),
+      from_ss_http_request(req),
+      std::vector<resource_detail>(
+        std::make_move_iterator(resources.begin()),
+        std::make_move_iterator(resources.end())),
+      severity_id::informational,
+      from_ss_endpoint(req.get_client_address()),
+      is_authorized ? api_activity::status_id::success
+                    : api_activity::status_id::failure,
+      create_timestamp_t(),
+      api_activity_unmapped{}};
 }
 
 api_activity api_activity::construct(

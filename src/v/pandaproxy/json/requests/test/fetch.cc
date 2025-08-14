@@ -10,7 +10,7 @@
 #include "pandaproxy/json/requests/fetch.h"
 
 #include "base/seastarx.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "kafka/client/test/utils.h"

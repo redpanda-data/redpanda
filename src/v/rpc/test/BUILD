@@ -8,7 +8,6 @@ redpanda_test_cc_library(
     hdrs = [
         "rpc_integration_fixture.h",
     ],
-    include_prefix = "rpc/test",
     deps = [
         "//src/v/base",
         "//src/v/config",
@@ -18,16 +17,29 @@ redpanda_test_cc_library(
     ],
 )
 
+redpanda_test_cc_library(
+    name = "test_types",
+    hdrs = [
+        "test_types.h",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_btest(
     name = "netbuf_test",
     timeout = "short",
     srcs = [
         "netbuf_tests.cc",
-        "test_types.h",
     ],
     deps = [
+        ":test_types",
         "//src/v/bytes:iobuf",
         "//src/v/rpc",
+        "//src/v/serde",
+        "//src/v/serde:sstring",
         "//src/v/test_utils:seastar_boost",
         "@fmt",
         "@seastar",
@@ -40,9 +52,9 @@ redpanda_cc_btest(
     timeout = "short",
     srcs = [
         "roundtrip_tests.cc",
-        "test_types.h",
     ],
     deps = [
+        ":test_types",
         "//src/v/bytes:iobuf",
         "//src/v/reflection:adl",
         "//src/v/test_utils:seastar_boost",
@@ -70,9 +82,9 @@ redpanda_cc_btest(
     timeout = "short",
     srcs = [
         "serialization_test.cc",
-        "test_types.h",
     ],
     deps = [
+        ":test_types",
         "//src/v/bytes:iobuf",
         "//src/v/reflection:adl",
         "//src/v/reflection:arity",
@@ -150,7 +162,6 @@ redpanda_cc_library(
     hdrs = [
         "rpc_gen_types.h",
     ],
-    include_prefix = "rpc/test",
     deps = [
         "//src/v/base",
         "//src/v/reflection:adl",
@@ -166,7 +177,6 @@ redpanda_cc_rpc_library(
     name = "cycling_rpc",
     src = "cycling_service.json",
     out = "cycling_service.h",
-    include_prefix = "rpc/test",
     deps = [
         ":rpc_gen_types",
     ],
@@ -176,7 +186,6 @@ redpanda_cc_rpc_library(
     name = "echo_rpc",
     src = "echo_service.json",
     out = "echo_service.h",
-    include_prefix = "rpc/test",
     deps = [
         ":rpc_gen_types",
     ],
@@ -186,7 +195,6 @@ redpanda_cc_rpc_library(
     name = "echo_v2_rpc",
     src = "echo_v2_service.json",
     out = "echo_v2_service.h",
-    include_prefix = "rpc/test",
     deps = [
         ":rpc_gen_types",
     ],

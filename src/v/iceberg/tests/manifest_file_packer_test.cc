@@ -7,7 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "iceberg/manifest_file_packer.h"
 #include "iceberg/manifest_list.h"
 

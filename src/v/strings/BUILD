@@ -8,7 +8,6 @@ redpanda_cc_library(
     hdrs = [
         "utf8.h",
     ],
-    include_prefix = "strings",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -21,7 +20,6 @@ redpanda_cc_library(
     hdrs = [
         "string_switch.h",
     ],
-    include_prefix = "strings",
     visibility = ["//visibility:public"],
 )
 
@@ -30,7 +28,6 @@ redpanda_cc_library(
     hdrs = [
         "static_str.h",
     ],
-    include_prefix = "strings",
     visibility = ["//visibility:public"],
     deps = [
         "@fmt",

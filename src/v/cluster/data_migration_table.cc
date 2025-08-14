@@ -16,7 +16,7 @@
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/topic_table.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/variant_utils.hh>

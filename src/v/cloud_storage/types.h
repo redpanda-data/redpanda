@@ -14,21 +14,15 @@
 #include "base/seastarx.h"
 #include "cloud_io/io_result.h"
 #include "cloud_io/transfer_details.h"
-#include "cloud_storage_clients/types.h"
-#include "config/configuration.h"
-#include "model/compression.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
 #include "model/timestamp.h"
 #include "ssx/semaphore.h"
 #include "utils/named_type.h"
-#include "utils/retry_chain_node.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
 
-#include <chrono>
 #include <filesystem>
 
 namespace cloud_storage {

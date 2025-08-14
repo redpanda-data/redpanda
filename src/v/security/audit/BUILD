@@ -5,7 +5,6 @@ redpanda_cc_library(
     hdrs = [
         "schemas/types.h",
     ],
-    include_prefix = "security/audit",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -39,7 +38,6 @@ redpanda_cc_library(
         "//src/v/kafka/data:record_batcher",
         "@abseil-cpp//absl/algorithm:container",
     ],
-    include_prefix = "security/audit",
     visibility = ["//visibility:public"],
     deps = [
         ":types",
@@ -102,7 +100,6 @@ redpanda_cc_library(
         "//src/v/security",
         "//src/v/security:request_auth",
         "//src/v/ssx:semaphore",
-        "//src/v/storage:parser_utils",
         "//src/v/strings:string_switch",
         "//src/v/utils:functional",
         "//src/v/utils:retry",

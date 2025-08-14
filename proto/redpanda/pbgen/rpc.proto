@@ -1,0 +1,62 @@
+// Copyright 2025 Redpanda Data, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package redpanda.pbgen;
+
+option go_package = "github.com/redpanda-data/redpanda/proto/redpanda/pbgen";
+
+import "google/protobuf/descriptor.proto";
+
+// The authentication level for this handler.
+enum RPCAuthZLevel {
+    LEVEL_UNSPECIFIED = 0;
+    PUBLIC = 1;
+    USER = 2;
+    SUPERUSER = 3;
+}
+
+message RPCOptions {
+    // The authentication level required to invoke the handler. Must be
+    // specified.
+    //
+    // APIs should default to SUPERUSER, if you'd like to create an admin API at
+    // another level, please consult the Redpanda core team first.
+    RPCAuthZLevel authz = 2;
+    // The alternative HTTP route to use for this handler. This is used to give
+    // "prettier" HTTP routes to the user. This is an additional route used to
+    // alias the ConnectRPC route that is automatically generated.
+    string http_route = 3;
+}
+
+extend google.protobuf.MethodOptions {
+    // A RPC method option for the authentication required to invoke
+    // the handler. Must be specified.
+    //
+    // Example:
+    //
+    // ```proto
+    // service Foo {
+    //
+    //   rpc GetFoo(GetFooRequest) returns (GetFooResponse) {
+    //     option (redpanda.pbgen.rpc) = {
+    //       authz: USER,
+    //       http_route: "/v2/myapi/foo",
+    //   }
+    //
+    // }
+    // ```
+    RPCOptions rpc = 51501;
+}

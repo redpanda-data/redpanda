@@ -7,7 +7,6 @@ redpanda_test_cc_library(
     implementation_deps = [
         "//src/v/random:generators",
     ],
-    include_prefix = "transform/logging/tests",
     deps = [
         "//src/v/bytes:iobuf",
         "//src/v/bytes:streambuf",

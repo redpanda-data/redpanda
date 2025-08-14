@@ -12,7 +12,7 @@
 #pragma once
 
 #include "cluster/state_machine_registry.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "raft/persisted_stm.h"
 #include "serde/envelope.h"

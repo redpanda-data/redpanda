@@ -5,7 +5,6 @@ redpanda_cc_library(
     hdrs = [
         "enterprise_feature_messages.h",
     ],
-    include_prefix = "features",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -32,7 +31,6 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/metrics",
     ],
-    include_prefix = "features",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -61,7 +59,6 @@ redpanda_cc_library(
     hdrs = [
         "enterprise_features.h",
     ],
-    include_prefix = "features",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",

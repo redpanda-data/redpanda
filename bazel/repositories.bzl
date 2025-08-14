@@ -92,17 +92,17 @@ def data_dependency():
     http_archive(
         name = "libprotobuf_mutator",
         build_file = "//bazel/thirdparty:libprotobuf-mutator.BUILD",
-        integrity = "sha256-KWUbFgNpDJtAO6Kr0eTo1v6iczEOta72jSle9oivFhg=",
-        strip_prefix = "libprotobuf-mutator-b922c8ab9004ef9944982e4f165e2747b13223fa",
-        url = "https://github.com/google/libprotobuf-mutator/archive/b922c8ab9004ef9944982e4f165e2747b13223fa.zip",
+        sha256 = "0847a2ee65552a92643131e934b50164e8b79fadc7be24b180a1c8d6dbb05952",
+        strip_prefix = "libprotobuf-mutator-dc4ced337a9fb4047e2dc727268fbac55ca82f73",
+        url = "https://github.com/google/libprotobuf-mutator/archive/dc4ced337a9fb4047e2dc727268fbac55ca82f73.zip",
     )
 
     http_archive(
         name = "libxml2",
         build_file = "//bazel/thirdparty:libxml2.BUILD",
-        sha256 = "f33a6353a80ccdb483abc3f895d4283f799b8ee9fae778da7a97b73604929138",
-        strip_prefix = "libxml2-2.13.8",
-        url = "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/libxml2-v2.13.8.tar.gz",
+        sha256 = "f52638e4d67135c49f676d1c8fcc4f9f35afb7ec9bfb4aee743e2e86d56e006b",
+        strip_prefix = "libxml2-2.14.5",
+        url = "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/libxml2-v2.14.5.tar.gz",
     )
 
     http_archive(
@@ -130,9 +130,9 @@ def data_dependency():
     http_archive(
         name = "openssl",
         build_file = "//bazel/thirdparty:openssl.BUILD",
-        sha256 = "57e03c50feab5d31b152af2b764f10379aecd8ee92f16c985983ce4a99f7ef86",
-        strip_prefix = "openssl-3.0.16",
-        url = "https://github.com/openssl/openssl/releases/download/openssl-3.0.16/openssl-3.0.16.tar.gz",
+        sha256 = "dfdd77e4ea1b57ff3a6dbde6b0bdc3f31db5ac99e7fdd4eaf9e1fbb6ec2db8ce",
+        strip_prefix = "openssl-3.0.17",
+        url = "https://github.com/openssl/openssl/releases/download/openssl-3.0.17/openssl-3.0.17.tar.gz",
     )
 
     http_archive(
@@ -162,9 +162,9 @@ def data_dependency():
     http_archive(
         name = "seastar",
         build_file = "//bazel/thirdparty:seastar.BUILD",
-        sha256 = "4f64324c068aff7fec3cb9bba9b49bd876b0a07889de325a38385463716af18a",
-        strip_prefix = "seastar-8a5ef9d49b50d2056637db761938fbf23a35013b",
-        url = "https://github.com/redpanda-data/seastar/archive/8a5ef9d49b50d2056637db761938fbf23a35013b.tar.gz",
+        sha256 = "43068252bf6b1e952390ef00d8884de64599bdd07807793540ebdeb8e70ecba8",
+        strip_prefix = "seastar-1fea24e9863e9e5a88681bea3fbc7b8b76705856",
+        url = "https://github.com/redpanda-data/seastar/archive/1fea24e9863e9e5a88681bea3fbc7b8b76705856.tar.gz",
     )
 
     http_archive(

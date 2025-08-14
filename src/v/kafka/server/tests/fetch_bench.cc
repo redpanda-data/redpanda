@@ -182,6 +182,7 @@ struct fetch_bench_fixture : redpanda_thread_fixture {
                   {std::move(msg)});
             }
         }
+        co_await producer.stop();
     }
 
     ss::future<model::topic>

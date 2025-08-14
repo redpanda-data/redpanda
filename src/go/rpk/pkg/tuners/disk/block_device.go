@@ -77,7 +77,7 @@ func parseUeventFile(lines []string) (map[string]string, error) {
 	for _, line := range lines {
 		parts := strings.Split(line, "=")
 		if len(parts) != 2 {
-			return nil, errors.New("Malformed uevent file content")
+			return nil, errors.New("malformed uevent file content")
 		}
 		deviceAttrs[parts[0]] = parts[1]
 	}

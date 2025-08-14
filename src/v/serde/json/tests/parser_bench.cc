@@ -24,15 +24,14 @@
 
 #include <utility>
 
-using namespace experimental::serde::json;
+using namespace serde::json;
 
 struct json_parser_bench {};
 
 // Simple test to ensure the parse doesn't fail on valid sample data. The
 // contents and correctness is not verified in this test.
 ss::future<> run_serde_bench() {
-    auto parser = experimental::serde::json::parser(
-      co_await json_test_suite_sample());
+    auto parser = serde::json::parser(co_await json_test_suite_sample());
 
     perf_tests::start_measuring_time();
 

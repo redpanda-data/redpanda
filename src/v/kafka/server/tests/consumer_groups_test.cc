@@ -155,15 +155,20 @@ FIXTURE_TEST(block_test, consumer_offsets_fixture) {
     add_topic(model::topic_namespace_view{model::kafka_namespace, t}).get();
     wait_for_consumer_offsets_topic(gi);
 
-    auto client = make_kafka_client().get();
+    auto client = std::make_unique<kafka::client::transport>(
+      make_kafka_client().get());
     auto client_stop = [&client] {
-        client.stop().then([&client] { client.shutdown(); }).get();
+        client->stop().then([&client] { client->shutdown(); }).get();
     };
     auto deferred = ss::defer(decltype(client_stop)(client_stop));
-    client.connect().get();
+    client->connect().get();
 
-    auto gntp = app.coordinator_ntp_mapper.local().ntp_for(g);
-    BOOST_REQUIRE(gntp);
+    auto g_partition = app.coordinator_ntp_mapper.local().partition_for(g);
+    BOOST_REQUIRE(g_partition);
+    model::ntp gntp(
+      model::kafka_namespace,
+      model::kafka_consumer_offsets_topic,
+      *g_partition);
 
     auto can_commit_offset = [&] {
         for (int _ : std::views::iota(0, 5)) {
@@ -179,7 +184,7 @@ FIXTURE_TEST(block_test, consumer_offsets_fixture) {
                       .partition_index = model::partition_id{0},
                       .committed_offset = model::offset{0}})})}};
             auto res
-              = client.dispatch(std::move(req), kafka::api_version(7)).get();
+              = client->dispatch(std::move(req), kafka::api_version(7)).get();
             if (!res.data.errored()) {
                 return true;
             }
@@ -194,7 +199,7 @@ FIXTURE_TEST(block_test, consumer_offsets_fixture) {
 
     auto set_blocked = [&](bool blocked) {
         auto res = app._group_manager.local()
-                     .set_blocked_for_groups(*gntp, {g}, blocked)
+                     .set_blocked_for_groups(gntp, {g}, blocked)
                      .get();
         BOOST_REQUIRE(res.has_value());
     };
@@ -203,9 +208,10 @@ FIXTURE_TEST(block_test, consumer_offsets_fixture) {
         client_stop();
         consumer_offsets_fixture::restart(should_wipe::no);
         wait_for_consumer_offsets_topic(gi);
-        wait_for_leader(*gntp).get();
-        client = make_kafka_client().get();
-        client.connect().get();
+        wait_for_leader(gntp).get();
+        client = std::make_unique<kafka::client::transport>(
+          make_kafka_client().get());
+        client->connect().get();
     };
 
     BOOST_REQUIRE(can_commit_offset());

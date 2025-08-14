@@ -8,7 +8,6 @@ redpanda_test_cc_library(
     hdrs = [
         "scoped_remote.h",
     ],
-    include_prefix = "cloud_io/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cloud_io:remote",
@@ -33,7 +32,6 @@ redpanda_test_cc_library(
         "@boost//:core",
         "@boost//:property_tree",
     ],
-    include_prefix = "cloud_io/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cloud_storage_clients",

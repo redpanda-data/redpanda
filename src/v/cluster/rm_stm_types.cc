@@ -401,11 +401,10 @@ namespace reflection {
 using namespace cluster::tx;
 
 template<class T>
-using fvec = fragmented_vector<T>;
+using fvec = chunked_vector<T>;
 
 ss::future<> async_adl<tx_snapshot_v4>::to(iobuf& out, tx_snapshot_v4 snap) {
-    co_await detail::async_adl_list<
-      fragmented_vector<model::producer_identity>>{}
+    co_await detail::async_adl_list<chunked_vector<model::producer_identity>>{}
       .to(out, std::move(snap.fenced));
     co_await detail::async_adl_list<fvec<tx_range>>{}.to(
       out, std::move(snap.ongoing));
@@ -458,8 +457,7 @@ ss::future<> async_adl<tx_snapshot_v5>::to(iobuf& out, tx_snapshot_v5 snap) {
     reflection::serialize(out, snap.offset);
     co_await detail::async_adl_list<fvec<producer_state_snapshot_deprecated>>{}
       .to(out, std::move(snap.producers));
-    co_await detail::async_adl_list<
-      fragmented_vector<model::producer_identity>>{}
+    co_await detail::async_adl_list<chunked_vector<model::producer_identity>>{}
       .to(out, std::move(snap.fenced));
     co_await detail::async_adl_list<fvec<tx_range>>{}.to(
       out, std::move(snap.ongoing));

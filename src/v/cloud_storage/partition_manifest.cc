@@ -726,13 +726,13 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
     return false;
 }
 
-fragmented_vector<partition_manifest::lw_segment_meta>
+chunked_vector<partition_manifest::lw_segment_meta>
 partition_manifest::lw_replaced_segments() const {
     return _replaced.copy();
 }
 
-fragmented_vector<segment_meta> partition_manifest::replaced_segments() const {
-    fragmented_vector<segment_meta> res;
+chunked_vector<segment_meta> partition_manifest::replaced_segments() const {
+    chunked_vector<segment_meta> res;
     for (const auto& s : _replaced) {
         res.push_back(lw_segment_meta::convert(s));
     }
@@ -1035,9 +1035,9 @@ partition_manifest partition_manifest::clone() const {
         segment_name name;
         segment_meta meta;
     };
-    fragmented_vector<segment_name_meta> segments;
-    fragmented_vector<segment_name_meta> replaced;
-    fragmented_vector<segment_name_meta> spillover;
+    chunked_vector<segment_name_meta> segments;
+    chunked_vector<segment_name_meta> replaced;
+    chunked_vector<segment_name_meta> spillover;
     for (const auto& m : _segments) {
         segments.push_back(
           {.name = generate_local_segment_name(m.base_offset, m.segment_term),
@@ -2632,7 +2632,7 @@ partition_manifest_serde_from_partition_manifest(const partition_manifest& m)
         (([&]<typename Src>(auto& dest, const Src& src) {
              if constexpr (std::is_same_v<Src, segment_meta_cstore>) {
                  dest = src.to_iobuf();
-             } else if constexpr (reflection::is_fragmented_vector<Src>) {
+             } else if constexpr (reflection::is_chunked_vector<Src>) {
                  dest = src.copy();
              } else {
                  dest = src;

@@ -78,3 +78,65 @@ auto fmt::formatter<kafka::data::rpc::kafka_topic_data_result>::format(
     return fmt::format_to(
       ctx.out(), "{{ errc: {}, tp: {} }}", result.err, result.tp);
 }
+
+auto fmt::formatter<kafka::data::rpc::topic_partitions>::format(
+  const kafka::data::rpc::topic_partitions& tp, format_context& ctx) const
+  -> format_context::iterator {
+    return fmt::format_to(
+      ctx.out(),
+      "{{ topic: {}, partitions: {} }}",
+      tp.topic,
+      fmt::join(tp.partitions, ", "));
+}
+
+auto fmt::formatter<kafka::data::rpc::get_offsets_request>::format(
+  const kafka::data::rpc::get_offsets_request& req, format_context& ctx) const
+  -> format_context::iterator {
+    return fmt::format_to(
+      ctx.out(), "{{ topics: {} }}", fmt::join(req.topics, ", "));
+}
+
+auto fmt::formatter<kafka::data::rpc::partition_offsets>::format(
+  const kafka::data::rpc::partition_offsets& po, format_context& ctx) const
+  -> format_context::iterator {
+    return fmt::format_to(
+      ctx.out(),
+      "{{ high_watermark: {}, last_stable_offset: {} }}",
+      po.high_watermark,
+      po.last_stable_offset);
+}
+
+auto fmt::formatter<kafka::data::rpc::partition_offset_result>::format(
+  const kafka::data::rpc::partition_offset_result& result,
+  format_context& ctx) const -> format_context::iterator {
+    return fmt::format_to(
+      ctx.out(), "{{ err: {}, offsets: {} }}", result.err, result.offsets);
+}
+
+auto fmt::formatter<kafka::data::rpc::get_offsets_reply>::format(
+  const kafka::data::rpc::get_offsets_reply& reply, format_context& ctx) const
+  -> format_context::iterator {
+    fmt::format_to(ctx.out(), "{{ partition_offsets: [");
+    bool first_topic = true;
+    for (const auto& [topic, partitions] : reply.partition_offsets) {
+        if (!first_topic) {
+            fmt::format_to(ctx.out(), ", ");
+        }
+        first_topic = false;
+        fmt::format_to(ctx.out(), "{{ topic: {}, partitions: [", topic);
+        bool first_partition = true;
+        for (const auto& [partition_id, result] : partitions) {
+            if (!first_partition) {
+                fmt::format_to(ctx.out(), ", ");
+            }
+            first_partition = false;
+            fmt::format_to(
+              ctx.out(),
+              "{{ partition: {}, result: {} }}",
+              partition_id,
+              result);
+        }
+        fmt::format_to(ctx.out(), "] }}");
+    }
+    return fmt::format_to(ctx.out(), "] }}");
+}

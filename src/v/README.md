@@ -8,6 +8,7 @@ bytes                  | Low level byte manipulations and containers |
 cloud_roles            | Authentication mechanisms with various cloud vendors |
 cloud_storage          | Tiered storage integration for Redpanda topics |
 cloud_storage_clients  | Clients for various vendor object storage implementations |
+cloud_topics           | Direct to cloud storage writes |
 cluster                | Redpanda brains. The oracle of truth / cluster management |
 compat                 | Compatibility checks |
 compression            | utilities supporting compression/decompression of many types |

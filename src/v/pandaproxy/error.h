@@ -42,6 +42,7 @@ enum class reply_error_code : uint16_t {
     not_modified = 304,
     use_proxy = 305,
     temporary_redirect = 307,
+    permanent_redirect = 308,
     bad_request = 400,
     unauthorized = 401,
     payment_required = 402,

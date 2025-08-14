@@ -20,14 +20,12 @@ redpanda_cc_library(
         "serde_size_t.h",
         "type_str.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes:iobuf_parser",
         "//src/v/hashing:crc32c",
         "//src/v/reflection:arity",
         "//src/v/reflection:to_tuple",
-        "//src/v/ssx:future_util",
         "//src/v/ssx:sformat",
     ],
 )
@@ -37,7 +35,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/array.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
@@ -49,7 +46,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/bool_class.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
@@ -61,7 +57,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/uuid.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
@@ -74,7 +69,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/vector.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
@@ -86,7 +80,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/optional.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
@@ -98,7 +91,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/map.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
@@ -110,7 +102,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/set.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":map",
@@ -123,7 +114,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/named_type.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
@@ -136,7 +126,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/sstring.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
@@ -148,7 +137,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/variant.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
@@ -160,7 +148,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/iobuf.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
@@ -172,7 +159,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/enum.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
@@ -184,7 +170,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/chrono.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
@@ -196,7 +181,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/tristate_rw.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":serde",
@@ -209,7 +193,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/inet_address.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":iobuf",
@@ -224,7 +207,6 @@ redpanda_cc_library(
     hdrs = [
         "rw/bytes.h",
     ],
-    include_prefix = "serde",
     visibility = ["//visibility:public"],
     deps = [
         ":serde",

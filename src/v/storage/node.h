@@ -11,12 +11,14 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "storage/disk.h"
 #include "storage/probe.h"
-#include "storage/types.h"
 #include "utils/named_type.h"
 #include "utils/notification_list.h"
 
 #include <seastar/core/future.hh>
+
+#include <sys/statvfs.h>
 
 namespace storage {
 

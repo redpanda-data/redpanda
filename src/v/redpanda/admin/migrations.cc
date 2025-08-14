@@ -161,7 +161,7 @@ void write_migration_as_json(
 }
 
 json::validator make_migration_validator() {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
 {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "type": "object",

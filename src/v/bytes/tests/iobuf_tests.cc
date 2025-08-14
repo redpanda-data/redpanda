@@ -69,6 +69,34 @@ SEASTAR_THREAD_TEST_CASE(test_lt) {
       == (iobuf::from("dog") <=> iobuf::from("cat")));
 }
 
+namespace std {
+std::ostream& operator<<(std::ostream& ostr, const strong_ordering& o) {
+    if (o == std::strong_ordering::less) {
+        ostr << "std::strong_ordering::less";
+    } else if (o == std::strong_ordering::greater) {
+        ostr << "std::strong_ordering::greater";
+    } else {
+        ostr << "std::strong_ordering::equal";
+    }
+    return ostr;
+}
+} // namespace std
+
+SEASTAR_THREAD_TEST_CASE(test_cmp_str_view) {
+    BOOST_CHECK_LT(iobuf::from(""), "cat");
+    BOOST_CHECK_LT(iobuf::from("cat"), "dog");
+    BOOST_CHECK_LT(iobuf::from("cat"), "catastrophe");
+    BOOST_CHECK_EQUAL(false, iobuf::from("cat") < "cat");
+    BOOST_CHECK_EQUAL(false, iobuf{} < "");
+    iobuf multiple_frags;
+    multiple_frags.append_fragments(iobuf::from("cat"));
+    multiple_frags.append_fragments(iobuf::from("astrophe"));
+    BOOST_CHECK_EQUAL(false, multiple_frags < "cat");
+    BOOST_CHECK_EQUAL(true, multiple_frags > "cat");
+    BOOST_CHECK_EQUAL(
+      std::strong_ordering::equal, (multiple_frags.share(0, 3) <=> "cat"));
+}
+
 SEASTAR_THREAD_TEST_CASE(test_appended_data_is_retained) {
     iobuf buf;
     append_sequence(buf, 5);

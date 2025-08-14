@@ -13,7 +13,6 @@ redpanda_test_cc_library(
         "//src/v/utils:base64",
         "//src/v/utils:file_io",
     ],
-    include_prefix = "compat",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -70,7 +69,6 @@ redpanda_test_cc_library(
         "try_abort_generator.h",
         "tx_gateway_generator.h",
     ],
-    include_prefix = "compat",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cluster",

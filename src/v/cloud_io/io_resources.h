@@ -18,6 +18,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/scheduling.hh>
 
 namespace cloud_io {
 
@@ -45,6 +46,8 @@ public:
 
     /// How many partition_record_batch_reader_impl instances exist
     size_t current_ongoing_hydrations() const;
+
+    ss::scheduling_group get_scheduling_group() const;
 
 private:
     config::binding<std::optional<uint32_t>>

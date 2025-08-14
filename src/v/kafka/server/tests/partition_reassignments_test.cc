@@ -9,7 +9,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "config/configuration.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/alter_partition_reassignments.h"
 #include "kafka/protocol/list_partition_reassignments.h"
 #include "kafka/protocol/metadata.h"

@@ -80,6 +80,11 @@ public:
       , _superuser(is_superuser)
       , _auth_required(is_auth_required) {};
 
+    request_auth_result operator=(request_auth_result&&) = delete;
+    request_auth_result operator=(const request_auth_result&) = delete;
+
+    request_auth_result(const request_auth_result&) = default;
+    request_auth_result(request_auth_result&&) noexcept;
     ~request_auth_result() noexcept(false);
 
     /**

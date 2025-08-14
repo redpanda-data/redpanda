@@ -35,7 +35,6 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/smp.hh>
-#include <seastar/core/with_scheduling_group.hh>
 #include <seastar/util/defer.hh>
 
 #include <boost/lexical_cast.hpp>
@@ -742,9 +741,18 @@ async_manifest_view::get_term_last_offset(model::term_id term) noexcept {
             }
         }
     } else if (stmm.get_archive_start_offset() != model::offset{}) {
+        // The desired term might be bounded within the spillover manifests
         const auto spill_index = get_spillover_upper_bound_by_term(term);
         if (!spill_index.has_value()) {
-            co_return std::nullopt;
+            // The first segment in the main manifest must be the one we are
+            // searching for, since stmm.begin()->segment_term > term and we
+            // didn't find a higher term in the spillover manifest. This implies
+            // the term boundary is between spillover region and main manifest.
+            // For example:
+            // Main manifest: [2, 3], Spillover map: [[0], [1]], desired term =
+            // 1, there is no higher bound in the spillover map and
+            // stmm.begin()->segment_term > term.
+            co_return stmm.begin()->base_kafka_offset() - kafka::offset(1);
         }
 
         vlog(

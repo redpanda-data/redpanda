@@ -49,9 +49,9 @@ handle_leader(request_context& ctx, model::node_id leader) {
  * leader to be elected if it isn't yet available immediately, like in the case
  * of creating the internal metadata topic on-demand.
  */
-static ss::future<response_ptr>
-handle_ntp(request_context& ctx, std::optional<model::ntp> ntp) {
-    if (!ntp) {
+static ss::future<response_ptr> handle_partition(
+  request_context& ctx, std::optional<model::partition_id> partition) {
+    if (!partition) {
         return ctx.respond(
           find_coordinator_response(error_code::coordinator_not_available));
     }
@@ -60,7 +60,12 @@ handle_ntp(request_context& ctx, std::optional<model::ntp> ntp) {
                    + config::shard_local_cfg().wait_for_leader_timeout_ms();
 
     return ctx.metadata_cache()
-      .get_leader(*ntp, timeout)
+      .get_leader(
+        model::ntp(
+          model::kafka_namespace,
+          model::kafka_consumer_offsets_topic,
+          *partition),
+        timeout)
       .then(
         [&ctx](model::node_id leader) { return handle_leader(ctx, leader); })
       .handle_exception([&ctx](const std::exception_ptr&) {
@@ -139,10 +144,10 @@ ss::future<response_ptr> find_coordinator_handler::handle(
            * metadata topic doesn't exist. in this case fall through and create
            * the topic on-demand.
            */
-          if (auto ntp = ctx.coordinator_mapper().ntp_for(
+          if (auto partition_id = ctx.coordinator_mapper().partition_for(
                 kafka::group_id(request.data.key));
-              ntp) {
-              return handle_ntp(ctx, std::move(ntp));
+              partition_id) {
+              return handle_partition(ctx, partition_id);
           }
 
           return ctx.group_initializer().assure_topic_exists().then(
@@ -152,9 +157,9 @@ ss::future<response_ptr> find_coordinator_handler::handle(
                  * will be updated and we can retry the group-ntp mapping.
                  */
                 if (created) {
-                    auto ntp = ctx.coordinator_mapper().ntp_for(
+                    auto partition_id = ctx.coordinator_mapper().partition_for(
                       kafka::group_id(request.data.key));
-                    return handle_ntp(ctx, std::move(ntp));
+                    return handle_partition(ctx, partition_id);
                 }
                 return ctx.respond(find_coordinator_response(
                   error_code::coordinator_not_available));

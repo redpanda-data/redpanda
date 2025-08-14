@@ -12,7 +12,6 @@
 
 #include "absl/container/btree_map.h"
 #include "absl/container/btree_set.h"
-#include "base/units.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
 #include "serde/peek.h"
@@ -29,7 +28,6 @@
 
 #include <exception>
 #include <ranges>
-#include <variant>
 
 namespace absl {
 
@@ -241,8 +239,7 @@ void access_time_tracker::remove(std::string_view key) noexcept {
 }
 
 ss::future<> access_time_tracker::sync(
-  const fragmented_vector<file_list_item>& existent,
-  add_entries_t add_entries) {
+  const chunked_vector<file_list_item>& existent, add_entries_t add_entries) {
     absl::btree_set<ss::sstring> paths;
     for (const auto& i : existent) {
         paths.insert(i.path);
@@ -296,8 +293,8 @@ access_time_tracker::get(const std::string& key) const {
 
 bool access_time_tracker::is_dirty() const { return _dirty; }
 
-fragmented_vector<file_list_item> access_time_tracker::lru_entries() const {
-    fragmented_vector<file_list_item> items;
+chunked_vector<file_list_item> access_time_tracker::lru_entries() const {
+    chunked_vector<file_list_item> items;
     items.reserve(_table.size());
     for (const auto& [path, metadata] : _table) {
         items.emplace_back(metadata.time_point(), path, metadata.size);

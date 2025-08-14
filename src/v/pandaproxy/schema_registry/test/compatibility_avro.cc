@@ -20,6 +20,7 @@
 #include <avro/Compiler.hh>
 #include <boost/test/tools/old/interface.hpp>
 
+#include <algorithm>
 #include <array>
 
 namespace pp = pandaproxy;
@@ -688,7 +689,7 @@ SEASTAR_THREAD_TEST_CASE(test_avro_compat_messages) {
             .value());
 
         pps::raw_compatibility_result raw;
-        absl::c_for_each(cd.expected, [&raw](auto e) {
+        std::ranges::for_each(cd.expected, [&raw](auto e) {
             raw.emplace<incompatibility>(std::move(e));
         });
         auto exp_compat = std::move(raw)(pps::verbose::yes);

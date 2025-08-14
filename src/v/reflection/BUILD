@@ -5,7 +5,6 @@ redpanda_cc_library(
     hdrs = [
         "arity.h",
     ],
-    include_prefix = "reflection",
     visibility = ["//visibility:public"],
 )
 
@@ -14,7 +13,6 @@ redpanda_cc_library(
     hdrs = [
         "to_tuple.h",
     ],
-    include_prefix = "reflection",
     visibility = ["//visibility:public"],
     deps = [
         ":arity",
@@ -26,11 +24,10 @@ redpanda_cc_library(
     hdrs = [
         "type_traits.h",
     ],
-    include_prefix = "reflection",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/utils:named_type",
         "//src/v/utils:tristate",
         "@abseil-cpp//absl/container:btree",
@@ -47,7 +44,6 @@ redpanda_cc_library(
         "for_each_field.h",
         "seastar/circular_buffer.h",
     ],
-    include_prefix = "reflection",
     visibility = ["//visibility:public"],
     deps = [
         ":arity",
@@ -56,7 +52,7 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
         "//src/v/container:chunked_circular_buffer",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/ssx:future_util",
         "//src/v/utils:named_type",
         "//src/v/utils:tristate",

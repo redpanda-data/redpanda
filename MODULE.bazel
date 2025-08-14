@@ -17,41 +17,40 @@ use_repo(
     "boost",
 )
 
-bazel_dep(name = "gazelle", version = "0.42.0")
+bazel_dep(name = "gazelle", version = "0.45.0")
 bazel_dep(name = "abseil-cpp", version = "20250127.1")
-bazel_dep(name = "bazel_skylib", version = "1.7.1")
+bazel_dep(name = "bazel_skylib", version = "1.8.1")
 bazel_dep(name = "crc32c", version = "1.1.0")
 bazel_dep(name = "fmt", version = "9.1.0")
-bazel_dep(name = "googletest", version = "1.15.2")
+bazel_dep(name = "googletest", version = "1.16.0")
 bazel_dep(name = "liburing", version = "2.5")
 bazel_dep(name = "lz4", version = "1.9.4")
-bazel_dep(name = "platforms", version = "0.0.11")
-bazel_dep(name = "protobuf", version = "29.1")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "protobuf", version = "31.1")
 single_version_override(
     module_name = "protobuf",
     patch_strip = 1,
-    # this patch is in upstream protobuf, so should be in an upcoming release.
     patches = [
-        "//bazel/thirdparty:protobuf_capture_warning.patch",
         "//bazel/thirdparty:0001-protobuf-handle-map-entry.patch",
     ],
 )
 
 bazel_dep(name = "re2", version = "2024-07-02.bcr.1")
 bazel_dep(name = "rules_foreign_cc", version = "0.12.0")
-bazel_dep(name = "rules_go", version = "0.53.0")
+bazel_dep(name = "rules_go", version = "0.56.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_rust", version = "0.60.0")
 bazel_dep(name = "snappy", version = "1.2.1")
 bazel_dep(name = "yaml-cpp", version = "0.8.0")
-bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
+bazel_dep(name = "zlib", version = "1.3.1.bcr.5")
 bazel_dep(name = "zstd", version = "1.5.7")
 bazel_dep(name = "patchelf", version = "0.18.0")
 bazel_dep(name = "bzip2", version = "1.0.8.bcr.2")
+bazel_dep(name = "googleapis", version = "0.0.0-20250703-f9d6fe4a")
 
-bazel_dep(name = "buildifier_prebuilt", version = "8.0.3", dev_dependency = True)
-bazel_dep(name = "rules_python", version = "1.0.0", dev_dependency = True)
-bazel_dep(name = "rules_cc", version = "0.1.1", dev_dependency = True)
+bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = True)
+bazel_dep(name = "rules_python", version = "1.5.1", dev_dependency = True)
+bazel_dep(name = "rules_cc", version = "0.1.3", dev_dependency = True)
 bazel_dep(name = "rules_shell", version = "0.4.1", dev_dependency = True)
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python", dev_dependency = True)
@@ -141,19 +140,6 @@ COMPILERS = {
     "previous": {
         "tars": {
             "aarch64": {
-                "build_date": "2025-03-10",
-                "sha": "9f52789c5aee794d6f013249b6e003b50f72e4c3874fd656723a72bf9322eff9",
-            },
-            "x86_64": {
-                "build_date": "2025-03-10",
-                "sha": "51e547308112bc6671f391d03420c315b7c099238d797631e00374f1bd80712e",
-            },
-        },
-        "version": "18.1.8",
-    },
-    "current": {
-        "tars": {
-            "aarch64": {
                 "build_date": "2025-03-15",
                 "sha": "cdba86609d71cfc379bfce9fb5ce97389cc08320fb713c6abab8d698a53e3fa2",
             },
@@ -164,18 +150,18 @@ COMPILERS = {
         },
         "version": "19.1.7",
     },
-    "next": {
+    "current": {
         "tars": {
             "aarch64": {
-                "build_date": "2025-06-18",
-                "sha": "895bc671e9d75e80fb09b1cf842b3191239d4aeb1bf79bb8108490571481c177",
+                "build_date": "2025-07-22",
+                "sha": "ce0a8d7f4df980dd3aa0deacd390804f887d31065cd79b71827bba6cd4d2e2e8",
             },
             "x86_64": {
-                "build_date": "2025-06-18",
-                "sha": "6eee67bc40ffe6a8470df0f8bea5ab0e99ad5785d1cc84d2c5d14c1a9021b3da",
+                "build_date": "2025-07-22",
+                "sha": "c424df0195e1641b6226dbb380a849d2013975150af40932392361d9893005ac",
             },
         },
-        "version": "20.1.7",
+        "version": "20.1.8",
     },
 }
 
@@ -267,13 +253,14 @@ use_repo(
     "com_github_aws_aws_sdk_go",
     "com_github_beevik_ntp",
     "com_github_bufbuild_protocompile",
+    "com_github_cespare_xxhash",
+    "com_github_containerd_errdefs",
     "com_github_coreos_go_systemd_v22",
     "com_github_docker_docker",
     "com_github_docker_go_connections",
     "com_github_docker_go_units",
     "com_github_fatih_color",
     "com_github_google_uuid",
-    "com_github_hamba_avro",
     "com_github_hamba_avro_v2",
     "com_github_hashicorp_go_multierror",
     "com_github_kballard_go_shellquote",
@@ -281,6 +268,7 @@ use_repo(
     "com_github_kr_text",
     "com_github_lestrrat_go_jwx_v2",
     "com_github_linkedin_goavro_v2",
+    "com_github_lithammer_go_jump_consistent_hash",
     "com_github_lorenzosaino_go_sysctl",
     "com_github_mark3labs_mcp_go",
     "com_github_mattn_go_isatty",
@@ -292,8 +280,10 @@ use_repo(
     "com_github_pkg_errors",
     "com_github_prometheus_client_model",
     "com_github_prometheus_common",
+    "com_github_rcrowley_go_metrics",
     "com_github_redpanda_data_common_go_proto",
     "com_github_redpanda_data_common_go_rpadmin",
+    "com_github_redpanda_data_common_go_rpsr",
     "com_github_redpanda_data_redpanda_src_transform_sdk_go_transform",
     "com_github_rs_xid",
     "com_github_safchain_ethtool",
@@ -301,12 +291,11 @@ use_repo(
     "com_github_schollz_progressbar_v3",
     "com_github_segmentio_encoding",
     "com_github_sergi_go_diff",
+    "com_github_sirupsen_logrus",
     "com_github_spf13_afero",
     "com_github_spf13_cobra",
     "com_github_spf13_pflag",
     "com_github_stretchr_testify",
-    "com_github_testcontainers_testcontainers_go",
-    "com_github_testcontainers_testcontainers_go_modules_redpanda",
     "com_github_tidwall_sjson",
     "com_github_tklauser_go_sysconf",
     "com_github_twmb_franz_go",
@@ -316,6 +305,7 @@ use_repo(
     "com_github_twmb_franz_go_plugin_kzap",
     "com_github_twmb_tlscfg",
     "com_github_twmb_types",
+    "com_github_vectorizedio_redpanda_src_go_rpk",
     "com_google_cloud_go_compute_metadata",
     "in_gopkg_yaml_v3",
     "io_k8s_api",
@@ -327,6 +317,7 @@ use_repo(
     "org_golang_x_sync",
     "org_golang_x_sys",
     "org_golang_x_term",
+    "org_golang_x_time",
     "org_uber_go_zap",
 )
 
@@ -362,6 +353,7 @@ crate.from_cargo(
     ],
 )
 use_repo(crate, "crates")
+
 crate.annotation(
     additive_build_file = "//bazel/thirdparty:wasmtime.BUILD",
     crate = "wasmtime-c-api-impl",
@@ -399,16 +391,6 @@ use_repo(
     "distroless_cc_debian12",
     "distroless_cc_debian12_linux_amd64",
     "distroless_cc_debian12_linux_arm64_v8",
-)
-
-# ====================================
-# clang-tidy
-# ====================================
-bazel_dep(name = "bazel_clang_tidy", dev_dependency = True)
-git_override(
-    module_name = "bazel_clang_tidy",
-    commit = "db677011c7363509a288a9fb3bf0a50830bbf791",
-    remote = "https://github.com/erenon/bazel_clang_tidy.git",
 )
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")

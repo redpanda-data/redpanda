@@ -24,12 +24,12 @@ struct schema {
     };
     using schema_outcome = checked<std::nullopt_t, errc>;
     using id_t = named_type<int32_t, struct schema_id_tag>;
-    static constexpr id_t unassigned_id{-1};
+    static constexpr id_t default_id{0};
     using ids_types_map_t
       = chunked_hash_map<nested_field::id_t, const field_type*>;
 
     struct_type schema_struct;
-    id_t schema_id;
+    id_t schema_id{default_id};
     absl::btree_set<nested_field::id_t> identifier_field_ids;
     friend bool operator==(const schema& lhs, const schema& rhs) = default;
 

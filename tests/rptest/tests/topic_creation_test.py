@@ -11,7 +11,7 @@
 import random
 import string
 import itertools
-import json
+import time
 from time import sleep
 from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
@@ -28,12 +28,68 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.util import wait_for_local_storage_truncate, expect_exception
 from rptest.clients.kcl import KCL
 from rptest.tests.cluster_config_test import wait_for_version_sync
+from rptest.tests.e2e_finjector import Finjector
 
 from ducktape.utils.util import wait_until
 from ducktape.mark import matrix, parametrize
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.offline_log_viewer import OfflineLogViewer
+
+
+def topic_name():
+    return "test-topic-" + "".join(
+        random.choice(string.ascii_lowercase) for _ in range(16))
+
+
+class RapidTopicRecreateTest(RedpandaTest):
+    def __init__(self, test_context):
+        super(RapidTopicRecreateTest, self).__init__(
+            test_context=test_context,
+            num_brokers=3,
+            si_settings=SISettings(test_context=test_context,
+                                   skip_end_of_test_scrubbing=True),
+            extra_rp_conf={
+                "iceberg_enabled": True,  # to create relevant STMs
+            })
+        self.rpk = RpkTool(self.redpanda)
+        self.topic_name = topic_name()
+
+    def create(self):
+        self._current_partitions = random.randint(1, 4)
+        replication_factor = random.choice([1, 3])
+        self.logger.info(
+            "Creating topic with {self._current_partitions} partitions "
+            "and {replication_factor=}")
+        self.client().create_topic(
+            TopicSpec(name=self.topic_name,
+                      partition_count=self._current_partitions,
+                      replication_factor=replication_factor))
+
+    def delete(self):
+        self.logger.info("Deleting topic")
+        self.client().delete_topic(self.topic_name)
+
+    def add_partitions(self):
+        partitions_to_add = random.randint(1, 4)
+        self.logger.info(f"Adding {partitions_to_add} partitions "
+                         f"to {self._current_partitions} existing")
+        self.rpk.add_partitions(self.topic_name, partitions_to_add)
+        self._current_partitions += partitions_to_add
+
+    @cluster(num_nodes=3)
+    def test_topic_rapid_recreation(self):
+        with Finjector(self.redpanda, self.scale,
+                       max_concurrent_failures=1).finj_thread():
+            for _ in range(100):
+                try:
+                    random.choice(
+                        [self.create, self.delete, self.add_partitions])()
+                    sleep_time = 2**random.uniform(-15, 2)
+                    self.logger.info(f"Sleeping for {sleep_time} seconds")
+                    time.sleep(sleep_time)
+                except Exception as e:
+                    self.logger.debug(f"Error: {e}")
 
 
 class Workload():
@@ -203,11 +259,6 @@ class TopicAutocreateTest(RedpandaTest):
         assert len(auto_topic_cfg_unique) == 0 and \
             len(manual_topic_cfg_unique) == 0, \
                   f"topics {auto_topic=} and {manual_topic=} have these different configs (should be empty) {auto_topic_cfg_unique=} {manual_topic_cfg_unique=}"
-
-
-def topic_name():
-    return "test-topic-" + "".join(
-        random.choice(string.ascii_lowercase) for _ in range(16))
 
 
 class CreateTopicsTest(RedpandaTest):
@@ -733,7 +784,10 @@ class RecreateTopicMetadataTest(RedpandaTest):
             extra_rp_conf={
                 # Test does explicit leadership movements
                 # that the balancer would interfere with.
-                'enable_leader_balancer': False
+                'enable_leader_balancer': False,
+                # Test does not depend on balancing actions and
+                # requires consistent replica assignment.
+                'partition_autobalancing_mode': "off",
             })
 
     @cluster(num_nodes=6, log_allow_list=RECREATE_LOG_ALLOW_LIST)

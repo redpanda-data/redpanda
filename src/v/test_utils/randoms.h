@@ -15,7 +15,7 @@
 #include "absl/container/node_hash_map.h"
 #include "absl/container/node_hash_set.h"
 #include "container/chunked_hash_map.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "random/generators.h"
 #include "utils/tristate.h"
 
@@ -85,8 +85,8 @@ template<
   typename... Args,
   typename T = std::invoke_result_t<Fn, Args...>>
 inline auto random_frag_vector(Fn&& gen, size_t size = 20, Args&&... args)
-  -> fragmented_vector<T> {
-    fragmented_vector<T> v;
+  -> chunked_vector<T> {
+    chunked_vector<T> v;
     while (size-- > 0) {
         v.push_back(gen(std::forward<Args>(args)...));
     }

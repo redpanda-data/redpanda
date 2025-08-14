@@ -1,0 +1,41 @@
+load("//bazel:build.bzl", "redpanda_cc_library")
+
+redpanda_cc_library(
+    name = "direct_consumer",
+    srcs = [
+        "data_queue.cc",
+        "direct_consumer.cc",
+        "fetcher.cc",
+    ],
+    hdrs = [
+        "api_types.h",
+        "data_queue.h",
+        "direct_consumer.h",
+        "fetcher.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
+        "//src/v/container:intrusive",
+        "//src/v/kafka/client:cluster",
+        "//src/v/kafka/client:errors",
+        "//src/v/kafka/client:exceptions",
+        "//src/v/kafka/client:logger",
+        "//src/v/kafka/client:types",
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:fetch",
+        "//src/v/kafka/protocol:list_offset",
+        "//src/v/kafka/protocol:metadata",
+        "//src/v/kafka/protocol/schemata:fetch_response",
+        "//src/v/model",
+        "//src/v/ssx:async_algorithm",
+        "//src/v/ssx:future_util",
+        "//src/v/utils:mutex",
+        "//src/v/utils:prefix_logger",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@fmt",
+        "@seastar",
+    ],
+)

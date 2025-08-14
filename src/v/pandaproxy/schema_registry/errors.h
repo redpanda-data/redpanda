@@ -188,6 +188,12 @@ inline error_info mode_not_readwrite(const subject& sub) {
       fmt::format("Subject {} is not in read-write mode", sub())};
 }
 
+inline error_info mode_not_import(const subject& sub) {
+    return error_info{
+      error_code::subject_version_operation_not_permitted,
+      fmt::format("Subject {} is not in import mode", sub())};
+}
+
 inline error_info mode_is_readonly(const std::optional<subject>& sub) {
     return error_info{
       error_code::subject_version_operation_not_permitted,
@@ -205,6 +211,12 @@ inline error_info format_not_supported(const output_format f) {
     return error_info{
       error_code::format_not_supported,
       fmt::format("Format value '{}' is not supported", f)};
+}
+
+inline error_info overwrite_schema_with_id_not_permitted(schema_id id) {
+    return error_info{
+      error_code::subject_version_operation_not_permitted,
+      fmt::format("Overwrite new schema with id {} is not permitted.", id())};
 }
 
 inline bool failed_subject_schema_lookup(std::error_code ec) {

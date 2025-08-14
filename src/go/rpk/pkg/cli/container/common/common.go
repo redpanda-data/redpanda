@@ -19,24 +19,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/image"
-	"gopkg.in/yaml.v3"
-
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
+	"gopkg.in/yaml.v3"
 )
 
 var (
 	tag               = "latest"
 	redpandaImageBase = "redpandadata/redpanda:" + tag
-	consoleImageBase  = "redpandadata/console:v2.8.5"
+	consoleImageBase  = "redpandadata/console:v3.1.2"
 )
 
 const (
@@ -507,7 +505,7 @@ func CheckIfImgPresent(c Client, img string) (bool, error) {
 }
 
 func getHostPort(
-	containerPort int, containerJSON types.ContainerJSON,
+	containerPort int, containerJSON container.InspectResponse,
 ) (uint, error) {
 	natContianerPort, err := nat.NewPort("tcp", fmt.Sprint(containerPort))
 	if err != nil {
@@ -621,29 +619,29 @@ func parseConsoleConfigFile(kafkaAddr, srAddr, adminAddr []string) (string, erro
 		Urls    []string `yaml:"urls"`
 	}
 	type Kafka struct {
-		Brokers        []string `yaml:"brokers"`
-		SchemaRegistry Listener `yaml:"schemaRegistry"`
+		Brokers []string `yaml:"brokers"`
 	}
 	type Redpanda struct {
 		AdminAPI Listener `yaml:"adminApi"`
 	}
 	type ConsoleCfg struct {
-		Kafka    Kafka    `yaml:"kafka"`
-		Redpanda Redpanda `yaml:"redpanda"`
+		Kafka          Kafka    `yaml:"kafka"`
+		Redpanda       Redpanda `yaml:"redpanda"`
+		SchemaRegistry Listener `yaml:"schemaRegistry"`
 	}
 	cfg := ConsoleCfg{
 		Kafka: Kafka{
 			Brokers: kafkaAddr,
-			SchemaRegistry: Listener{
-				Enabled: true,
-				Urls:    srAddr,
-			},
 		},
 		Redpanda: Redpanda{
 			AdminAPI: Listener{
 				Enabled: true,
 				Urls:    adminAddr,
 			},
+		},
+		SchemaRegistry: Listener{
+			Enabled: true,
+			Urls:    srAddr,
 		},
 	}
 	b, err := yaml.Marshal(cfg)

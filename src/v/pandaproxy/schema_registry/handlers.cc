@@ -259,6 +259,8 @@ ss::future<server::reply_t> put_mode(server::request_t rq, server::reply_t rp) {
                  .value_or(force::no);
     auto res = co_await rjson_parse(*rq.req, mode_handler<>{});
 
+    // Ensure we are up to date (eg. see all existing subjects for import mode)
+    co_await rq.service().writer().read_sync();
     co_await rq.service().writer().write_mode(std::nullopt, res.mode, frc);
 
     auto resp = ppj::rjson_serialize_iobuf(res);
@@ -347,22 +349,16 @@ get_schemas_types(server::request_t rq, server::reply_t rp) {
 ss::future<server::reply_t> get_schemas_ids_id(
   server::request_t rq,
   server::reply_t rp,
-  auth auth,
   std::optional<request_auth_result> auth_result) {
     parse_accept_header(rq, rp);
     auto id = parse::request_param<schema_id>(*rq.req, "id");
     const auto format = parse_output_format(*rq.req);
 
-    // Check if we need to validate the auth result
-    // Note: we may not need to if ACLs or authentication are disabled
-    if (auth_result.has_value()) {
-        // TODO(CORE-12276): Authorization check
-        // if auth::op::read for any subject that references this is satisfied
-        //    create an auth with the resource, pass it below
-        // else
-        //    fail
-        enterprise::handle_authz(rq, auth, *auth_result);
-    }
+    co_await rq.service().writer().read_sync();
+    auto subjects = co_await rq.service().schema_store().get_schema_subjects(
+      id, include_deleted::yes);
+
+    enterprise::handle_get_schemas_ids_id_authz(rq, auth_result, subjects);
 
     // With deferred schema validation, there might be a schema that
     // had invalid references. These might have already been posted, so
@@ -425,7 +421,6 @@ ss::future<ctx_server<service>::reply_t> get_schemas_ids_id_subjects(
 ss::future<server::reply_t> get_subjects(
   server::request_t rq,
   server::reply_t rp,
-  auth auth,
   std::optional<request_auth_result> auth_result) {
     parse_accept_header(rq, rp);
     auto inc_del{
@@ -434,19 +429,16 @@ ss::future<server::reply_t> get_subjects(
     auto subject_prefix{
       parse::query_param<std::optional<ss::sstring>>(*rq.req, "subjectPrefix")};
 
-    // Check if we need to validate the auth result
-    // Note: we may not need to if ACLs or authentication are disabled
-    if (auth_result.has_value()) {
-        // TODO(CORE-12277): Authorization check
-        enterprise::handle_authz(rq, auth, *auth_result);
-    }
-
     // List-type request: must ensure we see latest writes
     co_await rq.service().writer().read_sync();
 
-    auto resp = ppj::rjson_serialize_iobuf(
-      co_await rq.service().schema_store().get_subjects(
-        inc_del, subject_prefix));
+    auto res = co_await rq.service().schema_store().get_subjects(
+      inc_del, subject_prefix);
+
+    // Handle AuthZ - Filters res for the subjects the user is allowed to see
+    enterprise::handle_get_subjects_authz(rq, auth_result, res);
+
+    auto resp = ppj::rjson_serialize_iobuf(std::move(res));
     log_response(*rq.req, resp);
     rp.rep->write_body("json", ppj::as_body_writer(std::move(resp)));
     co_return rp;
@@ -531,16 +523,20 @@ ss::future<server::reply_t>
 post_subject_versions(server::request_t rq, server::reply_t rp) {
     parse_content_type_header(rq);
     parse_accept_header(rq, rp);
-    auto sub = parse::request_param<subject>(*rq.req, "subject");
-    auto norm{parse::query_param<std::optional<normalize>>(*rq.req, "normalize")
-                .value_or(normalize::no)};
+    const auto sub = parse::request_param<subject>(*rq.req, "subject");
+    const auto norm{
+      parse::query_param<std::optional<normalize>>(*rq.req, "normalize")
+        .value_or(normalize::no)};
     vlog(
       srlog.debug,
       "post_subject_versions subject='{}', normalize='{}'",
       sub,
       norm);
 
-    co_await rq.service().writer().read_sync();
+    auto& wr = rq.service().writer();
+    auto& st = rq.service().schema_store();
+
+    co_await wr.read_sync();
 
     auto unparsed = co_await rjson_parse(
       *rq.req, post_subject_versions_request_handler<>{sub});
@@ -557,23 +553,91 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
     }
 
     stored_schema schema{
-      co_await rq.service().schema_store().make_canonical_schema(
-        std::move(unparsed.def), norm),
+      co_await st.make_canonical_schema(std::move(unparsed.def), norm),
       unparsed.version.value_or(invalid_schema_version),
       unparsed.id.value_or(invalid_schema_id),
       is_deleted::no};
 
-    auto ids = co_await rq.service().schema_store().get_schema_version(
-      schema.share());
+    // Validate the schema (may throw)
+    co_await st.validate_schema(schema.schema.share());
 
-    schema_id schema_id{ids.id.value_or(invalid_schema_id)};
-    if (!ids.version.has_value()) {
-        schema.id = ids.id.value_or(invalid_schema_id);
-        schema.version = schema.version == invalid_schema_version
-                           ? ids.version.value_or(invalid_schema_version)
-                           : schema.version;
-        schema_id = co_await rq.service().writer().write_subject_version(
-          std::move(schema));
+    // Determine if the definition already exists
+    auto s_id = co_await st.get_schema_id(schema.schema.def().share());
+
+    vlog(
+      srlog.debug, "post_subject_versions: ID for schema definition: {}", s_id);
+
+    // Determine if the subject already has a version that references this
+    // schema, deleted versions are not seen.
+    const auto undeleted_versions = co_await st.get_subject_versions(
+      sub, include_deleted::no);
+
+    std::optional<schema_version> v_id;
+    if (s_id.has_value()) {
+        auto v_it = std::ranges::find(
+          undeleted_versions, *s_id, &subject_version_entry::id);
+        if (v_it != undeleted_versions.end()) {
+            v_id.emplace(v_it->version);
+        }
+    }
+
+    // Check if a match was found for the given request
+    // Return the id if a match was found, register the schema if not
+    const auto any_id_allowed = schema.id == invalid_schema_id;
+    const auto id_matches = (any_id_allowed && s_id.has_value())
+                            || schema.id == s_id;
+
+    const auto any_version_allowed = schema.version == invalid_schema_version;
+    const auto version_matches = (any_version_allowed && v_id.has_value())
+                                 || schema.version == v_id;
+
+    const auto matched = id_matches && version_matches;
+
+    schema_id schema_id{s_id.value_or(invalid_schema_id)};
+    if (!matched) {
+        // Check if the request is appropriate for the mode
+        const auto mode = co_await st.get_mode(sub, default_to_global::yes);
+        if (mode == mode::read_only) {
+            throw as_exception(mode_is_readonly(sub));
+        }
+        if (schema.id >= 0 && mode != mode::import) {
+            throw as_exception(mode_not_import(schema.schema.sub()));
+        }
+        if (schema.id < 0 && mode != mode::read_write) {
+            throw as_exception(mode_not_readwrite(sub));
+        }
+
+        // Determine if a provided schema id is appropriate
+        if (
+          schema.id != invalid_schema_id && s_id != schema.id
+          && co_await st.has_schema(schema.id)) {
+            // The supplied id already exists, but the schema is different
+            co_return ss::coroutine::return_exception(
+              as_exception(overwrite_schema_with_id_not_permitted(schema.id)));
+        }
+
+        // Check compatibility of the schema
+        if (!undeleted_versions.empty() && mode != mode::import) {
+            auto compat = co_await st.is_compatible(
+              undeleted_versions.back().version,
+              schema.schema.share(),
+              verbose::yes);
+            if (!compat.is_compat) {
+                throw exception(
+                  error_code::schema_incompatible,
+                  fmt::format(
+                    "Schema being registered is incompatible with an earlier "
+                    "schema for subject \"{}\", details: [{}]",
+                    sub,
+                    fmt::join(compat.messages, ", ")));
+            }
+        }
+
+        schema.id = (schema.id == invalid_schema_id)
+                      ? s_id.value_or(invalid_schema_id)
+                      : schema.id;
+
+        schema_id = co_await wr.write_subject_version(std::move(schema));
     }
 
     auto resp = ppj::rjson_serialize_iobuf(
@@ -776,7 +840,7 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
               error_code::schema_invalid,
               error_code::schema_empty,
               error_code::schema_missing_reference};
-            return absl::c_any_of(
+            return std::ranges::any_of(
               errors, [ec](error_code e) { return ec == e; });
         };
         if (is_verbose && reportable(e.code())) {
@@ -825,6 +889,22 @@ void check_feature_ready(const server::request_t& rq) {
           fmt::format("Feature '{}' is not yet available", feature));
     }
 }
+
+void check_licence(const server::request_t& rq) {
+    const auto& ft = rq.service().controller()->get_feature_table().local();
+    if (ft.should_sanction()) {
+        const auto& license = ft.get_license();
+        auto status = [&license]() {
+            return !license.has_value()    ? "not present"
+                   : license->is_expired() ? "expired"
+                                           : "unknown error";
+        };
+        throw ss::httpd::base_exception(
+          fmt::format("Invalid license: {}", status()),
+          ss::http::reply::status_type::forbidden);
+    }
+}
+
 } // namespace
 
 ss::future<server::reply_t>
@@ -858,7 +938,7 @@ get_security_acls(server::request_t rq, server::reply_t rp) {
         security::resource_pattern_filter::resource_subsystem::schema_registry},
       security::acl_entry_filter{principal, host, operation, permission}};
 
-    auto sr_acls = std::ranges::to<std::vector>(
+    auto sr_acls = std::ranges::to<chunked_vector<acl>>(
       acl_store.acls(filter)
       | std::views::transform(
         [](const security::acl_binding& binding) { return acl(binding); }));
@@ -871,6 +951,8 @@ get_security_acls(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 post_security_acls(server::request_t rq, server::reply_t rp) {
+    check_licence(rq);
+
     auto& security_frontend
       = rq.service().controller()->get_security_frontend().local();
 
@@ -919,6 +1001,8 @@ post_security_acls(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 delete_security_acls(server::request_t rq, server::reply_t rp) {
+    check_licence(rq);
+
     auto& security_frontend
       = rq.service().controller()->get_security_frontend().local();
 
@@ -945,7 +1029,7 @@ delete_security_acls(server::request_t rq, server::reply_t rp) {
     auto deleted = co_await security_frontend.delete_acls(
       std::move(filters), 5s);
 
-    auto res = std::vector<acl>{};
+    auto res = chunked_vector<acl>{};
     std::ranges::for_each(deleted, [&res](cluster::delete_acls_result r) {
         if (r.error != cluster::errc::success) {
             throw exception(

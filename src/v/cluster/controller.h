@@ -12,9 +12,11 @@
 #pragma once
 
 #include "cluster/cloud_metadata/producer_id_recovery_manager.h"
+#include "cluster/cluster_epoch_service.h"
 #include "cluster/cluster_link/fwd.h"
 #include "cluster/controller_probe.h"
 #include "cluster/controller_stm.h"
+#include "cluster/data_migration_group_proxy.h"
 #include "cluster/fwd.h"
 #include "cluster/node_status_table.h"
 #include "cluster/scheduling/leader_balancer.h"
@@ -68,7 +70,6 @@ public:
     ss::sharded<members_manager>& get_members_manager() {
         return _members_manager;
     }
-
     ss::sharded<config_frontend>& get_config_frontend() {
         return _config_frontend;
     }
@@ -129,6 +130,10 @@ public:
 
     ss::sharded<drain_manager>& get_drain_manager() { return _drain_manager; }
 
+    ss::sharded<raft::group_manager>& get_raft_manager() {
+        return _raft_manager;
+    }
+
     ss::sharded<partition_manager>& get_partition_manager() {
         return _partition_manager;
     }
@@ -150,6 +155,10 @@ public:
         return _members_backend;
     }
     ss::sharded<controller_stm>& get_controller_stm() { return _stm; }
+
+    ss::sharded<cluster_epoch_service<>>& get_cluster_epoch_generator() {
+        return _epoch_service;
+    }
 
     ss::sharded<data_migrations::migrated_resources>&
     get_data_migrated_resources() {
@@ -190,6 +199,10 @@ public:
         return _cluster_link_frontend;
     }
 
+    ss::sharded<shard_placement_table>& get_shard_placement_table() {
+        return _shard_placement;
+    }
+
     bool is_raft0_leader() const {
         vassert(
           ss::this_shard_id() == ss::shard_id(0),
@@ -215,7 +228,8 @@ public:
       ss::shared_ptr<cluster::cloud_metadata::offsets_upload_requestor>,
       ss::shared_ptr<cluster::cloud_metadata::producer_id_recovery_manager>,
       ss::shared_ptr<cluster::cloud_metadata::offsets_recovery_requestor>,
-      std::chrono::milliseconds application_start_time);
+      std::chrono::milliseconds application_start_time,
+      ss::sharded<std::unique_ptr<cluster::data_migrations::group_proxy>>&);
 
     // prevents controller from accepting new requests
     ss::future<> shutdown_input();
@@ -265,6 +279,15 @@ public:
 
 private:
     friend controller_probe;
+
+    using remake_cb_t
+      = ss::noncopyable_function<ss::future<std::error_code>(model::ntp)>;
+
+    ss::future<std::error_code> trigger_remake_cb(raft::group_id g);
+
+    ss::future<> set_raft_manager_remake_cb();
+
+    ss::future<> clear_raft_manager_remake_cb();
 
     /**
      * Create a \c bootstrap_cluster_cmd, replicate-and-wait it to the current
@@ -359,6 +382,8 @@ private:
       _cluster_link_frontend; // instance per core
     ss::sharded<cluster::cluster_link::table>
       _cluster_link_table; // instance per core
+
+    ss::sharded<cluster_epoch_service<>> _epoch_service; // instance per core
 
     bool _is_ready = false;
     ss::scheduling_group _scheduling_group;

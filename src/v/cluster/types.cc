@@ -9,17 +9,13 @@
 
 #include "cluster/types.h"
 
-#include "cluster/fwd.h"
-#include "cluster/remote_topic_properties.h"
 #include "cluster/topic_properties.h"
-#include "config/configuration.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "security/acl.h"
-#include "utils/to_string.h"
 #include "utils/tristate.h"
 
 #include <seastar/core/chunked_fifo.hh>
@@ -30,9 +26,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <optional>
-#include <type_traits>
 
 namespace cluster {
 

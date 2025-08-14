@@ -98,6 +98,7 @@ struct manual_deletion_fixture : public raft::raft_fixture {
                 100_MiB,
                 model::offset::max(),
                 std::nullopt,
+                std::nullopt,
                 std::chrono::milliseconds{0},
                 as,
                 storage::ntp_sanitizer_config{.sanitize_only = true}));

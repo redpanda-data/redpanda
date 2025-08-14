@@ -8,10 +8,10 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "compaction/key_offset_map.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "storage/compaction_reducers.h"
-#include "storage/key_offset_map.h"
 #include "storage/lock_manager.h"
 #include "storage/log_reader.h"
 #include "storage/probe.h"
@@ -58,9 +58,9 @@ TEST_F(MapBuildingReducerFixtureTest, TestMapIndexing) {
     auto& seg = segments.front();
 
     static constexpr int64_t max_keys = 4;
-    storage::simple_key_offset_map map(max_keys);
-    storage::compaction_config compact_cfg(
-      model::offset::max(), std::nullopt, as);
+    compaction::simple_key_offset_map map(max_keys);
+    compaction::compaction_config compact_cfg(
+      model::offset::max(), std::nullopt, std::nullopt, as);
     auto pb = storage::probe{};
 
     auto last_indexed_offset = model::offset{-1};

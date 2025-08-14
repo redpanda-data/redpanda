@@ -15,6 +15,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "base/outcome.h"
 #include "base/seastarx.h"
+#include "container/chunked_hash_map.h"
 #include "metrics/metrics.h"
 #include "model/metadata.h"
 #include "net/transport.h"
@@ -262,9 +263,10 @@ private:
      *
      * NOTE: _correlation_idx is unrelated to the sequence type used to define
      * on-wire ordering below.
+     *
+     * TODO(CORE-12902)
      */
-    absl::flat_hash_map<uint32_t, std::unique_ptr<response_entry>>
-      _correlations;
+    chunked_hash_map<uint32_t, std::unique_ptr<response_entry>> _correlations;
     uint32_t _correlation_idx{0};
 
     /**

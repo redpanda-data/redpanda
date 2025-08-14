@@ -27,7 +27,6 @@ redpanda_cc_library(
         "validator.h",
         "writer.h",
     ],
-    include_prefix = "json",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",

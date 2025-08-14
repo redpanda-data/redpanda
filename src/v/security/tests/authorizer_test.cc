@@ -16,11 +16,9 @@
 #include "security/role_store.h"
 #include "utils/base64.h"
 
-#include <seastar/testing/thread_test_case.hh>
-
 #include <boost/algorithm/string.hpp>
-#include <boost/test/unit_test.hpp>
 #include <fmt/ostream.h>
+#include <gtest/gtest.h>
 
 namespace security {
 
@@ -91,39 +89,40 @@ static authorizer make_test_instance(
     return {allow, std::move(b), roles.value_or(&_roles)};
 }
 
-BOOST_AUTO_TEST_CASE(authz_resource_type_auto) {
-    BOOST_REQUIRE(
-      get_resource_type<model::topic>() == security::resource_type::topic);
-    BOOST_REQUIRE(
-      get_resource_type<kafka::group_id>() == security::resource_type::group);
-    BOOST_REQUIRE(
-      get_resource_type<security::acl_cluster_name>()
-      == security::resource_type::cluster);
-    BOOST_REQUIRE(
-      get_resource_type<kafka::transactional_id>()
-      == security::resource_type::transactional_id);
-    BOOST_REQUIRE(
-      get_resource_type<pandaproxy::schema_registry::subject>()
-      == security::resource_type::sr_subject);
-    BOOST_REQUIRE(
-      get_resource_type<pandaproxy::schema_registry::registry_resource>()
-      == security::resource_type::sr_registry);
+class authorizer_test : public ::testing::Test {};
 
-    BOOST_REQUIRE(
-      get_resource_type<model::topic>() == get_resource_type<model::topic>());
-    BOOST_REQUIRE(
-      get_resource_type<model::topic>()
-      != get_resource_type<kafka::group_id>());
+TEST(AUTHORIZER_TEST, authz_resource_type_auto) {
+    ASSERT_EQ(
+      get_resource_type<model::topic>(), security::resource_type::topic);
+    ASSERT_EQ(
+      get_resource_type<kafka::group_id>(), security::resource_type::group);
+    ASSERT_EQ(
+      get_resource_type<security::acl_cluster_name>(),
+      security::resource_type::cluster);
+    ASSERT_EQ(
+      get_resource_type<kafka::transactional_id>(),
+      security::resource_type::transactional_id);
+    ASSERT_EQ(
+      get_resource_type<pandaproxy::schema_registry::subject>(),
+      security::resource_type::sr_subject);
+    ASSERT_EQ(
+      get_resource_type<pandaproxy::schema_registry::registry_resource>(),
+      security::resource_type::sr_registry);
+
+    ASSERT_EQ(
+      get_resource_type<model::topic>(), get_resource_type<model::topic>());
+    ASSERT_NE(
+      get_resource_type<model::topic>(), get_resource_type<kafka::group_id>());
 }
 
-BOOST_AUTO_TEST_CASE(authz_empty_resource_name) {
+TEST(AUTHORIZER_TEST, authz_empty_resource_name) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.0.1");
 
     auto auth = make_test_instance();
 
-    BOOST_REQUIRE(
-      !auth.authorized(kafka::group_id(""), acl_operation::read, user, host));
+    ASSERT_FALSE(
+      auth.authorized(kafka::group_id(""), acl_operation::read, user, host));
 
     acl_entry acl(
       acl_wildcard_user,
@@ -139,20 +138,20 @@ BOOST_AUTO_TEST_CASE(authz_empty_resource_name) {
 
     auto result = auth.authorized(
       kafka::group_id(""), acl_operation::read, user, host);
-    BOOST_REQUIRE(result.authorized);
-    BOOST_REQUIRE_EQUAL(result.acl, acl);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
-    BOOST_REQUIRE_EQUAL(result.principal, user);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::group);
-    BOOST_REQUIRE_EQUAL(result.resource_name, "");
-    BOOST_REQUIRE(!result.is_superuser);
-    BOOST_REQUIRE(!result.empty_matches);
+    ASSERT_TRUE(result.authorized);
+    ASSERT_EQ(result.acl, acl);
+    ASSERT_EQ(result.resource_pattern, resource);
+    ASSERT_EQ(result.principal, user);
+    ASSERT_EQ(result.host, host);
+    ASSERT_EQ(result.resource_type, security::resource_type::group);
+    ASSERT_EQ(result.resource_name, "");
+    ASSERT_FALSE(result.is_superuser);
+    ASSERT_FALSE(result.empty_matches);
 }
 
 static const model::topic default_topic("topic1");
 
-BOOST_AUTO_TEST_CASE(authz_deny_applies_first) {
+TEST(AUTHORIZER_TEST, authz_deny_applies_first) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.2.1");
 
@@ -176,18 +175,18 @@ BOOST_AUTO_TEST_CASE(authz_deny_applies_first) {
     auto result = auth.authorized(
       default_topic, acl_operation::read, user, host);
 
-    BOOST_REQUIRE(!result.authorized);
-    BOOST_REQUIRE_EQUAL(result.acl, deny);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
-    BOOST_REQUIRE_EQUAL(result.principal, user);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_topic());
-    BOOST_REQUIRE(!result.is_superuser);
-    BOOST_REQUIRE(!result.empty_matches);
+    ASSERT_FALSE(result.authorized);
+    ASSERT_EQ(result.acl, deny);
+    ASSERT_EQ(result.resource_pattern, resource);
+    ASSERT_EQ(result.principal, user);
+    ASSERT_EQ(result.host, host);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_topic());
+    ASSERT_FALSE(result.is_superuser);
+    ASSERT_FALSE(result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(authz_allow_all) {
+TEST(AUTHORIZER_TEST, authz_allow_all) {
     acl_principal user(principal_type::user, "random");
     acl_host host("192.0.4.4");
 
@@ -207,18 +206,18 @@ BOOST_AUTO_TEST_CASE(authz_allow_all) {
 
     auto result = auth.authorized(
       default_topic, acl_operation::read, user, host);
-    BOOST_REQUIRE(result.authorized);
-    BOOST_REQUIRE_EQUAL(result.acl, acl);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
-    BOOST_REQUIRE_EQUAL(result.principal, user);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_topic());
-    BOOST_REQUIRE(!result.is_superuser);
-    BOOST_REQUIRE(!result.empty_matches);
+    ASSERT_TRUE(result.authorized);
+    ASSERT_EQ(result.acl, acl);
+    ASSERT_EQ(result.resource_pattern, resource);
+    ASSERT_EQ(result.principal, user);
+    ASSERT_EQ(result.host, host);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_topic());
+    ASSERT_FALSE(result.is_superuser);
+    ASSERT_FALSE(result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(authz_super_user_allow) {
+TEST(AUTHORIZER_TEST, authz_super_user_allow) {
     acl_principal user1(principal_type::user, "superuser1");
     acl_principal user2(principal_type::user, "superuser2");
     acl_host host("192.0.4.4");
@@ -243,84 +242,84 @@ BOOST_AUTO_TEST_CASE(authz_super_user_allow) {
     auto result = auth.authorized(
       default_topic, acl_operation::read, user1, host);
 
-    BOOST_REQUIRE(!result.authorized);
-    BOOST_REQUIRE_EQUAL(result.acl, acl);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
-    BOOST_REQUIRE_EQUAL(result.principal, user1);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_topic());
-    BOOST_REQUIRE(!result.is_superuser);
-    BOOST_REQUIRE(!result.empty_matches);
+    ASSERT_FALSE(result.authorized);
+    ASSERT_EQ(result.acl, acl);
+    ASSERT_EQ(result.resource_pattern, resource);
+    ASSERT_EQ(result.principal, user1);
+    ASSERT_EQ(result.host, host);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_topic());
+    ASSERT_FALSE(result.is_superuser);
+    ASSERT_FALSE(result.empty_matches);
 
     result = auth.authorized(default_topic, acl_operation::read, user2, host);
 
-    BOOST_REQUIRE(!result.authorized);
-    BOOST_REQUIRE_EQUAL(result.acl, acl);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
-    BOOST_REQUIRE_EQUAL(result.principal, user2);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_topic());
-    BOOST_REQUIRE(!result.is_superuser);
-    BOOST_REQUIRE(!result.empty_matches);
+    ASSERT_FALSE(result.authorized);
+    ASSERT_EQ(result.acl, acl);
+    ASSERT_EQ(result.resource_pattern, resource);
+    ASSERT_EQ(result.principal, user2);
+    ASSERT_EQ(result.host, host);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_topic());
+    ASSERT_FALSE(result.is_superuser);
+    ASSERT_FALSE(result.empty_matches);
 
     // Adding superusers
     superuser_config_prop.update({"superuser1", "superuser2"});
 
     result = auth.authorized(default_topic, acl_operation::read, user1, host);
 
-    BOOST_REQUIRE(result.authorized);
-    BOOST_REQUIRE(!result.acl.has_value());
-    BOOST_REQUIRE(!result.resource_pattern.has_value());
-    BOOST_REQUIRE_EQUAL(result.principal, user1);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_topic());
-    BOOST_REQUIRE(result.is_superuser);
-    BOOST_REQUIRE(!result.empty_matches);
+    ASSERT_TRUE(result.authorized);
+    ASSERT_FALSE(result.acl.has_value());
+    ASSERT_FALSE(result.resource_pattern.has_value());
+    ASSERT_EQ(result.principal, user1);
+    ASSERT_EQ(result.host, host);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_topic());
+    ASSERT_TRUE(result.is_superuser);
+    ASSERT_FALSE(result.empty_matches);
 
     result = auth.authorized(default_topic, acl_operation::read, user2, host);
 
-    BOOST_REQUIRE(result.authorized);
-    BOOST_REQUIRE(!result.acl.has_value());
-    BOOST_REQUIRE(!result.resource_pattern.has_value());
-    BOOST_REQUIRE_EQUAL(result.principal, user2);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_topic());
-    BOOST_REQUIRE(result.is_superuser);
-    BOOST_REQUIRE(!result.empty_matches);
+    ASSERT_TRUE(result.authorized);
+    ASSERT_FALSE(result.acl.has_value());
+    ASSERT_FALSE(result.resource_pattern.has_value());
+    ASSERT_EQ(result.principal, user2);
+    ASSERT_EQ(result.host, host);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_topic());
+    ASSERT_TRUE(result.is_superuser);
+    ASSERT_FALSE(result.empty_matches);
 
     // Revoking a superuser
     superuser_config_prop.update({"superuser2"});
 
     result = auth.authorized(default_topic, acl_operation::read, user1, host);
 
-    BOOST_REQUIRE(!result.authorized);
-    BOOST_REQUIRE_EQUAL(result.acl, acl);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
-    BOOST_REQUIRE_EQUAL(result.principal, user1);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_topic());
-    BOOST_REQUIRE(!result.is_superuser);
-    BOOST_REQUIRE(!result.empty_matches);
+    ASSERT_FALSE(result.authorized);
+    ASSERT_EQ(result.acl, acl);
+    ASSERT_EQ(result.resource_pattern, resource);
+    ASSERT_EQ(result.principal, user1);
+    ASSERT_EQ(result.host, host);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_topic());
+    ASSERT_FALSE(result.is_superuser);
+    ASSERT_FALSE(result.empty_matches);
 
     result = auth.authorized(default_topic, acl_operation::read, user2, host);
 
-    BOOST_REQUIRE(result.authorized);
-    BOOST_REQUIRE(!result.acl.has_value());
-    BOOST_REQUIRE(!result.resource_pattern.has_value());
-    BOOST_REQUIRE_EQUAL(result.principal, user2);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_topic());
-    BOOST_REQUIRE(result.is_superuser);
-    BOOST_REQUIRE(!result.empty_matches);
+    ASSERT_TRUE(result.authorized);
+    ASSERT_FALSE(result.acl.has_value());
+    ASSERT_FALSE(result.resource_pattern.has_value());
+    ASSERT_EQ(result.principal, user2);
+    ASSERT_EQ(result.host, host);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_topic());
+    ASSERT_TRUE(result.is_superuser);
+    ASSERT_FALSE(result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(authz_wildcards) {
+TEST(AUTHORIZER_TEST, authz_wildcards) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.0.1");
 
@@ -329,15 +328,15 @@ BOOST_AUTO_TEST_CASE(authz_wildcards) {
     auto result = auth.authorized(
       default_topic, acl_operation::read, user, host);
 
-    BOOST_REQUIRE(!result.authorized);
-    BOOST_REQUIRE(!result.acl.has_value());
-    BOOST_REQUIRE(!result.resource_pattern.has_value());
-    BOOST_REQUIRE_EQUAL(result.principal, user);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_topic());
-    BOOST_REQUIRE(!result.is_superuser);
-    BOOST_REQUIRE(result.empty_matches);
+    ASSERT_FALSE(result.authorized);
+    ASSERT_FALSE(result.acl.has_value());
+    ASSERT_FALSE(result.resource_pattern.has_value());
+    ASSERT_EQ(result.principal, user);
+    ASSERT_EQ(result.host, host);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_topic());
+    ASSERT_FALSE(result.is_superuser);
+    ASSERT_TRUE(result.empty_matches);
 
     acl_principal user1(principal_type::user, "alice");
     acl_host host1("192.168.3.1");
@@ -353,15 +352,15 @@ BOOST_AUTO_TEST_CASE(authz_wildcards) {
 
     result = auth.authorized(default_topic, acl_operation::read, user1, host1);
 
-    BOOST_REQUIRE(result.authorized);
-    BOOST_REQUIRE_EQUAL(result.acl, read_acl);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, wildcard_resource);
-    BOOST_REQUIRE_EQUAL(result.principal, user1);
-    BOOST_REQUIRE_EQUAL(result.host, host1);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_topic());
-    BOOST_REQUIRE(!result.is_superuser);
-    BOOST_REQUIRE(!result.empty_matches);
+    ASSERT_TRUE(result.authorized);
+    ASSERT_EQ(result.acl, read_acl);
+    ASSERT_EQ(result.resource_pattern, wildcard_resource);
+    ASSERT_EQ(result.principal, user1);
+    ASSERT_EQ(result.host, host1);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_topic());
+    ASSERT_FALSE(result.is_superuser);
+    ASSERT_FALSE(result.empty_matches);
 
     acl_entry write_acl(
       user1, host1, acl_operation::write, acl_permission::allow);
@@ -380,18 +379,18 @@ BOOST_AUTO_TEST_CASE(authz_wildcards) {
     auth.add_bindings(bindings);
 
     result = auth.authorized(default_topic, acl_operation::write, user1, host1);
-    BOOST_REQUIRE(!result.authorized);
-    BOOST_REQUIRE_EQUAL(result.acl, deny_write_acl);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, wildcard_resource);
-    BOOST_REQUIRE_EQUAL(result.principal, user1);
-    BOOST_REQUIRE_EQUAL(result.host, host1);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_topic());
-    BOOST_REQUIRE(!result.is_superuser);
-    BOOST_REQUIRE(!result.empty_matches);
+    ASSERT_FALSE(result.authorized);
+    ASSERT_EQ(result.acl, deny_write_acl);
+    ASSERT_EQ(result.resource_pattern, wildcard_resource);
+    ASSERT_EQ(result.principal, user1);
+    ASSERT_EQ(result.host, host1);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_topic());
+    ASSERT_FALSE(result.is_superuser);
+    ASSERT_FALSE(result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(authz_no_acls_deny) {
+TEST(AUTHORIZER_TEST, authz_no_acls_deny) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.0.1");
 
@@ -400,18 +399,18 @@ BOOST_AUTO_TEST_CASE(authz_no_acls_deny) {
     auto result = auth.authorized(
       default_topic, acl_operation::read, user, host);
 
-    BOOST_REQUIRE(!result.authorized);
-    BOOST_REQUIRE(!result.acl.has_value());
-    BOOST_REQUIRE(!result.resource_pattern.has_value());
-    BOOST_REQUIRE_EQUAL(result.principal, user);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_topic());
-    BOOST_REQUIRE(!result.is_superuser);
-    BOOST_REQUIRE(result.empty_matches);
+    ASSERT_FALSE(result.authorized);
+    ASSERT_FALSE(result.acl.has_value());
+    ASSERT_FALSE(result.resource_pattern.has_value());
+    ASSERT_EQ(result.principal, user);
+    ASSERT_EQ(result.host, host);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_topic());
+    ASSERT_FALSE(result.is_superuser);
+    ASSERT_TRUE(result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(authz_no_acls_allow) {
+TEST(AUTHORIZER_TEST, authz_no_acls_allow) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.0.1");
 
@@ -420,15 +419,15 @@ BOOST_AUTO_TEST_CASE(authz_no_acls_allow) {
     auto result = auth.authorized(
       default_topic, acl_operation::read, user, host);
 
-    BOOST_REQUIRE(result.authorized);
-    BOOST_REQUIRE(!result.acl.has_value());
-    BOOST_REQUIRE(!result.resource_pattern.has_value());
-    BOOST_REQUIRE_EQUAL(result.principal, user);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_topic());
-    BOOST_REQUIRE(!result.is_superuser);
-    BOOST_REQUIRE(result.empty_matches);
+    ASSERT_TRUE(result.authorized);
+    ASSERT_FALSE(result.acl.has_value());
+    ASSERT_FALSE(result.resource_pattern.has_value());
+    ASSERT_EQ(result.principal, user);
+    ASSERT_EQ(result.host, host);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_topic());
+    ASSERT_FALSE(result.is_superuser);
+    ASSERT_TRUE(result.empty_matches);
 }
 
 static void do_implied_acls(
@@ -437,7 +436,7 @@ static void do_implied_acls(
     auto test_allow = [&bind_principal, &roles](
                         acl_operation op, std::set<acl_operation> allowed) {
         acl_principal user(principal_type::user, "alice");
-        BOOST_REQUIRE(
+        ASSERT_TRUE(
           user == bind_principal
           || bind_principal.type() == principal_type::role);
 
@@ -472,30 +471,29 @@ static void do_implied_acls(
             auto ok = auth.authorized(
               default_cluster_name, test_op, user, host);
             if (allowed.contains(test_op) || test_op == op) {
-                BOOST_REQUIRE(ok.authorized);
-                BOOST_REQUIRE_EQUAL(ok.acl, acl);
-                BOOST_REQUIRE_EQUAL(ok.resource_pattern, resource);
-                BOOST_REQUIRE(!ok.empty_matches);
+                ASSERT_TRUE(ok.authorized);
+                ASSERT_EQ(ok.acl, acl);
+                ASSERT_EQ(ok.resource_pattern, resource);
+                ASSERT_FALSE(ok.empty_matches);
             } else {
-                BOOST_REQUIRE(!ok.authorized);
-                BOOST_REQUIRE(!ok.acl.has_value());
-                BOOST_REQUIRE(!ok.resource_pattern.has_value());
-                BOOST_REQUIRE(ok.empty_matches);
+                ASSERT_FALSE(ok.authorized);
+                ASSERT_FALSE(ok.acl.has_value());
+                ASSERT_FALSE(ok.resource_pattern.has_value());
+                ASSERT_TRUE(ok.empty_matches);
             }
 
-            BOOST_REQUIRE_EQUAL(ok.principal, user);
-            BOOST_REQUIRE_EQUAL(ok.host, host);
-            BOOST_REQUIRE(!ok.is_superuser);
-            BOOST_REQUIRE_EQUAL(
-              ok.resource_type, security::resource_type::cluster);
-            BOOST_REQUIRE_EQUAL(ok.resource_name, default_cluster_name());
+            ASSERT_EQ(ok.principal, user);
+            ASSERT_EQ(ok.host, host);
+            ASSERT_FALSE(ok.is_superuser);
+            ASSERT_EQ(ok.resource_type, security::resource_type::cluster);
+            ASSERT_EQ(ok.resource_name, default_cluster_name());
         }
     };
 
     auto test_deny = [&bind_principal, &roles](
                        acl_operation op, std::set<acl_operation> denied) {
         acl_principal user(principal_type::user, "alice");
-        BOOST_REQUIRE(
+        ASSERT_TRUE(
           user == bind_principal
           || bind_principal.type() == principal_type::role);
 
@@ -537,21 +535,20 @@ static void do_implied_acls(
             auto ok = auth.authorized(
               default_cluster_name, test_op, user, host);
             if (denied.contains(test_op) || test_op == op) {
-                BOOST_REQUIRE(!ok.authorized);
-                BOOST_REQUIRE_EQUAL(ok.acl, deny);
+                ASSERT_FALSE(ok.authorized);
+                ASSERT_EQ(ok.acl, deny);
             } else {
-                BOOST_REQUIRE(ok.authorized);
-                BOOST_REQUIRE_EQUAL(ok.acl, allow);
+                ASSERT_TRUE(ok.authorized);
+                ASSERT_EQ(ok.acl, allow);
             }
 
-            BOOST_REQUIRE_EQUAL(ok.resource_pattern, resource);
-            BOOST_REQUIRE_EQUAL(ok.principal, user);
-            BOOST_REQUIRE_EQUAL(ok.host, host);
-            BOOST_REQUIRE(!ok.is_superuser);
-            BOOST_REQUIRE(!ok.empty_matches);
-            BOOST_REQUIRE_EQUAL(
-              ok.resource_type, security::resource_type::cluster);
-            BOOST_REQUIRE_EQUAL(ok.resource_name, default_cluster_name());
+            ASSERT_EQ(ok.resource_pattern, resource);
+            ASSERT_EQ(ok.principal, user);
+            ASSERT_EQ(ok.host, host);
+            ASSERT_FALSE(ok.is_superuser);
+            ASSERT_FALSE(ok.empty_matches);
+            ASSERT_EQ(ok.resource_type, security::resource_type::cluster);
+            ASSERT_EQ(ok.resource_name, default_cluster_name());
         }
     };
 
@@ -594,11 +591,11 @@ static void do_implied_acls(
     test_deny(acl_operation::describe_configs, {});
 }
 
-BOOST_AUTO_TEST_CASE(authz_implied_acls) {
+TEST(AUTHORIZER_TEST, authz_implied_acls) {
     do_implied_acls(acl_principal{principal_type::user, "alice"});
 }
 
-BOOST_AUTO_TEST_CASE(authz_allow_for_all_wildcard_resource) {
+TEST(AUTHORIZER_TEST, authz_allow_for_all_wildcard_resource) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.3.1");
 
@@ -620,18 +617,18 @@ BOOST_AUTO_TEST_CASE(authz_allow_for_all_wildcard_resource) {
     auto result = auth.authorized(
       default_topic, acl_operation::read, user, host);
 
-    BOOST_REQUIRE(result.authorized);
-    BOOST_REQUIRE_EQUAL(result.acl, acl);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
-    BOOST_REQUIRE_EQUAL(result.principal, user);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_topic());
-    BOOST_REQUIRE(!result.is_superuser);
-    BOOST_REQUIRE(!result.empty_matches);
+    ASSERT_TRUE(result.authorized);
+    ASSERT_EQ(result.acl, acl);
+    ASSERT_EQ(result.resource_pattern, resource);
+    ASSERT_EQ(result.principal, user);
+    ASSERT_EQ(result.host, host);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_topic());
+    ASSERT_FALSE(result.is_superuser);
+    ASSERT_FALSE(result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(authz_remove_acl_wildcard_resource) {
+TEST(AUTHORIZER_TEST, authz_remove_acl_wildcard_resource) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
@@ -646,10 +643,10 @@ BOOST_AUTO_TEST_CASE(authz_remove_acl_wildcard_resource) {
     }
 
     absl::flat_hash_set<acl_entry> expected{allow_write_acl};
-    BOOST_REQUIRE(get_acls(auth, wildcard_resource) == expected);
+    ASSERT_EQ(get_acls(auth, wildcard_resource), expected);
 }
 
-BOOST_AUTO_TEST_CASE(authz_remove_all_acl_wildcard_resource) {
+TEST(AUTHORIZER_TEST, authz_remove_all_acl_wildcard_resource) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
@@ -662,10 +659,12 @@ BOOST_AUTO_TEST_CASE(authz_remove_all_acl_wildcard_resource) {
         auth.remove_bindings(filters);
     }
 
-    BOOST_REQUIRE(get_acls(auth, acl_binding_filter::any()).empty());
+    ASSERT_EQ(
+      get_acls(auth, acl_binding_filter::any()),
+      absl::flat_hash_set<acl_entry>{});
 }
 
-BOOST_AUTO_TEST_CASE(authz_allow_for_all_prefixed_resource) {
+TEST(AUTHORIZER_TEST, authz_allow_for_all_prefixed_resource) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.3.1");
 
@@ -687,18 +686,18 @@ BOOST_AUTO_TEST_CASE(authz_allow_for_all_prefixed_resource) {
     auto result = auth.authorized(
       model::topic("foo-3uk3rlkj"), acl_operation::read, user, host);
 
-    BOOST_REQUIRE(result.authorized);
-    BOOST_REQUIRE_EQUAL(result.acl, acl);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
-    BOOST_REQUIRE_EQUAL(result.principal, user);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, "foo-3uk3rlkj");
-    BOOST_REQUIRE(!result.is_superuser);
-    BOOST_REQUIRE(!result.empty_matches);
+    ASSERT_TRUE(result.authorized);
+    ASSERT_EQ(result.acl, acl);
+    ASSERT_EQ(result.resource_pattern, resource);
+    ASSERT_EQ(result.principal, user);
+    ASSERT_EQ(result.host, host);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, "foo-3uk3rlkj");
+    ASSERT_FALSE(result.is_superuser);
+    ASSERT_FALSE(result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(authz_remove_acl_prefixed_resource) {
+TEST(AUTHORIZER_TEST, authz_remove_acl_prefixed_resource) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
@@ -713,10 +712,10 @@ BOOST_AUTO_TEST_CASE(authz_remove_acl_prefixed_resource) {
     }
 
     absl::flat_hash_set<acl_entry> expected{allow_write_acl};
-    BOOST_REQUIRE(get_acls(auth, prefixed_resource) == expected);
+    ASSERT_EQ(get_acls(auth, prefixed_resource), expected);
 }
 
-BOOST_AUTO_TEST_CASE(authz_remove_all_acl_prefixed_resource) {
+TEST(AUTHORIZER_TEST, authz_remove_all_acl_prefixed_resource) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
@@ -729,10 +728,12 @@ BOOST_AUTO_TEST_CASE(authz_remove_all_acl_prefixed_resource) {
         auth.remove_bindings(filters);
     }
 
-    BOOST_REQUIRE(get_acls(auth, acl_binding_filter::any()).empty());
+    ASSERT_EQ(
+      get_acls(auth, acl_binding_filter::any()),
+      absl::flat_hash_set<acl_entry>{});
 }
 
-BOOST_AUTO_TEST_CASE(authz_acls_on_literal_resource) {
+TEST(AUTHORIZER_TEST, authz_acls_on_literal_resource) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
@@ -761,12 +762,14 @@ BOOST_AUTO_TEST_CASE(authz_acls_on_literal_resource) {
       deny_read_acl,
     };
 
-    BOOST_REQUIRE(expected == get_acls(auth, default_resource));
-    BOOST_REQUIRE(get_acls(auth, wildcard_resource).empty());
-    BOOST_REQUIRE(get_acls(auth, prefixed_resource).empty());
+    ASSERT_EQ(expected, get_acls(auth, default_resource));
+    ASSERT_EQ(
+      get_acls(auth, wildcard_resource), absl::flat_hash_set<acl_entry>{});
+    ASSERT_EQ(
+      get_acls(auth, prefixed_resource), absl::flat_hash_set<acl_entry>{});
 }
 
-BOOST_AUTO_TEST_CASE(authz_acls_on_wildcard_resource) {
+TEST(AUTHORIZER_TEST, authz_acls_on_wildcard_resource) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
@@ -785,12 +788,14 @@ BOOST_AUTO_TEST_CASE(authz_acls_on_wildcard_resource) {
       deny_read_acl,
     };
 
-    BOOST_REQUIRE(expected == get_acls(auth, wildcard_resource));
-    BOOST_REQUIRE(get_acls(auth, default_resource).empty());
-    BOOST_REQUIRE(get_acls(auth, prefixed_resource).empty());
+    ASSERT_EQ(expected, get_acls(auth, wildcard_resource));
+    ASSERT_EQ(
+      get_acls(auth, default_resource), absl::flat_hash_set<acl_entry>{});
+    ASSERT_EQ(
+      get_acls(auth, prefixed_resource), absl::flat_hash_set<acl_entry>{});
 }
 
-BOOST_AUTO_TEST_CASE(authz_acls_on_prefixed_resource) {
+TEST(AUTHORIZER_TEST, authz_acls_on_prefixed_resource) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
@@ -809,12 +814,14 @@ BOOST_AUTO_TEST_CASE(authz_acls_on_prefixed_resource) {
       deny_read_acl,
     };
 
-    BOOST_REQUIRE(expected == get_acls(auth, prefixed_resource));
-    BOOST_REQUIRE(get_acls(auth, wildcard_resource).empty());
-    BOOST_REQUIRE(get_acls(auth, default_resource).empty());
+    ASSERT_EQ(expected, get_acls(auth, prefixed_resource));
+    ASSERT_EQ(
+      get_acls(auth, wildcard_resource), absl::flat_hash_set<acl_entry>{});
+    ASSERT_EQ(
+      get_acls(auth, default_resource), absl::flat_hash_set<acl_entry>{});
 }
 
-BOOST_AUTO_TEST_CASE(authz_auth_prefix_resource) {
+TEST(AUTHORIZER_TEST, authz_auth_prefix_resource) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.3.1");
 
@@ -850,15 +857,15 @@ BOOST_AUTO_TEST_CASE(authz_auth_prefix_resource) {
 
     auto result = auth.authorized(
       model::topic(default_resource.name()), acl_operation::read, user, host);
-    BOOST_REQUIRE(!result.authorized);
-    BOOST_REQUIRE(!result.acl.has_value());
-    BOOST_REQUIRE(!result.resource_pattern.has_value());
-    BOOST_REQUIRE_EQUAL(result.principal, user);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE(!result.is_superuser);
-    BOOST_REQUIRE(result.empty_matches);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_resource.name());
+    ASSERT_FALSE(result.authorized);
+    ASSERT_FALSE(result.acl.has_value());
+    ASSERT_FALSE(result.resource_pattern.has_value());
+    ASSERT_EQ(result.principal, user);
+    ASSERT_EQ(result.host, host);
+    ASSERT_FALSE(result.is_superuser);
+    ASSERT_TRUE(result.empty_matches);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_resource.name());
 
     std::vector<acl_binding> bindings;
     bindings.emplace_back(prefixed_resource, allow_read_acl);
@@ -867,18 +874,18 @@ BOOST_AUTO_TEST_CASE(authz_auth_prefix_resource) {
     result = auth.authorized(
       model::topic(default_resource.name()), acl_operation::read, user, host);
 
-    BOOST_REQUIRE(result.authorized);
-    BOOST_REQUIRE_EQUAL(result.acl, allow_read_acl);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, prefixed_resource);
-    BOOST_REQUIRE_EQUAL(result.principal, user);
-    BOOST_REQUIRE_EQUAL(result.host, host);
-    BOOST_REQUIRE(!result.is_superuser);
-    BOOST_REQUIRE(!result.empty_matches);
-    BOOST_REQUIRE_EQUAL(result.resource_type, security::resource_type::topic);
-    BOOST_REQUIRE_EQUAL(result.resource_name, default_resource.name());
+    ASSERT_TRUE(result.authorized);
+    ASSERT_EQ(result.acl, allow_read_acl);
+    ASSERT_EQ(result.resource_pattern, prefixed_resource);
+    ASSERT_EQ(result.principal, user);
+    ASSERT_EQ(result.host, host);
+    ASSERT_FALSE(result.is_superuser);
+    ASSERT_FALSE(result.empty_matches);
+    ASSERT_EQ(result.resource_type, security::resource_type::topic);
+    ASSERT_EQ(result.resource_name, default_resource.name());
 }
 
-BOOST_AUTO_TEST_CASE(authz_single_char) {
+TEST(AUTHORIZER_TEST, authz_single_char) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.3.1");
 
@@ -891,15 +898,15 @@ BOOST_AUTO_TEST_CASE(authz_single_char) {
 
     auto result = auth.authorized(
       model::topic("f"), acl_operation::read, user, host);
-    BOOST_REQUIRE(bool(result));
-    BOOST_REQUIRE_EQUAL(result.acl, allow_read_acl);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
+    ASSERT_TRUE(bool(result));
+    ASSERT_EQ(result.acl, allow_read_acl);
+    ASSERT_EQ(result.resource_pattern, resource);
 
     result = auth.authorized(
       model::topic("foo"), acl_operation::read, user, host);
-    BOOST_REQUIRE(!result);
-    BOOST_REQUIRE(!result.acl.has_value());
-    BOOST_REQUIRE(!result.resource_pattern.has_value());
+    ASSERT_FALSE(result);
+    ASSERT_FALSE(result.acl.has_value());
+    ASSERT_FALSE(result.resource_pattern.has_value());
 
     bindings.clear();
     resource_pattern resource1(
@@ -909,25 +916,25 @@ BOOST_AUTO_TEST_CASE(authz_single_char) {
 
     result = auth.authorized(
       model::topic("_foo"), acl_operation::read, user, host);
-    BOOST_REQUIRE(bool(result));
-    BOOST_REQUIRE_EQUAL(result.acl, allow_read_acl);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource1);
+    ASSERT_TRUE(bool(result));
+    ASSERT_EQ(result.acl, allow_read_acl);
+    ASSERT_EQ(result.resource_pattern, resource1);
 
     result = auth.authorized(
       model::topic("_"), acl_operation::read, user, host);
-    BOOST_REQUIRE(bool(result));
-    BOOST_REQUIRE_EQUAL(result.acl, allow_read_acl);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource1);
+    ASSERT_TRUE(bool(result));
+    ASSERT_EQ(result.acl, allow_read_acl);
+    ASSERT_EQ(result.resource_pattern, resource1);
 
     result = auth.authorized(
       model::topic("foo_"), acl_operation::read, user, host);
-    BOOST_REQUIRE(!result);
-    BOOST_REQUIRE(!result.acl.has_value());
-    BOOST_REQUIRE(!result.resource_pattern.has_value());
-    BOOST_REQUIRE(result.empty_matches);
+    ASSERT_FALSE(result);
+    ASSERT_FALSE(result.acl.has_value());
+    ASSERT_FALSE(result.resource_pattern.has_value());
+    ASSERT_TRUE(result.empty_matches);
 }
 
-BOOST_AUTO_TEST_CASE(authz_get_acls_principal) {
+TEST(AUTHORIZER_TEST, authz_get_acls_principal) {
     acl_principal user(principal_type::user, "alice");
 
     auto auth = make_test_instance();
@@ -939,9 +946,10 @@ BOOST_AUTO_TEST_CASE(authz_get_acls_principal) {
         user, acl_wildcard_host, acl_operation::write, acl_permission::allow));
     auth.add_bindings(bindings);
 
-    BOOST_REQUIRE(
-      get_acls(auth, acl_principal(principal_type::user, "*")).empty());
-    BOOST_REQUIRE_EQUAL(get_acls(auth, user).size(), 1);
+    ASSERT_EQ(
+      get_acls(auth, acl_principal(principal_type::user, "*")),
+      absl::flat_hash_set<acl_entry>{});
+    ASSERT_EQ(get_acls(auth, user).size(), 1);
 
     {
         std::vector<acl_binding_filter> filters;
@@ -959,12 +967,12 @@ BOOST_AUTO_TEST_CASE(authz_get_acls_principal) {
         acl_permission::allow));
     auth.add_bindings(bindings);
 
-    BOOST_REQUIRE_EQUAL(
+    ASSERT_EQ(
       get_acls(auth, acl_principal(principal_type::user, "*")).size(), 1);
-    BOOST_REQUIRE(get_acls(auth, user).empty());
+    ASSERT_EQ(get_acls(auth, user), absl::flat_hash_set<acl_entry>{});
 }
 
-BOOST_AUTO_TEST_CASE(authz_acl_filter) {
+TEST(AUTHORIZER_TEST, authz_acl_filter) {
     acl_principal user(principal_type::user, "alice");
 
     resource_pattern resource1(
@@ -1011,23 +1019,23 @@ BOOST_AUTO_TEST_CASE(authz_acl_filter) {
         return ret;
     };
 
-    BOOST_REQUIRE(
-      (absl::flat_hash_set<acl_binding>{acl1, acl2, acl3, acl4})
-      == to_set(auth.acls(acl_binding_filter::any())));
+    ASSERT_EQ(
+      (absl::flat_hash_set<acl_binding>{acl1, acl2, acl3, acl4}),
+      to_set(auth.acls(acl_binding_filter::any())));
 
-    BOOST_REQUIRE(
-      (absl::flat_hash_set<acl_binding>{acl1, acl2})
-      == to_set(
+    ASSERT_EQ(
+      (absl::flat_hash_set<acl_binding>{acl1, acl2}),
+      to_set(
         auth.acls(acl_binding_filter(resource1, acl_entry_filter::any()))));
 
-    BOOST_REQUIRE(
-      (absl::flat_hash_set<acl_binding>{acl4})
-      == to_set(auth.acls(
+    ASSERT_EQ(
+      (absl::flat_hash_set<acl_binding>{acl4}),
+      to_set(auth.acls(
         acl_binding_filter(prefixed_resource, acl_entry_filter::any()))));
 
-    BOOST_REQUIRE(
-      (absl::flat_hash_set<acl_binding>{acl3, acl4})
-      == to_set(auth.acls(acl_binding_filter(
+    ASSERT_EQ(
+      (absl::flat_hash_set<acl_binding>{acl3, acl4}),
+      to_set(auth.acls(acl_binding_filter(
         resource_pattern_filter(
           std::nullopt,
           resource2.name(),
@@ -1035,7 +1043,7 @@ BOOST_AUTO_TEST_CASE(authz_acl_filter) {
         acl_entry_filter::any()))));
 }
 
-BOOST_AUTO_TEST_CASE(authz_topic_acl) {
+TEST(AUTHORIZER_TEST, authz_topic_acl) {
     acl_principal user1(principal_type::user, "alice");
     acl_principal user2(principal_type::user, "rob");
     acl_principal user3(principal_type::user, "batman");
@@ -1081,73 +1089,73 @@ BOOST_AUTO_TEST_CASE(authz_topic_acl) {
 
     auto result = auth.authorized(
       default_topic, acl_operation::read, user1, host2);
-    BOOST_REQUIRE(bool(result));
-    BOOST_REQUIRE_EQUAL(result.acl, acl2);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
+    ASSERT_TRUE(bool(result));
+    ASSERT_EQ(result.acl, acl2);
+    ASSERT_EQ(result.resource_pattern, resource);
 
     result = auth.authorized(default_topic, acl_operation::read, user1, host1);
-    BOOST_REQUIRE(!result);
-    BOOST_REQUIRE_EQUAL(result.acl, acl3);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
+    ASSERT_FALSE(result);
+    ASSERT_EQ(result.acl, acl3);
+    ASSERT_EQ(result.resource_pattern, resource);
 
     result = auth.authorized(default_topic, acl_operation::write, user1, host1);
-    BOOST_REQUIRE(bool(result));
-    BOOST_REQUIRE_EQUAL(result.acl, acl4);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
+    ASSERT_TRUE(bool(result));
+    ASSERT_EQ(result.acl, acl4);
+    ASSERT_EQ(result.resource_pattern, resource);
 
     result = auth.authorized(default_topic, acl_operation::write, user1, host2);
-    BOOST_REQUIRE(!result);
-    BOOST_REQUIRE(!result.acl.has_value());
-    BOOST_REQUIRE(!result.resource_pattern.has_value());
+    ASSERT_FALSE(result);
+    ASSERT_FALSE(result.acl.has_value());
+    ASSERT_FALSE(result.resource_pattern.has_value());
 
     result = auth.authorized(
       default_topic, acl_operation::describe, user1, host1);
-    BOOST_REQUIRE(bool(result));
-    BOOST_REQUIRE_EQUAL(result.acl, acl5);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
+    ASSERT_TRUE(bool(result));
+    ASSERT_EQ(result.acl, acl5);
+    ASSERT_EQ(result.resource_pattern, resource);
 
     result = auth.authorized(
       default_topic, acl_operation::describe, user1, host2);
-    BOOST_REQUIRE(bool(result));
-    BOOST_REQUIRE_EQUAL(result.acl, acl5);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
+    ASSERT_TRUE(bool(result));
+    ASSERT_EQ(result.acl, acl5);
+    ASSERT_EQ(result.resource_pattern, resource);
 
     result = auth.authorized(default_topic, acl_operation::alter, user1, host1);
-    BOOST_REQUIRE(!result);
-    BOOST_REQUIRE(!result.acl.has_value());
-    BOOST_REQUIRE(!result.resource_pattern.has_value());
+    ASSERT_FALSE(result);
+    ASSERT_FALSE(result.acl.has_value());
+    ASSERT_FALSE(result.resource_pattern.has_value());
 
     result = auth.authorized(default_topic, acl_operation::alter, user1, host2);
-    BOOST_REQUIRE(!result);
-    BOOST_REQUIRE(!result.acl.has_value());
-    BOOST_REQUIRE(!result.resource_pattern.has_value());
+    ASSERT_FALSE(result);
+    ASSERT_FALSE(result.acl.has_value());
+    ASSERT_FALSE(result.resource_pattern.has_value());
 
     result = auth.authorized(
       default_topic, acl_operation::describe, user2, host1);
-    BOOST_REQUIRE(bool(result));
-    BOOST_REQUIRE_EQUAL(result.acl, acl6);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
+    ASSERT_TRUE(bool(result));
+    ASSERT_EQ(result.acl, acl6);
+    ASSERT_EQ(result.resource_pattern, resource);
 
     result = auth.authorized(
       default_topic, acl_operation::describe, user3, host1);
-    BOOST_REQUIRE(bool(result));
-    BOOST_REQUIRE_EQUAL(result.acl, acl7);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
+    ASSERT_TRUE(bool(result));
+    ASSERT_EQ(result.acl, acl7);
+    ASSERT_EQ(result.resource_pattern, resource);
 
     result = auth.authorized(default_topic, acl_operation::read, user2, host1);
-    BOOST_REQUIRE(bool(result));
-    BOOST_REQUIRE_EQUAL(result.acl, acl6);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
+    ASSERT_TRUE(bool(result));
+    ASSERT_EQ(result.acl, acl6);
+    ASSERT_EQ(result.resource_pattern, resource);
 
     result = auth.authorized(default_topic, acl_operation::write, user3, host1);
-    BOOST_REQUIRE(bool(result));
-    BOOST_REQUIRE_EQUAL(result.acl, acl7);
-    BOOST_REQUIRE_EQUAL(result.resource_pattern, resource);
+    ASSERT_TRUE(bool(result));
+    ASSERT_EQ(result.acl, acl7);
+    ASSERT_EQ(result.resource_pattern, resource);
 }
 
 // a bug had allowed a topic with read permissions (prefix) to authorize a group
 // for read permissions when the topic name was a prefix of the group name
-BOOST_AUTO_TEST_CASE(authz_topic_group_same_name) {
+TEST(AUTHORIZER_TEST, authz_topic_group_same_name) {
     auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
@@ -1161,41 +1169,41 @@ BOOST_AUTO_TEST_CASE(authz_topic_group_same_name) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.0.1");
 
-    BOOST_REQUIRE(!auth.authorized(
+    ASSERT_FALSE(auth.authorized(
       kafka::group_id("topic-foo"), acl_operation::read, user, host));
-    BOOST_REQUIRE(!auth.authorized(
+    ASSERT_FALSE(auth.authorized(
       kafka::group_id("topic-foo-xxx"), acl_operation::read, user, host));
 }
 
-BOOST_AUTO_TEST_CASE(role_authz_principal_view) {
+TEST(AUTHORIZER_TEST, role_authz_principal_view) {
     ss::sstring s1{"foor"};
     ss::sstring s2{"bar"};
 
-    BOOST_REQUIRE_NE(s1, s2);
+    ASSERT_NE(s1, s2);
     acl_principal p1{principal_type::user, s1};
     acl_principal p2{principal_type::user, s2};
     acl_principal_view pv1{p1};
 
-    BOOST_CHECK_NE(p1, p2);
-    BOOST_CHECK_EQUAL(p1, pv1);
-    BOOST_CHECK_NE(p2, pv1);
+    EXPECT_NE(p1, p2);
+    EXPECT_EQ(p1, pv1);
+    EXPECT_NE(p2, pv1);
 
     acl_principal p3{principal_type::role, s1};
     acl_principal p4{principal_type::role, s2};
     acl_principal_view pv3{p3};
 
-    BOOST_CHECK_NE(p3, p4);
-    BOOST_CHECK_EQUAL(p3, pv3);
-    BOOST_CHECK_NE(p4, pv3);
+    EXPECT_NE(p3, p4);
+    EXPECT_EQ(p3, pv3);
+    EXPECT_NE(p4, pv3);
 
     // respects principal type
-    BOOST_CHECK_NE(p1, p3);
-    BOOST_CHECK_NE(p2, p4);
-    BOOST_CHECK_NE(p1, pv3);
-    BOOST_CHECK_NE(pv1, pv3);
+    EXPECT_NE(p1, p3);
+    EXPECT_NE(p2, p4);
+    EXPECT_NE(p1, pv3);
+    EXPECT_NE(pv1, pv3);
 }
 
-BOOST_AUTO_TEST_CASE(role_authz_simple_allow) {
+TEST(AUTHORIZER_TEST, role_authz_simple_allow) {
     acl_principal user1(principal_type::user, "phyllis");
     acl_principal user2(principal_type::user, "lola");
     acl_principal user3(principal_type::user, "dietrichson");
@@ -1237,66 +1245,66 @@ BOOST_AUTO_TEST_CASE(role_authz_simple_allow) {
 
     // We haven't populated the role store yet
     auto result = auth.authorized(topic1, acl_operation::read, user1, host1);
-    BOOST_CHECK(!bool(result));
-    BOOST_CHECK(!result.acl.has_value());
-    BOOST_CHECK(!result.resource_pattern.has_value());
-    BOOST_CHECK(!result.role.has_value());
+    EXPECT_FALSE(bool(result));
+    EXPECT_FALSE(result.acl.has_value());
+    EXPECT_FALSE(result.resource_pattern.has_value());
+    EXPECT_FALSE(result.role.has_value());
 
     // Add the role to the store
-    BOOST_CHECK(roles.put(role_name1, the_dietrichsons));
+    EXPECT_TRUE(roles.put(role_name1, the_dietrichsons));
 
     // check authZ for both role members
     for (const auto& user : {user1, user2}) {
         auto result = auth.authorized(topic1, acl_operation::read, user, host1);
-        BOOST_CHECK(bool(result));
-        BOOST_CHECK_EQUAL(result.acl, acl1);
-        BOOST_CHECK_EQUAL(result.resource_pattern, resource);
-        BOOST_CHECK_EQUAL(result.role, role_name1);
+        EXPECT_TRUE(bool(result));
+        EXPECT_EQ(result.acl, acl1);
+        EXPECT_EQ(result.resource_pattern, resource);
+        EXPECT_EQ(result.role, role_name1);
     }
 
     // confirm that the non-member user3 was not granted read access
     result = auth.authorized(topic1, acl_operation::read, user3, host1);
-    BOOST_CHECK(!bool(result));
-    BOOST_CHECK(!result.acl.has_value());
-    BOOST_CHECK(!result.resource_pattern.has_value());
-    BOOST_CHECK(!result.role.has_value());
+    EXPECT_FALSE(bool(result));
+    EXPECT_FALSE(result.acl.has_value());
+    EXPECT_FALSE(result.resource_pattern.has_value());
+    EXPECT_FALSE(result.role.has_value());
 
     // check that the non-member user4 does have write access
     result = auth.authorized(topic1, acl_operation::write, user4, host1);
-    BOOST_CHECK(bool(result));
-    BOOST_CHECK_EQUAL(result.acl, acl3);
-    BOOST_CHECK_EQUAL(result.resource_pattern, resource);
-    BOOST_CHECK(!result.role.has_value());
+    EXPECT_TRUE(bool(result));
+    EXPECT_EQ(result.acl, acl3);
+    EXPECT_EQ(result.resource_pattern, resource);
+    EXPECT_FALSE(result.role.has_value());
 
     // And confirm that role members do NOT have write access
     for (const auto& user : {user1, user2}) {
         auto result = auth.authorized(
           topic1, acl_operation::write, user, host1);
-        BOOST_CHECK(!bool(result));
-        BOOST_CHECK(!result.acl.has_value());
-        BOOST_CHECK(!result.resource_pattern.has_value());
+        EXPECT_FALSE(bool(result));
+        EXPECT_FALSE(result.acl.has_value());
+        EXPECT_FALSE(result.resource_pattern.has_value());
         // No role here, becuase there was no match
-        BOOST_CHECK(!result.role.has_value());
+        EXPECT_FALSE(result.role.has_value());
     }
 
     // Add user3 to the role
     auto r = roles.get(role_name1);
-    BOOST_CHECK(roles.remove(role_name1));
-    BOOST_REQUIRE(r.has_value());
-    BOOST_CHECK_EQUAL(r.value(), the_dietrichsons);
+    EXPECT_TRUE(roles.remove(role_name1));
+    ASSERT_TRUE(r.has_value());
+    EXPECT_EQ(r.value(), the_dietrichsons);
     auto r1_members = std::move(r.value()).members();
     r1_members.insert(role_member::from_principal(user3));
     roles.put(role_name1, std::move(r1_members));
 
     // user3 should now have read permissions
     result = auth.authorized(topic1, acl_operation::read, user3, host1);
-    BOOST_CHECK(bool(result));
-    BOOST_CHECK_EQUAL(result.acl, acl1);
-    BOOST_CHECK_EQUAL(result.resource_pattern, resource);
-    BOOST_CHECK_EQUAL(result.role, role_name1);
+    EXPECT_TRUE(bool(result));
+    EXPECT_EQ(result.acl, acl1);
+    EXPECT_EQ(result.resource_pattern, resource);
+    EXPECT_EQ(result.role, role_name1);
 }
 
-BOOST_AUTO_TEST_CASE(role_authz_user_deny_applies_first) {
+TEST(AUTHORIZER_TEST, role_authz_user_deny_applies_first) {
     acl_principal user1(principal_type::user, "user1");
     role_name role_name1("role1");
     acl_principal role_principal1 = role::to_principal(role_name1());
@@ -1330,21 +1338,21 @@ BOOST_AUTO_TEST_CASE(role_authz_user_deny_applies_first) {
     for (auto op :
          {acl_operation::read, acl_operation::write, acl_operation::describe}) {
         auto result = auth.authorized(default_topic, op, user1, host1);
-        BOOST_CHECK(!bool(result));
+        EXPECT_FALSE(bool(result));
         if (op == acl_operation::write) {
-            BOOST_CHECK_EQUAL(result.acl, deny_user);
-            BOOST_CHECK_EQUAL(result.resource_pattern, resource);
+            EXPECT_EQ(result.acl, deny_user);
+            EXPECT_EQ(result.resource_pattern, resource);
         } else {
-            BOOST_CHECK(!result.acl.has_value());
-            BOOST_CHECK(!result.resource_pattern.has_value());
+            EXPECT_FALSE(result.acl.has_value());
+            EXPECT_FALSE(result.resource_pattern.has_value());
         }
-        BOOST_CHECK(!result.role.has_value());
+        EXPECT_FALSE(result.role.has_value());
     }
 
     // now add user1 to the role, which is already bound to the allow all acl
 
-    BOOST_CHECK(roles.remove(role_name1));
-    BOOST_CHECK(roles.put(
+    EXPECT_TRUE(roles.remove(role_name1));
+    EXPECT_TRUE(roles.put(
       role_name1,
       std::vector<role_member>{role_member::from_principal(user1)}));
 
@@ -1354,20 +1362,20 @@ BOOST_AUTO_TEST_CASE(role_authz_user_deny_applies_first) {
          {acl_operation::read, acl_operation::write, acl_operation::describe}) {
         auto result = auth.authorized(default_topic, op, user1, host1);
         if (op == acl_operation::write) {
-            BOOST_CHECK(!bool(result));
-            BOOST_CHECK_EQUAL(result.acl, deny_user);
-            BOOST_CHECK_EQUAL(result.resource_pattern, resource);
-            BOOST_CHECK(!result.role.has_value());
+            EXPECT_FALSE(bool(result));
+            EXPECT_EQ(result.acl, deny_user);
+            EXPECT_EQ(result.resource_pattern, resource);
+            EXPECT_FALSE(result.role.has_value());
         } else {
-            BOOST_CHECK(bool(result));
-            BOOST_CHECK_EQUAL(result.acl, allow_role);
-            BOOST_CHECK_EQUAL(result.resource_pattern, resource);
-            BOOST_CHECK_EQUAL(result.role, role_name1);
+            EXPECT_TRUE(bool(result));
+            EXPECT_EQ(result.acl, allow_role);
+            EXPECT_EQ(result.resource_pattern, resource);
+            EXPECT_EQ(result.role, role_name1);
         }
     }
 }
 
-BOOST_AUTO_TEST_CASE(role_authz_role_deny_applies_first) {
+TEST(AUTHORIZER_TEST, role_authz_role_deny_applies_first) {
     acl_principal user1(principal_type::user, "user1");
     role_name role_name1("role1");
     acl_principal role_principal1 = role::to_principal(role_name1());
@@ -1401,16 +1409,16 @@ BOOST_AUTO_TEST_CASE(role_authz_role_deny_applies_first) {
     for (auto op :
          {acl_operation::read, acl_operation::write, acl_operation::describe}) {
         auto result = auth.authorized(default_topic, op, user1, host1);
-        BOOST_CHECK(bool(result));
-        BOOST_CHECK_EQUAL(result.acl, allow_user);
-        BOOST_CHECK_EQUAL(result.resource_pattern, resource);
-        BOOST_CHECK(!result.role.has_value());
+        EXPECT_TRUE(bool(result));
+        EXPECT_EQ(result.acl, allow_user);
+        EXPECT_EQ(result.resource_pattern, resource);
+        EXPECT_FALSE(result.role.has_value());
     }
 
     // now add user1 to the role, which is already bound to the deny write acl
 
-    BOOST_CHECK(roles.remove(role_name1));
-    BOOST_CHECK(roles.put(
+    EXPECT_TRUE(roles.remove(role_name1));
+    EXPECT_TRUE(roles.put(
       role_name1,
       std::vector<role_member>{role_member::from_principal(user1)}));
 
@@ -1421,20 +1429,20 @@ BOOST_AUTO_TEST_CASE(role_authz_role_deny_applies_first) {
          {acl_operation::read, acl_operation::write, acl_operation::describe}) {
         auto result = auth.authorized(default_topic, op, user1, host1);
         if (op == acl_operation::write) {
-            BOOST_CHECK(!bool(result));
-            BOOST_CHECK_EQUAL(result.acl, deny_role);
-            BOOST_CHECK_EQUAL(result.resource_pattern, resource);
-            BOOST_CHECK_EQUAL(result.role, role_name1);
+            EXPECT_FALSE(bool(result));
+            EXPECT_EQ(result.acl, deny_role);
+            EXPECT_EQ(result.resource_pattern, resource);
+            EXPECT_EQ(result.role, role_name1);
         } else {
-            BOOST_CHECK(bool(result));
-            BOOST_CHECK_EQUAL(result.acl, allow_user);
-            BOOST_CHECK_EQUAL(result.resource_pattern, resource);
-            BOOST_CHECK(!result.role.has_value());
+            EXPECT_TRUE(bool(result));
+            EXPECT_EQ(result.acl, allow_user);
+            EXPECT_EQ(result.resource_pattern, resource);
+            EXPECT_FALSE(result.role.has_value());
         }
     }
 }
 
-BOOST_AUTO_TEST_CASE(role_authz_get_acls_principal) {
+TEST(AUTHORIZER_TEST, role_authz_get_acls_principal) {
     acl_principal role(principal_type::role, "admins");
 
     // NOTE(oren): Wildcard roles are rejected at the Kafka layer, but we
@@ -1450,8 +1458,8 @@ BOOST_AUTO_TEST_CASE(role_authz_get_acls_principal) {
         role, acl_wildcard_host, acl_operation::write, acl_permission::allow));
     auth.add_bindings(bindings);
 
-    BOOST_REQUIRE(get_acls(auth, wildcard_role).empty());
-    BOOST_REQUIRE_EQUAL(get_acls(auth, role).size(), 1);
+    ASSERT_EQ(get_acls(auth, wildcard_role), absl::flat_hash_set<acl_entry>{});
+    ASSERT_EQ(get_acls(auth, role).size(), 1);
 
     {
         std::vector<acl_binding_filter> filters;
@@ -1469,11 +1477,11 @@ BOOST_AUTO_TEST_CASE(role_authz_get_acls_principal) {
         acl_permission::allow));
     auth.add_bindings(bindings);
 
-    BOOST_REQUIRE_EQUAL(get_acls(auth, wildcard_role).size(), 1);
-    BOOST_REQUIRE(get_acls(auth, role).empty());
+    ASSERT_EQ(get_acls(auth, wildcard_role).size(), 1);
+    ASSERT_EQ(get_acls(auth, role), absl::flat_hash_set<acl_entry>{});
 }
 
-BOOST_AUTO_TEST_CASE(role_authz_wildcard_no_auth) {
+TEST(AUTHORIZER_TEST, role_authz_wildcard_no_auth) {
     acl_principal user1(principal_type::user, "alice");
     acl_principal role1(principal_type::role, "admins");
     acl_principal wildcard_role(principal_type::role, "*");
@@ -1504,10 +1512,10 @@ BOOST_AUTO_TEST_CASE(role_authz_wildcard_no_auth) {
     auto result = auth.authorized(
       default_topic, acl_operation::write, user1, host1);
 
-    BOOST_CHECK(!result.authorized);
+    EXPECT_FALSE(result.authorized);
 }
 
-BOOST_AUTO_TEST_CASE(role_authz_implied_acls) {
+TEST(AUTHORIZER_TEST, role_authz_implied_acls) {
     role_store roles;
     role_name role_name1{"admin"};
     role_member mem1{role_member_type::user, "alice"};
@@ -1515,7 +1523,7 @@ BOOST_AUTO_TEST_CASE(role_authz_implied_acls) {
     do_implied_acls(role::to_principal(role_name1()), &roles);
 }
 
-BOOST_AUTO_TEST_CASE(role_authz_user_same_name) {
+TEST(AUTHORIZER_TEST, role_authz_user_same_name) {
     role_store roles;
     role_name role_name1{"admin"};
     acl_principal user1{principal_type::user, "admin"};
@@ -1544,33 +1552,33 @@ BOOST_AUTO_TEST_CASE(role_authz_user_same_name) {
 
     auto result = auth.authorized(
       default_topic, acl_operation::read, user1, host1);
-    BOOST_CHECK(result.authorized);
-    BOOST_CHECK_EQUAL(result.acl, allow_user);
-    BOOST_CHECK_EQUAL(result.principal, user1);
+    EXPECT_TRUE(result.authorized);
+    EXPECT_EQ(result.acl, allow_user);
+    EXPECT_EQ(result.principal, user1);
 
     result = auth.authorized(default_topic, acl_operation::read, user2, host1);
-    BOOST_CHECK(!result.authorized);
-    BOOST_CHECK(!result.acl.has_value());
-    BOOST_CHECK_EQUAL(result.principal, user2);
-    BOOST_CHECK(!result.role.has_value());
+    EXPECT_FALSE(result.authorized);
+    EXPECT_FALSE(result.acl.has_value());
+    EXPECT_EQ(result.principal, user2);
+    EXPECT_FALSE(result.role.has_value());
 
     bindings.clear();
     bindings.emplace_back(resource, deny_role);
     auth.add_bindings(bindings);
 
     result = auth.authorized(default_topic, acl_operation::read, user1, host1);
-    BOOST_CHECK(result.authorized);
-    BOOST_CHECK_EQUAL(result.acl, allow_user);
-    BOOST_CHECK_EQUAL(result.principal, user1);
+    EXPECT_TRUE(result.authorized);
+    EXPECT_EQ(result.acl, allow_user);
+    EXPECT_EQ(result.principal, user1);
 
     result = auth.authorized(default_topic, acl_operation::read, user2, host1);
-    BOOST_CHECK(!result.authorized);
-    BOOST_CHECK_EQUAL(result.acl, deny_role);
-    BOOST_CHECK_EQUAL(result.principal, user2);
-    BOOST_CHECK_EQUAL(result.role, role_name1);
+    EXPECT_FALSE(result.authorized);
+    EXPECT_EQ(result.acl, deny_role);
+    EXPECT_EQ(result.principal, user2);
+    EXPECT_EQ(result.role, role_name1);
 }
 
-BOOST_AUTO_TEST_CASE(role_authz_remove_binding_multiple_match) {
+TEST(AUTHORIZER_TEST, role_authz_remove_binding_multiple_match) {
     role_name role_n{"role"};
     acl_principal role_p = role::to_principal(role_n());
     acl_principal user_p{principal_type::user, "user"};
@@ -1598,10 +1606,10 @@ BOOST_AUTO_TEST_CASE(role_authz_remove_binding_multiple_match) {
     }
 
     absl::flat_hash_set<acl_entry> expected{};
-    BOOST_REQUIRE(get_acls(auth, wildcard_resource) == expected);
+    ASSERT_EQ(get_acls(auth, wildcard_resource), expected);
 }
 
-BOOST_AUTO_TEST_CASE(authz_filter_out_non_kafka_resources) {
+TEST(AUTHORIZER_TEST, authz_filter_out_non_kafka_resources) {
     namespace ppsr = pandaproxy::schema_registry;
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.2.1");
@@ -1642,41 +1650,41 @@ BOOST_AUTO_TEST_CASE(authz_filter_out_non_kafka_resources) {
 
     auto result = auth.authorized(
       model::topic("model"), acl_operation::read, user, host);
-    BOOST_REQUIRE(result.is_authorized());
+    ASSERT_TRUE(result.is_authorized());
 
     auto kafka_acls = get_acls(auth, acl_binding_filter::any());
-    BOOST_REQUIRE_EQUAL(kafka_acls.size(), 1);
+    ASSERT_EQ(kafka_acls.size(), 1);
 
     auto sr_acls = get_acls(
       auth,
       acl_binding_filter::any(
         resource_pattern_filter::resource_subsystem::schema_registry));
-    BOOST_REQUIRE_EQUAL(sr_acls.size(), 2);
+    ASSERT_EQ(sr_acls.size(), 2);
 
     // Check prefix match for schema registry subject
     result = auth.authorized(
       ppsr::subject("model-value"), acl_operation::read, user, host);
-    BOOST_REQUIRE(result.is_authorized());
+    ASSERT_TRUE(result.is_authorized());
 
     // Check read implies describe
     result = auth.authorized(
       ppsr::subject("model-key"), acl_operation::describe, user, host);
-    BOOST_REQUIRE(result.is_authorized());
+    ASSERT_TRUE(result.is_authorized());
 
     // Check read does not imply write
     result = auth.authorized(
       ppsr::subject("model-key"), acl_operation::write, user, host);
-    BOOST_REQUIRE(!result.is_authorized());
+    ASSERT_FALSE(result.is_authorized());
 
     // Check global resource
     result = auth.authorized(
       ppsr::registry_resource(), acl_operation::describe, user, host);
-    BOOST_REQUIRE(result.is_authorized());
+    ASSERT_TRUE(result.is_authorized());
 
     // Check that describe does not imply read
     result = auth.authorized(
       ppsr::registry_resource(), acl_operation::read, user, host);
-    BOOST_REQUIRE(!result.is_authorized());
+    ASSERT_FALSE(result.is_authorized());
 }
 
 } // namespace security

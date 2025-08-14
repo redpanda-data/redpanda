@@ -11,17 +11,15 @@
 
 #pragma once
 
-#include "container/fragmented_vector.h"
+#include "compaction/types.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
-#include "model/limits.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "storage/file_sanitizer_types.h"
 #include "storage/fwd.h"
-#include "storage/key_offset_map.h"
 #include "storage/scoped_file_tracker.h"
-#include "utils/tristate.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh> //io_priority
@@ -34,47 +32,6 @@
 namespace storage {
 using log_clock = ss::lowres_clock;
 using jitter_percents = named_type<int, struct jitter_percents_tag>;
-
-enum class disk_space_alert { ok = 0, low_space = 1, degraded = 2 };
-
-inline disk_space_alert max_severity(disk_space_alert a, disk_space_alert b) {
-    return std::max(a, b);
-}
-
-inline std::ostream& operator<<(std::ostream& o, const disk_space_alert d) {
-    switch (d) {
-    case disk_space_alert::ok:
-        o << "ok";
-        break;
-    case disk_space_alert::low_space:
-        o << "low_space";
-        break;
-    case disk_space_alert::degraded:
-        o << "degraded";
-        break;
-    }
-    return o;
-}
-
-struct disk
-  : serde::envelope<disk, serde::version<1>, serde::compat_version<0>> {
-    static constexpr int8_t current_version = 0;
-
-    ss::sstring path;
-    uint64_t free{0};
-    uint64_t total{0};
-    disk_space_alert alert{disk_space_alert::ok};
-
-    auto serde_fields() { return std::tie(path, free, total, alert); }
-
-    // this value is _not_ serialized, but having it in this structure is useful
-    // for passing the filesystem id around as the structure is used internally
-    // to represent a disk not only for marshalling data to disk/network.
-    unsigned long int fsid;
-
-    friend std::ostream& operator<<(std::ostream&, const disk&);
-    friend bool operator==(const disk&, const disk&) = default;
-};
 
 // Helps to identify transactional stms in the registered list of stms.
 // Avoids an ugly dynamic cast to the base class.
@@ -123,7 +80,7 @@ public:
 
     // Only valid for state machines maintaining transactional state.
     // Returns aborted transactions in range [from, to] offsets.
-    virtual ss::future<fragmented_vector<model::tx_range>>
+    virtual ss::future<chunked_vector<model::tx_range>>
       aborted_tx_ranges(model::offset, model::offset) = 0;
 
     virtual model::control_record_type
@@ -189,9 +146,9 @@ public:
     model::offset max_removable_local_log_offset();
     std::optional<kafka::offset> lowest_pinned_data_offset() const;
 
-    ss::future<fragmented_vector<model::tx_range>>
+    ss::future<chunked_vector<model::tx_range>>
     aborted_tx_ranges(model::offset to, model::offset from) {
-        fragmented_vector<model::tx_range> r;
+        chunked_vector<model::tx_range> r;
         if (_tx_stm) {
             r = co_await _tx_stm->aborted_tx_ranges(to, from);
         }
@@ -285,11 +242,17 @@ struct timequery_config {
     friend std::ostream& operator<<(std::ostream& o, const timequery_config&);
 };
 struct timequery_result {
-    timequery_result(model::offset o, model::timestamp t) noexcept
-      : offset(o)
+    timequery_result(
+      model::term_id term, model::offset o, model::timestamp t) noexcept
+      : term(term)
+      , offset(o)
       , time(t) {}
+
+    model::term_id term;
     model::offset offset;
     model::timestamp time;
+
+    bool operator==(const timequery_result& other) const = default;
 
     friend std::ostream& operator<<(std::ostream& o, const timequery_result&);
 };
@@ -416,6 +379,8 @@ struct log_reader_config {
     // separately.
     translate_offsets translate_offsets{false};
 
+    std::optional<ss::semaphore::clock::time_point> read_lock_deadline{};
+
     log_reader_config(
       model::offset start_offset,
       model::offset max_offset,
@@ -472,63 +437,6 @@ struct gc_config {
     friend std::ostream& operator<<(std::ostream&, const gc_config&);
 };
 
-struct compaction_config {
-    compaction_config(
-      model::offset max_collect_offset,
-      std::optional<std::chrono::milliseconds> tombstone_ret_ms,
-      ss::abort_source& as,
-      std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
-      std::optional<size_t> max_keys = std::nullopt,
-      std::chrono::milliseconds min_lag_ms = std::chrono::milliseconds{0},
-      hash_key_offset_map* key_map = nullptr,
-      scoped_file_tracker::set_t* to_clean = nullptr)
-      : max_removable_local_log_offset(max_collect_offset)
-      , tombstone_retention_ms(tombstone_ret_ms)
-      , sanitizer_config(std::move(san_cfg))
-      , key_offset_map_max_keys(max_keys)
-      , min_lag_ms(min_lag_ms)
-      , hash_key_map(key_map)
-      , files_to_cleanup(to_clean)
-      , asrc(&as) {}
-
-    // Cannot delete or compact past this offset (i.e. for unresolved txn
-    // records): that is, only offsets <= this may be compacted.
-    model::offset max_removable_local_log_offset;
-
-    // The retention time for tombstones. Tombstone removal occurs only for
-    // "clean" compacted segments past the tombstone deletion horizon timestamp,
-    // which is a segment's clean_compact_timestamp + tombstone_retention_ms.
-    // This means tombstones take at least two rounds of compaction to remove a
-    // tombstone: at least one pass to make a segment clean, and another pass
-    // some time after tombstone_retention_ms to remove tombstones.
-    //
-    // Tombstone removal is only supported for topics with remote writes
-    // disabled. As a result, this field will only have a value for compaction
-    // ran on non-archival topics.
-    std::optional<std::chrono::milliseconds> tombstone_retention_ms;
-
-    // use proxy fileops with assertions and/or failure injection
-    std::optional<ntp_sanitizer_config> sanitizer_config;
-
-    // Limit the number of keys stored by a compaction's key-offset map.
-    std::optional<size_t> key_offset_map_max_keys;
-
-    // The value of min.compaction.lag.ms for this compaction.
-    std::chrono::milliseconds min_lag_ms;
-
-    // Hash key-offset map to reuse across compactions.
-    hash_key_offset_map* hash_key_map;
-
-    // Set of intermediary files added by compactions that need to be removed,
-    // e.g. because they were leftover from an aborted compaction.
-    scoped_file_tracker::set_t* files_to_cleanup;
-
-    // abort source for compaction task
-    ss::abort_source* asrc;
-
-    friend std::ostream& operator<<(std::ostream&, const compaction_config&);
-};
-
 /*
  * Compaction and garbage collection are two distinct processes with their own
  * configuration. However, the vast majority of the time they are invoked
@@ -541,13 +449,15 @@ struct housekeeping_config {
       std::optional<size_t> max_bytes_in_log,
       model::offset max_collect_offset,
       std::optional<std::chrono::milliseconds> tombstone_retention_ms,
+      std::optional<std::chrono::milliseconds> tx_retention_ms,
       std::chrono::milliseconds min_lag_ms,
       ss::abort_source& as,
       std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
-      hash_key_offset_map* key_map = nullptr)
+      compaction::hash_key_offset_map* key_map = nullptr)
       : compact(
           max_collect_offset,
           tombstone_retention_ms,
+          tx_retention_ms,
           as,
           std::move(san_cfg),
           std::nullopt,
@@ -555,7 +465,7 @@ struct housekeeping_config {
           key_map)
       , gc(upper, max_bytes_in_log) {}
 
-    compaction_config compact;
+    compaction::compaction_config compact;
     gc_config gc;
 
     friend std::ostream& operator<<(std::ostream&, const housekeeping_config&);

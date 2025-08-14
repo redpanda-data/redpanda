@@ -84,7 +84,7 @@ func getPreferredScheduler(
 			return sched, nil
 		}
 	}
-	return "", fmt.Errorf("None and Noop schedulers are not supported for %s",
+	return "", fmt.Errorf("none and noop schedulers are not supported for %s",
 		device)
 }
 

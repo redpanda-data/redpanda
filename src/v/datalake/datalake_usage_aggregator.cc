@@ -18,7 +18,10 @@
 
 #include <seastar/coroutine/as_future.hh>
 
+#include <ranges>
+
 namespace {
+
 ss::future<chunked_vector<datalake::coordinator::usage_stats_reply>>
 dispatch_requests(
   datalake::coordinator::frontend& frontend, int partition_count) {
@@ -29,7 +32,10 @@ dispatch_requests(
           model::partition_id(i)};
         replies.push_back(frontend.get_usage_stats(request));
     }
-    co_return co_await ss::when_all_succeed(replies.begin(), replies.end());
+    co_return co_await ss::when_all_succeed(replies.begin(), replies.end())
+      | std::views::as_rvalue
+      | std::ranges::to<
+        chunked_vector<datalake::coordinator::usage_stats_reply>>();
 }
 } // namespace
 

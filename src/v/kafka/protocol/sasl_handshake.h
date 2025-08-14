@@ -11,7 +11,7 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/schemata/sasl_handshake_request.h"
 #include "kafka/protocol/schemata/sasl_handshake_response.h"
 

@@ -13,6 +13,7 @@
 
 #include "raft/consensus.h"
 #include "raft/errc.h"
+#include "ssx/future-util.h"
 
 #include <ranges>
 

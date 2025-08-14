@@ -11,7 +11,7 @@
 
 #include "bytes/bytes.h"
 #include "bytes/iobuf_parser.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "gtest/gtest.h"
 #include "wasm/parser/parser.h"
 

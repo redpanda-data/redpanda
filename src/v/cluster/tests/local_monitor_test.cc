@@ -14,7 +14,6 @@
 #include "cluster/tests/local_monitor_fixture.h"
 #include "config/configuration.h"
 #include "redpanda/tests/fixture.h"
-#include "storage/types.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sstring.hh>

@@ -1305,7 +1305,6 @@ bool remote_partition::bounds_timestamp(model::timestamp t) const {
     }
 }
 
-static constexpr ss::lowres_clock::duration finalize_timeout = 20s;
 static constexpr ss::lowres_clock::duration finalize_backoff = 1s;
 
 /// When a remote_partition is being destroyed for the last time, we save this
@@ -1330,7 +1329,10 @@ ss::future<> finalize_in_background(
   remote& api, finalize_data data, remote_path_provider path_provider) {
     ss::abort_source& as = api.as();
 
-    retry_chain_node local_rtc(as, finalize_timeout, finalize_backoff);
+    retry_chain_node local_rtc(
+      as,
+      config::shard_local_cfg().cloud_storage_manifest_upload_timeout_ms(),
+      finalize_backoff);
 
     // Start with an empty manifest.
     partition_manifest remote_manifest(data.ntp, data.revision);

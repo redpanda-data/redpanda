@@ -23,8 +23,6 @@
 
 namespace pandaproxy::schema_registry {
 
-static constexpr auto audit_svc_name = "Redpanda Schema Registry Service";
-
 namespace {
 
 using server = pandaproxy::ctx_server<pandaproxy::schema_registry::service>;
@@ -160,8 +158,8 @@ void handle_authz(
 
 } // namespace
 
-std::optional<request_auth_result>
-auth::handle_auth(server::request_t& rq) const {
+std::optional<request_auth_result> auth::handle_auth(
+  server::request_t& rq, std::string_view operation_name) const {
     rq.authn_method = config::get_authn_method(
       rq.service().config().schema_registry_api.value(),
       rq.req->get_listener_idx());
@@ -193,7 +191,8 @@ auth::handle_auth(server::request_t& rq) const {
                 // Defer the authorization handling to the method handler
                 return auth_result;
             } else {
-                enterprise::handle_authz(rq, *this, auth_result);
+                enterprise::handle_authz(
+                  rq, operation_name, *this, auth_result);
             }
         } else {
             handle_authz(rq, _lvl, auth_result);

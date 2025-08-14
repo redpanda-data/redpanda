@@ -14,7 +14,6 @@ redpanda_cc_library(
         "//src/v/cloud_io:logger",
         "//src/v/ssx:future_util",
     ],
-    include_prefix = "cloud_io",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -36,7 +35,6 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/cloud_io:logger",
     ],
-    include_prefix = "cloud_io",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -57,7 +55,6 @@ redpanda_cc_library(
     hdrs = [
         "io_result.h",
     ],
-    include_prefix = "cloud_io",
     visibility = ["//visibility:public"],
 )
 
@@ -66,7 +63,6 @@ redpanda_cc_library(
     hdrs = [
         "logger.h",
     ],
-    include_prefix = "cloud_io",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -91,7 +87,6 @@ redpanda_cc_library(
         "@boost//:lexical_cast",
         "@boost//:range",
     ],
-    include_prefix = "cloud_io",
     visibility = ["//visibility:public"],
     deps = [
         ":auth_refresh_bg_op",
@@ -119,7 +114,6 @@ redpanda_cc_library(
     hdrs = [
         "transfer_details.h",
     ],
-    include_prefix = "cloud_io",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cloud_storage_clients",
@@ -137,7 +131,6 @@ redpanda_cc_library(
     hdrs = [
         "basic_cache_service_api.h",
     ],
-    include_prefix = "cloud_io",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -150,6 +143,5 @@ redpanda_cc_library(
     hdrs = [
         "provider.h",
     ],
-    include_prefix = "cloud_io",
     visibility = ["//visibility:public"],
 )

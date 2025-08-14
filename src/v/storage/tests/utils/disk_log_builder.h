@@ -12,15 +12,14 @@
 #pragma once
 #include "base/seastarx.h"
 #include "base/units.h"
-#include "base/vassert.h"
 #include "container/chunked_circular_buffer.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
+#include "model/limits.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
-#include "ssx/sformat.h"
 #include "storage/api.h"
 #include "storage/disk_log_impl.h"
 
@@ -312,10 +311,10 @@ public:
       std::optional<size_t> max_partition_retention_size);
     ss::future<std::optional<model::offset>> apply_retention(gc_config cfg);
     ss::future<> apply_adjacent_merge_compaction(
-      compaction_config cfg,
+      compaction::compaction_config cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
     ss::future<bool> apply_sliding_window_compaction(
-      compaction_config cfg,
+      compaction::compaction_config cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
     ss::future<bool> update_start_offset(model::offset start_offset);
     void add_dirty_segment_bytes(ssize_t bytes);

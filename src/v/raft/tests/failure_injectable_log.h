@@ -33,8 +33,9 @@ public:
     failure_injectable_log& operator=(const failure_injectable_log&) = delete;
     ~failure_injectable_log() noexcept final = default;
 
-    ss::future<>
-    start(std::optional<storage::truncate_prefix_config> cfg) final;
+    ss::future<> start(
+      std::optional<storage::truncate_prefix_config> cfg,
+      ss::abort_source& as) final;
     ss::future<> housekeeping(storage::housekeeping_config cfg) final;
 
     ss::future<> truncate(storage::truncate_config) final;
@@ -96,18 +97,27 @@ public:
     uint64_t size_bytes_after_offset(model::offset o) const final;
 
     ss::future<std::optional<storage::log::offset_range_size_result_t>>
-    offset_range_size(model::offset first, model::offset last) final;
+    offset_range_size(
+      model::offset first,
+      model::offset last,
+      ss::semaphore::time_point timeout) final;
 
     ss::future<std::optional<offset_range_size_result_t>> offset_range_size(
       model::offset first, offset_range_size_requirements_t target) final;
 
     bool is_compacted(model::offset first, model::offset last) const final;
 
+    bool eligible_for_compacted_reupload(
+      model::offset first, model::offset last) const final;
+
+    std::optional<model::offset> max_eligible_for_compacted_reupload_offset(
+      model::offset first = model::offset{0}) const final;
+
     void set_overrides(storage::ntp_config::default_overrides) final;
 
     bool notify_compaction_update() final;
 
-    int64_t compaction_backlog() const final;
+    int64_t compaction_backlog() final;
 
     ss::future<storage::usage_report> disk_usage(storage::gc_config) final;
 
@@ -131,10 +141,17 @@ public:
     ssize_t dirty_segment_bytes() const final;
     ssize_t closed_segment_bytes() const final;
 
-    double dirty_ratio() final;
+    double dirty_ratio() const final;
 
     virtual std::optional<model::timestamp>
     earliest_dirty_segment_ts() const final;
+
+    virtual std::optional<model::timestamp>
+      earliest_removable_timestamp(model::offset) const final;
+
+    virtual std::optional<model::offset> max_removed_offset() const final;
+
+    bool needs_compaction() const final;
 
 private:
     ss::shared_ptr<storage::log> _underlying_log;

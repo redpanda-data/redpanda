@@ -9,7 +9,9 @@
  * by the Apache License, Version 2.0
  */
 #include "test_utils/gtest_utils.h"
-#include "test_utils/test.h"
+
+#include <seastar/core/thread.hh>
+#include <seastar/testing/test_runner.hh>
 
 int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);

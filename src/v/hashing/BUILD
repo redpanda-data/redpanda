@@ -5,7 +5,6 @@ redpanda_cc_library(
     hdrs = [
         "crc32.h",
     ],
-    include_prefix = "hashing",
     visibility = ["//visibility:public"],
     deps = [
         "@zlib",
@@ -17,7 +16,6 @@ redpanda_cc_library(
     hdrs = [
         "crc32c.h",
     ],
-    include_prefix = "hashing",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes:iobuf",
@@ -30,7 +28,6 @@ redpanda_cc_library(
     hdrs = [
         "secure.h",
     ],
-    include_prefix = "hashing",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes",
@@ -46,7 +43,6 @@ redpanda_cc_library(
     defines = [
         "XXH_PRIVATE_API",
     ],
-    include_prefix = "hashing",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -65,7 +61,6 @@ redpanda_cc_library(
     copts = [
         "-Wno-implicit-fallthrough",
     ],
-    include_prefix = "hashing",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes:iobuf",
@@ -77,7 +72,6 @@ redpanda_cc_library(
     hdrs = [
         "jump_consistent_hash.h",
     ],
-    include_prefix = "hashing",
     visibility = ["//visibility:public"],
 )
 
@@ -86,7 +80,6 @@ redpanda_cc_library(
     hdrs = [
         "combine.h",
     ],
-    include_prefix = "hashing",
     visibility = ["//visibility:public"],
     deps = [
         "@abseil-cpp//absl/hash",

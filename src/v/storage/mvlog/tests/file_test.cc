@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "storage/mvlog/file.h"
 #include "test_utils/gtest_utils.h"
 #include "test_utils/random_bytes.h"

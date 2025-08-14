@@ -12,6 +12,7 @@
 #include "absl/container/btree_map.h"
 #include "base/likely.h"
 #include "base/vlog.h"
+#include "compaction/key_offset_map.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -25,7 +26,6 @@
 #include "storage/disk_log_impl.h"
 #include "storage/file_sanitizer.h"
 #include "storage/fs_utils.h"
-#include "storage/key_offset_map.h"
 #include "storage/kvstore.h"
 #include "storage/log.h"
 #include "storage/log_manager_probe.h"
@@ -288,7 +288,8 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
       && is_not_set(_logs_list.front().flags, bflags::compacted)) {
         auto compaction_mem_bytes
           = memory_groups().compaction_reserved_memory();
-        auto compaction_map = std::make_unique<hash_key_offset_map>();
+        auto compaction_map
+          = std::make_unique<compaction::hash_key_offset_map>();
         co_await compaction_map->initialize(compaction_mem_bytes);
         _compaction_hash_key_map = std::move(compaction_map);
     }
@@ -305,36 +306,19 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         compaction_heuristic_to_log_metas;
     for (auto& log_meta : _logs_list) {
         auto should_compact_log = [](ss::shared_ptr<log> l) {
-            // A log is eligible for compaction if at least one of the following
-            // is true:
-            // 1. It's gone long enough without compaction: the earliest first
-            //    batch timestamp of a dirty segment is longer ago than
-            //    the max compaction lag.
-            // 2. It's dirty enough: the dirty ratio is at least the minimum
-            //    cleanable dirty ratio.
-            const auto max_lag = l->config().max_compaction_lag_ms();
-            const auto now = to_time_point(model::timestamp::now());
-            const auto earliest_dirty_ts = l->earliest_dirty_segment_ts();
-            if (
-              earliest_dirty_ts
-              && (now - to_time_point(earliest_dirty_ts.value()) > max_lag)) {
-                return true;
+            auto needs_compact = l->needs_compaction();
+            if (!needs_compact) {
+                vlog(
+                  gclog.trace,
+                  "{}: dirty ratio ({}) < min.cleanable.dirty.ratio ({}) and "
+                  "time since earliest dirty timestamp does not exceed "
+                  "max.compaction.lag.ms ({}), skipping compaction.",
+                  l->config().ntp(),
+                  l->dirty_ratio(),
+                  l->config().min_cleanable_dirty_ratio(),
+                  l->config().max_compaction_lag_ms());
             }
-            const auto min_cleanable_dirty_ratio
-              = l->config().min_cleanable_dirty_ratio().value_or(0.0);
-            const auto dirty_ratio = l->dirty_ratio();
-            if (dirty_ratio >= min_cleanable_dirty_ratio) {
-                return true;
-            }
-
-            vlog(
-              gclog.trace,
-              "{}: dirty ratio ({}) < min.cleanable.dirty.ratio ({}), skipping "
-              "compaction.",
-              l->config().ntp(),
-              dirty_ratio,
-              min_cleanable_dirty_ratio);
-            return false;
+            return needs_compact;
         };
 
         const auto compact_log = should_compact_log(log_meta.handle);
@@ -461,6 +445,7 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
           _config.retention_bytes(),
           max_compactible_offset,
           current_log.handle->config().tombstone_retention_ms(),
+          current_log.handle->config().tx_retention_ms(),
           current_log.handle->config().min_compaction_lag_ms(),
           _abort_source,
           std::move(ntp_sanitizer_cfg),
@@ -733,23 +718,13 @@ ss::future<ss::shared_ptr<log>> log_manager::manage(
 }
 
 ss::future<> log_manager::maybe_clear_kvstore(const ntp_config& cfg) {
-    return ss::file_exists(cfg.work_directory())
-      .then([this,
-             offset_key = internal::start_offset_key(cfg.ntp()),
-             segment_key = internal::clean_segment_key(cfg.ntp())](
-              bool dir_exists) {
-          if (dir_exists) {
-              return ss::now();
-          }
-          // directory was deleted, make sure we do not have any state in KV
-          // store.
-          // NOTE: this only removes state in the storage key space.
-          return _kvstore.remove(kvstore::key_space::storage, offset_key)
-            .then([this, segment_key] {
-                return _kvstore.remove(
-                  kvstore::key_space::storage, segment_key);
-            });
-      });
+    if (co_await ss::file_exists(cfg.work_directory())) {
+        co_return;
+    }
+    // directory was deleted, make sure we do not have any state in KV
+    // store.
+    // NOTE: this only removes state in the storage key space.
+    co_await disk_log_impl::remove_kvstore_state(cfg.ntp(), _kvstore);
 }
 
 ss::future<ss::shared_ptr<log>> log_manager::do_manage(
@@ -854,16 +829,19 @@ ss::future<> log_manager::remove(model::ntp ntp) {
           //
           // TODO: we should more consistently clean up the staging operations
           // to clean up after themselves on failure.
-          if (boost::algorithm::ends_with(de.name, ".staging")) {
+          static constexpr auto suffixes_to_remove = std::to_array(
+            {".staging", ".cannotrecover", ".ignore_have_newer"});
+          const auto should_remove = std::ranges::any_of(
+            suffixes_to_remove,
+            [&](const auto& v) { return de.name.ends_with(v); });
+
+          if (should_remove) {
               // It isn't necessarily problematic to get here since we can
               // proceed with removal, but it points to a missing cleanup which
               // can be problematic for users, as it needlessly consumes space.
               // Log verbosely to make it easier to catch.
               auto file_path = fmt::format("{}/{}", ntp_dir, de.name);
-              vlog(
-                stlog.error,
-                "Leftover staging file found, removing: {}",
-                file_path);
+              vlog(stlog.warn, "Leftover file found, removing: {}", file_path);
               return ss::remove_file(file_path);
           }
           return ss::make_ready_future<>();
@@ -1055,7 +1033,7 @@ ss::future<usage_report> log_manager::disk_usage() {
      */
     auto cfg = default_gc_config();
 
-    fragmented_vector<ss::shared_ptr<log>> logs;
+    chunked_vector<ss::shared_ptr<log>> logs;
     for (auto& it : _logs) {
         logs.push_back(it.second->handle);
     }

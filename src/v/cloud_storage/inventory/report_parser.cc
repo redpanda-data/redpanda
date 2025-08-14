@@ -84,7 +84,7 @@ ss::future<> report_parser::stop() {
 report_parser::rows_t report_parser::split_to_rows() {
     using ibi = iobuf::byte_iterator;
     rows_t rows;
-    fragmented_vector<char> row;
+    chunked_vector<char> row;
     for (auto begin = ibi{_buffer.cbegin(), _buffer.cend()},
               end = ibi{_buffer.cend(), _buffer.cend()};
          begin != end;

@@ -64,21 +64,35 @@ private:
         static ::testing::TestInfo* const test_info_ [[maybe_unused]];         \
     };                                                                         \
                                                                                \
+    constexpr auto GTEST_CONCAT_TOKEN_(                                        \
+      GTEST_TEST_CLASS_NAME_(test_suite_name, test_name), _init)               \
+      = []() noexcept {                                                        \
+            try {                                                              \
+                /* NOLINTNEXTLINE(cppcoreguidelines-owning-memory) */          \
+                auto test_factory = new ::testing::internal::TestFactoryImpl<  \
+                  GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)>;         \
+                return ::testing::internal::MakeAndRegisterTestInfo(           \
+                  #test_suite_name,                                            \
+                  #test_name,                                                  \
+                  nullptr,                                                     \
+                  nullptr,                                                     \
+                  ::testing::internal::CodeLocation(__FILE__, __LINE__),       \
+                  (parent_id),                                                 \
+                  ::testing::internal::SuiteApiResolver<                       \
+                    parent_class>::GetSetUpCaseOrSuite(__FILE__, __LINE__),    \
+                  ::testing::internal::SuiteApiResolver<                       \
+                    parent_class>::GetTearDownCaseOrSuite(__FILE__, __LINE__), \
+                  test_factory);                                               \
+            } catch (...) {                                                    \
+                std::print(std::cerr, "Unknown exception during test init.");  \
+                std::terminate();                                              \
+            }                                                                  \
+        };                                                                     \
     ::testing::TestInfo* const GTEST_TEST_CLASS_NAME_(                         \
       test_suite_name, test_name)::test_info_                                  \
-      = ::testing::internal::MakeAndRegisterTestInfo(                          \
-        #test_suite_name,                                                      \
-        #test_name,                                                            \
-        nullptr,                                                               \
-        nullptr,                                                               \
-        ::testing::internal::CodeLocation(__FILE__, __LINE__),                 \
-        (parent_id),                                                           \
-        ::testing::internal::SuiteApiResolver<                                 \
-          parent_class>::GetSetUpCaseOrSuite(__FILE__, __LINE__),              \
-        ::testing::internal::SuiteApiResolver<                                 \
-          parent_class>::GetTearDownCaseOrSuite(__FILE__, __LINE__),           \
-        new ::testing::internal::TestFactoryImpl<GTEST_TEST_CLASS_NAME_(       \
-          test_suite_name, test_name)>);                                       \
+      = GTEST_CONCAT_TOKEN_(                                                   \
+        GTEST_TEST_CLASS_NAME_(test_suite_name, test_name), _init());          \
+                                                                               \
     seastar::future<> GTEST_TEST_CLASS_NAME_(                                  \
       test_suite_name, test_name)::TestBodyWrapped()
 
@@ -158,12 +172,19 @@ private:
     ASSERT_PRED_FORMAT2_CORO(::testing::internal::CmpHelperLE, val1, val2)
 #define GTEST_ASSERT_NE_CORO(val1, val2)                                       \
     ASSERT_PRED_FORMAT2_CORO(::testing::internal::CmpHelperNE, val1, val2)
+
+#define GTEST_ASSERT_STREQ_CORO(val1, val2)                                    \
+    ASSERT_PRED_FORMAT2_CORO(::testing::internal::CmpHelperSTREQ, val1, val2)
+#define GTEST_ASSERT_STRNE_CORO(val1, val2)                                    \
+    ASSERT_PRED_FORMAT2_CORO(::testing::internal::CmpHelperSTRNE, val1, val2)
+
 #define GTEST_TEST_THROW_CORO(statement, expected_exception)                   \
     GTEST_TEST_THROW_(statement, expected_exception, GTEST_FATAL_FAILURE_CORO_)
 #define GTEST_TEST_NO_THROW_CORO(statement)                                    \
     GTEST_TEST_NO_THROW_(statement, GTEST_FATAL_FAILURE_CORO_)
 #define ASSERT_NO_FATAL_FAILURE_CORO(statement)                                \
     GTEST_TEST_NO_FATAL_FAILURE_(statement, GTEST_FATAL_FAILURE_CORO_)
+
 /*
  * Coroutine safe assertions
  */
@@ -180,6 +201,9 @@ private:
 #define ASSERT_LT_CORO(val1, val2) GTEST_ASSERT_LT_CORO(val1, val2)
 #define ASSERT_LE_CORO(val1, val2) GTEST_ASSERT_LE_CORO(val1, val2)
 #define ASSERT_NE_CORO(val1, val2) GTEST_ASSERT_NE_CORO(val1, val2)
+
+#define ASSERT_STREQ_CORO(val1, val2) GTEST_ASSERT_STREQ_CORO(val1, val2)
+#define ASSERT_STRNE_CORO(val1, val2) GTEST_ASSERT_NE_CORO(val1, val2)
 
 #define ASSERT_RESULT_EQ_CORO(result_val, exp_naked_value)                     \
     /* NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) */                     \

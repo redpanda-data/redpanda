@@ -13,7 +13,7 @@
 
 #include "base/vassert.h"
 #include "base/vlog.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "serde/rw/envelope.h"
 #include "serde/rw/rw.h"

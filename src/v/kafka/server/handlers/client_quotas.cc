@@ -9,7 +9,6 @@
  * by the Apache License, Version 2.0
  */
 
-#include "absl/algorithm/container.h"
 #include "cluster/client_quota_frontend.h"
 #include "cluster/client_quota_serde.h"
 #include "cluster/client_quota_store.h"
@@ -379,10 +378,12 @@ ss::future<response_ptr> describe_client_quotas_handler::handle(
           // that matches it (regardless of strict mode)
           const auto& key = kv.first;
           auto each_predicate_has_a_match = !client_predicate
-                                            || absl::c_any_of(
+                                            || std::ranges::any_of(
                                               key.parts, *client_predicate);
-          // && (!user_predicate || absl::c_any_of(key.parts, *user_predicate))
-          // && (!ip_predicate || absl::c_any_of(key.parts, *ip_predicate));
+          // && (!user_predicate || std::ranges::any_of(key.parts,
+          // *user_predicate))
+          // && (!ip_predicate || std::ranges::any_of(key.parts,
+          // *ip_predicate));
 
           if (!each_predicate_has_a_match) {
               return false;
@@ -396,7 +397,7 @@ ss::future<response_ptr> describe_client_quotas_handler::handle(
                 //  || (user_predicate && (*user_predicate)(part))
                 //  || (ip_predicate && (*ip_predicate)(part));
             };
-          return !strict || absl::c_all_of(key.parts, reverse_predicate);
+          return !strict || std::ranges::all_of(key.parts, reverse_predicate);
       });
 
     res.data.entries->reserve(quotas.size());

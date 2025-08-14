@@ -852,7 +852,7 @@ class BucketViewState:
     partial results if listed is False
     """
     def __init__(self):
-        self.listed: bool = False
+        self.listed: set[Optional[str]] = set()
         self.segment_objects: int = 0
         self.ignored_objects: int = 0
         self.tx_manifests: int = 0
@@ -946,12 +946,12 @@ class BucketView:
 
     @property
     def cluster_metadata(self) -> dict[str, ClusterMetadata]:
-        self._ensure_listing()
+        self._ensure_listing("cluster_metadata")
         return self._state.cluster_metadata
 
     @property
     def latest_cluster_metadata_manifest(self) -> dict:
-        self._ensure_listing()
+        self._ensure_listing("cluster_metadata")
         latest_cluster_metadata = ClusterMetadata(dict(), dict())
         highest_meta_id = -1
         for _, meta in self.cluster_metadata.items():
@@ -1040,13 +1040,18 @@ class BucketView:
         self.logger.debug(f"cloud_log_size_sum()={total}")
         return total
 
-    def _ensure_listing(self):
-        if not self._state.listed is True:
-            self._do_listing()
-            self._state.listed = True
+    def _ensure_listing(self, prefix: Optional[str] = None):
+        if None in self._state.listed:
+            # 'None' indicates there was a previous listing with no prefix,
+            # which means there is a superset of the prefix.
+            return
 
-    def _do_listing(self):
-        for o in self.client.list_objects(self.bucket):
+        if prefix not in self._state.listed:
+            self._do_listing(prefix=prefix)
+            self._state.listed.add(prefix)
+
+    def _do_listing(self, prefix: Optional[str] = None):
+        for o in self.client.list_objects(self.bucket, prefix=prefix):
             self.logger.debug(f"Loading object {o.key}")
             if self.path_matcher.is_partition_manifest(o):
                 ntpr = parse_s3_manifest_path(o.key)

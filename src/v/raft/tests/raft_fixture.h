@@ -54,6 +54,7 @@ enum class msg_type {
     install_snapshot,
     timeout_now,
     transfer_leadership,
+    remake_learner_state
 };
 
 struct msg {
@@ -111,7 +112,8 @@ using reply_variant = std::variant<
   heartbeat_reply_v2,
   install_snapshot_reply,
   timeout_now_reply,
-  transfer_leadership_reply>;
+  transfer_leadership_reply,
+  remake_learner_state_reply>;
 
 using reply_interceptor_t = ss::noncopyable_function<ss::future<reply_variant>(
   reply_variant, model::node_id)>;
@@ -146,6 +148,9 @@ public:
 
     // TODO: move those methods out of Raft protocol.
     ss::future<> reset_backoff(model::node_id) final { co_return; }
+
+    ss::future<result<remake_learner_state_reply>> remake_learner_state(
+      model::node_id, remake_learner_state_request, rpc::client_opts) final;
 
     ss::future<bool> ensure_disconnect(model::node_id) final {
         co_return true;
@@ -249,6 +254,7 @@ public:
 
     ss::future<> remove_data();
 
+    ss::future<std::error_code> remake_learner_callback(group_id g);
     void leadership_notification_callback(leadership_status);
 
     model::ntp ntp() const {

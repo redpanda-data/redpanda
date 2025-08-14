@@ -6,10 +6,12 @@ redpanda_cc_library(
         "vassert.cc",
     ],
     hdrs = [
+        "format_to.h",
         "likely.h",
         "oncore.h",
         "outcome.h",
         "outcome_future_utils.h",
+        "seastar_fwd.h",
         "seastarx.h",
         "source_location.h",
         "type_traits.h",
@@ -17,10 +19,8 @@ redpanda_cc_library(
         "unreachable.h",
         "vassert.h",
         "vassert-register.h",
-        "vformat.h",
         "vlog.h",
     ],
-    include_prefix = "base",
     visibility = ["//visibility:public"],
     deps = [
         "@boost//:outcome",

@@ -156,7 +156,7 @@ bool iobuf::operator==(std::string_view o) const {
     bool are_equal = true;
     std::string_view::size_type n = 0;
     auto in = iobuf::iterator_consumer(cbegin(), cend());
-    (void)in.consume(
+    std::ignore = in.consume(
       size_bytes(), [&are_equal, &o, &n](const char* src, size_t fg_sz) {
           /// Both strings are equiv in total size, so its safe to assume the
           /// next chunk to compare is the remaining to cmp or the fragment size
@@ -168,6 +168,24 @@ bool iobuf::operator==(std::string_view o) const {
           return !are_equal ? ss::stop_iteration::yes : ss::stop_iteration::no;
       });
     return are_equal;
+}
+
+std::strong_ordering iobuf::operator<=>(std::string_view o) const {
+    std::strong_ordering cmp = std::strong_ordering::equal;
+    auto in = iobuf::iterator_consumer(cbegin(), cend());
+    std::string_view other = o;
+    std::ignore = in.consume(
+      std::min(size_bytes(), o.size()),
+      [&cmp, &other](const char* src, size_t fg_sz) {
+          cmp = std::string_view(src, fg_sz) <=> other;
+          other.remove_prefix(std::min(fg_sz, other.size()));
+          return cmp == std::strong_ordering::equal ? ss::stop_iteration::yes
+                                                    : ss::stop_iteration::no;
+      });
+    if (cmp == std::strong_ordering::equal) {
+        cmp = size_bytes() <=> o.size();
+    }
+    return cmp;
 }
 
 /**

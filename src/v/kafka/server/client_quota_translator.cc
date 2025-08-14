@@ -11,7 +11,6 @@
 
 #include "kafka/server/client_quota_translator.h"
 
-#include "absl/algorithm/container.h"
 #include "cluster/client_quota_store.h"
 #include "kafka/server/logger.h"
 

@@ -1141,7 +1141,7 @@ partition_balancer_planner::request_context::for_each_replica_random_order(
         model::node_id node;
     };
 
-    fragmented_vector<item> replicas;
+    chunked_vector<item> replicas;
     for (const auto& t : _parent._state.topics().topics_map()) {
         for (const auto& [_, a] : t.second.get_assignments()) {
             auto reassignment_it = _reassignments.find(

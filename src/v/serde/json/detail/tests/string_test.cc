@@ -31,7 +31,7 @@
 #include <array>
 #include <string_view>
 
-using namespace experimental::serde::json::detail;
+using namespace serde::json::detail;
 
 namespace {
 

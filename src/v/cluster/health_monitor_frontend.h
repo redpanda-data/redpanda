@@ -16,7 +16,7 @@
 #include "controller_stm.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
-#include "storage/types.h"
+#include "storage/disk.h"
 
 #include <seastar/core/sharded.hh>
 

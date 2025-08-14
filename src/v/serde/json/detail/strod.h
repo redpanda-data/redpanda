@@ -27,7 +27,7 @@
 
 #include "serde/json/detail/pow10.h"
 
-namespace experimental::serde::json::detail {
+namespace serde::json::detail {
 
 inline double strod_fast_path(double significand, int exp) {
     if (exp < -308) {
@@ -49,4 +49,4 @@ inline double strtod_normal_precision(double d, int p) {
     }
     return d;
 }
-}; // namespace experimental::serde::json::detail
+}; // namespace serde::json::detail

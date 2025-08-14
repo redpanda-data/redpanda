@@ -12,7 +12,7 @@
 #pragma once
 
 #include "absl/container/flat_hash_map.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/join_group.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/sync_group.h"

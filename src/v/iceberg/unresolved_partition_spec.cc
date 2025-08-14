@@ -13,6 +13,7 @@
 #include "iceberg/transform.h"
 
 #include <fmt/format.h>
+#include <fmt/ostream.h>
 
 #include <type_traits>
 

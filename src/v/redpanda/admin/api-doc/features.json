@@ -166,7 +166,14 @@
                 },
                 "type": {
                     "type": "string",
-                    "description": "type of license, currently only free_trial or enterprise"
+                    "description": "type of license"
+                },
+                "products": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Products covered by this license"
                 },
                 "expires": {
                     "type": "long",

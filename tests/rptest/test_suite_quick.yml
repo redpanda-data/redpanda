@@ -11,6 +11,7 @@ quick:
   included:
   - tests/
   - transactions/
+  - direct_consumer_tests/
 
   excluded:
   - tests/rpk_tuner_test.py

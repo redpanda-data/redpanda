@@ -52,8 +52,7 @@ public:
       pandaproxy::schema_registry::api*,
       std::unique_ptr<catalog_factory>,
       ss::sharded<cloud_io::remote>&,
-      cloud_storage_clients::bucket_name,
-      datalake::credential_manager&);
+      cloud_storage_clients::bucket_name);
     ~coordinator_manager();
 
     ss::future<> start();
@@ -96,9 +95,6 @@ private:
       leadership_notifications_;
 
     absl::btree_map<model::ntp, ss::lw_shared_ptr<coordinator>> coordinators_;
-
-    // Credential manager for handling authentication
-    datalake::credential_manager& credential_mgr_;
 };
 
 } // namespace datalake::coordinator

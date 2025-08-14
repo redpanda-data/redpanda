@@ -13,9 +13,13 @@ import (
 	"context"
 	"fmt"
 
+	"go.uber.org/zap"
+
+	"github.com/redpanda-data/common-go/rpsr"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/schemaregistry"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -56,7 +60,7 @@ resource names:
   * "literal" returns exact name matches
 `,
 		Args: cobra.ExactArgs(0),
-		Run: func(_ *cobra.Command, _ []string) {
+		Run: func(cmd *cobra.Command, _ []string) {
 			f := p.Formatter // always text for now
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
@@ -65,12 +69,19 @@ resource names:
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer adm.Close()
 
-			b, err := a.createDeletionsAndDescribes(false)
+			srClient, err := schemaregistry.NewClient(fs, p)
+			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
+
+			isKafka, isSR, err := kafkaOrSRFilters(cmd, false)
+			out.MaybeDie(err, "invalid request: %v", err)
+
+			kBuilder, srACLs, err := a.createDeletionsAndDescribes(false, isKafka, isSR)
 			out.MaybeDieErr(err)
 
 			var printDeletionsHeader bool
+			var filteredSRACLs []rpsr.ACL
 			if !noConfirm || dry {
-				describeReqResp(adm, printAllFilters, true, b, f)
+				filteredSRACLs = describeReqResp(cmd.Context(), adm, srClient, printAllFilters, true, kBuilder, srACLs, f)
 				fmt.Println()
 
 				confirmed, err := out.Confirm("Confirm deletion of the above matching ACLs?")
@@ -90,8 +101,7 @@ resource names:
 				printAllFilters = false
 				printDeletionsHeader = true
 			}
-
-			deleteReqResp(adm, printAllFilters, printDeletionsHeader, b)
+			deleteReqResp(cmd.Context(), adm, srClient, printAllFilters, printDeletionsHeader, kBuilder, srACLs, filteredSRACLs)
 		},
 	}
 	p.InstallKafkaFlags(cmd)
@@ -109,9 +119,10 @@ func (a *acls) addDeleteFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "Group to remove ACLs for (repeatable)")
 	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "Whether to remove ACLs to the cluster")
 	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "Transactional IDs to remove ACLs for (repeatable)")
+	cmd.Flags().BoolVar(&a.registry, registryFlag, false, "Whether to remove ACLs for the schema registry")
+	cmd.Flags().StringSliceVar(&a.subjects, subjectFlag, nil, "Schema Registry subjects to remove ACLs for (repeatable)")
 
 	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "any", "Pattern to use when matching resource names (any, match, literal, or prefixed)")
-
 	cmd.Flags().StringSliceVar(&a.operations, operationFlag, nil, "Operation to remove (repeatable)")
 
 	cmd.Flags().StringSliceVar(&a.allowPrincipals, allowPrincipalFlag, nil, "Allowed principal ACLs to remove (repeatable)")
@@ -123,71 +134,136 @@ func (a *acls) addDeleteFlags(cmd *cobra.Command) {
 }
 
 func deleteReqResp(
+	ctx context.Context,
 	adm *kadm.Client,
+	srCl *rpsr.Client,
 	printAllFilters bool,
 	printDeletionsHeader bool,
 	b *kadm.ACLBuilder,
+	srACLsFilter []rpsr.ACL,
+	filteredSRACLs []rpsr.ACL,
 ) {
-	results, err := adm.DeleteACLs(context.Background(), b)
-	out.MaybeDie(err, "unable to delete ACLs: %v", err)
-	types.Sort(results)
-
+	var (
+		kResults  []kadm.DeleteACLsResult
+		srResults []rpsr.ACL
+		err       error
+		srErr     error
+	)
+	if b != nil {
+		kResults, err = adm.DeleteACLs(ctx, b)
+		out.MaybeDie(err, "unable to delete Kafka ACLs: %v", err)
+	}
+	// Kafka ACLs deletion is done, and the result already contains the error
+	// message for each row. For SR we store a single error message and display
+	// it at the end.
+	if srACLsFilter != nil {
+		if filteredSRACLs == nil {
+			filteredSRACLs, err = srCl.ListACLsBatch(ctx, srACLsFilter)
+			if err != nil {
+				zap.L().Sugar().Warnf("failed to list schema registry ACLs: %v", err)
+				srErr = fmt.Errorf("unable to list sr ACLs: %v", err)
+			}
+		}
+		err = srCl.DeleteACLs(ctx, filteredSRACLs)
+		if err != nil {
+			srErr = fmt.Errorf("unable to delete Schema Registry ACLs: %v", err)
+		}
+		srResults = filteredSRACLs
+	}
 	// If any filters failed, or if all filters are requested, we print the
 	// filter section.
 	var printFailedFilters bool
-	for _, f := range results {
+	for _, f := range kResults {
 		if f.Err != nil {
 			printFailedFilters = true
 			break
 		}
 	}
+
 	if printAllFilters || printFailedFilters {
 		out.Section("filters")
-		printDeleteFilters(printAllFilters, results)
+		printDeleteFilters(printAllFilters, kResults, srACLsFilter)
 		fmt.Println()
 		printDeletionsHeader = true
 	}
 	if printDeletionsHeader {
 		out.Section("deletions")
 	}
-	printDeleteResults(results)
+	printDeleteResults(kResults, srResults, srErr)
 }
 
-func printDeleteFilters(all bool, results kadm.DeleteACLsResults) {
-	tw := out.NewTable(headersWithError...)
-	defer tw.Flush()
-	for _, f := range results {
+func printDeleteFilters(all bool, kResults kadm.DeleteACLsResults, srACLs []rpsr.ACL) {
+	var results []aclWithMessage
+	for _, f := range kResults {
 		if f.Err == nil && !all {
 			continue
 		}
-		tw.PrintStructFields(aclWithMessage{
+		results = append(results, aclWithMessage{
 			unptr(f.Principal),
 			unptr(f.Host),
-			f.Type,
+			f.Type.String(),
 			unptr(f.Name),
-			f.Pattern,
-			f.Operation,
-			f.Permission,
+			f.Pattern.String(),
+			f.Operation.String(),
+			f.Permission.String(),
 			kafka.ErrMessage(f.Err),
 		})
 	}
-}
-
-func printDeleteResults(results kadm.DeleteACLsResults) {
+	for _, f := range srACLs {
+		results = append(results, aclWithMessage{
+			Principal:           f.Principal,
+			Host:                f.Host,
+			ResourceType:        string(f.ResourceType),
+			ResourceName:        f.Resource,
+			ResourcePatternType: string(f.PatternType),
+			Operation:           string(f.Operation),
+			Permission:          string(f.Permission),
+		})
+	}
+	types.Sort(results)
 	tw := out.NewTable(headersWithError...)
 	defer tw.Flush()
 	for _, f := range results {
+		tw.PrintStructFields(f)
+	}
+}
+
+func printDeleteResults(kResults kadm.DeleteACLsResults, srACLs []rpsr.ACL, srErr error) {
+	var results []aclWithMessage
+	for _, f := range kResults {
 		for _, d := range f.Deleted {
-			tw.PrintStructFields(aclWithMessage{
+			results = append(results, aclWithMessage{
 				d.Principal,
 				d.Host,
-				d.Type,
+				d.Type.String(),
 				d.Name,
-				d.Pattern,
-				d.Operation,
-				d.Permission,
+				d.Pattern.String(),
+				d.Operation.String(),
+				d.Permission.String(),
 				kafka.ErrMessage(d.Err),
 			})
 		}
+	}
+	for _, f := range srACLs {
+		msg := ""
+		if srErr != nil {
+			msg = srErr.Error()
+		}
+		results = append(results, aclWithMessage{
+			Principal:           f.Principal,
+			Host:                f.Host,
+			ResourceType:        string(f.ResourceType),
+			ResourceName:        f.Resource,
+			ResourcePatternType: string(f.PatternType),
+			Operation:           string(f.Operation),
+			Permission:          string(f.Permission),
+			Message:             msg,
+		})
+	}
+	types.Sort(results)
+	tw := out.NewTable(headersWithError...)
+	defer tw.Flush()
+	for _, f := range results {
+		tw.PrintStructFields(f)
 	}
 }

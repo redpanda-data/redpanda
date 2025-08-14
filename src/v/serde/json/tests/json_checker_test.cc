@@ -16,26 +16,22 @@
 
 #include <gtest/gtest.h>
 
-using namespace experimental::serde::json;
+#include <optional>
 
-std::vector<std::string> collect_test_cases();
+using namespace serde::json;
 
-class json_checker_test
-  : public seastar_test
-  , public testing::WithParamInterface<std::string> {};
+std::vector<std::string> collect_test_cases(const std::string& directory);
 
-TEST_P_CORO(json_checker_test, all) {
-    auto test_case = GetParam();
-
-    auto test_case_path = test_utils::get_runfile_path(
-      fmt::format("src/v/serde/json/tests/testdata/jsonchecker/{}", test_case));
+ss::future<> run_json_test(
+  const std::string& directory,
+  const std::string& test_case,
+  std::optional<parser_config> config = std::nullopt) {
+    auto test_case_path = test_utils::get_runfile_path(fmt::format(
+      "src/v/serde/json/tests/testdata/{}/{}", directory, test_case));
 
     auto contents = co_await read_fully(test_case_path);
-    // Use depth limit of 19 to properly fail fail18.json (20 levels) while
-    // allowing pass2.json (19 levels, "Not too deep") to succeed
-    auto config = parser_config{.max_depth = 19};
-    auto parser = experimental::serde::json::parser(
-      std::move(contents), config);
+    auto parser = serde::json::parser(
+      std::move(contents), config.value_or(parser_config{}));
 
     while (co_await parser.next()) {
         // Do nothing, just drain the parser.
@@ -54,16 +50,28 @@ TEST_P_CORO(json_checker_test, all) {
     }
 }
 
+class json_checker_test
+  : public seastar_test
+  , public testing::WithParamInterface<std::string> {};
+
+TEST_P_CORO(json_checker_test, all) {
+    auto test_case = GetParam();
+    // Use depth limit of 19 to properly fail fail18.json (20 levels) while
+    // allowing pass2.json (19 levels, "Not too deep") to succeed
+    auto config = parser_config{.max_depth = 19};
+    co_await run_json_test("jsonchecker", test_case, config);
+}
+
 INSTANTIATE_TEST_SUITE_P(
   json_checker_tests,
   json_checker_test,
-  testing::ValuesIn(collect_test_cases()));
+  testing::ValuesIn(collect_test_cases("jsonchecker")));
 
-std::vector<std::string> collect_test_cases() {
+std::vector<std::string> collect_test_cases(const std::string& directory) {
     std::vector<std::string> test_cases;
 
     auto test_case_path = test_utils::get_runfile_path(
-      "src/v/serde/json/tests/testdata/jsonchecker");
+      fmt::format("src/v/serde/json/tests/testdata/{}", directory));
 
     std::filesystem::path dir_path(test_case_path);
     vassert(

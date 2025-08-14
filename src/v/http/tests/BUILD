@@ -12,7 +12,6 @@ redpanda_test_cc_library(
         "registered_urls.h",
         "utils.h",
     ],
-    include_prefix = "http/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",

@@ -16,7 +16,7 @@
 #include "absl/container/btree_set.h"
 #include "absl/container/node_hash_map.h"
 #include "config/configuration.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
 #include "pandaproxy/logger.h"
@@ -25,26 +25,12 @@
 
 #include <seastar/core/metrics.hh>
 
+#include <algorithm>
 #include <optional>
 #include <ranges>
 #include <utility>
 
 namespace pandaproxy::schema_registry {
-
-///\brief A mapping of version and schema id for a subject.
-struct subject_version_entry {
-    subject_version_entry(
-      schema_version version, schema_id id, is_deleted deleted)
-      : version{version}
-      , id{id}
-      , deleted(deleted) {}
-
-    schema_version version;
-    schema_id id;
-    is_deleted deleted{is_deleted::no};
-
-    std::vector<seq_marker> written_at;
-};
 
 namespace detail {
 
@@ -105,13 +91,11 @@ public:
 
     ///\brief Return the id of the schema, if it already exists.
     std::optional<schema_id> get_schema_id(const schema_definition& def) const {
-        const auto s_it = std::find_if(
-          _schemas.begin(), _schemas.end(), [&](const auto& s) {
-              const auto& entry = s.second;
-              return def == entry.definition;
-          });
-        return s_it == _schemas.end() ? std::optional<schema_id>{}
-                                      : s_it->first;
+        // Iterate in decreasing order to return the maximal matching id
+        auto rev = std::views::reverse(_schemas);
+        const auto s_it = std::ranges::find_if(
+          rev, [&](const auto& s) { return def == s.second.definition; });
+        return s_it == rev.end() ? std::optional<schema_id>{} : s_it->first;
     }
 
     ///\brief Return a list of subject-versions for the shema id.
@@ -132,7 +116,7 @@ public:
     get_schema_subjects(schema_id id, include_deleted inc_del) {
         chunked_vector<subject> subs;
         for (const auto& s : _subjects) {
-            if (absl::c_any_of(
+            if (std::ranges::any_of(
                   s.second.versions, [id, inc_del](const auto& vs) {
                       return vs.id == id && (inc_del || !vs.deleted);
                   })) {
@@ -191,7 +175,7 @@ public:
         res.reserve(_subjects.size());
         for (const auto& sub : _subjects) {
             if (inc_del || !sub.second.deleted) {
-                auto has_version = absl::c_any_of(
+                auto has_version = std::ranges::any_of(
                   sub.second.versions,
                   [inc_del](const auto& v) { return inc_del || !v.deleted; });
                 if (
@@ -206,8 +190,8 @@ public:
 
     ///\brief Return if there are subjects.
     bool has_subjects(include_deleted inc_del) const {
-        return absl::c_any_of(_subjects, [inc_del](const auto& sub) {
-            return absl::c_any_of(
+        return std::ranges::any_of(_subjects, [inc_del](const auto& sub) {
+            return std::ranges::any_of(
               sub.second.versions,
               [inc_del](const auto& v) { return inc_del || !v.deleted; });
         });
@@ -402,7 +386,7 @@ public:
     get_version_ids(const subject& sub, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         std::vector<subject_version_entry> res;
-        absl::c_copy_if(
+        std::ranges::copy_if(
           sub_it->second.versions,
           std::back_inserter(res),
           [inc_del](const subject_version_entry& e) {
@@ -417,7 +401,7 @@ public:
       const subject& sub, schema_id id, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         const auto& vs = sub_it->second.versions;
-        return absl::c_any_of(vs, [id, inc_del](const auto& entry) {
+        return std::ranges::any_of(vs, [id, inc_del](const auto& entry) {
             return entry.id == id && (inc_del || !entry.deleted);
         });
     }
@@ -448,8 +432,8 @@ public:
 
     bool subject_versions_has_any_of(
       const schema_id_set& ids, include_deleted inc_del) {
-        return absl::c_any_of(_subjects, [&ids, inc_del](const auto& s) {
-            return absl::c_any_of(
+        return std::ranges::any_of(_subjects, [&ids, inc_del](const auto& s) {
+            return std::ranges::any_of(
               s.second.versions, [&ids, &s, inc_del](const auto& v) {
                   return (inc_del || !s.second.deleted) && ids.contains(v.id);
               });

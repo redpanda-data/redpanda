@@ -5,7 +5,6 @@ redpanda_test_cc_library(
     hdrs = [
         "randoms.h",
     ],
-    include_prefix = "cluster/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cluster",
@@ -19,7 +18,6 @@ redpanda_test_cc_library(
     hdrs = [
         "topic_properties_generator.h",
     ],
-    include_prefix = "cluster/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -33,7 +31,6 @@ redpanda_test_cc_library(
     hdrs = [
         "partition_allocator_fixture.h",
     ],
-    include_prefix = "cluster/tests",
     deps = [
         "//src/v/base",
         "//src/v/cluster",
@@ -46,7 +43,6 @@ redpanda_test_cc_library(
         "cluster_test_fixture.h",
         "utils.h",
     ],
-    include_prefix = "cluster/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cluster",
@@ -67,7 +63,6 @@ redpanda_test_cc_library(
     hdrs = [
         "partition_balancer_planner_fixture.h",
     ],
-    include_prefix = "cluster/tests",
     deps = [
         ":cluster_test_fixture",
     ],
@@ -78,7 +73,6 @@ redpanda_test_cc_library(
     hdrs = [
         "rebalancing_tests_fixture.h",
     ],
-    include_prefix = "cluster/tests",
     deps = [
         ":cluster_test_fixture",
         "//src/v/container:chunked_circular_buffer",
@@ -90,7 +84,6 @@ redpanda_test_cc_library(
     hdrs = [
         "tx_compaction_utils.h",
     ],
-    include_prefix = "cluster/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cluster",
@@ -106,7 +99,6 @@ redpanda_test_cc_library(
     hdrs = [
         "rm_stm_test_fixture.h",
     ],
-    include_prefix = "cluster/tests",
     deps = [
         "//src/v/cluster",
         "//src/v/raft/tests:simple_raft_fixture",
@@ -118,7 +110,6 @@ redpanda_test_cc_library(
     hdrs = [
         "utils.h",
     ],
-    include_prefix = "cluster/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cluster",
@@ -133,7 +124,6 @@ redpanda_test_cc_library(
         "leader_balancer_constraints_utils.h",
         "leader_balancer_test_utils.h",
     ],
-    include_prefix = "cluster/tests",
     deps = [
         "//src/v/cluster",
     ],
@@ -144,7 +134,6 @@ redpanda_test_cc_library(
     hdrs = [
         "topic_table_fixture.h",
     ],
-    include_prefix = "cluster/tests",
     deps = [
         ":utils",
         "//src/v/base",
@@ -177,7 +166,6 @@ redpanda_test_cc_library(
     hdrs = [
         "raft_fixture_retry_policy.h",
     ],
-    include_prefix = "cluster/tests",
     deps = [
         "//src/v/cluster",
         "//src/v/raft",
@@ -360,11 +348,12 @@ redpanda_cc_gtest(
         "//src/v/cluster",
         "//src/v/container:chunked_hash_map",
         "//src/v/features",
+        "//src/v/random:generators",
         "//src/v/ssx:event",
+        "//src/v/ssx:future_util",
         "//src/v/storage",
         "//src/v/storage:resources",
         "//src/v/test_utils:gtest",
-        "//src/v/test_utils:random",
         "//src/v/utils:prefix_logger",
         "@seastar",
     ],
@@ -760,7 +749,6 @@ redpanda_test_cc_library(
     hdrs = [
         "health_monitor_test_utils.h",
     ],
-    include_prefix = "cluster/tests",
     deps = [
         "//src/v/cluster",
     ],
@@ -853,6 +841,30 @@ redpanda_cc_btest(
         "//src/v/cluster",
         "//src/v/model",
         "//src/v/raft",
+        "//src/v/redpanda/tests:fixture",
+        "//src/v/ssx:future_util",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:unresolved_address",
+        "@boost//:test",
+        "@fmt",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "remake_partition_tests",
+    timeout = "short",
+    srcs = ["remake_partition_tests.cc"],
+    cpu = 1,
+    deps = [
+        ":cluster_test_fixture",
+        "//src/v/base",
+        "//src/v/cluster",
+        "//src/v/kafka/server/tests:kafka_test_utils",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/redpanda/tests:fixture",
         "//src/v/ssx:future_util",
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:unresolved_address",
@@ -1026,11 +1038,31 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/cluster",
         "//src/v/config",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/random:generators",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "controller_state_test",
+    timeout = "short",
+    srcs = [
+        "controller_state_test.cc",
+    ],
+    deps = [
+        ":cluster_test_fixture",
+        "//src/v/cluster",
+        "//src/v/config",
+        "//src/v/features",
+        "//src/v/model",
+        "//src/v/security",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:unresolved_address",
+        "@boost//:test",
         "@seastar",
     ],
 )
@@ -1058,11 +1090,11 @@ redpanda_test_cc_library(
     hdrs = [
         "local_monitor_fixture.h",
     ],
-    include_prefix = "cluster/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cluster",
-        "//src/v/storage",
+        "//src/v/features",
+        "//src/v/storage:disk",
         "@seastar",
     ],
 )
@@ -1102,7 +1134,6 @@ redpanda_cc_btest(
         "//src/v/random:generators",
         "//src/v/security",
         "//src/v/test_utils:seastar_boost",
-        "@abseil-cpp//absl/algorithm:container",
         "@boost//:range",
         "@boost//:test",
     ],
@@ -1120,7 +1151,7 @@ redpanda_cc_btest(
         "//src/v/cluster/tests:randoms",
         "//src/v/cluster/tests:topic_properties_generator",
         "//src/v/compat",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/model/tests:random",
         "//src/v/pandaproxy/schema_registry/test:random",
@@ -1216,7 +1247,6 @@ redpanda_test_cc_library(
     hdrs = [
         "tx_compaction_utils.h",
     ],
-    include_prefix = "cluster/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cluster",
@@ -1242,5 +1272,22 @@ redpanda_cc_btest(
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
         "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "epoch_service_test",
+    timeout = "short",
+    srcs = [
+        "epoch_service_test.cc",
+    ],
+    cpu = 2,
+    deps = [
+        "//src/v/cluster",
+        "//src/v/ssx:abort_source",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
     ],
 )

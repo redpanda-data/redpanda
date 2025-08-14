@@ -18,7 +18,6 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/strings:string_switch",
     ],
-    include_prefix = "iceberg/conversion/json_schema",
     deps = [
         "//src/v/base",
         "@fmt",
@@ -35,11 +34,10 @@ redpanda_cc_library(
         "frontend.h",
     ],
     implementation_deps = [
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/iceberg/conversion/json_schema/details:string_switch_table",
         "@jsoncons",
     ],
-    include_prefix = "iceberg/conversion/json_schema",
     deps = [
         ":ir",
         "//src/v/base",

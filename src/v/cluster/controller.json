@@ -191,6 +191,16 @@
             "name": "update_mirror_topic_state",
             "input_type": "update_mirror_topic_state_request",
             "output_type": "update_mirror_topic_state_response"
+        },
+        {
+            "name": "update_mirror_topic_properties",
+            "input_type": "update_mirror_topic_properties_request",
+            "output_type": "update_mirror_topic_properties_response"
+        },
+        {
+            "name": "get_current_cluster_epoch",
+            "input_type": "get_current_cluster_epoch_request",
+            "output_type": "get_current_cluster_epoch_response"
         }
     ]
 }

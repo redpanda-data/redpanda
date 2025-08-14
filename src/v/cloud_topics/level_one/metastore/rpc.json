@@ -1,0 +1,39 @@
+{
+    "namespace": "experimental::cloud_topics::l1::rpc::impl",
+    "service_name": "l1_rpc",
+    "includes": [
+        "cloud_topics/level_one/metastore/rpc_types.h"
+    ],
+    "methods": [
+        {
+            "name": "add_objects",
+            "input_type": "add_objects_request",
+            "output_type": "add_objects_reply"
+        },
+        {
+            "name": "replace_objects",
+            "input_type": "replace_objects_request",
+            "output_type": "replace_objects_reply"
+        },
+        {
+            "name": "get_first_offset_ge",
+            "input_type": "get_first_offset_ge_request",
+            "output_type": "get_first_offset_ge_reply"
+        },
+        {
+            "name": "get_first_timestamp_ge",
+            "input_type": "get_first_timestamp_ge_request",
+            "output_type": "get_first_timestamp_ge_reply"
+        },
+        {
+            "name": "get_offsets",
+            "input_type": "get_offsets_request",
+            "output_type": "get_offsets_reply"
+        },
+        {
+            "name": "get_compaction_offsets",
+            "input_type": "get_compaction_offsets_request",
+            "output_type": "get_compaction_offsets_reply"
+        }
+    ]
+}

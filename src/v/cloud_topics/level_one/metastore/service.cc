@@ -1,0 +1,60 @@
+/*
+ * Copyright 2025 Redpanda Data, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+ */
+
+#include "cloud_topics/level_one/metastore/service.h"
+
+#include "cloud_topics/level_one/metastore/frontend.h"
+
+namespace experimental::cloud_topics::l1::rpc {
+
+service::service(
+  ss::scheduling_group sg,
+  ss::smp_service_group smp_sg,
+  ss::sharded<frontend>* frontend)
+  : impl::l1_rpc_service(sg, smp_sg)
+  , _frontend(frontend) {}
+
+ss::future<add_objects_reply>
+service::add_objects(add_objects_request request, ::rpc::streaming_context&) {
+    return _frontend->local().add_objects(
+      std::move(request), frontend::local_only::yes);
+}
+
+ss::future<replace_objects_reply> service::replace_objects(
+  replace_objects_request request, ::rpc::streaming_context&) {
+    return _frontend->local().replace_objects(
+      std::move(request), frontend::local_only::yes);
+}
+
+ss::future<get_first_offset_ge_reply> service::get_first_offset_ge(
+  get_first_offset_ge_request request, ::rpc::streaming_context&) {
+    return _frontend->local().get_first_offset_ge(
+      std::move(request), frontend::local_only::yes);
+}
+
+ss::future<get_first_timestamp_ge_reply> service::get_first_timestamp_ge(
+  get_first_timestamp_ge_request request, ::rpc::streaming_context&) {
+    return _frontend->local().get_first_timestamp_ge(
+      std::move(request), frontend::local_only::yes);
+}
+
+ss::future<get_offsets_reply>
+service::get_offsets(get_offsets_request request, ::rpc::streaming_context&) {
+    return _frontend->local().get_offsets(
+      std::move(request), frontend::local_only::yes);
+}
+
+ss::future<get_compaction_offsets_reply> service::get_compaction_offsets(
+  get_compaction_offsets_request request, ::rpc::streaming_context&) {
+    return _frontend->local().get_compaction_offsets(
+      std::move(request), frontend::local_only::yes);
+}
+
+} // namespace experimental::cloud_topics::l1::rpc

@@ -15,7 +15,6 @@ redpanda_cc_library(
         "@abseil-cpp//absl/container:btree",
         "@fmt",
     ],
-    include_prefix = "kafka/utils",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/model",

@@ -5,7 +5,6 @@ redpanda_cc_library(
     hdrs = [
         "leb128.h",
     ],
-    include_prefix = "wasm/parser",
     visibility = [
         "//src/v/wasm/parser:__pkg__",
         "//src/v/wasm/parser/tests:__pkg__",
@@ -30,15 +29,13 @@ redpanda_cc_library(
         "//src/v/bytes",
         "//src/v/bytes:iobuf_parser",
         "//src/v/strings:utf8",
-        "@abseil-cpp//absl/algorithm:container",
         "@fmt",
     ],
-    include_prefix = "wasm/parser",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "@seastar",
     ],
 )

@@ -62,12 +62,6 @@ FIXTURE_TEST(reconnect, kafka_client_fixture) {
     }
 
     {
-        info("Checking for known topic - expect controller not ready");
-        auto res = client.dispatch(make_list_topics_req());
-        BOOST_REQUIRE_THROW(res.get(), kc::broker_error);
-    }
-
-    {
         client.set_max_retries(size_t(5));
         info("Checking for known topic - controller ready");
         auto res = client.dispatch(make_list_topics_req()).get();

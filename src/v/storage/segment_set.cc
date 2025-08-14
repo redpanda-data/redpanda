@@ -12,6 +12,7 @@
 #include "absl/container/btree_set.h"
 #include "base/vassert.h"
 #include "base/vlog.h"
+#include "model/fundamental.h"
 #include "storage/fs_utils.h"
 #include "storage/log_replayer.h"
 #include "storage/logger.h"
@@ -26,6 +27,7 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <exception>
 
 namespace storage {
@@ -126,28 +128,6 @@ segment_set::lower_bound(model::offset offset) const {
     return segments_lower_bound(
       std::cbegin(_handles), std::cend(_handles), offset);
 }
-// Lower bound for timestamp based indexing
-//
-// From KIP-33:
-//
-// When searching by timestamp, broker will start from the earliest log segment
-// and check the last time index entry. If the timestamp of the last time index
-// entry is greater than the target timestamp, the broker will do binary search
-// on that time index to find the closest index entry and scan the log from
-// there. Otherwise it will move on to the next log segment.
-segment_set::iterator segment_set::lower_bound(model::timestamp needle) {
-    // Note that we exclude the segments that only contain configuration batches
-    // from our search, as their timestamps may be wildly different from the
-    // user provided timestamps.
-    return filtered_lower_bound(
-      _handles.begin(),
-      _handles.end(),
-      needle,
-      segment_ordering{},
-      [](const auto& segment) {
-          return segment->index().non_data_timestamps() == false;
-      });
-}
 
 segment_set::iterator segment_set::upper_bound(model::term_id term) {
     return std::upper_bound(
@@ -186,6 +166,96 @@ is_last_segment(segment* s, std::optional<ss::sstring> last_clean_segment) {
     return last_clean_segment
            && std::filesystem::path(s->filename()).filename().string()
                 == std::string(last_clean_segment.value());
+}
+
+ss::future<std::optional<segment_set>>
+maybe_create_contiguous_segment_set(segment_set::underlying_t segs) {
+    if (segs.size() < 2) {
+        co_return segment_set(std::move(segs));
+    }
+
+    using type = segment_set::type;
+    // Order by ascending base offset and descending dirty offset.
+    std::sort(segs.begin(), segs.end(), [](const type& seg1, const type& seg2) {
+        const auto& o1 = seg1->offsets();
+        const auto& o2 = seg2->offsets();
+        return std::forward_as_tuple(
+                 o1.get_base_offset(), o2.get_dirty_offset())
+               < std::forward_as_tuple(
+                 o2.get_base_offset(), o1.get_dirty_offset());
+    });
+
+    auto min_offset = segs.front()->offsets().get_base_offset();
+    // Max offset may not necessarily be seg_set.back()'s dirty_offset, due to
+    // descending ordering w/r/t dirty offset.
+    auto max_offset = (*std::ranges::max_element(
+                         segs,
+                         std::less<>{},
+                         [](const auto& s) {
+                             return s->offsets().get_dirty_offset();
+                         }))
+                        ->offsets()
+                        .get_dirty_offset();
+    segment_set::underlying_t ignored_segs;
+    for (auto it = std::next(segs.begin()); it != segs.end();) {
+        auto& s = *it;
+        auto& prev = *std::prev(it);
+        if (
+          prev->offsets().get_dirty_offset()
+          >= s->offsets().get_base_offset()) {
+            vlog(
+              stlog.info,
+              "Base offset {} of segment {} is < dirty offset {} of "
+              "previous segment {} after recovery. This is very likely a "
+              "segment that was not successfully removed during adjacent "
+              "merge compaction.",
+              s->offsets().get_base_offset(),
+              s->filename(),
+              prev->offsets().get_dirty_offset(),
+              prev->filename());
+            ignored_segs.push_back(s);
+            it = segs.erase(it);
+            continue;
+        }
+        // At this point we have greedily selected the segment `s`- ensure
+        // offset continuity.
+        if (
+          s->offsets().get_base_offset()
+          != model::next_offset(prev->offsets().get_dirty_offset())) {
+            vlog(
+              stlog.warn,
+              "Base offset {} of segment {} is non-contiguous with "
+              "dirty offset {} of previous segment {} after recovery.",
+              s->offsets().get_base_offset(),
+              s->filename(),
+              prev->offsets().get_dirty_offset(),
+              prev->filename());
+            co_return std::nullopt;
+        }
+        ++it;
+    }
+
+    // Offset span needs to be preserved.
+    if (!(segs.front()->offsets().get_base_offset() == min_offset
+          && segs.back()->offsets().get_dirty_offset() == max_offset)) {
+        vlog(
+          stlog.warn,
+          "Segments [{}-{}] do not preserve offset space [{}-{}] after "
+          "recovery.",
+          segs.front()->filename(),
+          segs.back()->filename(),
+          min_offset,
+          max_offset);
+        co_return std::nullopt;
+    }
+
+    for (auto& s : ignored_segs) {
+        co_await ss::rename_file(
+          s->reader().filename(),
+          s->reader().filename() + ".ignore_have_newer");
+    }
+
+    co_return segment_set(std::move(segs));
 }
 
 // Recover the last segment. Whenever we close a segment, we will likely
@@ -346,6 +416,21 @@ static ss::future<segment_set> unsafe_do_recover(
             vlog(stlog.info, "Recovered: {}", s);
             good.emplace_back(std::move(s));
         }
+
+        // Pass `good` by value on purpose, we need to preserve segments for
+        // sad return path below in case we are unable to produce a
+        // contiguous segment set here.
+        auto seg_set_opt = maybe_create_contiguous_segment_set(good).get();
+        if (seg_set_opt.has_value()) {
+            return std::move(seg_set_opt).value();
+        }
+        vlog(
+          stlog.warn,
+          "Failed to create contiguous segment set from recovered segment "
+          "set of size {} [{}-{}] - using recovered segments as is.",
+          good.size(),
+          good.front()->filename(),
+          good.back()->filename());
         return segment_set(std::move(good));
     });
 }

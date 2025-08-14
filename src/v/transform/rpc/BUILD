@@ -4,7 +4,6 @@ load("//src/v/rpc:compiler.bzl", "redpanda_cc_rpc_library")
 redpanda_cc_rpc_library(
     name = "transform_rpc",
     src = "rpc.json",
-    include_prefix = "transform/rpc",
 )
 
 redpanda_cc_library(
@@ -23,14 +22,13 @@ redpanda_cc_library(
         "serde.h",
         "service.h",
     ],
-    include_prefix = "transform/rpc",
     visibility = ["//visibility:public"],
     deps = [
         ":transform_rpc",
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/config",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/features",
         "//src/v/kafka/data:partition_proxy",
         "//src/v/kafka/data/rpc",

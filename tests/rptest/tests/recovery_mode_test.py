@@ -535,7 +535,12 @@ class DisablingPartitionsTest(RedpandaTest):
 
         assert all_disabled_shut_down()
 
-        assert get_hwms() == hwms3
+        # Even though we waited for leadership, a non-member of a partition
+        # may need a bit more time to learn about the new leader.
+        wait_until(lambda: get_hwms() == hwms3,
+                   10,
+                   backoff_sec=1,
+                   err_msg="Failed waiting to match high watermarks")
 
         self.logger.info("enabling partitions back")
 

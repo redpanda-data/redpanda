@@ -12,6 +12,7 @@
 #include "base/seastarx.h"
 #include "kafka/client/brokers.h"
 #include "kafka/client/topic_cache.h"
+#include "utils/notification_list.h"
 #include "utils/prefix_logger.h"
 namespace kafka::client {
 /**
@@ -21,7 +22,14 @@ namespace kafka::client {
  */
 class cluster {
 public:
+    using callback_id = named_type<int16_t, struct callback_id_tag>;
+    using metadata_callback
+      = ss::noncopyable_function<void(const metadata_response_data&)>;
+
     explicit cluster(connection_configuration config);
+    cluster(
+      connection_configuration config,
+      std::unique_ptr<broker_factory> broker_factory);
 
     ss::future<> start();
     ss::future<> stop();
@@ -48,13 +56,17 @@ public:
      */
     template<typename Req, typename Ret = typename Req::api_type::response_type>
     requires(KafkaApi<typename Req::api_type>)
-    ss::future<Ret> dispatch_to(model::node_id broker_id, Req request) {
+    ss::future<Ret>
+    dispatch_to(model::node_id broker_id, Req request, api_version version) {
         auto broker = _brokers.find(broker_id);
         if (!broker) {
             throw broker_error(
               broker_id, error_code::broker_not_available, "Broker not found");
         }
-        return broker->dispatch(std::move(request));
+        return broker->dispatch(std::move(request), version)
+          .then([](response_t response) {
+              return std::get<Ret>(std::move(response));
+          });
     }
     /**
      * Dispatches a request to a randomly selected broker from the connected
@@ -68,11 +80,15 @@ public:
 
     template<typename Req, typename Ret = typename Req::api_type::response_type>
     requires(KafkaApi<typename Req::api_type>)
-    ss::future<Ret> dispatch_to_any(Req request) {
+    ss::future<Ret> dispatch_to_any(Req request, api_version version) {
         if (_brokers.empty()) {
             co_await request_metadata_update();
         }
-        co_return co_await _brokers.any()->dispatch(std::move(request));
+        co_return co_await _brokers.any()
+          ->dispatch(std::move(request), version)
+          .then([](response_t response) {
+              return std::get<Ret>(std::move(response));
+          });
     }
     /**
      * Requests metadata update from the remote cluster. If any other request is
@@ -99,6 +115,41 @@ public:
     const std::optional<sasl_configuration>& get_sasl_configuration() const {
         return _config.sasl_cfg;
     }
+    /**
+     * Callbacks for receiving metadata updates.
+     * The callback will be called with the metadata response data.
+     *
+     * NOTE: the callback is called every time the metadata is updated, even it
+     * it didn't change
+     */
+    callback_id register_metadata_cb(metadata_callback cb) {
+        return _notifications.register_cb(std::move(cb));
+    }
+
+    void unregister_metadata_cb(callback_id id) {
+        _notifications.unregister_cb(id);
+    }
+    /**
+     * Returns the range of versions that is supported by all the brokers in the
+     * cluster. It connects to the brokers if necessary.
+     */
+    ss::future<std::optional<api_version_range>> supported_api_versions(
+      api_key key,
+      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+
+    /**
+     * Returns the range of versions that is supported the requested broker.
+     * Connection to the broker is established if necessary.
+     */
+    ss::future<std::optional<api_version_range>> supported_api_versions(
+      model::node_id id,
+      api_key key,
+      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+
+    /**
+     * Returns logger prefixed with the client id.
+     */
+    prefix_logger& logger() { return _logger; }
 
 private:
     ss::future<> update_metadata();
@@ -120,7 +171,7 @@ private:
     mutex _update_lock{"kc/metadata_update_lock"};
     ss::lowres_clock::time_point _last_update_time
       = ss::lowres_clock::time_point::min();
-
+    notification_list<metadata_callback, callback_id> _notifications;
     ss::gate _gate;
     ss::abort_source _as;
 };

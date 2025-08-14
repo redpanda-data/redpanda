@@ -14,7 +14,7 @@
 #include "cluster/data_migrated_resources.h"
 #include "cluster/data_migration_types.h"
 #include "cluster/topic_table.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "errc.h"
 #include "utils/named_type.h"
 #include "utils/notification_list.h"

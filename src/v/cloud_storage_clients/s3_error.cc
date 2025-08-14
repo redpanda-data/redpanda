@@ -625,4 +625,12 @@ std::string_view rest_error_response::resource() const noexcept {
     return _resource;
 }
 
+std::ostream& operator<<(std::ostream& o, const rest_error_response& err) {
+    static constexpr auto format
+      = "code: {}, message: {}, request_id: {}, resource: {}";
+    fmt::print(
+      o, format, err._code_str, err._message, err._request_id, err._resource);
+    return o;
+}
+
 } // namespace cloud_storage_clients

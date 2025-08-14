@@ -7,6 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 #include "raft/tests/failure_injectable_log.h"
+
+#include <seastar/core/sleep.hh>
 namespace raft {
 
 failure_injectable_log::failure_injectable_log(
@@ -15,8 +17,8 @@ failure_injectable_log::failure_injectable_log(
   , _underlying_log(std::move(underlying_log)) {}
 
 ss::future<> failure_injectable_log::start(
-  std::optional<storage::truncate_prefix_config> cfg) {
-    return _underlying_log->start(cfg);
+  std::optional<storage::truncate_prefix_config> cfg, ss::abort_source& as) {
+    return _underlying_log->start(cfg, as);
 }
 
 ss::future<>
@@ -177,8 +179,8 @@ failure_injectable_log::size_bytes_after_offset(model::offset o) const {
 
 ss::future<std::optional<storage::log::offset_range_size_result_t>>
 failure_injectable_log::offset_range_size(
-  model::offset first, model::offset last) {
-    return _underlying_log->offset_range_size(first, last);
+  model::offset first, model::offset last, ss::semaphore::time_point timeout) {
+    return _underlying_log->offset_range_size(first, last, timeout);
 }
 
 ss::future<std::optional<failure_injectable_log::offset_range_size_result_t>>
@@ -192,6 +194,17 @@ bool failure_injectable_log::is_compacted(
     return _underlying_log->is_compacted(first, last);
 }
 
+bool failure_injectable_log::eligible_for_compacted_reupload(
+  model::offset first, model::offset last) const {
+    return _underlying_log->eligible_for_compacted_reupload(first, last);
+}
+
+std::optional<model::offset>
+failure_injectable_log::max_eligible_for_compacted_reupload_offset(
+  model::offset first) const {
+    return _underlying_log->max_eligible_for_compacted_reupload_offset(first);
+}
+
 void failure_injectable_log::set_overrides(
   storage::ntp_config::default_overrides overrides) {
     mutable_config().set_overrides(overrides);
@@ -202,7 +215,7 @@ bool failure_injectable_log::notify_compaction_update() {
     return _underlying_log->notify_compaction_update();
 }
 
-int64_t failure_injectable_log::compaction_backlog() const {
+int64_t failure_injectable_log::compaction_backlog() {
     return _underlying_log->compaction_backlog();
 }
 
@@ -252,13 +265,27 @@ ssize_t failure_injectable_log::closed_segment_bytes() const {
     return _underlying_log->closed_segment_bytes();
 }
 
-double failure_injectable_log::dirty_ratio() {
+double failure_injectable_log::dirty_ratio() const {
     return _underlying_log->dirty_ratio();
 }
 
 std::optional<model::timestamp>
 failure_injectable_log::earliest_dirty_segment_ts() const {
     return _underlying_log->earliest_dirty_segment_ts();
+}
+
+std::optional<model::timestamp>
+failure_injectable_log::earliest_removable_timestamp(model::offset o) const {
+    return _underlying_log->earliest_removable_timestamp(o);
+}
+
+std::optional<model::offset>
+failure_injectable_log::max_removed_offset() const {
+    return _underlying_log->max_removed_offset();
+}
+
+bool failure_injectable_log::needs_compaction() const {
+    return _underlying_log->needs_compaction();
 }
 
 } // namespace raft

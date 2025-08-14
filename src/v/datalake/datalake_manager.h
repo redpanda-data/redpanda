@@ -13,6 +13,7 @@
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "cluster/fwd.h"
+#include "cluster/utils/partition_change_notifier.h"
 #include "config/property.h"
 #include "container/chunked_hash_map.h"
 #include "datalake/backlog_controller.h"
@@ -32,7 +33,6 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
-#include <seastar/util/defer.hh>
 
 namespace cloud_io {
 class remote;
@@ -56,7 +56,7 @@ class datalake_manager : public ss::peering_sharded_service<datalake_manager> {
 public:
     datalake_manager(
       model::node_id self,
-      ss::sharded<raft::group_manager>*,
+      std::unique_ptr<cluster::partition_change_notifier>,
       ss::sharded<cluster::partition_manager>*,
       ss::sharded<cluster::topic_table>*,
       ss::sharded<features::feature_table>*,
@@ -120,7 +120,9 @@ public:
 private:
     using translator = std::unique_ptr<translation::partition_translator>;
 
-    ss::future<> handle_translator_state_change(const model::ntp&);
+    ss::future<> handle_translator_state_change(
+      model::ntp ntp,
+      std::optional<cluster::partition_change_notifier::partition_state>);
 
     /// \note The probe is created on the first use.
     ss::lw_shared_ptr<translation_probe> get_or_create_probe(const model::ntp&);
@@ -160,7 +162,8 @@ private:
 
 private:
     model::node_id _self;
-    ss::sharded<raft::group_manager>* _group_mgr;
+    std::unique_ptr<cluster::partition_change_notifier>
+      _partition_notifications;
     ss::sharded<cluster::partition_manager>* _partition_mgr;
     ss::sharded<cluster::topic_table>* _topic_table;
     ss::sharded<features::feature_table>* _features;
@@ -179,8 +182,8 @@ private:
     ss::scheduling_group _sg;
     ss::gate _gate;
 
-    using deferred_action = ss::deferred_action<std::function<void()>>;
-    std::vector<deferred_action> _deregistrations;
+    cluster::notification_id_type _partition_notifications_id
+      = cluster::notification_id_type_invalid;
     config::binding<model::iceberg_invalid_record_action>
       _iceberg_invalid_record_action;
     std::filesystem::path _writer_scratch_space;

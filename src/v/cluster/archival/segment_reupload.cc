@@ -44,7 +44,7 @@ bool eligible_for_compacted_reupload(const storage::segment& s) {
     if (config::shard_local_cfg().log_compaction_use_sliding_window) {
         return s.finished_windowed_compaction();
     }
-    return s.finished_self_compaction();
+    return s.has_self_compact_timestamp();
 }
 
 std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
@@ -275,7 +275,7 @@ void segment_collector::collect_segments() {
 
     if (
       is_reupload_mode(_mode)
-      && _begin_inclusive >= _manifest.get_last_offset()) {
+      && _begin_inclusive > _manifest.get_last_offset()) {
         vlog(
           archival_log.warn,
           "Start offset {} is ahead of manifest last offset {} for ntp {}, not "
@@ -1091,7 +1091,7 @@ segment_collector::make_upload_candidate_stream(
        final_file_offset
        = cand.final_file_offset]() mutable -> ss::input_stream<char> {
         storage::concat_segment_reader_view crv(
-          std::move(segments), file_offset, final_file_offset);
+          segments, file_offset, final_file_offset);
         return crv.take_stream();
     };
     co_return stream;

@@ -99,6 +99,7 @@ FIXTURE_TEST(test_concurrent_log_eviction_and_append, storage_e2e_fixture) {
       /*max_bytes_in_log=*/1,
       /*max_collect_offset=*/model::offset::min(),
       /*tombstone_retention_ms=*/std::nullopt,
+      /*tx_retention_ms=*/std::nullopt,
       /*min_lag_ms=*/std::chrono::milliseconds{0},
       as);
 
@@ -107,6 +108,7 @@ FIXTURE_TEST(test_concurrent_log_eviction_and_append, storage_e2e_fixture) {
     model::offset stop_after{num_records * 100};
     tests::kafka_produce_transport producer(make_kafka_client().get());
     producer.start().get();
+    auto deferred_close = ss::defer([&producer] { producer.stop().get(); });
     auto produce = [&] {
         return producer
           .produce_to_partition(

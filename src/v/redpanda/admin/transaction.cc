@@ -88,7 +88,7 @@ admin_server::get_all_transactions_handler(
     }
 
     using tx_info = ss::httpd::transaction_json::transaction_summary;
-    fragmented_vector<tx_info> ans;
+    chunked_vector<tx_info> ans;
     ans.reserve(res.value().size());
 
     for (auto& tx : res.value()) {
@@ -240,7 +240,8 @@ admin_server::unsafe_abort_group_transaction(
 
     if (pid_str.empty() || epoch_str.empty() || sequence_str.empty()) {
         throw ss::httpd::bad_param_exception(fmt::format(
-          "invalid producer_id({})/epoch({})/sequence({}), should be integers "
+          "invalid producer_id({})/epoch({})/sequence({}), should be "
+          "integers "
           ">= 0",
           pid_str,
           epoch_str,
@@ -279,8 +280,8 @@ admin_server::unsafe_abort_group_transaction(
 
     auto& mapper = _kafka_server.local().coordinator_mapper();
     auto kafka_gid = kafka::group_id{group_id};
-    auto group_ntp = mapper.ntp_for(kafka::group_id{group_id});
-    if (!group_ntp) {
+    auto group_partition = mapper.partition_for(kafka::group_id{group_id});
+    if (!group_partition) {
         throw ss::httpd::server_error_exception(
           "consumer_offsets topic not found");
     }
@@ -292,6 +293,12 @@ admin_server::unsafe_abort_group_transaction(
         seq.value(),
         5s);
 
-    co_await throw_on_error(*request, result, group_ntp.value());
+    co_await throw_on_error(
+      *request,
+      result,
+      model::ntp(
+        model::kafka_namespace,
+        model::kafka_consumer_offsets_topic,
+        *group_partition));
     co_return ss::json::json_return_type(ss::json::json_void());
 }

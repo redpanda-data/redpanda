@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
+#include "storage/disk.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
 #include "storage/storage_resources.h"

@@ -7,7 +7,6 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "base/vlog.h"
 #include "ssx/abort_source.h"
 
 #include <seastar/core/sstring.hh>
@@ -15,6 +14,8 @@
 #include <seastar/util/later.hh>
 
 #include <boost/test/unit_test.hpp>
+
+#include <stdexcept>
 
 static constexpr auto derived_str = "derived";
 static constexpr auto expected_msg = std::string_view{derived_str};
@@ -119,4 +120,34 @@ SEASTAR_THREAD_TEST_CASE(ssx_sharded_abort_source_subscribe_test) {
     f.as.request_abort_ex(derived_error());
     f.stop().get();
     BOOST_REQUIRE_EQUAL(f.count, f.expected_count);
+}
+
+SEASTAR_THREAD_TEST_CASE(ssx_composite_abort_source) {
+    auto s1 = ss::abort_source();
+    auto s2 = ss::abort_source();
+
+    ssx::composite_abort_source cas{s1, s2};
+
+    BOOST_TEST(!cas.as().abort_requested());
+    s1.request_abort_ex(std::runtime_error("test error"));
+
+    BOOST_TEST(cas.as().abort_requested());
+
+    ssx::composite_abort_source cas2{s1, s2};
+    BOOST_TEST(cas2.as().abort_requested());
+}
+
+SEASTAR_THREAD_TEST_CASE(ssx_composite_abort_source_source_destroyed) {
+    std::optional<ssx::composite_abort_source> cas_opt;
+    {
+        auto s1 = ss::abort_source();
+        auto s2 = ss::abort_source();
+        cas_opt.emplace(s1, s2);
+    }
+
+    // We can't abort it sources anymore but it still should be valid to
+    // interact with the composite source
+    BOOST_TEST(!cas_opt->as().abort_requested());
+    cas_opt->as().request_abort();
+    BOOST_TEST(cas_opt->as().abort_requested());
 }

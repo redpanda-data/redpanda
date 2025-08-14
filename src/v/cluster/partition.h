@@ -26,13 +26,11 @@
 #include "storage/translating_reader.h"
 #include "storage/types.h"
 #include "utils/notification_list.h"
-#include "utils/rwlock.h"
 
 #include <seastar/core/shared_ptr.hh>
 
 namespace experimental::cloud_topics {
-class dl_stm_api;
-class app;
+class state_accessors;
 }; // namespace experimental::cloud_topics
 
 namespace cluster {
@@ -58,7 +56,7 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<archival::upload_housekeeping_service>&,
       std::optional<cloud_storage_clients::bucket_name> read_replica_bucket,
-      ss::sharded<experimental::cloud_topics::app>& ct_app);
+      ss::sharded<experimental::cloud_topics::state_accessors>* ct_state);
 
     ~partition() = default;
 
@@ -216,8 +214,6 @@ public:
 
     ss::shared_ptr<cluster::rm_stm> rm_stm();
 
-    ss::shared_ptr<experimental::cloud_topics::dl_stm_api> dl_stm_api();
-
     size_t size_bytes() const;
 
     size_t reclaimable_size_bytes() const;
@@ -229,7 +225,7 @@ public:
     const storage::ntp_config& get_ntp_config() const;
     ss::shared_ptr<cluster::tm_stm> tm_stm();
 
-    ss::future<fragmented_vector<model::tx_range>>
+    ss::future<chunked_vector<model::tx_range>>
     aborted_transactions(model::offset from, model::offset to);
 
     ss::future<std::vector<model::tx_range>>
@@ -399,12 +395,12 @@ public:
     void mark_started() noexcept { _started = true; }
 
     // Acquire a shared lock for producing to the partition.
-    ss::future<result<ssx::rwlock_unit>> hold_writes_enabled();
+    ss::future<result<ss::rwlock::holder>> hold_writes_enabled();
 
-    // Returns a pointer to the data plane api if cloud topics is enabled for
-    // this partition. Otherwise, nullopt is returned
-    ss::sharded<experimental::cloud_topics::app>&
-    get_cloud_topics_data_api() noexcept;
+    // Returns a pointer to cloud topics state accessors if available on the
+    // cluster, or nullptr otherwise.
+    ss::sharded<experimental::cloud_topics::state_accessors>*
+    get_cloud_topics_state() noexcept;
 
 private:
     ss::future<>
@@ -431,8 +427,8 @@ private:
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
     ss::shared_ptr<archival_metadata_stm> _archival_meta_stm;
     ss::shared_ptr<partition_properties_stm> _partition_properties_stm;
-    ss::shared_ptr<experimental::cloud_topics::dl_stm_api> _dl_stm_api;
-    ss::sharded<experimental::cloud_topics::app>& _cloud_topics_app;
+    ss::sharded<experimental::cloud_topics::state_accessors>*
+      _cloud_topics_state;
     ss::abort_source _as;
     partition_probe _probe;
     ss::sharded<features::feature_table>& _feature_table;
@@ -465,7 +461,7 @@ private:
 
     // acquire shared ("read") for produce,
     // exclusive ("write") for enabling/disabling writes
-    ssx::rwlock _produce_lock;
+    ss::rwlock _produce_lock;
 
     notification_list<flush_hook, partition_flush_hook_id> _flush_hooks;
     partition_flush_hook_id _archiver_flush_subscription

@@ -74,8 +74,6 @@ public:
 
     iterator lower_bound(model::offset o);
     const_iterator lower_bound(model::offset o) const;
-    iterator lower_bound(model::timestamp o);
-    const_iterator lower_bound(model::timestamp o) const;
     iterator upper_bound(model::term_id o);
     const_iterator upper_bound(model::term_id o) const;
 
@@ -108,5 +106,22 @@ ss::future<segment_set> recover_segments(
   storage_resources&,
   ss::sharded<features::feature_table>& feature_table,
   std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
+
+// Attempts to create a contiguous & non-overlapping `segment_set` from those
+// provided after recovery is performed. `segs` are first sorted in ascending
+// order w/r/t base offset and descending w/r/t dirty offset. I.e, sorting
+// `segment`s `[[0,100],[0,1000],[0,200],[1001,2000],[1001,2001]]` would result
+// in the ordering `[[0,1000],[0,200],[0,100],[1001,2001],[1001,2000]]`. From
+// there, a greedy selection is performed over the set to create a contiguous &
+// non-overlapping `segment_set` by removing redundant `segment`s. If the
+// acquired range is non-contiguous or has altered the offset span,
+// `std::nullopt` is returned, indicating the desired range could not be
+// created. Otherwise, the range is returned.
+// This process deals with the scenario in which redundant `segment`s left over
+// on disk by an adjacent merge compaction (i.e were scheduled for removal, but
+// were not removed due to e.g. a broker crash) will not be included in the
+// `log` post reboot.
+ss::future<std::optional<segment_set>>
+maybe_create_contiguous_segment_set(segment_set::underlying_t segs);
 
 } // namespace storage

@@ -140,10 +140,10 @@ public:
             }
         }
 
-        in_progress_update(const in_progress_update&) = delete;
+        in_progress_update(const in_progress_update&) = default;
         in_progress_update(in_progress_update&&) = default;
-        in_progress_update& operator=(const in_progress_update&) = delete;
-        in_progress_update& operator=(in_progress_update&&) = delete;
+        in_progress_update& operator=(const in_progress_update&) = default;
+        in_progress_update& operator=(in_progress_update&&) = default;
 
         const reconfiguration_state& get_state() const { return _state; }
 
@@ -156,6 +156,26 @@ public:
             }
             _state = state;
             _last_cmd_revision = rev;
+        }
+
+        void force_set_state(
+          const replicas_t& new_replicas,
+          model::revision_id rev,
+          reconfiguration_policy policy) {
+            /**
+             * a move from (A (prev) -> B (target)) -> C (force, new_replicas)
+             * is redefined to
+             * A -> C irrespective of whether the current move is a
+             * cancellation.
+             *
+             * This is logically equivalent to this in progress move never
+             * happening, and this makes it easy to account for allocation
+             * changes.
+             */
+            _target_replicas = new_replicas;
+            _last_cmd_revision = _update_revision = rev;
+            _policy = policy;
+            _state = reconfiguration_state::force_update;
         }
 
         const replicas_t& get_previous_replicas() const {
@@ -430,7 +450,7 @@ public:
     using ntp_delta = topic_table_ntp_delta;
 
     using ntp_delta_range_t
-      = boost::iterator_range<fragmented_vector<ntp_delta>::const_iterator>;
+      = boost::iterator_range<chunked_vector<ntp_delta>::const_iterator>;
     using ntp_delta_cb_t = ss::noncopyable_function<void(ntp_delta_range_t)>;
     using lw_ntp_cb_t = ss::noncopyable_function<void()>;
 
@@ -705,6 +725,12 @@ public:
 
     chunked_vector<model::ntp> all_updates_in_progress() const;
 
+    /**
+     * Returns the in-progress update for the given ntp, if it exists.
+     */
+    std::optional<in_progress_update>
+    update_in_progress(const model::ntp&) const;
+
     model::revision_id last_applied_revision() const {
         return _last_applied_revision_id;
     }
@@ -790,7 +816,7 @@ public:
     }
 
     std::error_code validate_force_reconfigurable_partitions(
-      const fragmented_vector<ntp_with_majority_loss>&) const;
+      const chunked_vector<ntp_with_majority_loss>&) const;
 
     auto partitions_to_force_recover_it_begin() const {
         return stable_iterator<
@@ -829,7 +855,7 @@ private:
     struct waiter {
         explicit waiter(uint64_t id)
           : id(id) {}
-        ss::promise<fragmented_vector<ntp_delta>> promise;
+        ss::promise<chunked_vector<ntp_delta>> promise;
         ss::abort_source::subscription sub;
         uint64_t id;
     };
@@ -861,15 +887,6 @@ private:
     std::error_code validate_force_reconfigurable_partition(
       const ntp_with_majority_loss&) const;
 
-    // Validation for the final property configuration from a
-    // update_topic_properties_cmd application. Allows user to perform
-    // validations that depend on more than one topic property.
-    //
-    // Returns true if the configured topic_properties is valid, and false
-    // otherwise.
-    bool
-    topic_multi_property_validation(const topic_properties& properties) const;
-
     underlying_map _topics;
     lifecycle_markers_t _lifecycle_markers;
     disabled_partitions_t _disabled_partitions;
@@ -893,7 +910,7 @@ private:
     std::vector<std::pair<cluster::notification_id_type, topic_delta_cb_t>>
       _topic_notifications;
 
-    fragmented_vector<ntp_delta> _pending_ntp_deltas;
+    chunked_vector<ntp_delta> _pending_ntp_deltas;
     cluster::notification_id_type _ntp_notification_id{0};
     cluster::notification_id_type _lw_ntp_notification_id{0};
     std::vector<std::pair<cluster::notification_id_type, ntp_delta_cb_t>>

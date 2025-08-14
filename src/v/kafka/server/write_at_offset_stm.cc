@@ -13,6 +13,7 @@
 #include "cluster/snapshot.h"
 #include "kafka/server/logger.h"
 #include "model/batch_utils.h"
+#include "ssx/future-util.h"
 
 #include <seastar/coroutine/as_future.hh>
 
@@ -73,7 +74,8 @@ raft::replicate_stages write_at_offset_stm::replicate(
   model::record_batch batch,
   kafka::offset expected_base_offset,
   std::optional<kafka::offset> prev_log_offset,
-  model::timeout_clock::duration timeout) {
+  model::timeout_clock::duration timeout,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
     ss::promise<> enqueued_promise;
     auto f = enqueued_promise.get_future();
     return raft::replicate_stages{
@@ -83,6 +85,7 @@ raft::replicate_stages write_at_offset_stm::replicate(
         expected_base_offset,
         prev_log_offset,
         timeout,
+        std::move(as),
         std::move(enqueued_promise))};
 }
 
@@ -91,6 +94,7 @@ ss::future<result<raft::replicate_result>> write_at_offset_stm::do_replicate(
   kafka::offset expected_base_offset,
   std::optional<kafka::offset> prev_log_offset,
   model::timeout_clock::duration timeout,
+  std::optional<std::reference_wrapper<ss::abort_source>> as,
   ss::promise<> enqueued_promise) {
     // offset translated batches are not supported by write at offset state
     // machine
@@ -174,7 +178,7 @@ ss::future<result<raft::replicate_result>> write_at_offset_stm::do_replicate(
      * Thanks to that assumption we can simply reset all inflight state instead
      * of reverting to the previous last offset.
      */
-    auto stages = try_replicate_in_stages(std::move(batches));
+    auto stages = try_replicate_in_stages(std::move(batches), as);
 
     auto enq = std::move(stages.request_enqueued).finally([u = std::move(u)] {
     });
@@ -235,12 +239,13 @@ kafka::offset write_at_offset_stm::expected_last_offset() const {
 }
 
 raft::replicate_stages write_at_offset_stm::try_replicate_in_stages(
-  chunked_vector<model::record_batch> batches) {
+  chunked_vector<model::record_batch> batches,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
     try {
         return _raft->replicate_in_stages(
           _insync_term,
           std::move(batches),
-          raft::replicate_options(raft::consistency_level::quorum_ack));
+          raft::replicate_options(raft::consistency_level::quorum_ack, as));
     } catch (...) {
         vlog(
           _log.warn,

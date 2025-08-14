@@ -244,7 +244,6 @@ rest_catalog_factory::create_catalog(ss::abort_source& as) {
     co_return std::make_unique<iceberg::rest_catalog>(
       std::move(client),
       config_->iceberg_rest_catalog_request_timeout_ms.bind(),
-      credential_manager_,
       config_->iceberg_rest_catalog_base_location());
 }
 

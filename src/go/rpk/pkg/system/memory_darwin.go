@@ -16,5 +16,5 @@ import (
 )
 
 func getMemInfo(_ afero.Fs) (*MemInfo, error) {
-	return nil, errors.New("Memory info collection not available in MacOS")
+	return nil, errors.New("memory info collection not available in MacOS")
 }

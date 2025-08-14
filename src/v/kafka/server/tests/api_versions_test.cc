@@ -49,14 +49,10 @@ FIXTURE_TEST(unsupported_version, redpanda_thread_fixture) {
     client.connect().get();
 
     kafka::api_versions_request request;
-    auto max_version = kafka::api_version(
-      std::numeric_limits<kafka::api_version::type>::max());
-    auto response
-      = client.dispatch(request, max_version, kafka::api_version(0)).get();
+    auto max_version = kafka::api_version(3);
+    auto response = client.dispatch(request, max_version).get();
     client.stop().then([&client] { client.shutdown(); }).get();
 
-    BOOST_TEST(
-      response.data.error_code == kafka::error_code::unsupported_version);
     BOOST_REQUIRE(!response.data.api_keys.empty());
 
     // get the versions supported by the api versions request itself

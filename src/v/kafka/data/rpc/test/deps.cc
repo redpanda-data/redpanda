@@ -56,6 +56,10 @@ void kafka_data_test_fixture::wire_up_and_start() {
         self_node,
         ss::sharded_parameter([&fplc]() { return std::move(fplc); }),
         ss::sharded_parameter([&ftpc]() { return std::move(ftpc); }),
+        ss::sharded_parameter([this]() {
+            return std::make_unique<delegating_fake_topic_metadata_cache>(
+              _local_ftmc);
+        }),
         _conn_cache,
         &_local_services)
       .get();

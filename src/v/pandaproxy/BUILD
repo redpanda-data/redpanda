@@ -12,7 +12,6 @@ redpanda_cc_library(
     hdrs = [
         "api/api-doc/rest.json.hh",
     ],
-    include_prefix = "pandaproxy",
     visibility = ["//visibility:public"],
     deps = [
         ":rest_swagger",
@@ -29,7 +28,6 @@ redpanda_cc_library(
     hdrs = [
         "api/api-doc/schema_registry.json.hh",
     ],
-    include_prefix = "pandaproxy",
     visibility = ["//visibility:public"],
     deps = [
         ":schema_registry_swagger",
@@ -44,7 +42,6 @@ redpanda_cc_library(
     hdrs = [
         "logger.h",
     ],
-    include_prefix = "pandaproxy",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -67,7 +64,6 @@ redpanda_cc_library(
         "json/types.h",
         "json/util.h",
     ],
-    include_prefix = "pandaproxy",
     visibility = ["//visibility:public"],
     deps = [
         ":logger",
@@ -91,7 +87,6 @@ redpanda_cc_library(
         "parsing/from_chars.h",
         "parsing/httpd.h",
     ],
-    include_prefix = "pandaproxy",
     visibility = ["//visibility:public"],
     deps = [
         ":json",
@@ -108,7 +103,6 @@ redpanda_cc_library(
     hdrs = [
         "error.h",
     ],
-    include_prefix = "pandaproxy",
     visibility = ["//visibility:public"],
     deps = [
         ":json",
@@ -135,7 +129,6 @@ redpanda_cc_library(
         "types.h",
         "util.h",
     ],
-    include_prefix = "pandaproxy",
     visibility = ["//visibility:public"],
     deps = [
         ":error",
@@ -176,7 +169,6 @@ redpanda_cc_library(
     hdrs = [
         "json/requests/error_reply.h",
     ],
-    include_prefix = "pandaproxy",
     visibility = ["//visibility:public"],
     deps = [
         ":json",
@@ -197,19 +189,19 @@ redpanda_cc_library(
         "json/requests/produce.h",
         "json/requests/subscribe_consumer.h",
     ],
-    include_prefix = "pandaproxy",
     visibility = ["//visibility:public"],
     deps = [
         ":json",
         ":parsing",
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/client",
         "//src/v/kafka/protocol:fetch",
         "//src/v/kafka/protocol:join_group",
         "//src/v/kafka/protocol:offset_commit",
         "//src/v/kafka/protocol:offset_fetch",
         "//src/v/model",
+        "//src/v/model:batch_compression",
     ],
 )
 

@@ -554,6 +554,9 @@ struct record_batch_header
         return !(*this == other);
     }
 
+    /// \brief resets the size, header crc and payload crc
+    void reset_size_checksum_metadata(const iobuf& records);
+
     friend std::ostream& operator<<(std::ostream&, const record_batch_header&);
 };
 

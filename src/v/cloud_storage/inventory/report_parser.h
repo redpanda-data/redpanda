@@ -14,7 +14,7 @@
 #include "base/seastarx.h"
 #include "bytes/details/io_allocation_size.h"
 #include "compression/gzip_stream_decompression.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 
 #include <seastar/core/iostream.hh>
 
@@ -25,7 +25,7 @@ namespace cloud_storage::inventory {
 using is_gzip_compressed = ss::bool_class<struct gzip_compressed_tag>;
 
 template<typename C>
-concept RowsConsumer = requires(C c, fragmented_vector<ss::sstring> rows) {
+concept RowsConsumer = requires(C c, chunked_vector<ss::sstring> rows) {
     { c(rows) } -> std::same_as<ss::future<>>;
 };
 
@@ -43,7 +43,7 @@ public:
 class report_parser {
 public:
     using row_t = iobuf;
-    using rows_t = fragmented_vector<ss::sstring>;
+    using rows_t = chunked_vector<ss::sstring>;
 
     report_parser(const report_parser&) = delete;
     report_parser& operator=(const report_parser&) = delete;

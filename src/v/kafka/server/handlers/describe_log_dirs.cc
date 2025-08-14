@@ -12,7 +12,7 @@
 
 #include "cluster/partition_manager.h"
 #include "config/node_config.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"

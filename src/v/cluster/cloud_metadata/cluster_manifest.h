@@ -14,13 +14,12 @@
 #include "cloud_storage/base_manifest.h"
 #include "cluster/cloud_metadata/error_outcome.h"
 #include "cluster/cloud_metadata/types.h"
+#include "json/document.h" // IWYU pragma: keep
 #include "model/fundamental.h"
 #include "serde/envelope.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/lowres_clock.hh>
-
-#include <rapidjson/document.h>
 
 #include <chrono>
 

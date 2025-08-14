@@ -10,7 +10,7 @@
 #include "datalake/coordinator/iceberg_file_committer.h"
 
 #include "base/vlog.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "datalake/coordinator/commit_offset_metadata.h"
 #include "datalake/coordinator/state.h"
 #include "datalake/coordinator/state_update.h"
@@ -597,6 +597,18 @@ iceberg_file_committer::commit_topic_files_to_catalog(
 ss::future<checked<std::nullopt_t, file_committer::errc>>
 iceberg_file_committer::drop_table(
   const iceberg::table_identifier& table_id) const {
+    auto load_res = co_await catalog_.load_table(table_id);
+    if (load_res.has_error()) {
+        if (load_res.error() == iceberg::catalog::errc::not_found) {
+            co_return std::nullopt;
+        }
+        log_and_convert_catalog_errc(
+          load_res.error(),
+          fmt::format(
+            "Failed to load {} before dropping, proceeding to attempt drop "
+            "anyway",
+            table_id));
+    }
     auto drop_res = co_await catalog_.drop_table(table_id, true);
     if (
       drop_res.has_error()

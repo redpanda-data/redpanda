@@ -12,7 +12,6 @@ redpanda_cc_library(
     hdrs = [
         "logger.h",
     ],
-    include_prefix = "transform/logging",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -30,7 +29,6 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/config",
     ],
-    include_prefix = "transform/logging",
     deps = [
         "//src/v/base",
         "//src/v/metrics",
@@ -46,7 +44,6 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/json",
     ],
-    include_prefix = "transform/logging",
     deps = [
         "//src/v/base",
         "//src/v/bytes:streambuf",
@@ -69,7 +66,9 @@ redpanda_cc_library(
         "log_manager.h",
         "rpc_client.h",
     ],
-    include_prefix = "transform/logging",
+    implementation_deps = [
+        "@abseil-cpp//absl/algorithm:container",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":event",
@@ -85,6 +84,7 @@ redpanda_cc_library(
         "//src/v/metrics",
         "//src/v/model",
         "//src/v/random:time_jitter",
+        "//src/v/ssx:future_util",
         "//src/v/ssx:semaphore",
         "//src/v/storage:record_batch_builder",
         "//src/v/strings:utf8",
@@ -92,7 +92,6 @@ redpanda_cc_library(
         "//src/v/utils:absl_sstring_hash",
         "//src/v/utils:human",
         "//src/v/utils:named_type",
-        "@abseil-cpp//absl/algorithm:container",
         "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/strings",

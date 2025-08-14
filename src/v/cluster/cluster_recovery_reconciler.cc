@@ -112,6 +112,13 @@ controller_snapshot_reconciler::get_actions(
             if (_topic_table.contains(tp_ns)) {
                 continue;
             }
+            if (tp_config.is_internal()) {
+                vlog(
+                  clusterlog.debug,
+                  "Skipping topic recovery for internal topic {}",
+                  tp_ns);
+                continue;
+            }
             if (
               si_props.has_value()
               && model::is_archival_enabled(si_props.value())) {

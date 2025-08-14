@@ -11,7 +11,7 @@
 
 #include "base/outcome.h"
 #include "cluster/cloud_metadata/error_outcome.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "serde/envelope.h"
@@ -21,14 +21,11 @@ namespace cluster::cloud_metadata {
 struct group_offsets
   : public serde::
       envelope<group_offsets, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     struct partition_offset
       : public serde::envelope<
           partition_offset,
           serde::version<0>,
           serde::compat_version<0>> {
-        using rpc_adl_exempt = std::true_type;
         partition_offset(model::partition_id p, kafka::offset o)
           : partition(p)
           , offset(o) {}
@@ -46,14 +43,13 @@ struct group_offsets
           topic_partitions,
           serde::version<0>,
           serde::compat_version<0>> {
-        using rpc_adl_exempt = std::true_type;
-        topic_partitions(model::topic t, fragmented_vector<partition_offset> ps)
+        topic_partitions(model::topic t, chunked_vector<partition_offset> ps)
           : topic(std::move(t))
           , partitions(std::move(ps)) {}
         topic_partitions() = default;
 
         model::topic topic;
-        fragmented_vector<partition_offset> partitions;
+        chunked_vector<partition_offset> partitions;
 
         auto serde_fields() { return std::tie(topic, partitions); }
         friend bool operator==(const topic_partitions&, const topic_partitions&)
@@ -64,7 +60,7 @@ struct group_offsets
     ss::sstring group_id;
 
     // Data partitions and their committed offsets.
-    fragmented_vector<topic_partitions> offsets;
+    chunked_vector<topic_partitions> offsets;
 
     auto serde_fields() { return std::tie(group_id, offsets); }
 
@@ -77,13 +73,11 @@ struct group_offsets_snapshot
       group_offsets_snapshot,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     // Partition ID of the offsets topic that managed these groups.
     model::partition_id offsets_topic_pid;
 
     // Consumer groups and their offsets.
-    fragmented_vector<group_offsets> groups;
+    chunked_vector<group_offsets> groups;
 
     auto serde_fields() { return std::tie(offsets_topic_pid, groups); }
 

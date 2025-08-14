@@ -15,6 +15,7 @@
 #include "bytes/iostream.h"
 #include "cloud_storage/cache_service.h"
 #include "config/property.h"
+#include "storage/disk.h"
 #include "test_utils/scoped_config.h"
 #include "test_utils/tmp_dir.h"
 

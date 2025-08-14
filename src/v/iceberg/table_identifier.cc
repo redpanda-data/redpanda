@@ -9,6 +9,9 @@
  */
 #include "iceberg/table_identifier.h"
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+
 namespace iceberg {
 std::ostream& operator<<(std::ostream& o, const table_identifier& id) {
     fmt::print(o, "{{ns: {}, table: {}}}", fmt::join(id.ns, "/"), id.table);

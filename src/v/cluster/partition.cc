@@ -13,8 +13,6 @@
 #include "cloud_storage/partition_manifest_downloader.h"
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote_partition.h"
-#include "cloud_topics/dl_stm/dl_stm.h"
-#include "cloud_topics/dl_stm/dl_stm_api.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/ntp_archiver_service.h"
 #include "cluster/archival/upload_housekeeping_service.h"
@@ -35,7 +33,6 @@
 #include "raft/state_machine_manager.h"
 #include "ssx/when_all.h"
 #include "storage/ntp_config.h"
-#include "utils/rwlock.h"
 
 #include <seastar/core/shared_ptr_incomplete.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -53,9 +50,9 @@ partition::partition(
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<archival::upload_housekeeping_service>& upload_hks,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket,
-  ss::sharded<experimental::cloud_topics::app>& ct_app)
+  ss::sharded<experimental::cloud_topics::state_accessors>* ct_state)
   : _raft(std::move(r))
-  , _cloud_topics_app(ct_app)
+  , _cloud_topics_state(ct_state)
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _feature_table(feature_table)
   , _archival_conf(std::move(archival_conf))
@@ -354,7 +351,8 @@ ss::future<result<kafka_result>> partition::replicate(
         co_return ret_t(res.error());
     }
     co_return ret_t(kafka_result{
-      kafka::offset(log()->from_log_offset(res.value().last_offset)())});
+      model::offset_cast(log()->from_log_offset(res.value().last_offset)),
+      res.value().last_term});
 }
 
 ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
@@ -366,10 +364,6 @@ ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
           _raft->ntp());
     }
     return _rm_stm;
-}
-
-ss::shared_ptr<experimental::cloud_topics::dl_stm_api> partition::dl_stm_api() {
-    return _dl_stm_api;
 }
 
 namespace {
@@ -445,9 +439,10 @@ kafka_stages partition::replicate_in_stages(
                     return ret_t(r.error());
                 }
                 auto old_offset = r.value().last_offset;
+                auto term = r.value().last_term;
                 auto new_offset = kafka::offset(
                   log()->from_log_offset(old_offset)());
-                return ret_t(kafka_result{new_offset});
+                return ret_t(kafka_result{new_offset, term});
             });
           return kafka_stages(
             std::move(res.request_enqueued), std::move(replicate_finished));
@@ -539,13 +534,6 @@ ss::future<> partition::start(
         }
     }
 
-    auto dl_stm
-      = _raft->stm_manager()->get<experimental::cloud_topics::dl_stm>();
-    if (dl_stm) {
-        _dl_stm_api = ss::make_shared<experimental::cloud_topics::dl_stm_api>(
-          clusterlog, std::move(dl_stm));
-    }
-
     _archiver_flush_subscription = register_flush_hook(
       [this](
         model::offset,
@@ -594,14 +582,6 @@ ss::future<> partition::stop() {
           "Stopping cloud_storage_manifest_view on partition: {}",
           partition_ntp);
         co_await _cloud_storage_manifest_view->stop();
-    }
-
-    if (_dl_stm_api) {
-        vlog(
-          clusterlog.debug,
-          "Stopping dl_stm_api on partition: {}",
-          partition_ntp);
-        co_await _dl_stm_api->stop();
     }
 
     _probe.clear_metrics();
@@ -802,7 +782,16 @@ bool partition::should_construct_archiver() {
     return config::shard_local_cfg().cloud_storage_enabled()
            && config::shard_local_cfg().cloud_storage_disable_archiver_manager()
            && _cloud_storage_api.local_is_initialized()
+           // The archiver can only be created for partitions that belong to
+           // user topics. This includes everything inside the kafka namespace
+           // except for the kafka consumer offsets topic. The consumer offsets
+           // topic is backed up separately by the cluster/cluster_metadata
+           // subsystem. The archival_metadata_stm can't be created for the
+           // consumer offsets topic partitions. The schema registry topic is
+           // not exempt from this. It should be possible to create an archiver
+           // for it.
            && _raft->ntp().ns == model::kafka_namespace
+           && _raft->ntp().tp.topic != model::kafka_consumer_offsets_topic
            && (ntp_config.is_archival_enabled() || ntp_config.is_read_replica_mode_enabled());
 }
 
@@ -1138,7 +1127,7 @@ partition::transfer_leadership(raft::transfer_leadership_request req) {
     // Some state machines need a preparatory phase to efficiently transfer
     // leadership: invoke this, and hold the lock that they return until
     // the leadership transfer attempt is complete.
-    ss::basic_rwlock<>::holder stm_prepare_lock;
+    ss::rwlock::holder stm_prepare_lock;
     if (_rm_stm) {
         stm_prepare_lock = co_await _rm_stm->prepare_transfer_leadership();
     } else if (auto stm = tm_stm(); stm) {
@@ -1552,11 +1541,11 @@ ss::shared_ptr<cluster::tm_stm> partition::tm_stm() {
     return _raft->stm_manager()->get<cluster::tm_stm>();
 }
 
-ss::future<fragmented_vector<tx::tx_range>>
+ss::future<chunked_vector<tx::tx_range>>
 partition::aborted_transactions(model::offset from, model::offset to) {
     if (!_rm_stm) {
-        return ss::make_ready_future<fragmented_vector<tx::tx_range>>(
-          fragmented_vector<tx::tx_range>());
+        return ss::make_ready_future<chunked_vector<tx::tx_range>>(
+          chunked_vector<tx::tx_range>());
     }
     return _rm_stm->aborted_transactions(from, to);
 }
@@ -1745,7 +1734,7 @@ consensus_ptr partition::raft() const { return _raft; }
 ss::future<result<model::offset>> partition::set_writes_disabled(
   partition_properties_stm::writes_disabled disable,
   model::timeout_clock::time_point deadline) {
-    ssx::rwlock::holder holder;
+    ss::rwlock::holder holder;
     auto lock_deadline = ss::semaphore::clock::now()
                          + ss::semaphore::clock::duration(
                            deadline - model::timeout_clock::now());
@@ -1824,8 +1813,8 @@ ss::future<errc> partition::flush_archiver() {
     }
 }
 
-ss::future<result<ssx::rwlock_unit>> partition::hold_writes_enabled() {
-    auto maybe_units = _produce_lock.attempt_read_lock();
+ss::future<result<ss::rwlock::holder>> partition::hold_writes_enabled() {
+    auto maybe_units = _produce_lock.try_hold_read_lock();
     if (!maybe_units) {
         co_return errc::resource_is_being_migrated;
     }
@@ -1844,9 +1833,9 @@ ss::future<result<ssx::rwlock_unit>> partition::hold_writes_enabled() {
     co_return *std::move(maybe_units);
 }
 
-ss::sharded<experimental::cloud_topics::app>&
-partition::get_cloud_topics_data_api() noexcept {
-    return _cloud_topics_app;
+ss::sharded<experimental::cloud_topics::state_accessors>*
+partition::get_cloud_topics_state() noexcept {
+    return _cloud_topics_state;
 }
 
 } // namespace cluster

@@ -699,6 +699,8 @@ consteval std::string_view property_type_name() {
         return "string";
     } else if constexpr (std::is_same_v<type, config::tls_name_format>) {
         return "string";
+    } else if constexpr (std::is_same_v<type, config::audit_failure_policy>) {
+        return "string";
     } else {
         static_assert(
           base::unsupported_type<T>::value, "Type name not defined");
@@ -879,6 +881,14 @@ public:
           meta,
           def,
           [this](T new_value) -> std::optional<ss::sstring> {
+              if constexpr (reflection::is_std_optional<T>) {
+                  // Accept nullopt as a valid value for optional enums even if
+                  // it is not explicitly listed in the enum values.
+                  if (!new_value.has_value()) {
+                      return std::nullopt;
+                  }
+              }
+
               auto found = std::ranges::find_if(
                 _values, [&new_value](const T& v) { return v == new_value; });
               if (found == _values.end()) {
@@ -928,7 +938,7 @@ private:
         }();
 
         return fmt::format(
-          "Must be one of {}{}", fmt::join(enum_values(), ","), or_null_str);
+          "Must be one of {}{}", fmt::join(enum_values(), ", "), or_null_str);
     }
 
     std::vector<T> _values;

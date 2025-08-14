@@ -1,4 +1,4 @@
 {
-  "clangd.path": "../../vbuild/llvm/install/bin/clangd",
-  "clangd.compilationDatabaseCandidates": ["../../vbuild/debug/clang", "../../vbuild/release/clang"]
+  "clangd.path": "../../tools/clangd",
+  "clangd.compilationDatabaseCandidates": ["../../"]
 }

@@ -8,12 +8,11 @@ redpanda_cc_library(
     hdrs = [
         "parser.h",
     ],
-    include_prefix = "serde/avro",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/utils:vint",
         "@avro",
         "@boost//:range",

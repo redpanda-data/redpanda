@@ -328,85 +328,11 @@ inline int32_t to_bit_field(const std::vector<security::acl_operation>& ops) {
     return static_cast<int32_t>(bitfield.to_ulong());
 }
 
-/**
- *  list of acl operations for specific resource
- */
-template<typename T>
-const std::vector<security::acl_operation>& get_allowed_operations() {
-    static const std::vector<security::acl_operation> topic_resource_ops{
-      security::acl_operation::read,
-      security::acl_operation::write,
-      security::acl_operation::create,
-      security::acl_operation::describe,
-      security::acl_operation::remove,
-      security::acl_operation::alter,
-      security::acl_operation::describe_configs,
-      security::acl_operation::alter_configs,
-    };
-
-    static const std::vector<security::acl_operation> group_resource_ops{
-      security::acl_operation::read,
-      security::acl_operation::describe,
-      security::acl_operation::remove,
-    };
-
-    static const std::vector<security::acl_operation>
-      transactional_id_resource_ops{
-        security::acl_operation::write,
-        security::acl_operation::describe,
-      };
-
-    static const std::vector<security::acl_operation> cluster_resource_ops{
-      security::acl_operation::create,
-      security::acl_operation::cluster_action,
-      security::acl_operation::describe_configs,
-      security::acl_operation::alter_configs,
-      security::acl_operation::idempotent_write,
-      security::acl_operation::alter,
-      security::acl_operation::describe,
-    };
-
-    static const std::vector<security::acl_operation> sr_subject_resource_ops{
-      security::acl_operation::read,
-      security::acl_operation::write,
-      security::acl_operation::remove,
-      security::acl_operation::describe,
-      security::acl_operation::alter_configs,
-      security::acl_operation::describe_configs,
-    };
-
-    static const std::vector<security::acl_operation> sr_registry_resource_ops{
-      security::acl_operation::read,
-      security::acl_operation::describe,
-      security::acl_operation::alter_configs,
-      security::acl_operation::describe_configs,
-    };
-
-    auto resource_type = security::get_resource_type<T>();
-
-    switch (resource_type) {
-    case security::resource_type::cluster:
-        return cluster_resource_ops;
-    case security::resource_type::group:
-        return group_resource_ops;
-    case security::resource_type::topic:
-        return topic_resource_ops;
-    case security::resource_type::transactional_id:
-        return transactional_id_resource_ops;
-    case security::resource_type::sr_subject:
-        return sr_subject_resource_ops;
-    case security::resource_type::sr_registry:
-        return sr_registry_resource_ops;
-    };
-
-    __builtin_unreachable();
-}
-
 template<typename T>
 std::vector<security::acl_operation>
 authorized_operations(request_context& ctx, const T& resource) {
     std::vector<security::acl_operation> allowed_operations;
-    auto& ops = get_allowed_operations<T>();
+    auto& ops = security::get_allowed_operations<T>();
 
     std::copy_if(
       ops.begin(),

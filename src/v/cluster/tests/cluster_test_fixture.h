@@ -48,6 +48,45 @@ void set_configuration(ss::sstring p_name, T v) {
     }).get();
 }
 
+inline auto
+get_cloud_storage_configurations(std::string_view hosthame, uint16_t port) {
+    net::unresolved_address server_addr(ss::sstring(hosthame), port);
+    cloud_storage_clients::s3_configuration s3_conf;
+    s3_conf.uri = cloud_storage_clients::access_point_uri(hosthame);
+    s3_conf.access_key = cloud_roles::public_key_str("access-key");
+    s3_conf.secret_key = cloud_roles::private_key_str("secret-key");
+    s3_conf.region = cloud_roles::aws_region_name("us-east-1");
+    s3_conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
+    s3_conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
+      net::metrics_disabled::yes,
+      net::public_metrics_disabled::yes,
+      cloud_roles::aws_region_name{},
+      cloud_storage_clients::endpoint_url{});
+    s3_conf.server_addr = server_addr;
+
+    archival::configuration a_conf{
+      .cloud_storage_initial_backoff = config::mock_binding(100ms),
+      .segment_upload_timeout = config::mock_binding(1000ms),
+      .manifest_upload_timeout = config::mock_binding(1000ms),
+      .garbage_collect_timeout = config::mock_binding(1000ms),
+      .upload_loop_initial_backoff = config::mock_binding(100ms),
+      .upload_loop_max_backoff = config::mock_binding(5000ms)};
+    a_conf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
+    a_conf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;
+    a_conf.svc_metrics_disabled = archival::service_metrics_disabled::yes;
+    a_conf.time_limit = std::nullopt;
+
+    cloud_storage::configuration c_conf;
+    c_conf.client_config = s3_conf;
+    c_conf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
+    c_conf.connection_limit = archival::connection_limit(2);
+    c_conf.cloud_credentials_source
+      = model::cloud_credentials_source::config_file;
+    return std::make_tuple(
+      std::move(s3_conf),
+      ss::make_lw_shared<archival::configuration>(std::move(a_conf)),
+      c_conf);
+}
 class cluster_test_fixture {
 public:
     using fixture_ptr = std::unique_ptr<redpanda_thread_fixture>;
@@ -82,7 +121,8 @@ public:
       std::optional<archival::configuration> archival_cfg = std::nullopt,
       std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,
       bool enable_legacy_upload_mode = true,
-      bool iceberg_enabled = false) {
+      bool iceberg_enabled = false,
+      bool cloud_topics_enabled = false) {
         return std::make_unique<redpanda_thread_fixture>(
           node_id,
           kafka_port,
@@ -100,7 +140,8 @@ public:
           empty_seed_starts_cluster_val,
           false,
           enable_legacy_upload_mode,
-          iceberg_enabled);
+          iceberg_enabled,
+          cloud_topics_enabled);
     }
 
     void add_node(
@@ -118,7 +159,8 @@ public:
       std::optional<archival::configuration> archival_cfg = std::nullopt,
       std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,
       bool enable_legacy_upload_mode = true,
-      bool iceberg_enabled = false) {
+      bool iceberg_enabled = false,
+      bool cloud_topics_enabled = false) {
         _instances.emplace(
           node_id,
           make_redpanda_fixture(
@@ -134,7 +176,8 @@ public:
             archival_cfg,
             cloud_cfg,
             enable_legacy_upload_mode,
-            iceberg_enabled));
+            iceberg_enabled,
+            cloud_topics_enabled));
     }
 
     application* get_node_application(model::node_id id) {
@@ -168,7 +211,8 @@ public:
       std::optional<archival::configuration> archival_cfg = std::nullopt,
       std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,
       bool legacy_upload_mode_enabled = true,
-      bool iceberg_enabled = false) {
+      bool iceberg_enabled = false,
+      bool cloud_topics_enabled = false) {
         std::vector<config::seed_server> seeds = {};
         if (!empty_seed_starts_cluster_val || node_id != 0) {
             seeds.push_back(
@@ -187,7 +231,8 @@ public:
           archival_cfg,
           cloud_cfg,
           legacy_upload_mode_enabled,
-          iceberg_enabled);
+          iceberg_enabled,
+          cloud_topics_enabled);
         return get_node_application(node_id);
     }
 

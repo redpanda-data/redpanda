@@ -14,6 +14,7 @@
 #include "kafka/data/rpc/rpc_service.h"
 #include "logger.h"
 #include "rpc/connection_cache.h"
+#include "ssx/async_algorithm.h"
 #include "utils/backoff_policy.h"
 
 #include <seastar/core/abort_source.hh>
@@ -131,11 +132,13 @@ client::client(
   model::node_id self,
   std::unique_ptr<kafka::data::rpc::partition_leader_cache> l,
   std::unique_ptr<kafka::data::rpc::topic_creator> t,
+  std::unique_ptr<kafka::data::rpc::topic_metadata_cache> mdc,
   ss::sharded<::rpc::connection_cache>* c,
   ss::sharded<local_service>* s)
   : _self(self)
   , _leaders(std::move(l))
   , _topic_creator(std::move(t))
+  , _metadata_cache(std::move(mdc))
   , _connections(c)
   , _local_service(s) {}
 
@@ -270,4 +273,155 @@ client::do_remote_produce(model::node_id node, produce_request req) {
     co_return std::move(resp).value();
 }
 
+namespace {
+chunked_vector<topic_partitions> topic_partition_map_to_vector(
+  chunked_hash_map<model::topic, chunked_vector<model::partition_id>> map) {
+    chunked_vector<topic_partitions> result;
+    result.reserve(map.size());
+    for (auto& [topic, partitions] : map) {
+        topic_partitions tp;
+        tp.topic = std::move(topic);
+        tp.partitions = std::move(partitions);
+        result.push_back(std::move(tp));
+    }
+    return result;
+}
+
+void join_maps(
+  partition_offsets_map& aggregate, partition_offsets_map&& element) {
+    for (auto& [topic, partitions] : element) {
+        auto& aggregate_partitions = aggregate[topic];
+        for (auto& [partition, offsets] : partitions) {
+            aggregate_partitions[partition] = std::move(offsets);
+        }
+    }
+}
+
+chunked_vector<topic_partitions>
+copy(const chunked_vector<topic_partitions>& vec) {
+    chunked_vector<topic_partitions> result;
+    result.reserve(vec.size());
+    for (const auto& item : vec) {
+        result.push_back(topic_partitions{
+          .topic = item.topic,
+          .partitions = item.partitions.copy(),
+        });
+    }
+    return result;
+}
+
+partition_offsets_map make_error_results(
+  const chunked_vector<topic_partitions>& topic_partitions,
+  cluster::errc error) {
+    partition_offsets_map results;
+    results.reserve(topic_partitions.size());
+    for (auto& topic : topic_partitions) {
+        results[topic.topic].reserve(topic.partitions.size());
+        for (auto& partition : topic.partitions) {
+            results[topic.topic][partition] = partition_offset_result(error);
+        }
+    }
+    return results;
+}
+} // namespace
+
+ss::future<result<partition_offsets_map, cluster::errc>>
+client::get_partition_offsets(
+  chunked_vector<topic_partitions> topic_partitions) {
+    partition_offsets_map results;
+    ssx::async_counter cnt;
+    chunked_hash_map<
+      model::node_id,
+      chunked_hash_map<model::topic, chunked_vector<model::partition_id>>>
+      per_node_partitions;
+
+    for (auto& topic : topic_partitions) {
+        co_await ssx::async_for_each_counter(
+          cnt,
+          topic.partitions,
+          [this, &topic, &per_node_partitions, &results](
+            model::partition_id partition) {
+              model::topic_namespace_view tp_ns(
+                model::kafka_namespace, topic.topic);
+              auto tp_cfg = _metadata_cache->find_topic_cfg(tp_ns);
+              if (!tp_cfg) {
+                  results[topic.topic][partition] = partition_offset_result(
+                    cluster::errc::topic_not_exists);
+                  return;
+              }
+              auto leader = _leaders->get_leader_node(
+                model::topic_namespace_view(
+                  model::kafka_namespace, topic.topic),
+                partition);
+              if (!leader) {
+                  results[topic.topic][partition] = partition_offset_result(
+                    cluster::errc::not_leader);
+              } else {
+                  per_node_partitions[*leader][topic.topic].push_back(
+                    partition);
+              }
+          });
+    }
+    co_await ss::parallel_for_each(
+      per_node_partitions, [this, &results](auto& pair) {
+          if (pair.first == _self) {
+              // If the leader is this node, we can use the local service
+              return _local_service->local()
+                .get_offsets(
+                  topic_partition_map_to_vector(std::move(pair.second)))
+                .then([&results](partition_offsets_map local_results) {
+                    join_maps(results, std::move(local_results));
+                });
+          }
+          auto topic_partitions = topic_partition_map_to_vector(
+            std::move(pair.second));
+          return get_remote_partition_offsets(
+                   pair.first, copy(topic_partitions))
+            .then([leader_id = pair.first,
+                   topic_partitions = std::move(topic_partitions)](
+                    result<partition_offsets_map, cluster::errc> res) {
+                if (res.has_error()) {
+                    vlog(
+                      log.warn,
+                      "Failed to get partition offsets from node {}: {}",
+                      leader_id,
+                      res.error());
+                    return make_error_results(topic_partitions, res.error());
+                }
+                return std::move(res.value());
+            })
+            .then([&results](partition_offsets_map remote_results) {
+                join_maps(results, std::move(remote_results));
+            });
+      });
+    co_return results;
+}
+
+ss::future<result<partition_offsets_map, cluster::errc>>
+client::get_remote_partition_offsets(
+  model::node_id leader, chunked_vector<topic_partitions> topics) {
+    using ret_t = result<partition_offsets_map, cluster::errc>;
+    auto result
+      = co_await _connections->local()
+          .with_node_client<
+            kafka::data::rpc::impl::kafka_data_rpc_client_protocol>(
+            _self,
+            ss::this_shard_id(),
+            leader,
+            timeout,
+            [topics = std::move(topics)](
+              impl::kafka_data_rpc_client_protocol proto) mutable {
+                return proto.get_offsets(
+                  get_offsets_request(std::move(topics)),
+                  ::rpc::client_opts(model::timeout_clock::now() + timeout));
+            })
+          .then([](auto ctx) {
+              return ::rpc::get_ctx_data<get_offsets_reply>(std::move(ctx));
+          });
+
+    if (result.has_error()) {
+        co_return ret_t(map_errc(result.assume_error()));
+    }
+    co_return ret_t(std::move(result.value().partition_offsets));
+}
 } // namespace kafka::data::rpc

@@ -11,32 +11,15 @@
 
 #pragma once
 #include "bytes/bytes.h"
+#include "compaction/key.h"
 #include "model/fundamental.h"
 #include "model/record_batch_types.h"
-#include "storage/compaction.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <ostream>
 
 namespace storage {
-// simple types shared among readers and writers
-
-inline compaction_key enhance_key(
-  model::record_batch_type type, bool is_control_batch, bytes_view key) {
-    auto bt_le = ss::cpu_to_le(
-      static_cast<std::underlying_type<model::record_batch_type>::type>(type));
-    auto ctrl_le = ss::cpu_to_le(static_cast<int8_t>(is_control_batch));
-    auto total_size = sizeof(bt_le) + key.size() + sizeof(ctrl_le);
-    bytes enriched_key(bytes::initialized_later{}, total_size);
-    auto out = enriched_key.begin();
-    out = std::copy_n(
-      reinterpret_cast<const char*>(&bt_le), sizeof(bt_le), out);
-    out = std::copy_n(
-      reinterpret_cast<const char*>(&ctrl_le), sizeof(ctrl_le), out);
-    std::copy_n(key.begin(), key.size(), out);
-    return compaction_key(std::move(enriched_key));
-}
 
 struct compacted_index {
     static constexpr const size_t max_entry_size = size_t(
@@ -137,14 +120,17 @@ struct compacted_index {
     // for the readers and friends
     struct entry {
         entry(
-          entry_type t, compaction_key k, model::offset o, int32_t d) noexcept
+          entry_type t,
+          compaction::compaction_key k,
+          model::offset o,
+          int32_t d) noexcept
           : type(t)
           , key(std::move(k))
           , offset(o)
           , delta(d) {}
 
         entry_type type;
-        compaction_key key;
+        compaction::compaction_key key;
         model::offset offset;
         int32_t delta;
     };

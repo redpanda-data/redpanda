@@ -5,7 +5,6 @@ redpanda_cc_library(
     hdrs = [
         "fips_config.h",
     ],
-    include_prefix = "model",
     visibility = ["//visibility:public"],
     deps = [
         ":model",
@@ -45,7 +44,6 @@ redpanda_cc_library(
         "transform.h",
         "validation.h",
     ],
-    include_prefix = "model",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -54,7 +52,7 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf_parser",
         "//src/v/container:chunked_circular_buffer",
         "//src/v/container:chunked_hash_map",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/hashing:crc32c",
         "//src/v/reflection:adl",
         "//src/v/serde",
@@ -98,7 +96,6 @@ redpanda_cc_library(
     hdrs = [
         "timeout_clock.h",
     ],
-    include_prefix = "model",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -114,11 +111,29 @@ redpanda_cc_library(
     hdrs = [
         "batch_utils.h",
     ],
-    include_prefix = "model",
     visibility = ["//visibility:public"],
     deps = [
         ":model",
         "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "batch_compression",
+    srcs = [
+        "batch_compression.cc",
+    ],
+    hdrs = [
+        "batch_compression.h",
+    ],
+    implementation_deps = [
+        "//src/v/compression",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":model",
+        "//src/v/bytes:iobuf",
         "@seastar",
     ],
 )

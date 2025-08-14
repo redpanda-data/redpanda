@@ -15,11 +15,14 @@ go_library(
         "//src/go/rpk/pkg/config",
         "//src/go/rpk/pkg/kafka",
         "//src/go/rpk/pkg/out",
+        "//src/go/rpk/pkg/schemaregistry",
+        "@com_github_redpanda_data_common_go_rpsr//:rpsr",
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
         "@com_github_twmb_franz_go_pkg_kmsg//:kmsg",
         "@com_github_twmb_types//:types",
+        "@org_uber_go_zap//:zap",
     ],
 )
 
@@ -29,6 +32,7 @@ go_test(
     srcs = ["common_test.go"],
     embed = [":acl"],
     deps = [
+        "@com_github_redpanda_data_common_go_rpsr//:rpsr",
         "@com_github_stretchr_testify//require",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
         "@com_github_twmb_franz_go_pkg_kmsg//:kmsg",

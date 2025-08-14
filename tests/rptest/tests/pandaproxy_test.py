@@ -1729,55 +1729,6 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
                                                   super_password))
 
 
-class PandaProxyAutoAuthTest(PandaProxyTestMethods):
-    """
-    Test pandaproxy against a redpanda cluster with Auto Auth enabled.
-
-    This derived class inherits all the tests from PandaProxyTestMethods.
-    """
-    def __init__(self, context):
-        security = SecurityConfig()
-        security.kafka_enable_authorization = True
-        security.endpoint_authn_method = 'sasl'
-        security.auto_auth = True
-
-        super(PandaProxyAutoAuthTest, self).__init__(context,
-                                                     security=security)
-
-    @cluster(num_nodes=3)
-    @parametrize(move_controller_leader=False)
-    @parametrize(move_controller_leader=True)
-    def test_restarts(self, move_controller_leader: bool):
-        nodes = self.redpanda.nodes
-        node_count = len(nodes)
-        restart_node_idx = 0
-
-        admin = Admin(self.redpanda)
-
-        def check_connection(hostname: str):
-            result_raw = self._get_topics(hostname=hostname)
-            self.logger.info(result_raw.status_code)
-            self.logger.info(result_raw.json())
-            assert result_raw.status_code == requests.codes.ok
-            assert result_raw.json() == []
-
-        def restart_node():
-            victim = nodes[restart_node_idx]
-
-            if move_controller_leader:
-                admin.partition_transfer_leadership(namespace="redpanda",
-                                                    topic="controller",
-                                                    partition=0)
-            self.logger.info(f"Restarting node: {restart_node_idx}")
-            self.redpanda.restart_nodes(victim)
-
-        for _ in range(5):
-            for n in self.redpanda.nodes:
-                check_connection(n.account.hostname)
-            restart_node()
-            restart_node_idx = (restart_node_idx + 1) % node_count
-
-
 class PandaProxyClientStopTest(PandaProxyEndpoints):
     username = 'red'
     password = 'panda'
@@ -2042,30 +1993,10 @@ class PandaProxyMTLSBase(PandaProxyEndpoints):
         admin = Admin(self.redpanda)
 
         # Create the users
-        admin.create_user(self.admin_user.username, self.admin_user.password,
-                          self.admin_user.algorithm)
-
-        # Hack: create a user, so that we can watch for this user in order to
-        # confirm that all preceding controller log writes landed: this is
-        # an indirect way to check that ACLs (and users) have propagated
-        # to all nodes before we proceed.
-        checkpoint_user = "_test_checkpoint"
-        admin.create_user(checkpoint_user, "_password",
-                          self.admin_user.algorithm)
-
-        # wait for users to propagate to nodes
-        def auth_metadata_propagated():
-            for node in self.redpanda.nodes:
-                users = admin.list_users(node=node)
-                if checkpoint_user not in users:
-                    return False
-                elif self.security.sasl_enabled(
-                ) or self.security.kafka_enable_authorization:
-                    assert self.admin_user.username in users
-                    assert self.admin_user.username in users
-            return True
-
-        wait_until(auth_metadata_propagated, timeout_sec=10, backoff_sec=1)
+        admin.create_user(self.admin_user.username,
+                          self.admin_user.password,
+                          self.admin_user.algorithm,
+                          await_exists=True)
 
         # Create topic with rpk instead of KafkaCLITool because rpk is configured to use TLS certs
         self.super_client(basic_auth_enabled).create_topic(self.topic)

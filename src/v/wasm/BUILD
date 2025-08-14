@@ -15,7 +15,6 @@ redpanda_cc_library(
     hdrs = [
         "allocator.h",
     ],
-    include_prefix = "wasm",
     deps = [
         "//src/v/base",
         "@abseil-cpp//absl/container:btree",
@@ -31,7 +30,6 @@ redpanda_cc_library(
     hdrs = [
         "logger.h",
     ],
-    include_prefix = "wasm",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -49,7 +47,6 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/utils:vint",
     ],
-    include_prefix = "wasm",
     deps = [
         ":logger",
         "//src/v/base",
@@ -73,7 +70,6 @@ redpanda_cc_library(
         ":logger",
         "//src/v/utils:named_type",
     ],
-    include_prefix = "wasm",
     deps = [
         ":ffi",
         "//src/v/base",
@@ -88,7 +84,6 @@ redpanda_cc_library(
     hdrs = [
         "wasi_logger.h",
     ],
-    include_prefix = "wasm",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -108,7 +103,6 @@ redpanda_cc_library(
         "//src/v/strings:utf8",
         "@abseil-cpp//absl/strings",
     ],
-    include_prefix = "wasm",
     deps = [
         ":ffi",
         ":wasi_logger",
@@ -132,7 +126,6 @@ redpanda_cc_library(
         ":logger",
         "//src/v/bytes:iobuf_parser",
     ],
-    include_prefix = "wasm",
     deps = [
         ":api",
         ":ffi",
@@ -152,7 +145,6 @@ redpanda_cc_library(
     hdrs = [
         "transform_probe.h",
     ],
-    include_prefix = "wasm",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -170,7 +162,6 @@ redpanda_cc_library(
     hdrs = [
         "engine_probe.h",
     ],
-    include_prefix = "wasm",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -187,7 +178,6 @@ redpanda_cc_library(
         "errc.h",
         "fwd.h",
     ],
-    include_prefix = "wasm",
     visibility = ["//visibility:public"],
     deps = [
         ":transform_probe",
@@ -220,22 +210,20 @@ redpanda_cc_library(
         ":wasi_logger",
         "//src/v/metrics",
         "//src/v/model",
+        "//src/v/model:batch_compression",
         "//src/v/reflection:type_traits",
         "//src/v/schema:registry",
         "//src/v/ssx:thread_worker",
-        "//src/v/storage:parser_utils",
         "//src/v/utils:human",
         "//src/v/utils:mutex",
         "//src/v/utils:named_type",
         "//src/v/utils:to_string",
         "//src/v/wasm/parser",
-        "@abseil-cpp//absl/algorithm:container",
         "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/strings",
         "@crates//:wasmtime_c",
         "@fmt",
     ],
-    include_prefix = "wasm",
     deps = [
         ":api",
         "//src/v/base",
@@ -254,7 +242,6 @@ redpanda_cc_library(
     implementation_deps = [
         ":logger",
     ],
-    include_prefix = "wasm",
     visibility = ["//visibility:public"],
     deps = [
         ":api",
@@ -263,6 +250,7 @@ redpanda_cc_library(
         ":wasi_logger",
         "//src/v/base",
         "//src/v/model",
+        "//src/v/ssx:future_util",
         "//src/v/utils:mutex",
         "@abseil-cpp//absl/container:btree",
         "@seastar",
@@ -281,7 +269,6 @@ redpanda_cc_library(
         ":wasmtime",
         "//src/v/schema:registry",
     ],
-    include_prefix = "wasm",
     visibility = ["//visibility:public"],
     deps = [
         ":api",

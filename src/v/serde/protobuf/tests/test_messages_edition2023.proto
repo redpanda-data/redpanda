@@ -11,6 +11,8 @@ syntax = "proto3";
 
 package protobuf_test_messages.editions;
 
+import "proto/redpanda/pbgen/options.proto";
+
 option java_package = "com.google.protobuf_test_messages.edition2023";
 option java_multiple_files = true;
 option objc_class_prefix = "Editions";
@@ -18,7 +20,7 @@ option objc_class_prefix = "Editions";
 message TestAllTypesEdition2023 {
     message NestedMessage {
         int32 a = 1;
-        TestAllTypesEdition2023 corecursive = 2;
+        TestAllTypesEdition2023 corecursive = 2 [(redpanda.pbgen.ptr) = true];
     }
 
     enum NestedEnum {
@@ -46,7 +48,8 @@ message TestAllTypesEdition2023 {
     bytes optional_bytes = 15;
 
     NestedMessage optional_nested_message = 18;
-    ForeignMessageEdition2023 optional_foreign_message = 19;
+    ForeignMessageEdition2023 optional_foreign_message = 19
+        [(redpanda.pbgen.ptr) = true];
 
     NestedEnum optional_nested_enum = 21;
     ForeignEnumEdition2023 optional_foreign_enum = 22;
@@ -54,7 +57,8 @@ message TestAllTypesEdition2023 {
     string optional_string_piece = 24 [ctype = STRING_PIECE];
     string optional_cord = 25 [ctype = CORD];
 
-    TestAllTypesEdition2023 recursive_message = 27;
+    TestAllTypesEdition2023 recursive_message = 27
+        [(redpanda.pbgen.ptr) = true];
 
     // Repeated
     repeated int32 repeated_int32 = 31;

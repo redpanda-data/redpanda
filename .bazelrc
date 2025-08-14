@@ -6,8 +6,7 @@ common --@toolchains_llvm//toolchain/config:compiler-rt=False
 build --linkopt --unwindlib=libgcc
 build --linkopt -stdlib=libc++
 
-common:clang-18 --extra_toolchains=@previous_llvm_toolchain//:all
-common:clang-20 --extra_toolchains=@next_llvm_toolchain//:all
+common:clang-19 --extra_toolchains=@previous_llvm_toolchain//:all
 
 # Use Bash instead of system python for finding the hermetic interpreter
 # within Bazel due to the `python3` binary not being present on CI
@@ -30,12 +29,18 @@ build:system-clang --action_env=BAZEL_COMPILER=clang
 build:system-clang --cxxopt=-std=c++23 --host_cxxopt=-std=c++23
 build:system-clang --linkopt -fuse-ld=lld
 # use a compiler name that doesn't symlink to ccache
-build:system-clang-18 --config=system-clang
-build:system-clang-18 --action_env=CC=clang-18 --host_action_env=CC=clang-18
-build:system-clang-18 --action_env=CXX=clang++-18 --host_action_env=CXX=clang++-18
 build:system-clang-19 --config=system-clang
 build:system-clang-19 --action_env=CC=clang-19 --host_action_env=CC=clang-19
 build:system-clang-19 --action_env=CXX=clang++-19 --host_action_env=CXX=clang++-19
+build:system-clang-20 --config=system-clang
+build:system-clang-20 --action_env=CC=clang-20 --host_action_env=CC=clang-20
+build:system-clang-20 --action_env=CXX=clang++-20 --host_action_env=CXX=clang++-20
+
+# Use new proto toolchain resolution
+build --incompatible_enable_proto_toolchain_resolution
+# Keep source info - bigger descriptors (not a problem at our scale),
+# but allows for printing comments in generated protos
+build --experimental_proto_descriptor_sets_include_source_info
 
 # https://github.com/bazelbuild/rules_foreign_cc/issues/1065
 # https://github.com/bazelbuild/rules_foreign_cc/issues/1186#issuecomment-2053550487
@@ -81,6 +86,13 @@ build:sanitizer --@seastar//:system_allocator=True
 build:sanitizer --@krb5//:sanitizers=address,undefined,vptr,function,alignment
 
 # =================================
+# Debug
+# =================================
+# alias to match our legacy cmake debug BUILD_TYPE so we don't have to do any
+# mapping in taskfiles
+build:debug --config=sanitizer
+
+# =================================
 # ODR Finder
 # =================================
 build:odr-finder --cxxopt -stdlib=libc++
@@ -96,11 +108,7 @@ build:odr-finder --@krb5//:linker=gold
 # =================================
 # clang-tidy
 # =================================
-build:clang-tidy --aspects @bazel_clang_tidy//clang_tidy:clang_tidy.bzl%clang_tidy_aspect
-# TODO(rockwood): Switch back to current clang tidy once we upgrade to clang-20
-# We have to use another version because clang-19 has crashes
-build:clang-tidy --@bazel_clang_tidy//:clang_tidy_executable=@previous_llvm_toolchain//:clang-tidy
-build:clang-tidy --@bazel_clang_tidy//:clang_tidy_config=//:clang_tidy_config
+build:clang-tidy --aspects //bazel/clang_tidy:clang_tidy.bzl%clang_tidy_aspect
 build:clang-tidy --copt -Wno-pragma-once-outside-header
 build:clang-tidy --output_groups=report
 

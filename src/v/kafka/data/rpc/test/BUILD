@@ -8,7 +8,6 @@ redpanda_test_cc_library(
     hdrs = [
         "deps.h",
     ],
-    include_prefix = "kafka/data/rpc/test",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/kafka/data/rpc",

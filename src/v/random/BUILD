@@ -5,7 +5,6 @@ redpanda_cc_library(
     hdrs = [
         "fast_prng.h",
     ],
-    include_prefix = "random",
     visibility = ["//visibility:public"],
     deps = [
         "@abseil-cpp//absl/random",
@@ -20,7 +19,6 @@ redpanda_cc_library(
     hdrs = [
         "generators.h",
     ],
-    include_prefix = "random",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -34,7 +32,6 @@ redpanda_cc_library(
     hdrs = [
         "simple_time_jitter.h",
     ],
-    include_prefix = "random",
     visibility = ["//visibility:public"],
     deps = [
         ":fast_prng",

@@ -18,7 +18,6 @@ redpanda_cc_library(
         "oidc_principal_mapping.h",
         "oidc_url_parser.h",
     ],
-    include_prefix = "security",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -40,7 +39,6 @@ redpanda_cc_library(
     hdrs = [
         "license.h",
     ],
-    include_prefix = "security",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -50,6 +48,7 @@ redpanda_cc_library(
         "//src/v/serde",
         "//src/v/serde:chrono",
         "//src/v/serde:enum",
+        "//src/v/serde:named_type",
         "//src/v/serde:sstring",
         "//src/v/utils:base64",
         "@fmt",
@@ -65,7 +64,6 @@ redpanda_cc_library(
     hdrs = [
         "request_auth.h",
     ],
-    include_prefix = "security",
     visibility = ["//visibility:public"],
     deps = [
         ":security",
@@ -128,7 +126,6 @@ redpanda_cc_library(
         "scram_credential.h",
         "types.h",
     ],
-    include_prefix = "security",
     visibility = ["//visibility:public"],
     deps = [
         ":config",
@@ -136,7 +133,7 @@ redpanda_cc_library(
         "//src/v/bytes",
         "//src/v/bytes:random",
         "//src/v/config",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/crypto",
         "//src/v/hashing:secure",
         "//src/v/http",
@@ -168,7 +165,6 @@ redpanda_cc_library(
         "//src/v/utils:named_type",
         "//src/v/utils:to_string",
         "//src/v/version",
-        "@abseil-cpp//absl/algorithm:container",
         "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/container:flat_hash_set",

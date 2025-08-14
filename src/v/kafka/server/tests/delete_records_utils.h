@@ -30,7 +30,7 @@ public:
       : _transport(std::move(t)) {}
 
     ss::future<> start() { return _transport.connect(); }
-
+    ss::future<> stop() { return _transport.stop(); }
     ss::future<pid_to_offset_map_t> delete_records(
       model::topic topic_name,
       pid_to_offset_map_t offsets_per_partition,

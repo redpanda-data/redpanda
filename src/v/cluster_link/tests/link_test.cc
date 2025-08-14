@@ -14,6 +14,7 @@
 #include "cluster/cluster_link/tests/utils.h"
 #include "cluster_link/link.h"
 #include "cluster_link/manager.h"
+#include "cluster_link/tests/deps.h"
 #include "test_utils/test.h"
 
 #include <seastar/util/defer.hh>
@@ -22,38 +23,23 @@
 
 using namespace std::chrono_literals;
 
-namespace cluster_link {
+namespace cluster_link::tests {
 
 using ::cluster::cluster_link::table;
 
 class link_test;
 namespace {
-class test_link_registry : public link_registry {
-public:
-    explicit test_link_registry(table* table)
-      : _table(table) {}
-
-    std::optional<std::reference_wrapper<const model::metadata>>
-    find_link_by_id(model::id_t id) const override {
-        return _table->find_link_by_id(id);
-    }
-
-    std::optional<std::reference_wrapper<const model::metadata>>
-    find_link_by_name(const model::name_t& name) const override {
-        return _table->find_link_by_name(name);
-    }
-
-    chunked_vector<model::id_t> get_all_link_ids() const override {
-        return _table->get_all_link_ids();
-    }
-
-private:
-    table* _table;
-};
 
 class test_link : public link {
 public:
-    test_link(link_test* link_test, model::metadata metadata);
+    test_link(
+      ::model::node_id self,
+      model::id_t link_id,
+      manager* manager,
+      ss::lowres_clock::duration task_reconciler_interval,
+      link_test* link_test,
+      model::metadata metadata,
+      kafka::client::cluster cluster_connection);
 
     ss::future<> start() override;
     ss::future<> stop() override;
@@ -62,32 +48,50 @@ private:
     link_test* _link_test;
 };
 
-class test_link_factory : public link_factory {
+class link_test_factory : public link_factory {
 public:
-    explicit test_link_factory(link_test* link_test)
-      : _link_test(link_test) {}
-    std::unique_ptr<link> create_link(model::metadata metadata) override {
-        return std::make_unique<test_link>(_link_test, std::move(metadata));
+    link_test_factory(
+      link_test* link_test, ss::lowres_clock::duration task_reconciler_interval)
+      : _link_test(link_test)
+      , _task_reconciler_interval(task_reconciler_interval) {}
+
+    std::unique_ptr<link> create_link(
+      ::model::node_id self,
+      model::id_t link_id,
+      manager* manager,
+      model::metadata metadata,
+      kafka::client::cluster cluster_connection) override {
+        return std::make_unique<test_link>(
+          self,
+          link_id,
+          manager,
+          _task_reconciler_interval,
+          _link_test,
+          std::move(metadata),
+          std::move(cluster_connection));
     }
 
 private:
     link_test* _link_test;
+    ss::lowres_clock::duration _task_reconciler_interval;
 };
 } // namespace
 
-class link_test : public seastar_test {
+class link_test_base : public seastar_test {
 public:
     virtual ss::future<> SetUpAsync() override {
+        setup_cluster_mock();
+        _partition_leader_cache_impl
+          = std::make_unique<fake_partition_leader_cache_impl>();
+        _partition_manager_proxy
+          = std::make_unique<fake_partition_manager_proxy>();
         co_await _table.start();
-        _manager = std::make_unique<manager>(
-          ::model::node_id(0),
-          std::make_unique<test_link_registry>(&_table.local()),
-          std::make_unique<test_link_factory>(this));
     }
 
     virtual ss::future<> TearDownAsync() override {
-        _manager.reset(nullptr);
         co_await _table.stop();
+        _partition_manager_proxy.reset();
+        _partition_leader_cache_impl.reset();
     }
 
     ss::future<> upsert_link(model::id_t id, model::metadata metadata) {
@@ -104,16 +108,6 @@ public:
         if (id.has_value()) {
             _manager->on_link_change(id.value());
         }
-    }
-
-    void add_link_to_list(uuid_t id, test_link* link) {
-        _links.emplace(id, link);
-        run_callbacks(id);
-    }
-
-    void remove_link(uuid_t id) {
-        _links.erase(id);
-        run_callbacks(id);
     }
 
     void run_callbacks(uuid_t id) {
@@ -135,12 +129,65 @@ public:
     void unregister_callback(notification_id id) { _callbacks.erase(id); }
 
 protected:
+    kafka::client::cluster_mock _cluster_mock;
+    std::unique_ptr<fake_partition_leader_cache_impl>
+      _partition_leader_cache_impl;
+    std::unique_ptr<fake_partition_manager_proxy> _partition_manager_proxy;
     ss::sharded<table> _table;
+
     std::unique_ptr<manager> _manager;
-    absl::flat_hash_map<uuid_t, test_link*> _links;
+
     absl::flat_hash_map<notification_id, ss::noncopyable_function<void(uuid_t)>>
       _callbacks;
     notification_id _latest_id{0};
+
+private:
+    void setup_cluster_mock() {
+        _cluster_mock.register_default_handlers();
+        _cluster_mock.add_broker(
+          ::model::node_id(0), net::unresolved_address{"localhost", 9092});
+        _cluster_mock.add_broker(
+          ::model::node_id(1), net::unresolved_address{"localhost", 9093});
+        _cluster_mock.add_broker(
+          ::model::node_id(2), net::unresolved_address{"localhost", 9094});
+    }
+};
+
+class link_test : public link_test_base {
+public:
+    static constexpr auto task_reconciler_interval = 1s;
+    virtual ss::future<> SetUpAsync() override {
+        co_await link_test_base::SetUpAsync();
+        _manager = std::make_unique<manager>(
+          ::model::node_id(0),
+          std::make_unique<fake_partition_leader_cache>(
+            _partition_leader_cache_impl.get()),
+          std::make_unique<fake_partition_manager>(
+            _partition_manager_proxy.get()),
+          std::make_unique<fake_topic_metadata_cache>(),
+          std::make_unique<test_link_registry>(&_table.local()),
+          std::make_unique<link_test_factory>(this, 1s),
+          std::make_unique<cluster_mock_factory>(&_cluster_mock),
+          task_reconciler_interval);
+    }
+
+    virtual ss::future<> TearDownAsync() override {
+        _manager.reset(nullptr);
+        co_await link_test_base::TearDownAsync();
+    }
+
+    void add_link_to_list(uuid_t id, test_link* link) {
+        _links.emplace(id, link);
+        run_callbacks(id);
+    }
+
+    void remove_link_from_list(uuid_t id) {
+        _links.erase(id);
+        run_callbacks(id);
+    }
+
+protected:
+    absl::flat_hash_map<uuid_t, test_link*> _links;
 };
 
 class link_test_manager_started : public link_test {
@@ -157,8 +204,21 @@ public:
 };
 
 namespace {
-test_link::test_link(link_test* link_test, model::metadata metadata)
-  : link(std::move(metadata))
+test_link::test_link(
+  ::model::node_id self,
+  model::id_t link_id,
+  manager* manager,
+  ss::lowres_clock::duration task_reconciler_interval,
+  link_test* link_test,
+  model::metadata metadata,
+  kafka::client::cluster cluster_connection)
+  : link(
+      self,
+      link_id,
+      manager,
+      task_reconciler_interval,
+      std::move(metadata),
+      std::move(cluster_connection))
   , _link_test(link_test) {}
 
 ss::future<> test_link::start() {
@@ -167,7 +227,7 @@ ss::future<> test_link::start() {
 }
 
 ss::future<> test_link::stop() {
-    _link_test->remove_link(config().uuid);
+    _link_test->remove_link_from_list(config().uuid);
     co_await link::stop();
 }
 } // namespace
@@ -269,4 +329,132 @@ TEST_F_CORO(link_test_manager_started, test_remove_non_existant_link) {
     _manager->on_link_change(model::id_t(1));
     return ss::now();
 }
-} // namespace cluster_link
+
+class evil_link : public link {
+public:
+    using link::link;
+
+    ss::future<> start() override {
+        static bool has_been_called = false;
+        if (has_been_called) {
+            has_been_called = false;
+            _running = true;
+            return ss::now();
+        } else {
+            has_been_called = true;
+            throw std::runtime_error("Evil link start method failed");
+        }
+    }
+
+    ss::future<> stop() override {
+        static bool has_been_called = false;
+        if (has_been_called) {
+            has_been_called = false;
+            _running = false;
+            return ss::now();
+        } else {
+            has_been_called = true;
+            throw std::runtime_error("Evil link stop method failed");
+        }
+    }
+
+    bool running() const { return _running; }
+
+private:
+    bool _running{false};
+};
+
+class evil_link_factory : public link_factory {
+public:
+    std::unique_ptr<link> create_link(
+      ::model::node_id self,
+      model::id_t link_id,
+      manager* manager,
+      model::metadata metadata,
+      kafka::client::cluster cluster_connection) override {
+        return std::make_unique<evil_link>(
+          self,
+          link_id,
+          manager,
+          1s,
+          std::move(metadata),
+          std::move(cluster_connection));
+    }
+};
+
+class evil_link_test : public link_test_base {
+public:
+    static constexpr auto task_reconciler_interval = 1s;
+    virtual ss::future<> SetUpAsync() override {
+        co_await link_test_base::SetUpAsync();
+        auto elf = std::make_unique<evil_link_factory>();
+        _elf = elf.get();
+        _manager = std::make_unique<manager>(
+          ::model::node_id(0),
+          std::make_unique<fake_partition_leader_cache>(
+            _partition_leader_cache_impl.get()),
+          std::make_unique<fake_partition_manager>(
+            _partition_manager_proxy.get()),
+          std::make_unique<fake_topic_metadata_cache>(),
+          std::make_unique<test_link_registry>(&_table.local()),
+          std::move(elf),
+          std::make_unique<cluster_mock_factory>(&_cluster_mock),
+          task_reconciler_interval);
+        co_await _manager->start();
+    }
+
+    virtual ss::future<> TearDownAsync() override {
+        co_await _manager->stop();
+        _elf = nullptr;
+        _manager.reset(nullptr);
+
+        co_await link_test_base::TearDownAsync();
+    }
+
+protected:
+    evil_link_factory* _elf;
+};
+
+TEST_F_CORO(evil_link_test, test_evil_link_start_stop) {
+    auto name = model::name_t("link1");
+    model::metadata link{
+      .name = name,
+      .uuid = model::uuid_t(::uuid_t::create()),
+      .connection = model::connection_config{}};
+    model::id_t link_id(1);
+
+    co_await upsert_link(link_id, link.copy());
+
+    // Enough time for the upsert callback to fire but no link should be present
+    co_await ss::sleep(500ms);
+
+    auto report = _manager->get_task_status_report();
+
+    EXPECT_TRUE(report.link_reports.empty())
+      << "Link should not be present yet";
+
+    // Link reconciler loop takes 10 seconds to run
+    co_await ss::sleep(11s);
+
+    report = _manager->get_task_status_report();
+    auto link_report = report.link_reports.find(name);
+    EXPECT_NE(link_report, report.link_reports.end())
+      << "Link should be present after reconciler loop";
+
+    co_await remove_link(name);
+    // Allow callback time to execute
+    co_await ss::sleep(500ms);
+
+    report = _manager->get_task_status_report();
+    link_report = report.link_reports.find(name);
+    EXPECT_NE(link_report, report.link_reports.end())
+      << "Link should be present after reconciler loop";
+
+    // Link reconciler loop takes 10 seconds to run
+    co_await ss::sleep(11s);
+    report = _manager->get_task_status_report();
+    EXPECT_TRUE(report.link_reports.empty())
+      << "Link should be removed after reconciler loop";
+}
+
+} // namespace cluster_link::tests

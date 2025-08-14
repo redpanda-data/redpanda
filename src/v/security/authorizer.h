@@ -13,7 +13,7 @@
 #include "base/seastarx.h"
 #include "base/vlog.h"
 #include "config/property.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "security/acl.h"
 #include "security/acl_entry_set.h"
 #include "security/fwd.h"
@@ -233,8 +233,8 @@ public:
       const acl_principal& principal,
       const acl_host& host) const;
 
-    ss::future<fragmented_vector<acl_binding>> all_bindings() const;
-    ss::future<> reset_bindings(const fragmented_vector<acl_binding>& bindings);
+    ss::future<chunked_vector<acl_binding>> all_bindings() const;
+    ss::future<> reset_bindings(const chunked_vector<acl_binding>& bindings);
 
     acl_store& store() &;
     const acl_store& store() const&;

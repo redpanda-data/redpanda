@@ -321,6 +321,9 @@ TEST_F_CORO(
     // Allow replication to progress.
     may_resume_append->set_value();
 
+    auto term_before_sync = co_await with_leader(
+      10s, [](raft::raft_node_instance& node) { return node.raft()->term(); });
+
     // This sync will succeed and will wait for replication to progress.
     auto synced = co_await with_leader(
       10s, [this, &plagued_node](raft::raft_node_instance& node) mutable {
@@ -342,7 +345,7 @@ TEST_F_CORO(
       });
 
     ASSERT_EQ_CORO(committed_offset, model::offset{2});
-    ASSERT_EQ_CORO(term, model::term_id{1});
+    ASSERT_EQ_CORO(term, term_before_sync);
 
     co_await wait_for_apply();
 }
@@ -466,6 +469,9 @@ TEST_F_CORO(
     // Allow replication to progress.
     may_resume_append->set_value();
 
+    auto term_before_sync = co_await with_leader(
+      10s, [](raft::raft_node_instance& node) { return node.raft()->term(); });
+
     // This sync will succeed and will wait for replication to progress.
     auto synced = co_await with_leader(
       10s, [this, &plagued_node](raft::raft_node_instance& node) mutable {
@@ -490,7 +496,7 @@ TEST_F_CORO(
       });
 
     ASSERT_EQ_CORO(committed_offset, model::offset{2});
-    ASSERT_EQ_CORO(term, model::term_id{1});
+    ASSERT_EQ_CORO(term, term_before_sync);
 
     co_await wait_for_apply();
 }

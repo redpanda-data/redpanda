@@ -120,13 +120,21 @@ class RpkRegistryTest(RedpandaTest):
                    backoff_sec=3,
                    retry_on_exc=True)
 
-    def create_schema(self, subject, schema, suffix, references=None):
+    def create_schema(self,
+                      subject,
+                      schema,
+                      suffix,
+                      references=None,
+                      id=None,
+                      version=None):
         with tempfile.NamedTemporaryFile(suffix=suffix) as tf:
             tf.write(bytes(schema, 'UTF-8'))
             tf.seek(0)
             out = self._rpk.create_schema(subject,
                                           tf.name,
-                                          references=references)
+                                          references=references,
+                                          id=id,
+                                          version=version)
             assert out["subject"] == subject
 
     def _schema_topic_created(self):
@@ -235,6 +243,34 @@ class RpkRegistryTest(RedpandaTest):
         assert out[0]["subject"] == subject_4
         assert out[0]["id"] == 4
         assert out[0]["type"] == "JSON"
+
+    @cluster(num_nodes=3)
+    def test_registry_schema_create_specific(self):
+        subject_1 = "test_subject_1"
+        subject_2 = "test_subject_2"
+
+        self._rpk.set_mode("IMPORT")
+
+        self.create_schema(subject_1,
+                           schema1_avro_def,
+                           ".avro",
+                           id=42,
+                           version=3)
+
+        out = self._rpk.get_schema(subject_1, version="3")
+        assert len(out) == 1
+        assert out[0]["subject"] == subject_1
+        assert out[0]["id"] == 42
+        assert out[0]["type"] == "AVRO"
+
+        with expect_exception(
+                RpkException, lambda e:
+                "--schema-version requires --id to be specified" in str(e)):
+            self.create_schema(subject_2,
+                               schema1_proto_def,
+                               ".proto",
+                               id=None,
+                               version=9)
 
     @cluster(num_nodes=1)
     def test_registry_compatibility_level(self):
@@ -651,7 +687,12 @@ message Test3 {
         # It goes back to the global mode (READONLY)
         assert findModeBySubject(out, subject_2) == read_only_mode
 
-        # We do not support import yet
-        with expect_exception(RpkException,
-                              lambda e: 'invalid mode "IMPORT"' in str(e)):
-            self._rpk.set_mode("IMPORT", [subject_1, subject_2], format="text")
+        # We support import as well
+        self._rpk.set_mode("IMPORT", [subject_1, subject_2], format="text")
+
+        # Invalid modes should throw
+        with expect_exception(
+                RpkException,
+                lambda e: 'invalid mode "SOME_INVALID"' in str(e)):
+            self._rpk.set_mode("SOME_INVALID", [subject_1, subject_2],
+                               format="text")

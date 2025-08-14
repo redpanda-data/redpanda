@@ -24,7 +24,8 @@ class ConsumerSwarm(ClientSwarmBase):
                  properties={},
                  unique_topics: Optional[bool] = False,
                  static_prefix: Optional[bool] = False,
-                 unique_groups=False):
+                 unique_groups=False,
+                 topics_per_client: Optional[int] = None):
         super().__init__(context, redpanda, topic, log_level, properties)
 
         self._group = group
@@ -33,6 +34,7 @@ class ConsumerSwarm(ClientSwarmBase):
         self._unique_topics = unique_topics
         self._unique_groups = unique_groups
         self._static_prefix = static_prefix
+        self._topics_per_client = topics_per_client
 
     def _additional_args(self):
         cmd = ""
@@ -46,6 +48,9 @@ class ConsumerSwarm(ClientSwarmBase):
 
         if self._unique_groups:
             cmd += " --unique-groups"
+
+        if self._topics_per_client:
+            cmd += f" --topics-per-client {self._topics_per_client}"
 
         return cmd
 

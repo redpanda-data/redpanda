@@ -48,17 +48,26 @@ model::record_batch create_update_mirror_topic_state_command(
     return cluster::serde_serialize_cmd(std::move(update_cmd));
 }
 
+model::record_batch create_update_mirror_topic_properties_command(
+  id_t id, ::cluster_link::model::update_mirror_topic_properties_cmd cmd) {
+    cluster::cluster_link_update_mirror_topic_properties_cmd update_cmd(
+      id, std::move(cmd));
+    return cluster::serde_serialize_cmd(std::move(update_cmd));
+}
+
 mirror_topic_metadata create_mirror_topic_metadata(
   mirror_topic_state state,
   ::model::topic source_topic_name,
   std::optional<::model::topic_id> source_topic_id,
-  std::optional<::model::topic_id> destination_topic_id) {
+  std::optional<::model::topic_id> destination_topic_id,
+  chunked_hash_map<ss::sstring, ss::sstring> topic_configs) {
     return {
       .state = state,
       .source_topic_id = source_topic_id,
       .source_topic_name = std::move(source_topic_name),
       .destination_topic_id = destination_topic_id.value_or(
         ::model::topic_id{uuid_t::create()}),
+      .topic_configs = std::move(topic_configs),
     };
 }
 } // namespace cluster::cluster_link::testing

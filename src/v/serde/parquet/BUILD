@@ -14,11 +14,10 @@ redpanda_cc_library(
         "flattened_schema.h",
         "schema.h",
     ],
-    include_prefix = "serde/parquet",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/utils:named_type",
         "@seastar",
     ],
@@ -32,12 +31,11 @@ redpanda_cc_library(
     hdrs = [
         "metadata.h",
     ],
-    include_prefix = "serde/parquet",
     deps = [
         ":schema",
         "//src/v/base",
         "//src/v/bytes:iobuf",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/hashing:crc32",
         "//src/v/serde/thrift:compact",
         "//src/v/utils:vint",
@@ -57,12 +55,11 @@ redpanda_cc_library(
         "@abseil-cpp//absl/strings",
         "@seastar",
     ],
-    include_prefix = "serde/parquet",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
     ],
 )
 
@@ -74,13 +71,12 @@ redpanda_cc_library(
     hdrs = [
         "encoding.h",
     ],
-    include_prefix = "serde/parquet",
     deps = [
         ":schema",
         ":value",
         "//src/v/base",
         "//src/v/bytes:iobuf",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/utils:vint",
     ],
 )
@@ -93,7 +89,6 @@ redpanda_cc_library(
     hdrs = [
         "shredder.h",
     ],
-    include_prefix = "serde/parquet",
     deps = [
         ":schema",
         ":value",
@@ -114,7 +109,6 @@ redpanda_cc_library(
         "column_stats_collector.h",
         "column_writer.h",
     ],
-    include_prefix = "serde/parquet",
     deps = [
         ":encoding",
         ":metadata",
@@ -124,7 +118,7 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
         "//src/v/compression",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/hashing:crc32",
         "@abseil-cpp//absl/numeric:int128",
         "@seastar",
@@ -148,13 +142,12 @@ redpanda_cc_library(
         "//src/v/container:contiguous_range_map",
         "@abseil-cpp//absl/container:flat_hash_set",
     ],
-    include_prefix = "serde/parquet",
     visibility = ["//visibility:public"],
     deps = [
         ":schema",
         ":value",
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "@seastar",
     ],
 )

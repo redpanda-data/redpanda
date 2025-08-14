@@ -55,7 +55,7 @@ catalog::load_or_create_table(
       table_ident);
     schema schema{
       .schema_struct = type.copy(),
-      .schema_id = schema::unassigned_id,
+      .schema_id = schema::default_id,
       .identifier_field_ids = {},
     };
     if (auto schm_res = schema.assign_fresh_ids(); schm_res.has_error()) {

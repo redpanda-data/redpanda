@@ -57,11 +57,58 @@ public:
         return {val, length_size};
     }
 
-    ss::sstring read_string(size_t len) {
-        ss::sstring str = ss::uninitialized_string(len);
+    /// \brief reads size bytes into a sstring with no validation
+    /// \param size the number of bytes to read
+    /// \return a string of exactly size bytes read from the underlying iobuf
+    ss::sstring read_string_unsafe(size_t size) {
+        ss::sstring str = ss::uninitialized_string(size);
         _in.consume_to(str.size(), str.begin());
+        return str;
+    }
+
+    /// \brief reads size bytes into a sstring, throws if invalid or truncated
+    /// utf
+    /// \param size the number of bytes to read
+    /// \return a string of exactly size bytes read from the underlying iobuf
+    ss::sstring read_string(size_t size) {
+        auto str = read_string_unsafe(size);
         validate_utf8(str);
         return str;
+    }
+
+    /// \brief reads size bytes into a sstring with no validation. Does not
+    /// advance the consumption index
+    /// \param size the number of bytes to read
+    /// \return a string of exactly size bytes read from the underlying iobuf
+    ss::sstring peek_string_unsafe(size_t size) const {
+        auto in = _in;
+        ss::sstring str = ss::uninitialized_string(size);
+        in.consume_to(str.size(), str.begin());
+        return str;
+    }
+
+    /// \brief reads size bytes into a sstring, throws if invalid or truncated
+    /// utf8. Does not advance the consumption index
+    /// advance the consumption index
+    /// \param size the number of bytes to read
+    /// \return a string of exactly size bytes read from the underlying iobuf
+    ss::sstring peek_string(size_t size) const {
+        auto str = peek_string_unsafe(size);
+        validate_utf8(str);
+        return str;
+    }
+
+    /// \brief read and consume a maximum size string at utf8 boundaries. Throws
+    /// on invalid utf8, truncates incomplete utf8. Advances the consumption
+    /// index by only the valid string length.
+    /// \param max_size the maximum allowed size to consume & return
+    /// \return longest valid utf8 string of size len or less
+    ss::sstring read_string_safe(size_t max_size) {
+        auto raw_string = peek_string_unsafe(max_size);
+        const auto valid_size = validate_and_truncate(raw_string);
+        raw_string.resize(valid_size);
+        skip(valid_size);
+        return raw_string;
     }
 
     bytes read_bytes(size_t n) {

@@ -10,14 +10,13 @@
 
 #include "cloud_storage/segment_meta_cstore.h"
 
+#include "absl/container/btree_map.h"
 #include "cloud_storage/types.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
 #include "model/timestamp.h"
 #include "utils/delta_for.h"
 
-#include <bitset>
 #include <exception>
 #include <functional>
 #include <limits>

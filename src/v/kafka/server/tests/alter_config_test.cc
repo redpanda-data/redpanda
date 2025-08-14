@@ -10,7 +10,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "config/configuration.h"
 #include "config/leaders_preference.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "features/enterprise_feature_messages.h"
 #include "kafka/protocol/alter_configs.h"
 #include "kafka/protocol/create_topics.h"
@@ -618,7 +618,7 @@ FIXTURE_TEST(
     auto client = make_kafka_client().get();
     client.connect().get();
     auto resp = client.dispatch(std::move(req), kafka::api_version(1)).get();
-    client.stop().then([&client] { client.shutdown(); }).get();
+    client.stop().get();
     auto broker_id = std::to_string(resp.data.brokers[0].node_id());
 
     std::vector<ss::sstring> all_properties = {

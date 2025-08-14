@@ -88,7 +88,7 @@ ss::future<> offsets_lookup_batcher::run_lookups(
 
         // Copy the NTPs to send. As we process duplicates, we may end up
         // removing from our lookup set.
-        fragmented_vector<model::ntp> ntps(
+        chunked_vector<model::ntp> ntps(
           ntps_to_lookup.begin(), ntps_to_lookup.end());
 
         // Batch up all our lookup requests per node.

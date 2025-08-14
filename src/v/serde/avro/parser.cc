@@ -13,6 +13,7 @@
 
 #include "bytes/iobuf_parser.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/util/defer.hh>
 
 #include <boost/range/irange.hpp>

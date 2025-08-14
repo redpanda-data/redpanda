@@ -193,7 +193,7 @@ void segment_chunks::resolve_prefetch_futures() {
     auto available_it = std::ranges::partition(
       _prefetches, [](const auto& f) { return !f.available(); });
 
-    fragmented_vector<ss::future<segment_chunk::handle_t>> resolved;
+    chunked_vector<ss::future<segment_chunk::handle_t>> resolved;
     resolved.reserve(available_it.size());
 
     std::ranges::move(available_it, std::back_inserter(resolved));

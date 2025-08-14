@@ -52,7 +52,10 @@ class CompactionRecoveryTest(RedpandaTest):
                         cleanup_policy=TopicSpec.CLEANUP_COMPACT), )
 
     def __init__(self, test_context):
-        extra_rp_conf = dict(compacted_log_segment_size=1048576, )
+        extra_rp_conf = dict(
+            compacted_log_segment_size=1048576,
+            max_compacted_log_segment_size=1,
+        )
 
         super(CompactionRecoveryTest,
               self).__init__(test_context=test_context,
@@ -77,7 +80,6 @@ class CompactionRecoveryTest(RedpandaTest):
 
         extra_rp_conf = dict(compacted_log_segment_size=1048576,
                              log_compaction_interval_ms=1000,
-                             max_compacted_log_segment_size=1,
                              compaction_ctrl_min_shares=1000,
                              compaction_ctrl_max_shares=1000)
 
@@ -99,9 +101,13 @@ class CompactionRecoveryTest(RedpandaTest):
             kafka_tools.produce(self.topic, 1024, 1024)
             storage = self.redpanda.storage()
             partitions[:] = storage.partitions("kafka", self.topic)
-            return partitions and all(
+            partitions_finished = list(
                 map(lambda p: len(p.segments) > count and p.recovered(),
                     partitions))
+            self.logger.debug(
+                f"Partition segments: {list(zip(partitions, partitions_finished))}"
+            )
+            return all(partitions_finished)
 
         wait_until(lambda: check_partitions(),
                    timeout_sec=90,

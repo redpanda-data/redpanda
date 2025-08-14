@@ -9,8 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "base/type_traits.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "container/tests/bench_utils.h"
 #include "random/generators.h"
 
@@ -118,29 +117,22 @@ using std_vector = std::vector<T>;
 using ss::sstring;
 
 VECTOR_PERF_TEST(std_vector, int64_t, 64)
-VECTOR_PERF_TEST(fragmented_vector, int64_t, 64)
 VECTOR_PERF_TEST(chunked_vector, int64_t, 64)
 
 VECTOR_PERF_TEST(std_vector, sstring, 64)
-VECTOR_PERF_TEST(fragmented_vector, sstring, 64)
 VECTOR_PERF_TEST(chunked_vector, sstring, 64)
 
 VECTOR_PERF_TEST(std_vector, large_struct, 64)
-VECTOR_PERF_TEST(fragmented_vector, large_struct, 64)
 VECTOR_PERF_TEST(chunked_vector, large_struct, 64)
 
 VECTOR_PERF_TEST(std_vector, int64_t, 10000)
-VECTOR_PERF_TEST(fragmented_vector, int64_t, 10000)
 VECTOR_PERF_TEST(chunked_vector, int64_t, 10000)
 
 VECTOR_PERF_TEST(std_vector, sstring, 10000)
-VECTOR_PERF_TEST(fragmented_vector, sstring, 10000)
 VECTOR_PERF_TEST(chunked_vector, sstring, 10000)
 
 VECTOR_PERF_TEST(std_vector, large_struct, 10000)
-VECTOR_PERF_TEST(fragmented_vector, large_struct, 10000)
 VECTOR_PERF_TEST(chunked_vector, large_struct, 10000)
 
 VECTOR_PERF_TEST(std_vector, int64_t, 1048576)
-VECTOR_PERF_TEST(fragmented_vector, int64_t, 1048576)
 VECTOR_PERF_TEST(chunked_vector, int64_t, 1048576)

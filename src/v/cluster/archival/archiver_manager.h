@@ -15,7 +15,7 @@
 #include "cluster/archival/types.h"
 #include "cluster/fwd.h"
 #include "cluster/partition_leaders_table.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -43,10 +43,10 @@ public:
     ss::future<> stop();
 
     /// Snapshot of managed partitions
-    fragmented_vector<model::ntp> managed_partitions() const;
+    chunked_vector<model::ntp> managed_partitions() const;
 
     /// Snapshot of managed partitions which are leaders
-    fragmented_vector<model::ntp> leader_partitions() const;
+    chunked_vector<model::ntp> leader_partitions() const;
 
 private:
     std::unique_ptr<impl> _impl;

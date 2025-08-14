@@ -4,7 +4,7 @@ This module contains functions for working with Redpanda RPC system.
 
 load("//bazel:build.bzl", "redpanda_cc_library")
 
-def redpanda_cc_rpc_library(name, src, out = None, deps = [], include_prefix = None, visibility = None):
+def redpanda_cc_rpc_library(name, src, out = None, deps = [], visibility = None):
     """
     Generate Redpanda RPC library.
 
@@ -13,7 +13,6 @@ def redpanda_cc_rpc_library(name, src, out = None, deps = [], include_prefix = N
       src: rpc specification json file
       out: output header name. defaults to src_service.h (without .json extension)
       deps: dependencies defined in the json src file
-      include_prefix: include_prefix of generated header
       visibility: visibility setting
     """
     if not src.endswith(".json"):
@@ -44,6 +43,5 @@ def redpanda_cc_rpc_library(name, src, out = None, deps = [], include_prefix = N
         name = name,
         hdrs = [out],
         deps = rpc_template_deps + deps,
-        include_prefix = include_prefix,
         visibility = visibility,
     )

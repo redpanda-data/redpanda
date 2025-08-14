@@ -7,7 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "datalake/coordinator/state.h"
 #include "datalake/coordinator/state_update.h"
 #include "datalake/coordinator/tests/state_test_utils.h"

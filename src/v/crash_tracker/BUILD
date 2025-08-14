@@ -39,7 +39,6 @@ redpanda_cc_library(
         "//src/v/version",
         "@fmt",
     ],
-    include_prefix = "crash_tracker",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",

@@ -23,6 +23,7 @@ enum class error_code {
     schema_missing_reference,
     schema_incompatible,
     schema_version_invalid,
+    schema_version_not_next,
     subject_not_found,
     subject_version_not_found,
     subject_soft_deleted,

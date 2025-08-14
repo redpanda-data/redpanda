@@ -10,7 +10,6 @@ redpanda_cc_library(
     hdrs = [
         "utils.h",
     ],
-    include_prefix = "http",
     deps = [
         "//src/v/base",
         "//src/v/bytes",
@@ -36,7 +35,6 @@ redpanda_cc_library(
         "logger.h",
         "probe.h",
     ],
-    include_prefix = "http",
     deps = [
         ":utils",
         "//src/v/base",
@@ -62,7 +60,6 @@ redpanda_cc_library(
     hdrs = [
         "request_builder.h",
     ],
-    include_prefix = "http",
     deps = [
         "//src/v/base",
         "//src/v/http:utils",
@@ -84,7 +81,6 @@ redpanda_cc_library(
     hdrs = [
         "rest_client/rest_entity.h",
     ],
-    include_prefix = "http",
     deps = [
         "//src/v/base",
         "//src/v/http:request_builder",

@@ -57,6 +57,11 @@ public:
 
         virtual ss::future<> reset_backoff(model::node_id) = 0;
 
+        virtual ss::future<result<remake_learner_state_reply>>
+          remake_learner_state(
+            model::node_id, remake_learner_state_request, rpc::client_opts)
+          = 0;
+
         virtual ~impl() noexcept = default;
     };
 
@@ -116,6 +121,14 @@ public:
 
     ss::future<> reset_backoff(model::node_id target_node) {
         return _impl->reset_backoff(target_node);
+    }
+
+    ss::future<result<remake_learner_state_reply>> remake_learner_state(
+      model::node_id target_node,
+      remake_learner_state_request r,
+      rpc::client_opts opts) {
+        return _impl->remake_learner_state(
+          target_node, std::move(r), std::move(opts));
     }
 
 private:

@@ -33,7 +33,7 @@
 #include <chrono>
 
 namespace experimental::cloud_topics {
-class app;
+class state_accessors;
 }
 
 namespace cluster {
@@ -53,7 +53,7 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<archival::upload_housekeeping_service>&,
       config::binding<std::chrono::milliseconds>,
-      ss::sharded<experimental::cloud_topics::app>&);
+      ss::sharded<experimental::cloud_topics::state_accessors>*);
 
     ~partition_manager();
 
@@ -308,7 +308,8 @@ private:
     state_machine_registry _stm_registry;
 
     // The sharded app may not be initialized if cloud topics isn't enabled.
-    ss::sharded<experimental::cloud_topics::app>& _cloud_topics_app;
+    ss::sharded<experimental::cloud_topics::state_accessors>*
+      _cloud_topics_state;
 
     friend std::ostream& operator<<(std::ostream&, const partition_manager&);
     friend std::ostream& operator<<(

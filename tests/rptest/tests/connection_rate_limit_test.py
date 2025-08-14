@@ -18,41 +18,38 @@ from rptest.services.redpanda import ResourceSettings
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.metrics_check import MetricCheck
+from rptest.utils.mode_checks import skip_debug_mode
 
-RATE_METRIC = "vectorized_kafka_rpc_connections_wait_rate_total"
+RATE_METRIC = "vectorized_kafka_rpc_active_connections"
 
 
 class ConnectionRateLimitTest(PreallocNodesTest):
     MSG_SIZE = 1000000
-    PRODUCE_COUNT = 10
-    READ_COUNT = 10
-    RANDOM_READ_PARALLEL = 3
-    RATE_LIMIT = 4
-    REFRESH_TOKENS_TIME_SEC = 2
+    PRODUCE_COUNT = 5000
 
     topics = (TopicSpec(partition_count=1, replication_factor=1), )
 
     def __init__(self, test_context):
         resource_setting = ResourceSettings(num_cpus=1)
-        super(ConnectionRateLimitTest, self).__init__(
-            test_context=test_context,
-            num_brokers=1,
-            node_prealloc_count=1,
-            extra_rp_conf={"kafka_connection_rate_limit": self.RATE_LIMIT},
-            resource_settings=resource_setting)
+        super(ConnectionRateLimitTest,
+              self).__init__(test_context=test_context,
+                             num_brokers=1,
+                             node_prealloc_count=1,
+                             resource_settings=resource_setting)
 
         self._producer = KgoVerifierProducer(test_context, self.redpanda,
                                              self.topics[0], self.MSG_SIZE,
                                              self.PRODUCE_COUNT,
                                              self.preallocated_nodes)
+        self.consumers = []
 
-    def start_consumer(self):
+    def make_consumer(self, retry_sec):
         return RpkConsumer(context=self.test_context,
                            redpanda=self.redpanda,
                            topic=self.topics[0],
-                           num_msgs=1,
-                           save_msgs=True,
-                           retry_sec=(1 / self.RATE_LIMIT))
+                           num_msgs=self.PRODUCE_COUNT,
+                           save_msgs=False,
+                           retry_sec=retry_sec)
 
     def stop_consumer(self, consumer):
         try:
@@ -62,65 +59,63 @@ class ConnectionRateLimitTest(PreallocNodesTest):
             pass
         consumer.free()
 
-    def read_data(self, consumers_count):
-        consumers = dict()
-        for i in range(consumers_count):
-            consumers[i] = self.start_consumer()
+    def make_consumers(self, n_consumers, retry_sec):
+        for _ in range(n_consumers):
+            self.consumers.append(self.make_consumer(retry_sec))
 
-        start = time.time()
+    def start_consumers(self):
+        for c in self.consumers:
+            c.start()
 
-        for i in range(consumers_count):
-            consumers[i].start()
+    def consumers_finished(self):
+        return all(
+            [c.message_count == self.PRODUCE_COUNT for c in self.consumers])
 
-        def consumed():
-            need_finish = True
-            for i in range(consumers_count):
-                self.logger.debug(
-                    f"Offset for {i} consumer: {len(consumers[i].messages)}")
+    def stop_consumers(self):
+        for c in self.consumers:
+            self.stop_consumer(c)
+        self.consumers = []
 
-                if len(consumers[i].messages) == 0:
-                    need_finish = False
-                    if consumers[i].done is True:
-                        self.stop_consumer(consumers[i])
-                        self.logger.debug(f"Rerun consumer {i}")
-                        consumers[i] = self.start_consumer()
-                        consumers[i].start()
-
-            return need_finish
-
-        wait_until(consumed,
-                   timeout_sec=190,
-                   backoff_sec=(1 / self.RATE_LIMIT))
-
-        finish = time.time()
-
-        for i in range(consumers_count):
-            self.stop_consumer(consumers[i])
-
-        return finish - start
-
-    def get_read_time(self, consumers_count):
-        deltas = list()
-
-        for i in range(20):
-            connection_time = self.read_data(consumers_count)
-            deltas.append(connection_time)
-
-            # We should wait moment when all tokens will be refreshed
-            time.sleep(self.REFRESH_TOKENS_TIME_SEC)
-
-        return sum(deltas) / len(deltas)
-
+    @skip_debug_mode
     @cluster(num_nodes=8)
     def connection_rate_test(self):
-        self._producer.start(clean=False)
+        self._producer.start()
         self._producer.wait()
-
-        time1 = self.get_read_time(self.RANDOM_READ_PARALLEL)
-        time2 = self.get_read_time(self.RANDOM_READ_PARALLEL * 2)
+        self._producer.free()
 
         metrics = MetricCheck(self.logger, self.redpanda,
                               self.redpanda.nodes[0], RATE_METRIC, {})
-        metrics.evaluate([(RATE_METRIC, lambda a, b: b > 0)])
 
-        assert time2 >= time1 * 1.6, f'Time for first iteration:{time1} Time for second iteration:{time2}'
+        n_consumers = 6
+
+        for rate_limit in [1, 2, 4]:
+            self.logger.info(f"Checking rate_limit: {rate_limit}")
+            self.redpanda.set_cluster_config(
+                {"kafka_connection_rate_limit": rate_limit},
+                expect_restart=False)
+            self.make_consumers(n_consumers, retry_sec=1. / rate_limit)
+            self.start_consumers()
+
+            old_connections = None
+
+            def eval(_, current_connections):
+                nonlocal old_connections
+                if not old_connections:
+                    old_connections = current_connections
+                    return False
+                rate = int(current_connections - old_connections)
+                old_connections = current_connections
+                self.logger.debug(f"Connection rate: {rate}")
+                # As the rate of connections is calculated through a metric,
+                # it is still quite reliant on timing effects. To try to account
+                # for these, as scale factor of 2 is used.
+                assert rate <= 2 * rate_limit, f"Expected rate <= 2*{rate_limit}. Got rate = {rate}."
+                return True
+
+            def check_metrics():
+                metrics.evaluate([(RATE_METRIC, eval)])
+                return self.consumers_finished()
+
+            wait_until(check_metrics, 90, backoff_sec=0.95)
+
+            self.stop_consumers()

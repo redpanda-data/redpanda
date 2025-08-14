@@ -13,8 +13,7 @@
 
 #include "model/tests/randoms.h"
 #include "random/generators.h"
-#include "storage/types.h"
-#include "test_utils/randoms.h"
+#include "storage/disk.h"
 
 namespace storage {
 

@@ -46,7 +46,7 @@ func (*launcher) Start(installDir string, args *RedpandaArgs) error {
 	}
 
 	if args.ConfigFilePath == "" {
-		return errors.New("Redpanda config file is required")
+		return errors.New("the Redpanda configuration file is required")
 	}
 	redpandaArgs := collectRedpandaArgs(args)
 

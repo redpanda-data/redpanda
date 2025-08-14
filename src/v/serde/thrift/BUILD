@@ -15,7 +15,6 @@ redpanda_cc_library(
     hdrs = [
         "compact.h",
     ],
-    include_prefix = "serde/thrift",
     deps = [
         "//src/v/base",
         "//src/v/bytes",

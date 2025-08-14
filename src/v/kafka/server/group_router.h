@@ -13,7 +13,7 @@
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "cluster/shard_table.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/heartbeat.h"
 #include "kafka/protocol/join_group.h"
@@ -113,21 +113,27 @@ private:
     template<typename Request, typename FwdFunc>
     auto route_stages(Request r, FwdFunc func);
 
-    using sharded_groups = absl::
-      node_hash_map<ss::shard_id, std::vector<std::pair<model::ntp, group_id>>>;
+    using sharded_groups = absl::node_hash_map<
+      ss::shard_id,
+      chunked_vector<std::pair<model::ntp, group_id>>>;
 
     std::optional<std::pair<model::ntp, ss::shard_id>>
     shard_for(const group_id& group) {
-        if (auto ntp = coordinator_mapper().local().ntp_for(group); ntp) {
-            if (auto shard_id = _shards.local().shard_for(*ntp); shard_id) {
-                return std::make_pair(std::move(*ntp), *shard_id);
+        if (auto p_id = coordinator_mapper().local().partition_for(group);
+            p_id) {
+            model::ntp ntp(
+              model::kafka_namespace,
+              model::kafka_consumer_offsets_topic,
+              *p_id);
+            if (auto shard_id = _shards.local().shard_for(ntp); shard_id) {
+                return std::make_pair(std::move(ntp), *shard_id);
             }
         }
         return std::nullopt;
     }
 
-    ss::future<std::vector<deletable_group_result>> route_delete_groups(
-      ss::shard_id, std::vector<std::pair<model::ntp, group_id>>);
+    ss::future<chunked_vector<deletable_group_result>> route_delete_groups(
+      ss::shard_id, chunked_vector<std::pair<model::ntp, group_id>>);
 
     ss::future<> parallel_route_delete_groups(
       std::vector<deletable_group_result>&, sharded_groups&);

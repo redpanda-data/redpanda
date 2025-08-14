@@ -12,14 +12,13 @@
 #pragma once
 
 #include "absl/container/btree_set.h"
-#include "absl/container/flat_hash_map.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/state_machine_registry.h"
 #include "cluster/tm_stm_types.h"
 #include "cluster/tx_hash_ranges.h"
 #include "container/chunked_hash_map.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
@@ -215,14 +214,14 @@ public:
         static constexpr uint8_t version = 0;
 
         model::offset offset;
-        fragmented_vector<tx_metadata> transactions;
+        chunked_vector<tx_metadata> transactions;
     };
 
     struct tm_snapshot {
         static constexpr uint8_t version = 1;
 
         model::offset offset;
-        fragmented_vector<tx_metadata> transactions;
+        chunked_vector<tx_metadata> transactions;
         // hash_ranges is unused and the relevant code can be
         // removed at some point.
         locally_hosted_txs hash_ranges;
@@ -294,17 +293,12 @@ public:
       update_transaction_status(
         model::term_id, kafka::transactional_id, tx_status);
 
-    // todo: cleanup last_pid and rolled_pid. It seems like they are doing
-    // the same thing but in practice they are not. last_pid is not updated
-    // in all cases whereas rolled_pid is need to cleanup all the state
-    // from previous epochs.
     ss::future<tm_stm::op_status> update_tx_producer(
       model::term_id,
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::producer_identity pid_to_register,
-      model::producer_identity last_pid,
-      model::producer_identity rolled_pid);
+      model::producer_identity last_pid);
     ss::future<tm_stm::op_status> register_new_producer(
       model::term_id,
       kafka::transactional_id,
@@ -323,7 +317,7 @@ public:
     absl::btree_set<kafka::transactional_id> get_expired_txs();
 
     using get_txs_result
-      = checked<fragmented_vector<tx_metadata>, tm_stm::op_status>;
+      = checked<chunked_vector<tx_metadata>, tm_stm::op_status>;
     ss::future<get_txs_result> get_all_transactions();
 
     ss::future<checked<tx_metadata, tm_stm::op_status>>
@@ -398,7 +392,7 @@ private:
 
     void upsert_transaction(tx_metadata);
 
-    fragmented_vector<tx_metadata> get_transactions_list() const;
+    chunked_vector<tx_metadata> get_transactions_list() const;
 
 private:
     std::chrono::milliseconds _sync_timeout;

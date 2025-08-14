@@ -45,6 +45,11 @@
             "name": "append_entries_full_serde",
             "input_type": "append_entries_request_serde_wrapper",
             "output_type": "append_entries_reply"
+        },
+        {
+            "name": "remake_learner_state",
+            "input_type": "remake_learner_state_request",
+            "output_type": "remake_learner_state_reply"
         }
     ]
 }

@@ -26,6 +26,7 @@
 
 #include <boost/lexical_cast.hpp>
 
+#include <algorithm>
 #include <system_error>
 
 namespace {
@@ -136,7 +137,7 @@ admin_server::list_transforms(std::unique_ptr<ss::http::request>) {
 
 namespace {
 void validate_transform_deploy_document(const json::Document& doc) {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
 {
     "type": "object",
     "properties": {
@@ -410,7 +411,7 @@ parse_json_metadata_patch(const json::Document& doc) {
 
     if (doc.HasMember("env")) {
         result.env.emplace();
-        absl::c_transform(
+        std::ranges::transform(
           doc["env"].GetArray(),
           std::inserter(result.env.value(), result.env.value().end()),
           [](const auto& p) {

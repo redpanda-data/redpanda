@@ -168,7 +168,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     for (auto [url, req] : get_targets()) {
         vlog(test_log.info, "{} {}", req.method, req.url);
     }
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
+    requests_size_eventually(5);
 
     cloud_storage::partition_manifest manifest;
     {
@@ -295,7 +295,7 @@ FIXTURE_TEST(test_upload_after_failure, archiver_fixture) {
 
     BOOST_REQUIRE_EQUAL(compacted_result.num_succeeded, 0);
     BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 4);
+    requests_size_eventually(4);
 
     cloud_storage::partition_manifest manifest;
     {
@@ -388,7 +388,7 @@ FIXTURE_TEST(
     auto&& [non_compacted_result, compacted_result] = res;
     BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 0);
     BOOST_REQUIRE_EQUAL(non_compacted_result.num_failed, 1);
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 1);
+    requests_size_eventually(1);
 }
 
 // NOLINTNEXTLINE
@@ -900,7 +900,8 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     for (auto req : get_requests()) {
         vlog(test_log.info, "{} {}", req.method, req.url);
     }
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
+
+    requests_size_eventually(5);
 
     cloud_storage::partition_manifest manifest;
     {
@@ -1124,7 +1125,8 @@ static void test_partial_upload_impl(
     BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     test.log_requests();
-    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 3);
+    // index uploads happen in the background, so give a little slack here
+    test.requests_size_eventually(3);
 
     {
         auto [begin, end] = test.get_targets().equal_range(manifest_url);
@@ -1164,7 +1166,7 @@ static void test_partial_upload_impl(
     BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     test.log_requests();
-    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 6);
+    test.requests_size_eventually(6);
     {
         auto [begin, end] = test.get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);
@@ -1443,110 +1445,6 @@ static void test_manifest_spillover_impl(
 // NOLINTNEXTLINE
 FIXTURE_TEST(test_manifest_spillover, archiver_fixture) {
     test_manifest_spillover_impl(*this, 0x1000, 0x3000);
-}
-
-// NOLINTNEXTLINE
-FIXTURE_TEST(test_upload_with_gap_blocked, archiver_fixture) {
-    std::vector<segment_desc> segments = {
-      {.ntp = manifest_ntp,
-       .base_offset = model::offset(0),
-       .term = model::term_id(1),
-       .num_records = 900},
-      {.ntp = manifest_ntp,
-       .base_offset = model::offset(1000),
-       .term = model::term_id(4),
-       .num_records = 1000},
-    };
-
-    init_storage_api_local(segments);
-    wait_for_partition_leadership(manifest_ntp);
-
-    auto part = app.partition_manager.local().get(manifest_ntp);
-    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
-        return part->last_stable_offset() >= model::offset(1000);
-    }).get();
-
-    vlog(
-      test_log.info,
-      "Partition is a leader, high-watermark: {}, partition: {}",
-      part->high_watermark(),
-      *part);
-
-    listen();
-
-    auto [arch_conf, remote_conf] = get_configurations();
-
-    auto manifest_view = ss::make_shared<cloud_storage::async_manifest_view>(
-      remote,
-      app.shadow_index_cache,
-      part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name,
-      path_provider);
-
-    archival::ntp_archiver archiver(
-      get_ntp_conf(),
-      arch_conf,
-      remote.local(),
-      app.shadow_index_cache.local(),
-      *part,
-      manifest_view);
-
-    auto action = ss::defer([&archiver, &manifest_view] {
-        archiver.stop().get();
-        manifest_view->stop().get();
-    });
-
-    auto res = upload_next_with_retries(archiver).get();
-
-    for (auto [url, req] : get_targets()) {
-        vlog(test_log.info, "{} {}", req.method, req.url);
-    }
-
-    // The archiver will upload both segments successfully but will be
-    // able to add to the manifest only the first one.
-    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_succeeded, 2);
-    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
-    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_cancelled, 0);
-    BOOST_REQUIRE_EQUAL(res.compacted_upload_result.num_succeeded, 0);
-    BOOST_REQUIRE_EQUAL(res.compacted_upload_result.num_failed, 0);
-    BOOST_REQUIRE_EQUAL(res.compacted_upload_result.num_cancelled, 0);
-
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
-
-    cloud_storage::partition_manifest manifest;
-    {
-        BOOST_REQUIRE(get_targets().count(manifest_url)); // NOLINT
-        auto req_opt = get_latest_request(manifest_url);
-        BOOST_REQUIRE(req_opt.has_value());
-        auto req = req_opt.value().get();
-        BOOST_REQUIRE_EQUAL(req.method, "PUT"); // NOLINT
-        manifest = load_manifest(req.content);
-        BOOST_REQUIRE(manifest == part->archival_meta_stm()->manifest());
-    }
-
-    {
-        segment_name segment1_name{"0-1-v1.log"};
-        auto segment1_url = get_segment_path(manifest, segment1_name);
-        auto req_opt = get_latest_request("/" + segment1_url().string());
-        BOOST_REQUIRE(req_opt.has_value());
-        auto req = req_opt.value().get();
-        BOOST_REQUIRE_EQUAL(req.method, "PUT"); // NOLINT
-        verify_segment(manifest_ntp, segment1_name, req.content);
-
-        auto index_url = get_segment_index_path(manifest, segment1_name);
-        auto index_req_maybe = get_latest_request("/" + index_url().string());
-        BOOST_REQUIRE(index_req_maybe.has_value());
-        auto index_req = index_req_maybe.value().get();
-        BOOST_REQUIRE_EQUAL(index_req.method, "PUT");
-        verify_index(manifest_ntp, segment1_name, manifest, index_req.content);
-    }
-
-    // The stm manifest should have only the first segment
-    BOOST_REQUIRE(part->archival_meta_stm());
-    const auto& stm_manifest = part->archival_meta_stm()->manifest();
-    BOOST_REQUIRE_EQUAL(stm_manifest.size(), 1);
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.last_segment()->base_offset, segments[0].base_offset);
 }
 
 // NOLINTNEXTLINE

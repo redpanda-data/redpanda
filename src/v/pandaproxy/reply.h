@@ -137,14 +137,19 @@ inline auto unprocessable_entity(ss::sstring msg) {
       std::move(msg));
 }
 
+inline auto shutdown_exception_reply(const std::exception& e) {
+    auto eb = errored_body(reply_error_code::kafka_retriable_error, e.what());
+    eb.set_reply_unavailable();
+    return eb;
+}
+
 inline auto exception_reply(ss::logger& log, std::exception_ptr e) {
     try {
         std::rethrow_exception(e);
     } catch (const ss::gate_closed_exception& e) {
-        auto eb = errored_body(
-          reply_error_code::kafka_retriable_error, e.what());
-        eb.set_reply_unavailable();
-        return eb;
+        return shutdown_exception_reply(e);
+    } catch (const ss::abort_requested_exception& e) {
+        return shutdown_exception_reply(e);
     } catch (const json::exception_base& e) {
         return errored_body(e.error, e.what());
     } catch (const parse::exception_base& e) {

@@ -19,6 +19,7 @@
 #include <boost/test/unit_test.hpp>
 #include <fmt/ostream.h>
 
+#include <algorithm>
 #include <vector>
 
 namespace security {
@@ -282,7 +283,7 @@ BOOST_AUTO_TEST_CASE(role_store_big_store) {
     const std::vector<role_member> members_data = [extra = stable_member]() {
         std::vector<role_member> mems{extra};
         mems.reserve(N_MEMBERS);
-        absl::c_for_each(boost::irange(0ul, N_MEMBERS), [&mems](auto) {
+        std::ranges::for_each(boost::irange(0ul, N_MEMBERS), [&mems](auto) {
             mems.emplace_back(
               role_member_type::user,
               random_generators::gen_alphanum_string(32));
@@ -293,7 +294,7 @@ BOOST_AUTO_TEST_CASE(role_store_big_store) {
     const std::vector<role_name> role_names_data = [extra = stable_name]() {
         std::vector<role_name> roles{extra};
         roles.reserve(N_ROLES);
-        absl::c_for_each(boost::irange(0ul, N_ROLES), [&roles](auto) {
+        std::ranges::for_each(boost::irange(0ul, N_ROLES), [&roles](auto) {
             roles.emplace_back(random_generators::gen_alphanum_string(32));
         });
         return roles;

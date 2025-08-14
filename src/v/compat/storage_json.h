@@ -11,7 +11,7 @@
 #pragma once
 
 #include "compat/json.h"
-#include "storage/types.h"
+#include "storage/disk.h"
 
 namespace json {
 

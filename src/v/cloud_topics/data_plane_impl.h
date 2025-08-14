@@ -1,16 +1,15 @@
 /*
  * Copyright 2025 Redpanda Data, Inc.
  *
- * Use of this software is governed by the Business Source License
- * included in the file licenses/BSL.md
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+
 #pragma once
 
-#include "cloud_topics/data_plane_api.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/distributed.hh>
@@ -19,7 +18,9 @@
 
 namespace cluster {
 class partition_manager;
-}
+template<typename Clock>
+class cluster_epoch_service;
+} // namespace cluster
 
 namespace cloud_io {
 class remote;
@@ -29,12 +30,22 @@ namespace cloud_storage {
 class cache;
 }
 
+namespace storage {
+class api;
+}
+
 namespace experimental::cloud_topics {
 
-ss::shared_ptr<data_plane_api> make_data_plane(
-  seastar::sharded<cluster::partition_manager>*,
+class cluster_services;
+class data_plane_api;
+
+ss::future<std::unique_ptr<data_plane_api>> make_data_plane(
+  ss::sstring logger_name,
   seastar::sharded<cloud_io::remote>*,
   seastar::sharded<cloud_storage::cache>*,
-  cloud_storage_clients::bucket_name bucket);
+  cloud_storage_clients::bucket_name bucket,
+  seastar::sharded<storage::api>* log_manager,
+  seastar::sharded<cluster::cluster_epoch_service<ss::lowres_clock>>*
+    cluster_services);
 
 } // namespace experimental::cloud_topics

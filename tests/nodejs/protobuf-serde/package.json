@@ -1,0 +1,21 @@
+{
+  "name": "protobuf-serde",
+  "private": true,
+  "main": "src/index.js",
+  "author": "Redpanda Data <hi@redpanda.com>",
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "gen": "protoc --plugin=protoc-gen-es=node_modules/@bufbuild/protoc-gen-es/bin/protoc-gen-es --proto_path=./proto --es_out=target=js:./src ./proto/*.proto",
+    "test": "node ./src/index.js --brokers=localhost:9092 --sr=http://localhost:8081"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.6.1",
+    "@confluentinc/kafka-javascript": "^1.4.0",
+    "@confluentinc/schemaregistry": "^1.4.0"
+  },
+  "devDependencies": {
+    "@bufbuild/protoc-gen-es": "^2.6.1",
+    "@protobuf-ts/protoc": "^2.11.1"
+  }
+}

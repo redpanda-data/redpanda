@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -e
+cd /opt/redpanda-tests/nodejs/protobuf-serde
+NODE_ENV=production /opt/nodejs/bin/npm clean-install

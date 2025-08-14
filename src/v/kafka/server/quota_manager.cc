@@ -12,7 +12,7 @@
 #include "base/vassert.h"
 #include "base/vlog.h"
 #include "config/configuration.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/server/atomic_token_bucket.h"
 #include "kafka/server/client_quota_translator.h"
 #include "kafka/server/logger.h"

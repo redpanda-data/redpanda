@@ -11,7 +11,7 @@
 
 #include "cluster/errc.h"
 #include "cluster/tx_gateway_frontend.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/describe_transactions_request.h"
 #include "kafka/protocol/types.h"

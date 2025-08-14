@@ -10,7 +10,7 @@
 
 #include "iceberg/conversion/json_schema/frontend.h"
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "iceberg/conversion/json_schema/details/string_switch_table.h"
 #include "iceberg/conversion/json_schema/ir.h"
 

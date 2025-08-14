@@ -6,7 +6,6 @@ package(default_visibility = ["//src/v/iceberg:__subpackages__"])
 avro_cc_library(
     name = "manifest_file_gen",
     class_name = "manifest_file",
-    include_prefix = "iceberg",
     namespace = "iceberg::avrogen",
     schema = "avroschemas/manifest_file.schema.json",
 )
@@ -14,7 +13,6 @@ avro_cc_library(
 avro_cc_library(
     name = "manifest_entry_gen",
     class_name = "manifest_entry",
-    include_prefix = "iceberg",
     namespace = "iceberg::avrogen",
     schema = "avroschemas/manifest_entry.schema.json",
 )
@@ -27,7 +25,6 @@ redpanda_cc_library(
     hdrs = [
         "action.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":table_requirement",
         ":table_update",
@@ -41,11 +38,10 @@ redpanda_cc_library(
     hdrs = [
         "avro_utils.h",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes:iobuf",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "@avro",
     ],
 )
@@ -58,7 +54,6 @@ redpanda_cc_library(
     hdrs = [
         "json_utils.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         "//src/v/container:chunked_hash_map",
         "//src/v/json",
@@ -71,7 +66,6 @@ redpanda_cc_library(
     hdrs = [
         "json_writer.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         "//src/v/json",
         "//src/v/strings:utf8",
@@ -90,7 +84,6 @@ redpanda_cc_library(
         ":logger",
         "@fmt",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":partition",
@@ -110,11 +103,10 @@ redpanda_cc_library(
     hdrs = [
         "datatypes.h",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/utils:named_type",
         "@seastar",
     ],
@@ -128,7 +120,6 @@ redpanda_cc_library(
     hdrs = [
         "compatibility_types.h",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
@@ -147,7 +138,6 @@ redpanda_cc_library(
     hdrs = [
         "compatibility_utils.h",
     ],
-    include_prefix = "iceberg",
     visibility = [
         "//visibility:public",
     ],
@@ -168,7 +158,6 @@ redpanda_cc_library(
     hdrs = [
         "compatibility.h",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":compatibility_types",
@@ -188,7 +177,6 @@ redpanda_cc_library(
     hdrs = [
         "datatypes_json.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":datatypes",
         ":json_utils",
@@ -206,7 +194,6 @@ redpanda_cc_library(
     hdrs = [
         "values_json.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":datatypes",
         ":json_utils",
@@ -226,11 +213,10 @@ redpanda_cc_library(
     hdrs = [
         "field_collecting_visitor.h",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
     ],
 )
 
@@ -245,7 +231,6 @@ redpanda_cc_library(
     implementation_deps = [
         ":manifest_entry",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":catalog",
@@ -272,13 +257,12 @@ redpanda_cc_library(
     hdrs = [
         "manifest.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":datatypes",
         ":manifest_entry",
         ":partition",
         ":schema",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/utils:named_type",
     ],
 )
@@ -291,7 +275,6 @@ redpanda_cc_library(
     hdrs = [
         "manifest_avro.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":avro_utils",
         ":datatypes_json",
@@ -309,7 +292,7 @@ redpanda_cc_library(
         ":values_avro",
         "//src/v/base",
         "//src/v/bytes:iobuf",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/strings:string_switch",
         "//src/v/utils:named_type",
         "@avro",
@@ -325,7 +308,6 @@ redpanda_cc_library(
     hdrs = [
         "manifest_entry.h",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":partition_key",
@@ -346,7 +328,6 @@ redpanda_cc_library(
     hdrs = [
         "manifest_entry_type.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":datatypes",
         ":partition_key_type",
@@ -365,7 +346,6 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf_parser",
         "//src/v/strings:string_switch",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":manifest_entry",
         ":partition_key_type",
@@ -381,10 +361,9 @@ redpanda_cc_library(
     hdrs = [
         "manifest_file_packer.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":manifest_list",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
     ],
 )
 
@@ -403,7 +382,6 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf",
         "//src/v/ssx:future_util",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":manifest",
@@ -423,12 +401,11 @@ redpanda_cc_library(
     hdrs = [
         "manifest_list.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":manifest_entry",
         ":partition",
         "//src/v/bytes",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/utils:named_type",
     ],
 )
@@ -448,7 +425,6 @@ redpanda_cc_library(
         "//src/v/strings:string_switch",
         "@avro",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":manifest_list",
         "//src/v/bytes:iobuf",
@@ -472,7 +448,6 @@ redpanda_cc_library(
         ":table_requirement",
         "//src/v/random:generators",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":action",
         ":manifest_entry",
@@ -490,7 +465,6 @@ redpanda_cc_library(
     hdrs = [
         "metadata_io.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":logger",
         ":uri",
@@ -518,14 +492,13 @@ redpanda_cc_library(
         "//src/v/base",
         "@seastar",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
         ":transform",
         ":transform_utils",
         ":unresolved_partition_spec",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/utils:named_type",
     ],
 )
@@ -544,10 +517,9 @@ redpanda_cc_library(
         ":transform_json",
         "//src/v/strings:string_switch",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":partition",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/json",
     ],
 )
@@ -560,7 +532,6 @@ redpanda_cc_library(
     hdrs = [
         "partition_key.h",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":partition",
@@ -578,7 +549,6 @@ redpanda_cc_library(
     hdrs = [
         "partition_key_type.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":datatypes",
         ":partition",
@@ -594,7 +564,6 @@ redpanda_cc_library(
     hdrs = [
         "logger.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -616,14 +585,14 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/container:chunked_hash_map",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":action",
         ":table_metadata",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/utils:prefix_logger",
+        "@seastar",
     ],
 )
 
@@ -638,7 +607,6 @@ redpanda_cc_library(
     implementation_deps = [
         ":field_collecting_visitor",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
@@ -657,7 +625,6 @@ redpanda_cc_library(
     hdrs = [
         "struct_accessor.h",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
@@ -674,7 +641,6 @@ redpanda_cc_library(
     hdrs = [
         "schema_avro.h",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
@@ -695,7 +661,6 @@ redpanda_cc_library(
     implementation_deps = [
         "@abseil-cpp//absl/container:btree",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":datatypes",
         ":datatypes_json",
@@ -711,7 +676,6 @@ redpanda_cc_library(
     hdrs = [
         "snapshot.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":manifest_entry",
         ":schema",
@@ -735,7 +699,6 @@ redpanda_cc_library(
         "//src/v/strings:string_switch",
         "@abseil-cpp//absl/container:btree",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":snapshot",
         "//src/v/json",
@@ -755,7 +718,6 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf_parser",
         "//src/v/json",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":metadata_io",
         ":table_metadata",
@@ -775,12 +737,12 @@ redpanda_cc_library(
     hdrs = [
         "table_identifier.h",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "@boost//:container_hash",
+        "@fmt",
         "@seastar",
     ],
 )
@@ -790,7 +752,6 @@ redpanda_cc_library(
     hdrs = [
         "storage_credentials.h",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -807,7 +768,6 @@ redpanda_cc_library(
     hdrs = [
         "table_metadata.h",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":compatibility_utils",
@@ -819,7 +779,7 @@ redpanda_cc_library(
         ":snapshot",
         ":transform",
         ":uri",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/utils:absl_sstring_hash",
         "//src/v/utils:named_type",
@@ -844,7 +804,6 @@ redpanda_cc_library(
         ":transform_json",
         "//src/v/strings:string_switch",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":json_writer",
         ":table_metadata",
@@ -857,7 +816,6 @@ redpanda_cc_library(
     hdrs = [
         "table_requests.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":partition",
         ":schema",
@@ -867,7 +825,7 @@ redpanda_cc_library(
         ":table_requirement",
         ":table_update",
         "//src/v/container:chunked_hash_map",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/utils:uuid",
     ],
 )
@@ -884,7 +842,6 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/utils:to_string",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":datatypes",
         ":manifest_entry",
@@ -903,7 +860,6 @@ redpanda_cc_library(
     hdrs = [
         "table_requirement_json.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":json_writer",
         ":table_requirement",
@@ -917,12 +873,11 @@ redpanda_cc_library(
     hdrs = [
         "table_update.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":datatypes",
         ":schema",
         ":snapshot",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/utils:uuid",
     ],
 )
@@ -935,7 +890,6 @@ redpanda_cc_library(
     hdrs = [
         "table_update_json.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":json_writer",
         ":partition_json",
@@ -960,9 +914,8 @@ redpanda_cc_library(
         ":schema",
         "//src/v/base",
         "//src/v/container:chunked_hash_map",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":table_metadata",
         ":table_update",
@@ -977,7 +930,6 @@ redpanda_cc_library(
     hdrs = [
         "time_transform_visitor.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":values",
     ],
@@ -997,7 +949,6 @@ redpanda_cc_library(
         ":update_partition_spec_action",
         ":update_schema_action",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":action",
@@ -1008,7 +959,7 @@ redpanda_cc_library(
         ":table_requirement",
         ":table_update",
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "@seastar",
     ],
 )
@@ -1024,7 +975,6 @@ redpanda_cc_library(
     implementation_deps = [
         "@fmt",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
@@ -1044,7 +994,6 @@ redpanda_cc_library(
         ":json_utils",
         "//src/v/strings:string_switch",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":transform",
         "//src/v/base",
@@ -1060,7 +1009,6 @@ redpanda_cc_library(
     hdrs = [
         "bucket_transform_hashing_visitor.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":values",
         "//src/v/hashing:murmur",
@@ -1076,7 +1024,6 @@ redpanda_cc_library(
     hdrs = [
         "truncate_transform_visitor.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":values",
         "//src/v/bytes:iobuf",
@@ -1092,7 +1039,6 @@ redpanda_cc_library(
     hdrs = [
         "transform_utils.h",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":bucket_transform_hashing_visitor",
         ":datatypes",
@@ -1117,12 +1063,11 @@ redpanda_cc_library(
         "//src/v/base",
         "@fmt",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":transform",
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "@seastar",
     ],
 )
@@ -1140,12 +1085,12 @@ redpanda_cc_library(
         ":table_requirement",
         ":table_update",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":action",
         ":table_metadata",
         ":unresolved_partition_spec",
         "//src/v/utils:prefix_logger",
+        "@seastar",
     ],
 )
 
@@ -1161,11 +1106,11 @@ redpanda_cc_library(
         ":table_requirement",
         ":table_update",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":action",
         ":schema",
         ":table_metadata",
+        "@seastar",
     ],
 )
 
@@ -1181,12 +1126,11 @@ redpanda_cc_library(
         "//src/v/bytes:hash",
         "//src/v/bytes:iobuf_parser",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
         "//src/v/bytes:iobuf",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/utils:uuid",
         "@abseil-cpp//absl/numeric:int128",
         "@boost//:container_hash",
@@ -1205,7 +1149,6 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/bytes:iobuf_parser",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":avro_decimal",
@@ -1227,7 +1170,6 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf_parser",
         "//src/v/utils:uuid",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
@@ -1248,7 +1190,6 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf_parser",
         "//src/v/utils:uuid",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":manifest_io",
@@ -1257,7 +1198,7 @@ redpanda_cc_library(
         ":table_requirement",
         ":table_update",
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "@seastar",
     ],
 )
@@ -1274,7 +1215,6 @@ redpanda_cc_library(
         ":partition_json",
         ":schema_json",
     ],
-    include_prefix = "iceberg",
     deps = [
         ":json_utils",
         ":json_writer",
@@ -1301,7 +1241,6 @@ redpanda_cc_library(
         ":table_metadata_json",
         ":table_update_json",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         ":catalog",
@@ -1328,7 +1267,6 @@ redpanda_cc_library(
     implementation_deps = [
         "@ada",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -1347,7 +1285,6 @@ redpanda_cc_library(
     hdrs = [
         "avro_decimal.h",
     ],
-    include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes",

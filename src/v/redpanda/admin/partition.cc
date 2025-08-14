@@ -17,7 +17,7 @@
 #include "cluster/rm_stm.h"
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "container/lw_shared_container.h"
 #include "kafka/data/partition_proxy.h"
 #include "model/record.h"
@@ -362,7 +362,7 @@ admin_server::unclean_abort_partition_reconfig_handler(
 namespace {
 
 json::validator make_set_replicas_validator() {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
 {
     "type": "array",
     "items": {
@@ -480,17 +480,11 @@ admin_server::force_set_partition_replicas_handler(
     const auto& in_progress = topics.updates_in_progress();
     const auto in_progress_it = in_progress.find(ntp);
 
-    if (in_progress_it != in_progress.end()) {
-        throw ss::httpd::bad_request_exception(
-          fmt::format("A partition operation is in progress. Check "
-                      "reconfigurations and "
-                      "cancel in flight update before issuing force "
-                      "replica set update."));
-    }
     const auto current_assignment = topics.get_partition_assignment(ntp);
     if (current_assignment) {
         const auto& current_replicas = current_assignment->replicas;
-        if (current_replicas == replicas) {
+        if (
+          current_replicas == replicas && in_progress_it == in_progress.end()) {
             vlog(
               adminlog.info,
               "Request to change ntp {} replica set to {}, no change",
@@ -618,7 +612,7 @@ admin_server::set_partition_replicas_handler(
 
 namespace {
 json::validator make_set_replica_core_validator() {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
 {
     "type": "object",
     "properties": {
@@ -750,7 +744,7 @@ void admin_server::register_partition_routes() {
             [](auto& partition_manager, bool materialized, auto get_leader) {
                 return partition_manager.map_reduce0(
                   [materialized, get_leader](auto& pm) {
-                      fragmented_vector<summary> partitions;
+                      chunked_vector<summary> partitions;
                       for (const auto& it : pm.partitions()) {
                           summary p;
                           p.ns = it.first.ns;
@@ -763,10 +757,10 @@ void admin_server::register_partition_routes() {
                       }
                       return partitions;
                   },
-                  fragmented_vector<summary>{},
+                  chunked_vector<summary>{},
                   [](
-                    fragmented_vector<summary> acc,
-                    fragmented_vector<summary> update) {
+                    chunked_vector<summary> acc,
+                    chunked_vector<summary> update) {
                       std::move(
                         std::make_move_iterator(update.begin()),
                         std::make_move_iterator(update.end()),
@@ -1053,7 +1047,7 @@ admin_server::get_topic_partitions_handler(
           fmt::format("Could not find topic: {}/{}", tp_ns.ns, tp_ns.tp));
     }
     using partition_t = ss::httpd::partition_json::partition;
-    fragmented_vector<partition_t> partitions;
+    chunked_vector<partition_t> partitions;
     const auto& assignments = tp_md->get().get_assignments();
     partitions.reserve(assignments.size());
 
@@ -1189,7 +1183,7 @@ admin_server::get_majority_lost_partitions(
 
 namespace {
 json::validator make_node_id_array_validator() {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
     {
       "type": "array",
       "items": {
@@ -1213,7 +1207,7 @@ parse_node_ids_from_json(const json::Document::ValueType& val) {
 }
 
 json::validator make_force_recover_partitions_validator() {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
 {
   "type": "object",
   "properties": {
@@ -1294,7 +1288,7 @@ json::validator make_force_recover_partitions_validator() {
 }
 
 json::validator make_ntp_validator() {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
 {
   "type": "object",
   "properties": {
@@ -1328,7 +1322,7 @@ model::ntp parse_ntp_from_json(const json::Document::ValueType& value) {
 }
 
 json::validator make_replicas_validator() {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
 {
   "type": "array",
   "items": {
@@ -1391,8 +1385,7 @@ admin_server::force_recover_partitions_from_nodes(
     // parse the json body into a controller command.
     std::vector<model::node_id> dead_nodes = parse_node_ids_from_json(
       doc["dead_nodes"]);
-    fragmented_vector<cluster::ntp_with_majority_loss>
-      partitions_to_force_recover;
+    chunked_vector<cluster::ntp_with_majority_loss> partitions_to_force_recover;
     for (auto& r : doc["partitions_to_force_recover"].GetArray()) {
         auto ntp = parse_ntp_from_json(r["ntp"]);
         auto replicas = parse_replicas_from_json(r["replicas"]);

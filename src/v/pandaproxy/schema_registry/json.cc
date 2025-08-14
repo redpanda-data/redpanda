@@ -188,6 +188,10 @@ struct json_schema_definition::impl {
     schema_definition::references refs;
 };
 
+const json::Document& document(const json_schema_definition::impl& impl) {
+    return impl.ctx.doc;
+}
+
 bool operator==(
   const json_schema_definition& lhs, const json_schema_definition& rhs) {
     return lhs.raw() == rhs.raw();

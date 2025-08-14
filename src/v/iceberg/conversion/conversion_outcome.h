@@ -42,6 +42,9 @@ private:
     std::string msg_;
 };
 
+template<typename T>
+using basic_value_outcome = result<T, value_conversion_exception>;
+
 using value_outcome = result<iceberg::value, value_conversion_exception>;
 using optional_value_outcome
   = result<std::optional<iceberg::value>, value_conversion_exception>;

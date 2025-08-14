@@ -110,8 +110,6 @@ std::string_view to_string_view(feature f) {
         return "topic_ids";
     case feature::kafka_data_rpc:
         return "kafka_data_rpc";
-    case feature::cluster_linking_dr:
-        return "cluster_linking_dr";
     case feature::topic_locations_in_outbound_migrations:
         return "topic_locations_in_outbound_migrations";
     case feature::schema_registry_authz:
@@ -308,7 +306,7 @@ make_builtin_trial_license(security::license::clock::time_point start_time) {
 
     return security::license{
       .format_version = 0,
-      .type = security::license_type::free_trial,
+      ._type = security::license_type::free_trial,
       .organization = "Redpanda Built-In Evaluation Period",
       .expiry = expiry,
       .checksum = "",

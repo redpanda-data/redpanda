@@ -11,7 +11,7 @@
 
 #pragma once
 #include "base/vlog.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/server/datalake_usage_api.h"
 #include "kafka/server/logger.h"
 #include "serde/rw/envelope.h"
@@ -141,7 +141,7 @@ protected:
     virtual void window_closed() {}
 
 private:
-    void reset_state(fragmented_vector<usage_window> buckets);
+    void reset_state(chunked_vector<usage_window> buckets);
     void close_window();
     void rearm_window_timer();
     bool is_bucket_stale(size_t idx, uint64_t close_ts) const;
@@ -160,7 +160,7 @@ private:
     ss::gate _bg_write_gate;
     ss::gate _gate;
     size_t _current_window{0};
-    fragmented_vector<usage_window> _buckets;
+    chunked_vector<usage_window> _buckets;
     storage::kvstore& _kvstore;
 };
 } // namespace kafka

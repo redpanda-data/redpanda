@@ -107,6 +107,15 @@ public:
         kafka::partition_proxy*)>) override
       = 0;
 
+    ss::future<result<kafka::data::rpc::partition_offsets, cluster::errc>>
+    get_offsets_from_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<
+        ss::future<result<kafka::data::rpc::partition_offsets, cluster::errc>>(
+          kafka::partition_proxy*)>) override
+      = 0;
+
     virtual ss::future<result<model::wasm_binary_iobuf, cluster::errc>>
     invoke_on_shard(
       ss::shard_id shard_id,

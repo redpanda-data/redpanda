@@ -10,6 +10,7 @@
 #include "raft/event_manager.h"
 
 #include "raft/consensus.h"
+#include "ssx/future-util.h"
 
 namespace raft {
 

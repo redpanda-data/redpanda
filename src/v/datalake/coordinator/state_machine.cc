@@ -167,7 +167,7 @@ ss::future<> coordinator_stm::apply_raft_snapshot(const iobuf& snapshot_buf) {
     state_ = std::move(snapshot.topics);
 }
 
-ss::future<iobuf> coordinator_stm::take_snapshot() {
+ss::future<iobuf> coordinator_stm::take_raft_snapshot() {
     iobuf snapshot_buf;
     co_await serde::write_async(snapshot_buf, make_snapshot());
     co_return std::move(snapshot_buf);

@@ -196,6 +196,16 @@ public:
         return _fake_proxy->invoke_on_shard_impl(shard_id, ntp, std::move(fn));
     }
 
+    ss::future<result<kafka::data::rpc::partition_offsets, cluster::errc>>
+    get_offsets_from_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<
+        ss::future<result<kafka::data::rpc::partition_offsets, cluster::errc>>(
+          kafka::partition_proxy*)> fn) final {
+        return _fake_proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
+    }
+
     ss::future<result<model::wasm_binary_iobuf, cluster::errc>> invoke_on_shard(
       ss::shard_id shard_id,
       const model::ntp& ntp,

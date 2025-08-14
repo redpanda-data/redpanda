@@ -27,7 +27,6 @@ redpanda_cc_library(
         "@abseil-cpp//absl/container:flat_hash_set",
         "@abseil-cpp//absl/container:node_hash_map",
     ],
-    include_prefix = "crypto",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",

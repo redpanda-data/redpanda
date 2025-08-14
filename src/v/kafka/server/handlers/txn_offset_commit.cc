@@ -20,6 +20,8 @@
 
 #include <seastar/core/print.hh>
 
+#include <algorithm>
+
 namespace kafka {
 
 struct txn_offset_commit_ctx {
@@ -137,7 +139,7 @@ ss::future<response_ptr> txn_offset_commit_handler::handle(
         if (!octx.rctx.authorized(security::acl_operation::read, topic.name)) {
             auto& parts = octx.unauthorized_tps[topic.name];
             parts.reserve(topic.partitions.size());
-            absl::c_transform(
+            std::ranges::transform(
               topic.partitions, parts.begin(), [](const auto& part) {
                   return txn_offset_commit_response_partition{
                     .partition_index = part.partition_index,

@@ -176,10 +176,15 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         self._wait_until_no_leader()
         return (killed, alive)
 
-    def _do_force_reconfiguration(self, replicas):
+    def _do_reconfigure(self, replicas, force: bool):
         try:
-            self.redpanda._admin.force_set_partition_replicas(
-                topic=self.topic, partition=0, replicas=replicas)
+            if force:
+                self.redpanda._admin.force_set_partition_replicas(
+                    topic=self.topic, partition=0, replicas=replicas)
+            else:
+                self.redpanda._admin.set_partition_replicas(topic=self.topic,
+                                                            partition=0,
+                                                            replicas=replicas)
             return True
         except requests.exceptions.RetryError:
             return False
@@ -188,17 +193,60 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         except requests.exceptions.HTTPError:
             return False
 
-    def _force_reconfiguration(self, new_replicas):
+    def reconfigure(self, new_replicas, force: bool):
         replicas = [
             dict(node_id=replica.node_id, core=replica.core)
             for replica in new_replicas
         ]
         self.redpanda.logger.info(f"Force reconfiguring to: {replicas}")
         self.redpanda.wait_until(
-            lambda: self._do_force_reconfiguration(replicas=replicas),
+            lambda: self._do_reconfigure(replicas=replicas, force=force),
             timeout_sec=60,
             backoff_sec=2,
             err_msg=f"Unable to force reconfigure {self.topic}/0 to {replicas}"
+        )
+
+    def _force_reconfiguration(self, replicas):
+        self.reconfigure(new_replicas=replicas, force=True)
+
+    def _reconfiguration(self, replicas):
+        self.reconfigure(new_replicas=replicas, force=False)
+
+    def _cancel_reconfiguration(self):
+        def do_cancel():
+            try:
+                self.redpanda._admin.cancel_partition_move(
+                    topic=self.topic,
+                    partition=0,
+                    node=random.choice(self.redpanda.started_nodes()))
+                return True
+            except requests.exceptions.RetryError:
+                return False
+            except requests.exceptions.ConnectionError:
+                return False
+            except requests.exceptions.HTTPError:
+                return False
+
+        self.redpanda.wait_until(
+            do_cancel,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg=f"Unable to cancel reconfiguration for {self.topic}/0")
+
+    def _wait_for_reconfigurations(self):
+        def has_reconfigurations():
+            try:
+                return len(
+                    self.redpanda._admin.list_reconfigurations(
+                        node=random.choice(self.redpanda.started_nodes()))) > 0
+            except:
+                return False
+
+        self.redpanda.wait_until(
+            has_reconfigurations,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg=f"Timed out waiting for reconfigurations for {self.topic}/0"
         )
 
     def _start_consumer(self):
@@ -301,6 +349,74 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
                                                  hosts=self._alive_nodes(),
                                                  timeout_s=self.WAIT_TIMEOUT_S)
 
+    @cluster(num_nodes=5)
+    # If cancellation is True, cancels the in progress stuck move and then force reconfigures
+    @matrix(cancellation=[True, False])
+    def test_reconfiguring_in_progress_move(self, cancellation):
+        """
+        Tests that a partition move stuck in progress can be reconfigured. Additionally also checks that a stuck cancellation can be reconfigured."""
+        self.start_redpanda(num_nodes=5)
+        assert self.redpanda
+
+        self.topic = "topic"
+        self.client().create_topic(
+            TopicSpec(name=self.topic, replication_factor=3))
+
+        (killed, alive) = self._stop_majority_nodes(replication=3)
+
+        assert alive, "At least one replica should be alive"
+
+        # Issue a regular partition move while the partition is leaderless.
+        # this should be stuck
+        self._reconfiguration(alive)
+        self._wait_for_reconfigurations()
+        if cancellation:
+            # Cancel the stuck move
+            self._cancel_reconfiguration()
+
+        # Randomness here may choose existing replicas or a totally new set of replicas.
+        # Both are interesting cases to test.
+        new_replicas = [
+            Replica(dict(node_id=self.redpanda.node_id(replica), core=0))
+            for replica in random.sample(self.redpanda.started_nodes(), 3)
+        ]
+
+        self._force_reconfiguration(new_replicas)
+
+        self.redpanda._admin.await_stable_leader(topic=self.topic,
+                                                 replication=3,
+                                                 hosts=self._alive_nodes(),
+                                                 timeout_s=self.WAIT_TIMEOUT_S)
+
+    @cluster(num_nodes=5)
+    def test_reconfiguring_force_reconfiguration(self):
+        """
+        Test ensures that a stuck force reconfiguration can be force reconfigured"""
+        self.start_redpanda(num_nodes=5)
+        assert self.redpanda
+
+        self.topic = "topic"
+        self.client().create_topic(
+            TopicSpec(name=self.topic, replication_factor=3))
+
+        (killed, alive) = self._stop_majority_nodes(replication=3)
+
+        # This would never finish
+        self._force_reconfiguration([killed[0]])
+        self._wait_for_reconfigurations()
+
+        new_replica_count = random.choice([1, 3])
+        new_replicas = [
+            Replica(dict(node_id=self.redpanda.node_id(replica),
+                         core=0)) for replica in random.sample(
+                             self.redpanda.started_nodes(), new_replica_count)
+        ]
+        self._force_reconfiguration(new_replicas)
+        self.redpanda._admin.await_stable_leader(topic=self.topic,
+                                                 replication=new_replica_count,
+                                                 hosts=self._alive_nodes(),
+                                                 timeout_s=self.WAIT_TIMEOUT_S)
+
     @cluster(num_nodes=7)
     @matrix(target_replica_set_size=[1, 3])
     def test_reconfiguring_all_replicas_lost(self, target_replica_set_size):
@@ -354,7 +470,7 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
             Replica(dict(node_id=self.redpanda.node_id(replica), core=0)) for
             replica in self.redpanda.started_nodes()[:target_replica_set_size]
         ]
-        self._force_reconfiguration(new_replicas=new_replicas)
+        self._force_reconfiguration(new_replicas)
 
         self.redpanda._admin.await_stable_leader(
             topic=self.topic,
@@ -450,7 +566,9 @@ class NodeWiseRecoveryTest(RedpandaTest):
         self.producer.clean()
         self.producer.free()
 
-    def wait_for_final_manifest_uploads(self, topic):
+    def wait_for_final_manifest_uploads(self,
+                                        topic,
+                                        fraction_uploaded: float = 0.8):
         def all_uploaded():
             for p in self.rpk.describe_topic(topic):
                 status = self.admin.get_partition_cloud_storage_status(
@@ -459,6 +577,16 @@ class NodeWiseRecoveryTest(RedpandaTest):
                     node=self.redpanda.get_node_by_id(p.leader))
                 if ("ms_since_last_manifest_upload"
                         not in status) or status["metadata_update_pending"]:
+                    self.logger.debug(
+                        f"Pending manifest update: {status['ms_since_last_manifest_upload']=} {status['metadata_update_pending']=}"
+                    )
+                    return False
+                if int(
+                        status["cloud_log_last_offset"]
+                ) < fraction_uploaded * int(status["local_log_last_offset"]):
+                    self.logger.debug(
+                        f"{topic}/{p.id}: {status['cloud_log_last_offset']=} vs {status['local_log_last_offset']=}"
+                    )
                     return False
             return True
 
@@ -507,10 +635,12 @@ class NodeWiseRecoveryTest(RedpandaTest):
         to_kill_node_ids = [
             int(self.redpanda.node_id(n)) for n in to_kill_nodes
         ]
+        expected_fraction_uploaded = 0.8
         for t in topics:
             self.produce_until_log_eviction(t.name)
         for t in topics:
-            self.wait_for_final_manifest_uploads(t.name)
+            self.wait_for_final_manifest_uploads(
+                t.name, fraction_uploaded=expected_fraction_uploaded)
 
         partitions_lost_majority = admin.get_majority_lost_partitions_from_nodes(
             dead_brokers=to_kill_node_ids)
@@ -638,22 +768,24 @@ class NodeWiseRecoveryTest(RedpandaTest):
                     f"partition {t}/{partition_id} replicas initial high watermark: {initial_hw} final high watermark: {final_hw}"
                 )
                 if t.redpanda_remote_write or t.replication_factor == 3:
-                    assert 0.8 * initial_hw <= final_hw <= initial_hw
+                    assert expected_fraction_uploaded * initial_hw <= final_hw <= initial_hw, \
+                        f"partition {t.name}/{partition_id}: {initial_hw=} vs {final_hw=}"
 
     @cluster(num_nodes=6)
-    def test_recovery_local_data_missing(self):
+    @matrix(wait_for_final_manifest_uploads=[False, True])
+    def test_recovery_local_data_missing(self,
+                                         wait_for_final_manifest_uploads):
         self.redpanda._disable_cloud_storage_diagnostics = True
 
-        topic = TopicSpec(name=f"topic-0",
-                          replication_factor=3,
+        topic = TopicSpec(replication_factor=3,
                           partition_count=1,
                           redpanda_remote_read=True,
                           redpanda_remote_write=True)
-
+        local_retention = 50 * 1024 * 1024  # 50 MiB
         self.client().create_topic(topic)
         self.client().alter_topic_config(
             topic.name, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
-            2 * 1024 * 1024)
+            local_retention)
 
         admin = self.redpanda._admin
         rpk = RpkTool(self.redpanda)
@@ -665,7 +797,11 @@ class NodeWiseRecoveryTest(RedpandaTest):
 
         # produce initial data
         self.produce_until_log_eviction(topic.name)
-        self.wait_for_final_manifest_uploads(topic.name)
+        if wait_for_final_manifest_uploads:
+            self.wait_for_final_manifest_uploads(topic.name)
+        else:
+            self.client().alter_topic_config(topic.name,
+                                             "redpanda.remote.write", False)
 
         # collect topic partition high watermarks before recovery
         initial_status = self.get_topic_partition_status(topic.name, 1)
@@ -676,15 +812,15 @@ class NodeWiseRecoveryTest(RedpandaTest):
         node_to_stop = self.redpanda.get_node_by_id(node_to_stop_id)
         self.logger.debug(f"Stopping node: {node_to_stop_id}")
         self.redpanda.stop_node(node_to_stop)
-
+        msg_size = 512
+        total_bytes = 75 * 1024 * 1024  # 75 MiB
+        msg_cnt = total_bytes // msg_size
         # produce more data while node 0 is stopped
-        producer = KgoVerifierProducer(self.test_context, self.redpanda,
-                                       topic.name, 512, 5000)
-        producer.start(clean=False)
-        producer.wait()
-        producer.clean()
-        producer.free()
-        self.wait_for_final_manifest_uploads(topic.name)
+        KgoVerifierProducer.oneshot(self.test_context, self.redpanda,
+                                    topic.name, msg_size, msg_cnt)
+
+        if wait_for_final_manifest_uploads:
+            self.wait_for_final_manifest_uploads(topic.name)
 
         status_2nd_step = self.get_topic_partition_status(topic.name, 1)
 
@@ -720,13 +856,12 @@ class NodeWiseRecoveryTest(RedpandaTest):
         rpk.force_partition_recovery(from_nodes=to_kill_node_ids)
         self.wait_for_no_reconfigurations()
         # wait for quiescence
-        for part in range(0, topic.partition_count):
-            self.redpanda._admin.await_stable_leader(
-                topic=topic.name,
-                partition=part,
-                timeout_s=self.default_timeout_sec,
-                backoff_s=2,
-                hosts=self._alive_nodes())
+        self.redpanda._admin.await_stable_leader(
+            topic=topic.name,
+            partition=0,
+            timeout_s=self.default_timeout_sec,
+            backoff_s=2,
+            hosts=self._alive_nodes())
 
         status_after = self.get_topic_partition_status(topic.name,
                                                        topic.partition_count)

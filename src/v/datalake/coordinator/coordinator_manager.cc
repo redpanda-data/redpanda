@@ -18,7 +18,6 @@
 #include "datalake/coordinator/iceberg_file_committer.h"
 #include "datalake/coordinator/iceberg_snapshot_remover.h"
 #include "datalake/coordinator/state_machine.h"
-#include "datalake/credential_manager.h"
 #include "datalake/logger.h"
 #include "datalake/record_schema_resolver.h"
 #include "iceberg/manifest_io.h"
@@ -39,8 +38,7 @@ coordinator_manager::coordinator_manager(
   pandaproxy::schema_registry::api* sr_api,
   std::unique_ptr<catalog_factory> catalog_factory,
   ss::sharded<cloud_io::remote>& io,
-  cloud_storage_clients::bucket_name bucket,
-  datalake::credential_manager& credential_mgr)
+  cloud_storage_clients::bucket_name bucket)
   : self_(self)
   , storage_(storage.local())
   , gm_(gm.local())
@@ -50,8 +48,8 @@ coordinator_manager::coordinator_manager(
   , schema_registry_(schema::registry::make_default(sr_api))
   , manifest_io_(io.local(), bucket)
   , catalog_factory_(std::move(catalog_factory))
-  , type_resolver_(std::make_unique<record_schema_resolver>(*schema_registry_))
-  , credential_mgr_(credential_mgr) {}
+  , type_resolver_(
+      std::make_unique<record_schema_resolver>(*schema_registry_)) {}
 
 coordinator_manager::~coordinator_manager() = default;
 

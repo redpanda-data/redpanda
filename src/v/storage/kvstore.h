@@ -14,7 +14,7 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "container/chunked_hash_map.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "metrics/metrics.h"
 #include "storage/fwd.h"
 #include "storage/ntp_config.h"

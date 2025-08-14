@@ -579,4 +579,32 @@ controller_api::get_global_reconciliation_state(
     co_return state;
 }
 
+ss::future<std::error_code> controller_api::remake_partition(raft::group_id g) {
+    auto shard_for_opt = shard_for(g);
+    if (!shard_for_opt.has_value()) {
+        co_return errc::partition_not_exists;
+    }
+
+    auto shard = shard_for_opt.value();
+    auto ntp_opt = co_await _partition_manager.invoke_on(
+      shard, [g](cluster::partition_manager& pm) -> std::optional<model::ntp> {
+          auto p = pm.partition_for(g);
+          if (!p) {
+              return std::nullopt;
+          }
+          return p->ntp();
+      });
+
+    if (!ntp_opt.has_value()) {
+        co_return errc::partition_not_exists;
+    }
+
+    auto ntp = std::move(ntp_opt).value();
+
+    co_return co_await _backend.invoke_on(
+      shard, [&ntp](cluster::controller_backend& b) {
+          return b.remake_partition(std::move(ntp));
+      });
+}
+
 } // namespace cluster

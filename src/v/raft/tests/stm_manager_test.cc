@@ -444,8 +444,8 @@ struct controllable_throwing_kv : public simple_kv {
       const ssx::semaphore_units& apply_units) override {
         if (batch.last_offset() > _allow_apply) {
             throw std::runtime_error(fmt::format(
-              "not allowed to apply batches with last offset greater than {}. "
-              "Current batch last offset: {}",
+              "not allowed to apply batches with last offset greater than "
+              "{}. Current batch last offset: {}",
               _allow_apply,
               batch.last_offset()));
         }
@@ -572,7 +572,7 @@ public:
     explicit non_fast_movable_kv(raft_node_instance& rn)
       : simple_kv_base<no_at_offset_snapshot_stm_base>(rn) {}
 
-    ss::future<iobuf> take_snapshot() final {
+    ss::future<iobuf> take_raft_snapshot() final {
         co_return serde::to_iobuf(state);
     }
 

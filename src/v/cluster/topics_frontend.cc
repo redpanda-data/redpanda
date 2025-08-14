@@ -321,13 +321,18 @@ topics_frontend::topics_frontend(
     }
 }
 
-static bool
-needs_linearizable_barrier(const std::vector<topic_result>& results) {
+namespace {
+
+template<std::ranges::input_range R>
+requires std::same_as<std::ranges::range_value_t<R>, topic_result>
+bool needs_linearizable_barrier(const R& results) {
     return std::any_of(
       results.cbegin(), results.cend(), [](const topic_result& r) {
           return r.ec == errc::success;
       });
 }
+
+} // namespace
 
 ss::future<std::vector<topic_result>> topics_frontend::create_topics(
   custom_assignable_topic_configuration_vector topics,
@@ -423,14 +428,16 @@ cluster::errc map_errc(std::error_code ec) {
     return errc::replication_error;
 }
 
-ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
+ss::future<chunked_vector<topic_result>>
+topics_frontend::update_topic_properties(
   topic_properties_update_vector updates,
   model::timeout_clock::time_point timeout) {
     auto cluster_leader = _leaders.local().get_leader(model::controller_ntp);
 
     // no leader available
     if (!cluster_leader) {
-        co_return make_error_topic_results(updates, errc::no_leader_controller);
+        co_return make_error_topic_results<chunked_vector>(
+          updates, errc::no_leader_controller);
     }
 
     if (!_features.local().is_active(features::feature::cloud_retention)) {
@@ -442,7 +449,8 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
           clusterlog.info,
           "Refusing to update topics as not all cluster nodes are running "
           "v22.3");
-        co_return make_error_topic_results(updates, errc::feature_disabled);
+        co_return make_error_topic_results<chunked_vector>(
+          updates, errc::feature_disabled);
     }
 
     // current node is a leader, just replicate
@@ -450,11 +458,11 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
         // replicate empty batch to make sure leader local state is up to date.
         auto result = co_await stm_linearizable_barrier(timeout);
         if (!result) {
-            co_return make_error_topic_results(
+            co_return make_error_topic_results<chunked_vector>(
               updates, map_errc(result.error()));
         }
 
-        auto results = co_await ssx::parallel_transform(
+        auto results = co_await ssx::parallel_transform<chunked_vector>(
           std::move(updates), [this, timeout](topic_properties_update update) {
               if (
                 _features.local().should_sanction()
@@ -502,7 +510,8 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
       .then([updates{std::move(updates2)}](
               result<update_topic_properties_reply> r) {
           if (r.has_error()) {
-              return make_error_topic_results(updates, map_errc(r.error()));
+              return make_error_topic_results<chunked_vector>(
+                updates, map_errc(r.error()));
           }
           return std::move(r.value().results);
       });
@@ -1340,11 +1349,11 @@ ss::future<std::error_code> topics_frontend::force_update_partition_replicas(
       _stm, _as, std::move(cmd), tout, term);
 }
 
-ss::future<result<fragmented_vector<ntp_with_majority_loss>>>
+ss::future<result<chunked_vector<ntp_with_majority_loss>>>
 topics_frontend::partitions_with_lost_majority(
   std::vector<model::node_id> dead_nodes) {
     try {
-        fragmented_vector<ntp_with_majority_loss> result;
+        chunked_vector<ntp_with_majority_loss> result;
         const auto& topics = _topics.local();
         for (auto it = topics.topics_iterator_begin();
              it != topics.topics_iterator_end();
@@ -1362,17 +1371,6 @@ topics_frontend::partitions_with_lost_majority(
                     continue;
                 }
                 model::ntp ntp(tn.ns, tn.tp, assignment.id);
-                if (topics.updates_in_progress().contains(ntp)) {
-                    // force reconfiguration does not support in progress
-                    // moves. this check can be relaxed once the limitation
-                    // is fixed.
-                    vlog(
-                      clusterlog.debug,
-                      "{} lost majority but skipping as an update is in "
-                      "progress.",
-                      ntp);
-                    continue;
-                }
                 result.emplace_back(
                   std::move(ntp),
                   topic_revision,
@@ -1401,7 +1399,7 @@ topics_frontend::partitions_with_lost_majority(
 ss::future<std::error_code>
 topics_frontend::force_recover_partitions_from_nodes(
   std::vector<model::node_id> nodes,
-  fragmented_vector<ntp_with_majority_loss>
+  chunked_vector<ntp_with_majority_loss>
     user_approved_force_recovery_partitions,
   model::timeout_clock::time_point timeout) {
     auto result = co_await stm_linearizable_barrier(timeout);
@@ -1415,17 +1413,16 @@ topics_frontend::force_recover_partitions_from_nodes(
     for (const auto& entry : user_approved_force_recovery_partitions) {
         // check if there is an in progress movemement, reject if so.
         // this is a conservative check and can be relaxed.
-        auto in_progress_move = topics.is_update_in_progress(entry.ntp);
         auto current_assignment = topics.get_partition_assignment(entry.ntp);
         auto assignment_match = current_assignment
                                 && are_replica_sets_equal(
                                   current_assignment->replicas,
                                   entry.assignment);
-        if (in_progress_move || !assignment_match) {
+        if (!assignment_match) {
             vlog(
               clusterlog.info,
               "rejecting force recovery of partitions from brokers {}, ntp: "
-              "{}, move in progress: {}, expected replica set: {}, current "
+              "{}, expected replica set: {}, current "
               "assignment: {}, the state may have changed since the original "
               "request was made, try again.",
               nodes,

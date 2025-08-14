@@ -24,8 +24,6 @@ struct partition_offsets_request
       partition_offsets_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     using partitions
       = chunked_hash_map<model::topic, chunked_hash_set<model::partition_id>>;
     partitions data;
@@ -38,8 +36,6 @@ struct partition_offsets_reply
       partition_offsets_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     using offsets = chunked_hash_map<
       model::topic,
       chunked_hash_map<model::partition_id, kafka::offset>>;

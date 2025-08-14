@@ -168,7 +168,7 @@ class no_at_offset_snapshot_stm_base : public state_machine_base {
     /**
      * Method that will be called whenever a raft snapshot is required
      */
-    virtual ss::future<iobuf> take_snapshot() = 0;
+    virtual ss::future<iobuf> take_raft_snapshot() = 0;
 
     snapshot_at_offset_supported supports_snapshot_at_offset() const final {
         return snapshot_at_offset_supported::no;
@@ -184,7 +184,7 @@ class no_at_offset_snapshot_stm_base : public state_machine_base {
               offset,
               last_applied_offset()));
         }
-        return take_snapshot();
+        return take_raft_snapshot();
     }
 };
 

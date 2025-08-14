@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "http/rest_client/rest_entity.h"
 
 namespace iceberg::rest_client {

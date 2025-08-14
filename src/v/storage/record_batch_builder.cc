@@ -13,8 +13,8 @@
 #include "model/record.h"
 #include "model/record_utils.h"
 #include "model/timeout_clock.h"
-#include "storage/parser_utils.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>
 
 namespace storage {
@@ -67,7 +67,7 @@ model::record_batch record_batch_builder::build() && {
         _records = compression::compressor::compress(_records, _compression);
     }
 
-    internal::reset_size_checksum_metadata(header, _records);
+    header.reset_size_checksum_metadata(_records);
     return model::record_batch(
       header, std::move(_records), model::record_batch::tag_ctor_ng{});
 }
@@ -84,7 +84,7 @@ ss::future<model::record_batch> record_batch_builder::build_async() && {
           std::move(_records), _compression);
     }
 
-    internal::reset_size_checksum_metadata(header, _records);
+    header.reset_size_checksum_metadata(_records);
 
     co_return model::record_batch(
       header, std::move(_records), model::record_batch::tag_ctor_ng{});

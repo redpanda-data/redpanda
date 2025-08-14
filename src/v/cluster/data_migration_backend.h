@@ -11,11 +11,15 @@
 #pragma once
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/topic_mount_handler.h"
+#include "cluster/data_migration_group_proxy.h"
 #include "cluster/data_migration_table.h"
 #include "cluster/shard_table.h"
+#include "cluster/types.h"
 #include "container/chunked_hash_map.h"
 #include "data_migration_types.h"
 #include "fwd.h"
+#include "model/fundamental.h"
+#include "model/metadata.h"
 #include "ssx/semaphore.h"
 #include "utils/mutex.h"
 
@@ -40,6 +44,7 @@ public:
       topics_frontend& topics_frontend,
       topic_table& topic_table,
       shard_table& shard_table,
+      group_proxy& group_proxy,
       std::optional<std::reference_wrapper<cloud_storage::remote>>
         _cloud_storage_api,
       std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>
@@ -52,10 +57,22 @@ public:
 private:
     struct work_scope {
         std::optional<state> sought_state;
-        bool partition_work_needed = false;
+        bool data_partition_work_needed = false;
+        bool co_partition_work_needed = false;
         bool topic_work_needed = false;
+
+        bool any_partition_work_needed() const {
+            return data_partition_work_needed || co_partition_work_needed;
+        };
+        bool partition_work_needed(const model::topic_namespace& nt) const {
+            return nt == model::kafka_consumer_offsets_nt
+                     ? co_partition_work_needed
+                     : data_partition_work_needed;
+        };
     };
     struct topic_reconciliation_state {
+        // will be invalid for consumer offsets topic
+        // as it was not explicitly requested in the migration as a topic
         size_t idx_in_migration;
         chunked_hash_map<model::partition_id, std::vector<model::node_id>>
           outstanding_partitions; // for partition scoped ops
@@ -63,13 +80,20 @@ private:
         bool topic_scoped_work_done;
         void clear();
     };
-    using topic_map_t
-      = chunked_hash_map<model::topic_namespace, topic_reconciliation_state>;
+    using topic_map_t = chunked_hash_map<
+      model::topic_namespace,
+      topic_reconciliation_state,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>;
+    using partition_consumer_group_map_t
+      = chunked_hash_map<model::partition_id, chunked_vector<consumer_group>>;
     struct migration_reconciliation_state {
         explicit migration_reconciliation_state(work_scope scope)
           : scope(scope) {}
         work_scope scope;
         topic_map_t outstanding_topics;
+        // may not stay unfilled between scheduling points
+        std::optional<partition_consumer_group_map_t> partition_group_map;
     };
     using migration_reconciliation_states_t
       = absl::flat_hash_map<id, migration_reconciliation_state>;
@@ -225,24 +249,33 @@ private:
     std::optional<std::reference_wrapper<replica_work_state>>
     get_replica_work_state(const model::ntp& ntp);
     bool has_local_replica(const model::ntp& ntp);
+    const inbound_topic& get_inbound_topic(
+      const model::topic_namespace_view& nt,
+      const inbound_migration& im,
+      id migration_id) const;
 
     inbound_partition_work_info get_partition_work_info(
-      const model::ntp& ntp, const inbound_migration& im, id migration_id);
+      const model::ntp& ntp,
+      const inbound_migration& im,
+      id migration_id) const;
     outbound_partition_work_info get_partition_work_info(
-      const model::ntp& ntp, const outbound_migration& om, id migration_id);
+      const model::ntp& ntp,
+      const outbound_migration& om,
+      id migration_id) const;
     partition_work_info get_partition_work_info(
-      const model::ntp& ntp, const migration_metadata& metadata);
+      const model::ntp& ntp, const migration_metadata& metadata) const;
 
     inbound_topic_work_info get_topic_work_info(
       const model::topic_namespace& nt,
       const inbound_migration& im,
-      id migration_id);
+      id migration_id) const;
     outbound_topic_work_info get_topic_work_info(
       const model::topic_namespace& nt,
       const outbound_migration& om,
-      id migration_id);
+      id migration_id) const;
     topic_work_info get_topic_work_info(
-      const model::topic_namespace& nt, const migration_metadata& metadata);
+      const model::topic_namespace& nt,
+      const migration_metadata& metadata) const;
 
     template<class M>
     struct migration_direction_tag {};
@@ -253,6 +286,12 @@ private:
     static work_scope get_work_scope(
       migration_direction_tag<outbound_migration>,
       const migration_metadata& metadata);
+
+    // for a normal topic get all assignments,
+    // for __consumer_groups get only those holding migrated groups
+    chunked_vector<partition_assignment>
+    get_topic_assignments(const model::topic_namespace& nt, const id id);
+
     /*
      * Reconciliation-related data.
      *
@@ -327,6 +366,7 @@ private:
     topics_frontend& _topics_frontend;
     topic_table& _topic_table;
     shard_table& _shard_table;
+    group_proxy& _group_proxy;
     std::optional<std::reference_wrapper<cloud_storage::remote>>
       _cloud_storage_api;
     std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>
@@ -338,8 +378,8 @@ private:
     mutex _mutex{"c/data-migration-be::lock"};
     ss::timer<ss::lowres_clock> _timer{[this]() { wakeup(); }};
 
-    bool _is_raft0_leader;
-    bool _is_coordinator;
+    std::optional<model::term_id> _raft0_leader_term;
+    std::optional<model::term_id> _coordinator_term;
     migrations_table::notification_id _table_notification_id;
     cluster::notification_id_type _plt_raft0_leadership_notification_id;
     cluster::notification_id_type _topic_table_notification_id;

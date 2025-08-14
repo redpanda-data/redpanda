@@ -259,7 +259,6 @@ struct transform_offsets_key
       transform_offsets_key,
       serde::version<1>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     transform_id id;
     // id of the partition from transform's input/source topic.
     partition_id partition;

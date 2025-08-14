@@ -12,7 +12,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/shard_table.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/data/partition_proxy.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/offset_for_leader_epoch_response.h"

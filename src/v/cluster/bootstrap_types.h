@@ -23,8 +23,6 @@ struct cluster_bootstrap_info_request
       cluster_bootstrap_info_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     friend std::ostream&
     operator<<(std::ostream& o, const cluster_bootstrap_info_request&) {
         fmt::print(o, "{{}}");
@@ -39,8 +37,6 @@ struct cluster_bootstrap_info_reply
       cluster_bootstrap_info_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     model::broker broker;
     cluster_version version;
     std::vector<net::unresolved_address> seed_servers;

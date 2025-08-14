@@ -9,7 +9,7 @@
  */
 #pragma once
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "datalake/coordinator/state.h"
 #include "datalake/coordinator/translated_offset_range.h"
 #include "datalake/errors.h"
@@ -46,8 +46,6 @@ struct ensure_table_exists_reply
       ensure_table_exists_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     ensure_table_exists_reply() = default;
     explicit ensure_table_exists_reply(errc err)
       : errc(err) {}
@@ -64,7 +62,6 @@ struct ensure_table_exists_request
       ensure_table_exists_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     using resp_t = ensure_table_exists_reply;
 
     ensure_table_exists_request() = default;
@@ -95,8 +92,6 @@ struct ensure_dlq_table_exists_reply
       ensure_dlq_table_exists_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     ensure_dlq_table_exists_reply() = default;
     explicit ensure_dlq_table_exists_reply(errc err)
       : errc(err) {}
@@ -114,7 +109,6 @@ struct ensure_dlq_table_exists_request
       ensure_dlq_table_exists_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     using resp_t = ensure_dlq_table_exists_reply;
 
     ensure_dlq_table_exists_request() = default;
@@ -139,8 +133,6 @@ struct add_translated_data_files_reply
       add_translated_data_files_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     add_translated_data_files_reply() = default;
     explicit add_translated_data_files_reply(errc err)
       : errc(err) {}
@@ -157,7 +149,6 @@ struct add_translated_data_files_request
       add_translated_data_files_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     using resp_t = add_translated_data_files_reply;
 
     add_translated_data_files_request() = default;
@@ -207,8 +198,6 @@ struct fetch_latest_translated_offset_reply
       fetch_latest_translated_offset_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     fetch_latest_translated_offset_reply() = default;
     explicit fetch_latest_translated_offset_reply(errc err)
       : errc(err) {}
@@ -242,7 +231,6 @@ struct fetch_latest_translated_offset_request
       fetch_latest_translated_offset_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     using resp_t = fetch_latest_translated_offset_reply;
 
     fetch_latest_translated_offset_request() = default;
@@ -271,8 +259,6 @@ struct per_topic_usage_stats
       per_topic_usage_stats,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     per_topic_usage_stats() = default;
     explicit per_topic_usage_stats(
       model::topic topic,
@@ -299,8 +285,6 @@ struct datalake_usage_stats
       datalake_usage_stats,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     friend std::ostream& operator<<(std::ostream&, const datalake_usage_stats&);
 
     chunked_vector<per_topic_usage_stats> topic_usages;
@@ -311,8 +295,6 @@ struct datalake_usage_stats
 struct usage_stats_reply
   : serde::
       envelope<usage_stats_reply, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     usage_stats_reply() = default;
     explicit usage_stats_reply(errc err)
       : errc(err) {}
@@ -333,7 +315,6 @@ struct usage_stats_request
       usage_stats_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     using resp_t = usage_stats_reply;
 
     model::partition_id coordinator_partition;

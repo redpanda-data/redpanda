@@ -170,7 +170,7 @@ struct errc_category final : public std::error_category {
         case errc::node_does_not_exists:
             return "Requested node does not exists";
         case errc::invalid_node_operation:
-            return "Requested node opeartion is invalid";
+            return "Requested node operation is invalid";
         case errc::invalid_configuration_update:
             return "Requested configuration update is invalid";
         case errc::topic_operation_error:

@@ -14,13 +14,12 @@ redpanda_cc_library(
         ":probe",
         ":utils",
         "//src/v/bytes:iostream",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/ssx:future_util",
         "//src/v/utils:external_process",
         "//src/v/utils:file_io",
         "@boost//:algorithm",
     ],
-    include_prefix = "debug_bundle",
     visibility = ["//visibility:public"],
     deps = [
         ":error",
@@ -42,7 +41,6 @@ redpanda_cc_library(
     hdrs = [
         "error.h",
     ],
-    include_prefix = "debug_bundle",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -62,11 +60,10 @@ redpanda_cc_library(
         "//src/v/strings:string_switch",
         "@re2",
     ],
-    include_prefix = "debug_bundle",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/security",
         "//src/v/utils:named_type",
@@ -83,7 +80,6 @@ redpanda_cc_library(
     hdrs = [
         "json.h",
     ],
-    include_prefix = "debug_bundle",
     visibility = ["//visibility:public"],
     deps = [
         ":debug_bundle",
@@ -101,12 +97,11 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/serde:vector",
     ],
-    include_prefix = "debug_bundle",
     visibility = ["//src/v/debug_bundle/tests:__subpackages__"],
     deps = [
         ":types",
         "//src/v/bytes",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/serde",
         "//src/v/serde:bytes",
         "//src/v/serde:named_type",
@@ -131,7 +126,6 @@ redpanda_cc_library(
         "//src/v/ssx:future_util",
         "@seastar",
     ],
-    include_prefix = "debug_bundle",
     visibility = ["//src/v/debug_bundle/tests:__subpackages__"],
     deps = [
         "//src/v/bytes",
@@ -150,7 +144,6 @@ redpanda_cc_library(
         "//src/v/config",
         "@seastar",
     ],
-    include_prefix = "debug_bundle",
     visibility = ["//visibility:private"],
     deps = [
         ":types",

@@ -271,7 +271,8 @@ class EndToEndTest(Test):
                        producer_timeout_sec=30,
                        consumer_timeout_sec=30,
                        enable_idempotence=False,
-                       enable_compaction=False):
+                       enable_compaction=False,
+                       acks=-1):
         try:
             self.await_num_produced(min_records, producer_timeout_sec)
 
@@ -281,7 +282,8 @@ class EndToEndTest(Test):
             self.run_consumer_validation(
                 consumer_timeout_sec=consumer_timeout_sec,
                 enable_idempotence=enable_idempotence,
-                enable_compaction=enable_compaction)
+                enable_compaction=enable_compaction,
+                acks=acks)
         except BaseException:
             self._collect_all_logs()
             raise
@@ -289,7 +291,8 @@ class EndToEndTest(Test):
     def run_consumer_validation(self,
                                 consumer_timeout_sec=30,
                                 enable_idempotence=False,
-                                enable_compaction=False) -> None:
+                                enable_compaction=False,
+                                acks=-1) -> None:
         try:
             # Take copy of this dict in case a rogue VerifiableProducer
             # thread modifies it.
@@ -304,7 +307,7 @@ class EndToEndTest(Test):
 
             self.consumer.stop()
 
-            self.validate(enable_idempotence, enable_compaction)
+            self.validate(enable_idempotence, enable_compaction, acks)
         except BaseException:
             self._collect_all_logs()
             raise
@@ -367,15 +370,18 @@ class EndToEndTest(Test):
 
         return success, msg
 
-    def validate(self, enable_idempotence, enable_compaction):
+    def validate(self, enable_idempotence, enable_compaction, acks=-1):
+        assert acks in [-1, 1], "acks must be -1 or 1"
+
         self.logger.info("Number of acked records: %d" %
                          len(self.producer.acked))
         self.logger.info("Number of consumed records: %d" %
                          len(self.records_consumed))
-
         success = True
         msg = ""
+
         if enable_compaction:
+            assert acks != 1, "use acks=-1 if validating compaction"
             success, msg = self.validate_compacted()
         else:
             # Correctness of the set difference operation depends on using equivalent
@@ -383,9 +389,14 @@ class EndToEndTest(Test):
             missing = set(self.producer.acked) - set(self.records_consumed)
 
             if len(missing) > 0:
-                success = False
-                msg = annotate_missing_msgs(missing, self.producer.acked,
-                                            self.records_consumed, msg)
+                if acks == -1:
+                    success = False
+                    msg = annotate_missing_msgs(missing, self.producer.acked,
+                                                self.records_consumed, msg)
+                else:
+                    # Losing leader-acked messages is bad but acceptable.
+                    msg += f"Detected {len(missing)} messages that were acked but not consumed. " \
+                           f"This is acceptable with acks=1.\n"
 
             # Are there duplicates?
             if len(set(self.records_consumed)) != len(self.records_consumed):

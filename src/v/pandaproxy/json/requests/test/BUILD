@@ -8,7 +8,7 @@ redpanda_cc_btest(
     ],
     deps = [
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/json",
         "//src/v/kafka/client/test:utils",
         "//src/v/kafka/protocol",

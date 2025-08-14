@@ -320,7 +320,6 @@ TEST_F(MergeAppendActionTest, TestMergeAfterTypePromotion) {
 
         auto res = tx.set_schema(iceberg::schema{
                                    .schema_struct = std::move(new_type),
-                                   .schema_id = iceberg::schema::unassigned_id,
                                    .identifier_field_ids = {},
                                  })
                      .get();
@@ -771,7 +770,6 @@ TEST_F(MergeAppendActionTest, TestMergeWithMultiplePartitionSpecs) {
 
         auto res = tx.set_schema(iceberg::schema{
                                    .schema_struct = std::move(new_type),
-                                   .schema_id = iceberg::schema::unassigned_id,
                                    .identifier_field_ids = {},
                                  })
                      .get();

@@ -9,7 +9,6 @@ redpanda_test_cc_library(
         "random_batch.h",
         "randoms.h",
     ],
-    include_prefix = "model/tests",
     visibility = [
         "//visibility:public",
     ],

@@ -15,10 +15,9 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "config/configuration.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "features/enterprise_feature_messages.h"
 #include "kafka/data/partition_proxy.h"
-#include "kafka/data/replicated_partition.h"
 #include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
@@ -31,15 +30,13 @@
 #include "kafka/server/kafka_probe.h"
 #include "kafka/server/read_distribution_probe.h"
 #include "model/fundamental.h"
+#include "model/limits.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
-#include "model/record_utils.h"
 #include "model/timeout_clock.h"
 #include "net/connection.h"
 #include "random/generators.h"
 #include "ssx/semaphore.h"
-#include "storage/parser_utils.h"
-#include "utils/to_string.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
@@ -56,7 +53,6 @@
 #include <chrono>
 #include <exception>
 #include <ranges>
-#include <string_view>
 
 namespace kafka {
 static constexpr std::chrono::milliseconds default_fetch_timeout = 5s;

@@ -4,7 +4,6 @@ redpanda_test_cc_library(
     name = "testing",
     srcs = ["common.cc"],
     hdrs = ["common.h"],
-    include_prefix = "io/tests",
     visibility = ["//visibility:private"],
     deps = [
         "//src/v/base",
@@ -117,7 +116,7 @@ redpanda_cc_gtest(
     deps = [
         ":testing",
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/io",
         "//src/v/ssx:async_algorithm",
         "//src/v/test_utils:gtest",

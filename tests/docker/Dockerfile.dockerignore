@@ -5,6 +5,7 @@
 !tests/setup.py
 !tests/python
 !tests/go
+!tests/nodejs
 !tools/offline_log_viewer
 !tools/rp_storage_tool
 !tools/consumer_offsets_recovery

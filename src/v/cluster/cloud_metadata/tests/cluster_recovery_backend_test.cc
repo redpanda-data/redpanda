@@ -33,6 +33,7 @@
 #include "redpanda/application.h"
 #include "redpanda/tests/fixture.h"
 #include "security/scram_credential.h"
+#include "security/tests/license_utils.h"
 #include "security/types.h"
 #include "ssx/future-util.h"
 #include "test_utils/async.h"
@@ -110,10 +111,14 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
     auto with_leadership_changes = GetParam();
 
     // Create a license.
-    auto license = get_test_license();
+    auto opt_license = security::testing::get_test_license();
+    if (!opt_license) {
+        GTEST_SKIP() << security::testing::skip_no_license_msg;
+        return;
+    }
     auto err = app.controller->get_feature_manager()
                  .local()
-                 .update_license(std::move(license))
+                 .update_license(std::move(*opt_license))
                  .get();
     ASSERT_TRUE(!err);
 

@@ -389,6 +389,7 @@ struct configuration final : public config_store {
     property<std::vector<ss::sstring>> audit_enabled_event_types;
     property<std::vector<ss::sstring>> audit_excluded_topics;
     property<std::vector<ss::sstring>> audit_excluded_principals;
+    enum_property<audit_failure_policy> audit_failure_policy;
 
     // Archival storage
     enterprise<property<bool>> cloud_storage_enabled;
@@ -747,7 +748,7 @@ struct configuration final : public config_store {
     property<ss::sstring> iceberg_rest_catalog_oauth2_scope;
     enum_property<datalake_catalog_auth_mode>
       iceberg_rest_catalog_authentication_mode;
-    property<std::optional<ss::sstring>> iceberg_rest_catalog_aws_service_name;
+    property<ss::sstring> iceberg_rest_catalog_aws_service_name;
     property<std::optional<ss::sstring>> iceberg_rest_catalog_aws_access_key;
     property<std::optional<ss::sstring>> iceberg_rest_catalog_aws_secret_key;
     property<std::optional<ss::sstring>> iceberg_rest_catalog_aws_region;
@@ -789,6 +790,7 @@ struct configuration final : public config_store {
 
 public:
     development_feature_property<bool> development_enable_cloud_topics;
+    development_feature_property<bool> development_enable_cluster_link;
 
     development_feature_property<int> development_feature_property_testing_only;
 

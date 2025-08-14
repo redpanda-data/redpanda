@@ -18,6 +18,7 @@
 #include "storage/record_batch_builder.h"
 
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/coroutine.hh>
 
 namespace kafka::client {
 

@@ -133,7 +133,7 @@ struct prepare_marker {
 struct abort_snapshot {
     model::offset first;
     model::offset last;
-    fragmented_vector<tx_range> aborted;
+    chunked_vector<tx_range> aborted;
 
     bool match(abort_index idx) {
         return idx.first == first && idx.last == last;
@@ -288,15 +288,15 @@ struct deprecated_seq_entry {
 struct tx_snapshot_v4 {
     static constexpr uint8_t version = 4;
 
-    fragmented_vector<model::producer_identity> fenced;
-    fragmented_vector<tx_range> ongoing;
-    fragmented_vector<prepare_marker> prepared;
-    fragmented_vector<tx_range> aborted;
-    fragmented_vector<abort_index> abort_indexes;
+    chunked_vector<model::producer_identity> fenced;
+    chunked_vector<tx_range> ongoing;
+    chunked_vector<prepare_marker> prepared;
+    chunked_vector<tx_range> aborted;
+    chunked_vector<abort_index> abort_indexes;
     model::offset offset;
-    fragmented_vector<deprecated_seq_entry> seqs;
-    fragmented_vector<tx_data_snapshot> tx_data;
-    fragmented_vector<expiration_snapshot> expiration;
+    chunked_vector<deprecated_seq_entry> seqs;
+    chunked_vector<tx_data_snapshot> tx_data;
+    chunked_vector<expiration_snapshot> expiration;
 
     bool operator==(const tx_snapshot_v4&) const = default;
 };
@@ -314,17 +314,17 @@ struct tx_snapshot_v5 {
     // members for transactional state. Once transactional state
     // is ported into producer_state, these data members can
     // be removed.
-    fragmented_vector<producer_state_snapshot_deprecated> producers;
+    chunked_vector<producer_state_snapshot_deprecated> producers;
 
     // transactional state
-    fragmented_vector<model::producer_identity> fenced;
-    fragmented_vector<tx_range> ongoing;
-    fragmented_vector<prepare_marker> prepared;
-    fragmented_vector<tx_range> aborted;
-    fragmented_vector<abort_index> abort_indexes;
+    chunked_vector<model::producer_identity> fenced;
+    chunked_vector<tx_range> ongoing;
+    chunked_vector<prepare_marker> prepared;
+    chunked_vector<tx_range> aborted;
+    chunked_vector<abort_index> abort_indexes;
 
-    fragmented_vector<tx_data_snapshot> tx_data;
-    fragmented_vector<expiration_snapshot> expiration;
+    chunked_vector<tx_data_snapshot> tx_data;
+    chunked_vector<expiration_snapshot> expiration;
     model::producer_id highest_producer_id{};
 
     bool operator==(const tx_snapshot_v5&) const = default;
@@ -338,9 +338,9 @@ struct tx_snapshot_v6
     tx_snapshot_v6() = default;
     explicit tx_snapshot_v6(tx_snapshot_v5, raft::group_id);
 
-    fragmented_vector<producer_state_snapshot> producers;
-    fragmented_vector<tx_range> aborted;
-    fragmented_vector<abort_index> abort_indexes;
+    chunked_vector<producer_state_snapshot> producers;
+    chunked_vector<tx_range> aborted;
+    chunked_vector<abort_index> abort_indexes;
     model::producer_id highest_producer_id;
 
     tx_snapshot_v5 downgrade_to_v5() &&;

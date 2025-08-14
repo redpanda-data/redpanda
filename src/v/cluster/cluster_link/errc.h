@@ -32,6 +32,12 @@ enum class errc : int16_t {
     topic_being_mirrored_by_other_link,
     topic_not_being_mirrored,
     mirror_topic_name_invalid,
+    uuid_conflict,
+    bootstrap_servers_empty,
+    tls_configuration_invalid,
+    link_name_invalid,
+    topic_filter_invalid,
+    topic_property_excluded_from_mirroring,
 };
 
 struct errc_category final : public std::error_category {

@@ -21,8 +21,6 @@ namespace cluster {
 struct status_request
   : serde::
       envelope<status_request, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     auto serde_fields() { return std::tie(); }
 };
 
@@ -68,7 +66,6 @@ std::ostream& operator<<(std::ostream&, const recovery_request_params&);
 struct single_status
   : serde::
       envelope<single_status, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     cloud_storage::topic_recovery_service::state state;
     std::vector<topic_downloads> download_counts;
     recovery_request_params request;
@@ -83,7 +80,6 @@ struct single_status
 struct status_response
   : serde::
       envelope<status_response, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     std::vector<single_status> status_log;
     auto serde_fields() { return std::tie(status_log); }
 

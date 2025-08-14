@@ -759,6 +759,7 @@ FIXTURE_TEST(test_recover_offsets, offsets_recovery_fixture) {
     BOOST_REQUIRE_NE(new_cluster_uuid(), cluster_uuid());
     make_partitions(1).get();
     tests::kafka_produce_transport produce(make_kafka_client().get());
+    auto deferred_close = ss::defer([&produce] { produce.stop().get(); });
     produce.start().get();
     int64_t num_records = 5;
     produce

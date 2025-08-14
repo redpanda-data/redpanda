@@ -9,6 +9,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/node_hash_map.h"
+#include "compaction/key.h"
 #include "model/fundamental.h"
 #include "random/generators.h"
 #include "storage/compacted_index.h"
@@ -31,7 +32,7 @@ PERF_TEST_F(reducer_bench, compaction_key_reducer_test) {
 
     storage::compacted_index::entry entry(
       storage::compacted_index::entry_type::key,
-      storage::compaction_key(std::move(key)),
+      compaction::compaction_key(std::move(key)),
       o,
       0);
 

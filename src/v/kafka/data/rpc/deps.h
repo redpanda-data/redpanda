@@ -151,6 +151,14 @@ public:
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
         kafka::partition_proxy*)>)
       = 0;
+
+    virtual ss::future<result<partition_offsets, cluster::errc>>
+    get_offsets_from_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<ss::future<
+        result<partition_offsets, cluster::errc>>(kafka::partition_proxy*)>)
+      = 0;
 };
 
 class partition_manager_proxy {

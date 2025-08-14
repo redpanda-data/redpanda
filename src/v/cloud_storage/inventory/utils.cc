@@ -24,7 +24,7 @@
 namespace {
 
 ss::future<> write_hashes_to_file(
-  ss::output_stream<char>& stream, fragmented_vector<uint64_t> hashes) {
+  ss::output_stream<char>& stream, chunked_vector<uint64_t> hashes) {
     iobuf serialized;
     serde::write(serialized, std::move(hashes));
 
@@ -39,7 +39,7 @@ ss::future<> write_hashes_to_file(
 }
 
 ss::future<>
-write_hashes_to_file(ss::file& f, fragmented_vector<uint64_t> hashes) {
+write_hashes_to_file(ss::file& f, chunked_vector<uint64_t> hashes) {
     std::exception_ptr ep;
     auto stream = co_await ss::make_file_output_stream(f);
     auto res = co_await ss::coroutine::as_future(
@@ -57,7 +57,7 @@ namespace cloud_storage::inventory {
 ss::future<> flush_ntp_hashes(
   std::filesystem::path root,
   model::ntp ntp,
-  fragmented_vector<uint64_t> hashes,
+  chunked_vector<uint64_t> hashes,
   uint64_t file_name) {
     auto ntp_hash_path = root / std::string_view{ntp.path()};
     const auto ntp_hash_dir = ntp_hash_path.string();

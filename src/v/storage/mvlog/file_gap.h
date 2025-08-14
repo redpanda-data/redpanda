@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0
 #pragma once
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "serde/envelope.h"
 
 #include <cstddef>

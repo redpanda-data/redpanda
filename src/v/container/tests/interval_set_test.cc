@@ -255,6 +255,25 @@ TEST(IntervalSet, EraseBeginToEnd) {
     EXPECT_TRUE(set.empty());
 }
 
+TEST(IntervalSet, TestSerdeEmpty) {
+    set_t s;
+    EXPECT_EQ(0, s.size());
+    iobuf b = serde::to_iobuf(s);
+    auto roundtrip_s = serde::from_iobuf<set_t>(std::move(b));
+    ASSERT_TRUE(s == roundtrip_s);
+}
+
+TEST(IntervalSet, TestSerde) {
+    set_t s;
+    EXPECT_TRUE(s.insert({0, 10}).second);
+    EXPECT_TRUE(s.insert({20, 10}).second);
+    EXPECT_TRUE(s.insert({40, 10}).second);
+    EXPECT_EQ(3, s.size());
+    iobuf b = serde::to_iobuf(s);
+    auto roundtrip_s = serde::from_iobuf<set_t>(std::move(b));
+    ASSERT_TRUE(s == roundtrip_s);
+}
+
 struct randomized_test_params {
     size_t interval_max_size;
     double target_fill_percent;

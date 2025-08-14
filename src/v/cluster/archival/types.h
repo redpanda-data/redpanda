@@ -14,6 +14,7 @@
 #include "cloud_storage/types.h"
 #include "cluster/archival/adjacent_segment_run.h"
 #include "cluster/archival/run_quota.h"
+#include "config/property.h"
 #include "seastar/core/lowres_clock.hh"
 #include "seastar/core/sstring.hh"
 #include "seastar/util/bool_class.hh"

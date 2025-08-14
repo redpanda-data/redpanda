@@ -233,13 +233,6 @@ ss::future<cluster::errc> cluster_recovery_backend::do_action(
         topic_configuration_vector topics;
         for (size_t i = 0; i < actions.remote_topics.size(); i++) {
             auto& topic_cfg = actions.remote_topics[i];
-            if (topic_cfg.is_internal()) {
-                vlog(
-                  clusterlog.debug,
-                  "Skipping topic recovery for internal topic {}",
-                  topic_cfg.tp_ns);
-                continue;
-            }
             topics.emplace_back(std::move(topic_cfg));
             vlog(
               clusterlog.debug,

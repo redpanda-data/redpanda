@@ -63,7 +63,9 @@ void verify_batches(
 
 SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
     chunked_vector<model::record_batch> batches{
-      model::test::make_random_batches(model::offset(1), 3, false).get()};
+      std::from_range,
+      model::test::make_random_batches(model::offset(1), 3, false).get()
+        | std::views::as_rvalue};
 
     chunked_vector<model::record_batch> reference_batches;
 
@@ -552,7 +554,9 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_backward_compatibility) {
 
 SEASTAR_THREAD_TEST_CASE(append_entries_request_serde_wrapper_serde) {
     chunked_vector<model::record_batch> batches{
-      model::test::make_random_batches(model::offset(1), 3, false).get()};
+      std::from_range,
+      model::test::make_random_batches(model::offset(1), 3, false).get()
+        | std::views::as_rvalue};
     chunked_vector<model::record_batch> reference_batches;
     for (auto& b : batches) {
         b.set_term(model::term_id(123));

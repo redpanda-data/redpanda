@@ -23,7 +23,6 @@ namespace datalake {
 struct schema_identifier
   : serde::
       envelope<schema_identifier, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     auto serde_fields() { return std::tie(schema_id, protobuf_offsets); }
 
     pandaproxy::schema_registry::schema_id schema_id;
@@ -37,7 +36,6 @@ struct record_schema_components
       record_schema_components,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     auto serde_fields() { return std::tie(key_identifier, val_identifier); }
 
     std::optional<schema_identifier> key_identifier;

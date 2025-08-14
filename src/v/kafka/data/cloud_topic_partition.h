@@ -10,7 +10,6 @@
  */
 #pragma once
 
-#include "cloud_storage/types.h"
 #include "kafka/data/partition_proxy.h"
 #include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
@@ -25,52 +24,22 @@
 #include <system_error>
 
 namespace experimental::cloud_topics {
-class data_plane_api;
-class app;
+class frontend;
 } // namespace experimental::cloud_topics
+
+namespace cluster {
+class partition;
+}
 
 namespace kafka {
 
-/// CloudTopics entry point
-///
-/// This class serves as the entry point into the cloud-topics (CT) subsystem,
-/// which comprises two main components: the data plane and the metadata layer.
-///
-/// Data Plane:
-/// - Accessible via the 'cloud_topics::app' instance passed through the
-///   constructor.
-/// - Contains 'core::read_pipeline' and 'core::write_pipeline'.
-///
-/// Metadata layer:
-/// - Composed of 'cluster::partition' and 'metastore' components
-///
-/// Write Request Path:
-/// - Batch is pushed to the data plane (app::write_and_debounce method).
-/// - Data plane returns a placeholder for the record batch, containing
-///   metadata to locate data in cloud storage.
-/// - 'cloud_topic_partition' pushes the placeholder to the metadata layer by
-///   replicating 'dl_placeholder' batch.
-///
-/// Read Request Path:
-/// - 'dl_placeholder' batches are queried from the metadata layer, fetched
-///   from 'cluster::partition'.
-/// - Includes information about aborted transactions.
-/// - 'dl_placeholder' batches are 'materialized' using the data plane.
-///
-/// Currently, the data plane is explicitly a sharded service. The control
-/// plane includes 'cluster::partition' and 'dl_stm', with no explicit API
-/// boundary. However, component use is limited to allow future
-/// introduction of such an API.
-///
+/// This class implements the partition_proxy interface for cloud topics.
+/// It's a wrapper around the cloud_topics::frontend.
 class cloud_topic_partition final : public kafka::partition_proxy::impl {
 public:
     explicit cloud_topic_partition(
       ss::lw_shared_ptr<cluster::partition> p,
-      ss::shared_ptr<experimental::cloud_topics::data_plane_api> ct) noexcept;
-
-    explicit cloud_topic_partition(
-      ss::lw_shared_ptr<cluster::partition> p,
-      ss::sharded<experimental::cloud_topics::app>& ct_app) noexcept;
+      std::unique_ptr<experimental::cloud_topics::frontend> fe) noexcept;
 
     const model::ntp& ntp() const final;
 
@@ -129,13 +98,8 @@ public:
     size_t estimate_size_between(kafka::offset, kafka::offset) const final;
 
 private:
-    raft::replicate_stages upload_and_replicate(
-      model::batch_identity batch_id,
-      model::record_batch,
-      raft::replicate_options);
-
     ss::lw_shared_ptr<cluster::partition> _partition;
-    ss::shared_ptr<experimental::cloud_topics::data_plane_api> _ct_api;
+    std::unique_ptr<experimental::cloud_topics::frontend> _fe;
 };
 
 } // namespace kafka

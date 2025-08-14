@@ -6,7 +6,6 @@ redpanda_cc_library(
     hdrs = [
         "archival/run_quota.h",
     ],
-    include_prefix = "cluster",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/utils:named_type",
@@ -84,7 +83,6 @@ redpanda_cc_library(
     hdrs = [
         "version.h",
     ],
-    include_prefix = "cluster",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/utils:named_type",
@@ -96,7 +94,6 @@ redpanda_cc_library(
     hdrs = [
         "feature_update_action.h",
     ],
-    include_prefix = "cluster",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/serde",
@@ -111,7 +108,6 @@ redpanda_cc_library(
     hdrs = [
         "notification.h",
     ],
-    include_prefix = "cluster",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/utils:named_type",
@@ -123,7 +119,6 @@ redpanda_cc_library(
     hdrs = [
         "snapshot.h",
     ],
-    include_prefix = "cluster",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -135,7 +130,6 @@ redpanda_cc_library(
     hdrs = [
         "nt_revision.h",
     ],
-    include_prefix = "cluster",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/model",
@@ -156,7 +150,6 @@ redpanda_cc_library(
         "topic_configuration.h",
         "topic_properties.h",
     ],
-    include_prefix = "cluster",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cloud_storage:remote_label",
@@ -192,16 +185,17 @@ redpanda_cc_library(
         "cloud_metadata/offsets_uploader.h",
         "errc.h",
     ],
-    include_prefix = "cluster",
     visibility = ["//visibility:public"],
     deps = [
         ":cloud_metadata_offsets_recovery_router",
         "//src/v/base",
         "//src/v/cloud_storage",
+        "//src/v/cloud_storage:cache",
+        "//src/v/cloud_storage:types",
         "//src/v/cloud_storage_clients",
         "//src/v/cluster",
         "//src/v/config",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/data:partition_proxy",
         "//src/v/kafka/protocol",
         "//src/v/kafka/server",
@@ -221,7 +215,6 @@ redpanda_cc_library(
     hdrs = [
         "scheduling/topic_memory_per_partition_default.h",
     ],
-    include_prefix = "cluster",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -239,7 +232,6 @@ redpanda_cc_library(
     hdrs = [
         "cloud_metadata/offsets_recovery_router.h",
     ],
-    include_prefix = "cluster",
     tags = ["noclangtidy"],
     visibility = ["//visibility:public"],
 )
@@ -249,7 +241,6 @@ redpanda_cc_library(
     hdrs = [
         "cloud_metadata/offsets_recovery_service.h",
     ],
-    include_prefix = "cluster",
     tags = ["noclangtidy"],
     visibility = ["//visibility:public"],
 )
@@ -259,7 +250,6 @@ redpanda_cc_library(
     hdrs = [
         "cloud_metadata/offsets_upload_router.h",
     ],
-    include_prefix = "cluster",
     tags = ["noclangtidy"],
     visibility = ["//visibility:public"],
 )
@@ -269,7 +259,6 @@ redpanda_cc_library(
     hdrs = [
         "state_machine_registry.h",
     ],
-    include_prefix = "cluster",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/raft",
@@ -309,6 +298,7 @@ redpanda_cc_library(
         "cloud_metadata/uploader.cc",
         "cloud_storage_size_reducer.cc",
         "cluster_discovery.cc",
+        "cluster_epoch_service.cc",
         "cluster_link/errc.cc",
         "cluster_link/frontend.cc",
         "cluster_link/table.cc",
@@ -407,6 +397,7 @@ redpanda_cc_library(
         "service.cc",
         "shard_balancer.cc",
         "shard_placement_table.cc",
+        "shard_placement_table_probe.cc",
         "tm_stm.cc",
         "tm_stm_types.cc",
         "topic_metrics_watcher.cc",
@@ -469,6 +460,7 @@ redpanda_cc_library(
         "cloud_storage_size_reducer.h",
         "cluster_bootstrap_service.h",
         "cluster_discovery.h",
+        "cluster_epoch_service.h",
         "cluster_link/errc.h",
         "cluster_link/frontend.h",
         "cluster_link/fwd.h",
@@ -494,6 +486,7 @@ redpanda_cc_library(
         "data_migrated_resources.h",
         "data_migration_backend.h",
         "data_migration_frontend.h",
+        "data_migration_group_proxy.h",
         "data_migration_irpc_frontend.h",
         "data_migration_rpc_service.h",
         "data_migration_service_handler.h",
@@ -601,6 +594,7 @@ redpanda_cc_library(
         "service.h",
         "shard_balancer.h",
         "shard_placement_table.h",
+        "shard_placement_table_probe.h",
         "shard_table.h",
         "simple_batch_builder.h",
         "snapshot.h",
@@ -637,11 +631,14 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":topic_memory_per_partition_default",
+        "//src/v/cloud_storage:logger",
         "//src/v/crash_tracker",
         "//src/v/features:enterprise_feature_messages",
         "//src/v/resource_mgmt:memory_groups",
+        "//src/v/ssx:abort_source",
+        "//src/v/ssx:work_queue",
+        "//src/v/utils:backoff_policy",
     ],
-    include_prefix = "cluster",
     visibility = ["//visibility:public"],
     deps = [
         ":bootstrap_rpc",
@@ -667,16 +664,19 @@ redpanda_cc_library(
         "//src/v/bytes:iostream",
         "//src/v/bytes:streambuf",
         "//src/v/cloud_storage",
+        "//src/v/cloud_storage:cache",
         "//src/v/cloud_storage:remote_label",
         "//src/v/cloud_storage:topic_mount_manifest_path",
+        "//src/v/cloud_storage:types",
         "//src/v/cloud_storage_clients",
-        "//src/v/cloud_topics/dl_stm",
-        "//src/v/cloud_topics/dl_stm:dl_stm_api",
+        "//src/v/cloud_topics:state_accessors",
+        "//src/v/cloud_topics/level_zero/stm:ctp_stm",
+        "//src/v/cloud_topics/level_zero/stm:ctp_stm_api",
         "//src/v/cluster_link/model",
         "//src/v/config",
         "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
         "//src/v/container:contiguous_range_map",
-        "//src/v/container:fragmented_vector",
         "//src/v/container:intrusive",
         "//src/v/crash_tracker",
         "//src/v/features",
@@ -729,7 +729,7 @@ redpanda_cc_library(
         "//src/v/ssx:sleep_abortable",
         "//src/v/ssx:when_all",
         "//src/v/storage",
-        "//src/v/storage:parser_utils",
+        "//src/v/storage:disk",
         "//src/v/storage:record_batch_builder",
         "//src/v/storage:record_batch_utils",
         "//src/v/strings:string_switch",
@@ -738,6 +738,7 @@ redpanda_cc_library(
         "//src/v/utils:available_promise",
         "//src/v/utils:directory_walker",
         "//src/v/utils:exceptions",
+        "//src/v/utils:execution_monitor",
         "//src/v/utils:expiring_promise",
         "//src/v/utils:file_io",
         "//src/v/utils:fixed_string",
@@ -752,7 +753,6 @@ redpanda_cc_library(
         "//src/v/utils:prefix_logger",
         "//src/v/utils:retry",
         "//src/v/utils:retry_chain_node",
-        "//src/v/utils:rwlock",
         "//src/v/utils:stable_iterator",
         "//src/v/utils:stream_provider",
         "//src/v/utils:stream_utils",
@@ -764,7 +764,6 @@ redpanda_cc_library(
         "//src/v/utils:waiter_queue",
         "//src/v/v8_engine",
         "//src/v/version",
-        "@abseil-cpp//absl/algorithm:container",
         "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/container:flat_hash_set",

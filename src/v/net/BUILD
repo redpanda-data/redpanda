@@ -32,7 +32,6 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/strings:utf8",
     ],
-    include_prefix = "net",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",

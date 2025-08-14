@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0
 #pragma once
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/offset_interval.h"
 #include "model/record.h"
 #include "storage/mvlog/file.h"

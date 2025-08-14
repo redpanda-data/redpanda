@@ -9,18 +9,17 @@
 
 #include "storage/compaction_reducers.h"
 
-#include "absl/algorithm/container.h"
 #include "base/vlog.h"
-#include "compression/compression.h"
+#include "compaction/key.h"
+#include "compaction/utils.h"
+#include "model/batch_compression.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
 #include "random/generators.h"
 #include "storage/compacted_index.h"
-#include "storage/compaction.h"
 #include "storage/index_state.h"
 #include "storage/logger.h"
-#include "storage/parser_utils.h"
 #include "storage/record_batch_utils.h"
 #include "storage/segment_utils.h"
 
@@ -141,16 +140,15 @@ model::record_batch copy_data_segment_reducer::make_placeholder_batch(
     new_hdr.first_timestamp = hdr.first_timestamp;
     new_hdr.max_timestamp = hdr.max_timestamp;
     auto no_records = iobuf{};
-    reset_size_checksum_metadata(new_hdr, no_records);
+    new_hdr.reset_size_checksum_metadata(no_records);
     return model::record_batch(
       new_hdr, std::move(no_records), model::record_batch::tag_ctor_ng{});
 }
 
 ss::future<std::optional<model::record_batch>>
 copy_data_segment_reducer::filter(model::record_batch batch) {
-    // do not compact raft configuration and archival metadata as they shift
-    // offset translation
-    if (!is_compactible(_ntp, batch)) {
+    // do not filter non-removable batch types under any circumstances
+    if (!compaction::is_filterable(batch.header().type)) {
         co_return std::move(batch);
     }
 
@@ -273,7 +271,7 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
     new_hdr.first_timestamp = first_time;
     new_hdr.max_timestamp = last_time;
     new_hdr.record_count = rec_count;
-    reset_size_checksum_metadata(new_hdr, ret);
+    new_hdr.reset_size_checksum_metadata(ret);
     auto new_batch = model::record_batch(
       new_hdr, std::move(ret), model::record_batch::tag_ctor_ng{});
     co_return new_batch;
@@ -293,7 +291,8 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
     const auto records_to_remove = record_count_before
                                    - to_copy->record_count();
     _stats.records_discarded += records_to_remove;
-    bool compactible_batch = is_compactible(_ntp, to_copy.value());
+    bool compactible_batch = compaction::is_compactible(
+      _ntp, to_copy.value().header());
     if (!compactible_batch) {
         ++_stats.non_compactible_batches;
     }
@@ -310,7 +309,8 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
                 r.offset_delta());
           });
     }
-    auto batch = co_await compress_batch(original, std::move(to_copy.value()));
+    auto batch = co_await model::compress_batch(
+      original, std::move(to_copy.value()));
     const auto start_pos = _appender->file_byte_offset();
     const auto header_size = batch.header().size_bytes;
     _acc += header_size;
@@ -352,7 +352,7 @@ copy_data_segment_reducer::operator()(model::record_batch b) {
     if (!b.compressed()) {
         co_return co_await filter_and_append(comp, std::move(b));
     }
-    auto batch = co_await decompress_batch(std::move(b));
+    auto batch = co_await model::decompress_batch(std::move(b));
 
     co_return co_await filter_and_append(comp, std::move(batch));
 }
@@ -364,7 +364,7 @@ index_rebuilder_reducer::operator()(model::record_batch&& b) {
     if (!b.compressed()) {
         f = do_index(std::move(b));
     } else {
-        f = internal::decompress_batch(std::move(b))
+        f = model::decompress_batch(std::move(b))
               .then([this](model::record_batch&& b) {
                   return do_index(std::move(b));
               });
@@ -426,10 +426,10 @@ bool tx_reducer::can_discard_consumer_offsets_batch(
         return false;
     }
     // Remove all transaction related batches (including data) because the
-    // committed data has already been rewritten as separate raft_data batches,
-    // so no need to retain originally written group_prepare_tx batches while
-    // the transaction is in progress.
-    return is_compactible_control_batch(_ntp, b.header().type);
+    // committed data has already been rewritten as separate raft_data
+    // batches, so no need to retain originally written group_prepare_tx
+    // batches while the transaction is in progress.
+    return compaction::is_compactible_control_batch(_ntp, b.header().type);
 }
 
 ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
@@ -460,7 +460,7 @@ ss::future<ss::stop_iteration> map_building_reducer::maybe_index_record_in_map(
     }
 
     auto key_view = iobuf_to_bytes(r.key());
-    auto key = enhance_key(type, is_control, key_view);
+    auto key = compaction::enhance_key(type, is_control, key_view);
     bool success = co_await _map->put(key, offset);
 
     if (success) {
@@ -474,19 +474,20 @@ ss::future<ss::stop_iteration> map_building_reducer::maybe_index_record_in_map(
 ss::future<ss::stop_iteration>
 map_building_reducer::operator()(model::record_batch batch) {
     bool fully_indexed_batch = true;
-    // There is no point to indexing records in uncompactible batches, since
-    // their inclusion in the segment post compaction is irrespective of the map
-    // state (see copy_data_segment_reducer::filter()).
-    if (!is_compactible(_ntp, batch)) {
+    auto& header = batch.header();
+    if (!compaction::is_compactible(_ntp, header)) {
+        // There is no point to indexing records in uncompactible batches, since
+        // their inclusion in the segment post compaction is irrespective of the
+        // map state (see copy_data_segment_reducer::filter()).
         co_return ss::stop_iteration::no;
     }
-    auto b = co_await decompress_batch(std::move(batch));
+    auto b = co_await model::decompress_batch(std::move(batch));
     co_await b.for_each_record_async(
       [this,
        &fully_indexed_batch,
        base_offset = b.base_offset(),
-       type = b.header().type,
-       is_control = b.header().attrs.is_control()](
+       type = header.type,
+       is_control = header.attrs.is_control()](
         const model::record& r) -> ss::future<ss::stop_iteration> {
           return maybe_index_record_in_map(
             r, base_offset, type, is_control, fully_indexed_batch);

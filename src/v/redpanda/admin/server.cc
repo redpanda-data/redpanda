@@ -50,7 +50,7 @@
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "config/validators.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "container/lw_shared_container.h"
 #include "features/enterprise_features.h"
 #include "features/feature_table.h"
@@ -83,6 +83,7 @@
 #include "redpanda/admin/api-doc/shadow_indexing.json.hh"
 #include "redpanda/admin/api-doc/status.json.hh"
 #include "redpanda/admin/cluster_config_schema_util.h"
+#include "redpanda/admin/services/admin.h"
 #include "redpanda/admin/util.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/errc.h"
@@ -114,6 +115,7 @@
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/http/api_docs.hh>
+#include <seastar/http/common.hh>
 #include <seastar/http/exception.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/http/json_path.hh>
@@ -200,6 +202,14 @@ security::audit::authentication_event_options make_authn_event_options(
       .error_reason = reason};
 }
 
+std::string_view strip_query_param(const ss::sstring& url) {
+    auto pos = url.find('?');
+    if (pos == ss::sstring::npos) {
+        return {url};
+    }
+    return {url.begin(), pos};
+};
+
 bool escape_hatch_request(ss::httpd::const_req req) {
     /// The following "break glass" mechanism allows the cluster config
     /// API to be hit in the case the user desires to disable auditing
@@ -208,14 +218,14 @@ bool escape_hatch_request(ss::httpd::const_req req) {
     static const auto allowed_requests = std::to_array(
       {ss::httpd::cluster_config_json::get_cluster_config_status,
        ss::httpd::cluster_config_json::get_cluster_config_schema,
-       ss::httpd::cluster_config_json::patch_cluster_config});
+       ss::httpd::cluster_config_json::patch_cluster_config,
+       ss::httpd::cluster_config_json::get_cluster_config});
 
-    return std::any_of(
-      allowed_requests.cbegin(),
-      allowed_requests.cend(),
+    return std::ranges::any_of(
+      allowed_requests,
       [method = req._method,
-       url = req.get_url()](const ss::httpd::path_description& d) {
-          return d.path == url
+       url = req._url](const ss::httpd::path_description& d) {
+          return d.path == strip_query_param(url)
                  && d.operations.method == ss::httpd::str2type(method);
       });
 }
@@ -330,6 +340,36 @@ admin_server::admin_server(
   , _default_blocked_reactor_notify(
       ss::engine().get_blocked_reactor_notify_ms()) {
     _server.set_content_streaming(true);
+    // NOTE: This isn't normally where services should be registered
+    // but this service is special as it has some reflection based methods.
+    add_service(std::make_unique<admin::admin_service_impl>(&_services));
+}
+
+void admin_server::add_service(
+  std::unique_ptr<serde::pb::rpc::base_service> service) {
+    vlog(adminlog.debug, "Registering RPC service: {}", service->name());
+    for (auto& route : service->all_routes()) {
+        vlog(adminlog.debug, "Registering RPC route: {}", route.name);
+        ss::httpd::path_description path{
+          fmt::format("/v2{}", route.path),
+          ss::httpd::operation_type::POST,
+          route.name,
+          /*path_parameters=*/{},
+          /*mandatory_params=*/{},
+        };
+        switch (route.authz_level) {
+        case serde::pb::rpc::authz_level::unauthenticated:
+            register_route_raw_async<publik>(path, route.handler);
+            break;
+        case serde::pb::rpc::authz_level::user:
+            register_route_raw_async<user>(path, route.handler);
+            break;
+        case serde::pb::rpc::authz_level::superuser:
+            register_route_raw_async<superuser>(path, route.handler);
+            break;
+        }
+    }
+    _services.push_back(std::move(service));
 }
 
 ss::future<> admin_server::start() {
@@ -687,7 +727,7 @@ void admin_server::rearm_log_level_timer() {
 }
 
 void admin_server::log_level_timer_handler() {
-    absl::c_for_each(_log_level_resets, [](auto& pr) {
+    std::ranges::for_each(_log_level_resets, [](auto& pr) {
         auto& [name, lr] = pr;
         if (lr.expires.has_value() && lr.expires <= ss::timer<>::clock::now()) {
             ss::global_logger_registry().set_logger_level(name, lr.level);
@@ -1524,7 +1564,7 @@ void admin_server::register_config_routes() {
 
 namespace {
 json::validator make_cluster_config_validator() {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
 {
     "type": "object",
     "properties": {
@@ -1733,21 +1773,12 @@ void config_multi_property_validation(
         errors[name] = invalid_cache.value();
     }
 
-    // For simplicity's sake, cloud storage read/write permissions cannot be
-    // enabled at the same time as tombstone_retention_ms at the cluster level,
-    // to avoid the case in which topics are created with TS read/write
-    // permissions and bugs are encountered later with tombstone removal.
-    if (updated_config.tombstone_retention_ms().has_value() &&
-	(updated_config.cloud_storage_enabled()
-	 || updated_config.cloud_storage_enable_remote_read()
-	 || updated_config.cloud_storage_enable_remote_write())) {
-        errors["cloud_storage_enabled"] = ssx::sformat(
-          "cannot set {} if any of ({}, {}, {}) are enabled at the cluster "
-          "level",
-          updated_config.tombstone_retention_ms.name(),
-          updated_config.cloud_storage_enabled.name(),
-          updated_config.cloud_storage_enable_remote_read.name(),
-          updated_config.cloud_storage_enable_remote_write.name());
+    // Validate iceberg REST catalog configuration
+    auto catalog_err = config::validate_iceberg_rest_catalog_config(
+      updated_config);
+    if (catalog_err.has_value()) {
+        errors[ss::sstring{updated_config.iceberg_catalog_type.name()}]
+          = catalog_err.value();
     }
 
     // Validate iceberg authentication mode properties
@@ -2164,7 +2195,7 @@ void admin_server::register_status_routes() {
 
 namespace {
 json::validator make_feature_put_validator() {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
 {
     "type": "object",
     "properties": {
@@ -2452,9 +2483,10 @@ void admin_server::register_features_routes() {
                   lc.format_version = license->format_version;
                   lc.org = license->organization;
               }
-              lc.type = security::license_type_to_string(license->type);
+              lc.type = license->get_type();
               lc.expires = license->expiry.count();
               lc.sha256 = license->checksum;
+              lc.products = license->products;
               res.license = lc;
           }
           return ss::make_ready_future<ss::json::json_return_type>(
@@ -2970,7 +3002,7 @@ void admin_server::register_hbadger_routes() {
 
 namespace {
 json::validator make_self_test_start_validator() {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
 {
     "type": "object",
     "properties": {
@@ -3186,7 +3218,7 @@ admin_server::get_disk_stat_handler(std::unique_ptr<ss::http::request> req) {
 
 namespace {
 json::validator make_disk_stat_overrides_validator() {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
 {
     "type": "object",
     "properties": {
@@ -3369,7 +3401,7 @@ admin_server::get_metrics_uuid(std::unique_ptr<ss::http::request>) {
 }
 
 static json::validator make_post_cluster_partitions_validator() {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
 {
     "type": "object",
     "properties": {

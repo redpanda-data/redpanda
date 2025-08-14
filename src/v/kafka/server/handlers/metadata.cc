@@ -15,8 +15,9 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/schemata/metadata_response.h"
+#include "kafka/protocol/types.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/handlers/describe_cluster.h"
@@ -175,9 +176,10 @@ metadata_response::topic make_topic_response_from_topic_metadata(
     return tp;
 }
 
-static ss::future<metadata_response::topic> create_topic(
+namespace {
+ss::future<metadata_response::topic> create_topic(
   request_context& ctx,
-  model::topic&& topic,
+  model::topic topic,
   const is_node_isolated_or_decommissioned is_node_isolated) {
     if (is_node_isolated) {
         vlog(
@@ -188,7 +190,7 @@ static ss::future<metadata_response::topic> create_topic(
         metadata_response::topic t;
         t.name = std::move(topic);
         t.error_code = error_code::broker_not_available;
-        return ss::make_ready_future<metadata_response::topic>(std::move(t));
+        co_return t;
     }
     // default topic configuration
     cluster::topic_configuration cfg{
@@ -197,52 +199,47 @@ static ss::future<metadata_response::topic> create_topic(
       config::shard_local_cfg().default_topic_partitions(),
       config::shard_local_cfg().default_topic_replication()};
     auto tout = config::shard_local_cfg().create_topic_timeout_ms();
-    return ctx.topics_frontend()
-      .autocreate_topics({std::move(cfg)}, tout)
-      .then([&ctx, &md_cache = ctx.metadata_cache(), tout](
-              std::vector<cluster::topic_result> res) {
-          vassert(res.size() == 1, "expected single result");
+    try {
+        auto res = co_await ctx.topics_frontend().autocreate_topics(
+          {std::move(cfg)}, tout);
+        vassert(res.size() == 1, "expected single result");
+        // error, neither success nor topic exists
+        if (!(res[0].ec == cluster::errc::success
+              || res[0].ec == cluster::errc::topic_already_exists)) {
+            metadata_response::topic t;
+            t.name = std::move(res[0].tp_ns.tp);
+            t.error_code = map_topic_error_code(res[0].ec);
+            co_return t;
+        }
 
-          // error, neither success nor topic exists
-          if (!(res[0].ec == cluster::errc::success
-                || res[0].ec == cluster::errc::topic_already_exists)) {
-              metadata_response::topic t;
-              t.name = std::move(res[0].tp_ns.tp);
-              t.error_code = map_topic_error_code(res[0].ec);
-              return ss::make_ready_future<metadata_response::topic>(
-                std::move(t));
-          }
-          auto tp_md = md_cache.get_topic_metadata(res[0].tp_ns);
+        co_await wait_for_topics(
+          ctx.metadata_cache(),
+          res,
+          ctx.controller_api(),
+          tout + model::timeout_clock::now());
 
-          if (!tp_md) {
-              metadata_response::topic t;
-              t.name = std::move(res[0].tp_ns.tp);
-              t.error_code = error_code::invalid_topic_exception;
-              return ss::make_ready_future<metadata_response::topic>(
-                std::move(t));
-          }
+        auto tp_md = ctx.metadata_cache().get_topic_metadata(res[0].tp_ns);
+        if (!tp_md) {
+            metadata_response::topic t;
+            t.name = std::move(res[0].tp_ns.tp);
+            t.error_code = error_code::invalid_topic_exception;
+            co_return t;
+        }
 
-          return wait_for_topics(
-                   md_cache,
-                   res,
-                   ctx.controller_api(),
-                   tout + model::timeout_clock::now())
-            .then([&ctx, tp_md = std::move(tp_md)]() mutable {
-                return make_topic_response_from_topic_metadata(
-                  ctx.metadata_cache(),
-                  tp_md.value(),
-                  is_node_isolated_or_decommissioned::no,
-                  ctx.recovery_mode_enabled());
-            });
-      })
-      .handle_exception([topic = std::move(topic)](
-                          [[maybe_unused]] std::exception_ptr e) mutable {
-          metadata_response::topic t;
-          t.name = std::move(topic);
-          t.error_code = error_code::request_timed_out;
-          return t;
-      });
+        co_return make_topic_response_from_topic_metadata(
+          ctx.metadata_cache(),
+          tp_md.value(),
+          is_node_isolated_or_decommissioned::no,
+          ctx.recovery_mode_enabled());
+    } catch (const std::exception& e) {
+        metadata_response::topic t;
+        t.name = std::move(topic);
+        t.error_code = error_code::request_timed_out;
+        vlog(klog.warn, "Failed to autocreate topic({}): {}", t.name, e.what());
+        co_return t;
+    }
 }
+} // namespace
 
 metadata_response::topic
 make_error_topic_response(model::topic tp, error_code ec) {
@@ -261,19 +258,19 @@ static metadata_response::topic make_topic_response(
      * if requested include topic authorized operations
      */
     if (rq.data.include_topic_authorized_operations) {
-        res.topic_authorized_operations = details::to_bit_field(
-          details::authorized_operations(ctx, md.get_configuration().tp_ns.tp));
+        res.topic_authorized_operations = kafka::topic_authorized_operations{
+          details::to_bit_field(details::authorized_operations(
+            ctx, md.get_configuration().tp_ns.tp))};
     }
 
     return res;
 }
 
-static ss::future<small_fragment_vector<metadata_response::topic>>
-get_topic_metadata(
+static ss::future<chunked_vector<metadata_response::topic>> get_topic_metadata(
   request_context& ctx,
   metadata_request& request,
   const is_node_isolated_or_decommissioned is_node_isolated) {
-    small_fragment_vector<metadata_response::topic> res;
+    chunked_vector<metadata_response::topic> res;
 
     // request can be served from whatever happens to be in the cache
     if (request.list_all_topics) {
@@ -297,8 +294,8 @@ get_topic_metadata(
               ctx, request, md.get_metadata(), is_node_isolated));
         }
 
-        return ss::make_ready_future<
-          small_fragment_vector<metadata_response::topic>>(std::move(res));
+        return ss::make_ready_future<chunked_vector<metadata_response::topic>>(
+          std::move(res));
     }
 
     std::vector<model::topic> topics_to_be_created;
@@ -371,8 +368,8 @@ get_topic_metadata(
                 .name = std::move(t)};
           });
 
-        return ss::make_ready_future<
-          small_fragment_vector<metadata_response::topic>>(std::move(res));
+        return ss::make_ready_future<chunked_vector<metadata_response::topic>>(
+          std::move(res));
     }
 
     std::for_each(
@@ -596,8 +593,10 @@ ss::future<typename T::api::response_type> handle_metadata(
       request.data.include_cluster_authorized_operations
       && ctx.authorized(
         security::acl_operation::describe, security::default_cluster_name)) {
-        reply.data.cluster_authorized_operations = details::to_bit_field(
-          details::authorized_operations(ctx, security::default_cluster_name));
+        reply.data.cluster_authorized_operations
+          = kafka::cluster_authorized_operations{
+            details::to_bit_field(details::authorized_operations(
+              ctx, security::default_cluster_name))};
     }
 
     co_return reply;
@@ -616,6 +615,20 @@ ss::future<response_ptr> describe_cluster_handler::handle(
     auto reply = co_await handle_metadata<describe_cluster_handler>(ctx, g);
     co_return co_await ctx.respond(std::move(reply));
 }
+
+namespace {
+// Safety margin to account for overallocations by the chunked_vector.
+// This is meant to represent either the table-doubling before filling
+// the first fragment or the allocation for an extra fragment.
+template<typename T>
+size_t chunked_vector_overalloc(size_t n_elems) {
+    if (std::cmp_less(n_elems, chunked_vector<T>::elements_per_fragment())) {
+        return sizeof(T) * n_elems;
+    } else {
+        return chunked_vector<T>::max_frag_bytes();
+    }
+}
+} // namespace
 
 size_t
 metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
@@ -679,7 +692,13 @@ metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
 
         size_estimate += pcount
                          * (bytes_per_partition + bytes_per_replica * rcount);
+
+        size_estimate += chunked_vector_overalloc<partition>(pcount);
     }
+
+    const auto n_topics = md_cache.all_topics_metadata().size();
+    size_estimate += chunked_vector_overalloc<kafka::metadata_response_topic>(
+      n_topics);
 
     // Finally, we double the estimate, because the highwater mark for memory
     // use comes when the in-memory structures (metadata_response_data and
@@ -691,10 +710,7 @@ metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
 
     // We still add on the default_estimate to handle the size of the request
     // itself and miscellaneous other procesing (this is a small adjustment,
-    // generally ~8000 bytes). Finally, we add max_frag_bytes to account for the
-    // worse-cast overshoot during vector re-allocation.
-    return default_memory_estimate(request_size) + size_estimate
-           + large_fragment_vector<
-             metadata_response_partition>::max_frag_bytes();
+    // generally ~8000 bytes).
+    return default_memory_estimate(request_size) + size_estimate;
 }
 } // namespace kafka

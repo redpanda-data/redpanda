@@ -21,6 +21,7 @@
 #include "storage/segment_reader.h"
 #include "storage/types.h"
 #include "storage/version.h"
+#include "utils/functional.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/gate.hh>
@@ -119,10 +120,9 @@ public:
     enum class bitflags : uint32_t {
         none = 0,
         is_compacted_segment = 1,
-        finished_self_compaction = 1U << 1U,
-        mark_tombstone = 1U << 2U,
-        closed = 1U << 3U,
-        finished_windowed_compaction = 1U << 4U,
+        mark_tombstone = 1U << 1U,
+        closed = 1U << 2U,
+        finished_windowed_compaction = 1U << 3U,
     };
 
 public:
@@ -191,10 +191,9 @@ public:
     void mark_as_compacted_segment();
     void unmark_as_compacted_segment();
     bool is_compacted_segment() const;
-    void mark_as_finished_self_compaction();
-    bool finished_self_compaction() const;
     void mark_as_finished_windowed_compaction();
     bool finished_windowed_compaction() const;
+    bool has_self_compact_timestamp() const;
     bool has_clean_compact_timestamp() const;
     /// \brief used for compaction, to reset the tracker from index
     void force_set_commit_offset_from_index();
@@ -223,7 +222,7 @@ public:
     const compacted_index_writer& compaction_index() const;
     // We currently use `max_removable_local_log_offset` to control both
     // deletion/eviction, and compaction.
-    bool is_compactible(const compaction_config& cfg) const;
+    bool is_compactible(const compaction::compaction_config& cfg) const;
 
     // Calls `_cache->reset()`, iff the optional `_cache` has a value. This
     // leaves the object in a re-usable state. If there is no contained object
@@ -243,6 +242,9 @@ public:
       bool skip_lru_promote);
     void cache_put(
       const model::record_batch& batch, batch_cache::is_dirty_entry dirty);
+
+    std::optional<ss::rwlock::holder> try_hold_read_lock();
+    std::optional<ss::rwlock::holder> try_hold_write_lock();
 
     ss::future<ss::rwlock::holder> read_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
@@ -457,7 +459,8 @@ inline bool segment::has_compaction_index() const {
     return _compaction_index != std::nullopt;
 }
 
-inline bool segment::is_compactible(const compaction_config& cfg) const {
+inline bool
+segment::is_compactible(const compaction::compaction_config& cfg) const {
     // Because we don't support partially-compacted segments, to be eligible for
     // compaction a segment must both
     // 1. have latest batch timestamp longer ago than min.compaction.lag.ms, and
@@ -480,19 +483,15 @@ inline bool segment::is_compacted_segment() const {
     return (_flags & bitflags::is_compacted_segment)
            == bitflags::is_compacted_segment;
 }
-inline void segment::mark_as_finished_self_compaction() {
-    _flags |= bitflags::finished_self_compaction;
-}
-inline bool segment::finished_self_compaction() const {
-    return (_flags & bitflags::finished_self_compaction)
-           == bitflags::finished_self_compaction;
-}
 inline void segment::mark_as_finished_windowed_compaction() {
     _flags |= bitflags::finished_windowed_compaction;
 }
 inline bool segment::finished_windowed_compaction() const {
     return (_flags & bitflags::finished_windowed_compaction)
            == bitflags::finished_windowed_compaction;
+}
+inline bool segment::has_self_compact_timestamp() const {
+    return index().has_self_compact_timestamp();
 }
 inline bool segment::has_clean_compact_timestamp() const {
     return index().has_clean_compact_timestamp();
@@ -540,6 +539,15 @@ inline void segment::cache_put(
         _cache->put(batch, dirty);
     }
 }
+
+inline std::optional<ss::rwlock::holder> segment::try_hold_read_lock() {
+    return _destructive_ops.try_hold_read_lock();
+}
+
+inline std::optional<ss::rwlock::holder> segment::try_hold_write_lock() {
+    return _destructive_ops.try_hold_write_lock();
+}
+
 inline ss::future<ss::rwlock::holder>
 segment::read_lock(ss::semaphore::time_point timeout) {
     return _destructive_ops.hold_read_lock(timeout);

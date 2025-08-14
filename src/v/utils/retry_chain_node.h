@@ -139,7 +139,9 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/sstring.hh>
 #include <seastar/core/weak_ptr.hh>
+#include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -147,7 +149,203 @@
 #include <fmt/ostream.h>
 
 #include <chrono>
+#include <exception>
+#include <iterator>
+#include <ranges>
 #include <variant>
+
+namespace detail {
+/// A fixed-size circular buffer that behaves like std::vector for basic
+/// operations. When the buffer reaches its maximum capacity, new elements
+/// overwrite the oldest elements in FIFO order.
+class rtc_circular_buffer {
+public:
+    using value_type = char;
+    using reference = char&;
+    using const_reference = const char&;
+
+    /// Create a circular buffer with the specified maximum capacity
+    explicit rtc_circular_buffer(size_t capacity);
+
+    /// Add an element to the buffer. When the buffer is full, the oldest
+    /// element is overwritten.
+    void push_back(value_type value);
+
+    void push_back(std::string_view sv);
+
+    /// Access element at logical index (0 is the oldest element)
+    reference operator[](size_t index);
+
+    /// Access element at logical index (0 is the oldest element)
+    const_reference operator[](size_t index) const;
+
+    /// Access element at logical index with bounds checking
+    reference at(size_t index);
+
+    /// Access element at logical index with bounds checking
+    const_reference at(size_t index) const;
+
+    /// Get the first (oldest) element
+    reference front();
+
+    /// Get the first (oldest) element
+    const_reference front() const;
+
+    /// Get the last (newest) element
+    reference back();
+
+    /// Get the last (newest) element
+    const_reference back() const;
+
+    /// Number of elements currently in the buffer
+    size_t size() const noexcept;
+
+    /// Maximum capacity of the buffer
+    size_t capacity() const noexcept;
+
+    /// Check if the buffer is empty
+    bool empty() const noexcept;
+
+    /// Check if the buffer is at full capacity
+    bool full() const noexcept;
+
+    /// Get the number of elements that were added to the buffer and
+    /// then overwritten and lost. The count is reset if 'clear' is
+    /// called.
+    size_t overwritten() const noexcept;
+
+    /// Clear all elements from the buffer
+    void clear() noexcept;
+
+    /// Return a view of the entire buffer (const version)
+    auto view() const {
+        return std::views::join(std::views::all(std::array{
+          std::span(_data).subspan(
+            _start, _size < _capacity ? _size - _start : _capacity - _start),
+          std::span(_data).subspan(0, _size < _capacity ? 0 : _start)}));
+    }
+
+    /// Return a view of the entire buffer
+    auto view() {
+        return std::views::join(std::views::all(std::array{
+          std::span(_data).subspan(
+            _start, _size < _capacity ? _size - _start : _capacity - _start),
+          std::span(_data).subspan(0, _size < _capacity ? 0 : _start)}));
+    }
+
+private:
+    std::vector<value_type> _data;
+    size_t _capacity;
+    size_t _size{0};
+    size_t _start{0};
+    size_t _total_added{0};
+};
+
+} // namespace detail
+
+/// Represents the context for a retry chain node, capable of collecting trace
+/// messages in memory.
+///
+/// This context is intended for logging repeated or periodic processes—
+/// for example, a background fiber that wakes up at intervals to perform work.
+/// It works in conjunction with `retry_chain_node` and `retry_chain_logger`
+/// to provide structured logging.
+///
+/// The context maintains an in-memory buffer for trace messages, with a
+/// configurable memory limit. This limit should be set based on the number of
+/// trace messages expected per iteration of the process.
+///
+/// When the buffer reaches its capacity, additional trace messages are
+/// discarded. In such cases, the buffer will end with a "[truncated]" message
+/// to indicate overflow. As such, this class is not intended for logging
+/// unbounded traces between resets.
+///
+/// Additionally, the context can provide an abort source, allowing external
+/// control to stop the associated fiber.
+template<typename Clock = ss::lowres_clock>
+class basic_retry_chain_context {
+public:
+    /// Create a trace memory buffer with the specified size.
+    /// \name is a name of the context
+    /// \as is an abort source
+    /// \size is a size limit for the in-memory buffer
+    explicit basic_retry_chain_context(
+      ss::sstring name, ss::abort_source& as, size_t size)
+      : _name(std::move(name))
+      , _as(as)
+      , _size_limit(size)
+      , _buf(size) {}
+
+    /// Add a trace to the buffer.
+    void add_trace(const ss::sstring& msg) const {
+        _last_trace_ts = Clock::now();
+        _buf.push_back(std::string_view{msg.data(), msg.size()});
+        _buf.push_back('\n');
+    }
+
+    /// Returns a view of trace strings that can be iterated
+    auto traces() const {
+        return std::ranges::split_view(_buf.view(), '\n')
+               | std::views::transform([](auto&& r) {
+                     auto begin = std::ranges::begin(r);
+                     auto end = std::ranges::end(r);
+                     return ss::sstring(begin, end);
+                 })
+               | std::views::filter(
+                 [](const ss::sstring& s) { return !s.empty(); });
+    }
+
+    bool truncation_warning() const { return _buf.overwritten() > 0; }
+
+    /// Get the entire trace log as a string (added for testing).
+    ss::sstring get_trace_log() const {
+        ss::sstring res;
+        for (const auto& trace : traces()) {
+            res += trace;
+            res += "\n";
+        }
+        return res;
+    }
+
+    auto get_last_trace_time() const noexcept { return _last_trace_ts; }
+
+    /// Reset the state of the context and empties the buffer
+    void reset() {
+        _buf.clear();
+        _last_trace_ts = Clock::now();
+        _suspended_to = Clock::time_point::min();
+    }
+
+    /// Get shared abort source of the context
+    ss::abort_source& as() noexcept { return _as; }
+
+    /// This method informs the context about the stall.
+    /// This will push the deadline into the future. The idea is that this
+    /// method should be invoked before the 'seastar::sleep' or similar method
+    /// is invoked to avoid triggering the stall detection logic.
+    void suspend_to(Clock::time_point sp) noexcept { _suspended_to = sp; }
+
+    /// Get the deadline value.
+    /// The deadline is computed as the timestamp of the last message logged +
+    /// stall timeout. The 'suspend_to' can override this value.
+    Clock::time_point get_deadline(Clock::duration stall_timeout) const {
+        return std::max(_last_trace_ts + stall_timeout, _suspended_to);
+    }
+
+    const ss::sstring& name() const noexcept { return _name; }
+
+private:
+    ss::sstring _name;
+    /// Root abort source
+    ss::abort_source& _as;
+    /// Trace buffer size limit
+    size_t _size_limit;
+    /// Buffer to store traces
+    mutable detail::rtc_circular_buffer _buf;
+    /// Last trace timestamp
+    mutable Clock::time_point _last_trace_ts;
+    Clock::time_point _suspended_to;
+};
 
 /// Retry strategy
 enum class retry_strategy : uint8_t {
@@ -199,6 +397,8 @@ struct retry_permit {
 /// timeout value have to be smaller that the one of the parent node.
 template<class Clock = ss::lowres_clock>
 class [[gnu::warn_unused]] basic_retry_chain_node {
+    using context_t = basic_retry_chain_context<Clock>;
+
 public:
     using clock = Clock;
     using duration = typename clock::duration;
@@ -224,6 +424,29 @@ public:
       ss::abort_source& as, duration timeout, duration initial_backoff);
     basic_retry_chain_node(
       ss::abort_source& as,
+      duration timeout,
+      duration initial_backoff,
+      retry_strategy retry_strategy);
+
+    /// Create a head of the chain without backoff but with context.
+    explicit basic_retry_chain_node(basic_retry_chain_context<Clock>& ctx);
+    /// Creates a head with the provided context, deadline, and
+    /// backoff granularity.
+    basic_retry_chain_node(
+      basic_retry_chain_context<Clock>& ctx,
+      time_point deadline,
+      duration initial_backoff);
+    basic_retry_chain_node(
+      basic_retry_chain_context<Clock>& ctx,
+      time_point deadline,
+      duration initial_backoff,
+      retry_strategy retry_strategy);
+    basic_retry_chain_node(
+      basic_retry_chain_context<Clock>& ctx,
+      duration timeout,
+      duration initial_backoff);
+    basic_retry_chain_node(
+      basic_retry_chain_context<Clock>& ctx,
       duration timeout,
       duration initial_backoff,
       retry_strategy retry_strategy);
@@ -325,6 +548,8 @@ public:
     /// Checks if the abort_source was provided and abort was requested.
     void check_abort() const;
 
+    void maybe_add_trace(const ss::sstring&) const;
+
     /// Return backoff duration that should be used before the next retry
     duration get_backoff() const;
 
@@ -339,6 +564,8 @@ public:
 
     /// Return root node of the retry chain
     const basic_retry_chain_node* get_root() const;
+
+    bool has_retry_chain_context() const;
 
 private:
     void format(std::back_insert_iterator<fmt::memory_buffer>& bii) const;
@@ -373,8 +600,9 @@ private:
     milliseconds_uint16_t _backoff;
     /// Deadline for retry attempts
     time_point _deadline;
-    /// optional parent node or (if root) abort source for all fibers
-    std::variant<basic_retry_chain_node*, ss::abort_source*> _parent;
+    /// optional parent node or (if root) abort source or the context object
+    std::variant<basic_retry_chain_node*, ss::abort_source*, context_t*>
+      _parent;
 };
 
 using retry_chain_node = basic_retry_chain_node<ss::lowres_clock>;
@@ -387,21 +615,29 @@ public:
     basic_retry_chain_logger(
       ss::logger& log, basic_retry_chain_node<Clock>& node)
       : _log(log)
-      , _node(node) {}
+      , _node(node)
+      , _has_tracing(node.has_retry_chain_context()) {}
     /// Make logger that adds retry_chain_node id and custom string
     /// to every message
     basic_retry_chain_logger(
       ss::logger& log, basic_retry_chain_node<Clock>& node, ss::sstring context)
       : _log(log)
       , _node(node)
-      , _ctx(std::move(context)) {}
+      , _ctx(std::move(context))
+      , _has_tracing(node.has_retry_chain_context()) {}
     template<typename... Args>
     void
     log(ss::log_level lvl, fmt::format_string<Args...> format, Args&&... args)
       const {
+        std::optional<ss::sstring> trace;
+        if (_has_tracing) {
+            trace = ssx::sformat(format, std::forward<Args>(args)...);
+            _node.maybe_add_trace(trace.value());
+        }
         if (_log.is_enabled(lvl)) {
             auto lambda = [&](ss::logger& logger, ss::log_level lvl) {
-                auto msg = ssx::sformat(format, std::forward<Args>(args)...);
+                auto msg = trace.value_or(
+                  ssx::sformat(format, std::forward<Args>(args)...));
                 if (_ctx) {
                     logger.log(
                       lvl,
@@ -435,6 +671,24 @@ public:
     void trace(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::trace, format, std::forward<Args>(args)...);
     }
+    /// Invoke the lambda function but disable tracing while the function is
+    /// running.
+    template<class Fn>
+    void bypass_tracing(Fn&& fn) {
+        auto d = ss::defer([this, t = _has_tracing] { _has_tracing = t; });
+        std::exception_ptr err;
+        auto tmp = _has_tracing;
+        _has_tracing = false;
+        try {
+            std::invoke(std::forward<Fn>(fn));
+        } catch (...) {
+            err = std::current_exception();
+        }
+        _has_tracing = tmp;
+        if (err) {
+            std::rethrow_exception(err);
+        }
+    }
 
 private:
     void __attribute__((noinline)) do_log(
@@ -444,6 +698,8 @@ private:
     ss::logger& _log;
     const basic_retry_chain_node<Clock>& _node;
     std::optional<ss::sstring> _ctx;
+    bool _has_tracing;
 };
 
 using retry_chain_logger = basic_retry_chain_logger<ss::lowres_clock>;
+using retry_chain_context = basic_retry_chain_context<ss::lowres_clock>;

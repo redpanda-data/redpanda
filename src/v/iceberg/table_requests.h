@@ -10,7 +10,7 @@
 #pragma once
 
 #include "container/chunked_hash_map.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "iceberg/partition.h"
 #include "iceberg/schema.h"
 #include "iceberg/storage_credentials.h"

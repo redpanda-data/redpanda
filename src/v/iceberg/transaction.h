@@ -10,7 +10,7 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "iceberg/action.h"
 #include "iceberg/manifest_io.h"
 #include "iceberg/merge_append_action.h"

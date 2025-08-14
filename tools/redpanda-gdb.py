@@ -258,7 +258,7 @@ class std_optional:
             return bool(self.ref['__value_'])
 
 
-class fragmented_vector:
+class chunked_vector:
     def __init__(self, ref):
         self.ref = ref
 
@@ -1117,9 +1117,9 @@ def find_cloud_storage_clients(shard=None):
 class index_state:
     def __init__(self, ref):
         self.ref = ref
-        self.offset = fragmented_vector(self.ref["relative_offset_index"])
-        self.time = fragmented_vector(self.ref["relative_time_index"])
-        self.pos = fragmented_vector(self.ref["position_index"])
+        self.offset = chunked_vector(self.ref["relative_offset_index"])
+        self.time = chunked_vector(self.ref["relative_time_index"])
+        self.pos = chunked_vector(self.ref["position_index"])
 
     def size(self):
         return int(self.offset.size_bytes() + self.time.size_bytes() +
@@ -1895,19 +1895,19 @@ class seastar_data_source:
 
     def __repr__(self):
         return f"""
-seastar_data_source(ref={self.ref}, 
-session_in_sem={self.session_in_sem}, 
-session_out_sem={self.session_out_sem}, 
-session_input={self.session_input}, 
-session_eof={self.session_eof}, 
-session_error={self.session_error}, 
-session_shutdown={self.session_shutdown}, 
+seastar_data_source(ref={self.ref},
+session_in_sem={self.session_in_sem},
+session_out_sem={self.session_out_sem},
+session_input={self.session_input},
+session_eof={self.session_eof},
+session_error={self.session_error},
+session_shutdown={self.session_shutdown},
 session_out_pending={self.session_out_pending},
 session_sock_fd={self.session_sock_fd},
 session_sock={self.session_sock},
-ssl = {self.session_ssl}, 
-rbio={self.rbio}, 
-wbio={self.wbio}, 
+ssl = {self.session_ssl},
+rbio={self.rbio},
+wbio={self.wbio},
 session_in={self.session_in},
 out_pending={self.out_pending}),
 """

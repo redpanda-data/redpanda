@@ -349,6 +349,7 @@ ss::future<> run_workload(
                 std::nullopt,
                 log->stm_manager()->max_removable_local_log_offset(),
                 std::nullopt,
+                std::nullopt,
                 std::chrono::milliseconds{0},
                 dummy_as,
               })

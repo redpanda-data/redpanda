@@ -86,7 +86,9 @@ public:
      */
     model::offset bootstrap_last_applied() const;
     /**
-     * Return when the committed offset has been established when STM starts.
+     * Return the current committed offset if the STM is already bootstrapped.
+     * Otherwise, wait until the STM has been started and bootstrapped, then
+     * return the committed offset.
      */
     ss::future<model::offset> bootstrap_committed_offset();
     /**

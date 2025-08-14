@@ -115,7 +115,6 @@ redpanda_cc_library(
         "api-doc/cluster_config.json.hh",
         "cluster_config_schema_util.h",
     ],
-    include_prefix = "redpanda/admin",
     visibility = ["//visibility:public"],
     deps = [
         ":cluster_config",
@@ -134,7 +133,6 @@ redpanda_cc_library(
     hdrs = [
         "data_migration_utils.h",
     ],
-    include_prefix = "redpanda/admin",
     visibility = ["//visibility:public"],
     deps = [
         ":migration",
@@ -189,7 +187,6 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/features:enterprise_feature_messages",
     ],
-    include_prefix = "redpanda/admin",
     visibility = ["//visibility:public"],
     deps = [
         ":broker",
@@ -215,9 +212,10 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes:streambuf",
         "//src/v/cloud_storage",
+        "//src/v/cloud_storage:cache",
         "//src/v/cluster",
         "//src/v/config",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/container:lw_shared_container",
         "//src/v/debug_bundle",
         "//src/v/debug_bundle:error",
@@ -236,6 +234,7 @@ redpanda_cc_library(
         "//src/v/pandaproxy/schema_registry:config",
         "//src/v/pandaproxy/schema_registry:server",
         "//src/v/raft",
+        "//src/v/redpanda/admin/services:admin",
         "//src/v/reflection:type_traits",
         "//src/v/resource_mgmt:cpu_profiler",
         "//src/v/resource_mgmt:memory_sampling",
@@ -245,6 +244,7 @@ redpanda_cc_library(
         "//src/v/security/audit",
         "//src/v/security/audit:types",
         "//src/v/serde",
+        "//src/v/serde/protobuf:rpc",
         "//src/v/ssx:async_algorithm",
         "//src/v/ssx:sformat",
         "//src/v/storage",

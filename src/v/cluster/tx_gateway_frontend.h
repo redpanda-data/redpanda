@@ -56,7 +56,7 @@ public:
     ss::future<end_tx_reply>
       end_txn(end_tx_request, model::timeout_clock::duration);
 
-    using return_all_txs_res = result<fragmented_vector<tx_metadata>, tx::errc>;
+    using return_all_txs_res = result<chunked_vector<tx_metadata>, tx::errc>;
     ss::future<return_all_txs_res>
     get_all_transactions_for_one_tx_partition(model::ntp tx_manager_ntp);
     ss::future<return_all_txs_res> get_all_transactions();

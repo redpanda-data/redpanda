@@ -11,7 +11,7 @@
 
 #include "base/seastarx.h"
 #include "config/property.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "datalake/coordinator/file_committer.h"
 #include "datalake/coordinator/state_update.h"
 #include "iceberg/catalog.h"

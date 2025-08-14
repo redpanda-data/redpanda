@@ -28,7 +28,22 @@ void rp_test_listener::OnTestIterationStart(
 
 void rp_test_listener::OnTestPartResult(
   const ::testing::TestPartResult& result) {
-    if (result.type() == testing::TestPartResult::kFatalFailure) {
+    if (result.fatally_failed()) {
+        const bool failed_with_exception = result.file_name() == nullptr
+                                           && result.line_number() == -1;
+        if (failed_with_exception) {
+            // If the test failed because an exception was thrown, we don't want
+            // to throw another exception here. The test is already failed and
+            // any additional exceptions are propagated to the runner process
+            // which would exit. This is a workaround for the issue
+            // https://github.com/google/googletest/issues/4791.
+            return;
+        }
+
+        // Throw an exception to fail the test on first assert (even if it is
+        // from a helper function).
+        // See
+        // https://google.github.io/googletest/advanced.html#asserting-on-subroutines-with-an-exception.
         throw testing::AssertionException(result);
     }
 }

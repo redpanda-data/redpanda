@@ -52,7 +52,7 @@ create_aws_sigv4_configuration(const config::configuration& cfg) {
 
     // Service name defaults to "glue".
     s3_config.service = cloud_roles::aws_service_name{
-      cfg.iceberg_rest_catalog_aws_service_name().value_or("glue")};
+      cfg.iceberg_rest_catalog_aws_service_name()};
 
     auto region = cfg.iceberg_rest_catalog_aws_region().has_value()
                     ? cfg.iceberg_rest_catalog_aws_region()

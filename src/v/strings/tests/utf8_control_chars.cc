@@ -41,7 +41,7 @@ BOOST_AUTO_TEST_CASE(control_chars_default_thrower) {
 }
 
 struct my_check_exception {
-    [[noreturn]] [[gnu::cold]] void conversion_error() {
+    [[noreturn]] [[gnu::cold]] void conversion_error() const {
         throw std::invalid_argument("invalid argument");
     }
 };

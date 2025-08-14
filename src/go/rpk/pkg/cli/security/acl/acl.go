@@ -105,9 +105,10 @@ flag with the --allow-principal flag, and the --deny-host flag with the
 
 RESOURCES
 
-A resource is what an ACL allows or denies access to. There are four resources
-within Redpanda: topics, groups, the cluster itself, and transactional IDs.
-Names for each of these resources can be specified with their respective flags.
+A resource is what an ACL allows or denies access to. There are six resources
+within Redpanda: topics, groups, the cluster itself, transactional IDs,
+schema registry, and schema registry subjects. Names for each of these resources
+can be specified with their respective flags.
 
 Resources combine with the operation that is allowed or denied on that
 resource. The next section describes which operations are required for which
@@ -128,7 +129,8 @@ Redpanda has the following operations:
     ALL                 Allows all operations below.
     READ                Allows reading a given resource.
     WRITE               Allows writing to a given resource.
-    CREATE              Allows creating a given resource.
+    CREATE              Allows creating a given resource (Except for Redpanda
+                        Schema Registry).
     DELETE              Allows deleting a given resource.
     ALTER               Allows altering non-configurations.
     DESCRIBE            Allows querying non-configurations.
@@ -169,7 +171,8 @@ const helpACLOperations = `Brokers support many operations for many resources:
     ALL                 Allows all operations below.
     READ                Allows reading a given resource.
     WRITE               Allows writing to a given resource.
-    CREATE              Allows creating a given resource.
+    CREATE              Allows creating a given resource. (Except for Redpanda
+                        Schema Registry).
     DELETE              Allows deleting a given resource.
     ALTER               Allows altering non-configurations.
     DESCRIBE            Allows querying non-configurations.
@@ -278,4 +281,45 @@ ADMIN
     DescribeTransactions   DESCRIBE on TRANSACTIONAL_ID for transactional.id
                            DESCRIBE on TOPIC for topics
     ListTransactions       DESCRIBE on TRANSACTIONAL_ID for transactional.id
+
+REGISTRY
+
+    GetGlobalConfig         DESCRIBE_CONFIGS on REGISTRY for schema registry
+    UpdateGlobalConfig      ALTER_CONFIGS on REGISTRY for schema registry
+
+    GetGlobalMode           DESCRIBE_CONFIGS on REGISTRY for schema registry
+    UpdateGlobalMode        ALTER_CONFIGS on REGISTRY for schema registry
+
+    GetReferencedBy         DESCRIBE on REGISTRY for schema registry
+    ListSchemasForId        DESCRIBE on REGISTRY for schema registry
+
+    ListSchemaTypes         (no ACLs required)
+    HealthCheck             (no ACLs required)
+
+SUBJECT
+
+    ListSubjects            DESCRIBE on SUBJECT for subject
+
+    CheckSchema             READ on SUBJECT for subject
+    RegisterSchema          WRITE on SUBJECT for subject
+
+    GetSchemaByVersion      READ on SUBJECT for subject
+    GetSchemaRaw            READ on SUBJECT for subject
+
+    ListSubjectVersions     DESCRIBE on SUBJECT for subject
+
+    DeleteSchemaVersion     DELETE on SUBJECT for subject
+    DeleteSubject           DELETE on SUBJECT for subject
+
+    GetSubjectConfig        DESCRIBE_CONFIGS on SUBJECT for subject
+    UpdateSubjectConfig     ALTER_CONFIGS on SUBJECT for subject
+    DeleteSubjectConfig     ALTER_CONFIGS on SUBJECT for subject
+
+    GetSubjectMode          DESCRIBE_CONFIGS on SUBJECT for subject
+    UpdateSubjectMode       ALTER_CONFIGS on SUBJECT for subject
+    DeleteSubjectMode       ALTER_CONFIGS on SUBJECT for subject
+
+    CheckCompatibility      READ on SUBJECT for subject
+
+    GetSchemaById           READ on SUBJECT for subject
 `

@@ -21,7 +21,7 @@
 
 namespace storage {
 
-const std::string failure_injector_schema = R"(
+constexpr std::string_view failure_injector_schema = R"(
 {
     "type": "object",
     "properties": {

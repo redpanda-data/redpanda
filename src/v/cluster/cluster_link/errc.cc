@@ -49,6 +49,19 @@ std::string errc_category::message(int c) const {
         return "Topic is not being mirrored by the cluster link";
     case errc::mirror_topic_name_invalid:
         return "Mirror topic name is invalid";
+    case errc::uuid_conflict:
+        return "Provided UUID on cluster link update command does not match "
+               "current UUID";
+    case errc::bootstrap_servers_empty:
+        return "Bootstrap servers cannot be empty";
+    case errc::tls_configuration_invalid:
+        return "TLS configuration is invalid";
+    case errc::link_name_invalid:
+        return "Provided cluster link name is invalid";
+    case errc::topic_filter_invalid:
+        return "Topic filter is invalid";
+    case errc::topic_property_excluded_from_mirroring:
+        return "Topic property is excluded from mirroring";
     }
     return "cluster::cluster_link::unknown";
 }
@@ -117,5 +130,25 @@ auto fmt::formatter<cluster::cluster_link::errc>::format(
     case cluster::cluster_link::errc::mirror_topic_name_invalid:
         return fmt::format_to(
           ctx.out(), "cluster::cluster_link::errc::mirror_topic_name_invalid");
+    case cluster::cluster_link::errc::uuid_conflict:
+        return fmt::format_to(
+          ctx.out(), "cluster::cluster_link::errc::uuid_conflict");
+    case cluster::cluster_link::errc::bootstrap_servers_empty:
+        return fmt::format_to(
+          ctx.out(), "cluster::cluster_link::errc::bootstrap_servers_empty");
+    case cluster::cluster_link::errc::tls_configuration_invalid:
+        return fmt::format_to(
+          ctx.out(), "cluster::cluster_link::errc::tls_configuration_invalid");
+    case cluster::cluster_link::errc::link_name_invalid:
+        return fmt::format_to(
+          ctx.out(), "cluster::cluster_link::errc::link_name_invalid");
+    case cluster::cluster_link::errc::topic_filter_invalid:
+        return fmt::format_to(
+          ctx.out(), "cluster::cluster_link::errc::topic_filter_invalid");
+    case cluster::cluster_link::errc::topic_property_excluded_from_mirroring:
+        return fmt::format_to(
+          ctx.out(),
+          "cluster::cluster_link::errc::topic_property_excluded_from_"
+          "mirroring");
     }
 }

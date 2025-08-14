@@ -17,7 +17,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -495,7 +495,7 @@ public:
     using transition_table = boost::mpl::vector<
     //  Source state      | Event                  | Dest state        | Action
     row<st_passive,         ev_leadership_acquired,  st_starting_async,  tr_passive_to_starting >, /* Start archiver when the leadership is acquired */
-    row<st_starting_async,  ev_archiver_started,     st_active,          tr_starting_to_active  >, /* Transition to active when the archiver is started */ 
+    row<st_starting_async,  ev_archiver_started,     st_active,          tr_starting_to_active  >, /* Transition to active when the archiver is started */
     row<st_starting_async,  ev_archiver_failure,     st_passive,         tr_starting_to_passive >, /* Return to the initial state due to failure */
     row<st_starting_async,  ev_leadership_lost,      none,               defer                  >, /* Leadership notification during archiver startup */
     row<st_starting_async,  ev_shutdown,             none,               defer                  >, /* Shutdown notification during archiver startup */
@@ -926,8 +926,8 @@ public:
         }
     }
 
-    fragmented_vector<model::ntp> managed_partitions() const {
-        fragmented_vector<model::ntp> results;
+    chunked_vector<model::ntp> managed_partitions() const {
+        chunked_vector<model::ntp> results;
         for (const auto& kv : _managed) {
             results.push_back(kv.first);
         }
@@ -935,8 +935,8 @@ public:
     }
 
     /// Snapshot of managed partitions which are leaders
-    fragmented_vector<model::ntp> leader_partitions() const {
-        fragmented_vector<model::ntp> results;
+    chunked_vector<model::ntp> leader_partitions() const {
+        chunked_vector<model::ntp> results;
         for (const auto& kv : _managed) {
             if (kv.second->is_active()) {
                 results.push_back(kv.first);
@@ -980,12 +980,12 @@ ss::future<> archiver_manager::start() { co_await _impl->start(); }
 
 ss::future<> archiver_manager::stop() { co_await _impl->stop(); }
 
-fragmented_vector<model::ntp> archiver_manager::managed_partitions() const {
+chunked_vector<model::ntp> archiver_manager::managed_partitions() const {
     return _impl->managed_partitions();
 }
 
 /// Snapshot of managed partitions which are leaders
-fragmented_vector<model::ntp> archiver_manager::leader_partitions() const {
+chunked_vector<model::ntp> archiver_manager::leader_partitions() const {
     return _impl->leader_partitions();
 }
 

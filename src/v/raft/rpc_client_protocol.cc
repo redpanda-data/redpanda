@@ -163,4 +163,21 @@ rpc_client_protocol::transfer_leadership(
       });
 }
 
+ss::future<result<remake_learner_state_reply>>
+rpc_client_protocol::remake_learner_state(
+  model::node_id n, remake_learner_state_request r, rpc::client_opts opts) {
+    auto timeout = opts.timeout;
+    return _connection_cache.local()
+      .with_node_client<raftgen_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        n,
+        timeout,
+        [r = std::move(r),
+         opts = std::move(opts)](raftgen_client_protocol client) mutable {
+            return client.remake_learner_state(std::move(r), std::move(opts));
+        })
+      .then(&rpc::get_ctx_data<remake_learner_state_reply>);
+}
+
 } // namespace raft

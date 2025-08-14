@@ -11,7 +11,6 @@
 
 #include "config/validators.h"
 
-#include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/container/node_hash_set.h"
 #include "config/configuration.h"
@@ -25,6 +24,7 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <array>
 #include <optional>
 #include <unordered_map>
@@ -90,14 +90,14 @@ validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms) {
 
     // Validate results
     for (const auto& m : mechanisms) {
-        if (absl::c_none_of(
+        if (std::ranges::none_of(
               supported, [&m](const auto& s) { return s == m; })) {
             return ssx::sformat("'{}' is not a supported SASL mechanism", m);
         }
     }
 
     const auto contains = [&mechanisms](const std::string_view& s) {
-        return absl::c_find(mechanisms, s) != mechanisms.end();
+        return std::ranges::contains(mechanisms, s);
     };
 
     if (contains("PLAIN") && !contains("SCRAM")) {
@@ -114,7 +114,7 @@ validate_http_authn_mechanisms(const std::vector<ss::sstring>& mechanisms) {
 
     // Validate results
     for (const auto& m : mechanisms) {
-        if (absl::c_none_of(
+        if (std::ranges::none_of(
               supported, [&m](const auto& s) { return s == m; })) {
             return ssx::sformat(
               "'{}' is not a supported HTTP authentication mechanism", m);
@@ -124,13 +124,13 @@ validate_http_authn_mechanisms(const std::vector<ss::sstring>& mechanisms) {
 }
 
 bool oidc_is_enabled_http() {
-    return absl::c_any_of(
+    return std::ranges::any_of(
       config::shard_local_cfg().http_authentication(),
       [](const auto& m) { return m == "OIDC"; });
 }
 
 bool oidc_is_enabled_kafka() {
-    return absl::c_any_of(
+    return std::ranges::any_of(
       config::shard_local_cfg().sasl_mechanisms(),
       [](const auto& m) { return m == "OAUTHBEARER"; });
 }
@@ -295,21 +295,6 @@ validate_iceberg_rest_catalog_auth_mode(const config::configuration& config) {
               ? config.iceberg_rest_catalog_aws_credentials_source().value()
               : config.cloud_storage_credentials_source();
 
-        if (
-          effective_creds_source != model::cloud_credentials_source::config_file
-          && effective_creds_source
-               != model::cloud_credentials_source::aws_instance_metadata) {
-            // SigV4 only makes sense for config or instance metadata.
-            return fmt::format(
-              "SigV4 authentication (iceberg_rest_catalog_authentication_mode "
-              "= {}) "
-              "is only supported with credentials sources 'config_file' or "
-              "'aws_instance_metadata'. Current effective credentials source "
-              "is '{}'.",
-              auth_mode,
-              effective_creds_source);
-        }
-
         // When using aws_instance_metadata, AWS credentials are not required
         if (
           effective_creds_source
@@ -355,6 +340,20 @@ validate_iceberg_rest_catalog_auth_mode(const config::configuration& config) {
         }
         break;
     }
+    }
+    return std::nullopt;
+}
+
+std::optional<ss::sstring>
+validate_iceberg_rest_catalog_config(const config::configuration& config) {
+    auto catalog_type = config.iceberg_catalog_type();
+    if (catalog_type == datalake_catalog_type::rest) {
+        const auto& endpoint = config.iceberg_rest_catalog_endpoint;
+        if (!endpoint().has_value()) {
+            return fmt::format(
+              "Must set {} when iceberg_catalog_type is set to 'rest'",
+              endpoint.name());
+        }
     }
     return std::nullopt;
 }

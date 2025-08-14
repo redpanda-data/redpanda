@@ -71,7 +71,7 @@ class node_isolation_watcher;
 struct controller_snapshot;
 struct controller_join_snapshot;
 class tx_manager_migrator;
-struct state_machine_factory;
+class state_machine_factory;
 class state_machine_registry;
 class tx_topic_manager;
 class shard_placement_table;

@@ -18,6 +18,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/net/tls.hh>
 
+#include <algorithm>
 #include <exception>
 #include <system_error>
 
@@ -45,7 +46,7 @@ bool is_reconnect_error(const std::system_error& e) {
       ss::tls::ERROR_HTTPS_PROXY_REQUEST};
 
     if (e.code().category() == ss::tls::error_category()) {
-        return absl::c_any_of(
+        return std::ranges::any_of(
           ss_tls_reconnect_errors, [v](int ec) { return v == ec; });
     } else if (
       e.code().category() == std::system_category()

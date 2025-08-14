@@ -18,12 +18,14 @@
 #include "security/acl.h"
 #include "strings/utf8.h"
 
+#include <algorithm>
+
 namespace pandaproxy::schema_registry {
 
 struct acl_control_character_thrower {
     explicit acl_control_character_thrower(std::string_view field)
       : field_name(field) {}
-    [[noreturn]] void conversion_error() {
+    [[noreturn]] void conversion_error() const {
         throw exception(
           error_code::acl_invalid,
           fmt::format("Control characters not allowed in '{}'", field_name));
@@ -47,7 +49,24 @@ T parse_security_enum(std::string_view value, std::string_view type_name) {
 } // namespace
 
 security::acl_operation to_acl_operation(std::string_view op) {
-    return parse_security_enum<security::acl_operation>(op, "ACL operation");
+    auto res = parse_security_enum<security::acl_operation>(
+      op, "ACL operation");
+
+    static const auto valid_ops = [] {
+        auto ops = std::vector<security::acl_operation>{};
+        ops.push_back(security::acl_operation::all);
+        ops.append_range(security::get_allowed_operations<subject>());
+        ops.append_range(security::get_allowed_operations<registry_resource>());
+        std::ranges::sort(ops);
+        ops.erase(std::ranges::unique(ops).begin(), ops.end());
+        return ops;
+    }();
+    if (!std::ranges::contains(valid_ops, res)) {
+        throw exception(
+          error_code::acl_invalid,
+          fmt::format("Invalid acl operation: {}", op));
+    }
+    return res;
 }
 
 security::resource_type to_resource_type(std::string_view type) {

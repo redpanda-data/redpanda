@@ -9,7 +9,6 @@
 
 #include "server.h"
 
-#include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_map.h"
 #include "base/vlog.h"
 #include "cluster/id_allocator_frontend.h"
@@ -90,6 +89,7 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <chrono>
 #include <exception>
 #include <iterator>
@@ -742,7 +742,7 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
 
     const auto& configured = config::shard_local_cfg().sasl_mechanisms();
     auto supports = [&configured](std::string_view value) {
-        return absl::c_find(configured, value) != configured.end();
+        return std::ranges::contains(configured, value);
     };
 
     /*

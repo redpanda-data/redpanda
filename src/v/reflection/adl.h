@@ -34,8 +34,8 @@ struct adl {
     static constexpr bool is_optional = is_std_optional<type>;
     static constexpr bool is_sstring = std::is_same_v<type, ss::sstring>;
     static constexpr bool is_vector = is_std_vector<type>;
-    static constexpr bool is_fragmented_vector
-      = reflection::is_fragmented_vector<type>;
+    static constexpr bool is_chunked_vector
+      = reflection::is_chunked_vector<type>;
     static constexpr bool is_chunked_fifo
       = reflection::is_ss_chunked_fifo<type>;
     static constexpr bool is_btree_set = is_absl_btree_set<type>;
@@ -93,7 +93,7 @@ struct adl {
                 ret.push_back(adl<value_type>{}.from(in));
             }
             return ret;
-        } else if constexpr (is_fragmented_vector || is_chunked_fifo) {
+        } else if constexpr (is_chunked_vector || is_chunked_fifo) {
             using value_type = typename type::value_type;
             int32_t n = in.template consume_type<int32_t>();
             type ret;
@@ -169,7 +169,7 @@ struct adl {
             out.append(t.data(), t.size());
             return;
         } else if constexpr (
-          is_vector || is_fragmented_vector || is_chunked_fifo) {
+          is_vector || is_chunked_vector || is_chunked_fifo) {
             using value_type = typename type::value_type;
             if (unlikely(t.size() > std::numeric_limits<int32_t>::max())) {
                 throw std::invalid_argument(fmt::format(

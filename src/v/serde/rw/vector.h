@@ -27,7 +27,7 @@ namespace serde {
  * This concept applies to everything that behaves like a vector.
  * Requires push_back, begin/end iterators and size.
  * This applies also to:
- * ss::chunked_fifo, fragmented_vector, ss::circular_buffer, etc.
+ * ss::chunked_fifo, chunked_vector, ss::circular_buffer, etc.
  */
 template<typename T>
 concept Vector = requires(T t) {

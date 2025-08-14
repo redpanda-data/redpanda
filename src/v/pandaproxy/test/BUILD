@@ -7,7 +7,6 @@ redpanda_test_cc_library(
     ],
     implementation_deps = [
     ],
-    include_prefix = "pandaproxy/test",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/pandaproxy:core",
@@ -21,7 +20,6 @@ redpanda_test_cc_library(
     ],
     implementation_deps = [
     ],
-    include_prefix = "pandaproxy/test",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/http",

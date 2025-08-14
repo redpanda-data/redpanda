@@ -10,6 +10,7 @@
 #include "storage/segment_index.h"
 
 #include "base/vassert.h"
+#include "compaction/utils.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "storage/index_state.h"
@@ -37,7 +38,9 @@ segment_index::segment_index(
   std::optional<ntp_sanitizer_config> sanitizer_config,
   std::optional<model::timestamp> broker_timestamp,
   std::optional<model::timestamp> clean_compact_timestamp,
-  bool may_have_tombstone_records)
+  bool may_have_tombstone_records,
+  std::optional<model::timestamp> self_compact_timestamp,
+  bool has_transaction_batches)
   : _path(std::move(path))
   , _step(step)
   , _feature_table(std::ref(feature_table))
@@ -47,6 +50,8 @@ segment_index::segment_index(
     _state.broker_timestamp = broker_timestamp;
     _state.clean_compact_timestamp = clean_compact_timestamp;
     _state.may_have_tombstone_records = may_have_tombstone_records;
+    _state.self_compact_timestamp = self_compact_timestamp;
+    _state.has_transaction_batches = has_transaction_batches;
 }
 
 segment_index::segment_index(
@@ -79,14 +84,18 @@ void segment_index::reset() {
     // Persist the base offset, clean compaction timestamp, and tombstones
     // identifier through a reset.
     auto base = _state.base_offset;
+    auto self_compact_timestamp = _state.self_compact_timestamp;
     auto clean_compact_timestamp = _state.clean_compact_timestamp;
     auto may_have_tombstone_records = _state.may_have_tombstone_records;
+    auto has_transaction_batches = _state.has_transaction_batches;
 
     _state = index_state::make_empty_index(
       base, storage::internal::should_apply_delta_time_offset(_feature_table));
 
+    _state.self_compact_timestamp = self_compact_timestamp;
     _state.clean_compact_timestamp = clean_compact_timestamp;
     _state.may_have_tombstone_records = may_have_tombstone_records;
+    _state.has_transaction_batches = has_transaction_batches;
 
     _acc = 0;
 }
@@ -132,8 +141,7 @@ void segment_index::maybe_track(
           to_optional_model_timestamp(new_broker_ts),
           path().is_internal_topic()
             || hdr.type == model::record_batch_type::raft_data,
-          internal::is_compactible(_path.get_ntp(), hdr) ? hdr.record_count
-                                                         : 0)) {
+          compaction::is_filterable(hdr.type) ? hdr.record_count : 0)) {
         _acc = 0;
     }
     _needs_persistence = true;

@@ -74,6 +74,11 @@ class leader_balancer {
     static constexpr std::chrono::milliseconds
       transfer_leadership_recovery_timeout
       = 25ms;
+    /*
+     * after node maintenance change or its health report appears, wait for a
+     * while to make sure node is ready to accept leaders.
+     */
+    static constexpr clock_type::duration node_status_changed_delay = 10s;
 
 public:
     leader_balancer(
@@ -137,6 +142,9 @@ private:
     void on_maintenance_change(model::node_id, model::maintenance_state);
 
     void handle_topic_deltas(const chunked_vector<topic_table_topic_delta>&);
+
+    void handle_node_health_report(
+      const node_health_report&, std::optional<node_health_report_ptr>);
 
     void check_register_leadership_change_notification();
     void check_unregister_leadership_change_notification();
@@ -227,7 +235,7 @@ private:
       _leadership_change_notify_handle;
     cluster::notification_id_type _maintenance_state_notify_handle;
     cluster::notification_id_type _topic_deltas_handle;
-
+    cluster::notification_id_type _health_monitor_handle;
     ss::gate _gate;
     ss::timer<clock_type> _timer;
     clock_type::time_point _last_iteration_at;

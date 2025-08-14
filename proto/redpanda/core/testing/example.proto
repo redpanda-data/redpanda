@@ -1,0 +1,135 @@
+// Copyright 2025 Redpanda Data, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package rich.example;
+
+import "proto/redpanda/pbgen/options.proto";
+import "proto/redpanda/pbgen/rpc.proto";
+
+option (redpanda.pbgen.cpp_namespace) = "proto::example";
+
+// File-level comment
+// This proto exercises core Protobuf features, excluding RPCs and extensions.
+
+/**
+ * Represents a person with various fields, nested messages, and enums.
+ */
+message Person {
+    // Unique identifier for the person
+    int32 id = 1;
+
+    // Full name
+    string name = 2;
+
+    // Email address
+    string email = 3;
+
+    // List of phone numbers
+    repeated PhoneNumber phones = 4;
+
+    // Gender enum
+    Gender gender = 5;
+
+    // Address — oneof home or work
+    oneof address {
+        string home_address = 6;
+        string work_address = 7;
+    }
+
+    // Metadata (string → string map)
+    map<string, string> metadata = 8;
+
+    // Nested enum
+    enum Gender {
+        GENDER_UNSPECIFIED = 0;
+        MALE = 1;
+        FEMALE = 2;
+        NON_BINARY = 3;
+    }
+
+    // Nested message
+    message PhoneNumber {
+        string number = 1;
+        PhoneType type = 2;
+
+        // Nested enum inside nested message
+        enum PhoneType {
+            MOBILE = 0;
+            HOME = 1;
+            WORK = 2;
+        }
+    }
+}
+
+// Another top-level message
+message Company {
+    string name = 1;
+    repeated Person employees = 2;
+
+    // A nested message with another nested level
+    message Department {
+        string name = 1;
+        repeated Person members = 2;
+
+        message Budget {
+            float amount = 1;
+            string currency = 2;
+        }
+
+        optional Budget budget = 3 [(redpanda.pbgen.ptr) = true];
+    }
+
+    repeated Department departments = 3;
+}
+
+// Top-level enum for testing
+enum Status {
+    STATUS_OK = 0;
+    STATUS_FAIL = 1;
+    STATUS_UNKNOWN = 2;
+}
+
+message GetPersonRequest {
+    string name = 1;
+}
+
+message GetPersonResponse {
+    Person people = 1;
+    map<int32, bytes> data_map = 2;
+}
+
+message ListPersonsRequest {}
+
+message ListPersonsResponse {
+    repeated Person people = 1;
+}
+
+// Example service definition
+service ExampleService {
+    // A get RPC method
+    rpc GetPerson(GetPersonRequest) returns (GetPersonResponse) {
+        option (redpanda.pbgen.rpc) = {
+            authz: USER,
+        };
+    }
+    // A list RPC method
+    rpc ListPersons(ListPersonsRequest) returns (ListPersonsResponse) {
+        option (redpanda.pbgen.rpc) = {
+            authz: SUPERUSER,
+            http_route: "/api/v1/persons",
+        };
+    }
+}

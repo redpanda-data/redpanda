@@ -69,10 +69,10 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
     std::optional<model::node_id> leader_opt;
     cluster::tx::errc ec;
     while (!leader_opt && 0 < retries--) {
-        auto ntp_opt
-          = _group_router.local().coordinator_mapper().local().ntp_for(
+        auto partition_opt
+          = _group_router.local().coordinator_mapper().local().partition_for(
             group_id);
-        if (!ntp_opt) {
+        if (!partition_opt) {
             vlog(
               cluster::txlog.trace,
               "can't find ntp for {}, retrying",
@@ -81,22 +81,24 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
             co_await ss::sleep(delay_ms);
             continue;
         }
-
-        auto ntp = std::move(ntp_opt.value());
-        auto nt = model::topic_namespace_view(ntp.ns, ntp.tp.topic);
-        if (!_metadata_cache.local().contains(nt, ntp.tp.partition)) {
+        auto& tp = model::kafka_consumer_offsets_nt;
+        if (!_metadata_cache.local().contains(tp, *partition_opt)) {
             vlog(
               cluster::txlog.trace,
-              "can't find meta info for {}, retrying",
-              ntp);
+              "can't find meta info for {}/{}, retrying",
+              *partition_opt);
             ec = cluster::tx::errc::partition_not_exists;
             co_await ss::sleep(delay_ms);
             continue;
         }
 
-        leader_opt = _leaders.local().get_leader(ntp);
+        leader_opt = _leaders.local().get_leader(tp, *partition_opt);
         if (!leader_opt) {
-            vlog(cluster::txlog.trace, "can't find a leader for {}", ntp);
+            vlog(
+              cluster::txlog.trace,
+              "can't find a leader for {}/{}",
+              tp,
+              *partition_opt);
             ec = cluster::tx::errc::leader_not_found;
             co_await ss::sleep(delay_ms);
         }
@@ -201,26 +203,28 @@ ss::future<cluster::commit_group_tx_reply> rm_group_frontend::commit_group_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
-    auto ntp_opt = _group_router.local().coordinator_mapper().local().ntp_for(
-      group_id);
-    if (!ntp_opt) {
+    auto p_id_opt
+      = _group_router.local().coordinator_mapper().local().partition_for(
+        group_id);
+    if (!p_id_opt) {
         vlog(cluster::txlog.warn, "can't find ntp for {}", group_id);
         co_return cluster::commit_group_tx_reply{
           cluster::tx::errc::partition_not_exists};
     }
 
-    auto ntp = std::move(ntp_opt.value());
+    auto& nt = model::kafka_consumer_offsets_nt;
 
-    auto nt = model::topic_namespace(ntp.ns, ntp.tp.topic);
-    if (!_metadata_cache.local().contains(nt, ntp.tp.partition)) {
-        vlog(cluster::txlog.warn, "can' find meta info for {}", ntp);
+    if (!_metadata_cache.local().contains(nt, *p_id_opt)) {
+        vlog(
+          cluster::txlog.warn, "can' find meta info for {}/{}", nt, *p_id_opt);
         co_return cluster::commit_group_tx_reply{
           cluster::tx::errc::partition_not_exists};
     }
 
-    auto leader_opt = _leaders.local().get_leader(ntp);
+    auto leader_opt = _leaders.local().get_leader(nt, *p_id_opt);
     if (!leader_opt) {
-        vlog(cluster::txlog.warn, "can't find a leader for {}", ntp);
+        vlog(
+          cluster::txlog.warn, "can't find a leader for {}/{}", nt, *p_id_opt);
         co_return cluster::commit_group_tx_reply{
           cluster::tx::errc::leader_not_found};
     }
@@ -314,25 +318,27 @@ ss::future<cluster::abort_group_tx_reply> rm_group_frontend::abort_group_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
-    auto ntp_opt = _group_router.local().coordinator_mapper().local().ntp_for(
-      group_id);
-    if (!ntp_opt) {
+    auto p_id_opt
+      = _group_router.local().coordinator_mapper().local().partition_for(
+        group_id);
+    if (!p_id_opt) {
         vlog(cluster::txlog.warn, "can't find ntp for {} ", group_id);
         co_return cluster::abort_group_tx_reply{
           cluster::tx::errc::partition_not_exists};
     }
-    auto ntp = std::move(ntp_opt.value());
+    auto& nt = model::kafka_consumer_offsets_nt;
 
-    auto nt = model::topic_namespace(ntp.ns, ntp.tp.topic);
-    if (!_metadata_cache.local().contains(nt, ntp.tp.partition)) {
-        vlog(cluster::txlog.warn, "can't find meta info for {}", ntp);
+    if (!_metadata_cache.local().contains(nt, *p_id_opt)) {
+        vlog(
+          cluster::txlog.warn, "can't find meta info for {}/{}", nt, *p_id_opt);
         co_return cluster::abort_group_tx_reply{
           cluster::tx::errc::partition_not_exists};
     }
 
-    auto leader_opt = _leaders.local().get_leader(ntp);
+    auto leader_opt = _leaders.local().get_leader(nt, *p_id_opt);
     if (!leader_opt) {
-        vlog(cluster::txlog.warn, "can't find a leader for {}", ntp);
+        vlog(
+          cluster::txlog.warn, "can't find a leader for  {}/{}", nt, *p_id_opt);
         co_return cluster::abort_group_tx_reply{
           cluster::tx::errc::leader_not_found};
     }

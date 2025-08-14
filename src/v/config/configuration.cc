@@ -1010,10 +1010,8 @@ configuration::configuration()
   , tombstone_retention_ms(
       *this,
       "tombstone_retention_ms",
-      "The retention time for tombstone records in a compacted topic. Cannot "
-      "be enabled at the same time as any of `cloud_storage_enabled`, "
-      "`cloud_storage_enable_remote_read`, or "
-      "`cloud_storage_enable_remote_write`.",
+      "The retention time for tombstone records and transaction markers in a "
+      "compacted topic.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::nullopt,
       validate_tombstone_retention_ms)
@@ -1964,6 +1962,16 @@ configuration::configuration()
         .visibility = visibility::user,
       },
       {})
+  , audit_failure_policy(
+      *this,
+      "audit_failure_policy",
+      "Defines the policy for rejecting audit log messages when the audit log "
+      "queue is full. If set to 'permit', then new audit messages are dropped "
+      "and the operation is permitted.  If set to 'reject', then the operation "
+      "is rejected.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      audit_failure_policy::reject,
+      {audit_failure_policy::reject, audit_failure_policy::permit})
   , cloud_storage_enabled(
       *this,
       true,
@@ -2155,13 +2163,13 @@ configuration::configuration()
       "cloud_storage_segment_upload_timeout_ms",
       "Log segment upload timeout (ms)",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      30s)
+      90s)
   , cloud_storage_manifest_upload_timeout_ms(
       *this,
       "cloud_storage_manifest_upload_timeout_ms",
       "Manifest upload timeout (ms).",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      10s)
+      30s)
   , cloud_storage_garbage_collect_timeout_ms(
       *this,
       "cloud_storage_garbage_collect_timeout_ms",
@@ -3897,7 +3905,7 @@ configuration::configuration()
       *this,
       "iceberg_latest_schema_cache_ttl_ms",
       "The TTL for the cache in translation that stores the latest schema when "
-      "using the `latest_protobuf_value` iceberg mode.",
+      "using the `value_schema_latest` iceberg mode.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::chrono::milliseconds(5min),
       {.min = std::chrono::milliseconds{1ms}})
@@ -4107,14 +4115,18 @@ configuration::configuration()
       &validate_non_empty_string_opt)
   , iceberg_rest_catalog_aws_credentials_source(
       *this,
-      "iceberg_rest_catalog_aws_credentials_source",
+      "iceberg_rest_catalog_credentials_source",
       "Source of AWS credentials for Iceberg REST catalog SigV4 "
       "authentication. "
       "If not set, falls back to cloud_storage_credentials_source when using "
       "aws_sigv4 authentication mode. Accepted values: config_file, "
       "aws_instance_metadata, sts, gcp_instance_metadata, "
       "azure_vm_instance_metadata, azure_aks_oidc_federation.",
-      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      {.needs_restart = needs_restart::yes,
+       .example = "config_file",
+       .visibility = visibility::user,
+       // Bad original name. The source may not always relate to AWS.
+       .aliases = {"iceberg_rest_catalog_aws_credentials_source"}},
       std::nullopt,
       {
         model::cloud_credentials_source::config_file,
@@ -4170,7 +4182,9 @@ configuration::configuration()
       "iceberg_default_partition_spec",
       "Default value for the redpanda.iceberg.partition.spec topic property "
       "that determines the partition spec for the Iceberg table corresponding "
-      "to the topic.",
+      "to the topic. If this property is not set and AWS Glue is being used as "
+      "the Iceberg REST catalog, the default value will be overridden by an "
+      "empty partition spec, for compatibility with AWS Glue.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       "(hour(redpanda.timestamp))",
       &validate_iceberg_partition_spec)
@@ -4317,6 +4331,12 @@ configuration::configuration()
       *this,
       "development_enable_cloud_topics",
       "Enable cloud topics.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
+  , development_enable_cluster_link(
+      *this,
+      "development_enable_cluster_link",
+      "Enable cluster linking.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
   , development_feature_property_testing_only(

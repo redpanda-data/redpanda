@@ -1,0 +1,63 @@
+/*
+ * Copyright 2025 Redpanda Data, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+#include "cloud_topics/level_one/metastore/offset_interval_set.h"
+
+#include "model/fundamental.h"
+
+namespace experimental::cloud_topics::l1 {
+
+bool offset_interval_set::stream::has_next() const noexcept {
+    return iter_ != set_.end();
+}
+
+offset_interval_set::interval offset_interval_set::stream::next() {
+    vassert(has_next(), "next() called while has_next() is false");
+    interval ret{
+      .base_offset = kafka::offset(iter_->first),
+      .last_offset = kafka::offset(iter_->second - 1),
+    };
+    ++iter_;
+    return ret;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const offset_interval_set::interval& iv) {
+    fmt::print(o, "{}", iv);
+    return o;
+}
+
+bool offset_interval_set::empty() const { return iset_.empty(); }
+
+bool offset_interval_set::insert(kafka::offset base, kafka::offset last) {
+    auto len = last() - base() + 1;
+    return iset_.insert(iset_t::interval{base, len}).second;
+}
+
+bool offset_interval_set::contains(kafka::offset o) const {
+    return iset_.find(o()) != iset_.end();
+}
+
+offset_interval_set::stream offset_interval_set::make_stream() const {
+    return stream(iset_);
+}
+
+chunked_vector<offset_interval_set::interval>
+offset_interval_set::to_vec() const {
+    chunked_vector<offset_interval_set::interval> ret;
+    ret.reserve(iset_.size());
+    auto stream = make_stream();
+    while (stream.has_next()) {
+        ret.emplace_back(stream.next());
+    }
+    return ret;
+}
+
+} // namespace experimental::cloud_topics::l1

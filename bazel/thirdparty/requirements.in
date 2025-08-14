@@ -1,0 +1,8 @@
+# List all our python requirements here, one per line.
+# These can then be locked with a tool like `uv`:
+# uv pip compile --generate-hashes requirements.in -o requirements.txt
+jsonschema
+jinja2
+aioboto3
+PyYAML
+psutil

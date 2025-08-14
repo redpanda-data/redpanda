@@ -248,6 +248,20 @@ public:
           });
     }
 
+    [[gnu::always_inline]] ss::future<remake_learner_state_reply>
+    remake_learner_state(
+      remake_learner_state_request r, rpc::streaming_context&) final {
+        return _probe.remake_learner_state().then(
+          [this, r = std::move(r)]() mutable {
+              return dispatch_request(
+                std::move(r),
+                &service::make_failed_remake_learner_state_reply,
+                [](remake_learner_state_request&& r, consensus_ptr c) {
+                    return c->do_remake_learner_state(std::move(r));
+                });
+          });
+    }
+
 private:
     using consensus_ptr = seastar::lw_shared_ptr<consensus>;
 
@@ -303,6 +317,12 @@ private:
     make_failed_transfer_leadership_reply() {
         return ss::make_ready_future<transfer_leadership_reply>(
           transfer_leadership_reply{});
+    }
+
+    static ss::future<remake_learner_state_reply>
+    make_failed_remake_learner_state_reply() {
+        return ss::make_ready_future<remake_learner_state_reply>(
+          remake_learner_state_reply{});
     }
 
     template<typename Req, typename ErrorFactory, typename Func>

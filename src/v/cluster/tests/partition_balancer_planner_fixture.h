@@ -25,7 +25,7 @@
 #include "cluster/topic_updates_dispatcher.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "features/feature_table.h"
 #include "model/metadata.h"
 #include "model/namespace.h"

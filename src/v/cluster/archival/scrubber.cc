@@ -145,7 +145,8 @@ ss::future<scrubber::run_result> scrubber::run(run_quota_t quota) {
       model::timestamp::now(),
       detect_result.last_scrubbed_offset,
       detect_result.status,
-      std::move(detect_result.detected));
+      std::move(detect_result.detected),
+      _as);
 
     _scheduler.pick_next_scrub_time();
 

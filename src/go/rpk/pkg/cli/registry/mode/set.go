@@ -23,7 +23,7 @@ import (
 	"github.com/twmb/franz-go/pkg/sr"
 )
 
-var supportedModes = []string{"READONLY", "READWRITE"}
+var supportedModes = []string{"READONLY", "READWRITE", "IMPORT"}
 
 func setCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var modeFlag string
@@ -40,6 +40,7 @@ mode at the same time as per-subject mode.
 Acceptable mode values: 
   - READONLY
   - READWRITE
+  - IMPORT
 `,
 		Example: `
 Set the global schema registry mode to READONLY

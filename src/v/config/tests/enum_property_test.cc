@@ -17,6 +17,8 @@ namespace {
 struct test_config : public config::config_store {
     config::enum_property<ss::sstring> enum_str;
     config::enum_property<std::optional<ss::sstring>> opt_enum_str;
+    config::enum_property<std::optional<ss::sstring>>
+      opt_enum_implicit_null_str;
 
     test_config()
       : enum_str(
@@ -32,7 +34,14 @@ struct test_config : public config::config_store {
           "A string with only certain values allowed",
           {},
           "foo",
-          {std::nullopt, "foo", "bar", "baz"}) {}
+          {std::nullopt, "foo", "bar", "baz"})
+      , opt_enum_implicit_null_str(
+          *this,
+          "opt_enum_implicit_null_str",
+          "A string with only certain values allowed",
+          {},
+          "foo",
+          {"foo", "bar", "baz"}) {}
 };
 
 SEASTAR_THREAD_TEST_CASE(enum_property_validation) {
@@ -54,16 +63,20 @@ SEASTAR_THREAD_TEST_CASE(enum_property_validation) {
         verr = cfg.enum_str.validate(YAML::Load(v));
         BOOST_REQUIRE(verr.has_value());
         BOOST_REQUIRE_EQUAL(
-          verr.value().error_message(), "Must be one of foo,bar,baz");
+          verr.value().error_message(), "Must be one of foo, bar, baz");
 
         verr = cfg.opt_enum_str.validate(YAML::Load(v));
         BOOST_REQUIRE(verr.has_value());
         BOOST_REQUIRE_EQUAL(
-          verr.value().error_message(), "Must be one of foo,bar,baz or null");
+          verr.value().error_message(), "Must be one of foo, bar, baz or null");
     }
 
     // Optional variant should also always consider null to be valid.
     verr = cfg.opt_enum_str.validate(YAML::Load("~"));
+    BOOST_CHECK(!verr.has_value());
+
+    // Optional variant should also always consider null to be valid.
+    verr = cfg.opt_enum_implicit_null_str.validate(YAML::Load("~"));
     BOOST_CHECK(!verr.has_value());
 }
 

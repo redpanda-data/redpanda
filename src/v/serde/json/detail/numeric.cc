@@ -27,7 +27,7 @@
 
 #include "serde/json/detail/strod.h"
 
-namespace experimental::serde::json::detail {
+namespace serde::json::detail {
 
 size_t numeric_parser::advance(ss::temporary_buffer<char>& buf, result& err) {
     size_t pos = 0;
@@ -279,4 +279,4 @@ size_t numeric_parser::advance(ss::temporary_buffer<char>& buf, result& err) {
     return pos;
 }
 
-} // namespace experimental::serde::json::detail
+} // namespace serde::json::detail

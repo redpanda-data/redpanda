@@ -91,6 +91,68 @@ ss::future<ss::chunked_fifo<kafka_topic_data_result>> local_service::produce(
     co_return results;
 }
 
+ss::future<partition_offsets_map>
+local_service::get_offsets(chunked_vector<topic_partitions> topics) {
+    static constexpr int concurrency_limit = 32;
+    partition_offsets_map results;
+    for (auto& t : topics) {
+        results.reserve(topics.size());
+        results[t.topic].reserve(t.partitions.size());
+        auto& partition_results = results[t.topic];
+        co_await ss::max_concurrent_for_each(
+          t.partitions.begin(),
+          t.partitions.end(),
+          concurrency_limit,
+          [this, &partition_results, topic = t.topic](model::partition_id p) {
+              return get_partition_offsets(topic, p).then(
+                [&partition_results, topic, p](
+                  result<partition_offsets, cluster::errc> r) {
+                    if (r.has_error()) {
+                        partition_results.emplace(
+                          p, partition_offset_result(r.error()));
+                        return;
+                    }
+                    partition_results.emplace(
+                      p, partition_offset_result(r.value()));
+                });
+          });
+    }
+
+    co_return results;
+}
+
+ss::future<result<partition_offsets, cluster::errc>>
+local_service::get_partition_offsets(
+  model::topic topic, model::partition_id p_id) {
+    model::ktp ktp(topic, p_id);
+    auto shard = _partition_manager->shard_owner(ktp);
+    if (!shard) {
+        co_return cluster::errc::not_leader;
+    }
+
+    auto topic_cfg = _metadata_cache->find_topic_cfg(
+      ::model::topic_namespace_view(model::kafka_namespace, topic));
+    if (!topic_cfg) {
+        co_return cluster::errc::topic_not_exists;
+    }
+    co_return co_await _partition_manager->get_offsets_from_shard(
+      *shard, ktp, [](kafka::partition_proxy* partition) {
+          using ret_t = result<partition_offsets, cluster::errc>;
+          if (!partition->is_leader()) {
+              return ssx::now<ret_t>(cluster::errc::not_leader);
+          }
+          auto lso_r = partition->last_stable_offset();
+          if (lso_r.has_error()) {
+              return ssx::now<ret_t>(cluster::errc::partition_operation_failed);
+          }
+
+          return ssx::now<ret_t>(partition_offsets{
+            .high_watermark = model::offset_cast(partition->high_watermark()),
+            .last_stable_offset = model::offset_cast(lso_r.value()),
+          });
+      });
+}
+
 ss::future<kafka_topic_data_result> local_service::produce(
   kafka_topic_data data, model::timeout_clock::duration timeout) {
     auto ktp = model::ktp(data.tp.topic, data.tp.partition);
@@ -126,7 +188,8 @@ ss::future<result<model::offset, cluster::errc>> local_service::produce(
       *shard,
       ntp,
       [timeout,
-       batches = chunked_vector<model::record_batch>(std::move(batches))](
+       batches = chunked_vector<model::record_batch>(
+         std::from_range, std::move(batches) | std::views::as_rvalue)](
         kafka::partition_proxy* partition) mutable {
           return partition
             ->replicate(std::move(batches), make_replicate_options(timeout))
@@ -147,6 +210,15 @@ network_service::produce(produce_request req, ::rpc::streaming_context&) {
     auto results = co_await _service->local().produce(
       std::move(req.topic_data), req.timeout);
     co_return produce_reply(std::move(results));
+}
+
+ss::future<get_offsets_reply> network_service::get_offsets(
+  get_offsets_request req, ::rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
+
+    auto results = co_await _service->local().get_offsets(
+      std::move(req.topics));
+    co_return get_offsets_reply(std::move(results));
 }
 
 } // namespace kafka::data::rpc

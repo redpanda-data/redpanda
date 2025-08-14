@@ -54,19 +54,7 @@ struct fmt::formatter<ss::chunked_fifo<T, chunk_size>> {
     template<typename FormatContext>
     typename FormatContext::iterator
     format(const type& fifo, FormatContext& ctx) const {
-        fmt::format_to(ctx.out(), "[");
-        if (!fifo.empty()) {
-            auto it = fifo.begin();
-            fmt::format_to(ctx.out(), "{}", *(it++));
-
-            for (; it != fifo.end(); ++it) {
-                fmt::format_to(ctx.out(), ", {}", *it);
-            }
-            return ctx.out();
-        }
-
-        fmt::format_to(ctx.out(), "]");
-        return ctx.out();
+        return fmt::format_to(ctx.out(), "[{}]", fmt::join(fifo, ", "));
     }
 };
 
@@ -101,3 +89,31 @@ std::ostream& operator<<(std::ostream& o, const absl::node_hash_map<K, V>& r) {
     return o;
 }
 } // namespace absl
+
+template<>
+struct fmt::formatter<absl::Time> {
+    constexpr format_parse_context::iterator parse(format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    format_context::iterator
+    format(const absl::Time& t, fmt::format_context& ctx);
+};
+
+template<>
+struct fmt::formatter<absl::Duration> {
+    constexpr format_parse_context::iterator parse(format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    format_context::iterator
+    format(const absl::Duration& d, fmt::format_context& ctx);
+};
+
+template<>
+struct fmt::formatter<std::monostate> {
+    constexpr format_parse_context::iterator parse(format_parse_context& ctx) {
+        return ctx.begin();
+    }
+    format_context::iterator format(const std::monostate&, format_context& ctx);
+};

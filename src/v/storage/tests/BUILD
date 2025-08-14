@@ -5,7 +5,6 @@ redpanda_test_cc_library(
     hdrs = [
         "storage_e2e_fixture.h",
     ],
-    include_prefix = "storage/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/kafka/server/tests:kafka_test_utils",
@@ -21,7 +20,6 @@ redpanda_test_cc_library(
     hdrs = [
         "manual_mixin.h",
     ],
-    include_prefix = "storage/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/test_utils:scoped_config",
@@ -33,7 +31,6 @@ redpanda_test_cc_library(
     hdrs = [
         "kvstore_fixture.h",
     ],
-    include_prefix = "storage/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/config",
@@ -49,7 +46,6 @@ redpanda_test_cc_library(
     hdrs = [
         "randoms.h",
     ],
-    include_prefix = "storage/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/model/tests:random",
@@ -63,7 +59,6 @@ redpanda_test_cc_library(
     hdrs = [
         "disk_log_builder_fixture.h",
     ],
-    include_prefix = "storage/tests",
     deps = [
         ":disk_log_builder",
         "@googletest//:gtest",
@@ -78,10 +73,10 @@ redpanda_test_cc_library(
     hdrs = [
         "utils/disk_log_builder.h",
     ],
-    include_prefix = "storage/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
+        "//src/v/compaction:types",
         "//src/v/container:chunked_circular_buffer",
         "//src/v/features",
         "//src/v/model",
@@ -98,7 +93,6 @@ redpanda_test_cc_library(
     hdrs = [
         "common.h",
     ],
-    include_prefix = "storage/tests",
     deps = [
         "//src/v/storage",
     ],
@@ -109,7 +103,6 @@ redpanda_test_cc_library(
     hdrs = [
         "batch_generators.h",
     ],
-    include_prefix = "storage/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes:iobuf",
@@ -131,7 +124,6 @@ redpanda_test_cc_library(
     hdrs = [
         "storage_test_fixture.h",
     ],
-    include_prefix = "storage/tests",
     visibility = ["//visibility:public"],
     deps = [
         ":batch_generators",
@@ -148,7 +140,6 @@ redpanda_test_cc_library(
     hdrs = [
         "storage_test_fixture.h",
     ],
-    include_prefix = "storage/tests",
     visibility = ["//visibility:public"],
     deps = [
         ":batch_generators",
@@ -168,10 +159,9 @@ redpanda_test_cc_library(
     hdrs = [
         "utils/log_gap_analysis.h",
     ],
-    include_prefix = "storage/tests",
     deps = [
         "//src/v/model",
-        "//src/v/storage:parser_utils",
+        "//src/v/model:batch_compression",
     ],
 )
 
@@ -293,20 +283,6 @@ redpanda_cc_gtest(
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",
-    ],
-)
-
-redpanda_cc_gtest(
-    name = "key_offset_map_test",
-    timeout = "short",
-    srcs = [
-        "key_offset_map_test.cc",
-    ],
-    deps = [
-        "//src/v/base",
-        "//src/v/storage:key_offset_map",
-        "//src/v/test_utils:gtest",
-        "@googletest//:gtest",
     ],
 )
 
@@ -530,7 +506,7 @@ redpanda_cc_gtest(
         "scoped_file_tracker_test.cc",
     ],
     deps = [
-        "//src/v/storage",
+        "//src/v/storage:scoped_file_tracker",
         "//src/v/test_utils:gtest",
         "@abseil-cpp//absl/container:btree",
         "@googletest//:gtest",
@@ -546,13 +522,13 @@ redpanda_cc_gtest(
     deps = [
         ":disk_log_builder",
         ":disk_log_builder_fixture",
+        "//src/v/compaction:key_offset_map",
         "//src/v/config",
         "//src/v/model",
         "//src/v/model/tests:random",
         "//src/v/random:generators",
         "//src/v/storage",
         "//src/v/storage:chunk_cache",
-        "//src/v/storage:key_offset_map",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",
@@ -574,6 +550,7 @@ redpanda_cc_gtest(
         "//src/v/model",
         "//src/v/random:generators",
         "//src/v/storage",
+        "//src/v/storage:scoped_file_tracker",
         "//src/v/test_utils:gtest",
         "//src/v/utils:mutex",
         "@googletest//:gtest",
@@ -627,6 +604,7 @@ redpanda_cc_gtest(
         "//src/v/random:generators",
         "//src/v/reflection:adl",
         "//src/v/resource_mgmt:memory_groups",
+        "//src/v/ssx:future_util",
         "//src/v/storage",
         "//src/v/storage:batch_cache",
         "//src/v/storage:record_batch_builder",
@@ -654,6 +632,22 @@ redpanda_cc_gtest(
         "//src/v/storage",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "segment_set_test",
+    timeout = "short",
+    srcs = [
+        "segment_set_test.cc",
+    ],
+    deps = [
+        "//src/v/storage",
+        "//src/v/storage:resources",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:directory_walker",
+        "@googletest//:gtest",
+        "@seastar",
     ],
 )
 
@@ -807,6 +801,7 @@ redpanda_cc_gtest(
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iostream",
         "//src/v/storage",
+        "//src/v/storage:file_sanitizer_types",
         "//src/v/test_utils:fixture",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
@@ -821,6 +816,7 @@ redpanda_cc_gtest(
         "compaction_reducer_test.cc",
     ],
     deps = [
+        "//src/v/compaction:key",
         "//src/v/random:generators",
         "//src/v/storage",
         "//src/v/storage:logger",
@@ -838,9 +834,9 @@ redpanda_cc_gtest(
     ],
     cpu = 1,
     deps = [
+        "//src/v/compaction:key_offset_map",
         "//src/v/model",
         "//src/v/storage",
-        "//src/v/storage:key_offset_map",
         "//src/v/storage/tests:batch_generators",
         "//src/v/storage/tests:storage_test_fixture",
         "//src/v/test_utils:gtest",
@@ -926,7 +922,7 @@ redpanda_cc_gtest(
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/cluster:features",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/features",
         "//src/v/kafka/server/tests:kafka_test_utils",
         "//src/v/model",
@@ -978,7 +974,7 @@ redpanda_cc_gtest(
     deps = [
         ":disk_log_builder",
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/random:generators",
         "//src/v/storage",
@@ -994,6 +990,7 @@ redpanda_cc_bench(
     name = "storage_rpbench",
     srcs = ["compaction_idx_bench.cc"],
     deps = [
+        "//src/v/compaction:key",
         "//src/v/model",
         "//src/v/random:generators",
         "//src/v/storage",

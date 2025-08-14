@@ -21,7 +21,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timestamp.h"
-#include "storage/types.h"
+#include "storage/disk.h"
 #include "utils/tristate.h"
 
 #include <seastar/core/coroutine.hh>

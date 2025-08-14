@@ -13,17 +13,16 @@
 #include "cluster/shard_placement_table.h"
 #include "container/chunked_hash_map.h"
 #include "features/feature_table.h"
+#include "random/generators.h"
 #include "ssx/event.h"
+#include "ssx/future-util.h"
 #include "storage/kvstore.h"
 #include "storage/storage_resources.h"
-#include "test_utils/randoms.h"
 #include "test_utils/test.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/util/file.hh>
-
-#include <chrono>
 
 using namespace std::chrono_literals;
 
@@ -290,6 +289,21 @@ private:
                   ntp,
                   expected_log_revision.value(),
                   placement.current().has_value());
+                if (ec) {
+                    co_return ec;
+                }
+            }
+            co_return ss::stop_iteration::yes;
+        }
+        case shard_placement_table::reconciliation_action::remake: {
+            auto log_revision = expected_log_revision.value_or(_ntpt.revision);
+            auto ec = co_await delete_partition(ntp, placement, log_revision);
+            if (ec) {
+                co_return ec;
+            }
+            if (!_launched.contains(ntp)) {
+                ec = co_await create_partition(
+                  ntp, log_revision, placement.current().has_value());
                 if (ec) {
                     co_return ec;
                 }

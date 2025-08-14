@@ -25,7 +25,7 @@ struct sax_deserializer {};
 
 ss::future<> test_body(size_t n) {
     // Test data.
-    fragmented_vector<model::tx_range> tx_ranges{};
+    chunked_vector<model::tx_range> tx_ranges{};
     for (size_t i = 0; i < n; ++i) {
         tx_ranges.push_back(model::tx_range{
           model::producer_identity(i, i + 1),

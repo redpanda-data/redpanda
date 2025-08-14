@@ -7,7 +7,8 @@ load("@gazelle//:def.bzl", "gazelle", "gazelle_test")
 # gazelle:exclude vtools
 # gazelle:exclude vbuild
 # Exclude the golang we use in ducktape for now
-# gazelle:exclude tests
+# gazelle:exclude tests/go/{byoc-mock,go-kafka-serde,plugin-mock,sarama,transform-verifier}
+# gazelle:exclude src/transform-sdk/tests
 # We don't yet use protobufs in our golang code
 # gazelle:proto disable
 # We prefer BUILD over BUILD.bazel
@@ -35,6 +36,12 @@ alias(
 alias(
     name = "rpk",
     actual = "//src/go/rpk/cmd/rpk:rpk",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "direct_consumer_verifier",
+    actual = "//src/v/kafka/client/direct_consumer/verifier:direct_consumer_verifier",
     visibility = ["//visibility:public"],
 )
 

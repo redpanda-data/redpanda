@@ -9,6 +9,8 @@
  */
 #include "iceberg/conversion/values_parquet.h"
 
+#include <seastar/core/coroutine.hh>
+
 namespace iceberg {
 namespace {
 struct primitive_value_converting_visitor {

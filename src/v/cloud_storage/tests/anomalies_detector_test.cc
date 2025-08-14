@@ -9,6 +9,7 @@
  */
 
 #include "absl/container/flat_hash_set.h"
+#include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/anomalies_detector.h"
 #include "cloud_storage/base_manifest.h"
@@ -224,8 +225,8 @@ ss::input_stream<char> make_manifest_stream(std::string_view json) {
 }
 
 ss::sstring iobuf_to_string(iobuf buf) {
-    auto input_stream = make_iobuf_input_stream(std::move(buf));
-    return ss::util::read_entire_stream_contiguous(input_stream).get();
+    iobuf_parser parser{std::move(buf)};
+    return parser.read_string_unsafe(parser.bytes_left());
 }
 
 } // namespace
@@ -393,7 +394,7 @@ public:
           0);
     }
 
-    fragmented_vector<uint64_t> path_hashes(
+    chunked_vector<uint64_t> path_hashes(
       const absl::flat_hash_set<cloud_storage::segment_meta>& skip_metas) {
         std::vector<ss::sstring> paths;
         std::ranges::copy(
@@ -529,8 +530,8 @@ private:
         return paths;
     }
 
-    fragmented_vector<uint64_t> path_hashes(std::vector<ss::sstring> paths) {
-        fragmented_vector<uint64_t> hashes;
+    chunked_vector<uint64_t> path_hashes(std::vector<ss::sstring> paths) {
+        chunked_vector<uint64_t> hashes;
         for (auto& path : paths) {
             hashes.push_back(xxhash_64(path.data(), path.size()));
         }

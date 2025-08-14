@@ -78,6 +78,16 @@ public:
     void integer_string(int64_t i);
     void integer_string(uint64_t i);
 
+    // Append raw JSON data to the buffer, the delimiters for lists and object
+    // values are still added. Do not use this for object keys, but values only.
+    //
+    // This method is dangerous, as you need to ensure that the JSON is valid.
+    void append_raw_json(iobuf&& b) {
+        append_delimiter();
+        _buf.append(std::move(b));
+        _next_delimiter = ',';
+    }
+
     iobuf&& finish() && { return std::move(_buf); }
 
 private:

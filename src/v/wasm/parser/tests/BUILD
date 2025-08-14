@@ -31,7 +31,7 @@ redpanda_cc_gtest(
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/test_utils:gtest",
         "//src/v/wasm/parser",
         "@crates//:wasmtime_c",

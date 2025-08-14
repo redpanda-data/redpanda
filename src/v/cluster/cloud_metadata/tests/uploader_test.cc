@@ -134,6 +134,7 @@ public:
                 req, model::timeout_clock::now() + 5s);
             if (
               result.errc == cluster::errc::not_leader_controller
+              || result.errc == cluster::errc::no_leader_controller
               || result.errc == raft::errc::not_leader) {
                 vlog(
                   logger.debug,
@@ -351,7 +352,8 @@ TEST_F(cluster_metadata_uploader_fixture, test_upload_in_term) {
     auto result = patch_config(cluster::config_update_request{
                                  .upsert = {{"cluster_id", "foo"}}})
                     .get();
-    ASSERT_TRUE(!result.errc);
+    ASSERT_TRUE(!result.errc)
+      << fmt::format("errc {} version {}", result.errc, result.version);
     RPTEST_REQUIRE_EVENTUALLY(
       5s, [this] { return controller_stm.maybe_write_snapshot(); });
     const auto new_snap_offset = get_local_snap_offset();
@@ -368,9 +370,8 @@ TEST_F(cluster_metadata_uploader_fixture, test_upload_loop_deletes_orphans) {
     auto& uploader = app.controller->metadata_uploader().value().get();
     RPTEST_REQUIRE_EVENTUALLY(5s, [this] { return raft0->is_leader(); });
 
-    auto upload_in_term
-      = uploader.upload_until_term_change().handle_exception_type(
-        [](const seastar::abort_requested_exception& e) { std::ignore = e; });
+    ssx::background = uploader.upload_until_term_change().handle_exception_type(
+      [](const seastar::abort_requested_exception& e) { std::ignore = e; });
     // Wait for some valid metadata to show up.
     cluster::cloud_metadata::cluster_metadata_manifest manifest;
     RPTEST_REQUIRE_EVENTUALLY(5s, [this, &manifest] {

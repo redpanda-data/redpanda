@@ -100,7 +100,7 @@ TEST_F(TopicRecoveryFixture, TestTopicNamespaceOverrideRecovery) {
         // Produce some records to the partition.
         tests::remote_segment_generator gen(
           make_kafka_client().get(), *partition);
-
+        auto deferred_close = ss::defer([&gen] { gen.stop().get(); });
         ASSERT_EQ(
           num_records_to_produce,
           gen.records_per_batch(num_records_to_produce).produce().get());
@@ -108,6 +108,8 @@ TEST_F(TopicRecoveryFixture, TestTopicNamespaceOverrideRecovery) {
         // Assert consuming from original topic works fine.
         kafka_consume_transport consumer(make_kafka_client().get());
         consumer.start().get();
+        auto deferred_c_close = ss::defer(
+          [&consumer] { consumer.stop().get(); });
         auto consumed_records
           = consumer.consume_from_partition(src_tp_ns.tp, pid, model::offset(0))
               .get();
@@ -164,6 +166,7 @@ TEST_F(TopicRecoveryFixture, TestTopicNamespaceOverrideRecovery) {
     // Assert consuming from recovered destination topic works fine.
     kafka_consume_transport consumer(make_kafka_client().get());
     consumer.start().get();
+    auto deferred_c_close = ss::defer([&consumer] { consumer.stop().get(); });
     auto consumed_records
       = consumer.consume_from_partition(dest_tp_ns.tp, pid, model::offset(0))
           .get();
@@ -182,7 +185,7 @@ TEST_F(TopicRecoveryFixture, TestTopicNamespaceOverrideRecovery) {
     auto& archiver = archiver_ref.value().get();
 
     tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
-
+    auto deferred_g_close = ss::defer([&gen] { gen.stop().get(); });
     ASSERT_EQ(
       num_records_to_produce,
       gen.num_segments(2)

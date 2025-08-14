@@ -256,7 +256,7 @@ public:
 
     // Return list of all segments that has to be
     // removed from S3.
-    fragmented_vector<cloud_storage::partition_manifest::lw_segment_meta>
+    chunked_vector<cloud_storage::partition_manifest::lw_segment_meta>
     get_segments_to_cleanup() const;
 
     /// Create batch builder that can be used to combine and replicate multiple
@@ -276,6 +276,16 @@ public:
     model::offset get_insync_offset() const { return last_applied_offset(); }
 
     model::offset get_last_clean_at() const { return _last_clean_at; };
+
+    /// Returns the maximum offset which is guaranteed to be recoverable from
+    /// cloud storage.
+    ///
+    /// This is the lesser of the last offset uploaded to cloud storage and the
+    /// last offset we uploaded a manifest for.
+    ///
+    /// If the manifest is empty or the last uploaded offset is 0, returns
+    /// offset::min(), indicating that nothing is recoverable from cloud.
+    model::offset cloud_recoverable_offset();
 
     model::offset max_removable_local_log_offset() override;
 
@@ -335,13 +345,13 @@ private:
 
     friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
 
-    static fragmented_vector<segment>
+    static chunked_vector<segment>
     segments_from_manifest(const cloud_storage::partition_manifest& manifest);
 
-    static fragmented_vector<segment> replaced_segments_from_manifest(
+    static chunked_vector<segment> replaced_segments_from_manifest(
       const cloud_storage::partition_manifest& manifest);
 
-    static fragmented_vector<segment>
+    static chunked_vector<segment>
     spillover_from_manifest(const cloud_storage::partition_manifest& manifest);
 
     void apply_add_segment(const segment& segment);

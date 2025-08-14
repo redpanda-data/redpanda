@@ -28,7 +28,7 @@ redpanda_cc_btest(
         "SERDE_TEST",
     ],
     deps = [
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/hashing:crc32c",
         "//src/v/model",
         "//src/v/random:generators",
@@ -78,7 +78,6 @@ genrule(
 redpanda_test_cc_library(
     name = "generated_structs",
     hdrs = [":generated_structs.h"],
-    include_prefix = "serde/test",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/serde",

@@ -181,6 +181,9 @@ public:
     std::string_view request_id() const noexcept;
     std::string_view resource() const noexcept;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const rest_error_response& err);
+
 private:
     s3_error_code _code;
     /// Error code string representation, this string is almost always short

@@ -11,9 +11,11 @@
 
 #pragma once
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "serde/parquet/metadata.h"
 #include "serde/parquet/value.h"
+
+#include <seastar/core/future.hh>
 
 namespace serde::parquet {
 

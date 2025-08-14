@@ -9,7 +9,7 @@
  */
 #pragma once
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/transform.h"
 #include "iceberg/unresolved_partition_spec.h"

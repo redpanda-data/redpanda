@@ -11,7 +11,6 @@ redpanda_test_cc_library(
     implementation_deps = [
         "//src/v/random:generators",
     ],
-    include_prefix = "kafka/data/test",
     deps = [
         "//src/v/bytes",
         "//src/v/bytes:iobuf",

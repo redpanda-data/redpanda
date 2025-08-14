@@ -11,7 +11,7 @@
 
 #include "base/seastarx.h"
 #include "bytes/bytes.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "serde/envelope.h"
 #include "serde/rw/bytes.h"
 

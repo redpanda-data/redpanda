@@ -70,7 +70,7 @@ protected:
 
     ss::future<> apply_raft_snapshot(const iobuf&) final;
 
-    ss::future<iobuf> take_snapshot() final;
+    ss::future<iobuf> take_raft_snapshot() final;
 
 private:
     void rearm_snapshot_timer();

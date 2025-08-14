@@ -294,8 +294,6 @@ struct alter_quotas_request
       alter_quotas_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     alter_delta_cmd_data cmd_data;
     model::timeout_clock::duration timeout{};
 
@@ -311,8 +309,6 @@ struct alter_quotas_response
       alter_quotas_response,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     cluster::errc ec;
     auto serde_fields() { return std::tie(ec); }
 

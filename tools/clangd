@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+# Hide a bunch of Bazel's built in output.
+# So it's as close to a proxy for the clangd
+# executable as possible.
+
+bazel run @current_llvm_toolchain//:clangd \
+  --noshow_progress \
+  --ui_event_filters=,+error,+fail \
+  --show_result=0 \
+  --logging=0 \
+  -- $@

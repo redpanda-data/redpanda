@@ -4,7 +4,6 @@ load("//bazel/thirdparty:avro.bzl", "avro_cc_library")
 avro_cc_library(
     name = "avro_test_array",
     class_name = "avro_test_array",
-    include_prefix = "serde/avro/tests",
     namespace = "serde::avro::tests",
     schema = "testdata/array",
 )
@@ -21,7 +20,6 @@ redpanda_test_cc_library(
         "//src/v/base",
         "//src/v/random:generators",
     ],
-    include_prefix = "serde/avro/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/utils:uuid",

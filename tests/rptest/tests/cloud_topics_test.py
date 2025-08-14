@@ -45,18 +45,23 @@ class CloudTopicsTest(RedpandaTest):
     @cluster(num_nodes=3)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_reconciler_uploads(self, cloud_storage_type):
-        def count_l1_objects():
-            objects = self.redpanda.get_objects_from_si()
-            return sum(1 for o in objects if "l1_" in o.key)
-
-        def produce_and_count():
-            kafka_tools = KafkaCliTools(self.redpanda)
-            kafka_tools.produce(self.topic, 100, 1, batch_size=10)
-            return count_l1_objects()
-
         self.topics = (TopicSpec(partition_count=5), )
         self.__create_initial_topics()
+        kafka_tools = KafkaCliTools(self.redpanda)
+        kafka_tools.produce(self.topic, 100, 1, batch_size=10)
 
-        wait_until(lambda: produce_and_count() >= 5,
-                   backoff_sec=12,
-                   timeout_sec=60)
+        def count_l1_objects():
+            objects = self.redpanda.get_objects_from_si()
+            keys = [o.key for o in objects if "l1_" in o.key]
+            debug_keys = "\n  ".join(keys)
+            self.logger.debug(
+                f"found the following L1 objects:\n  {debug_keys}")
+            return len(keys)
+
+        wait_until(
+            lambda: count_l1_objects() >= 1,
+            backoff_sec=12,
+            timeout_sec=60,
+            err_msg=lambda:
+            f"failed to find at least 1 l1 object(s), instead got {count_l1_objects()}"
+        )

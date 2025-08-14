@@ -11,7 +11,6 @@
 
 #include "wasm/parser/parser.h"
 
-#include "absl/algorithm/container.h"
 #include "base/units.h"
 #include "bytes/iobuf_parser.h"
 #include "strings/utf8.h"
@@ -332,7 +331,7 @@ private:
     void parse_one_section() {
         auto id = _parser->consume_type<uint8_t>();
         if (id != 0) {
-            auto it = absl::c_find(_sections_left, id);
+            auto it = std::ranges::find(_sections_left, id);
             if (it == _sections_left.end()) {
                 throw parse_exception(
                   fmt::format("invalid section with id {}", id));

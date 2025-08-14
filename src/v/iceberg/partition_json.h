@@ -9,7 +9,7 @@
  */
 #pragma once
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "iceberg/json_writer.h"
 #include "iceberg/partition.h"
 #include "json/document.h"

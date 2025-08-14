@@ -8,6 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "compaction/key.h"
 #include "random/generators.h"
 #include "storage/compacted_index.h"
 #include "storage/compaction_reducers.h"
@@ -26,21 +27,21 @@ TEST(CompactionReducerTest, compaction_reducer_key_clash_test) {
     // natural offset 0, rp offset 0
     storage::compacted_index::entry entry_at_0(
       storage::compacted_index::entry_type::key,
-      storage::compaction_key(key),
+      compaction::compaction_key(key),
       model::offset(0),
       0);
 
     // natural index 1, rp offset 5 (should win)
     storage::compacted_index::entry entry_at_5(
       storage::compacted_index::entry_type::key,
-      storage::compaction_key(key),
+      compaction::compaction_key(key),
       model::offset(5),
       0);
 
     // natural index 2, rp offset 1
     storage::compacted_index::entry entry_at_1(
       storage::compacted_index::entry_type::key,
-      storage::compaction_key(key),
+      compaction::compaction_key(key),
       model::offset(1),
       0);
 
@@ -62,7 +63,7 @@ TEST(CompactionReducerTest, compaction_reducer_max_mem_usage_test) {
         auto key = tests::random_bytes(20);
         storage::compacted_index::entry entry(
           storage::compacted_index::entry_type::key,
-          storage::compaction_key(std::move(key)),
+          compaction::compaction_key(std::move(key)),
           model::offset(i),
           0);
 

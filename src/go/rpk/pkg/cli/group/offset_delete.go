@@ -66,7 +66,7 @@ topic_b 0
 			} else if fromFile != "" {
 				topicsSet, err = parseTopicPartitionsFile(fs, fromFile)
 			} else {
-				err = fmt.Errorf("Must pass at least one command line argument --topic or --from-file")
+				err = fmt.Errorf("must pass at least one command line argument --topic or --from-file")
 			}
 			out.MaybeDieErr(err)
 

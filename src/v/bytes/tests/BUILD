@@ -120,3 +120,18 @@ redpanda_cc_bench(
         "@seastar//:benchmark",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "iobuf_parser_test",
+    timeout = "short",
+    srcs = [
+        "iobuf_parser_tests.cc",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar//:testing",
+    ],
+)

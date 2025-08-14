@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/redpanda-data/common-go/rpsr"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
@@ -16,7 +17,7 @@ import (
 	"github.com/twmb/franz-go/plugin/kzap"
 )
 
-func NewClient(fs afero.Fs, p *config.RpkProfile) (*sr.Client, error) {
+func NewClient(fs afero.Fs, p *config.RpkProfile) (*rpsr.Client, error) {
 	api := &p.SR
 
 	d := p.Defaults()
@@ -85,7 +86,11 @@ func NewClient(fs afero.Fs, p *config.RpkProfile) (*sr.Client, error) {
 	default:
 		// do nothing
 	}
-	return sr.NewClient(opts...)
+	srCl, err := sr.NewClient(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return rpsr.NewClient(srCl)
 }
 
 // IsSoftDeleteError checks whether the error is a SoftDeleteError. This error

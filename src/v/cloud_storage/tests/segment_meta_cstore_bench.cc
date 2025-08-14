@@ -11,9 +11,9 @@
 #include "absl/container/btree_map.h"
 #include "base/seastarx.h"
 #include "cloud_storage/segment_meta_cstore.h"
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "random/generators.h"
-#include "utils/delta_for.h"
 
 #include <seastar/testing/perf_tests.hh>
 #include <seastar/util/defer.hh>

@@ -23,6 +23,13 @@
 
 namespace cloud_storage_clients {
 
+// Corresponds to the Range HTTP header in the form <range-start>-<range-end>
+//
+// range-start: An integer in the given unit indicating the start position of
+// the request range.
+//
+// range-end: An integer in the given unit indicating the end position
+// of the requested range.
 using http_byte_range = std::pair<uint64_t, uint64_t>;
 
 class client {

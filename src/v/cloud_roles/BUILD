@@ -7,7 +7,6 @@ redpanda_cc_library(
     hdrs = [
         "logger.h",
     ],
-    include_prefix = "cloud_roles",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -22,7 +21,6 @@ redpanda_cc_library(
     hdrs = [
         "types.h",
     ],
-    include_prefix = "cloud_roles",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -41,7 +39,6 @@ redpanda_cc_library(
     hdrs = [
         "request_response_helpers.h",
     ],
-    include_prefix = "cloud_roles",
     deps = [
         ":logger",
         ":types",
@@ -62,7 +59,6 @@ redpanda_cc_library(
     hdrs = [
         "signature.h",
     ],
-    include_prefix = "cloud_roles",
     deps = [
         ":logger",
         ":request_response_helpers",
@@ -113,7 +109,6 @@ redpanda_cc_library(
         "probe.h",
         "refresh_credentials.h",
     ],
-    include_prefix = "cloud_roles",
     visibility = ["//visibility:public"],
     deps = [
         ":logger",

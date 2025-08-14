@@ -8,7 +8,6 @@ redpanda_cc_library(
     hdrs = [
         "string.h",
     ],
-    include_prefix = "serde/json/detail",
     visibility = [
         ":__subpackages__",
         "//src/v/serde/json:__pkg__",
@@ -30,7 +29,6 @@ redpanda_cc_library(
         "pow10.h",
         "strod.h",
     ],
-    include_prefix = "serde/json/detail",
     visibility = [
         ":__subpackages__",
         "//src/v/serde/json:__pkg__",

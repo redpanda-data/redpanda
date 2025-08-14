@@ -167,9 +167,9 @@ auto group_router::route_stages(Request r, FwdFunc func) {
     return return_type(std::move(dispatched_f), std::move(f));
 }
 
-ss::future<std::vector<deletable_group_result>>
+ss::future<chunked_vector<deletable_group_result>>
 group_router::route_delete_groups(
-  ss::shard_id shard, std::vector<std::pair<model::ntp, group_id>> groups) {
+  ss::shard_id shard, chunked_vector<std::pair<model::ntp, group_id>> groups) {
     return ss::with_scheduling_group(
       _sg, [this, shard, groups = std::move(groups)]() mutable {
           return get_group_manager().invoke_on(
@@ -187,10 +187,13 @@ ss::future<> group_router::parallel_route_delete_groups(
     return ss::parallel_for_each(
       groups_by_shard, [this, &results](sharded_groups::value_type& groups) {
           return route_delete_groups(groups.first, std::move(groups.second))
-            .then([&results](std::vector<deletable_group_result> new_results) {
-                results.insert(
-                  results.end(), new_results.begin(), new_results.end());
-            });
+            .then(
+              [&results](chunked_vector<deletable_group_result> new_results) {
+                  results.insert(
+                    results.end(),
+                    std::make_move_iterator(new_results.begin()),
+                    std::make_move_iterator(new_results.end()));
+              });
       });
 }
 
@@ -213,15 +216,8 @@ group_router::delete_groups(chunked_vector<group_id> groups) {
         }
     }
 
-    return ss::do_with(
-      std::move(results),
-      std::move(groups_by_shard),
-      [this](
-        std::vector<deletable_group_result>& results,
-        sharded_groups& groups_by_shard) {
-          return parallel_route_delete_groups(results, groups_by_shard)
-            .then([&results] { return std::move(results); });
-      });
+    co_await parallel_route_delete_groups(results, groups_by_shard);
+    co_return std::move(results);
 }
 
 ss::future<described_group> group_router::describe_group(kafka::group_id g) {

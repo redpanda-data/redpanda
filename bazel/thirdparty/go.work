@@ -7,5 +7,5 @@ use (
 	src/v/test_utils/go
 	src/transform-sdk/go/transform
 	src/transform-sdk/go/transform/internal/testdata
-	src/transform-sdk/tests
+	tests/go/kgo-verifier
 )

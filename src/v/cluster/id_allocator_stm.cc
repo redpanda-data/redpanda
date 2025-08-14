@@ -11,12 +11,12 @@
 
 #include "bytes/iobuf.h"
 #include "cluster/logger.h"
-#include "cluster/types.h"
+#include "cluster/snapshot.h"
 #include "config/configuration.h"
 #include "model/namespace.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
-#include "raft/fundamental.h"
+#include "ssx/future-util.h"
 #include "storage/ntp_config.h"
 #include "storage/record_batch_builder.h"
 

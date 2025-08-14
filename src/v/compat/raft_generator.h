@@ -18,6 +18,8 @@
 #include "test_utils/random_bytes.h"
 #include "test_utils/randoms.h"
 
+#include <ranges>
+
 namespace compat {
 
 template<>
@@ -325,7 +327,9 @@ struct instance_generator<raft::append_entries_request> {
           instance_generator<raft::vnode>::random(),
           instance_generator<raft::protocol_metadata>::random(),
           chunked_vector<model::record_batch>(
-            model::test::make_random_batches(model::offset(0), 3, false).get()),
+            std::from_range,
+            model::test::make_random_batches(model::offset(0), 3, false).get()
+              | std::views::as_rvalue),
           0,
           raft::flush_after_append(tests::random_bool()),
         };

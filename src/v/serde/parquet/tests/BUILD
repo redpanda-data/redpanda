@@ -199,7 +199,7 @@ redpanda_cc_bench(
     ],
     deps = [
         "//src/v/bytes:random",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/random:generators",
         "//src/v/serde/parquet:column_writer",
         "//src/v/serde/parquet:schema",

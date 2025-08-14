@@ -9,7 +9,7 @@
  */
 #pragma once
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/schema.h"
 #include "iceberg/snapshot.h"
@@ -33,6 +33,8 @@ struct add_schema {
 };
 
 struct set_current_schema {
+    static inline constexpr schema::id_t last_added{-1};
+
     schema::id_t schema_id;
     set_current_schema copy() const {
         return {

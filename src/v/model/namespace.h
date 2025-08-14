@@ -86,6 +86,10 @@ inline const model::topic datalake_coordinator_topic("datalake_coordinator");
 inline const model::topic_namespace datalake_coordinator_nt(
   model::kafka_internal_namespace, model::datalake_coordinator_topic);
 
+inline const model::topic l1_metastore_topic("ct_l1_domain");
+inline const model::topic_namespace
+  l1_metastore_nt(model::kafka_internal_namespace, model::l1_metastore_topic);
+
 // Topics in the Kafka namespace that are not user-created topics.
 inline const std::array non_user_topics{
   kafka_consumer_offsets_topic,

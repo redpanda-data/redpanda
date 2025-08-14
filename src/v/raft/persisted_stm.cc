@@ -12,6 +12,7 @@
 #include "bytes/iostream.h"
 #include "raft/consensus.h"
 #include "raft/state_machine_base.h"
+#include "ssx/future-util.h"
 #include "ssx/sformat.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
@@ -383,9 +384,9 @@ model::offset persisted_stm_base<BaseT, T>::max_removable_local_log_offset() {
 }
 
 template<typename BaseT, supported_stm_snapshot T>
-ss::future<fragmented_vector<model::tx_range>>
+ss::future<chunked_vector<model::tx_range>>
 persisted_stm_base<BaseT, T>::aborted_tx_ranges(model::offset, model::offset) {
-    return ss::make_ready_future<fragmented_vector<model::tx_range>>();
+    return ss::make_ready_future<chunked_vector<model::tx_range>>();
 }
 
 template<typename BaseT, supported_stm_snapshot T>

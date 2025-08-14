@@ -7,7 +7,6 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "absl/algorithm/container.h"
 #include "ssx/task_local_ptr.h"
 
 #include <seastar/core/sstring.hh>

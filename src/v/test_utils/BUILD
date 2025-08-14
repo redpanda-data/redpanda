@@ -8,7 +8,6 @@ redpanda_test_cc_library(
         "test_macros.h",
         "tmp_dir.h",
     ],
-    include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -33,7 +32,6 @@ redpanda_test_cc_library(
         "test_macros.h",
         "tmp_dir.h",
     ],
-    include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
         ":fixture",
@@ -56,7 +54,6 @@ redpanda_test_cc_library(
         "test_macros.h",
         "tmp_dir.h",
     ],
-    include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
         ":boost_result_redirect",
@@ -79,7 +76,6 @@ redpanda_test_cc_library(
         "@boost//:core",
         "@boost//:test",
     ],
-    include_prefix = "test_utils",
     visibility = ["//visibility:public"],
 )
 
@@ -88,12 +84,11 @@ redpanda_test_cc_library(
     hdrs = [
         "randoms.h",
     ],
-    include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/container:chunked_hash_map",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/random:generators",
         "//src/v/utils:tristate",
         "@abseil-cpp//absl/container:btree",
@@ -111,7 +106,6 @@ redpanda_test_cc_library(
     implementation_deps = [
         "//src/v/random:generators",
     ],
-    include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes",
@@ -124,7 +118,6 @@ redpanda_test_cc_library(
     hdrs = [
         "scoped_config.h",
     ],
-    include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/config",
@@ -143,7 +136,6 @@ redpanda_test_cc_library(
         "@bazel_tools//tools/cpp/runfiles",
         "@fmt",
     ],
-    include_prefix = "test_utils",
     visibility = ["//visibility:public"],
 )
 
@@ -152,7 +144,6 @@ redpanda_test_cc_library(
     hdrs = [
         "iostream.h",
     ],
-    include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -165,7 +156,6 @@ redpanda_test_cc_library(
     hdrs = [
         "rpc.h",
     ],
-    include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/reflection:adl",
@@ -178,7 +168,6 @@ redpanda_test_cc_library(
     hdrs = [
         "logs.h",
     ],
-    include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -194,7 +183,6 @@ redpanda_test_cc_library(
     hdrs = [
         "archival.h",
     ],
-    include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes:iostream",
@@ -211,7 +199,6 @@ redpanda_test_cc_library(
     hdrs = [
         "tmpbuf_file.h",
     ],
-    include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -225,7 +212,6 @@ redpanda_test_cc_library(
     hdrs = [
         "tee_log.h",
     ],
-    include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
         "@boost//:iostreams",

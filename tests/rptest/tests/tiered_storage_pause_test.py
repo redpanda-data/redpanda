@@ -151,12 +151,18 @@ class TestTieredStoragePause(PreallocNodesTest):
         zero. Otherwise the expectation is that start offset is greater than zero"""
         rpk = RpkTool(self.redpanda)
         partitions = rpk.describe_topic(self._topic)
-        for p in partitions:
+
+        def _check():
+            partitions = rpk.describe_topic(self._topic)
             if expected:
-                res = p.start_offset == 0
+                return all([p.start_offset == 0 for p in partitions])
             else:
-                res = p.start_offset > 0
-            assert res, f"local retention have unexpected value, expected to start from zero = {expected}, start offset = {p.start_offset}"
+                return all([p.start_offset > 0 for p in partitions])
+
+        wait_until(_check,
+                   timeout_sec=40,
+                   backoff_sec=5,
+                   err_msg="local retention have unexpected value")
 
     def wait_until_start_offset_advances(self):
         """

@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "pandaproxy/schema_registry/schema_getter.h"
 #include "pandaproxy/schema_registry/types.h"
 
@@ -45,12 +45,6 @@ public:
 
     ///\brief Construct a schema in the native format
     ss::future<valid_schema> make_valid_schema(subject_schema schema);
-
-    struct has_schema_result {
-        std::optional<schema_id> id;
-        std::optional<schema_version> version;
-    };
-    ss::future<has_schema_result> get_schema_version(stored_schema schema);
 
     struct insert_result {
         schema_version version;
@@ -88,6 +82,11 @@ public:
     ///\brief Return a list of subject-versions for the shema id.
     ss::future<chunked_vector<subject_version>>
     get_schema_subject_versions(schema_id id);
+
+    ///\brief Return a list of subject-versions for the subject. Returns an
+    /// empty vector if the subject does not exist.
+    ss::future<std::vector<subject_version_entry>>
+    get_subject_versions(subject sub, include_deleted inc_del);
 
     ///\brief Return a list of subjects for the schema id.
     ss::future<chunked_vector<subject>>
@@ -209,6 +208,10 @@ public:
 
     //// \brief Throw if the store is not mutable
     void check_mode_mutability(force f) const;
+
+    ///\brief Look up the id of a schema by definition
+    ss::future<std::optional<schema_id>>
+    get_schema_id(schema_definition def) const;
 
 private:
     ss::future<compatibility_result> do_is_compatible(

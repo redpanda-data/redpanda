@@ -9,7 +9,6 @@
 
 #pragma once
 
-#include "absl/algorithm/container.h"
 #include "http/client.h"
 #include "json/document.h"
 #include "pandaproxy/json/exceptions.h"
@@ -21,6 +20,7 @@
 #include <boost/beast/http/status.hpp>
 #include <boost/beast/http/verb.hpp>
 
+#include <algorithm>
 #include <iterator>
 
 namespace pp = pandaproxy;
@@ -117,7 +117,7 @@ get_body_versions(const ss::sstring& body) {
     const auto& arr = doc.GetArray();
     std::vector<pps::schema_version> found_versions;
     found_versions.reserve(arr.Size());
-    absl::c_transform(
+    std::ranges::transform(
       arr, std::back_inserter(found_versions), [](const auto& v) {
           return pps::schema_version{v.template Get<int>()};
       });

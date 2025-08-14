@@ -29,6 +29,7 @@
 #include "ssx/checkpoint_mutex.h"
 #include "ssx/event.h"
 #include "storage/fwd.h"
+#include "utils/execution_monitor.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
@@ -353,7 +354,7 @@ public:
     /// \param scanner is a user provided function used to find upload candidate
     /// \return {nullopt, nullopt} or the archiver lock and upload candidate
     ss::future<find_reupload_candidate_result>
-    find_reupload_candidate(manifest_scanner_t scanner);
+    find_reupload_candidate(manifest_scanner_t scanner, ss::abort_source& as);
 
     /**
      * Upload segment provided from the outside of the ntp_archiver.
@@ -376,6 +377,8 @@ public:
 
     /// Return reference to partition manifest from archival STM
     const cloud_storage::partition_manifest& manifest() const;
+
+    void log_collected_traces() noexcept;
 
     /// Get segment size for the partition
     size_t get_local_segment_size() const;
@@ -420,7 +423,8 @@ public:
       model::timestamp scrub_timestamp,
       std::optional<model::offset> last_scrubbed_offset,
       cloud_storage::scrub_status status,
-      cloud_storage::anomalies detected);
+      cloud_storage::anomalies detected,
+      ss::abort_source& caller_as);
 
     ss::future<std::error_code> reset_scrubbing_metadata();
 
@@ -558,11 +562,12 @@ private:
       archival_stm_fence fence,
       std::vector<wait_uploads_complete_result> finished_uploads);
 
+    ss::future<> upload_index(ss::sstring path, cloud_storage::offset_index);
+
     ss::future<ntp_archiver_upload_result> upload_segment(
       segment_collector_stream strm,
       const cloud_storage::segment_meta& meta,
-      std::optional<fragmented_vector<model::tx_range>> tx_ranges
-      = std::nullopt);
+      std::optional<chunked_vector<model::tx_range>> tx_ranges = std::nullopt);
 
     /// Upload tx-manifest
     /// Return error-code if the manifest was uploaded or upload was attempted
@@ -571,17 +576,17 @@ private:
     ss::future<std::optional<cloud_storage::upload_result>>
     maybe_upload_aborted_tx(
       cloud_storage::remote_segment_path path,
-      std::optional<fragmented_vector<model::tx_range>> tx,
+      std::optional<chunked_vector<model::tx_range>> tx,
       retry_chain_node& parent_rtc);
 
     /// Get aborted transactions for upload
     ///
     /// \return list of aborted transactions
-    ss::future<fragmented_vector<model::tx_range>> get_aborted_transactions(
+    ss::future<chunked_vector<model::tx_range>> get_aborted_transactions(
       model::offset start_offset, model::offset end_offset);
 
     ss::future<
-      std::pair<std::optional<fragmented_vector<model::tx_range>>, size_t>>
+      std::pair<std::optional<chunked_vector<model::tx_range>>, size_t>>
     get_aborted_transactions(
       const segment_collector_stream& meta, const cloud_storage::segment_name&);
 
@@ -695,6 +700,7 @@ private:
     std::optional<cloud_storage_clients::bucket_name> _bucket_override;
     ss::gate _gate;
     ss::abort_source _as;
+    retry_chain_context _rtctx;
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;
 
@@ -789,6 +795,8 @@ private:
 
     config::binding<std::chrono::milliseconds> _initial_backoff;
     config::binding<std::chrono::milliseconds> _max_backoff;
+
+    ssx::execution_monitor _execution_monitor;
 
     friend class archiver_fixture;
 };

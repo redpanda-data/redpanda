@@ -16,6 +16,7 @@
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/download_exception.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/segment_chunk_data_source.h"
@@ -176,8 +177,11 @@ remote_segment::remote_segment(
     }
 
     // run hydration loop in the background
+    auto sg = _api.resources().get_scheduling_group();
     _hydration_loop_running = true;
-    ssx::background = run_hydrate_bg();
+
+    ssx::background = ss::with_scheduling_group(
+      sg, [this] { return run_hydrate_bg(); });
 }
 
 const model::ntp& remote_segment::get_ntp() const { return _ntp; }
@@ -466,7 +470,9 @@ ss::future<> remote_segment::put_chunk_in_cache(
 
 ss::future<> remote_segment::do_hydrate_segment() {
     retry_chain_node local_rtc(
-      cache_hydration_timeout, cache_hydration_backoff, &_rtc);
+      config::shard_local_cfg().cloud_storage_segment_upload_timeout_ms(),
+      cache_hydration_backoff,
+      &_rtc);
 
     // RAII reservation object represents the disk space this put will consume
     auto reservation = co_await _cache.reserve_space(
@@ -498,7 +504,9 @@ ss::future<> remote_segment::do_hydrate_segment() {
 
 ss::future<> remote_segment::do_hydrate_index() {
     retry_chain_node local_rtc(
-      cache_hydration_timeout, cache_hydration_backoff, &_rtc);
+      config::shard_local_cfg().cloud_storage_segment_upload_timeout_ms(),
+      cache_hydration_backoff,
+      &_rtc);
 
     offset_index ix(
       _base_rp_offset,
@@ -530,7 +538,9 @@ ss::future<> remote_segment::do_hydrate_index() {
 ss::future<> remote_segment::do_hydrate_txrange() {
     ss::gate::holder guard(_gate);
     retry_chain_node local_rtc(
-      cache_hydration_timeout, cache_hydration_backoff, &_rtc);
+      config::shard_local_cfg().cloud_storage_segment_upload_timeout_ms(),
+      cache_hydration_backoff,
+      &_rtc);
     if (_sname_format == segment_name_format::v3 && _metadata_size_hint == 0) {
         // The tx-manifest is empty, no need to download it, and
         // avoid putting this empty manifest into the cache.
@@ -726,7 +736,7 @@ void remote_segment::set_waiter_errors(const std::exception_ptr& err) {
         _wait_list.pop_front();
     }
 
-    fragmented_vector<chunk_request> chunk_waiters;
+    chunked_vector<chunk_request> chunk_waiters;
     chunk_waiters.swap(_chunk_waiters);
     for (auto& w : chunk_waiters) {
         w.promise.set_exception(err);
@@ -754,6 +764,25 @@ bool remote_segment::is_state_materialized() const {
 }
 
 ss::future<> remote_segment::run_hydrate_bg() {
+    // The gate could potentially be closed before the background loop even has
+    // the chance to start.
+    if (_gate.is_closed()) {
+        // If any new download requests got queued up while we were downloading
+        // chunks before the gate closed, cancel them so that the gate close
+        // does not get stuck during segment stop.
+        if (!_chunk_waiters.empty()) {
+            vlog(
+              _ctxlog.debug,
+              "Cancelling {} pending chunk downloads during segment stop",
+              _chunk_waiters.size());
+            for (auto& w : _chunk_waiters) {
+                w.promise.set_exception(ss::gate_closed_exception{});
+            }
+        }
+        _hydration_loop_running = false;
+        co_return;
+    }
+
     ss::gate::holder guard(_gate);
 
     // Track whether we have seen our objects in the cache during the loop
@@ -885,13 +914,13 @@ ss::future<> remote_segment::run_hydrate_bg() {
     _hydration_loop_running = false;
 }
 
-ss::future<fragmented_vector<remote_segment::chunk_request>>
+ss::future<chunked_vector<remote_segment::chunk_request>>
 remote_segment::service_chunk_requests() {
     auto g = _gate.hold();
-    fragmented_vector<ss::future<ss::file>> chunk_op_results;
+    chunked_vector<ss::future<ss::file>> chunk_op_results;
     chunk_op_results.reserve(_chunk_waiters.size());
 
-    fragmented_vector<chunk_request> requests;
+    chunked_vector<chunk_request> requests;
     requests.swap(_chunk_waiters);
 
     std::ranges::transform(
@@ -905,7 +934,7 @@ remote_segment::service_chunk_requests() {
     auto results = co_await ss::when_all(
       chunk_op_results.begin(), chunk_op_results.end());
 
-    fragmented_vector<chunk_request> failed;
+    chunked_vector<chunk_request> failed;
     for (size_t i = 0; i < results.size(); ++i) {
         auto request = std::move(requests[i]);
         auto current_result = std::move(results[i]);
@@ -1067,7 +1096,9 @@ ss::future<> remote_segment::hydrate_chunk(chunk_start_offset_t start_offset) {
     }
 
     retry_chain_node rtc{
-      cache_hydration_timeout, cache_hydration_backoff, &_rtc};
+      config::shard_local_cfg().cloud_storage_segment_upload_timeout_ms(),
+      cache_hydration_backoff,
+      &_rtc};
 
     auto byte_range = _chunks_api->get_byte_range_for_chunk(
       start_offset, _size - 1);
@@ -1439,9 +1470,19 @@ remote_segment_batch_reader::remote_segment_batch_reader(
 
 ss::future<result<chunked_circular_buffer<model::record_batch>>>
 remote_segment_batch_reader::read_some(
-  model::timeout_clock::time_point,
+  model::timeout_clock::time_point timeout,
   storage::offset_translator_state& ot_state) {
     ss::gate::holder h(_gate);
+    return _seg
+      ->with_scheduling_group(
+        [this, timeout, &ot_state] { return do_read_some(timeout, ot_state); })
+      .finally([h = std::move(h)] {});
+}
+
+ss::future<result<chunked_circular_buffer<model::record_batch>>>
+remote_segment_batch_reader::do_read_some(
+  model::timeout_clock::time_point,
+  storage::offset_translator_state& ot_state) {
     if (_ringbuf.empty()) {
         if (!_parser) {
             // remote_segment_batch_reader shouldn't be used concurrently

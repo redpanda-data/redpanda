@@ -10,6 +10,7 @@
 
 #include "gtest/gtest.h"
 #include "iceberg/conversion/schema_protobuf.h"
+#include "iceberg/conversion/tests/gmock_iceberg_matchers.h"
 #include "iceberg/conversion/tests/proto_definitions.h"
 #include "iceberg/conversion/values_protobuf.h"
 #include "iceberg/datatypes.h"
@@ -30,7 +31,8 @@
 #include <memory>
 
 using namespace iceberg;
-using namespace testing;
+using namespace iceberg::testing;
+using namespace ::testing;
 
 MATCHER_P3(IsField, id, name, type, "") {
     *result_listener << fmt::format(
@@ -203,44 +205,6 @@ TEST(SchemaProtobuf, TestInvalidSchema) {
     }
 }
 
-using namespace iceberg;
-using namespace testing;
-
-template<typename ValueT>
-auto IcebergPrimitive(const auto& value) {
-    return VariantWith<primitive_value>(
-      VariantWith<ValueT>(Field(&ValueT::val, Eq(value))));
-}
-
-template<typename ValueT>
-auto OptionalIcebergPrimitive(const auto& value) {
-    return Optional(IcebergPrimitive<ValueT>(value));
-}
-
-template<typename... MatcherT>
-auto IcebergStruct(MatcherT... matchers) {
-    using struct_t = std::unique_ptr<struct_value>;
-    return Optional(VariantWith<struct_t>(Pointee(Field(
-      &struct_value::fields,
-      ElementsAre(std::forward<MatcherT>(matchers)...)))));
-}
-
-template<typename MatcherT>
-auto IcebergList(MatcherT matcher) {
-    return Optional(VariantWith<std::unique_ptr<list_value>>(
-      Pointee(Field(&list_value::elements, std::forward<MatcherT>(matcher)))));
-}
-
-template<typename MatcherT>
-auto IcebergMap(MatcherT matcher) {
-    return Optional(VariantWith<std::unique_ptr<map_value>>(
-      Pointee(Field(&map_value::kvs, std::forward<MatcherT>(matcher)))));
-}
-
-template<typename KeyMatcherT, typename ValueMatcherT>
-auto IcebergKeyValue(KeyMatcherT k_matcher, ValueMatcherT v_matcher) {
-    return FieldsAre(k_matcher, v_matcher);
-}
 template<typename Message>
 ss::future<iceberg::optional_value_outcome>
 serialize_and_convert(const Message& msg) {

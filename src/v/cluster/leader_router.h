@@ -9,7 +9,6 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "base/vformat.h"
 #include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_leaders_table.h"
@@ -22,6 +21,8 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
+
+#include <fmt/format.h>
 
 namespace rpc {
 class connection_cache;
@@ -163,8 +164,7 @@ ss::future<resp_t> leader_router<req_t, resp_t, handler_t>::process_or_dispatch(
     while (!_as.abort_requested() && 0 < retries--) {
         auto leader_opt = _leaders.local().get_leader(ntp);
         if (unlikely(!leader_opt)) {
-            error = vformat(
-              fmt::runtime("can't find {} in the leaders cache"), ntp);
+            error = fmt::format("can't find {} in the leaders cache", ntp);
             vlog(
               clusterlog.trace,
               "waiting for {} to fill leaders cache, retries left: {}",
@@ -194,15 +194,13 @@ ss::future<resp_t> leader_router<req_t, resp_t, handler_t>::process_or_dispatch(
         }
 
         if (likely(r.ec != errc::replication_error)) {
-            error = vformat(
-              fmt::runtime("{} failed with {}"),
-              handler_t::process_name(),
-              r.ec);
+            error = fmt::format(
+              "{} failed with {}", handler_t::process_name(), r.ec);
             break;
         }
 
-        error = vformat(
-          fmt::runtime("{} failed with {}"), handler_t::process_name(), r.ec);
+        error = fmt::format(
+          "{} failed with {}", handler_t::process_name(), r.ec);
         vlog(
           clusterlog.trace,
           "request {} for ntp {} failed, error: {} retries left: {}, delay ms: "

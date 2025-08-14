@@ -32,7 +32,6 @@ public:
     explicit rest_catalog(
       std::unique_ptr<rest_client::catalog_client>,
       config::binding<std::chrono::milliseconds> request_timeout,
-      datalake::credential_manager& credential_mgr,
       std::optional<ss::sstring> base_location = std::nullopt);
 
     rest_catalog(const rest_catalog&) = delete;
@@ -69,6 +68,5 @@ private:
     // REST request at a time
     mutex lock_;
     ss::abort_source as_;
-    datalake::credential_manager& credential_manager_;
 };
 }; // namespace iceberg

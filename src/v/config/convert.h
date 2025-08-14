@@ -23,6 +23,7 @@
 #include <boost/lexical_cast.hpp>
 #include <yaml-cpp/yaml.h>
 
+#include <algorithm>
 #include <unordered_map>
 
 namespace YAML {
@@ -738,6 +739,25 @@ struct convert<config::tls_name_format> {
             return false;
         }
         std::istringstream iss(value);
+        iss >> rhs;
+        return true;
+    }
+};
+
+template<>
+struct convert<config::audit_failure_policy> {
+    static Node encode(const config::audit_failure_policy& rhs) {
+        return Node(fmt::format("{}", rhs));
+    }
+
+    static bool decode(const Node& node, config::audit_failure_policy& rhs) {
+        static constexpr auto acceptable_values
+          = config::acceptable_audit_log_failure_policy_values();
+        auto valid = node.as<std::string>();
+        if (!std::ranges::contains(acceptable_values, valid)) {
+            return false;
+        }
+        std::istringstream iss(valid);
         iss >> rhs;
         return true;
     }

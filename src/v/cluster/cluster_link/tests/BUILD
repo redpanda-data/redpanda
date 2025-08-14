@@ -11,7 +11,6 @@ redpanda_test_cc_library(
     implementation_deps = [
         "//src/v/cluster",
     ],
-    include_prefix = "cluster/cluster_link/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cluster_link/model",

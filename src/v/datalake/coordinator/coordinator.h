@@ -12,7 +12,7 @@
 #include "absl/hash/hash.h"
 #include "cluster/fwd.h"
 #include "config/property.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "datalake/coordinator/file_committer.h"
 #include "datalake/coordinator/snapshot_remover.h"
 #include "datalake/coordinator/state_machine.h"
@@ -142,6 +142,11 @@ private:
       record_schema_components,
       std::string_view method_name,
       const table_schema_provider&);
+
+    // Get the effective default partition spec.
+    // This is an AWS Glue compatibility kludge.
+    ss::sstring get_effective_default_partition_spec(
+      const std::optional<ss::sstring>& partition_spec) const;
 
     ss::shared_ptr<coordinator_stm> stm_;
     cluster::topic_table& topic_table_;

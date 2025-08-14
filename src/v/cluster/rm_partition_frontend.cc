@@ -231,11 +231,11 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
       });
 }
 namespace {
-ss::future<result<ssx::rwlock_unit, tx::errc>>
+ss::future<result<ss::rwlock::holder, tx::errc>>
 hold_writes_enabled(ss::lw_shared_ptr<partition> partition) {
     auto units_result = co_await partition->hold_writes_enabled();
     if (units_result.has_value()) {
-        co_return result<ssx::rwlock_unit, tx::errc>{
+        co_return result<ss::rwlock::holder, tx::errc>{
           std::move(units_result.value())};
     }
 

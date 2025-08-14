@@ -13,7 +13,7 @@
 
 #include "base/likely.h"
 #include "base/seastarx.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/batch_reader.h"
 #include "kafka/protocol/schemata/fetch_request.h"
 #include "kafka/protocol/schemata/fetch_response.h"
@@ -214,7 +214,7 @@ struct fetch_response final {
     public:
         using partition_iterator = chunked_vector<partition>::iterator;
         using partition_response_iterator
-          = small_fragment_vector<partition_response>::iterator;
+          = chunked_vector<partition_response>::iterator;
 
         struct value_type {
             partition_iterator partition;

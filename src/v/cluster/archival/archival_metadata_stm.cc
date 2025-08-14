@@ -17,16 +17,16 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/types.h"
-#include "cluster/archival/logger.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/prefix_truncate_record.h"
-#include "cluster/types.h"
+#include "cluster/snapshot.h"
 #include "config/configuration.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
@@ -226,11 +226,11 @@ struct archival_metadata_stm::read_write_fence_cmd
 //
 struct archival_metadata_stm::snapshot
   : public serde::
-      envelope<snapshot, serde::version<5>, serde::compat_version<0>> {
+      envelope<snapshot, serde::version<6>, serde::compat_version<0>> {
     /// List of segments
-    fragmented_vector<segment> segments;
+    chunked_vector<segment> segments;
     /// List of replaced segments
-    fragmented_vector<segment> replaced;
+    chunked_vector<segment> replaced;
     /// Start offset (might be different from the base offset of the first
     /// segment). Default value means that the snapshot was old and didn't
     /// have start_offset. In this case we need to set it to compute it from
@@ -260,7 +260,7 @@ struct archival_metadata_stm::snapshot
     // when DeleteRecords was used to override)
     kafka::offset start_kafka_offset;
     // List of spillover manifests
-    fragmented_vector<segment> spillover_manifests;
+    chunked_vector<segment> spillover_manifests;
     // Timestamp of last completed scrub
     model::timestamp last_partition_scrub;
     // Offest at which the previous scrubbing stopped
@@ -271,6 +271,12 @@ struct archival_metadata_stm::snapshot
     model::producer_id highest_producer_id;
     // Offset of the last applied command
     model::offset applied_offset;
+    // The offset of the last mark_clean_cmd applied;
+    // default (-inf) in v5 and earlier
+    model::offset last_clean_at;
+    // The offset of the last record that modified the stm;
+    // default (-inf) in v5 and earlier
+    model::offset last_dirty_at;
 
     auto serde_fields() {
         return std::tie(
@@ -290,7 +296,9 @@ struct archival_metadata_stm::snapshot
           last_scrubbed_offset,
           detected_anomalies,
           highest_producer_id,
-          applied_offset);
+          applied_offset,
+          last_clean_at,
+          last_dirty_at);
     }
 };
 
@@ -507,10 +515,10 @@ command_batch_builder archival_metadata_stm::batch_start(
     return {*this, deadline, as};
 }
 
-fragmented_vector<archival_metadata_stm::segment>
+chunked_vector<archival_metadata_stm::segment>
 archival_metadata_stm::segments_from_manifest(
   const cloud_storage::partition_manifest& manifest) {
-    fragmented_vector<segment> segments;
+    chunked_vector<segment> segments;
     for (auto meta : manifest) {
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = manifest.get_revision_id();
@@ -531,11 +539,11 @@ archival_metadata_stm::segments_from_manifest(
     return segments;
 }
 
-fragmented_vector<archival_metadata_stm::segment>
+chunked_vector<archival_metadata_stm::segment>
 archival_metadata_stm::replaced_segments_from_manifest(
   const cloud_storage::partition_manifest& manifest) {
     auto replaced = manifest.replaced_segments();
-    fragmented_vector<segment> segments;
+    chunked_vector<segment> segments;
     for (auto meta : replaced) {
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = manifest.get_revision_id();
@@ -546,11 +554,11 @@ archival_metadata_stm::replaced_segments_from_manifest(
     return segments;
 }
 
-fragmented_vector<archival_metadata_stm::segment>
+chunked_vector<archival_metadata_stm::segment>
 archival_metadata_stm::spillover_from_manifest(
   const cloud_storage::partition_manifest& manifest) {
     const auto& sp_list = manifest.get_spillover_map();
-    fragmented_vector<segment> res;
+    chunked_vector<segment> res;
     for (auto meta : sp_list) {
         res.push_back(segment_from_meta(meta));
     }
@@ -1258,11 +1266,20 @@ archival_metadata_stm::apply_local_snapshot(
     // reset counter, the value depended on the previous _manifest
     _compacted_replaced_bytes = 0;
 
-    if (snap.dirty == state_dirty::dirty) {
-        _last_clean_at = model::offset{0};
+    if (snap.last_clean_at == model::offset{}) {
+        // Handle legacy snapshots which don't have the 'last_clean_at'
+        // field.
+        if (snap.dirty == state_dirty::dirty) {
+            _last_clean_at = model::offset{};
+        } else {
+            _last_clean_at = header.offset;
+        }
     } else {
-        _last_clean_at = header.offset;
+        _last_clean_at = snap.last_clean_at;
     }
+
+    _last_dirty_at = snap.last_dirty_at;
+
     co_return raft::local_snapshot_applied::yes;
 }
 
@@ -1289,7 +1306,9 @@ archival_metadata_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
       .last_scrubbed_offset = _manifest->last_scrubbed_offset(),
       .detected_anomalies = _manifest->detected_anomalies(),
       .highest_producer_id = _manifest->highest_producer_id(),
-      .applied_offset = _manifest->get_applied_offset()});
+      .applied_offset = _manifest->get_applied_offset(),
+      .last_clean_at = _last_clean_at,
+      .last_dirty_at = _last_dirty_at});
     auto snapshot_offset = last_applied_offset();
     apply_units.return_all();
 
@@ -1303,6 +1322,21 @@ archival_metadata_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
 
     co_return raft::stm_snapshot::create(
       0, snapshot_offset, std::move(snap_data));
+}
+
+model::offset archival_metadata_stm::cloud_recoverable_offset() {
+    auto lo = get_last_offset();
+    if (_manifest->size() == 0 && lo == model::offset{0}) {
+        lo = model::offset::min();
+    }
+
+    // Do not collect past the offset we last uploaded manifest for: this is
+    // needed for correctness because the remote manifest is used in
+    // handle_eviction() - it is what a remote node doing snapshot-driven
+    // raft recovery will use to start from.
+    lo = std::min(lo, _last_clean_at);
+
+    return lo;
 }
 
 model::offset archival_metadata_stm::max_removable_local_log_offset() {
@@ -1331,18 +1365,7 @@ model::offset archival_metadata_stm::max_removable_local_log_offset() {
         // need to interact with local retention.
         return model::offset::max();
     }
-    auto lo = get_last_offset();
-    if (_manifest->size() == 0 && lo == model::offset{0}) {
-        lo = model::offset::min();
-    }
-
-    // Do not collect past the offset we last uploaded manifest for: this is
-    // needed for correctness because the remote manifest is used in
-    // handle_eviction() - it is what a remote node doing snapshot-driven
-    // raft recovery will use to start from.
-    lo = std::min(lo, _last_clean_at);
-
-    return lo;
+    return cloud_recoverable_offset();
 }
 
 void archival_metadata_stm::maybe_notify_waiter(cluster::errc err) noexcept {
@@ -1563,7 +1586,7 @@ void archival_metadata_stm::apply_reset_scrubbing_metadata() {
     _manifest->reset_scrubbing_metadata();
 }
 
-fragmented_vector<cloud_storage::partition_manifest::lw_segment_meta>
+chunked_vector<cloud_storage::partition_manifest::lw_segment_meta>
 archival_metadata_stm::get_segments_to_cleanup() const {
     // Include replaced segments to the backlog
     using lw_segment_meta = cloud_storage::partition_manifest::lw_segment_meta;
@@ -1573,7 +1596,7 @@ archival_metadata_stm::get_segments_to_cleanup() const {
     // segments. This is a protection from the data loss. This should not
     // happen, but protects us from data loss in cases where bugs elsewhere.
     const auto backlog_size = source_backlog.size();
-    fragmented_vector<lw_segment_meta> backlog;
+    chunked_vector<lw_segment_meta> backlog;
     std::copy_if(
       source_backlog.begin(),
       source_backlog.end(),
@@ -1687,6 +1710,7 @@ archival_metadata_stm_factory::archival_metadata_stm_factory(
 bool archival_metadata_stm_factory::is_applicable_for(
   const storage::ntp_config& ntp_cfg) const {
     return _cloud_storage_enabled && _cloud_storage_api.local_is_initialized()
+           && ntp_cfg.ntp().tp.topic != model::kafka_consumer_offsets_topic
            && ntp_cfg.ntp().ns == model::kafka_namespace;
 }
 

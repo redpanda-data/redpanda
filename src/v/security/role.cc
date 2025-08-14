@@ -12,6 +12,7 @@
 
 #include "security/role_store.h"
 
+#include <algorithm>
 #include <ranges>
 
 namespace security {
@@ -88,7 +89,7 @@ std::optional<role> role_store::get(const role_name& name) const {
 }
 
 bool role_store::remove(const role_name& name) {
-    absl::c_for_each(
+    std::ranges::for_each(
       _members_store, [&name](members_store_type::value_type& e) {
           e.second.erase(role_name_view{name});
       });

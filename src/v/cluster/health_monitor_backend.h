@@ -19,6 +19,7 @@
 #include "model/metadata.h"
 #include "rpc/fwd.h"
 #include "ssx/semaphore.h"
+#include "storage/disk.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/chunked_fifo.hh>

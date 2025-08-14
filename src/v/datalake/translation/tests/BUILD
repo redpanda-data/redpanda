@@ -27,7 +27,6 @@ redpanda_test_cc_library(
     hdrs = [
         "scheduler_fixture.h",
     ],
-    include_prefix = "datalake/translation/tests",
     deps = [
         "//src/v/base",
         "//src/v/datalake:logger",

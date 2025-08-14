@@ -7,7 +7,6 @@ redpanda_test_cc_library(
     ],
     implementation_deps = [
     ],
-    include_prefix = "cluster/cloud_metadata/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cluster",
@@ -25,7 +24,6 @@ redpanda_test_cc_library(
     ],
     implementation_deps = [
     ],
-    include_prefix = "cluster/cloud_metadata/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/test_utils:scoped_config",
@@ -59,6 +57,7 @@ redpanda_cc_gtest(
         ":manual_mixin",
         "//src/v/cloud_io/tests:s3_imposter",
         "//src/v/cloud_storage",
+        "//src/v/cloud_storage:types",
         "//src/v/cluster",
         "//src/v/cluster/tests:topic_properties_generator",
         "//src/v/cluster/tests:tx_compaction_utils_gtest",
@@ -67,6 +66,7 @@ redpanda_cc_gtest(
         "//src/v/redpanda:application",
         "//src/v/redpanda/tests:fixture",
         "//src/v/security",
+        "//src/v/security/tests:utils",
         "//src/v/ssx:future_util",
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:scoped_config",
@@ -94,6 +94,7 @@ redpanda_cc_gtest(
         "//src/v/redpanda:application",
         "//src/v/redpanda/tests:fixture",
         "//src/v/security",
+        "//src/v/security/tests:utils",
         "//src/v/ssx:future_util",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
@@ -193,6 +194,7 @@ redpanda_cc_gtest(
         ":manual_mixin",
         "//src/v/cloud_io/tests:s3_imposter",
         "//src/v/cloud_storage",
+        "//src/v/cloud_storage:types",
         "//src/v/cluster",
         "//src/v/model",
         "//src/v/redpanda:application",

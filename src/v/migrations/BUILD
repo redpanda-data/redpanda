@@ -17,7 +17,6 @@ redpanda_cc_library(
         "shard_placement_migrator.h",
         "topic_id_migrator.h",
     ],
-    include_prefix = "migrations",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",

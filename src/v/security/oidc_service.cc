@@ -9,7 +9,6 @@
  */
 #include "security/oidc_service.h"
 
-#include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_map.h"
 #include "config/configuration.h"
 #include "config/tls_config.h"
@@ -33,6 +32,7 @@
 
 #include <boost/outcome/success_failure.hpp>
 
+#include <algorithm>
 #include <chrono>
 
 using namespace std::chrono_literals;
@@ -217,10 +217,10 @@ struct service::impl {
     }
 
     ss::future<> update() {
-        auto enabled = absl::c_any_of(
+        auto enabled = std::ranges::any_of(
                          _sasl_mechanisms(),
                          [](const auto& m) { return m == "OAUTHBEARER"; })
-                       || absl::c_any_of(
+                       || std::ranges::any_of(
                          _http_authentication(),
                          [](const auto& m) { return m == "OIDC"; });
         if (!enabled) {

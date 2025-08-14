@@ -15,7 +15,7 @@
 #include "cluster/scheduling/leader_balancer_strategy.h"
 #include "cluster/scheduling/leader_balancer_types.h"
 #include "container/chunked_hash_map.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/metadata.h"
 #include "raft/fundamental.h"
 #include "random/generators.h"
@@ -94,7 +94,7 @@ private:
     };
     chunked_hash_map<raft::group_id, model::broker_shard> _current_leaders;
 
-    using replicas_t = fragmented_vector<replica>;
+    using replicas_t = chunked_vector<replica>;
     replicas_t _replicas;
     size_t _replicas_begin{0};
 };

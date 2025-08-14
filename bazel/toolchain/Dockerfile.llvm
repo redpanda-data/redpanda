@@ -11,7 +11,7 @@ RUN apt update && apt install -y \
     lsb-release
 
 # Install latest versions using backports
-RUN echo "deb http://deb.debian.org/debian bullseye-backports main" > /etc/apt/sources.list.d/backports.list && \
+RUN echo "deb http://archive.debian.org/debian bullseye-backports main" > /etc/apt/sources.list.d/backports.list && \
     apt-get update && \
     apt-get install -y -t bullseye-backports \
       cmake \

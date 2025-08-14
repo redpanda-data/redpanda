@@ -177,7 +177,8 @@ class RaftAvailabilityTest(RedpandaTest):
         # Find which node is the leader
         admin = Admin(self.redpanda)
         initial_leader_id, replicas = self._wait_for_leader()
-        assert initial_leader_id == replicas[0]
+        assert initial_leader_id == replicas[
+            0], f'expected leader id: {replicas[0]}, but found leader {initial_leader_id}'
 
         self._expect_available()
 

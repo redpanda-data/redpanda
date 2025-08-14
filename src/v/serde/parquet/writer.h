@@ -12,7 +12,7 @@
 #pragma once
 
 #include "base/units.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "serde/parquet/schema.h"
 #include "serde/parquet/value.h"
 

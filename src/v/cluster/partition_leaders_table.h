@@ -16,8 +16,8 @@
 #include "cluster/ntp_callbacks.h"
 #include "cluster/types.h"
 #include "container/chunked_hash_map.h"
+#include "container/chunked_vector.h"
 #include "container/contiguous_range_map.h"
-#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "ssx/async_algorithm.h"
@@ -55,7 +55,8 @@ public:
         ss::sstring _msg;
     };
 
-    explicit partition_leaders_table(ss::sharded<topic_table>&);
+    explicit partition_leaders_table(
+      ss::sharded<topic_table>&, ss::sharded<ss::abort_source>&);
 
     ss::future<> stop();
 
@@ -235,7 +236,7 @@ private:
     version _version{0};
     version _topic_map_version{0};
     ss::gate _gate;
-    ss::abort_source _as;
+    ss::abort_source& _as;
 };
 
 } // namespace cluster

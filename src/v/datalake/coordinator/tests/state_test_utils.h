@@ -9,11 +9,13 @@
  */
 #pragma once
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "datalake/coordinator/file_committer.h"
 #include "datalake/coordinator/state.h"
 #include "datalake/coordinator/translated_offset_range.h"
 #include "model/fundamental.h"
+
+#include <seastar/core/coroutine.hh>
 
 #include <gtest/gtest.h>
 

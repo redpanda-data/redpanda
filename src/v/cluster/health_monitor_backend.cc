@@ -31,7 +31,6 @@
 #include "raft/fwd.h"
 #include "rpc/connection_cache.h"
 #include "ssx/async_algorithm.h"
-#include "storage/types.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/coroutine.hh>

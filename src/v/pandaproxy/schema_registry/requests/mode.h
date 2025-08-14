@@ -55,7 +55,7 @@ public:
         auto sv = std::string_view{str, len};
         if (_state == state::mode) {
             auto s = from_string_view<mode>(sv);
-            if (s.has_value() && s.value() != mode::import) {
+            if (s.has_value()) {
                 result.mode = *s;
                 _state = state::object;
             } else {

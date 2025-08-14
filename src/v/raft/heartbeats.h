@@ -320,8 +320,6 @@ class heartbeat_request_v2
       serde::version<0>,
       serde::compat_version<0>> {
 public:
-    using rpc_adl_exempt = std::true_type;
-
     using lw_column_t
       = deltafor_column<int64_t, ::details::delta_delta<int64_t>, int64_t>;
 
@@ -398,8 +396,6 @@ class heartbeat_reply_v2
       serde::version<0>,
       serde::compat_version<0>> {
 public:
-    using rpc_adl_exempt = std::true_type;
-
     using lw_column_t = deltafor_column<int64_t, ::details::delta_xor, int64_t>;
     using result_column_t = deltafor_column<int8_t, ::details::delta_xor>;
 

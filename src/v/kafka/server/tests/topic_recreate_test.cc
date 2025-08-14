@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "absl/container/flat_hash_map.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/delete_topics.h"
@@ -54,7 +54,9 @@ public:
             }};
 
             auto client = make_kafka_client().get();
+            auto deferred_close = ss::defer([&client] { client.stop().get(); });
             client.connect().get();
+
             auto resp
               = client.dispatch(std::move(req), kafka::api_version(2)).get();
             if (
@@ -85,6 +87,7 @@ public:
     kafka::delete_topics_response
     send_delete_topics_request(kafka::delete_topics_request req) {
         auto client = make_kafka_client().get();
+        auto deferred_close = ss::defer([&client] { client.stop().get(); });
         client.connect().get();
 
         return client.dispatch(std::move(req), kafka::api_version(2)).get();
@@ -97,10 +100,11 @@ public:
                 std::move(client),
                 [f = std::forward<Func>(f)](
                   kafka::client::transport& client) mutable {
-                    return client.connect().then(
-                      [&client, f = std::forward<Func>(f)]() mutable {
+                    return client.connect()
+                      .then([&client, f = std::forward<Func>(f)]() mutable {
                           return f(client);
-                      });
+                      })
+                      .finally([&client] { return client.stop(); });
                 });
           });
     }
@@ -272,7 +276,8 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
                       return p->raft()
                         ->replicate(
                           chunked_vector<model::record_batch>(
-                            std::move(batches)),
+                            std::from_range,
+                            std::move(batches) | std::views::as_rvalue),
                           raft::replicate_options(
                             raft::consistency_level::quorum_ack))
                         .then([p](auto) { return p->committed_offset(); });

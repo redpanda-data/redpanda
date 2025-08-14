@@ -8,7 +8,6 @@ redpanda_test_cc_library(
     hdrs = [
         "fake_registry.h",
     ],
-    include_prefix = "schema/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",

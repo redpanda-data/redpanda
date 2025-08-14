@@ -33,7 +33,7 @@ using namespace std::chrono_literals;
 #define RPTEST_REQUIRE_EVENTUALLY_CORO(...)                                    \
     do {                                                                       \
         try {                                                                  \
-            co_await tests::cooperative_spin_wait_with_timeout(__VA_ARGS__);   \
+            co_await ::tests::cooperative_spin_wait_with_timeout(__VA_ARGS__); \
         } catch (const ss::timed_out_error&) {                                 \
             RPTEST_FAIL_CORO(                                                  \
               ssx::sformat("Timed out at {}:{}", __FILE__, __LINE__));         \
@@ -44,7 +44,7 @@ using namespace std::chrono_literals;
 #define RPTEST_REQUIRE_EVENTUALLY(...)                                         \
     do {                                                                       \
         try {                                                                  \
-            tests::cooperative_spin_wait_with_timeout(__VA_ARGS__).get();      \
+            ::tests::cooperative_spin_wait_with_timeout(__VA_ARGS__).get();    \
         } catch (const ss::timed_out_error&) {                                 \
             RPTEST_FAIL(                                                       \
               ssx::sformat("Timed out at {}:{}", __FILE__, __LINE__));         \

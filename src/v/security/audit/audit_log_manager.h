@@ -138,6 +138,70 @@ public:
           std::vector<model::topic>());
     }
 
+    bool enqueue_authz_audit_event(
+      event_type event_type,
+      std::string_view svc_name,
+      ss::httpd::const_req req,
+      std::string_view operation_name,
+      security::auth_result&& result) {
+        if (auto val = should_enqueue_audit_event(event_type, result.principal);
+            val.has_value()) {
+            return (bool)*val;
+        }
+        return do_enqueue_audit_event<api_activity>(
+          svc_name, req, operation_name, std::move(result));
+    }
+
+    bool enqueue_authz_audit_event(
+      event_type event_type,
+      std::string_view svc_name,
+      ss::httpd::const_req req,
+      std::string_view operation_name,
+      const request_auth_result& auth_result,
+      bool is_authorized,
+      security::acl_operation operation,
+      std::optional<std::string_view> reason) {
+        if (auto val = should_enqueue_audit_event(
+              event_type, auth_result.get_username());
+            val.has_value()) {
+            return (bool)*val;
+        }
+        return do_enqueue_audit_event<api_activity>(
+          svc_name,
+          req,
+          operation_name,
+          auth_result,
+          is_authorized,
+          operation,
+          reason,
+          chunked_vector<resource_detail>{});
+    }
+
+    bool enqueue_authz_audit_event(
+      event_type event_type,
+      std::string_view svc_name,
+      ss::httpd::const_req req,
+      std::string_view operation_name,
+      const request_auth_result& auth_result,
+      bool is_authorized,
+      security::acl_operation operation,
+      chunked_vector<resource_detail>&& resources) {
+        if (auto val = should_enqueue_audit_event(
+              event_type, auth_result.get_username());
+            val.has_value()) {
+            return (bool)*val;
+        }
+        return do_enqueue_audit_event<api_activity>(
+          svc_name,
+          req,
+          operation_name,
+          auth_result,
+          is_authorized,
+          operation,
+          std::nullopt,
+          std::move(resources));
+    }
+
     bool enqueue_authn_event(authentication_event_options options) {
         if (auto val = should_enqueue_audit_event(
               event_type::authenticate, options.user);
@@ -243,6 +307,8 @@ private:
 
     template<InheritsFromOCSFBase T, typename... Args>
     bool do_enqueue_audit_event(Args&&... args) {
+        static constexpr auto rate_limit = std::chrono::seconds(5);
+        static thread_local ss::logger::rate_limit rate(rate_limit);
         auto& map = _queue.get<underlying_unordered_map>();
         const auto hash_key = T::hash(args...);
         auto it = map.find(hash_key);
@@ -260,6 +326,17 @@ private:
                   msg_size,
                   _queue_bytes_sem.available_units());
                 probe().audit_error();
+                if (
+                  _audit_log_reject_policy()
+                  == config::audit_failure_policy::permit) {
+                    vloglr(
+                      adtlog,
+                      ss::log_level::warn,
+                      rate,
+                      "Audit event {} dropped due to full queue",
+                      *msg);
+                    return true;
+                }
                 return false;
             }
             auto& list = _queue.get<underlying_list>();
@@ -354,6 +431,7 @@ private:
 
     /// configuration options
     config::binding<bool> _audit_enabled;
+    config::binding<config::audit_failure_policy> _audit_log_reject_policy;
     config::binding<std::chrono::milliseconds> _queue_drain_interval_ms;
     config::binding<std::vector<ss::sstring>> _audit_event_types;
     size_t _max_queue_size_bytes;

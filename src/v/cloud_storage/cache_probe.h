@@ -11,7 +11,6 @@
 #pragma once
 
 #include "metrics/metrics.h"
-#include "model/fundamental.h"
 
 #include <seastar/core/metrics_registration.hh>
 

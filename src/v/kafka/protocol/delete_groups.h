@@ -38,6 +38,7 @@ struct delete_groups_response final {
     using api_type = delete_groups_api;
 
     delete_groups_response_data data;
+    delete_groups_response() = default;
 
     explicit delete_groups_response(
       std::vector<deletable_group_result> results) {

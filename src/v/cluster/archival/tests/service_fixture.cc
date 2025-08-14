@@ -489,7 +489,7 @@ void segment_matcher<Fixture>::verify_manifest(
         auto base = s->offsets().get_base_offset();
         auto comm = s->offsets().get_committed_offset();
         auto size = s->size_bytes();
-        auto comp = s->finished_self_compaction();
+        auto comp = s->has_self_compact_timestamp();
         auto m = man.get(sname);
         BOOST_REQUIRE(m.has_value());
         BOOST_REQUIRE_EQUAL(base, m->base_offset);
@@ -547,7 +547,8 @@ void populate_log(storage::disk_log_builder& b, const log_spec& spec) {
       | storage::add_random_batch(*first, spec.last_segment_num_records);
 
     for (auto i : spec.compacted_segment_indices) {
-        b.get_segment(i).mark_as_finished_self_compaction();
+        b.get_segment(i).index().maybe_set_self_compact_timestamp(
+          model::timestamp::now());
         b.get_segment(i).mark_as_finished_windowed_compaction();
     }
 }

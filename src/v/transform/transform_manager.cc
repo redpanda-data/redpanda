@@ -10,7 +10,6 @@
  */
 #include "transform_manager.h"
 
-#include "absl/algorithm/container.h"
 #include "absl/container/btree_map.h"
 #include "absl/container/btree_set.h"
 #include "base/vassert.h"

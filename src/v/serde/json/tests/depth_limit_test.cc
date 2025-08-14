@@ -14,7 +14,7 @@
 
 #include <gtest/gtest.h>
 
-using namespace experimental::serde::json;
+using namespace serde::json;
 
 namespace {
 
@@ -85,7 +85,7 @@ TEST_CORO(depth_limit_test, default_depth_limit) {
     auto buf = iobuf{};
     buf.append(json_str.data(), json_str.size());
 
-    auto parser = experimental::serde::json::parser(std::move(buf));
+    auto parser = serde::json::parser(std::move(buf));
 
     size_t token_count = 0;
     while (co_await parser.next()) {
@@ -102,7 +102,7 @@ TEST_CORO(depth_limit_test, default_depth_limit_exceeded) {
     auto buf = iobuf{};
     buf.append(json_str.data(), json_str.size());
 
-    auto parser = experimental::serde::json::parser(std::move(buf));
+    auto parser = serde::json::parser(std::move(buf));
 
     while (co_await parser.next()) {
         // Continue parsing until error.
@@ -118,7 +118,7 @@ TEST_CORO(depth_limit_test, array_depth_limit_exceeded) {
     buf.append(json_str.data(), json_str.size());
 
     auto config = parser_config{.max_depth = depth_limit};
-    auto parser = experimental::serde::json::parser(std::move(buf), config);
+    auto parser = serde::json::parser(std::move(buf), config);
 
     while (co_await parser.next()) {
         // Continue parsing until error.
@@ -134,7 +134,7 @@ TEST_CORO(depth_limit_test, object_depth_limit_exceeded) {
     buf.append(json_str.data(), json_str.size());
 
     auto config = parser_config{.max_depth = depth_limit};
-    auto parser = experimental::serde::json::parser(std::move(buf), config);
+    auto parser = serde::json::parser(std::move(buf), config);
 
     while (co_await parser.next()) {
         // Continue parsing until error.
@@ -150,7 +150,7 @@ TEST_CORO(depth_limit_test, mixed_depth_limit_exceeded) {
     buf.append(json_str.data(), json_str.size());
 
     auto config = parser_config{.max_depth = depth_limit};
-    auto parser = experimental::serde::json::parser(std::move(buf), config);
+    auto parser = serde::json::parser(std::move(buf), config);
 
     while (co_await parser.next()) {
         // Continue parsing until error.
@@ -166,7 +166,7 @@ TEST_CORO(depth_limit_test, zero_depth_limit) {
     buf.append(json_str.data(), json_str.size());
 
     auto config = parser_config{.max_depth = depth_limit};
-    auto parser = experimental::serde::json::parser(std::move(buf), config);
+    auto parser = serde::json::parser(std::move(buf), config);
 
     while (co_await parser.next()) {
         // Continue parsing until error.

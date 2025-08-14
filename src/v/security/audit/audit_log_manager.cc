@@ -17,6 +17,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/security_frontend.h"
 #include "config/configuration.h"
+#include "config/types.h"
 #include "kafka/client/client.h"
 #include "kafka/client/config_utils.h"
 #include "kafka/data/record_batcher.h"
@@ -32,7 +33,7 @@
 #include "security/audit/schemas/types.h"
 #include "security/audit/schemas/utils.h"
 #include "security/ephemeral_credential_store.h"
-#include "storage/parser_utils.h"
+#include "ssx/semaphore.h"
 #include "utils/retry.h"
 
 #include <seastar/core/loop.hh>
@@ -40,6 +41,7 @@
 #include <seastar/core/smp.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 
@@ -101,8 +103,12 @@ public:
     ss::future<> shutdown();
 
     /// Produces to the audit topic partition specified with each batch.
-    /// Blocks if semaphore is exhausted.
-    ss::future<> produce(chunked_vector<partition_batch>, audit_probe&);
+    /// Blocks if semaphore is exhausted, or until the timeout expires, if one
+    /// is provided
+    ss::future<> produce(
+      chunked_vector<partition_batch>,
+      audit_probe&,
+      std::optional<ss::timer<>::duration> timeout = std::nullopt);
 
     /// Returns true if the configuration phase has completed which includes:
     /// - Connecting to the broker(s) w/ ephemeral creds
@@ -111,8 +117,11 @@ public:
     bool is_initialized() const { return _is_initialized; }
 
 private:
-    ss::future<>
-    do_produce(model::record_batch, model::partition_id, audit_probe&);
+    ss::future<> do_produce(
+      model::record_batch,
+      model::partition_id,
+      audit_probe&,
+      ss::timer<>::time_point timeout = ss::timer<>::time_point::max());
     ss::future<> update_status(kafka::error_code);
     ss::future<> update_status(kafka::produce_response);
     ss::future<> configure();
@@ -158,7 +167,9 @@ public:
     /// Produce to the audit topic within the context of the internal locks,
     /// ensuring toggling of the audit master switch happens in lock step with
     /// calls to produce()
-    ss::future<> produce(chunked_vector<partition_batch> records);
+    ss::future<> produce(
+      chunked_vector<partition_batch> records,
+      std::optional<ss::timer<>::duration> timeout = std::nullopt);
 
     /// Allocates and connects, or deallocates and shuts down the audit client
     void toggle(bool enabled);
@@ -492,7 +503,9 @@ ss::future<> audit_client::shutdown() {
 }
 
 ss::future<> audit_client::produce(
-  chunked_vector<partition_batch> records, audit_probe& probe) {
+  chunked_vector<partition_batch> records,
+  audit_probe& probe,
+  std::optional<ss::timer<>::duration> timeout) {
     auto total_size = absl::c_accumulate(
       records, size_t{0}, [](size_t acc, const partition_batch& b) {
           return acc + b.batch.size_bytes();
@@ -504,9 +517,11 @@ ss::future<> audit_client::produce(
       records.size(),
       total_size);
 
-    auto reserved = co_await ss::get_units(_send_sem, total_size);
+    auto timepoint = timeout.has_value() ? ss::timer<>::clock::now() + *timeout
+                                         : ss::timer<>::time_point::max();
+    auto reserved = co_await ss::get_units(_send_sem, total_size, timepoint);
 
-    absl::c_for_each(records, [&reserved](partition_batch& pb) {
+    std::ranges::for_each(records, [&reserved](partition_batch& pb) {
         try {
             pb.send_units.emplace(reserved.split(pb.batch.size_bytes()));
         } catch (const std::invalid_argument& e) {
@@ -533,18 +548,24 @@ ss::future<> audit_client::produce(
           [this,
            &probe,
            max_concurrency,
-           records = std::move(records)]() mutable {
+           records = std::move(records),
+           timepoint]() mutable {
               return ss::do_with(
                 std::move(records),
-                [this, &probe, max_concurrency](auto& records) mutable {
+                timepoint,
+                [this, &probe, max_concurrency](
+                  auto& records, ss::timer<>::time_point& timeout) mutable {
                     return ss::max_concurrent_for_each(
                       std::make_move_iterator(records.begin()),
                       std::make_move_iterator(records.end()),
                       max_concurrency,
-                      [this,
-                       &probe](partition_batch rec) mutable -> ss::future<> {
+                      [this, &probe, &timeout](
+                        partition_batch rec) mutable -> ss::future<> {
                           return do_produce(
-                                   std::move(rec.batch), rec.pid, probe)
+                                   std::move(rec.batch),
+                                   rec.pid,
+                                   probe,
+                                   timeout)
                             .finally([units = std::move(rec.send_units)] {});
                       });
                 });
@@ -558,12 +579,15 @@ ss::future<> audit_client::produce(
 }
 
 ss::future<> audit_client::do_produce(
-  model::record_batch batch, model::partition_id pid, audit_probe& probe) {
+  model::record_batch batch,
+  model::partition_id pid,
+  audit_probe& probe,
+  ss::timer<>::time_point timeout) {
     // Effectively retry forever, but start a fresh request from batch data held
     // in memory when each produce_record_batch's retries are exhausted. This
     // way the kafka client should periodically refresh its internal metadata.
     std::optional<kafka::error_code> ec;
-    while (!_as.abort_requested()) {
+    while (!_as.abort_requested() && ss::timer<>::clock::now() < timeout) {
         auto r = co_await _client.produce_record_batch(
           model::topic_partition{model::kafka_audit_logging_topic, pid},
           batch.copy());
@@ -617,11 +641,13 @@ audit_sink::update_auth_status(auth_misconfigured_t auth_misconfigured) {
       });
 }
 
-ss::future<> audit_sink::produce(chunked_vector<partition_batch> records) {
+ss::future<> audit_sink::produce(
+  chunked_vector<partition_batch> records,
+  std::optional<ss::timer<>::duration> timeout) {
     /// No locks/gates since the calls to this method are done in controlled
     /// context of other synchronization primitives
     vassert(_client, "produce() called on a null client");
-    co_await _client->produce(std::move(records), _audit_mgr->probe());
+    co_await _client->produce(std::move(records), _audit_mgr->probe(), timeout);
 }
 
 ss::future<> audit_sink::publish_app_lifecycle_event(
@@ -640,7 +666,22 @@ ss::future<> audit_sink::publish_app_lifecycle_event(
             .make_batch_of_one(std::nullopt, std::move(b));
     chunked_vector<partition_batch> rs;
     rs.emplace_back(_audit_mgr->compute_partition_id(), std::move(batch));
-    co_await produce(std::move(rs));
+    // If the audit log reject policy is set to drop, then we will call produce
+    // with a 5s timeout.  This is to prevent the audit log from blocking either
+    // the Redpanda startup or shutdown process.  If the policy is set to
+    // reject, then no timeout is set
+    auto timeout = _audit_mgr->_audit_log_reject_policy()
+                       == config::audit_failure_policy::permit
+                     ? std::make_optional(5s)
+                     : std::nullopt;
+    try {
+        co_await produce(std::move(rs), timeout);
+    } catch (ss::semaphore_timed_out& e) {
+        vlog(
+          adtlog.error,
+          "Failed to produce application lifecycle event: {}",
+          e.what());
+    }
 }
 
 void audit_sink::toggle(bool enabled) {
@@ -726,6 +767,8 @@ audit_log_manager::audit_log_manager(
   kafka::client::configuration& client_config,
   ss::sharded<cluster::metadata_cache>* metadata_cache)
   : _audit_enabled(config::shard_local_cfg().audit_enabled.bind())
+  , _audit_log_reject_policy(
+      config::shard_local_cfg().audit_failure_policy.bind())
   , _queue_drain_interval_ms(
       config::shard_local_cfg().audit_queue_drain_interval_ms.bind())
   , _audit_event_types(
@@ -998,7 +1041,10 @@ audit_log_manager::should_enqueue_audit_event() const {
     if (_as.abort_requested()) {
         /// Prevent auditing new messages when shutdown starts that way the
         /// queue may be entirely flushed before shutdown
-        return std::make_optional(audit_event_passthrough::no);
+        return std::make_optional(
+          _audit_log_reject_policy() == config::audit_failure_policy::reject
+            ? audit_event_passthrough::no
+            : audit_event_passthrough::yes);
     }
     const auto& feature_table = _controller->get_feature_table();
     if (!feature_table.local().is_active(features::feature::audit_logging)) {
@@ -1016,7 +1062,10 @@ audit_log_manager::should_enqueue_audit_event() const {
         vlog(
           adtlog.warn,
           "Audit message rejected due to misconfigured authorization");
-        return std::make_optional(audit_event_passthrough::no);
+        return std::make_optional(
+          _audit_log_reject_policy() == config::audit_failure_policy::reject
+            ? audit_event_passthrough::no
+            : audit_event_passthrough::yes);
     }
     return std::nullopt;
 }
@@ -1032,12 +1081,21 @@ audit_log_manager::should_enqueue_audit_event(
     return should_enqueue_audit_event();
 }
 
+namespace {
+bool is_ignored_ephemeral_user(const security::acl_principal& principal) {
+    return principal == security::audit_principal
+           || principal == security::schema_registry_principal;
+}
+} // namespace
+
 std::optional<audit_log_manager::audit_event_passthrough>
 audit_log_manager::should_enqueue_audit_event(
   event_type type,
   const security::acl_principal& principal,
   ignore_enabled_events ignore_events) const {
-    if (_audit_excluded_principals.contains(principal)) {
+    if (
+      _audit_excluded_principals.contains(principal)
+      || is_ignored_ephemeral_user(principal)) {
         return std::make_optional(audit_event_passthrough::yes);
     }
 
@@ -1063,8 +1121,12 @@ audit_log_manager::should_enqueue_audit_event(
 std::optional<audit_log_manager::audit_event_passthrough>
 audit_log_manager::should_enqueue_audit_event(
   event_type type, const security::audit::user& user) const {
+    auto principal_type = user.type_id == audit::user::type::system
+                            ? security::principal_type::ephemeral_user
+                            : security::principal_type::user;
+
     return should_enqueue_audit_event(
-      type, security::acl_principal{security::principal_type::user, user.name});
+      type, security::acl_principal{principal_type, user.name});
 }
 
 std::optional<audit_log_manager::audit_event_passthrough>

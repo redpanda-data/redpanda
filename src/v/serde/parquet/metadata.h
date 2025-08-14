@@ -27,7 +27,7 @@
 
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "hashing/crc32.h"
 #include "serde/parquet/flattened_schema.h"
 #include "serde/parquet/schema.h"

@@ -261,4 +261,16 @@ enum class scram_mechanism : int8_t {
 
 std::ostream& operator<<(std::ostream& os, scram_mechanism);
 
+using topic_authorized_operations
+  = named_type<int32_t, struct topic_authorized_operations_tag>;
+
+inline constexpr topic_authorized_operations
+  topic_authorized_operations_not_set(-2147483648);
+
+using cluster_authorized_operations
+  = named_type<int32_t, struct cluster_authorized_operations_tag>;
+
+inline constexpr cluster_authorized_operations
+  cluster_authorized_operations_not_set(-2147483648);
+
 } // namespace kafka

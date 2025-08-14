@@ -9,7 +9,6 @@
  */
 #pragma once
 
-#include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_map.h"
 #include "base/oncore.h"
 #include "base/outcome.h"
@@ -28,6 +27,7 @@
 
 #include <boost/algorithm/string/split.hpp>
 
+#include <algorithm>
 #include <iosfwd>
 #include <optional>
 #include <string_view>
@@ -179,7 +179,7 @@ public:
         // Perform a quick check that this could be a valid JWS.
         // I.e., it's not an unsecured JWT (2 dots, empty signature) or a JWE (4
         // dots)
-        if (encoded.ends_with('.') || absl::c_count(encoded, '.') != 2) {
+        if (encoded.ends_with('.') || std::ranges::count(encoded, '.') != 2) {
             return errc::jws_invalid_parts;
         }
         return jws{std::move(encoded)};
@@ -278,7 +278,7 @@ public:
         if (!it->value.IsArray()) {
             return false;
         }
-        return absl::c_any_of(it->value.GetArray(), is_aud);
+        return std::ranges::any_of(it->value.GetArray(), is_aud);
     }
 
     // Retrieve the Expiration Time Claim as a Clock::time_point

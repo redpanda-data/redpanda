@@ -9,7 +9,7 @@
 
 #include "absl/container/btree_map.h"
 #include "base/vlog.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/namespace.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
@@ -58,9 +58,9 @@ static model::record_batch make_random_batch(
     return std::move(builder).build();
 }
 
-static fragmented_vector<model::record_batch>
+static chunked_vector<model::record_batch>
 generate_random_record_batches(int num, int cardinality) {
-    fragmented_vector<model::record_batch> result;
+    chunked_vector<model::record_batch> result;
     std::vector<std::optional<ss::sstring>> keys;
     std::vector<std::optional<ss::sstring>> values;
     std::vector<model::record_batch_type> types{
@@ -126,7 +126,7 @@ struct ot_state_consumer {
 /// segment arrangement. The arrangement is defined
 /// by the set of segment base offset values.
 ss::future<ot_state> arrange_and_compact(
-  const fragmented_vector<model::record_batch>& batches,
+  const chunked_vector<model::record_batch>& batches,
   std::deque<model::offset> arrangement,
   bool simulate_internal_topic_compaction = false) {
     std::sort(arrangement.begin(), arrangement.end());
@@ -147,7 +147,8 @@ ss::future<ot_state> arrange_and_compact(
     co_await b1.start(log_ntp);
 
     // Must initialize translator state.
-    co_await b1.get_disk_log_impl().start(std::nullopt);
+    ss::abort_source as;
+    co_await b1.get_disk_log_impl().start(std::nullopt, as);
 
     try {
         for (const auto& b : batches) {
@@ -158,9 +159,8 @@ ss::future<ot_state> arrange_and_compact(
                 co_await b1.get_disk_log_impl().force_roll();
             }
         }
-        ss::abort_source as;
-        auto compact_cfg = storage::compaction_config(
-          batches.back().last_offset(), std::nullopt, as);
+        auto compact_cfg = compaction::compaction_config(
+          batches.back().last_offset(), std::nullopt, std::nullopt, as);
         std::ignore = co_await b1.apply_sliding_window_compaction(compact_cfg);
         co_await b1.apply_adjacent_merge_compaction(compact_cfg);
     } catch (...) {
@@ -185,7 +185,7 @@ ss::future<ot_state> arrange_and_compact(
 /// This function generates random alignment based on the set of batches
 /// that will be written into the log.
 std::deque<model::offset> generate_random_arrangement(
-  const fragmented_vector<model::record_batch>& batches, size_t num_segments) {
+  const chunked_vector<model::record_batch>& batches, size_t num_segments) {
     EXPECT_LE(num_segments, batches.size());
     std::deque<model::offset> arr;
     // User reservoir sample to produce num_segments

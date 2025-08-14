@@ -15,7 +15,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "base/outcome.h"
 #include "cluster/errc.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
@@ -32,8 +32,6 @@ struct transformed_topic_data
       transformed_topic_data,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     transformed_topic_data() = default;
     transformed_topic_data(model::topic_partition, model::record_batch);
     transformed_topic_data(
@@ -52,8 +50,6 @@ struct transformed_topic_data
 struct produce_request
   : serde::
       envelope<produce_request, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     produce_request() = default;
     produce_request(
       ss::chunked_fifo<transformed_topic_data> topic_data,
@@ -91,8 +87,6 @@ struct transformed_topic_data_result
 struct produce_reply
   : serde::
       envelope<produce_reply, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     produce_reply() = default;
     explicit produce_reply(ss::chunked_fifo<transformed_topic_data_result> r)
       : results(std::move(r)) {}
@@ -109,8 +103,6 @@ struct store_wasm_binary_request
       store_wasm_binary_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     store_wasm_binary_request() = default;
     explicit store_wasm_binary_request(
       model::wasm_binary_iobuf d, model::timeout_clock::duration t)
@@ -131,8 +123,6 @@ struct stored_wasm_binary_metadata
       stored_wasm_binary_metadata,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     stored_wasm_binary_metadata() = default;
     stored_wasm_binary_metadata(uuid_t k, model::offset o)
       : key(k)
@@ -152,8 +142,6 @@ struct store_wasm_binary_reply
       store_wasm_binary_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     store_wasm_binary_reply() = default;
     explicit store_wasm_binary_reply(
       cluster::errc e, stored_wasm_binary_metadata s)
@@ -174,8 +162,6 @@ struct delete_wasm_binary_request
       delete_wasm_binary_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     delete_wasm_binary_request() = default;
     explicit delete_wasm_binary_request(
       uuid_t k, model::timeout_clock::duration t)
@@ -196,8 +182,6 @@ struct delete_wasm_binary_reply
       store_wasm_binary_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     delete_wasm_binary_reply() = default;
     explicit delete_wasm_binary_reply(cluster::errc e)
       : ec(e) {}
@@ -215,8 +199,6 @@ struct load_wasm_binary_request
       store_wasm_binary_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     load_wasm_binary_request() = default;
     explicit load_wasm_binary_request(
       model::offset o, model::timeout_clock::duration t)
@@ -237,8 +219,6 @@ struct load_wasm_binary_reply
       store_wasm_binary_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     load_wasm_binary_reply() = default;
     explicit load_wasm_binary_reply(cluster::errc e, model::wasm_binary_iobuf b)
       : ec(e)
@@ -258,8 +238,6 @@ struct find_coordinator_request
       find_coordinator_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     find_coordinator_request() = default;
 
     void add(model::transform_offsets_key key) { keys.insert(key); }
@@ -277,8 +255,6 @@ struct find_coordinator_response
       find_coordinator_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     find_coordinator_response() = default;
 
     absl::flat_hash_map<model::transform_offsets_key, model::partition_id>
@@ -296,8 +272,6 @@ struct offset_commit_request
       offset_commit_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     offset_commit_request() = default;
     explicit offset_commit_request(
       model::partition_id c,
@@ -323,8 +297,6 @@ struct offset_commit_response
       offset_commit_response,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     offset_commit_response() = default;
     explicit offset_commit_response(cluster::errc e)
       : errc(e) {}
@@ -342,8 +314,6 @@ struct offset_fetch_request
       offset_commit_response,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     offset_fetch_request() = default;
     offset_fetch_request(model::transform_offsets_key k, model::partition_id c)
       : coordinator(c)
@@ -367,8 +337,6 @@ struct offset_fetch_response
       offset_commit_response,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     offset_fetch_response() = default;
 
     absl::flat_hash_map<
@@ -388,8 +356,6 @@ struct generate_report_request
       generate_report_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     generate_report_request() = default;
 
     auto serde_fields() { return std::tie(); }
@@ -403,8 +369,6 @@ struct generate_report_reply
       generate_report_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     generate_report_reply() = default;
     explicit generate_report_reply(model::cluster_transform_report r)
       : report(std::move(r)) {}
@@ -422,8 +386,6 @@ struct list_commits_request
       list_commits_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     list_commits_request() = default;
     explicit list_commits_request(model::partition_id partition)
       : partition(partition) {}
@@ -440,8 +402,6 @@ struct list_commits_reply
       list_commits_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     list_commits_reply() = default;
     explicit list_commits_reply(
       cluster::errc ec, model::transform_offsets_map m)
@@ -467,8 +427,6 @@ struct delete_commits_request
       delete_commits_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     delete_commits_request() = default;
     delete_commits_request(
       model::partition_id partition, absl::btree_set<model::transform_id> ids)
@@ -493,8 +451,6 @@ struct delete_commits_reply
       delete_commits_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     delete_commits_reply() = default;
 
     auto serde_fields() { return std::tie(errc); }

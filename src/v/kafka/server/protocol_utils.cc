@@ -25,7 +25,7 @@ namespace {
 struct header_parsing_error_utf8 : public default_control_character_thrower {
     using default_control_character_thrower::default_control_character_thrower;
 
-    [[noreturn]] [[gnu::cold]] void conversion_error() override {
+    [[noreturn]] [[gnu::cold]] void conversion_error() const override {
         throw invalid_utf8_exception("Invalid UTF8 in header");
     }
 };
@@ -33,7 +33,7 @@ struct header_parsing_error_utf8 : public default_control_character_thrower {
 struct header_parsing_error_control : public default_control_character_thrower {
     using default_control_character_thrower::default_control_character_thrower;
 
-    [[noreturn]] [[gnu::cold]] void conversion_error() override {
+    [[noreturn]] [[gnu::cold]] void conversion_error() const override {
         throw control_character_present_exception(
           "Control character in header");
     }

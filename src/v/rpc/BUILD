@@ -39,7 +39,6 @@ redpanda_cc_library(
         "transport.h",
         "types.h",
     ],
-    include_prefix = "rpc",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -48,6 +47,7 @@ redpanda_cc_library(
         "//src/v/bytes:scattered_message",
         "//src/v/compression",
         "//src/v/config",
+        "//src/v/container:chunked_hash_map",
         "//src/v/hashing:crc32c",
         "//src/v/hashing:xx",
         "//src/v/metrics",

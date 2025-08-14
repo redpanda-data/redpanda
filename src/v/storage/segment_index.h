@@ -126,7 +126,9 @@ public:
       std::optional<ntp_sanitizer_config> sanitizer_config,
       std::optional<model::timestamp> broker_timestamp = std::nullopt,
       std::optional<model::timestamp> clean_compact_timestamp = std::nullopt,
-      bool may_have_tombstone_records = true);
+      bool may_have_tombstone_records = true,
+      std::optional<model::timestamp> self_compact_timestamp = std::nullopt,
+      bool has_transaction_batches = true);
 
     ~segment_index() noexcept = default;
     segment_index(segment_index&&) noexcept = default;
@@ -199,7 +201,7 @@ public:
         return retention_timestamp(cfg);
     }
 
-    // Check if compacted timestamp has a value.
+    // Check if clean compacted timestamp has a value.
     bool has_clean_compact_timestamp() const {
         return _state.clean_compact_timestamp.has_value();
     }
@@ -216,7 +218,7 @@ public:
         return false;
     }
 
-    // Get the compacted timestamp.
+    // Get the cleanly compacted timestamp.
     std::optional<model::timestamp> clean_compact_timestamp() const {
         return _state.clean_compact_timestamp;
     }
@@ -230,6 +232,39 @@ public:
 
     bool may_have_tombstone_records() const {
         return _state.may_have_tombstone_records;
+    }
+
+    // Check if self compacted timestamp has a value.
+    bool has_self_compact_timestamp() const {
+        return _state.self_compact_timestamp.has_value();
+    }
+
+    // Set the compacted timestamp, if it doesn't already have a value.
+    // Returns a boolean indicating whether the clean compact timestamp was set
+    // or not.
+    bool maybe_set_self_compact_timestamp(model::timestamp t) {
+        if (!_state.self_compact_timestamp.has_value()) {
+            _state.self_compact_timestamp = t;
+            _needs_persistence = true;
+            return true;
+        }
+        return false;
+    }
+
+    // Get the self compacted timestamp.
+    std::optional<model::timestamp> self_compact_timestamp() const {
+        return _state.self_compact_timestamp;
+    }
+
+    void set_has_transaction_batches(bool b) {
+        if (_state.has_transaction_batches != b) {
+            _needs_persistence = true;
+        }
+        _state.has_transaction_batches = b;
+    }
+
+    bool has_transaction_batches() const {
+        return _state.has_transaction_batches;
     }
 
     ss::future<bool> materialize_index();

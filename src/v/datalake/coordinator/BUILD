@@ -6,7 +6,6 @@ package(default_visibility = ["//src/v/datalake/coordinator:__subpackages__"])
 redpanda_cc_rpc_library(
     name = "generated_datalake_coordinator_rpc",
     src = "rpc.json",
-    include_prefix = "datalake/coordinator",
 )
 
 redpanda_cc_library(
@@ -21,7 +20,6 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf_parser",
         "//src/v/json",
     ],
-    include_prefix = "datalake/coordinator",
     deps = [
         "//src/v/base",
         "//src/v/model",
@@ -51,7 +49,6 @@ redpanda_cc_library(
         "//src/v/ssx:sleep_abortable",
         "//src/v/storage:record_batch_builder",
     ],
-    include_prefix = "datalake/coordinator",
     deps = [
         ":file_committer",
         ":snapshot_remover",
@@ -59,7 +56,7 @@ redpanda_cc_library(
         ":stm",
         "//src/v/cluster",
         "//src/v/config",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/model",
         "@abseil-cpp//absl/hash",
         "@seastar",
@@ -92,7 +89,6 @@ redpanda_cc_library(
         "//src/v/storage",
         "//src/v/storage:record_batch_builder",
     ],
-    include_prefix = "datalake/coordinator",
     visibility = ["//visibility:public"],
     deps = [
         ":catalog_factory",
@@ -136,7 +132,6 @@ redpanda_cc_library(
         "@abseil-cpp//absl/strings",
         "@ada",
     ],
-    include_prefix = "datalake/coordinator",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cloud_io:remote",
@@ -156,7 +151,6 @@ redpanda_cc_library(
     hdrs = [
         "data_file.h",
     ],
-    include_prefix = "datalake/coordinator",
     visibility = [
         ":__subpackages__",
         "//src/v/datalake:__pkg__",
@@ -164,7 +158,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/bytes",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/serde",
         "//src/v/serde:bytes",
         "@fmt",
@@ -177,11 +171,10 @@ redpanda_cc_library(
     hdrs = [
         "file_committer.h",
     ],
-    include_prefix = "datalake/coordinator",
     deps = [
         ":state_update",
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/iceberg:table_identifier",
         "@seastar",
     ],
@@ -210,12 +203,11 @@ redpanda_cc_library(
         "//src/v/iceberg:values_bytes",
         "//src/v/storage",
     ],
-    include_prefix = "datalake/coordinator",
     deps = [
         ":file_committer",
         ":state_update",
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/iceberg:catalog",
         "//src/v/iceberg:manifest_io",
         "//src/v/iceberg:table_identifier",
@@ -237,7 +229,6 @@ redpanda_cc_library(
         "//src/v/iceberg:manifest_entry",
         "//src/v/iceberg:transaction",
     ],
-    include_prefix = "datalake/coordinator",
     deps = [
         ":snapshot_remover",
         "//src/v/base",
@@ -254,7 +245,6 @@ redpanda_cc_library(
     hdrs = [
         "snapshot_remover.h",
     ],
-    include_prefix = "datalake/coordinator",
     deps = [
         ":state",
         "//src/v/base",
@@ -271,7 +261,6 @@ redpanda_cc_library(
     hdrs = [
         "state.h",
     ],
-    include_prefix = "datalake/coordinator",
     deps = [
         ":translated_offset_range",
         "//src/v/container:chunked_hash_map",
@@ -288,7 +277,6 @@ redpanda_cc_library(
     hdrs = [
         "types.h",
     ],
-    include_prefix = "datalake/coordinator",
     visibility = ["//visibility:public"],
     deps = [
         ":translated_offset_range",
@@ -300,7 +288,7 @@ redpanda_cc_library(
         "//src/v/serde:enum",
         # todo: split writer further once it evolves
         "//src/v/datalake:writer",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/utils:to_string",
     ],
 )
@@ -316,7 +304,6 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/utils:prefix_logger",
     ],
-    include_prefix = "datalake/coordinator",
     visibility = ["//visibility:public"],
     deps = [
         ":model",
@@ -341,12 +328,11 @@ redpanda_cc_library(
     hdrs = [
         "state_update.h",
     ],
-    include_prefix = "datalake/coordinator",
     deps = [
         ":state",
         ":translated_offset_range",
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/serde",
         "//src/v/utils:named_type",
@@ -361,7 +347,6 @@ redpanda_cc_library(
     hdrs = [
         "translated_offset_range.h",
     ],
-    include_prefix = "datalake/coordinator",
     visibility = [
         ":__subpackages__",
         "//src/v/datalake:__pkg__",
@@ -370,7 +355,7 @@ redpanda_cc_library(
     deps = [
         ":data_file",
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/serde",
         "@fmt",
@@ -387,7 +372,6 @@ redpanda_cc_library(
         "frontend.h",
         "service.h",
     ],
-    include_prefix = "datalake/coordinator",
     visibility = ["//visibility:public"],
     deps = [
         ":coordinator",
@@ -398,10 +382,11 @@ redpanda_cc_library(
         ":translated_offset_range",
         "//src/v/base",
         "//src/v/cluster",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/datalake:logger",
         "//src/v/datalake:schema_identifier",
         "//src/v/datalake:types",
+        "//src/v/hashing:murmur",
         "//src/v/model",
         "//src/v/raft",
         "//src/v/rpc",

@@ -11,6 +11,7 @@
 #pragma once
 
 #include "hashing/combine.h"
+#include "security/acl.h"
 #include "security/audit/schemas/hashing_utils.h"
 #include "security/audit/schemas/schemas.h"
 #include "security/audit/schemas/types.h"
@@ -114,6 +115,22 @@ public:
       const ss::sstring& user,
       const ss::sstring& svc_name);
 
+    static size_t hash(
+      std::string_view svc_name,
+      ss::httpd::const_req req,
+      std::string_view operation_name,
+      const auth_result& auth_result);
+
+    static size_t hash(
+      std::string_view svc_name,
+      ss::httpd::const_req req,
+      std::string_view operation_name,
+      const request_auth_result& auth_result,
+      bool is_authorized,
+      security::acl_operation operation,
+      std::optional<std::string_view> reason,
+      const chunked_vector<resource_detail>& resources);
+
     template<typename T>
     static api_activity construct(
       std::string_view operation_name,
@@ -166,6 +183,22 @@ public:
       ss::httpd::const_req req,
       const ss::sstring& user,
       const ss::sstring& svc_name);
+
+    static api_activity construct(
+      std::string_view svc_name,
+      ss::httpd::const_req req,
+      std::string_view operation_name,
+      const auth_result& auth_result);
+
+    static api_activity construct(
+      std::string_view svc_name,
+      ss::httpd::const_req req,
+      std::string_view operation_name,
+      const request_auth_result& auth_result,
+      bool is_authorized,
+      security::acl_operation operation,
+      std::optional<std::string_view> reason,
+      chunked_vector<resource_detail>&& resources);
 
     static constexpr api_activity::activity_id
     op_to_crud(security::acl_operation op) {

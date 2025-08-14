@@ -12,15 +12,15 @@
 #include "serde/protobuf/parser.h"
 
 #include "bytes/iobuf_parser.h"
-#include "utils/vint.h"
+#include "serde/protobuf/wire_format.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/util/variant_utils.hh>
 
 #include <google/protobuf/descriptor.h>
 
 #include <algorithm>
 #include <iterator>
-#include <limits>
 #include <stdexcept>
 #include <type_traits>
 #include <variant>
@@ -28,66 +28,6 @@
 namespace serde::pb {
 
 namespace pb = google::protobuf;
-
-enum class wire_type : uint8_t {
-    variant = 0,
-    i64 = 1,
-    length = 2,
-    group_start = 3,
-    group_end = 4,
-    i32 = 5,
-    max = 5,
-};
-
-struct tag {
-    wire_type wire_type;
-    int32_t field_number;
-};
-
-int32_t decode_zigzag(uint32_t n) {
-    // NOTE: unsigned types prevent undefined behavior
-    return static_cast<int32_t>((n >> 1U) ^ (~(n & 1U) + 1));
-}
-
-enum class zigzag_decode { yes, no };
-
-template<
-  typename T,
-  zigzag_decode NeedsDecoding = std::is_signed_v<T> ? zigzag_decode::yes
-                                                    : zigzag_decode::no>
-T read_varint(iobuf_parser_base& parser) {
-    // Some int32_t types are sign extended in the wire protocol, but the upper
-    // bits get discarded during parsing. If we're in that case then we need to
-    // read all the sign extended bits.
-    constexpr bool sign_extended = std::is_signed_v<T>
-                                   && NeedsDecoding == zigzag_decode::no;
-    constexpr size_t limit = sizeof(T) == 8 || sign_extended ? 10 : 5;
-    auto buf = parser.peek_bytes(std::min(limit, parser.bytes_left()));
-    if constexpr (std::is_same_v<T, uint32_t>) {
-        auto [v, len] = unsigned_vint::detail::deserialize(buf, limit);
-        parser.skip(len);
-        return static_cast<uint32_t>(v);
-    } else if constexpr (std::is_same_v<T, int32_t>) {
-        auto [v, len] = unsigned_vint::detail::deserialize(buf, limit);
-        parser.skip(len);
-        if constexpr (NeedsDecoding == zigzag_decode::yes) {
-            return decode_zigzag(static_cast<uint32_t>(v));
-        }
-        return static_cast<int32_t>(static_cast<uint32_t>(v));
-    } else if constexpr (std::is_same_v<T, uint64_t>) {
-        auto [v, len] = unsigned_vint::detail::deserialize(buf, limit);
-        parser.skip(len);
-        return v;
-    } else {
-        static_assert(std::is_same_v<T, int64_t>);
-        auto [v, len] = unsigned_vint::detail::deserialize(buf, limit);
-        parser.skip(len);
-        if constexpr (NeedsDecoding == zigzag_decode::yes) {
-            return vint::decode_zigzag(v);
-        }
-        return static_cast<int64_t>(v);
-    }
-}
 
 class parser {
     static constexpr int32_t top_level_field_number = -1;
@@ -125,10 +65,10 @@ private:
         // Wrap in ss::repeat so that preemption is possible for big/complex
         // protocol buffers
         return ss::repeat([this] {
-            auto tag = read_tag();
+            auto tag = tag::read(&current_->parser);
             switch (tag.wire_type) {
-            case wire_type::variant:
-                read_variant_field(tag.field_number);
+            case wire_type::varint:
+                read_varint_field(tag.field_number);
                 break;
             case wire_type::i64:
                 read_fixed64_field(tag.field_number);
@@ -150,49 +90,49 @@ private:
         });
     }
 
-    void read_variant_field(int32_t field_number) {
+    void read_varint_field(int32_t field_number) {
         auto* field_descriptor = current_->descriptor->FindFieldByNumber(
           field_number);
         if (field_descriptor == nullptr) {
-            std::ignore = read_varint<uint64_t>(current_->parser);
+            std::ignore = read_varint<uint64_t>(&current_->parser);
             return;
         }
         switch (field_descriptor->type()) {
         case google::protobuf::FieldDescriptor::TYPE_BOOL:
             update_field(
               *field_descriptor,
-              static_cast<bool>(read_varint<int32_t>(current_->parser)));
+              static_cast<bool>(read_varint<int32_t>(&current_->parser)));
             break;
         case google::protobuf::FieldDescriptor::TYPE_ENUM:
             update_field(
               *field_descriptor,
-              static_cast<int32_t>(read_varint<uint64_t>(current_->parser)));
+              static_cast<int32_t>(read_varint<uint64_t>(&current_->parser)));
             break;
         case google::protobuf::FieldDescriptor::TYPE_INT32:
             update_field(
               *field_descriptor,
-              read_varint<int32_t, zigzag_decode::no>(current_->parser));
+              read_varint<int32_t, zigzag::no>(&current_->parser));
             break;
         case google::protobuf::FieldDescriptor::TYPE_SINT32:
             update_field(
-              *field_descriptor, read_varint<int32_t>(current_->parser));
+              *field_descriptor, read_varint<int32_t>(&current_->parser));
             break;
         case google::protobuf::FieldDescriptor::TYPE_UINT32:
             update_field(
-              *field_descriptor, read_varint<uint32_t>(current_->parser));
+              *field_descriptor, read_varint<uint32_t>(&current_->parser));
             break;
         case google::protobuf::FieldDescriptor::TYPE_INT64:
             update_field(
               *field_descriptor,
-              read_varint<int64_t, zigzag_decode::no>(current_->parser));
+              read_varint<int64_t, zigzag::no>(&current_->parser));
             break;
         case google::protobuf::FieldDescriptor::TYPE_SINT64:
             update_field(
-              *field_descriptor, read_varint<int64_t>(current_->parser));
+              *field_descriptor, read_varint<int64_t>(&current_->parser));
             break;
         case google::protobuf::FieldDescriptor::TYPE_UINT64:
             update_field(
-              *field_descriptor, read_varint<uint64_t>(current_->parser));
+              *field_descriptor, read_varint<uint64_t>(&current_->parser));
             break;
         case google::protobuf::FieldDescriptor::TYPE_FIXED32:
         case google::protobuf::FieldDescriptor::TYPE_SFIXED32:
@@ -452,35 +392,9 @@ private:
           &descriptor);
     }
 
-    tag read_tag() {
-        auto tag_value = read_varint<uint64_t>(current_->parser);
-        constexpr uint64_t wire_mask = 0b111;
-        uint64_t wtype = tag_value & wire_mask;
-        if (wtype > static_cast<int64_t>(wire_type::max)) [[unlikely]] {
-            throw std::runtime_error(
-              fmt::format("invalid wire type: {}", wtype));
-        }
-        uint64_t field_number = tag_value >> 3ULL;
-        constexpr auto max_field_number = static_cast<uint64_t>(
-          std::numeric_limits<int32_t>::max());
-        if (field_number > max_field_number || field_number == 0) [[unlikely]] {
-            throw std::runtime_error(
-              fmt::format("invalid field number: {}", field_number));
-        }
-        return {
-          static_cast<wire_type>(wtype), static_cast<int32_t>(field_number)};
-    }
-
     void read_packed_elements(
       const pb::FieldDescriptor& field, size_t amount, auto reader) {
         chunked_vector<std::invoke_result_t<decltype(reader)>> vec;
-        if (amount > current_->parser.bytes_left()) {
-            throw std::runtime_error(fmt::format(
-              "invalid packed field field: (bytes_needed={}, "
-              "bytes_left={})",
-              amount,
-              current_->parser.bytes_left()));
-        }
         auto target = current_->parser.bytes_consumed() + amount;
         while (current_->parser.bytes_consumed() < target) {
             vec.push_back(reader());
@@ -492,11 +406,7 @@ private:
     }
 
     void read_length_field(int32_t field_number) {
-        auto length = read_varint<int32_t, zigzag_decode::no>(current_->parser);
-        if (length < 0) {
-            throw std::runtime_error(
-              fmt::format("invalid length field: (length={})", length));
-        }
+        auto length = read_length(&current_->parser);
         const auto* descriptor = current_->descriptor->FindFieldByNumber(
           field_number);
         if (!descriptor) {
@@ -507,29 +417,27 @@ private:
         case pb::FieldDescriptor::TYPE_BOOL:
             read_packed_elements(*descriptor, length, [this] {
                 return static_cast<bool>(
-                  read_varint<int32_t>(current_->parser));
+                  read_varint<int32_t>(&current_->parser));
             });
             break;
         case pb::FieldDescriptor::TYPE_ENUM:
             read_packed_elements(*descriptor, length, [this] {
-                return read_varint<int32_t, zigzag_decode::no>(
-                  current_->parser);
+                return read_varint<int32_t, zigzag::no>(&current_->parser);
             });
             break;
         case pb::FieldDescriptor::TYPE_INT32:
             read_packed_elements(*descriptor, length, [this] {
-                return read_varint<int32_t, zigzag_decode::no>(
-                  current_->parser);
+                return read_varint<int32_t, zigzag::no>(&current_->parser);
             });
             break;
         case pb::FieldDescriptor::TYPE_SINT32:
             read_packed_elements(*descriptor, length, [this] {
-                return read_varint<int32_t>(current_->parser);
+                return read_varint<int32_t>(&current_->parser);
             });
             break;
         case pb::FieldDescriptor::TYPE_UINT32:
             read_packed_elements(*descriptor, length, [this] {
-                return read_varint<uint32_t>(current_->parser);
+                return read_varint<uint32_t>(&current_->parser);
             });
             break;
         case pb::FieldDescriptor::TYPE_FIXED32:
@@ -544,18 +452,17 @@ private:
             break;
         case pb::FieldDescriptor::TYPE_INT64:
             read_packed_elements(*descriptor, length, [this] {
-                return read_varint<int64_t, zigzag_decode::no>(
-                  current_->parser);
+                return read_varint<int64_t, zigzag::no>(&current_->parser);
             });
             break;
         case pb::FieldDescriptor::TYPE_UINT64:
             read_packed_elements(*descriptor, length, [this] {
-                return read_varint<uint64_t>(current_->parser);
+                return read_varint<uint64_t>(&current_->parser);
             });
             break;
         case pb::FieldDescriptor::TYPE_SINT64:
             read_packed_elements(*descriptor, length, [this] {
-                return read_varint<int64_t>(current_->parser);
+                return read_varint<int64_t>(&current_->parser);
             });
             break;
         case pb::FieldDescriptor::TYPE_FIXED64:

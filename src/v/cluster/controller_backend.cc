@@ -496,12 +496,39 @@ controller_backend::calculate_learner_initial_offset(
      * Initial learner start offset only makes sense for partitions with cloud
      * storage data
      */
+    if (auto tp_cfg = p->get_topic_config();
+        tp_cfg.has_value() && tp_cfg->get().is_internal()) {
+        vlog(clusterlog.trace, "{} is part of an internal topic", p->ntp());
+        return std::nullopt;
+    }
+
     if (!p->cloud_data_available()) {
         vlog(clusterlog.trace, "no cloud data available for: {}", p->ntp());
         return std::nullopt;
     }
 
+    if (p->get_cloud_storage_mode() != cluster::cloud_storage_mode::full) {
+        vlog(
+          clusterlog.trace,
+          "cloud storage not fully enabled for: {}",
+          p->ntp());
+        return std::nullopt;
+    }
+
+    if (
+      config::shard_local_cfg().cloud_storage_enable_segment_uploads()
+      == false) {
+        vlog(clusterlog.trace, "segment uploads are paused");
+        return std::nullopt;
+    }
+
+    if (p->archival_meta_stm() == nullptr) {
+        vlog(clusterlog.trace, "no archival_meta_stm for {}", p->ntp());
+        return std::nullopt;
+    }
+
     auto log = p->log();
+
     /**
      * Calculate retention targets based on cluster and topic configuration
      */
@@ -581,20 +608,38 @@ controller_backend::calculate_learner_initial_offset(
         return std::nullopt;
     }
 
-    const auto max_removable_local_log_offset
-      = p->max_removable_local_log_offset();
+    auto max_removable_local_log_offset = p->max_removable_local_log_offset();
+    auto archival_safe_removable
+      = p->archival_meta_stm()->cloud_recoverable_offset();
+
     /**
      * Last offset uploaded to the cloud is target learner retention upper
      * bound. We can not start retention recover from the point which is not yet
      * uploaded to Cloud Storage.
+     *
+     * In general max_removable_local_log_offset should not exceed
+     * last_uploaded, but can if, for example, archival is disabled or paused.
      */
+
+    if (max_removable_local_log_offset > archival_safe_removable) {
+        vlog(
+          clusterlog.info,
+          "[{}] max_removable_local_log_offset {} exceeds last uploaded to "
+          "cloud {}, clamping to {}",
+          p->ntp(),
+          max_removable_local_log_offset,
+          archival_safe_removable,
+          archival_safe_removable);
+        max_removable_local_log_offset = archival_safe_removable;
+    }
+
     vlog(
       clusterlog.info,
       "[{}] calculated retention offset: {}, last uploaded to cloud: {}, "
       "manifest clean offset: {}, max_removable_local_log_offset: {}",
       p->ntp(),
       *retention_offset,
-      p->archival_meta_stm()->manifest().get_last_offset(),
+      archival_safe_removable,
       p->archival_meta_stm()->get_last_clean_at(),
       max_removable_local_log_offset);
 
@@ -680,6 +725,8 @@ controller_backend::force_replica_set_update(
         // will be cleaned up as a part of update_finished command.
         co_return ss::stop_iteration::yes;
     }
+    auto [voters, learners] = split_voters_learners_for_force_reconfiguration(
+      previous_replicas, new_replicas, initial_replicas_revisions, cmd_rev);
     if (partition->cloud_data_available()) {
         auto last_cloud_offset
           = co_await partition->fetch_latest_cloud_offset_from_manifest(
@@ -695,7 +742,45 @@ controller_backend::force_replica_set_update(
               last_cloud_offset.error());
             co_return last_cloud_offset.error();
         }
-        if (last_cloud_offset.value() > partition->dirty_offset()) {
+
+        vlog(
+          clusterlog.info,
+          "[{}] force-update replica set - last cloud offset {}, dirty offset: "
+          "{}",
+          partition->ntp(),
+          last_cloud_offset.value(),
+          partition->dirty_offset());
+
+        /**
+         * This variable indicates whether the partition can be recovered
+         * by the leader.
+         *
+         * When force reconfiguring partition controller backend decides which
+         * of the new replicas should be added to the partition configuration as
+         * learners. The logic here is relatively simple: if a replica is
+         * already in the replica set (it is the disaster survivor), it is
+         * added to the replica set as a voter serving as a source of truth.
+         * Nodes that join the replica set are added to the configuration as
+         * learners in order to prevent them from reaching a majority and
+         * overcoming the current minority (the survivors).
+         *
+         * After establishing which replicas are learners vs voters the
+         * condition below decides if the survivor should be treated as a
+         * source of truth or if cloud data contains more up to date state.
+         *
+         * If replica dirty offset is greater than last cloud offset it means
+         * that the replica is more up to date, otherwise data in the bucket are
+         * newer and they should be used. This condition should only be verified
+         * if a node is not a learner and can not be recovered from the cloud.
+         * Otherwise all learners would face multiple deletions while being
+         * recovered by the leader as their dirty offset may be smaller than
+         * last cloud offset for a very long time.
+         *
+         */
+        const auto can_be_recovered_by_leader = contains_node(learners, _self);
+        if (
+          !can_be_recovered_by_leader
+          && last_cloud_offset.value() > partition->dirty_offset()) {
             vlog(
               clusterlog.info,
               "[{}] force-update replica set - last cloud offset {} is greater "
@@ -717,8 +802,6 @@ controller_backend::force_replica_set_update(
         }
     }
 
-    auto [voters, learners] = split_voters_learners_for_force_reconfiguration(
-      previous_replicas, new_replicas, initial_replicas_revisions, cmd_rev);
     vlog(
       clusterlog.debug,
       "[{}] force updating replica set with: [voters: {}, learners: {}]",
@@ -1059,6 +1142,15 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
         }
         co_return ss::stop_iteration::no;
     }
+    case shard_placement_table::reconciliation_action::remake: {
+        auto ec = co_await do_remake_partition(ntp);
+
+        if (ec) {
+            co_return ec;
+        }
+
+        co_return ss::stop_iteration::no;
+    }
     case shard_placement_table::reconciliation_action::create:
         // After this point the partition object is expected to exist on current
         // shard, it will be created below.
@@ -1126,6 +1218,20 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
           topic_md->get());
         if (ec) {
             co_return ec;
+        }
+
+        if (
+          placement.current().has_value()
+          && placement.current()->remake_state
+               != shard_placement_table::remake_partition_state::none) {
+            ec = co_await _shard_placement.set_remake_state(
+              ntp,
+              shard_placement_table::remake_partition_state::none,
+              expected_log_revision.value());
+
+            if (ec) {
+                co_return ec;
+            }
         }
 
         // The partition that we just created uses topic properties queried from
@@ -1830,6 +1936,7 @@ ss::future<> controller_backend::transfer_partition_from_extra_shard(
               case reconciliation_action::create:
               case reconciliation_action::transfer:
               case reconciliation_action::wait_for_target_update:
+              case reconciliation_action::remake:
                   vassert(
                     false,
                     "[{}] unexpected reconciliation action, placement: {}",
@@ -2036,6 +2143,79 @@ std::ostream& operator<<(
       op.last_error,
       std::error_code{op.last_error}.message());
     return o;
+}
+
+ss::future<std::error_code>
+controller_backend::do_remake_partition(const model::ntp& ntp) {
+    auto maybe_placement = _shard_placement.state_on_this_shard(ntp);
+
+    if (!maybe_placement.has_value()) {
+        co_return errc::partition_not_exists;
+    }
+
+    auto& current = maybe_placement->current();
+
+    if (!current.has_value()) {
+        co_return errc::waiting_for_shard_placement_update;
+    }
+
+    if (
+      current->remake_state
+      == shard_placement_table::remake_partition_state::none) {
+        co_return errc::waiting_for_shard_placement_update;
+    }
+
+    if (
+      current->remake_state
+      < shard_placement_table::remake_partition_state::deleted) {
+        auto p = _partition_manager.local().get(ntp);
+        if (p) {
+            co_await _partition_manager.local().remove(
+              ntp, partition_removal_mode::local_only);
+        }
+
+        co_await remove_persistent_state(
+          ntp, current->group, _storage.local().kvs());
+    }
+
+    auto ec = co_await _shard_placement.set_remake_state(
+      ntp,
+      shard_placement_table::remake_partition_state::deleted,
+      current->log_revision);
+
+    if (ec) {
+        co_return ec;
+    }
+
+    co_return errc::success;
+}
+
+ss::future<std::error_code>
+controller_backend::remake_partition(const model::ntp& ntp) {
+    auto maybe_placement = _shard_placement.state_on_this_shard(ntp);
+
+    if (!maybe_placement.has_value()) {
+        co_return errc::partition_not_exists;
+    }
+
+    auto& current = maybe_placement->current();
+
+    if (!current.has_value()) {
+        co_return errc::waiting_for_shard_placement_update;
+    }
+
+    auto ec = co_await _shard_placement.set_remake_state(
+      ntp,
+      shard_placement_table::remake_partition_state::initiated,
+      current->log_revision);
+
+    if (ec) {
+        co_return ec;
+    }
+
+    notify_reconciliation(ntp);
+
+    co_return errc::success;
 }
 
 } // namespace cluster

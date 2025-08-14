@@ -1,0 +1,163 @@
+/*
+ * Copyright 2025 Redpanda Data, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+ */
+#pragma once
+
+#include "cloud_topics/frontend/errc.h"
+#include "cloud_topics/level_zero/stm/ctp_stm_api.h"
+#include "model/fundamental.h"
+#include "model/timeout_clock.h"
+#include "raft/types.h"
+#include "storage/translating_reader.h"
+#include "storage/types.h"
+#include "utils/retry_chain_node.h"
+
+#include <seastar/core/abort_source.hh>
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/sharded.hh>
+
+#include <expected>
+#include <optional>
+#include <system_error>
+
+namespace cluster {
+class partition;
+}
+
+namespace experimental::cloud_topics {
+class data_plane_api;
+class ctp_stm_api;
+
+struct replica_info {
+    model::node_id id;
+    kafka::offset high_watermark;
+    kafka::offset log_end_offset;
+    bool is_alive;
+};
+
+struct partition_info {
+    std::vector<replica_info> replicas;
+    std::optional<model::node_id> leader;
+};
+
+/// CloudTopics entry point for the read and write paths.
+/// The frontend handles requests for one particular NTP. There could be
+/// multiple frontends created per NTP. E.g. one per request. This
+/// implementation follows kafka::data::partition_proxy interface with some
+/// minor differences but it doesn't depend on kafka layer. It's supposed to be
+/// used to implement partition_proxy in the kafka layer.
+///
+/// This class serves as the entry point into the cloud-topics (CT) subsystem,
+/// which comprises two main components: the data plane and the metadata layer.
+///
+/// Data Plane:
+/// - Accessible via the 'cloud_topics::app' instance passed through the
+///   constructor.
+/// - Contains 'l0::read_pipeline' and 'l0::write_pipeline'.
+///
+/// Metadata layer:
+/// - Composed of 'cluster::partition' and 'metastore' components
+///
+/// Write Request Path:
+/// - Batch is pushed to the data plane (app::write_and_debounce method).
+/// - Data plane returns a placeholder for the record batch, containing
+///   metadata to locate data in cloud storage.
+/// - 'cloud_topic_partition' pushes the placeholder to the metadata layer by
+///   replicating 'dl_placeholder' batch.
+///
+/// Read Request Path:
+/// - 'dl_placeholder' batches are queried from the metadata layer, fetched
+///   from 'cluster::partition'.
+/// - Includes information about aborted transactions.
+/// - 'dl_placeholder' batches are 'materialized' using the data plane.
+///
+/// Currently, the data plane is explicitly a sharded service. The control
+/// plane includes 'cluster::partition' and 'ctp_stm', with no explicit API
+/// boundary. However, component use is limited to allow future
+/// introduction of such an API.
+///
+class frontend final {
+public:
+    explicit frontend(
+      ss::lw_shared_ptr<cluster::partition> p, data_plane_api* ct) noexcept;
+
+    /// Get current NTP
+    const model::ntp& ntp() const;
+
+    ss::future<std::expected<kafka::offset, frontend_errc>>
+    sync_effective_start(model::timeout_clock::duration timeout);
+
+    /// This method defines starting offset for translation in data-lake
+    /// subsystem
+    kafka::offset local_start_offset() const;
+
+    /// Logical start offset
+    kafka::offset start_offset() const;
+
+    /// HWM (from underlying partition)
+    kafka::offset high_watermark() const;
+
+    /// Current LSO value (underlying partition)
+    std::expected<kafka::offset, frontend_errc> last_stable_offset() const;
+
+    /// Returns true if underlying partition is a leader
+    bool is_leader() const;
+
+    ss::future<std::expected<void, frontend_errc>>
+      prefix_truncate(kafka::offset, ss::lowres_clock::time_point);
+
+    ss::future<std::optional<storage::timequery_result>>
+    timequery(storage::timequery_config cfg);
+
+    ss::future<std::expected<kafka::offset, std::error_code>>
+      replicate(chunked_vector<model::record_batch>, raft::replicate_options);
+
+    raft::replicate_stages replicate(
+      model::batch_identity, model::record_batch, raft::replicate_options);
+
+    ss::future<storage::translating_reader> make_reader(
+      storage::log_reader_config cfg,
+      std::optional<model::timeout_clock::time_point>);
+
+    ss::future<std::vector<model::tx_range>> aborted_transactions(
+      kafka::offset base,
+      kafka::offset last,
+      ss::lw_shared_ptr<const storage::offset_translator_state>);
+
+    ss::future<std::optional<kafka::offset>>
+      get_leader_epoch_last_offset(model::term_id) const;
+
+    model::term_id leader_epoch() const;
+
+    ss::future<std::expected<std::monostate, frontend_errc>>
+    validate_fetch_offset(
+      kafka::offset, bool, model::timeout_clock::time_point);
+
+    std::expected<partition_info, frontend_errc> get_partition_info() const;
+
+    size_t estimate_size_between(kafka::offset, kafka::offset) const;
+
+    ss::future<std::error_code> linearizable_barrier();
+
+private:
+    raft::replicate_stages upload_and_replicate(
+      model::batch_identity batch_id,
+      model::record_batch,
+      raft::replicate_options);
+
+    bool cache_enabled() const;
+
+    ss::abort_source _as;
+    retry_chain_node _rtc;
+    ss::lw_shared_ptr<cluster::partition> _partition;
+    data_plane_api* _data_plane;
+    ss::lw_shared_ptr<experimental::cloud_topics::ctp_stm_api> _ctp_stm_api;
+};
+
+} // namespace experimental::cloud_topics

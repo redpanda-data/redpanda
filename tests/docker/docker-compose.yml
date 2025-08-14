@@ -39,16 +39,31 @@ services:
       - -f
       - http://localhost:9000/minio/health/live
       timeout: 20s
-    image: minio/minio:RELEASE.2024-10-29T16-01-48Z
+    image: minio/minio:RELEASE.2025-07-23T15-54-02Z
     networks:
       redpanda-test:
         ipv4_address: 192.168.215.125
+  mysql:
+    image: mysql:9.3.0
+    restart: always
+    expose:
+    - '3306'
+    environment:
+      MYSQL_ROOT_PASSWORD: panda-secret
+    volumes:
+    - ./mysql-init:/docker-entrypoint-initdb.d
+    networks:
+    - redpanda-test
   azurite:
     container_name: azurite
     restart: always
+    command: "azurite-blob -l /data --blobHost 0.0.0.0"
     ports:
     - 10000:10000
-    image: mcr.microsoft.com/azure-storage/azurite:3.25.0
+    # image: mcr.microsoft.com/azure-storage/azurite:3.34.0
+    image: public.ecr.aws/l9j0i2e0/azurite-no-leaks:latest
+    environment:
+      AZURITE_DB: mysql://root:panda-secret@mysql:3306/azurite_blob
     networks:
     - redpanda-test
   rp:

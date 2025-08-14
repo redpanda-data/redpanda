@@ -4,7 +4,6 @@ load("//src/v/rpc:compiler.bzl", "redpanda_cc_rpc_library")
 redpanda_cc_rpc_library(
     name = "kafka_data_rpc",
     src = "rpc.json",
-    include_prefix = "kafka/data/rpc",
 )
 
 redpanda_cc_library(
@@ -24,19 +23,22 @@ redpanda_cc_library(
         "serde.h",
         "service.h",
     ],
-    include_prefix = "kafka/data/rpc",
     visibility = ["//visibility:public"],
     deps = [
         ":kafka_data_rpc",
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/config",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/data:partition_proxy",
         "//src/v/model",
         "//src/v/raft",
         "//src/v/rpc",
         "//src/v/serde",
+        "//src/v/serde:map",
+        "//src/v/serde:vector",
+        "//src/v/ssx:async_algorithm",
         "//src/v/storage",
         "//src/v/storage:record_batch_builder",
         "//src/v/transform/stm",

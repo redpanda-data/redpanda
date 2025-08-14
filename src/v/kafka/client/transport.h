@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Redpanda Data, Inc.
+ * Copyright 2025 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -11,23 +11,22 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "base/seastarx.h"
-#include "bytes/iostream.h"
 #include "bytes/scattered_message.h"
-#include "kafka/client/logger.h"
 #include "kafka/protocol/api_versions.h"
 #include "kafka/protocol/flex_versions.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/protocol/wire.h"
 #include "net/transport.h"
 #include "utils/mutex.h"
+#include "utils/prefix_logger.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/socket_defs.hh>
-
 namespace kafka::client {
 
 class kafka_request_disconnected_exception : public std::runtime_error {
@@ -36,32 +35,163 @@ public:
       : std::runtime_error(msg) {}
 };
 
+class kafka_request_timeout_exception : public std::runtime_error {
+public:
+    explicit kafka_request_timeout_exception(const std::string& msg)
+      : std::runtime_error(msg) {}
+};
+
 /**
- * \brief Kafka client.
- *
- * Restrictions:
- *  - don't dispatch concurrent requests.
+ * Kafka client transport. The transport supports sending multiple outstanding
+ * requests to the server.
+ * TODO:
+ * - observability (metrics)
+ * - limit memory usage ?
+ * - support for flexible versions
  */
 class transport : public net::base_transport {
-private:
-    /*
-     * send a request message and process the reply. note that the kafka
-     * protocol requires that replies be sent in the same order they are
-     * received at the server. in a future version of this client we will also
-     * want to do some form of request/response correlation so that multiple
-     * requests can be in flight.
+public:
+    enum class errc : int8_t {
+        none,
+        disconnected,
+        timeout,
+    };
+    /**
+     * The default timeout for requests sent to the Kafka broker.
+     * This is used when the request does not specify a timeout.
+     * The default is set to 60 seconds, which is a common timeout for Kafka
+     * requests.
      */
-    template<typename Func>
-    auto send_recv(api_key key, api_version request_version, Func&& func) {
-        // size prefixed buffer for request
+    static constexpr std::chrono::milliseconds default_timeout
+      = std::chrono::seconds(60);
+
+    transport(
+      net::base_transport::configuration c,
+      std::optional<ss::sstring> client_id) noexcept;
+    transport(const transport&) = delete;
+    transport(transport&& other) noexcept;
+    transport& operator=(const transport&) = delete;
+    transport& operator=(transport&&) = delete;
+    ~transport() override {
+        vassert(
+          _needs_stop == false, "Transport must be stopped before destruction");
+    };
+
+    const std::optional<ss::sstring>& client_id() const { return _client_id; }
+
+    template<typename RequestT>
+    requires(KafkaApi<typename RequestT::api_type>)
+    ss::future<typename RequestT::api_type::response_type> dispatch(
+      RequestT r,
+      api_version version,
+      std::optional<model::timeout_clock::duration> timeout = default_timeout) {
+        return do_send(std::move(r), version, timeout)
+          .then(
+            [this](
+              checked<typename RequestT::api_type::response_type, errc> res) {
+                if (res.has_error()) {
+                    if (res.error() == errc::disconnected) {
+                        throw kafka_request_disconnected_exception(fmt::format(
+                          "Broker {}:{} transport disconnected",
+                          server_address().host(),
+                          server_address().port()));
+                    } else if (res.error() == errc::timeout) {
+                        throw kafka_request_disconnected_exception(fmt::format(
+                          "Broker {}:{} request of type {} timed out",
+                          server_address().host(),
+                          server_address().port(),
+                          RequestT::api_type::name));
+                    }
+                }
+
+                return std::move(res.value());
+            });
+    }
+
+    template<typename RequestT>
+    requires(KafkaApi<typename RequestT::api_type>)
+    ss::future<checked<typename RequestT::api_type::response_type, errc>>
+    dispatch_errc(
+      RequestT r,
+      api_version version,
+      std::optional<model::timeout_clock::duration> timeout = default_timeout) {
+        return do_send(std::move(r), version, timeout);
+    }
+
+    ss::future<> connect(
+      model::timeout_clock::time_point connection_timeout
+      = model::no_timeout) override;
+
+    ss::future<> stop();
+
+    void fail_outstanding_futures() override;
+
+private:
+    enum class reconnect_result_t : int8_t {
+        connected,
+        timed_out,
+    };
+    ss::future<reconnect_result_t> connect_with_retires(
+      model::timeout_clock::time_point connection_timeout = model::no_timeout);
+
+    struct response_data {
+        std::optional<tagged_fields> tags;
+        iobuf data;
+    };
+
+    struct request_entry {
+        explicit request_entry(
+          transport* parent_transport,
+          correlation_id correlation,
+          bool is_flexible,
+          std::optional<model::timeout_clock::duration> timeout);
+        void set_response(iobuf data, std::optional<tagged_fields> tags);
+        void set_error(errc);
+
+        ss::promise<checked<response_data, errc>> response_promise;
+        bool is_flexible{false};
+        ss::timer<model::timeout_clock> timeout_timer;
+    };
+
+    void write_header(
+      protocol::encoder& wr,
+      api_key key,
+      api_version version,
+      correlation_id correlation);
+
+    ss::future<> read_loop();
+
+    void on_timeout(correlation_id correlation);
+
+    template<typename RequestT>
+    ss::future<checked<typename RequestT::api_type::response_type, errc>>
+    do_send(
+      RequestT request,
+      api_version version,
+      std::optional<model::timeout_clock::duration> timeout) {
+        using ret_t = checked<typename RequestT::api_type::response_type, errc>;
+        // hold the mutex here before the message is written to the output
+        // stream to ensure ordering or requests.
+        auto u = co_await _dispatch_mutex.get_units();
+        if (!is_valid() || _dispatch_gate.is_closed()) {
+            co_return ret_t(errc::disconnected);
+        }
+        auto gate_holder = _dispatch_gate.hold();
         iobuf buf;
-        auto ph = buf.reserve(sizeof(int32_t));
+        auto placeholder = buf.reserve(sizeof(int32_t));
         auto start_size = buf.size_bytes();
         protocol::encoder wr(buf);
-
+        auto key = RequestT::api_type::key;
+        auto correlation = _correlation++;
+        vlog(
+          _logger.trace,
+          "Dispatching '{}' request with version: {}, correlation: {}",
+          RequestT::api_type::name,
+          version,
+          correlation);
         // encode request
-        func(wr);
-
+        write_header(wr, RequestT::api_type::key, version, correlation);
+        request.encode(wr, version);
         vassert(
           flex_versions::is_api_in_schema(key),
           "Attempted to send request to non-existent API: {}",
@@ -71,124 +201,45 @@ private:
         /// version for the API three however makes an exception that there will
         /// be no tags in the response header.
         const auto is_flexible = flex_versions::is_flexible_request(
-                                   key, request_version)
+                                   key, version)
                                  && key() != api_versions_api::key;
 
         // finalize by filling in the size prefix
         int32_t total_size = buf.size_bytes() - start_size;
         auto be_total_size = ss::cpu_to_be(total_size);
         auto* raw_size = reinterpret_cast<const char*>(&be_total_size);
-        ph.write(raw_size, sizeof(be_total_size));
+        placeholder.write(raw_size, sizeof(be_total_size));
 
-        return _out.write(iobuf_as_scattered(std::move(buf)))
-          .then([this, is_flexible](bool) {
-              return protocol::parse_size(_in).then([this, is_flexible](
-                                                      std::optional<size_t>
-                                                        sz) {
-                  if (!sz) {
-                      return ss::make_exception_future<iobuf>(
-                        kafka_request_disconnected_exception(
-                          "Request disconnected, no response received"));
-                  }
-                  auto size = sz.value();
-                  return _in.read_exactly(sizeof(correlation_id))
-                    .then([this, size, is_flexible](
-                            ss::temporary_buffer<char>) {
-                        if (is_flexible) {
-                            return parse_tags(_in).then([size](auto p) {
-                                auto& [_, bytes_read] = p;
-                                return size
-                                       - (sizeof(correlation_id) + bytes_read);
-                            });
-                        }
-                        return ss::make_ready_future<size_t>(
-                          size - sizeof(correlation_id));
-                    })
-                    .then([this](size_t remaining) {
-                        // Finally, read the rest of the response from the
-                        // buffer
-                        return read_iobuf_exactly(_in, remaining);
-                    });
-              });
-          });
-    }
-
-public:
-    // using net::base_transport::base_transport;
-
-    transport(
-      net::base_transport::configuration c,
-      std::optional<ss::sstring> client_id)
-      : net::base_transport(c, &kclog)
-      , _client_id(std::move(client_id)) {}
-
-    /*
-     * TODO: the concept here can be improved once we convert all of the request
-     * types to encode their type relationships between api/request/response.
-     */
-    template<typename T>
-    requires(KafkaApi<typename T::api_type>)
-    ss::future<typename T::api_type::response_type>
-    dispatch(T r, api_version request_version, api_version response_version) {
-        using type = std::remove_reference_t<std::decay_t<T>>;
-        using response_type = typename T::api_type::response_type;
-        if constexpr (std::is_same_v<type, produce_request>) {
-            if (request_version < api_version(3)) {
-                return ss::make_exception_future<response_type>(
-                  std::runtime_error(fmt::format(
-                    "Cannot make produce request at version {} because "
-                    "redpanda "
-                    "does not support serialization of legacy record batches",
-                    request_version)));
-            }
+        auto [it, _] = _pending_requests.emplace(
+          correlation,
+          std::make_unique<request_entry>(
+            this, correlation, is_flexible, timeout));
+        auto response_future = it->second->response_promise.get_future();
+        co_await _out.write(iobuf_as_scattered(std::move(buf)));
+        // return all units to the semaphore before flushing the output
+        u.return_all();
+        co_await _out.flush();
+        typename RequestT::api_type::response_type resp;
+        auto response_data = co_await std::move(response_future);
+        if (response_data.has_error()) {
+            co_return ret_t(response_data.error());
         }
-        return _dispatch_mutex
-          .with([this, r = std::move(r), request_version]() mutable {
-              return send_recv(
-                T::api_type::key,
-                request_version,
-                [this, request_version, r = std::move(r)](
-                  protocol::encoder& wr) mutable {
-                    write_header(wr, T::api_type::key, request_version);
-                    r.encode(wr, request_version);
-                });
-          })
-          .then([response_version](iobuf buf) {
-              response_type r;
-              r.decode(std::move(buf), response_version);
-              return ss::make_ready_future<response_type>(std::move(r));
-          });
-    }
-
-    template<typename T>
-    requires(KafkaApi<typename T::api_type>)
-    ss::future<typename T::api_type::response_type>
-    dispatch(T r, api_version ver) {
-        return dispatch(std::move(r), ver, ver);
-    }
-
-    const std::optional<ss::sstring>& client_id() const { return _client_id; }
-
-private:
-    void write_header(protocol::encoder& wr, api_key key, api_version version) {
-        wr.write(int16_t(key()));
-        wr.write(int16_t(version()));
-        wr.write(int32_t(_correlation()));
-        wr.write(_client_id);
-        vassert(
-          flex_versions::is_api_in_schema(key),
-          "Attempted to send request to non-existent API: {}",
-          key);
-        if (flex_versions::is_flexible_request(key, version)) {
-            /// Tags are unused by the client but to be protocol compliant
-            /// with flex versions at least a 0 byte must be written
-            wr.write_tags(tagged_fields{});
-        }
-        _correlation = _correlation + correlation_id(1);
+        resp.decode(std::move(response_data.value().data), version);
+        // TODO: If we need to handle tags, we can do it here.
+        co_return resp;
     }
     mutex _dispatch_mutex{"kafka::client::transport::dispatch_mutex"};
+    bool _needs_stop = false;
     correlation_id _correlation{0};
+    // We keep the entries sorted by correlation_id, as we are going to
+    // implement the validation of correlation id in near future (Kafka protocol
+    // defines the responses to be sent in the same order as requests were
+    // sent). In this case the response should always match the first entry in
+    // the map.
+    absl::btree_map<correlation_id, std::unique_ptr<request_entry>>
+      _pending_requests;
     std::optional<ss::sstring> _client_id;
+    prefix_logger _logger;
 };
 
 } // namespace kafka::client

@@ -858,7 +858,7 @@
                     "description": "Number of samples that were dropped due to space limitations during the measurement period."
                 },
                 "samples": {
-                    "type": "array",
+                    "type": "chunked_array",
                     "items": {
                         "type": "cpu_profile_sample"
                     }

@@ -39,6 +39,7 @@
 #include "kafka/data/rpc/client.h"
 #include "kafka/data/rpc/service.h"
 #include "kafka/server/app.h"
+#include "kafka/server/data_migration_group_proxy_impl.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/group_initializer.h"
 #include "kafka/server/snc_quota_manager.h"
@@ -63,6 +64,7 @@
 #include "rpc/fwd.h"
 #include "rpc/rpc_server.h"
 #include "security/fwd.h"
+#include "ssx/sharded_service_container.h"
 #include "ssx/watchdog.h"
 #include "storage/api.h"
 #include "storage/fwd.h"
@@ -73,7 +75,6 @@
 #include <seastar/core/app-template.hh>
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/sharded.hh>
-#include <seastar/util/defer.hh>
 
 #include <memory>
 
@@ -89,7 +90,7 @@ inline const auto redpanda_start_time{
   std::chrono::duration_cast<std::chrono::milliseconds>(
     std::chrono::system_clock::now().time_since_epoch())};
 
-class application {
+class application : public ssx::sharded_service_container {
 public:
     int run(int, char**);
 
@@ -201,7 +202,7 @@ public:
     kafka::server_app _kafka_server;
     ss::sharded<rpc::connection_cache> _connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
-    ss::sharded<experimental::cloud_topics::app> cloud_topics_api;
+    std::unique_ptr<experimental::cloud_topics::app> cloud_topics_app;
 
     const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
         return _schema_registry;
@@ -217,14 +218,6 @@ public:
     }
 
 private:
-    // First warning timeout
-    static constexpr auto short_shutdown_warning_timeout = 15s;
-    // Time after which we will print the warning about the service shutdown
-    // taking too long.
-    static constexpr auto long_shutdown_warning_timeout = 120s;
-    using deferred_actions
-      = std::deque<ss::deferred_action<std::function<void()>>>;
-
     // Constructs and starts the services required to provide cryptographic
     // algorithm support to Redpanda
     void wire_up_and_start_crypto_services();
@@ -270,104 +263,6 @@ private:
 
     ss::shared_ptr<kafka::datalake_usage_api> make_datalake_usage_aggregator();
 
-    // Stop the service.
-    // The method should be invoked in the ss::thread context.
-    template<class Service>
-    void stop_service(
-      Service& s,
-      ss::sstring name,
-      std::optional<ss::sstring> next_to_stop = std::nullopt) {
-        // This watchdog is triggered after short period of time (30s). It
-        // adds message to the log that service is taking a long time to
-        // shutdown on INFO level.
-        ssx::watchdog short_wd(short_shutdown_warning_timeout, [this, name] {
-            vlog(
-              _log.info,
-              "Service {} is taking more than {} seconds to shut down.",
-              name,
-              std::chrono::duration_cast<std::chrono::seconds>(
-                short_shutdown_warning_timeout)
-                .count());
-        });
-        // This watchdog is triggered after long period of time. This indicates
-        // a bug (most likely).
-        ssx::watchdog long_wd(long_shutdown_warning_timeout, [this, name] {
-            vlog(
-              _log.info,
-              "Service {} is taking more than {} seconds to shut down!",
-              name,
-              std::chrono::duration_cast<std::chrono::seconds>(
-                long_shutdown_warning_timeout)
-                .count());
-        });
-        if (next_to_stop.has_value()) {
-            vlog(
-              _log.info,
-              "Stopping {}, ..next to shutdown is {}",
-              name,
-              *next_to_stop);
-        } else {
-            vlog(_log.info, "Stopping {}", name);
-        }
-        s.stop().get();
-        if (!next_to_stop.has_value()) {
-            vlog(_log.info, "Stopped {}", name);
-        }
-    }
-
-    /**
-     * @brief Construct service boilerplate.
-     *
-     * Construct the given service s, calling start with the given arguments
-     * and set up a shutdown callback to stop it.
-     *
-     * Returns the future from start(), typically you'll call get() on it
-     * immediately to wait for creation to complete.
-     *
-     * @return the future returned by start()
-     */
-    template<typename Service, typename... Args>
-    ss::future<> construct_service(ss::sharded<Service>& s, Args&&... args) {
-        auto name = ss::pretty_type_name(typeid(Service));
-        _deferred.emplace_back(
-          [this, &s, name, next_to_stop = _last_constructed_service_name] {
-              stop_service(s, name, next_to_stop);
-          });
-        _last_constructed_service_name = ss::sstring(name);
-        return s.start(std::forward<Args>(args)...);
-    }
-
-    template<typename Service, typename... Args>
-    void construct_single_service(std::unique_ptr<Service>& s, Args&&... args) {
-        auto name = ss::pretty_type_name(typeid(Service));
-        s = std::make_unique<Service>(std::forward<Args>(args)...);
-        _deferred.emplace_back(
-          [this, &s, name, next_to_stop = _last_constructed_service_name] {
-              stop_service(*s, name, next_to_stop);
-              s.reset();
-          });
-        _last_constructed_service_name = name;
-    }
-
-    template<typename Service, typename... Args>
-    ss::future<>
-    construct_single_service_sharded(ss::sharded<Service>& s, Args&&... args) {
-        auto name = ss::pretty_type_name(typeid(Service));
-        auto f = s.start_single(std::forward<Args>(args)...);
-        _deferred.emplace_back(
-          [this, &s, name, next_to_stop = _last_constructed_service_name] {
-              stop_service(s, name, next_to_stop);
-          });
-        _last_constructed_service_name = name;
-        return f;
-    }
-
-    template<typename ShardedComponent>
-    auto ref_to_local(ss::sharded<ShardedComponent>& component) {
-        return ss::sharded_parameter(
-          [&component] { return std::ref(component.local()); });
-    }
-
     void setup_metrics();
     void setup_public_metrics();
     void setup_internal_metrics();
@@ -392,7 +287,6 @@ private:
     std::optional<kafka::client::configuration> _schema_reg_client_config;
     std::optional<kafka::client::configuration> _audit_log_client_config;
     ss::sharded<scheduling_groups_probe> _scheduling_groups_probe;
-    ss::logger _log;
 
     std::optional<config::binding<bool>> _abort_on_oom;
 
@@ -415,6 +309,8 @@ private:
     metrics::internal_metric_groups _metrics;
     ss::sharded<metrics::public_metrics_group_service> _public_metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
+    ss::sharded<std::unique_ptr<cluster::data_migrations::group_proxy>>
+      _data_migrations_group_proxy;
 
     ss::sharded<resources::cpu_profiler> _cpu_profiler;
     ss::sharded<debug_bundle::service> _debug_bundle_service;
@@ -432,10 +328,6 @@ private:
 
     ss::sharded<kafka::data::rpc::local_service> _kafka_data_rpc_service;
     ss::sharded<kafka::data::rpc::client> _kafka_data_rpc_client;
-
-    // run these first on destruction
-    deferred_actions _deferred;
-    std::optional<ss::sstring> _last_constructed_service_name;
 
     ss::sharded<aggregate_metrics_watcher> _aggregate_metrics_watcher;
 

@@ -16,9 +16,9 @@
 
 #include <seastar/core/future.hh>
 
-namespace experimental::serde::json::test::dom {
+namespace serde::json::test::dom {
 
 /// Parse a JSON document into a DOM tree using the rapidjson parser.
 ss::future<value> parse_document_rapidjson(iobuf buf);
 
-} // namespace experimental::serde::json::test::dom
+} // namespace serde::json::test::dom

@@ -59,6 +59,9 @@ struct replicate_result {
     /// used by the kafka API to produce a kafka reply to produce request.
     /// see produce_request.cc
     model::offset last_offset;
+    /// This value is used to communicate the term in which the batch was
+    /// replicated. It's not used by the Kafka API.
+    model::term_id last_term;
 };
 
 struct replicate_stages {

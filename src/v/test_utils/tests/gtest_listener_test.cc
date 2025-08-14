@@ -14,6 +14,8 @@
 
 #include <gtest/gtest.h>
 
+#include <stdexcept>
+
 /// Helper function to print and error message and exit with code 1.
 /// We can't use gtest assertions because the way test is set up is meant to
 /// fail and we hide that failure.
@@ -41,6 +43,16 @@ TEST(AssertInHelper, AssertInHelperThrows) {
     }
 }
 
+TEST(ThrowFromBody, ThrowFromBodyDoesNotAbort) {
+    throw std::runtime_error("throwing from test body");
+}
+
+bool global_did_run_after_throw = false;
+
+TEST(ThrowFromBody, ThisTestRunsAfterThrow) {
+    global_did_run_after_throw = true;
+}
+
 /// In this test we want to check that the listener intercepts asserts and
 /// throws exception resulting in not just test failure but test termination.
 int main(int argc, char** argv) {
@@ -51,10 +63,13 @@ int main(int argc, char** argv) {
 
     // Hide stdout to avoid confusing users.
     testing::internal::CaptureStdout();
-
     int result = RUN_ALL_TESTS();
     if (result == 0) {
         fail_test("Expected the test to fail but it passed.");
+    }
+
+    if (!global_did_run_after_throw) {
+        fail_test("Expected the test after throw to run but it did not.");
     }
 
     return 0;

@@ -27,6 +27,7 @@ import os
 import shutil
 import time
 import aioboto3
+import json
 
 BOOTSTRAP_YAML = ".bootstrap.yaml"
 
@@ -59,6 +60,14 @@ class RedpandaConfig:
     empty_seed_starts_cluster: bool = False
     rack: Optional[str] = None
     cloud_storage_enabled: bool = False
+    iceberg_enabled: bool = False
+    enable_developmental_unrecoverable_data_corrupting_features: int = int(
+        time.time())
+
+
+@dataclasses.dataclass
+class DefaultMinioRedpandaConfig:
+    cloud_storage_enabled: bool = True
     cloud_storage_secret_key: str = "minioadmin"
     cloud_storage_access_key: str = "minioadmin"
     cloud_storage_region: str = "panda-region"
@@ -67,7 +76,7 @@ class RedpandaConfig:
     cloud_storage_api_endpoint_port: int = 9000
     cloud_storage_disable_tls: bool = True
     cloud_storage_backend: str = 'aws'
-    iceberg_enabled: bool = False
+    iceberg_enabled: bool = True
 
 
 @dataclasses.dataclass
@@ -75,19 +84,26 @@ class NodeConfig:
     redpanda: RedpandaConfig
     pandaproxy: PandaproxyConfig
     schema_registry: SchemaRegistryConfig
+
+
+@dataclasses.dataclass
+class NodeMetadata:
     config_path: str
 
     # This is _not_ the node_id, just the index into our array of nodes
     index: int
     cluster_size: int
 
+    # Dictionary of node config properties.
+    config_dict: dict
+
 
 class Minio:
-    def __init__(self, binary, directory, config):
+    def __init__(self, binary, directory, rp_config):
         self.binary = binary
         self.directory = directory
         self.stopped = False
-        self.cfg = config
+        self.rp_cfg = rp_config
 
     def stop(self):
         if not self.stopped:
@@ -104,11 +120,11 @@ class Minio:
         home_dir = self.directory / "home"
         home_dir.mkdir(parents=True, exist_ok=True)
 
-        hostname = self.cfg.cloud_storage_api_endpoint
+        hostname = self.rp_cfg["cloud_storage_api_endpoint"]
         env = dict(HOME=home_dir,
                    MINIO_DOMAIN=hostname,
-                   MINIO_REGION_NAME=self.cfg.cloud_storage_region)
-        port = self.cfg.cloud_storage_api_endpoint_port
+                   MINIO_REGION_NAME=self.rp_cfg["cloud_storage_region"])
+        port = self.rp_cfg["cloud_storage_api_endpoint_port"]
         args = [
             str(self.binary), "server", "--address", f"{hostname}:{port}",
             str(data_dir)
@@ -133,26 +149,27 @@ class Minio:
 
 
 class Redpanda:
-    def __init__(self, binary, cores: int, config: NodeConfig, extra_args):
+    def __init__(self, binary, cores: int, node_meta: NodeMetadata,
+                 extra_args):
         self.binary = binary
         self.cores = cores
-        self.config = config
+        self.node_meta = node_meta
         self.process = None
         self.extra_args = extra_args
 
     def stop(self):
-        print(f"node-{self.config.index}: dev_cluster stop requested")
+        print(f"node-{self.node_meta.index}: dev_cluster stop requested")
         self.process.send_signal(signal.SIGINT)
 
     async def run(self):
         log_path = pathlib.Path(os.path.dirname(
-            self.config.config_path)) / "redpanda.log"
+            self.node_meta.config_path)) / "redpanda.log"
 
         # If user did not override cores with extra args, apply it from our internal cores setting
         if not {"-c", "--smp"} & set(self.extra_args):
             # Caller is required to pass a finite core count
             assert self.cores > 0
-            base_core = self.cores * self.config.index
+            base_core = self.cores * self.node_meta.index
 
             cores_args = f"--cpuset {base_core}-{base_core + self.cores - 1}"
         else:
@@ -161,8 +178,8 @@ class Redpanda:
         # If user did not specify memory, share 75% of memory equally between nodes
         if not {"-m", "--memory"} & set(self.extra_args):
             memory_total = psutil.virtual_memory().total
-            memory_per_node = (3 *
-                               (memory_total // 4)) // self.config.cluster_size
+            memory_per_node = (
+                3 * (memory_total // 4)) // self.node_meta.cluster_size
             memory_args = f"-m {memory_per_node // (1024 * 1024)}M"
         else:
             memory_args = ""
@@ -170,7 +187,7 @@ class Redpanda:
         extra_args = ' '.join(f"\"{a}\"" for a in self.extra_args)
 
         self.process = await asyncio.create_subprocess_shell(
-            f"{self.binary} --redpanda-cfg {self.config.config_path} {cores_args} {memory_args} {extra_args} 2>&1 | tee -i {log_path}",
+            f"{self.binary} --redpanda-cfg {self.node_meta.config_path} {cores_args} {memory_args} {extra_args} 2>&1 | tee -i {log_path}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT)
 
@@ -179,19 +196,43 @@ class Redpanda:
             if not line:
                 break
             line = line.decode("utf8").rstrip()
-            print(f"node-{self.config.index}: {line}")
+            print(f"node-{self.node_meta.index}: {line}")
 
         await self.process.wait()
 
 
-async def ensure_bucket_exists(cfg: RedpandaConfig):
+async def run_command(cmd):
+    proc = await asyncio.create_subprocess_shell(
+        cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+
+    stdout, stderr = await proc.communicate()
+
+    print(f"[{cmd!r} exited with {proc.returncode}]")
+    if stdout:
+        print(f"[{cmd!r}].[stdout]\n{stdout.decode()}")
+    if stderr:
+        print(f"[{cmd!r}].[stderr]\n{stderr.decode()}")
+
+    return proc.returncode == 0
+
+
+async def post_start_configure(rpk):
+    while True:
+        if await run_command(
+                f"{rpk} cluster config set development_enable_cloud_topics true"
+        ):
+            return
+        await asyncio.sleep(1)
+
+
+async def ensure_bucket_exists(cfg: dict):
     session = aioboto3.Session()
     client = session.client(
         service_name="s3",
         endpoint_url=
-        f"http://{cfg.cloud_storage_api_endpoint}:{cfg.cloud_storage_api_endpoint_port}",
-        aws_access_key_id=cfg.cloud_storage_access_key,
-        aws_secret_access_key=cfg.cloud_storage_secret_key)
+        f"http://{cfg['cloud_storage_api_endpoint']}:{cfg['cloud_storage_api_endpoint_port']}",
+        aws_access_key_id=cfg["cloud_storage_access_key"],
+        aws_secret_access_key=cfg["cloud_storage_secret_key"])
     print("Preparing cloud storage")
     async with client as s3:
         timeout_sec = 5
@@ -200,11 +241,11 @@ async def ensure_bucket_exists(cfg: RedpandaConfig):
             try:
                 buckets = await s3.list_buckets()
                 for bucket in buckets["Buckets"]:
-                    if bucket["Name"] == cfg.cloud_storage_bucket:
+                    if bucket["Name"] == cfg["cloud_storage_bucket"]:
                         print("Bucket exists, proceeding to start redpanda")
                         return
                 print("Bucket not found, creating...")
-                await s3.create_bucket(Bucket=cfg.cloud_storage_bucket)
+                await s3.create_bucket(Bucket=cfg["cloud_storage_bucket"])
             except Exception as e:
                 if (time.time() - start) >= timeout_sec:
                     raise e
@@ -263,7 +304,22 @@ async def main():
                         "--minio_executable",
                         type=pathlib.Path,
                         help="path to minio executable",
+                        default="minio")
+    parser.add_argument(
+        "--use-minio",
+        action=argparse.BooleanOptionalAction,
+        help=
+        "whether to spin up an instance of minio and use Redpanda configuration presets for it",
+        default=True)
+    parser.add_argument("--rpk",
+                        type=pathlib.Path,
+                        help="path to rpk executable",
                         default=None)
+    parser.add_argument(
+        "--config-overrides",
+        type=str,
+        help="JSON dictionary of config overrides to apply to all nodes",
+        default=None)
     args, extra_args = parser.parse_known_args()
 
     if extra_args and extra_args[0] == "--":
@@ -282,7 +338,7 @@ async def main():
         for i in range(args.nodes)
     ]
 
-    def make_node_config(i, data_dir, config_path, rack):
+    def make_node_metadata(i, data_dir, config_path, rack):
         make_address = lambda p: NetworkAddress(args.listen_address, p + i)
         rpc_address = rpc_addresses[i]
         redpanda = RedpandaConfig(data_directory=data_dir,
@@ -295,19 +351,18 @@ async def main():
                                   seed_servers=rpc_addresses[:3],
                                   empty_seed_starts_cluster=False,
                                   rack=rack)
-        if args.minio_executable:
-            redpanda.cloud_storage_enabled = True
-            redpanda.iceberg_enabled = True
+
         pandaproxy = PandaproxyConfig(
             pandaproxy_api=make_address(args.base_pandaproxy_port))
         schema_registry = SchemaRegistryConfig(
             schema_registry_api=make_address(args.base_schema_registry_port))
-        return NodeConfig(redpanda=redpanda,
-                          index=i,
-                          config_path=config_path,
-                          cluster_size=args.nodes,
-                          pandaproxy=pandaproxy,
-                          schema_registry=schema_registry)
+        node_conf = NodeConfig(redpanda=redpanda,
+                               pandaproxy=pandaproxy,
+                               schema_registry=schema_registry)
+        return NodeMetadata(config_path=config_path,
+                            index=i,
+                            cluster_size=args.nodes,
+                            config_dict=dataclasses.asdict(node_conf))
 
     def pathlib_path_representer(dumper, path):
         return dumper.represent_scalar("!Path", str(path))
@@ -325,36 +380,50 @@ async def main():
         node_dir.mkdir(parents=True, exist_ok=True)
         data_dir.mkdir(parents=True, exist_ok=True)
 
-        config = make_node_config(i, data_dir, conf_file, rack)
+        node_meta = make_node_metadata(i, data_dir, conf_file, rack)
+        config_dict = node_meta.config_dict
+
+        if args.use_minio:
+            default_minio_rp_config = dataclasses.asdict(
+                DefaultMinioRedpandaConfig())
+            config_dict[
+                "redpanda"] = config_dict["redpanda"] | default_minio_rp_config
+
+        if args.config_overrides:
+            try:
+                config_overrides = json.loads(args.config_overrides)
+                config_dict[
+                    "redpanda"] = config_dict["redpanda"] | config_overrides
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in config overrides: {e}")
+
         with open(conf_file, "w") as f:
-            yaml.dump(dataclasses.asdict(config),
-                      f,
-                      indent=2,
-                      Dumper=get_config_dumper())
+            yaml.dump(config_dict, f, indent=2, Dumper=get_config_dumper())
 
         # If there is a bootstrap file in pwd, propagate it to each node's
         # directory so that they'll load it on first start
         if os.path.exists(BOOTSTRAP_YAML):
             shutil.copyfile(BOOTSTRAP_YAML, node_dir / BOOTSTRAP_YAML)
 
-        return config
+        return node_meta
 
     if args.racks and len(args.racks) != args.nodes:
         raise Exception("Rack must be specified for each node")
 
-    configs = [
+    node_metas = [
         prepare_node(i, None if args.racks is None else args.racks[i])
         for i in range(args.nodes)
     ]
 
     minio = None
     minio_task = None
-    if args.minio_executable:
+    if args.use_minio:
         minio_dir = args.directory / "minio"
         minio_dir.mkdir(parents=True, exist_ok=True)
-        minio = Minio(args.minio_executable, minio_dir, configs[0].redpanda)
+        minio = Minio(args.minio_executable, minio_dir,
+                      node_metas[0].config_dict["redpanda"])
         minio_task = asyncio.create_task(minio.run())
-        await ensure_bucket_exists(configs[0].redpanda)
+        await ensure_bucket_exists(node_metas[0].config_dict["redpanda"])
 
     cores = args.cores
     if cores is None:
@@ -362,9 +431,13 @@ async def main():
         # gives each node 4 cores.
         cores = max((3 * (psutil.cpu_count(logical=False) // 4)) // args.nodes,
                     1)
-    nodes = [Redpanda(args.executable, cores, c, extra_args) for c in configs]
+    nodes = [
+        Redpanda(args.executable, cores, m, extra_args) for m in node_metas
+    ]
 
     redpanda_coros = [r.run() for r in nodes]
+    other_coros = [post_start_configure(args.rpk)]
+    all_coros = redpanda_coros + other_coros
 
     def stop():
         for n in nodes:
@@ -374,7 +447,7 @@ async def main():
 
     asyncio.get_event_loop().add_signal_handler(signal.SIGINT, stop)
 
-    await asyncio.gather(*redpanda_coros)
+    await asyncio.gather(*all_coros)
     if minio_task and minio:
         # send stop again. if redpanda shuts down but we didn't request the
         # shutdown then let's go ahead and tear down minio too so we exit

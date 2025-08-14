@@ -148,4 +148,7 @@ void rjson_serialize(
 void rjson_serialize(
   json::Writer<json::StringBuffer>&, config::tls_name_format);
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>&, config::audit_failure_policy);
+
 } // namespace json

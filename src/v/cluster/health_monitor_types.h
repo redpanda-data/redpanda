@@ -490,7 +490,6 @@ class get_node_health_request
       serde::version<1>,
       serde::compat_version<0>> {
 public:
-    using rpc_adl_exempt = std::true_type;
     get_node_health_request() = default;
     explicit get_node_health_request(model::node_id target_node_id)
       : _target_node_id(target_node_id) {}
@@ -522,8 +521,6 @@ struct get_node_health_reply
       get_node_health_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     errc error = cluster::errc::success;
     std::optional<node_health_report_serde> report;
 
@@ -549,7 +546,6 @@ struct get_cluster_health_request
       get_cluster_health_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     static constexpr int8_t initial_version = 0;
     // version -1: included revision id in partition status
     static constexpr int8_t revision_id_version = -1;
@@ -594,7 +590,6 @@ struct get_cluster_health_reply
       get_cluster_health_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     static constexpr int8_t current_version = 0;
 
     errc error = cluster::errc::success;

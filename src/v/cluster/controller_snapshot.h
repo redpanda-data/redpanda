@@ -21,7 +21,7 @@
 #include "cluster/types.h"
 #include "cluster_link/model/types.h"
 #include "container/chunked_hash_map.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "features/feature_table_snapshot.h"
 #include "security/role.h"
 #include "security/types.h"
@@ -110,7 +110,7 @@ struct config_t
       envelope<config_t, serde::version<0>, serde::compat_version<0>> {
     config_version version;
     absl::btree_map<ss::sstring, ss::sstring> values;
-    fragmented_vector<config_status> nodes_status;
+    chunked_vector<config_status> nodes_status;
 
     friend bool operator==(const config_t&, const config_t&) = default;
 
@@ -224,8 +224,8 @@ struct named_role_t
 struct security_t
   : public serde::
       envelope<security_t, serde::version<1>, serde::compat_version<0>> {
-    fragmented_vector<user_and_credential> user_credentials;
-    fragmented_vector<security::acl_binding> acls;
+    chunked_vector<user_and_credential> user_credentials;
+    chunked_vector<security::acl_binding> acls;
     chunked_vector<named_role_t> roles;
 
     friend bool operator==(const security_t&, const security_t&) = default;

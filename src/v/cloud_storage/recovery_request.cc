@@ -111,7 +111,7 @@ void recovery_request::parse_request_body(const ss::sstring& body) {
           "{}", rapidjson::GetParseError_En(document.GetParseError()))};
     }
 
-    auto validator = json::validator(std::string{request_schema});
+    auto validator = json::validator(request_schema);
     if (!document.Accept(validator.schema_validator)) {
         json::StringBuffer sbuf;
         json::Writer<json::StringBuffer> w{sbuf};

@@ -43,6 +43,7 @@ struct offset_delete_response final {
     using api_type = offset_delete_api;
 
     offset_delete_response_data data;
+    offset_delete_response() = default;
 
     offset_delete_response(error_code error) { data.error_code = error; }
 

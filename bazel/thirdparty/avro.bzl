@@ -4,7 +4,7 @@ This module contains functions for working with Avro.
 
 load("//bazel:build.bzl", "redpanda_cc_library")
 
-def avro_cc_library(name, class_name, schema, namespace, include_prefix = None, visibility = None):
+def avro_cc_library(name, class_name, schema, namespace, visibility = None):
     """
     Generate Avro library.
 
@@ -13,7 +13,6 @@ def avro_cc_library(name, class_name, schema, namespace, include_prefix = None, 
       class_name: name of the generated class
       schema: the schema file
       namespace: namespace for generated code
-      include_prefix: header include prefix
       visibility: library visibility
     """
     hh_out = class_name + ".avrogen.h"
@@ -32,7 +31,6 @@ def avro_cc_library(name, class_name, schema, namespace, include_prefix = None, 
             hh_out,
         ],
         visibility = visibility,
-        include_prefix = include_prefix,
         deps = [
             "@avro",
         ],

@@ -82,7 +82,7 @@ private:
     ss::future<result<node_status>>
       send_node_status_request(model::node_id, node_status_request);
 
-    ss::future<> maybe_create_client(model::node_id, net::unresolved_address);
+    ss::future<> maybe_update_client(model::node_id, net::unresolved_address);
 
     void setup_metrics(metrics::metric_groups_base&);
 
@@ -113,7 +113,12 @@ private:
     config::tls_config _rpc_tls_config;
     rpc::connection_set _node_connection_set;
 
-    absl::flat_hash_set<model::node_id> _discovered_peers;
+    struct peer_data {
+        uint64_t consecutive_timeouts = 0;
+    };
+
+    absl::flat_hash_map<model::node_id, peer_data> _discovered_peers;
+
     ss::gate _gate;
     ss::timer<ss::lowres_clock> _timer;
     notification_id_type _members_table_notification_handle;

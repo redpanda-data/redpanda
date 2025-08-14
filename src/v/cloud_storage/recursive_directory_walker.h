@@ -11,7 +11,7 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -33,8 +33,8 @@ struct file_list_item {
 struct walk_result {
     uint64_t cache_size{0};
     size_t filtered_out_files{0};
-    fragmented_vector<file_list_item> regular_files;
-    fragmented_vector<ss::sstring> empty_dirs;
+    chunked_vector<file_list_item> regular_files;
+    chunked_vector<ss::sstring> empty_dirs;
     size_t tmp_files_size{0};
 };
 

@@ -14,7 +14,6 @@ redpanda_test_cc_library(
     ],
     implementation_deps = [
     ],
-    include_prefix = "cloud_storage/inventory/tests",
     deps = [
         "//src/v/bytes:iostream",
         "//src/v/cloud_storage",
@@ -97,6 +96,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         "//src/v/cloud_storage",
+        "//src/v/cloud_storage:types",
         "//src/v/cloud_storage/inventory/tests:common",
         "//src/v/cloud_storage_clients",
         "//src/v/cluster",

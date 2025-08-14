@@ -159,7 +159,8 @@ ss::future<result<model::offset, cluster::errc>> local_service::produce(
       *shard,
       ntp,
       [timeout,
-       batches = chunked_vector<model::record_batch>(std::move(batches))](
+       batches = chunked_vector<model::record_batch>(
+         std::from_range, std::move(batches) | std::views::as_rvalue)](
         kafka::partition_proxy* partition) mutable {
           return partition
             ->replicate(std::move(batches), make_replicate_options(timeout))

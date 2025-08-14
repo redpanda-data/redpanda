@@ -15,7 +15,7 @@
 
 #include <utility>
 
-using namespace experimental::serde::json::detail;
+using namespace serde::json::detail;
 
 constexpr std::string_view plain_seed
   = R"(0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ)";

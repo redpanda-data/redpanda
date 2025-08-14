@@ -11,7 +11,7 @@
 
 #include "absl/time/time.h"
 #include "bytes/iobuf.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "iceberg/conversion/conversion_outcome.h"
 #include "iceberg/conversion/protobuf_utils.h"
 #include "iceberg/values.h"

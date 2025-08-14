@@ -52,6 +52,8 @@ public:
     }
     kafka_produce_transport& producer() { return _producer; }
 
+    ss::future<> stop() { co_await _producer.stop(); }
+
     // Produces records, flushing and rolling the local log, and uploading
     // according to the given parameters. Once the given segments are produced,
     // the partition manifest is uploaded.

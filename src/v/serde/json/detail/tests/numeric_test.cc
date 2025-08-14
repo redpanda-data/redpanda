@@ -37,7 +37,7 @@
 #include <string_view>
 #include <variant>
 
-using namespace experimental::serde::json::detail;
+using namespace serde::json::detail;
 
 struct test_case {
     /// Shortcut for valid inputs. Not a constructor because we want to

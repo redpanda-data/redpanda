@@ -11,6 +11,9 @@
 #pragma once
 
 #include "absl/container/btree_map.h"
+#include "bytes/iobuf_parser.h"
+#include "serde/rw/map.h"
+#include "serde/rw/rw.h"
 
 /**
  * A container that contains non-empty, open intervals.
@@ -40,6 +43,7 @@ public:
         T start;
         T length;
     };
+    bool operator==(const interval_set<T>&) const = default;
 
     /**
      * Insert the interval into the set, returning the resulting iterator and
@@ -92,6 +96,16 @@ public:
      */
     static auto to_start(const_iterator it) { return it->first; }
     static auto to_end(const_iterator it) { return it->second; }
+
+    friend void read_nested(
+      iobuf_parser& in, interval_set& is, const size_t bytes_left_limit) {
+        using serde::read_nested;
+        return read_nested(in, is.set_, bytes_left_limit);
+    }
+    friend void write(iobuf& out, interval_set is) {
+        using serde::write;
+        return write(out, std::move(is.set_));
+    }
 
 private:
     /**

@@ -12,12 +12,11 @@
 #include "absl/container/btree_map.h"
 #include "base/vlog.h"
 #include "bytes/iobuf_parser.h"
-#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "raft/consensus_utils.h"
-#include "raft/types.h"
 #include "reflection/adl.h"
 #include "serde/rw/rw.h"
+#include "ssx/future-util.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
 

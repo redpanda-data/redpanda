@@ -12,7 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "serde/envelope.h"
@@ -131,12 +131,15 @@ private:
    1 byte  - non_data_timestamps
  */
 struct index_state
-  : serde::envelope<index_state, serde::version<9>, serde::compat_version<4>> {
+  : serde::envelope<index_state, serde::version<10>, serde::compat_version<4>> {
     static constexpr auto monotonic_timestamps_version = 5;
     static constexpr auto broker_timestamp_version = 6;
     static constexpr auto num_compactible_records_version = 7;
     static constexpr auto clean_compact_timestamp_version = 8;
     static constexpr auto may_have_tombstone_records_version = 9;
+    // Added in the same version.
+    static constexpr auto self_compact_timestamp_version = 10;
+    static constexpr auto has_transaction_batches_version = 10;
 
     static index_state
     make_empty_index(model::offset base_offset, offset_delta_time with_offset);
@@ -197,10 +200,11 @@ struct index_state
     // the index.
     std::optional<model::timestamp> broker_timestamp{std::nullopt};
 
-    // The number of compactible records appended to the segment. This may not
-    // necessarily indicate the exact number of compactible records, e.g. if
-    // the segment was truncated, the count will remain the same. As such, this
-    // value may be an overestimate of the exact number of compactible records.
+    // The number of records appended to the segment that could be considered
+    // for removal via compaction. This may not necessarily indicate the exact
+    // number of compactible records, e.g. if the segment was truncated, the
+    // count will remain the same. As such, this value may be an overestimate of
+    // the exact number of compactible records.
     //
     // Returns std::nullopt if this index was written in a version that didn't
     // support this field, and we can't conclude anything.
@@ -216,6 +220,21 @@ struct index_state
     // deduplication/segment data copying is performed and it is proven that
     // the segment does not contain any tombstone records.
     bool may_have_tombstone_records{true};
+
+    // If set, the timestamp at which this segment was first self compacted.
+    // Like `clean_compact_timestamp`, this can only be set once per segment and
+    // is preserved across segment concatenations (that is, the maximum
+    // self_compact_timestamp of all segments being concatenated is assigned to
+    // the replacement segment.)
+    // This preserveration is important for transactional batch removal, as its
+    // delete horizon is set by `self_compact_timestamp + delete.retention.ms`.
+    std::optional<model::timestamp> self_compact_timestamp{std::nullopt};
+
+    // has_transaction_batches is `false` by default, but set in
+    // segment::append() when transactional batches are added. It remains `true`
+    // until compaction deduplication/segment data copying is performed and all
+    // transaction batches are removed.
+    bool has_transaction_batches{false};
 
     size_t size() const;
 

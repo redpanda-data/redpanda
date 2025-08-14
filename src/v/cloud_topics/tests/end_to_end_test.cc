@@ -9,6 +9,7 @@
  */
 
 #include "cloud_io/tests/s3_imposter.h"
+#include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "config/configuration.h"
 #include "kafka/server/tests/list_offsets_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
@@ -60,7 +61,11 @@ TEST_F(e2e_fixture, test_create_cloud_topic) {
     wait_for_leader(ntp).get();
 
     auto partition = app.partition_manager.local().get(ntp);
-    ASSERT_TRUE(partition->dl_stm_api() != nullptr);
+    ASSERT_TRUE(
+      partition->raft()
+        ->stm_manager()
+        ->get<experimental::cloud_topics::ctp_stm>()
+      != nullptr);
 }
 
 TEST_F(e2e_fixture, test_l0_path) {
@@ -79,6 +84,7 @@ TEST_F(e2e_fixture, test_l0_path) {
     // Produce data to the partition
     kafka_produce_transport producer(make_kafka_client().get());
     producer.start().get();
+    auto deferred_close = ss::defer([&producer] { producer.stop().get(); });
 
     size_t total_records = 100;
     size_t records_per_batch = 1;
@@ -96,6 +102,7 @@ TEST_F(e2e_fixture, test_l0_path) {
 
     kafka_consume_transport consumer(make_kafka_client().get());
     consumer.start().get();
+    auto deferred_c_close = ss::defer([&consumer] { consumer.stop().get(); });
     auto consumed_records = consumer
                               .consume_from_partition(
                                 topic_name,

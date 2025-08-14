@@ -117,6 +117,10 @@ private:
     template<typename T>
     void add_allocations_for_new_partitions(const T&);
 
+    void update_final_counts(
+      const std::vector<model::broker_shard>& previous,
+      const std::vector<model::broker_shard>& target);
+
     void update_allocations_for_reconfiguration(
       const std::vector<model::broker_shard>& previous,
       const std::vector<model::broker_shard>& target);

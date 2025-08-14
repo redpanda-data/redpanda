@@ -14,7 +14,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "base/seastarx.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/client/broker.h"
 #include "kafka/client/configuration.h"
 #include "kafka/protocol/metadata.h"
@@ -25,15 +25,17 @@
 namespace kafka::client {
 
 class brokers {
-    using brokers_t
-      = absl::flat_hash_set<shared_broker_t, broker_hash, broker_eq>;
+    using brokers_t = absl::flat_hash_map<model::node_id, shared_broker_t>;
 
 public:
     explicit brokers(
       const connection_configuration& config, prefix_logger& logger)
-      : _config(config)
-      , _logger(&logger)
-      , _factory(_config, *_logger) {};
+      : brokers(
+          logger, std::make_unique<remote_broker_factory>(config, logger)) {};
+
+    brokers(prefix_logger& logger, std::unique_ptr<broker_factory> factory)
+      : _logger(&logger)
+      , _factory(std::move(factory)) {};
 
     brokers(const brokers&) = delete;
     brokers(brokers&&) = default;
@@ -59,7 +61,8 @@ public:
      * Applies the metadata response to the brokers. This method will throw if
      * any of the brokers can not be connected to.
      */
-    ss::future<> apply(chunked_vector<metadata_response::broker> brokers);
+    ss::future<>
+    apply(const chunked_vector<metadata_response::broker>& brokers);
 
     /// \brief Returns true if there are no connected brokers
     bool empty() const;
@@ -67,14 +70,32 @@ public:
     ss::future<shared_broker_t>
     create_broker(model::node_id node_id, net::unresolved_address addr);
 
+    size_t size() const { return _brokers.size(); }
+    /**
+     * Returns the range of versions that is supported by all the brokers in the
+     * cluster. It connects to the brokers if necessary.
+     */
+    ss::future<std::optional<api_version_range>> supported_api_versions(
+      api_key key, std::optional<std::reference_wrapper<ss::abort_source>>);
+
+    /**
+     * Returns the range of versions that is supported the requested broker.
+     * Connection to the broker is established if necessary.
+     */
+    ss::future<std::optional<api_version_range>> supported_api_versions(
+      model::node_id id,
+      api_key key,
+      std::optional<std::reference_wrapper<ss::abort_source>>);
+
 private:
-    const connection_configuration& _config;
+    ss::future<> do_erase(model::node_id id);
     /// \brief Brokers map a model::node_id to a client.
     brokers_t _brokers;
     /// \brief Next broker to select with round-robin
     size_t _next_broker{0};
     prefix_logger* _logger;
-    broker_factory _factory;
+    std::unique_ptr<broker_factory> _factory;
+    mutex _state_mutex{"brokers::mutex"};
 };
 
 } // namespace kafka::client

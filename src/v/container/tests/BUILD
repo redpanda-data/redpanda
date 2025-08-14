@@ -14,13 +14,13 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
-    name = "fragmented_vector_test",
+    name = "chunked_vector_test",
     timeout = "short",
     srcs = [
-        "fragmented_vector_test.cc",
+        "chunked_vector_test.cc",
     ],
     deps = [
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/random:generators",
         "//src/v/serde",
         "//src/v/serde:vector",
@@ -64,14 +64,14 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_btest(
-    name = "fragmented_vector_async_test",
+    name = "chunked_vector_async_test",
     timeout = "short",
     srcs = [
-        "fragmented_vector_async_test.cc",
+        "chunked_vector_async_test.cc",
     ],
     deps = [
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/test_utils:seastar_boost",
         "@seastar//:testing",
     ],
@@ -82,7 +82,6 @@ redpanda_test_cc_library(
     hdrs = [
         "bench_utils.h",
     ],
-    include_prefix = "container/tests",
     visibility = ["//visibility:private"],
     deps = [
         "//src/v/base",
@@ -100,8 +99,8 @@ redpanda_cc_bench(
     deps = [
         ":bench_utils",
         "//src/v/base",
+        "//src/v/container:chunked_vector",
         "//src/v/container:contiguous_range_map",
-        "//src/v/container:fragmented_vector",
         "//src/v/random:generators",
         "@abseil-cpp//absl/container:btree",
         "@boost//:range",

@@ -22,6 +22,8 @@ namespace pandaproxy::schema_registry {
 
 using server = ctx_server<service>;
 
+constexpr auto audit_svc_name = "Redpanda Schema Registry Service";
+
 class auth {
 public:
     enum class level {
@@ -47,12 +49,9 @@ public:
 
     using regular_function_handler = ss::noncopyable_function<
       ss::future<server::reply_t>(server::request_t, server::reply_t)>;
-    using deferred_function_handler
-      = ss::noncopyable_function<ss::future<server::reply_t>(
-        server::request_t,
-        server::reply_t,
-        auth,
-        std::optional<request_auth_result>)>;
+    using deferred_function_handler = ss::noncopyable_function<ss::future<
+      server::reply_t>(
+      server::request_t, server::reply_t, std::optional<request_auth_result>)>;
     using function_handler
       = std::variant<regular_function_handler, deferred_function_handler>;
 
@@ -72,7 +71,8 @@ public:
     // The presence of a returned authentication result indicates that the
     // authorization check was deferred and has to be done inside the method
     // handler
-    std::optional<request_auth_result> handle_auth(server::request_t& rq) const;
+    std::optional<request_auth_result>
+    handle_auth(server::request_t& rq, std::string_view operation_name) const;
 
 private:
     level _lvl;

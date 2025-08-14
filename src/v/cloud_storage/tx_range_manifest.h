@@ -11,7 +11,7 @@
 #pragma once
 
 #include "cloud_storage/base_manifest.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 
@@ -24,7 +24,7 @@ class tx_range_manifest final : public base_manifest {
 public:
     /// Create manifest for specific ntp
     explicit tx_range_manifest(
-      remote_segment_path spath, fragmented_vector<model::tx_range> range);
+      remote_segment_path spath, chunked_vector<model::tx_range> range);
 
     /// Create empty manifest that supposed to be updated later
     explicit tx_range_manifest(remote_segment_path spath);
@@ -54,7 +54,7 @@ public:
         return manifest_type::tx_range;
     };
 
-    fragmented_vector<model::tx_range>&& get_tx_range() && {
+    chunked_vector<model::tx_range>&& get_tx_range() && {
         return std::move(_ranges);
     }
 
@@ -63,6 +63,6 @@ public:
 
 private:
     remote_segment_path _path;
-    fragmented_vector<model::tx_range> _ranges;
+    chunked_vector<model::tx_range> _ranges;
 };
 } // namespace cloud_storage

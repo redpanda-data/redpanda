@@ -26,8 +26,6 @@ struct offsets_recovery_request
       offsets_recovery_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     model::ntp offsets_ntp;
     cloud_storage_clients::bucket_name bucket;
     std::vector<ss::sstring> offsets_snapshot_paths;
@@ -57,8 +55,6 @@ struct offsets_recovery_reply
       offsets_recovery_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     cluster::errc ec{};
 
     auto serde_fields() { return std::tie(ec); }

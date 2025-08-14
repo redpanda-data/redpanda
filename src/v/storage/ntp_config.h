@@ -82,9 +82,7 @@ public:
         model::iceberg_mode iceberg_mode{default_iceberg_mode};
         bool cloud_topic_enabled{default_cloud_topic_enabled};
 
-        // Should not be enabled at the same time as any other tiered storage
-        // properties.
-        tristate<std::chrono::milliseconds> tombstone_retention_ms;
+        tristate<std::chrono::milliseconds> delete_retention_ms;
 
         // Controls segment compaction eligiblity.
         tristate<double> min_cleanable_dirty_ratio;
@@ -318,13 +316,40 @@ public:
                           : cluster_default;
     }
 
-    std::optional<std::chrono::milliseconds> tombstone_retention_ms() const {
+    std::optional<std::chrono::milliseconds> delete_retention_ms() const {
         if (is_read_replica_mode_enabled()) {
             // RRR sanity check.
             return std::nullopt;
         }
         auto& cluster_default
           = config::shard_local_cfg().tombstone_retention_ms();
+        if (_overrides) {
+            // If the tristate is disabled, return nullopt.
+            if (_overrides->delete_retention_ms.is_disabled()) {
+                return std::nullopt;
+            }
+            // If the tristate has a value, use it.
+            if (_overrides->delete_retention_ms.has_optional_value()) {
+                return _overrides->delete_retention_ms.value();
+            }
+
+            // If the tristate holds an empty optional, fall back to cluster
+            // default.
+            return cluster_default;
+        }
+
+        // Fall back to cluster default
+        return cluster_default;
+    }
+
+    // Unfortunately delete.retention.ms has to be split into two logical
+    // properties- tombstone_retention_ms and tx_retention_ms.
+    // This is because of the race conditions that exist with tombstone removal
+    // within a tiered storage enabled topic that don't exist with tx batch
+    // removal.
+    // tombstone_retention_ms should always == std::nullopt if tiered storage is
+    // enabled.
+    std::optional<std::chrono::milliseconds> tombstone_retention_ms() const {
         if (_overrides) {
             // Tombstone deletion should not be enabled at the same time as
             // tiered storage.
@@ -334,22 +359,12 @@ public:
                    != model::shadow_indexing_mode::disabled) {
                 return std::nullopt;
             }
-            // If the tristate is disabled, return nullopt.
-            if (_overrides->tombstone_retention_ms.is_disabled()) {
-                return std::nullopt;
-            }
-            // If the tristate has a value, use it.
-            if (_overrides->tombstone_retention_ms.has_optional_value()) {
-                return _overrides->tombstone_retention_ms.value();
-            }
-
-            // If the tristate holds an empty optional, fall back to cluster
-            // default.
-            return cluster_default;
         }
-        // Fall back to cluster default, since _overrides being nullptr signals
-        // that remote.read and remote.write is disabled for this topic.
-        return cluster_default;
+        return delete_retention_ms();
+    }
+
+    std::optional<std::chrono::milliseconds> tx_retention_ms() const {
+        return delete_retention_ms();
     }
 
     std::optional<model::cleanup_policy_bitflags>

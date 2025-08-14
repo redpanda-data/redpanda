@@ -28,7 +28,6 @@ struct transfer_leadership_request
       transfer_leadership_request,
       serde::version<1>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     group_id group;
     std::optional<model::node_id> target;
     std::optional<std::chrono::milliseconds> timeout;
@@ -50,7 +49,6 @@ struct transfer_leadership_reply
       transfer_leadership_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     bool success{false};
     raft::errc result;
 

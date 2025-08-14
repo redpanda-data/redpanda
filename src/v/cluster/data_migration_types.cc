@@ -10,6 +10,7 @@
  */
 #include "cluster/data_migration_types.h"
 
+#include "model/namespace.h"
 #include "ssx/sformat.h"
 #include "utils/to_string.h"
 
@@ -30,11 +31,15 @@ ss::sstring print_migration(const data_migration& dm) {
       });
 }
 } // namespace
+
 data_migration copy_migration(const data_migration& migration) {
     return std::visit(
       [](const auto& migration) { return data_migration{migration.copy()}; },
       migration);
 }
+
+const chunked_vector<inbound_topic> inbound_migration::consumer_offsets_topic{
+  {.source_topic_name = model::kafka_consumer_offsets_nt}};
 
 inbound_migration inbound_migration::copy() const {
     return inbound_migration{
@@ -42,6 +47,9 @@ inbound_migration inbound_migration::copy() const {
       .groups = groups.copy(),
       .auto_advance = auto_advance};
 }
+
+const chunked_vector<model::topic_namespace>
+  outbound_migration::consumer_offsets_topic{model::kafka_consumer_offsets_nt};
 
 outbound_migration outbound_migration::copy() const {
     return outbound_migration{

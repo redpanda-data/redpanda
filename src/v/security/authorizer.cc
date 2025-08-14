@@ -125,12 +125,12 @@ authorizer::acls(const acl_binding_filter& filter) const {
     return store().acls(filter);
 }
 
-ss::future<fragmented_vector<acl_binding>> authorizer::all_bindings() const {
+ss::future<chunked_vector<acl_binding>> authorizer::all_bindings() const {
     return store().all_bindings();
 }
 
 ss::future<>
-authorizer::reset_bindings(const fragmented_vector<acl_binding>& bindings) {
+authorizer::reset_bindings(const chunked_vector<acl_binding>& bindings) {
     return store().reset_bindings(bindings);
 }
 

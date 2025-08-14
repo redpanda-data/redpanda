@@ -45,7 +45,7 @@
 #include <google/protobuf/empty.pb.h>
 #include <google/protobuf/field_mask.pb.h>
 #include <google/protobuf/io/tokenizer.h>
-#include <google/protobuf/io/zero_copy_stream.h>
+#include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <google/protobuf/source_context.pb.h>
 #include <google/protobuf/struct.pb.h>
 #include <google/protobuf/timestamp.pb.h>
@@ -92,7 +92,7 @@ struct descriptor_hasher {
     using is_transparent = void;
 
     std::size_t operator()(const pb::FileDescriptor* s) const {
-        return absl::Hash<std::string>()(s->name());
+        return absl::Hash<std::string_view>()(s->name());
     }
     std::size_t operator()(const ss::sstring& s) const {
         return absl::Hash<ss::sstring>()(s);
@@ -569,7 +569,7 @@ protobuf_schema_definition::name(const std::vector<int>& fields) const {
     if (d.has_error()) {
         return d.error();
     }
-    return d.value().get().full_name();
+    return ss::sstring(d.value().get().full_name());
 }
 
 ::result<

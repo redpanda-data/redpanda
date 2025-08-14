@@ -10,7 +10,6 @@
  */
 
 #pragma once
-#include "absl/algorithm/container.h"
 #include "cluster/commands.h"
 #include "cluster/fwd.h"
 #include "model/record.h"
@@ -18,6 +17,7 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <algorithm>
 #include <array>
 
 namespace cluster {
@@ -47,7 +47,7 @@ public:
           model::record_batch_type::acl_management_cmd,
           model::record_batch_type::role_management_cmd,
         };
-        return absl::c_any_of(sec_batch_types, [&batch](auto bt) {
+        return std::ranges::any_of(sec_batch_types, [&batch](auto bt) {
             return batch.header().type == bt;
         });
     }

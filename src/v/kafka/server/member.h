@@ -13,7 +13,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/join_group.h"
 #include "kafka/protocol/schemata/describe_groups_response.h"
 #include "kafka/protocol/sync_group.h"

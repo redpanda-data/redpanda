@@ -235,6 +235,10 @@ public:
     /// requests. It is also important to note that the value for max_keys will
     /// be capped by the cloud provider default (which may vary between
     /// providers, e.g AWS has a limit of 1000 keys per ListObjects request).
+    /// The result may also contain less than max_keys (or even no results) even
+    /// though there is data if the continuation_token is followed. Use the
+    /// is_truncated field in the result to see if there is more data to be
+    /// fetched.
     /// \param continuation_token The token hopefully passed back to the user
     /// from a prior list_objects() request, in the case that they are handling
     /// a truncated result manually.

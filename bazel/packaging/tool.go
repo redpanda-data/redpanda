@@ -22,36 +22,100 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"testing/fstest"
 	"time"
 )
 
-type fipsPkgConfig struct {
-	Module string `json:"module"`
-	Config string `json:"config"`
+type fileConfig struct {
+	Path       string `json:"path"`
+	Name       string `json:"name"`
+	SourcePath string `json:"source"`
 }
 
 type pkgConfig struct {
-	RedpandaBinary    string         `json:"redpanda_binary"`
-	RPUtil            *string        `json:"rp_util"`
-	IOTune            *string        `json:"iotune"`
-	HWLocCalc         *string        `json:"hwloc_calc"`
-	HWLocDistrib      *string        `json:"hwloc_distrib"`
-	OpenSSL           *string        `json:"openssl"`
-	RPKBinary         *string        `json:"rpk"`
-	SharedLibraries   []string       `json:"shared_libraries"`
-	DefaultYAMLConfig *string        `json:"default_yaml_config"`
-	Owner             int            `json:"owner"`
-	DirectoryMode     bool           `json:"directory_mode"`
-	Fips              *fipsPkgConfig `json:"fips"`
+	PackageDirectories []string     `json:"package_dirs"`
+	PackageFiles       []fileConfig `json:"package_files"`
+	DirectoryMode      bool         `json:"directory_mode"`
+	Owner              int          `json:"owner"`
+}
+
+const rootDir = "___root___"
+
+// buildPackageStructure creates a MapFS structure based on the provided package configuration.
+// It sets up directories and package files specified in the configuration.
+// The root directory is defined as "___root___" and all paths are relative to this root.
+// NOTE: the root directory is required to be present in the MapFS structure for the walkDir function to work.
+
+func buildPackageStructure(cfg pkgConfig) (fstest.MapFS, error) {
+	mapFs := fstest.MapFS{}
+
+	// Add directories
+	for _, dir := range cfg.PackageDirectories {
+		path := filepath.Join(rootDir, dir)
+		mapFs[path] = &fstest.MapFile{
+			Mode: fs.ModeDir,
+		}
+	}
+
+	// Add package files
+	for _, file := range cfg.PackageFiles {
+		path := filepath.Join(rootDir, file.Path, file.Name)
+		mapFs[path] = &fstest.MapFile{}
+	}
+
+	return mapFs, nil
+}
+
+func createPackageDirectories(mapFs fstest.MapFS, dirFunction func(path string) error) error {
+	return fs.WalkDir(mapFs, rootDir, func(path string, info fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == rootDir {
+			return nil // Skip the root directory itself
+		}
+		// Get the relative path from the root directory, we do not want the root directory in the path
+		relativePath, err := filepath.Rel(rootDir, path)
+
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return dirFunction(relativePath)
+		}
+		return nil
+	})
+}
+
+func createPackage(cfg pkgConfig, createDir func(path string) error, createFile func(fileConfig fileConfig) error) error {
+	// Create package directory structure
+	mapFs, err := buildPackageStructure(cfg)
+	if err != nil {
+		return fmt.Errorf("unable to build package structure: %w", err)
+	}
+
+	err = createPackageDirectories(mapFs, createDir)
+	if err != nil {
+		return fmt.Errorf("error creating package directories: %w", err)
+	}
+
+	for _, f := range cfg.PackageFiles {
+		if err := createFile(f); err != nil {
+			return fmt.Errorf("error creating package file %s: %w", f.SourcePath, err)
+		}
+	}
+
+	return nil
 }
 
 func createTarball(cfg pkgConfig, w io.Writer) error {
 	tw := tar.NewWriter(w)
 	defer tw.Close()
-	writeFile := func(tarPath, fsPath string) error {
-		file, err := os.Open(fsPath)
+	writeFile := func(fileConfig fileConfig) error {
+		file, err := os.Open(fileConfig.SourcePath)
 		if err != nil {
 			return err
 		}
@@ -60,7 +124,7 @@ func createTarball(cfg pkgConfig, w io.Writer) error {
 			return err
 		}
 		err = tw.WriteHeader(&tar.Header{
-			Name:     tarPath,
+			Name:     filepath.Join(fileConfig.Path, fileConfig.Name),
 			Mode:     int64(info.Mode()),
 			Typeflag: tar.TypeReg,
 			ModTime:  time.Unix(0, 0),
@@ -84,61 +148,9 @@ func createTarball(cfg pkgConfig, w io.Writer) error {
 			Gid:      cfg.Owner,
 		})
 	}
-	// Collect the layout of the tarball first, then execute creating the tarball,
-	// so that defining the structure is not muddied up with error handling.
-	var ops []func() error
-	file := func(tarPath, fsPath string) {
-		ops = append(ops, func() error { return writeFile(tarPath, fsPath) })
-	}
-	dir := func(path string) {
-		ops = append(ops, func() error { return writeDir(path) })
-	}
-
-	if cfg.DefaultYAMLConfig != nil {
-		dir("etc/")
-		dir("etc/redpanda/")
-		file("etc/redpanda/redpanda.yaml", *cfg.DefaultYAMLConfig)
-	}
-	dir("opt/")
-	dir("opt/redpanda/")
-
-	dir("opt/redpanda/lib/")
-	for _, so := range cfg.SharedLibraries {
-		file(filepath.Join("opt/redpanda/lib", filepath.Base(so)), so)
-	}
-
-	dir("opt/redpanda/bin/")
-	file("opt/redpanda/bin/redpanda", cfg.RedpandaBinary)
-	for name, binary := range map[string]*string{
-		"rp_util":       cfg.RPUtil,
-		"rpk":           cfg.RPKBinary,
-		"iotune":        cfg.IOTune,
-		"hwloc-calc":    cfg.HWLocCalc,
-		"hwloc-distrib": cfg.HWLocDistrib,
-		"openssl":       cfg.OpenSSL,
-	} {
-		if binary != nil {
-			file(filepath.Join("opt/redpanda/bin/", name), *binary)
-		}
-	}
-	if cfg.Fips != nil {
-		dir("opt/redpanda/fips/")
-		file("opt/redpanda/fips/fips.so", cfg.Fips.Module)
-		file("opt/redpanda/fips/fipsmodule.cnf", cfg.Fips.Config)
-	}
-	dir("var/")
-	dir("var/lib/")
-	dir("var/lib/redpanda/")
-	dir("var/lib/redpanda/data/")
-
-	// Now execute the above plan, handling errors.
-	for _, op := range ops {
-		if err := op(); err != nil {
-			return err
-		}
-	}
-	return nil
+	return createPackage(cfg, writeDir, writeFile)
 }
+
 func copyFile(src string, dst string) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
@@ -170,65 +182,14 @@ func createPackageDir(cfg pkgConfig, output string) error {
 		return nil
 	}
 
-	file := func(src string, dir string, name string) error {
-		if err := copyFile(src, filepath.Join(output, dir, name)); err != nil {
-			return fmt.Errorf("Error copying file %s: %v", src, err)
+	file := func(fileConfig fileConfig) error {
+		if err := copyFile(fileConfig.SourcePath, filepath.Join(output, fileConfig.Path, fileConfig.Name)); err != nil {
+			return fmt.Errorf("Error copying file %s: %v", fileConfig.SourcePath, err)
 		}
 		return nil
 	}
 
-	if cfg.DefaultYAMLConfig != nil {
-		if err := dir("config"); err != nil {
-			return err
-		}
-	}
-	if err := dir("bin"); err != nil {
-		return err
-	}
-	if err := dir("lib"); err != nil {
-		return err
-	}
-
-	if err := dir("libexec"); err != nil {
-		return err
-	}
-
-	for _, so := range cfg.SharedLibraries {
-		if err := file(so, "lib", filepath.Base(so)); err != nil {
-			return err
-		}
-	}
-
-	if err := file(cfg.RedpandaBinary, "libexec", "redpanda"); err != nil {
-		return err
-	}
-
-	for name, binary := range map[string]*string{
-		"rp_util":       cfg.RPUtil,
-		"rpk":           cfg.RPKBinary,
-		"iotune":        cfg.IOTune,
-		"hwloc-calc":    cfg.HWLocCalc,
-		"hwloc-distrib": cfg.HWLocDistrib,
-		"openssl":       cfg.OpenSSL,
-	} {
-		if binary == nil {
-			continue
-		}
-		if err := file(*binary, "bin", name); err != nil {
-			return err
-		}
-	}
-
-	if cfg.Fips != nil {
-		if err := file(cfg.Fips.Module, "fips", "fips.so"); err != nil {
-			return err
-		}
-		if err := file(cfg.Fips.Config, "fips", "fipsmodule.cnf"); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return createPackage(cfg, dir, file)
 }
 
 func runTool() error {

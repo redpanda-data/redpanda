@@ -11,6 +11,7 @@
 
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/configuration.h"
+#include "config/property.h"
 
 namespace cloud_storage {
 

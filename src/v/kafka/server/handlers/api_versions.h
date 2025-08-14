@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/api_versions.h"
 #include "kafka/server/handlers/handler.h"
 

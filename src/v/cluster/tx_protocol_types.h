@@ -12,7 +12,7 @@
 
 #include "cluster/errc.h"
 #include "cluster/tx_errc.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -29,8 +29,6 @@ struct try_abort_reply
       envelope<try_abort_reply, serde::version<0>, serde::compat_version<0>> {
     using committed_type = ss::bool_class<struct committed_type_tag>;
     using aborted_type = ss::bool_class<struct aborted_type_tag>;
-
-    using rpc_adl_exempt = std::true_type;
 
     committed_type commited;
     aborted_type aborted;
@@ -65,7 +63,6 @@ struct try_abort_reply
 struct try_abort_request
   : serde::
       envelope<try_abort_request, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     using reply = try_abort_reply;
     static constexpr const std::string_view name = "try_abort";
 
@@ -100,8 +97,6 @@ struct init_tm_tx_request
       init_tm_tx_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     kafka::transactional_id tx_id{};
     std::chrono::milliseconds transaction_timeout_ms{};
     model::timeout_clock::duration timeout{};
@@ -130,8 +125,6 @@ struct init_tm_tx_request
 struct init_tm_tx_reply
   : serde::
       envelope<init_tm_tx_reply, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     // partition_not_exists, not_leader, topic_not_exists
     model::producer_identity pid;
     tx::errc ec;
@@ -196,8 +189,6 @@ struct end_tx_reply {
 struct fetch_tx_request
   : serde::
       envelope<fetch_tx_request, serde::version<1>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     kafka::transactional_id tx_id{};
     model::term_id term{};
     model::partition_id tm{0};
@@ -223,8 +214,6 @@ struct fetch_tx_request
 struct fetch_tx_reply
   : serde::
       envelope<fetch_tx_reply, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     enum class tx_status : int32_t {
         ongoing,
         preparing,
@@ -238,8 +227,6 @@ struct fetch_tx_reply
     struct tx_partition
       : serde::
           envelope<tx_partition, serde::version<0>, serde::compat_version<0>> {
-        using rpc_adl_exempt = std::true_type;
-
         model::ntp ntp;
         model::term_id etag;
         model::revision_id topic_revision;
@@ -264,8 +251,6 @@ struct fetch_tx_reply
 
     struct tx_group
       : serde::envelope<tx_group, serde::version<0>, serde::compat_version<0>> {
-        using rpc_adl_exempt = std::true_type;
-
         kafka::group_id group_id;
         model::term_id etag;
 
@@ -328,7 +313,6 @@ struct fetch_tx_reply
 struct begin_tx_request
   : serde::
       envelope<begin_tx_request, serde::version<1>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
@@ -362,7 +346,6 @@ struct begin_tx_request
 struct begin_tx_reply
   : serde::
       envelope<begin_tx_reply, serde::version<1>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     model::ntp ntp;
     model::term_id etag;
     tx::errc ec;
@@ -402,8 +385,6 @@ struct prepare_tx_request
       prepare_tx_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     model::ntp ntp;
     model::term_id etag;
     model::partition_id tm;
@@ -441,8 +422,6 @@ struct prepare_tx_request
 struct prepare_tx_reply
   : serde::
       envelope<prepare_tx_reply, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     tx::errc ec{};
 
     prepare_tx_reply() noexcept = default;
@@ -461,8 +440,6 @@ struct prepare_tx_reply
 struct commit_tx_request
   : serde::
       envelope<commit_tx_request, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
@@ -492,8 +469,6 @@ struct commit_tx_request
 struct commit_tx_reply
   : serde::
       envelope<commit_tx_reply, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     tx::errc ec{};
 
     commit_tx_reply() noexcept = default;
@@ -512,8 +487,6 @@ struct commit_tx_reply
 struct abort_tx_request
   : serde::
       envelope<abort_tx_request, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
@@ -542,8 +515,6 @@ struct abort_tx_request
 struct abort_tx_reply
   : serde::
       envelope<abort_tx_reply, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     tx::errc ec{};
 
     abort_tx_reply() noexcept = default;
@@ -564,8 +535,6 @@ struct begin_group_tx_request
       begin_group_tx_request,
       serde::version<1>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     model::ntp ntp;
     kafka::group_id group_id;
     model::producer_identity pid;
@@ -619,8 +588,6 @@ struct begin_group_tx_reply
       begin_group_tx_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     model::term_id etag;
     tx::errc ec{};
 
@@ -648,8 +615,6 @@ struct prepare_group_tx_request
       prepare_group_tx_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     model::ntp ntp;
     kafka::group_id group_id;
     model::term_id etag;
@@ -703,8 +668,6 @@ struct prepare_group_tx_reply
       prepare_group_tx_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     tx::errc ec{};
 
     prepare_group_tx_reply() noexcept = default;
@@ -727,8 +690,6 @@ struct commit_group_tx_request
       commit_group_tx_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
@@ -778,7 +739,6 @@ struct commit_group_tx_reply
       commit_group_tx_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     tx::errc ec{};
 
     commit_group_tx_reply() noexcept = default;
@@ -801,7 +761,6 @@ struct abort_group_tx_request
       abort_group_tx_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     model::ntp ntp;
     kafka::group_id group_id;
     model::producer_identity pid;
@@ -851,7 +810,6 @@ struct abort_group_tx_reply
       abort_group_tx_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     tx::errc ec{};
 
     abort_group_tx_reply() noexcept = default;
@@ -874,8 +832,6 @@ struct find_coordinator_reply
       find_coordinator_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     std::optional<model::node_id> coordinator{std::nullopt};
     std::optional<model::ntp> ntp{std::nullopt};
     errc ec{errc::generic_tx_error}; // this should have been tx::errc
@@ -923,7 +879,6 @@ struct find_coordinator_request
       find_coordinator_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
     using reply = find_coordinator_reply;
     static constexpr const std::string_view name = "find_coordinator";
 
@@ -949,8 +904,6 @@ struct idempotent_request_info
       idempotent_request_info,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     int32_t first_sequence;
     int32_t last_sequence;
     model::term_id term;
@@ -972,8 +925,6 @@ struct producer_state_info
       producer_state_info,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     model::producer_identity pid;
     // idempotent request information only filled for data partitions
     // that support idempotency.
@@ -1017,8 +968,6 @@ struct get_producers_reply
       get_producers_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     tx::errc error_code{};
     chunked_vector<producer_state_info> producers;
     // Not all producers are sent as a guard rail in extreme cases
@@ -1043,8 +992,6 @@ struct get_producers_request
       get_producers_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     get_producers_request() noexcept = default;
 
     explicit get_producers_request(

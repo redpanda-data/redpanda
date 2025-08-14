@@ -33,6 +33,7 @@
 #include "utils/arch.h"
 #include "version/version.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/shard_id.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
@@ -621,7 +622,7 @@ admin_server::cpu_profile_handler(std::unique_ptr<ss::http::request> req) {
         shard_samples.dropped_samples = shard_profile.dropped_samples;
 
         // build up the samples list
-        std::vector<cpu_profile_sample> samples;
+        seastar::chunked_fifo<cpu_profile_sample> samples;
         samples.reserve(shard_profile.samples.size());
         for (auto& sample : shard_profile.samples) {
             ss::httpd::debug_json::cpu_profile_sample json_sample;
@@ -982,7 +983,7 @@ ss::future<ss::json::json_return_type> admin_server::get_node_uuid_handler() {
 }
 
 static json::validator make_broker_id_override_validator() {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
 {
     "type": "object",
     "properties": {

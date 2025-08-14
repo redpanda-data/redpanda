@@ -17,7 +17,7 @@
 #include "cloud_storage/topic_path_utils.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "hashing/xx.h"
 #include "utils/retry_chain_node.h"
 

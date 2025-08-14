@@ -24,9 +24,11 @@ import (
 
 func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		refs       string
-		schemaFile string
-		schemaType string
+		refs          string
+		schemaFile    string
+		schemaType    string
+		id            int
+		schemaVersion int
 	)
 	cmd := &cobra.Command{
 		Use:   "create SUBJECT --schema {filename}",
@@ -43,6 +45,9 @@ comma separated list of <name>:<subject>:<version> or a path to a file. The file
 must contain lines of name, subject, and version separated by a tab or space, or 
 the equivalent in json / yaml format.
 
+In import mode, you can specify a schema ID and version using the --id and
+--schema-version flags to assign specific values when creating the schema.
+
 EXAMPLES
 
 Create a protobuf schema with subject 'foo':
@@ -54,6 +59,9 @@ Create an avro schema, passing the type via flags:
 Create a protobuf schema that references the schema in subject 'my_subject', 
 version 1:
   rpk registry schema create foo --schema /path/to/file.proto --references my_name:my_subject:1
+
+Create a schema with a specific ID and version in import mode:
+  rpk registry schema create foo --schema /path/to/file.proto --id 42 --schema-version 3
 `,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -61,6 +69,11 @@ version 1:
 			if h, ok := f.Help(subjectSchema{}); ok {
 				out.Exit(h)
 			}
+
+			if schemaVersion != -1 && id == -1 {
+				out.Die("--schema-version requires --id to be specified")
+			}
+
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
@@ -82,7 +95,8 @@ version 1:
 				Type:       t,
 				References: references,
 			}
-			s, err := cl.CreateSchema(cmd.Context(), subject, schema)
+
+			s, err := cl.CreateSchemaWithIDAndVersion(cmd.Context(), subject, schema, id, schemaVersion)
 			out.MaybeDie(err, "unable to create schema: %v", err)
 
 			err = printSubjectSchemaTable(f, true, s)
@@ -93,6 +107,8 @@ version 1:
 	cmd.Flags().StringVar(&schemaType, "type", "", fmt.Sprintf("Schema type (%v); overrides schema file extension", strings.Join(supportedTypes, ",")))
 	cmd.Flags().StringVar(&schemaFile, "schema", "", "Schema filepath to upload, must be .avro, .avsc, or .proto")
 	cmd.Flags().StringVar(&refs, "references", "", "Comma-separated list of references (name:subject:version) or path to reference file")
+	cmd.Flags().IntVar(&id, "id", -1, "Optional schema ID to use when creating the schema in import mode")
+	cmd.Flags().IntVar(&schemaVersion, "schema-version", -1, "Optional schema version to use when creating the schema in import mode (requires --id)")
 	cmd.MarkFlagRequired("schema")
 
 	cmd.RegisterFlagCompletionFunc("type", validTypes())

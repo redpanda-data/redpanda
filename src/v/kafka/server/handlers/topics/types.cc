@@ -12,7 +12,7 @@
 #include "base/units.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/server/handlers/configs/config_response_utils.h"
 #include "kafka/server/handlers/configs/config_utils.h"
 #include "model/compression.h"

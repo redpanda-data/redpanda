@@ -100,7 +100,7 @@ static unsigned parse_codepoint(const char* buf) {
 
 } // namespace
 
-namespace experimental::serde::json::detail {
+namespace serde::json::detail {
 
 size_t string_parser::advance(
   ss::temporary_buffer<char>& buf, string_parser::result& err) {
@@ -378,4 +378,4 @@ size_t string_parser::advance(
     return pos;
 }
 
-} // namespace experimental::serde::json::detail
+} // namespace serde::json::detail

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "serde/envelope.h"
 #include "utils/named_type.h"
 #include "utils/uuid.h"
 
@@ -19,37 +20,49 @@
 
 namespace experimental::cloud_topics {
 
-enum class dl_stm_key {
-    push_overlay = 0,
-    start_snapshot = 1,
-    remove_snapshots_before_version = 2,
-    // TODO: add all commands
-};
-
 /// Offset in the cloud storage object
 using first_byte_offset_t = named_type<uint64_t, struct first_byte_offset_tag>;
 
 /// Size of the span in the cloud storage object in bytes
 using byte_range_size_t = named_type<uint64_t, struct byte_range_size_tag>;
 
-/// 128-bit unique id of the object
-using object_id = named_type<uuid_t, struct object_id_tag>;
+/// An epoch is a monotonically increasing value across the cluster.
+using cluster_epoch = named_type<int64_t, struct cloud_topics_epoch>;
+
+/// Return the previous cluster epoch value.
+inline constexpr cluster_epoch prev_cluster_epoch(cluster_epoch e) {
+    if (e <= cluster_epoch{0}) {
+        return cluster_epoch::min();
+    }
+    return cluster_epoch(e() - 1);
+}
+
+/// Is the identifier of a cloud topic object L0 object, it is a combination
+/// of a unique name (UUIDv4) and a cluster epoch.
+struct object_id
+  : serde::envelope<object_id, serde::version<0>, serde::version<0>> {
+    cluster_epoch epoch;
+    uuid_t name;
+    static object_id create(cluster_epoch epoch) {
+        return {.epoch = epoch, .name = uuid_t::create()};
+    }
+    auto serde_fields() { return std::tie(epoch, name); }
+    bool operator==(const object_id& other) const = default;
+    auto operator<=>(const object_id& other) const = default;
+
+    template<typename H>
+    friend H AbslHashValue(H h, const object_id& id) {
+        return H::combine(std::move(h), id.epoch(), id.name);
+    }
+};
 
 /// Type of ownership
-enum class dl_stm_object_ownership {
+enum class ctp_stm_object_ownership {
     exclusive = 0,
     shared = 1,
 };
 
 } // namespace experimental::cloud_topics
-
-template<>
-struct fmt::formatter<experimental::cloud_topics::dl_stm_key>
-  : fmt::formatter<std::string_view> {
-    auto format(
-      experimental::cloud_topics::dl_stm_key, fmt::format_context& ctx) const
-      -> decltype(ctx.out());
-};
 
 template<>
 struct fmt::formatter<experimental::cloud_topics::object_id>
@@ -60,9 +73,9 @@ struct fmt::formatter<experimental::cloud_topics::object_id>
 };
 
 template<>
-struct fmt::formatter<experimental::cloud_topics::dl_stm_object_ownership>
+struct fmt::formatter<experimental::cloud_topics::ctp_stm_object_ownership>
   : fmt::formatter<std::string_view> {
     auto format(
-      experimental::cloud_topics::dl_stm_object_ownership,
+      experimental::cloud_topics::ctp_stm_object_ownership,
       fmt::format_context& ctx) const -> decltype(ctx.out());
 };

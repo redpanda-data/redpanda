@@ -12,6 +12,7 @@
 #pragma once
 
 #include "absl/container/flat_hash_map.h"
+#include "compaction/fwd.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "storage/disk_log_appender.h"
@@ -77,7 +78,8 @@ public:
     disk_log_impl(const disk_log_impl&) = delete;
     disk_log_impl& operator=(const disk_log_impl&) = delete;
 
-    ss::future<> start(std::optional<truncate_prefix_config>) final;
+    ss::future<>
+    start(std::optional<truncate_prefix_config>, ss::abort_source& as) final;
     ss::future<std::optional<ss::sstring>> close() final;
     ss::future<> remove() final;
     ss::future<> flush() final;
@@ -93,8 +95,11 @@ public:
     ///
     /// The 'first' offset should be the first offset of the batch. The 'last'
     /// should be the last offset of the batch. The offset range is inclusive.
-    ss::future<std::optional<offset_range_size_result_t>>
-    offset_range_size(model::offset first, model::offset last) override;
+    ss::future<std::optional<offset_range_size_result_t>> offset_range_size(
+      model::offset first,
+      model::offset last,
+      ss::semaphore::time_point timeout
+      = ss::semaphore::time_point::max()) override;
 
     /// Find the offset range based on size requirements
     ///
@@ -106,6 +111,12 @@ public:
 
     /// Return true if the offset range contains compacted data
     bool is_compacted(model::offset first, model::offset last) const override;
+
+    bool eligible_for_compacted_reupload(
+      model::offset first, model::offset last) const final;
+
+    std::optional<model::offset> max_eligible_for_compacted_reupload_offset(
+      model::offset first = model::offset{0}) const final;
 
     ss::future<model::record_batch_reader> make_reader(log_reader_config) final;
     ss::future<model::record_batch_reader> make_reader(timequery_config);
@@ -157,7 +168,7 @@ public:
     void set_overrides(ntp_config::default_overrides) final;
     bool notify_compaction_update() final;
 
-    int64_t compaction_backlog() const final;
+    int64_t compaction_backlog() final;
 
     ss::future<usage_report> disk_usage(gc_config) override;
 
@@ -176,7 +187,7 @@ public:
      * across all partitions.
      */
     auto& gate() { return _compaction_housekeeping_gate; }
-    fragmented_vector<ss::lw_shared_ptr<segment>> cloud_gc_eligible_segments();
+    chunked_vector<ss::lw_shared_ptr<segment>> cloud_gc_eligible_segments();
     void set_cloud_gc_offset(model::offset) override;
 
     ss::future<reclaimable_offsets>
@@ -204,7 +215,7 @@ public:
     // returns a contiguous range of segments. It is up to the caller to filter
     // out these already cleanly-compacted segments.
     segment_set find_sliding_range(
-      const compaction_config& cfg,
+      const compaction::compaction_config& cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
 
     void
@@ -222,29 +233,31 @@ public:
     storage_resources& resources();
 
     // Self compacts a segment.
-    ss::future<compaction_result>
-    segment_self_compact(compaction_config, ss::lw_shared_ptr<segment> seg);
+    ss::future<compaction_result> segment_self_compact(
+      compaction::compaction_config,
+      ss::lw_shared_ptr<segment> seg,
+      bool force_compaction = false);
 
     ss::future<> adjacent_merge_compact(
       segment_set& segments,
-      compaction_config,
+      compaction::compaction_config,
       std::optional<model::offset> new_start_offset = std::nullopt);
 
     ss::future<bool> sliding_window_compact(
-      const compaction_config& cfg,
+      const compaction::compaction_config& cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
 
     ss::future<> rewrite_segment_with_offset_map(
-      const compaction_config& cfg,
+      const compaction::compaction_config& cfg,
       ss::lw_shared_ptr<segment> seg,
-      key_offset_map& map,
+      compaction::key_offset_map& map,
       bool is_finished_window_compaction,
       bool is_clean_compacted);
 
     ss::future<bool> chunked_sliding_window_compact(
-      const compaction_config& cfg,
+      const compaction::compaction_config& cfg,
       const segment_set& segs,
-      key_offset_map& map);
+      compaction::key_offset_map& map);
 
     const auto& compaction_ratio() const { return _compaction_ratio; }
 
@@ -266,7 +279,7 @@ public:
     // Returns the dirty ratio of the log.
     // The dirty ratio is the ratio of bytes in closed, dirty segments to the
     // total number of bytes in all closed segments in the log.
-    double dirty_ratio() final;
+    double dirty_ratio() const final;
 
     std::optional<model::timestamp> earliest_dirty_segment_ts() const final;
 
@@ -282,13 +295,39 @@ public:
     std::optional<
       chunked_vector<std::pair<segment_set::iterator, segment_set::iterator>>>
     find_adjacent_compaction_ranges(
-      const compaction_config& cfg,
+      const compaction::compaction_config& cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
 
     ss::future<std::optional<chunked_vector<compaction_result>>>
     compact_adjacent_segment_ranges(
-      storage::compaction_config cfg,
+      compaction::compaction_config cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
+
+    // Returns the timestamp of the earliest removable data in the log above
+    // the offset o. "Removable" refers to data that, through the
+    // `copy_data_segment_reducer::filter()` process during compaction, can be
+    // removed due to reasons other than de-duplication. Concretely, "removable"
+    // data can be either a tombstone record in a segment with a
+    // clean_compact_timestamp set, or a transactional batch in a segment with
+    // self_compact_timestamp set. Returns std::nullopt if neither of the above
+    // are found.
+    std::optional<model::timestamp>
+      earliest_removable_timestamp(model::offset) const final;
+
+    std::optional<model::offset> max_removed_offset() const final;
+
+    struct file_offset_t {
+        size_t position{};
+        model::timestamp base_timestamp{model::timestamp::missing()};
+        model::timestamp last_timestamp{model::timestamp::missing()};
+    };
+
+    /// Compute file offset of the batch inside the segment
+    ss::future<file_offset_t> get_file_offset(
+      ss::lw_shared_ptr<segment> s,
+      std::optional<segment_index::entry> index_entry,
+      model::offset target,
+      boundary_type boundary);
 
 private:
     friend class disk_log_appender; // for multi-term appends
@@ -296,13 +335,6 @@ private:
     friend ::storage_e2e_fixture;
     friend ::reupload_fixture; // for tests
     friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
-
-    /// Compute file offset of the batch inside the segment
-    ss::future<size_t> get_file_offset(
-      ss::lw_shared_ptr<segment> s,
-      std::optional<segment_index::entry> index_entry,
-      model::offset target,
-      boundary_type boundary);
 
     ss::future<model::record_batch_reader>
       make_unchecked_reader(log_reader_config);
@@ -326,11 +358,12 @@ private:
     // operation.
     ss::future<compaction_result> do_compact_adjacent_segments(
       chunked_vector<ss::lw_shared_ptr<segment>>& segments,
-      storage::compaction_config cfg);
+      compaction::compaction_config cfg);
 
     ss::future<std::optional<model::offset>> do_gc(gc_config);
     ss::future<> do_compact(
-      compaction_config, std::optional<model::offset> new_start_offset);
+      compaction::compaction_config,
+      std::optional<model::offset> new_start_offset);
 
     ss::future<> remove_empty_segments();
 
@@ -407,6 +440,15 @@ private:
     bool log_contains_offset_range(
       model::offset first, model::offset last) const noexcept;
 
+    // A log is eligible for compaction if at least one of the following
+    // is true:
+    // 1. It's gone long enough without compaction: the earliest first
+    //    batch timestamp of a dirty segment is longer ago than
+    //    the max compaction lag.
+    // 2. It's dirty enough: the dirty ratio is at least the minimum
+    //    cleanable dirty ratio.
+    bool needs_compaction() const final;
+
 private:
     // Computes the segment size based on the latest max_segment_size
     // configuration. This takes into consideration any segment size
@@ -473,8 +515,8 @@ private:
 
     size_t _reclaimable_size_bytes{0};
 
-    ssize_t _dirty_segment_bytes{0};
-    ssize_t _closed_segment_bytes{0};
+    mutable ssize_t _dirty_segment_bytes{0};
+    mutable ssize_t _closed_segment_bytes{0};
 
     // Update the number of bytes in dirty segments.
     //
@@ -513,8 +555,9 @@ private:
     // Performs a manual O(n) reset of the dirty and closed bytes in the log by
     // iterating over segment in the log. Used as a safety hatch in
     // dirty_ratio() to prevent returning a bogus value due to improper
-    // book-keeping.
-    void reset_dirty_and_closed_bytes();
+    // book-keeping. Marked as `const` to make call from `dirty_ratio()` compile
+    // (`_bytes` are marked as `mutable`).
+    void reset_dirty_and_closed_bytes() const;
 
     bool _compaction_enabled;
 };

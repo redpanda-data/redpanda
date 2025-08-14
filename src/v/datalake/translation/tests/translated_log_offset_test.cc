@@ -54,7 +54,8 @@ TEST(TranslatedLogOffsetTest, TestTranslatedOffsetsGrowingLog) {
     auto log = b.get_log();
 
     // Must initialize translator state.
-    log->start(std::nullopt).get();
+    ss::abort_source as;
+    log->start(std::nullopt, as).get();
 
     // A good property to check.
     ASSERT_TRUE(
@@ -162,7 +163,8 @@ TEST(TranslatedLogOffsetTest, TestTranslatedOffsetsGrowingLogConfigBatchStart) {
     auto log = b.get_log();
 
     // Must initialize translator state.
-    log->start(std::nullopt).get();
+    ss::abort_source as;
+    log->start(std::nullopt, as).get();
 
     // A good property to check.
     ASSERT_TRUE(
@@ -275,7 +277,8 @@ TEST(
     auto log = b.get_log();
 
     // Must initialize translator state.
-    log->start(std::nullopt).get();
+    ss::abort_source as;
+    log->start(std::nullopt, as).get();
 
     // A good property to check.
     ASSERT_TRUE(

@@ -40,12 +40,11 @@ redpanda_cc_library(
         "skipping_data_source.h",
         "versioned_log.h",
     ],
-    include_prefix = "storage/mvlog",
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iostream",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/container:interval_set",
         "//src/v/hashing:crc32c",
         "//src/v/io",

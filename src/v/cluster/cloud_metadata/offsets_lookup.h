@@ -13,6 +13,7 @@
 #include "cluster/fwd.h"
 #include "model/metadata.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/sharded.hh>
 
 namespace cluster::cloud_metadata {

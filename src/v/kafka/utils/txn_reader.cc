@@ -173,8 +173,7 @@ std::unique_ptr<model::record_batch_reader::impl> make_txn_filtered_reader(
         }
         filtered.push_back(std::move(batch));
     }
-    return model::make_fragmented_memory_record_batch_reader(
-             std::move(filtered))
+    return model::make_chunked_memory_record_batch_reader(std::move(filtered))
       .release();
 }
 

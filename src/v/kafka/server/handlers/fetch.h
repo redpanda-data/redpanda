@@ -10,7 +10,7 @@
  */
 #pragma once
 #include "cluster/rm_stm.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "container/intrusive_list_helpers.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/server/handlers/fetch/replica_selector.h"

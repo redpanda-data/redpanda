@@ -9,11 +9,11 @@ with arbitrary alignment/boundaries.
 StAX (Streaming API for XML) style API is used to parse JSON documents.
 
 ```cpp
-auto p = experimental::serde::json::parser(iobuf);
+auto p = serde::json::parser(iobuf);
 
 while (co_await p.next()) {
     switch (p.token()) {
-    case experimental::serde::json::token::object_start:
+    case serde::json::token::object_start:
         // handle object start
         break;
     // ... handle other token types

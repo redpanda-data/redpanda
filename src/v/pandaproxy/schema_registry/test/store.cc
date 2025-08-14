@@ -9,13 +9,14 @@
 
 #include "pandaproxy/schema_registry/store.h"
 
-#include "absl/algorithm/container.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/test/compatibility_avro.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/schema_registry/util.h"
 
 #include <boost/test/unit_test.hpp>
+
+#include <algorithm>
 
 namespace pps = pandaproxy::schema_registry;
 
@@ -266,7 +267,7 @@ BOOST_AUTO_TEST_CASE(test_store_get_schema_subjects) {
     auto subjects = s.get_schema_subjects(
       pps::schema_id{1}, pps::include_deleted::no);
     BOOST_REQUIRE_EQUAL(subjects.size(), 1);
-    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 1);
+    BOOST_REQUIRE_EQUAL(std::ranges::count_if(subjects, is_equal(subject0)), 1);
 
     // Second insert, same schema, expect id{1}
     ins_res = s.insert({subject1, schema1.share()});
@@ -283,16 +284,16 @@ BOOST_AUTO_TEST_CASE(test_store_get_schema_subjects) {
     subjects = s.get_schema_subjects(
       pps::schema_id{1}, pps::include_deleted::no);
     BOOST_REQUIRE_EQUAL(subjects.size(), 2);
-    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 1);
-    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject1)), 1);
-    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject2)), 0);
+    BOOST_REQUIRE_EQUAL(std::ranges::count_if(subjects, is_equal(subject0)), 1);
+    BOOST_REQUIRE_EQUAL(std::ranges::count_if(subjects, is_equal(subject1)), 1);
+    BOOST_REQUIRE_EQUAL(std::ranges::count_if(subjects, is_equal(subject2)), 0);
 
     subjects = s.get_schema_subjects(
       pps::schema_id{2}, pps::include_deleted::no);
     BOOST_REQUIRE_EQUAL(subjects.size(), 1);
-    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 0);
-    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject1)), 0);
-    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject2)), 1);
+    BOOST_REQUIRE_EQUAL(std::ranges::count_if(subjects, is_equal(subject0)), 0);
+    BOOST_REQUIRE_EQUAL(std::ranges::count_if(subjects, is_equal(subject1)), 0);
+    BOOST_REQUIRE_EQUAL(std::ranges::count_if(subjects, is_equal(subject2)), 1);
 
     // Test deletion
 
@@ -306,13 +307,13 @@ BOOST_AUTO_TEST_CASE(test_store_get_schema_subjects) {
     subjects = s.get_schema_subjects(
       pps::schema_id{1}, pps::include_deleted::no);
     BOOST_REQUIRE_EQUAL(subjects.size(), 1);
-    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject1)), 1);
+    BOOST_REQUIRE_EQUAL(std::ranges::count_if(subjects, is_equal(subject1)), 1);
 
     subjects = s.get_schema_subjects(
       pps::schema_id{1}, pps::include_deleted::yes);
     BOOST_REQUIRE_EQUAL(subjects.size(), 2);
-    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 1);
-    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject1)), 1);
+    BOOST_REQUIRE_EQUAL(std::ranges::count_if(subjects, is_equal(subject0)), 1);
+    BOOST_REQUIRE_EQUAL(std::ranges::count_if(subjects, is_equal(subject1)), 1);
 }
 
 BOOST_AUTO_TEST_CASE(test_store_get_subject_schema) {
@@ -406,14 +407,14 @@ BOOST_AUTO_TEST_CASE(test_store_get_subjects) {
     s.insert({subject0, string_def0.share()});
     subjects = s.get_subjects(pps::include_deleted::no);
     BOOST_REQUIRE_EQUAL(subjects.size(), 1);
-    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 1);
+    BOOST_REQUIRE_EQUAL(std::ranges::count_if(subjects, is_equal(subject0)), 1);
 
     // second insert
     s.insert({subject1, string_def0.share()});
     subjects = s.get_subjects(pps::include_deleted::no);
     BOOST_REQUIRE(subjects.size() == 2);
-    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 1);
-    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject1)), 1);
+    BOOST_REQUIRE_EQUAL(std::ranges::count_if(subjects, is_equal(subject0)), 1);
+    BOOST_REQUIRE_EQUAL(std::ranges::count_if(subjects, is_equal(subject1)), 1);
 
     // Delete subject0 version
     pps::seq_marker dummy_marker;

@@ -10,7 +10,6 @@
  */
 #include "wasmtime.h"
 
-#include "absl/algorithm/container.h"
 #include "absl/strings/escaping.h"
 #include "allocator.h"
 #include "base/type_traits.h"
@@ -21,12 +20,12 @@
 #include "logger.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
+#include "model/batch_compression.h"
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "model/transform.h"
 #include "schema_registry_module.h"
 #include "ssx/thread_worker.h"
-#include "storage/parser_utils.h"
 #include "transform_module.h"
 #include "utils/human.h"
 #include "utils/to_string.h"
@@ -53,6 +52,7 @@
 
 #include <fmt/ostream.h>
 
+#include <algorithm>
 #include <alloca.h>
 #include <csignal>
 #include <exception>
@@ -530,8 +530,7 @@ public:
             co_return;
         }
         if (batch.compressed()) {
-            batch = co_await storage::internal::decompress_batch(
-              std::move(batch));
+            batch = co_await model::decompress_batch(std::move(batch));
         }
         ss::future<> fut = co_await ss::coroutine::as_future(
           invoke_transform(std::move(batch), probe, std::move(cb)));
@@ -1659,7 +1658,7 @@ bool is_exported_memory(const parser::module_export& mod_export) {
 
 bool is_transform_abi_check_fn(const parser::module_import& mod_import) {
     constexpr std::array version = {1, 2};
-    return absl::c_any_of(version, [&mod_import](int version) {
+    return std::ranges::any_of(version, [&mod_import](int version) {
         return mod_import
                == parser::module_import{
                  .module_name = ss::sstring(transform_module::name),

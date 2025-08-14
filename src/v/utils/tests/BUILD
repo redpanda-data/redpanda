@@ -5,7 +5,6 @@ redpanda_test_cc_library(
     hdrs = [
         "randoms.h",
     ],
-    include_prefix = "utils/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/random:generators",
@@ -317,22 +316,6 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_btest(
-    name = "rwlock_test",
-    timeout = "short",
-    srcs = [
-        "rwlock_test.cc",
-    ],
-    deps = [
-        "//src/v/base",
-        "//src/v/ssx:semaphore",
-        "//src/v/test_utils:seastar_boost",
-        "//src/v/utils:rwlock",
-        "@seastar",
-        "@seastar//:testing",
-    ],
-)
-
-redpanda_cc_btest(
     name = "token_bucket_test",
     timeout = "short",
     srcs = [
@@ -571,6 +554,22 @@ redpanda_cc_btest(
     deps = [
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:backoff_policy",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "execution_monitor_test",
+    timeout = "short",
+    srcs = [
+        "execution_monitor_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:execution_monitor",
         "@boost//:test",
         "@seastar",
         "@seastar//:testing",

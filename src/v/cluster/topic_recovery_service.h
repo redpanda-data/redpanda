@@ -15,7 +15,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cluster/types.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/gate.hh>

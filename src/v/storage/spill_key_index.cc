@@ -71,7 +71,9 @@ spill_key_index::~spill_key_index() {
 }
 
 ss::future<> spill_key_index::index(
-  const compaction_key& v, model::offset base_offset, int32_t delta) {
+  const compaction::compaction_key& v,
+  model::offset base_offset,
+  int32_t delta) {
     return ss::try_with_gate(_gate, [this, &v, base_offset, delta]() {
         if (auto it = _midx.find(v); it != _midx.end()) {
             auto& pair = it->second;
@@ -149,7 +151,8 @@ spill_key_index::spill_some(size_t entry_size, size_t min_index_size) {
     }
 }
 
-ss::future<> spill_key_index::add_key(compaction_key b, value_type v) {
+ss::future<>
+spill_key_index::add_key(compaction::compaction_key b, value_type v) {
     auto f = ss::now();
     const auto entry_size = entry_mem_usage(b);
     const auto expected_size = idx_mem_usage() + _keys_mem_usage + entry_size;
@@ -198,7 +201,7 @@ ss::future<> spill_key_index::index(
        b = std::move(b),
        base_offset,
        delta]() {
-          auto key = enhance_key(batch_type, is_control_batch, b);
+          auto key = compaction::enhance_key(batch_type, is_control_batch, b);
           if (auto it = _midx.find(key); it != _midx.end()) {
               auto& pair = it->second;
               // must use both base+delta, since we only want to keep the

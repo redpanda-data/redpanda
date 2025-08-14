@@ -19,7 +19,7 @@
 #include "cluster/topic_table.h"
 #include "config/configuration.h"
 #include "container/chunked_hash_map.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"
@@ -35,10 +35,12 @@
 #include "kafka/server/group_tx_tracker_stm.h"
 #include "kafka/server/logger.h"
 #include "model/fundamental.h"
+#include "model/limits.h"
 #include "model/namespace.h"
 #include "model/record.h"
 #include "raft/errc.h"
 #include "raft/fundamental.h"
+#include "ssx/async_algorithm.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/abort_source.hh>
@@ -50,6 +52,7 @@
 #include <fmt/ranges.h>
 
 #include <chrono>
+#include <ranges>
 #include <system_error>
 
 using cluster::cloud_metadata::group_offsets;
@@ -62,7 +65,7 @@ group_manager::attached_partition::attached_partition(
   ss::lw_shared_ptr<cluster::partition> p)
   : loading(true)
   , partition(std::move(p)) {
-    catchup_lock = ss::make_lw_shared<ssx::rwlock>();
+    catchup_lock = ss::make_lw_shared<ss::rwlock>();
 }
 
 group_manager::attached_partition::~attached_partition() noexcept = default;
@@ -286,7 +289,7 @@ ss::future<> group_manager::handle_offset_expiration() {
      * build a light-weight snapshot of the groups to process. the snapshot
      * allows us to avoid concurrent modifications to _groups container.
      */
-    fragmented_vector<std::pair<group_ptr, size_t>> groups;
+    chunked_vector<std::pair<group_ptr, size_t>> groups;
     for (auto& group : _groups) {
         groups.emplace_back(group.second, 0);
     }
@@ -703,7 +706,7 @@ ss::future<result<model::offset>> group_manager::set_blocked_for_groups(
           co_ntp);
         co_return cluster::errc::partition_not_exists;
     }
-    auto maybe_holder = p->catchup_lock->attempt_read_lock();
+    auto maybe_holder = p->catchup_lock->try_hold_read_lock();
     if (!maybe_holder) {
         vlog(
           cluster::txlog.trace,
@@ -713,20 +716,20 @@ ss::future<result<model::offset>> group_manager::set_blocked_for_groups(
 
     const auto affected_gids
       = group_ids
-        | std::views::filter([this, to_block](const kafka::group_id& group_id) {
-              return to_block != _blocked_groups.contains(group_id);
+        | std::views::filter([&p, to_block](const kafka::group_id& group_id) {
+              return to_block != p->blocked_groups.contains(group_id);
           })
         | std::ranges::to<chunked_vector<kafka::group_id>>();
 
     // in case we return early with an exception or another error
-    auto revert_blocking = ss::defer([this, &affected_gids, to_block] {
+    auto revert_blocking = ss::defer([p, &affected_gids, to_block] {
         if (to_block) {
-            _blocked_groups.erase(affected_gids.begin(), affected_gids.end());
+            p->blocked_groups.erase(affected_gids.begin(), affected_gids.end());
         }
     });
     if (to_block) {
         // block early to avoid racing with new transactions
-        _blocked_groups.insert(affected_gids.begin(), affected_gids.end());
+        p->blocked_groups.insert(affected_gids.begin(), affected_gids.end());
 
         auto last_error = cluster::tx::errc::none;
         co_await ss::max_concurrent_for_each(
@@ -766,7 +769,7 @@ ss::future<result<model::offset>> group_manager::set_blocked_for_groups(
 
     // unblock only when replicated
     if (!to_block) {
-        _blocked_groups.erase(affected_gids.cbegin(), affected_gids.cend());
+        p->blocked_groups.erase(affected_gids.cbegin(), affected_gids.cend());
     }
 
     revert_blocking.cancel();
@@ -793,7 +796,7 @@ ss::future<group_offsets_snapshot_result> group_manager::snapshot_groups(
     }
     // Make a copy of the groups that we're about to snapshot, to avoid racing
     // with removals during iteration.
-    fragmented_vector<std::pair<group_id, group_ptr>> groups;
+    chunked_vector<std::pair<group_id, group_ptr>> groups;
     std::copy_if(
       _groups.begin(),
       _groups.end(),
@@ -812,7 +815,7 @@ ss::future<group_offsets_snapshot_result> group_manager::snapshot_groups(
         go.group_id = group_id();
         absl::btree_map<
           model::topic,
-          fragmented_vector<group_offsets::partition_offset>>
+          chunked_vector<group_offsets::partition_offset>>
           offsets;
         for (const auto& [tp, o] : group->offsets()) {
             offsets[tp.topic].emplace_back(
@@ -959,7 +962,7 @@ ss::future<> group_manager::handle_partition_leader_change(
      * changes (infrequent event)
      */
     return p->catchup_lock->hold_write_lock().then(
-      [this, term, timeout, p](ss::basic_rwlock<>::holder unit) {
+      [this, term, timeout, p](ss::rwlock::holder unit) {
           return inject_noop(p->partition, timeout)
             .then([this, term, timeout, p](std::error_code error) {
                 if (error) {
@@ -1067,7 +1070,7 @@ ss::future<> group_manager::recover_partition(
           return do_recover_group(
             term, p, std::move(pair.first), std::move(pair.second));
       });
-    _blocked_groups = std::move(ctx.blocked_groups);
+    p->blocked_groups = std::move(ctx.blocked_groups);
 }
 
 ss::future<> group_manager::do_recover_group(
@@ -1421,7 +1424,7 @@ group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
         return ss::make_ready_future<txn_offset_commit_response>(
           txn_offset_commit_response(r, error_code::not_coordinator));
     }
-    auto maybe_holder = p->catchup_lock->attempt_read_lock();
+    auto maybe_holder = p->catchup_lock->try_hold_read_lock();
     if (!maybe_holder) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
@@ -1470,7 +1473,7 @@ group_manager::commit_tx(cluster::commit_group_tx_request&& r) {
         return ss::make_ready_future<cluster::commit_group_tx_reply>(
           make_commit_tx_reply(cluster::tx::errc::not_coordinator));
     }
-    auto maybe_holder = p->catchup_lock->attempt_read_lock();
+    auto maybe_holder = p->catchup_lock->try_hold_read_lock();
     if (!maybe_holder) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
@@ -1510,7 +1513,7 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
         return ss::make_ready_future<cluster::begin_group_tx_reply>(
           make_begin_tx_reply(cluster::tx::errc::not_coordinator));
     }
-    auto maybe_holder = p->catchup_lock->attempt_read_lock();
+    auto maybe_holder = p->catchup_lock->try_hold_read_lock();
     if (!maybe_holder) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
@@ -1557,7 +1560,7 @@ group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
         return ss::make_ready_future<cluster::abort_group_tx_reply>(
           make_abort_tx_reply(cluster::tx::errc::not_coordinator));
     }
-    auto maybe_holder = p->catchup_lock->attempt_read_lock();
+    auto maybe_holder = p->catchup_lock->try_hold_read_lock();
     if (!maybe_holder) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
@@ -1802,9 +1805,38 @@ group_manager::describe_partition_producers(const model::ntp& ntp) {
     return response;
 }
 
-ss::future<std::vector<deletable_group_result>> group_manager::delete_groups(
-  std::vector<std::pair<model::ntp, group_id>> groups) {
-    std::vector<deletable_group_result> results;
+ss::future<std::error_code> group_manager::empty_and_delete_groups(
+  const model::ntp& ntp, const chunked_vector<group_id>& groups) {
+    co_await ssx::async_for_each(groups, [this, &ntp](const group_id& group) {
+        auto g = get_group(group);
+        if (!g) {
+            vlog(cg_klog.warn, "Group {} not found on ntp {}", group, ntp);
+            return;
+        }
+        g->remove_full_members();
+    });
+
+    chunked_vector<std::pair<model::ntp, group_id>> groups_with_ntps{
+      std::from_range,
+      groups | std::views::transform([&ntp](const group_id& group_id) {
+          return std::make_pair(ntp, group_id);
+      })};
+    auto delete_results = co_await delete_groups(std::move(groups_with_ntps));
+    auto codes = std::views::transform(
+      delete_results, &deletable_group_result::error_code);
+    auto first_bad_code = std::ranges::find_if(codes, [](const auto& ec) {
+        return ec != kafka::error_code::none
+               && ec != kafka::error_code::group_id_not_found;
+    });
+    if (first_bad_code == codes.end()) {
+        co_return std::error_code{};
+    }
+    co_return std::error_code{*first_bad_code};
+}
+
+ss::future<chunked_vector<deletable_group_result>> group_manager::delete_groups(
+  chunked_vector<std::pair<model::ntp, group_id>> groups) {
+    chunked_vector<deletable_group_result> results;
 
     for (auto& group_info : groups) {
         auto error = validate_group_status(
@@ -1873,11 +1905,6 @@ error_code group_manager::validate_group_status(
   const group_id& group,
   api_key api,
   bool allow_blocked) const {
-    if (unlikely(!allow_blocked && _blocked_groups.contains(group))) {
-        vlog(cg_klog.debug, "Group {} is blocked for operation {}", group, api);
-        return error_code::invalid_group_id;
-    }
-
     if (!valid_group_id(group, api)) {
         vlog(
           cg_klog.debug,
@@ -1888,7 +1915,12 @@ error_code group_manager::validate_group_status(
     }
 
     if (const auto it = _partitions.find(ntp); it != _partitions.end()) {
-        if (!it->second->partition->is_leader()) {
+        auto& p = it->second;
+        if (unlikely(!allow_blocked && p->blocked_groups.contains(group))) {
+            return error_code::invalid_group_id;
+        }
+
+        if (!p->partition->is_leader()) {
             vlog(
               cg_klog.debug,
               "Group {} operation {} sent to non-leader coordinator {}",
@@ -1901,7 +1933,7 @@ error_code group_manager::validate_group_status(
          * Check if term changed, this can happen if a node that stepped down
          * became a leader again.
          */
-        if (it->second->partition->term() != it->second->term()) {
+        if (p->partition->term() != p->term()) {
             vlog(
               cg_klog.info,
               "Group {} operation {} for partition {} processed while term "
@@ -1910,12 +1942,12 @@ error_code group_manager::validate_group_status(
               group,
               api,
               ntp,
-              it->second->term(),
-              it->second->partition->term());
+              p->term(),
+              p->partition->term());
             return error_code::not_coordinator;
         }
 
-        if (it->second->loading) {
+        if (p->loading) {
             vlog(
               cg_klog.debug,
               "Group {} operation {} sent to loading coordinator {}",

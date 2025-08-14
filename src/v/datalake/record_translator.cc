@@ -18,6 +18,7 @@
 #include "iceberg/compatibility_utils.h"
 #include "iceberg/conversion/conversion_outcome.h"
 #include "iceberg/conversion/values_avro.h"
+#include "iceberg/conversion/values_json.h"
 #include "iceberg/conversion/values_protobuf.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
@@ -42,6 +43,16 @@ struct value_translating_visitor {
     ss::future<iceberg::optional_value_outcome>
     operator()(const avro::ValidSchema& s) {
         auto value = co_await iceberg::deserialize_avro(
+          std::move(parsable_buf), s);
+        if (value.has_error()) {
+            co_return iceberg::optional_value_outcome(value.error());
+        }
+        co_return std::move(value.value());
+    }
+
+    ss::future<iceberg::optional_value_outcome>
+    operator()(const iceberg::json_conversion_ir& s) {
+        auto value = co_await iceberg::deserialize_json(
           std::move(parsable_buf), s);
         if (value.has_error()) {
             co_return iceberg::optional_value_outcome(value.error());
@@ -270,11 +281,9 @@ structured_data_translator::translate_data(
       val_type->schema.get_schema_ref());
     if (translated_val.has_error()) {
         vlog(
-          datalake_log.error,
+          datalake_log.warn,
           "Error converting buffer: {}",
           translated_val.error());
-        // TODO: metric for data translation errors.
-        // Either needs to drop the data or send it to a dead-letter queue.
         co_return errc::translation_error;
     }
 

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -e
+cd /opt/redpanda-tests/go/kgo-verifier
+go mod tidy
+make
+mkdir --parents /opt/kgo-verifier
+cp /opt/redpanda-tests/go/kgo-verifier/kgo-{verifier,repeater} /opt/kgo-verifier/

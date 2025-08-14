@@ -12,7 +12,7 @@
 #include "absl/container/node_hash_map.h"
 #include "base/seastarx.h"
 #include "container/chunked_hash_map.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/client/broker.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/consumer.h"
@@ -65,6 +65,8 @@ client::client(
       _cluster.get_brokers(),
       _logger,
       [this](std::exception_ptr ex) { return mitigate_error(std::move(ex)); }) {
+    _metadata_callback_id = _cluster.register_metadata_cb(
+      [this](const metadata_response_data& res) { on_metadata_update(res); });
 }
 
 ss::future<> client::connect() {
@@ -89,6 +91,7 @@ ss::future<> catch_and_log(const prefix_logger& logger, Func&& f) noexcept {
 ss::future<> client::stop() noexcept {
     _as.request_abort();
     co_await catch_and_log(_logger, [this]() { return _producer.stop(); });
+    _cluster.unregister_metadata_cb(_metadata_callback_id);
     co_await _gate.close();
     for (auto& [id, group] : _consumers) {
         while (!group.empty()) {
@@ -101,6 +104,10 @@ ss::future<> client::stop() noexcept {
         }
     }
     co_await catch_and_log(_logger, [this]() { return _cluster.stop(); });
+}
+
+void client::on_metadata_update(const metadata_response_data& res) {
+    _partitioners.apply_metadata(res);
 }
 
 void client::set_credentials(std::optional<sasl_configuration> creds) {
@@ -199,6 +206,8 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
                   vlog(_logger.warn, "system_error: {}", ex);
                   return ss::make_exception_future(ex);
               }
+          } catch (const ss::abort_requested_exception& ex) {
+              vlog(_logger.debug, "abort_requested_exception: {}", ex);
           } catch (const std::exception& ex) {
               // TODO(Ben): Probably vassert
               vlog(_logger.error, "unknown exception: {}", ex);
@@ -231,7 +240,7 @@ ss::future<produce_response> client::produce_records(
         if (!p_id) {
             p_id = co_await gated_retry_with_mitigation([&, this]() {
                        return ss::make_ready_future<model::partition_id>(
-                         _cluster.get_topics().partition_for(topic, record));
+                         _partitioners.partition_for(topic, record));
                    }).handle_exception([](std::exception_ptr) {
                 // Assume auto topic creation is on and assign to first
                 // partition
@@ -285,7 +294,8 @@ ss::future<produce_response> client::produce_records(
 ss::future<metadata_response> client::fetch_metadata(metadata_request req) {
     co_return co_await gated_retry_with_mitigation(
       [this, req = std::move(req)]() {
-          return _cluster.dispatch_to_any(req.copy());
+          return _cluster.dispatch_to_any(
+            req.copy(), api_version_for(metadata_api::key));
       });
 }
 
@@ -299,7 +309,7 @@ client::create_topic(kafka::creatable_topic req) {
         return _cluster.dispatch_to(controller, kafka::create_topics_request{
                 .data = {
                   .topics = std::move(cv),
-                }})
+                }}, api_version_for(create_topics_api::key))
           .then([controller](auto res) {
               auto ec = res.data.topics[0].error_code;
               switch (ec) {
@@ -382,9 +392,12 @@ client::do_list_offsets(const list_offsets_request& unsharded_req) {
         for (const auto& partition : topic.partitions) {
             model::topic_partition tp{topic.name, partition.partition_index};
             auto node_id = _cluster.get_topics().leader(tp);
-
+            if (!node_id) {
+                throw partition_error(
+                  tp, error_code::unknown_topic_or_partition);
+            }
             auto& topics
-              = reqs.try_emplace(node_id, kafka::list_offsets_request{})
+              = reqs.try_emplace(*node_id, kafka::list_offsets_request{})
                   .first->second.data.topics;
             auto topic_it = std::ranges::find(
               topics, tp.topic, &list_offset_topic::name);
@@ -397,7 +410,10 @@ client::do_list_offsets(const list_offsets_request& unsharded_req) {
 
     auto mapper = [this](auto kv) {
         auto node_id = kv.first;
-        return _cluster.dispatch_to(node_id, std::move(kv.second));
+        return _cluster.dispatch_to(
+          node_id,
+          std::move(kv.second),
+          api_version_for(list_offsets_api::key));
     };
 
     auto reducer = [](list_offsets_response result, list_offsets_response val) {
@@ -435,10 +451,10 @@ client::do_list_offsets(const list_offsets_request& unsharded_req) {
 
 namespace {
 ss::future<fetch_response> maybe_throw_exception(
-  shared_broker_t b, model::topic_partition tp, fetch_response res) {
+  model::node_id broker_id, model::topic_partition tp, fetch_response res) {
     if (res.data.error_code != error_code::none) {
         return ss::make_exception_future<fetch_response>(
-          broker_error(b->id(), res.data.error_code));
+          broker_error(broker_id, res.data.error_code));
     }
 
     const auto& topics = res.data.responses;
@@ -476,12 +492,20 @@ ss::future<fetch_response> client::fetch_partition(
       std::move(tp),
       [this](auto& build_request, model::topic_partition& tp) {
           return gated_retry_with_mitigation([this, &tp, &build_request]() {
-                     auto leader = _cluster.get_topics().leader(tp);
-                     auto broker = _cluster.get_brokers().find(leader);
-                     return broker->dispatch(build_request(tp))
-                       .then([broker, &tp](fetch_response res) {
+                     auto leader_id = _cluster.get_topics().leader(tp);
+                     if (!leader_id) {
+                         return ss::make_exception_future<fetch_response>(
+                           partition_error(
+                             tp, error_code::unknown_topic_or_partition));
+                     }
+                     return _cluster
+                       .dispatch_to(
+                         *leader_id,
+                         build_request(tp),
+                         api_version_for(fetch_api::key))
+                       .then([leader_id, &tp](fetch_response res) {
                            return maybe_throw_exception(
-                             broker, tp, std::move(res));
+                             *leader_id, tp, std::move(res));
                        });
                  })
             .handle_exception([&tp](std::exception_ptr ex) {
@@ -665,7 +689,8 @@ ss::future<kafka::describe_configs_response> client::do_describe_topics(
     }
 
     co_return co_await _cluster.dispatch_to_any(
-      describe_configs_request{.data = {.resources = std::move(dcr)}});
+      describe_configs_request{.data = {.resources = std::move(dcr)}},
+      api_version_for(describe_configs_request::api_type::key));
 }
 
 } // namespace kafka::client

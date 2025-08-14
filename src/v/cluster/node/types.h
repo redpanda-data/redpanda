@@ -13,7 +13,7 @@
 #include "cluster/types.h"
 #include "model/metadata.h"
 #include "reflection/adl.h"
-#include "storage/types.h"
+#include "storage/disk.h"
 #include "utils/human.h"
 #include "utils/named_type.h"
 

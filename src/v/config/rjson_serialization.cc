@@ -284,4 +284,9 @@ void rjson_serialize(
     stringize(w, format);
 }
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, config::audit_failure_policy policy) {
+    stringize(w, policy);
+}
+
 } // namespace json

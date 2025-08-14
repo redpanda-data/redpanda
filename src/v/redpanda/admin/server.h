@@ -34,6 +34,7 @@
 #include "security/fwd.h"
 #include "security/request_auth.h"
 #include "security/types.h"
+#include "serde/protobuf/rpc.h"
 #include "storage/node.h"
 #include "transform/fwd.h"
 
@@ -96,6 +97,9 @@ public:
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<debug_bundle::service>&);
 
+    // Add a ConnectRPC service to the admin server.
+    void add_service(std::unique_ptr<serde::pb::rpc::base_service>);
+
     ss::future<> start();
     ss::future<> stop();
 
@@ -107,7 +111,7 @@ public:
           : default_control_character_thrower()
           , _parameter_name(parameter_name) {}
 
-        [[noreturn]] [[gnu::cold]] void conversion_error() override {
+        [[noreturn]] [[gnu::cold]] void conversion_error() const override {
             throw ss::httpd::bad_request_exception(fmt::format(
               "Parameter '{}' contained invalid control characters",
               _parameter_name));
@@ -465,7 +469,7 @@ private:
     ss::future<ss::json::json_return_type>
     oidc_revoke_handler(std::unique_ptr<ss::http::request> req);
     ss::future<ss::json::json_return_type> list_user_roles_handler(
-      std::unique_ptr<ss::http::request>, request_auth_result);
+      std::unique_ptr<ss::http::request>, const request_auth_result&);
 
     ss::future<std::unique_ptr<ss::http::reply>> create_role_handler(
       std::unique_ptr<ss::http::request> req,
@@ -777,6 +781,8 @@ private:
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     ss::sharded<debug_bundle::service>& _debug_bundle_service;
     ss::sharded<debug_bundle::file_handler> _debug_bundle_file_handler;
+
+    std::vector<std::unique_ptr<serde::pb::rpc::base_service>> _services;
 
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;

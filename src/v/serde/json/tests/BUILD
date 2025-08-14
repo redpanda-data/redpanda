@@ -75,7 +75,9 @@ redpanda_cc_gtest(
             "json_checker_test.cc",
         ],
     cpu = 1,
-    data = glob(["testdata/jsonchecker/*"]),
+    data = glob([
+        "testdata/jsonchecker/*",
+    ]),
     deps = [
         "//src/v/bytes:iobuf",
         "//src/v/serde/json:parser",
@@ -101,7 +103,6 @@ redpanda_test_cc_library(
         "//src/v/test_utils:runfiles",
         "//src/v/utils:file_io",
     ],
-    include_prefix = "serde/json/tests",
     visibility = ["//visibility:private"],
     deps = [
         "//src/v/bytes:iobuf",
@@ -122,13 +123,12 @@ redpanda_test_cc_library(
         "@abseil-cpp//absl/strings",
         "@seastar",
     ],
-    include_prefix = "serde/json/tests",
     visibility = ["//visibility:private"],
     deps = [
         "//src/v/bytes:hash",
         "//src/v/bytes:iobuf",
         "//src/v/container:chunked_hash_map",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
     ],
 )
 
@@ -142,10 +142,9 @@ redpanda_test_cc_library(
     ],
     implementation_deps = [
         "//src/v/container:chunked_hash_map",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/serde/json:parser",
     ],
-    include_prefix = "serde/json/tests",
     visibility = ["//visibility:private"],
     deps = [
         ":dom",
@@ -188,12 +187,11 @@ redpanda_test_cc_library(
     implementation_deps = [
         "//src/v/bytes:streambuf",
         "//src/v/container:chunked_hash_map",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/json",
         "//src/v/serde/json:parser",
         "@rapidjson",
     ],
-    include_prefix = "serde/json/tests",
     visibility = ["//visibility:private"],
     deps = [
         ":dom",

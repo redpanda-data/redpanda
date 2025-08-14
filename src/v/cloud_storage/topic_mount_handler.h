@@ -15,7 +15,7 @@
 #include "cloud_storage/topic_mount_manifest_path.h"
 #include "cloud_storage_clients/types.h"
 #include "cluster/topic_configuration.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "utils/retry_chain_node.h"
 

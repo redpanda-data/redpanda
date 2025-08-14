@@ -12,7 +12,7 @@
 
 #include "cluster/metadata_dissemination_types.h"
 #include "compat/generator.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/metadata.h"
 #include "model/tests/randoms.h"
 #include "random/generators.h"
@@ -47,7 +47,7 @@ EMPTY_COMPAT_GENERATOR(cluster::get_leadership_request);
 template<>
 struct instance_generator<cluster::get_leadership_reply> {
     static cluster::get_leadership_reply random() {
-        fragmented_vector<cluster::ntp_leader> leaders;
+        chunked_vector<cluster::ntp_leader> leaders;
         leaders.emplace_back(
           model::random_ntp(),
           tests::random_named_int<model::term_id>(),

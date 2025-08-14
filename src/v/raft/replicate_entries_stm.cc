@@ -301,7 +301,10 @@ result<replicate_result> replicate_entries_stm::build_replicate_result() const {
         return _append_result->error();
     }
 
-    return replicate_result{.last_offset = _append_result->value().last_offset};
+    return replicate_result{
+      .last_offset = _append_result->value().last_offset,
+      .last_term = _append_result->value().last_term,
+    };
 }
 
 ss::future<result<replicate_result>>

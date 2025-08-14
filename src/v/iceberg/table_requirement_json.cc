@@ -28,9 +28,11 @@ struct requirement_json_serializing_visitor {
         serialize_type("assert-ref-snapshot-id");
         w.Key("ref");
         w.String(req.ref);
+        w.Key("snapshot-id");
         if (req.snapshot_id) {
-            w.Key("snapshot-id");
             w.Int64(req.snapshot_id.value());
+        } else {
+            w.Null();
         }
     }
 

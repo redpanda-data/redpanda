@@ -11,8 +11,9 @@ import requests
 
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.tests.pandaproxy_test import PandaProxyEndpoints
+from rptest.tests.schema_registry_test import SchemaRegistryEndpoints
 from rptest.clients.rpk import RpkTool
+from rptest.clients.admin.v2 import Admin as AdminV2, admin_pb
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SaslCredentials, SecurityConfig
 from rptest.util import expect_exception, expect_http_error
@@ -106,6 +107,16 @@ class AdminApiAuthTest(RedpandaTest):
                               auth=(charles.username, charles.password))
         # Hit an endpoint requiring superuser
         charles_admin.get_cluster_config()
+
+        for protocol in ('proto', 'json'):
+            admin_v2 = AdminV2(self.redpanda,
+                               auth=(charles.username, charles.password),
+                               protocol=protocol)
+            build_info = admin_v2.get_build_info(
+                admin_pb.GetBuildInfoRequest())
+            self.logger.info(
+                f"Build info: version={build_info.version}, sha={build_info.build_sha}"
+            )
 
     @cluster(num_nodes=3)
     def test_public_get_license(self):
@@ -221,7 +232,7 @@ class AdminApiAuthEnablementTest(RedpandaTest):
                 {"superusers": [self.redpanda.SUPERUSER_CREDENTIALS.username]})
 
 
-class AdminApiListUsersTest(PandaProxyEndpoints):
+class AdminApiListUsersTest(SchemaRegistryEndpoints):
     def __init__(self, context):
         security = SecurityConfig()
         security.kafka_enable_authorization = True
@@ -237,10 +248,10 @@ class AdminApiListUsersTest(PandaProxyEndpoints):
 
     @cluster(num_nodes=3)
     def test_list_users(self):
-        # Create ephemeral users for each pandaproxy instance
+        # Create ephemeral users for each schema registry instance
         pp_hosts = [node.account.hostname for node in self.redpanda.nodes]
         for host in pp_hosts:
-            res = requests.get(f"http://{host}:8082/status/ready")
+            res = requests.get(f"http://{host}:8081/status/ready")
             assert res.status_code == requests.codes.ok
 
         users = self.superuser_admin.list_users()

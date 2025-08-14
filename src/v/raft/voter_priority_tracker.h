@@ -71,7 +71,7 @@ public:
 private:
     vnode _self;
     std::optional<voter_priority> _replica_priority_override;
-    voter_priority _target_priority;
+    voter_priority _target_priority = voter_priority::max();
 };
 
 } // namespace raft

@@ -13,7 +13,7 @@
 
 #include "cluster/state_machine_registry.h"
 #include "container/chunked_hash_map.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/server/group_data_parser.h"
 #include "raft/persisted_stm.h"
 #include "serde/rw/envelope.h"
@@ -83,7 +83,7 @@ public:
         return storage::stm_type::consumer_offsets_transactional;
     }
 
-    ss::future<fragmented_vector<model::tx_range>>
+    ss::future<chunked_vector<model::tx_range>>
     aborted_tx_ranges(model::offset, model::offset) override {
         // Instead of tracking aborted transactions, group partitions rely on a
         // different approach. When a group transaction is committed, the data
@@ -91,7 +91,7 @@ public:
         // conversion happens atomically along with writing a commit marker.
         // This eliminates the need to track completed transactional batches and
         // they are unconditionally omitted in the compaction pass.
-        return ss::make_ready_future<fragmented_vector<model::tx_range>>();
+        return ss::make_ready_future<chunked_vector<model::tx_range>>();
     }
 
     ss::future<> do_apply(const model::record_batch&) override;

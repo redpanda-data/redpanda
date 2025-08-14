@@ -90,11 +90,9 @@ public:
     model::offset start_offset() const final {
         throw std::runtime_error("unimplemented");
     }
-    model::offset high_watermark() const final {
-        throw std::runtime_error("unimplemented");
-    }
+    model::offset high_watermark() const final { return model::offset(102); }
     checked<model::offset, kafka::error_code> last_stable_offset() const final {
-        throw std::runtime_error("unimplemented");
+        return model::offset(101);
     }
     kafka::leader_epoch leader_epoch() const final {
         throw std::runtime_error("unimplemented");
@@ -459,6 +457,15 @@ public:
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
         kafka::partition_proxy*)> fn) final {
         return _fake_proxy->invoke_on_shard_impl(shard_id, ntp, std::move(fn));
+    }
+
+    ss::future<result<partition_offsets, cluster::errc>> get_offsets_from_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<
+        ss::future<result<partition_offsets, cluster::errc>>(
+          kafka::partition_proxy*)> fn) final {
+        return _fake_proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
     }
 
 private:

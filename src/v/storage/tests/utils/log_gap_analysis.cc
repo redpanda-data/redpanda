@@ -11,8 +11,8 @@
 
 #include "log_gap_analysis.h"
 
+#include "model/batch_compression.h"
 #include "model/fundamental.h"
-#include "storage/parser_utils.h"
 
 static ss::logger slog{"log_gap_test"};
 namespace storage {
@@ -65,7 +65,7 @@ log_gap_analysis make_log_gap_analysis(
     };
 
     for (auto&& rb : mem_log) {
-        rb = storage::internal::decompress_batch(std::move(rb)).get();
+        rb = model::decompress_batch(std::move(rb)).get();
         batch_consumer(rb);
     }
     return ga;

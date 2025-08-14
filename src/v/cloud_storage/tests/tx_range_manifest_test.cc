@@ -34,9 +34,8 @@ static remote_manifest_path
 using tx_range_t = model::tx_range;
 
 template<typename T = int>
-static fragmented_vector<T>
-make_fragmented_vector(std::initializer_list<T> in) {
-    fragmented_vector<T> ret;
+static chunked_vector<T> make_chunked_vector(std::initializer_list<T> in) {
+    chunked_vector<T> ret;
     std::copy(
       std::make_move_iterator(in.begin()),
       std::make_move_iterator(in.end()),
@@ -81,7 +80,7 @@ SEASTAR_THREAD_TEST_CASE(empty_serialization_roundtrip_test) {
 }
 
 SEASTAR_THREAD_TEST_CASE(serialization_roundtrip_test) {
-    fragmented_vector<tx_range_t> tx_ranges = make_fragmented_vector(ranges);
+    chunked_vector<tx_range_t> tx_ranges = make_chunked_vector(ranges);
     tx_range_manifest m(segment_path, std::move(tx_ranges));
     auto [is, size] = m.serialize().get();
     iobuf buf;

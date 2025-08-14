@@ -48,15 +48,15 @@ public:
 public:
     explicit json_conversion_ir(
       std::unique_ptr<iceberg::field_type> root,
-      struct_field_map_t struct_field_index)
+      struct_field_map_t struct_field_map)
       : root_(std::move(root))
-      , struct_field_index_(std::move(struct_field_index)) {
+      , struct_field_map_(std::move(struct_field_map)) {
         vassert(root_ != nullptr, "Root type cannot be null");
     }
 
     json_conversion_ir(const json_conversion_ir& other)
       : root_(std::make_unique<iceberg::field_type>(make_copy(*other.root_)))
-      , struct_field_index_(other.struct_field_index_) {}
+      , struct_field_map_(other.struct_field_map_) {}
 
     json_conversion_ir(json_conversion_ir&& other) noexcept = default;
     json_conversion_ir& operator=(json_conversion_ir&& other) noexcept
@@ -66,13 +66,13 @@ public:
 
 public:
     const iceberg::field_type& root() const { return *root_; }
-    const struct_field_map_t& struct_field_index() const {
-        return struct_field_index_;
+    const struct_field_map_t& struct_field_map() const {
+        return struct_field_map_;
     }
 
 private:
     std::unique_ptr<iceberg::field_type> root_;
-    struct_field_map_t struct_field_index_;
+    struct_field_map_t struct_field_map_;
 };
 
 /// Convert a JSON Schema IR to a iceberg conversion IR.

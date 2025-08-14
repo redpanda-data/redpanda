@@ -77,13 +77,11 @@ table_update::update copy(const table_update::update& update) {
 rest_catalog::rest_catalog(
   std::unique_ptr<rest_client::catalog_client> client,
   config::binding<std::chrono::milliseconds> request_timeout,
-  datalake::credential_manager& credential_mgr,
   std::optional<ss::sstring> base_location)
   : client_(std::move(client))
   , request_timeout_(std::move(request_timeout))
   , base_location_(std::move(base_location))
-  , lock_("iceberg/rest-catalog")
-  , credential_manager_(credential_mgr) {}
+  , lock_("iceberg/rest-catalog") {}
 
 void rest_catalog::set_table_location_if_needed(
   create_table_request& request, const table_identifier& t_id) const {

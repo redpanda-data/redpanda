@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "json/document.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "pandaproxy/schema_registry/types.h"
 
@@ -26,5 +27,7 @@ compatibility_result check_compatible(
   const json_schema_definition& reader,
   const json_schema_definition& writer,
   verbose is_verbose = verbose::no);
+
+const json::Document& document(const json_schema_definition::impl& impl);
 
 } // namespace pandaproxy::schema_registry

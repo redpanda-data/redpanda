@@ -10,7 +10,7 @@
  */
 
 #include "bytes/random.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "random/generators.h"
 #include "serde/parquet/column_writer.h"
 #include "serde/parquet/schema.h"

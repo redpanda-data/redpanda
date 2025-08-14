@@ -531,7 +531,8 @@ compat_copy(raft::append_entries_request r) {
       source_node,
       target_node,
       metadata,
-      chunked_vector<model::record_batch>(std::move(a_batches)),
+      chunked_vector<model::record_batch>(
+        std::from_range, std::move(a_batches) | std::views::as_rvalue),
       sz,
       flush);
 
@@ -579,7 +580,8 @@ struct compat_check<raft::append_entries_request> {
           node,
           target,
           meta,
-          chunked_vector<model::record_batch>(std::move(batches)),
+          chunked_vector<model::record_batch>(
+            std::from_range, std::move(batches) | std::views::as_rvalue),
           0,
           flush};
     }

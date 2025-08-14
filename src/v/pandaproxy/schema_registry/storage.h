@@ -16,6 +16,7 @@
 #include "json/json.h"
 #include "json/types.h"
 #include "json/writer.h"
+#include "model/batch_compression.h"
 #include "model/metadata.h"
 #include "model/record_utils.h"
 #include "pandaproxy/json/rjson_parse.h"
@@ -27,7 +28,6 @@
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
 #include "strings/string_switch.h"
 
@@ -1360,7 +1360,7 @@ struct consume_to_store {
 
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
         if (!b.header().attrs.is_control()) {
-            b = co_await storage::internal::decompress_batch(std::move(b));
+            b = co_await model::decompress_batch(std::move(b));
             auto base_offset = b.base_offset();
             co_await model::for_each_record(
               b, [this, base_offset](model::record& rec) {

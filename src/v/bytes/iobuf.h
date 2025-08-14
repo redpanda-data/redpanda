@@ -255,6 +255,7 @@ public:
 
     bool operator==(std::string_view) const;
     bool operator!=(std::string_view) const;
+    std::strong_ordering operator<=>(std::string_view) const;
 
     iterator begin();
     iterator end();

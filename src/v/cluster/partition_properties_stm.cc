@@ -14,7 +14,7 @@
 #include "base/vassert.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/record_batch_types.h"

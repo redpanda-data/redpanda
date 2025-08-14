@@ -23,7 +23,6 @@ redpanda_cc_library(
         "paging_data_source.h",
         "persistence.h",
     ],
-    include_prefix = "io",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",

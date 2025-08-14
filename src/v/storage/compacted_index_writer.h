@@ -11,6 +11,7 @@
 
 #pragma once
 #include "bytes/bytes.h"
+#include "compaction/key.h"
 #include "model/fundamental.h"
 #include "model/record_batch_types.h"
 #include "storage/compacted_index.h"
@@ -53,7 +54,7 @@ public:
 
     // accepts a compaction_key which is already prefixed with batch_type
     virtual ss::future<>
-    index(const compaction_key& b, model::offset, int32_t) = 0;
+    index(const compaction::compaction_key& b, model::offset, int32_t) = 0;
 
     virtual ss::future<> index(
       model::record_batch_type,

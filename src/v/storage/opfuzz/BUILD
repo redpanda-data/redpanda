@@ -16,7 +16,6 @@ redpanda_test_cc_library(
         "//src/v/utils:directory_walker",
         "@boost//:algorithm",
     ],
-    include_prefix = "storage/opfuzz",
     deps = [
         "//src/v/model",
         "//src/v/storage",

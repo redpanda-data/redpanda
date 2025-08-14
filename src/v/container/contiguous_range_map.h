@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 
 #include <stdexcept>
 

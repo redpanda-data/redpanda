@@ -142,6 +142,7 @@ class SimpleEndToEndTest(EndToEndTest):
         fi_thread.start()
         self.run_validation(min_records=100000,
                             producer_timeout_sec=300,
-                            consumer_timeout_sec=300)
+                            consumer_timeout_sec=300,
+                            acks=acks)
         stop_fi_ev.set()
         fi_thread.join()

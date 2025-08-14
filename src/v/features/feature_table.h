@@ -16,6 +16,8 @@
 #include "storage/record_batch_builder.h"
 #include "utils/waiter_queue.h"
 
+#include <seastar/core/gate.hh>
+
 #include <array>
 #include <memory>
 #include <string_view>
@@ -38,7 +40,6 @@ struct feature_table_snapshot;
 /// only used at runtime.  Therefore it is safe to re-use an integer that
 /// has been made available by another feature being retired.
 enum class feature : std::uint64_t {
-    cluster_linking_dr = 1ULL << 1U,
     topic_locations_in_outbound_migrations = 1ULL << 2U,
     schema_registry_authz = 1ULL << 3U,
     consumer_groups_migrations = 1ULL << 7U,
@@ -454,12 +455,6 @@ inline constexpr std::array feature_schema{
     "kafka_data_rpc",
     feature::kafka_data_rpc,
     feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    release_version::v25_2_1,
-    "cluster_linking_dr",
-    feature::cluster_linking_dr,
-    feature_spec::available_policy::explicit_only,
     feature_spec::prepare_policy::always},
   feature_spec{
     release_version::v25_2_1,

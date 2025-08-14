@@ -94,6 +94,7 @@
 #include <seastar/util/later.hh>
 
 #include <chrono>
+#include <memory>
 #include <optional>
 namespace cluster {
 
@@ -234,7 +235,9 @@ ss::future<> controller::start(
     producer_id_recovery,
   ss::shared_ptr<cluster::cloud_metadata::offsets_recovery_requestor>
     offsets_recovery,
-  std::chrono::milliseconds application_start_time) {
+  std::chrono::milliseconds application_start_time,
+  ss::sharded<std::unique_ptr<cluster::data_migrations::group_proxy>>&
+    data_migrations_group_proxy) {
     /**
      * Switch to cluster scheduling group to ensure that all the controller
      * services are started within that scheduling group.
@@ -257,7 +260,7 @@ ss::future<> controller::start(
       config::node().data_directory().as_sstring(),
       seed_nodes);
 
-    co_await _partition_leaders.start(std::ref(_tp_state));
+    co_await _partition_leaders.start(std::ref(_tp_state), std::ref(_as));
     co_await _drain_manager.start(std::ref(_partition_manager));
     co_await _members_manager.start_single(
       _raft0,
@@ -325,6 +328,9 @@ ss::future<> controller::start(
       std::ref(_feature_table),
       std::ref(_stm),
       std::ref(_partition_leaders),
+      ss::sharded_parameter([&data_migrations_group_proxy] {
+          return std::ref(*data_migrations_group_proxy.local());
+      }),
       std::ref(_connections),
       ss::sharded_parameter(
         [this]() -> std::optional<
@@ -343,6 +349,9 @@ ss::future<> controller::start(
         [this] { return std::ref(_partition_leaders.local()); }),
       ss::sharded_parameter(
         [this] { return std::ref(_partition_manager.local()); }),
+      ss::sharded_parameter([&data_migrations_group_proxy] {
+          return std::ref(*data_migrations_group_proxy.local());
+      }),
       ss::sharded_parameter([this] { return std::ref(_as.local()); }));
     {
         limiter_configuration limiter_conf{
@@ -390,6 +399,9 @@ ss::future<> controller::start(
           std::ref(_data_migration_table.local()),
           std::ref(_cluster_link_table.local()));
     }
+    co_await _epoch_service.start(_raft0->self().id(), &_connections);
+    co_await _epoch_service.invoke_on_all(&cluster_epoch_service<>::start);
+    _epoch_service.local().set_raft0(_raft0, _stm, _raft_manager);
 
     co_await _members_frontend.start(
       std::ref(_stm),
@@ -605,7 +617,7 @@ ss::future<> controller::start(
 
     co_await cluster_creation_hook(discovery);
     {
-        auto u = _stm.local().lock_apply();
+        auto u = co_await _stm.local().lock_apply();
         // start shard_balancer before controller_backend so that it bootstraps
         // shard_placement_table and controller_backend can start with already
         // initialized table.
@@ -645,6 +657,8 @@ ss::future<> controller::start(
       std::ref(_partition_balancer),
       std::ref(_partition_manager),
       std::ref(_as));
+
+    co_await set_raft_manager_remake_cb();
 
     co_await _members_backend.invoke_on(
       members_manager::shard, &members_backend::start);
@@ -825,6 +839,7 @@ ss::future<> controller::start(
       std::ref(_tp_frontend.local()),
       std::ref(_tp_state.local()),
       std::ref(_shard_table.local()),
+      std::ref(*data_migrations_group_proxy.local()),
       _cloud_storage_api.local_is_initialized()
         ? std::make_optional(std::ref(_cloud_storage_api.local()))
         : std::nullopt,
@@ -909,6 +924,7 @@ ss::future<> controller::stop() {
     co_await _data_migration_frontend.stop();
     co_await _topic_mount_handler.stop();
     co_await _config_manager.stop();
+    co_await clear_raft_manager_remake_cb();
     co_await _api.stop();
     co_await _shard_balancer.stop();
     co_await _backend.stop();
@@ -931,6 +947,7 @@ ss::future<> controller::stop() {
     co_await _credentials.stop();
     co_await _tp_state.stop();
     co_await _members_manager.stop();
+    co_await _epoch_service.stop();
     co_await _stm.stop();
     co_await _cluster_link_table.stop();
     co_await _quota_backend.stop();
@@ -1250,6 +1267,27 @@ controller::validate_configuration_invariants() {
         // configuration_invariants in kvstore later.
     }
     co_return invariants;
+}
+
+ss::future<std::error_code> controller::trigger_remake_cb(raft::group_id g) {
+    auto ec = co_await _api.local().remake_partition(g);
+    if (ec) {
+        vlog(clusterlog.warn, "Unable to remake group {}, {}", g, ec);
+    }
+    co_return ec;
+}
+
+ss::future<> controller::set_raft_manager_remake_cb() {
+    co_await _raft_manager.invoke_on_all([this](raft::group_manager& gm) {
+        gm.set_remake_cb(
+          [this](raft::group_id g) -> ss::future<std::error_code> {
+              return trigger_remake_cb(g);
+          });
+    });
+}
+
+ss::future<> controller::clear_raft_manager_remake_cb() {
+    co_await _raft_manager.invoke_on_all(&raft::group_manager::clear_remake_cb);
 }
 
 } // namespace cluster

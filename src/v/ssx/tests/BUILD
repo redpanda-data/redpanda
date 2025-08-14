@@ -25,7 +25,6 @@ redpanda_cc_btest(
         "//src/v/base",
         "//src/v/ssx:thread_worker",
         "//src/v/test_utils:seastar_boost",
-        "@abseil-cpp//absl/algorithm:container",
         "@boost//:test",
         "@seastar",
         "@seastar//:testing",
@@ -105,7 +104,6 @@ redpanda_cc_btest(
         "//src/v/base",
         "//src/v/ssx:task_local",
         "//src/v/test_utils:seastar_boost",
-        "@abseil-cpp//absl/algorithm:container",
         "@boost//:test",
         "@seastar",
         "@seastar//:testing",
@@ -156,6 +154,7 @@ redpanda_cc_btest(
     cpu = 1,
     deps = [
         "//src/v/base",
+        "//src/v/container:chunked_vector",
         "//src/v/ssx:future_util",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
@@ -172,7 +171,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         "//src/v/base",
-        "//src/v/container:fragmented_vector",
+        "//src/v/container:chunked_vector",
         "//src/v/ssx:when_all",
         "//src/v/test_utils:gtest",
         "@boost//:container",

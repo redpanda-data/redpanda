@@ -16,6 +16,7 @@
 #include "utils/mutex.h"
 #include "wasm/engine.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/weak_ptr.hh>

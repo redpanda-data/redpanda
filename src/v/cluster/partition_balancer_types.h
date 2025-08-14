@@ -124,8 +124,6 @@ struct partition_balancer_overview_request
       partition_balancer_overview_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     friend std::ostream&
     operator<<(std::ostream& o, const partition_balancer_overview_request&);
     auto serde_fields() { return std::tie(); }
@@ -188,8 +186,6 @@ struct partition_balancer_overview_reply
       partition_balancer_overview_reply,
       serde::version<3>,
       serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
     partition_balancer_overview_reply() noexcept = default;
     partition_balancer_overview_reply(const partition_balancer_overview_reply&)
       = delete;

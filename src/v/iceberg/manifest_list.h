@@ -10,7 +10,7 @@
 #pragma once
 
 #include "bytes/bytes.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "iceberg/manifest_entry.h"
 #include "iceberg/partition.h"
 #include "iceberg/uri.h"

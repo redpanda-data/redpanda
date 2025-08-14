@@ -20,7 +20,10 @@
 #include <seastar/core/future.hh>
 
 #include <chrono>
-#include <type_traits>
+
+namespace iceberg {
+class json_conversion_ir;
+}
 
 namespace schema {
 class registry;
@@ -76,21 +79,27 @@ using shared_schema_t
 // schemas are FileDescriptors in the registry rather than Descriptors, and
 // require additional information to get the Descriptors.
 class resolved_schema {
+    using storage_t = std::
+      variant<shared_schema_t, ss::shared_ptr<iceberg::json_conversion_ir>>;
+
 public:
     using resolved_schema_t = std::variant<
       std::reference_wrapper<const google::protobuf::Descriptor>,
-      std::reference_wrapper<const avro::ValidSchema>>;
+      std::reference_wrapper<const avro::ValidSchema>,
+      std::reference_wrapper<const iceberg::json_conversion_ir>>;
 
     resolved_schema(resolved_schema_t schema, shared_schema_t shared_schema)
-      : schema_(schema)
-      , shared_schema_(std::move(shared_schema)) {}
+      : shared_schema_(std::move(shared_schema))
+      , schema_(schema) {}
+
+    explicit resolved_schema(ss::shared_ptr<iceberg::json_conversion_ir>);
 
     resolved_schema_t get_schema_ref() const noexcept { return schema_; }
 
 private:
     // Note that `schema_` is a reference to data owned by `shared_schema_`.
+    storage_t shared_schema_;
     resolved_schema_t schema_;
-    shared_schema_t shared_schema_;
 };
 
 struct resolved_type {

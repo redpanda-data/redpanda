@@ -69,7 +69,6 @@ redpanda_test_cc_library(
     hdrs = [
         "test_fixture.h",
     ],
-    include_prefix = "transform/tests",
     deps = [
         "//src/v/base",
         "//src/v/model",

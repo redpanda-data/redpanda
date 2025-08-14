@@ -12,7 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "kafka/protocol/schemata/produce_request.h"

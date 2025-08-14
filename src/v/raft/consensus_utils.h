@@ -49,8 +49,8 @@ ss::future<raft::configuration_bootstrap_state> read_bootstrap_state(
 
 chunked_circular_buffer<model::record_batch> make_ghost_batches_in_gaps(
   model::offset, chunked_circular_buffer<model::record_batch>&&);
-fragmented_vector<model::record_batch> make_ghost_batches_in_gaps(
-  model::offset, fragmented_vector<model::record_batch>&&);
+chunked_vector<model::record_batch> make_ghost_batches_in_gaps(
+  model::offset, chunked_vector<model::record_batch>&&);
 
 /// writes snapshot with given data to disk
 ss::future<>

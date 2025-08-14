@@ -16,7 +16,7 @@
 
 #include <seastar/core/temporary_buffer.hh>
 
-namespace experimental::serde::json::detail {
+namespace serde::json::detail {
 
 /// An incremental parser for JSON strings.
 class string_parser {
@@ -76,4 +76,4 @@ private:
     uint32_t _utf8_codepoint{0};
 };
 
-} // namespace experimental::serde::json::detail
+} // namespace serde::json::detail

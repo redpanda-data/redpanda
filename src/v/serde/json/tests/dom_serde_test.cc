@@ -16,7 +16,7 @@
 
 #include <gtest/gtest.h>
 
-using namespace experimental::serde::json;
+using namespace serde::json;
 
 constexpr auto golden = R"(json_value(array(
   string(JSON Test Pattern pass1)

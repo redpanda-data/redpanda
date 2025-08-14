@@ -8,7 +8,6 @@ redpanda_cc_library(
     hdrs = [
         "smp_groups.h",
     ],
-    include_prefix = "resource_mgmt",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -24,13 +23,13 @@ redpanda_cc_library(
     hdrs = [
         "storage.h",
     ],
-    include_prefix = "resource_mgmt",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
-        "//src/v/cloud_storage",
+        "//src/v/cloud_storage:cache",
         "//src/v/cluster",
         "//src/v/config",
+        "//src/v/container:chunked_vector",
         "//src/v/datalake:manager",
         "//src/v/metrics",
         "//src/v/raft",
@@ -49,7 +48,6 @@ redpanda_cc_library(
     hdrs = [
         "logger.h",
     ],
-    include_prefix = "resource_mgmt",
     deps = [
         "//src/v/base",
         "@seastar",
@@ -64,7 +62,6 @@ redpanda_cc_library(
     hdrs = [
         "available_memory.h",
     ],
-    include_prefix = "resource_mgmt",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -87,7 +84,6 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/utils:human",
     ],
-    include_prefix = "resource_mgmt",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -101,7 +97,6 @@ redpanda_cc_library(
     hdrs = [
         "cpu_scheduling.h",
     ],
-    include_prefix = "resource_mgmt",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -114,7 +109,6 @@ redpanda_cc_library(
     hdrs = [
         "scheduling_groups_probe.h",
     ],
-    include_prefix = "resource_mgmt",
     visibility = ["//visibility:public"],
     deps = [
         ":cpu_scheduling",
@@ -133,7 +127,6 @@ redpanda_cc_library(
     hdrs = [
         "cpu_profiler.h",
     ],
-    include_prefix = "resource_mgmt",
     visibility = ["//visibility:public"],
     deps = [
         ":logger",
@@ -156,7 +149,6 @@ redpanda_cc_library(
     hdrs = [
         "memory_sampling.h",
     ],
-    include_prefix = "resource_mgmt",
     visibility = ["//visibility:public"],
     deps = [
         ":available_memory",

@@ -12,7 +12,7 @@
 #include "cluster/controller.h"
 #include "cluster/data_migration_frontend.h"
 #include "cluster/data_migration_types.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "json/chunked_buffer.h"
 #include "json/validator.h"
 #include "redpanda/admin/api-doc/migration.json.hh"
@@ -33,7 +33,7 @@ using admin::apply_validator;
 namespace {
 
 json::validator make_mount_configuration_validator() {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
 
 {
     "$schema": "http://json-schema.org/draft-04/schema#",
@@ -88,7 +88,7 @@ json::validator make_mount_configuration_validator() {
 }
 
 json::validator make_unmount_array_validator() {
-    const std::string schema = R"(
+    const std::string_view schema = R"(
 {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "type": "object",

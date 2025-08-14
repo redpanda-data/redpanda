@@ -9,7 +9,6 @@ redpanda_cc_library(
     hdrs = [
         "messages.h",
     ],
-    include_prefix = "kafka/protocol",
     visibility = ["//src/v/kafka:__subpackages__"],
     deps = MESSAGE_TYPES,
 )
@@ -35,7 +34,6 @@ redpanda_cc_library(
         "types.h",
         "wire.h",
     ],
-    include_prefix = "kafka/protocol",
     visibility = ["//visibility:public"],
     deps = [
         ":logger",
@@ -47,7 +45,6 @@ redpanda_cc_library(
         "//src/v/hashing:crc32",
         "//src/v/hashing:crc32c",
         "//src/v/model",
-        "//src/v/storage:parser_utils",
         "//src/v/storage:record_batch_builder",
         "//src/v/strings:utf8",
         "//src/v/utils:base64",
@@ -69,7 +66,6 @@ redpanda_cc_library(
     hdrs = [
         "flex_versions.h",
     ],
-    include_prefix = "kafka/protocol",
     visibility = ["//visibility:public"],
     deps = [
         ":messages",
@@ -87,7 +83,6 @@ redpanda_cc_library(
     hdrs = [
         "logger.h",
     ],
-    include_prefix = "kafka/protocol",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",

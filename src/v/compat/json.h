@@ -123,9 +123,8 @@ void read_value(const json::Value& v, ss::chunked_fifo<T, chunk_size>& target) {
     }
 }
 
-template<typename T, size_t fragment_size_bytes>
-void read_value(
-  const json::Value& v, fragmented_vector<T, fragment_size_bytes>& target) {
+template<typename T>
+void read_value(const json::Value& v, chunked_vector<T>& target) {
     for (const auto& e : v.GetArray()) {
         auto t = T{};
         read_value(e, t);

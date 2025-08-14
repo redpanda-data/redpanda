@@ -10,7 +10,7 @@
 #include "cluster/partition.h"
 #include "config/configuration.h"
 #include "config/types.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/group.h"
 #include "kafka/server/group_metadata.h"

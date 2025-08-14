@@ -149,19 +149,39 @@ configuration::configuration()
   , sasl_mechanism(
       *this,
       "sasl_mechanism",
-      "The SASL mechanism to use when connecting.",
+      "The SASL mechanism to use when the HTTP Proxy client connects to the "
+      "Kafka API. These credentials are used when the HTTP Proxy API "
+      "listener has `authentication_method: none` but the cluster requires "
+      "authenticated access to the Kafka API. Starting in Redpanda 25.2, "
+      "ephemeral credentials for HTTP Proxy are removed. If your HTTP Proxy "
+      "listeners use `authentication_method: none`, you must configure these "
+      "SASL properties for HTTP Proxy to authenticate with the Kafka API. "
+      "For more information, see "
+      "https://docs.redpanda.com/current/manage/security/authentication/",
       {},
       "")
   , scram_username(
       *this,
       "scram_username",
-      "Username to use for SCRAM authentication mechanisms.",
+      "Username to use for SCRAM authentication mechanisms when the HTTP "
+      "Proxy client connects to the Kafka API. This property is required "
+      "when the HTTP Proxy API listener has `authentication_method: none` "
+      "but the cluster requires authenticated access to the Kafka API. "
+      "Starting in Redpanda 25.2, ephemeral credentials for HTTP Proxy are "
+      "removed. You must configure this property if your HTTP Proxy "
+      "listeners use `authentication_method: none`.",
       {},
       "")
   , scram_password(
       *this,
       "scram_password",
-      "Password to use for SCRAM authentication mechanisms.",
+      "Password to use for SCRAM authentication mechanisms when the HTTP "
+      "Proxy client connects to the Kafka API. This property is required "
+      "when the HTTP Proxy API listener has `authentication_method: none` "
+      "but the cluster requires authenticated access to the Kafka API. "
+      "Starting in Redpanda 25.2, ephemeral credentials for HTTP Proxy are "
+      "removed. You must configure this property if your HTTP Proxy "
+      "listeners use `authentication_method: none`.",
       {.secret = config::is_secret::yes},
       "")
   , client_identifier(

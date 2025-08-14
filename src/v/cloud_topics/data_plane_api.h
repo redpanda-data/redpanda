@@ -1,21 +1,21 @@
 /*
  * Copyright 2025 Redpanda Data, Inc.
  *
- * Use of this software is governed by the Business Source License
- * included in the file licenses/BSL.md
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+
 #pragma once
 
 #include "base/outcome.h"
-#include "cloud_topics/extent_meta.h"
-#include "container/chunked_circular_buffer.h"
-#include "container/fragmented_vector.h"
+#include "cloud_topics/level_zero/common/extent_meta.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/timeout_clock.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future.hh>
@@ -41,15 +41,22 @@ public:
     virtual ss::future<result<chunked_vector<extent_meta>>> write_and_debounce(
       model::ntp ntp,
       chunked_vector<model::record_batch> batches,
-      std::chrono::milliseconds timeout)
+      model::timeout_clock::time_point deadline)
       = 0;
 
     virtual ss::future<result<chunked_vector<model::record_batch>>> materialize(
       model::ntp ntp,
       size_t output_size_estimate,
       chunked_vector<extent_meta> metadata,
-      std::chrono::milliseconds timeout)
+      model::timeout_clock::time_point timeout)
       = 0;
+
+    /// Cache materialized record batch
+    virtual void cache_put(const model::ntp&, const model::record_batch& b) = 0;
+
+    /// Retrieve materialized record batch from cache
+    virtual std::optional<model::record_batch>
+    cache_get(const model::ntp&, model::offset o) = 0;
 };
 
 } // namespace experimental::cloud_topics

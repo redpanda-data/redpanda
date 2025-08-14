@@ -240,6 +240,10 @@ ss::future<> io_resources::start() {
     co_return;
 }
 
+ss::scheduling_group io_resources::get_scheduling_group() const {
+    return _scheduling_group;
+}
+
 size_t io_resources::max_parallel_hydrations() const {
     auto max_connections
       = config::shard_local_cfg().cloud_storage_max_connections();

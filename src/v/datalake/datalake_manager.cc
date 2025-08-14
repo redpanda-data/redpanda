@@ -143,7 +143,7 @@ private:
 
 datalake_manager::datalake_manager(
   model::node_id self,
-  ss::sharded<raft::group_manager>* group_mgr,
+  std::unique_ptr<cluster::partition_change_notifier> notifications,
   ss::sharded<cluster::partition_manager>* partition_mgr,
   ss::sharded<cluster::topic_table>* topic_table,
   ss::sharded<features::feature_table>* features,
@@ -156,7 +156,7 @@ datalake_manager::datalake_manager(
   ss::scheduling_group sg,
   size_t memory_limit)
   : _self(self)
-  , _group_mgr(group_mgr)
+  , _partition_notifications(std::move(notifications))
   , _partition_mgr(partition_mgr)
   , _topic_table(topic_table)
   , _features(features)
@@ -227,95 +227,37 @@ ss::future<> datalake_manager::start() {
     _schema_mgr = std::make_unique<catalog_schema_manager>(*_catalog);
     // partition managed notification, this is particularly
     // relevant for cross core movements without a term change.
-    auto partition_managed_notification
-      = _partition_mgr->local().register_manage_notification(
-        model::kafka_namespace,
-        [this](const ss::lw_shared_ptr<cluster::partition>& new_partition) {
-            _queue.submit([this, ntp = new_partition->ntp()]() {
-                return handle_translator_state_change(ntp);
-            });
-        });
-    auto partition_unmanaged_notification
-      = _partition_mgr->local().register_unmanage_notification(
-        model::kafka_namespace, [this](model::topic_partition_view tp) {
-            model::ntp ntp{model::kafka_namespace, tp.topic, tp.partition};
-            // We remove the probe only when partition is moved out of the
-            // shard to avoid metrics disappearing during much more common
-            // leadership changes.
-            _translation_probe_by_ntp.erase(ntp);
-            _queue.submit([this, ntp = std::move(ntp)]() {
-                return handle_translator_state_change(ntp);
-            });
-        });
-    // Handle leadership changes
-    auto leadership_registration
-      = _group_mgr->local().register_leadership_notification(
+    _partition_notifications_id
+      = _partition_notifications->register_partition_notifications(
         [this](
-          raft::group_id group,
-          ::model::term_id,
-          std::optional<::model::node_id>) {
-            auto partition = _partition_mgr->local().partition_for(group);
-            if (partition) {
-                _queue.submit([this, ntp = partition->ntp()]() {
-                    return handle_translator_state_change(ntp);
-                });
-            }
-        });
-
-    // Handle topic properties changes (iceberg_mode,
-    // iceberg_invalid_record_action)
-    auto topic_properties_registration
-      = _topic_table->local().register_ntp_delta_notification(
-        [this](cluster::topic_table::ntp_delta_range_t range) {
-            for (auto& entry : range) {
-                if (
-                  entry.type
-                  == cluster::topic_table_ntp_delta_type::properties_updated) {
-                    _queue.submit([this, ntp = entry.ntp]() {
-                        return handle_translator_state_change(ntp);
-                    });
-                }
-            }
-        });
-
-    _deregistrations.reserve(4);
-    _deregistrations.emplace_back([this, partition_managed_notification] {
-        _partition_mgr->local().unregister_manage_notification(
-          partition_managed_notification);
-    });
-    _deregistrations.emplace_back([this, partition_unmanaged_notification] {
-        _partition_mgr->local().unregister_unmanage_notification(
-          partition_unmanaged_notification);
-    });
-    _deregistrations.emplace_back([this, leadership_registration] {
-        _group_mgr->local().unregister_leadership_notification(
-          leadership_registration);
-    });
-    _deregistrations.emplace_back([this, topic_properties_registration] {
-        _topic_table->local().unregister_ntp_delta_notification(
-          topic_properties_registration);
-    });
-    _iceberg_invalid_record_action.watch([this] {
-        for (auto& [ntp, _] : _scheduler.all_translators()) {
+          cluster::partition_change_notifier::notification_type,
+          const model::ntp& ntp,
+          std::optional<cluster::partition_change_notifier::partition_state>
+            partition) {
             _queue.submit(
-              [this, ntp]() { return handle_translator_state_change(ntp); });
-        }
-    });
-
-    if (!_features->local().is_active(features::feature::datalake_iceberg_ga)) {
-        ssx::spawn_with_gate(_gate, [this] {
-            return _features->local()
-              .await_feature(
-                features::feature::datalake_iceberg_ga, _as->local())
-              .then([this] {
-                  for (const auto& [ntp, _] : _scheduler.all_translators()) {
-                      _queue.submit([this, ntp]() {
-                          return handle_translator_state_change(ntp);
-                      });
-                  }
+              [this, ntp = ntp, partition = std::move(partition)]() mutable {
+                  return handle_translator_state_change(
+                    std::move(ntp), std::move(partition));
               });
         });
-    }
+    _iceberg_invalid_record_action.watch([this] {
+        for (auto& [ntp, _] : _scheduler.all_translators()) {
+            auto partition = _partition_mgr->local().get(ntp);
+            if (!partition) {
+                continue;
+            }
+            cluster::partition_change_notifier::partition_state pstate = {
+              partition->term(),
+              partition->is_leader(),
+              _topic_table->local().get_topic_cfg(
+                model::topic_namespace_view{ntp})};
+            _queue.submit(
+              [this, ntp = ntp, pstate = std::move(pstate)]() mutable {
+                  return handle_translator_state_change(
+                    std::move(ntp), std::move(pstate));
+              });
+        }
+    });
 
     _schema_cache->start();
     _backlog_controller = std::make_unique<backlog_controller>(
@@ -616,31 +558,25 @@ ss::future<> datalake_manager::shutdown() {
     if (_catalog) {
         co_await _catalog->stop();
     }
-    _deregistrations.clear();
+    _partition_notifications->unregister_partition_notifications(
+      _partition_notifications_id);
     co_await _scheduler.stop();
     co_await std::move(f);
     _schema_cache->stop();
     vlog(datalake_log.debug, "Stopped datalake manager...");
 }
 
-ss::future<>
-datalake_manager::handle_translator_state_change(const model::ntp& ntp) {
+ss::future<> datalake_manager::handle_translator_state_change(
+  model::ntp ntp,
+  std::optional<cluster::partition_change_notifier::partition_state>
+    partition) {
     if (_gate.is_closed() || !model::is_user_topic(ntp)) {
         co_return;
     }
     vlog(datalake_log.debug, "Translator state change for {} detected.", ntp);
-    auto partition = _partition_mgr->local().get(ntp);
-    auto is_leader = partition && partition->raft()->is_leader();
-    const auto& topic_cfg = _topic_table->local().get_topic_cfg(
-      model::topic_namespace_view{ntp});
     const auto& translators = _scheduler.all_translators();
     auto translator_it = translators.find(ntp);
     auto translator_exists = translator_it != translators.end();
-    auto iceberg_disabled = topic_cfg
-                            && topic_cfg->properties.iceberg_mode
-                                 == model::iceberg_mode::disabled;
-    auto requires_active_translator = partition && topic_cfg
-                                      && !iceberg_disabled && is_leader;
     if (translator_exists) {
         // stop the existing translator first and restart if needed
         // The newer incarnation will pickup any changes to the iceberg
@@ -655,13 +591,26 @@ datalake_manager::handle_translator_state_change(const model::ntp& ntp) {
               ntp,
               remove_f.get_exception());
             if (!_gate.is_closed()) {
-                _queue.submit_delayed(10s, [this, ntp]() {
-                    return handle_translator_state_change(ntp);
-                });
+                _queue.submit_delayed(
+                  10s,
+                  [this,
+                   ntp = std::move(ntp),
+                   partition = std::move(partition)]() mutable {
+                      return handle_translator_state_change(
+                        std::move(ntp), std::move(partition));
+                  });
             }
             co_return;
         }
     }
+
+    auto requires_active_translator
+      = partition               // valid partition on the shard
+        && partition->is_leader // currently the leader
+        // iceberg is enabled in the topic configuration
+        && partition->topic_cfg
+        && partition->topic_cfg->properties.iceberg_mode
+             != model::iceberg_mode::disabled;
 
     if (!requires_active_translator) {
         // no active translator needed, so nothing to do
@@ -670,7 +619,7 @@ datalake_manager::handle_translator_state_change(const model::ntp& ntp) {
 
     // otherwise we need to set up a translator
 
-    auto mode = topic_cfg->properties.iceberg_mode;
+    auto mode = partition->topic_cfg->properties.iceberg_mode;
     auto type_resolver = make_type_resolver(
       mode, ntp.tp.topic, *_schema_registry, *_schema_cache);
     auto record_translator = make_record_translator(mode);
@@ -682,8 +631,13 @@ datalake_manager::handle_translator_state_change(const model::ntp& ntp) {
     auto coordinator
       = translation::coordinator_api::make_default_coordinator_api(
         _coordinator_frontend->local());
+
+    auto partition_ptr = _partition_mgr->local().get(ntp);
+    if (!partition_ptr) {
+        co_return;
+    }
     auto data_src = translation::data_source::make_default_data_source(
-      partition);
+      partition_ptr);
     auto translation_ctx
       = translation::translation_context::make_default_translation_context(
         local_path{_writer_scratch_space},
@@ -698,10 +652,10 @@ datalake_manager::handle_translator_state_change(const model::ntp& ntp) {
         *reservations,
         _topic_table,
         _features,
-        get_or_create_probe(partition->ntp()));
+        get_or_create_probe(ntp));
     auto lag_tracker
       = translation::translation_lag_tracker::make_default_lag_tracker(
-        partition, _topic_table->local());
+        partition_ptr, _topic_table->local());
 
     auto translator = std::make_unique<translation::partition_translator>(
       _sg,
@@ -722,9 +676,15 @@ datalake_manager::handle_translator_state_change(const model::ntp& ntp) {
           "adding translator for {} failed, retrying in a bit",
           ntp);
         if (!_gate.is_closed()) {
-            _queue.submit_delayed(10s, [this, ntp]() {
-                return handle_translator_state_change(ntp);
-            });
+            _queue.submit_delayed(
+              10s,
+              [this,
+               ntp = std::move(ntp),
+               partition = std::move(partition)]() mutable {
+                  return handle_translator_state_change(
+                    std::move(ntp), std::move(partition));
+              });
+            co_return;
         }
     }
 }

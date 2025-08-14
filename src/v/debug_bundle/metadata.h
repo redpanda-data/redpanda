@@ -12,7 +12,7 @@
 #pragma once
 
 #include "bytes/bytes.h"
-#include "container/fragmented_vector.h"
+#include "container/chunked_vector.h"
 #include "debug_bundle/types.h"
 #include "serde/envelope.h"
 #include "serde/rw/bytes.h"
