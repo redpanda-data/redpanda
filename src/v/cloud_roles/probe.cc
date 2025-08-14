@@ -12,10 +12,14 @@
 
 #include "config/configuration.h"
 #include "metrics/prometheus_sanitize.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/metrics.hh>
 
 namespace cloud_roles {
+
+auth_refresh_probe::auth_refresh_probe(ss::sstring tag)
+  : _tag(std::move(tag)) {}
 
 void auth_refresh_probe::setup_metrics() {
     if (config::shard_local_cfg().disable_metrics()) {
@@ -23,7 +27,10 @@ void auth_refresh_probe::setup_metrics() {
     }
 
     _metrics.add_group(
-      prometheus_sanitize::metrics_name("cloud_roles::auth_refresh"),
+      _tag.empty()
+        ? prometheus_sanitize::metrics_name("cloud_roles::auth_refresh")
+        : prometheus_sanitize::metrics_name(
+            ssx::sformat("cloud_roles::{}_auth_refresh", _tag)),
       {
         ss::metrics::make_counter(
           "successful_fetches",

@@ -214,7 +214,8 @@ void credential_manager::start_auth_refresh_if_needed() {
     auth_refresh_bg_op_->maybe_start_auth_refresh_op(
       [this](cloud_roles::credentials creds) -> ss::future<> {
           return propagate_credentials(std::move(creds));
-      });
+      },
+      "datalake");
 }
 
 ss::future<>

@@ -46,7 +46,8 @@ public:
     /// started on auth_refresh_shard_id and credentials are copied to other
     /// shards using the callback.
     void maybe_start_auth_refresh_op(
-      cloud_roles::credentials_update_cb_t credentials_update_cb);
+      cloud_roles::credentials_update_cb_t credentials_update_cb,
+      ss::sstring metrics_tag = "");
 
     cloud_storage_clients::client_configuration get_client_config() const;
     void set_client_config(cloud_storage_clients::client_configuration conf);
@@ -55,7 +56,8 @@ public:
 
 private:
     void do_start_auth_refresh_op(
-      cloud_roles::credentials_update_cb_t credentials_update_cb);
+      cloud_roles::credentials_update_cb_t credentials_update_cb,
+      ss::sstring metrics_tag);
 
     ss::gate& _gate;
     ss::abort_source& _as;

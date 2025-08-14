@@ -332,9 +332,10 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
         auto auth_result = co_await _credential_manager.maybe_sign(
           payload, request.value());
         if (auth_result.has_error()) {
-            co_return tl::unexpected(domain_error{http_call_error{fmt::format(
-              "Failed to sign request with credential manager: {}",
-              auth_result.error().message())}});
+            co_return tl::unexpected(
+              domain_error{http_call_error{fmt::format(
+                "Failed to sign request with credential manager: {}",
+                auth_result.error().message())}});
         }
 
         auto request_target = ss::sstring{
