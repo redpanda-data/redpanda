@@ -271,6 +271,9 @@ public:
     ss::future<ss::circular_buffer<model::record_batch>>
     read_batches_in_range(model::offset min, model::offset max);
 
+    // Returns the base offset of a random record in the range [min, max)
+    // May therefore return an offset less than min, but may not return an
+    // offset greater than max. Min defaults to start_offset.
     ss::future<model::offset> random_batch_base_offset(
       model::offset max, std::optional<model::offset> min = std::nullopt);
 

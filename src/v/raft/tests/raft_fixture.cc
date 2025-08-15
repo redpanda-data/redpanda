@@ -605,20 +605,28 @@ raft_node_instance::read_batches_in_range(
 
 ss::future<model::offset> raft_node_instance::random_batch_base_offset(
   model::offset max, std::optional<model::offset> min) {
-    model::offset read_start(random_generators::get_int<int64_t>(
-      min.value_or(_raft->start_offset()), max));
+    model::offset req_min = min.value_or(_raft->start_offset());
+    // max is exclusive, but read_batches_in_range accepts inclusive
+    model::offset req_max = model::prev_offset(max);
 
-    model::offset last = model::next_offset(read_start);
+    model::offset read_start(
+      random_generators::get_int<int64_t>(req_min, req_max));
+
+    model::offset first = read_start;
+    model::offset last = read_start;
 
     ss::circular_buffer<model::record_batch> batches;
-    while (batches.empty() && last <= _raft->dirty_offset()) {
-        vlog(
-          test_log.info, "Reading batches in range: [{},{}]", read_start, last);
-        batches = co_await read_batches_in_range(read_start, last);
-        last++;
-    }
-    if (batches.empty()) {
-        co_return model::offset{};
+    while (batches.empty()) {
+        vlog(test_log.info, "Reading batches in range: [{},{}]", first, last);
+        batches = co_await read_batches_in_range(first, last);
+        if (last < req_max) {
+            last = model::next_offset(last);
+        } else if (first > req_min) {
+            first = model::prev_offset(first);
+        } else {
+            // cannot widen the search, already requesting full interval
+            co_return model::offset{};
+        }
     }
     co_return batches.front().base_offset();
 }
