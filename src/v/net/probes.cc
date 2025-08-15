@@ -161,6 +161,13 @@ void server_probe::setup_public_metrics(
             ssx::sformat("{}: Number of bytes sent to clients", proto)),
           {server_label(proto)})
           .aggregate({sm::shard_label}),
+        sm::make_counter(
+          "produce_bad_create_time",
+          [this] { return _produce_bad_create_time; },
+          sm::description("number of produce requests with timestamps too far "
+                          "in the future or in the past"),
+          {server_label(proto)})
+          .aggregate({sm::shard_label}),
       });
 }
 
