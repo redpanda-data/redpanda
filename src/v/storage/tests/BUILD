@@ -1003,3 +1003,29 @@ redpanda_cc_bench(
         "@seastar//:benchmark",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "segment_appender_concurrent_read_write_test",
+    timeout = "short",
+    srcs = [
+        "segment_appender_concurrent_read_write_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iostream",
+        "//src/v/config",
+        "//src/v/random:generators",
+        "//src/v/storage",
+        "//src/v/storage:chunk_cache",
+        "//src/v/storage:resources",
+        "//src/v/storage:segment_appender",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:random_bytes",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
+        "@abseil-cpp//absl/crc:crc32c",
+    ],
+)
