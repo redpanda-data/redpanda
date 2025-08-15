@@ -49,3 +49,30 @@ func RegexListedItems(list, expressions []string) ([]string, error) {
 	}
 	return matched, nil
 }
+
+func CompileRegexExpressions(expressions []string) ([]*regexp.Regexp, error) {
+	var compiled []*regexp.Regexp
+	for _, expression := range expressions {
+		if !strings.HasPrefix(expression, "^") {
+			expression = "^" + expression
+		}
+		if !strings.HasSuffix(expression, "$") {
+			expression += "$"
+		}
+		re, err := regexp.Compile(expression)
+		if err != nil {
+			return nil, fmt.Errorf("unable to compile regex %q: %w", expression, err)
+		}
+		compiled = append(compiled, re)
+	}
+	return compiled, nil
+}
+
+func MatchesAnyRegex(name string, compiled []*regexp.Regexp) bool {
+	for _, re := range compiled {
+		if re.MatchString(name) {
+			return true
+		}
+	}
+	return false
+}

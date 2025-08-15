@@ -80,20 +80,14 @@ information.
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer adm.Close()
 
-			if re {
-				topics, err = regexTopics(adm, topics)
-				out.MaybeDie(err, "unable to filter topics by regex: %v", err)
-			}
-
-			listed, err := adm.ListTopicsWithInternal(context.Background(), topics...)
-			out.MaybeDie(err, "unable to request metadata: %v", err)
+			listedTopics, err := executeTopicList(adm, topics, re)
+			out.MaybeDie(err, "unable to list topics: %v", err)
 
 			if detailed {
-				printDetailedListView(f, detailedListView(internal, listed), os.Stdout)
+				printDetailedListView(f, detailedListView(internal, listedTopics), os.Stdout)
 			} else {
-				printSummarizedListView(f, summarizedListView(internal, listed), os.Stdout)
+				printSummarizedListView(f, summarizedListView(internal, listedTopics), os.Stdout)
 			}
-			out.MaybeDie(err, "unable to summarize metadata: %v", err)
 		},
 	}
 
@@ -102,6 +96,19 @@ information.
 	cmd.Flags().BoolVarP(&internal, "internal", "i", false, "Print internal topics")
 	cmd.Flags().BoolVarP(&re, "regex", "r", false, "Parse topics as regex; list any topic that matches any input topic expression")
 	return cmd
+}
+
+func executeTopicList(adm *kadm.Client, topics []string, re bool) (kadm.TopicDetails, error) {
+	if re {
+		return regexTopicDetails(adm, topics)
+	}
+
+	listedTopics, err := adm.ListTopicsWithInternal(context.Background(), topics...)
+	if err != nil {
+		return nil, fmt.Errorf("unable to request metadata: %w", err)
+	}
+
+	return listedTopics, nil
 }
 
 type summarizedList struct {
