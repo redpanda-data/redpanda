@@ -226,7 +226,8 @@ convert_timestamp(std::unique_ptr<parsed::message> message) {
     if (it != message->fields.end()) {
         ts += absl::Nanoseconds(std::get<int32_t>(std::move(it->second)));
     }
-    co_return value_outcome{iceberg::timestamp_value{absl::ToUnixMicros(ts)}};
+    co_return optional_value_outcome{
+      iceberg::timestamp_value{absl::ToUnixMicros(ts)}};
 }
 
 ss::future<optional_value_outcome> message_field_to_value(
@@ -396,7 +397,7 @@ deserialize_protobuf(iobuf buffer, const pb::Descriptor& type_descriptor) {
         co_return co_await proto_parsed_message_to_value(
           std::move(msg_ptr), type_descriptor);
     } catch (...) {
-        co_return value_outcome(value_conversion_exception(fmt::format(
+        co_return optional_value_outcome(value_conversion_exception(fmt::format(
           "exception thrown while parsing protobuf - {}",
           std::current_exception())));
     }

@@ -90,7 +90,7 @@ public:
             id, std::move(cmd));
 
         auto ec = co_await _table->apply_update(std::move(batch));
-        co_return ec.value();
+        co_return ::cluster::cluster_link::errc(ec.value());
     }
 
     ss::future<::cluster::cluster_link::errc> update_mirror_topic_state(
@@ -105,7 +105,7 @@ public:
           create_update_mirror_topic_state_command(id, std::move(cmd));
 
         auto ec = co_await _table->apply_update(std::move(batch));
-        co_return ec.value();
+        co_return ::cluster::cluster_link::errc(ec.value());
     }
 
     ss::future<::cluster::cluster_link::errc> update_mirror_topic_properties(
@@ -119,7 +119,7 @@ public:
         auto batch = ::cluster::cluster_link::testing::
           create_update_mirror_topic_properties_command(id, std::move(cmd));
         auto ec = co_await _table->apply_update(std::move(batch));
-        co_return ec.value();
+        co_return ::cluster::cluster_link::errc(ec.value());
     }
 
     std::optional<chunked_hash_map<

@@ -707,7 +707,7 @@ ss::future<bool> s3_client::self_configure_test(const bucket_name& bucket) {
     // request.
     auto list_objects_result = co_await list_objects(
       bucket, std::nullopt, std::nullopt, 1);
-    co_return list_objects_result;
+    co_return list_objects_result.has_value();
 }
 
 ss::future<> s3_client::stop() { return _client.stop(); }

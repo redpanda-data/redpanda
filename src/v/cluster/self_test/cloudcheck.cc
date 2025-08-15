@@ -280,7 +280,7 @@ ss::future<cloudcheck::verify_upload_result> cloudcheck::verify_upload(
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
-        co_return result;
+        co_return cloudcheck::verify_upload_result{std::move(result)};
     }
 
     try {
@@ -306,7 +306,7 @@ ss::future<cloudcheck::verify_upload_result> cloudcheck::verify_upload(
         result.error = e.what();
     }
 
-    co_return result;
+    co_return cloudcheck::verify_upload_result{std::move(result)};
 }
 
 ss::future<cloudcheck::verify_list_result> cloudcheck::verify_list(
@@ -348,13 +348,13 @@ ss::future<cloudcheck::verify_head_result> cloudcheck::verify_head(
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
-        co_return result;
+        co_return cloudcheck::verify_head_result{std::move(result)};
     }
 
     if (!key) {
         result.warning = "Could not download from cloud storage (no file was "
                          "found in the bucket).";
-        co_return result;
+        co_return cloudcheck::verify_head_result{std::move(result)};
     }
 
     try {
@@ -382,7 +382,7 @@ ss::future<cloudcheck::verify_head_result> cloudcheck::verify_head(
         result.error = e.what();
     }
 
-    co_return result;
+    co_return cloudcheck::verify_head_result{std::move(result)};
 }
 
 ss::future<cloudcheck::verify_download_result> cloudcheck::verify_download(
@@ -443,7 +443,8 @@ ss::future<cloudcheck::verify_delete_result> cloudcheck::verify_delete(
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
-        co_return result;
+        co_return cloudcheck::verify_delete_result{
+          .test_result = std::move(result)};
     }
 
     try {
@@ -466,7 +467,8 @@ ss::future<cloudcheck::verify_delete_result> cloudcheck::verify_delete(
         result.error = e.what();
     }
 
-    co_return result;
+    co_return cloudcheck::verify_delete_result{
+      .test_result = std::move(result)};
 }
 
 ss::future<cloudcheck::verify_deletes_result> cloudcheck::verify_deletes(
@@ -476,7 +478,8 @@ ss::future<cloudcheck::verify_deletes_result> cloudcheck::verify_deletes(
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
-        co_return result;
+        co_return cloudcheck::verify_deletes_result{
+          .test_result = std::move(result)};
     }
 
     std::vector<cloud_storage_clients::object_key> keys(num_objects);
@@ -509,7 +512,8 @@ ss::future<cloudcheck::verify_deletes_result> cloudcheck::verify_deletes(
         result.error = e.what();
     }
 
-    co_return result;
+    co_return cloudcheck::verify_deletes_result{
+      .test_result = std::move(result)};
 }
 
 } // namespace cluster::self_test

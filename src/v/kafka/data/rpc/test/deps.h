@@ -129,8 +129,8 @@ public:
                 break;
             }
         }
-        co_return model::make_memory_record_batch_reader(
-          std::move(read_batches));
+        co_return storage::translating_reader{
+          model::make_memory_record_batch_reader(std::move(read_batches))};
     }
     ss::future<std::optional<storage::timequery_result>>
     timequery(storage::timequery_config) final {

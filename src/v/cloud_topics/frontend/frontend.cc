@@ -556,7 +556,7 @@ ss::future<std::expected<kafka::offset, std::error_code>> frontend::replicate(
             _data_plane->cache_put(ntp(), b);
         }
     }
-    co_return ret_offset;
+    co_return offset_cast(ret_offset);
 }
 
 raft::replicate_stages frontend::replicate(
@@ -596,7 +596,7 @@ frontend::get_leader_epoch_last_offset(model::term_id term) const {
     if (term >= first_local_term) {
         auto last_offset = _partition->get_term_last_offset(term);
         if (last_offset) {
-            co_return ot_state->from_log_offset(*last_offset);
+            co_return offset_cast(ot_state->from_log_offset(*last_offset));
         }
     }
 

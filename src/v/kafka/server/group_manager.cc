@@ -857,7 +857,7 @@ group_manager::recover_offsets(group_offsets_snapshot snap) {
       offsets_ntp);
     auto it = _partitions.find(offsets_ntp);
     if (it == _partitions.end()) {
-        co_return cluster::cloud_metadata::error_outcome::ntp_not_found;
+        co_return kafka::error_code::not_leader_for_partition;
     }
     auto attached_partition = it->second;
     auto units = co_await ss::get_units(
