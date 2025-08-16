@@ -317,6 +317,7 @@ private:
 
     model::cloud_storage_backend _cloud_storage_backend;
     cloud_io::provider _provider;
+    config::binding<std::chrono::milliseconds> _lease_timeout;
 };
 
 } // namespace cloud_io

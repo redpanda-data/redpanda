@@ -2391,6 +2391,13 @@ configuration::configuration()
       "`check_manifest_and_segment_metadata`.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10)
+  , cloud_storage_client_lease_timeout_ms(
+      *this,
+      "cloud_storage_client_lease_timeout_ms",
+      "Maximum time to hold a cloud storage client lease (ms), after which any "
+      "outstanding connection is immediately closed.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      900s)
   , cloud_storage_segment_size_target(
       *this,
       "cloud_storage_segment_size_target",

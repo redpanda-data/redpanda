@@ -1510,6 +1510,7 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
                 'cloud_storage_cluster_metadata_upload_interval_ms': 1000,
                 'enable_cluster_metadata_upload_loop': True,
                 'controller_snapshot_max_age_sec': 1,
+                'cloud_storage_client_lease_timeout_ms': 1000,
             },
             environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000},
             si_settings=si_settings,
