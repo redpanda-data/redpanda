@@ -17,7 +17,7 @@ use_repo(
     "boost",
 )
 
-bazel_dep(name = "gazelle", version = "0.42.0")
+bazel_dep(name = "gazelle", version = "0.45.0")
 bazel_dep(name = "abseil-cpp", version = "20250127.1")
 bazel_dep(name = "bazel_skylib", version = "1.8.0")
 bazel_dep(name = "crc32c", version = "1.1.0")
@@ -39,7 +39,7 @@ single_version_override(
 
 bazel_dep(name = "re2", version = "2024-07-02.bcr.1")
 bazel_dep(name = "rules_foreign_cc", version = "0.12.0")
-bazel_dep(name = "rules_go", version = "0.53.0")
+bazel_dep(name = "rules_go", version = "0.56.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_rust", version = "0.60.0")
 bazel_dep(name = "snappy", version = "1.2.1")
@@ -49,7 +49,7 @@ bazel_dep(name = "zstd", version = "1.5.7")
 bazel_dep(name = "patchelf", version = "0.18.0")
 bazel_dep(name = "bzip2", version = "1.0.8.bcr.2")
 
-bazel_dep(name = "buildifier_prebuilt", version = "8.0.3", dev_dependency = True)
+bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = True)
 bazel_dep(name = "rules_python", version = "1.0.0", dev_dependency = True)
 bazel_dep(name = "rules_cc", version = "0.1.1", dev_dependency = True)
 bazel_dep(name = "rules_shell", version = "0.4.1", dev_dependency = True)
@@ -268,13 +268,13 @@ use_repo(
     "com_github_beevik_ntp",
     "com_github_bufbuild_protocompile",
     "com_github_cespare_xxhash",
+    "com_github_containerd_errdefs",
     "com_github_coreos_go_systemd_v22",
     "com_github_docker_docker",
     "com_github_docker_go_connections",
     "com_github_docker_go_units",
     "com_github_fatih_color",
     "com_github_google_uuid",
-    "com_github_hamba_avro",
     "com_github_hamba_avro_v2",
     "com_github_hashicorp_go_multierror",
     "com_github_kballard_go_shellquote",
@@ -308,8 +308,6 @@ use_repo(
     "com_github_spf13_cobra",
     "com_github_spf13_pflag",
     "com_github_stretchr_testify",
-    "com_github_testcontainers_testcontainers_go",
-    "com_github_testcontainers_testcontainers_go_modules_redpanda",
     "com_github_tidwall_sjson",
     "com_github_tklauser_go_sysconf",
     "com_github_twmb_franz_go",
@@ -365,6 +363,7 @@ crate.from_cargo(
     ],
 )
 use_repo(crate, "crates")
+
 crate.annotation(
     additive_build_file = "//bazel/thirdparty:wasmtime.BUILD",
     crate = "wasmtime-c-api-impl",

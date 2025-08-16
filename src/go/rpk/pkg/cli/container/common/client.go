@@ -14,10 +14,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/docker/docker/api/types/image"
-
-	"github.com/docker/docker/api/types"
+	"github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -62,7 +61,7 @@ type Client interface {
 	ContainerList(
 		ctx context.Context,
 		options container.ListOptions,
-	) ([]types.Container, error)
+	) ([]container.Summary, error)
 
 	ContainerLogs(
 		ctx context.Context,
@@ -73,7 +72,7 @@ type Client interface {
 	ContainerInspect(
 		ctx context.Context,
 		containerID string,
-	) (types.ContainerJSON, error)
+	) (container.InspectResponse, error)
 
 	ContainerRemove(
 		ctx context.Context,
@@ -139,7 +138,7 @@ func NewDockerClient(ctx context.Context) (Client, error) {
 }
 
 func (*dockerClient) IsErrNotFound(err error) bool {
-	return client.IsErrNotFound(err)
+	return errdefs.IsNotFound(err)
 }
 
 func (*dockerClient) IsErrConnectionFailed(err error) bool {

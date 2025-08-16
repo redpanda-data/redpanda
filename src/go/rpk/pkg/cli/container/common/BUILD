@@ -12,7 +12,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/go/rpk/pkg/config",
-        "@com_github_docker_docker//api/types",
+        "@com_github_containerd_errdefs//:errdefs",
         "@com_github_docker_docker//api/types/container",
         "@com_github_docker_docker//api/types/filters",
         "@com_github_docker_docker//api/types/image",

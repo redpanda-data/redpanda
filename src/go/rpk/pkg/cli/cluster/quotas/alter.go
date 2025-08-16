@@ -155,7 +155,7 @@ Remove quota (producer_byte_rate) from client ID 'foo':
 	cmd.Flags().StringSliceVar(&defaults, "default", nil, "Entity type for default matching, where type is client-id or client-id-prefix (repeatable)")
 	cmd.Flags().StringSliceVar(&adds, "add", nil, "Key=value quota to add, where the value is a float number (repeatable)")
 	cmd.Flags().StringSliceVar(&deletes, "delete", nil, "Key of the quota to delete (repeatable)")
-	cmd.Flags().BoolVar(&dry, "dry", false, "Key of the quota to delete (repeatable)")
+	cmd.Flags().BoolVar(&dry, "dry", false, "Dry run: validate the request without altering the quotas")
 
 	cmd.MarkFlagsOneRequired("name", "default")
 	cmd.MarkFlagsOneRequired("add", "delete")
