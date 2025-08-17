@@ -85,7 +85,7 @@
           "about": "The epoch of the last fetched record or -1 if there is none"},
         { "name": "LogStartOffset", "type": "int64", "versions": "5+", "default": "-1", "ignorable": true,
           "about": "The earliest available offset of the follower replica.  The field is only used when the request is sent by the follower."},
-        { "name": "PartitionMaxBytes", "type": "int32", "versions": "0+",
+        { "name": "PartitionMaxBytes", "type": "int32", "versions": "0+", "default": "1048576",
           "about": "The maximum bytes to fetch from this partition.  See KIP-74 for cases where this limit may not be honored." }
       ]}
     ]},
