@@ -9,7 +9,7 @@
  */
 #pragma once
 #include "security/acl.h"
-#include "security/gssapi_principal_mapper.h"
+#include "security/gssapi_rule.h"
 #include "security/sasl_authentication.h"
 
 #include <seastar/core/lowres_clock.hh>

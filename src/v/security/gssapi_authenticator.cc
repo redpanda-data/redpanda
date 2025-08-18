@@ -11,10 +11,10 @@
 
 #include "base/vlog.h"
 #include "bytes/bytes.h"
-#include "kafka/protocol/wire.h"
 #include "security/acl.h"
 #include "security/errc.h"
 #include "security/gssapi.h"
+#include "security/gssapi_principal_mapper.h"
 #include "security/krb5.h"
 #include "security/logger.h"
 #include "ssx/thread_worker.h"
@@ -27,10 +27,15 @@
 #include <boost/outcome/success_failure.hpp>
 #include <fmt/ranges.h>
 
-#include <array>
 #include <sstream>
 #include <string_view>
 #include <utility>
+
+namespace {
+
+constexpr uint32_t min_ssf_warning = 128;
+
+}
 
 namespace security {
 
@@ -389,8 +394,16 @@ gssapi_authenticator::impl::ssfcap(bytes_view auth_bytes) {
     uint32_t ssf{};
     memcpy(&ssf, bufset[0].value(), sizeof(ssf));
     auto mech_ssf = ntohl(ssf);
-    vlog(seclog.trace, "gss {} mech_ssf: {}", _state, mech_ssf);
-
+    if (mech_ssf < min_ssf_warning) {
+        vlog(
+          seclog.warn,
+          "gss {} mech_ssf: {} < {} is insecure",
+          _state,
+          mech_ssf,
+          min_ssf_warning);
+    } else {
+        vlog(seclog.trace, "gss {} mech_ssf: {}", _state, mech_ssf);
+    }
     bytes sasl_data{0x1, 0x0, 0x0, 0xff};
     gss::buffer_view input{sasl_data};
     gss::buffer output_token;

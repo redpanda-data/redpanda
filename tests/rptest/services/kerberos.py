@@ -1,7 +1,10 @@
 import json
 import os
 
+import shutil
+import tempfile
 from collections import namedtuple
+from jinja2 import Template
 from ducktape.cluster.remoteaccount import RemoteCommandError, RemoteAccount
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -15,12 +18,15 @@ KADM5_ACL_PATH = "/etc/krb5kdc/kadm5.acl"
 
 KDC_CONF_TMPL = """
 [realms]
-	{realm} = {{
-		acl_file = {kadm5_acl_path}
-		max_renewable_life = 7d 0h 0m 0s
-		supported_enctypes = {supported_encryption_types}
-		default_principal_flags = +preauth
-}}
+    {{ realm }} = {
+        acl_file = {{ kadm5_acl_path }}
+        max_renewable_life = 7d 0h 0m 0s
+        {% if allow_rc4 %}
+        allow_rc4 = true
+        {% endif %}
+        supported_enctypes = {{ supported_encryption_types }}
+        default_principal_flags = +preauth
+}
 [logging]
     kdc = FILE=/var/log/kdc.log
     admin_server = FILE=/var/log/kadmin.log
@@ -30,17 +36,20 @@ KDC_CONF_PATH = "/etc/krb5kdc/kdc.conf"
 
 KRB5_CONF_TMPL = """
 [libdefaults]
-    default_realm = {realm}
+    default_realm = {{ realm }}
     dns_canonicalize_hostname = false
-    permitted_enctypes = {permitted_enctypes}
+    {% if allow_rc4 %}
+    allow_rc4 = true
+    {% endif %}
+    permitted_enctypes = {{ permitted_enctypes }}
 
 [realms]
-	{realm} = {{
-		kdc_ports = 88,750
-		kadmind_port = 749
-		kdc = {node.account.hostname}
-		admin_server = {node.account.hostname}
-	}}
+    {{ realm }} = {
+        kdc_ports = 88,750
+        kadmind_port = 749
+        kdc = {{ node.account.hostname }}
+        admin_server = {{ node.account.hostname }}
+    }
 """
 KRB5_CONF_PATH = "/etc/krb5.conf"
 DEFAULT_KEYTAB_FILE = "/etc/krb5.keytab"
@@ -106,10 +115,26 @@ class AuthenticationError(Exception):
         return repr(self.message)
 
 
-def render_krb5_config(kdc_node, realm: str, permitted_enctypes: str):
-    return KRB5_CONF_TMPL.format(node=kdc_node,
-                                 realm=realm,
-                                 permitted_enctypes=permitted_enctypes)
+def render_krb5_config(kdc_node,
+                       realm: str,
+                       permitted_enctypes: str,
+                       allow_rc4: bool = False):
+    return Template(KRB5_CONF_TMPL).render(
+        node=kdc_node,
+        realm=realm,
+        permitted_enctypes=permitted_enctypes,
+        allow_rc4=allow_rc4)
+
+
+def render_kdc_config(realm: str,
+                      kadm5_acl_path: str,
+                      supported_encryption_types: str,
+                      allow_rc4: bool = False):
+    return Template(KDC_CONF_TMPL).render(
+        realm=realm,
+        kadm5_acl_path=kadm5_acl_path,
+        supported_encryption_types=supported_encryption_types,
+        allow_rc4=allow_rc4)
 
 
 def render_remote_kadmin_command(command,
@@ -161,11 +186,22 @@ class KrbKdc(Service):
     """
     A Kerberos KDC implementation backed by krb5-kdc (MIT).
     """
-    def __init__(self, context, realm="example.com", log_level="DEBUG"):
-        super(KrbKdc, self).__init__(context, num_nodes=1)
+    def __init__(
+            self,
+            context,
+            realm="example.com",
+            supported_encryption_types="aes256-cts-hmac-sha384-192:normal",
+            permitted_enctypes="aes256-cts-hmac-sha384-192",
+            allow_rc4=False,
+            log_level="DEBUG"):
+        super(KrbKdc, self).__init__(
+            context,
+            num_nodes=1,
+        )
         self.realm = realm
-        self.supported_encryption_types = "aes256-cts-hmac-sha384-192:normal"
-        self.permitted_enctypes = "aes256-cts-hmac-sha384-192"
+        self.supported_encryption_types = supported_encryption_types
+        self.permitted_enctypes = permitted_enctypes
+        self.allow_rc4 = allow_rc4
         self.kadmin_principal = "kadmin/admin"
         self.kadmin_password = "adminpassword"
         self.kadm5_acl_path = KADM5_ACL_PATH
@@ -174,17 +210,18 @@ class KrbKdc(Service):
         self.log_level = log_level
 
     def _render_cfg(self, node):
-        tmpl = KRB5_CONF_TMPL.format(
-            node=node,
-            realm=self.realm,
-            permitted_enctypes=self.permitted_enctypes)
+        tmpl = render_krb5_config(kdc_node=node,
+                                  realm=self.realm,
+                                  permitted_enctypes=self.permitted_enctypes,
+                                  allow_rc4=self.allow_rc4)
         self.logger.info(f"{self.krb5_conf_path}: {tmpl}")
         node.account.create_file(self.krb5_conf_path, tmpl)
 
-        tmpl = KDC_CONF_TMPL.format(
+        tmpl = render_kdc_config(
             realm=self.realm,
             kadm5_acl_path=self.kadm5_acl_path,
-            supported_encryption_types=self.supported_encryption_types)
+            supported_encryption_types=self.supported_encryption_types,
+            allow_rc4=self.allow_rc4)
         self.logger.info(f"{self.kdc_conf_path}: {tmpl}")
         node.account.create_file(self.kdc_conf_path, tmpl)
 
@@ -321,19 +358,45 @@ EOF
             principal=self.kadmin_principal,
             password=self.kadmin_password,
             krb5_conf_path=krb5_conf_path)
+        local_account = self.nodes[0].account
         self.logger.debug(f"principal add command: {cmd}")
-        dest_node.account.ssh(cmd=cmd, allow_fail=False)
-        self.logger.debug(
-            f"Generating keytab file {dest} for {dest_node.name}")
+        local_account.ssh(cmd=cmd, allow_fail=False)
+        dest_tmp = f"{dest}.{dest_node.name}"
+        self.logger.debug(f"Generating keytab file {dest_tmp}")
         cmd = render_remote_kadmin_command(command=render_ktadd_command(
-            principal=principal, keytab_file=dest),
+            principal=principal, keytab_file=dest_tmp),
                                            realm=self.realm,
                                            principal=self.kadmin_principal,
                                            password=self.kadmin_password,
                                            krb5_conf_path=krb5_conf_path)
         self.logger.debug(f"ktadd command: {cmd}")
-        dest_node.account.ssh(f"mkdir -p {os.path.dirname(dest)}")
-        dest_node.account.ssh(cmd=cmd, allow_fail=False)
+        local_account.ssh(f"mkdir -p {os.path.dirname(dest_tmp)}",
+                          allow_fail=False)
+        local_account.ssh(cmd=cmd, allow_fail=False)
+        dest_node.account.ssh(f"mkdir -p {os.path.dirname(dest)}",
+                              allow_fail=False)
+        self.logger.debug(
+            f"copying keytab {dest_tmp} to {dest_node.name}:{dest}")
+
+        temp_dir = tempfile.mkdtemp()
+        try:
+            # TODO: deal with very unlikely case that src_name matches temp_dir name?
+            # TODO: I think this actually works
+            local_dest = local_account._re_anchor_basename(dest_tmp, temp_dir)
+
+            self.logger.debug(f"copying from {dest_tmp} to {local_dest}")
+            local_account.copy_from(dest_tmp, local_dest)
+            self.logger.debug(f"copying to {local_dest} to {dest}")
+            dest_node.account.copy_to(local_dest, dest)
+
+        finally:
+            if os.path.isdir(temp_dir):
+                shutil.rmtree(temp_dir)
+
+        # local_account.copy_between(dest_tmp, dest, dest_node)
+        self.logger.debug(f"removing {dest_tmp}")
+        # local_account.ssh(cmd=f"rm {dest_tmp}", allow_fail=False)
+        self.logger.debug("done")
 
     def configure_service_principal(self, krb5_conf_path: str, principal: str,
                                     dest: str, dest_node):
@@ -529,6 +592,8 @@ class RedpandaKerberosNode(RedpandaService):
             realm: str,
             keytab_file=f"{RedpandaService.PERSISTENT_ROOT}/redpanda.keytab",
             krb5_conf_path=KRB5_CONF_PATH,
+            permitted_enctypes=None,
+            allow_rc4=False,
             *args,
             **kwargs):
         super(RedpandaKerberosNode, self).__init__(context, *args, **kwargs)
@@ -536,7 +601,8 @@ class RedpandaKerberosNode(RedpandaService):
         self.realm = realm
         self.keytab_file = keytab_file
         self.krb5_conf_path = krb5_conf_path
-        self.permitted_enctypes = self.kdc.permitted_enctypes
+        self.permitted_enctypes = permitted_enctypes or kdc.permitted_enctypes
+        self.allow_rc4 = allow_rc4
 
     def clean_node(self, node, **kwargs):
         super().clean_node(node, **kwargs)
@@ -544,22 +610,29 @@ class RedpandaKerberosNode(RedpandaService):
         if self.krb5_conf_path != KRB5_CONF_PATH:
             node.account.ssh(f"rm -fr {self.krb5_conf_path}", allow_fail=True)
 
-    def start_node(self, node, **kwargs):
+    def _configure_krb5_config(self, node, allow_rc4: bool):
         self.logger.debug(
             f"Rendering KRB5 config for {node.name} using KDC node {self.kdc.nodes[0].name}"
         )
         krb5_config = render_krb5_config(
             kdc_node=self.kdc.nodes[0],
             realm=self.kdc.realm,
-            permitted_enctypes=self.permitted_enctypes)
+            permitted_enctypes=self.permitted_enctypes,
+            allow_rc4=allow_rc4)
         self.logger.debug(
             f"KRB5 config to {self.krb5_conf_path}: {krb5_config}")
         node.account.ssh(f"mkdir -p {os.path.dirname(self.krb5_conf_path)}")
         node.account.create_file(self.krb5_conf_path, krb5_config)
+
+    def _configure_principal(self, node):
         principal = self._service_principal(node)
         self.logger.debug(f"Principal for {node.name}: {principal}")
         self.kdc.configure_service_principal(self.krb5_conf_path, principal,
                                              self.keytab_file, node)
+
+    def start_node(self, node, **kwargs):
+        self._configure_krb5_config(node, self.allow_rc4)
+        self._configure_principal(node)
         super().start_node(node, **kwargs)
 
     def _service_principal(self, node, primary: str = "redpanda"):

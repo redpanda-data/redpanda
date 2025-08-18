@@ -9,6 +9,7 @@
  */
 
 #include "config/property.h"
+#include "security/config.h"
 #include "security/gssapi_principal_mapper.h"
 
 #include <boost/test/data/test_case.hpp>
