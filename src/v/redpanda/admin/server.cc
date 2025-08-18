@@ -799,6 +799,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
     // by IP address to a k8s cluster's internal pod IP.
 
     auto host_hdr = req.get_header("host");
+    // TODO: SL - this is the headless svc host and port
 
     std::string port;        // String like :123, or blank for default port
     std::string target_host; // Guessed admin API hostname of peer
@@ -823,22 +824,49 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
             port = host_hdr.substr(colon);
         }
 
+        // TODO: SL - this is the headless svc host
         auto req_hostname = host_hdr.substr(0, colon);
+        vlog(adminlog.debug, "SL: req_hostname {}", req_hostname);
 
         // See if this hostname is one of our kafka advertised addresses
         auto kafka_endpoints = config::node().advertised_kafka_api();
+        // TODO: SL - we MUST now add an adv addr
+        // with the headless svc in this list
+        // (this is likely what was missing
+        // before and why it now works)
+        for (const model::broker_endpoint& be : kafka_endpoints) {
+            vlog(
+              adminlog.debug,
+              "SL: kafka endpoint - address.host {} name {} ",
+              be.address.host(),
+              be.name);
+        }
+
         auto match_i = std::find_if(
           kafka_endpoints.begin(),
           kafka_endpoints.end(),
           [req_hostname](const model::broker_endpoint& be) {
               return be.address.host() == req_hostname;
+              // TODO: SL - then this must match against
+              // the headless svc host
           });
+
         if (match_i != kafka_endpoints.end()) {
             auto listener_idx = size_t(
               std::distance(kafka_endpoints.begin(), match_i));
+            vlog(adminlog.debug, "SL: listener_idx {}", listener_idx);
 
             auto leader_advertised_addrs
               = leader.broker.kafka_advertised_listeners();
+
+            for (const model::broker_endpoint& be : leader_advertised_addrs) {
+                vlog(
+                  adminlog.debug,
+                  "SL: leader_advertised_addrs endpoint - address.host {} name "
+                  "{} ",
+                  be.address.host(),
+                  be.name);
+            }
             if (leader_advertised_addrs.size() < listener_idx + 1) {
                 vlog(
                   adminlog.debug,
@@ -851,6 +879,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
                 target_host
                   = leader_advertised_addrs[listener_idx].address.host();
             }
+            vlog(adminlog.debug, "SL: target_host {}", target_host);
         } else {
             vlog(
               adminlog.debug,
@@ -863,6 +892,8 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
 
     std::optional<int> retry_after = std::nullopt;
     static const ss::sstring redirect_str = "redirect";
+    // TODO: SL - we see we get a redirect query param back, so
+    // it is getting here
     req._url = req.parse_query_param();
 
     // Check for redirect query parameter.
@@ -895,7 +926,11 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
 
     vlog(
       adminlog.info, "Redirecting admin API call to {} leader at {}", ntp, url);
+    // TODO: SL - we see this log line ^ in the logs
 
+    // TODO: SL - we also get a http 307 so we know it got all the way here -
+    // and DOES work IF the headless svc address is in the advertisedaddress
+    // list of the broker - but where does the adv addr come from?
     co_return ss::httpd::redirect_exception(
       url, ss::http::reply::status_type::temporary_redirect, retry_after);
 }
