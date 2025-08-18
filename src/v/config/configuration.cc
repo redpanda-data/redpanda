@@ -4236,6 +4236,18 @@ configuration::configuration()
       "its own.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , iceberg_topic_name_dot_replacement(
+      *this,
+      "iceberg_topic_name_dot_replacement",
+      "Optional replacement string for dots in topic names when deriving "
+      "Iceberg table names, useful when downstream systems do not permit "
+      "dots in table names. The replacement string cannot contain dots. "
+      "Be careful to avoid table name collisions caused by the replacement."
+      "If an Iceberg topic with dots in the name exists in the cluster, the "
+      "value of this property should not be changed.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      &validate_iceberg_topic_name_dot_replacement)
   , enable_host_metrics(
       *this,
       "enable_host_metrics",

@@ -767,6 +767,7 @@ struct configuration final : public config_store {
     bounded_property<std::chrono::milliseconds> iceberg_target_lag_ms;
     property<bool> iceberg_disable_snapshot_tagging;
     property<bool> iceberg_disable_automatic_snapshot_expiry;
+    property<std::optional<ss::sstring>> iceberg_topic_name_dot_replacement;
 
     property<bool> enable_host_metrics;
 

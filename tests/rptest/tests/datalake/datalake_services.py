@@ -255,7 +255,7 @@ class DatalakeServices():
             timeout_sec=timeout,
             backoff_sec=backoff_sec,
             err_msg=
-            f"Timed out waiting {namespace}.{table} to be created in the catalog"
+            f"Timed out waiting for {namespace}.{table} to be created in the catalog"
         )
 
     def wait_for_translation_until_offset(self,
