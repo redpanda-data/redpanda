@@ -257,6 +257,14 @@ validate_iceberg_partition_spec(const ss::sstring& value) {
     return std::nullopt;
 }
 
+std::optional<ss::sstring> validate_iceberg_topic_name_dot_replacement(
+  const std::optional<ss::sstring>& value) {
+    if (value.has_value() && value->find('.') != ss::sstring::npos) {
+        return "iceberg_topic_name_dot_replacement cannot contain dots";
+    }
+    return std::nullopt;
+}
+
 std::optional<ss::sstring>
 validate_iceberg_rest_catalog_auth_mode(const config::configuration& config) {
     auto auth_mode = config.iceberg_rest_catalog_authentication_mode();
