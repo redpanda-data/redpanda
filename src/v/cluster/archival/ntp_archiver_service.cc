@@ -2244,6 +2244,10 @@ ntp_archiver::wait_uploads_complete(
                 if (!segment_meta_matches_stats(*upload.meta, stats, _rtclog)) {
                     break;
                 }
+                vassert(
+                  !upload.meta.value().is_compacted,
+                  "OH BOY! {}",
+                  upload.meta.value());
             }
         }
 

@@ -13,13 +13,18 @@ import time
 import math
 
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, CloudStorageType,
+                                      RedpandaService, SISettings,
+                                      get_cloud_storage_type, LoggingConfig)
+from ducktape.cluster.cluster_spec import ClusterSpec
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool
 from rptest.util import wait_until_result
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
+from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
 from rptest.tests.redpanda_test import RedpandaTest
 
 
@@ -637,3 +642,91 @@ class LeadershipPinningTest(RedpandaTest):
         t2r = self._get_topic2racks()
         expected = {"foo": {"A", "B", "C"}, "bar": {"A", "B", "C"}}
         assert t2r == expected, f"Expected topic-to-rack leaders {expected}. Got {t2r} instead"
+
+
+class TieredStorageLeadershipTransferTest(RedpandaTest):
+    """
+    Transfer leadership between nodes, repeatedly, with TS enabled and a very short compaction interval.
+    Data should be highly compactible. The goal here is to reproduce a situation where a segment's base
+    offset is compacted away before it has been uploaded to block storage, resulting in metadata inconsistency.
+    """
+
+    topics = [
+        TopicSpec(
+            partition_count=20,
+            replication_factor=3,
+            cleanup_policy=TopicSpec.CLEANUP_COMPACT_DELETE,
+        )
+    ]
+
+    def __init__(self, test_context, *args, **kwargs):
+        extra_rp_conf = dict(
+            enable_leader_balancer=False,
+            partition_autobalancing_mode="off",
+            group_initial_rebalance_delay=300,
+            log_compaction_interval_ms=5,
+            cloud_storage_disable_upload_consistency_checks=False)
+        si_settings = SISettings(
+            test_context,
+            log_segment_size=1024 * 8,
+            cloud_storage_segment_max_upload_interval_sec=5,
+            cloud_storage_enable_remote_read=True,
+            cloud_storage_enable_remote_write=True)
+        super().__init__(
+            *args,
+            test_context=test_context,
+            si_settings=si_settings,
+            extra_rp_conf=extra_rp_conf,
+            # log_config=LoggingConfig('debug', {
+            #     'archival': 'trace',
+            # }),
+        )
+        self._ctx = test_context
+        self._producer = None
+        self._consumer = None
+        self._verifier_node = test_context.cluster.alloc(
+            ClusterSpec.simple_linux(1))[0]
+        self.logger.info(f"Verifier node name: {self._verifier_node.name}")
+
+    def init_producer(self, msg_size, num_messages):
+        self._producer = KgoVerifierProducer(self._ctx,
+                                             self.redpanda,
+                                             self.topic,
+                                             msg_size,
+                                             num_messages,
+                                             [self._verifier_node],
+                                             key_set_cardinality=1)
+
+    def init_consumer(self, msg_size):
+        self._consumer = KgoVerifierSeqConsumer(self._ctx,
+                                                self.redpanda,
+                                                self.topic,
+                                                msg_size,
+                                                nodes=[self._verifier_node],
+                                                loop=False)
+
+    @cluster(num_nodes=4)
+    @matrix(
+        message_size=[128],
+        num_messages=[
+            # 1024 * 128,
+            1024 * 1024 * 8,
+        ],
+        cloud_storage_type=get_cloud_storage_type()[1:],
+    )
+    def test_leadership_tx(self, message_size, num_messages,
+                           cloud_storage_type):
+        self.init_producer(message_size, num_messages)
+        self._producer.start(clean=False)
+
+        while self._producer.produce_status.acked < num_messages:
+            id = random.randint(0, self.topics[0].partition_count - 1)
+            Admin(self.redpanda).partition_transfer_leadership(
+                namespace="kafka", topic=self.topic, partition=id)
+            time.sleep(1)
+
+        self._producer.wait()
+
+        self.init_consumer(message_size)
+        self._consumer.start(clean=False)
+        self._consumer.wait()
