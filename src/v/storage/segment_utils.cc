@@ -882,6 +882,13 @@ make_concatenated_segment(
     auto writer = co_await make_writer_handle(path, cfg.sanitizer_config);
     auto output = co_await ss::make_file_output_stream(std::move(writer));
     for (auto& segment : segments) {
+        if (cfg.asrc && cfg.asrc->abort_requested()) {
+            // Close the output stream and then rethrow exception for a
+            // graceful shutdown. The leftover `.staging` files that have
+            // been written will be cleanly removed by log_manager.
+            co_await output.close();
+            std::rethrow_exception(cfg.asrc->abort_requested_exception_ptr());
+        }
         auto reader_handle = co_await segment->reader().data_stream(0);
         co_await ss::copy(reader_handle.stream(), output);
         co_await reader_handle.close();
