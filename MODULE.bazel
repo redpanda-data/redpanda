@@ -312,6 +312,7 @@ use_repo(
     "com_github_tklauser_go_sysconf",
     "com_github_twmb_franz_go",
     "com_github_twmb_franz_go_pkg_kadm",
+    "com_github_twmb_franz_go_pkg_kfake",
     "com_github_twmb_franz_go_pkg_kmsg",
     "com_github_twmb_franz_go_pkg_sr",
     "com_github_twmb_franz_go_plugin_kzap",

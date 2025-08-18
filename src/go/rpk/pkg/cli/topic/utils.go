@@ -59,3 +59,23 @@ func regexTopics(adm *kadm.Client, expressions []string) ([]string, error) {
 
 	return utils.RegexListedItems(topics.Names(), expressions)
 }
+
+func regexTopicDetails(adm *kadm.Client, expressions []string) (kadm.TopicDetails, error) {
+	topics, err := adm.ListTopicsWithInternal(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("unable to list topics: %w", err)
+	}
+
+	compiled, err := utils.CompileRegexExpressions(expressions)
+	if err != nil {
+		return nil, fmt.Errorf("unable to compile regex expressions: %w", err)
+	}
+
+	result := make(kadm.TopicDetails)
+	for name, topic := range topics {
+		if utils.MatchesAnyRegex(name, compiled) {
+			result[name] = topic
+		}
+	}
+	return result, nil
+}

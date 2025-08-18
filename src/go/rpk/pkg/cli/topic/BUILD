@@ -58,10 +58,13 @@ go_test(
     deps = [
         "//src/go/rpk/pkg/config",
         "@com_github_spf13_afero//:afero",
+        "@com_github_spf13_cobra//:cobra",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@com_github_twmb_franz_go//pkg/kerr",
+        "@com_github_twmb_franz_go//pkg/kgo",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
+        "@com_github_twmb_franz_go_pkg_kfake//:kfake",
         "@com_github_twmb_franz_go_pkg_kmsg//:kmsg",
         "@in_gopkg_yaml_v3//:yaml_v3",
     ],
