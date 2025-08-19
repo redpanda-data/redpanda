@@ -229,13 +229,22 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
 
         assert self.admin.put_license(license).status_code == 200
 
-        def obtain_configured_license():
-            lic = self.admin.get_license()
-            return (self.admin.is_sample_license(lic), lic)
+        def check_license(is_matching_license):
+            # Wait for all of the nodes to see the next license to ensure that
+            # we don't get idempotent 200's when updating the license on a
+            # stale node in the face of leadership changes
+            licenses = [
+                self.admin.get_license(node=node)
+                for node in self.redpanda.started_nodes()
+            ]
+            if any(not is_matching_license(lic) for lic in licenses):
+                return False, None
+            return (True, licenses[0])
 
-        resp = wait_until_result(obtain_configured_license,
-                                 timeout_sec=20,
-                                 backoff_sec=1)
+        resp = wait_until_result(
+            lambda: check_license(self.admin.is_sample_license),
+            timeout_sec=20,
+            backoff_sec=1)
         assert resp['license'] is not None
         assert expected_license_contents == resp['license'], resp['license']
 
@@ -261,13 +270,12 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
 
         assert self.admin.put_license(license_v1).status_code == 200
 
-        def obtain_configured_license_v1():
-            lic = self.admin.get_license()
+        def is_v1_license(lic):
             if lic is None or 'license' not in lic:
                 return False
-            return (lic['license']['format_version'] == 1, lic)
+            return lic['license']['format_version'] == 1
 
-        resp = wait_until_result(obtain_configured_license_v1,
+        resp = wait_until_result(lambda: check_license(is_v1_license),
                                  timeout_sec=20,
                                  backoff_sec=1)
         assert resp['license'] is not None
@@ -276,9 +284,10 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         # Set back to v0 for sanity check
         assert self.admin.put_license(license).status_code == 200
 
-        resp = wait_until_result(obtain_configured_license,
-                                 timeout_sec=20,
-                                 backoff_sec=1)
+        resp = wait_until_result(
+            lambda: check_license(self.admin.is_sample_license),
+            timeout_sec=20,
+            backoff_sec=1)
         assert resp['license'] is not None
         assert expected_license_contents == resp['license'], resp['license']
 
