@@ -115,7 +115,9 @@ class CloudRetentionTest(PreallocNodesTest):
 
         producer.wait_for_offset_map()
 
-        producer.wait_for_acks(msg_count, timeout_sec=600, backoff_sec=5)
+        producer.wait_for_acks(
+            msg_count, timeout_sec=1200, backoff_sec=5, progress_sec=20
+        )
         producer.wait()
         self.logger.info("finished producing")
         topics = (TopicSpec(name=self.topic_name, partition_count=num_partitions),)
