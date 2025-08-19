@@ -6,6 +6,7 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
@@ -250,9 +251,19 @@ class DatalakeClusterRestoreTest(RedpandaTest):
         Returns a map from table name to max translated offset.
         """
         offsets = dict()
-        for t in tables:
-            offsets[t] = int(dl.spark().max_translated_offset(
-                "redpanda", t, 0))
+        with ThreadPoolExecutor() as executor:
+            table_and_offset_futs = {
+                executor.submit(
+                    lambda t:
+                    (t, int(dl.spark().max_translated_offset("redpanda", t, 0))
+                     ), t)
+                for t in tables
+            }
+
+            for fut in as_completed(table_and_offset_futs):
+                table, offset = fut.result()
+                offsets[table] = offset
+
         self.logger.info(f"Translated offsets: {offsets}")
         return offsets
 
