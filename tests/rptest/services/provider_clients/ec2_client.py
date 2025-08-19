@@ -41,6 +41,7 @@ class EC2Client:
         self._disable_ssl = disable_ssl
         self._cli = self._make_client()
         self._ec2 = boto3.resource('ec2', region_name=region)
+        self._eks = self._make_eks_client()
         self._s3cli = self._make_s3_client()
         self._s3res = self._make_s3_resource()
         self._sts = self._make_sts_client()
@@ -61,6 +62,12 @@ class EC2Client:
                             aws_secret_access_key=self._secret_key,
                             endpoint_url=self._endpoint,
                             use_ssl=not self._disable_ssl)
+
+    def _make_eks_client(self):
+        return boto3.client('eks',
+                            region_name=self._region,
+                            aws_access_key_id=self._access_key,
+                            aws_secret_access_key=self._secret_key)
 
     def _make_sts_client(self):
         return boto3.client('sts',
@@ -643,10 +650,10 @@ class EC2Client:
                 # There is plenty of resources to cleanup
 
                 # - Delete network interfaces
-                # Enable manually. Normally these should be empty
+                # Normally these should be empty
                 # if resources up the chain was properly cleaned out.
                 # I.e. EKS clusters, ELBs
-                # self.delete_eni_by_vpc_id(vpc_id)
+                self.delete_eni_by_vpc_id(vpc_id)
 
                 # - Delete the internet-gateway
                 self.delete_igw_by_vpc_id(vpc_id)
@@ -669,3 +676,24 @@ class EC2Client:
                 )
                 return False
         return True
+
+    def get_eks_by_vpc_id(self, vpc_id):
+        # There should be only one vpc, but just in case, have it as a list
+        clusters = []
+        eks_clusters = self._eks.list_clusters()
+        for cluster in eks_clusters:
+            if cluster[self.VPC_ID_LABEL] == vpc_id:
+                clusters.append(cluster['name'])
+        if len(clusters) > 1:
+            self._log.warning(f"More than one cluster found for {vpc_id}: "
+                              f"{', '.join(clusters)}")
+        return clusters[0]
+
+    def get_eks_by_name(self, eks_name):
+        return self._eks.describe_cluster(eks_name)
+
+    def delete_eks_cluster(self, eks_name):
+        """Get a EKS resource and initiate delete
+        """
+        r = self._eks.delete_cluster(name=eks_name)
+        return r
