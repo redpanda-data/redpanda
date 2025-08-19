@@ -1068,7 +1068,7 @@ private:
 
             ssx::spawn_with_gate(_workers_gate, [&]() mutable {
                 return handle_exceptions(start_shard_fetch_worker(
-                  octx, std::move(plan.fetches_per_shard[shard]), 0));
+                  octx, std::move(plan.fetches_per_shard[shard]), 0, true));
             });
         }
 
@@ -1093,7 +1093,8 @@ private:
                         // Require that a worker returns more data than before.
                         // Otherwise it'll return right away with the previous
                         // result.
-                        _last_result_size[shard] + 1));
+                        _last_result_size[shard] + 1,
+                        false));
                   });
             }
         }
@@ -1165,7 +1166,10 @@ private:
      * and then notifies the fetch coordinator.
      */
     ss::future<> start_shard_fetch_worker(
-      op_context& octx, shard_fetch fetch, size_t min_fetch_bytes) {
+      op_context& octx,
+      shard_fetch fetch,
+      size_t min_fetch_bytes,
+      bool is_initial_request) {
         // if over budget skip the fetch.
         if (octx.bytes_left <= 0) {
             co_return;
@@ -1176,6 +1180,21 @@ private:
         }
 
         const bool foreign_read = fetch.shard != ss::this_shard_id();
+        const auto bytes_left = octx.bytes_left;
+
+        ss::abort_source as{};
+        auto resp_order = ss::now();
+        if (is_initial_request) {
+            // Ensure that initial shard fetch responses are filled in the same
+            // order that the shard workers are started in. This is to prevent
+            // the non-foreign shard worker from being preferred as it is more
+            // likely than the rest to be the first worker the executor gets
+            // results for.
+            resp_order = _initial_response_ordering.wait();
+            // Prevent the workers from waiting for new partition data on the
+            // initial request.
+            as.request_abort();
+        }
 
         fetch_worker::worker_result results
           = co_await octx.rctx.partition_manager().invoke_on(
@@ -1185,6 +1204,9 @@ private:
              min_fetch_bytes,
              foreign_read,
              configs = fetch.requests.copy(),
+             bytes_left,
+             is_initial_request,
+             &as,
              &octx](cluster::partition_manager& mgr) mutable
               -> ss::future<fetch_worker::worker_result> {
                 // Although this and octx are captured by reference across
@@ -1198,16 +1220,18 @@ private:
                   fetch_worker(
                     fetch_worker::shard_local_fetch_context{
                       .foreign_read = foreign_read,
-                      .bytes_left = octx.bytes_left,
+                      .bytes_left = bytes_left,
                       .min_bytes = min_fetch_bytes,
                       .deadline = octx.deadline,
                       .requests = std::move(configs),
                       .srv = octx.rctx.server().local(),
                       .mgr = mgr,
-                      .as = _worker_aborts[shard],
+                      .as = is_initial_request ? as : _worker_aborts[shard],
                     }),
                   [](auto& worker) { return worker.run(); });
             });
+
+        co_await std::move(resp_order);
 
         fill_fetch_responses(
           octx,
@@ -1215,6 +1239,10 @@ private:
           fetch.responses,
           fetch.start_time,
           false);
+
+        if (is_initial_request) {
+            _initial_response_ordering.signal();
+        }
 
         octx.rctx.probe().record_fetch_latency(
           results.first_run_latency_result);
@@ -1261,6 +1289,7 @@ private:
     std::exception_ptr _thrown_exception;
     ss::optimized_optional<ss::abort_source::subscription> _fetch_abort_sub;
     ss::timer<model::timeout_clock> _fetch_timeout;
+    ss::semaphore _initial_response_ordering{1};
 };
 
 size_t op_context::fetch_partition_count() const {
