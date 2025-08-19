@@ -832,7 +832,7 @@ TEST_F(CloudStorageManualMultiNodeTestBase, ReclaimableReportedInHealthReport) {
                         model::kafka_namespace, topic_name)) {
                         continue;
                     }
-                    for (auto partition : partitions) {
+                    for (auto [_, partition] : partitions) {
                         sizes.push_back(
                           partition.reclaimable_size_bytes.value_or(0));
                     }

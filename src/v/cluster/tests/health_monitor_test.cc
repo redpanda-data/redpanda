@@ -59,9 +59,8 @@ void check_reports_the_same(
             BOOST_REQUIRE_MESSAGE(r_it != rr->topics.end(), "tp_ns: " << tp_ns);
             auto& r_partitions = r_it->second;
             BOOST_REQUIRE_EQUAL(l_partitions.size(), r_partitions.size());
-            for (size_t p = 0; p < l_partitions.size(); ++p) {
-                auto& l_p = l_partitions[p];
-                auto& r_p = r_partitions[p];
+            for (auto [p_id, l_p] : l_partitions) {
+                auto& r_p = r_partitions.at(p_id);
                 BOOST_REQUIRE_EQUAL(l_p.id, r_p.id);
                 BOOST_REQUIRE_EQUAL(l_p.leader_id, r_p.leader_id);
                 BOOST_REQUIRE_EQUAL(l_p.term, r_p.term);
@@ -176,7 +175,7 @@ bool contains_exactly_ntp_leaders(
   const cluster::node_health_report::topics_t& topics) {
     auto left = expected;
     for (const auto& [tp_ns, partitions] : topics) {
-        for (const auto& p_l : partitions) {
+        for (const auto& [_, p_l] : partitions) {
             model::ntp ntp(tp_ns.ns, tp_ns.tp, p_l.id);
             if (left.erase(ntp) == 0) {
                 vlog(

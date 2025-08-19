@@ -38,7 +38,7 @@ struct health_bench : health_report_accessor {
 
         for (const auto& [_, report] : reports) {
             for (const auto& [tp_ns, partitions] : report->topics) {
-                for (const auto& partition : partitions) {
+                for (const auto& [_, partition] : partitions) {
                     if (
                       !partition.leader_id.has_value()
                       && ret.leaderless.size() < max_partitions_report) {

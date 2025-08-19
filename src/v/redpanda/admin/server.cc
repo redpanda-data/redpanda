@@ -3685,7 +3685,7 @@ void collect_shards_from_health_report(
         }
 
         for (const auto& replica : topic_it->second) {
-            auto partition_it = partitions.find(replica.id);
+            auto partition_it = partitions.find(replica.first);
             if (partition_it == partitions.end()) {
                 continue;
             }
@@ -3698,7 +3698,7 @@ void collect_shards_from_health_report(
                   return bs.node_id == node_id;
               });
             if (bs_it != part.replicas.end()) {
-                bs_it->shard = replica.shard;
+                bs_it->shard = replica.second.shard;
             }
         }
     }

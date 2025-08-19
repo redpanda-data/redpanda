@@ -166,7 +166,7 @@ node_health_report::topics_t filter_topic_status(
         node_health_report::topics_t ret;
         ret.reserve(topics.bucket_count());
         for (const auto& [tp_ns, partitions] : topics) {
-            ret.emplace(tp_ns, partitions.copy());
+            ret.emplace(tp_ns, copy_partition_statuses(partitions));
         }
         return ret;
     }
@@ -174,10 +174,10 @@ node_health_report::topics_t filter_topic_status(
     node_health_report::topics_t filtered;
 
     for (auto& [tp_ns, partitions] : topics) {
-        partition_statuses_t filtered_partitions;
-        for (auto& pl : partitions) {
-            if (filter.matches(tp_ns, pl.id)) {
-                filtered_partitions.push_back(pl);
+        partition_statuses_map_t filtered_partitions;
+        for (auto& [p_id, status] : partitions) {
+            if (filter.matches(tp_ns, p_id)) {
+                filtered_partitions.emplace(p_id, status);
             }
         }
         if (!filtered_partitions.empty()) {
@@ -454,7 +454,8 @@ ss::future<errc> health_monitor_backend::walk_local_and_remote_reports(
           counter,
           partitions,
           [&unclaimed_partitions, nt, &local_leader_handler](
-            const auto& partition_status) {
+            const auto& partition_status_pair) {
+              const auto& partition_status = partition_status_pair.second;
               if (const auto& fs = partition_status.followers_stats) {
                   vlog(
                     clusterlog.trace,
@@ -486,7 +487,8 @@ ss::future<errc> health_monitor_backend::walk_local_and_remote_reports(
               counter,
               partitions,
               [&unclaimed_partitions, nt, node_id, &remote_leader_handler](
-                const auto& partition_status) {
+                const auto& partition_status_pair) {
+                  const auto& partition_status = partition_status_pair.second;
                   auto nt_it = unclaimed_partitions.find(nt);
                   if (nt_it == unclaimed_partitions.end()) {
                       return;
@@ -1132,12 +1134,12 @@ health_monitor_backend::aggregate_reports(const report_cache_t& reports) {
             auto& leaderless_this_topic = leaderless.t_to_p[tp_ns];
             auto& urp_this_topic = urp.t_to_p[tp_ns];
 
-            for (const auto& partition : partitions) {
-                if (!partition.leader_id.has_value()) {
-                    leaderless_this_topic.emplace(partition.id);
+            for (const auto& [partition_id, status] : partitions) {
+                if (!status.leader_id.has_value()) {
+                    leaderless_this_topic.emplace(partition_id);
                 }
-                if (partition.under_replicated_replicas.value_or(0) > 0) {
-                    urp_this_topic.emplace(partition.id);
+                if (status.under_replicated_replicas.value_or(0) > 0) {
+                    urp_this_topic.emplace(partition_id);
                 }
             }
         }

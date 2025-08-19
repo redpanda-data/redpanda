@@ -85,7 +85,8 @@ node_health_report::node_health_report(
   , drain_status(drain_status) {
     topics.reserve(topics_vec.size());
     for (auto& topic : topics_vec) {
-        topics.emplace(std::move(topic.tp_ns), std::move(topic.partitions));
+        topics.emplace(
+          std::move(topic.tp_ns), move_to_map(std::move(topic.partitions)));
     }
 }
 
@@ -93,7 +94,7 @@ node_health_report node_health_report::copy() const {
     node_health_report ret{id, local_state, {}, drain_status};
     ret.topics.reserve(topics.bucket_count());
     for (const auto& [tp_ns, partitions] : topics) {
-        ret.topics.emplace(tp_ns, partitions.copy());
+        ret.topics.emplace(tp_ns, copy_partition_statuses(partitions));
     }
     return ret;
 }
@@ -106,8 +107,48 @@ node_health_report_serde::node_health_report_serde(const node_health_report& hr)
   : node_health_report_serde(hr.id, hr.local_state, {}, hr.drain_status) {
     topics.reserve(hr.topics.size());
     for (const auto& [tp_ns, partitions] : hr.topics) {
-        topics.emplace_back(tp_ns, partitions.copy());
+        topics.emplace_back(tp_ns, copy_to_vector(partitions));
     }
+}
+
+partition_statuses_map_t
+copy_partition_statuses(const partition_statuses_map_t& ps) {
+    partition_statuses_map_t ret;
+    ret.reserve(ps.size());
+    for (const auto& [p_id, status] : ps) {
+        ret.emplace(p_id, status);
+    }
+    return ret;
+}
+
+partition_statuses_t copy_to_vector(const partition_statuses_map_t& ps) {
+    partition_statuses_t vec;
+    vec.reserve(ps.size());
+    std::ranges::copy(ps | std::views::values, std::back_inserter(vec));
+    return vec;
+}
+partition_statuses_t move_to_vector(partition_statuses_map_t&& ps) {
+    partition_statuses_t vec;
+    vec.reserve(ps.size());
+    std::ranges::move(ps | std::views::values, std::back_inserter(vec));
+    return vec;
+}
+partition_statuses_map_t move_to_map(partition_statuses_t&& ps_vec) {
+    partition_statuses_map_t ret;
+    ret.reserve(ps_vec.size());
+    for (auto& status : ps_vec) {
+        ret.emplace(status.id, std::move(status));
+    }
+    return ret;
+}
+
+partition_statuses_map_t copy_to_map(const partition_statuses_t& ps_vec) {
+    partition_statuses_map_t ret;
+    ret.reserve(ps_vec.size());
+    for (const auto& status : ps_vec) {
+        ret.emplace(status.id, status);
+    }
+    return ret;
 }
 
 std::ostream& operator<<(std::ostream& o, const node_health_report_serde& r) {

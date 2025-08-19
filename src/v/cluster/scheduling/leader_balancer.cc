@@ -933,8 +933,7 @@ leader_balancer::collect_group_replicas_from_health_report(
 
             co_await ssx::async_for_each_counter(
               counter,
-              partitions.begin(),
-              partitions.end(),
+              partitions | std::views::values,
               [&](const partition_status& partition) {
                   auto as_it = meta.get_assignments().find(partition.id);
                   if (as_it != meta.get_assignments().end()) {

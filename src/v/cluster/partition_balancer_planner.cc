@@ -432,7 +432,7 @@ ss::future<> partition_balancer_planner::init_ntp_sizes_from_health_report(
   const cluster_health_report& health_report, request_context& ctx) {
     for (const auto& node_report : health_report.node_reports) {
         for (const auto& [tp_ns, partitions] : node_report->topics) {
-            for (const auto& partition : partitions) {
+            for (const auto& [_, partition] : partitions) {
                 model::ntp ntp{tp_ns.ns, tp_ns.tp, partition.id};
                 size_t reclaimable = partition.reclaimable_size_bytes.value_or(
                   0);

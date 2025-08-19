@@ -102,8 +102,7 @@ ss::future<> partition_leaders_table::update_with_node_report(
           = _topic_table.local().last_applied_revision();
         co_await ssx::async_for_each_counter(
           counter,
-          partitions.begin(),
-          partitions.end(),
+          partitions | std::views::values,
           [&](const partition_status& p) {
               if (!p.leader_id.has_value()) {
                   return;

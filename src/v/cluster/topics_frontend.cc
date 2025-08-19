@@ -1958,7 +1958,7 @@ ss::future<topics_frontend::capacity_info> topics_frontend::get_health_info(
           32,
           [&info](const node_health_report::topics_t::value_type& status) {
               for (const auto& partition : status.second) {
-                  info.ntp_sizes[partition.id] = partition.size_bytes;
+                  info.ntp_sizes[partition.first] = partition.second.size_bytes;
               }
               return ss::now();
           });
