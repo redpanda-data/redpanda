@@ -13,6 +13,7 @@ package bundle
 
 import (
 	"archive/zip"
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -121,10 +122,11 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 	defer w.Close()
 
 	ps := &stepParams{
-		fs:       bp.fs,
-		w:        w,
-		timeout:  bp.timeout,
-		fileRoot: strings.TrimSuffix(filepath.Base(bp.path), ".zip"),
+		fs:        bp.fs,
+		w:         w,
+		timeout:   bp.timeout,
+		fileRoot:  strings.TrimSuffix(filepath.Base(bp.path), ".zip"),
+		sharedBuf: make([]byte, 32*1024), // buffer for shared use. 32 KiB is the default used in io.Copy.
 	}
 
 	addrs := bp.y.Rpk.AdminAPI.Addresses
@@ -203,11 +205,12 @@ func errorFormat(errs []error) string {
 type step func() error
 
 type stepParams struct {
-	fs       afero.Fs
-	m        sync.Mutex
-	w        *zip.Writer
-	timeout  time.Duration
-	fileRoot string
+	fs        afero.Fs
+	m         sync.Mutex
+	w         *zip.Writer
+	timeout   time.Duration
+	fileRoot  string
+	sharedBuf []byte // shared buffer for writing to zip files.
 }
 
 type fileInfo struct {
@@ -267,6 +270,27 @@ func writeFileToZip(ps *stepParams, filename string, contents []byte) error {
 	return nil
 }
 
+// writeStreamToZip creates a file in the zip writer with name 'filename' and
+// streams data from reader to it.
+func writeStreamToZip(ps *stepParams, filename string, reader io.Reader) error {
+	ps.m.Lock()
+	defer ps.m.Unlock()
+
+	wr, err := ps.w.CreateHeader(&zip.FileHeader{
+		Name:     filepath.Join(ps.fileRoot, filename),
+		Method:   zip.Deflate,
+		Modified: time.Now(),
+	})
+	if err != nil {
+		return err
+	}
+	_, err = io.CopyBuffer(wr, reader, ps.sharedBuf)
+	if err != nil {
+		return fmt.Errorf("couldn't save '%s': %w", filename, err)
+	}
+	return nil
+}
+
 // writeDirToZip walks the 'srcDir' and writes the content in 'destDir'
 // directory in the zip writer. It will exclude the files that match the
 // 'exclude' regexp.
@@ -280,11 +304,11 @@ func writeDirToZip(ps *stepParams, srcDir, destDir string, exclude *regexp.Regex
 			if exclude != nil && exclude.MatchString(filename) {
 				return nil
 			}
-			file, err := os.ReadFile(filepath.Join(srcDir, filename))
+			file, err := ps.fs.Open(filepath.Join(srcDir, filename))
 			if err != nil {
 				return err
 			}
-			err = writeFileToZip(ps, filepath.Join(destDir, filename), file)
+			err = writeStreamToZip(ps, filepath.Join(destDir, filename), file)
 			if err != nil {
 				return err
 			}
@@ -394,74 +418,98 @@ func saveKafkaMetadata(rootCtx context.Context, ps *stepParams, cl *kgo.Client) 
 			Response interface{} // a raw response from kadm
 			Error    []string    // no error, or one error, or potentially many shard errors
 		}
-		var resps []resp
 
 		adm := kadm.NewClient(cl)
+		defer adm.Close()
+
+		// We stream to a temporary file, and then write that file to the zip.
+		// This to avoid:
+		//    1. Keeping the whole response in memory, which can be large.
+		//    2. Locking the zip writer for the whole duration of the request,
+		//       which can be long.
+		tempFile, err := afero.TempFile(ps.fs, "", "kafka-admin-*")
+		if err != nil {
+			return err
+		}
+		defer func() {
+			// Best effort cleanup of the temporary file.
+			if err := ps.fs.Remove(tempFile.Name()); err != nil {
+				zap.L().Sugar().Errorf("unable to remove temporary file %s: %v", tempFile.Name(), err)
+			}
+		}()
+
+		bufw := bufio.NewWriter(tempFile)
+		if _, err := bufw.WriteString("["); err != nil {
+			return err
+		}
+		encoder := json.NewEncoder(bufw)
+		first := true
+		encode := func(v any) error {
+			if !first {
+				if _, err := bufw.WriteString(","); err != nil {
+					return err
+				}
+			}
+			first = false
+			return encoder.Encode(v)
+		}
 
 		meta, err := adm.Metadata(ctx)
-		resps = append(resps, resp{
-			Name:     "metadata",
-			Response: meta,
-			Error:    stringifyKadmErr(err),
-		})
+		if e := encode(resp{"metadata", meta, stringifyKadmErr(err)}); e != nil {
+			return fmt.Errorf("unable to encode metadata response: %v", e)
+		}
 
 		tcs, err := adm.DescribeTopicConfigs(ctx, meta.Topics.Names()...)
-		resps = append(resps, resp{
-			Name:     "topic_configs",
-			Response: tcs,
-			Error:    stringifyKadmErr(err),
-		})
+		if e := encode(resp{"topic_configs", tcs, stringifyKadmErr(err)}); e != nil {
+			return fmt.Errorf("unable to encode topic configs response: %v", e)
+		}
 
 		bcs, err := adm.DescribeBrokerConfigs(ctx, meta.Brokers.NodeIDs()...)
-		resps = append(resps, resp{
-			Name:     "broker_configs",
-			Response: bcs,
-			Error:    stringifyKadmErr(err),
-		})
+		if e := encode(resp{"broker_configs", bcs, stringifyKadmErr(err)}); e != nil {
+			return fmt.Errorf("unable to encode broker configs response: %v", e)
+		}
 
 		ostart, err := adm.ListStartOffsets(ctx)
-		resps = append(resps, resp{
-			Name:     "log_start_offsets",
-			Response: ostart,
-			Error:    stringifyKadmErr(err),
-		})
+		if e := encode(resp{"log_start_offsets", ostart, stringifyKadmErr(err)}); e != nil {
+			return fmt.Errorf("unable to encode log start offsets response: %v", e)
+		}
 
 		ocommitted, err := adm.ListCommittedOffsets(ctx)
-		resps = append(resps, resp{
-			Name:     "last_stable_offsets",
-			Response: ocommitted,
-			Error:    stringifyKadmErr(err),
-		})
+		if e := encode(resp{"last_stable_offsets", ocommitted, stringifyKadmErr(err)}); e != nil {
+			return fmt.Errorf("unable to encode log committed offsets response: %v", e)
+		}
 
 		oend, err := adm.ListEndOffsets(ctx)
-		resps = append(resps, resp{
-			Name:     "high_watermarks",
-			Response: oend,
-			Error:    stringifyKadmErr(err),
-		})
+		if e := encode(resp{"high_watermarks", oend, stringifyKadmErr(err)}); e != nil {
+			return fmt.Errorf("unable to encode log end offsets response: %v", e)
+		}
 
 		groups, err := adm.DescribeGroups(ctx)
-		resps = append(resps, resp{
-			Name:     "groups",
-			Response: groups,
-			Error:    stringifyKadmErr(err),
-		})
+		if e := encode(resp{"groups", groups, stringifyKadmErr(err)}); e != nil {
+			return fmt.Errorf("unable to encode groups response: %v", e)
+		}
 
 		fetched := adm.FetchManyOffsets(ctx, groups.Names()...)
 		for _, fetch := range fetched {
-			resps = append(resps, resp{
-				Name:     fmt.Sprintf("group_commits_%s", fetch.Group),
-				Response: fetch.Fetched,
-				Error:    stringifyKadmErr(fetch.Err),
-			})
+			if e := encode(resp{fmt.Sprintf("group_commits_%s", fetch.Group), fetch.Fetched, stringifyKadmErr(fetch.Err)}); e != nil {
+				return fmt.Errorf("unable to encode group commits response: %v", e)
+			}
 		}
 
-		marshal, err := json.Marshal(resps)
+		_, err = bufw.WriteString("]")
 		if err != nil {
-			return fmt.Errorf("unable to encode kafka admin responses: %v", err)
+			return fmt.Errorf("unable to write end of JSON array: %v", err)
 		}
 
-		return writeFileToZip(ps, "kafka.json", marshal)
+		if err := bufw.Flush(); err != nil {
+			return fmt.Errorf("unable to flush to temporary file: %v", err)
+		}
+		f, err := ps.fs.Open(tempFile.Name())
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		return writeStreamToZip(ps, "kafka.json", f)
 	}
 }
 
@@ -472,20 +520,69 @@ func saveKafkaMetadata(rootCtx context.Context, ps *stepParams, cl *kgo.Client) 
 // its group, as well as an error message if reading that specific file failed.
 func saveDataDirStructure(ps *stepParams, y *config.RedpandaYaml) step {
 	return func() error {
-		files := make(map[string]*fileInfo)
-		err := walkDir(y.Redpanda.Directory, files)
+		// We stream to a temporary file, and then write that file to the zip.
+		// This to avoid:
+		//    1. Keeping the whole directory structure in memory, which can be large.
+		//    2. Locking the zip writer for the whole duration of the directory walk,
+		//       which can be long.
+		tempFile, err := afero.TempFile(ps.fs, "", "data-dir-*")
+		if err != nil {
+			return err
+		}
+		defer func() {
+			// Best effort cleanup of the temporary file.
+			if err := ps.fs.Remove(tempFile.Name()); err != nil {
+				zap.L().Sugar().Errorf("unable to remove temporary file %s: %v", tempFile.Name(), err)
+			}
+		}()
+
+		bufw := bufio.NewWriter(tempFile)
+		if _, err := bufw.WriteString("{"); err != nil {
+			return err
+		}
+		encoder := json.NewEncoder(bufw)
+		first := true
+		encodeEntry := func(path string, info *fileInfo) error {
+			if !first {
+				if _, err := bufw.WriteString(","); err != nil {
+					return err
+				}
+			}
+			first = false
+
+			// Encode the key-value pair manually to match the original format
+			pathJSON, err := json.Marshal(path)
+			if err != nil {
+				return err
+			}
+			if _, err := bufw.Write(pathJSON); err != nil {
+				return err
+			}
+			if _, err := bufw.WriteString(":"); err != nil {
+				return err
+			}
+			return encoder.Encode(info)
+		}
+
+		err = walkDirStreaming(y.Redpanda.Directory, encodeEntry)
 		if err != nil {
 			return fmt.Errorf("couldn't walk '%s': %w", y.Redpanda.Directory, err)
 		}
-		bs, err := json.Marshal(files)
+
+		_, err = bufw.WriteString("}")
 		if err != nil {
-			return fmt.Errorf(
-				"couldn't encode the '%s' directory structure as JSON: %w",
-				y.Redpanda.Directory,
-				err,
-			)
+			return fmt.Errorf("unable to write end of JSON object: %v", err)
 		}
-		return writeFileToZip(ps, "data-dir.txt", bs)
+
+		if err := bufw.Flush(); err != nil {
+			return fmt.Errorf("unable to flush to temporary file: %v", err)
+		}
+		f, err := ps.fs.Open(tempFile.Name())
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		return writeStreamToZip(ps, "data-dir.txt", f)
 	}
 }
 
@@ -563,44 +660,48 @@ func createRedpandaConfigCopy(y *config.RedpandaYaml) (*config.RedpandaYaml, err
 // Saves the contents of '/proc/cpuinfo'.
 func saveCPUInfo(ps *stepParams) step {
 	return func() error {
-		bs, err := afero.ReadFile(ps.fs, "/proc/cpuinfo")
+		f, err := ps.fs.Open("/proc/cpuinfo")
 		if err != nil {
 			return err
 		}
-		return writeFileToZip(ps, "proc/cpuinfo", bs)
+		defer f.Close()
+		return writeStreamToZip(ps, "proc/cpuinfo", f)
 	}
 }
 
 // Saves the contents of '/proc/interrupts'.
 func saveInterrupts(ps *stepParams) step {
 	return func() error {
-		bs, err := afero.ReadFile(ps.fs, "/proc/interrupts")
+		f, err := ps.fs.Open("/proc/interrupts")
 		if err != nil {
 			return err
 		}
-		return writeFileToZip(ps, "proc/interrupts", bs)
+		defer f.Close()
+		return writeStreamToZip(ps, "proc/interrupts", f)
 	}
 }
 
 // Saves the contents of '/proc/softirqs/'.
 func saveSoftwareInterrupts(ps *stepParams) step {
 	return func() error {
-		bs, err := afero.ReadFile(ps.fs, "/proc/softirqs")
+		f, err := ps.fs.Open("/proc/softirqs")
 		if err != nil {
 			return err
 		}
-		return writeFileToZip(ps, "proc/softirqs", bs)
+		defer f.Close()
+		return writeStreamToZip(ps, "proc/softirqs", f)
 	}
 }
 
 // Saves the contents of '/proc/mounts'.
 func saveMountedFilesystems(ps *stepParams) step {
 	return func() error {
-		bs, err := afero.ReadFile(ps.fs, "/proc/mounts")
+		f, err := ps.fs.Open("/proc/mounts")
 		if err != nil {
 			return err
 		}
-		return writeFileToZip(ps, "proc/mounts", bs)
+		defer f.Close()
+		return writeStreamToZip(ps, "proc/mounts", f)
 	}
 }
 
@@ -614,47 +715,51 @@ func saveDf(ctx context.Context, ps *stepParams) step {
 // Saves the contents of '/proc/slabinfo'. Requires Sudo.
 func saveSlabInfo(ps *stepParams) step {
 	return func() error {
-		bs, err := afero.ReadFile(ps.fs, "/proc/slabinfo")
+		f, err := ps.fs.Open("/proc/slabinfo")
 		if err != nil {
 			if errors.Is(err, fs.ErrPermission) {
 				return fmt.Errorf("%v: you may need to run the command as root to read this file", err)
 			}
 			return err
 		}
-		return writeFileToZip(ps, "proc/slabinfo", bs)
+		defer f.Close()
+		return writeStreamToZip(ps, "proc/slabinfo", f)
 	}
 }
 
 // Saves the contents of '/proc/cmdline'.
 func saveCmdLine(ps *stepParams) step {
 	return func() error {
-		bs, err := afero.ReadFile(ps.fs, "/proc/cmdline")
+		f, err := ps.fs.Open("/proc/cmdline")
 		if err != nil {
 			return err
 		}
-		return writeFileToZip(ps, "proc/cmdline", bs)
+		defer f.Close()
+		return writeStreamToZip(ps, "proc/cmdline", f)
 	}
 }
 
 // Saves the contents of '/proc/mdstat'.
 func saveMdstat(ps *stepParams) step {
 	return func() error {
-		bs, err := afero.ReadFile(ps.fs, "/proc/mdstat")
+		f, err := ps.fs.Open("/proc/mdstat")
 		if err != nil {
 			return err
 		}
-		return writeFileToZip(ps, "proc/mdstat", bs)
+		defer f.Close()
+		return writeStreamToZip(ps, "proc/mdstat", f)
 	}
 }
 
 // Saves the contents of '/proc/kallsyms'.
 func saveKernelSymbols(ps *stepParams) step {
 	return func() error {
-		bs, err := afero.ReadFile(ps.fs, "/proc/kallsyms")
+		f, err := ps.fs.Open("/proc/kallsyms")
 		if err != nil {
 			return err
 		}
-		return writeFileToZip(ps, "proc/kallsyms", bs)
+		defer f.Close()
+		return writeStreamToZip(ps, "proc/kallsyms", f)
 	}
 }
 
@@ -662,7 +767,7 @@ func saveKernelSymbols(ps *stepParams) step {
 // redpanda process.
 func saveResourceUsageData(ps *stepParams, y *config.RedpandaYaml) step {
 	return func() error {
-		res, err := system.GatherMetrics(ps.fs, ps.timeout, y)
+		res, err := system.GatherMetrics(ps.fs, 1*time.Second, y)
 		if system.IsErrRedpandaDown(err) {
 			return fmt.Errorf("omitting resource usage metrics: %w", err)
 		}
@@ -1059,11 +1164,12 @@ func saveControllerLogDir(ps *stepParams, y *config.RedpandaYaml, logLimitBytes 
 		slice := sliceControllerDir(cFiles, int64(logLimitBytes))
 
 		for _, cLog := range slice {
-			file, err := os.ReadFile(cLog.path)
+			f, err := ps.fs.Open(cLog.path)
 			if err != nil {
 				return fmt.Errorf("unable to save controller logs: %v", err)
 			}
-			err = writeFileToZip(ps, filepath.Join(baseDestDir, filepath.Base(cLog.path)), file)
+			err = writeStreamToZip(ps, filepath.Join(baseDestDir, filepath.Base(cLog.path)), f)
+			f.Close()
 			if err != nil {
 				return fmt.Errorf("unable to save controller logs: %v", err)
 			}
@@ -1085,11 +1191,11 @@ func saveStartupLog(ps *stepParams, y *config.RedpandaYaml) step {
 		if !exists {
 			return fmt.Errorf("skipping startup_log collection: unable to find file %q", path)
 		}
-		content, err := afero.ReadFile(ps.fs, path)
+		content, err := ps.fs.Open(path)
 		if err != nil {
 			return fmt.Errorf("failed to save startup_log: unable to read startup_log: %v", err)
 		}
-		err = writeFileToZip(ps, "startup_log", content)
+		err = writeStreamToZip(ps, "startup_log", content)
 		if err != nil {
 			return fmt.Errorf("failed to save startup_log: %v", err)
 		}
@@ -1118,83 +1224,105 @@ func saveCrashReports(ps *stepParams, y *config.RedpandaYaml) step {
 	}
 }
 
-func walkDir(root string, files map[string]*fileInfo) error {
-	return filepath.WalkDir(
-		root,
-		func(path string, d fs.DirEntry, readErr error) error {
-			// Prevent infinite loops.
-			if _, exists := files[path]; exists {
-				return nil
-			}
+// walkDirStreaming walks the directory tree and streams each file's info
+// immediately via the encodeEntry callback, avoiding memory accumulation.
+func walkDirStreaming(root string, encodeEntry func(string, *fileInfo) error) error {
+	visited := make(map[string]struct{})
 
-			i := new(fileInfo)
-			files[path] = i
+	var walkFn func(string) error
+	walkFn = func(currentRoot string) error {
+		return filepath.WalkDir(
+			currentRoot,
+			func(path string, d fs.DirEntry, readErr error) error {
+				// Prevent infinite loops.
+				if _, ok := visited[path]; ok {
+					return nil
+				}
+				visited[path] = struct{}{}
 
-			// If the directory's contents couldn't be read, skip it.
-			if readErr != nil {
-				i.Error = readErr.Error()
-				return fs.SkipDir
-			}
+				fileEntry := new(fileInfo)
 
-			info, err := d.Info()
-			if err != nil {
-				i.Error = err.Error()
-				// If reading a directory failed, then skip it altogether.
-				if d.IsDir() {
+				// If the directory's contents couldn't be read, skip it.
+				if readErr != nil {
+					fileEntry.Error = readErr.Error()
+					if err := encodeEntry(path, fileEntry); err != nil {
+						return err
+					}
 					return fs.SkipDir
 				}
-				// If it's just a file, just return and move to the
-				// next entry.
-				return nil
-			}
 
-			bSize := info.Size()
-			i.SizeBytes = bSize
-			i.Size = units.HumanSize(float64(bSize))
-			i.Mode = info.Mode().String()
-			i.Modified = info.ModTime().String()
-
-			// The user and group are only available through the
-			// underlying syscall object.
-			sys, ok := info.Sys().(*syscall.Stat_t)
-			if ok {
-				u, err := user.LookupId(fmt.Sprint(sys.Uid))
-				if err == nil {
-					i.User = u.Name
-				} else {
-					i.User = fmt.Sprintf("user lookup failed for UID %d: %v", sys.Uid, err)
+				info, err := d.Info()
+				if err != nil {
+					fileEntry.Error = err.Error()
+					if err := encodeEntry(path, fileEntry); err != nil {
+						return err
+					}
+					// If reading a directory failed, then skip it altogether.
+					if d.IsDir() {
+						return fs.SkipDir
+					}
+					// If it's just a file, just return and move to the
+					// next entry.
+					return nil
 				}
-				g, err := user.LookupGroupId(fmt.Sprint(sys.Gid))
-				if err == nil {
-					i.Group = g.Name
-				} else {
-					i.Group = fmt.Sprintf("group lookup failed for GID %d: %v", sys.Gid, err)
+
+				bSize := info.Size()
+				fileEntry.SizeBytes = bSize
+				fileEntry.Size = units.HumanSize(float64(bSize))
+				fileEntry.Mode = info.Mode().String()
+				fileEntry.Modified = info.ModTime().String()
+
+				// The user and group are only available through the
+				// underlying syscall object.
+				if sys, ok := info.Sys().(*syscall.Stat_t); ok {
+					u, err := user.LookupId(fmt.Sprint(sys.Uid))
+					if err != nil {
+						fileEntry.User = fmt.Sprintf("user lookup failed for UID %d: %v", sys.Uid, err)
+					} else {
+						fileEntry.User = u.Name
+					}
+					g, err := user.LookupGroupId(fmt.Sprint(sys.Gid))
+					if err != nil {
+						fileEntry.Group = fmt.Sprintf("group lookup failed for GID %d: %v", sys.Gid, err)
+					} else {
+						fileEntry.Group = g.Name
+					}
 				}
-			}
 
-			// If it's a symlink, save the dir or file it points to.
-			// If the file it points to is a directory, follow it and then
-			// call `walk` using it as the root.
-			isSymlink := info.Mode().Type()&fs.ModeSymlink != 0
-			if !isSymlink {
-				return nil
-			}
+				// If it's a symlink, save the dir or file it points to.
+				isSymlink := info.Mode().Type()&fs.ModeSymlink != 0
+				if isSymlink {
+					dest, err := os.Readlink(path)
+					if err != nil {
+						fileEntry.Symlink = "unresolvable"
+						fileEntry.Error = err.Error()
+					} else {
+						fileEntry.Symlink = dest
 
-			dest, err := os.Readlink(path)
-			if err != nil {
-				i.Symlink = "unresolvable"
-				i.Error = err.Error()
-			}
-			i.Symlink = dest
+						// Stream the destination info if it's not already visited.
+						fInfo, err := os.Stat(dest)
+						if err != nil {
+							if _, ok := visited[dest]; !ok {
+								destInfo := &fileInfo{Error: err.Error()}
+								if encodeErr := encodeEntry(dest, destInfo); encodeErr != nil {
+									return encodeErr
+								}
+								visited[dest] = struct{}{}
+							}
+						} else if _, ok := visited[dest]; fInfo.IsDir() && !ok {
+							// Recursively walk the symlinked directory.
+							if walkErr := walkFn(dest); walkErr != nil {
+								return walkErr
+							}
+						}
+					}
+				}
 
-			fInfo, err := os.Stat(dest)
-			if err != nil {
-				files[dest] = &fileInfo{Error: err.Error()}
-			} else if fInfo.IsDir() {
-				return walkDir(dest, files)
-			}
+				// Stream this entry
+				return encodeEntry(path, fileEntry)
+			},
+		)
+	}
 
-			return nil
-		},
-	)
+	return walkFn(root)
 }

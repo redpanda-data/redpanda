@@ -154,7 +154,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 	f := cmd.Flags()
 	f.StringVarP(&outFile, outputFlag, "o", "", "The file path where the debug file will be written (default ./<timestamp>-bundle.zip)")
-	f.DurationVar(&timeout, "timeout", 31*time.Second, "How long to wait for child commands to execute. For example: 30s, 1.5m")
+	f.DurationVar(&timeout, "timeout", 60*time.Second, "How long to wait for child commands to execute. For example: 30s, 1.5m")
 	f.StringVar(&uploadURL, "upload-url", "", "If provided, where to upload the bundle in addition to creating a copy on disk")
 	// Debug bundle options.
 	opts.InstallFlags(f)

@@ -16,7 +16,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -57,10 +59,11 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	defer w.Close()
 
 	ps := &stepParams{
-		fs:       bp.fs,
-		w:        w,
-		timeout:  bp.timeout,
-		fileRoot: strings.TrimSuffix(filepath.Base(bp.path), ".zip"),
+		fs:        bp.fs,
+		w:         w,
+		timeout:   bp.timeout,
+		fileRoot:  strings.TrimSuffix(filepath.Base(bp.path), ".zip"),
+		sharedBuf: make([]byte, 32*1024),
 	}
 	var errs *multierror.Error
 	bp.namespace = resolveNamespace(bp.namespace)
@@ -467,13 +470,17 @@ func saveMetricsAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *co
 					TLS:       p.AdminAPI.TLS,
 				},
 			}
-			cl, err := adminapi.NewClient(ctx, fs, p)
+			cl, err := adminapi.NewClient(ctx, fs, p, rpadmin.ClientTimeout(ps.timeout))
 			if err != nil {
 				rerrs = multierror.Append(rerrs, fmt.Errorf("unable to initialize admin client for %q: %v", a, err))
 				continue
 			}
 
-			endpoints := map[string]func(context.Context) ([]byte, error){"metrics": cl.PrometheusMetrics, "public_metrics": cl.PublicMetrics}
+			endpoints := map[string]func(context.Context) (io.ReadCloser, error){
+				"metrics":        metricStream(cl, "/metrics"),
+				"public_metrics": metricStream(cl, "/public_metrics"),
+			}
+
 			aName := common.SanitizeName(a)
 			for endpointName, endpoint := range endpoints {
 				endpointPoller := func() error {
@@ -511,6 +518,16 @@ func saveMetricsAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *co
 			rerrs = multierror.Append(rerrs, errs)
 		}
 		return rerrs.ErrorOrNil()
+	}
+}
+
+func metricStream(cl *rpadmin.AdminAPI, path string) func(ctx context.Context) (io.ReadCloser, error) {
+	return func(ctx context.Context) (io.ReadCloser, error) {
+		resp, err := cl.SendOneStream(ctx, http.MethodGet, path, nil, false)
+		if err != nil {
+			return nil, err
+		}
+		return resp.Body, nil
 	}
 }
 
@@ -616,6 +633,12 @@ func requestAndSave[T1 any](ctx context.Context, ps *stepParams, filename string
 	switch t := any(object).(type) {
 	case []byte:
 		err = writeFileToZip(ps, filename, t)
+		if err != nil {
+			return fmt.Errorf("unable to save output for %q: %v", filename, err)
+		}
+	case io.ReadCloser:
+		defer t.Close()
+		err = writeStreamToZip(ps, filename, t)
 		if err != nil {
 			return fmt.Errorf("unable to save output for %q: %v", filename, err)
 		}
