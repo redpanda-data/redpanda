@@ -1180,31 +1180,39 @@ class DataMigrationsMultiClusterTest(RedpandaTest, DataMigrationTestMixin):
     def producer_throughput(self):
         return 16 * 1024 if self.debug_mode else 1024 * 1024
 
-    def start_producer(self, topic, redpanda) -> None:
+    def start_producer(self,
+                       topic,
+                       redpanda,
+                       min_msgs=1000,
+                       max_msgs=100_000_000) -> None:
         assert self.producer is None
         self.producer = KgoVerifierProducer(
             context=self.test_context,
             redpanda=redpanda,
             topic=topic,
             msg_size=self.msg_size,
-            msg_count=100_000_000,
+            msg_count=max_msgs,
             rate_limit_bps=self.producer_throughput,
             tolerate_failed_produce=True,
-            trace_logs=True,
-        )
+            trace_logs=True)
 
         self.producer.start()
-        self.producer.wait_for_acks(1000, timeout_sec=60, backoff_sec=2)
+        self.producer.wait_for_acks(min_msgs, timeout_sec=60, backoff_sec=2)
 
     def stop_producer(self) -> int:
         "return the number of acked messages"
-        if self.producer is None:
-            return
+        assert self.producer is not None
+        assert self.producer._status_thread is not None
 
+        # give time for the producer to collect acks
+        time.sleep(2 + self.producer._status_thread.INTERVAL)
         self.producer.stop()
         acked = self.producer.produce_status.acked
         self.producer.free()
-        self.logger.info(f"stopped producer, {acked=}")
+        self.logger.info(
+            f"stopped producer, {acked=}, status={self.producer.produce_status}, "
+            f"max_offsets_produced={self.producer.produce_status.max_offsets_produced}"
+        )
         self.producer = None
         return acked
 
@@ -1320,8 +1328,11 @@ class DataMigrationsMultiClusterTest(RedpandaTest, DataMigrationTestMixin):
         total_acked += self.stop_producer()
         wait_for_offsets(another_redpanda, alias_name, total_acked)
 
-        self.logger.info("producing more to the third cluster")
-        self.start_producer(alias_name, another_redpanda)
+        self.logger.info("producing limited messages to the third cluster")
+        self.start_producer(alias_name,
+                            another_redpanda,
+                            min_msgs=1000,
+                            max_msgs=1000)
         total_acked += self.stop_producer()
 
         self.consume(alias_name,
