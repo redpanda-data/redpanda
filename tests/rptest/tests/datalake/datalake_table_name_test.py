@@ -101,6 +101,61 @@ class DatalakeTableNameTest(RedpandaTest):
             self._iceberg_dot_replacement_smoke(dl, "test.one", "")
             self._iceberg_dot_replacement_smoke(dl, "test.two", "_")
 
+    @cluster(num_nodes=3)
+    @matrix(cloud_storage_type=supported_storage_types(),
+            catalog_type=[filesystem_catalog_type()])
+    def test_dlq_table_name_dot_replacement(self, cloud_storage_type,
+                                            catalog_type):
+        """Test that dots in topic names are replaced in DLQ table names"""
+
+        with DatalakeServices(self.test_context,
+                              redpanda=self.redpanda,
+                              include_query_engines=[QueryEngineType.SPARK],
+                              catalog_type=catalog_type) as dl:
+
+            rpk = RpkTool(self.redpanda)
+            admin = Admin(self.redpanda)
+
+            admin.patch_cluster_config(
+                upsert={"iceberg_topic_name_dot_replacement": "_"})
+
+            topic = "test.dlq"
+            expected_table = topic.replace(".", "_")
+            expected_dlq_table = f"{expected_table}~dlq"
+
+            dl.create_iceberg_enabled_topic(
+                topic, iceberg_mode="value_schema_id_prefix")
+            rpk.produce(topic, "key", "invalid_record_no_schema")
+            dl.wait_for_translation(topic,
+                                    table_override=expected_dlq_table,
+                                    msg_count=1)
+
+            spark = dl.spark()
+            tables = spark.run_query_fetch_all("SHOW TABLES IN redpanda")
+            table_names = [row[1] for row in tables]
+
+            assert expected_dlq_table in table_names, f"DLQ table {expected_dlq_table} not found. Tables: {table_names}"
+            dlq_with_dots = f"{topic}~dlq"
+            assert dlq_with_dots not in table_names, f"DLQ table should not have dots: {dlq_with_dots} found in {table_names}"
+
+            # Verify we can query the DLQ table
+            result = spark.run_query_fetch_all(
+                f"SELECT COUNT(*) FROM redpanda.`{expected_dlq_table}`")
+            assert result[0][
+                0] == 1, f"Expected 1 row in DLQ table, got {result}"
+
+            rpk.delete_topic(topic)
+            wait_until(lambda: topic not in rpk.list_topics(),
+                       timeout_sec=30,
+                       err_msg=f"Topic {topic} was not deleted")
+            wait_until(
+                lambda: expected_dlq_table not in [
+                    row[1] for row in spark.run_query_fetch_all(
+                        "SHOW TABLES IN redpanda")
+                ],
+                timeout_sec=30,
+                err_msg=f"DLQ table {expected_dlq_table} was not deleted")
+
 
 class DatalakeTableNameInvalidReplacementTest(RedpandaTest):
     @cluster(num_nodes=1)
