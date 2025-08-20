@@ -105,7 +105,8 @@ std::optional<adjacent_segment_run> adjacent_segment_merger::scan_manifest(
 
     adjacent_segment_run run(_archiver.get_ntp());
 
-    for (auto it = manifest.segment_containing(so); it != manifest.end();
+    for (auto it = manifest.segment_containing(so), end_it = manifest.end();
+         it != end_it;
          ++it) {
         if (!_is_local && it->committed_offset >= local_start_offset) {
             // We're looking for the remote segment
