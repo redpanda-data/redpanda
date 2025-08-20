@@ -2320,11 +2320,18 @@ admin_server::put_license_handler(std::unique_ptr<ss::http::request> req) {
             throw ss::httpd::bad_request_exception(
               fmt::format("License is expired: {}", license));
         }
+
+        if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+            // In order that we can do a reliable idempotence check, run on the
+            // controller leader
+            throw co_await redirect_to_leader(*req, model::controller_ntp);
+        }
+
         const auto& ft = _controller->get_feature_table().local();
         const auto& loaded_license = ft.get_license();
         if (loaded_license && (*loaded_license == license)) {
             /// Loaded license is idential to license in request, do
-            /// nothing and return 200(OK)
+            /// nothing and return 200(OK) for idempotence
             vlog(
               adminlog.info,
               "Attempted to load identical license, doing nothing: {}",
