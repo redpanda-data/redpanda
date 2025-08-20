@@ -79,7 +79,18 @@
       "type": "object",
       "properties": {
         "compatibilityLevel": {
-          "type": "string"
+          "type": "string",
+          "description": "Compatibility level",
+          "example": "FULL_TRANSITIVE",
+          "enum": [
+            "BACKWARD",
+            "BACKWARD_TRANSITIVE",
+            "FORWARD",
+            "FORWARD_TRANSITIVE",
+            "FULL",
+            "FULL_TRANSITIVE",
+            "NONE"
+          ]
         }
       }
     },
@@ -87,7 +98,18 @@
       "type": "object",
       "properties": {
         "compatibility": {
-          "type": "string"
+          "type": "string",
+          "description": "Compatibility level",
+          "example": "FULL_TRANSITIVE",
+          "enum": [
+            "BACKWARD",
+            "BACKWARD_TRANSITIVE",
+            "FORWARD",
+            "FORWARD_TRANSITIVE",
+            "FULL",
+            "FULL_TRANSITIVE",
+            "NONE"
+          ]
         }
       }
     },
