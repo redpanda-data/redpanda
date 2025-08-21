@@ -29,6 +29,7 @@ import (
 // CloudClientSet holds the respective service clients to interact with
 // the control plane endpoints of the Public API.
 type CloudClientSet struct {
+	// Controlplane
 	Region           controlplanev1connect.RegionServiceClient
 	Cluster          controlplanev1connect.ClusterServiceClient
 	Network          controlplanev1connect.NetworkServiceClient
