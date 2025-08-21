@@ -6446,3 +6446,55 @@ TEST_F(storage_test_fixture, delete_retention_ms_without_ts) {
     ASSERT_TRUE(tx_retention_ms.has_value());
     ASSERT_EQ(tx_retention_ms.value(), delete_retention_ms);
 };
+
+TEST_F(storage_test_fixture, adjacent_merge_compaction_advances_generation_id) {
+    storage::log_manager mgr = make_log_manager();
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("kafka", "a", 0);
+    using overrides_t = storage::ntp_config::default_overrides;
+    overrides_t ov;
+    ov.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;
+
+    auto log
+      = mgr
+          .manage(storage::ntp_config(
+            ntp, mgr.config().base_dir, std::make_unique<overrides_t>(ov)))
+          .get();
+
+    auto add_segment = [log](size_t size, model::term_id term) {
+        do {
+            append_single_record_batch(log, 1, term, 16_KiB, true);
+        } while (log->segments().back()->size_bytes() < size);
+    };
+
+    auto add_segment_func = [&]() {
+        auto size = random_generators::get_int(4_KiB, 10_MiB);
+        add_segment(size, model::term_id(0));
+        log->force_roll().get();
+    };
+
+    add_segment_func();
+    add_segment_func();
+
+    ss::abort_source as;
+    storage::compaction_config cfg(
+      model::offset::max(), std::nullopt, std::nullopt, as);
+    auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
+
+    auto& segs = log->segments();
+    ASSERT_EQ(segs.size(), 3);
+
+    // Self compact the front segment which will be the target segment for the
+    // adjacent merge so that we already account for the generation_id
+    // advancement from that operation.
+    disk_log.segment_self_compact(cfg, segs.front()).get();
+
+    auto gen_id_before = segs.front()->get_generation_id();
+
+    disk_log.adjacent_merge_compact(segs, cfg).get();
+    ASSERT_EQ(segs.size(), 2);
+
+    auto gen_id_after = segs.front()->get_generation_id();
+
+    ASSERT_EQ(gen_id_after(), gen_id_before() + 1);
+}

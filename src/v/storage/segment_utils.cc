@@ -1160,6 +1160,8 @@ ss::future<chunked_vector<ss::rwlock::holder>> transfer_segment(
     // in the cache after the transfer.
     co_await to->reset_batch_cache_index();
 
+    // Target segment has been mutated, advance its `generation_id`.
+    to->advance_generation();
     co_return std::move(locks);
 }
 
