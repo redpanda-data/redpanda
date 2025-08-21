@@ -14,6 +14,7 @@ v_cc_library(
     Seastar::seastar
     protobuf::libprotobuf
     v::avro_test_utils
+    v::datalake_table_id_provider
     v::protobuf_test_utils
     v::schema
     v::schema_test_fixture
