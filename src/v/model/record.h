@@ -691,6 +691,8 @@ public:
 
     model::record next();
 
+    int32_t index() const noexcept { return _index; }
+
     static record_batch_iterator create(const model::record_batch& b);
 
 private:

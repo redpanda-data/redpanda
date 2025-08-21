@@ -21,17 +21,15 @@
 #include "datalake/tests/test_data_writer.h"
 #include "datalake/tests/test_utils.h"
 #include "datalake/translation/translation_probe.h"
-#include "iceberg/filesystem_catalog.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
 #include "storage/record_batch_builder.h"
 #include "test_utils/tmp_dir.h"
 
 #include <gtest/gtest.h>
-
-#include <filesystem>
 
 using namespace datalake;
 namespace {
@@ -203,6 +201,222 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
     EXPECT_EQ(
       result.value().last_offset(),
       start_offset + record_count * batch_count - 1);
+}
+
+TEST(DatalakeMultiplexerTest, CorruptedBatchRecordHeader) {
+    constexpr int record_count = 10;
+    constexpr int batch_count = 10;
+    constexpr int start_offset = 1005;
+
+    constexpr auto corrupted_offsets = std::to_array(
+      {// Make sure we have a batch with first record corrupted.
+       1005,
+       // Corrupt the middle of the second batch.
+       1005 + record_count + record_count / 2,
+       // Corrupt the last record in the last batch.
+       1005 + (batch_count - 1) * (record_count + 1)});
+
+    auto writer_factory = std::make_unique<datalake::test_data_writer_factory>(
+      false);
+    translation_probe probe(ntp);
+    datalake::record_multiplexer multiplexer(
+      ntp,
+      rev,
+      std::move(writer_factory),
+      simple_schema_mgr,
+      bin_resolver,
+      translator,
+      t_creator,
+      model::iceberg_invalid_record_action::dlq_table,
+      location_provider(
+        cloud_io::s3_compat_provider{"s3"},
+        cloud_storage_clients::bucket_name{"bucket"}),
+      probe);
+
+    model::test::record_batch_spec batch_spec;
+    batch_spec.allow_compression = false;
+    batch_spec.records = record_count;
+    batch_spec.count = batch_count;
+    batch_spec.offset = model::offset{start_offset};
+    chunked_circular_buffer<model::record_batch> batches = {};
+
+    for (auto& batch : model::test::make_random_batches(batch_spec).get()) {
+        iobuf mutated_record_buf = {};
+        batch.for_each_record([&](const model::record& r) {
+            auto record_offset = batch.base_offset()
+                                 + model::offset(r.offset_delta());
+            auto should_corrupt = std::ranges::find(
+                                    corrupted_offsets, record_offset())
+                                  != corrupted_offsets.end();
+
+            if (should_corrupt) {
+                iobuf record_buf;
+                model::append_record_to_buffer(record_buf, r);
+                std::string s(record_buf.size_bytes(), static_cast<char>(0xFF));
+                mutated_record_buf.append(s.data(), s.size());
+            } else {
+                model::append_record_to_buffer(mutated_record_buf, r);
+            }
+        });
+
+        batches.emplace_back(
+          batch.header(),
+          std::move(mutated_record_buf),
+          model::record_batch::tag_ctor_ng{});
+
+        batches.back().header().reset_size_checksum_metadata(
+          batches.back().data());
+    }
+
+    auto reader = model::make_generating_record_batch_reader(
+      [batches = std::move(batches)]() mutable {
+          return ss::make_ready_future<model::record_batch_reader::data_t>(
+            std::move(batches));
+      });
+
+    multiplexer
+      .multiplex(
+        std::move(reader), kafka::offset{start_offset}, model::no_timeout, as)
+      .get();
+    auto result = std::move(multiplexer).finish().get();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().start_offset(), start_offset);
+
+    // Subtract one since offsets end at 0, and this is an inclusive range.
+    EXPECT_EQ(
+      result.value().last_offset(),
+      start_offset + record_count * batch_count - 1);
+
+    // Valid records
+    ASSERT_EQ(result.value().data_files.size(), 1);
+    EXPECT_EQ(result.value().data_files[0].local_file.row_count, 84) << "";
+
+    // DLQ records
+    ASSERT_EQ(result.value().dlq_files.size(), 1);
+    EXPECT_EQ(result.value().dlq_files[0].local_file.row_count, 16) << "";
+
+    // Result must add up to total.
+    EXPECT_EQ(
+      result.value().data_files[0].local_file.row_count
+        + result.value().dlq_files[0].local_file.row_count,
+      record_count * batch_count);
+
+    EXPECT_EQ(
+      probe.counter_ref(
+        translation_probe::invalid_record_cause::corrupted_record),
+      16);
+}
+
+TEST(DatalakeMultiplexerTest, CorruptedBatchRecordHeaderStartOffset) {
+    constexpr int record_count = 10;
+    constexpr int batch_count = 10;
+    constexpr int start_offset = 1005;
+
+    constexpr auto corrupted_offsets = std::to_array(
+      {// Make sure we have a batch with first record corrupted.
+       1005,
+       // Corrupt the middle of the second batch.
+       1005 + record_count + record_count / 2,
+       // Corrupt the last record in the last batch.
+       1005 + (batch_count - 1) * (record_count + 1)});
+
+    auto writer_factory = std::make_unique<datalake::test_data_writer_factory>(
+      false);
+    translation_probe probe(ntp);
+    datalake::record_multiplexer multiplexer(
+      ntp,
+      rev,
+      std::move(writer_factory),
+      simple_schema_mgr,
+      bin_resolver,
+      translator,
+      t_creator,
+      model::iceberg_invalid_record_action::dlq_table,
+      location_provider(
+        cloud_io::s3_compat_provider{"s3"},
+        cloud_storage_clients::bucket_name{"bucket"}),
+      probe);
+
+    model::test::record_batch_spec batch_spec;
+    batch_spec.allow_compression = false;
+    batch_spec.records = record_count;
+    batch_spec.count = batch_count;
+    batch_spec.offset = model::offset{start_offset};
+    chunked_circular_buffer<model::record_batch> batches = {};
+
+    for (auto& batch : model::test::make_random_batches(batch_spec).get()) {
+        iobuf mutated_record_buf = {};
+        batch.for_each_record([&](const model::record& r) {
+            auto record_offset = batch.base_offset()
+                                 + model::offset(r.offset_delta());
+            auto should_corrupt = std::ranges::find(
+                                    corrupted_offsets, record_offset())
+                                  != corrupted_offsets.end();
+
+            if (should_corrupt) {
+                iobuf record_buf;
+                model::append_record_to_buffer(record_buf, r);
+                std::string s(record_buf.size_bytes(), static_cast<char>(0xFF));
+                mutated_record_buf.append(s.data(), s.size());
+            } else {
+                model::append_record_to_buffer(mutated_record_buf, r);
+            }
+        });
+
+        batches.emplace_back(
+          batch.header(),
+          std::move(mutated_record_buf),
+          model::record_batch::tag_ctor_ng{});
+
+        batches.back().header().reset_size_checksum_metadata(
+          batches.back().data());
+    }
+
+    auto reader = model::make_generating_record_batch_reader(
+      [batches = std::move(batches)]() mutable {
+          return ss::make_ready_future<model::record_batch_reader::data_t>(
+            std::move(batches));
+      });
+
+    // Multiplex with start offset past the first corrupted record but within
+    // the same batch.
+    ASSERT_EQ(corrupted_offsets[0], start_offset);
+    multiplexer
+      .multiplex(
+        std::move(reader),
+        kafka::offset{start_offset + 1},
+        model::no_timeout,
+        as)
+      .get();
+    auto result = std::move(multiplexer).finish().get();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().start_offset(), start_offset + 1);
+
+    // Subtract one since offsets end at 0, and this is an inclusive range.
+    EXPECT_EQ(
+      result.value().last_offset(),
+      start_offset + record_count * batch_count - 1);
+
+    // Valid records
+    ASSERT_EQ(result.value().data_files.size(), 1);
+    EXPECT_EQ(result.value().data_files[0].local_file.row_count, 84) << "";
+
+    // DLQ records
+    ASSERT_EQ(result.value().dlq_files.size(), 1);
+    EXPECT_EQ(result.value().dlq_files[0].local_file.row_count, 15) << "";
+
+    // Result must add up to total.
+    EXPECT_EQ(
+      result.value().data_files[0].local_file.row_count
+        + result.value().dlq_files[0].local_file.row_count,
+      record_count * batch_count - 1);
+
+    EXPECT_EQ(
+      probe.counter_ref(
+        translation_probe::invalid_record_cause::corrupted_record),
+      15);
 }
 
 namespace {

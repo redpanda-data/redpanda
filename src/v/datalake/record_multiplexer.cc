@@ -25,6 +25,8 @@
 
 #include <seastar/core/loop.hh>
 
+#include <exception>
+
 namespace datalake {
 
 namespace {
@@ -132,15 +134,43 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
             vlog(_log.debug, "Abort requested, stopping translation");
             co_return ss::stop_iteration::yes;
         }
-        auto record = it.next();
-        auto key = record.share_key_opt();
-        auto val = record.share_value_opt();
-        auto timestamp = model::timestamp{
-          first_timestamp + record.timestamp_delta()};
+
+        model::record record;
+
+        {
+            std::exception_ptr eptr;
+            try {
+                record = it.next();
+            } catch (...) {
+                eptr = std::current_exception();
+                vlog(
+                  _log.warn,
+                  "Error reading record from batch: {} at index {}. Err: {}",
+                  batch.header(),
+                  it.index(),
+                  eptr);
+            }
+
+            if (eptr) {
+                auto res = co_await handle_corrupted_batch(
+                  batch, start_offset, it.index(), as);
+                if (res.has_error()) {
+                    _error = res.error();
+                    co_return ss::stop_iteration::yes;
+                }
+                break;
+            }
+        }
+
         kafka::offset offset{batch.base_offset()() + record.offset_delta()};
         if (offset < start_offset) {
             continue;
         }
+
+        auto key = record.share_key_opt();
+        auto val = record.share_value_opt();
+        auto timestamp = model::timestamp{
+          first_timestamp + record.timestamp_delta()};
         int64_t estimated_size = (key ? key->size_bytes() : 0)
                                  + (val ? val->size_bytes() : 0);
         chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>
@@ -608,4 +638,42 @@ record_multiplexer::handle_invalid_record(
         co_return std::nullopt;
     }
 }
+
+ss::future<result<void, writer_error>>
+record_multiplexer::handle_corrupted_batch(
+  const model::record_batch& batch,
+  kafka::offset start_offset,
+  int32_t first_corrupted_record_index,
+  ss::abort_source& as) {
+    // We should use record::offset_delta() but because we weren't
+    // able to parse the header we don't have access to it. So we
+    // use a proxy for it.
+    auto first_corrupted_offset = kafka::offset{
+      batch.base_offset()() + first_corrupted_record_index};
+
+    if (first_corrupted_offset < start_offset) {
+        first_corrupted_offset = start_offset;
+    }
+
+    auto data_copy = batch.data().copy();
+
+    for (kafka::offset o = first_corrupted_offset;
+         o <= model::offset_cast(batch.last_offset());
+         ++o) {
+        auto invalid_res = co_await handle_invalid_record(
+          translation_probe::invalid_record_cause::corrupted_record,
+          o,
+          std::nullopt,
+          data_copy.share(0, data_copy.size_bytes()),
+          batch.header().first_timestamp,
+          {},
+          as);
+        if (invalid_res.has_error()) {
+            co_return invalid_res.error();
+        }
+    }
+
+    co_return outcome::success();
+}
+
 } // namespace datalake
