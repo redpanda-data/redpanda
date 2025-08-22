@@ -125,6 +125,9 @@ DEFAULT_LOG_ALLOW_LIST = [
     # which is not present in typical CI runs, which results in the following
     # error message from the debug bundle service
     re.compile(r"Current specified RPK location"),
+
+    # Ignore this log line, which is more like a compaction warning.
+    re.compile(r"failed to build offset map"),
 ]
 
 # Log errors that are expected in tests that restart nodes mid-test

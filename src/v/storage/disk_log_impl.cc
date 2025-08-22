@@ -668,7 +668,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
             std::rethrow_exception(eptr);
         }
         vlog(
-          gclog.warn,
+          gclog.error,
           "[{}] failed to build offset map. Stopping compaction: {}",
           config().ntp(),
           std::current_exception());
