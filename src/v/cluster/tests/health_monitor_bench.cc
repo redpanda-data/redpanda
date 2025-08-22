@@ -43,7 +43,7 @@ cluster::topic_status make_topic_status(size_t id, size_t num_partitions) {
     return ts;
 }
 
-cluster::node_health_report_serde
+cluster::node_health_report_deltas
 make_node_health_report(size_t num_topics, size_t partitions_per_topic) {
     model::node_id id = model::node_id(1);
 
@@ -62,7 +62,12 @@ make_node_health_report(size_t num_topics, size_t partitions_per_topic) {
         topics.push_back(make_topic_status(i, partitions_per_topic));
     }
 
-    return {id, local_state, std::move(topics), std::nullopt};
+    return {
+      id,
+      local_state,
+      std::move(topics),
+      std::nullopt,
+      cluster::report_version{0}};
 }
 
 template<typename T>

@@ -431,6 +431,14 @@ void record_risks_in_report(
 }
 } // namespace
 
+report_version
+health_monitor_backend::get_last_seen_version(model::node_id id) const {
+    if (const auto it = _reports->find(id); it != _reports->end()) {
+        return it->second->version;
+    }
+    return report_version{0};
+}
+
 ss::future<errc> health_monitor_backend::walk_local_and_remote_reports(
   partition_leader_status_handler auto local_leader_handler,
   partition_leader_status_handler auto remote_leader_handler,
@@ -717,15 +725,18 @@ health_monitor_backend::maybe_refresh_cluster_health(
 ss::future<result<node_health_report>>
 health_monitor_backend::collect_remote_node_health(model::node_id id) {
     const auto timeout = model::timeout_clock::now() + max_metadata_age();
+    auto last_seen_version = get_last_seen_version(id);
     return _connections.local()
       .with_node_client<controller_client_protocol>(
         _self,
         ss::this_shard_id(),
         id,
         max_metadata_age(),
-        [timeout, id](controller_client_protocol client) mutable {
+        [timeout, id, last_seen_version](
+          controller_client_protocol client) mutable {
             return client.collect_node_health_report(
-              get_node_health_request(id), rpc::client_opts(timeout));
+              get_node_health_request(id, last_seen_version),
+              rpc::client_opts(timeout));
         })
       .then(&rpc::get_ctx_data<get_node_health_reply>)
       .then([this, id](result<get_node_health_reply> reply) {
@@ -733,7 +744,7 @@ health_monitor_backend::collect_remote_node_health(model::node_id id) {
       });
 }
 
-result<node_health_report> map_reply_result(
+result<node_health_report_deltas> map_reply_result(
   model::node_id target_node_id, result<get_node_health_reply> reply) {
     if (!reply) {
         return {reply.error()};
@@ -744,8 +755,40 @@ result<node_health_report> map_reply_result(
     if (reply.value().report->id != target_node_id) {
         return {errc::invalid_target_node_id};
     }
-    return {std::move(*reply.value().report).to_in_memory()};
+
+    return {std::move(*reply.value().report)};
 }
+
+namespace {
+
+bool are_equal(const partition_status& lhs, const partition_status& rhs) {
+    return lhs.term == rhs.term && lhs.revision_id == rhs.revision_id
+           && lhs.size_bytes == rhs.size_bytes
+           && lhs.reclaimable_size_bytes == rhs.reclaimable_size_bytes
+           && lhs.leader_id == rhs.leader_id
+           && lhs.under_replicated_replicas == rhs.under_replicated_replicas;
+}
+
+bool were_topics_removed(
+  const node_health_report::topics_t& current_topics,
+  const node_health_report::topics_t& new_topics) {
+    for (const auto& [tp_ns, current_partitions] : current_topics) {
+        auto t_it = new_topics.find(tp_ns);
+        // removed topic
+        if (t_it == new_topics.end()) {
+            return true;
+        }
+        for (const auto& [p_id, _] : current_partitions) {
+            auto p_it = t_it->second.find(p_id);
+            if (p_it == t_it->second.end()) {
+                fmt::print(">>> removed: {}/{}\n", tp_ns, p_id);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+} // namespace
 
 result<node_health_report> health_monitor_backend::process_node_reply(
   model::node_id id, result<get_node_health_reply> reply) {
@@ -785,8 +828,29 @@ result<node_health_report> health_monitor_backend::process_node_reply(
     }
     status_it->second.last_reply_timestamp = ss::lowres_clock::now();
     status_it->second.is_alive = alive::yes;
+    auto deltas = std::move(res.value());
 
-    return res;
+    auto current_report_it = _reports->find(deltas.id);
+    if (
+      current_report_it == _reports->end()
+      || current_report_it->second->version > deltas.version
+      || deltas.full_report) {
+        // no current report, build one from deltas
+        fmt::print(
+          ">>> [s: {}] full report from: {}, deltas: {}, version: {}\n",
+          _self,
+          deltas.id,
+          deltas.topics,
+          deltas.version);
+        return new_report_from_deltas(std::move(deltas));
+    }
+    fmt::print(
+      ">>> [s: {}] incremental report from {}, deltas: {}, version: {}\n",
+      _self,
+      deltas.id,
+      deltas.topics,
+      deltas.version);
+    return with_deltas_applied(*current_report_it->second, std::move(deltas));
 }
 
 ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
@@ -879,29 +943,110 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
 
 ss::future<result<node_health_report>>
 health_monitor_backend::collect_current_node_health() {
-    vlog(clusterlog.debug, "collecting health report");
-    model::node_id id = _self;
+    ++_current_version;
+    vlog(
+      clusterlog.debug,
+      "collecting health report, version: {}",
+      _current_version);
 
-    auto local_state = _local_monitor.local().get_state_cached();
-    local_state.logical_version
+    node_health_report ret;
+    ret.id = _self;
+
+    ret.local_state = _local_monitor.local().get_state_cached();
+    ret.local_state.logical_version
       = features::feature_table::get_latest_logical_version();
+    ret.drain_status = co_await _drain_manager.local().status();
+    ret.version = _current_version;
+    /**
+     * Collect partition statutes from ALL partitions on the current node
+     */
+    auto topic_updates = co_await collect_topic_status();
 
-    auto drain_status = co_await _drain_manager.local().status();
-    auto topics = co_await collect_topic_status();
-
-    auto [it, _] = _status.try_emplace(id);
+    auto [it, _] = _status.try_emplace(_self);
     it->second.is_alive = alive::yes;
     it->second.last_reply_timestamp = ss::lowres_clock::now();
 
-    co_return node_health_report{
-      id, std::move(local_state), std::move(topics), std::move(drain_status)};
+    auto current_report_it = _reports->find(_self);
+    // if no current health report exists, build one from deltas, this will
+    // include all partitions from current node
+    if (current_report_it == _reports->end()) {
+        fmt::print(
+          ">>> [s: {}] collecting report, no cache, v: {}\n",
+          _self,
+          _current_version);
+        ret.topics = topic_statuses_from_deltas(std::move(topic_updates));
+        co_return ret;
+    }
+    auto& current_report = current_report_it->second;
+    auto& current_report_topics = current_report->topics;
+
+    /**
+     * Override with deltas if anything changed
+     */
+    for (auto& topic_update : topic_updates) {
+        fmt::print(
+          ">>> [s: {}] collecting, topic update: {}, v: {}\n",
+          _self,
+          topic_update.tp_ns,
+          _current_version);
+
+        // bran new topic, no need to check deltas
+        auto current_topic_it = current_report_topics.find(topic_update.tp_ns);
+        if (current_topic_it == current_report_topics.end()) {
+            fmt::print(
+              ">>> [s: {}] collecting, new topic: {}, v: {}\n",
+              _self,
+              topic_update.tp_ns,
+              _current_version);
+            ret.topics.emplace(
+              topic_update.tp_ns,
+              move_to_map(std::move(topic_update.partitions)));
+            continue;
+        }
+        for (auto& partition_update : topic_update.partitions) {
+            auto p_it = current_topic_it->second.find(partition_update.id);
+            if (
+              p_it == current_topic_it->second.end()
+              || !are_equal(p_it->second, partition_update)) {
+                fmt::print(
+                  ">>> [s: {}] collecting, partition update: {}/{}, v: {}\n",
+                  _self,
+                  topic_update.tp_ns,
+                  partition_update.id,
+                  _current_version);
+                // update partition status
+                ret.topics[topic_update.tp_ns][partition_update.id] = std::move(
+                  partition_update);
+            } else {
+                ret.topics[topic_update.tp_ns][partition_update.id]
+                  = p_it->second;
+            }
+        }
+    }
+    ret.last_removal = current_report->last_removal;
+    if (were_topics_removed(current_report_topics, ret.topics)) {
+        fmt::print(
+          ">>> [s: {}] collecting, removal v: {}\n", _self, _current_version);
+        // if topics were removed, we need to update last removal version
+        ret.last_removal = _current_version;
+    }
+
+    fmt::print(
+      ">>> [s: {}] done collecting (report version: {}, report last removal: "
+      "{})\n",
+      _self,
+      ret.version,
+      ret.last_removal);
+    co_return ret;
 }
 ss::future<result<node_health_report_ptr>>
 health_monitor_backend::get_current_node_health() {
     vlog(clusterlog.debug, "getting current node health");
 
     auto it = reports().find(_self);
-    if (it != reports().end()) {
+    if (
+      _last_self_report_refresh + max_metadata_age() >= ss::lowres_clock::now()
+      && it != reports().end()) {
         co_return it->second;
     }
 
@@ -929,11 +1074,58 @@ health_monitor_backend::get_current_node_health() {
     }
 
     it = _reports
-           ->emplace(
+           ->insert_or_assign(
              _self,
              ss::make_lw_shared<node_health_report>(std::move(r.value())))
            .first;
     co_return it->second;
+}
+
+ss::future<result<node_health_report_deltas>>
+health_monitor_backend::get_current_node_health_deltas(
+  report_version last_seen_version) {
+    auto res = co_await get_current_node_health();
+    if (res.has_error()) {
+        co_return res.error();
+    }
+    auto version_to_query = last_seen_version;
+    /**
+     * Requester seen version which is greater than the current one (f.e.
+     * current node restarted, send everything we have)
+     */
+    if (
+      last_seen_version > res.value()->version
+      || last_seen_version < res.value()->last_removal) {
+        version_to_query = report_version{0};
+    }
+    fmt::print(
+      ">>> [s: {}] requested deltas with last seen version: {}, effective "
+      "version to "
+      "query: {} (current_version: {}, last_removal: {})\n",
+      _self,
+      last_seen_version,
+      version_to_query,
+      res.value()->version,
+      res.value()->last_removal);
+    vlog(
+      clusterlog.trace,
+      "requested deltas with last seen version: {}, effective version to "
+      "query: {} (current_version: {}, last_removal: {})",
+      last_seen_version,
+      version_to_query,
+      res.value()->version,
+      res.value()->last_removal);
+    auto deltas = res.value()->get_deltas(version_to_query);
+
+    deltas.full_report = version_to_query == report_version{0};
+    fmt::print(
+      ">>> [s: {}] returning {} deltas: {}, full: {}\n",
+      _self,
+      deltas.topics.size(),
+      fmt::join(deltas.topics, ", "),
+      deltas.full_report);
+
+    co_return deltas;
 }
 
 namespace {
@@ -991,7 +1183,7 @@ chunked_vector<ntp_report> collect_shard_local_reports(partition_manager& pm) {
 }
 
 using reports_acc_t
-  = absl::node_hash_map<model::topic_namespace, partition_statuses_t>;
+  = chunked_hash_map<model::topic_namespace, partition_statuses_t>;
 
 reports_acc_t reduce_reports_map(
   reports_acc_t acc, chunked_vector<cluster::ntp_report> current_reports) {
@@ -1011,7 +1203,14 @@ health_monitor_backend::collect_topic_status() {
     chunked_vector<topic_status> topics;
     topics.reserve(reports_map.size());
     for (auto& [tp_ns, partitions] : reports_map) {
-        topics.emplace_back(tp_ns, std::move(partitions));
+        topic_status ts;
+        ts.tp_ns = std::move(tp_ns);
+        ts.partitions.reserve(partitions.size());
+        for (auto& status : partitions) {
+            status.last_update = _current_version;
+            ts.partitions.push_back(std::move(status));
+        }
+        topics.push_back(std::move(ts));
     }
 
     co_return topics;

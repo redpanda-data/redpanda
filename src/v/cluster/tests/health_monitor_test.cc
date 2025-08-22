@@ -576,3 +576,73 @@ FIXTURE_TEST(
     BOOST_REQUIRE(
       std::get<0>(results).get().value() == std::get<1>(results).get().value());
 }
+
+FIXTURE_TEST(test_delta_based_report_delivery, cluster_test_fixture) {
+    auto n0 = create_node_application(model::node_id{0});
+    create_node_application(model::node_id{1});
+    create_node_application(model::node_id{2});
+    auto get_report = [&] {
+        return n0->controller->get_health_monitor()
+          .local()
+          .get_cluster_health(
+            cluster::cluster_report_filter{},
+            force_refresh::yes,
+            model::no_timeout)
+          .then([](auto res) { return std::move(res.value()); });
+    };
+
+    auto initial_health_report = get_report().get();
+
+    BOOST_REQUIRE_EQUAL(initial_health_report.node_reports.size(), 3);
+    // create topic with 3 replicas
+    auto test_topic = model::topic_namespace(
+      model::kafka_namespace, model::topic("test-topic"));
+    create_topic(test_topic, 3, 3).get();
+
+    tests::cooperative_spin_wait_with_timeout(20s, [&] {
+        return get_report().then(
+          [&](const cluster::cluster_health_report& report) {
+              return report.node_reports.size() == 3
+                     && std::ranges::all_of(
+                       report.node_reports, [&](const auto& n_report) {
+                           return n_report->topics.contains(test_topic);
+                       });
+          });
+    }).get();
+
+    auto report_with_topic = get_report().get();
+    for (const auto& n_report : report_with_topic.node_reports) {
+        auto& topics = n_report->topics;
+        BOOST_REQUIRE_EQUAL(topics.size(), 2);
+        BOOST_REQUIRE_EQUAL(topics.at(test_topic).size(), 3);
+    }
+
+    auto deltas = n0->controller->get_health_monitor()
+                    .local()
+                    .get_current_node_health_deltas(report_version{0})
+                    .get()
+                    .value();
+
+    BOOST_REQUIRE_EQUAL(deltas.topics.size(), 2);
+
+    auto new_deltas = n0->controller->get_health_monitor()
+                        .local()
+                        .get_current_node_health_deltas(deltas.version)
+                        .get()
+                        .value();
+    // there should be no updates
+    BOOST_REQUIRE_EQUAL(new_deltas.topics.size(), 0);
+
+    // expect topic partitions to be removed from the report
+    delete_topic(test_topic).get();
+    tests::cooperative_spin_wait_with_timeout(20s, [&] {
+        return get_report().then(
+          [&](const cluster::cluster_health_report& report) {
+              return report.node_reports.size() == 3
+                     && std::ranges::all_of(
+                       report.node_reports, [&](const auto& n_report) {
+                           return !n_report->topics.contains(test_topic);
+                       });
+          });
+    }).get();
+}

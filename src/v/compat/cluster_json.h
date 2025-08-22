@@ -298,7 +298,7 @@ inline void rjson_serialize(
 
 inline void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
-  const cluster::node_health_report_serde& f) {
+  const cluster::node_health_report_deltas& f) {
     w.StartObject();
     w.Key("id");
     rjson_serialize(w, f.id);
@@ -308,6 +308,8 @@ inline void rjson_serialize(
     rjson_serialize(w, f.topics);
     w.Key("drain_status");
     rjson_serialize(w, f.drain_status);
+    w.Key("version");
+    rjson_serialize(w, f.version);
     w.EndObject();
 }
 
@@ -337,7 +339,7 @@ inline void rjson_serialize(
     w.Key("node_reports");
     w.StartArray();
     for (auto& r : f.node_reports) {
-        rjson_serialize(w, cluster::node_health_report_serde{*r});
+        rjson_serialize(w, cluster::node_health_report_deltas{*r});
     }
     w.EndArray();
     w.EndObject();
@@ -431,18 +433,20 @@ inline void read_value(const json::Value& rd, cluster::node::local_state& obj) {
 }
 
 inline void
-read_value(const json::Value& rd, cluster::node_health_report_serde& obj) {
+read_value(const json::Value& rd, cluster::node_health_report_deltas& obj) {
     model::node_id id;
     cluster::node::local_state local_state;
     chunked_vector<cluster::topic_status> topics;
     std::optional<cluster::drain_manager::drain_status> drain_status;
+    cluster::report_version version;
 
     read_member(rd, "id", id);
     read_member(rd, "local_state", local_state);
     read_member(rd, "topics", topics);
     read_member(rd, "drain_status", drain_status);
-    obj = cluster::node_health_report_serde(
-      id, local_state, std::move(topics), drain_status);
+    read_member(rd, "version", version);
+    obj = cluster::node_health_report_deltas(
+      id, local_state, std::move(topics), drain_status, version);
 }
 
 inline void read_value(const json::Value& rd, cluster::node_state& obj) {
@@ -468,11 +472,11 @@ read_value(const json::Value& rd, cluster::cluster_health_report& obj) {
     auto reports_v = rd.FindMember("node_reports");
     if (reports_v != rd.MemberEnd()) {
         for (const auto& e : reports_v->value.GetArray()) {
-            cluster::node_health_report_serde report;
+            cluster::node_health_report_deltas report;
             read_value(e, report);
             node_reports.emplace_back(
               ss::make_lw_shared<cluster::node_health_report>(
-                std::move(report).to_in_memory()));
+                new_report_from_deltas(std::move(report))));
         }
     }
     obj = cluster::cluster_health_report{

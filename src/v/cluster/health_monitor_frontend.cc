@@ -74,6 +74,15 @@ health_monitor_frontend::get_current_node_health() {
         return be.get_current_node_health();
     });
 }
+
+ss::future<result<node_health_report_deltas>>
+health_monitor_frontend::get_current_node_health_deltas(
+  report_version last_seen_version) {
+    return dispatch_to_backend(
+      [last_seen_version](health_monitor_backend& be) mutable {
+          return be.get_current_node_health_deltas(last_seen_version);
+      });
+}
 std::optional<alive>
 health_monitor_frontend::is_alive(model::node_id id) const {
     auto status = _node_status_table.local().get_node_status(id);

@@ -1649,7 +1649,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         // test ADL roundtrip.
         data.local_state.cache_disk = std::nullopt;
 
-        roundtrip_test(cluster::node_health_report_serde{data});
+        roundtrip_test(cluster::node_health_report_deltas{data});
     }
     {
         chunked_vector<cluster::topic_status> topics;
@@ -1667,14 +1667,14 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
         roundtrip_test(
           cluster::get_node_health_reply{
-            .report = cluster::node_health_report_serde{report},
+            .report = cluster::node_health_report_deltas{report},
           });
         // try serde with non-default error code. adl doesn't encode error so
         // this is a serde only test.
         roundtrip_test(
           cluster::get_node_health_reply{
             .error = cluster::errc::error_collecting_health_report,
-            .report = cluster::node_health_report_serde{report},
+            .report = cluster::node_health_report_deltas{report},
           });
     }
     {

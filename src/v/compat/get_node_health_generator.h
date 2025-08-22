@@ -32,7 +32,7 @@ struct instance_generator<cluster::get_node_health_reply> {
         return {
           .error = instance_generator<cluster::errc>::random(),
           .report = tests::random_optional([] {
-              return cluster::node_health_report_serde{
+              return cluster::node_health_report_deltas{
                 cluster::random_node_health_report()};
           }),
         };

@@ -88,6 +88,9 @@ public:
      */
     ss::future<result<node_health_report_ptr>> get_current_node_health();
 
+    ss::future<result<node_health_report_deltas>>
+    get_current_node_health_deltas(report_version last_seen_version);
+
     cluster::notification_id_type register_node_callback(health_node_cb_t cb);
     void unregister_node_callback(cluster::notification_id_type id);
 
@@ -157,6 +160,8 @@ private:
     std::chrono::milliseconds max_metadata_age();
     void abort_current_refresh();
 
+    report_version get_last_seen_version(model::node_id) const;
+
     ss::future<errc> walk_local_and_remote_reports(
       health_monitor_backend_details::partition_leader_status_handler auto
         local_leader_handler,
@@ -220,6 +225,8 @@ private:
     ss::sharded<topic_table>& _topic_table;
 
     ss::lowres_clock::time_point _last_refresh;
+    ss::lowres_clock::time_point _last_self_report_refresh
+      = ss::lowres_clock::time_point::min();
     ss::lw_shared_ptr<abortable_refresh_request> _refresh_request;
 
     status_cache_t _status;
@@ -239,7 +246,7 @@ private:
     std::vector<std::pair<cluster::notification_id_type, health_node_cb_t>>
       _node_callbacks;
     cluster::notification_id_type _next_callback_id{0};
-
+    report_version _current_version{0};
     mutex _report_collection_mutex{"health_report_collection"};
 
     friend struct health_report_accessor;

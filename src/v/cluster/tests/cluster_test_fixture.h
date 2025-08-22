@@ -28,6 +28,7 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/util/defer.hh>
 
+#include <algorithm>
 #include <utility>
 
 template<typename Pred>
@@ -286,6 +287,18 @@ public:
         return groups;
     }
 
+    ss::future<application*> get_controller_leader_app() {
+        co_await tests::cooperative_spin_wait_with_timeout(10s, [this] {
+            return std::ranges::any_of(_instances, [](auto& it) {
+                return it.second->app.controller->is_raft0_leader();
+            });
+        });
+        auto leader_it = std::ranges::find_if(_instances, [](auto& it) {
+            return it.second->app.controller->is_raft0_leader();
+        });
+
+        co_return &(leader_it->second->app);
+    }
     ss::future<> create_topic(
       model::topic_namespace_view tp_ns,
       int partitions = 1,
@@ -293,18 +306,8 @@ public:
       std::optional<cluster::topic_properties> custom_properties
       = std::nullopt) {
         vassert(!_instances.empty(), "no nodes in the cluster");
-        // wait until there is a controller stm leader.
-        co_await tests::cooperative_spin_wait_with_timeout(10s, [this] {
-            return std::any_of(
-              _instances.begin(), _instances.end(), [](auto& it) {
-                  return it.second->app.controller->is_raft0_leader();
-              });
-        });
-        auto leader_it = std::find_if(
-          _instances.begin(), _instances.end(), [](auto& it) {
-              return it.second->app.controller->is_raft0_leader();
-          });
-        auto& app_0 = leader_it->second->app;
+
+        auto& app_0 = *(co_await get_controller_leader_app());
         auto topic_cfg = cluster::topic_configuration{
           tp_ns.ns, tp_ns.tp, partitions, replication_factor};
         if (custom_properties) {
@@ -333,6 +336,16 @@ public:
                          return leaders.get_leader(tp_ns, p.second.id);
                      });
         });
+    }
+
+    ss::future<> delete_topic(model::topic_namespace_view tp_ns) {
+        auto& app_0 = *(co_await get_controller_leader_app());
+        std::vector<model::topic_namespace> topics;
+        topics.emplace_back(tp_ns);
+        co_return co_await app_0.controller->get_topics_frontend()
+          .local()
+          .delete_topics(std::move(topics), model::no_timeout)
+          .discard_result();
     }
 
     std::tuple<redpanda_thread_fixture*, ss::lw_shared_ptr<cluster::partition>>

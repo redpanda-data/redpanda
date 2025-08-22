@@ -535,15 +535,14 @@ service::do_collect_node_health_report(get_node_health_request req) {
         co_return get_node_health_reply{.error = errc::invalid_target_node_id};
     }
 
-    auto res = co_await _hm_frontend.local().get_current_node_health();
+    auto res = co_await _hm_frontend.local().get_current_node_health_deltas(
+      req.get_last_seen_version());
     if (res.has_error()) {
         co_return get_node_health_reply{
           .error = map_health_monitor_error_code(res.error())};
     }
     co_return get_node_health_reply{
-      .error = errc::success,
-      .report = node_health_report_serde{*res.value()},
-    };
+      .error = errc::success, .report = std::move(res.value())};
 }
 
 ss::future<get_cluster_health_reply>

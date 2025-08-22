@@ -758,6 +758,7 @@ redpanda_cc_btest(
     name = "health_monitor_test",
     timeout = "short",
     srcs = ["health_monitor_test.cc"],
+    memory = "2G",
     deps = [
         ":cluster_test_fixture",
         ":health_monitor_test_utils",

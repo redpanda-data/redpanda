@@ -62,6 +62,9 @@ public:
     // Collects or return cached version of current node health report.
     ss::future<result<node_health_report_ptr>> get_current_node_health();
 
+    // Collects or return cached version of current node health report.
+    ss::future<result<node_health_report_deltas>>
+    get_current_node_health_deltas(report_version last_seen_version);
     /**
      * Return drain status for a given node.
      */
