@@ -91,7 +91,7 @@ Use the flag '--no-confirm' to avoid the confirmation prompt.`,
 
 			if vp.FromCloud {
 				if vp.CloudCluster.IsServerless() {
-					out.Die("rpk cluster config set is not supported for serverless clusters.")
+					out.Die("rpk cluster config set is not supported on Redpanda serverless clusters")
 				}
 				out.MaybeDie(err, "rpk unable to load config: %v", err)
 				operation, err := setCloudConfig(cmd.Context(), cfg, vp, configs)
