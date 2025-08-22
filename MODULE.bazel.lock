@@ -5468,12 +5468,12 @@
         "bzlTransitiveDigest": "BPi/jkbGe4t+CftMYaXRe/Clkd62vRQhWpqTKbsi77E=",
         "usagesDigest": "iKmmEQX8xqicrHiRHLqXwjwu7pCrLkIAFXGNdc4Aveo=",
         "recordedFileInputs": {
-          "@@rules_rust~~rust_host_tools~rust_host_tools//bin/rustc": "241027b94ad67beb36d0356f7cc05180daaa9966b2958cfba1d4de089d2e521c",
+          "@@rules_rust~~rust_host_tools~rust_host_tools//bin/rustc": "b953c69e6f682bf55e39bdd55bdcbd3e1cc0cbdf9dfda24b9c6478ee2c38359b",
           "@@//bazel/thirdparty/Cargo.lock": "931fa1bc55d0e5d2e5b6d96da399569a4c2254a4bb1d99c98f71bb4b98eead73",
           "@@//bazel/thirdparty/Cargo.toml": "cb23768a6e7edc8f97215921e956f5be06521ad93cc0ecf64a932e3a8caada54",
-          "@@//MODULE.bazel": "64f2c3e2bd9bcf25a46b9bf23e7ba854d334830bbb99a2ae061e2e35544c2e82",
+          "@@//MODULE.bazel": "5b75f6a77939534948aaa144c212cab23491bb5e6d19eecb22ef9b3de6654e54",
           "@@//bazel/thirdparty/wasmtime.BUILD": "4b55deaf51f5b8be25fc3592f9bcf3d732f99632cd793c685436ddca9a177534",
-          "@@rules_rust~~rust_host_tools~rust_host_tools//bin/cargo": "35099f3b7b9497b3ae95aa00886ac6839343488e5cdb958e69c16c9b58c3afb2"
+          "@@rules_rust~~rust_host_tools~rust_host_tools//bin/cargo": "be459aeefa634aa6693a9a4741cfa4d63dd8a50af2d1a8ff221b7565e7eb4e4c"
         },
         "recordedDirentsInputs": {},
         "envVariables": {

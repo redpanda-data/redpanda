@@ -255,6 +255,7 @@ use_repo(
     "com_github_beevik_ntp",
     "com_github_bufbuild_protocompile",
     "com_github_cespare_xxhash",
+    "com_github_containerd_errdefs",
     "com_github_coreos_go_systemd_v22",
     "com_github_docker_docker",
     "com_github_docker_go_connections",
