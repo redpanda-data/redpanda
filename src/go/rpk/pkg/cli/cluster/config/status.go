@@ -50,8 +50,8 @@ is offline.`,
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			if vp.FromCloud {
-				if !vp.CloudCluster.IsBYOC() {
-					out.Die("rpk cluster config set is not supported for serverless and dedicated clusters.")
+				if vp.CloudCluster.IsServerless() {
+					out.Die("rpk cluster config status is not supported on Redpanda serverless clusters")
 				}
 				cfg, err := p.Load(fs)
 				out.MaybeDie(err, "rpk unable to load config: %v", err)
