@@ -148,6 +148,11 @@ private:
     ss::sstring get_effective_default_partition_spec(
       const std::optional<ss::sstring>& partition_spec) const;
 
+    // Return whether the underlying catalog is the Glue REST catalog.
+    // TODO: if the kludges start piling up, we should abstract some "catalog
+    // capabilities" out.
+    bool using_glue_catalog() const;
+
     ss::shared_ptr<coordinator_stm> stm_;
     cluster::topic_table& topic_table_;
     type_resolver& type_resolver_;

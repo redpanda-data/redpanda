@@ -856,14 +856,8 @@ ss::sstring coordinator::get_effective_default_partition_spec(
   const std::optional<ss::sstring>& partition_spec) const {
     const auto& cfg = config::shard_local_cfg();
     auto current_spec = partition_spec.value_or(default_partition_spec_());
-
-    bool is_glue = cfg.iceberg_catalog_type()
-                     == config::datalake_catalog_type::rest
-                   && cfg.iceberg_rest_catalog_authentication_mode()
-                        == config::datalake_catalog_auth_mode::aws_sigv4
-                   && cfg.iceberg_rest_catalog_aws_service_name() == "glue";
     if (
-      is_glue
+      using_glue_catalog()
       && current_spec == cfg.iceberg_default_partition_spec.default_value()) {
         // Glue can't partition on nested fields like redpanda.timestamp.
         vlog(
@@ -875,4 +869,13 @@ ss::sstring coordinator::get_effective_default_partition_spec(
 
     return current_spec;
 }
+
+bool coordinator::using_glue_catalog() const {
+    const auto& cfg = config::shard_local_cfg();
+    return cfg.iceberg_catalog_type() == config::datalake_catalog_type::rest
+           && cfg.iceberg_rest_catalog_authentication_mode()
+                == config::datalake_catalog_auth_mode::aws_sigv4
+           && cfg.iceberg_rest_catalog_aws_service_name() == "glue";
+}
+
 } // namespace datalake::coordinator
