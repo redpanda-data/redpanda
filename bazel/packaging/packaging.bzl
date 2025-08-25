@@ -247,7 +247,7 @@ def _impl(ctx):
     out = ctx.actions.declare_directory(ctx.attr.out) if use_dir else ctx.actions.declare_file(ctx.attr.out)
     interpreter_path = "/opt/redpanda/lib"
     if ctx.attr.install_path:
-        interpreter_path = "{}/lib".format(ctx.attr.install_path[BuildSettingInfo].value)
+        interpreter_path = "{}/redpanda/lib".format(ctx.attr.install_path[BuildSettingInfo].value)
     package_content = _prepare_redpanda_package_content(ctx, interpreter_path)
 
     fips_enabled = ctx.file.fips_module != None
@@ -364,11 +364,12 @@ def _prepapare_package_conent(ctx):
     ]
     for b in ctx.attr.cc_binaries:
         cc_binaries += [struct(attr = b, file = file) for file in b.files.to_list()]
-    install_path_value = ctx.attr.install_path[BuildSettingInfo].value if ctx.attr.install_path else "/opt/{}".format(ctx.attr.name)
+    install_path_value = ctx.attr.install_path[BuildSettingInfo].value if ctx.attr.install_path else "/opt"
+    effective_install_path = "{}/{}".format(install_path_value, ctx.attr.package_directory)
     package_cc_binaries = _prepare_package_binaries(
         ctx,
         cc_binaries,
-        "{}/lib".format(install_path_value),
+        "{}/lib".format(effective_install_path),
     )
 
     return struct(
@@ -440,6 +441,9 @@ native_package = rule(
         "include_sysroot_libs": attr.bool(),
         "rpath_override": attr.string(mandatory = False),
         "owner": attr.int(),
+        "package_directory": attr.string(
+            mandatory = True,
+        ),
         "install_path": attr.label(),
         "_tool": attr.label(
             executable = True,

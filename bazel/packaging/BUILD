@@ -17,7 +17,7 @@ redpanda_package(
 # This flag is used to set the interpret path for redpanda binary.
 string_flag(
     name = "install_path",
-    build_setting_default = "/opt/redpanda",
+    build_setting_default = "/opt",
 )
 
 redpanda_package(
@@ -66,6 +66,7 @@ native_package(
     ],
     include_sysroot_libs = True,
     install_path = ":install_path",
+    package_directory = "direct_consumer_verifier",
     rpath_override = "$ORIGIN/../lib",
 )
 
@@ -77,6 +78,7 @@ native_package(
     ],
     include_sysroot_libs = True,
     install_path = ":install_path",
+    package_directory = "direct_consumer_verifier",
     rpath_override = "$ORIGIN/../lib",
 )
 
