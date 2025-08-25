@@ -747,12 +747,17 @@ coordinator::update_lifecycle_state(
           model::topic_namespace_view{model::kafka_namespace, t});
         if (tombstone_it != topic_table_.get_iceberg_tombstones().end()) {
             auto tombstone_rev = tombstone_it->second.last_deleted_revision;
+            // The Glue REST catalog doesn't support purging data; explicitly
+            // pass that down to the drop operations.
+            auto should_purge = using_glue_catalog()
+                                  ? file_committer::purge_data::no
+                                  : file_committer::purge_data::yes;
             if (tombstone_rev >= topic.revision) {
                 // Drop the main table if it exists.
                 {
                     auto table_id = table_id_provider::table_id(t);
                     auto drop_res = co_await file_committer_.drop_table(
-                      table_id);
+                      table_id, should_purge);
                     if (drop_res.has_error()) {
                         switch (drop_res.error()) {
                         case file_committer::errc::shutting_down:
@@ -771,7 +776,7 @@ coordinator::update_lifecycle_state(
                 {
                     auto dlq_table_id = table_id_provider::dlq_table_id(t);
                     auto drop_res = co_await file_committer_.drop_table(
-                      dlq_table_id);
+                      dlq_table_id, should_purge);
                     if (drop_res.has_error()) {
                         switch (drop_res.error()) {
                         case file_committer::errc::shutting_down:
