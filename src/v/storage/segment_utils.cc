@@ -643,6 +643,7 @@ ss::future<compaction_result> do_self_compact_segment(
     s->index().swap_index_state(std::move(idx));
     s->force_set_commit_offset_from_index();
     co_await s->reset_batch_cache_index();
+    co_await mark_segment_as_finished_self_compaction(s, pb);
     co_await s->index().flush();
     s->advance_generation();
     co_return compaction_result(size_before, s->size_bytes(), cmp_idx_size);
@@ -833,7 +834,6 @@ ss::future<compaction_result> self_compact_segment(
     if (res.did_compact()) {
         pb.add_compaction_removed_bytes(
           ssize_t(res.size_before) - ssize_t(res.size_after));
-        co_await internal::mark_segment_as_finished_self_compaction(s, pb);
     }
 
     co_return res;
