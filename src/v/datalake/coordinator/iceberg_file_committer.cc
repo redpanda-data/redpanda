@@ -596,7 +596,7 @@ iceberg_file_committer::commit_topic_files_to_catalog(
 
 ss::future<checked<std::nullopt_t, file_committer::errc>>
 iceberg_file_committer::drop_table(
-  const iceberg::table_identifier& table_id) const {
+  const iceberg::table_identifier& table_id, purge_data should_purge) const {
     auto load_res = co_await catalog_.load_table(table_id);
     if (load_res.has_error()) {
         if (load_res.error() == iceberg::catalog::errc::not_found) {
@@ -609,7 +609,8 @@ iceberg_file_committer::drop_table(
             "anyway",
             table_id));
     }
-    auto drop_res = co_await catalog_.drop_table(table_id, true);
+    auto drop_res = co_await catalog_.drop_table(
+      table_id, should_purge == purge_data::yes);
     if (
       drop_res.has_error()
       && drop_res.error() != iceberg::catalog::errc::not_found) {

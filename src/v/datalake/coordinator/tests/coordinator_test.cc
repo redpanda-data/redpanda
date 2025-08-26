@@ -43,7 +43,7 @@ public:
     }
 
     ss::future<checked<std::nullopt_t, errc>>
-    drop_table(const iceberg::table_identifier&) const final {
+    drop_table(const iceberg::table_identifier&, purge_data) const final {
         co_return std::nullopt;
     }
 
