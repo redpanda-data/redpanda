@@ -75,7 +75,13 @@ func TestLimitedWriter(t *testing.T) {
 func TestWalkDirMissingRoot(t *testing.T) {
 	files := make(map[string]*fileInfo)
 	root := "/etc/its_highly_unlikely_that_a_dir_named_like_this_exists_anywhere"
-	err := walkDir(root, files)
+
+	encodeEntry := func(path string, info *fileInfo) error {
+		files[path] = info
+		return nil
+	}
+
+	err := walkDirStreaming(root, encodeEntry)
 
 	require.NoError(t, err)
 
