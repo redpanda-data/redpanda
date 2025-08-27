@@ -127,6 +127,50 @@ kafka_produce_transport::produce_partition_requests(
     return ret;
 }
 
+ss::future<kafka::offset> kafka_produce_transport::produce_to_partition(
+  model::topic topic_name, model::partition_id pid, model::record_batch batch) {
+    chunked_vector<kafka::partition_produce_data> partition_data;
+    kafka::produce_request::partition partition;
+    auto num_records = batch.record_count();
+    partition.partition_index = pid;
+    partition.records.emplace(std::move(batch));
+    partition_data.emplace_back(std::move(partition));
+
+    kafka::produce_request::topic tp;
+    tp.name = topic_name;
+    tp.partitions = std::move(partition_data);
+    chunked_vector<kafka::produce_request::topic> topics;
+    topics.push_back(std::move(tp));
+    kafka::produce_request req(std::nullopt, -1, std::move(topics));
+    req.data.timeout_ms = std::chrono::seconds(10);
+    req.has_idempotent = false;
+    req.has_transactional = false;
+    auto resp = co_await _transport.dispatch(
+      std::move(req), kafka::api_version(7));
+
+    for (auto& data_resp : resp.data.responses) {
+        if (data_resp.name != topic_name) {
+            continue;
+        }
+        for (auto& prt_resp : data_resp.partitions) {
+            if (prt_resp.partition_index != pid) {
+                continue;
+            }
+            if (prt_resp.error_code != kafka::error_code::none) {
+                throw std::runtime_error(fmt::format(
+                  "produce error: {}, message:{}",
+                  prt_resp.error_code,
+                  prt_resp.error_message));
+            }
+            co_return model::offset_cast(
+              prt_resp.base_offset + model::offset_delta(num_records - 1));
+        }
+    }
+    // unreachable
+    throw std::runtime_error(
+      fmt::format("missing produce result {}/{}", topic_name(), pid()));
+}
+
 ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
   model::topic topic_name,
   std::vector<model::partition_id> pids,
