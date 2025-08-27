@@ -310,3 +310,52 @@ class DatalakeBlockedCatalogTest(RedpandaTest):
             hwm, _ = self.get_hwm_lso()
             dl.wait_for_translation_until_offset(self.topic_name, hwm - 1)
             self.check_offsets(spark, hwm)
+
+    @cluster(num_nodes=4)
+    @matrix(cloud_storage_type=supported_storage_types())
+    def test_disable_reenable_after_blocking(self, cloud_storage_type):
+        """
+        Test that blocks the catalog, disables Iceberg, allows for retention to
+        happen, reenables Iceberg, and then ensures that we can make progress.
+
+        This is a regression test: in older versions of Redpanda we would be
+        unable to translate after reenabling Iceberg.
+        """
+        with DatalakeServices(
+            self.test_context,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.SPARK],
+            catalog_type=CatalogType.REST_JDBC,
+        ) as dl:
+
+            def hwm_gt(target_o):
+                hwm, _ = self.get_hwm_lso()
+                return hwm > target_o
+
+            rpk = RpkTool(self.redpanda)
+            with firewall_blocked(
+                self.redpanda.nodes, dl.catalog_service.iceberg_rest_port
+            ):
+                dl.create_iceberg_enabled_topic(
+                    self.topic_name, config=dict({"retention.ms": 1})
+                )
+                self.rpcn.start_stream(self.stream_name, self.make_rpcn_config())
+
+                # Wait for some amount of data to be produced.
+                wait_until(lambda: hwm_gt(100), timeout_sec=10, backoff_sec=1)
+
+                # Sanity check that the data is pinned and can't be trimmed.
+                _, lso = self.get_hwm_lso()
+                assert lso == 0, f"Expected {lso} = 0"
+
+                # Now disable Iceberg and wait for data to be trimmed.
+                rpk.cluster_config_set("iceberg_enabled", "false")
+                wait_until(self.cloud_log_trimmed, timeout_sec=30, backoff_sec=1)
+
+            # Now reenable Iceberg and check that we commit data.
+            rpk.cluster_config_set("iceberg_enabled", "true")
+            self.redpanda.restart_nodes(self.redpanda.nodes)
+
+            hwm, _ = self.get_hwm_lso()
+            dl.wait_for_translation_until_offset(self.topic_name, hwm - 1)
+            self.rpcn.stop_stream(self.stream_name, should_finish=None)
