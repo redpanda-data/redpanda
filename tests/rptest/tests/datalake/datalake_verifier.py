@@ -77,7 +77,7 @@ class DatalakeVerifier():
         # thread can perform verification. Larger batches results
         # in fewer SQL queries and hence faster verification
         self._msgs_batched = threading.Condition()
-        self._query_batch_size = 1000
+        self._query_batch_size = 777
         self._query_batch_wait_timeout_s = 3
         self._executor = ThreadPoolExecutor(max_workers=2)
         self._rpk = RpkTool(self.redpanda)
@@ -268,7 +268,8 @@ class DatalakeVerifier():
 
     def _query_thread(self):
         self.logger.info("Starting query thread")
-        while not self._stop.is_set():
+        incomplete_read = False
+        while incomplete_read or not self._stop.is_set():
             try:
                 with self._msgs_batched:
                     # Wait for enough data to be batched or a timeout.
@@ -285,8 +286,19 @@ class DatalakeVerifier():
                     if max_consumed <= last_queried_offset:
                         continue
 
+                    partition_consumed_messages = self._consumed_messages[
+                        partition]
+                    last_consumed_offset = partition_consumed_messages[
+                        0].offset() if len(
+                            partition_consumed_messages) > 0 else None
+
+                    to_query = min(
+                        max_consumed,
+                        last_queried_offset + self._query_batch_size)
+                    incomplete_read = to_query < max_consumed
+
                     query = self._get_query(partition, last_queried_offset,
-                                            max_consumed)
+                                            to_query)
                     self.logger.debug(f"Executing query: {query}")
 
                     with self._query.run_query(query) as cursor:
@@ -307,8 +319,23 @@ class DatalakeVerifier():
                             f"Max queried offsets: {self._max_queried_offsets}"
                         )
 
+                    query_all = self._get_query(partition, last_queried_offset,
+                                                max_consumed)
+                    self.logger.debug(f"Executing {query_all=}")
+                    with self._query.run_query(query) as cursor:
+                        if cursor.rowcount >= 0:
+                            row = cursor.fetchone()
+                            if row[0] > last_consumed_offset:
+                                self.logger.error(
+                                    f"Offset {row[0]} is greater than {last_consumed_offset=}, stopping query for {partition=}"
+                                )
+                                self._errors.append(
+                                    f"In unrestricted read offset {row[0]} is greater than {last_consumed_offset=}, stopping query for {partition=}"
+                                )
+                                return
             except Exception as e:
-                self.logger.error(f"Error querying iceberg table: {e}")
+                self.logger.error("Error querying iceberg table:")
+                self.logger.exception(e)
                 sleep(2)
 
     def start(self, wait_first_iceberg_msg=False):

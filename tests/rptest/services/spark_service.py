@@ -137,7 +137,8 @@ class SparkService(Service, QueryEngineBase):
                 f"Unsupported cloud storage type {type(self.credentials)}")
 
         env = self.make_env()
-        return f"{env} {SparkService.SPARK_SERVER_EXEC} {SparkService.dict_to_conf_args(conf_args)}"
+        preamble = """sed -e 's/debug/trace/g' -e 's/info/trace/g' -e 's/warn/debug/g' -e 's/error/info/g' -e 's/fatal/warn/g' /opt/spark/conf/log4j2.properties.template > /opt/spark/conf/log4j2.properties"""
+        return f"{preamble}; {env} {SparkService.SPARK_SERVER_EXEC} {SparkService.dict_to_conf_args(conf_args)}"
 
     def start_node(self, node, timeout_sec=120, **kwargs):
         start_cmd = self.start_cmd()
