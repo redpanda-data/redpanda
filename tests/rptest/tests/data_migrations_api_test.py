@@ -1180,31 +1180,39 @@ class DataMigrationsMultiClusterTest(RedpandaTest, DataMigrationTestMixin):
     def producer_throughput(self):
         return 16 * 1024 if self.debug_mode else 1024 * 1024
 
-    def start_producer(self, topic, redpanda) -> None:
+    def start_producer(self,
+                       topic,
+                       redpanda,
+                       min_msgs=1000,
+                       max_msgs=100_000_000) -> None:
         assert self.producer is None
         self.producer = KgoVerifierProducer(
             context=self.test_context,
             redpanda=redpanda,
             topic=topic,
             msg_size=self.msg_size,
-            msg_count=100_000_000,
+            msg_count=max_msgs,
             rate_limit_bps=self.producer_throughput,
             tolerate_failed_produce=True,
-            trace_logs=True,
-        )
+            trace_logs=True)
 
         self.producer.start()
-        self.producer.wait_for_acks(1000, timeout_sec=60, backoff_sec=2)
+        self.producer.wait_for_acks(min_msgs, timeout_sec=60, backoff_sec=2)
 
     def stop_producer(self) -> int:
         "return the number of acked messages"
-        if self.producer is None:
-            return
+        assert self.producer is not None
+        assert self.producer._status_thread is not None
 
+        # give time for the producer to collect acks
+        time.sleep(2 + self.producer._status_thread.INTERVAL)
         self.producer.stop()
         acked = self.producer.produce_status.acked
         self.producer.free()
-        self.logger.info(f"stopped producer, {acked=}")
+        self.logger.info(
+            f"stopped producer, {acked=}, status={self.producer.produce_status}, "
+            f"max_offsets_produced={self.producer.produce_status.max_offsets_produced}"
+        )
         self.producer = None
         return acked
 
@@ -1261,7 +1269,7 @@ class DataMigrationsMultiClusterTest(RedpandaTest, DataMigrationTestMixin):
             {"ntr_no_topic_manifest", "missing_segments"})
 
         n_partitions = 10
-        topic_name = "foo"
+        topic_name = "tp"
         workload_topic = TopicSpec(name=topic_name,
                                    partition_count=n_partitions)
         workload_ns_topic = make_namespaced_topic(topic_name)
@@ -1272,9 +1280,9 @@ class DataMigrationsMultiClusterTest(RedpandaTest, DataMigrationTestMixin):
         # To test various combinations of remote location and topic name being
         # same/different from local cluster uuid and topic name, we test the
         # following scenario:
-        # foo (cluster 1) -> foo-alias (cluster 2) -> foo-alias (cluster 3)
+        # tp (cluster 0) -> tp-alias (cluster 1) -> tp-alias (cluster 2)
 
-        dest_redpanda = self.start_extra_cluster()
+        cluster1 = self.start_extra_cluster()
 
         self.client().create_topic(workload_topic)
         self.logger.info(f"created topic {workload_topic}")
@@ -1282,7 +1290,7 @@ class DataMigrationsMultiClusterTest(RedpandaTest, DataMigrationTestMixin):
         self.start_producer(workload_topic.name, self.redpanda)
         self.migrate_between_clusters([workload_ns_topic],
                                       self.redpanda,
-                                      dest_redpanda,
+                                      cluster1,
                                       aliases=[alias_ns_topic])
         total_acked = self.stop_producer()
 
@@ -1303,27 +1311,24 @@ class DataMigrationsMultiClusterTest(RedpandaTest, DataMigrationTestMixin):
                 backoff_sec=1,
                 err_msg="timed out waiting for offsets of migrated topic")
 
-        wait_for_offsets(dest_redpanda, alias_name, total_acked)
+        wait_for_offsets(cluster1, alias_name, total_acked)
 
         self.logger.info("producing more to the second cluster")
-        self.start_producer(alias_name, dest_redpanda)
+        self.start_producer(alias_name, cluster1)
 
         self.consume(alias_name,
-                     redpanda=dest_redpanda,
+                     redpanda=cluster1,
                      msg_count=total_acked +
                      self.producer.produce_status.acked)
 
-        another_redpanda = self.start_extra_cluster()
-        self.migrate_between_clusters([alias_ns_topic], dest_redpanda,
-                                      another_redpanda)
+        cluster2 = self.start_extra_cluster()
+        self.migrate_between_clusters([alias_ns_topic], cluster1, cluster2)
 
         total_acked += self.stop_producer()
-        wait_for_offsets(another_redpanda, alias_name, total_acked)
+        wait_for_offsets(cluster2, alias_name, total_acked)
 
-        self.logger.info("producing more to the third cluster")
-        self.start_producer(alias_name, another_redpanda)
+        self.logger.info("producing limited messages to the third cluster")
+        self.start_producer(alias_name, cluster2, min_msgs=1000, max_msgs=1000)
         total_acked += self.stop_producer()
 
-        self.consume(alias_name,
-                     redpanda=another_redpanda,
-                     msg_count=total_acked)
+        self.consume(alias_name, redpanda=cluster2, msg_count=total_acked)
