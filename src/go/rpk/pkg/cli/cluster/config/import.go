@@ -288,8 +288,9 @@ func formatValidationError(
 	return buf.String(), nil
 }
 
-func newImportCommand(fs afero.Fs, p *config.Params, all *bool) *cobra.Command {
+func newImportCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var filename string
+	var all bool
 	cmd := &cobra.Command{
 		Use:   "import",
 		Short: "Import cluster configuration from a file",
@@ -321,7 +322,7 @@ from the YAML file, it is reset to its default value.  `,
 			out.MaybeDie(err, "unable to query config values: %v", err)
 
 			// Read back template & parse
-			err = importConfig(cmd.Context(), client, filename, currentConfig, currentFullConfig, schema, *all)
+			err = importConfig(cmd.Context(), client, filename, currentConfig, currentFullConfig, schema, all)
 			if fe := (*formattedError)(nil); errors.As(err, &fe) {
 				fmt.Fprint(os.Stderr, err)
 				out.Die("No changes were made")
@@ -330,13 +331,8 @@ from the YAML file, it is reset to its default value.  `,
 		},
 	}
 
-	cmd.Flags().StringVarP(
-		&filename,
-		"filename",
-		"f",
-		"",
-		"full path to file to import, e.g. '/tmp/config.yml'",
-	)
+	cmd.Flags().StringVarP(&filename, "filename", "f", "", "full path to file to import, e.g. '/tmp/config.yml'")
+	cmd.Flags().BoolVar(&all, "all", false, "Include all properties, including tunables")
 	return cmd
 }
 

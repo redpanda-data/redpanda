@@ -8,7 +8,9 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 	"github.com/spf13/afero"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sr"
+	"github.com/twmb/franz-go/plugin/kzap"
 )
 
 func NewClient(fs afero.Fs, p *config.RpkProfile) (*sr.Client, error) {
@@ -42,6 +44,8 @@ func NewClient(fs afero.Fs, p *config.RpkProfile) (*sr.Client, error) {
 	opts := []sr.ClientOpt{
 		sr.URLs(urls...),
 		sr.UserAgent("rpk"),
+		sr.LogFn(wrapKgoLogger(kzap.New(p.Logger()))),
+		sr.LogLevel(sr.LogLevelDebug),
 	}
 
 	tc, err := api.TLS.Config(fs)
@@ -69,4 +73,11 @@ func IsSoftDeleteError(err error) bool {
 func IsSubjectNotFoundError(err error) bool {
 	errMsg := err.Error()
 	return strings.Contains(errMsg, "Subject") && strings.Contains(errMsg, "not found")
+}
+
+// wrapKgoLogger wraps a kgo.Logger to match the sr.LogFn signature.
+func wrapKgoLogger(l kgo.Logger) func(int8, string, ...any) {
+	return func(lvl int8, msg string, keyvals ...any) {
+		l.Log(kgo.LogLevel(lvl), msg, keyvals...)
+	}
 }
