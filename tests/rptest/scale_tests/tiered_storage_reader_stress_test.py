@@ -38,70 +38,83 @@ class TieredStorageReaderStressTest(RedpandaTest):
     chunk_size = 1 * 1024 * 1024
 
     def __init__(self, test_context, *args, **kwargs):
-        si_settings = SISettings(test_context=test_context,
-                                 log_segment_size=self.segment_size,
-                                 cloud_storage_cache_size=self.cache_size)
+        si_settings = SISettings(
+            test_context=test_context,
+            log_segment_size=self.segment_size,
+            cloud_storage_cache_size=self.cache_size,
+        )
         extra_rp_conf = {
             "cloud_storage_cache_chunk_size": self.chunk_size,
-            'cloud_storage_segment_max_upload_interval_sec':
-            self.segment_upload_interval,
-            'cloud_storage_manifest_max_upload_interval_sec':
-            self.manifest_upload_interval,
-            'cloud_storage_max_segment_readers_per_shard':
-            self.readers_per_shard
+            "cloud_storage_segment_max_upload_interval_sec": self.segment_upload_interval,
+            "cloud_storage_manifest_max_upload_interval_sec": self.manifest_upload_interval,
+            "cloud_storage_max_segment_readers_per_shard": self.readers_per_shard,
         }
-        super().__init__(test_context,
-                         *args,
-                         si_settings=si_settings,
-                         extra_rp_conf=extra_rp_conf,
-                         **kwargs)
+        super().__init__(
+            test_context,
+            *args,
+            si_settings=si_settings,
+            extra_rp_conf=extra_rp_conf,
+            **kwargs,
+        )
 
         # Artificially limit CPUs, so that we concentrate readers on a small, deterministic
         # number of cores, and have relatively limited memory.  The memory is within the official system
         # requirements (2GB per core).
         self.redpanda.set_resource_settings(
-            ResourceSettings(memory_mb=4096, num_cpus=2))
+            ResourceSettings(memory_mb=4096, num_cpus=2)
+        )
 
-    def _produce_and_quiesce(self, topic_name: str, msg_size: int,
-                             data_size: int, expect_bandwidth: float,
-                             **kwargs):
+    def _produce_and_quiesce(
+        self,
+        topic_name: str,
+        msg_size: int,
+        data_size: int,
+        expect_bandwidth: float,
+        **kwargs,
+    ):
         expect_runtime = max(60.0, (data_size / expect_bandwidth) * 2)
 
         t1 = time.time()
         timeout = expect_runtime * self.runtime_grace_factor
 
         self.logger.info(f"Producing {data_size} bytes, timeout = {timeout}")
-        KgoVerifierProducer.oneshot(self.test_context,
-                                    self.redpanda,
-                                    topic_name,
-                                    msg_size=msg_size,
-                                    msg_count=data_size // msg_size,
-                                    batch_max_bytes=msg_size * 8,
-                                    timeout_sec=timeout,
-                                    **kwargs)
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            topic_name,
+            msg_size=msg_size,
+            msg_count=data_size // msg_size,
+            batch_max_bytes=msg_size * 8,
+            timeout_sec=timeout,
+            **kwargs,
+        )
         produce_duration = time.time() - t1
         self.logger.info(
             f"Produced {data_size} bytes in {produce_duration} seconds, {(data_size / produce_duration) / 1000000.0:.2f}MB/s"
         )
 
         quiesce_uploads(
-            self.redpanda, [topic_name],
-            self.manifest_upload_interval + self.segment_upload_interval + 30)
+            self.redpanda,
+            [topic_name],
+            self.manifest_upload_interval + self.segment_upload_interval + 30,
+        )
 
-    def _create_topic(self, topic_name: str, partition_count: int,
-                      local_retention: int):
+    def _create_topic(
+        self, topic_name: str, partition_count: int, local_retention: int
+    ):
         rpk = RpkTool(self.redpanda)
         rpk.create_topic(
             topic_name,
             partitions=partition_count,
             replicas=3,
             config={
-                'retention.local.target.bytes': local_retention,
+                "retention.local.target.bytes": local_retention,
                 # This test uses synthetic timestamps in the past, so
                 # disable time based retention to avoid it deleting our
                 # "old" data immediately.
-                'retention.ms': -1
-            })
+                "retention.ms": -1,
+            },
+        )
 
     def _get_stats(self):
         """The stats we care about for reader stress, especially
@@ -110,7 +123,8 @@ class TieredStorageReaderStressTest(RedpandaTest):
         results = {}
         for node in self.redpanda.nodes:
             metrics = self.redpanda.metrics(
-                node, metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+                node, metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS
+            )
             segment_reader_count = 0
             partition_reader_count = 0
             partition_reader_delay_count = 0
@@ -124,19 +138,32 @@ class TieredStorageReaderStressTest(RedpandaTest):
                         segment_reader_count += int(sample.value)
                     if sample.name == "redpanda_cloud_storage_partition_readers":
                         partition_reader_count += int(sample.value)
-                    if sample.name == "redpanda_cloud_storage_partition_readers_delayed_total":
+                    if (
+                        sample.name
+                        == "redpanda_cloud_storage_partition_readers_delayed_total"
+                    ):
                         partition_reader_delay_count += int(sample.value)
-                    if sample.name == "redpanda_cloud_storage_segment_readers_delayed_total":
+                    if (
+                        sample.name
+                        == "redpanda_cloud_storage_segment_readers_delayed_total"
+                    ):
                         segment_reader_delay_count += int(sample.value)
-                    if sample.name == "redpanda_cloud_storage_segment_materializations_delayed_total":
+                    if (
+                        sample.name
+                        == "redpanda_cloud_storage_segment_materializations_delayed_total"
+                    ):
                         materialize_segment_delay_count += int(sample.value)
                     elif sample.name == "redpanda_rpc_active_connections":
                         if sample.labels["redpanda_server"] == "kafka":
                             connection_count += int(sample.value)
             for family in self.redpanda.metrics(
-                    node, metrics_endpoint=MetricsEndpoint.METRICS):
+                node, metrics_endpoint=MetricsEndpoint.METRICS
+            ):
                 for sample in family.samples:
-                    if sample.name == "vectorized_cloud_storage_read_path_hydrations_in_progress_total":
+                    if (
+                        sample.name
+                        == "vectorized_cloud_storage_read_path_hydrations_in_progress_total"
+                    ):
                         hydrations_count += int(sample.value)
 
             stats = {
@@ -144,10 +171,9 @@ class TieredStorageReaderStressTest(RedpandaTest):
                 "segment_readers_delayed": segment_reader_delay_count,
                 "partition_readers": partition_reader_count,
                 "partition_readers_delayed": partition_reader_delay_count,
-                "materialize_segments_delayed":
-                materialize_segment_delay_count,
+                "materialize_segments_delayed": materialize_segment_delay_count,
                 "connections": connection_count,
-                "hydrations_count": hydrations_count
+                "hydrations_count": hydrations_count,
             }
             self.logger.debug(f"stats[{node.name}] = {stats}")
             results[node] = stats
@@ -183,7 +209,8 @@ class TieredStorageReaderStressTest(RedpandaTest):
             self.segment_size * partition_count * 4,
             # Write enough data that it won't all remain in cache, so that under stress
             # we are continually promoting/trimming data for maximum disk and memory stress
-            self.cache_size * 4)
+            self.cache_size * 4,
+        )
         msg_count = data_size // msg_size
 
         # We will use synthetic timestamps, to keep the test somewhat deterministic when we
@@ -192,15 +219,18 @@ class TieredStorageReaderStressTest(RedpandaTest):
         max_fake_ts = base_fake_ts + msg_count - 1
 
         peak_readers = partition_count * concurrent_timequeries
-        peak_readers_per_shard = peak_readers // (len(
-            (self.redpanda.nodes) * self.redpanda.get_node_cpu_count()))
+        peak_readers_per_shard = peak_readers // (
+            len((self.redpanda.nodes) * self.redpanda.get_node_cpu_count())
+        )
 
         self._create_topic(topic_name, partition_count, self.segment_size)
-        self._produce_and_quiesce(topic_name,
-                                  msg_size,
-                                  data_size,
-                                  self.expect_throughput,
-                                  fake_timestamp_ms=base_fake_ts)
+        self._produce_and_quiesce(
+            topic_name,
+            msg_size,
+            data_size,
+            self.expect_throughput,
+            fake_timestamp_ms=base_fake_ts,
+        )
 
         rpk = RpkTool(self.redpanda)
 
@@ -208,11 +238,9 @@ class TieredStorageReaderStressTest(RedpandaTest):
 
         def tq_at(ts):
             self.logger.debug(f"starting timequery: {ts}")
-            out = rpk.consume(topic_name,
-                              n=1,
-                              offset=f"@{ts}",
-                              format="%p,%o",
-                              timeout=5)
+            out = rpk.consume(
+                topic_name, n=1, offset=f"@{ts}", format="%p,%o", timeout=5
+            )
             self.logger.debug(f"completed timequery: {ts} -> {out}")
 
         stats_watcher_stop = threading.Event()
@@ -237,12 +265,16 @@ class TieredStorageReaderStressTest(RedpandaTest):
         any_failed = False
 
         # How long we expect it to  take for all tasks to execute
-        task_wait_timeout = (total_timequeries // concurrent_timequeries
-                             ) * client_timeout * self.runtime_grace_factor
+        task_wait_timeout = (
+            (total_timequeries // concurrent_timequeries)
+            * client_timeout
+            * self.runtime_grace_factor
+        )
         task_initial_time = time.time()
 
         with concurrent.futures.ThreadPoolExecutor(
-                max_workers=concurrent_timequeries + 1) as executor:
+            max_workers=concurrent_timequeries + 1
+        ) as executor:
             watcher_job = executor.submit(stats_watcher)
             jobs = []
             step = msg_count // concurrent_timequeries
@@ -255,12 +287,11 @@ class TieredStorageReaderStressTest(RedpandaTest):
                     ts = base_fake_ts + step * i + k * (step // k_iterations)
                     jobs.append((k, ts, executor.submit(tq_at, ts)))
 
-            for (k, ts, j) in jobs:
+            for k, ts, j in jobs:
                 try:
                     # Throw and fail the test if our overall runtime for all tasks
                     # has expired.
-                    timeout = task_wait_timeout - (time.time() -
-                                                   task_initial_time)
+                    timeout = task_wait_timeout - (time.time() - task_initial_time)
                     j.result(timeout=timeout)
                 except RpkException as e:
                     # We expect this: timequeries will time out
@@ -281,27 +312,29 @@ class TieredStorageReaderStressTest(RedpandaTest):
         for node, hwms in stats_hwms.items():
             self.logger.info(f"hwms[{node.name}]: {hwms}")
 
-            assert hwms['connections'] <= total_timequeries
-            assert hwms[
-                'partition_readers'] <= self.readers_per_shard * self.redpanda.get_node_cpu_count(
-                )
-            assert hwms[
-                'segment_readers'] <= self.readers_per_shard * self.redpanda.get_node_cpu_count(
-                )
+            assert hwms["connections"] <= total_timequeries
+            assert (
+                hwms["partition_readers"]
+                <= self.readers_per_shard * self.redpanda.get_node_cpu_count()
+            )
+            assert (
+                hwms["segment_readers"]
+                <= self.readers_per_shard * self.redpanda.get_node_cpu_count()
+            )
 
         # TODO: assert on reader HWM once we enforce it more strongly
 
         stats = self._get_stats()
         for node, stats in stats.items():
             # The stats indicate saturation with tiered storage reads.
-            assert stats['partition_readers_delayed'] or stats[
-                'segment_readers_delayed']
+            assert (
+                stats["partition_readers_delayed"] or stats["segment_readers_delayed"]
+            )
 
         def is_metric_zero(fn, label):
             for node, stats in self._get_stats().items():
                 if metric := fn(stats):
-                    self.logger.debug(
-                        f"Node {node.name} still has {metric} {label}")
+                    self.logger.debug(f"Node {node.name} still has {metric} {label}")
                     return False
             return True
 
@@ -312,24 +345,26 @@ class TieredStorageReaderStressTest(RedpandaTest):
         """
         self.logger.info("Waiting for active hydrations to finish")
         self.redpanda.wait_until(
-            lambda: is_metric_zero(lambda s: s['hydrations_count'],
-                                   'active hydrations'),
+            lambda: is_metric_zero(
+                lambda s: s["hydrations_count"], "active hydrations"
+            ),
             timeout_sec=15,
             backoff_sec=1,
-            err_msg="Waiting for active hydrations to finish")
+            err_msg="Waiting for active hydrations to finish",
+        )
 
         # Once downloads are done, connections should be closed very shortly after.
         self.logger.info("Waiting for all Kafka connections to close")
         self.redpanda.wait_until(
-            lambda: is_metric_zero(lambda s: s["connections"],
-                                   "kafka connections"),
+            lambda: is_metric_zero(lambda s: s["connections"], "kafka connections"),
             timeout_sec=3,
             backoff_sec=1,
-            err_msg="Waiting for Kafka connections to close")
+            err_msg="Waiting for Kafka connections to close",
+        )
 
         # No new downloads should be started once all reader activity is done
         for _ in range(10):
             time.sleep(0.5)
             assert is_metric_zero(
-                lambda s: s['hydrations_count'], 'active hydrations'
-            ), 'found an active hydration where none expected'
+                lambda s: s["hydrations_count"], "active hydrations"
+            ), "found an active hydration where none expected"

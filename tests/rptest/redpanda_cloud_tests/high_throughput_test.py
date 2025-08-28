@@ -28,23 +28,38 @@ from rptest.services.cluster import cluster
 from contextlib import contextmanager
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.kgo_verifier_services import (
-    KgoVerifierConsumerGroupConsumer, KgoVerifierProducer,
-    KgoVerifierRandomConsumer)
+    KgoVerifierConsumerGroupConsumer,
+    KgoVerifierProducer,
+    KgoVerifierRandomConsumer,
+)
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
-from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations, ValidatorDict
+from rptest.services.openmessaging_benchmark_configs import (
+    OMBSampleConfigurations,
+    ValidatorDict,
+)
 from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.redpanda_cloud import CLOUD_TYPE_FMC
-from rptest.services.redpanda_cloud import CloudTierName, get_config_profile_name, PROVIDER_AWS
-from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
-                                      RedpandaService, SISettings,
-                                      RedpandaServiceCloud)
+from rptest.services.redpanda_cloud import (
+    CloudTierName,
+    get_config_profile_name,
+    PROVIDER_AWS,
+)
+from rptest.services.redpanda import (
+    RESTART_LOG_ALLOW_LIST,
+    MetricsEndpoint,
+    RedpandaService,
+    SISettings,
+    RedpandaServiceCloud,
+)
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 from rptest.util import firewall_blocked
 from rptest.utils.si_utils import nodes_report_cloud_segments
-from rptest.redpanda_cloud_tests.cloudv2_object_store_blocked import cloudv2_object_store_blocked
+from rptest.redpanda_cloud_tests.cloudv2_object_store_blocked import (
+    cloudv2_object_store_blocked,
+)
 from rptest.utils.test_mixins import PreallocNodesMixin
 from rptest.services.machinetype import get_machine_info
 
@@ -62,12 +77,15 @@ class HighThroughputTestTrafficGenerator:
     higher egress maximum allowed load then ingress, by a factor of at most
     3x in some tiers.
     """
-    def __init__(self,
-                 context: TestContext,
-                 redpanda: RedpandaServiceCloud,
-                 topic: str,
-                 msg_size: int,
-                 asymetry: int = 3):
+
+    def __init__(
+        self,
+        context: TestContext,
+        redpanda: RedpandaServiceCloud,
+        topic: str,
+        msg_size: int,
+        asymetry: int = 3,
+    ):
         t = time.time()
         self._logger = redpanda.logger
         self._producer_start_time = t
@@ -76,11 +94,9 @@ class HighThroughputTestTrafficGenerator:
         self._consumer_end_time = t
         self._msg_size = msg_size
         self._msg_count = 5_000_000_000_000
-        self._producer = KgoVerifierProducer(context,
-                                             redpanda,
-                                             topic,
-                                             msg_size=self._msg_size,
-                                             msg_count=self._msg_count)
+        self._producer = KgoVerifierProducer(
+            context, redpanda, topic, msg_size=self._msg_size, msg_count=self._msg_count
+        )
 
         # Level of asymetry is equal to the number of parallel consumers
         self._consumer = KgoVerifierConsumerGroupConsumer(
@@ -92,12 +108,15 @@ class HighThroughputTestTrafficGenerator:
             loop=True,
             max_msgs=self._msg_count,
             debug_logs=True,
-            trace_logs=True)
+            trace_logs=True,
+        )
 
     def wait_for_traffic(self, acked: int = 1, timeout_sec: int = 60):
-        wait_until(lambda: self._producer.produce_status.acked >= acked,
-                   timeout_sec=timeout_sec,
-                   backoff_sec=1.0)
+        wait_until(
+            lambda: self._producer.produce_status.acked >= acked,
+            timeout_sec=timeout_sec,
+            backoff_sec=1.0,
+        )
 
     def start(self):
         self._logger.info("Starting producer")
@@ -112,7 +131,8 @@ class HighThroughputTestTrafficGenerator:
         self._consumer_start_time = time.time()
         wait_until(
             lambda: self._consumer.consumer_status.validator.total_reads >= 1,
-            timeout_sec=120)
+            timeout_sec=120,
+        )
 
     def stop(self):
         self._logger.info("Stopping all traffic generation")
@@ -133,29 +153,31 @@ class HighThroughputTestTrafficGenerator:
         producer_bytes_written = self._msg_size * producer_status.acked
         consumer_bytes_read = self._msg_size * consumer_status.validator.total_reads
         return {
-            'producer': {
-                'errors': producer_status.bad_offsets,
-                'total_successful_requests': producer_status.acked,
-                'bytes_written': producer_bytes_written,
-                'ingress_throughput':
-                producer_bytes_written / producer_total_time
+            "producer": {
+                "errors": producer_status.bad_offsets,
+                "total_successful_requests": producer_status.acked,
+                "bytes_written": producer_bytes_written,
+                "ingress_throughput": producer_bytes_written / producer_total_time,
             },
-            'consumer': {
-                'errors': consumer_status.errors,
-                'total_successful_requests':
-                consumer_status.validator.total_reads,
-                'bytes_read': consumer_bytes_read,
-                'egress_throughput': consumer_bytes_read / consumer_total_time
-            }
+            "consumer": {
+                "errors": consumer_status.errors,
+                "total_successful_requests": consumer_status.validator.total_reads,
+                "bytes_read": consumer_bytes_read,
+                "egress_throughput": consumer_bytes_read / consumer_total_time,
+            },
         }
 
 
 @contextmanager
-def traffic_generator(context: TestContext, redpanda: RedpandaServiceCloud,
-                      expected_ingress_rate: int, expected_egress_rate: int,
-                      *args: Any, **kwargs: Any):
-    tgen = HighThroughputTestTrafficGenerator(context, redpanda, *args,
-                                              **kwargs)
+def traffic_generator(
+    context: TestContext,
+    redpanda: RedpandaServiceCloud,
+    expected_ingress_rate: int,
+    expected_egress_rate: int,
+    *args: Any,
+    **kwargs: Any,
+):
+    tgen = HighThroughputTestTrafficGenerator(context, redpanda, *args, **kwargs)
     tgen.start()
     try:
         yield tgen
@@ -166,24 +188,27 @@ def traffic_generator(context: TestContext, redpanda: RedpandaServiceCloud,
         tgen.stop()
         throughput = tgen.throughput()
         redpanda.logger.info(
-            f'HighThroughputTrafficGenerator reported throughput: {json.dumps(throughput, sort_keys=True, indent=4)}'
+            f"HighThroughputTrafficGenerator reported throughput: {json.dumps(throughput, sort_keys=True, indent=4)}"
         )
-        producer_throughput = throughput['producer']['ingress_throughput']
-        consumer_throughput = throughput['consumer']['egress_throughput']
-        assert (
-            producer_throughput / 0.1
-        ) >= expected_ingress_rate, f"Observed producer throughput {producer_throughput} too low, expected: {expected_ingress_rate}"
-        assert (
-            consumer_throughput / 0.1
-        ) >= expected_egress_rate, f"Observed consumer throughput {consumer_throughput} too low, expected: {expected_egress_rate}"
+        producer_throughput = throughput["producer"]["ingress_throughput"]
+        consumer_throughput = throughput["consumer"]["egress_throughput"]
+        assert (producer_throughput / 0.1) >= expected_ingress_rate, (
+            f"Observed producer throughput {producer_throughput} too low, expected: {expected_ingress_rate}"
+        )
+        assert (consumer_throughput / 0.1) >= expected_egress_rate, (
+            f"Observed consumer throughput {consumer_throughput} too low, expected: {expected_egress_rate}"
+        )
 
 
 @contextmanager
-def omb_runner(context: TestContext, redpanda: RedpandaServiceCloud,
-               driver: str, workload: dict[str,
-                                           Any], omb_config: ValidatorDict):
-    bench = OpenMessagingBenchmark(context, redpanda, driver,
-                                   (workload, omb_config))
+def omb_runner(
+    context: TestContext,
+    redpanda: RedpandaServiceCloud,
+    driver: str,
+    workload: dict[str, Any],
+    omb_config: ValidatorDict,
+):
+    bench = OpenMessagingBenchmark(context, redpanda, driver, (workload, omb_config))
     # No need to set 'clean' flag as OMB service always cleans node on start
     # On nodes with lower perf start takes longer than 60 sec
     bench.start(timeout_sec=120)
@@ -221,25 +246,26 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
     def __init__(self, test_ctx: TestContext, *args: Any, **kwargs: Any):
         self._ctx = test_ctx
 
-        super(HighThroughputTest, self).__init__(test_context=test_ctx,
-                                                 *args,
-                                                 node_prealloc_count=3,
-                                                 **kwargs)
+        super(HighThroughputTest, self).__init__(
+            test_context=test_ctx, *args, node_prealloc_count=3, **kwargs
+        )
 
         # Load install pack and check profile
         install_pack = self.redpanda.get_install_pack()
-        self.logger.info(f"Loaded install pack '{install_pack['version']}': "
-                         f"Redpanda v{install_pack['redpanda_version']}, "
-                         f"created at '{install_pack['created_at']}'")
+        self.logger.info(
+            f"Loaded install pack '{install_pack['version']}': "
+            f"Redpanda v{install_pack['redpanda_version']}, "
+            f"created at '{install_pack['created_at']}'"
+        )
 
         config_profile = self.redpanda.config_profile
-        cluster_config = config_profile['cluster_config']
+        cluster_config = config_profile["cluster_config"]
 
-        self._num_brokers = config_profile['nodes_count']
-        self._cluster_config_log_segment_size = int(
-            cluster_config['log_segment_size'])
+        self._num_brokers = config_profile["nodes_count"]
+        self._cluster_config_log_segment_size = int(cluster_config["log_segment_size"])
         self._memory_per_broker = get_machine_info(
-            config_profile['machine_type']).memory
+            config_profile["machine_type"]
+        ).memory
 
         if self.redpanda.is_operator_v2_cluster():
             self.operator_version = 2
@@ -259,15 +285,15 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         fact that the partition allocator isn't guaranteed to perfectly distribute
         the partitions across all shards evenly.
         """
-        self._partitions_upper_limit = int(tier_product.max_partition_count *
-                                           0.8)
+        self._partitions_upper_limit = int(tier_product.max_partition_count * 0.8)
         self._partitions_min = tier_product.max_partition_count // 50
         self._advertised_max_ingress = tier_product.max_ingress
         self._advertised_max_egress = tier_product.max_egress
         self._advertised_max_client_count = tier_product.max_connections_count
 
         test_ctx.logger.info(
-            f"config profile {self.config_profile_name}: {config_profile}")
+            f"config profile {self.config_profile_name}: {config_profile}"
+        )
 
         self.rpk = RpkTool(self.redpanda)
 
@@ -282,63 +308,61 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         # traffic as well
         _half_ingress_rate = self._advertised_max_ingress / 2
         self.msg_timeout = int(
-            self.msg_count /
-            (_half_ingress_rate / self.msg_size / self._num_brokers))
+            self.msg_count / (_half_ingress_rate / self.msg_size / self._num_brokers)
+        )
         # Increase calculated timeout by 2
         self.msg_timeout *= 2
         # resources
         self.resources: list[dict[str, Any]] = []
 
         # list of systemd services on the agent
-        self._agent_services = [
-            'redpanda-agent.service', 'redpanda-agent-boot.service'
-        ]
+        self._agent_services = ["redpanda-agent.service", "redpanda-agent-boot.service"]
         if self.redpanda._cloud_cluster.config.provider == PROVIDER_AWS:
-            self._agent_services.append('redpanda-agent-init.service')
+            self._agent_services.append("redpanda-agent-init.service")
 
-    def _make_workload(self,
-                       target_seconds: int,
-                       message_size: int = DEFAULT_MESSAGE_SIZE):
+    def _make_workload(
+        self, target_seconds: int, message_size: int = DEFAULT_MESSAGE_SIZE
+    ):
         """Make a time-based workload, i.e., a workload that will run for about the expected time."""
 
         # The basic assumption is that we run at full ingress speed for the workload
         target_count = math.ceil(
-            float(target_seconds) * self._advertised_max_ingress /
-            message_size)
+            float(target_seconds) * self._advertised_max_ingress / message_size
+        )
 
         # Timeout is 4x the nominal amount of time this would take, plus a buffer of 5 seconds
         # for startup time.
         timeout = target_seconds * 4 + 5
 
-        return ProduceWorkload(target_count, self._advertised_max_ingress,
-                               timeout)
+        return ProduceWorkload(target_count, self._advertised_max_ingress, timeout)
 
     def _add_resource_tracking(self, type: str, resource: Any):
         self.resources.append({"type": type, "spec": resource})
 
-    def _create_topic_spec(self,
-                           partitions: int | None = None,
-                           replicas: int | None = None):
+    def _create_topic_spec(
+        self, partitions: int | None = None, replicas: int | None = None
+    ):
         # defaulting to max partitions
         _partitions = self._partitions_upper_limit if partitions is None else partitions
         _replicas = 3 if replicas is None else replicas
-        _spec = TopicSpec(partition_count=_partitions,
-                          replication_factor=_replicas,
-                          retention_bytes=-1)
+        _spec = TopicSpec(
+            partition_count=_partitions,
+            replication_factor=_replicas,
+            retention_bytes=-1,
+        )
         self.topics = [_spec]
         self._add_resource_tracking("topic", _spec)
 
-    def _create_default_topics(self,
-                               num_partitions: int | None = None,
-                               num_replicas: int | None = None):
-        self._create_topic_spec(partitions=num_partitions,
-                                replicas=num_replicas)
+    def _create_default_topics(
+        self, num_partitions: int | None = None, num_replicas: int | None = None
+    ):
+        self._create_topic_spec(partitions=num_partitions, replicas=num_replicas)
         self._create_initial_topics()
 
     def _clean_resources(self):
         for item in self.resources:
-            if item['type'] == 'topic':
-                self.rpk.delete_topic(item['spec'].name)
+            if item["type"] == "topic":
+                self.rpk.delete_topic(item["spec"].name)
         self.redpanda.clean_cluster()
 
     @cluster(num_nodes=0)
@@ -362,23 +386,26 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in self._ctx.globals:
             self._clean_resources()
 
-    def load_many_segments(self,
-                           target_segments=None,
-                           timeout_segments=None,
-                           num_segments_per_partition=100):
+    def load_many_segments(
+        self,
+        target_segments=None,
+        timeout_segments=None,
+        num_segments_per_partition=100,
+    ):
         """
         This methods intended use is to pre-load the cluster (and S3) with
         small segments to bootstrap a test environment that would stress
         the tiered storage subsystem.
-        
+
         Parameters:
-        - target_segments: Optional. The number of segments you want to create. 
+        - target_segments: Optional. The number of segments you want to create.
         If not specified, the function will use a default value suitable for the test.
         - timeout_secs: Optional. The maximum time to wait for the segments to be generated.
         If not specified, the function will estimate the time based on the data size and ingress rate.
         - num_segments_per_partition: Optional. The number of segments to create per partition.
         Default value is 100.
         """
+
         def _check_cloud_segments(target_segments):
             # variation of si_utils function 'nodes_report_cloud_segments'
             # but this one throws error when Public metrics not available
@@ -386,7 +413,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             try:
                 num_segments = self.redpanda.metric_sum(
                     "redpanda_cloud_storage_segments",
-                    metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+                    metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+                )
                 self.redpanda.logger.info(
                     f"Cluster metrics report {num_segments} / {target_segments} cloud segments"
                 )
@@ -405,60 +433,73 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         # Use half upper limit for projected number of segments in the cloud for 100% messages produced
         projected_cloud_segments = num_segments_per_partition * (
-            self._partitions_upper_limit // 2)
+            self._partitions_upper_limit // 2
+        )
         total_bytes_to_produce = projected_cloud_segments * cloud_segment_size
         total_messages = int((total_bytes_to_produce / self.msg_size) * 1.2)
         self.redpanda.logger.info(
             f"Total bytes: {total_bytes_to_produce}, "
             f"total messages: {total_messages}, "
-            f"target segments: {projected_cloud_segments}")
+            f"target segments: {projected_cloud_segments}"
+        )
         assert cloud_segment_size >= self.msg_size
-        producer = KgoVerifierProducer(self.test_context, self.redpanda,
-                                       self.topic, self.msg_size,
-                                       total_messages)
+        producer = KgoVerifierProducer(
+            self.test_context, self.redpanda, self.topic, self.msg_size, total_messages
+        )
 
-        self.adjust_topic_segment_properties(cloud_segment_size,
-                                             cloud_segment_size * 2)
+        self.adjust_topic_segment_properties(cloud_segment_size, cloud_segment_size * 2)
 
         # Wait for at least as long as it would take to produce the data to the cluster
         # at the given tiers expected ingress rate. Add in a little more time to account
         # for any network hiccups or transitent errors
         estimated_produce_time_secs = int(
-            (total_bytes_to_produce / self._advertised_max_ingress) * 1.2)
+            (total_bytes_to_produce / self._advertised_max_ingress) * 1.2
+        )
         # Use the provided timeout or fall back to the estimated production time if not specified
         timeout_secs = timeout_segments or estimated_produce_time_secs
         # Use sensible target cloud segments number
         # based on ingress rate and amount of data can be produced in 10 min (or custom timeout)
         # on current tier
-        target_cloud_segments = self._advertised_max_ingress // cloud_segment_size * timeout_secs // 4
+        target_cloud_segments = (
+            self._advertised_max_ingress // cloud_segment_size * timeout_secs // 4
+        )
         # Determine the target number of segments
         target_segments = target_segments or target_cloud_segments
 
         try:
             producer.start()
-            wait_until(lambda: _check_cloud_segments(target_segments),
-                       timeout_sec=timeout_secs,
-                       backoff_sec=5)
+            wait_until(
+                lambda: _check_cloud_segments(target_segments),
+                timeout_sec=timeout_secs,
+                backoff_sec=5,
+            )
         finally:
             producer.stop()
             producer.wait(timeout_sec=600)
 
         # Once some segments are generated, configure the topic to use more
         # realistic sizes.
-        retention_bytes = int(self._advertised_max_ingress * 6 * hours /
-                              self._partitions_upper_limit)
+        retention_bytes = int(
+            self._advertised_max_ingress * 6 * hours / self._partitions_upper_limit
+        )
         # adjust log segment size to half of what is configured for the tier
         self.adjust_topic_segment_properties(
-            self._cluster_config_log_segment_size // 2, retention_bytes)
+            self._cluster_config_log_segment_size // 2, retention_bytes
+        )
 
-    def adjust_topic_segment_properties(self, segment_bytes: int,
-                                        retention_local_bytes: int):
-        self.rpk.alter_topic_config(self.topic,
-                                    TopicSpec.PROPERTY_SEGMENT_SIZE,
-                                    max(self.min_segment_size, segment_bytes))
+    def adjust_topic_segment_properties(
+        self, segment_bytes: int, retention_local_bytes: int
+    ):
         self.rpk.alter_topic_config(
-            self.topic, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
-            retention_local_bytes)
+            self.topic,
+            TopicSpec.PROPERTY_SEGMENT_SIZE,
+            max(self.min_segment_size, segment_bytes),
+        )
+        self.rpk.alter_topic_config(
+            self.topic,
+            TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
+            retention_local_bytes,
+        )
 
     def get_node(self):
         idx = random.randrange(len(self.cluster.nodes))
@@ -473,10 +514,14 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         # create default topics
         self._create_default_topics()
         # Generate traffic
-        with traffic_generator(self.test_context, self.redpanda,
-                               self._advertised_max_ingress,
-                               self._advertised_max_egress, self.topic,
-                               self.msg_size) as _:
+        with traffic_generator(
+            self.test_context,
+            self.redpanda,
+            self._advertised_max_ingress,
+            self._advertised_max_egress,
+            self.topic,
+            self.msg_size,
+        ) as _:
             # Test will assert if advertised throughput isn't met
             time.sleep(15)
         self.redpanda.assert_cluster_is_reusable()
@@ -488,8 +533,11 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                 _current = int(
                     node.account.ssh_output(
                         "netstat -pan -t tcp | grep ESTABLISHED "
-                        "| grep ':9092' | grep 'client-swarm' | wc -l").decode(
-                            "utf-8").strip())
+                        "| grep ':9092' | grep 'client-swarm' | wc -l"
+                    )
+                    .decode("utf-8")
+                    .strip()
+                )
                 _list.append(_current)
         return _list
 
@@ -525,12 +573,14 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         # setup ProducerSwarm parameters
         producer_kwargs = {}
-        producer_kwargs['min_record_size'] = 64
-        producer_kwargs['max_record_size'] = 64
+        producer_kwargs["min_record_size"] = 64
+        producer_kwargs["max_record_size"] = 64
 
-        effective_msg_size = producer_kwargs['min_record_size'] + (
-            producer_kwargs['max_record_size'] -
-            producer_kwargs['min_record_size']) // 2
+        effective_msg_size = (
+            producer_kwargs["min_record_size"]
+            + (producer_kwargs["max_record_size"] - producer_kwargs["min_record_size"])
+            // 2
+        )
 
         # connections per node at max (tier-5) is ~3700
         # Account for the metadata traffic of 1%
@@ -544,39 +594,42 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         # single producer runtime
         # Roughly every 500 connection needs 30 seconds to ramp up on 3 cluster nodes
         # 1000 -> on 6 cluster nodes
-        _tier_coefficient = (_target_per_node // 1000) + (
-            (_target_per_node % 1000) > 0)
+        _tier_coefficient = (_target_per_node // 1000) + ((_target_per_node % 1000) > 0)
         target_runtime_s = 30 * _tier_coefficient + 30
         # for 50 MiB total messag30e count is 3060
         records_per_producer = messages_per_sec_per_producer * target_runtime_s
 
-        producer_kwargs[
-            'messages_per_second_per_producer'] = messages_per_sec_per_producer
+        producer_kwargs["messages_per_second_per_producer"] = (
+            messages_per_sec_per_producer
+        )
 
         # create default topics
         # Use lower partitions limit
-        self._create_default_topics(num_partitions=self._partitions_min,
-                                    num_replicas=3)
+        self._create_default_topics(num_partitions=self._partitions_min, num_replicas=3)
 
         # Initialize all 3 nodes with proper values
         swarm = []
         for idx in range(len(self.cluster.nodes), 0, -1):
             # First one will be longest, last shortest
-            _swarm_node = ProducerSwarm(self._ctx,
-                                        self.redpanda,
-                                        self.topic,
-                                        int(_target_per_node),
-                                        int(records_per_producer),
-                                        timeout_ms=PRODUCER_TIMEOUT_MS,
-                                        **producer_kwargs)
+            _swarm_node = ProducerSwarm(
+                self._ctx,
+                self.redpanda,
+                self.topic,
+                int(_target_per_node),
+                int(records_per_producer),
+                timeout_ms=PRODUCER_TIMEOUT_MS,
+                **producer_kwargs,
+            )
 
             swarm.append(_swarm_node)
 
         # Start producing
-        self.logger.warn(f"Start swarming from {len(swarm)} nodes: "
-                         f"{_target_per_node} connections per node, "
-                         f"{records_per_producer} msg each producer, "
-                         f"{_target_total} total connections expected")
+        self.logger.warn(
+            f"Start swarming from {len(swarm)} nodes: "
+            f"{_target_per_node} connections per node, "
+            f"{records_per_producer} msg each producer, "
+            f"{_target_total} total connections expected"
+        )
         # Total connections
         _total = 0
         connectMax = 0
@@ -592,7 +645,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             # Create a thread with function that starts a swarm.
             # Threading here will not block other nodes from starting
             # No delay or anything needed
-            t = Thread(target=swarm_start, args=(swarm[idx - 1], ))
+            t = Thread(target=swarm_start, args=(swarm[idx - 1],))
             t.start()
             threads.append(t)
             # Next swarm node
@@ -610,15 +663,18 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             _total = sum(_connections)
             _elapsed = _now - _start
             _elapsed_str = "{:>5,.1f}s".format(_elapsed)
-            self.logger.warn(f"{_elapsed_str}: {_total:>6} connections "
-                             f"({'/'.join(map(str, _connections))}) ")
+            self.logger.warn(
+                f"{_elapsed_str}: {_total:>6} connections "
+                f"({'/'.join(map(str, _connections))}) "
+            )
             # Save maximum
             connectMax = _total if connectMax < _total else connectMax
             # if at least two nodes finished, exit
             if (len(swarm) - calc_alive_swarm_nodes(swarm)) > 1:
                 break
-            elif _elapsed > FINISH_TIMEOUT_SEC and \
-                _total < (self._advertised_max_client_count * 0.01):
+            elif _elapsed > FINISH_TIMEOUT_SEC and _total < (
+                self._advertised_max_client_count * 0.01
+            ):
                 # Number of connections after timeout is less than 1%
                 break
             # sleep before next measurement
@@ -626,7 +682,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         # Message count is producers * total connections
         expected_msg_count = records_per_producer * int(
-            self._advertised_max_client_count)
+            self._advertised_max_client_count
+        )
         # Since there is -1% on connections target set
         # Message count should be < expected * 0.99
         # or _target_total connections number * per producer
@@ -646,10 +703,12 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             _last_hwm = _hwm
             _hwm = self._get_hwm_for_default_topic()
             _percent = _hwm / expected_msg_count * 100 if _hwm > 0 else 0
-            self.logger.warn(f"{_elapsed}: Swarm nodes active: {_alive}, "
-                             f"total: {_total}, msg produced: {_hwm} "
-                             f"({_percent:.2f}%), "
-                             f"expected: {expected_msg_count}")
+            self.logger.warn(
+                f"{_elapsed}: Swarm nodes active: {_alive}, "
+                f"total: {_total}, msg produced: {_hwm} "
+                f"({_percent:.2f}%), "
+                f"expected: {expected_msg_count}"
+            )
             # Fail safe checks
             if _hwm > reasonably_expected:
                 # Success
@@ -681,8 +740,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         # Assert that target connection count is reached
         self.logger.warn(f"Reached {connectMax} of {_target_total} needed")
-        assert connectMax >= _target_total, \
+        assert connectMax >= _target_total, (
             f"Expected >{_target_total} connections, actual {connectMax}"
+        )
 
         # Check message count
         _hwm = self._get_hwm_for_default_topic()
@@ -690,17 +750,20 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         # Check that all messages make it through
         _percent = _hwm / expected_msg_count * 100 if _hwm > 0 else 0
         _rpercent = reasonably_expected / expected_msg_count * 100
-        self.logger.warn(f"Expected more than {reasonably_expected} "
-                         f"({_rpercent}%) messages "
-                         f"out of {expected_msg_count}, actual {_hwm} "
-                         f"({_percent:.2f}%)")
-        assert _hwm >= reasonably_expected, \
+        self.logger.warn(
+            f"Expected more than {reasonably_expected} "
+            f"({_rpercent}%) messages "
+            f"out of {expected_msg_count}, actual {_hwm} "
+            f"({_percent:.2f}%)"
+        )
+        assert _hwm >= reasonably_expected, (
             f"Expected >{reasonably_expected} messages, actual {_hwm}"
+        )
 
         self.redpanda.assert_cluster_is_reusable()
 
     COMBO_PRELOADED_LOG_ALLOW_LIST = [
-        re.compile('storage - .* - Stopping parser, short read. .*')
+        re.compile("storage - .* - Stopping parser, short read. .*")
     ] + RESTART_LOG_ALLOW_LIST
 
     @cluster(num_nodes=2, log_allow_list=COMBO_PRELOADED_LOG_ALLOW_LIST)
@@ -717,13 +780,16 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self._create_default_topics()
 
         # Generate a realistic number of segments per partition.
-        with traffic_generator(self.test_context, self.redpanda,
-                               self._advertised_max_ingress,
-                               self._advertised_max_egress, self.topic,
-                               self.msg_size) as tgen:
+        with traffic_generator(
+            self.test_context,
+            self.redpanda,
+            self._advertised_max_ingress,
+            self._advertised_max_egress,
+            self.topic,
+            self.msg_size,
+        ) as tgen:
             # Wait until theres some traffic
-            tgen.wait_for_traffic(acked=self.msg_count,
-                                  timeout_sec=self.msg_timeout)
+            tgen.wait_for_traffic(acked=self.msg_count, timeout_sec=self.msg_timeout)
 
             # Run a rolling restart.
             self.redpanda.rolling_restart_pods()
@@ -733,8 +799,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
             # Stop a node, wait for enough time for movement to occur, then
             # restart.
-            self.stage_stop_wait_start(forced_stop=False,
-                                       downtime=self.unavailable_timeout)
+            self.stage_stop_wait_start(
+                forced_stop=False, downtime=self.unavailable_timeout
+            )
 
             # Block traffic to/from one node.
             self.stage_block_node_traffic()
@@ -742,8 +809,10 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self.redpanda.assert_cluster_is_reusable()
 
     NOS3_LOG_ALLOW_LIST = [
-        re.compile("s3 - .* - Accessing .*, unexpected REST API error "
-                   " detected, code: RequestTimeout"),
+        re.compile(
+            "s3 - .* - Accessing .*, unexpected REST API error "
+            " detected, code: RequestTimeout"
+        ),
         re.compile("cloud_storage - .* - Exceeded cache size limit!"),
     ]
 
@@ -753,18 +822,13 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self.logger.info(f"Isolating node {node.name}")
         with FailureInjector(self.redpanda) as fi:
             fi.inject_failure(FailureSpec(FailureSpec.FAILURE_ISOLATE, node))
-            self.logger.info(
-                f"Running for {wait_time}s while failure injected")
+            self.logger.info(f"Running for {wait_time}s while failure injected")
             time.sleep(wait_time)
 
-        self.logger.info(
-            f"Running for {wait_time}s after injected failure removed")
+        self.logger.info(f"Running for {wait_time}s after injected failure removed")
         time.sleep(wait_time)
-        self.logger.info(
-            f"Waiting for the cluster to return to a healthy state")
-        wait_until(self.redpanda.cluster_healthy(),
-                   timeout_sec=600,
-                   backoff_sec=1)
+        self.logger.info(f"Waiting for the cluster to return to a healthy state")
+        wait_until(self.redpanda.cluster_healthy(), timeout_sec=600, backoff_sec=1)
 
     def stage_stop_wait_start(self, forced_stop: bool, downtime: int):
         node = self.get_node()
@@ -772,20 +836,19 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             f"Stopping node {node.name} {'ungracefully' if forced_stop else 'gracefully'}"
         )
         assert False, "stop_node not valid for Cloud"
-        self.redpanda.stop_node(node,
-                                forced=forced_stop,
-                                timeout=60 if forced_stop else 180)
+        self.redpanda.stop_node(
+            node, forced=forced_stop, timeout=60 if forced_stop else 180
+        )
 
         self.logger.info(f"Node downtime {downtime} s")
         time.sleep(downtime)
 
         restart_timeout = 300 + int(900 * downtime / 60)
-        self.logger.info(
-            f"Restarting node {node.name} for {restart_timeout} s")
+        self.logger.info(f"Restarting node {node.name} for {restart_timeout} s")
         self.redpanda.start_node(node, timeout=600)
-        wait_until(self.redpanda.cluster_healthy(),
-                   timeout_sec=restart_timeout,
-                   backoff_sec=1)
+        wait_until(
+            self.redpanda.cluster_healthy(), timeout_sec=restart_timeout, backoff_sec=1
+        )
 
     @cluster(num_nodes=2, log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_disrupt_cloud_storage(self):
@@ -801,8 +864,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         properties/policies
         """
         if self.redpanda.cloud_type == CLOUD_TYPE_FMC:
-            self.logger.warn(
-                'This test is designed for BYOC only, this is FMC')
+            self.logger.warn("This test is designed for BYOC only, this is FMC")
             return
 
         # create default topics
@@ -810,15 +872,19 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         segment_size = self.min_segment_size
         self.adjust_topic_segment_properties(
-            segment_bytes=segment_size, retention_local_bytes=segment_size)
+            segment_bytes=segment_size, retention_local_bytes=segment_size
+        )
 
-        with traffic_generator(self.test_context, self.redpanda,
-                               self._advertised_max_ingress,
-                               self._advertised_max_egress, self.topic,
-                               self.msg_size) as tgen:
+        with traffic_generator(
+            self.test_context,
+            self.redpanda,
+            self._advertised_max_ingress,
+            self._advertised_max_egress,
+            self.topic,
+            self.msg_size,
+        ) as tgen:
             # Wait until theres some traffic
-            tgen.wait_for_traffic(acked=self.msg_count,
-                                  timeout_sec=self.msg_timeout)
+            tgen.wait_for_traffic(acked=self.msg_count, timeout_sec=self.msg_timeout)
             self.logger.info(f"Topic is: {self.topic}")
             # S3 up -> down -> up
             self.stage_block_s3(self.topic)
@@ -828,9 +894,11 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
     def _cloud_storage_no_new_errors(self, redpanda, logger=None):
         num_errors = redpanda.metric_sum(
             "redpanda_cloud_storage_errors_total",
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
-        increase = (num_errors -
-                    self.last_num_errors) if self.last_num_errors > 0 else 0
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+        )
+        increase = (
+            (num_errors - self.last_num_errors) if self.last_num_errors > 0 else 0
+        )
         self.last_num_errors = num_errors
         if logger:
             logger.info(
@@ -842,42 +910,47 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self.logger.info(
             f"Getting the first 100 segments into the cloud for specific topic"
         )
-        wait_until(lambda: nodes_report_cloud_segments(self.redpanda, 100, self
-                                                       .topic),
-                   timeout_sec=600,
-                   backoff_sec=5)
+        wait_until(
+            lambda: nodes_report_cloud_segments(self.redpanda, 100, self.topic),
+            timeout_sec=600,
+            backoff_sec=5,
+        )
         self.logger.info(f"Blocking S3 traffic for all nodes")
         self.last_num_errors = 0
 
         with cloudv2_object_store_blocked(self.redpanda, self.logger):
             # wait for the first cloud related failure + one minute
-            wait_until(lambda: not self._cloud_storage_no_new_errors(
-                self.redpanda, self.logger),
-                       timeout_sec=600,
-                       backoff_sec=10)
+            wait_until(
+                lambda: not self._cloud_storage_no_new_errors(
+                    self.redpanda, self.logger
+                ),
+                timeout_sec=600,
+                backoff_sec=10,
+            )
             time.sleep(60)
 
         # make sure nothing is crashed
-        wait_until(self.redpanda.cluster_healthy(),
-                   timeout_sec=60,
-                   backoff_sec=1)
+        wait_until(self.redpanda.cluster_healthy(), timeout_sec=60, backoff_sec=1)
         self.logger.info(f"Waiting for S3 errors to cease")
-        wait_until(lambda: self._cloud_storage_no_new_errors(
-            self.redpanda, self.logger),
-                   timeout_sec=600,
-                   backoff_sec=20)
+        wait_until(
+            lambda: self._cloud_storage_no_new_errors(self.redpanda, self.logger),
+            timeout_sec=600,
+            backoff_sec=20,
+        )
 
     def _wait_for_traffic(self, producer, acked, timeout=1800):
-        assert timeout > 0, f'non-positive timeout: {timeout}'
+        assert timeout > 0, f"non-positive timeout: {timeout}"
         try:
             start_time = time.time()
+            self.logger.info(f"Waiting for {acked} messages to produced in {timeout}s")
+            wait_until(
+                lambda: producer.produce_status.acked > acked,
+                timeout_sec=timeout,
+                backoff_sec=5.0,
+            )
             self.logger.info(
-                f"Waiting for {acked} messages to produced in {timeout}s")
-            wait_until(lambda: producer.produce_status.acked > acked,
-                       timeout_sec=timeout,
-                       backoff_sec=5.0)
-            self.logger.info(
-                f"{acked} messages produced in {time.time() - start_time}s")
+                f"{acked} messages produced in {time.time() - start_time}s"
+            )
         except TimeoutException:
             _throughput = producer.produce_status.acked * self.msg_size / timeout / 1e6
             raise RuntimeError(
@@ -889,67 +962,75 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         # currently, all operator V2 clusters use a hardcoded cluster
         # name of 'redpanda-broker'
         if self.operator_version == 2:
-            return 'redpanda-broker'
-        return f'rp-{self.redpanda._cloud_cluster.cluster_id}'
+            return "redpanda-broker"
+        return f"rp-{self.redpanda._cloud_cluster.cluster_id}"
 
     # returns a tuple of (replicas, readyReplicas)
     def get_cluster_replicas(self, cluster_name: str) -> tuple[int, int]:
         if self.operator_version == 2:
             return self._get_cluster_replicas_v2(
-                cluster_name), self._get_cluster_ready_replicas_v2(
-                    cluster_name)
+                cluster_name
+            ), self._get_cluster_ready_replicas_v2(cluster_name)
         return self._get_cluster_replicas(
-            cluster_name), self._get_cluster_ready_replicas(cluster_name)
+            cluster_name
+        ), self._get_cluster_ready_replicas(cluster_name)
 
     # sets new target replica count for the cluster
     def set_cluster_replicas(self, cluster_name: str, new_replicas: int):
         # for operator V2, we scale the statefulset because that seems
         # to be the only way that works
         if self.operator_version == 2:
-            self.redpanda.kubectl.cmd([
-                'scale', '-n=redpanda', 'statefulset', 'redpanda-broker',
-                f'--replicas={new_replicas}'
-            ])
+            self.redpanda.kubectl.cmd(
+                [
+                    "scale",
+                    "-n=redpanda",
+                    "statefulset",
+                    "redpanda-broker",
+                    f"--replicas={new_replicas}",
+                ]
+            )
             return
 
         # for operator v1, we patch the cluster CRD instead
-        patch = [{
-            'op': 'replace',
-            'path': '/spec/replicas',
-            'value': new_replicas
-        }]
+        patch = [{"op": "replace", "path": "/spec/replicas", "value": new_replicas}]
         patch_str = json.dumps(patch)
 
         # kubectl patch -n=redpanda cluster rp-clkd0n22nfn1jf7vd9t0 --type=json -p='[{"op":"replace","path":"/spec/replicas","value":4}]'
-        self.redpanda.kubectl.cmd([
-            'patch', '-n=redpanda', 'cluster', cluster_name, '--type=json',
-            f"-p='{patch_str}'"
-        ])
+        self.redpanda.kubectl.cmd(
+            [
+                "patch",
+                "-n=redpanda",
+                "cluster",
+                cluster_name,
+                "--type=json",
+                f"-p='{patch_str}'",
+            ]
+        )
 
     # kubectl will sometimes successfully return an empty string
     # instead of the actual integer value we want when we request
     # a value for a specific field like `.status.replicas` which
     # necessitates some sort of retry logic to reduce test flakiness.
     # see DEVPROD-2135 for links to builds with these failures.
-    def _kube_autoretry_int(self,
-                            command: list[str],
-                            max_retries: int = 10) -> int | None:
-        result = ''
+    def _kube_autoretry_int(
+        self, command: list[str], max_retries: int = 10
+    ) -> int | None:
+        result = ""
         retry_count = 0
         while retry_count < max_retries:
             result = self.redpanda.kubectl.cmd(command)
-            if type(result) is str and result != '':
+            if type(result) is str and result != "":
                 return int(result)
 
             retry_count += 1
             if retry_count == max_retries:
                 raise TimeoutError(
-                    'DEVPROD-2135',
-                    f'hit max retries ({max_retries}) for `kubectl {command}`',
-                    f'last attempt returned {type(result)}: `{result}`')
+                    "DEVPROD-2135",
+                    f"hit max retries ({max_retries}) for `kubectl {command}`",
+                    f"last attempt returned {type(result)}: `{result}`",
+                )
 
-            self.logger.debug(
-                f'retrying `kubectl {command}` attempt #{retry_count}')
+            self.logger.debug(f"retrying `kubectl {command}` attempt #{retry_count}")
             time.sleep(0.50)
 
     # waits until the Redpanda broker replica count reaches the target value
@@ -962,111 +1043,162 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
     # operator V1
     def _get_cluster_replicas(self, cluster_name: str):
         # kubectl get cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda -o=jsonpath='{.status.replicas}'
-        return self._kube_autoretry_int([
-            'get', 'cluster', cluster_name, '-n=redpanda',
-            "-o=jsonpath='{.status.replicas}'"
-        ])
+        return self._kube_autoretry_int(
+            [
+                "get",
+                "cluster",
+                cluster_name,
+                "-n=redpanda",
+                "-o=jsonpath='{.status.replicas}'",
+            ]
+        )
 
     # operator V1
     def _get_cluster_ready_replicas(self, cluster_name: str):
         # kubectl get cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda -o=jsonpath='{.status.readyReplicas}'
-        return self._kube_autoretry_int([
-            'get', 'cluster', cluster_name, '-n=redpanda',
-            "-o=jsonpath='{.status.readyReplicas}'"
-        ])
+        return self._kube_autoretry_int(
+            [
+                "get",
+                "cluster",
+                cluster_name,
+                "-n=redpanda",
+                "-o=jsonpath='{.status.readyReplicas}'",
+            ]
+        )
 
     # operator v2
     def _get_cluster_replicas_v2(self, cluster_name: str):
         # kubectl get statefulset redpanda-broker -n=redpanda -o=jsonpath='{.status.readyReplicas}'
-        return self._kube_autoretry_int([
-            'get', 'statefulset', cluster_name, '-n=redpanda',
-            "-o=jsonpath='{.status.replicas}'"
-        ])
+        return self._kube_autoretry_int(
+            [
+                "get",
+                "statefulset",
+                cluster_name,
+                "-n=redpanda",
+                "-o=jsonpath='{.status.replicas}'",
+            ]
+        )
 
     # operator V2
     def _get_cluster_ready_replicas_v2(self, cluster_name: str):
         # kubectl get statefulset redpanda-broker -n=redpanda -o=jsonpath='{.status.readyReplicas}'
-        return self._kube_autoretry_int([
-            'get', 'statefulset', cluster_name, '-n=redpanda',
-            "-o=jsonpath='{.status.readyReplicas}'"
-        ])
+        return self._kube_autoretry_int(
+            [
+                "get",
+                "statefulset",
+                cluster_name,
+                "-n=redpanda",
+                "-o=jsonpath='{.status.readyReplicas}'",
+            ]
+        )
 
     # operator V1
     def _wait_cluster_ready_replicas(self, cluster_name, ready_replicas):
         # kubectl wait cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda --for=jsonpath='{.status.readyReplicas}'=4 --timeout=900s
-        return self.redpanda.kubectl.cmd([
-            'wait', 'cluster', cluster_name, '-n=redpanda',
-            "--for=jsonpath='{.status.readyReplicas}'=" + str(ready_replicas),
-            '--timeout=1200s'
-        ])
+        return self.redpanda.kubectl.cmd(
+            [
+                "wait",
+                "cluster",
+                cluster_name,
+                "-n=redpanda",
+                "--for=jsonpath='{.status.readyReplicas}'=" + str(ready_replicas),
+                "--timeout=1200s",
+            ]
+        )
 
     # operator V2
     def _wait_cluster_ready_replicas_v2(self, cluster_name, ready_replicas):
         # kubectl wait statefulset redpanda-broker -n=redpanda --for=condition=Ready --timeout=900s
-        return self.redpanda.kubectl.cmd([
-            'wait', 'redpanda', cluster_name, '-n=redpanda',
-            '--for=condition=Ready', '--timeout=900s'
-        ])
+        return self.redpanda.kubectl.cmd(
+            [
+                "wait",
+                "redpanda",
+                cluster_name,
+                "-n=redpanda",
+                "--for=condition=Ready",
+                "--timeout=900s",
+            ]
+        )
 
     def _disable_agent_services(self):
-        self.logger.debug(f'disabling agent services')
+        self.logger.debug(f"disabling agent services")
         # sudo systemctl disable --now redpanda-agent.service redpanda-agent-boot.service redpanda-agent-init.service
         self.redpanda.cloud_agent_ssh(
-            ['sudo', 'systemctl', 'disable', '--now'] + self._agent_services)
+            ["sudo", "systemctl", "disable", "--now"] + self._agent_services
+        )
 
     def _enable_agent_services(self):
-        self.logger.debug(f'enabling agent services')
+        self.logger.debug(f"enabling agent services")
         # sudo systemctl enable --now redpanda-agent.service redpanda-agent-boot.service redpanda-agent-init.service
         self.redpanda.cloud_agent_ssh(
-            ['sudo', 'systemctl', 'enable', '--now'] + self._agent_services)
+            ["sudo", "systemctl", "enable", "--now"] + self._agent_services
+        )
 
     def _patch_deployment_args(self, old, new):
-        self.logger.debug('getting list of args from deployment')
+        self.logger.debug("getting list of args from deployment")
         # kubectl get deployment redpanda-controller-manager -n=redpanda-system -o=jsonpath='{.spec.template.spec.containers[0].args}'
-        deployment_args = self.redpanda.kubectl.cmd([
-            'get', 'deployment', 'redpanda-controller-manager',
-            '-n=redpanda-system',
-            "-o=jsonpath='{.spec.template.spec.containers[0].args}'"
-        ])
-        assert type(
-            deployment_args
-        ) is str, f'type of deployment_args is {type(deployment_args)} instead of string'
+        deployment_args = self.redpanda.kubectl.cmd(
+            [
+                "get",
+                "deployment",
+                "redpanda-controller-manager",
+                "-n=redpanda-system",
+                "-o=jsonpath='{.spec.template.spec.containers[0].args}'",
+            ]
+        )
+        assert type(deployment_args) is str, (
+            f"type of deployment_args is {type(deployment_args)} instead of string"
+        )
 
-        self.logger.debug('patching deployment args with search and replace')
+        self.logger.debug("patching deployment args with search and replace")
         deployment_args = deployment_args.replace(old, new, 1)
-        patch = [{
-            'op': 'replace',
-            'path': '/spec/template/spec/containers/0/args',
-            'value': json.loads(deployment_args)
-        }]
+        patch = [
+            {
+                "op": "replace",
+                "path": "/spec/template/spec/containers/0/args",
+                "value": json.loads(deployment_args),
+            }
+        ]
         patch_str = json.dumps(patch)
         # kubectl patch deployment redpanda-controller-manager -n=redpanda-system --type=json \
         #         --patch='[{"op":"replace","path":"/spec/template/spec/containers/0/args","value":["arg1","arg2","etc..."]}]'
-        self.redpanda.kubectl.cmd([
-            'patch', 'deployment', 'redpanda-controller-manager',
-            '-n=redpanda-system', '--type=json', f"-p='{patch_str}'"
-        ])
+        self.redpanda.kubectl.cmd(
+            [
+                "patch",
+                "deployment",
+                "redpanda-controller-manager",
+                "-n=redpanda-system",
+                "--type=json",
+                f"-p='{patch_str}'",
+            ]
+        )
 
-        self.logger.debug('waiting for deployment to become ready after patch')
+        self.logger.debug("waiting for deployment to become ready after patch")
         # kubectl rollout status deployment redpanda-controller-manager -n=redpanda-system --timeout=10m
-        self.redpanda.kubectl.cmd([
-            'rollout', 'status', 'deployment', 'redpanda-controller-manager',
-            '-n=redpanda-system', '--timeout=10m'
-        ])
+        self.redpanda.kubectl.cmd(
+            [
+                "rollout",
+                "status",
+                "deployment",
+                "redpanda-controller-manager",
+                "-n=redpanda-system",
+                "--timeout=10m",
+            ]
+        )
 
     def _delete_cluster_pvc(self, cluster_name, num):
         if self.operator_version == 2:
             # it appears the operator handles nuking the PVC for us in V2
             return
-        pvc_name = f'datadir-{cluster_name}-{num}'
-        self.logger.info(f'deleting pvc {pvc_name}')
+        pvc_name = f"datadir-{cluster_name}-{num}"
+        self.logger.info(f"deleting pvc {pvc_name}")
         # kubectl delete pvc datadir-rp-clkd0n22nfn1jf7vd9t0-4 -n=redpanda
-        self.redpanda.kubectl.cmd(['delete', 'pvc', pvc_name, '-n=redpanda'])
+        self.redpanda.kubectl.cmd(["delete", "pvc", pvc_name, "-n=redpanda"])
 
-        pvc_name = f'shadow-index-cache-{cluster_name}-{num}'
-        self.logger.info(f'deleting pvc {pvc_name}')
+        pvc_name = f"shadow-index-cache-{cluster_name}-{num}"
+        self.logger.info(f"deleting pvc {pvc_name}")
         # kubectl delete pvc shadow-index-cache-rp-clkd0n22nfn1jf7vd9t0-4 -n=redpanda
-        self.redpanda.kubectl.cmd(['delete', 'pvc', pvc_name, '-n=redpanda'])
+        self.redpanda.kubectl.cmd(["delete", "pvc", pvc_name, "-n=redpanda"])
 
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_decommission_and_add(self):
@@ -1077,9 +1209,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         stage.
         """
 
-        self.logger.info(f'verify cluster > 3 nodes')
+        self.logger.info(f"verify cluster > 3 nodes")
         if self._num_brokers <= 3:
-            self.logger.warning('need more than 3 nodes to run test')
+            self.logger.warning("need more than 3 nodes to run test")
             return
 
         # create default topics
@@ -1087,14 +1219,14 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         self.adjust_topic_segment_properties(
             segment_bytes=self.min_segment_size,
-            retention_local_bytes=2 * self.min_segment_size)
+            retention_local_bytes=2 * self.min_segment_size,
+        )
 
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
 
         initial_workload = self._make_workload(10)
-        self.logger.info(
-            f'Starting workload, initial spec: {initial_workload}')
+        self.logger.info(f"Starting workload, initial spec: {initial_workload}")
 
         producer = KgoVerifierProducer(
             self.test_context,
@@ -1103,14 +1235,17 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             msg_size=self.msg_size,
             msg_count=5_000_000_000_000,
             rate_limit_bps=self._advertised_max_ingress,
-            custom_node=[self.preallocated_nodes[0]])
+            custom_node=[self.preallocated_nodes[0]],
+        )
 
         try:
             producer.start()
-            self.logger.info('waiting for traffic…')
-            self._wait_for_traffic(producer,
-                                   initial_workload.msg_count,
-                                   timeout=initial_workload.timeout_seconds)
+            self.logger.info("waiting for traffic…")
+            self._wait_for_traffic(
+                producer,
+                initial_workload.msg_count,
+                timeout=initial_workload.timeout_seconds,
+            )
             self._stage_decommission_and_add()
 
         finally:
@@ -1123,24 +1258,26 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self._disable_agent_services()
 
         if self.operator_version == 1:
-            self._patch_deployment_args('--allow-downscaling=false',
-                                        '--allow-downscaling=true')
+            self._patch_deployment_args(
+                "--allow-downscaling=false", "--allow-downscaling=true"
+            )
 
-        self.logger.info(f'getting replicas from cluster {self.cluster_name}')
+        self.logger.info(f"getting replicas from cluster {self.cluster_name}")
 
-        orig_replicas, orig_ready = self.get_cluster_replicas(
-            self.cluster_name)
-        assert orig_replicas == orig_ready, f'cluster is unstable, replicas expected {orig_replicas} != ready {orig_ready}'
+        orig_replicas, orig_ready = self.get_cluster_replicas(self.cluster_name)
+        assert orig_replicas == orig_ready, (
+            f"cluster is unstable, replicas expected {orig_replicas} != ready {orig_ready}"
+        )
 
         new_replicas = orig_replicas - 1
         self.logger.info(
-            f'decomm by patching cluster {self.cluster_name} with replicas {new_replicas}'
+            f"decomm by patching cluster {self.cluster_name} with replicas {new_replicas}"
         )
 
         self.set_cluster_replicas(self.cluster_name, new_replicas)
 
         self.logger.info(
-            f'waiting for decommissioning of {self.cluster_name} to arrive at {new_replicas}'
+            f"waiting for decommissioning of {self.cluster_name} to arrive at {new_replicas}"
         )
 
         self.wait_cluster_replicas(self.cluster_name, new_replicas)
@@ -1149,55 +1286,59 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self._delete_cluster_pvc(self.cluster_name, new_replicas)
 
         self.logger.info(
-            f'ensuring decommission of {self.cluster_name} reduced replicas to {new_replicas}'
+            f"ensuring decommission of {self.cluster_name} reduced replicas to {new_replicas}"
         )
         _, ready_replicas = self.get_cluster_replicas(self.cluster_name)
-        assert ready_replicas == new_replicas, f'expected: {new_replicas} actual: {ready_replicas}'
+        assert ready_replicas == new_replicas, (
+            f"expected: {new_replicas} actual: {ready_replicas}"
+        )
 
         # skip decomm via broker admin api so it does not conflict with decomm via kubectl
-        #admin = self.redpanda._admin
-        #admin.decommission_broker(pod_id)
-        #waiter = NodeDecommissionWaiter(self.redpanda, pod_id, self.logger, progress_timeout=120)
-        #waiter.wait_for_removal()
-        #self.redpanda.stop_node(pod)
+        # admin = self.redpanda._admin
+        # admin.decommission_broker(pod_id)
+        # waiter = NodeDecommissionWaiter(self.redpanda, pod_id, self.logger, progress_timeout=120)
+        # waiter.wait_for_removal()
+        # self.redpanda.stop_node(pod)
 
         self.logger.info(
-            f'adding new broker by patching cluster {self.cluster_name} with replicas {orig_replicas}'
+            f"adding new broker by patching cluster {self.cluster_name} with replicas {orig_replicas}"
         )
 
         self.set_cluster_replicas(self.cluster_name, orig_replicas)
 
         self.logger.info(
-            f'waiting for commissioning of {self.cluster_name} to arrive at replicas {orig_replicas}'
+            f"waiting for commissioning of {self.cluster_name} to arrive at replicas {orig_replicas}"
         )
         self.wait_cluster_replicas(self.cluster_name, orig_replicas)
 
-        self.logger.info('reenabling agent services')
+        self.logger.info("reenabling agent services")
         self._enable_agent_services()
 
         self.logger.info(
-            f'ensuring commission of {self.cluster_name} restored replicas to {orig_replicas}'
+            f"ensuring commission of {self.cluster_name} restored replicas to {orig_replicas}"
         )
         _, ready_replicas = self.get_cluster_replicas(self.cluster_name)
-        assert ready_replicas == orig_replicas, f'expected ready replicas: {orig_replicas}, actual: {ready_replicas}'
+        assert ready_replicas == orig_replicas, (
+            f"expected ready replicas: {orig_replicas}, actual: {ready_replicas}"
+        )
 
         # skip new node creation so it does not conflict with add via kubectl
-        #self.redpanda.clean_node(pod, preserve_logs=True, preserve_current_install=True)
-        #self.redpanda.start_node(pod, auto_assign_node_id=False, omit_seeds_on_idx_one=False)
-        #wait_until(self.redpanda.cluster_healthy(), timeout_sec=600, backoff_sec=1)
-        #new_node_id = self.redpanda.node_id(pod, force_refresh=True)
+        # self.redpanda.clean_node(pod, preserve_logs=True, preserve_current_install=True)
+        # self.redpanda.start_node(pod, auto_assign_node_id=False, omit_seeds_on_idx_one=False)
+        # wait_until(self.redpanda.cluster_healthy(), timeout_sec=600, backoff_sec=1)
+        # new_node_id = self.redpanda.node_id(pod, force_refresh=True)
 
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_add_and_decommission(self):
-        """Add a new node and then decommission it while under load.
-        """
+        """Add a new node and then decommission it while under load."""
 
         # create default topics
         self._create_default_topics()
 
         self.adjust_topic_segment_properties(
             segment_bytes=self.min_segment_size,
-            retention_local_bytes=2 * self.min_segment_size)
+            retention_local_bytes=2 * self.min_segment_size,
+        )
 
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
@@ -1209,13 +1350,12 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             msg_size=self.msg_size,
             msg_count=5_000_000_000_000,
             rate_limit_bps=self._advertised_max_ingress,
-            custom_node=[self.preallocated_nodes[0]])
+            custom_node=[self.preallocated_nodes[0]],
+        )
 
         try:
             producer.start()
-            self._wait_for_traffic(producer,
-                                   self.msg_count,
-                                   timeout=self.msg_timeout)
+            self._wait_for_traffic(producer, self.msg_count, timeout=self.msg_timeout)
             self._stage_add_and_decommission()
 
         finally:
@@ -1225,38 +1365,41 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self.redpanda.assert_cluster_is_reusable()
 
     def _stage_add_and_decommission(self):
-        orig_replicas, orig_ready = self.get_cluster_replicas(
-            self.cluster_name)
-        assert orig_replicas == orig_ready, f'cluster is unstable, replicas expected {orig_replicas} != ready {orig_ready}'
+        orig_replicas, orig_ready = self.get_cluster_replicas(self.cluster_name)
+        assert orig_replicas == orig_ready, (
+            f"cluster is unstable, replicas expected {orig_replicas} != ready {orig_ready}"
+        )
 
         new_replicas = orig_replicas + 1
 
         self.logger.info(
-            f'scaling out cluster {self.cluster_name} from {orig_replicas} to {new_replicas}'
+            f"scaling out cluster {self.cluster_name} from {orig_replicas} to {new_replicas}"
         )
         self.set_cluster_replicas(self.cluster_name, new_replicas)
 
         self.logger.info(
-            f'waiting for cluster {self.cluster_name} to have ready replicas {new_replicas}'
+            f"waiting for cluster {self.cluster_name} to have ready replicas {new_replicas}"
         )
         self.wait_cluster_replicas(self.cluster_name, new_replicas)
 
         self.logger.info(
-            f'scaling in cluster {self.cluster_name} from {new_replicas} to {orig_replicas}'
+            f"scaling in cluster {self.cluster_name} from {new_replicas} to {orig_replicas}"
         )
         self._disable_agent_services()
         if self.operator_version == 1:
-            self._patch_deployment_args('--allow-downscaling=false',
-                                        '--allow-downscaling=true')
+            self._patch_deployment_args(
+                "--allow-downscaling=false", "--allow-downscaling=true"
+            )
         self.set_cluster_replicas(self.cluster_name, orig_replicas)
         self._delete_cluster_pvc(self.cluster_name, orig_replicas)
         if self.operator_version == 1:
-            self._patch_deployment_args('--allow-downscaling=true',
-                                        '--allow-downscaling=false')
+            self._patch_deployment_args(
+                "--allow-downscaling=true", "--allow-downscaling=false"
+            )
         self._enable_agent_services()
 
         self.logger.info(
-            f'waiting for cluster {self.cluster_name} to have ready replicas {orig_replicas}'
+            f"waiting for cluster {self.cluster_name} to have ready replicas {orig_replicas}"
         )
         self.wait_cluster_replicas(self.cluster_name, orig_replicas)
 
@@ -1283,35 +1426,43 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         segment_size = self.min_segment_size
         self.adjust_topic_segment_properties(
-            segment_bytes=segment_size, retention_local_bytes=segment_size)
+            segment_bytes=segment_size, retention_local_bytes=segment_size
+        )
 
         initial_cloud_storage_cache_op_put = self.redpanda.metric_sum(
             "redpanda_cloud_storage_cache_op_put_total",
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+        )
         self.logger.debug(f"{initial_cloud_storage_cache_op_put=}")
 
-        with traffic_generator(self.test_context, self.redpanda,
-                               self._advertised_max_ingress,
-                               self._advertised_max_egress, self.topic,
-                               self.msg_size) as tgen:
-            tgen.wait_for_traffic(acked=self.msg_count,
-                                  timeout_sec=self.msg_timeout)
-            wait_until(lambda: nodes_report_cloud_segments(
-                self.redpanda, 100, self.topic),
-                       timeout_sec=600,
-                       backoff_sec=5)
+        with traffic_generator(
+            self.test_context,
+            self.redpanda,
+            self._advertised_max_ingress,
+            self._advertised_max_egress,
+            self.topic,
+            self.msg_size,
+        ) as tgen:
+            tgen.wait_for_traffic(acked=self.msg_count, timeout_sec=self.msg_timeout)
+            wait_until(
+                lambda: nodes_report_cloud_segments(self.redpanda, 100, self.topic),
+                timeout_sec=600,
+                backoff_sec=5,
+            )
             tgen._producer.wait_for_offset_map()
 
             # Exhaust cloud cache with multiple consumers
             # reading at random offsets
             self.logger.info(f"Starting thrashing consumers")
-            consumer = KgoVerifierRandomConsumer(self.test_context,
-                                                 self.redpanda,
-                                                 self.topic,
-                                                 msg_size=self.msg_size,
-                                                 rand_read_msgs=1,
-                                                 parallel=4,
-                                                 debug_logs=True)
+            consumer = KgoVerifierRandomConsumer(
+                self.test_context,
+                self.redpanda,
+                self.topic,
+                msg_size=self.msg_size,
+                rand_read_msgs=1,
+                parallel=4,
+                debug_logs=True,
+            )
             try:
                 consumer.start(clean=False)
                 time.sleep(240)
@@ -1322,7 +1473,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
             final_cloud_storage_cache_op_put = self.redpanda.metric_sum(
                 "redpanda_cloud_storage_cache_op_put_total",
-                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+            )
             self.logger.debug(f"{final_cloud_storage_cache_op_put=}")
 
             # Make sure we did touch the cache at least once for each partition.
@@ -1330,9 +1482,14 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             # The check is not ideal due to the cache metrics being per cluster
             # rather than per topic or consumer.
             expected_misses = self.topics[0].partition_count
-            actual_misses = final_cloud_storage_cache_op_put - initial_cloud_storage_cache_op_put
-            assert actual_misses >= expected_misses, "Expected at least {} cache misses, got {}".format(
-                expected_misses, actual_misses)
+            actual_misses = (
+                final_cloud_storage_cache_op_put - initial_cloud_storage_cache_op_put
+            )
+            assert actual_misses >= expected_misses, (
+                "Expected at least {} cache misses, got {}".format(
+                    expected_misses, actual_misses
+                )
+            )
 
         self.redpanda.assert_cluster_is_reusable()
 
@@ -1343,7 +1500,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         self.adjust_topic_segment_properties(
             segment_bytes=self.min_segment_size,
-            retention_local_bytes=2 * self.min_segment_size)
+            retention_local_bytes=2 * self.min_segment_size,
+        )
 
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
@@ -1354,18 +1512,14 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             msg_size=self.msg_size,
             msg_count=5_000_000_000_000,
             rate_limit_bps=self._advertised_max_ingress,
-            custom_node=[self.preallocated_nodes[0]])
+            custom_node=[self.preallocated_nodes[0]],
+        )
 
-        consumer = RpkConsumer(self._ctx,
-                               self.redpanda,
-                               self.topic,
-                               num_msgs=100)
+        consumer = RpkConsumer(self._ctx, self.redpanda, self.topic, num_msgs=100)
 
         try:
             producer.start()
-            self._wait_for_traffic(producer,
-                                   self.msg_count,
-                                   timeout=self.msg_timeout)
+            self._wait_for_traffic(producer, self.msg_count, timeout=self.msg_timeout)
 
             self.stage_lots_of_failed_consumers()
             self.redpanda.concurrent_restart_pods(180)
@@ -1407,25 +1561,30 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
                 return False
 
         while consume_count > 0:
-            consumer = RpkConsumer(self._ctx,
-                                   self.redpanda,
-                                   self.topic,
-                                   num_msgs=consume_count)
+            consumer = RpkConsumer(
+                self._ctx, self.redpanda, self.topic, num_msgs=consume_count
+            )
             consumer.start()
-            wait_until(lambda: random_stop_check(consumer),
-                       timeout_sec=30,
-                       backoff_sec=0.001)
+            wait_until(
+                lambda: random_stop_check(consumer), timeout_sec=30, backoff_sec=0.001
+            )
 
             consumer.stop()
             consumer.free()
 
             consume_count -= consumer.message_count
-            self.logger.warning(f"consumed {consumer.message_count} messages, "
-                                f"{consume_count} left")
+            self.logger.warning(
+                f"consumed {consumer.message_count} messages, {consume_count} left"
+            )
 
-    def _consume_from_offset(self, topic_name: str, msg_count: int,
-                             partition: int, starting_offset: str,
-                             timeout_per_topic: int):
+    def _consume_from_offset(
+        self,
+        topic_name: str,
+        msg_count: int,
+        partition: int,
+        starting_offset: str,
+        timeout_per_topic: int,
+    ):
         def consumer_saw_msgs(consumer):
             self.logger.info(
                 f"Consumer message_count={consumer.message_count} / {msg_count}"
@@ -1434,24 +1593,28 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             # there can have been retries.
             return consumer.message_count >= msg_count
 
-        consumer = RpkConsumer(self._ctx,
-                               self.redpanda,
-                               topic_name,
-                               save_msgs=True,
-                               partitions=[partition],
-                               offset=starting_offset,
-                               num_msgs=msg_count)
+        consumer = RpkConsumer(
+            self._ctx,
+            self.redpanda,
+            topic_name,
+            save_msgs=True,
+            partitions=[partition],
+            offset=starting_offset,
+            num_msgs=msg_count,
+        )
         consumer.start()
-        wait_until(lambda: consumer_saw_msgs(consumer),
-                   timeout_sec=timeout_per_topic,
-                   backoff_sec=0.125)
+        wait_until(
+            lambda: consumer_saw_msgs(consumer),
+            timeout_sec=timeout_per_topic,
+            backoff_sec=0.125,
+        )
 
         consumer.stop()
         consumer.free()
 
         if starting_offset.isnumeric():
             expected_offset = int(starting_offset)
-            actual_offset = int(consumer.messages[0]['offset'])
+            actual_offset = int(consumer.messages[0]["offset"])
             assert expected_offset == actual_offset, "expected_offset != actual_offset"
 
     # The testcase occasionally fails on various parts:
@@ -1464,7 +1627,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         self.adjust_topic_segment_properties(
             segment_bytes=self.min_segment_size,
-            retention_local_bytes=2 * self.min_segment_size)
+            retention_local_bytes=2 * self.min_segment_size,
+        )
 
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
@@ -1476,13 +1640,12 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             msg_size=self.msg_size,
             msg_count=5 * 1024 * 1024 * 1024 * 1024,
             rate_limit_bps=self._advertised_max_ingress,
-            custom_node=[self.preallocated_nodes[0]])
+            custom_node=[self.preallocated_nodes[0]],
+        )
 
         try:
             producer.start()
-            self._wait_for_traffic(producer,
-                                   self.msg_count,
-                                   timeout=self.msg_timeout)
+            self._wait_for_traffic(producer, self.msg_count, timeout=self.msg_timeout)
 
             # this stage could have been a part of test_consume however one
             # of the checks requires nicely balanced replicas, and this is
@@ -1506,20 +1669,21 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         # Get current offsets for topic. We'll use these for starting offsets
         # for consuming messages after we produce enough data to push them out
         # of the batch cache.
-        last_offsets = [(p.id, p.high_watermark)
-                        for p in self.rpk.describe_topic(self.topic)
-                        if p.high_watermark is not None]
+        last_offsets = [
+            (p.id, p.high_watermark)
+            for p in self.rpk.describe_topic(self.topic)
+            if p.high_watermark is not None
+        ]
 
         partition_size_check: list[MetricCheck] = []
         partition_size_metric = "vectorized_storage_log_partition_size"
 
         for pod in self.redpanda.pods:
             partition_size_check.append(
-                MetricCheck(self.logger,
-                            self.redpanda,
-                            pod,
-                            partition_size_metric,
-                            reduce=sum))
+                MetricCheck(
+                    self.logger, self.redpanda, pod, partition_size_metric, reduce=sum
+                )
+            )
 
         # wait for producer to produce enough to exceed the batch cache by some margin
         # For a test on 4x `is4gen.4xlarge` there is about 0.13 GiB/s of throughput per node.
@@ -1527,42 +1691,49 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         # the cache has been filled by the producer.
         produce_rate_per_node_bytes_s = self._advertised_max_ingress / self._num_brokers
         batch_cache_max_memory = self._memory_per_broker
-        time_till_memory_full_per_node = batch_cache_max_memory / produce_rate_per_node_bytes_s
+        time_till_memory_full_per_node = (
+            batch_cache_max_memory / produce_rate_per_node_bytes_s
+        )
         required_wait_time_s = 1.5 * time_till_memory_full_per_node
 
         self.logger.info(
             f"Expecting to wait {required_wait_time_s} seconds. "
             f"time_till_memory_full_per_node: {time_till_memory_full_per_node}, "
-            f"produce_rate_per_node_bytes_s: {produce_rate_per_node_bytes_s}")
+            f"produce_rate_per_node_bytes_s: {produce_rate_per_node_bytes_s}"
+        )
 
         current_sent = producer.produce_status.sent
         expected_sent = math.ceil(
-            (self._num_brokers * batch_cache_max_memory) / self.msg_size)
+            (self._num_brokers * batch_cache_max_memory) / self.msg_size
+        )
 
         self.logger.info(
             f"{current_sent} currently sent messages. Waiting for {expected_sent} messages to be sent"
         )
 
         def producer_complete():
-            number_left = (current_sent +
-                           expected_sent) - producer.produce_status.sent
+            number_left = (current_sent + expected_sent) - producer.produce_status.sent
             self.logger.info(f"{number_left} messages still need to be sent.")
             return number_left <= 0
 
         try:
-            wait_until(producer_complete,
-                       timeout_sec=required_wait_time_s,
-                       backoff_sec=30)
+            wait_until(
+                producer_complete, timeout_sec=required_wait_time_s, backoff_sec=30
+            )
         except Exception as e:
             _percent = (producer.produce_status.sent * 100) / expected_sent
-            self.logger.warning("# Timeout waiting for all messages: "
-                                f"expected {expected_sent}, "
-                                f"current {producer.produce_status.sent} "
-                                f"({_percent}%)\n{e}")
+            self.logger.warning(
+                "# Timeout waiting for all messages: "
+                f"expected {expected_sent}, "
+                f"current {producer.produce_status.sent} "
+                f"({_percent}%)\n{e}"
+            )
 
-        post_prod_offsets = [(p.id, p.high_watermark)
-                             for p in self.rpk.describe_topic(self.topic)
-                             if p.high_watermark is not None]
+        post_prod_offsets = [
+            (p.id, p.high_watermark)
+            for p in self.rpk.describe_topic(self.topic)
+            if p.high_watermark is not None
+        ]
 
         offset_deltas = [
             (c[0][0], c[0][1] - c[1][1])
@@ -1577,7 +1748,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         # Report under-replicated status for the context in the case the following check fails
         s = self.redpanda.metrics_sample(
-            "vectorized_cluster_partition_under_replicated_replicas")
+            "vectorized_cluster_partition_under_replicated_replicas"
+        )
         if sum(x.value for x in s.samples) == 0:
             self.logger.info(f"No under-replicated replicas")
         else:
@@ -1588,8 +1760,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
             def check_partition_size(old_size, new_size):
                 self.logger.info(
-                    f"Total increase in size for partitions: {new_size-old_size}, "
-                    f"checked from {check.node.name}")
+                    f"Total increase in size for partitions: {new_size - old_size}, "
+                    f"checked from {check.node.name}"
+                )
 
                 unreplicated_size_inc = (new_size - old_size) / 3
                 return unreplicated_size_inc >= batch_cache_max_memory
@@ -1612,11 +1785,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         for pod in self.redpanda.pods:
             check_batch_cache_reads.append(
-                MetricCheck(self.logger,
-                            self.redpanda,
-                            pod,
-                            cache_metrics,
-                            reduce=sum))
+                MetricCheck(self.logger, self.redpanda, pod, cache_metrics, reduce=sum)
+            )
 
         # start consuming at the offsets recorded before the wait.
         # at this point we can be sure they are not from the batch cache.
@@ -1624,13 +1794,13 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         timeout_seconds = 60
 
         for p_id, p_hw in last_offsets:
-            self._consume_from_offset(self.topic, messages_to_read, p_id,
-                                      str(p_hw), timeout_seconds)
+            self._consume_from_offset(
+                self.topic, messages_to_read, p_id, str(p_hw), timeout_seconds
+            )
 
         def check_cache_bytes_ratio(old, new):
             log_diff = int(new[cache_metrics[0]]) - int(old[cache_metrics[0]])
-            cache_diff = int(new[cache_metrics[1]]) - int(
-                old[cache_metrics[1]])
+            cache_diff = int(new[cache_metrics[1]]) - int(old[cache_metrics[1]])
             cache_hit_percent = cache_diff / log_diff
 
             self.logger.info(
@@ -1639,13 +1809,11 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             return cache_hit_percent <= 0.4
 
         for check in check_batch_cache_reads:
-            ok = check.evaluate_groups([(cache_metrics,
-                                         check_cache_bytes_ratio)])
+            ok = check.evaluate_groups([(cache_metrics, check_cache_bytes_ratio)])
 
             assert ok, "cache hit ratio is higher than expected"
 
-    def _run_omb(self, produce_bps,
-                 validator_overrides) -> OpenMessagingBenchmark:
+    def _run_omb(self, produce_bps, validator_overrides) -> OpenMessagingBenchmark:
         topic_count = 1
         partitions_per_topic = self._partitions_upper_limit
         workload = {
@@ -1667,9 +1835,15 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         worker_nodes = self.preallocated_nodes[1:]
 
         benchmark = OpenMessagingBenchmark(
-            self._ctx, self.redpanda, "SIMPLE_DRIVER",
-            (workload, OMBSampleConfigurations.UNIT_TEST_LATENCY_VALIDATOR
-             | validator_overrides))
+            self._ctx,
+            self.redpanda,
+            "SIMPLE_DRIVER",
+            (
+                workload,
+                OMBSampleConfigurations.UNIT_TEST_LATENCY_VALIDATOR
+                | validator_overrides,
+            ),
+        )
 
         benchmark.start()
         return benchmark
@@ -1689,19 +1863,20 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         # create a new topic with low local retention.
         config = {
-            'segment.bytes': segment_size,
-            'retention.bytes': -1,
-            'retention.local.target.bytes': 2 * segment_size,
-            'cleanup.policy': 'delete',
-            'partition_autobalancing_node_availability_timeout_sec':
-            self.unavailable_timeout,
-            'partition_autobalancing_mode': 'continuous',
-            'raft_learner_recovery_rate': 10 * GiB,
+            "segment.bytes": segment_size,
+            "retention.bytes": -1,
+            "retention.local.target.bytes": 2 * segment_size,
+            "cleanup.policy": "delete",
+            "partition_autobalancing_node_availability_timeout_sec": self.unavailable_timeout,
+            "partition_autobalancing_mode": "continuous",
+            "raft_learner_recovery_rate": 10 * GiB,
         }
-        self.rpk.create_topic(self.topic,
-                              partitions=self._partitions_upper_limit,
-                              replicas=3,
-                              config=config)
+        self.rpk.create_topic(
+            self.topic,
+            partitions=self._partitions_upper_limit,
+            replicas=3,
+            config=config,
+        )
 
         producer = KgoVerifierProducer(
             self.test_context,
@@ -1709,49 +1884,50 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
             self.topic,
             msg_size=self.msg_size,
             msg_count=5_000_000_000_000,
-            rate_limit_bps=self._advertised_max_ingress)
+            rate_limit_bps=self._advertised_max_ingress,
+        )
         producer.start()
 
         # produce 10 mins worth of consume data onto S3.
         produce_time_s = 4 * 60
         messages_to_produce = (produce_time_s * consume_rate) / self.msg_size
-        time_to_wait = (messages_to_produce *
-                        self.msg_size) / self._advertised_max_ingress
+        time_to_wait = (
+            messages_to_produce * self.msg_size
+        ) / self._advertised_max_ingress
 
         wait_until(
             lambda: producer.produce_status.acked >= messages_to_produce,
             timeout_sec=1.5 * time_to_wait,
             backoff_sec=5,
-            err_msg=
-            f"Could not ack production of {messages_to_produce} messages in {1.5 * time_to_wait} s"
+            err_msg=f"Could not ack production of {messages_to_produce} messages in {1.5 * time_to_wait} s",
         )
         # continue to produce the rest of the test
 
         validator_overrides = {
-            OMBSampleConfigurations.E2E_LATENCY_50PCT:
-            [OMBSampleConfigurations.lte(51)],
-            OMBSampleConfigurations.E2E_LATENCY_AVG:
-            [OMBSampleConfigurations.lte(145)],
+            OMBSampleConfigurations.E2E_LATENCY_50PCT: [
+                OMBSampleConfigurations.lte(51)
+            ],
+            OMBSampleConfigurations.E2E_LATENCY_AVG: [OMBSampleConfigurations.lte(145)],
         }
 
         # Run a usual producer + consumer workload and a S3 producer + consumer workload concurrently
         # Ensure that the S3 workload doesn't effect the usual workload majorly.
-        benchmark = self._run_omb(self._advertised_max_ingress / 2,
-                                  validator_overrides)
+        benchmark = self._run_omb(self._advertised_max_ingress / 2, validator_overrides)
 
         # This consumer should largely be reading from S3
-        consumer = RpkConsumer(self._ctx,
-                               self.redpanda,
-                               self.topic,
-                               offset="oldest",
-                               num_msgs=messages_to_produce)
+        consumer = RpkConsumer(
+            self._ctx,
+            self.redpanda,
+            self.topic,
+            offset="oldest",
+            num_msgs=messages_to_produce,
+        )
         consumer.start()
         wait_until(
             lambda: consumer.message_count >= messages_to_produce,
             timeout_sec=5 * produce_time_s,
             backoff_sec=5,
-            err_msg=
-            f"Could not consume {messages_to_produce} msgs in {5 * produce_time_s} s"
+            err_msg=f"Could not consume {messages_to_produce} msgs in {5 * produce_time_s} s",
         )
         consumer.stop()
         consumer.free()
@@ -1760,8 +1936,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
         benchmark.check_succeed()
 
-    def _prepare_omb_workload(self, ramp_time, duration, partitions, rate,
-                              msg_size, producers, consumers):
+    def _prepare_omb_workload(
+        self, ramp_time, duration, partitions, rate, msg_size, producers, consumers
+    ):
         return {
             "name": "HT004-MINPARTOMB",
             "topics": 1,
@@ -1788,8 +1965,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         def _get_metrics(bench: OpenMessagingBenchmark):
             return list(
-                json.loads(bench.node.account.ssh_output(
-                    bench.chart_cmd)).values())[0]
+                json.loads(bench.node.account.ssh_output(bench.chart_cmd)).values()
+            )[0]
 
         # Get values for almost idle cluster load
         rampup_time = 1
@@ -1805,26 +1982,33 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
         # Measure with target load
         validator_overrides = {
-            OMBSampleConfigurations.E2E_LATENCY_50PCT:
-            [OMBSampleConfigurations.lte(target_e2e_50pct)],
-            OMBSampleConfigurations.E2E_LATENCY_AVG:
-            [OMBSampleConfigurations.lte(target_e2e_avg)],
+            OMBSampleConfigurations.E2E_LATENCY_50PCT: [
+                OMBSampleConfigurations.lte(target_e2e_50pct)
+            ],
+            OMBSampleConfigurations.E2E_LATENCY_AVG: [
+                OMBSampleConfigurations.lte(target_e2e_avg)
+            ],
         }
 
         # Select number of partitions
         if partitions == "min":
             _num_partitions = self._partitions_min
         else:
-            assert partitions == "max", f'Test parameter for partitions invalid: {partitions}'
+            assert partitions == "max", (
+                f"Test parameter for partitions invalid: {partitions}"
+            )
             _num_partitions = self._partitions_upper_limit
 
-        workload = self._prepare_omb_workload(rampup_time, runtime,
-                                              _num_partitions, rate, msg_size,
-                                              producers, consumers)
+        workload = self._prepare_omb_workload(
+            rampup_time, runtime, _num_partitions, rate, msg_size, producers, consumers
+        )
         with omb_runner(
-                self._ctx, self.redpanda, "SIMPLE_DRIVER", workload,
-                OMBSampleConfigurations.UNIT_TEST_LATENCY_VALIDATOR
-                | validator_overrides) as omb:
+            self._ctx,
+            self.redpanda,
+            "SIMPLE_DRIVER",
+            workload,
+            OMBSampleConfigurations.UNIT_TEST_LATENCY_VALIDATOR | validator_overrides,
+        ) as omb:
             metrics = _get_metrics(omb)
             # Tier metrics should not diviate from idle
             # metrics more than 145 ms on the average

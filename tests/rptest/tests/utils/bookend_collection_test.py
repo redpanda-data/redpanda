@@ -32,5 +32,6 @@ class BookendCollectionTest(Test):
         collection = BookendCollection(head=2, tail=2)
         for i in range(10):
             collection.append(i)
-        assert list(collection) == [0, 1, BookendCollection.Gap(6), 8,
-                                    9], f"got {list(collection)}"
+        assert list(collection) == [0, 1, BookendCollection.Gap(6), 8, 9], (
+            f"got {list(collection)}"
+        )

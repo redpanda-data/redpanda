@@ -48,8 +48,7 @@ class CompactedVerifier(Service):
         self._partitions = None
 
     def is_alive(self, node):
-        result = node.account.ssh_output(
-            "bash /opt/remote/control/alive.sh rw")
+        result = node.account.ssh_output("bash /opt/remote/control/alive.sh rw")
         result = result.decode("utf-8")
         return "YES" in result
 
@@ -80,8 +79,7 @@ class CompactedVerifier(Service):
             check_writes,
             timeout_sec,
             2,
-            err_msg=
-            f"writes got stuck: hasn't written {delta} records in {timeout_sec}s"
+            err_msg=f"writes got stuck: hasn't written {delta} records in {timeout_sec}s",
         )
 
     def has_cleared(self, threshold, timeout_sec):
@@ -101,38 +99,36 @@ class CompactedVerifier(Service):
             check,
             timeout_sec,
             2,
-            err_msg=
-            f"num of rw iteration hasn't reached {threshold} in {timeout_sec}")
+            err_msg=f"num of rw iteration hasn't reached {threshold} in {timeout_sec}",
+        )
 
     def raise_on_violation(self, node):
-        self.logger.info(
-            f"Scanning node {node.account.hostname} log for violations...")
+        self.logger.info(f"Scanning node {node.account.hostname} log for violations...")
 
-        for line in node.account.ssh_capture(
-                f"grep -e violation {OUTPUT_LOG} || true"):
+        for line in node.account.ssh_capture(f"grep -e violation {OUTPUT_LOG} || true"):
             raise ConsistencyViolationException(line)
 
     ### Service overrides
 
     def start_node(self, node, timeout_sec=10):
         node.account.ssh(
-            f"bash /opt/remote/control/start.sh rw \"java -cp /opt/verifiers/verifiers.jar io.vectorized.compaction.App\""
+            f'bash /opt/remote/control/start.sh rw "java -cp /opt/verifiers/verifiers.jar io.vectorized.compaction.App"'
         )
         wait_until(
             lambda: self.is_alive(node),
             timeout_sec=timeout_sec,
             backoff_sec=1,
-            err_msg=
-            f"rw service {node.account.hostname} failed to start within {timeout_sec} sec",
-            retry_on_exc=False)
+            err_msg=f"rw service {node.account.hostname} failed to start within {timeout_sec} sec",
+            retry_on_exc=False,
+        )
         self._node = node
         wait_until(
             lambda: self.is_ready(),
             timeout_sec=timeout_sec,
             backoff_sec=1,
-            err_msg=
-            f"rw service {node.account.hostname} failed to become ready within {timeout_sec} sec",
-            retry_on_exc=False)
+            err_msg=f"rw service {node.account.hostname} failed to become ready within {timeout_sec} sec",
+            retry_on_exc=False,
+        )
 
     def stop_node(self, node):
         node.account.ssh("bash /opt/remote/control/stop.sh rw")
@@ -147,9 +143,9 @@ class CompactedVerifier(Service):
             lambda: not (self.is_alive(node)),
             timeout_sec=timeout_sec,
             backoff_sec=1,
-            err_msg=
-            f"rw service {node.account.hostname} failed to stop within {timeout_sec} sec",
-            retry_on_exc=False)
+            err_msg=f"rw service {node.account.hostname} failed to stop within {timeout_sec} sec",
+            retry_on_exc=False,
+        )
         return True
 
     ### RPCs
@@ -160,23 +156,27 @@ class CompactedVerifier(Service):
         if r.status_code != 200:
             raise Exception(f"unexpected status code: {r.status_code}")
 
-    def remote_start_producer(self,
-                              connection,
-                              topic,
-                              partitions,
-                              key_set_cardinality=10,
-                              abort_probability=0.3):
+    def remote_start_producer(
+        self,
+        connection,
+        topic,
+        partitions,
+        key_set_cardinality=10,
+        abort_probability=0.3,
+    ):
         self._partitions = partitions
         ip = self._node.account.hostname
-        r = requests.post(f"http://{ip}:8080/start-producer",
-                          json={
-                              "workload": self._workload.name,
-                              "brokers": connection,
-                              "topic": topic,
-                              "partitions": partitions,
-                              "key_set_cardinality": key_set_cardinality,
-                              "abort_probability": abort_probability
-                          })
+        r = requests.post(
+            f"http://{ip}:8080/start-producer",
+            json={
+                "workload": self._workload.name,
+                "brokers": connection,
+                "topic": topic,
+                "partitions": partitions,
+                "key_set_cardinality": key_set_cardinality,
+                "abort_probability": abort_probability,
+            },
+        )
         if r.status_code != 200:
             raise Exception(
                 f"unexpected status code: {r.status_code} content: {r.content}"
@@ -219,10 +219,12 @@ class CompactedVerifier(Service):
                     return False
             return True
 
-        wait_until(check_consumed,
-                   timeout_sec,
-                   2,
-                   err_msg=f"consumers haven't finished in {timeout_sec}s")
+        wait_until(
+            check_consumed,
+            timeout_sec,
+            2,
+            err_msg=f"consumers haven't finished in {timeout_sec}s",
+        )
 
         ip = self._node.account.hostname
         r = requests.get(f"http://{ip}:8080/wait-consumer")
@@ -258,7 +260,8 @@ class CompactedVerifier(Service):
                 raise
             except:
                 self._redpanda.logger.debug(
-                    "Got error on fetching info, retrying?!", exc_info=True)
+                    "Got error on fetching info, retrying?!", exc_info=True
+                )
             return (False, None)
 
         # info is a lightweight request, it's ok to have small timeout

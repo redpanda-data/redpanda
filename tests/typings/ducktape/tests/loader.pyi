@@ -24,6 +24,23 @@ class TestLoader:
     test_file_pattern: Incomplete
     test_function_pattern: Incomplete
     injected_args: Incomplete
-    def __init__(self, session_context, logger, repeat: int = ..., injected_args: Incomplete | None = ..., cluster: Incomplete | None = ..., subset: int = ..., subsets: int = ..., historical_report: Incomplete | None = ...) -> None: ...
+    def __init__(
+        self,
+        session_context,
+        logger,
+        repeat: int = ...,
+        injected_args: Incomplete | None = ...,
+        cluster: Incomplete | None = ...,
+        subset: int = ...,
+        subsets: int = ...,
+        historical_report: Incomplete | None = ...,
+    ) -> None: ...
     def load(self, symbols, excluded_test_symbols: Incomplete | None = ...): ...
-    def discover(self, directory, module_name, cls_name, method_name, injected_args: Incomplete | None = ...): ...
+    def discover(
+        self,
+        directory,
+        module_name,
+        cls_name,
+        method_name,
+        injected_args: Incomplete | None = ...,
+    ): ...

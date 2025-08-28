@@ -24,19 +24,20 @@ from rptest.tests.datalake.utils import supported_storage_types
 
 class DatalakeTransactionTests(RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):
-        super(DatalakeTransactionTests,
-              self).__init__(test_ctx,
-                             num_brokers=1,
-                             si_settings=SISettings(test_context=test_ctx),
-                             extra_rp_conf={
-                                 "iceberg_enabled": "true",
-                                 "iceberg_catalog_commit_interval_ms": 5000,
-                                 "log_compaction_interval_ms": 1000,
-                             },
-                             schema_registry_config=SchemaRegistryConfig(),
-                             pandaproxy_config=PandaproxyConfig(),
-                             *args,
-                             **kwargs)
+        super(DatalakeTransactionTests, self).__init__(
+            test_ctx,
+            num_brokers=1,
+            si_settings=SISettings(test_context=test_ctx),
+            extra_rp_conf={
+                "iceberg_enabled": "true",
+                "iceberg_catalog_commit_interval_ms": 5000,
+                "log_compaction_interval_ms": 1000,
+            },
+            schema_registry_config=SchemaRegistryConfig(),
+            pandaproxy_config=PandaproxyConfig(),
+            *args,
+            **kwargs,
+        )
         self.test_ctx = test_ctx
         self.topic_name = "test"
 
@@ -44,9 +45,10 @@ class DatalakeTransactionTests(RedpandaTest):
         pass
 
     def verify_no_aborted_batches(
-            self,
-            dl: DatalakeServices,
-            query_engine: QueryEngineType = QueryEngineType.TRINO):
+        self,
+        dl: DatalakeServices,
+        query_engine: QueryEngineType = QueryEngineType.TRINO,
+    ):
         qe_svc = dl.service(query_engine)
         assert qe_svc, f"No query engine of type {query_engine} found"
         table = f"redpanda.{qe_svc.escape_identifier(self.topic_name)}"
@@ -60,8 +62,7 @@ class DatalakeTransactionTests(RedpandaTest):
             # Dump some diagnostics
             query = f"select redpanda.offset from {table} where regexp_like(from_utf8(value), {abort_value_pattern}) = TRUE limit 5"
             offsets = qe_svc.run_query_fetch_all(query)
-            self.redpanda.logger.error(
-                f"A few offsets with aborted records {offsets}")
+            self.redpanda.logger.error(f"A few offsets with aborted records {offsets}")
         assert abort_count == 0, f"{abort_count} aborted records found in iceberg table"
 
     @cluster(num_nodes=4)
@@ -70,27 +71,26 @@ class DatalakeTransactionTests(RedpandaTest):
         """Test ensures correctness of translation when running with transactions.
         Ensures no aborted transactions make it to the iceberg table"""
 
-        tx_verifier = CompactedVerifier(self.test_context, self.redpanda,
-                                        Workload.TX)
+        tx_verifier = CompactedVerifier(self.test_context, self.redpanda, Workload.TX)
         min_num_records = 1000
-        with DatalakeServices(self.test_context,
-                              redpanda=self.redpanda,
-                              include_query_engines=[QueryEngineType.TRINO
-                                                     ]) as dl:
+        with DatalakeServices(
+            self.test_context,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.TRINO],
+        ) as dl:
             topic_config = dict()
             topic_config[TopicSpec.PROPERTY_SEGMENT_SIZE] = 1 * 1024 * 1024
             if compaction:
-                topic_config[
-                    TopicSpec.
-                    PROPERTY_CLEANUP_POLICY] = TopicSpec.CLEANUP_COMPACT
-            dl.create_iceberg_enabled_topic(self.topic_name,
-                                            config=topic_config)
+                topic_config[TopicSpec.PROPERTY_CLEANUP_POLICY] = (
+                    TopicSpec.CLEANUP_COMPACT
+                )
+            dl.create_iceberg_enabled_topic(self.topic_name, config=topic_config)
 
             tx_verifier.start()
             # Produces transactional data into the topic with 30% aborted batches
-            tx_verifier.remote_start_producer(self.redpanda.brokers(),
-                                              self.topic_name,
-                                              partitions=1)
+            tx_verifier.remote_start_producer(
+                self.redpanda.brokers(), self.topic_name, partitions=1
+            )
             tx_verifier.ensure_progress(delta=min_num_records, timeout_sec=180)
             tx_verifier.remote_stop_producer()
             tx_verifier.remote_wait_producer()
@@ -98,7 +98,8 @@ class DatalakeTransactionTests(RedpandaTest):
 
             # Verify the committed offsets
             committed_offset_verifier = DatalakeVerifier(
-                self.redpanda, self.topic_name, dl.trino())
+                self.redpanda, self.topic_name, dl.trino()
+            )
             committed_offset_verifier.start()
             committed_offset_verifier.wait()
             self.verify_no_aborted_batches(dl)

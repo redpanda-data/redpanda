@@ -24,15 +24,17 @@ from rptest.clients.types import TopicSpec
 class SaramaTest(RedpandaTest):
     """
     Test three of Sarama's examples: topic interceptor, http server, and consumer group.
-    All three examples have some piece that runs in the background, so we use a 
+    All three examples have some piece that runs in the background, so we use a
     BackgroundThreadService (i.e., ExampleRunner).
     """
-    topics = (TopicSpec(), )
+
+    topics = (TopicSpec(),)
 
     def __init__(self, test_context):
         super(SaramaTest, self).__init__(
             test_context=test_context,
-            extra_rp_conf={'auto_create_topics_enabled': True})
+            extra_rp_conf={"auto_create_topics_enabled": True},
+        )
 
         self._ctx = test_context
 
@@ -44,34 +46,26 @@ class SaramaTest(RedpandaTest):
     @matrix(version=["2.1.0"])
     def test_sarama_interceptors(self, version):
         sarama_example = SaramaExamples.SaramaInterceptors(
-            self.redpanda, version, self.topic)
-        example = ExampleRunner(self._ctx,
-                                sarama_example,
-                                timeout_sec=self._timeout)
+            self.redpanda, version, self.topic
+        )
+        example = ExampleRunner(self._ctx, sarama_example, timeout_sec=self._timeout)
 
         # Start the example
         example.start()
 
-        wait_until(example.condition_met,
-                   timeout_sec=self._timeout,
-                   backoff_sec=1)
+        wait_until(example.condition_met, timeout_sec=self._timeout, backoff_sec=1)
 
     @cluster(num_nodes=4)
     @matrix(version=["2.1.0"])
     def test_sarama_http_server(self, version):
-        sarama_example = SaramaExamples.SaramaHttpServer(
-            self.redpanda, version)
-        example = ExampleRunner(self._ctx,
-                                sarama_example,
-                                timeout_sec=self._timeout)
+        sarama_example = SaramaExamples.SaramaHttpServer(self.redpanda, version)
+        example = ExampleRunner(self._ctx, sarama_example, timeout_sec=self._timeout)
 
         # Start the example
         example.start()
 
         # Wait for the server to load
-        wait_until(example.condition_met,
-                   timeout_sec=self._timeout,
-                   backoff_sec=1)
+        wait_until(example.condition_met, timeout_sec=self._timeout, backoff_sec=1)
 
         # Get the node the server is on and
         # a ducktape node
@@ -89,10 +83,12 @@ class SaramaTest(RedpandaTest):
         # Using wait_until for auto-retry because sometimes
         # redpanda is in the middle of a leadership election when
         # we try to http get.
-        wait_until(try_curl,
-                   timeout_sec=self._timeout,
-                   backoff_sec=5,
-                   err_msg="sarama http_server test failed")
+        wait_until(
+            try_curl,
+            timeout_sec=self._timeout,
+            backoff_sec=5,
+            err_msg="sarama http_server test failed",
+        )
 
     @cluster(num_nodes=5)
     @matrix(version=["2.1.0"])
@@ -100,17 +96,12 @@ class SaramaTest(RedpandaTest):
         count = 10 if self.scale.local else 5000
 
         sarama_example = SaramaExamples.SaramaConsumerGroup(
-            self.redpanda, version, self.topic, count)
-        example = ExampleRunner(self._ctx,
-                                sarama_example,
-                                timeout_sec=self._timeout)
-        producer = RpkProducer(self._ctx,
-                               self.redpanda,
-                               self.topic,
-                               4,
-                               count,
-                               acks=-1,
-                               printable=True)
+            self.redpanda, version, self.topic, count
+        )
+        example = ExampleRunner(self._ctx, sarama_example, timeout_sec=self._timeout)
+        producer = RpkProducer(
+            self._ctx, self.redpanda, self.topic, 4, count, acks=-1, printable=True
+        )
 
         def until_partitions():
             storage = self.redpanda.storage()
@@ -119,10 +110,12 @@ class SaramaTest(RedpandaTest):
         # Must wait for the paritions to materialize or else
         # kaf may try to produce during leadership election.
         # This results in a skipped record since kaf doesn't auto-retry.
-        wait_until(until_partitions,
-                   timeout_sec=30,
-                   backoff_sec=2,
-                   err_msg="Expected partition did not materialize")
+        wait_until(
+            until_partitions,
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg="Expected partition did not materialize",
+        )
 
         # Run the producer and wait for the worker
         # threads to finish producing
@@ -133,9 +126,7 @@ class SaramaTest(RedpandaTest):
         example.start()
 
         # Wait until the example is OK to terminate
-        wait_until(example.condition_met,
-                   timeout_sec=self._timeout,
-                   backoff_sec=1)
+        wait_until(example.condition_met, timeout_sec=self._timeout, backoff_sec=1)
 
 
 class SaramaScramTest(RedpandaTest):
@@ -144,7 +135,8 @@ class SaramaScramTest(RedpandaTest):
     The example runs in the foreground so there is no need for
     a BackgroundThreadService.
     """
-    topics = (TopicSpec(), )
+
+    topics = (TopicSpec(),)
 
     def __init__(self, test_context):
         security = SecurityConfig()
@@ -155,8 +147,7 @@ class SaramaScramTest(RedpandaTest):
     @matrix(version=["2.1.0"])
     def test_sarama_sasl_scram(self, version):
         # Get the SASL SCRAM command and a ducktape node
-        cmd = SaramaExamples.sarama_sasl_scram(self.redpanda, version,
-                                               self.topic)
+        cmd = SaramaExamples.sarama_sasl_scram(self.redpanda, version, self.topic)
         node = random.choice(self.redpanda.nodes)
 
         def try_cmd():
@@ -164,15 +155,17 @@ class SaramaScramTest(RedpandaTest):
             # non-zero if redpanda is in the middle of a
             # leadership election. Instead we want to
             # retry the cmd.
-            result = node.account.ssh_output(cmd,
-                                             allow_fail=True,
-                                             timeout_sec=10).decode()
+            result = node.account.ssh_output(
+                cmd, allow_fail=True, timeout_sec=10
+            ).decode()
             self.logger.debug(result)
             return "wrote message at partition:" in result
 
         # Using wait_until for auto-retry because sometimes
         # redpanda is in the middle of a leadership election
-        wait_until(try_cmd,
-                   timeout_sec=60,
-                   backoff_sec=5,
-                   err_msg="sarama sasl scram test failed")
+        wait_until(
+            try_cmd,
+            timeout_sec=60,
+            backoff_sec=5,
+            err_msg="sarama sasl scram test failed",
+        )

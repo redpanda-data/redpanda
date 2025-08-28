@@ -16,7 +16,12 @@ from rptest.services.admin import Admin
 from rptest.util import wait_until_result
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.default import DefaultClient
-from rptest.services.redpanda import SISettings, make_redpanda_service, CHAOS_LOG_ALLOW_LIST, MetricsEndpoint
+from rptest.services.redpanda import (
+    SISettings,
+    make_redpanda_service,
+    CHAOS_LOG_ALLOW_LIST,
+    MetricsEndpoint,
+)
 from rptest.services.failure_injector import make_failure_injector, FailureSpec
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
@@ -109,27 +114,30 @@ class PartitionBalancerService(EndToEndTest):
     def get_partition_amount_on_node(self, node):
         admin = Admin(self.redpanda)
         return len(
-            list(
-                filter(lambda x: x["ns"] == "kafka",
-                       admin.get_partitions(node=node))))
+            list(filter(lambda x: x["ns"] == "kafka", admin.get_partitions(node=node)))
+        )
 
-    def validate_metrics_node_down(self, disabled_node,
-                                   expected_moving_partitions_amount):
+    def validate_metrics_node_down(
+        self, disabled_node, expected_moving_partitions_amount
+    ):
         self.logger.debug(
             f"Checking metrics for movement with disabled node: {self.redpanda.idx(disabled_node)}"
         )
         availabale_nodes = list(
-            filter(lambda x: x != disabled_node, self.redpanda.nodes))
+            filter(lambda x: x != disabled_node, self.redpanda.nodes)
+        )
         metrics = self.redpanda.metrics_sample(
             "moving_to_node",
             availabale_nodes,
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+        )
         moving_to_sum = int(sum([metric.value for metric in metrics.samples]))
 
-        self.logger.debug(f"\
+        self.logger.debug(
+            f"\
             moving_to_sum: {moving_to_sum}, \
             expected_moving_partitions_amount: {expected_moving_partitions_amount}"
-                          )
+        )
 
         if moving_to_sum != expected_moving_partitions_amount:
             return False
@@ -137,9 +145,9 @@ class PartitionBalancerService(EndToEndTest):
         metrics = self.redpanda.metrics_sample(
             "moving_from_node",
             availabale_nodes,
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
-        moving_from_sum = int(sum([metric.value
-                                   for metric in metrics.samples]))
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+        )
+        moving_from_sum = int(sum([metric.value for metric in metrics.samples]))
         self.logger.debug(f"moving_from_sum: {moving_from_sum}")
         if moving_from_sum != 0:
             return False
@@ -147,9 +155,9 @@ class PartitionBalancerService(EndToEndTest):
         metrics = self.redpanda.metrics_sample(
             "node_cancelling_movements",
             availabale_nodes,
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
-        cancelling_movements = int(
-            sum([metric.value for metric in metrics.samples]))
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+        )
+        cancelling_movements = int(sum([metric.value for metric in metrics.samples]))
         self.logger.debug(f"cancelling_movements: {cancelling_movements}")
         if cancelling_movements != 0:
             return False
@@ -157,9 +165,12 @@ class PartitionBalancerService(EndToEndTest):
         return True
 
     def check_metrics(self, disabled_node, expected_moving_partitions_amount):
-        return wait_until(lambda: self.validate_metrics_node_down(
-            disabled_node, expected_moving_partitions_amount),
-                          timeout_sec=10)
+        return wait_until(
+            lambda: self.validate_metrics_node_down(
+                disabled_node, expected_moving_partitions_amount
+            ),
+            timeout_sec=10,
+        )
 
     def wait_until_status(self, predicate, timeout_sec=120, err_msg=""):
         # We may get a 504 if we proxy a status request to a suspended node.
@@ -190,26 +201,27 @@ class PartitionBalancerService(EndToEndTest):
             err_msg=err_msg,
         )
 
-    def wait_until_ready(self,
-                         timeout_sec=120,
-                         expected_unavailable_node=None):
+    def wait_until_ready(self, timeout_sec=120, expected_unavailable_node=None):
         if expected_unavailable_node:
             node_id = self.redpanda.idx(expected_unavailable_node)
-            self.logger.info(f"waiting for quiescent state, "
-                             f"expected unavailable node: {node_id}")
+            self.logger.info(
+                f"waiting for quiescent state, expected unavailable node: {node_id}"
+            )
         else:
             node_id = None
             self.logger.info(f"waiting for quiescent state")
 
         def predicate(status):
-            return (status["status"] == "ready" and
-                    ((node_id is None) or (node_id in status["violations"].get(
-                        "unavailable_nodes", []))))
+            return status["status"] == "ready" and (
+                (node_id is None)
+                or (node_id in status["violations"].get("unavailable_nodes", []))
+            )
 
         return self.wait_until_status(
             predicate,
             timeout_sec=timeout_sec,
-            err_msg="Error waiting for partition balancer to become ready")
+            err_msg="Error waiting for partition balancer to become ready",
+        )
 
     def check_no_replicas_on_node(self, node):
         node2pc = self.node2partition_count()
@@ -220,6 +232,7 @@ class PartitionBalancerService(EndToEndTest):
 
     class NodeStopper:
         """Stop/kill/freeze one node at a time and wait for partition balancer."""
+
         def __init__(self, test, exclude_unavailable_nodes=False):
             self.test = test
             self.f_injector = make_failure_injector(test.redpanda)
@@ -238,7 +251,7 @@ class PartitionBalancerService(EndToEndTest):
             brokers = admin.get_brokers()
 
             for b in brokers:
-                if b['node_id'] == node_id and b['is_alive'] == False:
+                if b["node_id"] == node_id and b["is_alive"] == False:
                     return False
 
             return True
@@ -246,25 +259,25 @@ class PartitionBalancerService(EndToEndTest):
         def make_available(self, wait_for_node=False):
             if self.cur_failure:
                 # heal the previous failure
-                self.f_injector._stop_func(self.cur_failure.type)(
-                    self.cur_failure.node)
+                self.f_injector._stop_func(self.cur_failure.type)(self.cur_failure.node)
                 if wait_for_node:
                     wait_until(
                         lambda: self.wait_for_node_to_be_ready(
-                            self.test.redpanda.idx(self.cur_failure.node)), 30,
-                        1)
+                            self.test.redpanda.idx(self.cur_failure.node)
+                        ),
+                        30,
+                        1,
+                    )
                     self.logger.info(
                         f"made {self.cur_failure.node.account.hostname} available"
                     )
                 if self.exclude_unavailable_nodes:
-                    self.test.redpanda.add_to_started_nodes(
-                        self.cur_failure.node)
+                    self.test.redpanda.add_to_started_nodes(self.cur_failure.node)
                 self.cur_failure = None
 
-        def make_unavailable(self,
-                             node,
-                             failure_types=None,
-                             wait_for_previous_node=False):
+        def make_unavailable(
+            self, node, failure_types=None, wait_for_previous_node=False
+        ):
             self.make_available(wait_for_previous_node)
             self.logger.info(f"making {node.account.hostname} unavailable")
 
@@ -279,8 +292,7 @@ class PartitionBalancerService(EndToEndTest):
             assert self.cur_failure is None
 
             self.cur_failure = FailureSpec(random.choice(failure_types), node)
-            self.f_injector._start_func(self.cur_failure.type)(
-                self.cur_failure.node)
+            self.f_injector._start_func(self.cur_failure.type)(self.cur_failure.node)
             if self.exclude_unavailable_nodes:
                 self.test.redpanda.remove_from_started_nodes(node)
 
@@ -296,10 +308,12 @@ class PartitionBalancerTest(PartitionBalancerService):
     @matrix(decom_before_add=[True, False])
     def test_restack_nodes(self, decom_before_add):
         extra_rp_conf = {"raft_learner_recovery_rate": 100 * 1024 * 1024}
-        self.start_redpanda(num_nodes=5,
-                            extra_rp_conf=extra_rp_conf,
-                            new_bootstrap=True,
-                            max_num_seeds=5)
+        self.start_redpanda(
+            num_nodes=5,
+            extra_rp_conf=extra_rp_conf,
+            new_bootstrap=True,
+            max_num_seeds=5,
+        )
         self.topic = TopicSpec(partition_count=1)
         self.client().create_topic(self.topic)
 
@@ -328,8 +342,7 @@ class PartitionBalancerTest(PartitionBalancerService):
                         brokers = self.redpanda._admin.get_brokers()
                     except:
                         return False
-                    return not any(b['node_id'] == old_node_id
-                                   for b in brokers)
+                    return not any(b["node_id"] == old_node_id for b in brokers)
 
                 wait_until(node_removed, timeout_sec=120, backoff_sec=2)
 
@@ -337,37 +350,37 @@ class PartitionBalancerTest(PartitionBalancerService):
                 decommission_node()
 
             redpanda.stop_node(node)
-            redpanda.clean_node(node,
-                                preserve_logs=True,
-                                preserve_current_install=True)
-            redpanda.start_node(node,
-                                auto_assign_node_id=True,
-                                omit_seeds_on_idx_one=False)
+            redpanda.clean_node(node, preserve_logs=True, preserve_current_install=True)
+            redpanda.start_node(
+                node, auto_assign_node_id=True, omit_seeds_on_idx_one=False
+            )
 
             if not decom_before_add:
                 decommission_node()
 
             # The revived node should have a new node ID.
             new_node_id = self.redpanda.node_id(node, force_refresh=True)
-            assert new_node_id not in used_node_ids, \
+            assert new_node_id not in used_node_ids, (
                 f"Expected new node ID for {old_node_id}, got {new_node_id}"
+            )
             used_node_ids.append(new_node_id)
 
             self.logger.debug(
                 f"Wiped and restarted node ID {old_node_id} at {node.account.hostname}"
             )
             wait_until(self.redpanda.healthy, timeout_sec=120, backoff_sec=1)
-        self.run_validation(min_records=100,
-                            consumer_timeout_sec=CONSUMER_TIMEOUT)
+        self.run_validation(min_records=100, consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     @skip_debug_mode
-    @cluster(num_nodes=7,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST + RECONCILIATION_TIMEOUT_LOG)
+    @cluster(
+        num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST + RECONCILIATION_TIMEOUT_LOG
+    )
     def test_unavailable_nodes(self):
         self.start_redpanda(num_nodes=5)
         # set partition shutdown watchdog timeout to a large value to prevent spurious detection when Redpanda node is suspended
         self.redpanda.set_cluster_config(
-            {"partition_manager_shutdown_watchdog_timeout": 90000})
+            {"partition_manager_shutdown_watchdog_timeout": 90000}
+        )
 
         self.topic = TopicSpec(partition_count=random.randint(20, 30))
         self.client().create_topic(self.topic)
@@ -386,8 +399,7 @@ class PartitionBalancerTest(PartitionBalancerService):
                     # but just for the partition movement to start and then
                     # move to the next node.
 
-                    self.logger.info(
-                        f"waiting for partition balancer to kick in")
+                    self.logger.info(f"waiting for partition balancer to kick in")
 
                     node_id = self.redpanda.idx(node)
 
@@ -396,7 +408,8 @@ class PartitionBalancerTest(PartitionBalancerService):
                             return True
                         elif s["status"] == "ready":
                             return node_id in s["violations"].get(
-                                "unavailable_nodes", [])
+                                "unavailable_nodes", []
+                            )
                         else:
                             return False
 
@@ -411,13 +424,13 @@ class PartitionBalancerTest(PartitionBalancerService):
             self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     def _throttle_recovery(self, new_value):
-        self.redpanda.set_cluster_config(
-            {"raft_learner_recovery_rate": str(new_value)})
+        self.redpanda.set_cluster_config({"raft_learner_recovery_rate": str(new_value)})
         wait_for_recovery_throttle_rate(self.redpanda, new_value)
 
     @skip_debug_mode
-    @cluster(num_nodes=6,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST + RECONCILIATION_TIMEOUT_LOG)
+    @cluster(
+        num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST + RECONCILIATION_TIMEOUT_LOG
+    )
     def test_movement_cancellations(self):
         self.start_redpanda(num_nodes=4)
 
@@ -433,8 +446,7 @@ class PartitionBalancerTest(PartitionBalancerService):
 
         with self.NodeStopper(self) as ns:
             # clean node
-            ns.make_unavailable(empty_node,
-                                failure_types=[FailureSpec.FAILURE_KILL])
+            ns.make_unavailable(empty_node, failure_types=[FailureSpec.FAILURE_KILL])
             self.wait_until_ready(expected_unavailable_node=empty_node)
             ns.make_available()
             self.check_no_replicas_on_node(empty_node)
@@ -444,10 +456,8 @@ class PartitionBalancerTest(PartitionBalancerService):
 
             for n in range(3):
                 node = self.redpanda.nodes[n % 3]
-                partitions_amount_to_move = self.get_partition_amount_on_node(
-                    node)
-                ns.make_unavailable(node,
-                                    failure_types=[FailureSpec.FAILURE_KILL])
+                partitions_amount_to_move = self.get_partition_amount_on_node(node)
+                ns.make_unavailable(node, failure_types=[FailureSpec.FAILURE_KILL])
 
                 # wait until movement start
                 self.wait_until_status(lambda s: s["status"] == "in_progress")
@@ -455,8 +465,9 @@ class PartitionBalancerTest(PartitionBalancerService):
                 ns.make_available()
 
                 # stop empty node
-                ns.make_unavailable(empty_node,
-                                    failure_types=[FailureSpec.FAILURE_KILL])
+                ns.make_unavailable(
+                    empty_node, failure_types=[FailureSpec.FAILURE_KILL]
+                )
 
                 # wait until movements are cancelling
                 self.wait_until_ready(expected_unavailable_node=empty_node)
@@ -468,18 +479,19 @@ class PartitionBalancerTest(PartitionBalancerService):
     def check_rack_placement(self, topic, rack_layout):
         for p in self.topic_partitions_replicas(topic):
             racks = {rack_layout[r - 1] for r in p.replicas}
-            assert (
-                len(racks) == 3
-            ), f"bad rack placement {racks} for partition id: {p.id} (replicas: {p.replicas})"
+            assert len(racks) == 3, (
+                f"bad rack placement {racks} for partition id: {p.id} (replicas: {p.replicas})"
+            )
 
     @skip_debug_mode
-    @cluster(num_nodes=8,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST + RECONCILIATION_TIMEOUT_LOG)
+    @cluster(
+        num_nodes=8, log_allow_list=CHAOS_LOG_ALLOW_LIST + RECONCILIATION_TIMEOUT_LOG
+    )
     def test_rack_awareness(self):
         extra_rp_conf = self._extra_rp_conf | {"enable_rack_awareness": True}
-        self.redpanda = make_redpanda_service(self.test_context,
-                                              num_brokers=6,
-                                              extra_rp_conf=extra_rp_conf)
+        self.redpanda = make_redpanda_service(
+            self.test_context, num_brokers=6, extra_rp_conf=extra_rp_conf
+        )
 
         rack_layout = "AABBCC"
         for ix, node in enumerate(self.redpanda.nodes):
@@ -509,8 +521,9 @@ class PartitionBalancerTest(PartitionBalancerService):
             self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     @skip_debug_mode
-    @cluster(num_nodes=7,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST + RECONCILIATION_TIMEOUT_LOG)
+    @cluster(
+        num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST + RECONCILIATION_TIMEOUT_LOG
+    )
     def test_rack_constraint_repair(self):
         """
         Test partition balancer rack constraint repair with the following scenario:
@@ -523,9 +536,9 @@ class PartitionBalancerTest(PartitionBalancerService):
         """
 
         extra_rp_conf = self._extra_rp_conf | {"enable_rack_awareness": True}
-        self.redpanda = make_redpanda_service(self.test_context,
-                                              num_brokers=5,
-                                              extra_rp_conf=extra_rp_conf)
+        self.redpanda = make_redpanda_service(
+            self.test_context, num_brokers=5, extra_rp_conf=extra_rp_conf
+        )
 
         rack_layout = "ABBCC"
         for ix, node in enumerate(self.redpanda.nodes):
@@ -545,13 +558,14 @@ class PartitionBalancerTest(PartitionBalancerService):
 
         def num_with_broken_rack_constraint() -> int:
             metrics = self.redpanda.metrics_sample(
-                "num_with_broken_rack_constraint",
-                nodes=self.redpanda.nodes[0:3])
+                "num_with_broken_rack_constraint", nodes=self.redpanda.nodes[0:3]
+            )
             self.logger.debug(f"samples: {metrics.samples}")
 
             val = int(max(s.value for s in metrics.samples))
             self.logger.debug(
-                f"number of partitions with broken rack constraint: {val}")
+                f"number of partitions with broken rack constraint: {val}"
+            )
             return val
 
         with self.NodeStopper(self) as ns:
@@ -559,7 +573,8 @@ class PartitionBalancerTest(PartitionBalancerService):
 
             node = self.redpanda.nodes[3]
             num_partitions_on_killed_node = len(
-                Admin(self.redpanda).get_partitions(node=node))
+                Admin(self.redpanda).get_partitions(node=node)
+            )
             self.logger.info(
                 f"number of partitions on killed node: {num_partitions_on_killed_node}"
             )
@@ -568,8 +583,9 @@ class PartitionBalancerTest(PartitionBalancerService):
             self.wait_until_ready(expected_unavailable_node=node)
 
             # - 1 comes from the controller partition
-            assert num_with_broken_rack_constraint(
-            ) == num_partitions_on_killed_node - 1
+            assert (
+                num_with_broken_rack_constraint() == num_partitions_on_killed_node - 1
+            )
 
             self.redpanda.start_node(self.redpanda.nodes[4])
 
@@ -580,10 +596,12 @@ class PartitionBalancerTest(PartitionBalancerService):
         assert num_with_broken_rack_constraint() == 0
 
     @skip_debug_mode
-    @cluster(num_nodes=7,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST +
-             RACE_BETWEEN_DELETION_AND_ADDING_PARTITION +
-             RECONCILIATION_TIMEOUT_LOG)
+    @cluster(
+        num_nodes=7,
+        log_allow_list=CHAOS_LOG_ALLOW_LIST
+        + RACE_BETWEEN_DELETION_AND_ADDING_PARTITION
+        + RECONCILIATION_TIMEOUT_LOG,
+    )
     def test_fuzz_admin_ops(self):
         self.start_redpanda(num_nodes=5)
 
@@ -594,9 +612,9 @@ class PartitionBalancerTest(PartitionBalancerService):
         self.start_consumer(1)
         self.await_startup()
 
-        self.admin_fuzz = AdminOperationsFuzzer(self.redpanda,
-                                                min_replication=3,
-                                                retries=0)
+        self.admin_fuzz = AdminOperationsFuzzer(
+            self.redpanda, min_replication=3, retries=0
+        )
         self.admin_fuzz.start()
 
         def describe_topics(retries=5, retries_interval=5):
@@ -610,7 +628,8 @@ class PartitionBalancerTest(PartitionBalancerService):
                     error = e
                     self.logger.info(
                         f"describe_topics error: {error}, "
-                        f"retries left: {retries-retry}/{retries}")
+                        f"retries left: {retries - retry}/{retries}"
+                    )
                     time.sleep(retries_interval)
             raise error
 
@@ -619,8 +638,9 @@ class PartitionBalancerTest(PartitionBalancerService):
             for t in describe_topics():
                 for p in t.partitions:
                     for r in p.replicas:
-                        node2partition_count[
-                            r] = node2partition_count.setdefault(r, 0) + 1
+                        node2partition_count[r] = (
+                            node2partition_count.setdefault(r, 0) + 1
+                        )
             self.logger.info(f"partition counts: {node2partition_count}")
             return node2partition_count
 
@@ -656,8 +676,10 @@ class PartitionBalancerTest(PartitionBalancerService):
         """
 
         skip_reason = None
-        if not self.test_context.globals.get('use_xfs_partitions', False):
-            skip_reason = "looks like we are not using separate partitions for each node"
+        if not self.test_context.globals.get("use_xfs_partitions", False):
+            skip_reason = (
+                "looks like we are not using separate partitions for each node"
+            )
 
         if skip_reason:
             self.logger.warn("skipping test: " + skip_reason)
@@ -676,31 +698,33 @@ class PartitionBalancerTest(PartitionBalancerService):
                 "log_segment_size": 104857600,  # 100 MiB
                 "retention_local_target_capacity_percent": 100.0,
                 "retention_local_trim_interval": 3000,
-                "disk_reservation_percent": 0.0
+                "disk_reservation_percent": 0.0,
             },
-            environment={"__REDPANDA_TEST_DISK_SIZE": disk_size})
+            environment={"__REDPANDA_TEST_DISK_SIZE": disk_size},
+        )
 
         self.topic = TopicSpec(partition_count=30)
         self.client().create_topic(self.topic)
 
         def get_avg_disk_usage():
-            return sum([
-                self.redpanda.get_node_disk_usage(n)
-                for n in self.redpanda.nodes
-            ]) / len(self.redpanda.nodes) / disk_size
+            return (
+                sum([self.redpanda.get_node_disk_usage(n) for n in self.redpanda.nodes])
+                / len(self.redpanda.nodes)
+                / disk_size
+            )
 
         msg_size = 102_400
         produce_batch_size = ceil(disk_size / msg_size / 30)
         while get_avg_disk_usage() < 0.7:
-            producer = KgoVerifierProducer(self.test_context,
-                                           self.redpanda,
-                                           self.topic,
-                                           msg_size=msg_size,
-                                           msg_count=produce_batch_size)
+            producer = KgoVerifierProducer(
+                self.test_context,
+                self.redpanda,
+                self.topic,
+                msg_size=msg_size,
+                msg_count=produce_batch_size,
+            )
             producer.start(clean=False)
-            producer.wait_for_acks(produce_batch_size,
-                                   timeout_sec=120,
-                                   backoff_sec=5)
+            producer.wait_for_acks(produce_batch_size, timeout_sec=120, backoff_sec=5)
             producer.stop()
             producer.free()
 
@@ -709,12 +733,14 @@ class PartitionBalancerTest(PartitionBalancerService):
                 disk_usage = self.redpanda.get_node_disk_usage(n)
                 self.logger.info(
                     f"node {self.redpanda.idx(n)}: "
-                    f"disk used percentage: {int(100.0 * disk_usage/disk_size)}"
+                    f"disk used percentage: {int(100.0 * disk_usage / disk_size)}"
                 )
 
         with self.NodeStopper(self) as ns:
-            ns.make_unavailable(random.choice(self.redpanda.nodes),
-                                failure_types=[FailureSpec.FAILURE_KILL])
+            ns.make_unavailable(
+                random.choice(self.redpanda.nodes),
+                failure_types=[FailureSpec.FAILURE_KILL],
+            )
 
             # Wait until the balancer manages to move partitions from the killed node.
             # This will make other 4 nodes go over the disk usage limit and the balancer
@@ -743,8 +769,7 @@ class PartitionBalancerTest(PartitionBalancerService):
                     # because leadership transfers will create new segments that can cause disk
                     # usage to go over limit again even after we've verified that everything
                     # is stable.
-                    self.redpanda.set_cluster_config(
-                        {"enable_leader_balancer": False})
+                    self.redpanda.set_cluster_config({"enable_leader_balancer": False})
                     ready_appeared_at = time.time()
                 else:
                     # ready status is stable for 11 seconds, should be enough for 3 ticks to pass
@@ -759,7 +784,8 @@ class PartitionBalancerTest(PartitionBalancerService):
             used_ratio = disk_usage / disk_size
             self.logger.info(
                 f"node {self.redpanda.idx(n)}: "
-                f"disk used percentage: {int(100.0 * used_ratio)}")
+                f"disk used percentage: {int(100.0 * used_ratio)}"
+            )
             # Checking that used_ratio is less than 81 instead of 80
             # Because when we check, disk can become overfilled one more time
             # and partition balancing is not invoked yet
@@ -773,8 +799,10 @@ class PartitionBalancerTest(PartitionBalancerService):
         """
 
         skip_reason = None
-        if not self.test_context.globals.get('use_xfs_partitions', False):
-            skip_reason = "looks like we are not using separate partitions for each node"
+        if not self.test_context.globals.get("use_xfs_partitions", False):
+            skip_reason = (
+                "looks like we are not using separate partitions for each node"
+            )
 
         if skip_reason:
             self.logger.warn("skipping test: " + skip_reason)
@@ -790,7 +818,8 @@ class PartitionBalancerTest(PartitionBalancerService):
         # configure local retention to be below the balancer threshold
         local_retention_percents = 50
         local_retention_bytes = int(
-            (disk_size * (local_retention_percents / 100.0)) / partition_count)
+            (disk_size * (local_retention_percents / 100.0)) / partition_count
+        )
 
         si_settings = SISettings(
             test_context=self.test_context,
@@ -798,7 +827,8 @@ class PartitionBalancerTest(PartitionBalancerService):
             cloud_storage_segment_max_upload_interval_sec=5,
             cloud_storage_manifest_max_upload_interval_sec=3,
             cloud_storage_cache_size=1024 * 1024 * 1024,
-            retention_local_strict=False)
+            retention_local_strict=False,
+        )
 
         self.start_redpanda(
             num_nodes=5,
@@ -811,21 +841,24 @@ class PartitionBalancerTest(PartitionBalancerService):
                 # add disk reservation to buffer
                 "disk_reservation_percent": 20.0,
                 "partition_autobalancing_max_disk_usage_percent": 70,
-                'retention_local_target_capacity_percent': 100,
-                'storage_space_alert_free_threshold_percent': 0,
+                "retention_local_target_capacity_percent": 100,
+                "storage_space_alert_free_threshold_percent": 0,
                 "retention_local_strict": False,
-                "partition_autobalancing_mode": "off"
+                "partition_autobalancing_mode": "off",
             },
             environment={"__REDPANDA_TEST_DISK_SIZE": disk_size},
-            si_settings=si_settings)
+            si_settings=si_settings,
+        )
 
         self.topic = TopicSpec(partition_count=partition_count)
         self.topic.redpanda_remote_read = True
         self.topic.redpanda_remote_write = True
         self.client().create_topic(self.topic)
         self.client().alter_topic_config(
-            self.topic.name, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
-            local_retention_bytes)
+            self.topic.name,
+            TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
+            local_retention_bytes,
+        )
 
         def get_avg_disk_usage():
             node_disk_sizes = {
@@ -835,25 +868,24 @@ class PartitionBalancerTest(PartitionBalancerService):
 
             for n, sz in node_disk_sizes.items():
                 self.logger.info(
-                    f"node: {n} used disk size: {sz/(1024*1024):.2f} MB, usage: {100.0*sz/disk_size:.2f} %"
+                    f"node: {n} used disk size: {sz / (1024 * 1024):.2f} MB, usage: {100.0 * sz / disk_size:.2f} %"
                 )
 
-            return sum(node_disk_sizes.values()) / len(
-                self.redpanda.nodes) / disk_size
+            return sum(node_disk_sizes.values()) / len(self.redpanda.nodes) / disk_size
 
         msg_size = 102_400
         produce_batch_size = ceil(disk_size / msg_size / 30)
         # produce up to 80 percentes of disk used
         while get_avg_disk_usage() < 0.79:
-            producer = KgoVerifierProducer(self.test_context,
-                                           self.redpanda,
-                                           self.topic,
-                                           msg_size=msg_size,
-                                           msg_count=produce_batch_size)
+            producer = KgoVerifierProducer(
+                self.test_context,
+                self.redpanda,
+                self.topic,
+                msg_size=msg_size,
+                msg_count=produce_batch_size,
+            )
             producer.start(clean=False)
-            producer.wait_for_acks(produce_batch_size,
-                                   timeout_sec=120,
-                                   backoff_sec=5)
+            producer.wait_for_acks(produce_batch_size, timeout_sec=120, backoff_sec=5)
             producer.stop()
             producer.free()
 
@@ -862,12 +894,11 @@ class PartitionBalancerTest(PartitionBalancerService):
                 disk_usage = self.redpanda.get_node_disk_usage(n)
                 self.logger.info(
                     f"node {self.redpanda.idx(n)}: "
-                    f"disk used percentage: {int(100.0 * disk_usage/disk_size)}"
+                    f"disk used percentage: {int(100.0 * disk_usage / disk_size)}"
                 )
 
         # turn the partition balancer on
-        self.redpanda.set_cluster_config(
-            {"partition_autobalancing_mode": "continuous"})
+        self.redpanda.set_cluster_config({"partition_autobalancing_mode": "continuous"})
 
         # Wait until the balancer is active and stable for a few ticks in a row
         ready_appeared_at = None
@@ -882,8 +913,7 @@ class PartitionBalancerTest(PartitionBalancerService):
                     # because leadership transfers will create new segments that can cause disk
                     # usage to go over limit again even after we've verified that everything
                     # is stable.
-                    self.redpanda.set_cluster_config(
-                        {"enable_leader_balancer": False})
+                    self.redpanda.set_cluster_config({"enable_leader_balancer": False})
                     ready_appeared_at = time.time()
                 else:
                     # ready status is stable for 11 seconds, should be enough for 3 ticks to pass
@@ -895,8 +925,10 @@ class PartitionBalancerTest(PartitionBalancerService):
         # check the partition balancer can still work with the disk
         # having reclaimable space but no free space
         with self.NodeStopper(self) as ns:
-            ns.make_unavailable(random.choice(self.redpanda.nodes),
-                                failure_types=[FailureSpec.FAILURE_KILL])
+            ns.make_unavailable(
+                random.choice(self.redpanda.nodes),
+                failure_types=[FailureSpec.FAILURE_KILL],
+            )
 
             # Wait until the balancer manages to move partitions from the killed node.
             def is_in_progress(s):
@@ -918,8 +950,9 @@ class PartitionBalancerTest(PartitionBalancerService):
         self.wait_until_status(is_ready_and_stable)
 
     @skip_debug_mode
-    @cluster(num_nodes=7,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST + RECONCILIATION_TIMEOUT_LOG)
+    @cluster(
+        num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST + RECONCILIATION_TIMEOUT_LOG
+    )
     @matrix(kill_same_node=[True, False])
     def test_maintenance_mode(self, kill_same_node):
         """
@@ -951,38 +984,38 @@ class PartitionBalancerTest(PartitionBalancerService):
 
         rpk.cluster_maintenance_enable(node, wait=True)
         # the node should now report itself in maintenance mode
-        assert admin.maintenance_status(node)["draining"], \
-                    f"{node.name} not in expected maintenance mode"
+        assert admin.maintenance_status(node)["draining"], (
+            f"{node.name} not in expected maintenance mode"
+        )
 
         def entered_maintenance_mode(node):
             try:
                 status = admin.maintenance_status(node)
             except IOError:
                 return False
-            return status["finished"] and not status["errors"] and \
-                status["partitions"] > 0
+            return (
+                status["finished"] and not status["errors"] and status["partitions"] > 0
+            )
 
         with self.NodeStopper(self) as ns:
             if kill_same_node:
                 to_kill = node
             else:
-                to_kill = random.choice([
-                    n for n in self.redpanda.nodes
-                    if self.redpanda.idx(n) != node_id
-                ])
+                to_kill = random.choice(
+                    [n for n in self.redpanda.nodes if self.redpanda.idx(n) != node_id]
+                )
 
             ns.make_unavailable(to_kill)
 
             if kill_same_node:
                 ns.make_available()
 
-            wait_until(lambda: entered_maintenance_mode(node),
-                       timeout_sec=120,
-                       backoff_sec=10)
+            wait_until(
+                lambda: entered_maintenance_mode(node), timeout_sec=120, backoff_sec=10
+            )
 
             # use raw admin interface to avoid waiting for the killed node
-            admin.patch_cluster_config(
-                {"raft_learner_recovery_rate": 100_000_000})
+            admin.patch_cluster_config({"raft_learner_recovery_rate": 100_000_000})
 
             if kill_same_node:
                 self.wait_until_ready()
@@ -990,12 +1023,14 @@ class PartitionBalancerTest(PartitionBalancerService):
                 self.wait_until_ready(expected_unavailable_node=to_kill)
                 self.check_no_replicas_on_node(to_kill)
 
-        self.run_validation(enable_idempotence=False,
-                            consumer_timeout_sec=CONSUMER_TIMEOUT)
+        self.run_validation(
+            enable_idempotence=False, consumer_timeout_sec=CONSUMER_TIMEOUT
+        )
 
     @skip_debug_mode
-    @cluster(num_nodes=7,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST + STARTUP_SEQUENCE_ABORTED)
+    @cluster(
+        num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST + STARTUP_SEQUENCE_ABORTED
+    )
     @matrix(kill_same_node=[True, False], decommission_first=[True, False])
     def test_decommission(self, kill_same_node, decommission_first):
         """
@@ -1025,10 +1060,9 @@ class PartitionBalancerTest(PartitionBalancerService):
             to_kill = to_decom
             to_kill_id = to_decom_id
         else:
-            to_kill = random.choice([
-                n for n in self.redpanda.nodes
-                if self.redpanda.idx(n) != to_decom_id
-            ])
+            to_kill = random.choice(
+                [n for n in self.redpanda.nodes if self.redpanda.idx(n) != to_decom_id]
+            )
             to_kill_id = self.redpanda.idx(to_kill)
 
         # throttle recovery to prevent partition moves from finishing
@@ -1044,8 +1078,7 @@ class PartitionBalancerTest(PartitionBalancerService):
 
         with self.NodeStopper(self) as ns:
             # kill the node and wait for the partition balancer to kick in
-            ns.make_unavailable(to_kill,
-                                failure_types=[FailureSpec.FAILURE_KILL])
+            ns.make_unavailable(to_kill, failure_types=[FailureSpec.FAILURE_KILL])
             self.wait_until_status(lambda s: s["status"] == "in_progress")
 
             if not decommission_first:
@@ -1054,18 +1087,22 @@ class PartitionBalancerTest(PartitionBalancerService):
 
             # A node which isn't being decommed, to use when calling into
             # the admin API from this point onwards.
-            survivor_node = random.choice([
-                n for n in self.redpanda.nodes
-                if self.redpanda.idx(n) not in {to_kill_id, to_decom_id}
-            ])
+            survivor_node = random.choice(
+                [
+                    n
+                    for n in self.redpanda.nodes
+                    if self.redpanda.idx(n) not in {to_kill_id, to_decom_id}
+                ]
+            )
             self.logger.info(
                 f"Using survivor node {survivor_node.name} {self.redpanda.idx(survivor_node)}"
             )
 
             def started_draining():
                 b = [
-                    b for b in admin.get_brokers(survivor_node)
-                    if b['node_id'] == to_decom_id
+                    b
+                    for b in admin.get_brokers(survivor_node)
+                    if b["node_id"] == to_decom_id
                 ]
                 return len(b) > 0 and b[0]["membership_status"] == "draining"
 
@@ -1078,11 +1115,11 @@ class PartitionBalancerTest(PartitionBalancerService):
             self.logger.info("bringing back recovery speed")
             # use raw admin interface to avoid waiting for the killed node
             new_version = admin.patch_cluster_config(
-                {"raft_learner_recovery_rate": 100_000_000})['config_version']
+                {"raft_learner_recovery_rate": 100_000_000}
+            )["config_version"]
 
             alive_nodes = [
-                n for n in self.redpanda.nodes
-                if self.redpanda.idx(n) is not to_kill_id
+                n for n in self.redpanda.nodes if self.redpanda.idx(n) is not to_kill_id
             ]
 
             def config_applied():
@@ -1090,15 +1127,18 @@ class PartitionBalancerTest(PartitionBalancerService):
                 self.logger.debug(
                     f"cluster status: {status}, checking for live nodes: {alive_nodes}"
                 )
-                return all(k["config_version"] >= new_version for k in status
-                           if k["node_id"] in alive_nodes)
+                return all(
+                    k["config_version"] >= new_version
+                    for k in status
+                    if k["node_id"] in alive_nodes
+                )
 
             wait_until(config_applied, timeout_sec=60, backoff_sec=2)
 
             # Check that the node has been successfully decommissioned.
             def node_removed():
                 brokers = admin.get_brokers(node=survivor_node)
-                return not any(b['node_id'] == to_decom_id for b in brokers)
+                return not any(b["node_id"] == to_decom_id for b in brokers)
 
             wait_until(node_removed, timeout_sec=120, backoff_sec=2)
 
@@ -1108,8 +1148,9 @@ class PartitionBalancerTest(PartitionBalancerService):
 
             self.wait_until_ready()
 
-        self.run_validation(enable_idempotence=False,
-                            consumer_timeout_sec=CONSUMER_TIMEOUT)
+        self.run_validation(
+            enable_idempotence=False, consumer_timeout_sec=CONSUMER_TIMEOUT
+        )
 
     @skip_debug_mode
     @cluster(num_nodes=4, log_allow_list=CHAOS_LOG_ALLOW_LIST)
@@ -1136,28 +1177,33 @@ class PartitionBalancerTest(PartitionBalancerService):
 
         with self.NodeStopper(self) as ns:
             to_kill = random.choice(self.redpanda.nodes)
-            ns.make_unavailable(to_kill,
-                                failure_types=[FailureSpec.FAILURE_KILL])
+            ns.make_unavailable(to_kill, failure_types=[FailureSpec.FAILURE_KILL])
             self.wait_until_ready()
 
             controller = self.redpanda.controller()
             controller_id = self.redpanda.idx(controller)
             admin = Admin(self.redpanda)
 
-            transfer_to = random.choice([
-                n for n in self.redpanda.nodes
-                if n.name != to_kill.name and n.name != controller.name
-            ])
+            transfer_to = random.choice(
+                [
+                    n
+                    for n in self.redpanda.nodes
+                    if n.name != to_kill.name and n.name != controller.name
+                ]
+            )
             transfer_to_idx = self.redpanda.idx(transfer_to)
             self.logger.info(
                 f"transferring raft0 leadership from {controller_id} to {transfer_to_idx} "
-                f"(killed node: {self.redpanda.idx(to_kill)})")
+                f"(killed node: {self.redpanda.idx(to_kill)})"
+            )
 
-            admin.transfer_leadership_to(namespace='redpanda',
-                                         topic='controller',
-                                         partition=0,
-                                         leader_id=controller_id,
-                                         target_id=transfer_to_idx)
+            admin.transfer_leadership_to(
+                namespace="redpanda",
+                topic="controller",
+                partition=0,
+                leader_id=controller_id,
+                target_id=transfer_to_idx,
+            )
 
             self.wait_until_ready()
 
@@ -1170,9 +1216,7 @@ class PartitionBalancerTest(PartitionBalancerService):
         """
 
         # start first 3 nodes and create some partitions on them
-        self.start_redpanda(num_nodes=5,
-                            num_started_nodes=3,
-                            new_bootstrap=True)
+        self.start_redpanda(num_nodes=5, num_started_nodes=3, new_bootstrap=True)
         self.topic = TopicSpec(partition_count=50)
         self.client().create_topic(self.topic)
 
@@ -1186,24 +1230,26 @@ class PartitionBalancerTest(PartitionBalancerService):
             seed_nodes,
             auto_assign_node_id=True,
             omit_seeds_on_idx_one=False,
-            override_cfg_params={"recovery_mode_enabled": True})
+            override_cfg_params={"recovery_mode_enabled": True},
+        )
 
         # add 2 more nodes and make sure the balancer runs on one of them
         # (it can't run on seed nodes because of recovery mode)
         joiner_nodes = self.redpanda.nodes[3:]
         for node in joiner_nodes:
-            self.redpanda.start_node(node,
-                                     auto_assign_node_id=True,
-                                     omit_seeds_on_idx_one=False)
+            self.redpanda.start_node(
+                node, auto_assign_node_id=True, omit_seeds_on_idx_one=False
+            )
         self.redpanda.wait_for_membership(first_start=False)
 
         admin = Admin(self.redpanda)
 
-        admin.transfer_leadership_to(namespace='redpanda',
-                                     topic='controller',
-                                     partition=0,
-                                     target_id=self.redpanda.node_id(
-                                         joiner_nodes[0]))
+        admin.transfer_leadership_to(
+            namespace="redpanda",
+            topic="controller",
+            partition=0,
+            target_id=self.redpanda.node_id(joiner_nodes[0]),
+        )
 
         # the balancer will stall because not all partitions are moveable
         self.wait_until_status(lambda s: s["status"] == "stalled")
@@ -1220,8 +1266,9 @@ class PartitionBalancerTest(PartitionBalancerService):
         ]
         self.logger.info(f"partition counts: {partition_counts}")
         avg = sum(partition_counts) / len(partition_counts)
-        assert all(abs(c - avg) / avg < 0.05 for c in partition_counts), \
+        assert all(abs(c - avg) / avg < 0.05 for c in partition_counts), (
             "partition counts not balanced"
+        )
 
         self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
@@ -1232,7 +1279,7 @@ class PartitionBalancerTest(PartitionBalancerService):
             return self.node2partition_count().get(node_id, 0)
 
         if disable_license:
-            environment = dict(__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE='1')
+            environment = dict(__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE="1")
         else:
             environment = dict()
 
@@ -1251,30 +1298,32 @@ class PartitionBalancerTest(PartitionBalancerService):
 
             kill_id = int(self.redpanda.node_id(to_kill))
             partitions_in_node_before = partitions_in_node(kill_id)
-            assert partitions_in_node_before != 0, f"Invalid Setup: Initial node partitions is \"{partitions_in_node_before}\""
+            assert partitions_in_node_before != 0, (
+                f'Invalid Setup: Initial node partitions is "{partitions_in_node_before}"'
+            )
 
-            ns.make_unavailable(to_kill,
-                                failure_types=[FailureSpec.FAILURE_KILL])
+            ns.make_unavailable(to_kill, failure_types=[FailureSpec.FAILURE_KILL])
 
             time.sleep(30)
 
-            admin = Admin(self.redpanda,
-                          retry_codes=[503, 504],
-                          retries_amount=10)
+            admin = Admin(self.redpanda, retry_codes=[503, 504], retries_amount=10)
             status = admin.get_partition_balancer_status(timeout=10)
 
             partitions_in_node_after = partitions_in_node(kill_id)
 
-            s = status['status']
-            assert s == 'ready', f"Expected status == 'ready' but got '{s}' instead"
+            s = status["status"]
+            assert s == "ready", f"Expected status == 'ready' but got '{s}' instead"
 
-            unavailable = status['violations'].get('unavailable_nodes', [])
+            unavailable = status["violations"].get("unavailable_nodes", [])
             if disable_license:
-                assert len( unavailable) == 0, \
+                assert len(unavailable) == 0, (
                     f"Expected no nodes in unavailable. unavailable: {unavailable}"
+                )
                 assert partitions_in_node_after == partitions_in_node_before
             else:
-                assert kill_id in unavailable, f"Expected node with id \"{kill_id}\" in unavailable. unavailable: {unavailable}"
+                assert kill_id in unavailable, (
+                    f'Expected node with id "{kill_id}" in unavailable. unavailable: {unavailable}'
+                )
                 assert partitions_in_node_after == 0
 
             # Restore the system to a fully healthy state before validation:

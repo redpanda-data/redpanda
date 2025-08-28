@@ -61,8 +61,9 @@ class RpkProfileTest(RedpandaTest):
         assert len(profile_list) == 1
 
         # Now we try to use an already deleted profile
-        with expect_exception(RemoteCommandError,
-                              lambda e: "returned non-zero exit" in str(e)):
+        with expect_exception(
+            RemoteCommandError, lambda e: "returned non-zero exit" in str(e)
+        ):
             rpk.use_profile(pr2)
 
         # Finally, we rename it
@@ -73,8 +74,8 @@ class RpkProfileTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_use_profile(self):
         """
-        Test that creates a profile, assign the brokers and create a 
-        topic without using the --brokers flag that is used in every 
+        Test that creates a profile, assign the brokers and create a
+        topic without using the --brokers flag that is used in every
         ducktape test so far.
         """
         node = self.redpanda.get_node(0)
@@ -99,8 +100,7 @@ class RpkProfileTest(RedpandaTest):
         rpk.config_set("rpk.kafka_api.brokers", self.redpanda.brokers_list())
 
         # Then we create the profile based on the redpanda.yaml
-        rpk.create_profile_redpanda("simple_test",
-                                    RedpandaService.NODE_CONFIG_FILE)
+        rpk.create_profile_redpanda("simple_test", RedpandaService.NODE_CONFIG_FILE)
 
         rpk_cfg = read_rpk_cfg(node)
         redpanda_cfg = read_redpanda_cfg(node)

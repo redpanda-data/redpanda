@@ -8,8 +8,7 @@
 # by the Apache License, Version 2.0
 
 from rptest.services.cluster import cluster
-from rptest.transactions.verifiers.compacted_verifier \
-    import CompactedVerifier, Workload
+from rptest.transactions.verifiers.compacted_verifier import CompactedVerifier, Workload
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
@@ -23,21 +22,23 @@ class CompactedVerifierTest(RedpandaTest):
         extra_rp_conf = {
             "id_allocator_replication": 3,
             "default_topic_replications": 3,
-            "default_topic_partitions": 1
+            "default_topic_partitions": 1,
         }
 
-        super(CompactedVerifierTest,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf=extra_rp_conf)
+        super(CompactedVerifierTest, self).__init__(
+            test_context=test_context, extra_rp_conf=extra_rp_conf
+        )
 
     @cluster(num_nodes=4)
     def test_idempotency(self):
-        verifier = CompactedVerifier(self.test_context, self.redpanda,
-                                     Workload.IDEMPOTENCY)
+        verifier = CompactedVerifier(
+            self.test_context, self.redpanda, Workload.IDEMPOTENCY
+        )
         verifier.start()
 
-        verifier.remote_start_producer(self.redpanda.brokers(), self.topic,
-                                       self.partition_count)
+        verifier.remote_start_producer(
+            self.redpanda.brokers(), self.topic, self.partition_count
+        )
         self.logger.info("Waiting for 1000 writes")
         verifier.ensure_progress(1000, 30)
         self.logger.info("Done")
@@ -52,12 +53,12 @@ class CompactedVerifierTest(RedpandaTest):
 
     @cluster(num_nodes=4)
     def test_tx(self):
-        verifier = CompactedVerifier(self.test_context, self.redpanda,
-                                     Workload.TX)
+        verifier = CompactedVerifier(self.test_context, self.redpanda, Workload.TX)
         verifier.start()
 
-        verifier.remote_start_producer(self.redpanda.brokers(), self.topic,
-                                       self.partition_count)
+        verifier.remote_start_producer(
+            self.redpanda.brokers(), self.topic, self.partition_count
+        )
         self.logger.info("Waiting for 100 writes")
         verifier.ensure_progress(100, self.tx100_timeout_s)
         self.logger.info("Done")
@@ -68,12 +69,14 @@ class CompactedVerifierTest(RedpandaTest):
 
     @cluster(num_nodes=4)
     def test_tx_unique_keys(self):
-        verifier = CompactedVerifier(self.test_context, self.redpanda,
-                                     Workload.TX_UNIQUE_KEYS)
+        verifier = CompactedVerifier(
+            self.test_context, self.redpanda, Workload.TX_UNIQUE_KEYS
+        )
         verifier.start()
 
-        verifier.remote_start_producer(self.redpanda.brokers(), self.topic,
-                                       self.partition_count)
+        verifier.remote_start_producer(
+            self.redpanda.brokers(), self.topic, self.partition_count
+        )
         self.logger.info("Waiting for 100 writes")
         verifier.ensure_progress(100, self.tx100_timeout_s)
         self.logger.info("Done")

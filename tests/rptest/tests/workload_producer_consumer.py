@@ -10,7 +10,10 @@
 import uuid
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierProducer,
+    KgoVerifierSeqConsumer,
+)
 from rptest.services.workload_protocol import PWorkload
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.si_utils import BucketView, quiesce_uploads
@@ -20,6 +23,7 @@ class ProducerConsumerWorkload(PWorkload):
     """
     This workload will setup a KGoProducer/Consumer to verify operations across an upgrade
     """
+
     def __init__(self, ctx: PreallocNodesTest) -> None:
         self.ctx = ctx
         self.rpk = RpkTool(self.ctx.redpanda)
@@ -31,8 +35,7 @@ class ProducerConsumerWorkload(PWorkload):
         produce_byte_rate = 256 * 1024  # a quarter of Mb per second
         target_runtime_secs = 20 * 60
         self.MSG_SIZE = 256
-        self.PRODUCE_COUNT = (produce_byte_rate *
-                              target_runtime_secs) // self.MSG_SIZE
+        self.PRODUCE_COUNT = (produce_byte_rate * target_runtime_secs) // self.MSG_SIZE
         # the topic is requires less resources in debug mode for the sake of the test
         self.topic = TopicSpec(
             name=f"topic-{self.__class__.__name__}-{str(uuid.uuid4())}",
@@ -41,8 +44,7 @@ class ProducerConsumerWorkload(PWorkload):
             redpanda_remote_write=True,
             redpanda_remote_read=True,
             segment_bytes=1024 * 1024,
-            retention_bytes=
-            1024,  # this low value will indirectly speed up the upload of segments
+            retention_bytes=1024,  # this low value will indirectly speed up the upload of segments
         )
 
         self._producer = KgoVerifierProducer(
@@ -52,13 +54,15 @@ class ProducerConsumerWorkload(PWorkload):
             msg_size=self.MSG_SIZE,
             msg_count=self.PRODUCE_COUNT,
             rate_limit_bps=produce_byte_rate,
-            custom_node=self.ctx.preallocated_nodes)
+            custom_node=self.ctx.preallocated_nodes,
+        )
         self._seq_consumer = KgoVerifierSeqConsumer(
             self.ctx.test_context,
             self.ctx.redpanda,
             self.topic,
             self.MSG_SIZE,
-            nodes=self.ctx.preallocated_nodes)
+            nodes=self.ctx.preallocated_nodes,
+        )
 
     def begin(self):
         self.rpk.cluster_config_set("cloud_storage_enabled", "true")
@@ -68,8 +72,10 @@ class ProducerConsumerWorkload(PWorkload):
         self.ctx.client().create_topic(self.topic)
         # double check the topic is configured correctly
         topic_cfg = self.ctx.client().describe_topic_configs(self.topic.name)
-        assert topic_cfg["redpanda.remote.read"].value == "true" and topic_cfg[
-            "redpanda.remote.write"].value == "true"
+        assert (
+            topic_cfg["redpanda.remote.read"].value == "true"
+            and topic_cfg["redpanda.remote.write"].value == "true"
+        )
 
         self._producer.start(clean=False)
         self._producer.wait_for_offset_map()
@@ -80,7 +86,9 @@ class ProducerConsumerWorkload(PWorkload):
         self._producer.wait()
         self._seq_consumer.wait()
         wrote_at_least = self._producer.produce_status.acked
-        assert self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
+        assert (
+            self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
+        )
 
         self.ctx.client().delete_topic(self.topic.name)
 
@@ -102,23 +110,24 @@ class ProducerConsumerWorkload(PWorkload):
         manifest = bucket.manifest_for_ntp(self.topic.name, partition_zero.id)
 
         if major_version < (23, 2):
-            assert manifest[
-                'version'] <= 1, f"Manifest version {manifest['version']} is not <= 1"
+            assert manifest["version"] <= 1, (
+                f"Manifest version {manifest['version']} is not <= 1"
+            )
         else:
             # 23.2 starts to use the new manifest. wait until it gets uploaded
-            if manifest['version'] < 2:
+            if manifest["version"] < 2:
                 return PWorkload.NOT_DONE
 
-        if not ("segments" in manifest and len(manifest['segments']) > 0):
+        if not ("segments" in manifest and len(manifest["segments"]) > 0):
             # no segments uploaded yet
             return PWorkload.NOT_DONE
 
         # retrieve highest committed kafka offset and check that progress is made
-        top_segment = max(manifest['segments'].values(),
-                          key=lambda seg: seg['base_offset'])
-        uploaded_raft_offset = top_segment['committed_offset']
-        uploaded_kafka_offset = uploaded_raft_offset - top_segment[
-            'delta_offset_end']
+        top_segment = max(
+            manifest["segments"].values(), key=lambda seg: seg["base_offset"]
+        )
+        uploaded_raft_offset = top_segment["committed_offset"]
+        uploaded_kafka_offset = uploaded_raft_offset - top_segment["delta_offset_end"]
 
         if uploaded_kafka_offset > self.last_uploaded_kafka_offset:
             self.last_uploaded_kafka_offset = uploaded_kafka_offset

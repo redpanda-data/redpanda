@@ -12,7 +12,7 @@ import logging
 from io import BytesIO
 from reader import Reader
 
-logger = logging.getLogger('rp')
+logger = logging.getLogger("rp")
 
 # https://docs.python.org/3.8/library/struct.html#format-strings
 #
@@ -35,12 +35,27 @@ HDR_FMT_RP = HDR_FMT_RP_PREFIX + HDR_FMT_CRC
 HEADER_SIZE = struct.calcsize(HDR_FMT_RP)
 
 Header = collections.namedtuple(
-    'Header', ('header_crc', 'batch_size', 'base_offset', 'type', 'crc',
-               'attrs', 'delta', 'first_ts', 'max_ts', 'producer_id',
-               'producer_epoch', 'base_seq', 'record_count'))
+    "Header",
+    (
+        "header_crc",
+        "batch_size",
+        "base_offset",
+        "type",
+        "crc",
+        "attrs",
+        "delta",
+        "first_ts",
+        "max_ts",
+        "producer_id",
+        "producer_epoch",
+        "base_seq",
+        "record_count",
+    ),
+)
 
 SEGMENT_NAME_PATTERN = re.compile(
-    r"(?P<base_offset>\d+)-(?P<term>\d+)-v(?P<version>\d)\.log")
+    r"(?P<base_offset>\d+)-(?P<term>\d+)-v(?P<version>\d)\.log"
+)
 
 
 def human_bytes(bytes: int):
@@ -63,8 +78,9 @@ class CorruptBatchError(Exception):
 
 
 class Record:
-    def __init__(self, length, attrs, timestamp_delta, offset_delta, key,
-                 value, headers):
+    def __init__(
+        self, length, attrs, timestamp_delta, offset_delta, key, value, headers
+    ):
         self.length = length
         self.attrs = attrs
         self.timestamp_delta = timestamp_delta
@@ -122,12 +138,12 @@ class RecordIter:
         for i in range(0, hdr_size):
             headers.append(self._parse_header())
 
-        return Record(len, attrs, timestamp_delta, offset_delta, key, value,
-                      headers)
+        return Record(len, attrs, timestamp_delta, offset_delta, key, value, headers)
 
 
 class BatchType(Enum):
     """Keep this in sync with model/record_batch_types.h"""
+
     raft_data = 1
     raft_configuration = 2
     controller = 3
@@ -199,7 +215,8 @@ class Batch:
         self.type = BatchType(header[3])
 
         header_crc_bytes = struct.pack(
-            "<" + HDR_FMT_RP_PREFIX_NO_CRC + HDR_FMT_CRC, *self.header[1:])
+            "<" + HDR_FMT_RP_PREFIX_NO_CRC + HDR_FMT_CRC, *self.header[1:]
+        )
         header_crc = crc32c.crc32c(header_crc_bytes)
         if self.header.header_crc != header_crc:
             raise CorruptBatchError(self)
@@ -210,16 +227,15 @@ class Batch:
 
     def header_dict(self):
         header = self.header._asdict()
-        attrs = header['attrs']
+        attrs = header["attrs"]
         header["type_name"] = self.type.name
         header["term"] = self.term
-        header['expanded_attrs'] = {
-            'compression':
-            Batch.CompressionType(attrs & Batch.compression_mask).name,
-            'transactional':
-            attrs & Batch.transactional_mask == Batch.transactional_mask,
-            'control_batch': attrs & Batch.control_mask == Batch.control_mask,
-            'timestamp_type': attrs & Batch.ts_type_mask == Batch.ts_type_mask
+        header["expanded_attrs"] = {
+            "compression": Batch.CompressionType(attrs & Batch.compression_mask).name,
+            "transactional": attrs & Batch.transactional_mask
+            == Batch.transactional_mask,
+            "control_batch": attrs & Batch.control_mask == Batch.control_mask,
+            "timestamp_type": attrs & Batch.ts_type_mask == Batch.ts_type_mask,
         }
         return header
 
@@ -299,7 +315,7 @@ class Segment:
         if m is None:
             raise RuntimeError(f"Invalid segment path: {self.path}")
 
-        return int(m['term'])
+        return int(m["term"])
 
     def __iter__(self):
         return BatchIterator(self.path, self.term)
@@ -312,14 +328,15 @@ class Ntp:
         self.topic = topic
         self.partition = partition
         self.ntp_id = ntp_id
-        self.path = os.path.join(self.base_dir, self.nspace, self.topic,
-                                 f"{self.partition}_{self.ntp_id}")
+        self.path = os.path.join(
+            self.base_dir, self.nspace, self.topic, f"{self.partition}_{self.ntp_id}"
+        )
         pattern = os.path.join(self.path, "*.log")
         self.segments = glob.iglob(pattern)
 
         def _base_offset(segment_path):
             m = SEGMENT_NAME_PATTERN.match(os.path.basename(segment_path))
-            return int(m['base_offset'])
+            return int(m["base_offset"])
 
         self.segments = sorted(self.segments, key=_base_offset)
 
@@ -342,12 +359,12 @@ class Store:
             if nspace == "cloud_storage_cache":
                 continue
             for topic in listdirs(join(self.base_dir, nspace)):
-                for part_ntp_id in listdirs(join(self.base_dir, nspace,
-                                                 topic)):
-                    assert re.match("^\\d+_\\d+$", part_ntp_id), \
-                        "ntp dir at {} does not match expected format. Wrong --path or extra directories present?"\
-                        .format(join(self.base_dir, nspace, topic, part_ntp_id))
+                for part_ntp_id in listdirs(join(self.base_dir, nspace, topic)):
+                    assert re.match("^\\d+_\\d+$", part_ntp_id), (
+                        "ntp dir at {} does not match expected format. Wrong --path or extra directories present?".format(
+                            join(self.base_dir, nspace, topic, part_ntp_id)
+                        )
+                    )
                     [part, ntp_id] = part_ntp_id.split("_")
-                    ntp = Ntp(self.base_dir, nspace, topic, int(part),
-                              int(ntp_id))
+                    ntp = Ntp(self.base_dir, nspace, topic, int(part), int(ntp_id))
                     self.ntps.append(ntp)

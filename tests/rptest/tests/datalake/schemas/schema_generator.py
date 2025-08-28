@@ -13,36 +13,52 @@ import json
 import random
 import jinja2
 
-from rptest.tests.datalake.schemas.data_types import ProducerType, GenericDataType, GenericPrimitive, GenericBool, GenericInt, GenericLong, GenericFloat, GenericDouble, GenericString, GenericEnum, ALL_COMPLEX_DATA_TYPES, ALL_PRIMITIVE_DATA_TYPES, ALL_PRIMITIVE_DATA_TYPES_AND_ENUM
+from rptest.tests.datalake.schemas.data_types import (
+    ProducerType,
+    GenericDataType,
+    GenericPrimitive,
+    GenericBool,
+    GenericInt,
+    GenericLong,
+    GenericFloat,
+    GenericDouble,
+    GenericString,
+    GenericEnum,
+    ALL_COMPLEX_DATA_TYPES,
+    ALL_PRIMITIVE_DATA_TYPES,
+    ALL_PRIMITIVE_DATA_TYPES_AND_ENUM,
+)
 
 from rptest.tests.datalake.schemas.data_type_generator import DataTypeGenerator
 
 
 class SchemaGenerator:
     def __init__(
-            self,
-            producer_type: ProducerType,
-            complex_types: list[GenericDataType] = ALL_COMPLEX_DATA_TYPES,
-            complex_type_probabilities: list[float] = None,
-            primitive_types: list[GenericDataType] = ALL_PRIMITIVE_DATA_TYPES,
-            primitive_type_probabilities: list[float] = None,
-            max_depth: int = 5,
-            max_fields: int = 10,
-            max_fields_per_type: int = 10):
+        self,
+        producer_type: ProducerType,
+        complex_types: list[GenericDataType] = ALL_COMPLEX_DATA_TYPES,
+        complex_type_probabilities: list[float] = None,
+        primitive_types: list[GenericDataType] = ALL_PRIMITIVE_DATA_TYPES,
+        primitive_type_probabilities: list[float] = None,
+        max_depth: int = 5,
+        max_fields: int = 10,
+        max_fields_per_type: int = 10,
+    ):
         if complex_type_probabilities is None:
-            complex_type_probabilities: list[float] = [
-                1.0 / len(complex_types)
-            ] * len(complex_types)
+            complex_type_probabilities: list[float] = [1.0 / len(complex_types)] * len(
+                complex_types
+            )
         if primitive_type_probabilities is None:
-            primitive_type_probabilities = [1.0 / len(primitive_types)
-                                            ] * len(primitive_types)
+            primitive_type_probabilities = [1.0 / len(primitive_types)] * len(
+                primitive_types
+            )
 
-        assert len(complex_types) == len(
-            complex_type_probabilities
-        ), f"complex_type_probabilities should be of length {len(complex_types)}, is of length {len(complex_type_probabilities)}"
-        assert len(primitive_types) == len(
-            primitive_type_probabilities
-        ), f"primitive_type_probabilities should be of length {len(primitive_types)}, is of length {len(primitive_type_probabilities)}"
+        assert len(complex_types) == len(complex_type_probabilities), (
+            f"complex_type_probabilities should be of length {len(complex_types)}, is of length {len(complex_type_probabilities)}"
+        )
+        assert len(primitive_types) == len(primitive_type_probabilities), (
+            f"primitive_type_probabilities should be of length {len(primitive_types)}, is of length {len(primitive_type_probabilities)}"
+        )
 
         self.producer_type = producer_type
         self.max_depth = max_depth
@@ -60,8 +76,7 @@ class SchemaGenerator:
         return self.max_fields - self.num_fields
 
     def num_sub_fields_for_field(self) -> int:
-        return min(self.num_fields_left(),
-                   random.randint(1, self.max_fields_per_type))
+        return min(self.num_fields_left(), random.randint(1, self.max_fields_per_type))
 
     def can_recurse(self) -> bool:
         return self.current_depth < self.max_depth
@@ -70,11 +85,12 @@ class SchemaGenerator:
         data_type = GenericPrimitive
         if self.can_recurse() and num_sub_fields > 1:
             data_type = random.choices(
-                self.complex_types, weights=self.complex_type_probabilities)[0]
+                self.complex_types, weights=self.complex_type_probabilities
+            )[0]
         if data_type is GenericPrimitive:
             data_type = random.choices(
-                self.primitive_types,
-                weights=self.primitive_type_probabilities)[0]
+                self.primitive_types, weights=self.primitive_type_probabilities
+            )[0]
         return data_type
 
     def _make_avro_schema(self):
@@ -82,7 +98,8 @@ class SchemaGenerator:
         template = {}
         while self.num_fields < self.max_fields:
             field, field_temp = DataTypeGenerator.generate_field(
-                self, self.num_sub_fields_for_field())
+                self, self.num_sub_fields_for_field()
+            )
             fields.append(field)
             template.update(field_temp)
         raw_schema = dict()
@@ -104,10 +121,9 @@ class SchemaGenerator:
             return self._make_proto_schema()
 
     @staticmethod
-    def make_random_record(schema,
-                           schema_fields: dict,
-                           schema_template,
-                           validate: bool = False):
+    def make_random_record(
+        schema, schema_fields: dict, schema_template, validate: bool = False
+    ):
         field_values = {}
         for k, v in schema_fields.items():
             t, maybe_syms = v
@@ -116,9 +132,7 @@ class SchemaGenerator:
                     field_values[k] = t.random(maybe_syms)
                 elif t == GenericString:
                     field_values[k] = t.random(random.randint(1, 100))
-                elif t in [
-                        GenericInt, GenericLong, GenericFloat, GenericDouble
-                ]:
+                elif t in [GenericInt, GenericLong, GenericFloat, GenericDouble]:
                     field_values[k] = t.random(0, 100)
                 else:
                     field_values[k] = t.random()

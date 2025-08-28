@@ -23,13 +23,14 @@ from rptest.utils.mode_checks import cleanup_on_early_exit
 
 class RackAwarePlacementTest(RedpandaTest):
     def __init__(self, test_context):
-        super(RackAwarePlacementTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=6,
-                             extra_rp_conf={
-                                 'enable_rack_awareness': True,
-                                 'segment_fallocation_step': 1024,
-                             })
+        super(RackAwarePlacementTest, self).__init__(
+            test_context=test_context,
+            num_brokers=6,
+            extra_rp_conf={
+                "enable_rack_awareness": True,
+                "segment_fallocation_step": 1024,
+            },
+        )
 
     def setUp(self):
         # Delay startup, so that the test case can configure redpanda
@@ -45,24 +46,17 @@ class RackAwarePlacementTest(RedpandaTest):
             return 0
 
     def _create_topic(self, topic):
-        """Create topic and wait until all partitions are created.
-        """
+        """Create topic and wait until all partitions are created."""
         self.client().create_topic(topic)
 
         wait_until(
-            lambda: self._get_partition_count(topic.name
-                                              ) == topic.partition_count,
+            lambda: self._get_partition_count(topic.name) == topic.partition_count,
             timeout_sec=60,
             backoff_sec=1,
-            err_msg=
-            f"Not all partitions are created in time, expected {topic.partition_count} partitions, found {self._get_partition_count(topic.name)}"
+            err_msg=f"Not all partitions are created in time, expected {topic.partition_count} partitions, found {self._get_partition_count(topic.name)}",
         )
 
-    def _validate_placement(self,
-                            topic,
-                            rack_layout,
-                            num_replicas,
-                            ids_mapping={}):
+    def _validate_placement(self, topic, rack_layout, num_replicas, ids_mapping={}):
         """Validate the replica placement. The method uses provided
         rack layout and number of replicas for the partitions.
         The validation is done by examining existing replica placemnt
@@ -88,12 +82,15 @@ class RackAwarePlacementTest(RedpandaTest):
             assert len(set(racks)) == min(num_racks, num_replicas)
 
     @cluster(num_nodes=6)
-    @matrix(rack_layout_str=['ABCDEF', 'xxYYzz', 'ooooFF'],
-            num_partitions=[50, 400],
-            replication_factor=[3, 5],
-            num_topics=[2])
-    def test_replica_placement(self, rack_layout_str, num_partitions,
-                               replication_factor, num_topics):
+    @matrix(
+        rack_layout_str=["ABCDEF", "xxYYzz", "ooooFF"],
+        num_partitions=[50, 400],
+        replication_factor=[3, 5],
+        num_topics=[2],
+    )
+    def test_replica_placement(
+        self, rack_layout_str, num_partitions, replication_factor, num_topics
+    ):
         """
         Test replica placement. The test case creates a set of brokers with
         initialized 'rack' parameter in the configuration. The 'rack' property
@@ -130,10 +127,10 @@ class RackAwarePlacementTest(RedpandaTest):
                 # We're introducing two racks, small and large.
                 # The small rack has only one node and the
                 # large one has four nodes.
-                'rack': rack_layout[ix],
+                "rack": rack_layout[ix],
                 # This parameter enables rack awareness
-                'enable_rack_awareness': True,
-                'segment_fallocation_step': 4096,
+                "enable_rack_awareness": True,
+                "segment_fallocation_step": 4096,
             }
             self.redpanda.set_extra_node_conf(node, extra_node_conf)
 
@@ -149,8 +146,9 @@ class RackAwarePlacementTest(RedpandaTest):
 
         topics = []
         for tix in range(0, num_topics):
-            topic = TopicSpec(partition_count=num_partitions,
-                              replication_factor=replication_factor)
+            topic = TopicSpec(
+                partition_count=num_partitions, replication_factor=replication_factor
+            )
             topics.append(topic)
             self._create_topic(topic)
 
@@ -165,7 +163,7 @@ class RackAwarePlacementTest(RedpandaTest):
         return random.randint(200, 300)
 
     @cluster(num_nodes=6)
-    @matrix(rack_layout=['ABCDEF', 'xxYYzz', 'ooooFF'])
+    @matrix(rack_layout=["ABCDEF", "xxYYzz", "ooooFF"])
     def test_rack_awareness_after_node_operations(self, rack_layout):
         replication_factor = 3
 
@@ -174,16 +172,19 @@ class RackAwarePlacementTest(RedpandaTest):
                 node,
                 {
                     "rack": rack_layout[ix],
-                    'enable_rack_awareness': True,
+                    "enable_rack_awareness": True,
                     # make fallocation step small to spare the disk space
-                    'segment_fallocation_step': 4096,
-                })
+                    "segment_fallocation_step": 4096,
+                },
+            )
 
         self.redpanda.start()
         self._client = DefaultClient(self.redpanda)
 
-        topic = TopicSpec(partition_count=self._partition_count(),
-                          replication_factor=replication_factor)
+        topic = TopicSpec(
+            partition_count=self._partition_count(),
+            replication_factor=replication_factor,
+        )
         self.client().create_topic(topic)
         self._validate_placement(topic, rack_layout, replication_factor)
 
@@ -191,7 +192,7 @@ class RackAwarePlacementTest(RedpandaTest):
         admin = Admin(self.redpanda)
 
         brokers = admin.get_brokers()
-        to_decommission = random.choice(brokers)['node_id']
+        to_decommission = random.choice(brokers)["node_id"]
 
         admin.decommission_broker(to_decommission)
 
@@ -201,7 +202,7 @@ class RackAwarePlacementTest(RedpandaTest):
                     continue
                 brokers = admin.get_brokers(node=n)
                 for b in brokers:
-                    if b['node_id'] == to_decommission:
+                    if b["node_id"] == to_decommission:
                         return False
             return True
 
@@ -219,15 +220,17 @@ class RackAwarePlacementTest(RedpandaTest):
 
         def seed_servers_for(idx):
             seeds = map(
-                lambda n: {
-                    "address": n.account.hostname,
-                    "port": 33145
-                }, self.redpanda.nodes)
+                lambda n: {"address": n.account.hostname, "port": 33145},
+                self.redpanda.nodes,
+            )
 
             return list(
                 filter(
-                    lambda n: n['address'] != self.redpanda.get_node(idx).
-                    account.hostname, seeds))
+                    lambda n: n["address"]
+                    != self.redpanda.get_node(idx).account.hostname,
+                    seeds,
+                )
+            )
 
         # add a node back with different id but the same rack
         # change the seed server list to prevent node from forming new cluster
@@ -237,10 +240,11 @@ class RackAwarePlacementTest(RedpandaTest):
                 "node_id": new_node_id,
                 "seed_servers": seed_servers_for(to_decommission),
                 "rack": rack_layout[to_decommission - 1],
-                'enable_rack_awareness': True,
+                "enable_rack_awareness": True,
                 # make fallocation step small to spare the disk space
-                'segment_fallocation_step': 4096,
-            })
+                "segment_fallocation_step": 4096,
+            },
+        )
 
         rpk = RpkTool(self.redpanda)
 
@@ -264,10 +268,12 @@ class RackAwarePlacementTest(RedpandaTest):
 
         wait_until(no_partitions_moving, 90, 1)
 
-        self._validate_placement(topic,
-                                 rack_layout,
-                                 replication_factor,
-                                 ids_mapping={new_node_id: to_decommission})
+        self._validate_placement(
+            topic,
+            rack_layout,
+            replication_factor,
+            ids_mapping={new_node_id: to_decommission},
+        )
 
     @cluster(num_nodes=6)
     def test_node_config_update(self):
@@ -277,7 +283,7 @@ class RackAwarePlacementTest(RedpandaTest):
         * restart the nodes
         * check that rack aware placement works
         """
-        rack_layout = 'AABBCC'
+        rack_layout = "AABBCC"
         replication_factor = 3
         num_partitions = 10
 
@@ -286,22 +292,26 @@ class RackAwarePlacementTest(RedpandaTest):
         self.redpanda.stop()
         for ix, node in enumerate(self.redpanda.nodes):
             self.redpanda.start_node(
-                node, override_cfg_params={"rack": rack_layout[ix]})
+                node, override_cfg_params={"rack": rack_layout[ix]}
+            )
 
         admin = Admin(self.redpanda)
 
         def rack_ids_updated():
             for n in self.redpanda.nodes:
-                if any('rack' not in b for b in admin.get_brokers(n)):
+                if any("rack" not in b for b in admin.get_brokers(n)):
                     return False
             return True
 
-        wait_until(rack_ids_updated,
-                   timeout_sec=30,
-                   backoff_sec=1,
-                   err_msg="node configurations didn't get updated")
+        wait_until(
+            rack_ids_updated,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="node configurations didn't get updated",
+        )
 
-        topic = TopicSpec(partition_count=num_partitions,
-                          replication_factor=replication_factor)
+        topic = TopicSpec(
+            partition_count=num_partitions, replication_factor=replication_factor
+        )
         self._create_topic(topic)
         self._validate_placement(topic, rack_layout, replication_factor)

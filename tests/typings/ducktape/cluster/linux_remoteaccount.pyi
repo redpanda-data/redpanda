@@ -1,6 +1,9 @@
 from _typeshed import Incomplete
 from ducktape.cluster.cluster_spec import LINUX as LINUX
-from ducktape.cluster.remoteaccount import RemoteAccount as RemoteAccount, RemoteAccountError as RemoteAccountError
+from ducktape.cluster.remoteaccount import (
+    RemoteAccount as RemoteAccount,
+    RemoteAccountError as RemoteAccountError,
+)
 
 class LinuxRemoteAccount(RemoteAccount):
     os: Incomplete

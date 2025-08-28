@@ -24,5 +24,5 @@ WAT_TEMPLATE = """
 
 source = sys.stdin.read()
 sys.stdout.write(
-    WAT_TEMPLATE.format(length=len(source),
-                        bytecode=source.encode().hex('\\')))
+    WAT_TEMPLATE.format(length=len(source), bytecode=source.encode().hex("\\"))
+)

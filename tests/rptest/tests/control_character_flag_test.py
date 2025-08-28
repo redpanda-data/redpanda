@@ -14,17 +14,22 @@ from ducktape.utils.util import wait_until
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions, ver_string
+from rptest.services.redpanda_installer import (
+    RedpandaInstaller,
+    wait_for_num_versions,
+    ver_string,
+)
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_fips_mode
 
 
 class ControlCharacterPermittedBase(RedpandaTest):
-    feature_legacy_permit_control_char = 'legacy_permit_unsafe_log_operation'
+    feature_legacy_permit_control_char = "legacy_permit_unsafe_log_operation"
 
     def __init__(self, test_context, **kwargs):
-        super(ControlCharacterPermittedBase,
-              self).__init__(test_context=test_context, **kwargs)
+        super(ControlCharacterPermittedBase, self).__init__(
+            test_context=test_context, **kwargs
+        )
         self._installer = self.redpanda._installer
         self._admin = Admin(self.redpanda)
 
@@ -43,13 +48,11 @@ class ControlCharacterPermittedBase(RedpandaTest):
         assert ver_string(version) in unique_versions
 
         config = self._admin.get_cluster_config()
-        assert config.keys().isdisjoint(
-            {self.feature_legacy_permit_control_char})
+        assert config.keys().isdisjoint({self.feature_legacy_permit_control_char})
 
     def _perform_update(self, initial_version):
         versions = self.load_version_range(initial_version)[1:]
-        for version in self.upgrade_through_versions(versions,
-                                                     already_running=True):
+        for version in self.upgrade_through_versions(versions, already_running=True):
             self.logger.info(f"Updated to {version}")
 
         config = self._admin.get_cluster_config()
@@ -66,9 +69,11 @@ class ControlCharacterPermittedAfterUpgrade(ControlCharacterPermittedBase):
     are rejected.  In new clusters, those that start at v23.2.1, the flag does
     nothing.
     """
+
     def __init__(self, test_context):
-        super(ControlCharacterPermittedAfterUpgrade,
-              self).__init__(test_context=test_context, num_brokers=3)
+        super(ControlCharacterPermittedAfterUpgrade, self).__init__(
+            test_context=test_context, num_brokers=3
+        )
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(initial_version=(22, 2, 9))
@@ -88,10 +93,10 @@ class ControlCharacterPermittedAfterUpgrade(ControlCharacterPermittedBase):
         # Should still be able to create a user
         self._admin.create_user("my\notheruser", "password", "SCRAM-SHA-256")
         self._admin.patch_cluster_config(
-            {self.feature_legacy_permit_control_char: False})
+            {self.feature_legacy_permit_control_char: False}
+        )
         try:
-            self._admin.create_user("my\nthirduser", "password",
-                                    "SCRAM-SHA-256")
+            self._admin.create_user("my\nthirduser", "password", "SCRAM-SHA-256")
             assert False
         except requests.exceptions.HTTPError:
             pass
@@ -113,7 +118,8 @@ class ControlCharacterPermittedAfterUpgrade(ControlCharacterPermittedBase):
             pass
 
         self._admin.patch_cluster_config(
-            {self.feature_legacy_permit_control_char: False})
+            {self.feature_legacy_permit_control_char: False}
+        )
 
         try:
             self._admin.create_user("my\nuser", "password", "SCRAM-SHA-256")
@@ -126,13 +132,14 @@ class ControlCharacterNag(ControlCharacterPermittedBase):
     """
     Validates the presence (or lack there of) of the flag nag message
     """
+
     def __init__(self, test_context):
-        super(ControlCharacterNag, self).__init__(test_context=test_context,
-                                                  num_brokers=3)
+        super(ControlCharacterNag, self).__init__(
+            test_context=test_context, num_brokers=3
+        )
 
     def _has_flag_nag(self):
-        return self.redpanda.search_log_all(
-            "You have enabled unsafe log operations")
+        return self.redpanda.search_log_all("You have enabled unsafe log operations")
 
     # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
     @skip_fips_mode
@@ -166,14 +173,16 @@ class ControlCharacterNag(ControlCharacterPermittedBase):
         assert not self._has_flag_nag()
 
         self._admin.patch_cluster_config(
-            {self.feature_legacy_permit_control_char: False})
+            {self.feature_legacy_permit_control_char: False}
+        )
         # Give time for config to propagate
         time.sleep(2)
 
         assert not self._has_flag_nag()
 
         self._admin.patch_cluster_config(
-            {self.feature_legacy_permit_control_char: True})
+            {self.feature_legacy_permit_control_char: True}
+        )
         # Give time for config to propagate
         time.sleep(2)
 

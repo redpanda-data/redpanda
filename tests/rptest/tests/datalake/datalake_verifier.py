@@ -22,7 +22,7 @@ from confluent_kafka import Consumer
 from confluent_kafka import TopicPartition
 
 
-class DatalakeVerifier():
+class DatalakeVerifier:
     """
      Verifier that does the verification of the data in the redpanda Iceberg table.
      The verifier consumes offsets from specified topic and verifies it the data
@@ -41,14 +41,16 @@ class DatalakeVerifier():
     there is no way back.
     """
 
-    #TODO: add an ability to pass lambda to verify the message content
-    def __init__(self,
-                 redpanda: RedpandaService,
-                 topic: str,
-                 query_engine: QueryEngineBase,
-                 compacted: bool = False,
-                 table_override: Optional[str] = None,
-                 max_buffered_msgs=5000):
+    # TODO: add an ability to pass lambda to verify the message content
+    def __init__(
+        self,
+        redpanda: RedpandaService,
+        topic: str,
+        query_engine: QueryEngineBase,
+        compacted: bool = False,
+        table_override: Optional[str] = None,
+        max_buffered_msgs=5000,
+    ):
         self.redpanda = redpanda
         self.topic = topic
         self.table = table_override or topic
@@ -108,11 +110,13 @@ class DatalakeVerifier():
         self._expected_compacted_keys = set()
 
     def create_consumer(self):
-        c = Consumer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': self._cg,
-            'auto.offset.reset': 'earliest'
-        })
+        c = Consumer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "group.id": self._cg,
+                "auto.offset.reset": "earliest",
+            }
+        )
         c.subscribe([self.topic])
 
         return c
@@ -136,7 +140,8 @@ class DatalakeVerifier():
                         )
                     else:
                         self.logger.debug(
-                            f"next position for {p.partition} is {p.offset}")
+                            f"next position for {p.partition} is {p.offset}"
+                        )
                         self._next_positions[p.partition] = p.offset
                 return self._next_positions.copy()
 
@@ -157,8 +162,7 @@ class DatalakeVerifier():
         self.logger.debug(f"remembered {self._consumer_positions=}")
         self._partition_hwms = self.partition_hwms()
         for p in self._partition_hwms:
-            self.logger.debug(
-                f"remembered partition {p.id=} hwm={p.high_watermark}, ")
+            self.logger.debug(f"remembered partition {p.id=} hwm={p.high_watermark}, ")
         with self._consumer_lock:
             self._consumer.close()
             self._consumer = None
@@ -184,8 +188,9 @@ class DatalakeVerifier():
         try:
             self.logger.info("Starting consumer thread")
             while not self._stop.is_set() and not (
-                    self._offline_mode_requested.is_set()
-                    and self._consumed_till_hwm(update=True)):
+                self._offline_mode_requested.is_set()
+                and self._consumed_till_hwm(update=True)
+            ):
                 self._msg_semaphore.acquire()
                 if self._stop.is_set():
                     break
@@ -204,9 +209,11 @@ class DatalakeVerifier():
                             self._msgs_batched.notify()
                     self._max_consumed_offsets[msg.partition()] = max(
                         self._max_consumed_offsets.get(msg.partition(), -1),
-                        msg.offset())
+                        msg.offset(),
+                    )
                     self.logger.debug(
-                        f"Max consumed offsets: {self._max_consumed_offsets}")
+                        f"Max consumed offsets: {self._max_consumed_offsets}"
+                    )
                     if len(self._errors) > 0:
                         return
         finally:
@@ -272,21 +279,24 @@ class DatalakeVerifier():
             try:
                 with self._msgs_batched:
                     # Wait for enough data to be batched or a timeout.
-                    self._msgs_batched.wait(
-                        timeout=self._query_batch_wait_timeout_s)
+                    self._msgs_batched.wait(timeout=self._query_batch_wait_timeout_s)
                 partitions = self.update_and_get_fetch_positions()
 
                 for partition, next_consume_offset in partitions.items():
-                    last_queried_offset = self._max_queried_offsets[
-                        partition] if partition in self._max_queried_offsets else -1
+                    last_queried_offset = (
+                        self._max_queried_offsets[partition]
+                        if partition in self._max_queried_offsets
+                        else -1
+                    )
 
                     max_consumed = next_consume_offset - 1
                     # no new messages consumed, skip query
                     if max_consumed <= last_queried_offset:
                         continue
 
-                    query = self._get_query(partition, last_queried_offset,
-                                            max_consumed)
+                    query = self._get_query(
+                        partition, last_queried_offset, max_consumed
+                    )
                     self.logger.debug(f"Executing query: {query}")
 
                     with self._query.run_query(query) as cursor:
@@ -330,8 +340,8 @@ class DatalakeVerifier():
                     return False
                 # Ensure all the consumed messages are drained.
                 return all(
-                    len(messages) == 0
-                    for messages in self._consumed_messages.values())
+                    len(messages) == 0 for messages in self._consumed_messages.values()
+                )
 
         return True
 
@@ -355,12 +365,11 @@ class DatalakeVerifier():
                     lambda: self._made_progress(),
                     progress_timeout_sec,
                     backoff_sec=3,
-                    err_msg=
-                    f"Error waiting for the query to make progress for topic {self.topic}"
+                    err_msg=f"Error waiting for the query to make progress for topic {self.topic}",
                 )
-                assert len(
-                    self._errors
-                ) == 0, f"Topic {self.topic} validation errors: {self._errors}"
+                assert len(self._errors) == 0, (
+                    f"Topic {self.topic} validation errors: {self._errors}"
+                )
             self.logger.debug(f"No errors around waiting")
         except Exception as e:
             self.logger.error(f"Error around waiting: {e}")
@@ -374,28 +383,31 @@ class DatalakeVerifier():
             self._stop.set()
             self._msg_semaphore.release()
             self._executor.shutdown(wait=False)
-            assert len(
-                self._errors
-            ) == 0, f"Topic {self.topic} validation errors: {self._errors}"
+            assert len(self._errors) == 0, (
+                f"Topic {self.topic} validation errors: {self._errors}"
+            )
 
-            self.logger.debug(
-                f"consumed offsets: {self._max_consumed_offsets}")
+            self.logger.debug(f"consumed offsets: {self._max_consumed_offsets}")
             self.logger.debug(f"queried offsets: {self._max_queried_offsets}")
 
-            assert self._max_queried_offsets == self._max_consumed_offsets, "Mismatch between maximum offsets in topic vs iceberg table"
+            assert self._max_queried_offsets == self._max_consumed_offsets, (
+                "Mismatch between maximum offsets in topic vs iceberg table"
+            )
 
-            assert len(
-                self._expected_compacted_keys
-            ) == 0, f"Some keys which were compacted away were not seen later in the consumer's log"
+            assert len(self._expected_compacted_keys) == 0, (
+                f"Some keys which were compacted away were not seen later in the consumer's log"
+            )
         finally:
             if self._consumer:
                 self._consumer.close()
 
     @staticmethod
-    def oneshot(redpanda: RedpandaService,
-                topic: str,
-                query_engine: QueryEngineBase,
-                progress_timeout_sec=30):
+    def oneshot(
+        redpanda: RedpandaService,
+        topic: str,
+        query_engine: QueryEngineBase,
+        progress_timeout_sec=30,
+    ):
         verifier = DatalakeVerifier(redpanda, topic, query_engine)
         verifier.start()
         verifier.wait(progress_timeout_sec=progress_timeout_sec)

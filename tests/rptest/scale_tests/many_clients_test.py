@@ -36,30 +36,25 @@ class ManyClientsTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         # We will send huge numbers of messages, so tune down the log verbosity
         # as this is just a "did we stay up?" test
-        kwargs['log_level'] = "info"
+        kwargs["log_level"] = "info"
 
-        kwargs['extra_rp_conf'] = {
+        kwargs["extra_rp_conf"] = {
             # Enable segment size jitter as this is a stress test and does not
             # rely on exact segment counts.
-            'log_segment_size_jitter_percent':
-            5,
-
+            "log_segment_size_jitter_percent": 5,
             # This limit caps the produce throughput to a sustainable rate for a RP
             # cluster that has 384MB of memory per shard. It is set here to
             # since our current backpressure mechanisms will allow producers to
             # produce at a much higher rate and cause RP to run out of memory.
-            'kafka_throughput_limit_node_in_bps':
-            self.TARGET_THROUGHPUT_MB_S_PER_NODE * 1024 *
-            1024,  # 100MiB/s per node
-
+            "kafka_throughput_limit_node_in_bps": self.TARGET_THROUGHPUT_MB_S_PER_NODE
+            * 1024
+            * 1024,  # 100MiB/s per node
             # Set higher connection count limits than the redpanda default.
             # Factor of 4: allow each client 3 connections (producer,consumer,admin), plus
             # 1 connection to accomodate reconnects while a previous connection is
             # still live.
-            'kafka_connections_max':
-            self.PRODUCER_COUNT * 4,
-            'kafka_connections_max_per_ip':
-            self.PRODUCER_COUNT * 4,
+            "kafka_connections_max": self.PRODUCER_COUNT * 4,
+            "kafka_connections_max_per_ip": self.PRODUCER_COUNT * 4,
         }
         super().__init__(*args, **kwargs)
 
@@ -70,8 +65,10 @@ class ManyClientsTest(RedpandaTest):
     @cluster(num_nodes=7)
     @matrix(idempotent_producers=[True, False])
     def test_many_clients_no_compaction(self, idempotent_producers):
-        self._test_many_clients(compaction_mode=CompactionMode.NONE,
-                                idempotent_producers=idempotent_producers)
+        self._test_many_clients(
+            compaction_mode=CompactionMode.NONE,
+            idempotent_producers=idempotent_producers,
+        )
 
     @cluster(num_nodes=7)
     def test_many_clients_realistic_compaction(self):
@@ -107,13 +104,18 @@ class ManyClientsTest(RedpandaTest):
         # memory footprint: they may decompress/compress up to two batches
         # per shard concurrently (one for index updates on the produce path,
         # one for housekeeping)
-        memory_mb = 768 if compaction_mode == CompactionMode.NONE else 768 + compacted_record_size_max_mb * 2 * num_cpus
+        memory_mb = (
+            768
+            if compaction_mode == CompactionMode.NONE
+            else 768 + compacted_record_size_max_mb * 2 * num_cpus
+        )
 
         resource_settings = ResourceSettings(
             num_cpus=num_cpus,
             # Set a low memory size, such that the amount of available memory per client
             # is small (~100k)
-            memory_mb=memory_mb)
+            memory_mb=memory_mb,
+        )
 
         # Load the resource settings and start Redpanda
         self.redpanda.set_resource_settings(resource_settings)
@@ -129,60 +131,78 @@ class ManyClientsTest(RedpandaTest):
         segment_size = 128 * 1024 * 1024
         retention_size = 8 * segment_size
 
-        cleanup_policy = "compact" if compaction_mode != CompactionMode.NONE else "delete"
+        cleanup_policy = (
+            "compact" if compaction_mode != CompactionMode.NONE else "delete"
+        )
 
         self.client().create_topic(
-            TopicSpec(name=TOPIC_NAME,
-                      partition_count=partition_count,
-                      retention_bytes=retention_size,
-                      segment_bytes=segment_size,
-                      cleanup_policy=cleanup_policy))
+            TopicSpec(
+                name=TOPIC_NAME,
+                partition_count=partition_count,
+                retention_bytes=retention_size,
+                segment_bytes=segment_size,
+                cleanup_policy=cleanup_policy,
+            )
+        )
 
         # Three consumers, just so that we are at least touching consumer
         # group functionality, if not stressing the overall number of consumers.
         # Need enough consumers to grab data before it gets cleaned up by the
         # retention policy
-        consumer_a = RpkConsumer(self.test_context,
-                                 self.redpanda,
-                                 TOPIC_NAME,
-                                 group="testgroup",
-                                 save_msgs=False)
-        consumer_b = RpkConsumer(self.test_context,
-                                 self.redpanda,
-                                 TOPIC_NAME,
-                                 group="testgroup",
-                                 save_msgs=False)
-        consumer_c = RpkConsumer(self.test_context,
-                                 self.redpanda,
-                                 TOPIC_NAME,
-                                 group="testgroup",
-                                 save_msgs=False)
+        consumer_a = RpkConsumer(
+            self.test_context,
+            self.redpanda,
+            TOPIC_NAME,
+            group="testgroup",
+            save_msgs=False,
+        )
+        consumer_b = RpkConsumer(
+            self.test_context,
+            self.redpanda,
+            TOPIC_NAME,
+            group="testgroup",
+            save_msgs=False,
+        )
+        consumer_c = RpkConsumer(
+            self.test_context,
+            self.redpanda,
+            TOPIC_NAME,
+            group="testgroup",
+            save_msgs=False,
+        )
 
         key_space = 10
 
         target_throughput_mb_s = self.TARGET_THROUGHPUT_MB_S_PER_NODE * len(
-            self.redpanda.nodes)
+            self.redpanda.nodes
+        )
 
         producer_kwargs = {}
         if compaction_mode == CompactionMode.NONE:
-            producer_kwargs['min_record_size'] = 0
-            producer_kwargs['max_record_size'] = 16384
+            producer_kwargs["min_record_size"] = 0
+            producer_kwargs["max_record_size"] = 16384
 
-            effective_msg_size = producer_kwargs['min_record_size'] + (
-                producer_kwargs['max_record_size'] -
-                producer_kwargs['min_record_size']) // 2
+            effective_msg_size = (
+                producer_kwargs["min_record_size"]
+                + (
+                    producer_kwargs["max_record_size"]
+                    - producer_kwargs["min_record_size"]
+                )
+                // 2
+            )
         else:
             # Compaction is much more stressful when the clients sends compacted
             # data, because the server must decompress it to index it.
-            producer_kwargs['compression_type'] = 'mixed'
+            producer_kwargs["compression_type"] = "mixed"
 
             if compaction_mode == CompactionMode.PATHOLOGICAL:
                 # Use large compressible payloads, to stress memory consumption: a
                 # compressed batch will be accepted by the Kafka API, but
-                producer_kwargs['compressible_payload'] = True
-                producer_kwargs['min_record_size'] = 16 * 1024 * 1024
-                producer_kwargs[
-                    'max_record_size'] = pathological_record_size_mb * 1024 * 1024
+                producer_kwargs["compressible_payload"] = True
+                producer_kwargs["min_record_size"] = 16 * 1024 * 1024
+                producer_kwargs["max_record_size"] = (
+                    pathological_record_size_mb * 1024 * 1024
+                )
 
                 # Actual messages are tiny.  Use a heuristic to approximate what kind
                 # of throughput one of these "big batch of zeros" messages would
@@ -191,14 +211,19 @@ class ManyClientsTest(RedpandaTest):
             else:
                 # Regular data that just happens to be compressed: we take the CPU
                 # hit but do not have batches that blow up into huge memory.
-                producer_kwargs['min_record_size'] = 0
-                producer_kwargs['max_record_size'] = 16384
+                producer_kwargs["min_record_size"] = 0
+                producer_kwargs["max_record_size"] = 16384
 
-                effective_msg_size = producer_kwargs['min_record_size'] + (
-                    producer_kwargs['max_record_size'] -
-                    producer_kwargs['min_record_size']) // 2
+                effective_msg_size = (
+                    producer_kwargs["min_record_size"]
+                    + (
+                        producer_kwargs["max_record_size"]
+                        - producer_kwargs["min_record_size"]
+                    )
+                    // 2
+                )
 
-            producer_kwargs['keys'] = key_space
+            producer_kwargs["keys"] = key_space
 
             # Clients have to do the compression work on these larger messages,
             # so curb our expectations about how many we may run concurrently.
@@ -210,12 +235,15 @@ class ManyClientsTest(RedpandaTest):
 
         msg_rate = (target_throughput_mb_s * 1024 * 1024) // effective_msg_size
         messages_per_sec_per_producer = msg_rate // producer_count
-        producer_kwargs[
-            'messages_per_second_per_producer'] = messages_per_sec_per_producer
+        producer_kwargs["messages_per_second_per_producer"] = (
+            messages_per_sec_per_producer
+        )
 
         # If this fails, the test was altered to have an impractical ratio of
         # producers to traffic rate.
-        assert messages_per_sec_per_producer > 0, "Bad sizing params, need at least 1 MPS"
+        assert messages_per_sec_per_producer > 0, (
+            "Bad sizing params, need at least 1 MPS"
+        )
 
         target_runtime_s = 30
         records_per_producer = messages_per_sec_per_producer * target_runtime_s
@@ -225,16 +253,18 @@ class ManyClientsTest(RedpandaTest):
         )
 
         if idempotent_producers:
-            producer_kwargs['properties'] = {}
-            producer_kwargs['properties']["enable.idempotence"] = True
+            producer_kwargs["properties"] = {}
+            producer_kwargs["properties"]["enable.idempotence"] = True
 
-        producer = ProducerSwarm(self.test_context,
-                                 self.redpanda,
-                                 TOPIC_NAME,
-                                 producer_count,
-                                 records_per_producer,
-                                 timeout_ms=PRODUCER_TIMEOUT_MS,
-                                 **producer_kwargs)
+        producer = ProducerSwarm(
+            self.test_context,
+            self.redpanda,
+            TOPIC_NAME,
+            producer_count,
+            records_per_producer,
+            timeout_ms=PRODUCER_TIMEOUT_MS,
+            **producer_kwargs,
+        )
         producer.start()
         consumer_a.start()
         consumer_b.start()
@@ -252,9 +282,16 @@ class ManyClientsTest(RedpandaTest):
             self.logger.info(
                 f"Message counts: {consumer_a.message_count} {consumer_b.message_count} {consumer_c.message_count} (vs {expect})"
             )
-            return consumer_a.message_count + consumer_b.message_count + consumer_c.message_count >= expect
+            return (
+                consumer_a.message_count
+                + consumer_b.message_count
+                + consumer_c.message_count
+                >= expect
+            )
 
-        self.redpanda.wait_until(complete,
-                                 timeout_sec=30,
-                                 backoff_sec=1,
-                                 err_msg="Consumers didn't see all messages")
+        self.redpanda.wait_until(
+            complete,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Consumers didn't see all messages",
+        )

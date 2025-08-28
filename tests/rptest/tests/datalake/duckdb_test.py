@@ -31,15 +31,17 @@ def duckdb_supported_storage_types():
 
 class DuckDBTest(RedpandaTest):
     def __init__(self, test_context, *args, **kwargs):
-        super().__init__(test_context,
-                         num_brokers=1,
-                         si_settings=SISettings(test_context),
-                         extra_rp_conf={
-                             "iceberg_enabled": "true",
-                             "iceberg_catalog_commit_interval_ms": 5000
-                         },
-                         *args,
-                         **kwargs)
+        super().__init__(
+            test_context,
+            num_brokers=1,
+            si_settings=SISettings(test_context),
+            extra_rp_conf={
+                "iceberg_enabled": "true",
+                "iceberg_catalog_commit_interval_ms": 5000,
+            },
+            *args,
+            **kwargs,
+        )
         self.test_context = test_context
         self.topic_name = "test"
 
@@ -52,17 +54,15 @@ class DuckDBTest(RedpandaTest):
     def test_e2e_basic(self, cloud_storage_type):
         count = 100
         with DatalakeServices(
-                self.test_context,
-                redpanda=self.redpanda,
-                include_query_engines=[QueryEngineType.DUCKDB_PY],
-                catalog_type=filesystem_catalog_type()) as dl:
-
+            self.test_context,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.DUCKDB_PY],
+            catalog_type=filesystem_catalog_type(),
+        ) as dl:
             dl.create_iceberg_enabled_topic(self.topic_name, partitions=1)
             dl.produce_to_topic(self.topic_name, 1024, count)
 
-            dl.wait_for_translation(self.topic_name,
-                                    msg_count=count,
-                                    timeout=60)
+            dl.wait_for_translation(self.topic_name, msg_count=count, timeout=60)
 
             # TODO add test with WHERE clause which currently is broken.
             #   Even `WHERE value IS NOT NULL` fails with:
@@ -74,5 +74,6 @@ class DuckDBTest(RedpandaTest):
                     FROM redpanda.{self.topic_name}
                     """) as cursor:
                 odd_offsets_result = cursor.fetchone()
-                assert odd_offsets_result is not None and odd_offsets_result[0] == 50, \
+                assert odd_offsets_result is not None and odd_offsets_result[0] == 50, (
                     f"Expected 50 odd offsets, got {odd_offsets_result}"
+                )

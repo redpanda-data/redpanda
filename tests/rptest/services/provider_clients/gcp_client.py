@@ -17,13 +17,7 @@ class GCPClient:
     OWNER_ID_LABEL = "OwnerId"
     CIDR_LABEL = "CidrBlock"
 
-    def __init__(self,
-                 region,
-                 keypath,
-                 logger,
-                 endpoint=None,
-                 disable_ssl=True):
-
+    def __init__(self, region, keypath, logger, endpoint=None, disable_ssl=True):
         self._region = region
         self._keyfilepath = keypath
         self._endpoint = endpoint
@@ -52,8 +46,7 @@ class GCPClient:
     @property
     def subnet_cli(self):
         if self._subnet_cli is None:
-            self._subnet_cli = compute_v1.SubnetworksClient(
-                credentials=self.creds)
+            self._subnet_cli = compute_v1.SubnetworksClient(credentials=self.creds)
         return self._subnet_cli
 
     @property
@@ -72,29 +65,30 @@ class GCPClient:
         """
         Creates two peering connections facing each other
         """
+
         def _prepare_request(src_id, dst_id):
             # Prepare network names
-            _src_name = src_id.split('/')[-1]
+            _src_name = src_id.split("/")[-1]
             # Deal with RP network name
             if not dst_id.startswith("http"):
                 _dst_name = dst_id
                 _dst_id = self.get_network_resource_link(
-                    params.rp_owner_id, params.rp_vpc_id)
+                    params.rp_owner_id, params.rp_vpc_id
+                )
             else:
-                _dst_name = dst_id.split('/')[-1]
+                _dst_name = dst_id.split("/")[-1]
                 _dst_id = dst_id
             # Return prepared request
             return compute_v1.AddPeeringNetworkRequest(
                 project=params.peer_owner_id,
                 network=_src_name,
-                networks_add_peering_request_resource= \
-                    compute_v1.NetworksAddPeeringRequest(
-                        network_peering= \
-                            compute_v1.NetworkPeering(
-                                exchange_subnet_routes=True,
-                                name=f"{_src_name}-to-{_dst_name}",
-                                network=_dst_id)
+                networks_add_peering_request_resource=compute_v1.NetworksAddPeeringRequest(
+                    network_peering=compute_v1.NetworkPeering(
+                        exchange_subnet_routes=True,
+                        name=f"{_src_name}-to-{_dst_name}",
+                        network=_dst_id,
                     )
+                ),
             )
 
         _src_req = _prepare_request(params.peer_vpc_id, params.rp_vpc_id)
@@ -124,13 +118,14 @@ class GCPClient:
         # Get network
         _r = self.net_cli.get(request=_req)
         # Get subnet, should be one
-        _subnet_names = [n.split('/')[-1] for n in _r.subnetworks]
+        _subnet_names = [n.split("/")[-1] for n in _r.subnetworks]
         if len(_subnet_names) > 1:
-            self._log.warning("Found more than one subnet/CIDR "
-                              f"for '{_name}'. Using first one")
-        _subnet = self.subnet_cli.get(project=self.project_id,
-                                      region=self._region,
-                                      subnetwork=_subnet_names[0])
+            self._log.warning(
+                f"Found more than one subnet/CIDR for '{_name}'. Using first one"
+            )
+        _subnet = self.subnet_cli.get(
+            project=self.project_id, region=self._region, subnetwork=_subnet_names[0]
+        )
         # Format response
         _net = {}
         _net[self.VPC_ID_LABEL] = _r.self_link
@@ -177,12 +172,13 @@ class GCPClient:
         self_link: "https://www.googleapis.com/compute/v1/projects/rp-byoc-asavatieiev/zones/us-west4-b"
         status: "UP"
         supports_pzs: false
-        }      
+        }
         """
         # Prepare filter for region
         # ref: https://cloud.google.com/python/docs/reference/compute/latest/google.cloud.compute_v1.types.ListZonesRequest
-        _req = compute_v1.ListZonesRequest(project=self.project_id,
-                                           filter=f'region eq ".*{region}"')
+        _req = compute_v1.ListZonesRequest(
+            project=self.project_id, filter=f'region eq ".*{region}"'
+        )
         # Get the list
         _r = self.zones_cli.list(request=_req)
         # _r contains iterator to zone items among other fields
@@ -192,7 +188,7 @@ class GCPClient:
         # Return a single zone as a string
         return _available[0]
 
-    def get_instance_meta(self, target='localhost'):
+    def get_instance_meta(self, target="localhost"):
         """
         Query meta from local node.
         Source: https://cloud.google.com/compute/docs/metadata/querying-metadata
@@ -200,7 +196,7 @@ class GCPClient:
         # prepare request data
         _prefix = "http://"
         _suffix = "/computeMetadata/v1/instance/"
-        _target = "169.254.169.254" if target == 'localhost' else target
+        _target = "169.254.169.254" if target == "localhost" else target
         uri = f"{_prefix}{_target}{_suffix}"
 
         return query_instance_meta(uri, headers=headers)
@@ -218,9 +214,9 @@ class GCPClient:
         policy = bucket.get_iam_policy(requested_policy_version=3)
 
         idx = 0
-        sa = f'serviceAccount:rp-cl-{cluster_id}@{self.project_id}.iam.gserviceaccount.com'
+        sa = f"serviceAccount:rp-cl-{cluster_id}@{self.project_id}.iam.gserviceaccount.com"
         for b in policy.bindings:
-            if sa in b['members']:
+            if sa in b["members"]:
                 break
             idx += 1
         binding_removed = policy.bindings.pop(idx)

@@ -51,23 +51,26 @@ class FlinkScaleTests(RedpandaTest):
     @staticmethod
     def _run_workloads(flink, workloads, config, logger):
         """
-            Run workloads from the list with supplied config
+        Run workloads from the list with supplied config
 
-            Return: list of failed jobs
+        Return: list of failed jobs
         """
         # Run produce job
         ids = []
         for workload in workloads:
             # Add script as a job
             logger.info(f"Adding {workload['name']} to flink")
-            ids = flink.run_flink_job(workload['path'], config)
+            ids = flink.run_flink_job(workload["path"], config)
             if ids is None:
-                raise RuntimeError("Failed to run job on flink for "
-                                   f"workload: {workload['name']}")
+                raise RuntimeError(
+                    f"Failed to run job on flink for workload: {workload['name']}"
+                )
 
-            logger.debug(f"Workload '{workload['name']}' "
-                         f"generated {len(ids)} "
-                         f"jobs: {', '.join(ids)}")
+            logger.debug(
+                f"Workload '{workload['name']}' "
+                f"generated {len(ids)} "
+                f"jobs: {', '.join(ids)}"
+            )
 
         return ids
 
@@ -77,18 +80,19 @@ class FlinkScaleTests(RedpandaTest):
         failed = []
         for id in job_list:
             job = flink.get_job_by_id(id)
-            if job['state'] == flink.STATE_FAILED:
+            if job["state"] == flink.STATE_FAILED:
                 logger.warning(f"Job '{id}' has failed")
                 failed.append(job)
 
         desc = [f"{j['name']} ({j['jid']}): {j['state']}" for j in failed]
         desc = "\n".join(desc)
-        assert len(failed) == 0, \
-            "Flink reports fails for " \
-            f"transaction workload:\n{desc}"
+        assert len(failed) == 0, (
+            f"Flink reports fails for transaction workload:\n{desc}"
+        )
 
-    def _assert_actual_rate(self, rate_single_node, topics_total_events,
-                            total_commit_requests):
+    def _assert_actual_rate(
+        self, rate_single_node, topics_total_events, total_commit_requests
+    ):
         # Account for network losses
         target_transaction_rate = rate_single_node * 0.8
         self.logger.info(
@@ -96,13 +100,13 @@ class FlinkScaleTests(RedpandaTest):
         )
         # Actual rate is simple total msg divided by transactions
         actual_transaction_rate = topics_total_events / total_commit_requests
-        self.logger.info(
-            f"Actual transaction rate: {actual_transaction_rate} per 1 ms")
-        assert target_transaction_rate < actual_transaction_rate, \
-            "Flink failed to generate at least 1 transaction " \
-            f"per half of the task managers ({rate_single_node}) " \
-            "per checkpoint (1 ms): " \
+        self.logger.info(f"Actual transaction rate: {actual_transaction_rate} per 1 ms")
+        assert target_transaction_rate < actual_transaction_rate, (
+            "Flink failed to generate at least 1 transaction "
+            f"per half of the task managers ({rate_single_node}) "
+            "per checkpoint (1 ms): "
             f"{target_transaction_rate} < {actual_transaction_rate}"
+        )
 
     def _get_total_events_for_topic(self, topic):
         total_events = 0
@@ -112,13 +116,13 @@ class FlinkScaleTests(RedpandaTest):
         return total_events
 
     # Calculate per-node vectorized_internal_rpc_latency_sum/commit_tx
-    def _get_commit_requests_counts(self, method,
-                                    nodes) -> list[MetricSamples]:
+    def _get_commit_requests_counts(self, method, nodes) -> list[MetricSamples]:
         # Get metrics from redpanda nodes
         metrics = self.redpanda.metrics_sample(  # type: ignore
             "vectorized_internal_rpc_latency_sum",
             nodes=nodes,
-            metrics_endpoint=MetricsEndpoint.METRICS)
+            metrics_endpoint=MetricsEndpoint.METRICS,
+        )
 
         # Check if metrics received
         if not isinstance(metrics, MetricSamples):
@@ -127,14 +131,15 @@ class FlinkScaleTests(RedpandaTest):
         # Filter whole series with supplied method
         samples = []
         for s in metrics.samples:
-            if s[4]['method'] == method:
+            if s[4]["method"] == method:
                 samples.append(s)
         return samples
 
     def get_total_commit_requests(self):
         # Get metric for commit_tx method
         commit_requests = self._get_commit_requests_counts(
-            "commit_tx", self.redpanda.started_nodes())
+            "commit_tx", self.redpanda.started_nodes()
+        )
 
         # Rearrange as dict
         # {
@@ -151,14 +156,12 @@ class FlinkScaleTests(RedpandaTest):
                 if node == metric.node:  # type: ignore
                     if h not in metric_per_node:
                         metric_per_node[h] = {}
-                    metric_per_node[h].update(
-                        {metric.labels["shard"]: metric.value})  # type: ignore
-            metric_per_node[h]['total'] = sum(metric_per_node[h].values())
-            total_commit_requests += metric_per_node[h]['total']
+                    metric_per_node[h].update({metric.labels["shard"]: metric.value})  # type: ignore
+            metric_per_node[h]["total"] = sum(metric_per_node[h].values())
+            total_commit_requests += metric_per_node[h]["total"]
         return total_commit_requests, metric_per_node
 
-    def _create_topic_swarm(self, flinks, total_workloads,
-                            topics_per_workload):
+    def _create_topic_swarm(self, flinks, total_workloads, topics_per_workload):
         # Prepare topic specs
         self.topic_specs = []
         for flink in flinks:
@@ -166,8 +169,10 @@ class FlinkScaleTests(RedpandaTest):
             for idx_w in range(total_workloads):
                 for idx_t in range(topics_per_workload):
                     self.topic_specs.append(
-                        TopicSpec(name=f"flink-{hostname}-{idx_w}-{idx_t}",
-                                  partition_count=1))
+                        TopicSpec(
+                            name=f"flink-{hostname}-{idx_w}-{idx_t}", partition_count=1
+                        )
+                    )
 
         # Create topics
         self.logger.debug("Creating topics")
@@ -177,8 +182,11 @@ class FlinkScaleTests(RedpandaTest):
             executor.map(self.kafkacli.create_topic, self.topic_specs)
         elapsed = time.time() - _start
         tps = len(self.topic_specs) / elapsed
-        self.logger.debug("Done creating topics ({:>5,.2f}s, {:>5,.2f} "
-                          "topics per sec)".format(elapsed, tps))
+        self.logger.debug(
+            "Done creating topics ({:>5,.2f}s, {:>5,.2f} topics per sec)".format(
+                elapsed, tps
+            )
+        )
 
     @skip_debug_mode
     @cluster(num_nodes=4)
@@ -186,13 +194,15 @@ class FlinkScaleTests(RedpandaTest):
     @parametrize(unique_topics=False)
     def test_transactions_scale_single_node(self, unique_topics):
         """
-            Test uses same workload with different modes to produce
-            and consume/process given number of transactions
+        Test uses same workload with different modes to produce
+        and consume/process given number of transactions
         """
         # Create service
-        flink = FlinkService(self.test_context,
-                             self.redpanda.get_node_cpu_count(),
-                             self.redpanda.get_node_memory_mb())
+        flink = FlinkService(
+            self.test_context,
+            self.redpanda.get_node_cpu_count(),
+            self.redpanda.get_node_memory_mb(),
+        )
 
         if not self.redpanda.dedicated_nodes:
             # Single workload
@@ -231,27 +241,29 @@ class FlinkScaleTests(RedpandaTest):
             "topic_name": "flink_scale_topic_placeholder",
             "transaction_id_prefix": "flink_scale_tid_prefix_placeholder",
             "mode": "produce",
-            "count": target_total_events // total_workloads
+            "count": target_total_events // total_workloads,
         }
 
         # Get workload
         workloads = self.workload_manager.get_workloads(
-            ['flink', 'transactions', 'scale'])
+            ["flink", "transactions", "scale"]
+        )
         # Run produce part
         all_jobs = []
         for idx in range(total_workloads):
             if unique_topics:
-                _workload_config['topic_name'] = self.topic_specs[idx].name
-                _workload_config[
-                    'transaction_id_prefix'] = f"flink-scale-tid-{idx}"
+                _workload_config["topic_name"] = self.topic_specs[idx].name
+                _workload_config["transaction_id_prefix"] = f"flink-scale-tid-{idx}"
             else:
-                _workload_config['topic_name'] = self.topic_specs[0].name
-                _workload_config[
-                    'transaction_id_prefix'] = f"flink-scale-tid-{idx}"
-            self.logger.debug("Submitting job with config: \n"
-                              f"{json.dumps(_workload_config, indent=2)}")
-            all_jobs += self._run_workloads(flink, workloads, _workload_config,
-                                            self.logger)
+                _workload_config["topic_name"] = self.topic_specs[0].name
+                _workload_config["transaction_id_prefix"] = f"flink-scale-tid-{idx}"
+            self.logger.debug(
+                "Submitting job with config: \n"
+                f"{json.dumps(_workload_config, indent=2)}"
+            )
+            all_jobs += self._run_workloads(
+                flink, workloads, _workload_config, self.logger
+            )
 
         # Assert failed jobs
         self._assert_failed_jobs(flink, self.logger, all_jobs)
@@ -266,27 +278,29 @@ class FlinkScaleTests(RedpandaTest):
 
         # Print out in one place:
         for idx in range(len(all_topic_events)):
-            self.logger.info(f"Topic: {self.topic_specs[idx].name}, "
-                             f"event count: {all_topic_events[idx]}")
-        self.logger.info(
-            f"Total messages/High watermark sum: {sum(all_topic_events)}")
+            self.logger.info(
+                f"Topic: {self.topic_specs[idx].name}, "
+                f"event count: {all_topic_events[idx]}"
+            )
+        self.logger.info(f"Total messages/High watermark sum: {sum(all_topic_events)}")
 
         # Simple validation according to RP topic watermarks
         topics_total_events = sum(all_topic_events)
-        assert topics_total_events >= target_total_events, \
-            "High watermark is less than targer total events: " \
+        assert topics_total_events >= target_total_events, (
+            "High watermark is less than targer total events: "
             f"{topics_total_events} hwm, {target_total_events} target total"
+        )
 
         # Collected metric is a count of commit_tx RPCs on the shard.
         # Since there is a commit_tx for each transaction, i.e. checkpoint
         # happens each 1 ms (see workload code). It is set in line:
         #       env.get_checkpoint_config().set_min_pause_between_checkpoints(1)
-        total_commit_requests, metric_per_node = \
-            self.get_total_commit_requests()
+        total_commit_requests, metric_per_node = self.get_total_commit_requests()
 
         # So, this is a number of transactions happened
-        self.logger.info("Per-node metrics for latency is:\n"
-                         f"{json.dumps(metric_per_node, indent=2)}")
+        self.logger.info(
+            f"Per-node metrics for latency is:\n{json.dumps(metric_per_node, indent=2)}"
+        )
         self.logger.info(f"Total: {total_commit_requests}")
 
         # With default parallelization optimizations currently set
@@ -299,8 +313,9 @@ class FlinkScaleTests(RedpandaTest):
 
         # Calculate rate for single node and assert actual transfer rate
         rate_single_node = flink.num_taskmanagers // 2
-        self._assert_actual_rate(rate_single_node, topics_total_events,
-                                 total_commit_requests)
+        self._assert_actual_rate(
+            rate_single_node, topics_total_events, total_commit_requests
+        )
 
         return
 
@@ -308,18 +323,21 @@ class FlinkScaleTests(RedpandaTest):
     @cluster(num_nodes=8)
     def test_transactions_scale_swarm(self):
         """
-            Test uses same workload with different modes to produce
-            and consume/process given number of transactions
+        Test uses same workload with different modes to produce
+        and consume/process given number of transactions
         """
         # Get number of available nodes
         # This will give us num_nodes - redpanda nodes
         # Currently, 8-3 = 5
-        total_nodes = len(self.cluster._available_nodes.os_to_nodes['linux'])
+        total_nodes = len(self.cluster._available_nodes.os_to_nodes["linux"])
 
         # Create flink
         flinks = [
-            FlinkService(self.test_context, self.redpanda.get_node_cpu_count(),
-                         self.redpanda.get_node_memory_mb())
+            FlinkService(
+                self.test_context,
+                self.redpanda.get_node_cpu_count(),
+                self.redpanda.get_node_memory_mb(),
+            )
             for idx in range(total_nodes)
         ]
 
@@ -363,8 +381,7 @@ class FlinkScaleTests(RedpandaTest):
             target_total_events = 1 * 1024 * 1024
 
         # Create topics
-        self._create_topic_swarm(flinks, workloads_per_node,
-                                 topics_per_workload)
+        self._create_topic_swarm(flinks, workloads_per_node, topics_per_workload)
 
         # Load python workload to target node
         # TODO: Add workload config management
@@ -377,12 +394,13 @@ class FlinkScaleTests(RedpandaTest):
             "topic_prefix": "flink_scale_topic_placeholder",
             "transaction_id_prefix": "flink_scale_tid_prefix_placeholder",
             "mode": "produce",
-            "count": target_total_events // workloads_per_node
+            "count": target_total_events // workloads_per_node,
         }
 
         # Get workload
         workloads = self.workload_manager.get_workloads(
-            ['flink', 'transactions', 'topic', 'swarm'])
+            ["flink", "transactions", "topic", "swarm"]
+        )
         # Run produce part
         all_jobs = {}
         for idx in range(workloads_per_node):
@@ -392,14 +410,18 @@ class FlinkScaleTests(RedpandaTest):
                 if hostname not in all_jobs:
                     all_jobs[hostname] = []
                 # set prefixes
-                _workload_config['topic_prefix'] = f"flink-{hostname}-{idx}"
-                _workload_config['transaction_id_prefix'] = \
+                _workload_config["topic_prefix"] = f"flink-{hostname}-{idx}"
+                _workload_config["transaction_id_prefix"] = (
                     f"flink-{hostname}-tid-{idx}"
+                )
                 # Submit job
-                self.logger.debug("Submitting job with config: \n"
-                                  f"{json.dumps(_workload_config, indent=2)}")
+                self.logger.debug(
+                    "Submitting job with config: \n"
+                    f"{json.dumps(_workload_config, indent=2)}"
+                )
                 all_jobs[hostname] += self._run_workloads(
-                    flink, workloads, _workload_config, self.logger)
+                    flink, workloads, _workload_config, self.logger
+                )
 
         # Assert failed jobs
         for flink in flinks:
@@ -417,20 +439,23 @@ class FlinkScaleTests(RedpandaTest):
 
         # Print out in one place:
         for idx in range(len(all_topic_events)):
-            self.logger.info(f"Topic: {self.topic_specs[idx].name}, "
-                             f"event count: {all_topic_events[idx]}")
-        self.logger.info(
-            f"Total messages/High watermark sum: {sum(all_topic_events)}")
+            self.logger.info(
+                f"Topic: {self.topic_specs[idx].name}, "
+                f"event count: {all_topic_events[idx]}"
+            )
+        self.logger.info(f"Total messages/High watermark sum: {sum(all_topic_events)}")
 
         # Simple validation according to RP topic watermarks
         topics_total_events = sum(all_topic_events)
-        assert topics_total_events >= target_total_events, \
-            "High watermark is less than targer total events: " \
+        assert topics_total_events >= target_total_events, (
+            "High watermark is less than targer total events: "
             f"{topics_total_events} hwm, {target_total_events} target total"
+        )
 
         # Get metric for commit_tx method
         commit_requests = self._get_commit_requests_counts(
-            "commit_tx", self.redpanda.started_nodes())
+            "commit_tx", self.redpanda.started_nodes()
+        )
 
         # Rearrange as dict
         # {
@@ -447,10 +472,9 @@ class FlinkScaleTests(RedpandaTest):
                 if node == metric.node:  # type: ignore
                     if h not in metric_per_node:
                         metric_per_node[h] = {}
-                    metric_per_node[h].update(
-                        {metric.labels["shard"]: metric.value})  # type: ignore
-            metric_per_node[h]['total'] = sum(metric_per_node[h].values())
-            total_commit_requests += metric_per_node[h]['total']
+                    metric_per_node[h].update({metric.labels["shard"]: metric.value})  # type: ignore
+            metric_per_node[h]["total"] = sum(metric_per_node[h].values())
+            total_commit_requests += metric_per_node[h]["total"]
 
         # Collected metric is a count of commit_tx RPCs on the shard.
         # Since there is a commit_tx for each transaction, i.e. checkpoint
@@ -458,8 +482,9 @@ class FlinkScaleTests(RedpandaTest):
         #       env.get_checkpoint_config().set_min_pause_between_checkpoints(1)
 
         # So, this is a number of transactions happened
-        self.logger.info("Per-node metrics for latency is:\n"
-                         f"{json.dumps(metric_per_node, indent=2)}")
+        self.logger.info(
+            f"Per-node metrics for latency is:\n{json.dumps(metric_per_node, indent=2)}"
+        )
         self.logger.info(f"Total: {total_commit_requests}")
 
         # With default parallelization optimizations currently set
@@ -474,6 +499,7 @@ class FlinkScaleTests(RedpandaTest):
         # 1 transaction per each node per per 1 ms interval.
         # Also, we account for 20% losses on the network
         rate_per_node = 1
-        self._assert_actual_rate(rate_per_node * total_nodes,
-                                 topics_total_events, total_commit_requests)
+        self._assert_actual_rate(
+            rate_per_node * total_nodes, topics_total_events, total_commit_requests
+        )
         return

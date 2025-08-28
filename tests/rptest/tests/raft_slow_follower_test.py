@@ -39,9 +39,11 @@ class ThreadedProducer:
         self.thread.start()
 
     def produce_loop(self):
-        self.producer = Producer({
-            "bootstrap.servers": self.redpanda.brokers(),
-        })
+        self.producer = Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+            }
+        )
 
         def delivery_clb(err: KafkaError, msg, start_time):
             if err:
@@ -58,14 +60,17 @@ class ThreadedProducer:
                 topic=self.topic,
                 key="test-message-key",
                 value="test-message-value",
-                on_delivery=lambda err, msg: delivery_clb(err, msg, start))
+                on_delivery=lambda err, msg: delivery_clb(err, msg, start),
+            )
             self.producer.flush()
 
     def wait_for_messages(self, messages, timeout_sec):
-        wait_until(lambda: len(self.latencies) >= messages,
-                   timeout_sec=timeout_sec,
-                   backoff_sec=1,
-                   err_msg=f"timed out waiting for {messages} messages")
+        wait_until(
+            lambda: len(self.latencies) >= messages,
+            timeout_sec=timeout_sec,
+            backoff_sec=1,
+            err_msg=f"timed out waiting for {messages} messages",
+        )
 
     def stop(self):
         self.stop_ev.set()
@@ -80,24 +85,24 @@ class RaftSlowFollowerTest(RedpandaTest):
             test_context=test_context,
             extra_rp_conf={
                 # disable leader balancer not to introduce variability into the test
-                'enable_leader_balancer': False,
-            })
+                "enable_leader_balancer": False,
+            },
+        )
 
     def _get_follower(self, topic, partition):
         rpk = RpkTool(self.redpanda)
         partitions = list(rpk.describe_topic(topic=topic))
         leader_id = partitions[partition].leader
         followers = [
-            n for n in self.redpanda.nodes
-            if self.redpanda.node_id(n) != leader_id
+            n for n in self.redpanda.nodes if self.redpanda.node_id(n) != leader_id
         ]
         return random.choice(followers)
 
     @cluster(num_nodes=3)
     def test_single_slow_follower(self):
-        topic = TopicSpec(name="latency-test-topic",
-                          partition_count=1,
-                          replication_factor=3)
+        topic = TopicSpec(
+            name="latency-test-topic", partition_count=1, replication_factor=3
+        )
         self.client().create_topic(topic)
 
         try:
@@ -106,20 +111,20 @@ class RaftSlowFollowerTest(RedpandaTest):
             producer.wait_for_messages(2000, 100)
 
             self.logger.info(
-                f"average latency: {numpy.average(producer.latencies)*1000} ms, max latency: {numpy.max(producer.latencies)*1000} ms"
+                f"average latency: {numpy.average(producer.latencies) * 1000} ms, max latency: {numpy.max(producer.latencies) * 1000} ms"
             )
             f = self._get_follower(topic.name, 0)
-            assert numpy.max(
-                producer.latencies
-            ) < 2.5, f"Produce latency is unexpectedly high: {numpy.max(producer.latencies)*1000} ms"
+            assert numpy.max(producer.latencies) < 2.5, (
+                f"Produce latency is unexpectedly high: {numpy.max(producer.latencies) * 1000} ms"
+            )
             self.redpanda.signal_redpanda(f, signal=signal.SIGSTOP)
             producer.wait_for_messages(12000, 100)
             self.redpanda.signal_redpanda(f, signal=signal.SIGCONT)
             self.logger.info(
-                f"average latency: {numpy.average(producer.latencies)*1000} ms, max latency: {numpy.max(producer.latencies)*1000} ms"
+                f"average latency: {numpy.average(producer.latencies) * 1000} ms, max latency: {numpy.max(producer.latencies) * 1000} ms"
             )
-            assert numpy.max(
-                producer.latencies
-            ) < 2.5, f"Produce latency is unexpectedly high: {numpy.max(producer.latencies)*1000} after follower was suspended"
+            assert numpy.max(producer.latencies) < 2.5, (
+                f"Produce latency is unexpectedly high: {numpy.max(producer.latencies) * 1000} after follower was suspended"
+            )
         finally:
             producer.stop()

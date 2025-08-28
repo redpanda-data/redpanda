@@ -12,7 +12,9 @@ from typing import List
 from rptest.services.catalog_service import CatalogType
 
 SUPPORTED_CATALOG_TYPES = [
-    CatalogType.REST_JDBC, CatalogType.REST_HADOOP, CatalogType.NESSIE
+    CatalogType.REST_JDBC,
+    CatalogType.REST_HADOOP,
+    CatalogType.NESSIE,
 ]
 
 

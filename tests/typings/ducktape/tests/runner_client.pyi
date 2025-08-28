@@ -1,9 +1,19 @@
 from _typeshed import Incomplete
-from ducktape.services.service import MultiRunServiceIdFactory as MultiRunServiceIdFactory, service_id_factory as service_id_factory
+from ducktape.services.service import (
+    MultiRunServiceIdFactory as MultiRunServiceIdFactory,
+    service_id_factory as service_id_factory,
+)
 from ducktape.services.service_registry import ServiceRegistry as ServiceRegistry
 from ducktape.tests.event import ClientEventFactory as ClientEventFactory
 from ducktape.tests.loader import TestLoader as TestLoader
-from ducktape.tests.result import FAIL as FAIL, IGNORE as IGNORE, OFAIL as OFAIL, OPASS as OPASS, PASS as PASS, TestResult as TestResult
+from ducktape.tests.result import (
+    FAIL as FAIL,
+    IGNORE as IGNORE,
+    OFAIL as OFAIL,
+    OPASS as OPASS,
+    PASS as PASS,
+    TestResult as TestResult,
+)
 from ducktape.tests.serde import SerDe as SerDe
 from ducktape.tests.status import FLAKY as FLAKY
 from ducktape.tests.test import TestContext as TestContext, test_logger as test_logger
@@ -28,12 +38,25 @@ class RunnerClient:
     test: Incomplete
     test_context: Incomplete
     all_services: Incomplete
-    def __init__(self, server_hostname, server_port, test_id, test_index, logger_name, log_dir, debug, fail_bad_cluster_utilization, deflake_num) -> None: ...
+    def __init__(
+        self,
+        server_hostname,
+        server_port,
+        test_id,
+        test_index,
+        logger_name,
+        log_dir,
+        debug,
+        fail_bad_cluster_utilization,
+        deflake_num,
+    ) -> None: ...
     def send(self, event): ...
     def run(self): ...
     def setup_test(self) -> None: ...
     def run_test(self): ...
-    def teardown_test(self, teardown_services: bool = ..., test_status: Incomplete | None = ...): ...
+    def teardown_test(
+        self, teardown_services: bool = ..., test_status: Incomplete | None = ...
+    ): ...
     def log(self, log_level, msg, *args, **kwargs) -> None: ...
 
 class Sender:

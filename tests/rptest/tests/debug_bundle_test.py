@@ -22,9 +22,21 @@ from ducktape.mark import matrix
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
-from rptest.services.admin import Admin, DebugBundleLabelSelection, DebugBundleStartConfig, DebugBundleStartConfigParams
+from rptest.services.admin import (
+    Admin,
+    DebugBundleLabelSelection,
+    DebugBundleStartConfig,
+    DebugBundleStartConfigParams,
+)
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import LoggingConfig, MetricSamples, MetricsEndpoint, RpkNodeConfig, SecurityConfig, TLSProvider
+from rptest.services.redpanda import (
+    LoggingConfig,
+    MetricSamples,
+    MetricsEndpoint,
+    RpkNodeConfig,
+    SecurityConfig,
+    TLSProvider,
+)
 from rptest.services.redpanda_types import SaslCredentials
 from rptest.services.tls import Certificate, CertificateAuthority, TLSCertManager
 from rptest.tests.cluster_config_test import wait_for_version_sync
@@ -45,11 +57,9 @@ class DebugBundleErrorCode:
     DEBUG_BUNDLE_EXPIRED = 9
 
 
-log_config = LoggingConfig('info',
-                           logger_levels={
-                               'admin_api_server': 'trace',
-                               'debug-bundle-service': 'trace'
-                           })
+log_config = LoggingConfig(
+    "info", logger_levels={"admin_api_server": "trace", "debug-bundle-service": "trace"}
+)
 
 KUBERNETES_VARIABLES = {
     "KUBERNETES_SERVICE_HOST": "INVALID_HOST",
@@ -66,46 +76,44 @@ class DebugBundleTestBase(RedpandaTest):
         "failed_generation_count",
     ]
 
-    def __init__(self,
-                 context,
-                 log_config=log_config,
-                 num_brokers=1,
-                 **kwargs) -> None:
-        super(DebugBundleTestBase, self).__init__(context,
-                                                  num_brokers=num_brokers,
-                                                  log_config=log_config,
-                                                  **kwargs)
+    def __init__(self, context, log_config=log_config, num_brokers=1, **kwargs) -> None:
+        super(DebugBundleTestBase, self).__init__(
+            context, num_brokers=num_brokers, log_config=log_config, **kwargs
+        )
         self.admin = Admin(self.redpanda)
 
     def _get_sha256sum(self, node, file):
-        cap = node.account.ssh_capture(f"sha256sum -b {file}",
-                                       allow_fail=False)
+        cap = node.account.ssh_capture(f"sha256sum -b {file}", allow_fail=False)
         return "".join(cap).strip().split(maxsplit=1)[0]
 
     def _get_metrics_from_node(
-        self,
-        node: ClusterNode,
-        endpoint: MetricsEndpoint = MetricsEndpoint.METRICS
+        self, node: ClusterNode, endpoint: MetricsEndpoint = MetricsEndpoint.METRICS
     ) -> dict[str, MetricSamples]:
         def get_metrics_from_node_sync(patterns: list[str]):
             samples = self.redpanda.metrics_samples(patterns, [node], endpoint)
-            success = samples is not None and set(
-                samples.keys()) == set(patterns)
+            success = samples is not None and set(samples.keys()) == set(patterns)
             return success, samples
 
         samples = wait_until_result(
             lambda: get_metrics_from_node_sync(self.metrics),
             timeout_sec=2,
-            backoff_sec=.1,
-            err_msg="Failed to fetch metrics from node")
+            backoff_sec=0.1,
+            err_msg="Failed to fetch metrics from node",
+        )
         assert samples, f"Missing expected metrics from node {node.name}"
-        assert set(samples.keys()) == set(
-            self.metrics), f"Missing expected metrics from node {node.name}"
+        assert set(samples.keys()) == set(self.metrics), (
+            f"Missing expected metrics from node {node.name}"
+        )
         return samples
 
-    def _assert_http_error(self, expected_status_code: int,
-                           expected_error_code: DebugBundleErrorCode, request,
-                           *args, **kwargs):
+    def _assert_http_error(
+        self,
+        expected_status_code: int,
+        expected_error_code: DebugBundleErrorCode,
+        request,
+        *args,
+        **kwargs,
+    ):
         try:
             request(*args, **kwargs)
             assert False, f"Expected HTTPError with status code {expected_status_code}"
@@ -114,46 +122,53 @@ class DebugBundleTestBase(RedpandaTest):
             assert e.response.status_code == expected_status_code, json
             assert json["code"] == expected_error_code, json
 
-    def _run_debug_bundle(self,
-                          job_id: UUID,
-                          node: ClusterNode,
-                          cancel_after_start: bool = False,
-                          config: Optional[DebugBundleStartConfig] = None,
-                          admin: Optional[Admin] = None):
-
+    def _run_debug_bundle(
+        self,
+        job_id: UUID,
+        node: ClusterNode,
+        cancel_after_start: bool = False,
+        config: Optional[DebugBundleStartConfig] = None,
+        admin: Optional[Admin] = None,
+    ):
         admin = admin or self.admin
-        res = admin.post_debug_bundle(DebugBundleStartConfig(job_id=job_id,
-                                                             config=config),
-                                      node=node)
-        assert res.status_code == requests.codes.ok, f"Failed to start debug bundle: {res.json()}"
+        res = admin.post_debug_bundle(
+            DebugBundleStartConfig(job_id=job_id, config=config), node=node
+        )
+        assert res.status_code == requests.codes.ok, (
+            f"Failed to start debug bundle: {res.json()}"
+        )
 
         def get_bundle_status(expected_status: str) -> bool:
             res = admin.get_debug_bundle(node=node).json()
             self.logger.debug(f"Status: {res}")
-            status = res['status']
-            if status == 'error' and expected_status != 'error':
+            status = res["status"]
+            if status == "error" and expected_status != "error":
                 assert False, f"Debug bundle failed: {res}"
 
-            return res['status'] == expected_status
+            return res["status"] == expected_status
 
         # Wait until the debug bundle is running
         try:
             wait_until(
-                lambda: get_bundle_status('running'),
+                lambda: get_bundle_status("running"),
                 timeout_sec=120,
                 backoff_sec=1,
-                err_msg="Timed out waiting for debug bundle process to start")
+                err_msg="Timed out waiting for debug bundle process to start",
+            )
         except Exception as e:
             self.redpanda.logger.warning(
-                f"response: {admin.get_debug_bundle(node=node).json()}")
+                f"response: {admin.get_debug_bundle(node=node).json()}"
+            )
             raise e
 
         if cancel_after_start:
             res = admin.delete_debug_bundle(job_id=job_id, node=node)
-            assert res.status_code == requests.codes.no_content, f"Failed to cancel debug bundle: {res.json()}"
+            assert res.status_code == requests.codes.no_content, (
+                f"Failed to cancel debug bundle: {res.json()}"
+            )
             assert len(res.content) == 0, f"Response not empty: {res.content}"
 
-        expected_status = 'error' if cancel_after_start else 'success'
+        expected_status = "error" if cancel_after_start else "success"
 
         # Wait until the debug bundle has completed
         try:
@@ -161,70 +176,70 @@ class DebugBundleTestBase(RedpandaTest):
                 lambda: get_bundle_status(expected_status),
                 timeout_sec=120,
                 backoff_sec=1,
-                err_msg=
-                f"Timed out waiting for debug bundle process to enter {expected_status} state"
+                err_msg=f"Timed out waiting for debug bundle process to enter {expected_status} state",
             )
         except Exception as e:
             self.redpanda.logger.warning(
-                f"response: {admin.get_debug_bundle(node=node).json()}")
+                f"response: {admin.get_debug_bundle(node=node).json()}"
+            )
             raise e
 
-    def _retrieve_file(self,
-                       node: ClusterNode,
-                       admin: Optional[Admin] = None) -> bytes:
+    def _retrieve_file(self, node: ClusterNode, admin: Optional[Admin] = None) -> bytes:
         admin = admin or self.admin
         res = admin.get_debug_bundle(node=node)
         assert res.status_code == requests.codes.ok, res.json()
-        filename = res.json()['filename']
+        filename = res.json()["filename"]
         res = admin.get_debug_bundle_file(filename=filename, node=node)
         assert res.status_code == requests.codes.ok, res.json()
-        assert res.headers['Content-Type'] == 'application/zip', res.json()
+        assert res.headers["Content-Type"] == "application/zip", res.json()
 
         return res.content
 
     def _validate_topic_name_in_response(
-            self,
-            response: bytes,
-            topic_name: str,
-            expected: bool,
-            expect_populated_topic_response: bool = True):
+        self,
+        response: bytes,
+        topic_name: str,
+        expected: bool,
+        expect_populated_topic_response: bool = True,
+    ):
         zip_file = io.BytesIO(response)
-        with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+        with zipfile.ZipFile(zip_file, "r") as zip_ref:
             self.logger.debug(f"zip file contents: {zip_ref.namelist()}")
             kafka_file = [
-                entry for entry in zip_ref.namelist()
-                if entry.endswith('kafka.json')
+                entry for entry in zip_ref.namelist() if entry.endswith("kafka.json")
             ]
             assert kafka_file, f"Expected to find kafka.json in the zip file"
             with zip_ref.open(kafka_file[0]) as f:
-                kafka_json = json.loads(f.read().decode('utf-8'))
+                kafka_json = json.loads(f.read().decode("utf-8"))
                 self.logger.debug(f"kafka_json: {kafka_json}")
                 metadata_obj = [
-                    entry for entry in kafka_json
-                    if entry['Name'] == 'metadata'
+                    entry for entry in kafka_json if entry["Name"] == "metadata"
                 ]
                 assert metadata_obj, f"Expected to find metadata object in kafka.json"
                 if not expect_populated_topic_response:
-                    assert metadata_obj[0]['Response'][
-                        'Topics'] is None, f"Expected to not find 'Topics' in kafka resonse: {metadata_obj[0]['Response']['Topics']}"
+                    assert metadata_obj[0]["Response"]["Topics"] is None, (
+                        f"Expected to not find 'Topics' in kafka resonse: {metadata_obj[0]['Response']['Topics']}"
+                    )
                     return
                 if expected:
-                    assert topic_name in metadata_obj[0]['Response'][
-                        'Topics'], f"Expected to find {topic_name} in metadata object {metadata_obj[0]['Response']['Topics']}"
+                    assert topic_name in metadata_obj[0]["Response"]["Topics"], (
+                        f"Expected to find {topic_name} in metadata object {metadata_obj[0]['Response']['Topics']}"
+                    )
                 else:
-                    assert not topic_name in metadata_obj[0]['Response'][
-                        'Topics'], f"Expected not to find {topic_name} in metadata object {metadata_obj[0]['Response']['Topics']}"
+                    assert not topic_name in metadata_obj[0]["Response"]["Topics"], (
+                        f"Expected not to find {topic_name} in metadata object {metadata_obj[0]['Response']['Topics']}"
+                    )
 
 
 class DebugBundleTest(DebugBundleTestBase):
     """
     Smoke test for debug bundle admin API
     """
+
     def __init__(self, context, **kwargs) -> None:
-        super(DebugBundleTest, self).__init__(context,
-                                              num_brokers=1,
-                                              log_config=log_config,
-                                              **kwargs)
+        super(DebugBundleTest, self).__init__(
+            context, num_brokers=1, log_config=log_config, **kwargs
+        )
 
     @cluster(num_nodes=1)
     @matrix(ignore_none=[True, False])
@@ -236,12 +251,16 @@ class DebugBundleTest(DebugBundleTestBase):
         node = random.choice(self.redpanda.started_nodes())
 
         job_id = uuid4()
-        res = self.admin.post_debug_bundle(DebugBundleStartConfig(
-            job_id=job_id,
-            config=DebugBundleStartConfigParams(cpu_profiler_wait_seconds=16,
-                                                metrics_interval_seconds=16)),
-                                           ignore_none=ignore_none,
-                                           node=node)
+        res = self.admin.post_debug_bundle(
+            DebugBundleStartConfig(
+                job_id=job_id,
+                config=DebugBundleStartConfigParams(
+                    cpu_profiler_wait_seconds=16, metrics_interval_seconds=16
+                ),
+            ),
+            ignore_none=ignore_none,
+            node=node,
+        )
 
         assert res.status_code == requests.codes.ok, res.json()
 
@@ -250,35 +269,41 @@ class DebugBundleTest(DebugBundleTestBase):
             requests.codes.conflict,
             DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_RUNNING,
             self.admin.post_debug_bundle,
-            config=DebugBundleStartConfig(job_id=job_id,
-                                          config=DebugBundleStartConfigParams(
-                                              cpu_profiler_wait_seconds=16,
-                                              metrics_interval_seconds=16)),
-            node=node)
+            config=DebugBundleStartConfig(
+                job_id=job_id,
+                config=DebugBundleStartConfigParams(
+                    cpu_profiler_wait_seconds=16, metrics_interval_seconds=16
+                ),
+            ),
+            node=node,
+        )
 
         # Get the debug bundle status, expect running
         res = self.admin.get_debug_bundle(node=node)
         assert res.status_code == requests.codes.ok, res.json()
-        assert res.json()['status'] == 'running', res.json()
-        assert res.json()['job_id'] == str(job_id), res.json()
+        assert res.json()["status"] == "running", res.json()
+        assert res.json()["job_id"] == str(job_id), res.json()
 
         # Wait until the debug bundle has completed
         try:
-            wait_until(lambda: self.admin.get_debug_bundle(node=node).json()[
-                'status'] != 'running',
-                       timeout_sec=60,
-                       backoff_sec=1)
+            wait_until(
+                lambda: self.admin.get_debug_bundle(node=node).json()["status"]
+                != "running",
+                timeout_sec=60,
+                backoff_sec=1,
+            )
         except Exception as e:
             self.redpanda.logger.warning(
-                f"response: {self.admin.get_debug_bundle(node=node).json()}")
+                f"response: {self.admin.get_debug_bundle(node=node).json()}"
+            )
             raise e
 
         # Get the debug bundle status, expect success
         res = self.admin.get_debug_bundle(node=node)
         assert res.status_code == requests.codes.ok, res.json()
-        assert res.json()['status'] == 'success', res.json()
-        assert res.json()['job_id'] == str(job_id), res.json()
-        filename = res.json()['filename']
+        assert res.json()["status"] == "success", res.json()
+        assert res.json()["job_id"] == str(job_id), res.json()
+        filename = res.json()["filename"]
         assert filename == f"{job_id}.zip", res.json()
 
         # Delete the debug bundle after it has completed
@@ -287,25 +312,30 @@ class DebugBundleTest(DebugBundleTestBase):
             DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NOT_RUNNING,
             self.admin.delete_debug_bundle,
             job_id=job_id,
-            node=node)
+            node=node,
+        )
 
         res = self.admin.get_debug_bundle_file(filename=filename, node=node)
         assert res.status_code == requests.codes.ok, res.json()
-        assert res.headers['Content-Type'] == 'application/zip', res.json()
+        assert res.headers["Content-Type"] == "application/zip", res.json()
         data_dir = None
         try:
             data_dir = self.admin.get_cluster_config(
-                node=node,
-                key=self.debug_bundle_dir_config)[self.debug_bundle_dir_config]
+                node=node, key=self.debug_bundle_dir_config
+            )[self.debug_bundle_dir_config]
         except requests.HTTPError as e:
             pass
 
-        data_dir = data_dir or self.admin.get_node_config(
-            node=node)['data_directory']['data_directory'] + "/debug-bundle"
+        data_dir = (
+            data_dir
+            or self.admin.get_node_config(node=node)["data_directory"]["data_directory"]
+            + "/debug-bundle"
+        )
 
         file = f"{data_dir}/{filename}"
-        assert self._get_sha256sum(node, file) == hashlib.sha256(
-            res.content).hexdigest()
+        assert (
+            self._get_sha256sum(node, file) == hashlib.sha256(res.content).hexdigest()
+        )
 
         # Delete the debug bundle file
         res = self.admin.delete_debug_bundle_file(filename=filename, node=node)
@@ -318,7 +348,8 @@ class DebugBundleTest(DebugBundleTestBase):
             requests.codes.conflict,
             DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
             self.admin.get_debug_bundle,
-            node=node)
+            node=node,
+        )
 
         # Cancel the non-existant debug bundle
         self._assert_http_error(
@@ -326,7 +357,8 @@ class DebugBundleTest(DebugBundleTestBase):
             DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
             self.admin.delete_debug_bundle,
             job_id=job_id,
-            node=node)
+            node=node,
+        )
 
         # Get the non-existant debug bundle file
         self._assert_http_error(
@@ -334,7 +366,8 @@ class DebugBundleTest(DebugBundleTestBase):
             DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
             self.admin.get_debug_bundle_file,
             filename=filename,
-            node=node)
+            node=node,
+        )
 
         # Delete the debug bundle file again
         self._assert_http_error(
@@ -342,84 +375,76 @@ class DebugBundleTest(DebugBundleTestBase):
             DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
             self.admin.delete_debug_bundle_file,
             filename=filename,
-            node=node)
+            node=node,
+        )
 
     @cluster(num_nodes=1)
     def test_debug_bundle_metrics(self):
         """
         This test verifies the functionality of the debug bundle metrics
         """
+
         def _check_node_metric(node, expected_values):
             def within_two_seconds(time, expected_time):
                 return expected_time - 2 <= time <= expected_time + 2
 
             samples = self._get_metrics_from_node(node)
 
-            sgc = samples['successful_generation_count'].samples[0].value
-            expected_sgc = expected_values['successful_generation_count']
+            sgc = samples["successful_generation_count"].samples[0].value
+            expected_sgc = expected_values["successful_generation_count"]
             if sgc != expected_sgc:
                 return False
 
-            lsbt = samples['last_successful_bundle_timestamp_seconds'].samples[
-                0].value
-            expected_lsbt = expected_values[
-                'last_successful_bundle_timestamp_seconds']
+            lsbt = samples["last_successful_bundle_timestamp_seconds"].samples[0].value
+            expected_lsbt = expected_values["last_successful_bundle_timestamp_seconds"]
             if not within_two_seconds(lsbt, expected_lsbt):
                 return False
 
-            fgc = samples['failed_generation_count'].samples[0].value
-            expected_fgc = expected_values['failed_generation_count']
+            fgc = samples["failed_generation_count"].samples[0].value
+            expected_fgc = expected_values["failed_generation_count"]
             if fgc != expected_fgc:
                 return False
 
-            lfbt = samples['last_failed_bundle_timestamp_seconds'].samples[
-                0].value
-            expected_lfbt = expected_values[
-                'last_failed_bundle_timestamp_seconds']
+            lfbt = samples["last_failed_bundle_timestamp_seconds"].samples[0].value
+            expected_lfbt = expected_values["last_failed_bundle_timestamp_seconds"]
             return within_two_seconds(lfbt, expected_lfbt)
 
         node = random.choice(self.redpanda.started_nodes())
 
         expected_values = {
-            'successful_generation_count': 0,
-            'last_successful_bundle_timestamp_seconds': 0,
-            'failed_generation_count': 0,
-            'last_failed_bundle_timestamp_seconds': 0
+            "successful_generation_count": 0,
+            "last_successful_bundle_timestamp_seconds": 0,
+            "failed_generation_count": 0,
+            "last_failed_bundle_timestamp_seconds": 0,
         }
 
         job_id = uuid4()
-        self._run_debug_bundle(job_id=job_id,
-                               node=node,
-                               cancel_after_start=False)
+        self._run_debug_bundle(job_id=job_id, node=node, cancel_after_start=False)
         success_generation_time = int(time.time())
 
-        expected_values['successful_generation_count'] += 1
-        expected_values[
-            'last_successful_bundle_timestamp_seconds'] = success_generation_time
-
-        wait_until(
-            lambda: _check_node_metric(node, expected_values),
-            timeout_sec=30,
-            backoff_sec=1,
-            err_msg=
-            f"Successful generation event: Metrics failed to update to expected values: {expected_values}."
+        expected_values["successful_generation_count"] += 1
+        expected_values["last_successful_bundle_timestamp_seconds"] = (
+            success_generation_time
         )
 
-        self._run_debug_bundle(job_id=job_id,
-                               node=node,
-                               cancel_after_start=True)
+        wait_until(
+            lambda: _check_node_metric(node, expected_values),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Successful generation event: Metrics failed to update to expected values: {expected_values}.",
+        )
+
+        self._run_debug_bundle(job_id=job_id, node=node, cancel_after_start=True)
         failed_generation_time = int(time.time())
 
-        expected_values['failed_generation_count'] += 1
-        expected_values[
-            'last_failed_bundle_timestamp_seconds'] = failed_generation_time
+        expected_values["failed_generation_count"] += 1
+        expected_values["last_failed_bundle_timestamp_seconds"] = failed_generation_time
 
         wait_until(
             lambda: _check_node_metric(node, expected_values),
             timeout_sec=30,
             backoff_sec=1,
-            err_msg=
-            f"Failed generation event: Metrics failed to update to expected values: {expected_values}."
+            err_msg=f"Failed generation event: Metrics failed to update to expected values: {expected_values}.",
         )
 
     @cluster(num_nodes=1)
@@ -432,9 +457,9 @@ class DebugBundleTest(DebugBundleTestBase):
         node = random.choice(self.redpanda.started_nodes())
         job_id = uuid4()
 
-        self._run_debug_bundle(job_id=job_id,
-                               node=node,
-                               cancel_after_start=fail_bundle_generation)
+        self._run_debug_bundle(
+            job_id=job_id, node=node, cancel_after_start=fail_bundle_generation
+        )
         finished_time = int(time.time())
 
         self.redpanda.restart_nodes(self.redpanda.nodes)
@@ -452,16 +477,32 @@ class DebugBundleTest(DebugBundleTestBase):
             expected_last_failed_bundle_timestamp = 0
             expected_last_successful_bundle_timestamp = finished_time
 
-        assert samples['successful_generation_count'].samples[
-            0].value == expected_successful_generation_count, f"Expected {expected_successful_generation_count} successful generation, got {samples['successful_generation_count'].samples[0].value}"
-        assert samples['failed_generation_count'].samples[
-            0].value == expected_failed_generation_count, f"Expected {expected_failed_generation_count} failed generation, got {samples['failed_generation_count'].samples[0].value}"
-        assert expected_last_failed_bundle_timestamp - 2 <= samples[
-            'last_failed_bundle_timestamp_seconds'].samples[
-                0].value <= expected_last_failed_bundle_timestamp + 2, f"Expected to see failed generation {samples['last_failed_bundle_timestamp_seconds'].samples[0].value} within 2 seconds of {expected_last_failed_bundle_timestamp}"
-        assert expected_last_successful_bundle_timestamp - 2 <= samples[
-            'last_successful_bundle_timestamp_seconds'].samples[
-                0].value <= expected_last_successful_bundle_timestamp + 2, f"Expected to see generation time {samples['last_successful_bundle_timestamp_seconds'].samples[0].value} within 2 seconds of {expected_last_successful_bundle_timestamp}"
+        assert (
+            samples["successful_generation_count"].samples[0].value
+            == expected_successful_generation_count
+        ), (
+            f"Expected {expected_successful_generation_count} successful generation, got {samples['successful_generation_count'].samples[0].value}"
+        )
+        assert (
+            samples["failed_generation_count"].samples[0].value
+            == expected_failed_generation_count
+        ), (
+            f"Expected {expected_failed_generation_count} failed generation, got {samples['failed_generation_count'].samples[0].value}"
+        )
+        assert (
+            expected_last_failed_bundle_timestamp - 2
+            <= samples["last_failed_bundle_timestamp_seconds"].samples[0].value
+            <= expected_last_failed_bundle_timestamp + 2
+        ), (
+            f"Expected to see failed generation {samples['last_failed_bundle_timestamp_seconds'].samples[0].value} within 2 seconds of {expected_last_failed_bundle_timestamp}"
+        )
+        assert (
+            expected_last_successful_bundle_timestamp - 2
+            <= samples["last_successful_bundle_timestamp_seconds"].samples[0].value
+            <= expected_last_successful_bundle_timestamp + 2
+        ), (
+            f"Expected to see generation time {samples['last_successful_bundle_timestamp_seconds'].samples[0].value} within 2 seconds of {expected_last_successful_bundle_timestamp}"
+        )
 
     @cluster(num_nodes=1)
     def test_delete_cancelled_job(self):
@@ -473,18 +514,17 @@ class DebugBundleTest(DebugBundleTestBase):
         node = random.choice(self.redpanda.started_nodes())
         job_id = uuid4()
 
-        self._run_debug_bundle(job_id=job_id,
-                               node=node,
-                               cancel_after_start=True)
+        self._run_debug_bundle(job_id=job_id, node=node, cancel_after_start=True)
 
-        filename = f'{str(job_id)}.zip'
+        filename = f"{str(job_id)}.zip"
         # Delete the debug bundle after it has been cancelled
         self.admin.delete_debug_bundle_file(filename=filename, node=node)
         self._assert_http_error(
             requests.codes.conflict,
             DebugBundleErrorCode.DEBUG_BUNDLE_PROCESS_NEVER_STARTED,
             self.admin.get_debug_bundle,
-            node=node)
+            node=node,
+        )
 
     @cluster(num_nodes=1)
     @matrix(env_variables=[{}, KUBERNETES_VARIABLES])
@@ -497,8 +537,9 @@ class DebugBundleTest(DebugBundleTestBase):
 
         if env_variables:
             self.redpanda.set_environment(env_variables)
-            self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
-                                                use_maintenance_mode=False)
+            self.redpanda.rolling_restart_nodes(
+                self.redpanda.nodes, use_maintenance_mode=False
+            )
 
         controller_logs_size_limit_bytes = 300 * 1024 * 1024
         cpu_profiler_wait_seconds = 15
@@ -509,9 +550,7 @@ class DebugBundleTest(DebugBundleTestBase):
         metrics_samples = 3
         partition = [f"{topic_name}/1,2"]
         namespace = "redpanda"
-        label_selector = [
-            DebugBundleLabelSelection(key="app", value="redpanda")
-        ]
+        label_selector = [DebugBundleLabelSelection(key="app", value="redpanda")]
 
         params = DebugBundleStartConfigParams(
             controller_logs_size_limit_bytes=controller_logs_size_limit_bytes,
@@ -523,11 +562,10 @@ class DebugBundleTest(DebugBundleTestBase):
             metrics_samples=metrics_samples,
             partition=partition,
             namespace=namespace,
-            label_selector=label_selector)
+            label_selector=label_selector,
+        )
 
-        RpkTool(self.redpanda).create_topic(topic_name,
-                                            partitions=16,
-                                            replicas=1)
+        RpkTool(self.redpanda).create_topic(topic_name, partitions=16, replicas=1)
 
         node = random.choice(self.redpanda.started_nodes())
 
@@ -535,33 +573,39 @@ class DebugBundleTest(DebugBundleTestBase):
 
         self._run_debug_bundle(job_id=job_id, node=node, config=params)
 
-        search_str = f'Starting RPK debug bundle:'
+        search_str = f"Starting RPK debug bundle:"
         for k, v in env_variables.items():
-            search_str += f' {k}={v}'
-        search_str += f' {self.redpanda.find_path_to_rpk()} debug bundle'
-        search_str += f' --output /var/lib/redpanda/data/debug-bundle/{str(job_id)}.zip'
-        search_str += f' --verbose'
-        search_str += f' --controller-logs-size-limit {controller_logs_size_limit_bytes}B'
-        search_str += f' --cpu-profiler-wait {cpu_profiler_wait_seconds}s'
-        search_str += f' --logs-since {logs_since}'
-        search_str += f' --logs-size-limit {logs_size_limit_bytes}B'
-        search_str += f' --logs-until {logs_until}'
-        search_str += f' --metrics-interval {metrics_interval_seconds}s'
-        search_str += f' --metrics-samples {metrics_samples}'
-        search_str += f' --partition kafka/{topic_name}/1,2'
-        search_str += f' --namespace {namespace}'
-        search_str += f' --label-selector {label_selector[0].key}={label_selector[0].value}'
-        assert self.redpanda.search_log_node(
-            node, search_str), f"Failed to find {search_str}"
+            search_str += f" {k}={v}"
+        search_str += f" {self.redpanda.find_path_to_rpk()} debug bundle"
+        search_str += f" --output /var/lib/redpanda/data/debug-bundle/{str(job_id)}.zip"
+        search_str += f" --verbose"
+        search_str += (
+            f" --controller-logs-size-limit {controller_logs_size_limit_bytes}B"
+        )
+        search_str += f" --cpu-profiler-wait {cpu_profiler_wait_seconds}s"
+        search_str += f" --logs-since {logs_since}"
+        search_str += f" --logs-size-limit {logs_size_limit_bytes}B"
+        search_str += f" --logs-until {logs_until}"
+        search_str += f" --metrics-interval {metrics_interval_seconds}s"
+        search_str += f" --metrics-samples {metrics_samples}"
+        search_str += f" --partition kafka/{topic_name}/1,2"
+        search_str += f" --namespace {namespace}"
+        search_str += (
+            f" --label-selector {label_selector[0].key}={label_selector[0].value}"
+        )
+        assert self.redpanda.search_log_node(node, search_str), (
+            f"Failed to find {search_str}"
+        )
 
 
 class DebugBundleSCRAMAuthn(DebugBundleTestBase):
     """
     Tests to verify that debug bundle works with SCRAM authentication
     """
-    test_user = SaslCredentials(username="test",
-                                password="test1234",
-                                algorithm="SCRAM-SHA-256")
+
+    test_user = SaslCredentials(
+        username="test", password="test1234", algorithm="SCRAM-SHA-256"
+    )
 
     user_accessible_topic = "user_topic"
     user_non_accessible_topic = "private_topic"
@@ -572,35 +616,40 @@ class DebugBundleSCRAMAuthn(DebugBundleTestBase):
         self.security_config.kafka_enable_authorization = True
         self.security_config.endpoint_authn_method = "sasl"
 
-        super(DebugBundleSCRAMAuthn,
-              self).__init__(context,
-                             num_brokers=1,
-                             security=self.security_config)
+        super(DebugBundleSCRAMAuthn, self).__init__(
+            context, num_brokers=1, security=self.security_config
+        )
 
         self.super_admin = Admin(
             self.redpanda,
-            auth=(self.redpanda.SUPERUSER_CREDENTIALS.username,
-                  self.redpanda.SUPERUSER_CREDENTIALS.password))
+            auth=(
+                self.redpanda.SUPERUSER_CREDENTIALS.username,
+                self.redpanda.SUPERUSER_CREDENTIALS.password,
+            ),
+        )
         self.rpk = RpkTool(
             self.redpanda,
             username=self.redpanda.SUPERUSER_CREDENTIALS.username,
             password=self.redpanda.SUPERUSER_CREDENTIALS.password,
-            sasl_mechanism=self.redpanda.SUPERUSER_CREDENTIALS.algorithm)
+            sasl_mechanism=self.redpanda.SUPERUSER_CREDENTIALS.algorithm,
+        )
 
     def _enable_http_authn(self):
         self.redpanda.set_cluster_config(
-            values={'admin_api_require_auth': True},
-            admin_client=self.super_admin)
+            values={"admin_api_require_auth": True}, admin_client=self.super_admin
+        )
 
     def setUp(self):
         super().setUp()
-        self.rpk.sasl_create_user(self.test_user.username,
-                                  self.test_user.password,
-                                  self.test_user.algorithm)
-        self.rpk.sasl_allow_principal(principal=self.test_user.username,
-                                      operations=['all'],
-                                      resource='topic',
-                                      resource_name=self.user_accessible_topic)
+        self.rpk.sasl_create_user(
+            self.test_user.username, self.test_user.password, self.test_user.algorithm
+        )
+        self.rpk.sasl_allow_principal(
+            principal=self.test_user.username,
+            operations=["all"],
+            resource="topic",
+            resource_name=self.user_accessible_topic,
+        )
         self.rpk.create_topic(self.user_accessible_topic)
         self.rpk.create_topic(self.user_non_accessible_topic)
         self._enable_http_authn()
@@ -621,17 +670,15 @@ class DebugBundleSCRAMAuthn(DebugBundleTestBase):
         job_id = uuid4()
         config = DebugBundleStartConfigParams(authentication=creds)
 
-        self._run_debug_bundle(job_id=job_id,
-                               node=node,
-                               config=config,
-                               admin=self.super_admin)
+        self._run_debug_bundle(
+            job_id=job_id, node=node, config=config, admin=self.super_admin
+        )
 
         content = self._retrieve_file(node=node, admin=self.super_admin)
-        self._validate_topic_name_in_response(content,
-                                              self.user_accessible_topic, True)
-        self._validate_topic_name_in_response(content,
-                                              self.user_non_accessible_topic,
-                                              use_superuser)
+        self._validate_topic_name_in_response(content, self.user_accessible_topic, True)
+        self._validate_topic_name_in_response(
+            content, self.user_non_accessible_topic, use_superuser
+        )
 
 
 class DebugBundleTLSProvider(TLSProvider):
@@ -642,8 +689,7 @@ class DebugBundleTLSProvider(TLSProvider):
     def ca(self) -> CertificateAuthority:
         return self._tls.ca
 
-    def create_broker_cert(self, service: Service,
-                           node: ClusterNode) -> Certificate:
+    def create_broker_cert(self, service: Service, node: ClusterNode) -> Certificate:
         assert node in service.nodes
         return self._tls.create_cert(node.name)
 
@@ -655,12 +701,13 @@ class DebugBundleTLS(DebugBundleTestBase):
     """
     Tests to validate rpk debug bundle when TLS is enabled
     """
+
     topic_name = "test_topic"
 
     def __init__(self, context):
-        super(DebugBundleTLS, self).__init__(context,
-                                             num_brokers=1,
-                                             rpk_node_config=RpkNodeConfig())
+        super(DebugBundleTLS, self).__init__(
+            context, num_brokers=1, rpk_node_config=RpkNodeConfig()
+        )
         self.security = SecurityConfig()
         self.tls = TLSCertManager(self.logger)
         self.security.tls_provider = DebugBundleTLSProvider(self.tls)
@@ -681,8 +728,8 @@ class DebugBundleTLS(DebugBundleTestBase):
         """
         node = random.choice(self.redpanda.started_nodes())
         job_id = uuid4()
-        self._run_debug_bundle(job_id=job_id,
-                               node=node,
-                               config=DebugBundleStartConfigParams())
+        self._run_debug_bundle(
+            job_id=job_id, node=node, config=DebugBundleStartConfigParams()
+        )
         content = self._retrieve_file(node=node)
         self._validate_topic_name_in_response(content, self.topic_name, True)

@@ -9,14 +9,15 @@ def all_greater_than_zero(l1: list[float]):
 
 
 class NodeMetrics:
-    """ Convenience class for grabbing per-node metrics, like disk space. """
+    """Convenience class for grabbing per-node metrics, like disk space."""
+
     def __init__(self, redpanda: RedpandaService):
         self.redpanda = redpanda
 
     def _get_metrics_vals(self, name_substr: str) -> list[float]:
         family = self.redpanda.metrics_sample(
-            sample_pattern=name_substr,
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+            sample_pattern=name_substr, metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS
+        )
         assert family
         return list(map(lambda s: floor(s.value), family.samples))
 
@@ -39,9 +40,11 @@ class NodeMetrics:
         return self._get_metrics_vals("storage_cache_disk_free_space_alert")
 
     def wait_until_ready(self, timeout_sec=15):
-        """ Wait until we have metrics for all nodes. """
+        """Wait until we have metrics for all nodes."""
         # disk metrics are updated via health monitor's periodic tick().
-        wait_until(lambda: all_greater_than_zero(self.disk_total_bytes()) and
-                   all_greater_than_zero(self.cache_disk_total_bytes()),
-                   timeout_sec=15,
-                   err_msg="Disk metrics not populated before timeout.")
+        wait_until(
+            lambda: all_greater_than_zero(self.disk_total_bytes())
+            and all_greater_than_zero(self.cache_disk_total_bytes()),
+            timeout_sec=15,
+            err_msg="Disk metrics not populated before timeout.",
+        )

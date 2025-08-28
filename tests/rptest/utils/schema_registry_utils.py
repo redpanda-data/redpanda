@@ -16,7 +16,7 @@ HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
 
 HTTP_POST_HEADERS = {
     "Accept": "application/vnd.schemaregistry.v1+json",
-    "Content-Type": "application/vnd.schemaregistry.v1+json"
+    "Content-Type": "application/vnd.schemaregistry.v1+json",
 }
 
 
@@ -35,11 +35,11 @@ def _request(nodes, logger, verb, path, hostname=None, **kwargs):
         node = nodes[0]
         hostname = node.account.hostname
 
-    scheme = 'http'
-    uri = f'{scheme}://{hostname}:8081/{path}'
+    scheme = "http"
+    uri = f"{scheme}://{hostname}:8081/{path}"
 
-    if 'timeout' not in kwargs:
-        kwargs['timeout'] = 60
+    if "timeout" not in kwargs:
+        kwargs["timeout"] = 60
 
     # Error codes that may appear during normal API operation, do not
     # indicate an issue with the service
@@ -52,13 +52,11 @@ def _request(nodes, logger, verb, path, hostname=None, **kwargs):
 
     r = requests.request(verb, uri, **kwargs)
     if not accept_response(r):
-        logger.info(
-            f"Retrying for error {r.status_code} on {verb} {path} ({r.text})")
+        logger.info(f"Retrying for error {r.status_code} on {verb} {path} ({r.text})")
         time.sleep(10)
         r = requests.request(verb, uri, **kwargs)
         if accept_response(r):
-            logger.info(
-                f"OK after retry {r.status_code} on {verb} {path} ({r.text})")
+            logger.info(f"OK after retry {r.status_code} on {verb} {path} ({r.text})")
         else:
             logger.info(
                 f"Error after retry {r.status_code} on {verb} {path} ({r.text})"
@@ -71,12 +69,12 @@ def _request(nodes, logger, verb, path, hostname=None, **kwargs):
 
 def get_config(nodes, logger, headers=HTTP_GET_HEADERS, **kwargs):
     """Returns the config of the schema registry
-    
+
     Parameters
     ----------
-    nodes : 
+    nodes :
         List of nodes to pick from
-    
+
     logger :
         Logger to use
 
@@ -93,18 +91,14 @@ def get_config(nodes, logger, headers=HTTP_GET_HEADERS, **kwargs):
     return _request(nodes, logger, "GET", "config", headers=headers, **kwargs)
 
 
-def get_subjects(nodes,
-                 logger,
-                 deleted=False,
-                 headers=HTTP_GET_HEADERS,
-                 **kwargs):
+def get_subjects(nodes, logger, deleted=False, headers=HTTP_GET_HEADERS, **kwargs):
     """Returns a list of subjects held by the SR
-    
+
     Parameters
     ----------
-    nodes : 
+    nodes :
         List of nodes to pick from
-    
+
     logger :
         Logger to use
 
@@ -121,12 +115,14 @@ def get_subjects(nodes,
     -------
     List of subjects
     """
-    return _request(nodes,
-                    logger,
-                    "GET",
-                    f"subjects{'?deleted=true' if deleted else ''}",
-                    headers=headers,
-                    **kwargs)
+    return _request(
+        nodes,
+        logger,
+        "GET",
+        f"subjects{'?deleted=true' if deleted else ''}",
+        headers=headers,
+        **kwargs,
+    )
 
 
 def put_mode(nodes, logger, mode: Mode, headers=HTTP_POST_HEADERS, **kwargs):
@@ -153,10 +149,6 @@ def put_mode(nodes, logger, mode: Mode, headers=HTTP_POST_HEADERS, **kwargs):
     -------
     Changes the read-write-ness mode of the schema registry
     """
-    return _request(nodes,
-                    logger,
-                    "PUT",
-                    "mode",
-                    json=mode.to_json(),
-                    headers=headers,
-                    **kwargs)
+    return _request(
+        nodes, logger, "PUT", "mode", json=mode.to_json(), headers=headers, **kwargs
+    )

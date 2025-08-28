@@ -30,10 +30,11 @@ class ClusterViewTest(EndToEndTest):
         def rp1_started():
             nonlocal seed
             try:
-                #{"version": 0, "brokers": [{"node_id": 1, "num_cores": 3, "membership_status": "active", "is_alive": true}]}
+                # {"version": 0, "brokers": [{"node_id": 1, "num_cores": 3, "membership_status": "active", "is_alive": true}]}
                 seed = admin.get_cluster_view(self.redpanda.nodes[0])
                 self.redpanda.logger.info(
-                    f"view from {self.redpanda.nodes[0]}: {json.dumps(seed)}")
+                    f"view from {self.redpanda.nodes[0]}: {json.dumps(seed)}"
+                )
                 return len(seed["brokers"]) == 1
             except requests.exceptions.RequestException as e:
                 self.redpanda.logger.debug(f"admin API isn't available ({e})")
@@ -43,7 +44,8 @@ class ClusterViewTest(EndToEndTest):
             rp1_started,
             timeout_sec=30,
             backoff_sec=1,
-            err_msg="Cant get cluster view from {self.redpanda.nodes[0]}")
+            err_msg="Cant get cluster view from {self.redpanda.nodes[0]}",
+        )
 
         self.redpanda.start_node(self.redpanda.nodes[1])
         self.redpanda.start_node(self.redpanda.nodes[2])
@@ -64,20 +66,22 @@ class ClusterViewTest(EndToEndTest):
                     if last == None:
                         last = view
                         ids = set(
-                            map(lambda broker: broker["node_id"],
-                                view["brokers"]))
+                            map(lambda broker: broker["node_id"], view["brokers"])
+                        )
                     if last["version"] != view["version"]:
                         return False
                     if not ids.issubset(
-                            map(lambda broker: broker["node_id"],
-                                view["brokers"])):
+                        map(lambda broker: broker["node_id"], view["brokers"])
+                    ):
                         return False
                 return True
             except requests.exceptions.RequestException as e:
                 self.redpanda.logger.debug(f"admin API isn't available ({e})")
                 return False
 
-        wait_until(rest_started,
-                   timeout_sec=30,
-                   backoff_sec=1,
-                   err_msg="Cant get cluster view from {self.redpanda.nodes}")
+        wait_until(
+            rest_started,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Cant get cluster view from {self.redpanda.nodes}",
+        )

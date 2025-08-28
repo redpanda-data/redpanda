@@ -50,14 +50,14 @@ class KafkaStreamsWikipedia(KafkaStreams):
         schema_reg = redpanda.schema_reg()
         jar_args = (
             f"WikipediaFeedAvroExampleDriver {redpanda.brokers()} {schema_reg}",
-            f"WikipediaFeedAvroLambdaExample {redpanda.brokers()} {schema_reg}"
+            f"WikipediaFeedAvroLambdaExample {redpanda.brokers()} {schema_reg}",
         )
 
-        super(KafkaStreamsWikipedia, self).__init__(redpanda, is_driver,
-                                                    jar_args)
+        super(KafkaStreamsWikipedia, self).__init__(redpanda, is_driver, jar_args)
 
         self.users_re = re.compile(
-            "(erica|bob|joe|damian|tania|phil|sam|lauren|joseph)")
+            "(erica|bob|joe|damian|tania|phil|sam|lauren|joseph)"
+        )
 
     def driver_cond(self, line):
         return self.users_re.search(line) is not None
@@ -68,13 +68,19 @@ class KafkaStreamsTopArticles(KafkaStreams):
         schema_reg = redpanda.schema_reg()
         jar_args = (
             f"TopArticlesExampleDriver {redpanda.brokers()} {schema_reg}",
-            f"TopArticlesLambdaExample {redpanda.brokers()} {schema_reg}")
+            f"TopArticlesLambdaExample {redpanda.brokers()} {schema_reg}",
+        )
 
-        super(KafkaStreamsTopArticles, self).__init__(redpanda, is_driver,
-                                                      jar_args)
+        super(KafkaStreamsTopArticles, self).__init__(redpanda, is_driver, jar_args)
 
     def driver_cond(self, line):
-        return "engineering" in line or "telco" in line or "finance" in line or "health" in line or "science" in line
+        return (
+            "engineering" in line
+            or "telco" in line
+            or "finance" in line
+            or "health" in line
+            or "science" in line
+        )
 
 
 class KafkaStreamsSessionWindow(KafkaStreams):
@@ -82,10 +88,10 @@ class KafkaStreamsSessionWindow(KafkaStreams):
         schema_reg = redpanda.schema_reg()
         jar_args = (
             f"SessionWindowsExampleDriver {redpanda.brokers()} {schema_reg}",
-            f"SessionWindowsExample {redpanda.brokers()} {schema_reg}")
+            f"SessionWindowsExample {redpanda.brokers()} {schema_reg}",
+        )
 
-        super(KafkaStreamsSessionWindow,
-              self).__init__(redpanda, is_driver, jar_args)
+        super(KafkaStreamsSessionWindow, self).__init__(redpanda, is_driver, jar_args)
 
     def driver_cond(self, line):
         return "sarah" in line or "bill" in line or "jo" in line
@@ -96,10 +102,10 @@ class KafkaStreamsJsonToAvro(KafkaStreams):
         schema_reg = redpanda.schema_reg()
         jar_args = (
             f"JsonToAvroExampleDriver {redpanda.brokers()} {schema_reg}",
-            f"JsonToAvroExample {redpanda.brokers()} {schema_reg}")
+            f"JsonToAvroExample {redpanda.brokers()} {schema_reg}",
+        )
 
-        super(KafkaStreamsJsonToAvro, self).__init__(redpanda, is_driver,
-                                                     jar_args)
+        super(KafkaStreamsJsonToAvro, self).__init__(redpanda, is_driver, jar_args)
 
         # The driver prints out 3 avro records
         self._count = 3
@@ -115,22 +121,25 @@ class KafkaStreamsPageView(KafkaStreams):
         schema_reg = redpanda.schema_reg()
         jar_args = (
             f"PageViewRegionExampleDriver {redpanda.brokers()} {schema_reg}",
-            f"PageViewRegionLambdaExample {redpanda.brokers()} {schema_reg}")
+            f"PageViewRegionLambdaExample {redpanda.brokers()} {schema_reg}",
+        )
 
-        super(KafkaStreamsPageView, self).__init__(redpanda, is_driver,
-                                                   jar_args)
+        super(KafkaStreamsPageView, self).__init__(redpanda, is_driver, jar_args)
 
     def driver_cond(self, line):
-        return "europe@" in line or "usa@" in line or "asia@" in line or "africa@" in line
+        return (
+            "europe@" in line or "usa@" in line or "asia@" in line or "africa@" in line
+        )
 
 
 class KafkaStreamsSumLambda(KafkaStreams):
     def __init__(self, redpanda, is_driver):
-        jar_args = (f"SumLambdaExampleDriver {redpanda.brokers()}",
-                    f"SumLambdaExample {redpanda.brokers()}")
+        jar_args = (
+            f"SumLambdaExampleDriver {redpanda.brokers()}",
+            f"SumLambdaExample {redpanda.brokers()}",
+        )
 
-        super(KafkaStreamsSumLambda, self).__init__(redpanda, is_driver,
-                                                    jar_args)
+        super(KafkaStreamsSumLambda, self).__init__(redpanda, is_driver, jar_args)
 
     def driver_cond(self, line):
         return "Current sum of odd numbers is:" in line
@@ -139,11 +148,11 @@ class KafkaStreamsSumLambda(KafkaStreams):
 class KafkaStreamsAnomalyDetection(KafkaStreams):
     def __init__(self, redpanda, is_driver):
         # 1st arg is None since this example does not have a driver
-        jar_args = (None,
-                    f"AnomalyDetectionLambdaExample {redpanda.brokers()}")
+        jar_args = (None, f"AnomalyDetectionLambdaExample {redpanda.brokers()}")
 
-        super(KafkaStreamsAnomalyDetection,
-              self).__init__(redpanda, is_driver, jar_args)
+        super(KafkaStreamsAnomalyDetection, self).__init__(
+            redpanda, is_driver, jar_args
+        )
 
 
 class KafkaStreamsUserRegion(KafkaStreams):
@@ -151,8 +160,7 @@ class KafkaStreamsUserRegion(KafkaStreams):
         # 1st arg is None since this example does not have a driver
         jar_args = (None, f"UserRegionLambdaExample {redpanda.brokers()}")
 
-        super(KafkaStreamsUserRegion, self).__init__(redpanda, is_driver,
-                                                     jar_args)
+        super(KafkaStreamsUserRegion, self).__init__(redpanda, is_driver, jar_args)
 
 
 class KafkaStreamsWordCount(KafkaStreams):
@@ -160,8 +168,7 @@ class KafkaStreamsWordCount(KafkaStreams):
         # 1st arg is None since this example does not have a driver
         jar_args = (None, f"WordCountLambdaExample {redpanda.brokers()}")
 
-        super(KafkaStreamsWordCount, self).__init__(redpanda, is_driver,
-                                                    jar_args)
+        super(KafkaStreamsWordCount, self).__init__(redpanda, is_driver, jar_args)
 
 
 class KafkaStreamsMapFunc(KafkaStreams):
@@ -169,5 +176,4 @@ class KafkaStreamsMapFunc(KafkaStreams):
         # 1st arg is None since this example does not have a driver
         jar_args = (None, f"MapFunctionLambdaExample {redpanda.brokers()}")
 
-        super(KafkaStreamsMapFunc, self).__init__(redpanda, is_driver,
-                                                  jar_args)
+        super(KafkaStreamsMapFunc, self).__init__(redpanda, is_driver, jar_args)

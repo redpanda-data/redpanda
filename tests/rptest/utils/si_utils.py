@@ -47,7 +47,7 @@ class NTP(NamedTuple):
     topic: str
     partition: int
 
-    def to_ntpr(self, revision: int) -> 'NTPR':
+    def to_ntpr(self, revision: int) -> "NTPR":
         return NTPR(self.ns, self.topic, self.partition, revision)
 
     def to_nt(self):
@@ -116,6 +116,7 @@ class ControllerSnapshotComponents(NamedTuple):
     """
     Keys that uniquely identify a controller snapshot.
     """
+
     cluster_uuid: str
     offset: int
 
@@ -124,6 +125,7 @@ class ClusterMetadataComponents(NamedTuple):
     """
     Keys that uniquely identify a cluster metadata manifest.
     """
+
     cluster_uuid: str
     metadata_id: int
 
@@ -132,6 +134,7 @@ class ClusterMetadata(NamedTuple):
     """
     Metadata associated with a single cluster.
     """
+
     # metadata_id => deserialized manifest
     cluster_metadata_manifests: dict[int, dict]
 
@@ -139,14 +142,14 @@ class ClusterMetadata(NamedTuple):
     controller_snapshot_sizes: dict[int, int]
 
 
-TopicManifestMetadata = namedtuple('TopicManifestMetadata',
-                                   ['ntp', 'revision'])
+TopicManifestMetadata = namedtuple("TopicManifestMetadata", ["ntp", "revision"])
 SegmentMetadata = namedtuple(
-    'SegmentMetadata',
-    ['ntp', 'revision', 'base_offset', 'term', 'md5', 'size'])
+    "SegmentMetadata", ["ntp", "revision", "base_offset", "term", "md5", "size"]
+)
 
-SegmentPathComponents = namedtuple('SegmentPathComponents',
-                                   ['ntpr', 'name', 'base_offset'])
+SegmentPathComponents = namedtuple(
+    "SegmentPathComponents", ["ntpr", "name", "base_offset"]
+)
 
 MISSING_DATA_ERRORS = [
     "No segments found. Empty partition manifest generated",
@@ -156,7 +159,7 @@ MISSING_DATA_ERRORS = [
 
 TRANSIENT_ERRORS = RESTART_LOG_ALLOW_LIST + [
     "raft::offset_monitor::wait_timed_out",
-    "Upload loop error: seastar::timed_out_error"
+    "Upload loop error: seastar::timed_out_error",
 ]
 
 
@@ -183,9 +186,23 @@ class SegmentReader:
     HDR_FMT_RP = "<IiqbIhiqqqhii"
     HEADER_SIZE = struct.calcsize(HDR_FMT_RP)
     Header = collections.namedtuple(
-        'Header', ('header_crc', 'batch_size', 'base_offset', 'type', 'crc',
-                   'attrs', 'delta', 'first_ts', 'max_ts', 'producer_id',
-                   'producer_epoch', 'base_seq', 'record_count'))
+        "Header",
+        (
+            "header_crc",
+            "batch_size",
+            "base_offset",
+            "type",
+            "crc",
+            "attrs",
+            "delta",
+            "first_ts",
+            "max_ts",
+            "producer_id",
+            "producer_epoch",
+            "base_seq",
+            "record_count",
+        ),
+    )
 
     def __init__(self, stream):
         self.stream = stream
@@ -200,9 +217,9 @@ class SegmentReader:
             data = self.stream.read(records_size)
             if len(data) < records_size:
                 return None
-            assert len(
-                data
-            ) == records_size, f"data len is {len(data)} but the expected records size is {records_size}"
+            assert len(data) == records_size, (
+                f"data len is {len(data)} but the expected records size is {records_size}"
+            )
             return header
         return None
 
@@ -230,8 +247,7 @@ def make_segment_summary(ntpr: NTPR, reader: SegmentReader) -> SegmentSummary:
     size_bytes = 0
     for header in reader:
         base_offset = min(base_offset, header.base_offset)
-        last_offset = max(last_offset,
-                          header.base_offset + header.record_count - 1)
+        last_offset = max(last_offset, header.base_offset + header.record_count - 1)
         base_timestamp = min(base_timestamp, header.first_ts)
         last_timestamp = max(last_timestamp, header.max_ts)
         epoch = header.producer_epoch
@@ -239,7 +255,7 @@ def make_segment_summary(ntpr: NTPR, reader: SegmentReader) -> SegmentSummary:
             19,  # archival
             2,  # raft_configuration
             23,  # version_fence
-            25  # prefix_truncate
+            25,  # prefix_truncate
         ]
 
         if header.type in filters:
@@ -249,20 +265,22 @@ def make_segment_summary(ntpr: NTPR, reader: SegmentReader) -> SegmentSummary:
             num_data_batches += 1
             num_data_records += header.record_count
         size_bytes += header.batch_size
-    return SegmentSummary(ns=ntpr.ns,
-                          topic=ntpr.topic,
-                          revision=ntpr.revision,
-                          partition=ntpr.partition,
-                          epoch=epoch,
-                          base_offset=base_offset,
-                          last_offset=last_offset,
-                          base_timestamp=base_timestamp,
-                          last_timestamp=last_timestamp,
-                          num_data_batches=num_data_batches,
-                          num_conf_batches=num_conf_batches,
-                          num_data_records=num_data_records,
-                          num_conf_records=num_conf_records,
-                          size_bytes=size_bytes)
+    return SegmentSummary(
+        ns=ntpr.ns,
+        topic=ntpr.topic,
+        revision=ntpr.revision,
+        partition=ntpr.partition,
+        epoch=epoch,
+        base_offset=base_offset,
+        last_offset=last_offset,
+        base_timestamp=base_timestamp,
+        last_timestamp=last_timestamp,
+        num_data_batches=num_data_batches,
+        num_conf_batches=num_conf_batches,
+        num_data_records=num_data_records,
+        num_conf_records=num_conf_records,
+        size_bytes=size_bytes,
+    )
 
 
 def parse_s3_topic_label(path: str) -> str:
@@ -275,8 +293,8 @@ def parse_s3_topic_label(path: str) -> str:
     Sample name: meta/kafka/panda-topic/6e94ccdc-443a-4807-b105-0bb86e8f97f7/0/topic_manifest.json
         Output: "6e94ccdc-443a-4807-b105-0bb86e8f97f7"
     """
-    items = path.split('/')
-    if len(items[0]) == 8 and items[0].endswith('0000000'):
+    items = path.split("/")
+    if len(items[0]) == 8 and items[0].endswith("0000000"):
         return ""
     return items[3]
 
@@ -293,8 +311,8 @@ def parse_s3_partition_path_label(path: str) -> str:
     Sample name: 6e94ccdc-443a-4807-b105-0bb86e8f97f7/meta/kafka/panda-topic/0_18/manifest.bin.0.21.0.20.1719867209267.1719867209268
         Output: "6e94ccdc-443a-4807-b105-0bb86e8f97f7"
     """
-    items = path.split('/')
-    if len(items[0]) == 8 and items[0].endswith('0000000'):
+    items = path.split("/")
+    if len(items[0]) == 8 and items[0].endswith("0000000"):
         return ""
     return items[0]
 
@@ -304,25 +322,25 @@ def parse_s3_manifest_path(path: str) -> NTPR:
     Sample name: 50000000/meta/kafka/panda-topic/0_19/manifest.json
     Sample name: 6e94ccdc-443a-4807-b105-0bb86e8f97f7/meta/kafka/panda-topic/0_18/manifest.bin
     """
-    items = path.split('/')
+    items = path.split("/")
     ns = items[2]
     topic = items[3]
-    part_rev = items[4].split('_')
+    part_rev = items[4].split("_")
     partition = int(part_rev[0])
     revision = int(part_rev[1])
     return NTPR(ns=ns, topic=topic, partition=partition, revision=revision)
 
 
-def parse_cluster_metadata_manifest_path(
-        path: str) -> ClusterMetadataComponents:
+def parse_cluster_metadata_manifest_path(path: str) -> ClusterMetadataComponents:
     """
     Parse S3 cluster metadata manifest path. Return the cluster UUID and
     metadata ID.
     Sample name: cluster_metadata/6e94ccdc-443a-4807-b105-0bb86e8f97f7/manifests/0/cluster_manifest.json
     """
-    items = path.split('/')
-    assert items[
-        0] == "cluster_metadata", f"Invalid cluster metadata manifest path: {path}"
+    items = path.split("/")
+    assert items[0] == "cluster_metadata", (
+        f"Invalid cluster metadata manifest path: {path}"
+    )
     cluster_uuid = items[1]
     meta_id = int(items[3])
     return ClusterMetadataComponents(cluster_uuid, meta_id)
@@ -334,9 +352,10 @@ def parse_controller_snapshot_path(path: str) -> ClusterMetadataComponents:
     metadata ID.
     Sample name: cluster_metadata/6e94ccdc-443a-4807-b105-0bb86e8f97f7/0/controller.snapshot
     """
-    items = path.split('/')
-    assert items[
-        0] == "cluster_metadata", f"Invalid cluster metadata manifest path: {path}"
+    items = path.split("/")
+    assert items[0] == "cluster_metadata", (
+        f"Invalid cluster metadata manifest path: {path}"
+    )
     cluster_uuid = items[1]
     meta_id = int(items[2])
     return ClusterMetadataComponents(cluster_uuid, meta_id)
@@ -346,18 +365,16 @@ def parse_s3_segment_path(path) -> SegmentPathComponents:
     """Parse S3 segment path. Return ntp, revision and name.
     Sample name: b525cddd/kafka/panda-topic/0_9/4109-1-v1.log
     """
-    items = path.split('/')
+    items = path.split("/")
     ns = items[1]
     topic = items[2]
-    part_rev = items[3].split('_')
+    part_rev = items[3].split("_")
     partition = int(part_rev[0])
     revision = int(part_rev[1])
     fname = items[4]
-    base_offset = int(fname.split('-')[0])
+    base_offset = int(fname.split("-")[0])
     ntpr = NTPR(ns=ns, topic=topic, partition=partition, revision=revision)
-    return SegmentPathComponents(ntpr=ntpr,
-                                 name=fname,
-                                 base_offset=base_offset)
+    return SegmentPathComponents(ntpr=ntpr, name=fname, base_offset=base_offset)
 
 
 def _parse_checksum_entry(path, value, ignore_rev):
@@ -366,29 +383,29 @@ def _parse_checksum_entry(path, value, ignore_rev):
     (e.g. <ns>/<topic>/<partition>_<revision>/<baseoffset>-<term>-v1.log).
     The value should contain a pair of md5 hash and file size."""
     md5, segment_size = value
-    items = path.split('/')
+    items = path.split("/")
     ns = items[0]
     topic = items[1]
-    part_rev = items[2].split('_')
+    part_rev = items[2].split("_")
     partition = int(part_rev[0])
     revision = 0 if ignore_rev else int(part_rev[1])
-    fname = items[3].split('-')
+    fname = items[3].split("-")
     base_offset = int(fname[0])
     term = int(fname[1])
     ntp = NTP(ns=ns, topic=topic, partition=partition)
-    return SegmentMetadata(ntp=ntp,
-                           revision=revision,
-                           base_offset=base_offset,
-                           term=term,
-                           md5=md5,
-                           size=segment_size)
+    return SegmentMetadata(
+        ntp=ntp,
+        revision=revision,
+        base_offset=base_offset,
+        term=term,
+        md5=md5,
+        size=segment_size,
+    )
 
 
-def verify_file_layout(baseline_per_host,
-                       restored_per_host,
-                       expected_topics,
-                       logger,
-                       size_overrides=None):
+def verify_file_layout(
+    baseline_per_host, restored_per_host, expected_topics, logger, size_overrides=None
+):
     """This function checks the restored segments over the expected ones.
     It takes into account the fact that the md5 checksum as well as the
     file name of the restored segment might be different from the original
@@ -423,9 +440,9 @@ def verify_file_layout(baseline_per_host,
             if first_host is None:
                 first_host = host
             else:
-                assert set(ntps.keys()) == set(
-                    ntp_size.keys()
-                ), f"NTPs on {host} differ from first host {first_host}: {set(ntps.keys())} vs {host}: {set(ntp_size.keys())}"
+                assert set(ntps.keys()) == set(ntp_size.keys()), (
+                    f"NTPs on {host} differ from first host {first_host}: {set(ntps.keys())} vs {host}: {set(ntp_size.keys())}"
+                )
 
             for ntp, total_size in ntp_size.items():
                 if ntp in ntps and not hosts_can_vary:
@@ -435,8 +452,9 @@ def verify_file_layout(baseline_per_host,
                     logger.info(
                         f"checking size of the partition for {ntp}, new {total_size} vs already accounted {ntps[ntp]}"
                     )
-                    assert total_size == ntps[ntp],\
-                          f"{ntp=} new {total_size=} differs from already accounted size={ntps[ntp]}"
+                    assert total_size == ntps[ntp], (
+                        f"{ntp=} new {total_size=} differs from already accounted size={ntps[ntp]}"
+                    )
                 else:
                     ntps[ntp] = max(total_size, ntps[ntp])
         return ntps
@@ -444,10 +462,12 @@ def verify_file_layout(baseline_per_host,
     restored_ntps = get_ntp_sizes(restored_per_host, hosts_can_vary=False)
     baseline_ntps = get_ntp_sizes(baseline_per_host, hosts_can_vary=True)
 
-    logger.info(f"before matching\n"
-                f"restored ntps: {restored_ntps}\n"
-                f"baseline ntps: {baseline_ntps}\n"
-                f"expected topics: {expected_topics}")
+    logger.info(
+        f"before matching\n"
+        f"restored ntps: {restored_ntps}\n"
+        f"baseline ntps: {baseline_ntps}\n"
+        f"expected topics: {expected_topics}"
+    )
 
     for ntp, orig_ntp_size in baseline_ntps.items():
         # Restored ntp should be equal or less than original
@@ -458,41 +478,46 @@ def verify_file_layout(baseline_per_host,
                 f"NTP {ntp} uses size override {orig_ntp_size} - {size_overrides[ntp]}"
             )
             orig_ntp_size -= size_overrides[ntp]
-        assert ntp in restored_ntps, f"NTP {ntp} is missing in the restored data: {restored_ntps}"
+        assert ntp in restored_ntps, (
+            f"NTP {ntp} is missing in the restored data: {restored_ntps}"
+        )
         rest_ntp_size = restored_ntps[ntp]
         fraction = float(max(rest_ntp_size, orig_ntp_size)) / float(
-            min(rest_ntp_size, orig_ntp_size))
-        assert fraction < 1.1, \
+            min(rest_ntp_size, orig_ntp_size)
+        )
+        assert fraction < 1.1, (
             f"NTP {ntp} the size of the restored partition is too different {rest_ntp_size} compared to the original one {orig_ntp_size}."
+        )
 
         delta = orig_ntp_size - rest_ntp_size
-        assert delta <= BLOCK_SIZE, \
-            f"NTP {ntp} the restored partition is too small {rest_ntp_size}." \
+        assert delta <= BLOCK_SIZE, (
+            f"NTP {ntp} the restored partition is too small {rest_ntp_size}."
             f" The original is {orig_ntp_size} bytes which {delta} bytes larger."
+        )
 
 
-def gen_topic_manifest_path(topic: NT,
-                            manifest_format: Literal['json', 'bin'] = 'bin',
-                            remote_label: str = "",
-                            rev: int = 0):
-    assert manifest_format in ['json', 'bin']
+def gen_topic_manifest_path(
+    topic: NT,
+    manifest_format: Literal["json", "bin"] = "bin",
+    remote_label: str = "",
+    rev: int = 0,
+):
+    assert manifest_format in ["json", "bin"]
     path = f"{topic.ns}/{topic.topic}"
     if len(remote_label) == 0:
         x = xxhash.xxh32()
-        x.update(path.encode('ascii'))
-        hash = x.hexdigest()[0] + '0000000'
+        x.update(path.encode("ascii"))
+        hash = x.hexdigest()[0] + "0000000"
         return f"{hash}/meta/{path}/topic_manifest.{manifest_format}"
     return f"meta/{path}/{remote_label}/{rev}/topic_manifest.{manifest_format}"
 
 
-def gen_topic_lifecycle_marker_path(topic: NT,
-                                    rev: int,
-                                    remote_label: str = ""):
+def gen_topic_lifecycle_marker_path(topic: NT, rev: int, remote_label: str = ""):
     path = f"{topic.ns}/{topic.topic}"
     if len(remote_label) == 0:
         x = xxhash.xxh32()
-        x.update(path.encode('ascii'))
-        hash = x.hexdigest()[0] + '0000000'
+        x.update(path.encode("ascii"))
+        hash = x.hexdigest()[0] + "0000000"
         return f"{hash}/meta/{path}/{rev}_lifecycle.bin"
     return f"meta/{path}/{remote_label}/{rev}_lifecycle.bin"
 
@@ -506,23 +531,30 @@ def gen_segment_name_from_meta(meta: dict, key: str) -> str:
     :param key: the segment key which is also the old style path for v1
     :return: adjusted path
     """
-    version = meta.get('sname_format', 1)
+    version = meta.get("sname_format", 1)
     if version > 1:
-        head = '-'.join([
-            str(meta[k]) for k in ('base_offset', 'committed_offset',
-                                   'size_bytes', 'segment_term')
-        ])
-        return f'{head}-v1.log'
+        head = "-".join(
+            [
+                str(meta[k])
+                for k in (
+                    "base_offset",
+                    "committed_offset",
+                    "size_bytes",
+                    "segment_term",
+                )
+            ]
+        )
+        return f"{head}-v1.log"
     else:
         return key
 
 
 def gen_local_path_from_remote(remote_path: str) -> str:
-    head, tail = remote_path.rsplit('/', 1)
-    tokens = tail.split('-')
+    head, tail = remote_path.rsplit("/", 1)
+    tokens = tail.split("-")
     # extract base offset and term from new style path
-    adjusted = f'{tokens[0]}-{tokens[-2]}-{tokens[-1]}'
-    return f'{head}/{adjusted}'
+    adjusted = f"{tokens[0]}-{tokens[-2]}-{tokens[-1]}"
+    return f"{head}/{adjusted}"
 
 
 def get_on_disk_size_per_ntp(chk):
@@ -541,13 +573,14 @@ def get_on_disk_size_per_ntp(chk):
     return size_bytes_per_ntp
 
 
-NodeReport = NewType('NodeReport', dict[str, tuple[str, int]])
-NodeSegmentsReport = NewType('NodeSegmentsReport', dict[str, NodeReport])
+NodeReport = NewType("NodeReport", dict[str, tuple[str, int]])
+NodeSegmentsReport = NewType("NodeSegmentsReport", dict[str, NodeReport])
 
 
-def get_expected_ntp_restored_size(nodes_segments_report: NodeSegmentsReport,
-                                   retention_policy: int):
-    """ Get expected retestored ntp disk size
+def get_expected_ntp_restored_size(
+    nodes_segments_report: NodeSegmentsReport, retention_policy: int
+):
+    """Get expected retestored ntp disk size
     We expect that redpanda will restore max
     amount of segments with total size less
     than retention_policy
@@ -575,11 +608,12 @@ def get_expected_ntp_restored_size(nodes_segments_report: NodeSegmentsReport,
         for ntp, segments in segments_sizes_per_ntp.items():
             expected_restored_sizes[ntp] = 0
             for segment in sorted(segments.keys(), reverse=True):
-                if expected_restored_sizes[ntp] + segments_sizes_per_ntp[ntp][
-                        segment] > retention_policy:
+                if (
+                    expected_restored_sizes[ntp] + segments_sizes_per_ntp[ntp][segment]
+                    > retention_policy
+                ):
                     break
-                expected_restored_sizes[ntp] += segments_sizes_per_ntp[ntp][
-                    segment]
+                expected_restored_sizes[ntp] += segments_sizes_per_ntp[ntp][segment]
 
     assert expected_restored_sizes is not None
 
@@ -595,7 +629,7 @@ def nodes_report_cloud_segments(redpanda, target_segments, topic_name=None):
         redpanda: The Redpanda instance.
         target_segments (int): The target number of segments to check for.
         topic_name (str, optional): The name of the topic for which to count the segments.
-    
+
     NOTE: we're explicitly not checking the manifest via cloud client
     because we expect the number of items in our bucket to be quite large,
     and for associated ListObjects calls to take a long time.
@@ -606,17 +640,22 @@ def nodes_report_cloud_segments(redpanda, target_segments, topic_name=None):
             num_segments = redpanda.metric_sum(
                 "redpanda_cloud_storage_segments",
                 metrics_endpoint=metrics_endpoint,
-                topic=topic_name)
+                topic=topic_name,
+            )
         else:
             # Fetch total number of segments without filtering by specific topic
             num_segments = redpanda.metric_sum(
-                "redpanda_cloud_storage_segments",
-                metrics_endpoint=metrics_endpoint)
+                "redpanda_cloud_storage_segments", metrics_endpoint=metrics_endpoint
+            )
 
-        message = (f"Cluster metrics for topic '{topic_name}' report "
-                   f"{num_segments} / {target_segments} cloud segments") \
-            if topic_name else \
-            f"Cluster metrics report {num_segments} / {target_segments} cloud segments"
+        message = (
+            (
+                f"Cluster metrics for topic '{topic_name}' report "
+                f"{num_segments} / {target_segments} cloud segments"
+            )
+            if topic_name
+            else f"Cluster metrics report {num_segments} / {target_segments} cloud segments"
+        )
 
         redpanda.logger.info(message)
     except Exception as e:
@@ -632,8 +671,9 @@ def is_close_size(actual_size, expected_size):
     between two values shouldn't be greater than the size of one segment.
     """
     lower_bound = int(expected_size * 0.95)
-    upper_bound = expected_size + default_log_segment_size + \
-                  int(default_log_segment_size * 0.2)
+    upper_bound = (
+        expected_size + default_log_segment_size + int(default_log_segment_size * 0.2)
+    )
     return actual_size in range(lower_bound, upper_bound)
 
 
@@ -646,8 +686,10 @@ class PathMatcher:
             self.topic_manifest_paths = {
                 manifest_key
                 for t in self.topic_names
-                for manifest_key in (f'/{t}/topic_manifest.json',
-                                     f'/{t}/topic_manifest.bin')
+                for manifest_key in (
+                    f"/{t}/topic_manifest.json",
+                    f"/{t}/topic_manifest.bin",
+                )
             }
         else:
             self.topic_names = None
@@ -664,28 +706,27 @@ class PathMatcher:
             return True
         else:
             for t in self.topic_names:
-                if not key.endswith(
-                        "/topic_manifest.bin") and not key.endswith(
-                            "/topic_manifest.json"):
+                if not key.endswith("/topic_manifest.bin") and not key.endswith(
+                    "/topic_manifest.json"
+                ):
                     continue
                 if t in key:
                     return True
             return False
 
     def is_cluster_metadata_manifest(self, o: ObjectMetadata) -> bool:
-        return o.key.endswith('/cluster_manifest.json')
+        return o.key.endswith("/cluster_manifest.json")
 
     def is_controller_snapshot(self, o: ObjectMetadata) -> bool:
-        return o.key.endswith('/controller.snapshot')
+        return o.key.endswith("/controller.snapshot")
 
     def is_partition_manifest(self, o: ObjectMetadata) -> bool:
-        return (o.key.endswith('/manifest.json')
-                or o.key.endswith("/manifest.bin")
-                ) and self._match_partition_manifest(o.key)
+        return (
+            o.key.endswith("/manifest.json") or o.key.endswith("/manifest.bin")
+        ) and self._match_partition_manifest(o.key)
 
     def is_spillover_manifest(self, o: ObjectMetadata) -> bool:
-        return "/manifest.bin." in o.key and self._match_partition_manifest(
-            o.key)
+        return "/manifest.bin." in o.key and self._match_partition_manifest(o.key)
 
     def is_topic_manifest(self, o: ObjectMetadata) -> bool:
         return self._match_topic_manifest(o.key)
@@ -735,10 +776,9 @@ class PathMatcher:
         return self._match_partition_manifest(path)
 
 
-def quiesce_uploads(redpanda,
-                    topic_names: list[str],
-                    timeout_sec,
-                    target_label: Optional[str] = None):
+def quiesce_uploads(
+    redpanda, topic_names: list[str], timeout_sec, target_label: Optional[str] = None
+):
     """
     Wait until all local data for all topics in `topic_names` has been uploaded
     to remote storage.  This function expects that no new data is being produced:
@@ -769,7 +809,7 @@ def quiesce_uploads(redpanda,
         else:
             ready = remote_committed_offset >= hwm - 1
             if not ready:
-                last_msg = f"Partition {ntp} not yet ready ({remote_committed_offset} < {hwm-1})"
+                last_msg = f"Partition {ntp} not yet ready ({remote_committed_offset} < {hwm - 1})"
                 redpanda.logger.debug(last_msg)
             return ready
 
@@ -782,17 +822,19 @@ def quiesce_uploads(redpanda,
         for p in described:
             p_count += 1
 
-            ntp = NTP(ns='kafka', topic=topic_name, partition=p.id)
+            ntp = NTP(ns="kafka", topic=topic_name, partition=p.id)
             hwm = p.high_watermark
 
             # After timeout_sec has elapsed, expect each partition to
             # be ready immediately.
             timeout = max(1, timeout_sec - (time.time() - t_initial))
 
-            redpanda.wait_until(lambda: remote_has_reached_hwm(ntp, hwm),
-                                timeout_sec=timeout,
-                                backoff_sec=1,
-                                err_msg=lambda: last_msg)
+            redpanda.wait_until(
+                lambda: remote_has_reached_hwm(ntp, hwm),
+                timeout_sec=timeout,
+                backoff_sec=1,
+                err_msg=lambda: last_msg,
+            )
             redpanda.logger.debug(f"Partition {ntp} ready (reached HWM {hwm})")
 
         if p_count == 0:
@@ -815,15 +857,18 @@ class SpillMeta:
     @staticmethod
     def make(ntpr: NTPR, path: str):
         base, last, base_kafka, last_kafka, base_ts, last_ts = SpillMeta._parse_path(
-            ntpr, path)
-        return SpillMeta(base=int(base),
-                         last=int(last),
-                         base_kafka=int(base_kafka),
-                         last_kafka=int(last_kafka),
-                         base_ts=int(base_ts),
-                         last_ts=int(last_ts),
-                         ntpr=ntpr,
-                         path=path)
+            ntpr, path
+        )
+        return SpillMeta(
+            base=int(base),
+            last=int(last),
+            base_kafka=int(base_kafka),
+            last_kafka=int(last_kafka),
+            base_ts=int(base_ts),
+            last_ts=int(last_ts),
+            ntpr=ntpr,
+            path=path,
+        )
 
     @staticmethod
     def _parse_path(ntpr: NTPR, path: str) -> list[str]:
@@ -839,8 +884,7 @@ class SpillMeta:
 
         split = suffix.split(".")
         if len(split) != 6:
-            raise RuntimeError(
-                f"Invalid spillover manifest {path=} for {ntpr=}")
+            raise RuntimeError(f"Invalid spillover manifest {path=} for {ntpr=}")
 
         return split
 
@@ -851,6 +895,7 @@ class BucketViewState:
     Results of a full listing of the bucket, if listed is True, or
     partial results if listed is False
     """
+
     def __init__(self):
         self.listed: set[Optional[str]] = set()
         self.segment_objects: int = 0
@@ -859,8 +904,7 @@ class BucketViewState:
         self.segment_indexes: int = 0
         self.topic_manifests: dict[str, dict[NT, dict]] = {}
         self.partition_manifests: dict[str, dict[NTP, dict]] = {}
-        self.spillover_manifests: dict[str, dict[NTP, dict[SpillMeta,
-                                                           dict]]] = {}
+        self.spillover_manifests: dict[str, dict[NTP, dict[SpillMeta, dict]]] = {}
         # List of summaries for all segments. These summaries refer
         # to data in the bucket and not segments in the manifests.
         self.segment_summaries: dict[str, dict[NTP, list[SegmentSummary]]] = {}
@@ -868,8 +912,8 @@ class BucketViewState:
 
 
 class ManifestFormat(Enum):
-    JSON = 'json'
-    BINARY = 'binary'
+    JSON = "json"
+    BINARY = "binary"
 
 
 class LifecycleMarkerStatus(Enum):
@@ -888,10 +932,13 @@ class BucketView:
     object listings (like the object counts) will list the bucket and then cache
     the result.
     """
-    def __init__(self,
-                 redpanda,
-                 topics: Optional[Sequence[TopicSpec]] = None,
-                 scan_segments: bool = False):
+
+    def __init__(
+        self,
+        redpanda,
+        topics: Optional[Sequence[TopicSpec]] = None,
+        scan_segments: bool = False,
+    ):
         """
         Always construct this with a `redpanda` -- the explicit logger/bucket/client
         arguments are only here to enable the structure of topic_recovery_test.py to work,
@@ -929,7 +976,7 @@ class BucketView:
         except KeyError:
             # Load topic manifest to resolve revision
             topic_manifest = self.get_topic_manifest(ntp.to_nt())
-            revision = topic_manifest['revision_id']
+            revision = topic_manifest["revision_id"]
             self._ntp_to_revision[ntp] = revision
 
         return ntp.to_ntpr(revision)
@@ -963,7 +1010,8 @@ class BucketView:
             return dict()
 
         highest_manifest = latest_cluster_metadata.cluster_metadata_manifests[
-            highest_meta_id]
+            highest_meta_id
+        ]
         return highest_manifest
 
     @property
@@ -978,27 +1026,29 @@ class BucketView:
     @staticmethod
     def kafka_start_offset(manifest) -> Optional[int]:
         if "archive_start_offset" in manifest:
-            return manifest["archive_start_offset"] - manifest[
-                "archive_start_offset_delta"]
+            return (
+                manifest["archive_start_offset"]
+                - manifest["archive_start_offset_delta"]
+            )
 
-        if 'segments' not in manifest or len(manifest['segments']) == 0:
+        if "segments" not in manifest or len(manifest["segments"]) == 0:
             return None
 
-        start_model_offset = manifest['start_offset']
-        for seg in manifest['segments'].values():
-            if seg['base_offset'] == start_model_offset:
+        start_model_offset = manifest["start_offset"]
+        for seg in manifest["segments"].values():
+            if seg["base_offset"] == start_model_offset:
                 # Usually, the manifest's 'start_offset' will match the 'base_offset'
                 # of a 'segment' as retention normally advances the start offset to
                 # another segment's base offset. This branch covers this case.
-                delta = seg['delta_offset']
+                delta = seg["delta_offset"]
                 return start_model_offset - delta
-            elif start_model_offset == seg['committed_offset'] + 1:
+            elif start_model_offset == seg["committed_offset"] + 1:
                 # When retention decides to remove all current segments from the cloud
                 # according to the retention policy, it advances the manifest's start
                 # offset to `committed_offset + 1` of the latest segment present at the time.
                 # Since, there's no guarantee that new segments haven't been added in the
                 # meantime, we look for a match in all segments.
-                delta = seg['delta_offset_end']
+                delta = seg["delta_offset_end"]
                 return start_model_offset - delta
 
         assert False, (
@@ -1009,13 +1059,14 @@ class BucketView:
 
     @staticmethod
     def kafka_last_offset(manifest) -> Optional[int]:
-        if 'segments' not in manifest or len(manifest['segments']) == 0:
+        if "segments" not in manifest or len(manifest["segments"]) == 0:
             return None
 
-        last_model_offset = manifest['last_offset']
-        last_segment = max(manifest['segments'].values(),
-                           key=lambda seg: seg['base_offset'])
-        delta = last_segment['delta_offset_end']
+        last_model_offset = manifest["last_offset"]
+        last_segment = max(
+            manifest["segments"].values(), key=lambda seg: seg["base_offset"]
+        )
+        delta = last_segment["delta_offset_end"]
 
         return last_model_offset - delta
 
@@ -1030,8 +1081,7 @@ class BucketView:
             )
 
         total = CloudLogSize.make_empty()
-        partition_manifests = next(
-            iter(self._state.partition_manifests.values()))
+        partition_manifests = next(iter(self._state.partition_manifests.values()))
         for ns, topic, partition in partition_manifests.keys():
             val = self.cloud_log_size_for_ntp(topic, partition, ns)
             self.logger.debug(f"{topic}/{partition} log_size={val}")
@@ -1071,7 +1121,7 @@ class BucketView:
                         # and deleted by Redpanda concurrently.
                         # We don't expect this to happen with the manifests
                         # so this error is only handled in case of segments
-                        if err['Error']['Code'] == 'NoSuchKey':
+                        if err["Error"]["Code"] == "NoSuchKey":
                             self._state.ignored_objects += 1
             elif self.path_matcher.is_topic_manifest(o):
                 pass
@@ -1093,8 +1143,7 @@ class BucketView:
         for label, summaries in self._state.segment_summaries.items():
             res = {}
             for ntp, lst in summaries.items():
-                self.logger.debug(
-                    f"Sorting segment summaries for {label}/{ntp}")
+                self.logger.debug(f"Sorting segment summaries for {label}/{ntp}")
                 res[ntp] = sorted(lst, key=lambda x: x.base_offset)
             self._state.segment_summaries[label] = res
 
@@ -1122,8 +1171,7 @@ class BucketView:
             raise KeyError(f"Manifest for ntp {ntpr} not found")
 
         if format == ManifestFormat.BINARY:
-            manifest = RpStorageTool(
-                self.logger).decode_partition_manifest(data)
+            manifest = RpStorageTool(self.logger).decode_partition_manifest(data)
         else:
             manifest = json.loads(data)
 
@@ -1143,8 +1191,7 @@ class BucketView:
 
         return manifest
 
-    def _load_spillover_manifest(self, ntpr: NTPR,
-                                 path: str) -> tuple[SpillMeta, dict]:
+    def _load_spillover_manifest(self, ntpr: NTPR, path: str) -> tuple[SpillMeta, dict]:
         manifest = self._get_manifest(ntpr, path)
         ntp = ntpr.to_ntp()
         label = parse_s3_partition_path_label(path)
@@ -1180,12 +1227,13 @@ class BucketView:
         summary = make_segment_summary(spc.ntpr, reader)
         self._state.segment_summaries[label][ntp].append(summary)
 
-    def _discover_spillover_manifests(self,
-                                      ntpr: NTPR,
-                                      label: str = "") -> list[SpillMeta]:
+    def _discover_spillover_manifests(
+        self, ntpr: NTPR, label: str = ""
+    ) -> list[SpillMeta]:
         list_res = self.client.list_objects(
             bucket=self.bucket,
-            prefix=BucketView.gen_manifest_path(ntpr, remote_label=label))
+            prefix=BucketView.gen_manifest_path(ntpr, remote_label=label),
+        )
 
         def is_spillover_manifest_path(path: str) -> bool:
             return not (path.endswith(".json") or path.endswith(".bin"))
@@ -1205,13 +1253,14 @@ class BucketView:
             raise KeyError(f"Cluster manifest at {path} failed to load")
         manifest = json.loads(data)
         self.logger.debug(
-            f"Loaded cluster manifest at {path}: {pprint.pformat(manifest)}")
+            f"Loaded cluster manifest at {path}: {pprint.pformat(manifest)}"
+        )
         cluster_uuid, meta_id = parse_cluster_metadata_manifest_path(path)
         if cluster_uuid not in self._state.cluster_metadata:
-            self._state.cluster_metadata[cluster_uuid] = ClusterMetadata(
-                dict(), dict())
+            self._state.cluster_metadata[cluster_uuid] = ClusterMetadata(dict(), dict())
         self._state.cluster_metadata[cluster_uuid].cluster_metadata_manifests[
-            meta_id] = manifest
+            meta_id
+        ] = manifest
         return manifest
 
     def _load_controller_snapshot_size(self, path: str) -> int:
@@ -1223,27 +1272,25 @@ class BucketView:
         self.logger.debug(f"Loaded controller snapshot at {path}: {meta}")
         cluster_uuid, offset = parse_controller_snapshot_path(path)
         if cluster_uuid not in self._state.cluster_metadata:
-            self._state.cluster_metadata[cluster_uuid] = ClusterMetadata(
-                dict(), dict())
-        self._state.cluster_metadata[cluster_uuid].controller_snapshot_sizes[
-            offset] = meta.content_length
+            self._state.cluster_metadata[cluster_uuid] = ClusterMetadata(dict(), dict())
+        self._state.cluster_metadata[cluster_uuid].controller_snapshot_sizes[offset] = (
+            meta.content_length
+        )
         return meta.content_length
 
     @staticmethod
-    def gen_manifest_path(ntpr: NTPR,
-                          extension: str = "bin",
-                          remote_label: str = ""):
+    def gen_manifest_path(ntpr: NTPR, extension: str = "bin", remote_label: str = ""):
         path = f"{ntpr.ns}/{ntpr.topic}/{ntpr.partition}_{ntpr.revision}"
         if len(remote_label) == 0:
             x = xxhash.xxh32()
-            x.update(path.encode('ascii'))
-            hash = x.hexdigest()[0] + '0000000'
+            x.update(path.encode("ascii"))
+            hash = x.hexdigest()[0] + "0000000"
             return f"{hash}/meta/{path}/manifest.{extension}"
         return f"{remote_label}/meta/{path}/manifest.{extension}"
 
-    def get_partition_manifest(self,
-                               ntp: NTP | NTPR,
-                               target_label: Optional[str] = None) -> dict:
+    def get_partition_manifest(
+        self, ntp: NTP | NTPR, target_label: Optional[str] = None
+    ) -> dict:
         """
         Fetch a manifest, looking up revision as needed.
 
@@ -1262,8 +1309,7 @@ class BucketView:
             if ntp in pms:
                 matching_labels.append(label)
         if len(matching_labels) > 1:
-            raise Exception(
-                f"Multiple labels contain {ntp}: {matching_labels}")
+            raise Exception(f"Multiple labels contain {ntp}: {matching_labels}")
 
         if len(matching_labels) == 1:
             return self._state.partition_manifests[matching_labels[0]][ntp]
@@ -1324,7 +1370,8 @@ class BucketView:
         return []
 
     def get_spillover_manifests(
-            self, ntp: NTP | NTPR) -> Optional[dict[SpillMeta, dict]]:
+        self, ntp: NTP | NTPR
+    ) -> Optional[dict[SpillMeta, dict]]:
         """
         Discovers and downloads the spillover manifests for 'ntp'. If no spillover
         manifests exist 'None' is returned. Note that the results are cached and will
@@ -1340,8 +1387,7 @@ class BucketView:
             if ntp in pms:
                 matching_labels.append(label)
         if len(matching_labels) > 1:
-            raise Exception(
-                f"Multiple labels contain {ntp}: {matching_labels}")
+            raise Exception(f"Multiple labels contain {ntp}: {matching_labels}")
 
         if len(matching_labels) == 1:
             return self._state.spillover_manifests[matching_labels[0]][ntp]
@@ -1368,19 +1414,22 @@ class BucketView:
         return None
 
     def _load_manifest_v1_from_data(
-            self, data, manifest_format: Literal['json', 'bin']) -> dict:
+        self, data, manifest_format: Literal["json", "bin"]
+    ) -> dict:
         """
         Either decode a bin topic_manifest or json load a json topic_manifest.
         the result is a dict of only the fields that were serialized in v1 of topic_manifest
         """
-        if manifest_format == 'bin':
+        if manifest_format == "bin":
             return OfflineLogViewer(self.redpanda).read_bin_topic_manifest(
-                data, return_legacy_format=True)
+                data, return_legacy_format=True
+            )
         else:
             return json.loads(data)
 
-    def _load_topic_manifest(self, topic: NT, path: str,
-                             manifest_format: Literal['json', 'bin']):
+    def _load_topic_manifest(
+        self, topic: NT, path: str, manifest_format: Literal["json", "bin"]
+    ):
         try:
             data = self.client.get_object_data(self.bucket, path)
         except Exception as e:
@@ -1388,7 +1437,8 @@ class BucketView:
             raise KeyError(f"Manifest for topic {topic} not found")
 
         manifest = self._load_manifest_v1_from_data(
-            data, manifest_format=manifest_format)
+            data, manifest_format=manifest_format
+        )
 
         self.logger.debug(
             f"Loaded topic manifest from {path} {topic}: {pprint.pformat(manifest)}"
@@ -1412,7 +1462,8 @@ class BucketView:
             raise KeyError(f"Manifest @path={path} not found")
 
         manifest = self._load_manifest_v1_from_data(
-            data, manifest_format='bin' if path.endswith('bin') else 'json')
+            data, manifest_format="bin" if path.endswith("bin") else "json"
+        )
         self.logger.debug(
             f"Loaded topic manifest from {path} for {manifest['topic']}: {pprint.pformat(manifest)}"
         )
@@ -1427,27 +1478,25 @@ class BucketView:
 
         # If none, we'll fall back on legacy, hash-prefixed manifests.
         x = xxhash.xxh32()
-        x.update(path.encode('ascii'))
-        hash = x.hexdigest()[0] + '0000000'
+        x.update(path.encode("ascii"))
+        hash = x.hexdigest()[0] + "0000000"
         list_prefixes.append(f"{hash}/meta/{path}/")
 
         ret = []
         for prefix in list_prefixes:
-            for obj_meta in self.client.list_objects(self.bucket,
-                                                     prefix=prefix):
+            for obj_meta in self.client.list_objects(self.bucket, prefix=prefix):
                 ret.append(obj_meta)
         return ret
 
     def _find_topic_manifest_paths(self, topic: NT) -> list:
         return [
-            meta.key for meta in self._find_topic_metas(topic)
+            meta.key
+            for meta in self._find_topic_metas(topic)
             if meta.key.endswith("topic_manifest.bin")
             or meta.key.endswith("topic_manifest.json")
         ]
 
-    def get_topic_manifest(self,
-                           topic: NT,
-                           target_label: Optional[str] = None) -> dict:
+    def get_topic_manifest(self, topic: NT, target_label: Optional[str] = None) -> dict:
         """
         try to download a topic_manifest.bin for topic. if no object is found, fallback to topic_manifest.json
         """
@@ -1458,8 +1507,7 @@ class BucketView:
             if topic in tms:
                 matching_labels.append(label)
         if len(matching_labels) > 1:
-            raise Exception(
-                f"Multiple labels contain {topic}: {matching_labels}")
+            raise Exception(f"Multiple labels contain {topic}: {matching_labels}")
 
         if len(matching_labels) == 1:
             return self._state.topic_manifests[matching_labels[0]][topic]
@@ -1470,9 +1518,7 @@ class BucketView:
             if target_label is not None and target_label != label:
                 continue
             format = "bin" if path.endswith(".bin") else "json"
-            return self._load_topic_manifest(topic,
-                                             path,
-                                             manifest_format=format)
+            return self._load_topic_manifest(topic, path, manifest_format=format)
 
         raise KeyError(f"Topic manifest not found for {topic}")
 
@@ -1487,7 +1533,8 @@ class BucketView:
         It is convenient in tests to retrieve by NT though.
         """
         return [
-            meta for meta in self._find_topic_metas(topic)
+            meta
+            for meta in self._find_topic_metas(topic)
             if meta.key.endswith("lifecycle.bin")
         ]
 
@@ -1506,7 +1553,7 @@ class BucketView:
         body = self.client.get_object_data(self.bucket, key)
         decoded = RpStorageTool(self.logger).decode_lifecycle_marker(body)
         self.logger.debug(
-            f"Decoded lifecycle marker for {topic}: {json.dumps(decoded,indent=2)}"
+            f"Decoded lifecycle marker for {topic}: {json.dumps(decoded, indent=2)}"
         )
         return decoded
 
@@ -1523,44 +1570,42 @@ class BucketView:
             segment_path = parse_s3_segment_path(o.key)
             partition_manifest = self.get_partition_manifest(segment_path.ntpr)
             if not partition_manifest:
-                self.logger.warn(f'no manifest found for {segment_path.ntpr}')
+                self.logger.warn(f"no manifest found for {segment_path.ntpr}")
                 return None
 
-            segments_in_manifest = partition_manifest['segments']
+            segments_in_manifest = partition_manifest["segments"]
 
             # Filename for segment contains the archiver term, eg:
             # 4886-1-v1.log.2 -> 4886-1-v1.log and 2
-            base_name, archiver_term = segment_path.name.rsplit('.', 1)
+            base_name, archiver_term = segment_path.name.rsplit(".", 1)
 
             # New segment path format is base-committed-size-term-v1.log
-            base_name_tokens = base_name.split('-')
-            manifest_key = '-'.join([base_name_tokens[i] for i in (0, -2)])
-            manifest_key = f'{manifest_key}-v1.log'
+            base_name_tokens = base_name.split("-")
+            manifest_key = "-".join([base_name_tokens[i] for i in (0, -2)])
+            manifest_key = f"{manifest_key}-v1.log"
             segment_entry = segments_in_manifest.get(manifest_key)
             if not segment_entry:
                 self.logger.warn(
-                    f'no entry found for segment path {manifest_key} '
-                    f'in manifest: {pprint.pformat(segments_in_manifest, indent=2)}'
+                    f"no entry found for segment path {manifest_key} "
+                    f"in manifest: {pprint.pformat(segments_in_manifest, indent=2)}"
                 )
                 return None
 
             # Archiver term should match the value in partition manifest
-            manifest_archiver_term = str(segment_entry['archiver_term'])
+            manifest_archiver_term = str(segment_entry["archiver_term"])
             if archiver_term == manifest_archiver_term:
                 return segment_entry
 
             self.logger.warn(
-                f'{segment_path} has archiver term {archiver_term} '
-                f'which does not match manifest term {manifest_archiver_term}')
+                f"{segment_path} has archiver term {archiver_term} "
+                f"which does not match manifest term {manifest_archiver_term}"
+            )
             return None
         except Exception as e:
-            self.logger.info(f'error {e} while checking if {o} is a segment')
+            self.logger.info(f"error {e} while checking if {o} is a segment")
             return None
 
-    def is_ntp_in_manifest(self,
-                           topic: str,
-                           partition: int,
-                           ns: str = "kafka") -> bool:
+    def is_ntp_in_manifest(self, topic: str, partition: int, ns: str = "kafka") -> bool:
         """
         Whether a manifest is present for this NTP
         """
@@ -1572,35 +1617,28 @@ class BucketView:
         else:
             return True
 
-    def manifest_for_ntpr(self,
-                          topic: str,
-                          partition: int,
-                          revision: int,
-                          ns: str = 'kafka') -> dict:
+    def manifest_for_ntpr(
+        self, topic: str, partition: int, revision: int, ns: str = "kafka"
+    ) -> dict:
         ntpr = NTPR(ns, topic, partition, revision)
         return self.get_partition_manifest(ntpr)
 
-    def manifest_for_ntp(self,
-                         topic: str,
-                         partition: int,
-                         ns: str = 'kafka') -> dict:
+    def manifest_for_ntp(self, topic: str, partition: int, ns: str = "kafka") -> dict:
         ntp = NTP(ns, topic, partition)
         return self.get_partition_manifest(ntp)
 
-    def cloud_log_segment_count_for_ntp(self,
-                                        topic: str,
-                                        partition: int,
-                                        ns: str = 'kafka') -> int:
+    def cloud_log_segment_count_for_ntp(
+        self, topic: str, partition: int, ns: str = "kafka"
+    ) -> int:
         manifest = self.manifest_for_ntp(topic, partition, ns)
-        if 'segments' not in manifest:
+        if "segments" not in manifest:
             return 0
 
-        return len(manifest['segments'])
+        return len(manifest["segments"])
 
-    def stm_region_size_for_ntp(self,
-                                topic: str,
-                                partition: int,
-                                ns: str = "kafka") -> LogRegionSize:
+    def stm_region_size_for_ntp(
+        self, topic: str, partition: int, ns: str = "kafka"
+    ) -> LogRegionSize:
         size = LogRegionSize()
 
         try:
@@ -1608,21 +1646,20 @@ class BucketView:
         except KeyError:
             return size
 
-        if 'segments' not in manifest or len(manifest['segments']) == 0:
+        if "segments" not in manifest or len(manifest["segments"]) == 0:
             return size
 
-        so = manifest['start_offset']
-        for seg in manifest['segments'].values():
-            size.total += seg['size_bytes']
-            if seg['base_offset'] >= so:
-                size.accessible += seg['size_bytes']
+        so = manifest["start_offset"]
+        for seg in manifest["segments"].values():
+            size.total += seg["size_bytes"]
+            if seg["base_offset"] >= so:
+                size.accessible += seg["size_bytes"]
 
         return size
 
-    def archive_size_for_ntp(self,
-                             topic: str,
-                             partition: int,
-                             ns: str = "kafka") -> LogRegionSize:
+    def archive_size_for_ntp(
+        self, topic: str, partition: int, ns: str = "kafka"
+    ) -> LogRegionSize:
         size = LogRegionSize()
 
         try:
@@ -1630,7 +1667,10 @@ class BucketView:
         except KeyError:
             return size
 
-        if "archive_clean_offset" not in manifest or "archive_start_offset" not in manifest:
+        if (
+            "archive_clean_offset" not in manifest
+            or "archive_start_offset" not in manifest
+        ):
             return size
 
         archive_clean_offset = manifest["archive_clean_offset"]
@@ -1649,43 +1689,45 @@ class BucketView:
 
         return size
 
-    def cloud_log_size_for_ntp(self,
-                               topic: str,
-                               partition: int,
-                               ns: str = 'kafka') -> CloudLogSize:
+    def cloud_log_size_for_ntp(
+        self, topic: str, partition: int, ns: str = "kafka"
+    ) -> CloudLogSize:
         return CloudLogSize(
             stm=self.stm_region_size_for_ntp(topic, partition, ns),
-            archive=self.archive_size_for_ntp(topic, partition, ns))
+            archive=self.archive_size_for_ntp(topic, partition, ns),
+        )
 
-    def assert_at_least_n_uploaded_segments_compacted(self,
-                                                      topic: str,
-                                                      partition: int,
-                                                      revision: Optional[int],
-                                                      n=1):
+    def assert_at_least_n_uploaded_segments_compacted(
+        self, topic: str, partition: int, revision: Optional[int], n=1
+    ):
         if revision:
             manifest_data = self.manifest_for_ntpr(topic, partition, revision)
         else:
             manifest_data = self.manifest_for_ntp(topic, partition)
-        segments = manifest_data['segments']
+        segments = manifest_data["segments"]
         compacted_segments = len(
-            [meta for meta in segments.values() if meta['is_compacted']])
-        assert compacted_segments >= n, f"Could not find {n} compacted segments, " \
-                                        f"total uploaded: {len(segments)}, " \
-                                        f"total compacted: {compacted_segments}"
+            [meta for meta in segments.values() if meta["is_compacted"]]
+        )
+        assert compacted_segments >= n, (
+            f"Could not find {n} compacted segments, "
+            f"total uploaded: {len(segments)}, "
+            f"total compacted: {compacted_segments}"
+        )
 
     def assert_segments_replaced(self, topic: str, partition: int):
         manifest_data = self.manifest_for_ntp(topic, partition)
-        assert len(manifest_data.get(
-            'replaced',
-            [])) > 0, f"No replaced segments after compacted segments uploaded"
+        assert len(manifest_data.get("replaced", [])) > 0, (
+            f"No replaced segments after compacted segments uploaded"
+        )
 
     def assert_segments_deleted(self, topic: str, partition: int):
         manifest = self.manifest_for_ntp(topic, partition)
-        assert manifest.get('start_offset', 0) > 0
+        assert manifest.get("start_offset", 0) > 0
 
-        first_segment = min(manifest['segments'].values(),
-                            key=lambda seg: seg['base_offset'])
-        assert first_segment['base_offset'] > 0
+        first_segment = min(
+            manifest["segments"].values(), key=lambda seg: seg["base_offset"]
+        )
+        assert first_segment["base_offset"] > 0
 
     def segment_summaries(self, ntp: NTP) -> list[SegmentSummary]:
         self._ensure_listing()
@@ -1694,8 +1736,7 @@ class BucketView:
             if ntp in summaries:
                 matching_labels.append(label)
         if len(matching_labels) > 1:
-            raise Exception(
-                f"Multiple labels contain {ntp}: {matching_labels}")
+            raise Exception(f"Multiple labels contain {ntp}: {matching_labels}")
 
         if len(matching_labels) == 1:
             return self._state.segment_summaries[matching_labels[0]][ntp]
@@ -1704,7 +1745,8 @@ class BucketView:
 
     def are_all_segments_config_batches(self, summaries):
         all_config_batches = all(
-            [summary.num_data_records == 0 for summary in summaries])
+            [summary.num_data_records == 0 for summary in summaries]
+        )
         if all_config_batches:
             self.logger.debug(
                 "Segments left in archive are composed of all non-data batches"
@@ -1714,8 +1756,8 @@ class BucketView:
     def is_archive_cleanup_complete(self, ntp: NTP):
         self._ensure_listing()
         manifest = self.manifest_for_ntp(ntp.topic, ntp.partition)
-        aso = manifest.get('archive_start_offset', DEFAULT_OFFSET)
-        aco = manifest.get('archive_clean_offset', DEFAULT_OFFSET)
+        aso = manifest.get("archive_start_offset", DEFAULT_OFFSET)
+        aco = manifest.get("archive_clean_offset", DEFAULT_OFFSET)
         summaries = self.segment_summaries(ntp)
         num = len(summaries)
         if aso > 0 and aco < aso:
@@ -1726,7 +1768,8 @@ class BucketView:
 
         if len(summaries) == 0:
             self.logger.debug(
-                f"archive is empty, start: {aso}, clean: {aco}, len: {num}")
+                f"archive is empty, start: {aso}, clean: {aco}, len: {num}"
+            )
             return True
 
         if self.are_all_segments_config_batches(summaries):
@@ -1751,7 +1794,7 @@ class BucketView:
         manifest = self.manifest_for_ntp(ntp.topic, ntp.partition)
         summaries = self.segment_summaries(ntp)
         if len(summaries) == 0:
-            assert 'archive_start_offset' not in manifest
+            assert "archive_start_offset" not in manifest
         else:
             if self.are_all_segments_config_batches(summaries):
                 # quiesce_uploads() would not have waited for these segments
@@ -1760,11 +1803,15 @@ class BucketView:
                 # didn't contribute to the HWM. Treat this race-y case as successful.
                 return
 
-            next_base_offset = manifest.get('archive_start_offset')
-            expected_last = manifest.get('last_offset')
+            next_base_offset = manifest.get("archive_start_offset")
+            expected_last = manifest.get("last_offset")
 
             for summary in summaries:
-                assert next_base_offset == summary.base_offset, f"Unexpected segment {summary}, expected base offset {next_base_offset}"
+                assert next_base_offset == summary.base_offset, (
+                    f"Unexpected segment {summary}, expected base offset {next_base_offset}"
+                )
                 next_base_offset = summary.last_offset + 1
             else:
-                assert expected_last == summary.last_offset, f"Unexpected last offset {summary.last_offset}, expected: {expected_last}"
+                assert expected_last == summary.last_offset, (
+                    f"Unexpected last offset {summary.last_offset}, expected: {expected_last}"
+                )

@@ -35,7 +35,9 @@ class StorageResourceTest(RedpandaTest):
             replication_factor=1,
             # Enable compaction so that we can test the handling of compaction_index
             cleanup_policy=TopicSpec.CLEANUP_COMPACT,
-            segment_bytes=SEGMENT_SIZE), )
+            segment_bytes=SEGMENT_SIZE,
+        ),
+    )
 
     def _get_segments(self):
         storage = self.redpanda.storage()
@@ -54,20 +56,23 @@ class StorageResourceTest(RedpandaTest):
         """
         How many file descriptors is redpanda consuming for our topic?
         """
-        for f in self.redpanda.lsof_node(self.redpanda.nodes[0],
-                                         filter=self.topic):
+        for f in self.redpanda.lsof_node(self.redpanda.nodes[0], filter=self.topic):
             self.logger.info(f"Open file: {f}")
 
-        return sum(1 for _ in self.redpanda.lsof_node(self.redpanda.nodes[0],
-                                                      filter=self.topic))
+        return sum(
+            1
+            for _ in self.redpanda.lsof_node(self.redpanda.nodes[0], filter=self.topic)
+        )
 
     def _write(self, msg_size, msg_count):
-        producer = RpkProducer(self.test_context,
-                               self.redpanda,
-                               self.topic,
-                               msg_size,
-                               msg_count=msg_count,
-                               acks=-1)
+        producer = RpkProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size,
+            msg_count=msg_count,
+            acks=-1,
+        )
         producer.start()
         producer.wait()
         producer.free()
@@ -116,10 +121,12 @@ class StorageResourceRestartTest(RedpandaTest):
     PARTITION_COUNT = 64
     TARGET_REPLAY_BYTES = 1024 * 1024 * 1024
 
-    topics = (TopicSpec(
-        partition_count=PARTITION_COUNT,
-        replication_factor=1,
-    ), )
+    topics = (
+        TopicSpec(
+            partition_count=PARTITION_COUNT,
+            replication_factor=1,
+        ),
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(
@@ -127,9 +134,10 @@ class StorageResourceRestartTest(RedpandaTest):
             extra_rp_conf={
                 # Decrease from the default 10GB so that we can run the test
                 # without having to write >10GB of data on slow docker environments
-                'storage_target_replay_bytes': self.TARGET_REPLAY_BYTES
+                "storage_target_replay_bytes": self.TARGET_REPLAY_BYTES
             },
-            **kwargs)
+            **kwargs,
+        )
 
     def _await_replay(self):
         """
@@ -147,23 +155,27 @@ class StorageResourceRestartTest(RedpandaTest):
         wait_until(ready, timeout_sec=30, backoff_sec=5)
 
     def _write(self, msg_size, msg_count, acks):
-        producer = RpkProducer(self.test_context,
-                               self.redpanda,
-                               self.topic,
-                               msg_size,
-                               msg_count=msg_count,
-                               acks=acks)
+        producer = RpkProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size,
+            msg_count=msg_count,
+            acks=acks,
+        )
         producer.start()
         producer.wait()
         producer.free()
 
     def _read_all(self, msg_count):
-        consumer = RpkConsumer(self.test_context,
-                               self.redpanda,
-                               self.topic,
-                               offset='oldest',
-                               save_msgs=False,
-                               num_msgs=msg_count)
+        consumer = RpkConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            offset="oldest",
+            save_msgs=False,
+            num_msgs=msg_count,
+        )
         consumer.start()
         consumer.wait()
         consumer.free()
@@ -173,11 +185,9 @@ class StorageResourceRestartTest(RedpandaTest):
         partition_meta = list(rpk.describe_topic(self.topic))
         assert len(partition_meta) == self.PARTITION_COUNT
         for p in partition_meta:
-            rpk.consume(self.topic,
-                        partition=p.id,
-                        n=1,
-                        offset=p.high_watermark - 1,
-                        quiet=True)
+            rpk.consume(
+                self.topic, partition=p.id, n=1, offset=p.high_watermark - 1, quiet=True
+            )
 
     def _sum_metrics(self, metric_name):
         samples = self.redpanda.metrics_sample(metric_name).samples
@@ -210,8 +220,7 @@ class StorageResourceRestartTest(RedpandaTest):
         if self.debug_mode:
             self.logger.info("Skipping in debug mode")
             # Satisfy checks for test using all its nodes
-            nodes = self.test_context.cluster.alloc(
-                ClusterSpec.simple_linux(1))
+            nodes = self.test_context.cluster.alloc(ClusterSpec.simple_linux(1))
             self.test_context.cluster.free_single(nodes[0])
             return
 
@@ -233,8 +242,9 @@ class StorageResourceRestartTest(RedpandaTest):
 
         # We should not be playing in enough data per-partition to trip the
         # naive per-partition checkpoint limits
-        assert (msg_count * msg_size /
-                self.PARTITION_COUNT) < per_partition_checkpoint_threshold
+        assert (
+            msg_count * msg_size / self.PARTITION_COUNT
+        ) < per_partition_checkpoint_threshold
 
         self._write(msg_size, msg_count, acks)
         total_bytes = msg_size * msg_count
@@ -253,8 +263,7 @@ class StorageResourceRestartTest(RedpandaTest):
             self.redpanda.stop_node(self.redpanda.nodes[0])
         else:
             # Unclean shutdown: stop with SIGKILL
-            self.redpanda.signal_redpanda(self.redpanda.nodes[0],
-                                          signal=signal.SIGKILL)
+            self.redpanda.signal_redpanda(self.redpanda.nodes[0], signal=signal.SIGKILL)
 
         # Inspect disk
         # ============

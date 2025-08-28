@@ -20,15 +20,17 @@ from rptest.tests.redpanda_test import RedpandaTest
 
 class Datalake3rdPartyMaintenanceTest(RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):
-        super().__init__(test_ctx,
-                         num_brokers=1,
-                         si_settings=SISettings(test_ctx),
-                         extra_rp_conf={
-                             "iceberg_enabled": "true",
-                             "iceberg_catalog_commit_interval_ms": 5000
-                         },
-                         *args,
-                         **kwargs)
+        super().__init__(
+            test_ctx,
+            num_brokers=1,
+            si_settings=SISettings(test_ctx),
+            extra_rp_conf={
+                "iceberg_enabled": "true",
+                "iceberg_catalog_commit_interval_ms": 5000,
+            },
+            *args,
+            **kwargs,
+        )
 
         self.test_ctx = test_ctx
         self.topic_name = "test"
@@ -41,9 +43,11 @@ class Datalake3rdPartyMaintenanceTest(RedpandaTest):
         pass
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
-            catalog_type=supported_catalog_types())
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
+        catalog_type=supported_catalog_types(),
+    )
     def test_e2e_basic(self, cloud_storage_type, query_engine, catalog_type):
         """
         This test verifies that Redpanda can continue to work with Iceberg
@@ -51,41 +55,53 @@ class Datalake3rdPartyMaintenanceTest(RedpandaTest):
         with a third-party query engine to trigger a rewrite of the data files
         and metadata.
         """
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              catalog_type=catalog_type,
-                              include_query_engines=[query_engine]) as dl:
-            dl.create_iceberg_enabled_topic(self.topic_name,
-                                            partitions=self.num_partitions)
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            catalog_type=catalog_type,
+            include_query_engines=[query_engine],
+        ) as dl:
+            dl.create_iceberg_enabled_topic(
+                self.topic_name, partitions=self.num_partitions
+            )
             # Write some data to the topic.
             self._translate_sample_data(dl)
 
             # Run maintenance to rewrite the data.
             num_parquet_files_before = dl.query_engine(
-                query_engine).count_parquet_files("redpanda", self.topic_name)
+                query_engine
+            ).count_parquet_files("redpanda", self.topic_name)
 
             # Want at least 2 files to be able to assert that optimization did something.
-            assert num_parquet_files_before >= 2, f"Expecting at least 2 files, got {num_parquet_files_before}"
+            assert num_parquet_files_before >= 2, (
+                f"Expecting at least 2 files, got {num_parquet_files_before}"
+            )
 
             dl.query_engine(query_engine).optimize_parquet_files(
-                "redpanda", self.topic_name)
+                "redpanda", self.topic_name
+            )
 
             # Ensure that some data and metadata mutation actually happened.
-            num_parquet_files_after = dl.query_engine(
-                query_engine).count_parquet_files("redpanda", self.topic_name)
-            assert num_parquet_files_after < num_parquet_files_before, f"Expecting fewer files after optimize, got {num_parquet_files_after}"
+            num_parquet_files_after = dl.query_engine(query_engine).count_parquet_files(
+                "redpanda", self.topic_name
+            )
+            assert num_parquet_files_after < num_parquet_files_before, (
+                f"Expecting fewer files after optimize, got {num_parquet_files_after}"
+            )
 
             # Verify consistency post rewrite.
-            DatalakeVerifier.oneshot(self.redpanda, self.topic_name,
-                                     dl.query_engine(query_engine))
+            DatalakeVerifier.oneshot(
+                self.redpanda, self.topic_name, dl.query_engine(query_engine)
+            )
 
             # Produce additional messages to the topic to make sure we correctly
             # interoperate with the metadata written by Trino.
             self._translate_sample_data(dl)
 
             # Verify consistency with the additional messages.
-            DatalakeVerifier.oneshot(self.redpanda, self.topic_name,
-                                     dl.query_engine(query_engine))
+            DatalakeVerifier.oneshot(
+                self.redpanda, self.topic_name, dl.query_engine(query_engine)
+            )
 
     def _translate_sample_data(self, dl):
         NUM_MSG_PER_SAMPLE = 100
@@ -93,5 +109,4 @@ class Datalake3rdPartyMaintenanceTest(RedpandaTest):
 
         dl.produce_to_topic(self.topic_name, 1024, NUM_MSG_PER_SAMPLE)
         # Wait for all messages (including the ones we just wrote) to be translated.
-        dl.wait_for_translation(self.topic_name,
-                                msg_count=self.produced_messages)
+        dl.wait_for_translation(self.topic_name, msg_count=self.produced_messages)

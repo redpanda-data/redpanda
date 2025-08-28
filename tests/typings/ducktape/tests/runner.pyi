@@ -2,9 +2,20 @@ from _typeshed import Incomplete
 from ducktape.cluster.finite_subcluster import FiniteSubcluster as FiniteSubcluster
 from ducktape.command_line.defaults import ConsoleDefaults as ConsoleDefaults
 from ducktape.errors import TimeoutError as TimeoutError
-from ducktape.tests.event import ClientEventFactory as ClientEventFactory, EventResponseFactory as EventResponseFactory
-from ducktape.tests.reporter import HTMLSummaryReporter as HTMLSummaryReporter, JSONReporter as JSONReporter, SimpleFileSummaryReporter as SimpleFileSummaryReporter
-from ducktape.tests.result import FAIL as FAIL, TestResult as TestResult, TestResults as TestResults
+from ducktape.tests.event import (
+    ClientEventFactory as ClientEventFactory,
+    EventResponseFactory as EventResponseFactory,
+)
+from ducktape.tests.reporter import (
+    HTMLSummaryReporter as HTMLSummaryReporter,
+    JSONReporter as JSONReporter,
+    SimpleFileSummaryReporter as SimpleFileSummaryReporter,
+)
+from ducktape.tests.result import (
+    FAIL as FAIL,
+    TestResult as TestResult,
+    TestResults as TestResults,
+)
 from ducktape.tests.runner_client import run_client as run_client
 from ducktape.tests.scheduler import TestScheduler as TestScheduler
 from ducktape.tests.serde import SerDe as SerDe
@@ -48,7 +59,16 @@ class TestRunner:
     total_tests: Incomplete
     active_tests: Incomplete
     finished_tests: Incomplete
-    def __init__(self, cluster, session_context, session_logger, tests, deflake_num, min_port=..., max_port=...) -> None: ...
+    def __init__(
+        self,
+        cluster,
+        session_context,
+        session_logger,
+        tests,
+        deflake_num,
+        min_port=...,
+        max_port=...,
+    ) -> None: ...
     def who_am_i(self): ...
     def run_all_tests(self): ...
     def active_tests_debug(self): ...

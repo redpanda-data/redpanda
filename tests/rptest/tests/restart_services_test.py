@@ -12,15 +12,18 @@ import requests
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
-from rptest.services.redpanda import RedpandaService, ResourceSettings, LoggingConfig, SchemaRegistryConfig
+from rptest.services.redpanda import (
+    RedpandaService,
+    ResourceSettings,
+    LoggingConfig,
+    SchemaRegistryConfig,
+)
 from ducktape.utils.util import wait_until
 from rptest.util import search_logs_with_timeout
 
-log_config = LoggingConfig('info',
-                           logger_levels={
-                               'admin_api_server': 'trace',
-                               'kafka/client': 'trace'
-                           })
+log_config = LoggingConfig(
+    "info", logger_levels={"admin_api_server": "trace", "kafka/client": "trace"}
+)
 
 
 class RestartServicesTest(RedpandaTest):
@@ -34,7 +37,8 @@ class RestartServicesTest(RedpandaTest):
             resource_settings=ResourceSettings(num_cpus=1),
             log_config=log_config,
             schema_registry_config=SchemaRegistryConfig(),
-            **kwargs)
+            **kwargs,
+        )
 
     @cluster(num_nodes=3)
     def test_restart_services_failures(self):
@@ -51,7 +55,7 @@ class RestartServicesTest(RedpandaTest):
 
         self.logger.debug("Check restart with invalid service name")
         try:
-            admin.restart_service(rp_service='foobar')
+            admin.restart_service(rp_service="foobar")
             assert False
         except requests.exceptions.HTTPError as ex:
             self.logger.debug(ex)
@@ -66,20 +70,22 @@ class RestartServicesUndefinedConfigTest(RedpandaTest):
             extra_rp_conf={"auto_create_topics_enabled": False},
             resource_settings=ResourceSettings(num_cpus=1),
             log_config=log_config,
-            **kwargs)
+            **kwargs,
+        )
 
     @cluster(
         num_nodes=1,
         log_allow_list=[
             r"admin_api_server - .* is undefined. Is it set in the .yaml config file?"
-        ])
+        ],
+    )
     def test_undefined_config(self):
         admin = Admin(self.redpanda)
 
         # Success checks
         self.logger.debug("Check http proxy restart")
         try:
-            admin.restart_service(rp_service='http-proxy')
+            admin.restart_service(rp_service="http-proxy")
             assert False
         except requests.exceptions.HTTPError as ex:
             self.logger.debug(ex.response.json())
@@ -87,7 +93,7 @@ class RestartServicesUndefinedConfigTest(RedpandaTest):
 
         self.logger.debug("Check schema registry restart")
         try:
-            admin.restart_service(rp_service='schema-registry')
+            admin.restart_service(rp_service="schema-registry")
             assert False
         except requests.exceptions.HTTPError as ex:
             self.logger.debug(ex.response.json())

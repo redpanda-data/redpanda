@@ -10,19 +10,22 @@ class RpkProducer(BackgroundThreadService):
     to write a simple repeated value to a topic, for example to increase
     the topic's size on disk when testing recovery.
     """
-    def __init__(self,
-                 context,
-                 redpanda,
-                 topic: str,
-                 msg_size: int,
-                 msg_count: int,
-                 acks: Optional[int] = None,
-                 printable=False,
-                 quiet: bool = False,
-                 produce_timeout: Optional[int] = None,
-                 *,
-                 partition: Optional[int] = None,
-                 max_message_bytes: Optional[int] = None):
+
+    def __init__(
+        self,
+        context,
+        redpanda,
+        topic: str,
+        msg_size: int,
+        msg_count: int,
+        acks: Optional[int] = None,
+        printable=False,
+        quiet: bool = False,
+        produce_timeout: Optional[int] = None,
+        *,
+        partition: Optional[int] = None,
+        max_message_bytes: Optional[int] = None,
+    ):
         super(RpkProducer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -45,10 +48,13 @@ class RpkProducer(BackgroundThreadService):
         # path used by each node may differ from that returned by
         # redpanda.find_binary(), e.g. if using a RedpandaInstaller.
         rp_install_path_root = self._redpanda._context.globals.get(
-            "rp_install_path_root", None)
+            "rp_install_path_root", None
+        )
         rpk_binary = f"{rp_install_path_root}/bin/rpk"
         key_size = 16
-        cmd = f"dd if=/dev/urandom bs={self._msg_size + key_size} count={self._msg_count}"
+        cmd = (
+            f"dd if=/dev/urandom bs={self._msg_size + key_size} count={self._msg_count}"
+        )
 
         if self._printable:
             cmd += ' | hexdump -e "1/1 \\"%02x\\""'
@@ -60,7 +66,7 @@ class RpkProducer(BackgroundThreadService):
 
         if self._quiet:
             # Suppress default "Produced to..." output lines by setting output template to empty string
-            cmd += " -o \"\""
+            cmd += ' -o ""'
 
         if self._partition is not None:
             cmd += f" -p {self._partition}"
@@ -71,7 +77,8 @@ class RpkProducer(BackgroundThreadService):
         self._stopping.clear()
         try:
             for line in node.account.ssh_capture(
-                    cmd, timeout_sec=self._produce_timeout):
+                cmd, timeout_sec=self._produce_timeout
+            ):
                 self.logger.debug(line.rstrip())
                 self._output_line_count += 1
         except RemoteCommandError:
@@ -80,8 +87,7 @@ class RpkProducer(BackgroundThreadService):
             else:
                 raise
 
-        self._redpanda.logger.debug(
-            f"Finished sending {self._msg_count} messages")
+        self._redpanda.logger.debug(f"Finished sending {self._msg_count} messages")
 
     @property
     def output_line_count(self):

@@ -18,11 +18,9 @@ from rptest.tests.prealloc_nodes import PreallocNodesTest
 
 class QuickTerminateTest(PreallocNodesTest):
     def __init__(self, test_ctx, *args, **kwargs):
-        super().__init__(test_ctx,
-                         num_brokers=3,
-                         *args,
-                         node_prealloc_count=1,
-                         **kwargs)
+        super().__init__(
+            test_ctx, num_brokers=3, *args, node_prealloc_count=1, **kwargs
+        )
 
     @cluster(num_nodes=3, log_allow_list=Finjector.LOG_ALLOW_LIST)
     def test_terminate(self):

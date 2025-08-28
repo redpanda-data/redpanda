@@ -41,30 +41,31 @@ def main():
 
     def generate_options():
         parser = argparse.ArgumentParser(
-            description='Redpanda Schema Registry _schemas Command Generator')
-        parser.add_argument('path', type=str, help='Path to the file')
+            description="Redpanda Schema Registry _schemas Command Generator"
+        )
+        parser.add_argument("path", type=str, help="Path to the file")
         return parser
 
     parser = generate_options()
     options, _ = parser.parse_known_args()
 
     # Formatting as a single json
-    tmp = '['
+    tmp = "["
     with open(options.path) as f:
         for l in f.read().splitlines():
-            if l.startswith('}'):
-                tmp += ('},')
+            if l.startswith("}"):
+                tmp += "},"
             else:
-                tmp += (l)
-    tmp = re.sub('},$', '}]', tmp)
+                tmp += l
+    tmp = re.sub("},$", "}]", tmp)
     j = json.loads(tmp)
 
     # Generating rpk topic create commands
-    cmd_all = ''
+    cmd_all = ""
     cmd_all += f"#!/bin/bash\n\n"
     for c, i in enumerate(j):
-        d = json.loads(i['key'])
-        if d['seq'] > i['offset']:
+        d = json.loads(i["key"])
+        if d["seq"] > i["offset"]:
             cmd_all = f"The seq {d['seq']} is unexpectedly higher than the \
 offset {i['offset']} at key {i['key']}. \nThat is it's likely broken, hence exiting...."
 
@@ -78,5 +79,5 @@ offset {i['offset']} at key {i['key']}. \nThat is it's likely broken, hence exit
     print(cmd_all)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

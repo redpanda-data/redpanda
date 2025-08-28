@@ -13,18 +13,20 @@ from rptest.services.client_swarm_base import ClientSwarmBase
 
 
 class ConsumerSwarm(ClientSwarmBase):
-    def __init__(self,
-                 context: TestContext,
-                 redpanda,
-                 topic: str,
-                 group: str,
-                 consumers: int,
-                 records_per_consumer: int,
-                 log_level="DEBUG",
-                 properties={},
-                 unique_topics: Optional[bool] = False,
-                 static_prefix: Optional[bool] = False,
-                 unique_groups=False):
+    def __init__(
+        self,
+        context: TestContext,
+        redpanda,
+        topic: str,
+        group: str,
+        consumers: int,
+        records_per_consumer: int,
+        log_level="DEBUG",
+        properties={},
+        unique_topics: Optional[bool] = False,
+        static_prefix: Optional[bool] = False,
+        unique_groups=False,
+    ):
         super().__init__(context, redpanda, topic, log_level, properties)
 
         self._group = group
@@ -79,9 +81,8 @@ class ConsumerSwarm(ClientSwarmBase):
 
         checker = Checker(self)
 
-        self._redpanda.wait_until(checker,
-                                  timeout_sec=timeout_sec,
-                                  backoff_sec=1,
-                                  err_msg=err_msg)
+        self._redpanda.wait_until(
+            checker, timeout_sec=timeout_sec, backoff_sec=1, err_msg=err_msg
+        )
 
         return checker.check_passed

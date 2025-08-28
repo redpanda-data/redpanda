@@ -21,18 +21,19 @@ from rptest.tests.datalake.utils import supported_storage_types
 
 class PartitionMovementTest(PartitionMovementMixin, RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):
-        super(PartitionMovementTest,
-              self).__init__(test_ctx,
-                             num_brokers=1,
-                             si_settings=SISettings(test_context=test_ctx),
-                             extra_rp_conf={
-                                 "iceberg_enabled": "true",
-                                 "iceberg_catalog_commit_interval_ms": 5000
-                             },
-                             schema_registry_config=SchemaRegistryConfig(),
-                             pandaproxy_config=PandaproxyConfig(),
-                             *args,
-                             **kwargs)
+        super(PartitionMovementTest, self).__init__(
+            test_ctx,
+            num_brokers=1,
+            si_settings=SISettings(test_context=test_ctx),
+            extra_rp_conf={
+                "iceberg_enabled": "true",
+                "iceberg_catalog_commit_interval_ms": 5000,
+            },
+            schema_registry_config=SchemaRegistryConfig(),
+            pandaproxy_config=PandaproxyConfig(),
+            *args,
+            **kwargs,
+        )
         self.test_ctx = test_ctx
         self.topic_name = "test"
 
@@ -53,16 +54,16 @@ class PartitionMovementTest(PartitionMovementMixin, RedpandaTest):
         partition = 0
         stream = "cross_core_test"
 
-        with DatalakeServices(self.test_context,
-                              redpanda=self.redpanda,
-                              include_query_engines=[QueryEngineType.TRINO
-                                                     ]) as dl:
+        with DatalakeServices(
+            self.test_context,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.TRINO],
+        ) as dl:
             dl.create_iceberg_enabled_topic(topic)
             # A long running counter that runs until stopped
-            connect = dl.start_counter_stream(name=stream,
-                                              topic=topic,
-                                              count=0,
-                                              interval="1ms")
+            connect = dl.start_counter_stream(
+                name=stream, topic=topic, count=0, interval="1ms"
+            )
 
             def total_records_ingested():
                 metrics = connect.stream_metrics(name=stream)
@@ -77,23 +78,19 @@ class PartitionMovementTest(PartitionMovementMixin, RedpandaTest):
                     lambda: total_records_ingested() >= target,
                     timeout_sec=20,
                     backoff_sec=5,
-                    err_msg=
-                    f"Timed out waiting for stream producer to reach target: {target}"
+                    err_msg=f"Timed out waiting for stream producer to reach target: {target}",
                 )
 
             for _ in range(moves):
-                assignments = self._get_current_node_cores(
-                    admin, topic, partition)
+                assignments = self._get_current_node_cores(admin, topic, partition)
                 for a in assignments:
-                    a['core'] = (a['core'] +
-                                 1) % self.redpanda.get_node_cpu_count()
+                    a["core"] = (a["core"] + 1) % self.redpanda.get_node_cpu_count()
 
                 counter_before = total_records_ingested()
 
-                self._set_partition_assignments(topic,
-                                                partition,
-                                                assignments,
-                                                admin=admin)
+                self._set_partition_assignments(
+                    topic, partition, assignments, admin=admin
+                )
                 self._wait_post_move(topic, partition, assignments, 180)
                 # Make sure the stream is not stuck
                 ensure_stream_progress(counter_before + 500)

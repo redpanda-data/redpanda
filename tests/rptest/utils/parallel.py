@@ -22,8 +22,7 @@ def execute_in_parallel(items, process_batch, batch_len=10):
     :param batch_len: Number of items per batch.
     """
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        batches = (items[i:i + batch_len]
-                   for i in range(0, len(items), batch_len))
+        batches = (items[i : i + batch_len] for i in range(0, len(items), batch_len))
         batched_results = list(executor.map(process_batch, batches))
         if all(batch_result is None for batch_result in batched_results):
             return None

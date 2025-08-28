@@ -33,7 +33,7 @@ cmds = {
     "time": State.TIMEOUT,
     "event": State.EVENT,
     "violation": State.VIOLATION,
-    "log": State.LOG
+    "log": State.LOG,
 }
 
 transitions = {
@@ -43,7 +43,7 @@ transitions = {
     State.SENDING: [State.OK, State.ERROR, State.TIMEOUT],
     State.OK: [State.SENDING, State.CONSTRUCTING],
     State.ERROR: [State.SENDING, State.CONSTRUCTING],
-    State.TIMEOUT: [State.SENDING, State.CONSTRUCTING]
+    State.TIMEOUT: [State.SENDING, State.CONSTRUCTING],
 }
 
 phantoms = [State.EVENT, State.VIOLATION, State.LOG]

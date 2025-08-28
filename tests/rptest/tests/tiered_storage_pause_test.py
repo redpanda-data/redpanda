@@ -24,8 +24,9 @@ from typing import Optional
 import time
 
 
-def gaps_allowed(cluster_level_allow_gaps: bool,
-                 topic_level_override: Optional[bool] = None):
+def gaps_allowed(
+    cluster_level_allow_gaps: bool, topic_level_override: Optional[bool] = None
+):
     """Return True if the gaps are allowed.
     'topic_level_override' can be set to True, False, or None. The last
     value means that the override is not set.
@@ -48,17 +49,21 @@ class TestTieredStoragePause(PreallocNodesTest):
     3. The topic level override 'redpanda.remote.allowgaps' could be used
        to enable or disable the no-gaps policy.
     """
+
     def __init__(self, test_context):
-        super().__init__(test_context,
-                         num_brokers=3,
-                         node_prealloc_count=1,
-                         si_settings=SISettings(
-                             test_context=test_context,
-                             cloud_storage_segment_max_upload_interval_sec=5,
-                             cloud_storage_enable_remote_read=True,
-                             cloud_storage_enable_remote_write=True,
-                             cloud_storage_housekeeping_interval_ms=500,
-                             fast_uploads=True))
+        super().__init__(
+            test_context,
+            num_brokers=3,
+            node_prealloc_count=1,
+            si_settings=SISettings(
+                test_context=test_context,
+                cloud_storage_segment_max_upload_interval_sec=5,
+                cloud_storage_enable_remote_read=True,
+                cloud_storage_enable_remote_write=True,
+                cloud_storage_housekeeping_interval_ms=500,
+                fast_uploads=True,
+            ),
+        )
         self._msg_size = 128
         self._segment_size = 1024 * 1024
         # num messages to produce (50 MiB)
@@ -93,12 +98,12 @@ class TestTieredStoragePause(PreallocNodesTest):
             self._msg_count,
             # Limit tput to 1MiB per second
             rate_limit_bps=2 * 1024 * 1024,
-            custom_node=self.preallocated_nodes)
+            custom_node=self.preallocated_nodes,
+        )
 
         self.producer.start(clean=False)
 
-        self.producer.wait_for_acks(
-            2 * self._retention_bytes // self._msg_size, 60, 1)
+        self.producer.wait_for_acks(2 * self._retention_bytes // self._msg_size, 60, 1)
 
     def start_producer_lite(self):
         """Small scale producer"""
@@ -106,15 +111,15 @@ class TestTieredStoragePause(PreallocNodesTest):
         # Couple of segments to ensure that retention can remove whole segments
         # before these new ones.
         msg_cnt = 3 * self._segment_size // self._msg_size
-        self.logger.info(
-            f"starting kgo-verifier producer with {msg_cnt} messages")
+        self.logger.info(f"starting kgo-verifier producer with {msg_cnt} messages")
         self.producer = KgoVerifierProducer(
             self.test_context,
             self.redpanda,
             self._topic,
             self._msg_size,
             msg_cnt,
-            custom_node=self.preallocated_nodes)
+            custom_node=self.preallocated_nodes,
+        )
 
         self.producer.start(clean=False)
 
@@ -124,8 +129,9 @@ class TestTieredStoragePause(PreallocNodesTest):
         # Check that metric is showing that the ntp archiver is paused
         def _archiver_paused():
             num_paused = self.get_metric(
-                'redpanda_cloud_storage_paused_archivers',
-                MetricsEndpoint.PUBLIC_METRICS)
+                "redpanda_cloud_storage_paused_archivers",
+                MetricsEndpoint.PUBLIC_METRICS,
+            )
             # only one partition is created
             return num_paused == expected_num_paused
 
@@ -133,18 +139,21 @@ class TestTieredStoragePause(PreallocNodesTest):
             _archiver_paused,
             timeout_sec=30,
             backoff_sec=1,
-            err_msg=f"number of paused archivers is not {expected_num_paused}")
+            err_msg=f"number of paused archivers is not {expected_num_paused}",
+        )
 
     def get_uploaded_bytes(self):
         uploaded_bytes = self.get_metric(
-            'vectorized_ntp_archiver_uploaded_bytes_total',
-            MetricsEndpoint.METRICS)
+            "vectorized_ntp_archiver_uploaded_bytes_total", MetricsEndpoint.METRICS
+        )
         return uploaded_bytes
 
     def expect_no_uploaded_bytes(self):
         """Check that nothing is uploaded to the cloud storage"""
         uploaded_bytes = self.get_uploaded_bytes()
-        assert uploaded_bytes == 0, f"{uploaded_bytes} bytes are uploaded, expected all uploads to be paused"
+        assert uploaded_bytes == 0, (
+            f"{uploaded_bytes} bytes are uploaded, expected all uploads to be paused"
+        )
 
     def expect_start_from_offset_zero(self, expected):
         """If 'expected' set to True then the expectation is that the start offset is
@@ -156,7 +165,9 @@ class TestTieredStoragePause(PreallocNodesTest):
                 res = p.start_offset == 0
             else:
                 res = p.start_offset > 0
-            assert res, f"local retention have unexpected value, expected to start from zero = {expected}, start offset = {p.start_offset}"
+            assert res, (
+                f"local retention have unexpected value, expected to start from zero = {expected}, start offset = {p.start_offset}"
+            )
 
     def wait_until_start_offset_advances(self):
         """
@@ -168,10 +179,12 @@ class TestTieredStoragePause(PreallocNodesTest):
             partitions = rpk.describe_topic(self._topic)
             return all([p.start_offset > 0 for p in partitions])
 
-        wait_until(_start_offset_updated,
-                   timeout_sec=120,
-                   backoff_sec=10,
-                   err_msg="timed out waiting for segments to be evicted")
+        wait_until(
+            _start_offset_updated,
+            timeout_sec=120,
+            backoff_sec=10,
+            err_msg="timed out waiting for segments to be evicted",
+        )
 
     def get_start_offset(self) -> int:
         rpk = RpkTool(self.redpanda)
@@ -183,10 +196,11 @@ class TestTieredStoragePause(PreallocNodesTest):
 
     @cluster(num_nodes=4)
     @skip_debug_mode
-    @matrix(allow_gaps_topic_level=[None, True, False],
-            allow_gaps_cluster_level=[True, False])
-    def test_safe_pause_resume(self, allow_gaps_cluster_level,
-                               allow_gaps_topic_level):
+    @matrix(
+        allow_gaps_topic_level=[None, True, False],
+        allow_gaps_cluster_level=[True, False],
+    )
+    def test_safe_pause_resume(self, allow_gaps_cluster_level, allow_gaps_topic_level):
         """
         The test performs pause/resume operation. If the gaps are not allowed
         it checks that the range is full. In this test we starts with paused
@@ -203,30 +217,32 @@ class TestTieredStoragePause(PreallocNodesTest):
         Otherwise it should be set to zero.
         """
         # create topic with tiered storage enabled
-        topic = TopicSpec(partition_count=1,
-                          segment_bytes=self._segment_size,
-                          retention_bytes=self._retention_bytes)
+        topic = TopicSpec(
+            partition_count=1,
+            segment_bytes=self._segment_size,
+            retention_bytes=self._retention_bytes,
+        )
 
         self.client().create_topic(topic)
         if allow_gaps_topic_level is not None:
-            value = 'true' if allow_gaps_topic_level else 'false'
-            self.client().alter_topic_config(topic.name,
-                                             "redpanda.remote.allowgaps",
-                                             value)
+            value = "true" if allow_gaps_topic_level else "false"
+            self.client().alter_topic_config(
+                topic.name, "redpanda.remote.allowgaps", value
+            )
         self._topic = topic.name
 
         # Pause all segment uploads
         self.redpanda.set_cluster_config(
-            {"cloud_storage_enable_segment_uploads": False})
-        self.redpanda.set_cluster_config({
-            "cloud_storage_enable_remote_allow_gaps":
-            allow_gaps_cluster_level
-        })
+            {"cloud_storage_enable_segment_uploads": False}
+        )
         self.redpanda.set_cluster_config(
-            {"cloud_storage_housekeeping_interval_ms": 1000})
+            {"cloud_storage_enable_remote_allow_gaps": allow_gaps_cluster_level}
+        )
+        self.redpanda.set_cluster_config(
+            {"cloud_storage_housekeeping_interval_ms": 1000}
+        )
 
-        gaps_expected = gaps_allowed(allow_gaps_cluster_level,
-                                     allow_gaps_topic_level)
+        gaps_expected = gaps_allowed(allow_gaps_cluster_level, allow_gaps_topic_level)
 
         self.start_producer()
 
@@ -242,8 +258,7 @@ class TestTieredStoragePause(PreallocNodesTest):
         self.expect_no_uploaded_bytes()
 
         # Resume segment uploads
-        self.redpanda.set_cluster_config(
-            {"cloud_storage_enable_segment_uploads": True})
+        self.redpanda.set_cluster_config({"cloud_storage_enable_segment_uploads": True})
         self.redpanda.wait_for_manifest_uploads()
 
         # check that start offset moved forward because of the retention
@@ -262,8 +277,7 @@ class TestTieredStoragePause(PreallocNodesTest):
 
     @cluster(num_nodes=4)
     @skip_debug_mode
-    @matrix(allow_gaps_topic_level=[None],
-            allow_gaps_cluster_level=[True, False])
+    @matrix(allow_gaps_topic_level=[None], allow_gaps_cluster_level=[True, False])
     def test_resume(self, allow_gaps_cluster_level, allow_gaps_topic_level):
         """
         The test performs pause/resume operation. Unlike the previous test it
@@ -271,16 +285,18 @@ class TestTieredStoragePause(PreallocNodesTest):
         are allowed during the pause the gap is actually created.
         """
         # create topic with tiered storage enabled
-        topic = TopicSpec(partition_count=1,
-                          segment_bytes=self._segment_size,
-                          retention_bytes=self._retention_bytes)
+        topic = TopicSpec(
+            partition_count=1,
+            segment_bytes=self._segment_size,
+            retention_bytes=self._retention_bytes,
+        )
 
         self.client().create_topic(topic)
         if allow_gaps_topic_level is not None:
-            value = 'true' if allow_gaps_topic_level else 'false'
-            self.client().alter_topic_config(topic.name,
-                                             "redpanda.remote.allowgaps",
-                                             value)
+            value = "true" if allow_gaps_topic_level else "false"
+            self.client().alter_topic_config(
+                topic.name, "redpanda.remote.allowgaps", value
+            )
         self._topic = topic.name
 
         # Pre-populate the topic
@@ -297,13 +313,14 @@ class TestTieredStoragePause(PreallocNodesTest):
 
         # Pause all segment uploads
         self.redpanda.set_cluster_config(
-            {"cloud_storage_enable_segment_uploads": False})
-        self.redpanda.set_cluster_config({
-            "cloud_storage_enable_remote_allow_gaps":
-            allow_gaps_cluster_level
-        })
+            {"cloud_storage_enable_segment_uploads": False}
+        )
         self.redpanda.set_cluster_config(
-            {"cloud_storage_housekeeping_interval_ms": 1000})
+            {"cloud_storage_enable_remote_allow_gaps": allow_gaps_cluster_level}
+        )
+        self.redpanda.set_cluster_config(
+            {"cloud_storage_housekeeping_interval_ms": 1000}
+        )
 
         # Check that metric is showing that the ntp archiver is paused
         self.wait_archivers_paused(expected_num_paused=1)
@@ -317,10 +334,12 @@ class TestTieredStoragePause(PreallocNodesTest):
             pause_start_offset = self.get_start_offset()
             return pause_start_offset > start_offset
 
-        wait_until(_start_offset_advanced,
-                   timeout_sec=120,
-                   backoff_sec=10,
-                   err_msg="timed out waiting for segments to be evicted")
+        wait_until(
+            _start_offset_advanced,
+            timeout_sec=120,
+            backoff_sec=10,
+            err_msg="timed out waiting for segments to be evicted",
+        )
 
         # Wait for local storage housekeeping to remove some local segments.
         # The housekeeping interval is set to 1s.
@@ -328,8 +347,7 @@ class TestTieredStoragePause(PreallocNodesTest):
 
         # Resume segment uploads.
         # If the gaps are allowed we expect to see one.
-        self.redpanda.set_cluster_config(
-            {"cloud_storage_enable_segment_uploads": True})
+        self.redpanda.set_cluster_config({"cloud_storage_enable_segment_uploads": True})
         self.redpanda.wait_for_manifest_uploads()
 
         # check that metric is showing that the ntp archiver is no longer paused

@@ -18,22 +18,34 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, SISettings, MetricsEndpoint, get_cloud_storage_type
+from rptest.services.redpanda import (
+    CloudStorageType,
+    SISettings,
+    MetricsEndpoint,
+    get_cloud_storage_type,
+)
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import (produce_until_segments, produce_total_bytes,
-                         wait_for_local_storage_truncate, segments_count,
-                         expect_exception, wait_until_with_progress_check)
+from rptest.util import (
+    produce_until_segments,
+    produce_total_bytes,
+    wait_for_local_storage_truncate,
+    segments_count,
+    expect_exception,
+    wait_until_with_progress_check,
+)
 from rptest.utils.si_utils import BucketView, NTP, quiesce_uploads
 
 
 class CloudArchiveRetentionTest(RedpandaTest):
     """Test retention with spillover enabled"""
+
     def __init__(self, test_context):
         self.extra_rp_conf = dict(
             log_compaction_interval_ms=1000,
             cloud_storage_spillover_manifest_max_segments=5,
             cloud_storage_spillover_manifest_size=None,
-            cloud_storage_enable_segment_merging=False)
+            cloud_storage_enable_segment_merging=False,
+        )
 
         self.next_base_timestamp = 1664453149000  # arbitrary value
         self.timestamp_step_ms = 1000 * 60 * 2  # 2 minutes
@@ -42,13 +54,15 @@ class CloudArchiveRetentionTest(RedpandaTest):
             test_context,
             log_segment_size=1024 * 1024,  # 1 MiB
             cloud_storage_housekeeping_interval_ms=1000,
-            fast_uploads=True)
+            fast_uploads=True,
+        )
 
-        super(CloudArchiveRetentionTest,
-              self).__init__(test_context=test_context,
-                             si_settings=si_settings,
-                             extra_rp_conf=self.extra_rp_conf,
-                             log_level="debug")
+        super(CloudArchiveRetentionTest, self).__init__(
+            test_context=test_context,
+            si_settings=si_settings,
+            extra_rp_conf=self.extra_rp_conf,
+            log_level="debug",
+        )
 
         self.rpk = RpkTool(self.redpanda)
         self.s3_bucket_name = si_settings.cloud_storage_bucket
@@ -63,43 +77,46 @@ class CloudArchiveRetentionTest(RedpandaTest):
             msg_size=msg_size,
             msg_count=msg_count,
             fake_timestamp_ms=self.next_base_timestamp,
-            fake_timestamp_step_ms=self.timestamp_step_ms)
+            fake_timestamp_step_ms=self.timestamp_step_ms,
+        )
 
         self.next_base_timestamp += (msg_count + 1) * self.timestamp_step_ms
 
     def num_manifests_uploaded(self):
         s = self.redpanda.metric_sum(
-            metric_name=
-            "redpanda_cloud_storage_spillover_manifest_uploads_total",
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
-        self.logger.info(
-            f"redpanda_cloud_storage_spillover_manifest_uploads = {s}")
+            metric_name="redpanda_cloud_storage_spillover_manifest_uploads_total",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+        )
+        self.logger.info(f"redpanda_cloud_storage_spillover_manifest_uploads = {s}")
         return s
 
     def num_segments_deleted(self):
         s = self.redpanda.metric_sum(
             metric_name="redpanda_cloud_storage_deleted_segments_total",
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
-        self.logger.info(
-            f"redpanda_cloud_storage_deleted_segments_total = {s}")
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+        )
+        self.logger.info(f"redpanda_cloud_storage_deleted_segments_total = {s}")
         return s
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=get_cloud_storage_type(),
-            retention_type=['retention.bytes', 'retention.ms'])
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(),
+        retention_type=["retention.bytes", "retention.ms"],
+    )
     def test_delete(self, cloud_storage_type, retention_type):
-        topic = TopicSpec(cleanup_policy=TopicSpec.CLEANUP_DELETE,
-                          retention_ms=-1)
+        topic = TopicSpec(cleanup_policy=TopicSpec.CLEANUP_DELETE, retention_ms=-1)
 
         self.client().create_topic(topic)
-        self.client().alter_topic_config(topic.name, 'message.timestamp.type',
-                                         "CreateTime")
+        self.client().alter_topic_config(
+            topic.name, "message.timestamp.type", "CreateTime"
+        )
 
         def wait_for_topic():
-            wait_until(lambda: len(
-                list(self.client().describe_topic(topic.name))) > 0,
-                       30,
-                       backoff_sec=2)
+            wait_until(
+                lambda: len(list(self.client().describe_topic(topic.name))) > 0,
+                30,
+                backoff_sec=2,
+            )
 
         def produce_until_spillover():
             initial_uploaded = self.num_manifests_uploaded()
@@ -115,7 +132,8 @@ class CloudArchiveRetentionTest(RedpandaTest):
                 timeout_sec=360,
                 progress_sec=60,
                 backoff_sec=10,
-                err_msg="Manifests were not created")
+                err_msg="Manifests were not created",
+            )
 
         wait_for_topic()
         produce_until_spillover()
@@ -125,14 +143,14 @@ class CloudArchiveRetentionTest(RedpandaTest):
 
         view = BucketView(self.redpanda, [topic], scan_segments=True)
 
-        ntp0 = NTP(ns='kafka', topic=topic.name, partition=0)
+        ntp0 = NTP(ns="kafka", topic=topic.name, partition=0)
         summaries = view.segment_summaries(ntp0)
         expected_so = None
         # Try to remove 7 segments. Spillover manifest is configured to
         # have 5 segments so this will guarantee that retention will
         # truncate one full spillover manifest.
         index = min(len(summaries) - 1, 7)
-        if retention_type == 'retention.bytes':
+        if retention_type == "retention.bytes":
             retention_value = 0
             log_size = sum([s.size_bytes for s in summaries])
             retention_value = log_size
@@ -152,30 +170,30 @@ class CloudArchiveRetentionTest(RedpandaTest):
 
         segments_to_delete = 0
         for part_id in range(0, topic.partition_count):
-            ntp = NTP(ns='kafka', topic=topic.name, partition=part_id)
+            ntp = NTP(ns="kafka", topic=topic.name, partition=part_id)
             summaries = view.segment_summaries(ntp)
             for s in summaries:
                 if s.base_offset < expected_so:
                     segments_to_delete += 1
 
-        self.client().alter_topic_config(topic.name, retention_type,
-                                         retention_value)
+        self.client().alter_topic_config(topic.name, retention_type, retention_value)
 
         self.logger.debug(
-            f"waiting until {segments_to_delete} segments will be removed")
+            f"waiting until {segments_to_delete} segments will be removed"
+        )
         # Wait for the first truncation to the middle of the archive
         wait_until(
             lambda: self.num_segments_deleted() >= segments_to_delete,
             timeout_sec=100,
             backoff_sec=5,
-            err_msg=
-            f"Segments were not removed from the cloud, expected at least {segments_to_delete} deletions"
+            err_msg=f"Segments were not removed from the cloud, expected at least {segments_to_delete} deletions",
         )
 
         view.reset()
         for partition_id in range(0, topic.partition_count):
             assert view.is_archive_cleanup_complete(
-                NTP(ns='kafka', topic=topic.name, partition=partition_id))
+                NTP(ns="kafka", topic=topic.name, partition=partition_id)
+            )
 
         # Try to truncate the entire archive. In order to do this
         # we need to set retention value to very small value and correctly
@@ -186,43 +204,45 @@ class CloudArchiveRetentionTest(RedpandaTest):
         time.sleep(2)
 
         for part_id in range(0, topic.partition_count):
-            ntp = NTP(ns='kafka', topic=topic.name, partition=part_id)
+            ntp = NTP(ns="kafka", topic=topic.name, partition=part_id)
             summaries = view.segment_summaries(ntp)
-            if retention_type == 'retention.bytes':
+            if retention_type == "retention.bytes":
                 retention_value = max(
-                    min(summaries, key=lambda s: s.size_bytes).size_bytes - 1,
-                    0)
+                    min(summaries, key=lambda s: s.size_bytes).size_bytes - 1, 0
+                )
                 segments_to_delete = len(summaries)
             else:
                 retention_value = 1000  # 1s
                 current_time = round(time.time() * 1000)
-                segments_to_delete = len([
-                    s for s in summaries
-                    if s.base_timestamp < (current_time - retention_value)
-                ])
+                segments_to_delete = len(
+                    [
+                        s
+                        for s in summaries
+                        if s.base_timestamp < (current_time - retention_value)
+                    ]
+                )
 
         self.logger.debug(f"Setting {retention_type} to {retention_value}")
 
         # Note: altering the topic config will re-init the archiver and
         # reset the metric tracking segment deletion. This is why we assign
         # to `segments_to_delete` instead of adding.
-        self.client().alter_topic_config(topic.name, retention_type,
-                                         retention_value)
+        self.client().alter_topic_config(topic.name, retention_type, retention_value)
 
         self.logger.debug(
-            f"waiting until {segments_to_delete} segments will be removed")
+            f"waiting until {segments_to_delete} segments will be removed"
+        )
         # Wait for the second truncation of the entire archive
         wait_until(
             lambda: self.num_segments_deleted() >= segments_to_delete,
             timeout_sec=120,
             backoff_sec=5,
-            err_msg=
-            f"Segments were not removed from the cloud, expected at least {segments_to_delete} "
-            f"segments to be removed but only {self.num_segments_deleted()} was actually removed"
+            err_msg=f"Segments were not removed from the cloud, expected at least {segments_to_delete} "
+            f"segments to be removed but only {self.num_segments_deleted()} was actually removed",
         )
 
         view.reset()
         for partition_id in range(0, topic.partition_count):
-            ntp = NTP(ns='kafka', topic=topic.name, partition=partition_id)
+            ntp = NTP(ns="kafka", topic=topic.name, partition=partition_id)
             assert view.is_archive_cleanup_complete(ntp)
             view.check_archive_integrity(ntp)

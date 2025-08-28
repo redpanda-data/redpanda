@@ -1,11 +1,11 @@
-#Copyright 2025 Redpanda Data, Inc.
+# Copyright 2025 Redpanda Data, Inc.
 #
-#Use of this software is governed by the Business Source License
-#included in the file licenses / BSL.md
+# Use of this software is governed by the Business Source License
+# included in the file licenses / BSL.md
 #
-#As of the Change Date specified in that file, in accordance with
-#the Business Source License, use of this software will be governed
-#by the Apache License, Version 2.0
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
 
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
@@ -27,11 +27,14 @@ class TopicLabelAggregationTest(RedpandaTest):
         def metrics_have_topic_label() -> bool:
             for node in self.redpanda.nodes:
                 for family in self.redpanda.metrics(
-                        node, metrics_endpoint=MetricsEndpoint.METRICS):
+                    node, metrics_endpoint=MetricsEndpoint.METRICS
+                ):
                     for sample in family.samples:
-                        #If the partition label isn't aggregated then neither will the topic label.
-                        if self.TOPIC_LABEL in sample.labels.keys(
-                        ) and self.PARTITION_LABEL not in sample.labels.keys():
+                        # If the partition label isn't aggregated then neither will the topic label.
+                        if (
+                            self.TOPIC_LABEL in sample.labels.keys()
+                            and self.PARTITION_LABEL not in sample.labels.keys()
+                        ):
                             return True
 
             return False
@@ -46,23 +49,23 @@ class TopicLabelAggregationTest(RedpandaTest):
 
         initial_topic_count = len(self.client().describe_topics())
         topics_to_create = [TopicSpec() for _ in range(50)]
-        topic_aggregation_limit = len(
-            topics_to_create) + initial_topic_count - 1
+        topic_aggregation_limit = len(topics_to_create) + initial_topic_count - 1
 
-        self.redpanda.set_cluster_config({
-            "aggregate_metrics":
-            True,
-            "topic_label_aggregation_limit":
-            topic_aggregation_limit,
-        })
-        assert metrics_have_topic_label(
-        ), "topic label shouldn't be aggregated yet"
+        self.redpanda.set_cluster_config(
+            {
+                "aggregate_metrics": True,
+                "topic_label_aggregation_limit": topic_aggregation_limit,
+            }
+        )
+        assert metrics_have_topic_label(), "topic label shouldn't be aggregated yet"
 
         create_topics(topics_to_create)
-        wait_until(lambda: not metrics_have_topic_label(),
-                   timeout_sec=60,
-                   backoff_sec=10,
-                   err_msg="topic label wasn't aggregated")
+        wait_until(
+            lambda: not metrics_have_topic_label(),
+            timeout_sec=60,
+            backoff_sec=10,
+            err_msg="topic label wasn't aggregated",
+        )
 
         # Internally the topic label isn't unaggregated until the total topic count
         # falls below 95% of the aggregation limit. Hence delete enough topics to go
@@ -71,8 +74,7 @@ class TopicLabelAggregationTest(RedpandaTest):
         current_topic_count = len(topics_to_create) + initial_topic_count
         agg_limit_lower_bound = 0.95 * topic_aggregation_limit
         assert (topic_aggregation_limit - agg_limit_lower_bound) > 1
-        topic_count_to_delete = int(current_topic_count -
-                                    agg_limit_lower_bound) - 1
+        topic_count_to_delete = int(current_topic_count - agg_limit_lower_bound) - 1
         assert topic_count_to_delete > 1
 
         delete_topics(topics_to_create[:topic_count_to_delete])
@@ -80,22 +82,27 @@ class TopicLabelAggregationTest(RedpandaTest):
 
         # Have topic count fall bellow the 95% limit.
         delete_topics(
-            topics_to_create[topic_count_to_delete:(topic_count_to_delete +
-                                                    2)])
-        wait_until(lambda: metrics_have_topic_label(),
-                   timeout_sec=60,
-                   backoff_sec=10,
-                   err_msg="topic label wasn't un-aggregated")
+            topics_to_create[topic_count_to_delete : (topic_count_to_delete + 2)]
+        )
+        wait_until(
+            lambda: metrics_have_topic_label(),
+            timeout_sec=60,
+            backoff_sec=10,
+            err_msg="topic label wasn't un-aggregated",
+        )
 
-        create_topics(topics_to_create[:(topic_count_to_delete + 2)])
-        wait_until(lambda: not metrics_have_topic_label(),
-                   timeout_sec=60,
-                   backoff_sec=10,
-                   err_msg="topic label wasn't aggregated")
+        create_topics(topics_to_create[: (topic_count_to_delete + 2)])
+        wait_until(
+            lambda: not metrics_have_topic_label(),
+            timeout_sec=60,
+            backoff_sec=10,
+            err_msg="topic label wasn't aggregated",
+        )
 
-        self.redpanda.set_cluster_config(
-            {"topic_label_aggregation_limit": None})
-        wait_until(lambda: metrics_have_topic_label(),
-                   timeout_sec=60,
-                   backoff_sec=10,
-                   err_msg="topic label wasn't un-aggregated")
+        self.redpanda.set_cluster_config({"topic_label_aggregation_limit": None})
+        wait_until(
+            lambda: metrics_have_topic_label(),
+            timeout_sec=60,
+            backoff_sec=10,
+            err_msg="topic label wasn't un-aggregated",
+        )

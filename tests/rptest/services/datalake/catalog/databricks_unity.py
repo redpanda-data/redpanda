@@ -9,14 +9,19 @@
 
 from typing import Dict, Optional
 
-from rptest.context.databricks import DatabricksContext, OauthCredentials, PatCredentials
+from rptest.context.databricks import (
+    DatabricksContext,
+    OauthCredentials,
+    PatCredentials,
+)
 from rptest.services.catalog_service import CatalogService, CatalogType
 from rptest.services.databricks_workspace import DatabricksCatalogInfo
 
 
 class DatabricksUnity(CatalogService):
-    def __init__(self, ctx, *, cloud_storage_bucket: str,
-                 catalog: DatabricksCatalogInfo):
+    def __init__(
+        self, ctx, *, cloud_storage_bucket: str, catalog: DatabricksCatalogInfo
+    ):
         super().__init__(
             ctx,
             cloud_storage_bucket,
@@ -41,13 +46,14 @@ class DatabricksUnity(CatalogService):
     def _configure_client(self, conf: Dict[str, Optional[str]]) -> None:
         if isinstance(self._databricks_context.credentials, PatCredentials):
             conf["token"] = self._databricks_context.credentials.token
-        elif isinstance(self._databricks_context.credentials,
-                        OauthCredentials):
-            conf[
-                "credential"] = f"{self._databricks_context.credentials.client_id}:{self._databricks_context.credentials.client_secret}"
+        elif isinstance(self._databricks_context.credentials, OauthCredentials):
+            conf["credential"] = (
+                f"{self._databricks_context.credentials.client_id}:{self._databricks_context.credentials.client_secret}"
+            )
             conf["scope"] = "all-apis"
-            conf[
-                "oauth2-server-uri"] = f"{self._databricks_context.workspace_url}/oidc/v1/token"
+            conf["oauth2-server-uri"] = (
+                f"{self._databricks_context.workspace_url}/oidc/v1/token"
+            )
         else:
             raise ValueError(
                 f"Unsupported credentials type for Databricks context for {type(self._databricks_context.credentials)}"

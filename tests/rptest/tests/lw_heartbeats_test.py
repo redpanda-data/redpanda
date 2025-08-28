@@ -25,17 +25,24 @@ class HeartbeatMetrics:
 
 class LwHeartbeatsTest(RedpandaTest):
     def get_heartbeat_metrics(self):
-        lw_beats = sum([
-            sample.value for sample in self.redpanda.metrics_sample(
-                "lightweight_heartbeat_requests",
-                metrics_endpoint=MetricsEndpoint.METRICS).samples
-        ])
+        lw_beats = sum(
+            [
+                sample.value
+                for sample in self.redpanda.metrics_sample(
+                    "lightweight_heartbeat_requests",
+                    metrics_endpoint=MetricsEndpoint.METRICS,
+                ).samples
+            ]
+        )
 
-        full_beats = sum([
-            sample.value for sample in self.redpanda.metrics_sample(
-                "full_heartbeat_requests",
-                metrics_endpoint=MetricsEndpoint.METRICS).samples
-        ])
+        full_beats = sum(
+            [
+                sample.value
+                for sample in self.redpanda.metrics_sample(
+                    "full_heartbeat_requests", metrics_endpoint=MetricsEndpoint.METRICS
+                ).samples
+            ]
+        )
 
         return HeartbeatMetrics(lw_beats=lw_beats, full_beats=full_beats)
 
@@ -50,11 +57,14 @@ class LwHeartbeatsTest(RedpandaTest):
             f_cnt = m.full_beats - self.previous_sample.full_beats
             self.previous_sample = m
             self.logger.info(
-                f"heartbeats since last sample: [lw: {lw_cnt}, full: {f_cnt}]")
+                f"heartbeats since last sample: [lw: {lw_cnt}, full: {f_cnt}]"
+            )
             return lw_cnt > 0 and f_cnt == 0
 
         time.sleep(2)
         wait_until(
-            only_lw_beats_exchanged, 30, 2,
-            "Timeout waiting for cluster to reach state in which lw heartbeats are exchanged"
+            only_lw_beats_exchanged,
+            30,
+            2,
+            "Timeout waiting for cluster to reach state in which lw heartbeats are exchanged",
         )

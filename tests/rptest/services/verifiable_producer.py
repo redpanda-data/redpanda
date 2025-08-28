@@ -27,7 +27,7 @@ from collections import namedtuple
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.background_thread import BackgroundThreadService
 
-TopicPartition = namedtuple('TopicPartition', ['topic', 'partition'])
+TopicPartition = namedtuple("TopicPartition", ["topic", "partition"])
 
 
 def is_int(msg):
@@ -39,8 +39,8 @@ def is_int(msg):
         return int(msg)
     except ValueError:
         raise Exception(
-            "Unexpected message format (expected an integer). Message: %s" %
-            (msg))
+            "Unexpected message format (expected an integer). Message: %s" % (msg)
+        )
 
 
 def is_int_with_prefix(msg):
@@ -55,7 +55,8 @@ def is_int_with_prefix(msg):
         if len(parts) != 2:
             raise Exception(
                 "Unexpected message format. Message should be of format: integer "
-                "prefix dot integer value. Message: %s" % (msg))
+                "prefix dot integer value. Message: %s" % (msg)
+            )
         int(parts[0])
         int(parts[1])
         return msg
@@ -63,7 +64,8 @@ def is_int_with_prefix(msg):
         raise Exception(
             "Unexpected message format. Message should be of format: integer "
             "prefix dot integer value, but one of the two parts (before or after dot) "
-            "are not integers. Message: %s" % (msg))
+            "are not integers. Message: %s" % (msg)
+        )
 
 
 class VerifiableProducer(BackgroundThreadService):
@@ -73,48 +75,44 @@ class VerifiableProducer(BackgroundThreadService):
     """
 
     PERSISTENT_ROOT = "/mnt/verifiable_producer"
-    STDOUT_CAPTURE = os.path.join(PERSISTENT_ROOT,
-                                  "verifiable_producer.stdout")
-    STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT,
-                                  "verifiable_producer.stderr")
+    STDOUT_CAPTURE = os.path.join(PERSISTENT_ROOT, "verifiable_producer.stdout")
+    STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "verifiable_producer.stderr")
     LOG_DIR = os.path.join(PERSISTENT_ROOT, "logs")
     LOG_FILE = os.path.join(LOG_DIR, "verifiable_producer.log")
     LOG4J_CONFIG = os.path.join(PERSISTENT_ROOT, "tools-log4j.properties")
-    CONFIG_FILE = os.path.join(PERSISTENT_ROOT,
-                               "verifiable_producer.properties")
+    CONFIG_FILE = os.path.join(PERSISTENT_ROOT, "verifiable_producer.properties")
 
     logs = {
         "verifiable_producer_stdout": {
             "path": STDOUT_CAPTURE,
-            "collect_default": False
+            "collect_default": False,
         },
         "verifiable_producer_stderr": {
             "path": STDERR_CAPTURE,
-            "collect_default": False
+            "collect_default": False,
         },
-        "verifiable_producer_log": {
-            "path": LOG_FILE,
-            "collect_default": True
-        }
+        "verifiable_producer_log": {"path": LOG_FILE, "collect_default": True},
     }
 
-    def __init__(self,
-                 context,
-                 num_nodes,
-                 redpanda,
-                 topic,
-                 max_messages=-1,
-                 throughput=100000,
-                 message_validator=is_int,
-                 compression_types=None,
-                 acks=None,
-                 stop_timeout_sec=150,
-                 request_timeout_sec=30,
-                 log_level="INFO",
-                 enable_idempotence=False,
-                 create_time=-1,
-                 repeating_keys=None,
-                 retries=None):
+    def __init__(
+        self,
+        context,
+        num_nodes,
+        redpanda,
+        topic,
+        max_messages=-1,
+        throughput=100000,
+        message_validator=is_int,
+        compression_types=None,
+        acks=None,
+        stop_timeout_sec=150,
+        request_timeout_sec=30,
+        log_level="INFO",
+        enable_idempotence=False,
+        create_time=-1,
+        repeating_keys=None,
+        retries=None,
+    ):
         """
         Args:
             :param max_messages                number of messages to be produced per producer
@@ -137,8 +135,9 @@ class VerifiableProducer(BackgroundThreadService):
         self.message_validator = message_validator
         self.compression_types = compression_types
         if self.compression_types is not None:
-            assert len(self.compression_types
-                       ) == num_nodes, "Specify one compression type per node"
+            assert len(self.compression_types) == num_nodes, (
+                "Specify one compression type per node"
+            )
 
         self.acked_values = []
         self.acked_values_by_partition = {}
@@ -156,26 +155,32 @@ class VerifiableProducer(BackgroundThreadService):
 
     def prop_file(self, node):
         idx = self.idx(node)
-        prop_file = self.render('producer.properties',
-                                request_timeout_ms=(self.request_timeout_sec *
-                                                    1000))
+        prop_file = self.render(
+            "producer.properties", request_timeout_ms=(self.request_timeout_sec * 1000)
+        )
         if self.compression_types is not None:
             compression_index = idx - 1
             self.logger.info(
                 "VerifiableProducer (index = %d) will use compression type = %s",
-                idx, self.compression_types[compression_index])
-            prop_file += "\ncompression.type=%s\n" % self.compression_types[
-                compression_index]
+                idx,
+                self.compression_types[compression_index],
+            )
+            prop_file += (
+                "\ncompression.type=%s\n" % self.compression_types[compression_index]
+            )
         return prop_file
 
     def _worker(self, idx, node):
-        node.account.ssh("mkdir -p %s" % VerifiableProducer.PERSISTENT_ROOT,
-                         allow_fail=False)
+        node.account.ssh(
+            "mkdir -p %s" % VerifiableProducer.PERSISTENT_ROOT, allow_fail=False
+        )
 
         # Create and upload log properties
-        log_config = self.render('tools_log4j.properties',
-                                 log_file=VerifiableProducer.LOG_FILE,
-                                 log_level=self.log_level)
+        log_config = self.render(
+            "tools_log4j.properties",
+            log_file=VerifiableProducer.LOG_FILE,
+            log_level=self.log_level,
+        )
         node.account.create_file(VerifiableProducer.LOG4J_CONFIG, log_config)
 
         # Create and upload config file
@@ -183,8 +188,8 @@ class VerifiableProducer(BackgroundThreadService):
 
         if self.acks is not None:
             self.logger.info(
-                "VerifiableProducer (index = %d) will use acks = %s", idx,
-                self.acks)
+                "VerifiableProducer (index = %d) will use acks = %s", idx, self.acks
+            )
             producer_prop_file += "\nacks=%s\n" % self.acks
 
         if self.enable_idempotence:
@@ -194,16 +199,18 @@ class VerifiableProducer(BackgroundThreadService):
             producer_prop_file += "\nenable.idempotence=true\n"
         elif self.retries is not None:
             self.logger.info(
-                "VerifiableProducer (index = %d) will use retries = %s", idx,
-                self.retries)
+                "VerifiableProducer (index = %d) will use retries = %s",
+                idx,
+                self.retries,
+            )
             producer_prop_file += "\nretries=%s\n" % self.retries
             producer_prop_file += "\ndelivery.timeout.ms=%s\n" % (
-                self.request_timeout_sec * 1000 * self.retries)
+                self.request_timeout_sec * 1000 * self.retries
+            )
 
         self.logger.info("verifiable_producer.properties:")
         self.logger.info(producer_prop_file)
-        node.account.create_file(VerifiableProducer.CONFIG_FILE,
-                                 producer_prop_file)
+        node.account.create_file(VerifiableProducer.CONFIG_FILE, producer_prop_file)
 
         cmd = self.start_cmd(idx)
         self.logger.debug("VerifiableProducer %d command: %s" % (idx, cmd))
@@ -217,7 +224,6 @@ class VerifiableProducer(BackgroundThreadService):
 
             data = self.try_parse_json(line)
             if data is not None:
-
                 with self.lock:
                     if data["name"] == "producer_send_error":
                         data["node"] = idx
@@ -227,8 +233,7 @@ class VerifiableProducer(BackgroundThreadService):
                         self.produced_count[idx] += 1
 
                     elif data["name"] == "producer_send_success":
-                        partition = TopicPartition(data["topic"],
-                                                   data["partition"])
+                        partition = TopicPartition(data["topic"], data["partition"])
                         value = self.message_validator(data["value"])
                         key = data["key"]
                         self.acked_values.append((key, value))
@@ -243,8 +248,8 @@ class VerifiableProducer(BackgroundThreadService):
                         # even if there is only one producer, so we must handle situation
                         # where we see an offset lower than what we already recorded as highest.
                         self._last_acked_offsets[partition] = max(
-                            data["offset"],
-                            self._last_acked_offsets.get(partition, 0))
+                            data["offset"], self._last_acked_offsets.get(partition, 0)
+                        )
 
                         # Log information if there is a large gap between successively acknowledged messages
                         t = time.time()
@@ -252,10 +257,9 @@ class VerifiableProducer(BackgroundThreadService):
                         if time_delta_sec > 2 and prev_msg is not None:
                             self.logger.debug(
                                 "Time delta between successively acked messages is large: "
-                                +
-                                "delta_t_sec: %s, prev_message: %s, current_message: %s"
-                                % (str(time_delta_sec), str(prev_msg),
-                                   str(data)))
+                                + "delta_t_sec: %s, prev_message: %s, current_message: %s"
+                                % (str(time_delta_sec), str(prev_msg), str(data))
+                            )
 
                         last_produced_time = t
                         prev_msg = data
@@ -264,15 +268,15 @@ class VerifiableProducer(BackgroundThreadService):
                         if node in self.clean_shutdown_nodes:
                             raise Exception(
                                 "Unexpected shutdown event from producer, already shutdown. Producer index: %d"
-                                % idx)
+                                % idx
+                            )
                         self.clean_shutdown_nodes.add(node)
 
     def start_cmd(self, idx):
         cmd = "java -cp /opt/redpanda-tests/java/e2e-verifiers/target/e2e-verifiers-1.0.jar"
         cmd += " -Dlog4j.configuration=file:%s" % VerifiableProducer.LOG4J_CONFIG
         cmd += " org.apache.kafka.tools.VerifiableProducer "
-        cmd += " --topic %s --broker-list %s" % (self.topic,
-                                                 self.redpanda.brokers())
+        cmd += " --topic %s --broker-list %s" % (self.topic, self.redpanda.brokers())
         if self.max_messages > 0:
             cmd += " --max-messages %s" % str(self.max_messages)
         if self.throughput > 0:
@@ -288,8 +292,10 @@ class VerifiableProducer(BackgroundThreadService):
 
         cmd += " --producer.config %s" % VerifiableProducer.CONFIG_FILE
 
-        cmd += " 2>> %s | tee -a %s &" % (VerifiableProducer.STDOUT_CAPTURE,
-                                          VerifiableProducer.STDOUT_CAPTURE)
+        cmd += " 2>> %s | tee -a %s &" % (
+            VerifiableProducer.STDOUT_CAPTURE,
+            VerifiableProducer.STDOUT_CAPTURE,
+        )
         return cmd
 
     def kill_node(self, node, clean_shutdown=True, allow_fail=False):
@@ -303,8 +309,8 @@ class VerifiableProducer(BackgroundThreadService):
         try:
             cmd = "jps | grep -i VerifiableProducer | awk '{print $1}'"
             pid_arr = [
-                pid for pid in node.account.ssh_capture(
-                    cmd, allow_fail=True, callback=int)
+                pid
+                for pid in node.account.ssh_capture(cmd, allow_fail=True, callback=int)
             ]
             return pid_arr
         except (RemoteCommandError, ValueError):
@@ -346,8 +352,10 @@ class VerifiableProducer(BackgroundThreadService):
     def each_produced_at_least(self, count):
         with self.lock:
             for idx in range(1, self.num_nodes + 1):
-                if self.produced_count.get(
-                        idx) is None or self.produced_count[idx] < count:
+                if (
+                    self.produced_count.get(idx) is None
+                    or self.produced_count[idx] < count
+                ):
                     return False
             return True
 
@@ -358,8 +366,10 @@ class VerifiableProducer(BackgroundThreadService):
         allow_fail = self.max_messages > 0
         self.kill_node(node, clean_shutdown=True, allow_fail=allow_fail)
         stopped = self.wait_node(node, timeout_sec=self.stop_timeout_sec)
-        assert stopped, "Node %s: did not stop within the specified timeout of %s seconds" % \
-                        (str(node.account), str(self.stop_timeout_sec))
+        assert stopped, (
+            "Node %s: did not stop within the specified timeout of %s seconds"
+            % (str(node.account), str(self.stop_timeout_sec))
+        )
 
     def clean_node(self, node):
         self.kill_node(node, clean_shutdown=False, allow_fail=False)
