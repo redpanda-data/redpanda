@@ -266,5 +266,8 @@ vbuild/
 #asdf tool version file
 .tool-versions
 
+# Ruff (python formatter)
+.ruff_cache
+
 # Ctest
 /Testing
