@@ -40,6 +40,17 @@ struct snapshot_summary {
     // The operation that this snapshot represents.
     snapshot_operation operation;
 
+    // A subset of the optional snapshot summary fields that get updated by an
+    // append only system like Redpanda.
+    // NOTE: these are noted as optional, but some systems require them to
+    // query the snapshot.
+    std::optional<int64_t> added_data_files;
+    std::optional<int64_t> total_data_files;
+    std::optional<int64_t> added_records;
+    std::optional<int64_t> total_records;
+    std::optional<int64_t> added_files_size;
+    std::optional<int64_t> total_files_size;
+
     // All other properties of the snapshot, besides 'operation'.
     // NOTE: these aren't necessarily important to Redpanda's Iceberg write
     // path, but are still important to serialize, as they may be used for
