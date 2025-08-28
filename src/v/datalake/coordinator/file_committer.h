@@ -28,8 +28,9 @@ public:
       checked<chunked_vector<mark_files_committed_update>, errc>>
     commit_topic_files_to_catalog(model::topic, const topics_state&) const = 0;
 
+    using purge_data = ss::bool_class<struct purge_data_tag>;
     virtual ss::future<checked<std::nullopt_t, errc>>
-    drop_table(const iceberg::table_identifier&) const = 0;
+    drop_table(const iceberg::table_identifier&, purge_data) const = 0;
 
     virtual ~file_committer() = default;
 };
