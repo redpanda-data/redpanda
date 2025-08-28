@@ -59,16 +59,13 @@ class ExpectRate:
         |              |<-  target sec ->|
         |              |                 |
         0        interval_start      newest sample"""
-    def __init__(self,
-                 sample: Callable[[], int],
-                 logger: Logger,
-                 units: str = "bytes"):
+
+    def __init__(self, sample: Callable[[], int], logger: Logger, units: str = "bytes"):
         self.logger = logger
         self.sample = sample
         self.units = units
 
     def expect_rate(self, target: RateTarget) -> None:
-
         sample_interval_ms = 1000
         ts = lambda x: x.timestamp
         total_msec = 0
@@ -94,16 +91,17 @@ class ExpectRate:
                 rate = elapsed_count / (elapsed_msec / 1000.0)
                 if target.target_min_rate <= rate and rate <= target.target_max_rate:
                     self.logger.info(
-                        f"Rate target met: {rate:.1f} {self.units}/sec " +
-                        f"over the last {elapsed_msec/1000:.3f} sec.")
+                        f"Rate target met: {rate:.1f} {self.units}/sec "
+                        + f"over the last {elapsed_msec / 1000:.3f} sec."
+                    )
                     return
                 else:
-                    self.logger.debug(
-                        f"rate: {rate:.1f} for {elapsed_msec/1000:.3f}")
+                    self.logger.debug(f"rate: {rate:.1f} for {elapsed_msec / 1000:.3f}")
             else:
                 self.logger.debug(
-                    f"(waiting, {delta_t/1000:.1f}/{target.target_sec} sec) " +
-                    f"{self.units}: {m.count}")
+                    f"(waiting, {delta_t / 1000:.1f}/{target.target_sec} sec) "
+                    + f"{self.units}: {m.count}"
+                )
 
             sleep_ms(sample_interval_ms)
             total_msec = time_ms() - t_0

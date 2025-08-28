@@ -19,10 +19,12 @@ HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
 
 HTTP_POST_HEADERS = {
     "Accept": "application/vnd.schemaregistry.v1+json",
-    "Content-Type": "application/vnd.schemaregistry.v1+json"
+    "Content-Type": "application/vnd.schemaregistry.v1+json",
 }
 
-schema_template = '{"type":"record","name":"record_%s","fields":[{"name":"f1","type":"string"}]}'
+schema_template = (
+    '{"type":"record","name":"record_%s","fields":[{"name":"f1","type":"string"}]}'
+)
 
 
 class WriteWorker(threading.Thread):
@@ -55,15 +57,17 @@ class WriteWorker(threading.Thread):
 
         uri = f"http://{hostname}:8081/{path}"
 
-        if 'timeout' not in kwargs:
-            kwargs['timeout'] = 60
+        if "timeout" not in kwargs:
+            kwargs["timeout"] = 60
 
         # Error codes that may appear during normal API operation, do not
         # indicate an issue with the service
         acceptable_errors = {409, 422, 404}
 
         def accept_response(resp):
-            return 200 <= resp.status_code < 300 or resp.status_code in acceptable_errors
+            return (
+                200 <= resp.status_code < 300 or resp.status_code in acceptable_errors
+            )
 
         log.debug(f"{verb} hostname={hostname} {path} {kwargs}")
 
@@ -71,15 +75,11 @@ class WriteWorker(threading.Thread):
         # during startup, after that a failure is a failure.
         r = requests.request(verb, uri, **kwargs)
         if not accept_response(r):
-            log.info(
-                f"Retrying for error {r.status_code} on {verb} {path} ({r.text})"
-            )
+            log.info(f"Retrying for error {r.status_code} on {verb} {path} ({r.text})")
             time.sleep(10)
             r = requests.request(verb, uri, **kwargs)
             if accept_response(r):
-                log.info(
-                    f"OK after retry {r.status_code} on {verb} {path} ({r.text})"
-                )
+                log.info(f"OK after retry {r.status_code} on {verb} {path} ({r.text})")
             else:
                 log.info(
                     f"Error after retry {r.status_code} on {verb} {path} ({r.text})"
@@ -89,24 +89,19 @@ class WriteWorker(threading.Thread):
 
         return r
 
-    def _post_subjects_subject_versions(self,
-                                        subject,
-                                        data,
-                                        headers=HTTP_POST_HEADERS,
-                                        **kwargs):
-        return self._request("POST",
-                             f"subjects/{subject}/versions",
-                             headers=headers,
-                             data=data,
-                             **kwargs)
+    def _post_subjects_subject_versions(
+        self, subject, data, headers=HTTP_POST_HEADERS, **kwargs
+    ):
+        return self._request(
+            "POST", f"subjects/{subject}/versions", headers=headers, data=data, **kwargs
+        )
 
-    def _get_subjects_subject_versions_version(self,
-                                               subject,
-                                               version,
-                                               headers=HTTP_GET_HEADERS):
-        return self._request("GET",
-                             f"subjects/{subject}/versions/{version}",
-                             headers=headers)
+    def _get_subjects_subject_versions_version(
+        self, subject, version, headers=HTTP_GET_HEADERS
+    ):
+        return self._request(
+            "GET", f"subjects/{subject}/versions/{version}", headers=headers
+        )
 
     def _get_schemas_ids_id(self, id, headers=HTTP_GET_HEADERS):
         return self._request("GET", f"schemas/ids/{id}", headers=headers)
@@ -120,18 +115,15 @@ class WriteWorker(threading.Thread):
             log.debug(f"Worker {self.name} writing subject {subject}")
             try:
                 resp = self._post_subjects_subject_versions(
-                    subject=subject,
-                    data=json.dumps({"schema": schema_def}),
-                    timeout=20)
+                    subject=subject, data=json.dumps({"schema": schema_def}), timeout=20
+                )
             except requests.exceptions.RequestException as e:
                 self._push_err(f"{subject}/{version_id} POST exception: {e}")
             else:
-                self._check_eq(subject, version_id, "post_ret",
-                               resp.status_code, 200)
+                self._check_eq(subject, version_id, "post_ret", resp.status_code, 200)
                 if resp.status_code == 200:
                     schema_id = resp.json()["id"]
-                    self.results[(subject, version_id)] = (schema_def,
-                                                           schema_id)
+                    self.results[(subject, version_id)] = (schema_def, schema_id)
 
     def _push_err(self, err):
         log.error(f"push_err[{self.name}]: {err}")
@@ -145,35 +137,27 @@ class WriteWorker(threading.Thread):
             self._push_err(f"{subject}/{version} failed {check_name} {a}!={b}")
 
     def verify(self):
-        for (subject, version), (schema_def,
-                                 schema_id) in self.results.items():
+        for (subject, version), (schema_def, schema_id) in self.results.items():
             try:
-                r = self._get_subjects_subject_versions_version(
-                    subject, version)
+                r = self._get_subjects_subject_versions_version(subject, version)
             except requests.exceptions.RequestException as e:
-                self._push_err(
-                    f"{subject}/{version} GET version exception: {e}")
+                self._push_err(f"{subject}/{version} GET version exception: {e}")
                 continue
 
-            self._check_eq(subject, version, "subject_retcode", r.status_code,
-                           200)
-            self._check_eq(subject, version, "subject",
-                           r.json()['subject'], subject)
-            self._check_eq(subject, version, "version",
-                           r.json()['version'], version)
-            self._check_eq(subject, version, "schema",
-                           r.json()['schema'], schema_def)
+            self._check_eq(subject, version, "subject_retcode", r.status_code, 200)
+            self._check_eq(subject, version, "subject", r.json()["subject"], subject)
+            self._check_eq(subject, version, "version", r.json()["version"], version)
+            self._check_eq(subject, version, "schema", r.json()["schema"], schema_def)
 
             try:
                 r = self._get_schemas_ids_id(id=schema_id)
             except requests.exceptions.RequestException as e:
-                self._push_err(
-                    f"{subject}/{version} GET schema exception: {e}")
+                self._push_err(f"{subject}/{version} GET schema exception: {e}")
                 continue
-            self._check_eq(subject, version, "schema_retcode", r.status_code,
-                           200)
-            self._check_eq(subject, version, "schema_def",
-                           r.json()['schema'], schema_def)
+            self._check_eq(subject, version, "schema_retcode", r.status_code, 200)
+            self._check_eq(
+                subject, version, "schema_def", r.json()["schema"], schema_def
+            )
 
         schema_ids = self.get_schema_ids()
         if len(set(schema_ids)) != len(schema_ids):
@@ -197,8 +181,7 @@ class WriteWorker(threading.Thread):
 
     def get_schema_ids(self):
         result = []
-        for (subject, version), (schema_def,
-                                 schema_id) in self.results.items():
+        for (subject, version), (schema_def, schema_id) in self.results.items():
             result.append(schema_id)
 
         return result

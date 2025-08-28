@@ -26,7 +26,7 @@ class ListOffsetsWorkload(WorkloadServiceBase):
             "topic": self._topic,
             "settings": {
                 "concurrency": self._concurrency,
-            }
+            },
         }
 
     def validate_consistency(self):
@@ -38,5 +38,6 @@ class ListOffsetsWorkload(WorkloadServiceBase):
         )
 
     def collect_stats(self):
-        return stat.collect(self.context.test_id, self._results_dir(),
-                            [n.name for n in self.nodes])
+        return stat.collect(
+            self.context.test_id, self._results_dir(), [n.name for n in self.nodes]
+        )

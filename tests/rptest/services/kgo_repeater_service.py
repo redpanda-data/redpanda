@@ -33,26 +33,28 @@ class KgoRepeaterService(Service):
 
     logs = {"repeater_log": {"path": LOG_PATH, "collect_default": True}}
 
-    def __init__(self,
-                 context: TestContext,
-                 redpanda: RedpandaService,
-                 *,
-                 sasl_options: Optional[SaslCredentials] = None,
-                 nodes: Optional[list[ClusterNode]] = None,
-                 num_nodes: Optional[int] = None,
-                 topics: list[str],
-                 msg_size: Optional[int],
-                 workers: int,
-                 key_count: Optional[int] = None,
-                 group_name: str = "repeat01",
-                 max_buffered_records: Optional[int] = None,
-                 mb_per_worker: Optional[int] = None,
-                 use_transactions: bool = False,
-                 transaction_abort_rate: Optional[float] = None,
-                 rate_limit_bps: Optional[int] = None,
-                 msgs_per_transaction: Optional[int] = None,
-                 compression_type: Optional[str] = None,
-                 compressible_payload: Optional[bool] = None):
+    def __init__(
+        self,
+        context: TestContext,
+        redpanda: RedpandaService,
+        *,
+        sasl_options: Optional[SaslCredentials] = None,
+        nodes: Optional[list[ClusterNode]] = None,
+        num_nodes: Optional[int] = None,
+        topics: list[str],
+        msg_size: Optional[int],
+        workers: int,
+        key_count: Optional[int] = None,
+        group_name: str = "repeat01",
+        max_buffered_records: Optional[int] = None,
+        mb_per_worker: Optional[int] = None,
+        use_transactions: bool = False,
+        transaction_abort_rate: Optional[float] = None,
+        rate_limit_bps: Optional[int] = None,
+        msgs_per_transaction: Optional[int] = None,
+        compression_type: Optional[str] = None,
+        compressible_payload: Optional[bool] = None,
+    ):
         """
         :param rate_limit_bps: Total rate for all nodes: each node will get an equal share.
         """
@@ -73,8 +75,9 @@ class KgoRepeaterService(Service):
         self.group_name = group_name
         self.sasl_options = sasl_options
 
-        self.rate_limit_bps_per_node = rate_limit_bps // len(
-            self.nodes) if rate_limit_bps else None
+        self.rate_limit_bps_per_node = (
+            rate_limit_bps // len(self.nodes) if rate_limit_bps else None
+        )
 
         # Note: using a port that happens to already be in test environment
         # firewall rules from other use cases.  If changing this, update
@@ -173,8 +176,7 @@ class KgoRepeaterService(Service):
             lambda: self._is_ready(node),
             timeout_sec=5,
             backoff_sec=0.5,
-            err_msg=
-            f"Timed out waiting for status endpoint {self.who_am_i()} to be available"
+            err_msg=f"Timed out waiting for status endpoint {self.who_am_i()} to be available",
         )
 
     def _is_ready(self, node):
@@ -183,16 +185,16 @@ class KgoRepeaterService(Service):
         except Exception as e:
             # Broad exception handling for any lower level connection errors etc
             # that might not be properly classed as `requests` exception.
-            self.logger.debug(
-                f"Status endpoint {self.who_am_i()} not ready: {e}")
+            self.logger.debug(f"Status endpoint {self.who_am_i()} not ready: {e}")
             return False
         else:
             return r.status_code == 200
 
     def _assert_running(self, node):
         assert node.name in self._pid_by_node
-        node.account.ssh_output(f"ps -p {self._pid_by_node[node.name]}",
-                                allow_fail=False)
+        node.account.ssh_output(
+            f"ps -p {self._pid_by_node[node.name]}", allow_fail=False
+        )
 
     def stop(self, *args, **kwargs):
         # On first call to stop, log status from the workers.
@@ -201,14 +203,13 @@ class KgoRepeaterService(Service):
             for node in self.nodes:
                 # This is only advisory, make errors non-fatal
                 try:
-                    r = requests.get(self._remote_url(node, "status"),
-                                     timeout=10)
-                    self.logger.debug(
-                        f"kgo-repeater status on node {node.name}:")
+                    r = requests.get(self._remote_url(node, "status"), timeout=10)
+                    self.logger.debug(f"kgo-repeater status on node {node.name}:")
                     self.logger.debug(json.dumps(r.json(), indent=2))
                 except:
                     self.logger.exception(
-                        f"Error getting pre-stop status on {node.name}")
+                        f"Error getting pre-stop status on {node.name}"
+                    )
 
         self._stopped = True
 
@@ -248,17 +249,18 @@ class KgoRepeaterService(Service):
         self.remote_to_all("activate")
 
     def await_group_ready(self):
-
         expect_members = self.workers * len(self.nodes)
 
         def group_ready():
             rpk = RpkTool(self.redpanda)
 
             if self.sasl_options is not None:
-                rpk = RpkTool(self.redpanda,
-                              username=self.sasl_options.username,
-                              password=self.sasl_options.password,
-                              sasl_mechanism=self.sasl_options.algorithm)
+                rpk = RpkTool(
+                    self.redpanda,
+                    username=self.sasl_options.username,
+                    password=self.sasl_options.password,
+                    sasl_mechanism=self.sasl_options.algorithm,
+                )
             try:
                 group = rpk.group_describe(self.group_name, summary=True)
             except Exception as e:
@@ -269,7 +271,8 @@ class KgoRepeaterService(Service):
 
             if group is None:
                 self.logger.debug(
-                    f"group_ready: {self.group_name} got None from describe")
+                    f"group_ready: {self.group_name} got None from describe"
+                )
                 return False
             elif group.state != "Stable":
                 self.logger.debug(
@@ -289,21 +292,18 @@ class KgoRepeaterService(Service):
 
         t1 = time.time()
         try:
-            self.redpanda.wait_until(group_ready,
-                                     timeout_sec=120,
-                                     backoff_sec=10,
-                                     err_msg=what)
+            self.redpanda.wait_until(
+                group_ready, timeout_sec=120, backoff_sec=10, err_msg=what
+            )
         except:
             # On failure, dump stacks on all workers in case there is an apparent client bug to investigate
             for node in self.nodes:
                 try:
-                    r = requests.get(self._remote_url(node, "print_stack"),
-                                     timeout=10)
+                    r = requests.get(self._remote_url(node, "print_stack"), timeout=10)
                     r.raise_for_status()
                 except Exception as e:
                     # Just log exceptions: we want to proceed with rest of teardown
-                    self.logger.warn(
-                        f"Failed to print stack on {node.name}: {e}")
+                    self.logger.warn(f"Failed to print stack on {node.name}: {e}")
 
             # On failure, inspect the group to identify which workers
             # specifically were absent.  This information helps to
@@ -329,7 +329,8 @@ class KgoRepeaterService(Service):
             raise
 
         self.logger.debug(
-            f"Group {self.group_name} became ready in {time.time() - t1}s")
+            f"Group {self.group_name} became ready in {time.time() - t1}s"
+        )
 
     def _get_status_reports(self):
         for node in self.nodes:
@@ -346,25 +347,24 @@ class KgoRepeaterService(Service):
         produced = 0
         consumed = 0
         for worker_status in self._get_status_reports():
-            produced += worker_status['produced']
-            consumed += worker_status['consumed']
+            produced += worker_status["produced"]
+            consumed += worker_status["consumed"]
 
         return produced, consumed
 
-    def latency_reports(self, report_type='e2e'):
+    def latency_reports(self, report_type="e2e"):
         """
         :return: 3-tuple of average p50, p90, and p99 latencies
         """
-        report_types = ['e2e', 'ack']
+        report_types = ["e2e", "ack"]
         if report_type not in report_types:
             raise RuntimeError(
-                f'Invalid report_type {report_type} passed, possible values are {report_types}'
+                f"Invalid report_type {report_type} passed, possible values are {report_types}"
             )
         latencies = []
         for worker_status in self._get_status_reports():
-            histogram = worker_status['latency'][report_type]
-            latencies.append(
-                (histogram['p50'], histogram['p90'], histogram['p99']))
+            histogram = worker_status["latency"][report_type]
+            latencies.append((histogram["p50"], histogram["p90"], histogram["p99"]))
 
         def tuple_op(binary_op, a, b):
             """Perform binary_op() across all fields of tuple a and b"""
@@ -391,9 +391,13 @@ class KgoRepeaterService(Service):
 
         def check():
             p, c = self.total_messages()
-            pct = min(
-                float(p - initial_p) / (msg_count),
-                float(c - initial_c) / (msg_count)) * 100
+            pct = (
+                min(
+                    float(p - initial_p) / (msg_count),
+                    float(c - initial_c) / (msg_count),
+                )
+                * 100
+            )
             self.logger.debug(
                 f"await_progress: {pct:.1f}% p={p} c={c}, initial_p={initial_p}, initial_c={initial_c}, await count {msg_count})"
             )
@@ -404,10 +408,9 @@ class KgoRepeaterService(Service):
         # the system isn't at peak throughput (e.g. when it's just warming up)
         timeout_sec = max(timeout_sec, 60)
 
-        self.redpanda.wait_until(check,
-                                 timeout_sec=timeout_sec,
-                                 backoff_sec=1,
-                                 err_msg=err_msg)
+        self.redpanda.wait_until(
+            check, timeout_sec=timeout_sec, backoff_sec=1, err_msg=err_msg
+        )
 
     def reset(self):
         """Internally resets the metrics accumulated within the kgo-repeater"""
@@ -417,11 +420,9 @@ class KgoRepeaterService(Service):
 
 
 @contextmanager
-def repeater_traffic(context,
-                     redpanda,
-                     *args,
-                     cleanup: Optional[Callable] = None,
-                     **kwargs):
+def repeater_traffic(
+    context, redpanda, *args, cleanup: Optional[Callable] = None, **kwargs
+):
     svc = KgoRepeaterService(context, redpanda, *args, **kwargs)
     svc.start()
     svc.prepare_and_activate()

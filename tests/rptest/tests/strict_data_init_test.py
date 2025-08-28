@@ -36,7 +36,9 @@ class StrictDataInitTest(RedpandaTest):
             bad_lines = b.node_to_lines[target_node]
             assert any(STRICT_DATA_ERR_MSG_SUFFIX in b for b in bad_lines)
         else:
-            assert False, "The reason why redpanda failed to start isn't due to a nonexistent magic file"
+            assert False, (
+                "The reason why redpanda failed to start isn't due to a nonexistent magic file"
+            )
 
         # Write the empty `.redpanda_data_dir` file then start
         # the node once more. It should start this time.

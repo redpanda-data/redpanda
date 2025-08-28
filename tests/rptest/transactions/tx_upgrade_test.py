@@ -38,9 +38,9 @@ class TxUpgradeTest(RedpandaTest):
     """
     Basic test verifying if mapping between transaction coordinator and transaction_id is preserved across the upgrades
     """
+
     def __init__(self, test_context):
-        super(TxUpgradeTest, self).__init__(test_context=test_context,
-                                            num_brokers=3)
+        super(TxUpgradeTest, self).__init__(test_context=test_context, num_brokers=3)
         self.installer = self.redpanda._installer
         self.partition_count = 10
         self.msg_sent = 0
@@ -48,9 +48,12 @@ class TxUpgradeTest(RedpandaTest):
 
     def setUp(self):
         self.old_version = self.installer.highest_from_prior_feature_version(
-            RedpandaInstaller.HEAD)
+            RedpandaInstaller.HEAD
+        )
 
-        self.old_version_str = f"v{self.old_version[0]}.{self.old_version[1]}.{self.old_version[2]}"
+        self.old_version_str = (
+            f"v{self.old_version[0]}.{self.old_version[1]}.{self.old_version[2]}"
+        )
         self.installer.install(self.redpanda.nodes, self.old_version)
         super(TxUpgradeTest, self).setUp()
 
@@ -63,18 +66,22 @@ class TxUpgradeTest(RedpandaTest):
                 assert False, "failed to deliver message: %s" % err
 
         for i in range(self.producers_count):
-            producer = ck.Producer({
-                'bootstrap.servers': self.redpanda.brokers(),
-                'transactional.id': self._tx_id(i),
-            })
+            producer = ck.Producer(
+                {
+                    "bootstrap.servers": self.redpanda.brokers(),
+                    "transactional.id": self._tx_id(i),
+                }
+            )
             producer.init_transactions()
             producer.begin_transaction()
             for m in range(random.randint(1, 50)):
-                producer.produce(topic,
-                                 f"p-{i}-key-{m}",
-                                 f"p-{i}-value-{m}",
-                                 random.randint(0, self.partition_count - 1),
-                                 callback=delivery_callback)
+                producer.produce(
+                    topic,
+                    f"p-{i}-key-{m}",
+                    f"p-{i}-value-{m}",
+                    random.randint(0, self.partition_count - 1),
+                    callback=delivery_callback,
+                )
             producer.commit_transaction()
             producer.flush()
 
@@ -83,8 +90,7 @@ class TxUpgradeTest(RedpandaTest):
         admin = Admin(self.redpanda)
         for idx in range(self.producers_count):
             c = admin.find_tx_coordinator(self._tx_id(idx))
-            mapping[self._tx_id(
-                idx)] = f"{c['ntp']['topic']}/{c['ntp']['partition']}"
+            mapping[self._tx_id(idx)] = f"{c['ntp']['topic']}/{c['ntp']['partition']}"
 
         return mapping
 
@@ -107,8 +113,9 @@ class TxUpgradeTest(RedpandaTest):
         self.redpanda.restart_nodes([first_node])
         unique_versions = wait_for_num_versions(self.redpanda, 2)
         assert self.old_version_str in unique_versions, unique_versions
-        assert self._get_tx_id_mapping(
-        ) == initial_mapping, "Mapping changed after upgrading one of the nodes"
+        assert self._get_tx_id_mapping() == initial_mapping, (
+            "Mapping changed after upgrading one of the nodes"
+        )
 
         # verify if txs are handled correctly with mixed versions
         self._populate_tx_coordinator(topic.name)
@@ -118,17 +125,25 @@ class TxUpgradeTest(RedpandaTest):
         self.redpanda.restart_nodes(self.redpanda.nodes)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
         assert self.old_version_str not in unique_versions, unique_versions
-        assert self._get_tx_id_mapping(
-        ) == initial_mapping, "Mapping changed after full upgrade"
+        assert self._get_tx_id_mapping() == initial_mapping, (
+            "Mapping changed after full upgrade"
+        )
 
 
 class TxUpgradeRevertTest(RedpandaTest):
     """Tests that the local snapshot is compatible after the upgrade is reverted"""
-    class TxStateGenerator():
+
+    class TxStateGenerator:
         """A traffic generating utility for transactions. Traffic can be paused and resumed as needed to see a consistent snapshot
         of the transactions and tally the state as seen by clients vs the brokers."""
-        def __init__(self, num_producers: int, topic_name: str,
-                     num_partitions: int, redpanda: RedpandaService) -> None:
+
+        def __init__(
+            self,
+            num_producers: int,
+            topic_name: str,
+            num_partitions: int,
+            redpanda: RedpandaService,
+        ) -> None:
             self.num_producers = num_producers
             self.topic_name = topic_name
             self.tx_id_counter = 0
@@ -154,20 +169,22 @@ class TxUpgradeRevertTest(RedpandaTest):
             self.resume()
             self.stop()
             self.thread.join(timeout=30)
-            assert not self.failed, "A subset of transactional producers failed, check test log output"
+            assert not self.failed, (
+                "A subset of transactional producers failed, check test log output"
+            )
             self.redpanda.logger.debug(
-                json.dumps(self.tx_states, sort_keys=True, indent=4))
+                json.dumps(self.tx_states, sort_keys=True, indent=4)
+            )
 
         class TxState(str, Enum):
-            INIT = 'init',
-            BEGIN = 'begin',
-            PRODUCED = 'produced',
-            COMMITTED = 'committed',
-            ABORTED = 'aborted',
+            INIT = ("init",)
+            BEGIN = ("begin",)
+            PRODUCED = ("produced",)
+            COMMITTED = ("committed",)
+            ABORTED = ("aborted",)
 
         def random_string(self):
-            return ''.join(
-                random.choice(string.ascii_letters) for _ in range(5))
+            return "".join(random.choice(string.ascii_letters) for _ in range(5))
 
         def pause(self):
             self.workload_paused = True
@@ -190,15 +207,16 @@ class TxUpgradeRevertTest(RedpandaTest):
                 return id
 
         def do_transaction(self, producer: ck.Producer, partitions: list[int]):
-
             producer.begin_transaction()
             yield self.TxState.BEGIN
 
             for partition in partitions:
-                producer.produce(topic=self.topic_name,
-                                 value=self.random_string(),
-                                 key=self.random_string(),
-                                 partition=partition)
+                producer.produce(
+                    topic=self.topic_name,
+                    value=self.random_string(),
+                    key=self.random_string(),
+                    partition=partition,
+                )
             producer.flush()
             yield self.TxState.PRODUCED
 
@@ -209,38 +227,41 @@ class TxUpgradeRevertTest(RedpandaTest):
                 producer.abort_transaction()
                 yield self.TxState.ABORTED
 
-        def update_tx_state(self, producer_id, state, partitions: list[int],
-                            sequence: int):
+        def update_tx_state(
+            self, producer_id, state, partitions: list[int], sequence: int
+        ):
             with self.lock:
                 for p in partitions:
-                    self.tx_states[p][producer_id] = dict(state=state,
-                                                          sequence=sequence)
+                    self.tx_states[p][producer_id] = dict(
+                        state=state, sequence=sequence
+                    )
 
         def dump_debug_transaction_state(self):
             self.redpanda.logger.debug("---- test producer state state ----")
             self.redpanda.logger.debug(
-                json.dumps(self.tx_states, sort_keys=True, indent=4))
+                json.dumps(self.tx_states, sort_keys=True, indent=4)
+            )
             self.redpanda.logger.debug("----- broker partition state ----")
             for partition in range(0, self.num_partitions):
                 partition_txes = self.admin.get_transactions(
-                    topic=self.topic_name,
-                    partition=partition,
-                    namespace="kafka")
+                    topic=self.topic_name, partition=partition, namespace="kafka"
+                )
                 self.redpanda.logger.debug(partition_txes)
 
         def random_transaction(self):
             id = self.tx_id()
-            producer = ck.Producer({
-                'bootstrap.servers': self.redpanda.brokers(),
-                'transactional.id': id,
-                'transaction.timeout.ms': 1000000
-            })
+            producer = ck.Producer(
+                {
+                    "bootstrap.servers": self.redpanda.brokers(),
+                    "transactional.id": id,
+                    "transaction.timeout.ms": 1000000,
+                }
+            )
 
             producer.init_transactions()
-            self.update_tx_state(producer_id=id,
-                                 state=self.TxState.INIT,
-                                 partitions=[],
-                                 sequence=-1)
+            self.update_tx_state(
+                producer_id=id, state=self.TxState.INIT, partitions=[], sequence=-1
+            )
 
             sequence = 0
             try:
@@ -250,21 +271,21 @@ class TxUpgradeRevertTest(RedpandaTest):
                         continue
                     with self.semaphore:
                         partitions = random.sample(
-                            range(0, self.num_partitions),
-                            random.randint(0, 5))
+                            range(0, self.num_partitions), random.randint(0, 5)
+                        )
                         for state in self.do_transaction(
-                                producer=producer, partitions=partitions):
-                            self.update_tx_state(id,
-                                                 state,
-                                                 partitions,
-                                                 sequence=sequence)
+                            producer=producer, partitions=partitions
+                        ):
+                            self.update_tx_state(
+                                id, state, partitions, sequence=sequence
+                            )
                         sequence += 1
             except Exception as e:
                 self.failed = True
                 self.dump_debug_transaction_state()
                 self.redpanda.logger.error(
-                    f"Exception running transactions with producer {id}",
-                    exc_info=True)
+                    f"Exception running transactions with producer {id}", exc_info=True
+                )
 
         def start_workload(self):
             producers = []
@@ -283,11 +304,12 @@ class TxUpgradeRevertTest(RedpandaTest):
                         f"Validating partition tx state for {self.topic_name}/{p}"
                     )
                     rp_tx_state = self.admin.get_transactions(
-                        topic=self.topic_name, partition=p,
-                        namespace="kafka").get("active_transactions", [])
+                        topic=self.topic_name, partition=p, namespace="kafka"
+                    ).get("active_transactions", [])
                     local_tx_state = self.tx_states[p]
                     local_active_pids = [
-                        int(pid) for pid, tx_state in local_tx_state.items()
+                        int(pid)
+                        for pid, tx_state in local_tx_state.items()
                         if tx_state["state"] in ["begin", "produced"]
                     ]
                     local_active_pids.sort()
@@ -305,15 +327,16 @@ class TxUpgradeRevertTest(RedpandaTest):
                     do_check,
                     timeout_sec=20,
                     backoff_sec=2,
-                    err_msg=
-                    "Invalid active transaction state, check log for details")
+                    err_msg="Invalid active transaction state, check log for details",
+                )
             except TimeoutError as e:
                 self.dump_debug_transaction_state()
                 raise e
 
     def __init__(self, test_context):
-        super(TxUpgradeRevertTest, self).__init__(test_context=test_context,
-                                                  num_brokers=3)
+        super(TxUpgradeRevertTest, self).__init__(
+            test_context=test_context, num_brokers=3
+        )
         self.installer = self.redpanda._installer
         self.partition_count = 10
         self.msg_sent = 0
@@ -321,9 +344,12 @@ class TxUpgradeRevertTest(RedpandaTest):
 
     def setUp(self):
         self.old_version = self.installer.highest_from_prior_feature_version(
-            RedpandaInstaller.HEAD)
+            RedpandaInstaller.HEAD
+        )
 
-        self.old_version_str = f"v{self.old_version[0]}.{self.old_version[1]}.{self.old_version[2]}"
+        self.old_version_str = (
+            f"v{self.old_version[0]}.{self.old_version[1]}.{self.old_version[2]}"
+        )
         # Install and upgrade from an older version.
         self.installer.install(self.redpanda.nodes, self.old_version)
         self.admin = Admin(self.redpanda)
@@ -341,9 +367,7 @@ class TxUpgradeRevertTest(RedpandaTest):
         self.redpanda.restart_nodes([node])
         # Disable maintenance mode
         self.rpk.cluster_maintenance_disable(node=node_idx)
-        self.admin.await_stable_leader(topic=topic,
-                                       replication=3,
-                                       timeout_s=30)
+        self.admin.await_stable_leader(topic=topic, replication=3, timeout_s=30)
 
     @skip_debug_mode
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -353,10 +377,12 @@ class TxUpgradeRevertTest(RedpandaTest):
         partition_count = 50
         topic = TopicSpec(partition_count=50)
         self.client().create_topic(topic)
-        with self.TxStateGenerator(num_producers=20,
-                                   topic_name=topic.name,
-                                   num_partitions=50,
-                                   redpanda=self.redpanda) as traffic:
+        with self.TxStateGenerator(
+            num_producers=20,
+            topic_name=topic.name,
+            num_partitions=50,
+            redpanda=self.redpanda,
+        ) as traffic:
             # Populate some transactions state.
             sleep(30)
             # Pause the workload and upgrade one of the nodes
@@ -365,8 +391,7 @@ class TxUpgradeRevertTest(RedpandaTest):
             first_node = self.redpanda.nodes[0]
             wait_for_num_versions(self.redpanda, 1)
             # do the upgrade
-            self.install_one_node(first_node, RedpandaInstaller.HEAD,
-                                  topic.name)
+            self.install_one_node(first_node, RedpandaInstaller.HEAD, topic.name)
             wait_for_num_versions(self.redpanda, 2)
             traffic.validate_active_tx_states()
             # Ensure things can progress from where they were paused.

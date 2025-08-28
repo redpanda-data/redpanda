@@ -35,12 +35,12 @@ class StreamVerifierTest(RedpandaTest):
         extra_rp_conf = {
             "id_allocator_replication": self.num_replicas,
             "default_topic_replications": self.num_replicas,
-            "default_topic_partitions": self.num_partitions
+            "default_topic_partitions": self.num_partitions,
         }
         # Init RP cluster with 3 brokers
-        super(StreamVerifierTest, self).__init__(num_brokers=3,
-                                                 test_context=test_context,
-                                                 extra_rp_conf=extra_rp_conf)
+        super(StreamVerifierTest, self).__init__(
+            num_brokers=3, test_context=test_context, extra_rp_conf=extra_rp_conf
+        )
 
         # Calculated speed of producer is ~100k messages per minute on EC2,
         # and 7.2k per minute in docker. Which is ~1500/sec and 120/sec
@@ -64,63 +64,68 @@ class StreamVerifierTest(RedpandaTest):
     def create_topics(self):
         # Source topics
         self.client().create_topic(
-            TopicSpec(name=self.source_topic,
-                      partition_count=self.num_partitions,
-                      replication_factor=self.num_replicas))
+            TopicSpec(
+                name=self.source_topic,
+                partition_count=self.num_partitions,
+                replication_factor=self.num_replicas,
+            )
+        )
 
         self.client().create_topic(
-            TopicSpec(name=self.target_topic,
-                      partition_count=self.num_partitions,
-                      replication_factor=self.num_replicas))
+            TopicSpec(
+                name=self.target_topic,
+                partition_count=self.num_partitions,
+                replication_factor=self.num_replicas,
+            )
+        )
 
-    def start_producer(self,
-                       wait_msg_count=50,
-                       messages_per_sec=0,
-                       timeout=30):
-        self.verifier.remote_start_produce(self.source_topic,
-                                           self.default_message_count,
-                                           messages_per_sec=messages_per_sec)
+    def start_producer(self, wait_msg_count=50, messages_per_sec=0, timeout=30):
+        self.verifier.remote_start_produce(
+            self.source_topic,
+            self.default_message_count,
+            messages_per_sec=messages_per_sec,
+        )
         self.logger.info(f"Waiting for {wait_msg_count} produces messages")
-        self.verifier.wait_for_processed_count('produce', wait_msg_count,
-                                               timeout)
+        self.verifier.wait_for_processed_count("produce", wait_msg_count, timeout)
         self.logger.info(f"Produce action reached {wait_msg_count} messages.")
 
     def start_atomic(self, wait_msg_count=50, messages_per_sec=0, timeout=30):
-        self.verifier.remote_start_atomic(self.source_topic,
-                                          self.target_topic,
-                                          messages_per_sec=messages_per_sec)
-        self.verifier.wait_for_processed_count('atomic', wait_msg_count,
-                                               timeout)
+        self.verifier.remote_start_atomic(
+            self.source_topic, self.target_topic, messages_per_sec=messages_per_sec
+        )
+        self.verifier.wait_for_processed_count("atomic", wait_msg_count, timeout)
 
         # Milestone check
         self.logger.info(f"Atomic action reached {wait_msg_count} messages. ")
 
     def run_consumer(self):
         self.verifier.remote_start_verify(self.target_topic)
-        self.verifier.remote_wait_action('consume')
+        self.verifier.remote_wait_action("consume")
         verify_status = self.verifier.remote_stop_verify()
         self.logger.info(
-            f"Consume action finished:\n{json.dumps(verify_status, indent=2)}")
+            f"Consume action finished:\n{json.dumps(verify_status, indent=2)}"
+        )
 
     def verify(self):
         produce_status = self.verifier.get_produce_status()
         atomic_status = self.verifier.get_atomic_status()
         verify_status = self.verifier.get_verify_status()
-        produced_count = produce_status['processed_messages']
-        atomic_count = atomic_status['processed_messages']
-        verify_count = verify_status['processed_messages']
+        produced_count = produce_status["processed_messages"]
+        atomic_count = atomic_status["processed_messages"]
+        verify_count = verify_status["processed_messages"]
 
-        assert produced_count == atomic_count, \
-            "Produced/Atomic message count mismatch: " \
-            f"{produced_count}/{atomic_count}"
+        assert produced_count == atomic_count, (
+            f"Produced/Atomic message count mismatch: {produced_count}/{atomic_count}"
+        )
 
-        assert atomic_count == verify_count, \
-            "Atomic/Consumed message count mismatch: " \
-            f"{atomic_count}/{verify_count}"
+        assert atomic_count == verify_count, (
+            f"Atomic/Consumed message count mismatch: {atomic_count}/{verify_count}"
+        )
 
-        errors = "\n".join(verify_status['errors'])
-        assert len(verify_status['errors']) < 1, \
+        errors = "\n".join(verify_status["errors"])
+        assert len(verify_status["errors"]) < 1, (
             f"Consume action has validation errors:\n{errors}"
+        )
 
     @cluster(num_nodes=4)
     def test_simple_produce_consume_txn_with_add_node(self):
@@ -134,11 +139,13 @@ class StreamVerifierTest(RedpandaTest):
         # consumer will hit EOF earlier than produce finishes
         # sleep mode will wait for 'consume_sleep_time_s'
         # and check if new messages appeared
-        self.verifier.update_service_config({
-            "consume_sleep_time_s": self.consume_sleep_time_s,
-            "consume_stop_criteria": "sleep",
-            "msg_per_txn": 1
-        })
+        self.verifier.update_service_config(
+            {
+                "consume_sleep_time_s": self.consume_sleep_time_s,
+                "consume_stop_criteria": "sleep",
+                "msg_per_txn": 1,
+            }
+        )
 
         # Produce
         self.logger.info("Starting producer")
@@ -152,7 +159,7 @@ class StreamVerifierTest(RedpandaTest):
 
         # Milestone check
         self.logger.info("Waiting for produce to finish")
-        self.verifier.remote_wait_action('produce')
+        self.verifier.remote_wait_action("produce")
 
         # Make sure that producer is stopped and get the status
         produce_status = self.verifier.remote_stop_produce()
@@ -161,10 +168,11 @@ class StreamVerifierTest(RedpandaTest):
         )
 
         # Wait for atomic action to finish and get the status
-        self.verifier.remote_wait_action('atomic')
+        self.verifier.remote_wait_action("atomic")
         atomic_status = self.verifier.remote_stop_atomic()
         self.logger.info(
-            f"Atomic action finished:\n{json.dumps(atomic_status, indent=2)}")
+            f"Atomic action finished:\n{json.dumps(atomic_status, indent=2)}"
+        )
 
         # Consume and verify
         self.run_consumer()

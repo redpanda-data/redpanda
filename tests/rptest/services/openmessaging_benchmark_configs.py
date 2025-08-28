@@ -42,18 +42,18 @@ class OMBSampleConfigurations:
 
     @staticmethod
     def range(min_val: float, max_val: float) -> OMBValidator:
-        return (lambda x: x >= min_val and x <= max_val,
-                f"Expected in range [{min_val}, {max_val}], check failed.")
+        return (
+            lambda x: x >= min_val and x <= max_val,
+            f"Expected in range [{min_val}, {max_val}], check failed.",
+        )
 
     @staticmethod
     def lte(max_val: float) -> OMBValidator:
-        return (lambda x: x <= max_val,
-                f"Expected to be <= {max_val}, check failed.")
+        return (lambda x: x <= max_val, f"Expected to be <= {max_val}, check failed.")
 
     @staticmethod
     def gte(min_val: float) -> OMBValidator:
-        return (lambda x: x >= min_val,
-                f"Expected to be >= {min_val}, check failed.")
+        return (lambda x: x >= min_val, f"Expected to be >= {min_val}, check failed.")
 
     # Values here are empirical based on historical runs across releases.
     # Typically e2e latency numbers are sub 8-9ms.
@@ -95,13 +95,11 @@ class OMBSampleConfigurations:
         E2E_LATENCY_50PCT: [lte(4)],
         E2E_LATENCY_75PCT: [lte(5)],
         E2E_LATENCY_95PCT: [lte(10)],
-        AVG_THROUGHPUT_MBPS: [gte(600)]
+        AVG_THROUGHPUT_MBPS: [gte(600)],
     }
 
     @staticmethod
-    def validate_metrics(metrics,
-                         validator: ValidatorDict,
-                         raise_exceptions=True):
+    def validate_metrics(metrics, validator: ValidatorDict, raise_exceptions=True):
         """Validates some predefined metrics rules against the metrics data.
 
         Args:
@@ -147,7 +145,7 @@ class OMBSampleConfigurations:
         "consumer_config": {
             "auto.offset.reset": "earliest",
             "enable.auto.commit": "false",
-            "max.partition.fetch.bytes": 131072
+            "max.partition.fetch.bytes": 131072,
         },
     }
 
@@ -165,7 +163,7 @@ class OMBSampleConfigurations:
         "consumer_config": {
             "auto.offset.reset": "earliest",
             "enable.auto.commit": "false",
-            "max.partition.fetch.bytes": 131072
+            "max.partition.fetch.bytes": 131072,
         },
     }
 
@@ -183,7 +181,7 @@ class OMBSampleConfigurations:
         "consumer_config": {
             "auto.offset.reset": "earliest",
             "enable.auto.commit": "false",
-            "max.partition.fetch.bytes": 131072
+            "max.partition.fetch.bytes": 131072,
         },
     }
 
@@ -201,7 +199,7 @@ class OMBSampleConfigurations:
         "consumer_config": {
             "auto.offset.reset": "earliest",
             "enable.auto.commit": "false",
-            "max.partition.fetch.bytes": 131072
+            "max.partition.fetch.bytes": 131072,
         },
     }
 
@@ -219,7 +217,7 @@ class OMBSampleConfigurations:
         "consumer_config": {
             "auto.offset.reset": "earliest",
             "enable.auto.commit": "false",
-            "max.partition.fetch.bytes": 131072
+            "max.partition.fetch.bytes": 131072,
         },
     }
 
@@ -237,7 +235,7 @@ class OMBSampleConfigurations:
         "consumer_config": {
             "auto.offset.reset": "earliest",
             "enable.auto.commit": "false",
-            "max.partition.fetch.bytes": 131072
+            "max.partition.fetch.bytes": 131072,
         },
     }
 
@@ -255,7 +253,7 @@ class OMBSampleConfigurations:
         "producer_rate": 1250000,
         "consumer_backlog_size_GB": 0,
         "test_duration_minutes": 60,
-        "warmup_duration_minutes": 5
+        "warmup_duration_minutes": 5,
     }
 
     SIMPLE_WORKLOAD = {
@@ -308,28 +306,28 @@ class OMBSampleConfigurations:
     # the test parameters and use them as keys to lookup the corresponding
     # driver and workload combination.
     DRIVERS = {
-        "SIMPLE_DRIVER":
-        SIMPLE_DRIVER,
-        "ACK_ALL_GROUP_LINGER_1MS":
-        ACK_ALL_GROUP_LINGER_1MS,
-        "ACK_ALL_GROUP_LINGER_1MS_WITH_IDEMPOTENCE":
-        ACK_ALL_GROUP_LINGER_1MS_WITH_IDEMPOTENCE,
-        "ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT":
-        ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT,
-        "ACK_ALL_GROUP_LINGER_10MS":
-        ACK_ALL_GROUP_LINGER_10MS,
-        "ACK_ALL_GROUP_LINGER_10MS_WITH_IDEMPOTENCE":
-        ACK_ALL_GROUP_LINGER_10MS_WITH_IDEMPOTENCE,
+        "SIMPLE_DRIVER": SIMPLE_DRIVER,
+        "ACK_ALL_GROUP_LINGER_1MS": ACK_ALL_GROUP_LINGER_1MS,
+        "ACK_ALL_GROUP_LINGER_1MS_WITH_IDEMPOTENCE": ACK_ALL_GROUP_LINGER_1MS_WITH_IDEMPOTENCE,
+        "ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT": ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT,
+        "ACK_ALL_GROUP_LINGER_10MS": ACK_ALL_GROUP_LINGER_10MS,
+        "ACK_ALL_GROUP_LINGER_10MS_WITH_IDEMPOTENCE": ACK_ALL_GROUP_LINGER_10MS_WITH_IDEMPOTENCE,
     }
 
     # Workload key maps to the actual workload and the corresponding
     # metric validator.
     WORKLOADS = {
         "SIMPLE_WORKLOAD": (SIMPLE_WORKLOAD, UNIT_TEST_LATENCY_VALIDATOR),
-        "DEDICATED_NODE_WORKLOAD":
-        (DEDICATED_NODE_WORKLOAD, UNIT_TEST_LATENCY_VALIDATOR),
-        "TOPIC1_PART100_1KB_4PROD_1250K_RATE":
-        (TOPIC1_PART100_1KB_4PROD_1250K_RATE, PROD_ENV_VALIDATOR),
-        "RELEASE_CERT_SMOKE_LOAD_625k":
-        (RELEASE_CERT_SMOKE_LOAD_625k, RELEASE_SMOKE_TEST_VALIDATOR),
+        "DEDICATED_NODE_WORKLOAD": (
+            DEDICATED_NODE_WORKLOAD,
+            UNIT_TEST_LATENCY_VALIDATOR,
+        ),
+        "TOPIC1_PART100_1KB_4PROD_1250K_RATE": (
+            TOPIC1_PART100_1KB_4PROD_1250K_RATE,
+            PROD_ENV_VALIDATOR,
+        ),
+        "RELEASE_CERT_SMOKE_LOAD_625k": (
+            RELEASE_CERT_SMOKE_LOAD_625k,
+            RELEASE_SMOKE_TEST_VALIDATOR,
+        ),
     }

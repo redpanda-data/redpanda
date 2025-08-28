@@ -23,7 +23,8 @@ def now():
 
 
 class DataMigrationTestMixin:
-    """ assumes self.redpanda, self.admin and self.client() present """
+    """assumes self.redpanda, self.admin and self.client() present"""
+
     def wait_partitions_appear(self, topics: list[TopicSpec]):
         # we may be unlucky to query a slow node
         def topic_has_all_partitions(t: TopicSpec):
@@ -40,19 +41,23 @@ class DataMigrationTestMixin:
                 msg += f"got {len(self.client().describe_topic(t.name).partitions)} partitions\n"
             return msg
 
-        wait_until(lambda: all(topic_has_all_partitions(t) for t in topics),
-                   timeout_sec=90,
-                   backoff_sec=1,
-                   err_msg=err_msg)
+        wait_until(
+            lambda: all(topic_has_all_partitions(t) for t in topics),
+            timeout_sec=90,
+            backoff_sec=1,
+            err_msg=err_msg,
+        )
 
     def wait_partitions_disappear(self, topics: list[str]):
         # we may be unlucky to query a slow node
         wait_until(
-            lambda: all(self.client().describe_topic(t).partitions == []
-                        for t in topics),
+            lambda: all(
+                self.client().describe_topic(t).partitions == [] for t in topics
+            ),
             timeout_sec=90,
             backoff_sec=1,
-            err_msg=f"Failed waiting for partitions to disappear")
+            err_msg=f"Failed waiting for partitions to disappear",
+        )
 
     def get_migration(self, id, node=None):
         try:
@@ -66,8 +71,7 @@ class DataMigrationTestMixin:
     def get_migrations_map(self, node=None):
         self.redpanda.logger.debug("calling self.admin.list_data_migrations")
         migrations = self.admin.list_data_migrations(node).json()
-        self.redpanda.logger.debug(
-            "received self.admin.list_data_migrations result")
+        self.redpanda.logger.debug("received self.admin.list_data_migrations result")
         return {migration["id"]: migration for migration in migrations}
 
     def on_all_live_nodes(self, migration_id, predicate):
@@ -76,8 +80,7 @@ class DataMigrationTestMixin:
         for n in self.redpanda.nodes:
             try:
                 map = self.get_migrations_map(n)
-                self.redpanda.logger.debug(
-                    f"migrations on node {n.name}: {map}")
+                self.redpanda.logger.debug(f"migrations on node {n.name}: {map}")
                 list_item = map[migration_id] if migration_id in map else None
                 individual = self.get_migration(migration_id, n)
 
@@ -99,7 +102,7 @@ class DataMigrationTestMixin:
         def migration_present_on_node(m):
             if m is None:
                 return False
-            self.validate_timing(assure_created_after, m['created_timestamp'])
+            self.validate_timing(assure_created_after, m["created_timestamp"])
             return True
 
         def migration_is_present(id: int):
@@ -109,10 +112,10 @@ class DataMigrationTestMixin:
             lambda: migration_is_present(migration_id),
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=f"Expected migration with id {migration_id} is present")
+            err_msg=f"Expected migration with id {migration_id} is present",
+        )
 
-    def create_and_wait(self, migration: InboundDataMigration
-                        | OutboundDataMigration):
+    def create_and_wait(self, migration: InboundDataMigration | OutboundDataMigration):
         def migration_id_if_exists():
             for n in self.redpanda.nodes:
                 for m in self.admin.list_data_migrations(n).json():
@@ -131,8 +134,8 @@ class DataMigrationTestMixin:
                 raise
             migration_id = maybe_id
             self.redpanda.logger.info(
-                f"create migration failed "
-                f"but migration {migration_id} present: {e}")
+                f"create migration failed but migration {migration_id} present: {e}"
+            )
 
         self.wait_migration_appear(migration_id, time_before_creation)
 
@@ -145,10 +148,9 @@ class DataMigrationTestMixin:
         except requests.exceptions.HTTPError:
             pass
 
-    def wait_for_migration_states(self,
-                                  id: int,
-                                  states: list[str],
-                                  assure_completed_after: int = 0):
+    def wait_for_migration_states(
+        self, id: int, states: list[str], assure_completed_after: int = 0
+    ):
         def migration_in_one_of_states_on_node(m):
             if m is None:
                 return False
@@ -160,17 +162,14 @@ class DataMigrationTestMixin:
             return m["state"] in states
 
         def migration_in_one_of_states():
-            return self.on_all_live_nodes(id,
-                                          migration_in_one_of_states_on_node)
+            return self.on_all_live_nodes(id, migration_in_one_of_states_on_node)
 
-        self.logger.info(f'waiting for {" or ".join(states)}')
+        self.logger.info(f"waiting for {' or '.join(states)}")
         wait_until(
             migration_in_one_of_states,
             timeout_sec=90,
             backoff_sec=1,
-            err_msg=
-            f"Failed waiting for migration {id} to reach one of {states} states"
+            err_msg=f"Failed waiting for migration {id} to reach one of {states} states",
         )
-        if all(state not in ('planned', 'finished', 'cancelled')
-               for state in states):
+        if all(state not in ("planned", "finished", "cancelled") for state in states):
             self.assure_not_deletable(id)

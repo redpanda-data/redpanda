@@ -19,7 +19,10 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import SISettings
-from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierRandomConsumer
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierProducer,
+    KgoVerifierRandomConsumer,
+)
 
 
 class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
@@ -39,65 +42,76 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
     # just this many reads will not be very fast in this particular test.
     rand_consumer_msgs_per_pass = 100
 
-    topics = (TopicSpec(partition_count=100, replication_factor=3), )
+    topics = (TopicSpec(partition_count=100, replication_factor=3),)
     test_defaults = {
-        'default':
-        dict(log_segment_size=1024 * 1024,
-             cloud_storage_cache_size=10 * 1024 * 1024),
+        "default": dict(
+            log_segment_size=1024 * 1024, cloud_storage_cache_size=10 * 1024 * 1024
+        ),
     }
 
     def __init__(self, test_context, *args, **kwargs):
         test_name = test_context.test_name
-        si_params = self.test_defaults.get(
-            test_name) or self.test_defaults.get('default')
+        si_params = self.test_defaults.get(test_name) or self.test_defaults.get(
+            "default"
+        )
         si_settings = SISettings(test_context, **si_params)
-        self._segment_size = si_params['log_segment_size']
+        self._segment_size = si_params["log_segment_size"]
         extra_rp_conf = {
-            'disable_metrics': True,
-            'election_timeout_ms': 5000,
-            'raft_heartbeat_interval_ms': 500,
-            'segment_fallocation_step': 0x1000,
-            'retention_local_target_bytes_default': self._segment_size,
-            'retention_bytes': self._segment_size * 5,
-            'cloud_storage_cache_check_interval': 500,
+            "disable_metrics": True,
+            "election_timeout_ms": 5000,
+            "raft_heartbeat_interval_ms": 500,
+            "segment_fallocation_step": 0x1000,
+            "retention_local_target_bytes_default": self._segment_size,
+            "retention_bytes": self._segment_size * 5,
+            "cloud_storage_cache_check_interval": 500,
         }
-        super().__init__(test_context,
-                         num_brokers=3,
-                         extra_rp_conf=extra_rp_conf,
-                         si_settings=si_settings)
+        super().__init__(
+            test_context,
+            num_brokers=3,
+            extra_rp_conf=extra_rp_conf,
+            si_settings=si_settings,
+        )
         self._ctx = test_context
-        self._verifier_node = test_context.cluster.alloc(
-            ClusterSpec.simple_linux(1))[0]
+        self._verifier_node = test_context.cluster.alloc(ClusterSpec.simple_linux(1))[0]
         self.logger.info(
             f"Verifier node name: {self._verifier_node.name}, segment_size: {self._segment_size}"
         )
 
     def init_producer(self, msg_size, num_messages):
-        self._producer = KgoVerifierProducer(self._ctx, self.redpanda,
-                                             self.topic, msg_size,
-                                             num_messages,
-                                             [self._verifier_node])
+        self._producer = KgoVerifierProducer(
+            self._ctx,
+            self.redpanda,
+            self.topic,
+            msg_size,
+            num_messages,
+            [self._verifier_node],
+        )
 
     def init_consumer(self, msg_size, concurrency):
         self._consumer = KgoVerifierRandomConsumer(
-            self._ctx, self.redpanda, self.topic, msg_size,
-            self.rand_consumer_msgs_per_pass, concurrency,
-            [self._verifier_node])
+            self._ctx,
+            self.redpanda,
+            self.topic,
+            msg_size,
+            self.rand_consumer_msgs_per_pass,
+            concurrency,
+            [self._verifier_node],
+        )
 
     def free_nodes(self):
         super().free_nodes()
-        wait_until(lambda: self.redpanda.sockets_clear(self._verifier_node),
-                   timeout_sec=120,
-                   backoff_sec=10)
+        wait_until(
+            lambda: self.redpanda.sockets_clear(self._verifier_node),
+            timeout_sec=120,
+            backoff_sec=10,
+        )
         self.test_context.cluster.free_single(self._verifier_node)
 
-    @cluster(num_nodes=4,
-             log_allow_list=[r'failed to hydrate chunk.*NotFound'])
+    @cluster(num_nodes=4, log_allow_list=[r"failed to hydrate chunk.*NotFound"])
     @matrix(message_size=[10000], num_messages=[100000], concurrency=[2])
     def test_si_cache(self, message_size, num_messages, concurrency):
         if self.debug_mode:
-            self.logger.info(
-                "Skipping test in debug mode (requires release build)")
+            self.logger.info("Skipping test in debug mode (requires release build)")
             return
 
         self.init_producer(message_size, num_messages)
@@ -142,14 +156,15 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
 
         # Reader should eventually trigger some SI cache reads when
         # retention settings evict segment from local disk.
-        wait_until(lambda: not cache_files_closed(),
-                   timeout_sec=30,
-                   backoff_sec=5)
+        wait_until(lambda: not cache_files_closed(), timeout_sec=30, backoff_sec=5)
 
         self._consumer.wait()
 
         assert self._producer.produce_status.acked >= num_messages
-        assert self._consumer.consumer_status.validator.total_reads >= self.rand_consumer_msgs_per_pass * concurrency
+        assert (
+            self._consumer.consumer_status.validator.total_reads
+            >= self.rand_consumer_msgs_per_pass * concurrency
+        )
 
         assert not cache_files_closed()
         # Wait until all files are closed. The SI evicts all unused segments

@@ -12,19 +12,18 @@ import statistics
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
-from rptest.services.openmessaging_benchmark_configs import \
-    OMBSampleConfigurations
+from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
 from ducktape.mark import parametrize
 
 
 class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
-
     BENCHMARK_WAIT_TIME_MIN = 10
 
     def __init__(self, ctx):
         self._ctx = ctx
-        super(RedPandaOpenMessagingBenchmarkPerf,
-              self).__init__(test_context=ctx, num_brokers=3)
+        super(RedPandaOpenMessagingBenchmarkPerf, self).__init__(
+            test_context=ctx, num_brokers=3
+        )
 
     @cluster(num_nodes=6)
     def omb_test(self):
@@ -56,19 +55,22 @@ class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
             "consumer_config": {
                 "auto.offset.reset": "earliest",
                 "enable.auto.commit": "false",
-                "max.partition.fetch.bytes": 131072
+                "max.partition.fetch.bytes": 131072,
             },
         }
         validator = {
-            OMBSampleConfigurations.AVG_THROUGHPUT_MBPS:
-            [OMBSampleConfigurations.gte(70)]
+            OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
+                OMBSampleConfigurations.gte(70)
+            ]
         }
 
-        benchmark = OpenMessagingBenchmark(ctx=self._ctx,
-                                           redpanda=self.redpanda,
-                                           driver=driver,
-                                           workload=(workload, validator),
-                                           topology="ensemble")
+        benchmark = OpenMessagingBenchmark(
+            ctx=self._ctx,
+            redpanda=self.redpanda,
+            driver=driver,
+            workload=(workload, validator),
+            topology="ensemble",
+        )
 
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time_mins() + 5

@@ -25,16 +25,18 @@ from rptest.util import expect_exception
 class LogLevelTest(RedpandaTest):
     initial_log_level = "trace"
     MAX_LOG_EXPIRY_S = 5
-    extra_node_conf = {'verbose_logging_timeout_sec_max': MAX_LOG_EXPIRY_S}
+    extra_node_conf = {"verbose_logging_timeout_sec_max": MAX_LOG_EXPIRY_S}
 
     def __init__(self, *args, **kwargs):
         # Set an explicit log level rather than relying on the externally
         # configurable redpanda log level, so that the test knows where
         # it will start.
-        super().__init__(*args,
-                         log_level=self.initial_log_level,
-                         extra_node_conf=self.extra_node_conf,
-                         **kwargs)
+        super().__init__(
+            *args,
+            log_level=self.initial_log_level,
+            extra_node_conf=self.extra_node_conf,
+            **kwargs,
+        )
 
     @cluster(num_nodes=3)
     def test_get_loggers(self):
@@ -43,8 +45,9 @@ class LogLevelTest(RedpandaTest):
         loggers = admin.get_loggers(node)
         # Check for some basic loggers.
         expected_loggers = ["storage", "httpd", "kafka", "io"]
-        assert all([l in loggers for l in expected_loggers
-                    ]), "Expected at least {expected_loggers}: {loggers}"
+        assert all([l in loggers for l in expected_loggers]), (
+            "Expected at least {expected_loggers}: {loggers}"
+        )
 
         # Any logger we get we should be able to set.
         for logger in loggers:
@@ -54,10 +57,12 @@ class LogLevelTest(RedpandaTest):
 
             with self.redpanda.monitor_log(node) as mon:
                 admin.set_log_level(logger, "info")
-                mon.wait_until(f"Set log level for {{{logger}}}: .* -> info",
-                               timeout_sec=5,
-                               backoff_sec=1,
-                               err_msg=f"Never saw message for {{{logger}}}")
+                mon.wait_until(
+                    f"Set log level for {{{logger}}}: .* -> info",
+                    timeout_sec=5,
+                    backoff_sec=1,
+                    err_msg=f"Never saw message for {{{logger}}}",
+                )
 
     @cluster(num_nodes=3)
     def test_log_level_control(self):
@@ -71,7 +76,8 @@ class LogLevelTest(RedpandaTest):
                 f"Set log level for {{admin_api_server}}: {self.initial_log_level} -> warn",
                 timeout_sec=5,
                 backoff_sec=1,
-                err_msg="Never saw message")
+                err_msg="Never saw message",
+            )
 
         # set to debug. log level at warn, so shouldn't see it
         try:
@@ -81,7 +87,8 @@ class LogLevelTest(RedpandaTest):
                     "Set log level for {admin_api_server}: warn -> debug",
                     timeout_sec=10,
                     backoff_sec=1,
-                    err_msg="Never saw message")
+                    err_msg="Never saw message",
+                )
             assert False, "Should not have seen message"
         except ducktape.errors.TimeoutError:
             pass
@@ -93,7 +100,8 @@ class LogLevelTest(RedpandaTest):
                 "Set log level for {admin_api_server}: debug -> info",
                 timeout_sec=5,
                 backoff_sec=1,
-                err_msg="Never saw message")
+                err_msg="Never saw message",
+            )
 
         with self.redpanda.monitor_log(node) as mon:
             admin.set_log_level("admin_api_server", "debug", expires=5)
@@ -101,7 +109,8 @@ class LogLevelTest(RedpandaTest):
                 f"Expiring log level for {{admin_api_server}} to {self.initial_log_level}",
                 timeout_sec=10,
                 backoff_sec=1,
-                err_msg="Never saw message")
+                err_msg="Never saw message",
+            )
 
     @cluster(num_nodes=1)
     @parametrize(loggers=("admin_api_server", "raft"))
@@ -120,14 +129,18 @@ class LogLevelTest(RedpandaTest):
             admin.set_log_level(first_logger, "trace", expires=10)
             time.sleep(1)
             admin.set_log_level(second_logger, "trace", expires=10)
-            mon.wait_until(f"Expiring log level for {{{first_logger}}}",
-                           timeout_sec=15,
-                           backoff_sec=1,
-                           err_msg=f"Never saw Expiring for {first_logger}")
-            mon.wait_until(f"Expiring log level for {{{second_logger}}}",
-                           timeout_sec=15,
-                           backoff_sec=1,
-                           err_msg=f"Never saw Expiring for {second_logger}")
+            mon.wait_until(
+                f"Expiring log level for {{{first_logger}}}",
+                timeout_sec=15,
+                backoff_sec=1,
+                err_msg=f"Never saw Expiring for {first_logger}",
+            )
+            mon.wait_until(
+                f"Expiring log level for {{{second_logger}}}",
+                timeout_sec=15,
+                backoff_sec=1,
+                err_msg=f"Never saw Expiring for {second_logger}",
+            )
 
     @cluster(num_nodes=1)
     def test_log_level_persist_a_never_expire_request(self):
@@ -147,9 +160,11 @@ class LogLevelTest(RedpandaTest):
             admin.set_log_level("admin_api_server", "error", expires=0)
 
             try:
-                mon.wait_until("Expiring log level for {admin_api_server}",
-                               timeout_sec=15,
-                               backoff_sec=1)
+                mon.wait_until(
+                    "Expiring log level for {admin_api_server}",
+                    timeout_sec=15,
+                    backoff_sec=1,
+                )
                 assert False, "Should not have seen message"
             except ducktape.errors.TimeoutError:
                 pass
@@ -162,114 +177,118 @@ class LogLevelTest(RedpandaTest):
         admin = Admin(self.redpanda)
         node = self.redpanda.nodes[0]
 
-        def set_log_and_check(level,
-                              expiration,
-                              actual,
-                              force=False,
-                              orig=self.initial_log_level):
+        def set_log_and_check(
+            level, expiration, actual, force=False, orig=self.initial_log_level
+        ):
             with self.redpanda.monitor_log(node) as mon:
                 # note that this sends the request to all nodes in the cluster, synchronously
-                rsps = admin.set_log_level("admin_api_server",
-                                           level,
-                                           expires=expiration,
-                                           force=force)
-                assert all(
-                    r['expiration'] == actual for r in rsps
-                ), f"Expected clamped expirations: {json.dumps([{'expiration': r['expiration']} for r in rsps])}"
+                rsps = admin.set_log_level(
+                    "admin_api_server", level, expires=expiration, force=force
+                )
+                assert all(r["expiration"] == actual for r in rsps), (
+                    f"Expected clamped expirations: {json.dumps([{'expiration': r['expiration']} for r in rsps])}"
+                )
                 # check the log line
                 mon.wait_until(
                     f"Set log level for {{admin_api_server}}: {orig} -> {level} (expiring {actual}s)",
                     timeout_sec=5,
                     backoff_sec=1,
-                    err_msg="Never saw message")
+                    err_msg="Never saw message",
+                )
                 # confirm that the admin API reflects the expected settings
                 rsps = admin.get_log_level("admin_api_server")
                 assert all(
-                    r['expiration'] <= actual and r['level'] == level
-                    for r in rsps
-                ), f"Expected {level} level expiring w/in {actual}s, got {json.dumps(rsps)}"
+                    r["expiration"] <= actual and r["level"] == level for r in rsps
+                ), (
+                    f"Expected {level} level expiring w/in {actual}s, got {json.dumps(rsps)}"
+                )
 
                 # wait for a single node to expire
                 mon.wait_until(
                     f"Expiring log level for {{admin_api_server}} to {self.initial_log_level}",
                     timeout_sec=actual + 1,
                     backoff_sec=1,
-                    err_msg="Never saw message")
+                    err_msg="Never saw message",
+                )
 
                 rsps = admin.get_log_level("admin_api_server")
                 # No guarantee that all servers have expired at this point
                 assert any(
-                    r['expiration'] == 0
-                    and r['level'] == self.initial_log_level for r in rsps
-                ), f"Expected expiration to {self.initial_log_level}, got {json.dumps(rsps)}"
+                    r["expiration"] == 0 and r["level"] == self.initial_log_level
+                    for r in rsps
+                ), (
+                    f"Expected expiration to {self.initial_log_level}, got {json.dumps(rsps)}"
+                )
 
         # set verbose level with expiration that exceeds the configured limit
         # and confirm that we clamp
-        for lvl in ['trace', 'debug']:
-            set_log_and_check(lvl,
-                              expiration=self.MAX_LOG_EXPIRY_S * 10,
-                              actual=self.MAX_LOG_EXPIRY_S)
+        for lvl in ["trace", "debug"]:
+            set_log_and_check(
+                lvl, expiration=self.MAX_LOG_EXPIRY_S * 10, actual=self.MAX_LOG_EXPIRY_S
+            )
 
         # set non-verbose level with expiration that exceeds configured max
         # and confirm that we DON'T clamp
-        for lvl in ['error', 'warn', 'info']:
-            set_log_and_check(lvl,
-                              expiration=self.MAX_LOG_EXPIRY_S * 2,
-                              actual=self.MAX_LOG_EXPIRY_S * 2)
+        for lvl in ["error", "warn", "info"]:
+            set_log_and_check(
+                lvl,
+                expiration=self.MAX_LOG_EXPIRY_S * 2,
+                actual=self.MAX_LOG_EXPIRY_S * 2,
+            )
 
         # try forcing an expiry that is longer than the configured max
-        set_log_and_check('debug',
-                          expiration=self.MAX_LOG_EXPIRY_S * 3,
-                          actual=self.MAX_LOG_EXPIRY_S * 3,
-                          force=True)
+        set_log_and_check(
+            "debug",
+            expiration=self.MAX_LOG_EXPIRY_S * 3,
+            actual=self.MAX_LOG_EXPIRY_S * 3,
+            force=True,
+        )
 
         # try non-expiring setting, confirm that it's clamped
-        set_log_and_check('debug', expiration=0, actual=self.MAX_LOG_EXPIRY_S)
+        set_log_and_check("debug", expiration=0, actual=self.MAX_LOG_EXPIRY_S)
 
         # try forcing non-expiring level
         with self.redpanda.monitor_log(node) as mon:
             expiration = 0
             actual = 0
-            lvl = 'debug'
+            lvl = "debug"
             force = True
             with self.redpanda.monitor_log(node) as mon:
-                rsps = admin.set_log_level("admin_api_server",
-                                           lvl,
-                                           expires=expiration,
-                                           force=force)
-                assert all(
-                    r['expiration'] == actual for r in rsps
-                ), f"Expected clamped expirations: {json.dumps([{'expiration': r['expiration']} for r in rsps])}"
+                rsps = admin.set_log_level(
+                    "admin_api_server", lvl, expires=expiration, force=force
+                )
+                assert all(r["expiration"] == actual for r in rsps), (
+                    f"Expected clamped expirations: {json.dumps([{'expiration': r['expiration']} for r in rsps])}"
+                )
                 mon.wait_until(
                     f"Set log level for {{admin_api_server}}: trace -> {lvl} (expiring NEVER)",
                     timeout_sec=5,
                     backoff_sec=1,
-                    err_msg="Never saw message")
-                with expect_exception(ducktape.errors.TimeoutError,
-                                      lambda _: True):
+                    err_msg="Never saw message",
+                )
+                with expect_exception(ducktape.errors.TimeoutError, lambda _: True):
                     mon.wait_until(
                         f"Expiring log level for {{admin_api_server}} to {self.initial_log_level}",
                         timeout_sec=self.MAX_LOG_EXPIRY_S + 1,
                         backoff_sec=1,
-                        err_msg="Never saw message")
+                        err_msg="Never saw message",
+                    )
 
         # finally, set with any expiration to confirm that we expire to the default
         # and NOT some previously set "permanent" level (debug in this case)
-        set_log_and_check('info', expiration=2, actual=2, orig='debug')
+        set_log_and_check("info", expiration=2, actual=2, orig="debug")
 
     @cluster(num_nodes=3)
     def test_invalid_logger_name(self):
         admin = Admin(self.redpanda)
-        logger = 'test\nlog'
+        logger = "test\nlog"
 
         def check_log_for_invalid_parameter(val: str):
-            pattern = f'Parameter \'name\' contained invalid control characters'
-            wait_until(lambda: self.redpanda.search_log_any(pattern),
-                       timeout_sec=5)
+            pattern = f"Parameter 'name' contained invalid control characters"
+            wait_until(lambda: self.redpanda.search_log_any(pattern), timeout_sec=5)
 
         try:
             admin.set_log_level(urllib.parse.quote(logger), "debug")
             assert False, "Call should fail"
         except requests.exceptions.HTTPError:
-            check_log_for_invalid_parameter(
-                logger.translate(CONTROL_CHARS_MAP))
+            check_log_for_invalid_parameter(logger.translate(CONTROL_CHARS_MAP))

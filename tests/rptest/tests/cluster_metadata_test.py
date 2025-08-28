@@ -35,9 +35,8 @@ class MetadataTest(RedpandaTest):
         assert sorted(all_ids) == sorted(returned_node_ids)
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @matrix(failure=['isolate', 'stop'], node=['follower', 'controller'])
-    def test_metadata_request_does_not_contain_failed_node(
-            self, failure, node):
+    @matrix(failure=["isolate", "stop"], node=["follower", "controller"])
+    def test_metadata_request_does_not_contain_failed_node(self, failure, node):
         """
         Check if broker list returned from metadata request does not contain node
         which is not alive
@@ -52,7 +51,7 @@ class MetadataTest(RedpandaTest):
         assert sorted(redpanda_ids) == sorted(node_ids)
 
         def get_node():
-            if node == 'controller':
+            if node == "controller":
                 return self.redpanda.controller()
             else:
                 n = self.redpanda.nodes[0]
@@ -67,8 +66,7 @@ class MetadataTest(RedpandaTest):
         )
         with FailureInjector(self.redpanda) as fi:
             if failure == "isolate":
-                fi.inject_failure(
-                    FailureSpec(FailureSpec.FAILURE_ISOLATE, node))
+                fi.inject_failure(FailureSpec(FailureSpec.FAILURE_ISOLATE, node))
             else:
                 self.redpanda.stop_node(node)
 

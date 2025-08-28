@@ -23,24 +23,29 @@ class RpkRoleTest(RedpandaTest):
         self._ctx = test_ctx
         security = SecurityConfig()
         security.enable_sasl = True
-        security.endpoint_authn_method = 'sasl'
-        super(RpkRoleTest,
-              self).__init__(test_ctx,
-                             security=security,
-                             extra_rp_conf={'election_timeout_ms': 10000},
-                             *args,
-                             **kwargs)
-        self._rpk = RpkTool(redpanda=self.redpanda,
-                            username=self.username,
-                            password=self.password,
-                            sasl_mechanism=self.mechanism)
+        security.endpoint_authn_method = "sasl"
+        super(RpkRoleTest, self).__init__(
+            test_ctx,
+            security=security,
+            extra_rp_conf={"election_timeout_ms": 10000},
+            *args,
+            **kwargs,
+        )
+        self._rpk = RpkTool(
+            redpanda=self.redpanda,
+            username=self.username,
+            password=self.password,
+            sasl_mechanism=self.mechanism,
+        )
         self.superuser = self.redpanda.SUPERUSER_CREDENTIALS
 
     def _superclient(self):
-        return RpkTool(self.redpanda,
-                       username=self.superuser.username,
-                       password=self.superuser.password,
-                       sasl_mechanism=self.mechanism)
+        return RpkTool(
+            self.redpanda,
+            username=self.superuser.username,
+            password=self.superuser.password,
+            sasl_mechanism=self.mechanism,
+        )
 
     @cluster(num_nodes=1)
     def test_create_list_delete(self):
@@ -79,16 +84,16 @@ class RpkRoleTest(RedpandaTest):
         # Create user and verify it can't produce
         superclient.sasl_create_user(self.username, self.password)
 
-        with expect_exception(RpkException,
-                              lambda e: 'AUTHORIZATION_FAILED' in str(e)):
-            self._rpk.produce(topic_name, 'foo', 'bar')
+        with expect_exception(RpkException, lambda e: "AUTHORIZATION_FAILED" in str(e)):
+            self._rpk.produce(topic_name, "foo", "bar")
 
-        superclient.sasl_allow_principal(f"RedpandaRole:{role_name}", ['all'],
-                                         'topic', topic_name)
+        superclient.sasl_allow_principal(
+            f"RedpandaRole:{role_name}", ["all"], "topic", topic_name
+        )
 
         # Now we assign the role, the user should be able to produce without errors.
         superclient.assign_role(role_name, [self.username])
-        self._rpk.produce(topic_name, 'foo', 'bar')
+        self._rpk.produce(topic_name, "foo", "bar")
 
         # Verify we can describe the role and it contains members and permissions.
         described = superclient.describe_role(role_name)
@@ -97,6 +102,5 @@ class RpkRoleTest(RedpandaTest):
 
         # Now, unassign, error should be back:
         superclient.unassign_role(role_name, [self.username])
-        with expect_exception(RpkException,
-                              lambda e: 'AUTHORIZATION_FAILED' in str(e)):
-            self._rpk.produce(topic_name, 'foo', 'bar')
+        with expect_exception(RpkException, lambda e: "AUTHORIZATION_FAILED" in str(e)):
+            self._rpk.produce(topic_name, "foo", "bar")

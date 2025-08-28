@@ -73,8 +73,7 @@ def bytes_required(value: Union[int, Decimal]) -> int:
     raise ValueError(f"Unsupported value: {value}")
 
 
-def decimal_to_bytes(value: Decimal,
-                     byte_length: Optional[int] = None) -> bytes:
+def decimal_to_bytes(value: Decimal, byte_length: Optional[int] = None) -> bytes:
     """Return a byte representation of a decimal.
 
     Args:
@@ -94,7 +93,7 @@ def uuid_to_bytes(value: uuid.UUID) -> bytes:
 
 
 def hash_decimal(v: Decimal) -> int:
-    print(">>> {}".format(codecs.encode(decimal_to_bytes(v), 'hex')))
+    print(">>> {}".format(codecs.encode(decimal_to_bytes(v), "hex")))
     return mmh3.hash(decimal_to_bytes(v))
 
 
@@ -103,7 +102,7 @@ def hash_string(v: str) -> int:
 
 
 def hash_uuid(v: uuid.UUID) -> int:
-    print(">>> {}".format(codecs.encode(uuid_to_bytes(v), 'hex')))
+    print(">>> {}".format(codecs.encode(uuid_to_bytes(v), "hex")))
     return mmh3.hash(uuid_to_bytes(v))
 
 
@@ -132,12 +131,9 @@ bucket_transform(hash_decimal, 2025, Decimal(-5923679718586680004350836613))
 bucket_transform(hash_string, 16, "non-latin to test UTF-8: Алексей")
 bucket_transform(hash_string, 128, "non-latin to test UTF-8: Алексей")
 bucket_transform(hash_string, 2025, "non-latin to test UTF-8: Алексей")
-bucket_transform(hash_uuid, 16,
-                 uuid.UUID("ab4ed576-b638-424f-89d8-4ea602393772"))
-bucket_transform(hash_uuid, 128,
-                 uuid.UUID("ab4ed576-b638-424f-89d8-4ea602393772"))
-bucket_transform(hash_uuid, 2025,
-                 uuid.UUID("ab4ed576-b638-424f-89d8-4ea602393772"))
-bucket_transform(hash_bytes, 16, bytes.fromhex('deadbeef'))
-bucket_transform(hash_bytes, 128, bytes.fromhex('deadbeef'))
-bucket_transform(hash_bytes, 2025, bytes.fromhex('deadbeef'))
+bucket_transform(hash_uuid, 16, uuid.UUID("ab4ed576-b638-424f-89d8-4ea602393772"))
+bucket_transform(hash_uuid, 128, uuid.UUID("ab4ed576-b638-424f-89d8-4ea602393772"))
+bucket_transform(hash_uuid, 2025, uuid.UUID("ab4ed576-b638-424f-89d8-4ea602393772"))
+bucket_transform(hash_bytes, 16, bytes.fromhex("deadbeef"))
+bucket_transform(hash_bytes, 128, bytes.fromhex("deadbeef"))
+bucket_transform(hash_bytes, 2025, bytes.fromhex("deadbeef"))

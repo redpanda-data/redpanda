@@ -27,11 +27,20 @@ from rptest.clients.types import TopicSpec
 from rptest.services.action_injector import random_process_kills
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer, \
-    KgoVerifierRandomConsumer, KgoVerifierSeqConsumer
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierConsumerGroupConsumer,
+    KgoVerifierProducer,
+    KgoVerifierRandomConsumer,
+    KgoVerifierSeqConsumer,
+)
 from rptest.services.metrics_check import MetricCheck
-from rptest.services.redpanda import SISettings, get_cloud_storage_type, make_redpanda_service, CHAOS_LOG_ALLOW_LIST, \
-    MetricsEndpoint
+from rptest.services.redpanda import (
+    SISettings,
+    get_cloud_storage_type,
+    make_redpanda_service,
+    CHAOS_LOG_ALLOW_LIST,
+    MetricsEndpoint,
+)
 from rptest.services.utils import LogSearchLocal
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
@@ -48,7 +57,12 @@ from rptest.utils.cluster_topology import (
     NodeQdisc,
 )
 from rptest.utils.mode_checks import skip_debug_mode
-from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView, NTP, quiesce_uploads
+from rptest.utils.si_utils import (
+    nodes_report_cloud_segments,
+    BucketView,
+    NTP,
+    quiesce_uploads,
+)
 
 # This is allowed because manifest reset test disables remote.write dynamically which may race with
 # ntp_archiver startup/shutdown
@@ -64,18 +78,19 @@ class EndToEndShadowIndexingBase(EndToEndTest):
 
     num_brokers = 3
 
-    topics = (TopicSpec(
-        name=s3_topic_name,
-        partition_count=1,
-        replication_factor=3,
-    ), )
+    topics = (
+        TopicSpec(
+            name=s3_topic_name,
+            partition_count=1,
+            replication_factor=3,
+        ),
+    )
 
     def __init__(self, test_context, extra_rp_conf=None, environment=None):
-        super(EndToEndShadowIndexingBase,
-              self).__init__(test_context=test_context)
+        super(EndToEndShadowIndexingBase, self).__init__(test_context=test_context)
 
         if environment is None:
-            environment = {'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000}
+            environment = {"__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS": 5000}
         self.test_context = test_context
         self.topic = self.s3_topic_name
 
@@ -85,7 +100,8 @@ class EndToEndShadowIndexingBase(EndToEndTest):
             # Tests may configure spillover manually.
             cloud_storage_spillover_manifest_size=None,
             controller_snapshot_max_age_sec=1,
-            min_cleanable_dirty_ratio=0.0)
+            min_cleanable_dirty_ratio=0.0,
+        )
         if extra_rp_conf:
             for k, v in conf.items():
                 extra_rp_conf[k] = v
@@ -102,11 +118,13 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         self.si_settings.load_context(self.logger, test_context)
         self.scale = Scale(test_context)
 
-        self.redpanda = make_redpanda_service(context=self.test_context,
-                                              num_brokers=self.num_brokers,
-                                              si_settings=self.si_settings,
-                                              extra_rp_conf=extra_rp_conf,
-                                              environment=environment)
+        self.redpanda = make_redpanda_service(
+            context=self.test_context,
+            num_brokers=self.num_brokers,
+            si_settings=self.si_settings,
+            extra_rp_conf=extra_rp_conf,
+            environment=environment,
+        )
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
 
@@ -120,18 +138,18 @@ class EndToEndShadowIndexingBase(EndToEndTest):
 def num_manifests_uploaded(test_self):
     s = test_self.redpanda.metric_sum(
         metric_name="redpanda_cloud_storage_spillover_manifest_uploads_total",
-        metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
-    test_self.logger.info(
-        f"redpanda_cloud_storage_spillover_manifest_uploads = {s}")
+        metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+    )
+    test_self.logger.info(f"redpanda_cloud_storage_spillover_manifest_uploads = {s}")
     return s
 
 
 def num_manifests_downloaded(test_self):
     s = test_self.redpanda.metric_sum(
         metric_name="redpanda_cloud_storage_spillover_manifest_downloads_total",
-        metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
-    test_self.logger.info(
-        f"redpanda_cloud_storage_spillover_manifest_downloads = {s}")
+        metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+    )
+    test_self.logger.info(f"redpanda_cloud_storage_spillover_manifest_downloads = {s}")
     return s
 
 
@@ -149,11 +167,9 @@ def all_uploads_done(rpk, topic, redpanda, logger):
         logger.info(f"Exception thrown while retrieving the manifest: {e}")
         return False
 
-    top_segment = max(manifest['segments'].values(),
-                      key=lambda seg: seg['base_offset'])
-    uploaded_raft_offset = top_segment['committed_offset']
-    uploaded_kafka_offset = uploaded_raft_offset - top_segment[
-        'delta_offset_end']
+    top_segment = max(manifest["segments"].values(), key=lambda seg: seg["base_offset"])
+    uploaded_raft_offset = top_segment["committed_offset"]
+    uploaded_kafka_offset = uploaded_raft_offset - top_segment["delta_offset_end"]
     logger.info(
         f"Remote HWM {uploaded_kafka_offset} (raft {uploaded_raft_offset}), local hwm {hwm}"
     )
@@ -167,8 +183,7 @@ def all_uploads_done(rpk, topic, redpanda, logger):
 
 class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
     def _all_uploads_done(self):
-        return all_uploads_done(self.rpk, self.topic, self.redpanda,
-                                self.logger)
+        return all_uploads_done(self.rpk, self.topic, self.redpanda, self.logger)
 
     @cluster(num_nodes=4)
     @matrix(cloud_storage_type=get_cloud_storage_type()[0:1])
@@ -176,87 +191,97 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         brokers = self.redpanda.started_nodes()
 
         msg_count_before_reset = 50 * (self.segment_size // 2056)
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       self.topic,
-                                       msg_size=2056,
-                                       msg_count=msg_count_before_reset,
-                                       debug_logs=True,
-                                       trace_logs=True)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=2056,
+            msg_count=msg_count_before_reset,
+            debug_logs=True,
+            trace_logs=True,
+        )
 
         producer.start()
         producer.wait(timeout_sec=60)
         producer.free()
 
-        wait_until(lambda: self._all_uploads_done() == True,
-                   timeout_sec=60,
-                   backoff_sec=5)
+        wait_until(
+            lambda: self._all_uploads_done() == True, timeout_sec=60, backoff_sec=5
+        )
 
         s3_snapshot = BucketView(self.redpanda, topics=self.topics)
         manifest = s3_snapshot.manifest_for_ntp(self.topic, 0)
 
-        self.rpk.alter_topic_config(self.topic, 'redpanda.remote.write',
-                                    'false')
+        self.rpk.alter_topic_config(self.topic, "redpanda.remote.write", "false")
         time.sleep(1)
 
         # Tweak the manifest as follows: remove the last 6 segments and update
         # the last offset accordingly.
-        sorted_segments = sorted(manifest['segments'].items(),
-                                 key=lambda entry: entry[1]['base_offset'])
+        sorted_segments = sorted(
+            manifest["segments"].items(), key=lambda entry: entry[1]["base_offset"]
+        )
 
         for name, meta in sorted_segments[-6:]:
-            manifest['segments'].pop(name)
+            manifest["segments"].pop(name)
 
-        manifest['last_offset'] = sorted_segments[-7][1]['committed_offset']
+        manifest["last_offset"] = sorted_segments[-7][1]["committed_offset"]
 
         json_man = json.dumps(manifest)
         self.logger.info(f"Re-setting manifest to:{json_man}")
 
-        self.redpanda._admin.unsafe_reset_cloud_metadata(
-            self.topic, 0, manifest)
+        self.redpanda._admin.unsafe_reset_cloud_metadata(self.topic, 0, manifest)
 
-        self.rpk.alter_topic_config(self.topic, 'redpanda.remote.write',
-                                    'true')
+        self.rpk.alter_topic_config(self.topic, "redpanda.remote.write", "true")
 
         msg_count_after_reset = 10 * (self.segment_size // 2056)
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       self.topic,
-                                       msg_size=2056,
-                                       msg_count=msg_count_after_reset,
-                                       debug_logs=True,
-                                       trace_logs=True)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=2056,
+            msg_count=msg_count_after_reset,
+            debug_logs=True,
+            trace_logs=True,
+        )
 
         producer.start()
         producer.wait(timeout_sec=30)
         producer.free()
 
-        wait_until(lambda: self._all_uploads_done() == True,
-                   timeout_sec=60,
-                   backoff_sec=5)
+        wait_until(
+            lambda: self._all_uploads_done() == True, timeout_sec=60, backoff_sec=5
+        )
 
         # Enable aggresive local retention to test the cloud storage read path.
-        self.rpk.alter_topic_config(self.topic, 'retention.local.target.bytes',
-                                    self.segment_size * 5)
+        self.rpk.alter_topic_config(
+            self.topic, "retention.local.target.bytes", self.segment_size * 5
+        )
 
-        wait_for_local_storage_truncate(self.redpanda,
-                                        self.topic,
-                                        target_bytes=6 * self.segment_size,
-                                        partition_idx=0,
-                                        timeout_sec=30)
+        wait_for_local_storage_truncate(
+            self.redpanda,
+            self.topic,
+            target_bytes=6 * self.segment_size,
+            partition_idx=0,
+            timeout_sec=30,
+        )
 
-        consumer = KgoVerifierSeqConsumer(self.test_context,
-                                          self.redpanda,
-                                          self.topic,
-                                          msg_size=2056,
-                                          debug_logs=True,
-                                          trace_logs=True)
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=2056,
+            debug_logs=True,
+            trace_logs=True,
+        )
 
         consumer.start()
         consumer.wait(timeout_sec=60)
 
         assert consumer.consumer_status.validator.invalid_reads == 0
-        assert consumer.consumer_status.validator.valid_reads >= msg_count_before_reset + msg_count_after_reset
+        assert (
+            consumer.consumer_status.validator.valid_reads
+            >= msg_count_before_reset + msg_count_after_reset
+        )
 
     @cluster(num_nodes=4, log_allow_list=REST_LOG_ALLOW_LIST)
     @matrix(cloud_storage_type=get_cloud_storage_type())
@@ -270,19 +295,21 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         for the partition has been updated accordingly.
         """
         msg_size = 2056
-        self.redpanda.set_cluster_config({
-            "cloud_storage_housekeeping_interval_ms":
-            10000,
-            "cloud_storage_spillover_manifest_max_segments":
-            10,
-        })
+        self.redpanda.set_cluster_config(
+            {
+                "cloud_storage_housekeeping_interval_ms": 10000,
+                "cloud_storage_spillover_manifest_max_segments": 10,
+            }
+        )
         msg_per_segment = self.segment_size // msg_size
         msg_count_before_reset = 50 * msg_per_segment
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       self.topic,
-                                       msg_size=msg_size,
-                                       msg_count=msg_count_before_reset)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=msg_size,
+            msg_count=msg_count_before_reset,
+        )
 
         producer.start()
 
@@ -294,9 +321,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         producer.wait(timeout_sec=60)
         producer.free()
 
-        wait_until(lambda: self._all_uploads_done(),
-                   timeout_sec=60,
-                   backoff_sec=5)
+        wait_until(lambda: self._all_uploads_done(), timeout_sec=60, backoff_sec=5)
 
         class Manifests:
             def __init__(self, test_instance):
@@ -305,24 +330,27 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
                 self.spillover_manifests = None
 
             def cloud_log_stable(self) -> bool:
-                s3_snapshot = BucketView(self.test_instance.redpanda,
-                                         topics=self.test_instance.topics)
+                s3_snapshot = BucketView(
+                    self.test_instance.redpanda, topics=self.test_instance.topics
+                )
                 self.manifest = s3_snapshot.manifest_for_ntp(
-                    self.test_instance.topic, 0)
+                    self.test_instance.topic, 0
+                )
                 self.spillover_manifests = s3_snapshot.get_spillover_manifests(
-                    NTP("kafka", self.test_instance.topic, 0))
-                if not self.spillover_manifests or len(
-                        self.spillover_manifests) < 2:
+                    NTP("kafka", self.test_instance.topic, 0)
+                )
+                if not self.spillover_manifests or len(self.spillover_manifests) < 2:
                     return False
-                manifest_keys = set(self.manifest['segments'].keys())
+                manifest_keys = set(self.manifest["segments"].keys())
                 spillover_keys = set()
                 for sm in self.spillover_manifests.values():
-                    for key in sm['segments'].keys():
+                    for key in sm["segments"].keys():
                         spillover_keys.add(key)
                 overlap = manifest_keys & spillover_keys
                 if overlap:
                     self.test_instance.logger.debug(
-                        f'overlap in manifest and spillovers: {overlap}')
+                        f"overlap in manifest and spillovers: {overlap}"
+                    )
                 return not overlap
 
             def has_data(self) -> bool:
@@ -333,106 +361,103 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
             lambda: manifests.cloud_log_stable(),
             backoff_sec=1,
             timeout_sec=120,
-            err_msg='Could not find suitable manifest and spillover combination'
+            err_msg="Could not find suitable manifest and spillover combination",
         )
 
-        assert manifests.has_data(
-        ), 'Manifests were not loaded from cloud storage'
+        assert manifests.has_data(), "Manifests were not loaded from cloud storage"
         manifest = manifests.manifest
         spill_metas = manifest["spillover"]
         # Enable aggressive local retention to remove local copy of the data
-        self.rpk.alter_topic_config(self.topic, 'retention.local.target.bytes',
-                                    self.segment_size * 5)
+        self.rpk.alter_topic_config(
+            self.topic, "retention.local.target.bytes", self.segment_size * 5
+        )
 
-        wait_for_local_storage_truncate(self.redpanda,
-                                        self.topic,
-                                        target_bytes=7 * self.segment_size,
-                                        partition_idx=0,
-                                        timeout_sec=30)
+        wait_for_local_storage_truncate(
+            self.redpanda,
+            self.topic,
+            target_bytes=7 * self.segment_size,
+            partition_idx=0,
+            timeout_sec=30,
+        )
 
-        self.rpk.alter_topic_config(self.topic, 'redpanda.remote.write',
-                                    'false')
+        self.rpk.alter_topic_config(self.topic, "redpanda.remote.write", "false")
         time.sleep(1)
 
         # sort the list of spillover manifest metadata
-        spill_metas = sorted(spill_metas, key=lambda sm: sm['base_offset'])
+        spill_metas = sorted(spill_metas, key=lambda sm: sm["base_offset"])
 
-        self.logger.info(
-            f"Removing {spill_metas[0]} from the spillover manifest list")
+        self.logger.info(f"Removing {spill_metas[0]} from the spillover manifest list")
 
-        manifest['spillover'] = spill_metas[1:]
+        manifest["spillover"] = spill_metas[1:]
 
         # Adjust archive fields: the start archive start offsets move forward to
         # the new first spillover manifset and the archive size decreases by
         # the size of the removed spillover manifest.
-        manifest['archive_start_offset'] = manifest['spillover'][0][
-            'base_offset']
-        manifest['archive_clean_offset'] = manifest['spillover'][0][
-            'base_offset']
-        manifest['archive_start_offset_delta'] = manifest['spillover'][0][
-            'delta_offset']
-        manifest['archive_size_bytes'] -= spill_metas[0]['size_bytes']
+        manifest["archive_start_offset"] = manifest["spillover"][0]["base_offset"]
+        manifest["archive_clean_offset"] = manifest["spillover"][0]["base_offset"]
+        manifest["archive_start_offset_delta"] = manifest["spillover"][0][
+            "delta_offset"
+        ]
+        manifest["archive_size_bytes"] -= spill_metas[0]["size_bytes"]
 
-        expected_new_kafka_start_offset = BucketView.kafka_start_offset(
-            manifest)
+        expected_new_kafka_start_offset = BucketView.kafka_start_offset(manifest)
 
         json_man = json.dumps(manifest)
         self.logger.info(f"Re-setting manifest to:{json_man}")
 
-        self.redpanda._admin.unsafe_reset_cloud_metadata(
-            self.topic, 0, manifest)
+        self.redpanda._admin.unsafe_reset_cloud_metadata(self.topic, 0, manifest)
 
-        self.rpk.alter_topic_config(self.topic, 'redpanda.remote.write',
-                                    'true')
+        self.rpk.alter_topic_config(self.topic, "redpanda.remote.write", "true")
 
         msg_count_after_reset = 10 * msg_per_segment
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       self.topic,
-                                       msg_size=msg_size,
-                                       msg_count=msg_count_after_reset,
-                                       debug_logs=True,
-                                       trace_logs=True)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=msg_size,
+            msg_count=msg_count_after_reset,
+            debug_logs=True,
+            trace_logs=True,
+        )
 
         producer.start()
         producer.wait(timeout_sec=30)
         producer.free()
 
         # wait for uploads from first
-        wait_until(lambda: self._all_uploads_done(),
-                   timeout_sec=60,
-                   backoff_sec=5)
+        wait_until(lambda: self._all_uploads_done(), timeout_sec=60, backoff_sec=5)
         rpk = RpkTool(self.redpanda)
         partitions = list(rpk.describe_topic(self.topic))
-        assert partitions[0].start_offset == expected_new_kafka_start_offset \
-        , f"Partition start offset must be equal to the reset start offset. \
+        assert partitions[0].start_offset == expected_new_kafka_start_offset, (
+            f"Partition start offset must be equal to the reset start offset. \
             expected: {expected_new_kafka_start_offset} current: {partitions[0].start_offset}"
+        )
 
         # Read the whole partition once, consumer must not be able to consume data from removed spillover manifests
-        consumer = KgoVerifierConsumerGroupConsumer(self.test_context,
-                                                    self.redpanda,
-                                                    self.topic,
-                                                    msg_size=msg_size,
-                                                    debug_logs=True,
-                                                    trace_logs=True,
-                                                    readers=1)
+        consumer = KgoVerifierConsumerGroupConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=msg_size,
+            debug_logs=True,
+            trace_logs=True,
+            readers=1,
+        )
 
         consumer.start()
         # messages to read contains all the produced messages minus the one that were dropped
-        messages_to_read = msg_count_before_reset + msg_count_after_reset - partitions[
-            0].start_offset
+        messages_to_read = (
+            msg_count_before_reset + msg_count_after_reset - partitions[0].start_offset
+        )
         wait_until(
-            lambda: consumer.consumer_status.validator.valid_reads >=
-            messages_to_read,
+            lambda: consumer.consumer_status.validator.valid_reads >= messages_to_read,
             timeout_sec=60,
             backoff_sec=1,
-            err_msg=
-            f"Error waiting for {messages_to_read} messages to be consumed after reset."
+            err_msg=f"Error waiting for {messages_to_read} messages to be consumed after reset.",
         )
         consumer.wait(timeout_sec=60)
 
-        self.logger.info(
-            f"finished with consumer status: {consumer.consumer_status}")
+        self.logger.info(f"finished with consumer status: {consumer.consumer_status}")
 
         assert consumer.consumer_status.validator.invalid_reads == 0
         # validate that messages from the manifests that were removed from the manifest are not readable
@@ -440,7 +465,8 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
     @cluster(
         num_nodes=4,
-        log_allow_list=["Applying the cloud manifest would cause data loss"])
+        log_allow_list=["Applying the cloud manifest would cause data loss"],
+    )
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_reset_from_cloud(self, cloud_storage_type):
         """
@@ -451,25 +477,28 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         up any inconsistencies.
         """
         msg_size = 2056
-        self.redpanda.set_cluster_config({
-            "cloud_storage_housekeeping_interval_ms":
-            10000,
-            "cloud_storage_spillover_manifest_max_segments":
-            10
-        })
+        self.redpanda.set_cluster_config(
+            {
+                "cloud_storage_housekeeping_interval_ms": 10000,
+                "cloud_storage_spillover_manifest_max_segments": 10,
+            }
+        )
 
         # Set a very low local retetion to race manifest resets wih retention
-        self.rpk.alter_topic_config(self.topic, 'retention.local.target.bytes',
-                                    self.segment_size * 1)
+        self.rpk.alter_topic_config(
+            self.topic, "retention.local.target.bytes", self.segment_size * 1
+        )
 
         msg_per_segment = self.segment_size // msg_size
         total_messages = 250 * msg_per_segment
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       self.topic,
-                                       msg_size=msg_size,
-                                       msg_count=total_messages,
-                                       rate_limit_bps=1024 * 1024 * 5)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=msg_size,
+            msg_count=total_messages,
+            rate_limit_bps=1024 * 1024 * 5,
+        )
 
         producer.start()
 
@@ -486,7 +515,8 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
             if now >= next_reset:
                 try:
                     self.redpanda._admin.unsafe_reset_metadata_from_cloud(
-                        namespace="kafka", topic=self.topic, partition=0)
+                        namespace="kafka", topic=self.topic, partition=0
+                    )
                     resets_done += 1
                 except HTTPError as ex:
                     if "would cause data loss" in ex.response.text:
@@ -514,11 +544,13 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         # which allows for validation of the consumed offests.
         quiesce_uploads(self.redpanda, [self.topic], timeout_sec=120)
 
-        consumer = KgoVerifierSeqConsumer(self.test_context,
-                                          self.redpanda,
-                                          self.topic,
-                                          debug_logs=True,
-                                          trace_logs=True)
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            debug_logs=True,
+            trace_logs=True,
+        )
 
         consumer.start()
         consumer.wait(timeout_sec=120)
@@ -531,13 +563,17 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         that everything that is acked is consumed."""
         brokers = self.redpanda.started_nodes()
         index_metrics = [
-            MetricCheck(self.logger,
-                        self.redpanda,
-                        node, [
-                            'vectorized_cloud_storage_index_uploads_total',
-                            'vectorized_cloud_storage_index_downloads_total',
-                        ],
-                        reduce=sum) for node in brokers
+            MetricCheck(
+                self.logger,
+                self.redpanda,
+                node,
+                [
+                    "vectorized_cloud_storage_index_uploads_total",
+                    "vectorized_cloud_storage_index_downloads_total",
+                ],
+                reduce=sum,
+            )
+            for node in brokers
         ]
 
         self.start_producer()
@@ -550,47 +586,56 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
         # Get a snapshot of the current segments, before tightening the
         # retention policy.
-        original_snapshot = self.redpanda.storage(
-            all_nodes=True).segments_by_node("kafka", self.topic, 0)
+        original_snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
+            "kafka", self.topic, 0
+        )
 
         for node, node_segments in original_snapshot.items():
-            assert len(
-                node_segments
-            ) >= 10, f"Expected at least 10 segments, but got {len(node_segments)} on {node}"
+            assert len(node_segments) >= 10, (
+                f"Expected at least 10 segments, but got {len(node_segments)} on {node}"
+            )
 
         def indices_uploaded():
-            return self.redpanda.metric_sum(
-                'vectorized_cloud_storage_index_uploads_total') > 0
+            return (
+                self.redpanda.metric_sum("vectorized_cloud_storage_index_uploads_total")
+                > 0
+            )
 
-        wait_until(indices_uploaded,
-                   timeout_sec=120,
-                   backoff_sec=1,
-                   err_msg='No indices uploaded to cloud storage')
+        wait_until(
+            indices_uploaded,
+            timeout_sec=120,
+            backoff_sec=1,
+            err_msg="No indices uploaded to cloud storage",
+        )
 
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                5 * self.segment_size,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: 5 * self.segment_size,
             },
         )
 
-        wait_for_removal_of_n_segments(redpanda=self.redpanda,
-                                       topic=self.topic,
-                                       partition_idx=0,
-                                       n=6,
-                                       original_snapshot=original_snapshot)
+        wait_for_removal_of_n_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            n=6,
+            original_snapshot=original_snapshot,
+        )
 
         self.start_consumer()
         self.run_validation()
 
         assert any(
-            im.evaluate([('vectorized_cloud_storage_index_downloads_total',
-                          lambda _, cnt: cnt)]) for im in index_metrics)
+            im.evaluate(
+                [("vectorized_cloud_storage_index_downloads_total", lambda _, cnt: cnt)]
+            )
+            for im in index_metrics
+        )
 
         # Matches the segment or the index
         cache_expr = re.compile(
-            fr'^({self.redpanda.DATA_DIR}/cloud_storage_cache/.*\.log\.\d+)[(_chunks/.*)|(.index)]?$'
+            rf"^({self.redpanda.DATA_DIR}/cloud_storage_cache/.*\.log\.\d+)[(_chunks/.*)|(.index)]?$"
         )
 
         # Each segment should have the corresponding index present
@@ -599,14 +644,16 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
             for file in self.redpanda.data_checksum(node):
                 if (match := cache_expr.match(file)) and self.topic in file:
                     entry = index_segment_pair[match[1]]
-                    if file.endswith('.index') or '_chunks' not in file:
+                    if file.endswith(".index") or "_chunks" not in file:
                         entry[0] += 1
                     # Count chunks just once
-                    elif not entry[1] and '_chunks' in file:
+                    elif not entry[1] and "_chunks" in file:
                         entry[1] = True
                         entry[0] += 1
             for file, (count, _) in index_segment_pair.items():
-                assert count == 2, f'expected one index and one log or one set of chunks for {file}, found {count}'
+                assert count == 2, (
+                    f"expected one index and one log or one set of chunks for {file}, found {count}"
+                )
 
     @skip_debug_mode
     @cluster(num_nodes=4)
@@ -618,41 +665,41 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
             partition_idx=0,
             count=10,
         )
-        original_snapshot = self.redpanda.storage(
-            all_nodes=True).segments_by_node("kafka", self.topic, 0)
+        original_snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
+            "kafka", self.topic, 0
+        )
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                5 * self.segment_size,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: 5 * self.segment_size,
             },
         )
 
-        wait_for_removal_of_n_segments(redpanda=self.redpanda,
-                                       topic=self.topic,
-                                       partition_idx=0,
-                                       n=6,
-                                       original_snapshot=original_snapshot)
+        wait_for_removal_of_n_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            n=6,
+            original_snapshot=original_snapshot,
+        )
 
         # Wipe everything and restore from tiered storage.
         self.redpanda.stop()
         for n in self.redpanda.nodes:
             self.redpanda.remove_local_data(n)
 
-        self.redpanda.restart_nodes(self.redpanda.nodes,
-                                    auto_assign_node_id=True,
-                                    omit_seeds_on_idx_one=False)
-        self.redpanda._admin.await_stable_leader("controller",
-                                                 partition=0,
-                                                 namespace='redpanda',
-                                                 timeout_s=60,
-                                                 backoff_s=2)
+        self.redpanda.restart_nodes(
+            self.redpanda.nodes, auto_assign_node_id=True, omit_seeds_on_idx_one=False
+        )
+        self.redpanda._admin.await_stable_leader(
+            "controller", partition=0, namespace="redpanda", timeout_s=60, backoff_s=2
+        )
 
         rpk = RpkTool(self.redpanda)
         rpk.cluster_recovery_start(wait=True)
-        wait_until(lambda: len(set(rpk.list_topics())) == 1,
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(
+            lambda: len(set(rpk.list_topics())) == 1, timeout_sec=30, backoff_sec=1
+        )
 
     @skip_debug_mode
     @cluster(num_nodes=4)
@@ -664,21 +711,23 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
             partition_idx=0,
             count=10,
         )
-        original_snapshot = self.redpanda.storage(
-            all_nodes=True).segments_by_node("kafka", self.topic, 0)
+        original_snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
+            "kafka", self.topic, 0
+        )
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                5 * self.segment_size,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: 5 * self.segment_size,
             },
         )
 
-        wait_for_removal_of_n_segments(redpanda=self.redpanda,
-                                       topic=self.topic,
-                                       partition_idx=0,
-                                       n=6,
-                                       original_snapshot=original_snapshot)
+        wait_for_removal_of_n_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            n=6,
+            original_snapshot=original_snapshot,
+        )
         self.producer.stop()
         rpk = RpkTool(self.redpanda)
         new_lwm = 2
@@ -686,17 +735,18 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         assert len(response) == 1
         assert response[0].topic == self.topic
         assert response[0].partition == 0
-        assert response[0].error_msg == '', f"Err msg: {response[0].error_msg}"
-        assert new_lwm == response[0].new_start_offset, response[
-            0].new_start_offset
+        assert response[0].error_msg == "", f"Err msg: {response[0].error_msg}"
+        assert new_lwm == response[0].new_start_offset, response[0].new_start_offset
 
         def topic_info_populated():
             return len(list(rpk.describe_topic(self.topic))) == 1
 
-        wait_until(topic_info_populated,
-                   timeout_sec=60,
-                   backoff_sec=1,
-                   err_msg=f"topic info not available for {self.topic}")
+        wait_until(
+            topic_info_populated,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg=f"topic info not available for {self.topic}",
+        )
 
         topics_info = list(rpk.describe_topic(self.topic))
         assert len(topics_info) == 1
@@ -712,42 +762,44 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         self.redpanda.stop()
         for n in self.redpanda.nodes:
             self.redpanda.remove_local_data(n)
-        self.redpanda.restart_nodes(self.redpanda.nodes,
-                                    auto_assign_node_id=True,
-                                    omit_seeds_on_idx_one=False)
-        self.redpanda._admin.await_stable_leader("controller",
-                                                 partition=0,
-                                                 namespace='redpanda',
-                                                 timeout_s=60,
-                                                 backoff_s=2)
+        self.redpanda.restart_nodes(
+            self.redpanda.nodes, auto_assign_node_id=True, omit_seeds_on_idx_one=False
+        )
+        self.redpanda._admin.await_stable_leader(
+            "controller", partition=0, namespace="redpanda", timeout_s=60, backoff_s=2
+        )
 
         rpk.cluster_recovery_start(wait=True)
-        wait_until(lambda: len(set(rpk.list_topics())) == 1,
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(
+            lambda: len(set(rpk.list_topics())) == 1, timeout_sec=30, backoff_sec=1
+        )
 
-        wait_until(topic_info_populated,
-                   timeout_sec=60,
-                   backoff_sec=1,
-                   err_msg=f"topic info not available for {self.topic}")
+        wait_until(
+            topic_info_populated,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg=f"topic info not available for {self.topic}",
+        )
         topics_info = list(rpk.describe_topic(self.topic))
         assert len(topics_info) == 1
         assert topics_info[0].start_offset == new_lwm, topics_info
 
 
 class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
-    topics = (TopicSpec(
-        name=EndToEndShadowIndexingBase.s3_topic_name,
-        partition_count=1,
-        replication_factor=3,
-        cleanup_policy="compact,delete",
-        segment_bytes=EndToEndShadowIndexingBase.segment_size // 2), )
+    topics = (
+        TopicSpec(
+            name=EndToEndShadowIndexingBase.s3_topic_name,
+            partition_count=1,
+            replication_factor=3,
+            cleanup_policy="compact,delete",
+            segment_bytes=EndToEndShadowIndexingBase.segment_size // 2,
+        ),
+    )
 
     def _prime_compacted_topic(self, segment_count):
         # Set compaction interval high at first, so we can get enough segments in log
         rpk_client = RpkTool(self.redpanda)
-        rpk_client.cluster_config_set("log_compaction_interval_ms",
-                                      f'{1000 * 60 * 60}')
+        rpk_client.cluster_config_set("log_compaction_interval_ms", f"{1000 * 60 * 60}")
 
         self.start_producer(throughput=10000, repeating_keys=10)
         wait_until_segments(
@@ -759,16 +811,17 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
 
         # Force compaction every 2 seconds now that we have some data
         rpk_client = RpkTool(self.redpanda)
-        rpk_client.cluster_config_set("log_compaction_interval_ms", f'{2000}')
+        rpk_client.cluster_config_set("log_compaction_interval_ms", f"{2000}")
 
-        original_snapshot = self.redpanda.storage(
-            all_nodes=True).segments_by_node("kafka", self.topic, 0)
+        original_snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
+            "kafka", self.topic, 0
+        )
 
         for node, node_segments in original_snapshot.items():
-            assert len(
-                node_segments
-            ) >= segment_count, f"Expected at least {segment_count} segments, " \
-                                f"but got {len(node_segments)} on {node}"
+            assert len(node_segments) >= segment_count, (
+                f"Expected at least {segment_count} segments, "
+                f"but got {len(node_segments)} on {node}"
+            )
 
         self.await_num_produced(min_records=5000)
         self.logger.info(
@@ -780,24 +833,28 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
 
     def _transfer_topic_leadership(self):
         admin = Admin(self.redpanda)
-        cur_leader = admin.get_partition_leader(namespace='kafka',
-                                                topic=self.topic,
-                                                partition=0)
-        broker_ids = [x['node_id'] for x in admin.get_brokers()]
+        cur_leader = admin.get_partition_leader(
+            namespace="kafka", topic=self.topic, partition=0
+        )
+        broker_ids = [x["node_id"] for x in admin.get_brokers()]
         transfer_to = random.choice([n for n in broker_ids if n != cur_leader])
         assert cur_leader != transfer_to, "incorrect partition move in test"
-        admin.transfer_leadership_to(namespace="kafka",
-                                     topic=self.topic,
-                                     partition=0,
-                                     target_id=transfer_to,
-                                     leader_id=cur_leader)
+        admin.transfer_leadership_to(
+            namespace="kafka",
+            topic=self.topic,
+            partition=0,
+            target_id=transfer_to,
+            leader_id=cur_leader,
+        )
 
-        admin.await_stable_leader(self.topic,
-                                  partition=0,
-                                  namespace='kafka',
-                                  timeout_s=60,
-                                  backoff_s=2,
-                                  check=lambda node_id: node_id == transfer_to)
+        admin.await_stable_leader(
+            self.topic,
+            partition=0,
+            namespace="kafka",
+            timeout_s=60,
+            backoff_s=2,
+            check=lambda node_id: node_id == transfer_to,
+        )
 
     @skip_debug_mode
     @cluster(num_nodes=5)
@@ -808,23 +865,25 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                5 * self.segment_size,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: 5 * self.segment_size,
             },
         )
 
-        wait_for_removal_of_n_segments(redpanda=self.redpanda,
-                                       topic=self.topic,
-                                       partition_idx=0,
-                                       n=6,
-                                       original_snapshot=original_snapshot)
+        wait_for_removal_of_n_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            n=6,
+            original_snapshot=original_snapshot,
+        )
 
         self.start_consumer(verify_offsets=False)
         self.run_consumer_validation(enable_compaction=True)
 
         s3_snapshot = BucketView(self.redpanda, topics=self.topics)
         s3_snapshot.assert_at_least_n_uploaded_segments_compacted(
-            self.topic, partition=0, revision=None, n=1)
+            self.topic, partition=0, revision=None, n=1
+        )
         s3_snapshot.assert_segments_replaced(self.topic, partition=0)
 
     @skip_debug_mode
@@ -836,8 +895,7 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                5 * self.segment_size,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: 5 * self.segment_size,
             },
         )
 
@@ -845,28 +903,33 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         self._transfer_topic_leadership()
 
         # After leadership transfer has completed assert that manifest is OK
-        wait_for_removal_of_n_segments(redpanda=self.redpanda,
-                                       topic=self.topic,
-                                       partition_idx=0,
-                                       n=6,
-                                       original_snapshot=original_snapshot)
+        wait_for_removal_of_n_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            n=6,
+            original_snapshot=original_snapshot,
+        )
 
         self.start_consumer(verify_offsets=False)
         self.run_consumer_validation(enable_compaction=True)
 
         s3_snapshot = BucketView(self.redpanda, topics=self.topics)
         s3_snapshot.assert_at_least_n_uploaded_segments_compacted(
-            self.topic, partition=0, revision=None, n=1)
+            self.topic, partition=0, revision=None, n=1
+        )
         s3_snapshot.assert_segments_replaced(self.topic, partition=0)
 
 
 class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
     def __init__(self, test_context):
-        super().__init__(test_context,
-                         extra_rp_conf={
-                             'default_topic_replications': self.num_brokers,
-                             'cloud_storage_cache_chunk_size': self.chunk_size,
-                         })
+        super().__init__(
+            test_context,
+            extra_rp_conf={
+                "default_topic_replications": self.num_brokers,
+                "cloud_storage_cache_chunk_size": self.chunk_size,
+            },
+        )
 
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @matrix(cloud_storage_type=get_cloud_storage_type())
@@ -881,28 +944,28 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
 
         # Get a snapshot of the current segments, before tightening the
         # retention policy.
-        original_snapshot = self.redpanda.storage(
-            all_nodes=True).segments_by_node("kafka", self.topic, 0)
+        original_snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
+            "kafka", self.topic, 0
+        )
 
         for node, node_segments in original_snapshot.items():
-            assert len(
-                node_segments
-            ) >= 10, f"Expected at least 10 segments, but got {len(node_segments)} on {node}"
+            assert len(node_segments) >= 10, (
+                f"Expected at least 10 segments, but got {len(node_segments)} on {node}"
+            )
 
         self.kafka_tools.alter_topic_config(
             self.topic,
-            {
-                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                5 * self.segment_size
-            },
+            {TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: 5 * self.segment_size},
         )
 
         assert self.redpanda
         with random_process_kills(self.redpanda) as ctx:
-            wait_for_local_storage_truncate(redpanda=self.redpanda,
-                                            topic=self.topic,
-                                            target_bytes=5 * self.segment_size,
-                                            partition_idx=0)
+            wait_for_local_storage_truncate(
+                redpanda=self.redpanda,
+                topic=self.topic,
+                target_bytes=5 * self.segment_size,
+                partition_idx=0,
+            )
 
             self.start_consumer()
             self.run_validation(consumer_timeout_sec=90)
@@ -914,12 +977,16 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
     small_segment_size = EndToEndShadowIndexingBase.segment_size // 4
     small_interval_ms = 100
     infinite_topic_name = f"{EndToEndShadowIndexingBase.s3_topic_name}"
-    topics = (TopicSpec(name=infinite_topic_name,
-                        partition_count=1,
-                        replication_factor=1,
-                        retention_bytes=-1,
-                        retention_ms=-1,
-                        segment_bytes=small_segment_size), )
+    topics = (
+        TopicSpec(
+            name=infinite_topic_name,
+            partition_count=1,
+            replication_factor=1,
+            retention_bytes=-1,
+            retention_ms=-1,
+            segment_bytes=small_segment_size,
+        ),
+    )
 
     def __init__(self, test_context):
         self.num_brokers = 1
@@ -928,17 +995,16 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
             extra_rp_conf={
                 # Trigger housekeeping frequently to encourage segment
                 # deletion.
-                "cloud_storage_housekeeping_interval_ms":
-                self.small_interval_ms,
-
+                "cloud_storage_housekeeping_interval_ms": self.small_interval_ms,
                 # Use small cluster-wide retention settings to
                 # encourage cloud segment deletion, as we ensure
                 # nothing will be deleted for an infinite-retention
                 # topic.
                 "delete_retention_ms": self.small_interval_ms,
                 "retention_bytes": self.small_segment_size,
-                'cloud_storage_cache_chunk_size': self.chunk_size,
-            })
+                "cloud_storage_cache_chunk_size": self.chunk_size,
+            },
+        )
 
     @cluster(num_nodes=2)
     @matrix(cloud_storage_type=get_cloud_storage_type())
@@ -954,8 +1020,7 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
         # Wait for there to be some segments.
         def manifest_has_segments():
             s3_snapshot = BucketView(self.redpanda, topics=self.topics)
-            manifest = s3_snapshot.manifest_for_ntp(self.infinite_topic_name,
-                                                    0)
+            manifest = s3_snapshot.manifest_for_ntp(self.infinite_topic_name, 0)
             return len(manifest.get("segments", {})) > 0
 
         wait_until(manifest_has_segments, timeout_sec=10, backoff_sec=1)
@@ -971,14 +1036,18 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
     small_segment_size = 4096
     chunk_size = small_segment_size * 0.75
     topic_name = f"{EndToEndShadowIndexingBase.s3_topic_name}"
-    topics = (TopicSpec(name=topic_name,
-                        partition_count=128,
-                        replication_factor=1,
-                        redpanda_remote_write=True,
-                        redpanda_remote_read=True,
-                        retention_bytes=-1,
-                        retention_ms=-1,
-                        segment_bytes=small_segment_size), )
+    topics = (
+        TopicSpec(
+            name=topic_name,
+            partition_count=128,
+            replication_factor=1,
+            redpanda_remote_write=True,
+            redpanda_remote_read=True,
+            retention_bytes=-1,
+            retention_ms=-1,
+            segment_bytes=small_segment_size,
+        ),
+    )
 
     def __init__(self, test_context):
         self.num_brokers = 1
@@ -995,16 +1064,17 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
                 # Avoid segment merging so we can generate many segments
                 # quickly.
                 "cloud_storage_enable_segment_merging": False,
-                'log_segment_size_min': 1024,
-                'cloud_storage_cache_chunk_size': self.chunk_size,
-                'cloud_storage_cluster_metadata_upload_interval_ms': 1000,
-                'enable_cluster_metadata_upload_loop': True,
-                'controller_snapshot_max_age_sec': 1,
+                "log_segment_size_min": 1024,
+                "cloud_storage_cache_chunk_size": self.chunk_size,
+                "cloud_storage_cluster_metadata_upload_interval_ms": 1000,
+                "enable_cluster_metadata_upload_loop": True,
+                "controller_snapshot_max_age_sec": 1,
             },
-            environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000},
+            environment={"__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS": 5000},
             si_settings=si_settings,
             # These tests write many objects; set a higher scrub timeout.
-            cloud_storage_scrub_timeout_s=120)
+            cloud_storage_scrub_timeout_s=120,
+        )
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
     def setUp(self):
@@ -1012,9 +1082,9 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
         for topic in self.topics:
             self.kafka_tools.create_topic(topic)
         rpk = RpkTool(self.redpanda)
-        rpk.alter_topic_config(self.topic,
-                               TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_MS,
-                               '1000')
+        rpk.alter_topic_config(
+            self.topic, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_MS, "1000"
+        )
 
     @skip_debug_mode
     @cluster(num_nodes=2)
@@ -1023,29 +1093,33 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
         Test that reproduces a slow shutdown when many partitions each with
         many hydrated segments get shut down.
         """
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       self.topic,
-                                       msg_size=1024,
-                                       msg_count=10 * 1000 * 1000,
-                                       rate_limit_bps=256 *
-                                       self.small_segment_size,
-                                       custom_node=self.preallocated_nodes)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=1024,
+            msg_count=10 * 1000 * 1000,
+            rate_limit_bps=256 * self.small_segment_size,
+            custom_node=self.preallocated_nodes,
+        )
         producer.start()
         try:
             wait_until(
                 lambda: nodes_report_cloud_segments(self.redpanda, 128 * 200),
                 timeout_sec=300,
-                backoff_sec=5)
+                backoff_sec=5,
+            )
         finally:
             producer.stop()
             producer.wait()
 
-        seq_consumer = KgoVerifierSeqConsumer(self.test_context,
-                                              self.redpanda,
-                                              self.topic,
-                                              0,
-                                              nodes=self.preallocated_nodes)
+        seq_consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            0,
+            nodes=self.preallocated_nodes,
+        )
         seq_consumer.start(clean=False)
         seq_consumer.wait()
         self.redpanda.stop_node(self.redpanda.nodes[0])
@@ -1057,20 +1131,22 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
         Test that reproduces an OOM when doing recovery with a large dataset in
         the bucket.
         """
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       self.topic,
-                                       msg_size=1024,
-                                       msg_count=10 * 1000 * 1000,
-                                       rate_limit_bps=256 *
-                                       self.small_segment_size,
-                                       custom_node=self.preallocated_nodes)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=1024,
+            msg_count=10 * 1000 * 1000,
+            rate_limit_bps=256 * self.small_segment_size,
+            custom_node=self.preallocated_nodes,
+        )
         producer.start()
         try:
             wait_until(
                 lambda: nodes_report_cloud_segments(self.redpanda, 100 * 200),
                 timeout_sec=180,
-                backoff_sec=3)
+                backoff_sec=3,
+            )
         finally:
             producer.stop()
             producer.wait()
@@ -1078,20 +1154,18 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
         node = self.redpanda.nodes[0]
         self.redpanda.stop()
         self.redpanda.remove_local_data(node)
-        self.redpanda.restart_nodes(self.redpanda.nodes,
-                                    auto_assign_node_id=True,
-                                    omit_seeds_on_idx_one=False)
-        self.redpanda._admin.await_stable_leader("controller",
-                                                 partition=0,
-                                                 namespace='redpanda',
-                                                 timeout_s=60,
-                                                 backoff_s=2)
+        self.redpanda.restart_nodes(
+            self.redpanda.nodes, auto_assign_node_id=True, omit_seeds_on_idx_one=False
+        )
+        self.redpanda._admin.await_stable_leader(
+            "controller", partition=0, namespace="redpanda", timeout_s=60, backoff_s=2
+        )
 
         rpk = RpkTool(self.redpanda)
         rpk.cluster_recovery_start(wait=True)
-        wait_until(lambda: len(set(rpk.list_topics())) == 1,
-                   timeout_sec=120,
-                   backoff_sec=3)
+        wait_until(
+            lambda: len(set(rpk.list_topics())) == 1, timeout_sec=120, backoff_sec=3
+        )
 
 
 class ShadowIndexingWhileBusyTest(PreallocNodesTest):
@@ -1105,39 +1179,40 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
     topics = [TopicSpec()]
 
     def __init__(self, test_context: TestContext):
-        si_settings = SISettings(test_context,
-                                 log_segment_size=self.segment_size,
-                                 cloud_storage_cache_size=20 * 2**30,
-                                 cloud_storage_enable_remote_read=False,
-                                 cloud_storage_enable_remote_write=False,
-                                 fast_uploads=True)
+        si_settings = SISettings(
+            test_context,
+            log_segment_size=self.segment_size,
+            cloud_storage_cache_size=20 * 2**30,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+            fast_uploads=True,
+        )
 
-        super(ShadowIndexingWhileBusyTest,
-              self).__init__(test_context=test_context,
-                             node_prealloc_count=1,
-                             num_brokers=7,
-                             si_settings=si_settings,
-                             extra_rp_conf={
-                                 'cloud_storage_cache_chunk_size':
-                                 self.chunk_size,
-                             })
+        super(ShadowIndexingWhileBusyTest, self).__init__(
+            test_context=test_context,
+            node_prealloc_count=1,
+            num_brokers=7,
+            si_settings=si_settings,
+            extra_rp_conf={
+                "cloud_storage_cache_chunk_size": self.chunk_size,
+            },
+        )
 
         if not self.redpanda.dedicated_nodes:
             self.redpanda.set_extra_rp_conf(
-                {'cloud_storage_max_segment_readers_per_shard': 10})
+                {"cloud_storage_max_segment_readers_per_shard": 10}
+            )
 
     def setUp(self):
         # Dedicated nodes refers to non-container nodes such as EC2 instances
-        self.topics[
-            0].partition_count = 100 if self.redpanda.dedicated_nodes else 10
+        self.topics[0].partition_count = 100 if self.redpanda.dedicated_nodes else 10
 
         # Topic creation happens here
         super().setUp()
 
 
 class EndToEndSpilloverTest(RedpandaTest):
-    topics = (TopicSpec(partition_count=3,
-                        cleanup_policy=TopicSpec.CLEANUP_DELETE), )
+    topics = (TopicSpec(partition_count=3, cleanup_policy=TopicSpec.CLEANUP_DELETE),)
 
     def __init__(self, test_context):
         extra_rp_conf = dict(cloud_storage_spillover_manifest_size=None)
@@ -1149,18 +1224,22 @@ class EndToEndSpilloverTest(RedpandaTest):
                 log_segment_size=1024,
                 fast_uploads=True,
                 cloud_storage_housekeeping_interval_ms=10000,
-                cloud_storage_spillover_manifest_max_segments=10))
+                cloud_storage_spillover_manifest_max_segments=10,
+            ),
+        )
 
         self.msg_size = 1024 * 256
         self.msg_count = 3000
 
     def produce(self):
         topic_name = self.topics[0].name
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       topic_name,
-                                       msg_size=self.msg_size,
-                                       msg_count=self.msg_count)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            topic_name,
+            msg_size=self.msg_size,
+            msg_count=self.msg_count,
+        )
 
         producer.start()
         producer.wait()
@@ -1173,12 +1252,14 @@ class EndToEndSpilloverTest(RedpandaTest):
 
     def consume(self):
         topic_name = self.topics[0].name
-        consumer = KgoVerifierSeqConsumer(self.test_context,
-                                          self.redpanda,
-                                          topic_name,
-                                          msg_size=self.msg_size,
-                                          debug_logs=True,
-                                          trace_logs=True)
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            topic_name,
+            msg_size=self.msg_size,
+            debug_logs=True,
+            trace_logs=True,
+        )
         consumer.start()
 
         consumer.wait(timeout_sec=200)
@@ -1191,7 +1272,6 @@ class EndToEndSpilloverTest(RedpandaTest):
     @cluster(num_nodes=4, log_allow_list=[r"cluster.*Can't add segment"])
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_spillover(self, cloud_storage_type):
-
         self.logger.info("Start producer")
         self.produce()
 
@@ -1201,15 +1281,16 @@ class EndToEndSpilloverTest(RedpandaTest):
         rpk = RpkTool(self.redpanda)
         num_partitions = self.topics[0].partition_count
         topic_name = self.topics[0].name
-        rpk.alter_topic_config(topic_name, 'retention.local.target.bytes',
-                               0x1000)
+        rpk.alter_topic_config(topic_name, "retention.local.target.bytes", 0x1000)
 
         for pix in range(0, num_partitions):
-            wait_for_local_storage_truncate(self.redpanda,
-                                            self.topic,
-                                            target_bytes=0x2000,
-                                            partition_idx=pix,
-                                            timeout_sec=30)
+            wait_for_local_storage_truncate(
+                self.redpanda,
+                self.topic,
+                target_bytes=0x2000,
+                partition_idx=pix,
+                timeout_sec=30,
+            )
 
         self.logger.info("Start consumer")
         self.consume()
@@ -1227,8 +1308,7 @@ class EndToEndSpilloverTest(RedpandaTest):
 
 
 class EndToEndThrottlingTest(RedpandaTest):
-    topics = (TopicSpec(partition_count=3,
-                        cleanup_policy=TopicSpec.CLEANUP_DELETE), )
+    topics = (TopicSpec(partition_count=3, cleanup_policy=TopicSpec.CLEANUP_DELETE),)
 
     def __init__(self, test_context):
         si_settings = SISettings(
@@ -1237,8 +1317,9 @@ class EndToEndThrottlingTest(RedpandaTest):
             fast_uploads=True,
         )
 
-        super(EndToEndThrottlingTest, self).__init__(test_context=test_context,
-                                                     si_settings=si_settings)
+        super(EndToEndThrottlingTest, self).__init__(
+            test_context=test_context, si_settings=si_settings
+        )
 
         self.rpk = RpkTool(self.redpanda)
         self.admin = Admin(self.redpanda)
@@ -1249,11 +1330,13 @@ class EndToEndThrottlingTest(RedpandaTest):
 
     def produce(self):
         topic_name = self.topics[0].name
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       topic_name,
-                                       msg_size=self.msg_size,
-                                       msg_count=self.msg_count)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            topic_name,
+            msg_size=self.msg_size,
+            msg_count=self.msg_count,
+        )
 
         producer.start()
         producer.wait()
@@ -1262,17 +1345,18 @@ class EndToEndThrottlingTest(RedpandaTest):
         wait_until(self._all_uploads_done, timeout_sec=180, backoff_sec=10)
 
     def _all_uploads_done(self):
-        return all_uploads_done(self.rpk, self.topic, self.redpanda,
-                                self.logger)
+        return all_uploads_done(self.rpk, self.topic, self.redpanda, self.logger)
 
     def consume(self):
         topic_name = self.topics[0].name
-        consumer = KgoVerifierSeqConsumer(self.test_context,
-                                          self.redpanda,
-                                          topic_name,
-                                          loop=False,
-                                          debug_logs=True,
-                                          trace_logs=True)
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            topic_name,
+            loop=False,
+            debug_logs=True,
+            trace_logs=True,
+        )
 
         start = time.time()
         consumer.start()
@@ -1291,19 +1375,27 @@ class EndToEndThrottlingTest(RedpandaTest):
         for iter_ix in range(2):
             # Trim cache.
             self.redpanda.for_nodes(
-                self.redpanda.nodes, lambda n: self.admin.cloud_storage_trim(
-                    byte_limit=0, object_limit=0, node=n))
+                self.redpanda.nodes,
+                lambda n: self.admin.cloud_storage_trim(
+                    byte_limit=0, object_limit=0, node=n
+                ),
+            )
 
             # Restart redpanda to make sure it gave up on all the file handles.
             self.redpanda.restart_nodes(self.redpanda.nodes)
 
             # Wait all topics to have leadership.
-            wait_until(lambda: all(
-                self.admin.get_partition_leader(
-                    namespace='kafka', topic=self.topic, partition=p) != -1
-                for p in range(self.topics[0].partition_count)),
-                       timeout_sec=60,
-                       backoff_sec=1)
+            wait_until(
+                lambda: all(
+                    self.admin.get_partition_leader(
+                        namespace="kafka", topic=self.topic, partition=p
+                    )
+                    != -1
+                    for p in range(self.topics[0].partition_count)
+                ),
+                timeout_sec=60,
+                backoff_sec=1,
+            )
 
             # Measure throughput.
             self.logger.info(f"Start consumer iteration {iter_ix}")
@@ -1322,10 +1414,8 @@ class EndToEndThrottlingTest(RedpandaTest):
     # hard to assert the bandwidth or test duration so we skip the test.
     @cluster(num_nodes=4)
     # @skip_debug_mode
-    @matrix(cloud_storage_type=get_cloud_storage_type(
-        docker_use_arbitrary=True))
+    @matrix(cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True))
     def test_throttling(self, cloud_storage_type):
-
         self.logger.info("Start producer")
         self.produce()
 
@@ -1334,15 +1424,16 @@ class EndToEndThrottlingTest(RedpandaTest):
         rpk = RpkTool(self.redpanda)
         num_partitions = self.topics[0].partition_count
         topic_name = self.topics[0].name
-        rpk.alter_topic_config(topic_name, 'retention.local.target.bytes',
-                               4096)
+        rpk.alter_topic_config(topic_name, "retention.local.target.bytes", 4096)
 
         for pix in range(0, num_partitions):
-            wait_for_local_storage_truncate(self.redpanda,
-                                            self.topic,
-                                            target_bytes=8192,
-                                            partition_idx=pix,
-                                            timeout_sec=30)
+            wait_for_local_storage_truncate(
+                self.redpanda,
+                self.topic,
+                target_bytes=8192,
+                partition_idx=pix,
+                timeout_sec=30,
+            )
 
         # A warm-up consume to make all future measurements fairer.
         # This potentially warms up object storage. Potentially some local
@@ -1361,15 +1452,19 @@ class EndToEndThrottlingTest(RedpandaTest):
         self.logger.info(
             f"Unrestricted bandwidth: {unrestricted_bw} bytes/sec. "
             f"Configuring per shard limit to {per_shard_bw_limit} bytes/sec. "
-            f"Expecting throughput to be less than {expected_bw} bytes/sec.")
+            f"Expecting throughput to be less than {expected_bw} bytes/sec."
+        )
 
         self.redpanda.set_cluster_config(
-            {'cloud_storage_max_throughput_per_shard': per_shard_bw_limit})
+            {"cloud_storage_max_throughput_per_shard": per_shard_bw_limit}
+        )
 
         restricted_bw = self.measure_consume_throughput()
         self.logger.info(f"Restricted bandwidth: {restricted_bw} bytes/sec")
 
-        assert restricted_bw < expected_bw, f"Expected {restricted_bw=} < {expected_bw=}"
+        assert restricted_bw < expected_bw, (
+            f"Expected {restricted_bw=} < {expected_bw=}"
+        )
 
 
 class EndToEndHydrationTimeoutTest(EndToEndShadowIndexingBase):
@@ -1389,10 +1484,13 @@ class EndToEndHydrationTimeoutTest(EndToEndShadowIndexingBase):
         count = 0
         for n in self.redpanda.nodes:
             for family in self.redpanda.metrics(
-                    n, metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS):
+                n, metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS
+            ):
                 for sample in family.samples:
-                    if sample.name == "redpanda_rpc_active_connections" and sample.labels[
-                            "redpanda_server"] == "kafka":
+                    if (
+                        sample.name == "redpanda_rpc_active_connections"
+                        and sample.labels["redpanda_server"] == "kafka"
+                    ):
                         connections = int(sample.value)
                         self.logger.debug(
                             f"open connections: {connections} on node {n.account.hostname}"
@@ -1402,41 +1500,46 @@ class EndToEndHydrationTimeoutTest(EndToEndShadowIndexingBase):
 
     def workload(self):
         msg_count = 5 * (self.segment_size // 2048)
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       self.s3_topic_name,
-                                       msg_size=2048,
-                                       msg_count=msg_count)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.s3_topic_name,
+            msg_size=2048,
+            msg_count=msg_count,
+        )
         producer.start()
         producer.wait(timeout_sec=300)
         producer.free()
 
-        original_snapshot = self.redpanda.storage(
-            all_nodes=True).segments_by_node("kafka", self.topic, 0)
+        original_snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
+            "kafka", self.topic, 0
+        )
 
         for node, node_segments in original_snapshot.items():
-            assert len(
-                node_segments
-            ) >= 5, f"Expected at least 10 segments, but got {len(node_segments)} on {node}"
+            assert len(node_segments) >= 5, (
+                f"Expected at least 10 segments, but got {len(node_segments)} on {node}"
+            )
 
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                self.segment_size,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: self.segment_size,
             },
         )
 
-        wait_for_removal_of_n_segments(redpanda=self.redpanda,
-                                       topic=self.topic,
-                                       partition_idx=0,
-                                       n=2,
-                                       original_snapshot=original_snapshot)
+        wait_for_removal_of_n_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            n=2,
+            original_snapshot=original_snapshot,
+        )
 
         def segments_downloaded():
             downloads = self.redpanda.metric_sum(
-                'vectorized_cloud_storage_successful_downloads_total')
-            self.logger.debug(f'downloads: {downloads}')
+                "vectorized_cloud_storage_successful_downloads_total"
+            )
+            self.logger.debug(f"downloads: {downloads}")
             return downloads > 0
 
         assert not segments_downloaded()
@@ -1446,34 +1549,40 @@ class EndToEndHydrationTimeoutTest(EndToEndShadowIndexingBase):
             # size, this should ensure that the client is disconnected during hydrate.
             self.rpk.consume(self.topic, timeout=1)
         except RpkException as e:
-            assert 'timed out' in e.msg
+            assert "timed out" in e.msg
 
         # All connections should close very quickly once wait for hydration aborts.
-        wait_until(self._all_kafka_connections_closed,
-                   timeout_sec=5,
-                   err_msg="Kafka connections are still open")
+        wait_until(
+            self._all_kafka_connections_closed,
+            timeout_sec=5,
+            err_msg="Kafka connections are still open",
+        )
 
         # Even when the consumer disconnects or times out, the download should still complete.
         # TODO assert that if we have multiple consumers and one disconnects, the others should
         #  be able to consume.
-        wait_until(segments_downloaded,
-                   timeout_sec=30,
-                   backoff_sec=1,
-                   err_msg="Segment downloads did not complete")
+        wait_until(
+            segments_downloaded,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Segment downloads did not complete",
+        )
 
     @cluster(num_nodes=4)
     def test_hydration_completes_on_timeout(self):
         # The short hydration timeout should cause hydrate to abort early
-        self._start_redpanda({
-            'cloud_storage_hydration_timeout_ms': 1,
-            'cloud_storage_disable_chunk_reads': True
-        })
+        self._start_redpanda(
+            {
+                "cloud_storage_hydration_timeout_ms": 1,
+                "cloud_storage_disable_chunk_reads": True,
+            }
+        )
         self.workload()
 
     @cluster(num_nodes=4)
     def test_hydration_completes_when_consumer_killed(self):
         # Disable chunk reads so that hydration downloads full segments and takes longer.
-        self._start_redpanda({'cloud_storage_disable_chunk_reads': True})
+        self._start_redpanda({"cloud_storage_disable_chunk_reads": True})
         self.workload()
 
 
@@ -1481,14 +1590,18 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
     small_segment_size = 4096
     chunk_size = small_segment_size * 0.75
     topic_name = f"{EndToEndShadowIndexingBase.s3_topic_name}"
-    topics = (TopicSpec(name=topic_name,
-                        partition_count=128,
-                        replication_factor=1,
-                        redpanda_remote_write=True,
-                        redpanda_remote_read=True,
-                        retention_bytes=-1,
-                        retention_ms=-1,
-                        segment_bytes=small_segment_size), )
+    topics = (
+        TopicSpec(
+            name=topic_name,
+            partition_count=128,
+            replication_factor=1,
+            redpanda_remote_write=True,
+            redpanda_remote_read=True,
+            retention_bytes=-1,
+            retention_ms=-1,
+            segment_bytes=small_segment_size,
+        ),
+    )
 
     def __init__(self, test_context):
         self.num_brokers = 1
@@ -1505,17 +1618,18 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
                 # Avoid segment merging so we can generate many segments
                 # quickly.
                 "cloud_storage_enable_segment_merging": False,
-                'log_segment_size_min': 1024,
-                'cloud_storage_cache_chunk_size': self.chunk_size,
-                'cloud_storage_cluster_metadata_upload_interval_ms': 1000,
-                'enable_cluster_metadata_upload_loop': True,
-                'controller_snapshot_max_age_sec': 1,
-                'cloud_storage_client_lease_timeout_ms': 1000,
+                "log_segment_size_min": 1024,
+                "cloud_storage_cache_chunk_size": self.chunk_size,
+                "cloud_storage_cluster_metadata_upload_interval_ms": 1000,
+                "enable_cluster_metadata_upload_loop": True,
+                "controller_snapshot_max_age_sec": 1,
+                "cloud_storage_client_lease_timeout_ms": 1000,
             },
-            environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000},
+            environment={"__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS": 5000},
             si_settings=si_settings,
             # These tests write many objects; set a higher scrub timeout.
-            cloud_storage_scrub_timeout_s=120)
+            cloud_storage_scrub_timeout_s=120,
+        )
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
     def setUp(self):
@@ -1535,11 +1649,13 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
             except:
                 pass
 
-            self.rp_qdisc = NodeQdisc(self.redpanda.nodes[0],
-                                      ClusterTopology._get_if_in_use(), 1)
+            self.rp_qdisc = NodeQdisc(
+                self.redpanda.nodes[0], ClusterTopology._get_if_in_use(), 1
+            )
             self.rp_qdisc.initialize()
-            self.rp_qdisc.add(target_addresses=[s3_service_dest],
-                              spec=NetemSpec(300, 100))
+            self.rp_qdisc.add(
+                target_addresses=[s3_service_dest], spec=NetemSpec(300, 100)
+            )
             self.rp_qdisc.drop_incoming(s3_service_dest)
 
         def __exit__(self, exc_type, exc_value, traceback):
@@ -1552,38 +1668,40 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
         Test that reproduces an OOM when doing recovery with a large dataset in
         the bucket.
         """
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       self.topic,
-                                       msg_size=1024,
-                                       msg_count=10 * 1000 * 1000,
-                                       rate_limit_bps=256 *
-                                       self.small_segment_size,
-                                       custom_node=self.preallocated_nodes)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=1024,
+            msg_count=10 * 1000 * 1000,
+            rate_limit_bps=256 * self.small_segment_size,
+            custom_node=self.preallocated_nodes,
+        )
 
         with self.EnableTrafficShaping(self.redpanda) as ts:
             self.redpanda.start()
             self.kafka_tools.create_topic(self.topics[0])
             rpk = RpkTool(self.redpanda)
             rpk.alter_topic_config(
-                self.topic, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_MS,
-                '1000')
+                self.topic, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_MS, "1000"
+            )
 
             def count_timeouts():
                 v = self.redpanda.metric_sum(
                     metric_name="redpanda_cloud_client_lease_timeouts_total",
                     metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
                     nodes=self.redpanda.nodes[0:1],
-                    expect_metric=True)
-                self.logger.info(
-                    f"redpanda_cloud_client_lease_timeout_total: {v}")
+                    expect_metric=True,
+                )
+                self.logger.info(f"redpanda_cloud_client_lease_timeout_total: {v}")
                 return v
 
             def pool_utilization(pct):
                 v = self.redpanda.metrics_sample(
                     "redpanda_cloud_client_client_pool_utilization",
                     metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
-                    nodes=self.redpanda.nodes[0:1])
+                    nodes=self.redpanda.nodes[0:1],
+                )
                 u = [s.value for s in v.samples]
                 self.logger.info(
                     f"redpanda_cloud_client_client_pool_utilization: {json.dumps(u)}"
@@ -1595,10 +1713,11 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
                 "Wait until the client pool is backed up due to long-running requests"
             )
             try:
-                wait_until(lambda:
-                           (count_timeouts() > 40 and pool_utilization(100)),
-                           timeout_sec=180,
-                           backoff_sec=3)
+                wait_until(
+                    lambda: (count_timeouts() > 40 and pool_utilization(100)),
+                    timeout_sec=180,
+                    backoff_sec=3,
+                )
             finally:
                 producer.stop()
                 producer.wait()
@@ -1611,7 +1730,8 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
             wait_until(
                 lambda: nodes_report_cloud_segments(self.redpanda, 10000),
                 timeout_sec=180,
-                backoff_sec=3)
+                backoff_sec=3,
+            )
         finally:
             producer.stop()
             producer.wait()
@@ -1619,17 +1739,15 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
         node = self.redpanda.nodes[0]
         self.redpanda.stop()
         self.redpanda.remove_local_data(node)
-        self.redpanda.restart_nodes(self.redpanda.nodes,
-                                    auto_assign_node_id=True,
-                                    omit_seeds_on_idx_one=False)
-        self.redpanda._admin.await_stable_leader("controller",
-                                                 partition=0,
-                                                 namespace='redpanda',
-                                                 timeout_s=60,
-                                                 backoff_s=2)
+        self.redpanda.restart_nodes(
+            self.redpanda.nodes, auto_assign_node_id=True, omit_seeds_on_idx_one=False
+        )
+        self.redpanda._admin.await_stable_leader(
+            "controller", partition=0, namespace="redpanda", timeout_s=60, backoff_s=2
+        )
 
         rpk = RpkTool(self.redpanda)
         rpk.cluster_recovery_start(wait=True)
-        wait_until(lambda: len(set(rpk.list_topics())) == 1,
-                   timeout_sec=120,
-                   backoff_sec=3)
+        wait_until(
+            lambda: len(set(rpk.list_topics())) == 1, timeout_sec=120, backoff_sec=3
+        )

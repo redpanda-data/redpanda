@@ -27,8 +27,7 @@ def stop_stress(admin: Admin, node: ClusterNode):
 
 class CpuStressInjectionTest(RedpandaTest):
     def __init__(self, test_context):
-        super(CpuStressInjectionTest, self).__init__(test_context,
-                                                     num_brokers=1)
+        super(CpuStressInjectionTest, self).__init__(test_context, num_brokers=1)
 
     def has_started_stress(self):
         return self.redpanda.search_log_any("Started stress fiber")
@@ -45,10 +44,12 @@ class CpuStressInjectionTest(RedpandaTest):
         admin = Admin(self.redpanda)
         node = self.redpanda.nodes[0]
         try:
-            admin.stress_fiber_start(node,
-                                     10,
-                                     min_ms_per_scheduling_point=30,
-                                     max_ms_per_scheduling_point=300)
+            admin.stress_fiber_start(
+                node,
+                10,
+                min_ms_per_scheduling_point=30,
+                max_ms_per_scheduling_point=300,
+            )
         except:
             # Ignore errors, since the HTTP endpoint may be stalled behind a
             # fiber.
@@ -58,9 +59,7 @@ class CpuStressInjectionTest(RedpandaTest):
             wait_until(self.has_reactor_stalls, timeout_sec=10, backoff_sec=1)
             assert self.has_started_stress()
         finally:
-            wait_until(lambda: stop_stress(admin, node),
-                       timeout_sec=30,
-                       backoff_sec=1)
+            wait_until(lambda: stop_stress(admin, node), timeout_sec=30, backoff_sec=1)
 
     @cluster(num_nodes=1)
     def test_stress_fibers_spins(self):
@@ -70,10 +69,12 @@ class CpuStressInjectionTest(RedpandaTest):
         admin = Admin(self.redpanda)
         node = self.redpanda.nodes[0]
         try:
-            admin.stress_fiber_start(node,
-                                     10,
-                                     min_spins_per_scheduling_point=1000,
-                                     max_spins_per_scheduling_point=100000)
+            admin.stress_fiber_start(
+                node,
+                10,
+                min_spins_per_scheduling_point=1000,
+                max_spins_per_scheduling_point=100000,
+            )
         except:
             # Ignore errors, since the HTTP endpoint may be stalled behind a
             # fiber.
@@ -85,9 +86,7 @@ class CpuStressInjectionTest(RedpandaTest):
             # reactor stalls, just look that we started stress fibers.
             wait_until(self.has_started_stress, timeout_sec=10, backoff_sec=1)
         finally:
-            wait_until(lambda: stop_stress(admin, node),
-                       timeout_sec=30,
-                       backoff_sec=1)
+            wait_until(lambda: stop_stress(admin, node), timeout_sec=30, backoff_sec=1)
 
     @cluster(num_nodes=1)
     def test_misconfigured_stress_fibers(self):
@@ -97,48 +96,58 @@ class CpuStressInjectionTest(RedpandaTest):
         admin = Admin(self.redpanda)
         node = self.redpanda.nodes[0]
         try:
-            admin.stress_fiber_start(node,
-                                     10,
-                                     min_ms_per_scheduling_point=1000,
-                                     max_ms_per_scheduling_point=10)
+            admin.stress_fiber_start(
+                node,
+                10,
+                min_ms_per_scheduling_point=1000,
+                max_ms_per_scheduling_point=10,
+            )
             assert False, "Expected failure: require ms min < max"
         except:
             pass
 
         try:
-            admin.stress_fiber_start(node,
-                                     10,
-                                     min_spins_per_scheduling_point=1000,
-                                     max_spins_per_scheduling_point=10)
+            admin.stress_fiber_start(
+                node,
+                10,
+                min_spins_per_scheduling_point=1000,
+                max_spins_per_scheduling_point=10,
+            )
             assert False, "Expected failure: require spins min < max"
         except:
             pass
 
         try:
-            admin.stress_fiber_start(node,
-                                     10,
-                                     min_ms_per_scheduling_point=None,
-                                     max_ms_per_scheduling_point=1000)
+            admin.stress_fiber_start(
+                node,
+                10,
+                min_ms_per_scheduling_point=None,
+                max_ms_per_scheduling_point=1000,
+            )
             assert False, "Expected failure: require both ms min/max be set"
         except:
             pass
 
         try:
-            admin.stress_fiber_start(node,
-                                     10,
-                                     min_spins_per_scheduling_point=None,
-                                     max_spins_per_scheduling_point=1000)
+            admin.stress_fiber_start(
+                node,
+                10,
+                min_spins_per_scheduling_point=None,
+                max_spins_per_scheduling_point=1000,
+            )
             assert False, "Expected failure: require both spins min/max be set"
         except:
             pass
 
         try:
-            admin.stress_fiber_start(node,
-                                     10,
-                                     min_ms_per_scheduling_point=0,
-                                     max_ms_per_scheduling_point=100,
-                                     min_spins_per_scheduling_point=1000,
-                                     max_spins_per_scheduling_point=1000)
+            admin.stress_fiber_start(
+                node,
+                10,
+                min_ms_per_scheduling_point=0,
+                max_ms_per_scheduling_point=100,
+                min_spins_per_scheduling_point=1000,
+                max_spins_per_scheduling_point=1000,
+            )
             assert False, "Expected failure: require either spins or ms set"
         except:
             pass

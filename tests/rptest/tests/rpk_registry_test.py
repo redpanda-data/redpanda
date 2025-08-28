@@ -21,7 +21,9 @@ from rptest.services import tls
 from rptest.tests.pandaproxy_test import User, PandaProxyTLSProvider
 from rptest.util import expect_exception
 
-schema1_avro_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"}]}'
+schema1_avro_def = (
+    '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"}]}'
+)
 schema2_avro_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"},{"name":"f2","type":"string","default":"foo"}]}'
 incompatible_schema = '{"type":"record","name":"myrecord","fields":[{"name":"f2","type":"string"},{"name":"f3","type":"string","default":"foo"}]}'
 
@@ -57,7 +59,9 @@ class RpkRegistryTest(RedpandaTest):
         )
         # SASL Config
         self.security = SecurityConfig()
-        super_username, super_password, super_algorithm = self.redpanda.SUPERUSER_CREDENTIALS
+        super_username, super_password, super_algorithm = (
+            self.redpanda.SUPERUSER_CREDENTIALS
+        )
         self.admin_user = User(0)
         self.admin_user.username = super_username
         self.admin_user.password = super_password
@@ -74,14 +78,15 @@ class RpkRegistryTest(RedpandaTest):
 
         # Enable Basic Auth
         self.security.kafka_enable_authorization = True
-        self.security.endpoint_authn_method = 'sasl'
-        self.schema_registry_config.authn_method = 'http_basic'
+        self.security.endpoint_authn_method = "sasl"
+        self.schema_registry_config.authn_method = "http_basic"
 
         # Cert for principal with no explicitly granted permissions
         self.admin_user.certificate = tls_manager.create_cert(
             socket.gethostname(),
             common_name=self.admin_user.username,
-            name='test_admin_client')
+            name="test_admin_client",
+        )
 
         # TLS.
         self.security.tls_provider = PandaProxyTLSProvider(tls_manager)
@@ -91,16 +96,20 @@ class RpkRegistryTest(RedpandaTest):
         self.redpanda.set_schema_registry_settings(self.schema_registry_config)
         self.redpanda.start()
 
-        self._rpk = RpkTool(self.redpanda,
-                            username=self.admin_user.username,
-                            password=self.admin_user.password,
-                            sasl_mechanism=self.admin_user.algorithm,
-                            tls_cert=self.admin_user.certificate)
+        self._rpk = RpkTool(
+            self.redpanda,
+            username=self.admin_user.username,
+            password=self.admin_user.password,
+            sasl_mechanism=self.admin_user.algorithm,
+            tls_cert=self.admin_user.certificate,
+        )
 
         # Create the user which rpk will use to authenticate.
-        self._rpk.sasl_create_user(self.admin_user.username,
-                                   self.admin_user.password,
-                                   self.admin_user.algorithm)
+        self._rpk.sasl_create_user(
+            self.admin_user.username,
+            self.admin_user.password,
+            self.admin_user.algorithm,
+        )
 
         # wait for users to propagate to nodes
         admin = Admin(self.redpanda)
@@ -115,18 +124,15 @@ class RpkRegistryTest(RedpandaTest):
         wait_until(auth_user_propagated, timeout_sec=60, backoff_sec=3)
 
         # Wait until Schema Registry is ready.
-        wait_until(self._schema_topic_created,
-                   timeout_sec=60,
-                   backoff_sec=3,
-                   retry_on_exc=True)
+        wait_until(
+            self._schema_topic_created, timeout_sec=60, backoff_sec=3, retry_on_exc=True
+        )
 
     def create_schema(self, subject, schema, suffix, references=None):
         with tempfile.NamedTemporaryFile(suffix=suffix) as tf:
-            tf.write(bytes(schema, 'UTF-8'))
+            tf.write(bytes(schema, "UTF-8"))
             tf.seek(0)
-            out = self._rpk.create_schema(subject,
-                                          tf.name,
-                                          references=references)
+            out = self._rpk.create_schema(subject, tf.name, references=references)
             assert out["subject"] == subject
 
     def _schema_topic_created(self):
@@ -141,10 +147,8 @@ class RpkRegistryTest(RedpandaTest):
         subject_3 = "test_subject_3"
         subject_4 = "test_subject_4"
 
-        self.create_schema(subject_1, schema1_avro_def,
-                           ".avro")  # version: 1, ID: 1
-        self.create_schema(subject_2, schema1_proto_def,
-                           ".proto")  # version: 1, ID: 2
+        self.create_schema(subject_1, schema1_avro_def, ".avro")  # version: 1, ID: 1
+        self.create_schema(subject_2, schema1_proto_def, ".proto")  # version: 1, ID: 2
 
         # We can get the schema in multiple ways:
 
@@ -164,7 +168,7 @@ class RpkRegistryTest(RedpandaTest):
 
         # - By schema, checking if the schema has been created in the subject.
         with tempfile.NamedTemporaryFile(suffix=".avro") as tf:
-            tf.write(bytes(schema1_avro_def, 'UTF-8'))
+            tf.write(bytes(schema1_avro_def, "UTF-8"))
             tf.seek(0)
             out = self._rpk.get_schema(subject_1, schema_path=tf.name)
             assert len(out) == 1
@@ -187,10 +191,8 @@ class RpkRegistryTest(RedpandaTest):
 
         # References. Subject 3 references subject 2
         self.create_schema(
-            subject_3,
-            imported_proto_def,
-            ".proto",
-            references=f"simple:{subject_2}:1")  # version: 1, ID: 3
+            subject_3, imported_proto_def, ".proto", references=f"simple:{subject_2}:1"
+        )  # version: 1, ID: 3
 
         out = self._rpk.schema_references(subject_2, "1")
         assert len(out) == 1
@@ -212,8 +214,9 @@ class RpkRegistryTest(RedpandaTest):
 
         # We can't delete a schema if we still have a reference.
         with expect_exception(
-                RpkException, lambda e:
-                "One or more references exist to the schema" in str(e)):
+            RpkException,
+            lambda e: "One or more references exist to the schema" in str(e),
+        ):
             self._rpk.delete_schema(subject_2, version="1", permanent=True)
 
         # First we delete the subject/schema that use the reference:
@@ -228,8 +231,9 @@ class RpkRegistryTest(RedpandaTest):
         out = self._rpk.list_schemas(deleted=True)
         assert not find_subject(out, subject_1)  # Not in the deleted list.
 
-        self.create_schema(subject_4, json_number_schema_def,
-                           ".json")  # version: 1, ID: 4
+        self.create_schema(
+            subject_4, json_number_schema_def, ".json"
+        )  # version: 1, ID: 4
         out = self._rpk.get_schema(subject_4, version="1")
         assert len(out) == 1
         assert out[0]["subject"] == subject_4
@@ -247,16 +251,14 @@ class RpkRegistryTest(RedpandaTest):
 
         def check_compatibility(subject, version, schema):
             with tempfile.NamedTemporaryFile(suffix=".avro") as tf:
-                tf.write(bytes(schema, 'UTF-8'))
+                tf.write(bytes(schema, "UTF-8"))
                 tf.seek(0)
-                out = self._rpk.check_compatibility(subject,
-                                                    version=version,
-                                                    schema_path=tf.name)
+                out = self._rpk.check_compatibility(
+                    subject, version=version, schema_path=tf.name
+                )
                 return out["compatible"]
 
-        assert check_compatibility(subject_1,
-                                   version="1",
-                                   schema=schema1_avro_def)
+        assert check_compatibility(subject_1, version="1", schema=schema1_avro_def)
 
         # We can change the compatibility level.
         out = self._rpk.set_compatibility_level(subject_1, "FORWARD")
@@ -264,12 +266,13 @@ class RpkRegistryTest(RedpandaTest):
 
         # And return appropiately if not compatible.
         assert not check_compatibility(
-            subject_1, version="1", schema=incompatible_schema)
+            subject_1, version="1", schema=incompatible_schema
+        )
 
         # We also fail when a wrong level is passed.
         with expect_exception(
-                RpkException,
-                lambda e: "unknown compatibility level" in str(e)):
+            RpkException, lambda e: "unknown compatibility level" in str(e)
+        ):
             out = self._rpk.set_compatibility_level(subject_1, "WRONG")
 
     @cluster(num_nodes=3)
@@ -277,10 +280,8 @@ class RpkRegistryTest(RedpandaTest):
         subject_1 = "test_subject_1"
         subject_2 = "test_subject_2"
 
-        self.create_schema(subject_1, schema1_avro_def,
-                           ".avro")  # version: 1, ID: 1
-        self.create_schema(subject_2, schema1_proto_def,
-                           ".proto")  # version: 1, ID: 2
+        self.create_schema(subject_1, schema1_avro_def, ".avro")  # version: 1, ID: 1
+        self.create_schema(subject_2, schema1_proto_def, ".proto")  # version: 1, ID: 2
 
         # List.
         out = self._rpk.list_subjects()
@@ -329,13 +330,16 @@ class RpkRegistryTest(RedpandaTest):
 
         subject_2 = "subject-for-reference"
         avro_with_reference = '{"type":"record","name":"test","fields":[{"name":"name","type":"string"},{"name":"telephone","type":"telephone"}]}'
-        self.create_schema(subject_2, avro_with_reference, ".avro",
-                           f"telephone:{subject_1}:1")  # ID 2
+        self.create_schema(
+            subject_2, avro_with_reference, ".avro", f"telephone:{subject_1}:1"
+        )  # ID 2
 
         test_topic = "test_topic_sr"
         self._rpk.create_topic(test_topic)
 
-        msg_1 = '{"name":"redpanda","telephone":{"number":12341234,"identifier":"home"}}'
+        msg_1 = (
+            '{"name":"redpanda","telephone":{"number":12341234,"identifier":"home"}}'
+        )
         key_1 = "somekey"
         expected_msg_1 = json.loads(msg_1)
         # Produce: unencoded key, encoded value:
@@ -354,13 +358,12 @@ class RpkRegistryTest(RedpandaTest):
         assert msg["key"] == key_1
 
         bytes_from_string = bytes(
-            raw_bytes_string.encode().decode('unicode-escape'), 'utf-8')
+            raw_bytes_string.encode().decode("unicode-escape"), "utf-8"
+        )
         assert bytes_from_string[0] == 0
 
         # Now we decode the same message:
-        out = self._rpk.consume(test_topic,
-                                offset="0:1",
-                                use_schema_registry="value")
+        out = self._rpk.consume(test_topic, offset="0:1", use_schema_registry="value")
         msg = json.loads(out)
 
         assert json.loads(msg["value"]) == expected_msg_1
@@ -369,16 +372,14 @@ class RpkRegistryTest(RedpandaTest):
         # We can produce using different schema for key and value
         msg_2 = '{"number":3211123,"identifier":"work"}'
         expected_msg_2 = json.loads(msg_2)
-        self._rpk.produce(test_topic,
-                          key=msg_2,
-                          msg=msg_1,
-                          schema_key_id=1,
-                          schema_id=2)
+        self._rpk.produce(
+            test_topic, key=msg_2, msg=msg_1, schema_key_id=1, schema_id=2
+        )
 
         # And decode them separately
-        out = self._rpk.consume(test_topic,
-                                offset="1:2",
-                                use_schema_registry="key,value")
+        out = self._rpk.consume(
+            test_topic, offset="1:2", use_schema_registry="key,value"
+        )
         msg = json.loads(out)
 
         assert json.loads(msg["value"]) == expected_msg_1
@@ -386,7 +387,6 @@ class RpkRegistryTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_produce_consume_proto(self):
-
         # First we register the schemas with their references.
         subject_1 = "subject_for_person"
         proto_person = """
@@ -413,8 +413,9 @@ message AddressBook {
   repeated .Person people = 1;
 }
 """
-        self.create_schema(subject_2, proto_with_reference, ".proto",
-                           f"person.proto:{subject_1}:1")  # ID 2
+        self.create_schema(
+            subject_2, proto_with_reference, ".proto", f"person.proto:{subject_1}:1"
+        )  # ID 2
 
         test_topic = "test_topic_sr"
         self._rpk.create_topic(test_topic)
@@ -423,11 +424,9 @@ message AddressBook {
         key_1 = "somekey"
         expected_msg_1 = json.loads(msg_1)
         # Produce: unencoded key, encoded value:
-        self._rpk.produce(test_topic,
-                          msg=msg_1,
-                          key=key_1,
-                          schema_id=2,
-                          proto_msg="AddressBook")
+        self._rpk.produce(
+            test_topic, msg=msg_1, key=key_1, schema_id=2, proto_msg="AddressBook"
+        )
 
         # We consume as is, i.e: it will show the encoded value.
         out = self._rpk.consume(test_topic, offset="0:1")
@@ -442,13 +441,12 @@ message AddressBook {
         assert msg["key"] == key_1
 
         bytes_from_string = bytes(
-            raw_bytes_string.encode().decode('unicode-escape'), 'utf-8')
+            raw_bytes_string.encode().decode("unicode-escape"), "utf-8"
+        )
         assert bytes_from_string[0] == 0
 
         # Now we decode the same message:
-        out = self._rpk.consume(test_topic,
-                                offset="0:1",
-                                use_schema_registry="value")
+        out = self._rpk.consume(test_topic, offset="0:1", use_schema_registry="value")
         msg = json.loads(out)
 
         assert json.loads(msg["value"]) == expected_msg_1
@@ -457,18 +455,20 @@ message AddressBook {
         # We can produce using different schema for key and value and a different proto message.
         msg_2 = '{"name":"bar","id":2212,"email":"test2@redpanda.com","phones":[{"number":"1431"}]}'
         expected_msg_2 = json.loads(msg_2)
-        self._rpk.produce(test_topic,
-                          key=msg_2,
-                          msg=msg_1,
-                          schema_key_id=1,
-                          schema_id=2,
-                          proto_key_msg="Person",
-                          proto_msg="AddressBook")
+        self._rpk.produce(
+            test_topic,
+            key=msg_2,
+            msg=msg_1,
+            schema_key_id=1,
+            schema_id=2,
+            proto_key_msg="Person",
+            proto_msg="AddressBook",
+        )
 
         # And decode them separately
-        out = self._rpk.consume(test_topic,
-                                offset="1:2",
-                                use_schema_registry="key,value")
+        out = self._rpk.consume(
+            test_topic, offset="1:2", use_schema_registry="key,value"
+        )
         msg = json.loads(out)
 
         assert json.loads(msg["value"]) == expected_msg_1
@@ -494,32 +494,32 @@ message Test3 {
         expected_msg_3 = json.loads(msg_3)
         # Produce: unencoded key, encoded value:
         self._rpk.produce(
-            test_topic, msg=msg_3, key=key_3, schema_id=3,
-            proto_msg="")  # For single-message, it should default to it.
+            test_topic, msg=msg_3, key=key_3, schema_id=3, proto_msg=""
+        )  # For single-message, it should default to it.
 
         # We consume as is, i.e: it will show the encoded value.
         out = self._rpk.consume(test_topic, offset="2:3")
         msg = json.loads(out)
 
         raw_bytes_string = msg["value"]
-        assert raw_bytes_string != expected_msg_3, f'expected to have raw bytes {raw_bytes_string} to be different than {expected_msg_3}'
-        assert msg["key"] == key_3, f'got key: {msg["key"]}; expected {key_3}'
+        assert raw_bytes_string != expected_msg_3, (
+            f"expected to have raw bytes {raw_bytes_string} to be different than {expected_msg_3}"
+        )
+        assert msg["key"] == key_3, f"got key: {msg['key']}; expected {key_3}"
 
         bytes_from_string = bytes(
-            raw_bytes_string.encode().decode('unicode-escape'), 'utf-8')
-        assert bytes_from_string[
-            0] == 0, f'expected encoding to contain magic byte (0)'
+            raw_bytes_string.encode().decode("unicode-escape"), "utf-8"
+        )
+        assert bytes_from_string[0] == 0, f"expected encoding to contain magic byte (0)"
 
         # Now we decode the same message:
-        out = self._rpk.consume(test_topic,
-                                offset="2:3",
-                                use_schema_registry="value")
+        out = self._rpk.consume(test_topic, offset="2:3", use_schema_registry="value")
         msg = json.loads(out)
 
-        assert json.loads(
-            msg["value"]
-        ) == expected_msg_3, f'got: {json.loads(msg["value"])}; expected {expected_msg_3}'
-        assert msg["key"] == key_3, f'got key: {msg["key"]}; expected {key_3}'
+        assert json.loads(msg["value"]) == expected_msg_3, (
+            f"got: {json.loads(msg['value'])}; expected {expected_msg_3}"
+        )
+        assert msg["key"] == key_3, f"got key: {msg['key']}; expected {key_3}"
 
     @cluster(num_nodes=3)
     def test_produce_consume_json(self):
@@ -568,8 +568,10 @@ message Test3 {
    }
 }"""
         self.create_schema(
-            subject_2, json_with_reference, ".json",
-            f"https://example.com/geographical-location.schema.json:{subject_1}:1"
+            subject_2,
+            json_with_reference,
+            ".json",
+            f"https://example.com/geographical-location.schema.json:{subject_1}:1",
         )  # ID 2
 
         # Produce: unencoded key, encoded value:
@@ -591,13 +593,12 @@ message Test3 {
         assert raw_bytes_string != expected_msg_1
         assert msg["key"] == key_1
         bytes_from_string = bytes(
-            raw_bytes_string.encode().decode('unicode-escape'), 'utf-8')
+            raw_bytes_string.encode().decode("unicode-escape"), "utf-8"
+        )
         assert bytes_from_string[0] == 0
 
         # Now we decode the same message:
-        out = self._rpk.consume(test_topic,
-                                offset="0:1",
-                                use_schema_registry="value")
+        out = self._rpk.consume(test_topic, offset="0:1", use_schema_registry="value")
         msg = json.loads(out)
 
         assert json.loads(msg["value"]) == expected_msg_1
@@ -605,14 +606,11 @@ message Test3 {
 
         # Finally we will check that we fail when the validation fails
         with expect_exception(
-                RpkException,
-                lambda e: "jsonschema validation failed" in str(e)):
+            RpkException, lambda e: "jsonschema validation failed" in str(e)
+        ):
             # Error here is that productId should be an integer and not a string.
             bad_msg = '{"productId":"123","productName":"redpanda","tags":["foo","bar"],"warehouseLocation":{"latitude":37.2795481,"longitude":127.047077}}'
-            self._rpk.produce(test_topic,
-                              msg=bad_msg,
-                              key=key_1,
-                              schema_id="topic")
+            self._rpk.produce(test_topic, msg=bad_msg, key=key_1, schema_id="topic")
 
     @cluster(num_nodes=1)
     def test_registry_mode(self):
@@ -652,6 +650,7 @@ message Test3 {
         assert findModeBySubject(out, subject_2) == read_only_mode
 
         # We do not support import yet
-        with expect_exception(RpkException,
-                              lambda e: 'invalid mode "IMPORT"' in str(e)):
+        with expect_exception(
+            RpkException, lambda e: 'invalid mode "IMPORT"' in str(e)
+        ):
             self._rpk.set_mode("IMPORT", [subject_1, subject_2], format="text")

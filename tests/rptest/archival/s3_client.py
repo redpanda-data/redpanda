@@ -32,12 +32,13 @@ class ObjectMetadata(NamedTuple):
 
 
 class S3AddressingStyle(str, Enum):
-    VIRTUAL = 'virtual'
-    PATH = 'path'
+    VIRTUAL = "virtual"
+    PATH = "path"
 
 
 def retry_on_slowdown(tries=4, delay=1.0, backoff=2.0):
     """Retry with an exponential backoff if SlowDown exception was triggered."""
+
     def retry(fn):
         @wraps(fn)
         def do_retry(*args, **kwargs):
@@ -59,19 +60,20 @@ def retry_on_slowdown(tries=4, delay=1.0, backoff=2.0):
 
 class S3Client:
     """Simple S3 client"""
-    def __init__(self,
-                 region,
-                 access_key,
-                 secret_key,
-                 logger,
-                 endpoint=None,
-                 disable_ssl=True,
-                 signature_version='s3v4',
-                 before_call_headers: Optional[Callable[[], dict[str,
-                                                                 str]]] = None,
-                 use_fips_endpoint=False,
-                 addressing_style: S3AddressingStyle = S3AddressingStyle.PATH):
 
+    def __init__(
+        self,
+        region,
+        access_key,
+        secret_key,
+        logger,
+        endpoint=None,
+        disable_ssl=True,
+        signature_version="s3v4",
+        before_call_headers: Optional[Callable[[], dict[str, str]]] = None,
+        use_fips_endpoint=False,
+        addressing_style: S3AddressingStyle = S3AddressingStyle.PATH,
+    ):
         logger.debug(
             f"Constructed S3Client in region {region}, endpoint {endpoint}, key is set = {access_key is not None}, fips mode {use_fips_endpoint}, addressing style {addressing_style}"
         )
@@ -95,26 +97,28 @@ class S3Client:
 
     def update_boto3_loggers(self):
         """Configure loggers related to boto3 to emit messages
-           with FileHandlers similar to ones from ducktape
-           using same filenames for corresponding log levels
-           
-           loggers updated: boto3, botocore
-           
-           loggers list that can be included can be found in ticket: PESDLC-876         
-           
+        with FileHandlers similar to ones from ducktape
+        using same filenames for corresponding log levels
+
+        loggers updated: boto3, botocore
+
+        loggers list that can be included can be found in ticket: PESDLC-876
+
         """
 
         # If something really need debugging, add 'urllib3'
-        boto_loggers = ['boto3', 'botocore']
+        boto_loggers = ["boto3", "botocore"]
 
         def populate_handler(filename, level):
             for logger_name in boto_loggers:
                 handler = logging.FileHandler(filename)
                 handler.setLevel(level)
-                fmt = logging.Formatter('[%(levelname)-5s - %(asctime)s - '
-                                        f'{logger_name} - %(module)s - '
-                                        '%(funcName)s - lineno:%(lineno)s]: '
-                                        '%(message)s')
+                fmt = logging.Formatter(
+                    "[%(levelname)-5s - %(asctime)s - "
+                    f"{logger_name} - %(module)s - "
+                    "%(funcName)s - lineno:%(lineno)s]: "
+                    "%(message)s"
+                )
                 handler.setFormatter(fmt)
 
                 logging.getLogger(logger_name).addHandler(handler)
@@ -134,32 +138,32 @@ class S3Client:
         cfg = Config(
             region_name=self._region,
             signature_version=self._signature_version,
-            retries={
-                'max_attempts': 10,
-                'mode': 'adaptive'
-            },
-            s3={'addressing_style': f'{self._addressing_style}'},
-            use_fips_endpoint=True if self._use_fips_endpoint else None)
-        cl = boto3.client('s3',
-                          config=cfg,
-                          aws_access_key_id=self._access_key,
-                          aws_secret_access_key=self._secret_key,
-                          endpoint_url=self._endpoint,
-                          use_ssl=not self._disable_ssl)
+            retries={"max_attempts": 10, "mode": "adaptive"},
+            s3={"addressing_style": f"{self._addressing_style}"},
+            use_fips_endpoint=True if self._use_fips_endpoint else None,
+        )
+        cl = boto3.client(
+            "s3",
+            config=cfg,
+            aws_access_key_id=self._access_key,
+            aws_secret_access_key=self._secret_key,
+            endpoint_url=self._endpoint,
+            use_ssl=not self._disable_ssl,
+        )
         if self._before_call_headers is not None:
             event_system = cl.meta.events
-            event_system.register('before-call.s3.*', self._add_header)
+            event_system.register("before-call.s3.*", self._add_header)
         return cl
 
     def register_custom_events(self):
         # src: https://stackoverflow.com/questions/58828800/adding-custom-headers-to-all-boto3-requests
         def process_custom_arguments(params, context, **kwargs):
-            if (custom_headers := params.pop("custom_headers", None)):
+            if custom_headers := params.pop("custom_headers", None):
                 context["custom_headers"] = custom_headers
 
         # Here we extract the headers from the request context and actually set them
         def add_custom_headers(params, context, **kwargs):
-            if (custom_headers := context.get("custom_headers")):
+            if custom_headers := context.get("custom_headers"):
                 params["headers"].update(custom_headers)
 
         event_system = self._cli.meta.events
@@ -178,9 +182,10 @@ class S3Client:
         #                                      custom_headers=custom_headers)
         # Similar event callbacks can be added to other functions when needed
         # Wildcards supported.
-        event_system.register('before-parameter-build.s3.CopyObject',
-                              process_custom_arguments)
-        event_system.register('before-call.s3.CopyObject', add_custom_headers)
+        event_system.register(
+            "before-parameter-build.s3.CopyObject", process_custom_arguments
+        )
+        event_system.register("before-call.s3.CopyObject", add_custom_headers)
 
         return
 
@@ -189,25 +194,24 @@ class S3Client:
         try:
             res = self._cli.create_bucket(
                 Bucket=name,
-                CreateBucketConfiguration={'LocationConstraint': self._region})
+                CreateBucketConfiguration={"LocationConstraint": self._region},
+            )
 
             self.logger.debug(res)
-            assert res['ResponseMetadata']['HTTPStatusCode'] == 200
+            assert res["ResponseMetadata"]["HTTPStatusCode"] == 200
         except ClientError as err:
-            if err.response['Error']['Code'] != 'BucketAlreadyOwnedByYou':
+            if err.response["Error"]["Code"] != "BucketAlreadyOwnedByYou":
                 raise err
 
         def bucket_is_listable():
             try:
                 self._cli.list_objects_v2(Bucket=name)
             except Exception as e:
-                self.logger.warning(
-                    f"Listing {name} failed after creation: {e}")
+                self.logger.warning(f"Listing {name} failed after creation: {e}")
 
                 return False
             else:
-                self.logger.info(
-                    f"Listing bucket {name} succeeded after creation")
+                self.logger.info(f"Listing bucket {name} succeeded after creation")
                 return True
 
         # Wait until ListObjectsv2 requests start working on the newly created
@@ -220,8 +224,8 @@ class S3Client:
             bucket_is_listable,
             timeout_sec=300,
             backoff_sec=5,
-            err_msg=
-            f"Bucket {name} didn't become visible to ListObjectsvv2 requests")
+            err_msg=f"Bucket {name} didn't become visible to ListObjectsvv2 requests",
+        )
 
     def empty_and_delete_bucket(self, name, parallel=False):
         failed_deletions = self.empty_bucket(name, parallel=parallel)
@@ -252,8 +256,7 @@ class S3Client:
         prefixes = hash_prefixes + ["cluster_metadata"] if parallel else [""]
 
         def empty_bucket_prefix(prefix):
-            self.logger.debug(
-                f"empty_bucket: running on {name} prefix={prefix}")
+            self.logger.debug(f"empty_bucket: running on {name} prefix={prefix}")
             failed_keys = []
 
             # boto3 client objects are not thread safe: create one for each worker thread
@@ -283,14 +286,10 @@ class S3Client:
                             for k in key_list:
                                 local.client.delete_object(Bucket=name, Key=k)
                         else:
-                            local.client.delete_objects(Bucket=name,
-                                                        Delete={
-                                                            'Objects':
-                                                            [{
-                                                                'Key': k
-                                                            }
-                                                             for k in key_list]
-                                                        })
+                            local.client.delete_objects(
+                                Bucket=name,
+                                Delete={"Objects": [{"Key": k} for k in key_list]},
+                            )
                     except:
                         self.logger.exception(
                             f"empty_bucket: delete request failed for keys {key_list[0]}..{key_list[-1]}"
@@ -312,7 +311,7 @@ class S3Client:
         all_deleted_count = 0
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             results = executor.map(empty_bucket_prefix, prefixes)
-            for (dc, fk) in results:
+            for dc, fk in results:
                 all_deleted_count += dc
                 all_failed_keys.extend(fk)
 
@@ -324,7 +323,8 @@ class S3Client:
             all_failed_keys.extend(fk)
 
         self.logger.debug(
-            f"empty_bucket: deleted {all_deleted_count} keys (all prefixes)")
+            f"empty_bucket: deleted {all_deleted_count} keys (all prefixes)"
+        )
 
         return all_failed_keys
 
@@ -337,8 +337,7 @@ class S3Client:
 
     def _wait_no_key(self, bucket, key, timeout_sec=10):
         """Wait for the key to apper in the bucket"""
-        deadline = datetime.datetime.now() + datetime.timedelta(
-            seconds=timeout_sec)
+        deadline = datetime.datetime.now() + datetime.timedelta(seconds=timeout_sec)
         try:
             # Busy wait until the object is actually
             # deleted
@@ -356,16 +355,14 @@ class S3Client:
     def _wait_key(self, bucket, key, timeout_sec=30):
         """Wait for the key to apper in the bucket"""
         # Busy wait until the object is available
-        deadline = datetime.datetime.now() + datetime.timedelta(
-            seconds=timeout_sec)
+        deadline = datetime.datetime.now() + datetime.timedelta(seconds=timeout_sec)
         while True:
             try:
                 meta = self._head_object(bucket, key)
                 self.logger.debug(f"object {key} is available, head: {meta}")
                 return
             except ClientError as err:
-                self.logger.debug(
-                    f"error response while polling {bucket}: {err}")
+                self.logger.debug(f"error response while polling {bucket}: {err}")
             now = datetime.datetime.now()
             if now > deadline:
                 raise TimeoutError()
@@ -380,7 +377,7 @@ class S3Client:
             return self._cli.delete_object(Bucket=bucket, Key=key)
         except ClientError as err:
             self.logger.debug(f"error response {err}")
-            if err.response['Error']['Code'] == 'SlowDown':
+            if err.response["Error"]["Code"] == "SlowDown":
                 raise SlowDown()
             else:
                 raise
@@ -392,7 +389,7 @@ class S3Client:
             return self._cli.get_object(Bucket=bucket, Key=key)
         except ClientError as err:
             self.logger.debug(f"error response getting {bucket}/{key}: {err}")
-            if err.response['Error']['Code'] == 'SlowDown':
+            if err.response["Error"]["Code"] == "SlowDown":
                 raise SlowDown()
             else:
                 raise
@@ -404,7 +401,7 @@ class S3Client:
             return self._cli.head_object(Bucket=bucket, Key=key)
         except ClientError as err:
             self.logger.debug(f"error response heading {bucket}/{key}: {err}")
-            if err.response['Error']['Code'] == 'SlowDown':
+            if err.response["Error"]["Code"] == "SlowDown":
                 raise SlowDown()
             else:
                 raise
@@ -414,13 +411,13 @@ class S3Client:
         """Put object to S3"""
         try:
             if not is_bytes:
-                payload = bytes(content, encoding='utf-8')
+                payload = bytes(content, encoding="utf-8")
             else:
                 payload = content
             return self._cli.put_object(Bucket=bucket, Key=key, Body=payload)
         except ClientError as err:
             self.logger.debug(f"error response putting {bucket}/{key} {err}")
-            if err.response['Error']['Code'] == 'SlowDown':
+            if err.response["Error"]["Code"] == "SlowDown":
                 raise SlowDown()
             else:
                 raise
@@ -431,42 +428,34 @@ class S3Client:
         try:
             src_uri = f"{bucket}/{src}"
             custom_headers = {"x-goog-copy-source": src_uri}
-            return self._cli.copy_object(Bucket=bucket,
-                                         Key=dst,
-                                         CopySource=src_uri,
-                                         custom_headers=custom_headers)
+            return self._cli.copy_object(
+                Bucket=bucket,
+                Key=dst,
+                CopySource=src_uri,
+                custom_headers=custom_headers,
+            )
         except ClientError as err:
             self.logger.debug(f"error response copying {bucket}/{src}: {err}")
-            if err.response['Error']['Code'] == 'SlowDown':
+            if err.response["Error"]["Code"] == "SlowDown":
                 raise SlowDown()
             else:
                 raise
 
     def get_object_data(self, bucket, key):
         resp = self._get_object(bucket, key)
-        return resp['Body'].read()
+        return resp["Body"].read()
 
     def put_object(self, bucket, key, data, is_bytes=False):
         self._put_object(bucket, key, data, is_bytes)
 
-    def copy_object(self,
-                    bucket,
-                    src,
-                    dst,
-                    validate=False,
-                    validation_timeout_sec=30):
+    def copy_object(self, bucket, src, dst, validate=False, validation_timeout_sec=30):
         """Copy object inside a bucket and optionally poll the destination until
         the copy will be available or timeout passes."""
         self._copy_single_object(bucket, src, dst)
         if validate:
             self._wait_key(bucket, dst, validation_timeout_sec)
 
-    def move_object(self,
-                    bucket,
-                    src,
-                    dst,
-                    validate=False,
-                    validation_timeout_sec=30):
+    def move_object(self, bucket, src, dst, validate=False, validation_timeout_sec=30):
         """Move object inside a bucket and optionally poll the destination until
         the new location will be available and old will disappear or timeout is reached."""
         self._copy_single_object(bucket, src, dst)
@@ -479,49 +468,51 @@ class S3Client:
         """Get object metadata without downloading it"""
         resp = self._get_object(bucket, key)
         # Note: ETag field contains md5 hash enclosed in double quotes that have to be removed
-        return ObjectMetadata(bucket=bucket,
-                              key=key,
-                              etag=resp['ETag'][1:-1],
-                              content_length=resp['ContentLength'])
+        return ObjectMetadata(
+            bucket=bucket,
+            key=key,
+            etag=resp["ETag"][1:-1],
+            content_length=resp["ContentLength"],
+        )
 
     def write_object_to_file(self, bucket, key, dest_path):
         """Get object and write it to file"""
         resp = self._get_object(bucket, key)
-        with open(dest_path, 'wb') as f:
-            body = resp['Body']
+        with open(dest_path, "wb") as f:
+            body = resp["Body"]
             for chunk in body.iter_chunks(chunk_size=0x1000):
                 f.write(chunk)
 
     @retry_on_slowdown()
-    def _list_objects(self,
-                      *,
-                      bucket,
-                      token=None,
-                      limit=1000,
-                      prefix: Optional[str] = None,
-                      client):
+    def _list_objects(
+        self, *, bucket, token=None, limit=1000, prefix: Optional[str] = None, client
+    ):
         try:
             if token is not None:
-                return client.list_objects_v2(Bucket=bucket,
-                                              MaxKeys=limit,
-                                              ContinuationToken=token,
-                                              Prefix=prefix if prefix else "")
+                return client.list_objects_v2(
+                    Bucket=bucket,
+                    MaxKeys=limit,
+                    ContinuationToken=token,
+                    Prefix=prefix if prefix else "",
+                )
             else:
-                return client.list_objects_v2(Bucket=bucket,
-                                              MaxKeys=limit,
-                                              Prefix=prefix if prefix else "")
+                return client.list_objects_v2(
+                    Bucket=bucket, MaxKeys=limit, Prefix=prefix if prefix else ""
+                )
         except ClientError as err:
             self.logger.debug(f"error response listing {bucket}: {err}")
-            if err.response['Error']['Code'] == 'SlowDown':
+            if err.response["Error"]["Code"] == "SlowDown":
                 raise SlowDown()
             else:
                 raise
 
-    def list_objects(self,
-                     bucket,
-                     topic: Optional[str] = None,
-                     prefix: Optional[str] = None,
-                     client=None) -> Iterator[ObjectMetadata]:
+    def list_objects(
+        self,
+        bucket,
+        topic: Optional[str] = None,
+        prefix: Optional[str] = None,
+        client=None,
+    ) -> Iterator[ObjectMetadata]:
         """
         :param bucket: S3 bucket name
         :param topic: Optional, if set then only return objects belonging to this topic
@@ -534,35 +525,35 @@ class S3Client:
         truncated = True
         while truncated:
             try:
-                res = self._list_objects(bucket=bucket,
-                                         token=token,
-                                         limit=100,
-                                         prefix=prefix,
-                                         client=client)
+                res = self._list_objects(
+                    bucket=bucket, token=token, limit=100, prefix=prefix, client=client
+                )
             except:
                 # For debugging NoSuchBucket errors in tests: if we can't list
                 # this bucket, then try to list what buckets exist.
                 # Related: https://github.com/redpanda-data/redpanda/issues/8490
                 self.logger.error(
-                    f"Error in list_objects '{bucket}', listing all buckets")
+                    f"Error in list_objects '{bucket}', listing all buckets"
+                )
                 for k, v in self.list_buckets(client=client).items():
                     self.logger.error(f"Listed bucket {k}: {v}")
                 raise
 
-            token = res.get('NextContinuationToken')
-            truncated = bool(res['IsTruncated'])
-            if 'Contents' in res:
-                for item in res['Contents']:
+            token = res.get("NextContinuationToken")
+            truncated = bool(res["IsTruncated"])
+            if "Contents" in res:
+                for item in res["Contents"]:
                     # Apply optional topic filtering
-                    if topic is not None and key_to_topic(
-                            item['Key']) != topic:
+                    if topic is not None and key_to_topic(item["Key"]) != topic:
                         self.logger.debug(f"Skip {item['Key']} for {topic}")
                         continue
 
-                    yield ObjectMetadata(bucket=bucket,
-                                         key=item['Key'],
-                                         etag=item['ETag'][1:-1],
-                                         content_length=item['Size'])
+                    yield ObjectMetadata(
+                        bucket=bucket,
+                        key=item["Key"],
+                        etag=item["ETag"][1:-1],
+                        content_length=item["Size"],
+                    )
 
     def list_buckets(self, client=None) -> dict[str, Union[list, dict]]:
         if client is None:
@@ -570,7 +561,7 @@ class S3Client:
         try:
             return client.list_buckets()
         except Exception as ex:
-            self.logger.error(f'Error listing buckets: {ex}')
+            self.logger.error(f"Error listing buckets: {ex}")
             raise
 
     def create_expiration_policy(self, bucket: str, days: int):
@@ -585,24 +576,26 @@ class S3Client:
             self._cli.put_bucket_lifecycle_configuration(
                 Bucket=bucket,
                 LifecycleConfiguration={
-                    "Rules": [{
-                        "Expiration": {
-                            "Days": days
-                        },
-                        "Filter": {},
-                        "ID": f"{bucket}-ducktape-one-day-expiration",
-                        "Status": "Enabled"
-                    }]
-                })
+                    "Rules": [
+                        {
+                            "Expiration": {"Days": days},
+                            "Filter": {},
+                            "ID": f"{bucket}-ducktape-one-day-expiration",
+                            "Status": "Enabled",
+                        }
+                    ]
+                },
+            )
         except ClientError as err:
-            if err.response['Error']['Code'] == 'SlowDown':
+            if err.response["Error"]["Code"] == "SlowDown":
                 self.logger.debug(
                     f"Got SlowDown code when creating bucket lifecycle configuration for {bucket}"
                 )
                 raise SlowDown()
 
             self.logger.error(
-                f"Failed to set lifecycle configuration for {bucket}: {err}")
+                f"Failed to set lifecycle configuration for {bucket}: {err}"
+            )
             raise err
 
     def _gcp_create_expiration_policy(self, bucket: str, days: int):
@@ -613,7 +606,7 @@ class S3Client:
 
     def _add_header(self, model, params, request_signer, **kwargs):
         assert self._before_call_headers is not None
-        params['headers'].update(self._before_call_headers())
+        params["headers"].update(self._before_call_headers())
 
     @property
     def _is_gcs(self):
@@ -622,4 +615,4 @@ class S3Client:
         for some management operations we need to apply custom logic.
         https://cloud.google.com/storage/docs/migrating#methods-comparison
         """
-        return self._endpoint is not None and 'storage.googleapis.com' in self._endpoint
+        return self._endpoint is not None and "storage.googleapis.com" in self._endpoint

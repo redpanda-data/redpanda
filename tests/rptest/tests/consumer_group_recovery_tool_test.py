@@ -14,7 +14,10 @@ from rptest.services.cluster import cluster
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
-from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierConsumerGroupConsumer,
+    KgoVerifierProducer,
+)
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.prealloc_nodes import PreallocNodesTest
@@ -42,7 +45,8 @@ class ConsumerOffsetsRecoveryToolTest(PreallocNodesTest):
                 "enable_leader_balancer": False,
             },
             node_prealloc_count=1,
-            **kwargs)
+            **kwargs,
+        )
 
     def describe_all_groups(self, num_groups: int = 1):
         rpk = RpkTool(self.redpanda)
@@ -50,7 +54,7 @@ class ConsumerOffsetsRecoveryToolTest(PreallocNodesTest):
 
         # The one consumer group in this test comes from KgoVerifierConsumerGroupConsumer
         # for example, kgo-verifier-1691097745-347-0
-        kgo_group_re = re.compile(r'^kgo-verifier-[0-9]+-[0-9]+-0$')
+        kgo_group_re = re.compile(r"^kgo-verifier-[0-9]+-[0-9]+-0$")
 
         self.logger.debug(f"Issue ListGroups, expect {num_groups} groups")
 
@@ -71,14 +75,14 @@ class ConsumerOffsetsRecoveryToolTest(PreallocNodesTest):
             do_list_groups,
             timeout_sec=30,
             backoff_sec=0.5,
-            err_msg="RPK failed to list consumer groups")
+            err_msg="RPK failed to list consumer groups",
+        )
 
         for g in group_list_res:
             gd = rpk.group_describe(g)
             all_groups[gd.name] = {}
             for p in gd.partitions:
-                all_groups[
-                    gd.name][f"{p.topic}/{p.partition}"] = p.current_offset
+                all_groups[gd.name][f"{p.topic}/{p.partition}"] = p.current_offset
 
         return all_groups
 
@@ -89,18 +93,20 @@ class ConsumerOffsetsRecoveryToolTest(PreallocNodesTest):
         msg_size = 1024
         msg_cnt = 10000
 
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       topic.name,
-                                       msg_size,
-                                       msg_cnt,
-                                       custom_node=self.preallocated_nodes)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            topic.name,
+            msg_size,
+            msg_cnt,
+            custom_node=self.preallocated_nodes,
+        )
 
         producer.start(clean=False)
 
-        wait_until(lambda: producer.produce_status.acked > 10,
-                   timeout_sec=30,
-                   backoff_sec=0.5)
+        wait_until(
+            lambda: producer.produce_status.acked > 10, timeout_sec=30, backoff_sec=0.5
+        )
 
         consumer = KgoVerifierConsumerGroupConsumer(
             self.test_context,
@@ -108,13 +114,17 @@ class ConsumerOffsetsRecoveryToolTest(PreallocNodesTest):
             topic.name,
             msg_size,
             readers=3,
-            nodes=self.preallocated_nodes)
+            nodes=self.preallocated_nodes,
+        )
         consumer.start(clean=False)
 
         producer.wait()
         consumer.wait()
 
-        assert consumer.consumer_status.validator.valid_reads >= producer.produce_status.acked
+        assert (
+            consumer.consumer_status.validator.valid_reads
+            >= producer.produce_status.acked
+        )
 
         groups_pre_migration = self.describe_all_groups()
 
@@ -135,8 +145,8 @@ class ConsumerOffsetsRecoveryToolTest(PreallocNodesTest):
 
         # check if topic partition count changed
         wait_until(
-            lambda: len(list(rpk.describe_topic("__consumer_offsets"))) == 16,
-            20)
+            lambda: len(list(rpk.describe_topic("__consumer_offsets"))) == 16, 20
+        )
 
         groups_post_migration = self.describe_all_groups()
 

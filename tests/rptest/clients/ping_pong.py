@@ -12,12 +12,14 @@ class SyncProducer:
         self.last_msg = None
 
     def init(self):
-        self.producer = Producer({
-            "bootstrap.servers": self.bootstrap,
-            "request.required.acks": -1,
-            "retries": 5,
-            "enable.idempotence": True
-        })
+        self.producer = Producer(
+            {
+                "bootstrap.servers": self.bootstrap,
+                "request.required.acks": -1,
+                "retries": 5,
+                "enable.idempotence": True,
+            }
+        )
 
     def on_delivery(self, err, msg):
         if err is not None:
@@ -26,11 +28,13 @@ class SyncProducer:
 
     def produce(self, topic, partition, key, value, timeout_s):
         self.last_msg = None
-        self.producer.produce(topic,
-                              key=key.encode('utf-8'),
-                              value=value.encode('utf-8'),
-                              partition=partition,
-                              callback=lambda e, m: self.on_delivery(e, m))
+        self.producer.produce(
+            topic,
+            key=key.encode("utf-8"),
+            value=value.encode("utf-8"),
+            partition=partition,
+            callback=lambda e, m: self.on_delivery(e, m),
+        )
         self.producer.flush(timeout_s)
         msg = self.last_msg
         if msg == None:
@@ -48,15 +52,16 @@ class LogReader:
         self.stream = None
 
     def init(self, group, topic, partition):
-        self.consumer = Consumer({
-            "bootstrap.servers": self.bootstrap,
-            "group.id": group,
-            "enable.auto.commit": False,
-            "auto.offset.reset": "earliest",
-            "isolation.level": "read_committed"
-        })
-        self.consumer.assign(
-            [TopicPartition(topic, partition, OFFSET_BEGINNING)])
+        self.consumer = Consumer(
+            {
+                "bootstrap.servers": self.bootstrap,
+                "group.id": group,
+                "enable.auto.commit": False,
+                "auto.offset.reset": "earliest",
+                "isolation.level": "read_committed",
+            }
+        )
+        self.consumer.assign([TopicPartition(topic, partition, OFFSET_BEGINNING)])
         self.stream = self.stream_gen()
 
     def stream_gen(self):
@@ -72,8 +77,8 @@ class LogReader:
                 raise KafkaException(KafkaError(KafkaError._TIMED_OUT))
             for msg in self.stream:
                 offset = msg.offset()
-                value = msg.value().decode('utf-8')
-                key = msg.key().decode('utf-8')
+                value = msg.value().decode("utf-8")
+                key = msg.key().decode("utf-8")
                 if check(offset, key, value):
                     return
 
@@ -99,9 +104,7 @@ class PingPong:
         random.shuffle(self.brokers)
         bootstrap = ",".join(self.brokers)
         self.consumer = LogReader(bootstrap)
-        self.consumer.init(group="ping_ponger1",
-                           topic=topic,
-                           partition=partition)
+        self.consumer.init(group="ping_ponger1", topic=topic, partition=partition)
         self.producer = SyncProducer(bootstrap)
         self.producer.init()
         self.logger = logger
@@ -119,11 +122,13 @@ class PingPong:
         while True:
             count += 1
             try:
-                offset = self.producer.produce(topic=self.topic,
-                                               partition=self.partition,
-                                               key=key,
-                                               value=value,
-                                               timeout_s=timeout_s)
+                offset = self.producer.produce(
+                    topic=self.topic,
+                    partition=self.partition,
+                    key=key,
+                    value=value,
+                    timeout_s=timeout_s,
+                )
                 break
             except KafkaException as e:
                 if count > retries:
@@ -144,9 +149,8 @@ class PingPong:
                 self.producer.init()
                 self.logger.info(f"produce request {key}={value} timed out")
 
-        self.consumer.read_until(expect(offset, key, value),
-                                 timeout_s=timeout_s)
+        self.consumer.read_until(expect(offset, key, value), timeout_s=timeout_s)
         latency = time.time() - start
         self.logger.info(
-            f"ping_pong produced and consumed {key}={value}@{offset} in {(latency)*1000.0:.2f} ms"
+            f"ping_pong produced and consumed {key}={value}@{offset} in {(latency) * 1000.0:.2f} ms"
         )

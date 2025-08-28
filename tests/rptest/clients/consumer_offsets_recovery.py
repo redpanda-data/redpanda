@@ -14,10 +14,11 @@ class ConsumerOffsetsRecovery:
     """
     Wrap tools/consumer_offsets_recovery for use in tests
     """
+
     def __init__(self, redpanda: RedpandaService):
         self._redpanda = redpanda
-        self._cfg_path = '/tmp/cgr.properties'
-        self._offsets_cache_path = '/tmp/offsets'
+        self._cfg_path = "/tmp/cgr.properties"
+        self._offsets_cache_path = "/tmp/offsets"
 
     def _cmd(self, partition_count, dry_run):
         cmd = "python3 /opt/scripts/consumer_offsets_recovery/main.py"

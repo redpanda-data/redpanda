@@ -45,20 +45,21 @@ class DatalakeDelayedTranslationTest(RedpandaTest):
     SCHEMA_NAME = "schema"
 
     def __init__(self, test_ctx, *args, **kwargs):
-        super(DatalakeDelayedTranslationTest,
-              self).__init__(test_ctx,
-                             num_brokers=1,
-                             si_settings=SISettings(
-                                 test_context=test_ctx,
-                                 log_segment_size=10 * 1024,
-                                 cloud_storage_max_connections=5,
-                                 cloud_storage_enable_remote_read=True,
-                                 cloud_storage_enable_remote_write=True,
-                             ),
-                             extra_rp_conf={"iceberg_enabled": False},
-                             schema_registry_config=SchemaRegistryConfig(),
-                             *args,
-                             **kwargs)
+        super(DatalakeDelayedTranslationTest, self).__init__(
+            test_ctx,
+            num_brokers=1,
+            si_settings=SISettings(
+                test_context=test_ctx,
+                log_segment_size=10 * 1024,
+                cloud_storage_max_connections=5,
+                cloud_storage_enable_remote_read=True,
+                cloud_storage_enable_remote_write=True,
+            ),
+            extra_rp_conf={"iceberg_enabled": False},
+            schema_registry_config=SchemaRegistryConfig(),
+            *args,
+            **kwargs,
+        )
 
     def setUp(self):
         pass  # redpanda will be started by DatalakeServices
@@ -72,8 +73,10 @@ class DatalakeDelayedTranslationTest(RedpandaTest):
     def _get_partition_local_starts(self, pids) -> list[int]:
         admin = Admin(self.redpanda)
         return [
-            admin.get_partition_cloud_storage_status(
-                self.TOPIC_NAME, pid)['local_log_start_offset'] for pid in pids
+            admin.get_partition_cloud_storage_status(self.TOPIC_NAME, pid)[
+                "local_log_start_offset"
+            ]
+            for pid in pids
         ]
 
     def _query_minmax(self, query_engine: QueryEngineBase):
@@ -85,33 +88,42 @@ class DatalakeDelayedTranslationTest(RedpandaTest):
             GROUP BY 1
         """) as cursor:
             last_query_result = {
-                row[0]: dict(min_offset=row[1], max_offset=row[2])
-                for row in cursor
+                row[0]: dict(min_offset=row[1], max_offset=row[2]) for row in cursor
             }
             self.redpanda.logger.debug(f"{last_query_result=}")
             return last_query_result
 
     def produce_until_result(self, *args, **kwargs):
         try:
-            self._connect.start_stream(name="ducky_stream",
-                                       config=counter_stream_config(
-                                           self.redpanda, self.TOPIC_NAME,
-                                           self.SCHEMA_NAME,
-                                           {"weight": "range(0, 10000)"}, 0))
+            self._connect.start_stream(
+                name="ducky_stream",
+                config=counter_stream_config(
+                    self.redpanda,
+                    self.TOPIC_NAME,
+                    self.SCHEMA_NAME,
+                    {"weight": "range(0, 10000)"},
+                    0,
+                ),
+            )
             return wait_until_result(*args, **kwargs)
         finally:
             self._connect.stop_stream("ducky_stream", should_finish=False)
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
-            catalog_type=supported_catalog_types())
-    def test_basic(self, cloud_storage_type, query_engine: QueryEngineType,
-                   catalog_type):
-        with DatalakeServices(self.test_context,
-                              redpanda=self.redpanda,
-                              catalog_type=catalog_type,
-                              include_query_engines=[query_engine]) as dl:
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
+        catalog_type=supported_catalog_types(),
+    )
+    def test_basic(
+        self, cloud_storage_type, query_engine: QueryEngineType, catalog_type
+    ):
+        with DatalakeServices(
+            self.test_context,
+            redpanda=self.redpanda,
+            catalog_type=catalog_type,
+            include_query_engines=[query_engine],
+        ) as dl:
             query_engine_inst = dl.service(engine_type=query_engine)
             assert query_engine_inst is not None
 
@@ -119,7 +131,8 @@ class DatalakeDelayedTranslationTest(RedpandaTest):
                 self.redpanda.all_up,
                 timeout_sec=60,
                 backoff_sec=1,
-                err_msg=f"Failed waiting for redpanda to become available")
+                err_msg=f"Failed waiting for redpanda to become available",
+            )
 
             rpk = RpkTool(self.redpanda)
             rpk.create_topic(
@@ -131,18 +144,17 @@ class DatalakeDelayedTranslationTest(RedpandaTest):
                     # in hope there is some kafka data in 10k worth of logs
                     "retention.local.target.bytes": 10 * 1024,
                     "cleanup.policy": "delete",
-                })
+                },
+            )
             rpk.create_schema_from_str(self.SCHEMA_NAME, self.AVRO_SCHEMA_STR)
 
-            self._connect = RedpandaConnectService(self.test_context,
-                                                   self.redpanda)
+            self._connect = RedpandaConnectService(self.test_context, self.redpanda)
             self._connect.start()
 
             # produce until all partitions are GCed locally
 
             def is_truncated():
-                log_starts = self._for_each_partition(
-                    self._get_partition_local_starts)
+                log_starts = self._for_each_partition(self._get_partition_local_starts)
                 self.redpanda.logger.debug(f"{log_starts=}")
                 return all(s > 0 for s in log_starts), log_starts
 
@@ -150,7 +162,8 @@ class DatalakeDelayedTranslationTest(RedpandaTest):
                 is_truncated,
                 timeout_sec=600,
                 backoff_sec=15,
-                err_msg="Failed waiting for all partitions to be GCed")
+                err_msg="Failed waiting for all partitions to be GCed",
+            )
 
             # enable iceberg
 
@@ -158,13 +171,14 @@ class DatalakeDelayedTranslationTest(RedpandaTest):
                 {
                     "iceberg_enabled": True,
                     "iceberg_catalog_commit_interval_ms": 5000,
-                    "iceberg_target_lag_ms": 5000
+                    "iceberg_target_lag_ms": 5000,
                 },
-                expect_restart=True)
+                expect_restart=True,
+            )
 
             for k, v in {
-                    TopicSpec.PROPERTY_ICEBERG_MODE: "key_value",
-                    TopicSpec.PROPERTY_ICEBERG_TARGET_LAG_MS: 10000
+                TopicSpec.PROPERTY_ICEBERG_MODE: "key_value",
+                TopicSpec.PROPERTY_ICEBERG_TARGET_LAG_MS: 10000,
             }.items():
                 rpk.alter_topic_config(self.TOPIC_NAME, k, v)
 
@@ -186,14 +200,16 @@ class DatalakeDelayedTranslationTest(RedpandaTest):
                 n_translated = len(last_query_results)
                 n_total = self._partition_count()
                 self.redpanda.logger.info(
-                    f"{n_translated} of {n_total} partitions translated")
+                    f"{n_translated} of {n_total} partitions translated"
+                )
                 return n_translated == n_total, last_query_results
 
             query_results_when_translated = wait_until_result(
                 translation_started,
                 timeout_sec=600,
                 backoff_sec=1,
-                err_msg="Failed waiting for all partitions to be translated")
+                err_msg="Failed waiting for all partitions to be translated",
+            )
             iceberg_max_offsets = {
                 pid: res["max_offset"]
                 for pid, res in query_results_when_translated.items()
@@ -205,21 +221,24 @@ class DatalakeDelayedTranslationTest(RedpandaTest):
             def translation_continues():
                 # must work exception-free this time
                 last_query_result = self._query_minmax(query_engine_inst)
-                state = ({
-                    "pid": pid,
-                    "old": old_max_offset,
-                    "new": last_query_result[pid]["max_offset"]
-                } for pid, old_max_offset in iceberg_max_offsets.items())
+                state = (
+                    {
+                        "pid": pid,
+                        "old": old_max_offset,
+                        "new": last_query_result[pid]["max_offset"],
+                    }
+                    for pid, old_max_offset in iceberg_max_offsets.items()
+                )
                 stuck = [d for d in state if d["new"] <= d["old"]]
-                self.redpanda.logger.info(
-                    f"partitions not progressed: {stuck}")
+                self.redpanda.logger.info(f"partitions not progressed: {stuck}")
                 return stuck == []
 
             self.produce_until_result(
                 translation_continues,
                 timeout_sec=600,
                 backoff_sec=1,
-                err_msg="Failed waiting for partitions translation continuing")
+                err_msg="Failed waiting for partitions translation continuing",
+            )
 
             # need more time to shut down
 

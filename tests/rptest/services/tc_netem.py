@@ -87,8 +87,8 @@ class NetemDuplicate(typing.NamedTuple):
 
 
 def _list_network_devices(node):
-    lines = node.account.ssh_output('ls /sys/class/net/').decode('utf-8')
-    return [d for d in lines.splitlines() if d != 'lo']
+    lines = node.account.ssh_output("ls /sys/class/net/").decode("utf-8")
+    return [d for d in lines.splitlines() if d != "lo"]
 
 
 def _tc_netem_execute(
@@ -112,12 +112,12 @@ def _tc_netem_execute(
 
 def tc_netem_add(node, option, device=None):
     option.validate()
-    return _tc_netem_execute(node, 'add', option.get_command(), device)
+    return _tc_netem_execute(node, "add", option.get_command(), device)
 
 
 def tc_netem_delete(node, device=None):
-    return _tc_netem_execute(node, 'delete', "netem", device)
+    return _tc_netem_execute(node, "delete", "netem", device)
 
 
 def tc_netem_list(node, device=None):
-    return _tc_netem_execute(node, 'list', "", device)
+    return _tc_netem_execute(node, "list", "", device)

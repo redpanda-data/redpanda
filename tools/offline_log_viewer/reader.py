@@ -9,12 +9,14 @@ SERDE_CHECKSUM_ENVELOPE_FORMAT = "<BBIi"
 SERDE_ENVELOPE_SIZE = struct.calcsize(SERDE_ENVELOPE_FORMAT)
 SERDE_CHECKSUM_ENVELOPE_SIZE = struct.calcsize(SERDE_CHECKSUM_ENVELOPE_FORMAT)
 
-SerdeEnvelope = collections.namedtuple('SerdeEnvelope',
-                                       ('version', 'compat_version', 'size'))
+SerdeEnvelope = collections.namedtuple(
+    "SerdeEnvelope", ("version", "compat_version", "size")
+)
 SerdeChecksumEnvelope = collections.namedtuple(
-    'SerdeChecksumEnvelope', ('version', 'compat_version', 'size', 'checksum'))
+    "SerdeChecksumEnvelope", ("version", "compat_version", "size", "checksum")
+)
 
-logger = logging.getLogger('reader')
+logger = logging.getLogger("reader")
 
 
 class Endianness(Enum):
@@ -23,10 +25,9 @@ class Endianness(Enum):
 
 
 class Reader:
-    def __init__(self,
-                 stream,
-                 endianness=Endianness.LITTLE_ENDIAN,
-                 include_envelope=False):
+    def __init__(
+        self, stream, endianness=Endianness.LITTLE_ENDIAN, include_envelope=False
+    ):
         # BytesIO provides .getBuffer(), BufferedReader peek()
         self.stream = BufferedReader(stream)
         self.endianness = endianness
@@ -42,7 +43,7 @@ class Reader:
         while True:
             i = ord(self.stream.read(1))
             if i & 128:
-                result |= ((i & 0x7f) << shift)
+                result |= (i & 0x7F) << shift
             else:
                 result |= i << shift
                 break
@@ -51,35 +52,35 @@ class Reader:
         return Reader._decode_zig_zag(result)
 
     def with_endianness(self, str):
-        ch = '<' if self.endianness == Endianness.LITTLE_ENDIAN else '>'
+        ch = "<" if self.endianness == Endianness.LITTLE_ENDIAN else ">"
         return f"{ch}{str}"
 
     def read_int8(self):
-        return struct.unpack(self.with_endianness('b'), self.stream.read(1))[0]
+        return struct.unpack(self.with_endianness("b"), self.stream.read(1))[0]
 
     def read_uint8(self):
-        return struct.unpack(self.with_endianness('B'), self.stream.read(1))[0]
+        return struct.unpack(self.with_endianness("B"), self.stream.read(1))[0]
 
     def read_int16(self):
-        return struct.unpack(self.with_endianness('h'), self.stream.read(2))[0]
+        return struct.unpack(self.with_endianness("h"), self.stream.read(2))[0]
 
     def read_uint16(self):
-        return struct.unpack(self.with_endianness('H'), self.stream.read(2))[0]
+        return struct.unpack(self.with_endianness("H"), self.stream.read(2))[0]
 
     def read_int32(self):
-        return struct.unpack(self.with_endianness('i'), self.stream.read(4))[0]
+        return struct.unpack(self.with_endianness("i"), self.stream.read(4))[0]
 
     def read_uint32(self):
-        return struct.unpack(self.with_endianness('I'), self.stream.read(4))[0]
+        return struct.unpack(self.with_endianness("I"), self.stream.read(4))[0]
 
     def read_int64(self):
-        return struct.unpack(self.with_endianness('q'), self.stream.read(8))[0]
+        return struct.unpack(self.with_endianness("q"), self.stream.read(8))[0]
 
     def read_uint64(self):
-        return struct.unpack(self.with_endianness('Q'), self.stream.read(8))[0]
+        return struct.unpack(self.with_endianness("Q"), self.stream.read(8))[0]
 
     def read_double(self):
-        return struct.unpack(self.with_endianness('d'), self.stream.read(8))[0]
+        return struct.unpack(self.with_endianness("d"), self.stream.read(8))[0]
 
     def read_serde_enum(self):
         return self.read_int32()
@@ -93,11 +94,11 @@ class Reader:
 
     def read_string(self):
         len = self.read_int32()
-        return self.stream.read(len).decode('utf-8')
+        return self.stream.read(len).decode("utf-8")
 
     def read_kafka_string(self):
         len = self.read_int16()
-        return self.stream.read(len).decode('utf-8')
+        return self.stream.read(len).decode("utf-8")
 
     def read_kafka_bytes(self):
         len = self.read_int32()
@@ -113,7 +114,7 @@ class Reader:
         len = self.read_int16()
         if len == -1:
             return None
-        return self.stream.read(len).decode('utf-8')
+        return self.stream.read(len).decode("utf-8")
 
     def read_vector(self, type_read):
         sz = self.read_int32()
@@ -138,7 +139,8 @@ class Reader:
     def read_checksum_envelope(self, type_read=None, reader_version=0):
         header = self.read_bytes(SERDE_CHECKSUM_ENVELOPE_SIZE)
         envelope = SerdeChecksumEnvelope(
-            *struct.unpack(SERDE_CHECKSUM_ENVELOPE_FORMAT, header))
+            *struct.unpack(SERDE_CHECKSUM_ENVELOPE_FORMAT, header)
+        )
         return self.read_envelope_inner(envelope, type_read, reader_version)
 
     def read_envelope_inner(self, envelope, type_read, reader_version):
@@ -158,19 +160,19 @@ class Reader:
                     logger.warning(
                         f"Reading {type_read=} envelope with version {envelope.version},"
                         f" but max compat version is {reader_version}."
-                        f" The output is likely to be incomplete.")
+                        f" The output is likely to be incomplete."
+                    )
 
                 v = type_read(self, envelope.version)
 
                 # Skip the rest of the envelope.
-                bytes_left_in_envelope -= self.stream.tell(
-                ) - envelope_start_pos
+                bytes_left_in_envelope -= self.stream.tell() - envelope_start_pos
                 self.stream.read(bytes_left_in_envelope)
 
                 if not self.include_envelope:
                     return v
                 else:
-                    return {'envelope': envelope} | v
+                    return {"envelope": envelope} | v
             else:
                 # Skip the the envelope.
                 self.stream.read(bytes_left_in_envelope)
@@ -178,10 +180,7 @@ class Reader:
                     f"can't decode {envelope.version=}, check {envelope.compat_version=} > {reader_version=} for {type_read=}"
                 )
                 return {
-                    'error': {
-                        'reader_version': reader_version,
-                        'envelope': envelope
-                    }
+                    "error": {"reader_version": reader_version, "envelope": envelope}
                 }
         return envelope
 
@@ -196,11 +195,11 @@ class Reader:
         state = self.read_int8()
         t = {}
         if state == -1:
-            t['state'] = 'disabled'
+            t["state"] = "disabled"
         elif state == 0:
-            t['state'] = 'empty'
+            t["state"] = "empty"
         else:
-            t['value'] = type_read(self)
+            t["value"] = type_read(self)
         return t
 
     def read_bytes(self, length):
@@ -210,14 +209,16 @@ class Reader:
         return self.stream.peek(length)
 
     def read_uuid(self):
-        return ''.join([
-            f'{self.read_uint8():02x}' + ('-' if k in [3, 5, 7, 9] else '')
-            for k in range(16)
-        ])
+        return "".join(
+            [
+                f"{self.read_uint8():02x}" + ("-" if k in [3, 5, 7, 9] else "")
+                for k in range(16)
+            ]
+        )
 
     def peek_int8(self):
         # peek returns the whole memory buffer, slice is needed to conform to struct format string
-        return struct.unpack('<b', self.stream.peek(1)[:1])[0]
+        return struct.unpack("<b", self.stream.peek(1)[:1])[0]
 
     def skip(self, length):
         self.stream.read(length)

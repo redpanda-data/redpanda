@@ -19,7 +19,11 @@ from collections import namedtuple
 from typing import Any, Iterator, Optional
 from ducktape.cluster.cluster import ClusterNode
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda_types import SSL_SECURITY, KafkaClientSecurity, check_username_password
+from rptest.services.redpanda_types import (
+    SSL_SECURITY,
+    KafkaClientSecurity,
+    check_username_password,
+)
 from rptest.util import wait_until_result
 from rptest.services import tls
 from rptest.clients.types import TopicSpec
@@ -66,15 +70,9 @@ class RpkException(Exception):
 
 
 class RpkPartition:
-    def __init__(self,
-                 id,
-                 leader,
-                 leader_epoch,
-                 replicas,
-                 lso,
-                 hw,
-                 start_offset,
-                 load_error=None):
+    def __init__(
+        self, id, leader, leader_epoch, replicas, lso, hw, start_offset, load_error=None
+    ):
         self.id = id
         self.leader = leader
         self.leader_epoch = leader_epoch
@@ -86,8 +84,13 @@ class RpkPartition:
 
     def __str__(self):
         ret = "id: {}, leader: {}, leader_epoch: {} replicas: {}, hw: {}, start_offset: {}".format(
-            self.id, self.leader, self.leader_epoch, self.replicas,
-            self.high_watermark, self.start_offset)
+            self.id,
+            self.leader,
+            self.leader_epoch,
+            self.replicas,
+            self.high_watermark,
+            self.start_offset,
+        )
         if self.load_error:
             ret += f", load_error: `{self.load_error}'"
         return ret
@@ -95,12 +98,15 @@ class RpkPartition:
     def __eq__(self, other):
         if other is None:
             return False
-        return self.id == other.id and self.leader == other.leader \
-            and self.leader_epoch == other.leader_epoch \
-            and self.replicas == other.replicas \
-            and self.high_watermark == other.high_watermark \
-            and self.start_offset == other.start_offset \
+        return (
+            self.id == other.id
+            and self.leader == other.leader
+            and self.leader_epoch == other.leader_epoch
+            and self.replicas == other.replicas
+            and self.high_watermark == other.high_watermark
+            and self.start_offset == other.start_offset
             and self.load_error == other.load_error
+        )
 
 
 class RpkGroupPartition(typing.NamedTuple):
@@ -232,14 +238,15 @@ def parse_rpk_table_lines(lines):
         if not m:
             raise RpkException(f"can't parse header: '{lines[0]}'")
         columns.append(RpkColumnHeader(m.group(1), len(m.group(2))))
-        header = header[columns[-1].width():]
+        header = header[columns[-1].width() :]
         if columns[-1].name in seen_names:
             raise RpkException(
-                f"rpk table have duplicated column: '{columns[-1].name}'")
+                f"rpk table have duplicated column: '{columns[-1].name}'"
+            )
         seen_names.add(columns[-1].name)
 
     rows = []
-    for line in lines[h_idx + 1:]:
+    for line in lines[h_idx + 1 :]:
         row = []
         position = 0
         for column in columns:
@@ -251,11 +258,11 @@ def parse_rpk_table_lines(lines):
                     value = ""
             else:
                 if position + column.width() < len(line):
-                    if line[position + column.width() - 1] != ' ':
+                    if line[position + column.width() - 1] != " ":
                         raise RpkException(
                             f"can't parse '{line}': value at {column.name} must end with padding"
                         )
-                    value = line[position:position + column.width()]
+                    value = line[position : position + column.width()]
                 elif position >= len(line):
                     value = ""
                 else:
@@ -269,16 +276,16 @@ def parse_rpk_table_lines(lines):
 
 
 AccessControlList = namedtuple(
-    'AccessControlList',
+    "AccessControlList",
     [
-        'principal',
-        'host',
-        'resource',
-        'resource_name',
-        'resource_pattern_type',
-        'operation',
-        'permission',
-        'error',
+        "principal",
+        "host",
+        "resource",
+        "resource_name",
+        "resource_pattern_type",
+        "operation",
+        "permission",
+        "error",
     ],
 )
 
@@ -286,8 +293,9 @@ AccessControlList = namedtuple(
 class AclList:
     def __init__(self, table: RpkTable):
         self._acls = {
-            u[u.find(':') + 1:]:
-            [AccessControlList(*r) for r in table.rows if r[0] == u]
+            u[u.find(":") + 1 :]: [
+                AccessControlList(*r) for r in table.rows if r[0] == u
+            ]
             for u in set([r[0] for r in table.rows])
         }
 
@@ -296,45 +304,50 @@ class AclList:
         table = parse_rpk_table(raw)
         return AclList(table)
 
-    def has_permission(self,
-                       principal: str,
-                       operation: str,
-                       resource: str,
-                       resource_name: str,
-                       permission: str = 'ALLOW'):
-        return any([
-            l.operation == operation.upper()
-            and l.resource == resource.upper()
-            and l.resource_name == resource_name
-            and l.permission == permission.upper()
-            for l in self._acls.get(principal, [])
-        ])
+    def has_permission(
+        self,
+        principal: str,
+        operation: str,
+        resource: str,
+        resource_name: str,
+        permission: str = "ALLOW",
+    ):
+        return any(
+            [
+                l.operation == operation.upper()
+                and l.resource == resource.upper()
+                and l.resource_name == resource_name
+                and l.permission == permission.upper()
+                for l in self._acls.get(principal, [])
+            ]
+        )
 
 
 class RpkTool:
     """
     Wrapper around rpk.
     """
-    def __init__(self,
-                 redpanda,
-                 username: str | None = None,
-                 password: str | None = None,
-                 sasl_mechanism: str | None = None,
-                 tls_cert: Optional[tls.Certificate] = None,
-                 tls_enabled: Optional[bool] = None):
+
+    def __init__(
+        self,
+        redpanda,
+        username: str | None = None,
+        password: str | None = None,
+        sasl_mechanism: str | None = None,
+        tls_cert: Optional[tls.Certificate] = None,
+        tls_enabled: Optional[bool] = None,
+    ):
         self._redpanda = redpanda
 
         check_username_password(username, password)
 
-        sasl_set = any(
-            [v is not None for v in (username, password, sasl_mechanism)])
+        sasl_set = any([v is not None for v in (username, password, sasl_mechanism)])
 
         if tls_cert:
-            assert tls_enabled is not False, 'using tls_cert implies tls_enabled'
+            assert tls_enabled is not False, "using tls_cert implies tls_enabled"
             tls_enabled = True
 
-        default_security: KafkaClientSecurity = redpanda.kafka_client_security(
-        )
+        default_security: KafkaClientSecurity = redpanda.kafka_client_security()
 
         if not sasl_set and tls_cert:
             # By convention, if none of the SASL properties are set and tls_cert
@@ -343,17 +356,19 @@ class RpkTool:
             self._security = SSL_SECURITY
         else:
             # integrate any provided credentials with the default redpanda ones
-            self._security = default_security.override(username, password,
-                                                       sasl_mechanism,
-                                                       tls_enabled)
+            self._security = default_security.override(
+                username, password, sasl_mechanism, tls_enabled
+            )
 
         self._tls_cert = tls_cert
 
-    def create_topic(self,
-                     topic: str,
-                     partitions: int = 1,
-                     replicas: int | None = None,
-                     config: dict[str, Any] | None = None):
+    def create_topic(
+        self,
+        topic: str,
+        partitions: int = 1,
+        replicas: int | None = None,
+        config: dict[str, Any] | None = None,
+    ):
         def create_topic():
             try:
                 cmd = ["create", topic]
@@ -376,10 +391,9 @@ class RpkTool:
                 raise e
 
         try:
-            wait_until_result(create_topic,
-                              10,
-                              0.1,
-                              err_msg="Can't create a topic within 10s")
+            wait_until_result(
+                create_topic, 10, 0.1, err_msg="Can't create a topic within 10s"
+            )
         except TimeoutError:
             raise RpkException("rpk couldn't create topic within 10s timeout")
 
@@ -399,37 +413,52 @@ class RpkTool:
         if not status_line.endswith("OK"):
             raise RpkException(f"Bad status: '{status_line}'")
 
-    def _sasl_set_principal_access(self,
-                                   principal,
-                                   operations,
-                                   resource,
-                                   resource_name,
-                                   username: Optional[str] = None,
-                                   password: Optional[str] = None,
-                                   mechanism: Optional[str] = None,
-                                   deny=False,
-                                   ptype: str = "principal"):
-
+    def _sasl_set_principal_access(
+        self,
+        principal,
+        operations,
+        resource,
+        resource_name,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        mechanism: Optional[str] = None,
+        deny=False,
+        ptype: str = "principal",
+    ):
         username = username if username is not None else self._username
         password = password if password is not None else self._password
         mechanism = mechanism if mechanism is not None else self._sasl_mechanism
-        RESOURCES = set([
-            'topic',
-            'transactional-id',
-            'group',
-        ])
+        RESOURCES = set(
+            [
+                "topic",
+                "transactional-id",
+                "group",
+            ]
+        )
         if resource in RESOURCES:
             resource = "--" + resource
         else:
             raise Exception(f"unknown resource: {resource}")
 
-        perm = f'--allow-{ptype}' if not deny else f'--deny-{ptype}'
+        perm = f"--allow-{ptype}" if not deny else f"--deny-{ptype}"
 
         cmd = [
-            "acl", "create", perm, principal, "--operation",
-            ",".join(operations), resource, resource_name, "--brokers",
-            self._redpanda.brokers(), "--user", username, "--password",
-            password, "--sasl-mechanism", mechanism
+            "acl",
+            "create",
+            perm,
+            principal,
+            "--operation",
+            ",".join(operations),
+            resource,
+            resource_name,
+            "--brokers",
+            self._redpanda.brokers(),
+            "--user",
+            username,
+            "--password",
+            password,
+            "--sasl-mechanism",
+            mechanism,
         ] + self._tls_settings()
         return self._run(cmd)
 
@@ -440,16 +469,12 @@ class RpkTool:
         return self._sasl_set_principal_access(*args, **kwargs, deny=True)
 
     def sasl_allow_role(self, *args, **kwargs):
-        return self._sasl_set_principal_access(*args,
-                                               **kwargs,
-                                               deny=False,
-                                               ptype="role")
+        return self._sasl_set_principal_access(
+            *args, **kwargs, deny=False, ptype="role"
+        )
 
     def sasl_deny_role(self, *args, **kwargs):
-        return self._sasl_set_principal_access(*args,
-                                               **kwargs,
-                                               deny=True,
-                                               ptype="role")
+        return self._sasl_set_principal_access(*args, **kwargs, deny=True, ptype="role")
 
     def allow_principal(self, principal, operations, resource, resource_name):
         if resource == "topic":
@@ -460,10 +485,17 @@ class RpkTool:
             raise Exception(f"unknown resource: {resource}")
 
         cmd = [
-            "security", "acl", "create", "--allow-principal", principal,
-            "--operation", ",".join(operations), resource, resource_name,
+            "security",
+            "acl",
+            "create",
+            "--allow-principal",
+            principal,
+            "--operation",
+            ",".join(operations),
+            resource,
+            resource_name,
             "--brokers",
-            self._redpanda.brokers()
+            self._redpanda.brokers(),
         ]
         return self._run(cmd)
 
@@ -476,9 +508,16 @@ class RpkTool:
             raise Exception(f"unknown resource: {resource}")
 
         cmd = [
-            "security", "acl", "delete", "--allow-principal", principal,
-            "--operation", ",".join(operations), resource, resource_name,
-            "--no-confirm"
+            "security",
+            "acl",
+            "delete",
+            "--allow-principal",
+            principal,
+            "--operation",
+            ",".join(operations),
+            resource,
+            resource_name,
+            "--no-confirm",
         ] + self._kafka_conn_settings()
         return self._run(cmd)
 
@@ -492,10 +531,9 @@ class RpkTool:
 
         return cmd
 
-    def sasl_create_user(self,
-                         new_username,
-                         new_password="",
-                         mechanism="SCRAM-SHA-256"):
+    def sasl_create_user(
+        self, new_username, new_password="", mechanism="SCRAM-SHA-256"
+    ):
         cmd = self._sasl_create_user_cmd(new_username, new_password, mechanism)
 
         return self._run(cmd)
@@ -512,27 +550,38 @@ class RpkTool:
 
         return self._run(cmd)
 
-    def sasl_create_user_basic(self,
-                               new_username,
-                               auth_user="",
-                               auth_password="",
-                               new_password="",
-                               mechanism="SCRAM-SHA-256"):
+    def sasl_create_user_basic(
+        self,
+        new_username,
+        auth_user="",
+        auth_password="",
+        new_password="",
+        mechanism="SCRAM-SHA-256",
+    ):
         cmd = self._sasl_create_user_cmd(new_username, new_password, mechanism)
         cmd += ["--user", auth_user, "--password", auth_password]
 
         return self._run(cmd)
 
-    def sasl_create_user_basic_mix(self,
-                                   new_username,
-                                   auth_user="",
-                                   auth_password="",
-                                   new_password="",
-                                   mechanism="SCRAM-SHA-256"):
+    def sasl_create_user_basic_mix(
+        self,
+        new_username,
+        auth_user="",
+        auth_password="",
+        new_password="",
+        mechanism="SCRAM-SHA-256",
+    ):
         cmd = [
-            "acl", "user", "create", new_username, "--password", new_password,
-            "--mechanism", mechanism, "-X",
-            "admin.hosts=" + self._redpanda.admin_endpoints()
+            "acl",
+            "user",
+            "create",
+            new_username,
+            "--password",
+            new_password,
+            "--mechanism",
+            mechanism,
+            "-X",
+            "admin.hosts=" + self._redpanda.admin_endpoints(),
         ]
         cmd += ["-X", "user=" + auth_user, "-X", "pass=" + auth_password]
 
@@ -540,9 +589,16 @@ class RpkTool:
 
     def sasl_update_user(self, user, new_password, new_mechanism):
         cmd = [
-            "acl", "user", "update", user, "--new-password", new_password,
-            "--mechanism", new_mechanism, "-X",
-            "admin.hosts=" + self._redpanda.admin_endpoints()
+            "acl",
+            "user",
+            "update",
+            user,
+            "--new-password",
+            new_password,
+            "--mechanism",
+            new_mechanism,
+            "-X",
+            "admin.hosts=" + self._redpanda.admin_endpoints(),
         ]
         return self._run(cmd)
 
@@ -584,24 +640,25 @@ class RpkTool:
         lines = output.splitlines()
         for i, line in enumerate(lines):
             if line.split() == ["NAME", "PARTITIONS", "REPLICAS"]:
-                return map(topic_line, lines[i + 1:])
+                return map(topic_line, lines[i + 1 :])
 
         assert False, "Unexpected output format"
 
-    def produce(self,
-                topic,
-                key,
-                msg,
-                headers=[],
-                partition=None,
-                timeout=None,
-                compression_type=TopicSpec.COMPRESSION_NONE,
-                schema_id=None,
-                schema_key_id=None,
-                proto_msg=None,
-                proto_key_msg=None,
-                tombstone=False):
-
+    def produce(
+        self,
+        topic,
+        key,
+        msg,
+        headers=[],
+        partition=None,
+        timeout=None,
+        compression_type=TopicSpec.COMPRESSION_NONE,
+        schema_id=None,
+        schema_key_id=None,
+        proto_msg=None,
+        proto_key_msg=None,
+        tombstone=False,
+    ):
         if timeout is None:
             # For produce, we use a lower timeout than the general
             # default, because tests generally call this when
@@ -609,27 +666,33 @@ class RpkTool:
             timeout = DEFAULT_PRODUCE_TIMEOUT
 
         cmd = [
-            'produce', '--key', key, '-z', f'{compression_type}',
-            '--delivery-timeout', f'{timeout}s', topic
+            "produce",
+            "--key",
+            key,
+            "-z",
+            f"{compression_type}",
+            "--delivery-timeout",
+            f"{timeout}s",
+            topic,
         ]
 
         # An empty msg needs to be a newline for stdin purposes.
-        if msg == '':
-            msg = '\n'
+        if msg == "":
+            msg = "\n"
 
-        if msg not in ['\n']:
-            cmd += ['-f', '%v']
+        if msg not in ["\n"]:
+            cmd += ["-f", "%v"]
 
         use_schema_registry = False
         if headers:
-            cmd += ['-H ' + h for h in headers]
+            cmd += ["-H " + h for h in headers]
         if partition is not None:
-            cmd += ['-p', str(partition)]
+            cmd += ["-p", str(partition)]
         if schema_id is not None:
-            cmd += ["--schema-id", f'{schema_id}']
+            cmd += ["--schema-id", f"{schema_id}"]
             use_schema_registry = True
         if schema_key_id is not None:
-            cmd += ["--schema-key-id", f'{schema_key_id}']
+            cmd += ["--schema-key-id", f"{schema_key_id}"]
             use_schema_registry = True
         if proto_msg is not None:
             cmd += ["--schema-type", proto_msg]
@@ -643,31 +706,36 @@ class RpkTool:
         # Run remote process with a slightly higher timeout than the
         # rpk delivery timeout, so that we get a clean-ish rpk timeout
         # message rather than sigkilling the remote process.
-        out = self._run_topic(cmd,
-                              stdin=msg,
-                              timeout=timeout + 0.5,
-                              use_schema_registry=use_schema_registry)
+        out = self._run_topic(
+            cmd,
+            stdin=msg,
+            timeout=timeout + 0.5,
+            use_schema_registry=use_schema_registry,
+        )
 
         m = re.search(r"at offset (\d+)", out)
         assert m, f"Reported offset not found in: {out}"
         return int(m.group(1))
 
-    def analyze_topic(self, topic: str,
-                      time_range: str) -> Iterator[RpkAnalyzedTopic]:
-        cmd = ['analyze', topic, '-t', time_range, '--print-topics']
+    def analyze_topic(self, topic: str, time_range: str) -> Iterator[RpkAnalyzedTopic]:
+        cmd = ["analyze", topic, "-t", time_range, "--print-topics"]
         output = self._run_topic(cmd)
         table = parse_rpk_table(output)
 
-        expected_columns = set([
-            "TOPIC", "PARTITIONS", "BYTES-PER-SECOND", "BATCHES-PER-SECOND",
-            "AVERAGE-BYTES-PER-BATCH"
-        ])
+        expected_columns = set(
+            [
+                "TOPIC",
+                "PARTITIONS",
+                "BYTES-PER-SECOND",
+                "BATCHES-PER-SECOND",
+                "AVERAGE-BYTES-PER-BATCH",
+            ]
+        )
         received_columns = set()
 
         for column in table.columns:
             if column.name not in expected_columns:
-                self._redpanda.logger.error(
-                    f"Unexpected column: {column.name}")
+                self._redpanda.logger.error(f"Unexpected column: {column.name}")
                 raise RpkException(f"Unexpected column: {column.name}")
             received_columns.add(column.name)
 
@@ -687,11 +755,12 @@ class RpkTool:
                 partitions=int(obj["PARTITIONS"]),
                 bytes_per_second=float(obj["BYTES-PER-SECOND"]),
                 batches_per_second=float(obj["BATCHES-PER-SECOND"]),
-                average_bytes_per_batch=float(obj["AVERAGE-BYTES-PER-BATCH"]))
+                average_bytes_per_batch=float(obj["AVERAGE-BYTES-PER-BATCH"]),
+            )
 
-    def describe_topic(self,
-                       topic: str,
-                       tolerant: bool = False) -> Iterator[RpkPartition]:
+    def describe_topic(
+        self, topic: str, tolerant: bool = False
+    ) -> Iterator[RpkPartition]:
         """
         By default this will omit any partitions which do not have full
         metadata in the response: this means that if we are unlucky and a
@@ -704,26 +773,34 @@ class RpkTool:
                          fields set to None, as long as the leader field is present.
         :return:
         """
+
         def int_or_none(value):
             m = re.match("^-?\d+$", value)
             if m:
                 return int(value)
             return None
 
-        cmd = ['describe', topic, '-p']
+        cmd = ["describe", topic, "-p"]
         output = self._run_topic(cmd)
         table = parse_rpk_table(output)
 
-        expected_columns = set([
-            "PARTITION", "LEADER", "EPOCH", "REPLICAS", "LOG-START-OFFSET",
-            "HIGH-WATERMARK", "LAST-STABLE-OFFSET", "LOAD-ERROR"
-        ])
+        expected_columns = set(
+            [
+                "PARTITION",
+                "LEADER",
+                "EPOCH",
+                "REPLICAS",
+                "LOG-START-OFFSET",
+                "HIGH-WATERMARK",
+                "LAST-STABLE-OFFSET",
+                "LOAD-ERROR",
+            ]
+        )
         received_columns = set()
 
         for column in table.columns:
             if column.name not in expected_columns:
-                self._redpanda.logger.error(
-                    f"Unexpected column: {column.name}")
+                self._redpanda.logger.error(f"Unexpected column: {column.name}")
                 raise RpkException(f"Unexpected column: {column.name}")
             received_columns.add(column.name)
 
@@ -733,7 +810,9 @@ class RpkTool:
         # https://github.com/redpanda-data/redpanda/issues/8381#issuecomment-1403051606
         # LOAD-ERROR is not present if there was no error.
         missing_columns = missing_columns - {
-            "LAST-STABLE-OFFSET", "EPOCH", "LOAD-ERROR"
+            "LAST-STABLE-OFFSET",
+            "EPOCH",
+            "LOAD-ERROR",
         }
 
         if len(missing_columns) != 0:
@@ -760,28 +839,36 @@ class RpkTool:
             obj["HIGH-WATERMARK"] = int_or_none(obj["HIGH-WATERMARK"])
             obj["LAST-STABLE-OFFSET"] = int_or_none(obj["LAST-STABLE-OFFSET"])
 
-            initialized = obj["LEADER"] >= 0 and obj["EPOCH"] >= 0 and obj[
-                "REPLICAS"] != None and obj["LOG-START-OFFSET"] != None and obj[
-                    "LOG-START-OFFSET"] >= 0 and obj[
-                        "HIGH-WATERMARK"] != None and obj["HIGH-WATERMARK"] >= 0
+            initialized = (
+                obj["LEADER"] >= 0
+                and obj["EPOCH"] >= 0
+                and obj["REPLICAS"] != None
+                and obj["LOG-START-OFFSET"] != None
+                and obj["LOG-START-OFFSET"] >= 0
+                and obj["HIGH-WATERMARK"] != None
+                and obj["HIGH-WATERMARK"] >= 0
+            )
 
-            partition = RpkPartition(id=obj["PARTITION"],
-                                     leader=obj["LEADER"],
-                                     leader_epoch=obj["EPOCH"],
-                                     replicas=obj["REPLICAS"],
-                                     lso=None,
-                                     hw=obj["HIGH-WATERMARK"],
-                                     start_offset=obj["LOG-START-OFFSET"],
-                                     load_error=obj.get("LOAD-ERROR"))
+            partition = RpkPartition(
+                id=obj["PARTITION"],
+                leader=obj["LEADER"],
+                leader_epoch=obj["EPOCH"],
+                replicas=obj["REPLICAS"],
+                lso=None,
+                hw=obj["HIGH-WATERMARK"],
+                start_offset=obj["LOG-START-OFFSET"],
+                load_error=obj.get("LOAD-ERROR"),
+            )
 
             if initialized or tolerant:
                 yield partition
 
     def describe_topic_configs(self, topic):
-        cmd = ['describe', topic, '-c']
+        cmd = ["describe", topic, "-c"]
         output = self._run_topic(cmd)
-        assert "not found" not in output, \
-                f"Cannot describe configs for unknown topic {topic}"
+        assert "not found" not in output, (
+            f"Cannot describe configs for unknown topic {topic}"
+        )
         lines = output.splitlines()
         res = {}
         for line in lines:
@@ -795,10 +882,7 @@ class RpkTool:
         return res
 
     def alter_topic_config(self, topic, set_key, set_value):
-        cmd = [
-            'alter-config', topic, "--set", f"{set_key}={set_value}",
-            "--no-confirm"
-        ]
+        cmd = ["alter-config", topic, "--set", f"{set_key}={set_value}", "--no-confirm"]
         out = self._run_topic(cmd)
         lines = out.splitlines()
         lines = list(map(lambda x: x.strip(), lines))
@@ -816,27 +900,29 @@ class RpkTool:
             )
 
     def delete_topic_config(self, topic, key):
-        cmd = ['alter-config', topic, "--delete", key]
+        cmd = ["alter-config", topic, "--delete", key]
         self._run_topic(cmd)
 
     def add_topic_partitions(self, topic, additional):
-        cmd = ['add-partitions', topic, '--num', str(additional)]
+        cmd = ["add-partitions", topic, "--num", str(additional)]
         output = self._run_topic(cmd)
         self._check_stdout_success(output)
         return output
 
-    def consume(self,
-                topic,
-                n=None,
-                group=None,
-                regex=False,
-                offset=None,
-                partition=None,
-                fetch_max_bytes=None,
-                quiet=False,
-                format=None,
-                timeout=None,
-                use_schema_registry=None):
+    def consume(
+        self,
+        topic,
+        n=None,
+        group=None,
+        regex=False,
+        offset=None,
+        partition=None,
+        fetch_max_bytes=None,
+        quiet=False,
+        format=None,
+        timeout=None,
+        use_schema_registry=None,
+    ):
         cmd = ["consume", topic]
         if group is not None:
             cmd += ["-g", group]
@@ -857,10 +943,9 @@ class RpkTool:
         elif format is not None:
             cmd += ["-f", format]
 
-        return self._run_topic(cmd,
-                               timeout=timeout,
-                               use_schema_registry=use_schema_registry
-                               is not None)
+        return self._run_topic(
+            cmd, timeout=timeout, use_schema_registry=use_schema_registry is not None
+        )
 
     def group_seek_to(self, group, to):
         cmd = ["seek", group, "--to", to]
@@ -871,7 +956,7 @@ class RpkTool:
             pattern = re.compile(f" *{field_name} +(?P<value>.+)")
             m = pattern.match(string)
             assert m is not None, f"Field string '{string}' does not match the pattern"
-            return m['value']
+            return m["value"]
 
         def try_describe_group(group):
             if summary:
@@ -902,8 +987,7 @@ class RpkTool:
             lines = out.splitlines()
             group_name = parse_field("GROUP", lines[0])
             coordinator_node = parse_field("COORDINATOR-NODE", lines[1])
-            coordinator_partition = parse_field("COORDINATOR-PARTITION",
-                                                lines[2])
+            coordinator_partition = parse_field("COORDINATOR-PARTITION", lines[2])
             state = parse_field("STATE", lines[3])
             balancer = parse_field("BALANCER", lines[4])
             members = parse_field("MEMBERS", lines[5])
@@ -916,24 +1000,36 @@ class RpkTool:
                 table = parse_rpk_table_lines(partition_lines)
 
                 received_columns = set(c.name for c in table.columns)
-                required_columns = set([
-                    "TOPIC", "PARTITION", "CURRENT-OFFSET", "LOG-START-OFFSET",
-                    "LOG-END-OFFSET", "LAG", "MEMBER-ID", "CLIENT-ID", "HOST"
-                ])
+                required_columns = set(
+                    [
+                        "TOPIC",
+                        "PARTITION",
+                        "CURRENT-OFFSET",
+                        "LOG-START-OFFSET",
+                        "LOG-END-OFFSET",
+                        "LAG",
+                        "MEMBER-ID",
+                        "CLIENT-ID",
+                        "HOST",
+                    ]
+                )
                 optional_columns = set(["INSTANCE-ID", "ERROR"])
 
                 missing_columns = required_columns - received_columns
                 if len(missing_columns) > 0:
                     raise RpkException(f"Missing columns: {missing_columns}")
 
-                unexpected_columns = received_columns - required_columns - optional_columns
+                unexpected_columns = (
+                    received_columns - required_columns - optional_columns
+                )
                 if len(unexpected_columns) > 0:
-                    raise RpkException(
-                        f"Unexpected columns: {unexpected_columns}")
+                    raise RpkException(f"Unexpected columns: {unexpected_columns}")
 
                 for row in table.rows:
-                    obj = dict((table.columns[i].name, row[i])
-                               for i in range(len(table.columns)))
+                    obj = dict(
+                        (table.columns[i].name, row[i])
+                        for i in range(len(table.columns))
+                    )
 
                     # Check to see if info for the partition was queried during a change in leadership.
                     error = obj.get("ERROR")
@@ -954,7 +1050,7 @@ class RpkTool:
 
                     def maybe_parse_int(field):
                         # Account for negative numbers and '-' value
-                        if field.lstrip('-').isdigit():
+                        if field.lstrip("-").isdigit():
                             return int(field)
                         return None
 
@@ -962,8 +1058,7 @@ class RpkTool:
                         topic=obj["TOPIC"],
                         partition=int(obj["PARTITION"]),
                         current_offset=maybe_parse_int(obj["CURRENT-OFFSET"]),
-                        log_start_offset=maybe_parse_int(
-                            obj["LOG-START-OFFSET"]),
+                        log_start_offset=maybe_parse_int(obj["LOG-START-OFFSET"]),
                         log_end_offset=maybe_parse_int(obj["LOG-END-OFFSET"]),
                         lag=maybe_parse_int(obj["LAG"]),
                         member_id=obj["MEMBER-ID"],
@@ -975,14 +1070,16 @@ class RpkTool:
 
                     partitions.append(partition)
 
-            return RpkGroup(name=group_name,
-                            coordinator_node=int(coordinator_node),
-                            coordinator_partition=coordinator_partition,
-                            state=state,
-                            balancer=balancer,
-                            members=int(members),
-                            partitions=partitions,
-                            total_lag=int(total_lag))
+            return RpkGroup(
+                name=group_name,
+                coordinator_node=int(coordinator_node),
+                coordinator_partition=coordinator_partition,
+                state=state,
+                balancer=balancer,
+                members=int(members),
+                partitions=partitions,
+                total_lag=int(total_lag),
+            )
 
         attempts = 10
         rpk_group = None
@@ -994,7 +1091,9 @@ class RpkTool:
             if rpk_group is None:
                 time.sleep(0.5)
 
-        assert rpk_group is not None, "Unable to determine group within set number of attempts"
+        assert rpk_group is not None, (
+            "Unable to determine group within set number of attempts"
+        )
 
         return rpk_group
 
@@ -1011,9 +1110,9 @@ class RpkTool:
         return self._run_group(cmd)
 
     def group_list(self, states: list[str] = []) -> list[RpkListGroup]:
-        cmd = ['list']
+        cmd = ["list"]
         if states:
-            cmd += ['--states', ','.join(states)]
+            cmd += ["--states", ",".join(states)]
         out = self._run_group(cmd)
 
         return [RpkListGroup.from_line(l) for l in out.splitlines()[1:]]
@@ -1022,80 +1121,95 @@ class RpkTool:
         return [res.group for res in self.group_list()]
 
     def wasm_remove(self, name):
-        cmd = ['wasm', 'remove', name, '--brokers', self._redpanda.brokers()]
+        cmd = ["wasm", "remove", name, "--brokers", self._redpanda.brokers()]
         return self._execute(cmd)
 
     def wasm_gen(self, directory):
-        cmd = [
-            self._rpk_binary(), 'wasm', 'generate', '--skip-version', directory
-        ]
+        cmd = [self._rpk_binary(), "wasm", "generate", "--skip-version", directory]
         return self._execute(cmd)
 
-    def cluster_recovery_start(self, wait: bool = True, polling_interval='5s'):
+    def cluster_recovery_start(self, wait: bool = True, polling_interval="5s"):
         cmd = [
-            self._rpk_binary(), '--api-urls',
-            self._admin_host(), 'cluster', 'storage', 'recovery', 'start'
+            self._rpk_binary(),
+            "--api-urls",
+            self._admin_host(),
+            "cluster",
+            "storage",
+            "recovery",
+            "start",
         ]
         if wait:
-            cmd.append('--wait')
+            cmd.append("--wait")
             if polling_interval:
-                cmd.append('--polling-interval')
+                cmd.append("--polling-interval")
                 cmd.append(polling_interval)
         return self._execute(cmd)
 
-    def self_test_start(self,
-                        disk_duration_ms=None,
-                        network_duration_ms=None,
-                        cloud_timeout_ms=None,
-                        cloud_backoff_ms=None,
-                        only_disk=False,
-                        only_network=False,
-                        only_cloud=False,
-                        node_ids=None):
+    def self_test_start(
+        self,
+        disk_duration_ms=None,
+        network_duration_ms=None,
+        cloud_timeout_ms=None,
+        cloud_backoff_ms=None,
+        only_disk=False,
+        only_network=False,
+        only_cloud=False,
+        node_ids=None,
+    ):
         cmd = [
-            self._rpk_binary(), '--api-urls',
-            self._admin_host(), 'cluster', 'self-test', 'start', '--no-confirm'
+            self._rpk_binary(),
+            "--api-urls",
+            self._admin_host(),
+            "cluster",
+            "self-test",
+            "start",
+            "--no-confirm",
         ]
         if disk_duration_ms is not None:
-            cmd += ['--disk-duration-ms', str(disk_duration_ms)]
+            cmd += ["--disk-duration-ms", str(disk_duration_ms)]
         if network_duration_ms is not None:
-            cmd += ['--network-duration-ms', str(network_duration_ms)]
+            cmd += ["--network-duration-ms", str(network_duration_ms)]
         if cloud_timeout_ms is not None:
-            cmd += ['--cloud-timeout-ms', str(cloud_timeout_ms)]
+            cmd += ["--cloud-timeout-ms", str(cloud_timeout_ms)]
         if cloud_backoff_ms is not None:
-            cmd += ['--cloud-backoff-ms', str(cloud_backoff_ms)]
+            cmd += ["--cloud-backoff-ms", str(cloud_backoff_ms)]
         if only_disk is True:
-            cmd += ['--only-disk-test']
+            cmd += ["--only-disk-test"]
         if only_network is True:
-            cmd += ['--only-network-test']
+            cmd += ["--only-network-test"]
         if only_cloud is True:
-            cmd += ['--only-cloud-test']
+            cmd += ["--only-cloud-test"]
         if node_ids is not None:
             ids = ",".join([str(x) for x in node_ids])
-            cmd += ['--participants-node-ids', ids]
+            cmd += ["--participants-node-ids", ids]
         return self._execute(cmd)
 
     def self_test_stop(self):
         cmd = [
-            self._rpk_binary(), '--api-urls',
-            self._admin_host(), 'cluster', 'self-test', 'stop'
+            self._rpk_binary(),
+            "--api-urls",
+            self._admin_host(),
+            "cluster",
+            "self-test",
+            "stop",
         ]
         return self._execute(cmd)
 
-    def self_test_status(self, output_format='json'):
+    def self_test_status(self, output_format="json"):
         cmd = [
-            self._rpk_binary(), '--api-urls',
-            self._admin_host(), 'cluster', 'self-test', 'status', '--format',
-            output_format
+            self._rpk_binary(),
+            "--api-urls",
+            self._admin_host(),
+            "cluster",
+            "self-test",
+            "status",
+            "--format",
+            output_format,
         ]
         output = self._execute(cmd)
-        return json.loads(output) if output_format == 'json' else output
+        return json.loads(output) if output_format == "json" else output
 
-    def _run_topic(self,
-                   cmd,
-                   stdin=None,
-                   timeout=None,
-                   use_schema_registry=False):
+    def _run_topic(self, cmd, stdin=None, timeout=None, use_schema_registry=False):
         cmd = [self._rpk_binary(), "topic"] + self._kafka_conn_settings() + cmd
         if use_schema_registry:
             cmd = cmd + self._schema_registry_conn_settings()
@@ -1122,18 +1236,21 @@ class RpkTool:
 
         def _parse_out(line):
             m = re.match(
-                r"^(?P<id>\d+)[\s*]+(?P<host>[^\s]+)\s+(?P<port>\d+)$",
-                line.strip())
+                r"^(?P<id>\d+)[\s*]+(?P<host>[^\s]+)\s+(?P<port>\d+)$", line.strip()
+            )
             if m is None:
                 return None
 
             address = f"{m.group('host')}:{m.group('port')}"
 
-            return RpkClusterInfoNode(id=int(m.group('id')), address=address)
+            return RpkClusterInfoNode(id=int(m.group("id")), address=address)
 
         cmd = [
-            self._rpk_binary(), 'cluster', 'info', '--brokers',
-            self._redpanda.brokers()
+            self._rpk_binary(),
+            "cluster",
+            "info",
+            "--brokers",
+            self._redpanda.brokers(),
         ]
         output = self._execute(cmd, stdin=None, timeout=timeout)
         parsed = map(_parse_out, output.splitlines())
@@ -1141,25 +1258,35 @@ class RpkTool:
 
     def _admin_host(self, node=None):
         if node is None:
-            return ",".join([
-                f"{n.account.hostname}:9644"
-                for n in self._redpanda.started_nodes()
-            ])
+            return ",".join(
+                [f"{n.account.hostname}:9644" for n in self._redpanda.started_nodes()]
+            )
         else:
             return f"{node.account.hostname}:9644"
 
     def admin_config_print(self, node):
-        return self._execute([
-            self._rpk_binary(), "redpanda", "admin", "config", "print",
-            "--host",
-            self._admin_host(node)
-        ])
+        return self._execute(
+            [
+                self._rpk_binary(),
+                "redpanda",
+                "admin",
+                "config",
+                "print",
+                "--host",
+                self._admin_host(node),
+            ]
+        )
 
     def cluster_config_export(self, file, all):
         cmd = [
-            self._rpk_binary(), '--api-urls',
-            self._admin_host(), "cluster", "config", "export", "--filename",
-            file
+            self._rpk_binary(),
+            "--api-urls",
+            self._admin_host(),
+            "cluster",
+            "config",
+            "export",
+            "--filename",
+            file,
         ]
         if all:
             cmd.append("--all")
@@ -1167,9 +1294,14 @@ class RpkTool:
 
     def cluster_config_import(self, file, all):
         cmd = [
-            self._rpk_binary(), "--api-urls",
-            self._admin_host(), "cluster", "config", "import", "--filename",
-            file
+            self._rpk_binary(),
+            "--api-urls",
+            self._admin_host(),
+            "cluster",
+            "config",
+            "import",
+            "--filename",
+            file,
         ]
         if all:
             cmd.append("--all")
@@ -1177,25 +1309,39 @@ class RpkTool:
 
     def cluster_config_status(self):
         cmd = [
-            self._rpk_binary(), "--api-urls",
-            self._admin_host(), "cluster", "config", "status"
+            self._rpk_binary(),
+            "--api-urls",
+            self._admin_host(),
+            "cluster",
+            "config",
+            "status",
         ]
         return self._execute(cmd)
 
     def cluster_config_get(self, key):
         cmd = [
-            self._rpk_binary(), "--api-urls",
-            self._admin_host(), "cluster", "config", "get", key
+            self._rpk_binary(),
+            "--api-urls",
+            self._admin_host(),
+            "cluster",
+            "config",
+            "get",
+            key,
         ]
         return self._execute(cmd).strip()
 
-    def cluster_config_list(self,
-                            output_format: str = "json",
-                            output_filter=".*"):
+    def cluster_config_list(self, output_format: str = "json", output_filter=".*"):
         cmd = [
-            self._rpk_binary(), "--api-urls",
-            self._admin_host(), "cluster", "config", "list", "--format",
-            output_format, "--filter", output_filter
+            self._rpk_binary(),
+            "--api-urls",
+            self._admin_host(),
+            "cluster",
+            "config",
+            "list",
+            "--format",
+            output_format,
+            "--filter",
+            output_filter,
         ]
         return self._execute(cmd).strip()
 
@@ -1212,9 +1358,15 @@ class RpkTool:
         wait for the configuration to be applied.
         """
         cmd = [
-            self._rpk_binary(), "--api-urls",
-            self._admin_host(), "cluster", "config", "set", key,
-            str(value), "--no-confirm"
+            self._rpk_binary(),
+            "--api-urls",
+            self._admin_host(),
+            "cluster",
+            "config",
+            "set",
+            key,
+            str(value),
+            "--no-confirm",
         ]
         return self._execute(cmd)
 
@@ -1222,9 +1374,9 @@ class RpkTool:
         if timeout is None:
             timeout = DEFAULT_TIMEOUT
 
-        cmd += ['-X', f'globals.request_timeout_overhead={timeout}s']
+        cmd += ["-X", f"globals.request_timeout_overhead={timeout}s"]
         # Unconditionally enable verbose logging
-        cmd += ['-v']
+        cmd += ["-v"]
 
         if log_cmd:
             self._redpanda.logger.debug("Executing command: %s", cmd)
@@ -1232,28 +1384,33 @@ class RpkTool:
         if env is not None:
             env.update(os.environ.copy())
 
-        p = subprocess.Popen(cmd,
-                             stdout=subprocess.PIPE,
-                             stdin=subprocess.PIPE,
-                             stderr=subprocess.PIPE,
-                             env=env,
-                             text=True)
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stdin=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            text=True,
+        )
         try:
             output, stderror = p.communicate(input=stdin, timeout=timeout)
         except subprocess.TimeoutExpired:
             p.kill()
             output, stderr = p.communicate()
-            raise RpkException(f"command `{' '.join(cmd)}' timed out",
-                               stdout=output,
-                               stderr=stderr)
+            raise RpkException(
+                f"command `{' '.join(cmd)}' timed out", stdout=output, stderr=stderr
+            )
 
-        self._redpanda.logger.debug(f'\n{output}')
+        self._redpanda.logger.debug(f"\n{output}")
 
         if p.returncode:
             raise RpkException(
-                'command %s returned %d, output: %s' %
-                (' '.join(cmd) if log_cmd else '[redacted]', p.returncode,
-                 output), stderror, p.returncode, output)
+                "command %s returned %d, output: %s"
+                % (" ".join(cmd) if log_cmd else "[redacted]", p.returncode, output),
+                stderror,
+                p.returncode,
+                output,
+            )
         else:
             # Send the verbose output of rpk to debug logger
             self._redpanda.logger.debug(f"\n{stderror}")
@@ -1265,28 +1422,39 @@ class RpkTool:
         # path used by each node may differ from that returned by
         # redpanda.find_binary(), e.g. if using a RedpandaInstaller.
         rp_install_path_root = self._redpanda._context.globals.get(
-            "rp_install_path_root", None)
+            "rp_install_path_root", None
+        )
         return f"{rp_install_path_root}/bin/rpk"
 
     def cluster_maintenance_enable(self, node, wait=False):
-        node_id = self._redpanda.node_id(node) if isinstance(
-            node, ClusterNode) else node
+        node_id = (
+            self._redpanda.node_id(node) if isinstance(node, ClusterNode) else node
+        )
         cmd = [
-            self._rpk_binary(), "--api-urls",
-            self._admin_host(), "cluster", "maintenance", "enable",
-            str(node_id)
+            self._rpk_binary(),
+            "--api-urls",
+            self._admin_host(),
+            "cluster",
+            "maintenance",
+            "enable",
+            str(node_id),
         ]
         if wait:
             cmd.append("--wait")
         return self._execute(cmd)
 
     def cluster_maintenance_disable(self, node, timeout=None):
-        node_id = self._redpanda.node_id(node) if isinstance(
-            node, ClusterNode) else node
+        node_id = (
+            self._redpanda.node_id(node) if isinstance(node, ClusterNode) else node
+        )
         cmd = [
-            self._rpk_binary(), "--api-urls",
-            self._admin_host(), "cluster", "maintenance", "disable",
-            str(node_id)
+            self._rpk_binary(),
+            "--api-urls",
+            self._admin_host(),
+            "cluster",
+            "maintenance",
+            "disable",
+            str(node_id),
         ]
         return self._execute(cmd, timeout=timeout)
 
@@ -1294,6 +1462,7 @@ class RpkTool:
         """
         Run `rpk cluster maintenance status` and return the parsed results.
         """
+
         def parse(line):
             if line.startswith("Request error") or not line.strip():
                 # RPK may print messages about request errors, which it internally
@@ -1305,9 +1474,9 @@ class RpkTool:
             # 1        false     false     false   0           0         0             0
             line = line.split()
 
-            assert len(
-                line
-            ) == 8, f"`rpk cluster maintenance status` has changed: {line}"
+            assert len(line) == 8, (
+                f"`rpk cluster maintenance status` has changed: {line}"
+            )
             line = [x.strip() for x in line]
             if line[0] == "NODE-ID":
                 return None
@@ -1318,14 +1487,16 @@ class RpkTool:
             def int_or_none(value: str):
                 return None if value == "-" else int(value)
 
-            return RpkMaintenanceStatus(node_id=int(line[0]),
-                                        enabled=line[1] == "true",
-                                        finished=bool_or_none(line[2]),
-                                        errors=bool_or_none(line[3]),
-                                        partitions=int_or_none(line[4]),
-                                        eligible=int_or_none(line[5]),
-                                        transferring=int_or_none(line[6]),
-                                        failed=int_or_none(line[7]))
+            return RpkMaintenanceStatus(
+                node_id=int(line[0]),
+                enabled=line[1] == "true",
+                finished=bool_or_none(line[2]),
+                errors=bool_or_none(line[3]),
+                partitions=int_or_none(line[4]),
+                eligible=int_or_none(line[5]),
+                transferring=int_or_none(line[6]),
+                failed=int_or_none(line[7]),
+            )
 
         cmd = [
             self._rpk_binary(),
@@ -1358,8 +1529,9 @@ class RpkTool:
         return flags
 
     def _kafka_conn_settings(self, node: Optional[ClusterNode] = None):
-        brokers = self._redpanda.broker_address(node) if node else \
-                  self._redpanda.brokers()
+        brokers = (
+            self._redpanda.broker_address(node) if node else self._redpanda.brokers()
+        )
         flags = ["-X", "brokers=" + brokers]
         if self._username:
             # u, p and mechanism must always be all set or all unset
@@ -1386,11 +1558,15 @@ class RpkTool:
         any structured representation of acls. however at the time of writing we
         are interested only in an authz success/fail signal.
         """
-        cmd = [
-            self._rpk_binary(),
-            "acl",
-            "list",
-        ] + flags + self._kafka_conn_settings()
+        cmd = (
+            [
+                self._rpk_binary(),
+                "acl",
+                "list",
+            ]
+            + flags
+            + self._kafka_conn_settings()
+        )
 
         output = self._execute(cmd)
 
@@ -1399,10 +1575,9 @@ class RpkTool:
 
         return output
 
-    def acl_create_allow_cluster(self,
-                                 username: str,
-                                 op: str,
-                                 principal_type: str = "User"):
+    def acl_create_allow_cluster(
+        self, username: str, op: str, principal_type: str = "User"
+    ):
         """
         Add allow+describe+cluster ACL
         """
@@ -1411,7 +1586,7 @@ class RpkTool:
             "acl",
             "create",
             "--allow-principal",
-            f"\"{principal_type}:{username}\"",
+            f'"{principal_type}:{username}"',
             "--operation",
             op,
             "--cluster",
@@ -1419,8 +1594,14 @@ class RpkTool:
         output = self._execute(cmd)
         table = parse_rpk_table(output)
         expected_columns = [
-            "PRINCIPAL", "HOST", "RESOURCE-TYPE", "RESOURCE-NAME",
-            "RESOURCE-PATTERN-TYPE", "OPERATION", "PERMISSION", "ERROR"
+            "PRINCIPAL",
+            "HOST",
+            "RESOURCE-TYPE",
+            "RESOURCE-NAME",
+            "RESOURCE-PATTERN-TYPE",
+            "OPERATION",
+            "PERMISSION",
+            "ERROR",
         ]
 
         expected = ",".join(expected_columns)
@@ -1433,7 +1614,8 @@ class RpkTool:
 
         if table.rows[0][-1] != "":
             raise RpkException(
-                f"acl_create_allow_cluster failed with {table.rows[0][-1]}")
+                f"acl_create_allow_cluster failed with {table.rows[0][-1]}"
+            )
 
         return output
 
@@ -1444,8 +1626,11 @@ class RpkTool:
         because there are already other ways to get at that.
         """
         cmd = [
-            self._rpk_binary(), '-X', "brokers=" + self._redpanda.brokers(),
-            'cluster', 'metadata'
+            self._rpk_binary(),
+            "-X",
+            "brokers=" + self._redpanda.brokers(),
+            "cluster",
+            "metadata",
         ]
         output = self._execute(cmd)
         lines = output.strip().split("\n")
@@ -1464,8 +1649,12 @@ class RpkTool:
 
     def license_set(self, path, license=""):
         cmd = [
-            self._rpk_binary(), "-X", "admin.hosts=" + self._admin_host(),
-            "cluster", "license", "set"
+            self._rpk_binary(),
+            "-X",
+            "admin.hosts=" + self._admin_host(),
+            "cluster",
+            "license",
+            "set",
         ]
 
         if license:
@@ -1476,11 +1665,15 @@ class RpkTool:
         return self._execute(cmd, log_cmd=False)
 
     def license_info(self):
-
         cmd = [
-            self._rpk_binary(), "--api-urls",
-            self._admin_host(), "cluster", "license", "info", "--format",
-            "json"
+            self._rpk_binary(),
+            "--api-urls",
+            self._admin_host(),
+            "cluster",
+            "license",
+            "info",
+            "--format",
+            "json",
         ]
 
         return self._execute(cmd)
@@ -1497,7 +1690,8 @@ class RpkTool:
                 if not x:
                     raise RuntimeError("Failed to parse offset-delete output")
                 return RpkOffsetDeleteResponsePartition(
-                    x['topic'], int(x['partition']), x['status'], x['error'])
+                    x["topic"], int(x["partition"]), x["status"], x["error"]
+                )
 
             return [make(regex.match(x)) for x in output]
 
@@ -1509,17 +1703,17 @@ class RpkTool:
                 except RpkException as e:
                     if e.returncode != 1:
                         raise e
-                    if not 'NOT_COORDINATOR' in str(e):
+                    if not "NOT_COORDINATOR" in str(e):
                         e.parsed_output = parse_offset_delete_output(
-                            e.stdout.splitlines())
+                            e.stdout.splitlines()
+                        )
                         raise e
                     retries -= 1
             raise RpkException("Max number of retries exceeded")
 
         # First convert partitions from integers to strings
         as_strings = {
-            k: ",".join([str(x) for x in v])
-            for k, v in topic_partitions.items()
+            k: ",".join([str(x) for x in v]) for k, v in topic_partitions.items()
         }
 
         # Group each kv pair to string item like '<topic>:p1,p2,p3'
@@ -1530,26 +1724,36 @@ class RpkTool:
         # [-t, arg1, -t arg2, ... , -t argn]
         request_args_w_flags = list(
             itertools.chain(
-                *zip(["-t"
-                      for _ in range(0, len(request_args))], request_args)))
+                *zip(["-t" for _ in range(0, len(request_args))], request_args)
+            )
+        )
 
         # Execute the rpk group offset-delete command
-        cmd = [
-            self._rpk_binary(),
-            "--brokers",
-            self._redpanda.brokers(),
-            "group",
-            "offset-delete",
-            group,
-        ] + self._kafka_conn_settings() + request_args_w_flags
+        cmd = (
+            [
+                self._rpk_binary(),
+                "--brokers",
+                self._redpanda.brokers(),
+                "group",
+                "offset-delete",
+                group,
+            ]
+            + self._kafka_conn_settings()
+            + request_args_w_flags
+        )
 
         # Retry if NOT_COORDINATOR is observed when command exits 1
         return try_offset_delete(retries=5)
 
     def generate_grafana(self, dashboard, datasource="", metrics_endpoint=""):
         cmd = [
-            self._rpk_binary(), "generate", "grafana-dashboard", "--dashboard",
-            dashboard, "-X", "admin.hosts=" + self._redpanda.admin_endpoints()
+            self._rpk_binary(),
+            "generate",
+            "grafana-dashboard",
+            "--dashboard",
+            dashboard,
+            "-X",
+            "admin.hosts=" + self._redpanda.admin_endpoints(),
         ]
 
         if datasource != "":
@@ -1562,15 +1766,19 @@ class RpkTool:
 
     def describe_log_dirs(self):
         cmd = [
-            self._rpk_binary(), "--brokers",
-            self._redpanda.brokers(), "cluster", "logdirs", "describe"
+            self._rpk_binary(),
+            "--brokers",
+            self._redpanda.brokers(),
+            "cluster",
+            "logdirs",
+            "describe",
         ]
         output = self._execute(cmd)
         lines = output.split("\n")
 
         DescribeLogDirItem = namedtuple(
-            'DescribeLogDirItem',
-            ['broker', 'dir', 'topic', 'partition', 'size'])
+            "DescribeLogDirItem", ["broker", "dir", "topic", "partition", "size"]
+        )
 
         result = []
         for l in lines[1:]:
@@ -1588,8 +1796,8 @@ class RpkTool:
                 raise
 
             result.append(
-                DescribeLogDirItem(broker, dir, topic, int(partition),
-                                   int(size)))
+                DescribeLogDirItem(broker, dir, topic, int(partition), int(size))
+            )
 
         return result
 
@@ -1611,7 +1819,8 @@ class RpkTool:
                 topic=line[0],
                 partition=int(line[1]),
                 new_start_offset=int(line[2]) if line[2] != "-" else -1,
-                error_msg=line[3] if len(line) > 3 else "")
+                error_msg=line[3] if len(line) > 3 else "",
+            )
 
         cmd = [
             self._rpk_binary(),
@@ -1635,14 +1844,16 @@ class RpkTool:
         return self._execute(cmd)
 
     def cloud_byoc_aws_apply(self, redpanda_id, token, extra_flags=[]):
-        envs = {
-            "RPK_CLOUD_SKIP_VERSION_CHECK": "true",
-            "RPK_CLOUD_TOKEN": token
-        }
+        envs = {"RPK_CLOUD_SKIP_VERSION_CHECK": "true", "RPK_CLOUD_TOKEN": token}
 
         cmd = [
-            self._rpk_binary(), "cloud", "byoc", "aws", "apply",
-            "--redpanda-id", redpanda_id
+            self._rpk_binary(),
+            "cloud",
+            "byoc",
+            "aws",
+            "apply",
+            "--redpanda-id",
+            redpanda_id,
         ]
 
         if len(extra_flags) > 0:
@@ -1653,10 +1864,9 @@ class RpkTool:
 
     def _schema_registry_host(self, node=None):
         if node is None:
-            return ",".join([
-                f"{n.account.hostname}:8081"
-                for n in self._redpanda.started_nodes()
-            ])
+            return ",".join(
+                [f"{n.account.hostname}:8081" for n in self._redpanda.started_nodes()]
+            )
         else:
             return f"{node.account.hostname}:8081"
 
@@ -1692,8 +1902,11 @@ class RpkTool:
         return flags
 
     def _run_registry(self, cmd, stdin=None, timeout=60, output_format="json"):
-        cmd = [self._rpk_binary(), "registry", "--format", output_format
-               ] + self._schema_registry_conn_settings() + cmd
+        cmd = (
+            [self._rpk_binary(), "registry", "--format", output_format]
+            + self._schema_registry_conn_settings()
+            + cmd
+        )
         out = self._execute(cmd, stdin=stdin, timeout=timeout)
         return json.loads(out) if output_format == "json" else out
 
@@ -1713,8 +1926,13 @@ class RpkTool:
 
     def check_compatibility(self, subject, version, schema_path):
         cmd = [
-            "schema", "check-compatibility", subject, "--schema-version",
-            version, "--schema", schema_path
+            "schema",
+            "check-compatibility",
+            subject,
+            "--schema-version",
+            version,
+            "--schema",
+            schema_path,
         ]
 
         return self._run_registry(cmd)
@@ -1727,21 +1945,15 @@ class RpkTool:
 
         return self._run_registry(cmd)
 
-    def create_schema_from_str(self,
-                               subject: str,
-                               schema: str,
-                               schema_suffix="avro",
-                               references=None):
+    def create_schema_from_str(
+        self, subject: str, schema: str, schema_suffix="avro", references=None
+    ):
         with tempfile.NamedTemporaryFile(suffix=f".{schema_suffix}") as tf:
-            tf.write(bytes(schema, 'UTF-8'))
+            tf.write(bytes(schema, "UTF-8"))
             tf.flush()
             return self.create_schema(subject, tf.name, references)
 
-    def get_schema(self,
-                   subject=None,
-                   id=None,
-                   version=None,
-                   schema_path=None):
+    def get_schema(self, subject=None, id=None, version=None, schema_path=None):
         cmd = ["schema", "get"]
 
         if subject is not None:
@@ -1834,17 +2046,23 @@ class RpkTool:
         cmd += rest
         return self._execute(cmd)
 
-    def deploy_wasm(self,
-                    name,
-                    input_topic,
-                    output_topics,
-                    file="tinygo/identity.wasm",
-                    compression_type: TopicSpec.CompressionTypes
-                    | None = None,
-                    from_offset: str | None = None):
+    def deploy_wasm(
+        self,
+        name,
+        input_topic,
+        output_topics,
+        file="tinygo/identity.wasm",
+        compression_type: TopicSpec.CompressionTypes | None = None,
+        from_offset: str | None = None,
+    ):
         cmd = [
-            "deploy", "--name", name, "--input-topic", input_topic, "--file",
-            f"/opt/transforms/{file}"
+            "deploy",
+            "--name",
+            name,
+            "--input-topic",
+            input_topic,
+            "--file",
+            f"/opt/transforms/{file}",
         ]
         if compression_type is not None:
             cmd += ["--compression", compression_type]
@@ -1859,12 +2077,14 @@ class RpkTool:
         self._run_wasm(["delete", name, "--no-confirm"])
 
     def list_wasm(self):
-        out = self._run_wasm([
-            "list",
-            "--format",
-            "json",
-            "--detailed",
-        ])
+        out = self._run_wasm(
+            [
+                "list",
+                "--format",
+                "json",
+                "--detailed",
+            ]
+        )
         loaded = json.loads(out)
 
         def status_from_json(loaded):
@@ -1895,8 +2115,11 @@ class RpkTool:
 
     def describe_txn_producers(self, topics, partitions, all=False):
         cmd = [
-            "describe-producers", "--topics", ",".join(topics), "--partitions",
-            ",".join([str(x) for x in partitions])
+            "describe-producers",
+            "--topics",
+            ",".join(topics),
+            "--partitions",
+            ",".join([str(x) for x in partitions]),
         ]
 
         if all:
@@ -1915,18 +2138,20 @@ class RpkTool:
     def list_txn(self):
         return self._run_txn(["list"])
 
-    def _run_txn(self,
-                 cmd,
-                 stdin=None,
-                 timeout=None,
-                 output_format="json") -> dict | str:
-        cmd = [
-            self._rpk_binary(),
-            "cluster",
-            "txn",
-            "--format",
-            output_format,
-        ] + self._kafka_conn_settings() + cmd
+    def _run_txn(
+        self, cmd, stdin=None, timeout=None, output_format="json"
+    ) -> dict | str:
+        cmd = (
+            [
+                self._rpk_binary(),
+                "cluster",
+                "txn",
+                "--format",
+                output_format,
+            ]
+            + self._kafka_conn_settings()
+            + cmd
+        )
 
         out = self._execute(cmd, stdin=stdin, timeout=timeout)
 
@@ -1972,8 +2197,7 @@ class RpkTool:
         return self._run_role(["list"])
 
     def delete_role(self, role_name):
-        cmd = ["delete", role_name, "--no-confirm"
-               ] + self._kafka_conn_settings()
+        cmd = ["delete", role_name, "--no-confirm"] + self._kafka_conn_settings()
         return self._run_role(cmd)
 
     def assign_role(self, role_name, principals):
@@ -1985,26 +2209,32 @@ class RpkTool:
         return self._run_role(cmd)
 
     def describe_role(self, role_name):
-        return self._run_role(["describe", role_name] +
-                              self._kafka_conn_settings())
+        return self._run_role(["describe", role_name] + self._kafka_conn_settings())
 
     def _run_role(self, cmd, output_format="json"):
         cmd = [
-            self._rpk_binary(), "security", "role", "--format", output_format,
-            "-X", "admin.hosts=" + self._redpanda.admin_endpoints()
+            self._rpk_binary(),
+            "security",
+            "role",
+            "--format",
+            output_format,
+            "-X",
+            "admin.hosts=" + self._redpanda.admin_endpoints(),
         ] + cmd
 
         out = self._execute(cmd)
 
         return json.loads(out) if output_format == "json" else out
 
-    def describe_cluster_quotas(self,
-                                any=[],
-                                default=[],
-                                name=[],
-                                strict=False,
-                                output_format="json",
-                                node: Optional[ClusterNode] = None):
+    def describe_cluster_quotas(
+        self,
+        any=[],
+        default=[],
+        name=[],
+        strict=False,
+        output_format="json",
+        node: Optional[ClusterNode] = None,
+    ):
         cmd = ["describe"]
 
         if strict:
@@ -2016,18 +2246,18 @@ class RpkTool:
         if len(name) > 0:
             cmd += ["--name", ",".join(name)]
 
-        return self._run_cluster_quotas(cmd,
-                                        output_format=output_format,
-                                        node=node)
+        return self._run_cluster_quotas(cmd, output_format=output_format, node=node)
 
-    def alter_cluster_quotas(self,
-                             add=[],
-                             delete=[],
-                             default=[],
-                             name=[],
-                             dry=False,
-                             output_format="json",
-                             node: Optional[ClusterNode] = None):
+    def alter_cluster_quotas(
+        self,
+        add=[],
+        delete=[],
+        default=[],
+        name=[],
+        dry=False,
+        output_format="json",
+        node: Optional[ClusterNode] = None,
+    ):
         cmd = ["alter"]
 
         if dry:
@@ -2041,25 +2271,26 @@ class RpkTool:
         if len(name) > 0:
             cmd += ["--name", ",".join(name)]
 
-        return self._run_cluster_quotas(cmd,
-                                        output_format=output_format,
-                                        node=node)
+        return self._run_cluster_quotas(cmd, output_format=output_format, node=node)
 
     def import_cluster_quota(self, source, output_format="json"):
         cmd = ["import", "--no-confirm", "--from", source]
         return self._run_cluster_quotas(cmd, output_format=output_format)
 
-    def _run_cluster_quotas(self,
-                            cmd,
-                            output_format="json",
-                            node: Optional[ClusterNode] = None):
-        cmd = [
-            self._rpk_binary(),
-            "cluster",
-            "quotas",
-            "--format",
-            output_format,
-        ] + self._kafka_conn_settings(node) + cmd
+    def _run_cluster_quotas(
+        self, cmd, output_format="json", node: Optional[ClusterNode] = None
+    ):
+        cmd = (
+            [
+                self._rpk_binary(),
+                "cluster",
+                "quotas",
+                "--format",
+                output_format,
+            ]
+            + self._kafka_conn_settings(node)
+            + cmd
+        )
 
         out = self._execute(cmd)
 
@@ -2097,8 +2328,11 @@ class RpkTool:
         return self._run_remote_bundle(cmd)
 
     def _run_remote_bundle(self, cmd, format=None):
-        cmd = [self._rpk_binary(), "debug", "remote-bundle"
-               ] + cmd + ["-X", "admin.hosts=" + self._admin_host()]
+        cmd = (
+            [self._rpk_binary(), "debug", "remote-bundle"]
+            + cmd
+            + ["-X", "admin.hosts=" + self._admin_host()]
+        )
 
         if format is not None:
             cmd += ["--format", format]

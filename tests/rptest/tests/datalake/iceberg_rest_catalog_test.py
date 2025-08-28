@@ -15,16 +15,17 @@ from rptest.tests.redpanda_test import RedpandaTest
 
 class IcebergRESTCatalogTest(RedpandaTest):
     """Create a iceberg REST catalog with a shared bucket as Redpanda"""
+
     def __init__(self, test_ctx, *args, **kwargs):
         si_settings = SISettings(test_context=test_ctx)
-        super(IcebergRESTCatalogTest, self).__init__(test_ctx,
-                                                     si_settings=si_settings,
-                                                     *args,
-                                                     **kwargs)
+        super(IcebergRESTCatalogTest, self).__init__(
+            test_ctx, si_settings=si_settings, *args, **kwargs
+        )
         self.catalog_service = IcebergRESTCatalog(
             test_ctx,
             cloud_storage_bucket=si_settings.cloud_storage_bucket,
-            filesystem_wrapper_mode=False)
+            filesystem_wrapper_mode=False,
+        )
 
     def setUp(self):
         super().setUp()

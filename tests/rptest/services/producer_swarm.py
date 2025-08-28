@@ -18,28 +18,31 @@ from rptest.services.utils import assert_int, assert_int_or_none
 
 
 class ProducerSwarm(ClientSwarmBase):
-    def __init__(self,
-                 context: TestContext,
-                 redpanda: AnyRedpandaService,
-                 topic: str,
-                 producers: int,
-                 records_per_producer: int,
-                 log_level="DEBUG",
-                 properties={},
-                 timeout_ms: int = 1000,
-                 compression_type: Optional[str] = None,
-                 compressible_payload: Optional[bool] = None,
-                 min_record_size: Optional[int] = None,
-                 max_record_size: Optional[int] = None,
-                 keys: Optional[int] = None,
-                 unique_topics: Optional[bool] = False,
-                 messages_per_second_per_producer: Optional[int] = None):
+    def __init__(
+        self,
+        context: TestContext,
+        redpanda: AnyRedpandaService,
+        topic: str,
+        producers: int,
+        records_per_producer: int,
+        log_level="DEBUG",
+        properties={},
+        timeout_ms: int = 1000,
+        compression_type: Optional[str] = None,
+        compressible_payload: Optional[bool] = None,
+        min_record_size: Optional[int] = None,
+        max_record_size: Optional[int] = None,
+        keys: Optional[int] = None,
+        unique_topics: Optional[bool] = False,
+        messages_per_second_per_producer: Optional[int] = None,
+    ):
         super().__init__(context, redpanda, topic, log_level, properties)
 
         self._producers = assert_int(producers)
         self._records_per_producer = assert_int(records_per_producer)
         self._messages_per_second_per_producer = assert_int_or_none(
-            messages_per_second_per_producer)
+            messages_per_second_per_producer
+        )
         self._timeout_ms = assert_int(timeout_ms)
         self._compression_type = compression_type
         self._compressible_payload = compressible_payload
@@ -99,20 +102,21 @@ class ProducerSwarm(ClientSwarmBase):
         # the cluster. Since we have often just created the topic, this could be delayed
         # due to leadership transfers which occur in a burst some time between 0 and 5
         # minutes after the topic is created.
-        timeout_s = 30 + 3 * ceil(
-            self._producers * self.CLIENT_SPAWN_WAIT_MS / 1000)
+        timeout_s = 30 + 3 * ceil(self._producers * self.CLIENT_SPAWN_WAIT_MS / 1000)
 
         def started_count():
             started = self.get_metrics_summary().clients_started
-            self.logger.debug(f'{started} producers started so far')
+            self.logger.debug(f"{started} producers started so far")
             return started
 
         self.logger.info(
-            f'Waiting up to {timeout_s}s for all {self._producers} to start')
+            f"Waiting up to {timeout_s}s for all {self._producers} to start"
+        )
 
         self._redpanda.wait_until(
             lambda: started_count() == self._producers,
             timeout_sec=timeout_s,
             backoff_sec=1,
             err_msg=lambda: f"{self} did not start after {timeout_s}: "
-            f"{started_count()} started, expected {self._producers}")
+            f"{started_count()} started, expected {self._producers}",
+        )

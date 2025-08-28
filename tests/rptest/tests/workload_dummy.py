@@ -43,9 +43,7 @@ class DummyWorkload(PWorkload):
         return "DummyWorkload"
 
     def on_cluster_upgraded(self, version: tuple[int, int, int]) -> int:
-        versions = [
-            self.ctx.redpanda.get_version(n) for n in self.ctx.redpanda.nodes
-        ]
+        versions = [self.ctx.redpanda.get_version(n) for n in self.ctx.redpanda.nodes]
         self.ctx.logger.info(f"got {version=}, running on {versions=}")
         return PWorkload.DONE
 
@@ -55,7 +53,8 @@ class MinimalWorkload(PWorkload):
         self.ctx = ctx
         self.topic = TopicSpec(
             name=f"topic-{self.__class__.__name__}-{str(uuid.uuid4())}",
-            replication_factor=3)
+            replication_factor=3,
+        )
 
     def begin(self):
         self.ctx.client().create_topic(self.topic)
@@ -64,8 +63,8 @@ class MinimalWorkload(PWorkload):
         self.ctx.client().delete_topic(self.topic.name)
 
     def on_cluster_upgraded(self, version: tuple[int, int, int]) -> int:
-        offset = RpkTool(self.ctx.redpanda).produce(topic=self.topic.name,
-                                                    key=f"{version}",
-                                                    msg=str(uuid.uuid4()))
+        offset = RpkTool(self.ctx.redpanda).produce(
+            topic=self.topic.name, key=f"{version}", msg=str(uuid.uuid4())
+        )
         self.ctx.logger.info(f"produced to {self.topic.name} at {offset=}")
         return PWorkload.DONE

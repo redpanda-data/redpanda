@@ -21,11 +21,9 @@ from rptest.tests.redpanda_test import RedpandaTest
 class FetchTest(RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):
         self._ctx = test_ctx
-        super(FetchTest, self).__init__(test_ctx,
-                                        num_brokers=1,
-                                        *args,
-                                        extra_rp_conf={},
-                                        **kwargs)
+        super(FetchTest, self).__init__(
+            test_ctx, num_brokers=1, *args, extra_rp_conf={}, **kwargs
+        )
 
     """
     Validates key availability properties of the system using a single
@@ -33,17 +31,17 @@ class FetchTest(RedpandaTest):
     """
 
     @cluster(num_nodes=1)
-    @parametrize(type='multiple-topics')
-    @parametrize(type='multiple-partitions')
+    @parametrize(type="multiple-topics")
+    @parametrize(type="multiple-partitions")
     def simple_fetch_handler_fairness_test(self, type):
         """
-        Testing if when fetching from single node all partitions are 
+        Testing if when fetching from single node all partitions are
         returned in round robin fashion
         """
+
         def multiple_topics(count):
             return [
-                TopicSpec(partition_count=1, replication_factor=1)
-                for _ in range(count)
+                TopicSpec(partition_count=1, replication_factor=1) for _ in range(count)
             ]
 
         def multiple_partitions(count):
@@ -53,7 +51,7 @@ class FetchTest(RedpandaTest):
         records_per_partition = 100
         topics = []
 
-        if type == 'multiple-topics':
+        if type == "multiple-topics":
             topics = multiple_topics(number_of_partitions)
         else:
             topics = multiple_partitions(number_of_partitions)
@@ -70,10 +68,7 @@ class FetchTest(RedpandaTest):
             for p in range(0, s.partition_count):
                 for i in range(0, records_per_partition):
                     self.redpanda.logger.info(f"producing to : {t}/{p}")
-                    rpk.produce(t,
-                                f"k.{t}.{p}.{i}",
-                                f"p.{t}.{p}.{i}",
-                                partition=p)
+                    rpk.produce(t, f"k.{t}.{p}.{i}", f"p.{t}.{p}.{i}", partition=p)
 
         # configure kcl to fetch at most 1 byte in single fetch request,
         # this way we should receive exactly one record per each partition
@@ -86,14 +81,16 @@ class FetchTest(RedpandaTest):
         # in single fetch session, it should include single partition in each
         # fetch response.
         to_consume = int(number_of_partitions * expected_frequency)
-        consumed = kcl.consume(topic="topic-.*",
-                               n=to_consume,
-                               regex=True,
-                               fetch_max_bytes=1,
-                               group="test-gr-1")
+        consumed = kcl.consume(
+            topic="topic-.*",
+            n=to_consume,
+            regex=True,
+            fetch_max_bytes=1,
+            group="test-gr-1",
+        )
 
         for c in consumed.split():
-            parts = c.split('.')
+            parts = c.split(".")
             consumed_frequency[(parts[1], parts[2])] += 1
 
         for p, freq in consumed_frequency.items():

@@ -10,17 +10,17 @@
 import time
 from typing import Generic, Optional, TypeVar
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class ExpiringValue(Generic[T]):
     """
     Single value cache with optional expiration.
     """
-    def __init__(self,
-                 value: Optional[T] = None,
-                 *,
-                 expire_at: Optional[float] = None) -> None:
+
+    def __init__(
+        self, value: Optional[T] = None, *, expire_at: Optional[float] = None
+    ) -> None:
         """
         Create an ExpiringValue with optional initial value and expiration.
 

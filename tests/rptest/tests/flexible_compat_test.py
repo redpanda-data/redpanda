@@ -13,8 +13,8 @@ from rptest.services.cluster import cluster
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
 
-usable_api_re = re.compile('(.*)\((\d*)\): (\d*) to (\d*) \[usable: (\d*)\]')
-unusable_api_re = re.compile('(.*)\((\d*)\): UNSUPPORTED')
+usable_api_re = re.compile("(.*)\((\d*)\): (\d*) to (\d*) \[usable: (\d*)\]")
+unusable_api_re = re.compile("(.*)\((\d*)\): UNSUPPORTED")
 
 
 def parse_api_versions_response(line):
@@ -45,8 +45,15 @@ class ApiVersionResponseParser:
     def __repr__(self):
         if self.is_unsupported:
             return str((self.api_name, self.api_key))
-        return str((self.api_name, self.api_key, self.min_supported,
-                    self.max_supported, self.version_used))
+        return str(
+            (
+                self.api_name,
+                self.api_key,
+                self.min_supported,
+                self.max_supported,
+                self.version_used,
+            )
+        )
 
 
 class FlexibleCompatTest(RedpandaTest):
@@ -60,10 +67,10 @@ class FlexibleCompatTest(RedpandaTest):
 
         # sanitize output
         def trim_and_parse(x):
-            line = parse_api_versions_response(x.removesuffix(',').strip())
+            line = parse_api_versions_response(x.removesuffix(",").strip())
             return None if line is None else ApiVersionResponseParser(line)
 
-        output = [trim_and_parse(x) for x in output.split('\n')]
+        output = [trim_and_parse(x) for x in output.split("\n")]
         return [x for x in output if x is not None]
 
     @cluster(num_nodes=3)
@@ -73,8 +80,12 @@ class FlexibleCompatTest(RedpandaTest):
 
         # 3 because theres one response for each node in cluster
         if len(results) != 3:
-            raise Exception(f'ApiVersionsRequest failed: {parsed}')
+            raise Exception(f"ApiVersionsRequest failed: {parsed}")
 
         for r in results:
-            assert r.is_unsupported is False and r.min_supported == 0 \
-                and r.max_supported >= 3 and r.version_used >= 3
+            assert (
+                r.is_unsupported is False
+                and r.min_supported == 0
+                and r.max_supported >= 3
+                and r.version_used >= 3
+            )

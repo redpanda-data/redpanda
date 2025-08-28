@@ -18,6 +18,7 @@ class ExampleRunner(BackgroundThreadService):
     """
     The service that runs examples in the background
     """
+
     def __init__(self, context, example, timeout_sec=10):
         super(ExampleRunner, self).__init__(context, num_nodes=1)
 
@@ -88,8 +89,9 @@ class ExampleRunner(BackgroundThreadService):
         try:
             if self._pid:
                 node.account.signal(self._pid, 9, allow_fail=True)
-            node.account.kill_process(self._example.process_to_kill(),
-                                      clean_shutdown=False)
+            node.account.kill_process(
+                self._example.process_to_kill(), clean_shutdown=False
+            )
         except RemoteCommandError as e:
             if b"No such process" in e.msg:
                 pass

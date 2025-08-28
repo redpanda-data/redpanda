@@ -13,9 +13,9 @@ import random
 
 
 class ProducerType(str, Enum):
-    AVRO = 'avro'
-    PROTO2 = 'proto2'
-    PROTO3 = 'proto3'
+    AVRO = "avro"
+    PROTO2 = "proto2"
+    PROTO3 = "proto3"
 
 
 class GenericDataType:
@@ -32,24 +32,22 @@ class GenericDataType:
 
     @staticmethod
     def name() -> str:
-        raise NotImplementedError(
-            f"Not implemented in GenericDataType base class")
+        raise NotImplementedError(f"Not implemented in GenericDataType base class")
 
     @staticmethod
     def to_avro() -> str:
-        raise NotImplementedError(
-            f"Not implemented in GenericDataType base class")
+        raise NotImplementedError(f"Not implemented in GenericDataType base class")
 
     @staticmethod
     def to_proto() -> str:
-        raise NotImplementedError(
-            f"Not implemented in GenericDataType base class")
+        raise NotImplementedError(f"Not implemented in GenericDataType base class")
 
 
 class GenericRecord(GenericDataType):
     """
     A generic record type. In Avro, this is a 'record', in Protobuf, this is a 'message'.
     """
+
     @staticmethod
     def name() -> str:
         return "generic_record"
@@ -67,6 +65,7 @@ class GenericArray(GenericDataType):
     """
     A generic array type. In Avro, this is an 'array', in Protobuf, this is a 'repeated'.
     """
+
     @staticmethod
     def name() -> str:
         return "generic_array"
@@ -84,6 +83,7 @@ class GenericMap(GenericDataType):
     """
     A generic map type. In Avro, this is a 'map', in Protobuf, this is a 'map'.
     """
+
     @staticmethod
     def name() -> str:
         return "generic_map"
@@ -101,6 +101,7 @@ class GenericEnum(GenericDataType):
     """
     A generic enum type. In Avro, this is an 'enum', in Protobuf, this is an 'enum'.
     """
+
     @staticmethod
     def name() -> str:
         return "generic_enum"
@@ -124,11 +125,11 @@ class GenericEnum(GenericDataType):
             start with [A-Za-z_], subsequently contain only [A-Za-z0-9_]
             https://avro.apache.org/docs/1.11.1/specification/#names
             """
-            first_char = random.choice(string.ascii_letters + '_')
-            rest_of_name = random.choices(string.ascii_letters +
-                                          string.digits + '_',
-                                          k=n - 1)
-            return first_char + ''.join(rest_of_name)
+            first_char = random.choice(string.ascii_letters + "_")
+            rest_of_name = random.choices(
+                string.ascii_letters + string.digits + "_", k=n - 1
+            )
+            return first_char + "".join(rest_of_name)
 
         if producer_type == ProducerType.AVRO:
             return make_avro_enum(n)
@@ -138,6 +139,7 @@ class GenericUnion(GenericDataType):
     """
     A generic union type. In Avro, this is a 'union', in Protobuf, this is a 'union'.
     """
+
     @staticmethod
     def name() -> str:
         return "generic_union"
@@ -155,6 +157,7 @@ class GenericOptional(GenericDataType):
     """
     A generic optional type. In Avro, this is a regular field type with the default value of 'null', in Protobuf, this is an 'optional'.
     """
+
     @staticmethod
     def name() -> str:
         return "generic_optional"
@@ -174,15 +177,15 @@ class GenericPrimitive(GenericDataType):
         return "generic_primitive"
 
 
-#TODO(willem): implement all complex data types
+# TODO(willem): implement all complex data types
 ALL_COMPLEX_DATA_TYPES = [
     GenericRecord,
     GenericArray,
     GenericMap,
     GenericEnum,
-    #GenericUnion,
-    #GenericOptional,
-    GenericPrimitive
+    # GenericUnion,
+    # GenericOptional,
+    GenericPrimitive,
 ]
 
 
@@ -190,6 +193,7 @@ class GenericBool(GenericDataType):
     """
     A generic bool type.
     """
+
     @staticmethod
     def name() -> str:
         return "generic_bool"
@@ -211,6 +215,7 @@ class GenericInt(GenericDataType):
     """
     A generic int type.
     """
+
     @staticmethod
     def name() -> str:
         return "generic_int"
@@ -232,6 +237,7 @@ class GenericLong(GenericDataType):
     """
     A generic long type.
     """
+
     @staticmethod
     def name() -> str:
         return "generic_long"
@@ -253,6 +259,7 @@ class GenericFloat(GenericDataType):
     """
     A generic float type.
     """
+
     @staticmethod
     def name() -> str:
         return "generic_float"
@@ -274,6 +281,7 @@ class GenericDouble(GenericDataType):
     """
     A generic double type.
     """
+
     @staticmethod
     def name() -> str:
         return "generic_double"
@@ -295,6 +303,7 @@ class GenericBytes(GenericDataType):
     """
     A generic bytes type.
     """
+
     @staticmethod
     def name() -> str:
         return "generic_bytes"
@@ -309,16 +318,18 @@ class GenericBytes(GenericDataType):
 
     @staticmethod
     def random(n: int = 10) -> str:
-        return ''.join(
-            random.choices(string.ascii_lowercase + string.ascii_uppercase +
-                           string.digits,
-                           k=n))
+        return "".join(
+            random.choices(
+                string.ascii_lowercase + string.ascii_uppercase + string.digits, k=n
+            )
+        )
 
 
 class GenericString(GenericDataType):
     """
     A generic string type.
     """
+
     @staticmethod
     def name() -> str:
         return "generic_string"
@@ -335,15 +346,20 @@ class GenericString(GenericDataType):
     def random(n: int = 10) -> str:
         # Prefix string with 's' to prevent inappropriate conversion to integer types
         # in schema template, see make_random_record() in schema_generator.py
-        return "s" + ''.join(
-            random.choices(string.ascii_lowercase + string.ascii_uppercase +
-                           string.digits,
-                           k=n - 1))
+        return "s" + "".join(
+            random.choices(
+                string.ascii_lowercase + string.ascii_uppercase + string.digits, k=n - 1
+            )
+        )
 
 
 ALL_PRIMITIVE_DATA_TYPES = [
-    GenericBool, GenericInt, GenericLong, GenericFloat, GenericDouble,
-    GenericString
+    GenericBool,
+    GenericInt,
+    GenericLong,
+    GenericFloat,
+    GenericDouble,
+    GenericString,
 ]
 
 ALL_PRIMITIVE_DATA_TYPES_AND_ENUM = ALL_PRIMITIVE_DATA_TYPES + [GenericEnum]

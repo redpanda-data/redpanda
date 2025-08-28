@@ -32,18 +32,19 @@ from rptest.utils.parallel import execute_in_parallel
 
 class DatalakeManyTopicsTest(RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):
-        super(DatalakeManyTopicsTest,
-              self).__init__(test_ctx,
-                             num_brokers=6,
-                             si_settings=SISettings(test_context=test_ctx),
-                             extra_rp_conf={
-                                 "iceberg_enabled": True,
-                                 "iceberg_catalog_commit_interval_ms": 5000,
-                                 "iceberg_target_lag_ms": 5000,
-                             },
-                             schema_registry_config=SchemaRegistryConfig(),
-                             *args,
-                             **kwargs)
+        super(DatalakeManyTopicsTest, self).__init__(
+            test_ctx,
+            num_brokers=6,
+            si_settings=SISettings(test_context=test_ctx),
+            extra_rp_conf={
+                "iceberg_enabled": True,
+                "iceberg_catalog_commit_interval_ms": 5000,
+                "iceberg_target_lag_ms": 5000,
+            },
+            schema_registry_config=SchemaRegistryConfig(),
+            *args,
+            **kwargs,
+        )
 
     def setUp(self):
         # redpanda will be started by DatalakeServices
@@ -61,21 +62,25 @@ class DatalakeManyTopicsTest(RedpandaTest):
                     topic=n,
                     partitions=partitions,
                     replicas=replicas,
-                    config={"redpanda.iceberg.mode": "value_schema_id_prefix"})
+                    config={"redpanda.iceberg.mode": "value_schema_id_prefix"},
+                )
 
         execute_in_parallel(all_topic_names, create_batch)
         return all_topic_names
 
     def create_producer(self, schema):
         value_serializer = AvroSerializer(
-            SchemaRegistryClient(
-                {"url": self.redpanda.schema_reg().split(",")[0]}), schema)
+            SchemaRegistryClient({"url": self.redpanda.schema_reg().split(",")[0]}),
+            schema,
+        )
 
-        return SerializingProducer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'key.serializer': StringSerializer('utf_8'),
-            'value.serializer': value_serializer,
-        })
+        return SerializingProducer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "key.serializer": StringSerializer("utf_8"),
+                "value.serializer": value_serializer,
+            }
+        )
 
     def produce_messages(self, schema, create_record, topics, msg_per_topic):
         def produce_batch(topics):
@@ -86,7 +91,8 @@ class DatalakeManyTopicsTest(RedpandaTest):
                         topic=topic,
                         # key to ensure that all partitions get some records
                         key=str(uuid4()),
-                        value=create_record(i))
+                        value=create_record(i),
+                    )
             producer.flush()
 
         execute_in_parallel(topics, produce_batch)
@@ -94,13 +100,15 @@ class DatalakeManyTopicsTest(RedpandaTest):
     @cluster(num_nodes=8)
     @matrix(cloud_storage_type=supported_storage_types())
     def test_basic(self, cloud_storage_type):
-        with DatalakeServices(self.test_context,
-                              redpanda=self.redpanda,
-                              catalog_type=CatalogType.REST_JDBC,
-                              include_query_engines=[QueryEngineType.SPARK
-                                                     ]) as dl:
+        with DatalakeServices(
+            self.test_context,
+            redpanda=self.redpanda,
+            catalog_type=CatalogType.REST_JDBC,
+            include_query_engines=[QueryEngineType.SPARK],
+        ) as dl:
             all_topics = self.create_topics(
-                1000 if self.redpanda.dedicated_nodes else 20)
+                1000 if self.redpanda.dedicated_nodes else 20
+            )
             self.logger.info(f"creating topics finished")
 
             schema1 = """
@@ -121,31 +129,29 @@ class DatalakeManyTopicsTest(RedpandaTest):
                     "number": i,
                 }
 
-            self.produce_messages(schema1,
-                                  create_record1,
-                                  topics=all_topics,
-                                  msg_per_topic=100)
+            self.produce_messages(
+                schema1, create_record1, topics=all_topics, msg_per_topic=100
+            )
             self.logger.info(f"producing finished")
 
             def tables_created():
                 try:
                     return len(
-                        spark.run_query_fetch_all(
-                            f"show tables in redpanda")) >= len(all_topics)
+                        spark.run_query_fetch_all(f"show tables in redpanda")
+                    ) >= len(all_topics)
                 except pyhive.exc.OperationalError:
                     # thrown if the namespace hasn't been created yet
                     return False
 
             spark = dl.spark()
-            self.redpanda.wait_until(tables_created,
-                                     timeout_sec=180,
-                                     backoff_sec=5)
+            self.redpanda.wait_until(tables_created, timeout_sec=180, backoff_sec=5)
             self.logger.info(f"table creation finished")
 
             def all_translated(msg_per_topic):
                 for topic in random.sample(all_topics, 10):
                     count = spark.run_query_fetch_all(
-                        f"select count(*) from redpanda.{topic}")
+                        f"select count(*) from redpanda.{topic}"
+                    )
                     if count[0][0] < msg_per_topic:
                         return False
                 return True
@@ -154,7 +160,8 @@ class DatalakeManyTopicsTest(RedpandaTest):
                 lambda: all_translated(100),
                 timeout_sec=180,
                 backoff_sec=5,
-                err_msg="timed out waiting for first translation")
+                err_msg="timed out waiting for first translation",
+            )
             self.logger.info(f"translation finished")
 
             schema2 = """
@@ -177,25 +184,23 @@ class DatalakeManyTopicsTest(RedpandaTest):
                     "number": i,
                 }
 
-            self.produce_messages(schema2,
-                                  create_record2,
-                                  topics=all_topics,
-                                  msg_per_topic=100)
+            self.produce_messages(
+                schema2, create_record2, topics=all_topics, msg_per_topic=100
+            )
             self.logger.info(f"producing with new schema finished")
 
             self.redpanda.wait_until(
                 lambda: all_translated(200),
                 timeout_sec=180,
                 backoff_sec=5,
-                err_msg="timed out waiting for translation after schema change"
+                err_msg="timed out waiting for translation after schema change",
             )
             self.logger.info(f"translation finished")
 
             def all_updated_schema():
                 for topic in random.sample(all_topics, 10):
-                    describe = spark.run_query_fetch_all(
-                        f"describe redpanda.{topic}")
-                    expected_line = ('event_type', 'string', None)
+                    describe = spark.run_query_fetch_all(f"describe redpanda.{topic}")
+                    expected_line = ("event_type", "string", None)
                     if expected_line not in describe:
                         return False
                 return True
@@ -204,40 +209,41 @@ class DatalakeManyTopicsTest(RedpandaTest):
                 all_updated_schema,
                 timeout_sec=30,
                 backoff_sec=5,
-                err_msg="timed out waiting for schema update")
+                err_msg="timed out waiting for schema update",
+            )
 
             def set_property_for_batch(batch):
                 rpk = RpkTool(self.redpanda)
                 for topic in batch:
-                    rpk.alter_topic_config(topic,
-                                           "redpanda.iceberg.partition.spec",
-                                           "(event_type)")
+                    rpk.alter_topic_config(
+                        topic, "redpanda.iceberg.partition.spec", "(event_type)"
+                    )
 
             execute_in_parallel(all_topics, set_property_for_batch)
             self.logger.info(f"partition spec property changed")
 
-            self.produce_messages(schema2,
-                                  create_record2,
-                                  topics=all_topics,
-                                  msg_per_topic=100)
+            self.produce_messages(
+                schema2, create_record2, topics=all_topics, msg_per_topic=100
+            )
             self.logger.info(f"producing with new partition spec finished")
 
             self.redpanda.wait_until(
                 lambda: all_translated(300),
                 timeout_sec=180,
                 backoff_sec=5,
-                err_msg="timed out waiting for translation after spec update")
+                err_msg="timed out waiting for translation after spec update",
+            )
             self.logger.info(f"translation finished")
 
             def all_updated_spec():
                 for topic in random.sample(all_topics, 10):
-                    describe = spark.run_query_fetch_all(
-                        f"describe redpanda.{topic}")
+                    describe = spark.run_query_fetch_all(f"describe redpanda.{topic}")
                     partitioning = list(
                         itertools.dropwhile(
-                            lambda r: not r[0].startswith('# Partition'),
-                            describe))
-                    expected_line = ('event_type', 'string', None)
+                            lambda r: not r[0].startswith("# Partition"), describe
+                        )
+                    )
+                    expected_line = ("event_type", "string", None)
                     if expected_line not in partitioning:
                         return False
                 return True
@@ -246,4 +252,5 @@ class DatalakeManyTopicsTest(RedpandaTest):
                 all_updated_spec,
                 timeout_sec=30,
                 backoff_sec=5,
-                err_msg="timed out waiting for partition spec update")
+                err_msg="timed out waiting for partition spec update",
+            )
