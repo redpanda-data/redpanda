@@ -34,10 +34,12 @@ class AvailabilityTests(EndToEndTest):
             producer_timeout_sec = 180
             consumer_timeout_sec = 180
 
-        self.run_validation(min_records=min_records,
-                            enable_idempotence=False,
-                            producer_timeout_sec=producer_timeout_sec,
-                            consumer_timeout_sec=consumer_timeout_sec)
+        self.run_validation(
+            min_records=min_records,
+            enable_idempotence=False,
+            producer_timeout_sec=producer_timeout_sec,
+            consumer_timeout_sec=consumer_timeout_sec,
+        )
 
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_availability_when_one_node_failed(self):
@@ -51,12 +53,11 @@ class AvailabilityTests(EndToEndTest):
                 # set disk timeout to value greater than max suspend time
                 # not to emit spurious errors
                 "raft_io_timeout_ms": 20000,
-            })
+            },
+        )
 
         self.redpanda.start()
-        spec = TopicSpec(name="test-topic",
-                         partition_count=6,
-                         replication_factor=3)
+        spec = TopicSpec(name="test-topic", partition_count=6, replication_factor=3)
 
         DefaultClient(self.redpanda).create_topic(spec)
         self.topic = spec.name
@@ -70,7 +71,6 @@ class AvailabilityTests(EndToEndTest):
 
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_recovery_after_catastrophic_failure(self):
-
         self.redpanda = make_redpanda_service(
             self.test_context,
             3,
@@ -81,12 +81,11 @@ class AvailabilityTests(EndToEndTest):
                 # set disk timeout to value greater than max suspend time
                 # not to emit spurious errors
                 "raft_io_timeout_ms": 20000,
-            })
+            },
+        )
 
         self.redpanda.start()
-        spec = TopicSpec(name="test-topic",
-                         partition_count=6,
-                         replication_factor=3)
+        spec = TopicSpec(name="test-topic", partition_count=6, replication_factor=3)
 
         DefaultClient(self.redpanda).create_topic(spec)
         self.topic = spec.name
@@ -97,12 +96,16 @@ class AvailabilityTests(EndToEndTest):
 
         with Finjector(self.redpanda, self.scale).finj_manual() as finj:
             # inject permanent random failure
-            f_spec = FailureSpec(random.choice(FailureSpec.FAILURE_TYPES),
-                                 random.choice(self.redpanda.nodes[0:1]))
+            f_spec = FailureSpec(
+                random.choice(FailureSpec.FAILURE_TYPES),
+                random.choice(self.redpanda.nodes[0:1]),
+            )
             finj(f_spec)
             # inject transient failure on other node
-            f_spec = FailureSpec(random.choice(FailureSpec.FAILURE_TYPES),
-                                 self.redpanda.nodes[2],
-                                 length=2.0 if self.scale.local else 15.0)
+            f_spec = FailureSpec(
+                random.choice(FailureSpec.FAILURE_TYPES),
+                self.redpanda.nodes[2],
+                length=2.0 if self.scale.local else 15.0,
+            )
             finj(f_spec)
             self.validate_records()

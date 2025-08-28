@@ -17,7 +17,11 @@ from rptest.utils.rpenv import sample_license
 from rptest.services.admin import Admin
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SISettings, CloudStorageType, get_cloud_storage_type
+from rptest.services.redpanda import (
+    SISettings,
+    CloudStorageType,
+    get_cloud_storage_type,
+)
 from rptest.services.cluster import cluster
 from requests.exceptions import HTTPError
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
@@ -28,11 +32,13 @@ class UpgradeMigratingLicenseVersion(RedpandaTest):
     """
     Verify that the cluster can interpret licenses between versions
     """
+
     def __init__(self, test_context):
-        super(UpgradeMigratingLicenseVersion,
-              self).__init__(test_context=test_context,
-                             num_brokers=3,
-                             si_settings=SISettings(test_context))
+        super(UpgradeMigratingLicenseVersion, self).__init__(
+            test_context=test_context,
+            num_brokers=3,
+            si_settings=SISettings(test_context),
+        )
         self.installer = self.redpanda._installer
         self.admin = Admin(self.redpanda)
 
@@ -42,13 +48,13 @@ class UpgradeMigratingLicenseVersion(RedpandaTest):
         super(UpgradeMigratingLicenseVersion, self).setUp()
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @matrix(cloud_storage_type=get_cloud_storage_type(
-        applies_only_on=[CloudStorageType.S3]))
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
     def test_license_upgrade(self, cloud_storage_type):
         license = sample_license()
         if license is None:
-            self.logger.info(
-                "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
+            self.logger.info("Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
             return
 
         # Upload a license
@@ -64,7 +70,9 @@ class UpgradeMigratingLicenseVersion(RedpandaTest):
             license = self.admin.get_license()
             return self.admin.is_sample_license(license)
 
-        wait_until(license_loaded_ok,
-                   timeout_sec=30,
-                   backoff_sec=1,
-                   err_msg="Timeout waiting for license to exist in cluster")
+        wait_until(
+            license_loaded_ok,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Timeout waiting for license to exist in cluster",
+        )

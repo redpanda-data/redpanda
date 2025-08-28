@@ -44,7 +44,7 @@ class Bindfs(Operations):
             "read": 0,
             "release": 0,
             "truncate": 0,
-            "write": 0
+            "write": 0,
         }
 
         self.io_op_should_fail = {
@@ -70,7 +70,7 @@ class Bindfs(Operations):
             "read": False,
             "release": False,
             "truncate": False,
-            "write": False
+            "write": False,
         }
 
     def get_mapped_location(self, path):
@@ -106,14 +106,23 @@ class Bindfs(Operations):
         self.prologue("getattr")
         target = self.get_mapped_location(path)
         lstat = os.lstat(target)
-        return dict((key, getattr(lstat, key))
-                    for key in ('st_atime', 'st_ctime', 'st_gid', 'st_mode',
-                                'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
+        return dict(
+            (key, getattr(lstat, key))
+            for key in (
+                "st_atime",
+                "st_ctime",
+                "st_gid",
+                "st_mode",
+                "st_mtime",
+                "st_nlink",
+                "st_size",
+                "st_uid",
+            )
+        )
 
     def link(self, target, name):
         self.prologue("link")
-        return os.link(self.get_mapped_location(name),
-                       self.get_mapped_location(target))
+        return os.link(self.get_mapped_location(name), self.get_mapped_location(target))
 
     def mkdir(self, path, mode):
         self.prologue("mkdir")
@@ -129,7 +138,7 @@ class Bindfs(Operations):
         if os.path.isdir(target):
             for item in os.listdir(target):
                 yield item
-        for m in ['.', '..']:
+        for m in [".", ".."]:
             yield m
 
     def readlink(self, path):
@@ -142,8 +151,7 @@ class Bindfs(Operations):
 
     def rename(self, old, new):
         self.prologue("rename")
-        return os.rename(self.get_mapped_location(old),
-                         self.get_mapped_location(new))
+        return os.rename(self.get_mapped_location(old), self.get_mapped_location(new))
 
     def rmdir(self, path):
         self.prologue("rmdir")
@@ -154,10 +162,21 @@ class Bindfs(Operations):
         self.prologue("statfs")
         target = self.get_mapped_location(path)
         stv = os.statvfs(target)
-        return dict((key, getattr(stv, key))
-                    for key in ('f_bavail', 'f_bfree', 'f_blocks', 'f_bsize',
-                                'f_favail', 'f_ffree', 'f_files', 'f_flag',
-                                'f_frsize', 'f_namemax'))
+        return dict(
+            (key, getattr(stv, key))
+            for key in (
+                "f_bavail",
+                "f_bfree",
+                "f_blocks",
+                "f_bsize",
+                "f_favail",
+                "f_ffree",
+                "f_files",
+                "f_flag",
+                "f_frsize",
+                "f_namemax",
+            )
+        )
 
     def symlink(self, name, target):
         self.prologue("symlink")
@@ -222,7 +241,7 @@ app = Flask(__name__)
 bindfs = Bindfs(target)
 
 
-@app.route('/delay/<op_name>/<delay_ms>', methods=['GET'])
+@app.route("/delay/<op_name>/<delay_ms>", methods=["GET"])
 def fuse_delay(op_name, delay_ms):
     if op_name == "all":
         for key in bindfs.io_op_delay_ms.keys():
@@ -235,7 +254,7 @@ def fuse_delay(op_name, delay_ms):
         return {"status": "fail", "error": "op " + op_name + " isn't found"}
 
 
-@app.route('/ruin/<op_name>', methods=['GET'])
+@app.route("/ruin/<op_name>", methods=["GET"])
 def fuse_ruin(op_name):
     if op_name == "all":
         for key in bindfs.io_op_should_fail.keys():
@@ -248,7 +267,7 @@ def fuse_ruin(op_name):
         return {"status": "fail", "error": "op " + op_name + " isn't found"}
 
 
-@app.route('/recover', methods=['GET'])
+@app.route("/recover", methods=["GET"])
 def fuse_recover():
     for key in bindfs.io_op_should_fail.keys():
         bindfs.io_op_should_fail[key] = False
@@ -257,16 +276,17 @@ def fuse_recover():
     return {"status": "ok"}
 
 
-@app.route('/status', methods=['GET'])
+@app.route("/status", methods=["GET"])
 def status():
     return {"status": "ok"}
 
 
 fuse_thread = threading.Thread(
-    target=lambda: FUSE(bindfs, mountpoint, nothreads=True, foreground=True))
+    target=lambda: FUSE(bindfs, mountpoint, nothreads=True, foreground=True)
+)
 fuse_thread.start()
 
 print("Successfully started iofaults!")
 
-app.run(host='0.0.0.0', port=port, use_reloader=False)
+app.run(host="0.0.0.0", port=port, use_reloader=False)
 fuse_thread.join()

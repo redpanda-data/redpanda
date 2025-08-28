@@ -13,10 +13,9 @@ from rptest.tests.redpanda_test import RedpandaTest
 
 class HostMetricsTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args,
-                         num_brokers=1,
-                         extra_rp_conf={"enable_host_metrics": True},
-                         **kwargs)
+        super().__init__(
+            *args, num_brokers=1, extra_rp_conf={"enable_host_metrics": True}, **kwargs
+        )
 
     @cluster(num_nodes=1)
     def test_basic_hoststats(self):

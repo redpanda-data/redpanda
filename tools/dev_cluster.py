@@ -88,8 +88,9 @@ class Redpanda:
         self.process.send_signal(signal.SIGINT)
 
     async def run(self):
-        log_path = pathlib.Path(os.path.dirname(
-            self.config.config_path)) / "redpanda.log"
+        log_path = (
+            pathlib.Path(os.path.dirname(self.config.config_path)) / "redpanda.log"
+        )
 
         # If user did not override cores with extra args, apply it from our internal cores setting
         if not {"-c", "--smp"} & set(self.extra_args):
@@ -104,18 +105,18 @@ class Redpanda:
         # If user did not specify memory, share 75% of memory equally between nodes
         if not {"-m", "--memory"} & set(self.extra_args):
             memory_total = psutil.virtual_memory().total
-            memory_per_node = (3 *
-                               (memory_total // 4)) // self.config.cluster_size
+            memory_per_node = (3 * (memory_total // 4)) // self.config.cluster_size
             memory_args = f"-m {memory_per_node // (1024 * 1024)}M"
         else:
             memory_args = ""
 
-        extra_args = ' '.join(f"\"{a}\"" for a in self.extra_args)
+        extra_args = " ".join(f'"{a}"' for a in self.extra_args)
 
         self.process = await asyncio.create_subprocess_shell(
             f"{self.binary} --redpanda-cfg {self.config.config_path} {cores_args} {memory_args} {extra_args} 2>&1 | tee -i {log_path}",
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT)
+            stderr=asyncio.subprocess.STDOUT,
+        )
 
         while True:
             line = await self.process.stdout.readline()
@@ -129,52 +130,46 @@ class Redpanda:
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-e",
-                        "--executable",
-                        type=pathlib.Path,
-                        help="path to redpanda executable",
-                        default="redpanda")
+    parser.add_argument(
+        "-e",
+        "--executable",
+        type=pathlib.Path,
+        help="path to redpanda executable",
+        default="redpanda",
+    )
     parser.add_argument("--nodes", type=int, help="number of nodes", default=3)
-    parser.add_argument("--cores",
-                        type=int,
-                        help="number of cores per node",
-                        default=None)
-    parser.add_argument("-d",
-                        "--directory",
-                        type=pathlib.Path,
-                        help="data directory",
-                        default=None)
-    parser.add_argument("--base-rpc-port",
-                        type=int,
-                        help="rpc port",
-                        default=33145)
-    parser.add_argument("--base-kafka-port",
-                        type=int,
-                        help="kafka port",
-                        default=9092)
-    parser.add_argument("--base-admin-port",
-                        type=int,
-                        help="admin port",
-                        default=9644)
-    parser.add_argument("--base-schema-registry-port",
-                        type=int,
-                        help="schema registry port",
-                        default=8081)
+    parser.add_argument(
+        "--cores", type=int, help="number of cores per node", default=None
+    )
+    parser.add_argument(
+        "-d", "--directory", type=pathlib.Path, help="data directory", default=None
+    )
+    parser.add_argument("--base-rpc-port", type=int, help="rpc port", default=33145)
+    parser.add_argument("--base-kafka-port", type=int, help="kafka port", default=9092)
+    parser.add_argument("--base-admin-port", type=int, help="admin port", default=9644)
+    parser.add_argument(
+        "--base-schema-registry-port",
+        type=int,
+        help="schema registry port",
+        default=8081,
+    )
     parser.add_argument(
         "--base-pandaproxy-port",
         type=int,
         help="pandaproxy port",
         # We can't use the "normal" pandaproxy port due to conflicts
-        default=8092)
-    parser.add_argument("--listen-address",
-                        type=str,
-                        help="listening address",
-                        default="127.0.0.1")
-    parser.add_argument("--racks",
-                        dest='racks',
-                        help="racks for each of node",
-                        action='append',
-                        default=None)
+        default=8092,
+    )
+    parser.add_argument(
+        "--listen-address", type=str, help="listening address", default="127.0.0.1"
+    )
+    parser.add_argument(
+        "--racks",
+        dest="racks",
+        help="racks for each of node",
+        action="append",
+        default=None,
+    )
     args, extra_args = parser.parse_known_args()
 
     if extra_args and extra_args[0] == "--":
@@ -184,8 +179,9 @@ async def main():
         args = parser.parse_args()
 
     if args.directory is None:
-        args.directory = pathlib.Path(
-            os.environ.get("BUILD_WORKSPACE_DIRECTORY", ".")) / "data"
+        args.directory = (
+            pathlib.Path(os.environ.get("BUILD_WORKSPACE_DIRECTORY", ".")) / "data"
+        )
 
     # Use the first 3 nodes as seed servers
     rpc_addresses = [
@@ -196,26 +192,31 @@ async def main():
     def make_node_config(i, data_dir, config_path, rack):
         make_address = lambda p: NetworkAddress(args.listen_address, p + i)
         rpc_address = rpc_addresses[i]
-        redpanda = RedpandaConfig(data_directory=data_dir,
-                                  rpc_server=rpc_address,
-                                  advertised_rpc_api=rpc_address,
-                                  advertised_kafka_api=make_address(
-                                      args.base_kafka_port),
-                                  kafka_api=make_address(args.base_kafka_port),
-                                  admin=make_address(args.base_admin_port),
-                                  seed_servers=rpc_addresses[:3],
-                                  empty_seed_starts_cluster=False,
-                                  rack=rack)
+        redpanda = RedpandaConfig(
+            data_directory=data_dir,
+            rpc_server=rpc_address,
+            advertised_rpc_api=rpc_address,
+            advertised_kafka_api=make_address(args.base_kafka_port),
+            kafka_api=make_address(args.base_kafka_port),
+            admin=make_address(args.base_admin_port),
+            seed_servers=rpc_addresses[:3],
+            empty_seed_starts_cluster=False,
+            rack=rack,
+        )
         pandaproxy = PandaproxyConfig(
-            pandaproxy_api=make_address(args.base_pandaproxy_port))
+            pandaproxy_api=make_address(args.base_pandaproxy_port)
+        )
         schema_registry = SchemaRegistryConfig(
-            schema_registry_api=make_address(args.base_schema_registry_port))
-        return NodeConfig(redpanda=redpanda,
-                          index=i,
-                          config_path=config_path,
-                          cluster_size=args.nodes,
-                          pandaproxy=pandaproxy,
-                          schema_registry=schema_registry)
+            schema_registry_api=make_address(args.base_schema_registry_port)
+        )
+        return NodeConfig(
+            redpanda=redpanda,
+            index=i,
+            config_path=config_path,
+            cluster_size=args.nodes,
+            pandaproxy=pandaproxy,
+            schema_registry=schema_registry,
+        )
 
     def pathlib_path_representer(dumper, path):
         return dumper.represent_scalar("!Path", str(path))
@@ -235,10 +236,9 @@ async def main():
 
         config = make_node_config(i, data_dir, conf_file, rack)
         with open(conf_file, "w") as f:
-            yaml.dump(dataclasses.asdict(config),
-                      f,
-                      indent=2,
-                      Dumper=get_config_dumper())
+            yaml.dump(
+                dataclasses.asdict(config), f, indent=2, Dumper=get_config_dumper()
+            )
 
         # If there is a bootstrap file in pwd, propagate it to each node's
         # directory so that they'll load it on first start
@@ -259,8 +259,7 @@ async def main():
     if cores is None:
         # Use 75% of cores for redpanda.  e.g. 3 node cluster on a 16 node system
         # gives each node 4 cores.
-        cores = max((3 * (psutil.cpu_count(logical=False) // 4)) // args.nodes,
-                    1)
+        cores = max((3 * (psutil.cpu_count(logical=False) // 4)) // args.nodes, 1)
     nodes = [Redpanda(args.executable, cores, c, extra_args) for c in configs]
 
     coros = [r.run() for r in nodes]

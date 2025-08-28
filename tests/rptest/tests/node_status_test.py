@@ -45,18 +45,15 @@ class StatusGraph:
     expected between each pair of nodes via the peer_status admin
     request.
     """
+
     def __init__(self, redpanda):
         self.redpanda = redpanda
         nodes = self.redpanda.nodes
 
         self.node_to_vertex = {node: i for i, node in enumerate(nodes)}
-        self.vertex_to_node = {
-            i: node
-            for node, i in self.node_to_vertex.items()
-        }
+        self.vertex_to_node = {i: node for node, i in self.node_to_vertex.items()}
         self.shape = (len(nodes), len(nodes))
-        self.edges = np.full(shape=self.shape,
-                             fill_value=ConnectionStatus.ALIVE)
+        self.edges = np.full(shape=self.shape, fill_value=ConnectionStatus.ALIVE)
 
     def mark_node_unavailable(self, unavailable_node: ClusterNode):
         generated_id = self.node_to_vertex[unavailable_node]
@@ -116,8 +113,8 @@ class StatusGraph:
             self.do_check_cluster_status,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=
-            "Node status across cluster nodes did not reach the desired state")
+            err_msg="Node status across cluster nodes did not reach the desired state",
+        )
 
     def _all_edges(self):
         for start_vertex, end_vertex in np.ndindex(self.shape):
@@ -126,8 +123,7 @@ class StatusGraph:
 
             yield (start_node, end_node, self.edges[start_vertex, end_vertex])
 
-    def _get_peer_status(self, admin: Admin, node: ClusterNode,
-                         peer: ClusterNode):
+    def _get_peer_status(self, admin: Admin, node: ClusterNode, peer: ClusterNode):
         try:
             return admin.get_peer_status(node, self.redpanda.idx(peer))
         except requests.exceptions.HTTPError as e:
@@ -142,11 +138,11 @@ class NodeStatusTest(RedpandaTest):
     def __init__(self, ctx):
         super().__init__(
             test_context=ctx,
-            extra_rp_conf={"node_status_interval": NODE_STATUS_INTERVAL})
+            extra_rp_conf={"node_status_interval": NODE_STATUS_INTERVAL},
+        )
 
     def _update_max_backoff(self):
-        self.redpanda.set_cluster_config(
-            {"node_status_reconnect_max_backoff_ms": 5000})
+        self.redpanda.set_cluster_config({"node_status_reconnect_max_backoff_ms": 5000})
 
     @cluster(num_nodes=3)
     def test_all_nodes_up(self):
@@ -172,7 +168,8 @@ class NodeStatusStartupTest(RedpandaTest):
         super().__init__(
             test_context=ctx,
             num_brokers=3,
-            extra_rp_conf={"node_status_interval": NODE_STATUS_INTERVAL})
+            extra_rp_conf={"node_status_interval": NODE_STATUS_INTERVAL},
+        )
 
     def setUp(self):
         pass

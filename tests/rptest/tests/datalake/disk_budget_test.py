@@ -40,6 +40,7 @@ class DatalakeDiskUsageTest(RedpandaTest):
     declines indicating that it was the target disk space usage monitor that was
     controlling the usage.
     """
+
     def __init__(self, test_ctx, *args, **kwargs):
         # datalake has a hard coded 10% memory limit. when a translator hits
         # this limit it force finishes. this makes it difficult to accumulate
@@ -65,7 +66,8 @@ class DatalakeDiskUsageTest(RedpandaTest):
                 "datalake_scratch_space_size_bytes": 100 * 2**30,
             },
             *args,
-            **kwargs)
+            **kwargs,
+        )
 
         self.test_ctx = test_ctx
         self.topic_name = "test"
@@ -77,10 +79,12 @@ class DatalakeDiskUsageTest(RedpandaTest):
 
     def create_topic(self, num_partitions):
         rpk = RpkTool(self.redpanda)
-        rpk.create_topic(self.topic_name,
-                         partitions=num_partitions,
-                         replicas=1,
-                         config={TopicSpec.PROPERTY_ICEBERG_MODE: "key_value"})
+        rpk.create_topic(
+            self.topic_name,
+            partitions=num_partitions,
+            replicas=1,
+            config={TopicSpec.PROPERTY_ICEBERG_MODE: "key_value"},
+        )
 
     def produce_until_staging_size(self, target_size):
         # produce some data to the topic and then back off and let datalake do
@@ -96,16 +100,17 @@ class DatalakeDiskUsageTest(RedpandaTest):
                 self.topic_name,
                 2**14,
                 2**15,  # ~256mb
-                acks=-1)
+                acks=-1,
+            )
             producer.start()
             producer.wait()
             producer.free()
             time.sleep(5)
             current_size = self.datalake_staging_usage()
             self.logger.info(f"Staging data usage {current_size}")
-            assert (
-                time.time() -
-                start_time) < timeout_sec, f"{current_size} < {target_size}"
+            assert (time.time() - start_time) < timeout_sec, (
+                f"{current_size} < {target_size}"
+            )
         return current_size
 
     def translation_lag(self):
@@ -114,15 +119,19 @@ class DatalakeDiskUsageTest(RedpandaTest):
 
     @cluster(num_nodes=2)
     @skip_debug_mode
-    @matrix(num_partitions=[10, 40],
-            concurrent_translations=[4],
-            cloud_storage_type=supported_storage_types())
-    def test_idle_finish(self, num_partitions, concurrent_translations,
-                         cloud_storage_type):
-        self.redpanda.set_cluster_config({
-            "datalake_scheduler_max_concurrent_translations":
-            concurrent_translations,
-        })
+    @matrix(
+        num_partitions=[10, 40],
+        concurrent_translations=[4],
+        cloud_storage_type=supported_storage_types(),
+    )
+    def test_idle_finish(
+        self, num_partitions, concurrent_translations, cloud_storage_type
+    ):
+        self.redpanda.set_cluster_config(
+            {
+                "datalake_scheduler_max_concurrent_translations": concurrent_translations,
+            }
+        )
 
         # produce data until we have a nice bit of datalake staging data on disk
         target_size = 2 * 2**30
@@ -135,7 +144,8 @@ class DatalakeDiskUsageTest(RedpandaTest):
             wait_until(
                 lambda: self.datalake_staging_usage() < idle_staging_size,
                 timeout_sec=30,
-                backoff_sec=2)
+                backoff_sec=2,
+            )
             assert False, f"{self.datalake_staging_usage()} < {idle_staging_size}"
         except ducktape.errors.TimeoutError:
             # success, the data usage didn't shrink
@@ -144,13 +154,16 @@ class DatalakeDiskUsageTest(RedpandaTest):
         # now we will halve the target size and we expect to see that the
         # staging directory usage decreases below this value.
         new_target_size = target_size // 2
-        self.redpanda.set_cluster_config({
-            "datalake_scratch_space_size_bytes":
-            new_target_size,
-        })
-        wait_until(lambda: self.datalake_staging_usage() <= new_target_size,
-                   timeout_sec=60,
-                   backoff_sec=2)
+        self.redpanda.set_cluster_config(
+            {
+                "datalake_scratch_space_size_bytes": new_target_size,
+            }
+        )
+        wait_until(
+            lambda: self.datalake_staging_usage() <= new_target_size,
+            timeout_sec=60,
+            backoff_sec=2,
+        )
 
         # start a thread that tracks the max observed usage
         self.max_usage_observed = 0
@@ -166,8 +179,7 @@ class DatalakeDiskUsageTest(RedpandaTest):
                 )
                 time.sleep(1)
 
-        usage_monitor_thread = threading.Thread(target=usage_monitor,
-                                                daemon=True)
+        usage_monitor_thread = threading.Thread(target=usage_monitor, daemon=True)
         usage_monitor_thread.start()
 
         try:
@@ -179,13 +191,16 @@ class DatalakeDiskUsageTest(RedpandaTest):
                 self.topic_name,
                 2**14,  # 16kb message size
                 2**18,  # 4gb total data written
-                acks=-1)
+                acks=-1,
+            )
             producer.start()
 
             # make sure stuff looks like it is happening!
-            wait_until(lambda: self.translation_lag() > lag_start,
-                       timeout_sec=60,
-                       backoff_sec=5)
+            wait_until(
+                lambda: self.translation_lag() > lag_start,
+                timeout_sec=60,
+                backoff_sec=5,
+            )
 
             producer.wait()
             producer.free()
@@ -194,14 +209,19 @@ class DatalakeDiskUsageTest(RedpandaTest):
             # we had to set the lag time high to increase data that lands on
             # disk, we also need to wait a long time for lag to go to zero.
             # currently it doens't look like we can dynamically change that.
-            wait_until(lambda: self.translation_lag() == 0,
-                       timeout_sec=self.target_lag_sec * 2,
-                       backoff_sec=10,
-                       err_msg=f"lag={self.translation_lag()}")
+            wait_until(
+                lambda: self.translation_lag() == 0,
+                timeout_sec=self.target_lag_sec * 2,
+                backoff_sec=10,
+                err_msg=f"lag={self.translation_lag()}",
+            )
 
             self.logger.info("Finished waiting on translation to complete")
 
-            assert self.max_usage_observed > 0 and self.max_usage_observed <= new_target_size, f"{self.max_usage_observed} > {new_target_size}"
+            assert (
+                self.max_usage_observed > 0
+                and self.max_usage_observed <= new_target_size
+            ), f"{self.max_usage_observed} > {new_target_size}"
         finally:
             self.stopped.set()
             usage_monitor_thread.join()

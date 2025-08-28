@@ -16,8 +16,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
 class CompactionTermRollRecoveryTest(RedpandaTest):
-    topics = (TopicSpec(cleanup_policy=TopicSpec.CLEANUP_COMPACT,
-                        partition_count=1), )
+    topics = (TopicSpec(cleanup_policy=TopicSpec.CLEANUP_COMPACT, partition_count=1),)
 
     def __init__(self, test_context):
         extra_rp_conf = dict(
@@ -25,10 +24,9 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
             compacted_log_segment_size=1048576,
         )
 
-        super(CompactionTermRollRecoveryTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=3,
-                             extra_rp_conf=extra_rp_conf)
+        super(CompactionTermRollRecoveryTest, self).__init__(
+            test_context=test_context, num_brokers=3, extra_rp_conf=extra_rp_conf
+        )
 
     @cluster(num_nodes=3)
     def test_compact_term_rolled_recovery(self):
@@ -69,8 +67,8 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
         num_segs = 3
 
         target = list(
-            map(lambda cnt: cnt + num_segs,
-                self._compacted_segments(nodes, topic)))
+            map(lambda cnt: cnt + num_segs, self._compacted_segments(nodes, topic))
+        )
 
         kafka_tools = KafkaCliTools(self.redpanda)
 
@@ -79,10 +77,12 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
             curr = self._compacted_segments(nodes, topic)
             return all(map(lambda cnt: cnt[0] > cnt[1], zip(curr, target)))
 
-        wait_until(done,
-                   timeout_sec=60,
-                   backoff_sec=2,
-                   err_msg="Compacted segments were not created")
+        wait_until(
+            done,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg="Compacted segments were not created",
+        )
 
     def _compacted_segments(self, nodes, topic):
         """
@@ -92,14 +92,17 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
         so that we can use a query language to lookup metrics instead of parsing
         exported node metrics in their raw form.
         """
+
         def fetch(node):
             count = 0
             metrics = self.redpanda.metrics(node)
             for family in metrics:
                 for sample in family.samples:
-                    if sample.name == "vectorized_storage_log_compacted_segment_total" and \
-                            sample.labels["namespace"] == "kafka" and \
-                            sample.labels["topic"] == topic:
+                    if (
+                        sample.name == "vectorized_storage_log_compacted_segment_total"
+                        and sample.labels["namespace"] == "kafka"
+                        and sample.labels["topic"] == topic
+                    ):
                         count += int(sample.value)
             self.logger.debug(count)
             return count
@@ -110,16 +113,20 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
         """
         Wait until all nodes report the same LSO > 0
         """
+
         def fetch_lso(node):
             last_stable_offset = None
             try:
                 metrics = self.redpanda.metrics(node)
                 for family in metrics:
                     for sample in family.samples:
-                        if sample.name == "vectorized_cluster_partition_last_stable_offset" and \
-                                sample.labels["namespace"] == "kafka" and \
-                                sample.labels["topic"] == topic and \
-                                int(sample.labels["partition"]) == partition:
+                        if (
+                            sample.name
+                            == "vectorized_cluster_partition_last_stable_offset"
+                            and sample.labels["namespace"] == "kafka"
+                            and sample.labels["topic"] == topic
+                            and int(sample.labels["partition"]) == partition
+                        ):
                             last_stable_offset = int(sample.value)
             except Exception as e:
                 self.logger.debug(e)
@@ -131,7 +138,9 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
             self.logger.debug(f"Found replica LSOs {offsets}")
             return all(map(lambda o: o and o > 0 and o == offsets[0], offsets))
 
-        wait_until(identical_lso,
-                   timeout_sec=60,
-                   backoff_sec=1,
-                   err_msg="Replicas did not converge to the same LSO")
+        wait_until(
+            identical_lso,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="Replicas did not converge to the same LSO",
+        )

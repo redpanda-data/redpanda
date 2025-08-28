@@ -12,8 +12,11 @@ import requests
 import sys
 from rptest.util import wait_until
 
-from rptest.remote_scripts.stream_verifier_txn import COMMAND_PRODUCE, \
-    COMMAND_CONSUME, COMMAND_ATOMIC
+from rptest.remote_scripts.stream_verifier_txn import (
+    COMMAND_PRODUCE,
+    COMMAND_CONSUME,
+    COMMAND_ATOMIC,
+)
 
 title = "StreamVerifier"
 filename = "stream_verifier_txn.py"
@@ -47,8 +50,7 @@ class StreamVerifier(Service):
         Returns:
             bool: True is webserver is running
         """
-        result = node.account.ssh_output(
-            f"bash /opt/remote/control/alive.sh {title}")
+        result = node.account.ssh_output(f"bash /opt/remote/control/alive.sh {title}")
         result = result.decode("utf-8")
         pid_alive = "YES" in result
 
@@ -62,16 +64,19 @@ class StreamVerifier(Service):
         if action not in available_actions:
             raise RuntimeError(
                 f"'{action}' is unknown. "
-                f"Available actions are {', '.join(available_actions)}")
+                f"Available actions are {', '.join(available_actions)}"
+            )
         try:
             r = self.get_produce_status()
-            if r['status'][action] == 'READY':
+            if r["status"][action] == "READY":
                 # Check that no active command is running
                 return True
             else:
-                self.logger.debug(f"Requested action of '{action}' is not "
-                                  "ready. Current statuses are "
-                                  f"'{r['status']}' ")
+                self.logger.debug(
+                    f"Requested action of '{action}' is not "
+                    "ready. Current statuses are "
+                    f"'{r['status']}' "
+                )
                 return False
             return True
         except requests.exceptions.ConnectionError:
@@ -91,7 +96,7 @@ class StreamVerifier(Service):
     def get_processed_count(self, action):
         s = self.get_action_status(action)
         # A bit ugly, but works
-        count = s.get('processed_messages', 0)
+        count = s.get("processed_messages", 0)
         self.logger.debug(f"[{action}] ...{count} messages")
         return count
 
@@ -99,55 +104,65 @@ class StreamVerifier(Service):
         # Validations
         if not self.is_alive(self._node):
             raise CrashedException(
-                f"{title} process has crashed. Check its logs for details")
+                f"{title} process has crashed. Check its logs for details"
+            )
         elif action not in available_actions:
             raise RuntimeError(
                 f"'{action}' is unknown. "
-                f"Available actions are {', '.join(available_actions)}")
+                f"Available actions are {', '.join(available_actions)}"
+            )
         elif self.is_action_ready(action):
             self.logger.info(f"Action '{action}' already finished")
             return
 
         initial_message_count = self.get_processed_count(action)
         self.logger.info(
-            f"[{action}] initial messages count is {initial_message_count}")
-        self.logger.info(f"[{action}] Waiting for "
-                         f"{initial_message_count + delta} message count")
-        wait_until(lambda: self.get_processed_count(action) >
-                   initial_message_count + delta,
-                   timeout_sec=timeout_sec,
-                   backoff_sec=1,
-                   err_msg=f"{title} service ({self._node.account.hostname}) "
-                   f"failed progressing in {action} within {timeout_sec} sec",
-                   retry_on_exc=False)
+            f"[{action}] initial messages count is {initial_message_count}"
+        )
+        self.logger.info(
+            f"[{action}] Waiting for {initial_message_count + delta} message count"
+        )
+        wait_until(
+            lambda: self.get_processed_count(action) > initial_message_count + delta,
+            timeout_sec=timeout_sec,
+            backoff_sec=1,
+            err_msg=f"{title} service ({self._node.account.hostname}) "
+            f"failed progressing in {action} within {timeout_sec} sec",
+            retry_on_exc=False,
+        )
 
     # Service overrides
     def start_node(self, node, timeout_sec=30):
-
         # Build cmd line
-        cmd = f'bash /opt/remote/control/start.sh {title} ' \
-            f'\"python3 /opt/remote/{filename} ' \
-            f'--brokers {self._redpanda.brokers()} webservice ' \
-            f'--port {self._port}\"'
+        cmd = (
+            f"bash /opt/remote/control/start.sh {title} "
+            f'"python3 /opt/remote/{filename} '
+            f"--brokers {self._redpanda.brokers()} webservice "
+            f'--port {self._port}"'
+        )
         # run webserver
         node.account.ssh(cmd)
         self._pid = node.account.ssh_output(f"cat /opt/remote/var/{title}.pid")
-        self._pid = self._pid.decode('utf-8').strip()
+        self._pid = self._pid.decode("utf-8").strip()
         self._node = node
 
-        wait_until(lambda: self.is_alive(node),
-                   timeout_sec=timeout_sec,
-                   backoff_sec=1,
-                   err_msg=f"{title} service {node.account.hostname} "
-                   f"failed to start within {timeout_sec} sec",
-                   retry_on_exc=False)
+        wait_until(
+            lambda: self.is_alive(node),
+            timeout_sec=timeout_sec,
+            backoff_sec=1,
+            err_msg=f"{title} service {node.account.hostname} "
+            f"failed to start within {timeout_sec} sec",
+            retry_on_exc=False,
+        )
 
-        wait_until(lambda: self.is_action_ready("produce"),
-                   timeout_sec=timeout_sec,
-                   backoff_sec=1,
-                   err_msg=f"{title} service {node.account.hostname} failed "
-                   f"to become ready within {timeout_sec} sec",
-                   retry_on_exc=False)
+        wait_until(
+            lambda: self.is_action_ready("produce"),
+            timeout_sec=timeout_sec,
+            backoff_sec=1,
+            err_msg=f"{title} service {node.account.hostname} failed "
+            f"to become ready within {timeout_sec} sec",
+            retry_on_exc=False,
+        )
 
     def stop_node(self, node):
         if self.is_alive(node):
@@ -155,18 +170,20 @@ class StreamVerifier(Service):
 
     def clean_node(self, node):
         # make sure that there is no such process
-        _pid = node.account.ssh_output(f"sudo ps -aux | grep {filename} | "
-                                       f"grep -v grep | tr -s ' ' | "
-                                       f"cut -d' ' -f2")
+        _pid = node.account.ssh_output(
+            f"sudo ps -aux | grep {filename} | grep -v grep | tr -s ' ' | cut -d' ' -f2"
+        )
         node.account.ssh_output(f"kill -9 {_pid.decode().strip()}")
 
     def wait_node(self, node, timeout_sec=sys.maxsize):
-        wait_until(lambda: not (self.is_alive(node)),
-                   timeout_sec=timeout_sec,
-                   backoff_sec=1,
-                   err_msg=f"{title} service {node.account.hostname} failed "
-                   f"to stop within {timeout_sec} sec",
-                   retry_on_exc=False)
+        wait_until(
+            lambda: not (self.is_alive(node)),
+            timeout_sec=timeout_sec,
+            backoff_sec=1,
+            err_msg=f"{title} service {node.account.hostname} failed "
+            f"to stop within {timeout_sec} sec",
+            retry_on_exc=False,
+        )
         return True
 
     # RPCs
@@ -175,7 +192,8 @@ class StreamVerifier(Service):
         if request_result.status_code != 200:
             raise Exception(
                 f"unexpected status code: {request_result.status_code} "
-                f"content: {request_result.content}")
+                f"content: {request_result.content}"
+            )
 
     def _get_ip(self):
         return self._node.account.hostname
@@ -193,7 +211,8 @@ class StreamVerifier(Service):
             return r.json()
         except (requests.ConnectionError, requests.ConnectTimeout):
             self.logger.debug(
-                f"{self.service_id} failed to connect to {title} using {url}")
+                f"{self.service_id} failed to connect to {title} using {url}"
+            )
             return {}
 
     def _post(self, url: str, payload: dict) -> dict:
@@ -204,8 +223,8 @@ class StreamVerifier(Service):
             return r.json()
         except (requests.ConnectionError, requests.ConnectTimeout) as e:
             self.logger.warning(
-                f"{self.service_id} failed to connect to {title} using {url}: "
-                f"{e}")
+                f"{self.service_id} failed to connect to {title} using {url}: {e}"
+            )
             return {}
 
     def _delete(self, url: str) -> dict:
@@ -216,8 +235,8 @@ class StreamVerifier(Service):
             return r.json()
         except (requests.ConnectionError, requests.ConnectTimeout) as e:
             self.logger.warning(
-                f"{self.service_id} failed to connect to {title} using {url}: "
-                f"{e}")
+                f"{self.service_id} failed to connect to {title} using {url}: {e}"
+            )
             return {}
 
     def get_service_config(self):
@@ -235,17 +254,16 @@ class StreamVerifier(Service):
     def get_atomic_status(self):
         return self._get(self._get_url("atomic"), raise_on_fails=False)
 
-    def remote_start_produce(self,
-                             target_topic_name,
-                             message_count,
-                             messages_per_sec=0):
+    def remote_start_produce(
+        self, target_topic_name, message_count, messages_per_sec=0
+    ):
         payload = {
             "topic_group_id": "stream_verifier_group",
             "target_topic_name": target_topic_name,
             # Consider increasing when debugging
             # "consume_timeout_s": 30,
             "msg_rate_limit": messages_per_sec,
-            "total_messages": message_count
+            "total_messages": message_count,
         }
 
         return self._post(self._get_url("produce"), payload)
@@ -254,17 +272,16 @@ class StreamVerifier(Service):
         payload = {"source_topic_name": source_topic_name}
         return self._post(self._get_url("verify"), payload)
 
-    def remote_start_atomic(self,
-                            source_topic_name,
-                            target_topic_name,
-                            messages_per_sec=0):
+    def remote_start_atomic(
+        self, source_topic_name, target_topic_name, messages_per_sec=0
+    ):
         payload = {
             "topic_group_id": "stream_verifier_group",
             "target_topic_name": target_topic_name,
             "source_topic_name": source_topic_name,
             # Consider increasing when debugging
             # "consume_timeout_s": 30,
-            "msg_rate_limit": messages_per_sec
+            "msg_rate_limit": messages_per_sec,
         }
         return self._post(self._get_url("atomic"), payload)
 
@@ -280,34 +297,40 @@ class StreamVerifier(Service):
     def remote_wait_action(self, action, timeout_sec=600):
         def is_action_active(action):
             r = self.get_action_status(action)
-            status = r['status']
-            self.logger.debug(
-                f"[{action}] {status[action]}; {r['processed_messages']}")
-            return True if status[action] == 'ACTIVE' else False
+            status = r["status"]
+            self.logger.debug(f"[{action}] {status[action]}; {r['processed_messages']}")
+            return True if status[action] == "ACTIVE" else False
 
         self.logger.info(f"Waiting for '{action}' action to finish")
-        wait_until(lambda: not is_action_active(action),
-                   timeout_sec=timeout_sec,
-                   backoff_sec=5,
-                   err_msg=f"{title} service {self._node.account.hostname} "
-                   f"failed to finish {action} action in {timeout_sec} sec",
-                   retry_on_exc=False)
+        wait_until(
+            lambda: not is_action_active(action),
+            timeout_sec=timeout_sec,
+            backoff_sec=5,
+            err_msg=f"{title} service {self._node.account.hostname} "
+            f"failed to finish {action} action in {timeout_sec} sec",
+            retry_on_exc=False,
+        )
 
     def wait_for_processed_count(self, action, message_count, timeout_sec=600):
         # Validations
         if not self.is_alive(self._node):
             raise CrashedException(
-                f"{title} process has crashed. Check its logs for details")
+                f"{title} process has crashed. Check its logs for details"
+            )
         elif action not in available_actions:
             raise RuntimeError(
                 f"'{action}' is unknown. "
-                f"Available actions are {', '.join(available_actions)}")
+                f"Available actions are {', '.join(available_actions)}"
+            )
         self.logger.info(
-            f"[{action}] Waiting for {message_count} messages to be produced ")
-        wait_until(lambda: self.get_processed_count(action) >= message_count,
-                   timeout_sec=timeout_sec,
-                   backoff_sec=1,
-                   err_msg=f"{title} service ({self._node.account.hostname}) "
-                   f"failed to reach {message_count} messages for {action}"
-                   f" within {timeout_sec} sec",
-                   retry_on_exc=False)
+            f"[{action}] Waiting for {message_count} messages to be produced "
+        )
+        wait_until(
+            lambda: self.get_processed_count(action) >= message_count,
+            timeout_sec=timeout_sec,
+            backoff_sec=1,
+            err_msg=f"{title} service ({self._node.account.hostname}) "
+            f"failed to reach {message_count} messages for {action}"
+            f" within {timeout_sec} sec",
+            retry_on_exc=False,
+        )

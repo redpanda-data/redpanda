@@ -33,8 +33,7 @@ class KafProducer(BackgroundThreadService):
                 if self._pid is None:
                     # Take first line as pid
                     self._pid = line.strip()
-                    self._redpanda.logger.debug(
-                        f"Spawned remote shell {self._pid}")
+                    self._redpanda.logger.debug(f"Spawned remote shell {self._pid}")
                     continue
                 else:
                     self._output_line_count += 1

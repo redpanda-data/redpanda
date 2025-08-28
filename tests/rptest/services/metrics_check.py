@@ -28,14 +28,17 @@ class MetricCheck(object):
     call `expect` or `evaluate` later to measure how your metrics of
     interest have changed over that region.
     """
-    def __init__(self,
-                 logger,
-                 redpanda,
-                 node,
-                 metrics,
-                 labels=None,
-                 reduce=None,
-                 metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
+
+    def __init__(
+        self,
+        logger,
+        redpanda,
+        node,
+        metrics,
+        labels=None,
+        reduce=None,
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+    ):
         """
         :param redpanda: a RedpandaService
         :param logger: a Logger
@@ -79,8 +82,7 @@ class MetricCheck(object):
                     if label_mismatch:
                         continue
 
-                self.logger.info(
-                    f"  Read {sample.name}={sample.value} {sample.labels}")
+                self.logger.info(f"  Read {sample.name}={sample.value} {sample.labels}")
                 if sample.name in samples:
                     if self._reduce is None:
                         raise RuntimeError(
@@ -88,7 +90,8 @@ class MetricCheck(object):
                         )
                     else:
                         samples[sample.name] = self._reduce(
-                            [samples[sample.name], sample.value])
+                            [samples[sample.name], sample.value]
+                        )
 
                 else:
                     samples[sample.name] = sample.value
@@ -103,11 +106,14 @@ class MetricCheck(object):
             dump = "No metrics extracted"
             # handle cloud cluster separately
             if getattr(self.redpanda, "_cloud_cluster", None) is None:
-                metrics_endpoint = ("/metrics" if self._metrics_endpoint
-                                    == MetricsEndpoint.METRICS else
-                                    "/public_metrics")
+                metrics_endpoint = (
+                    "/metrics"
+                    if self._metrics_endpoint == MetricsEndpoint.METRICS
+                    else "/public_metrics"
+                )
                 url = f"http://{self.node.account.hostname}:9644{metrics_endpoint}"
                 import requests
+
                 dump = requests.get(url).text
             else:
                 dump = self.redpanda._cloud_cluster.get_public_metrics()
@@ -123,7 +129,7 @@ class MetricCheck(object):
         samples = self._capture([e[0] for e in expectations])
 
         error = None
-        for (metric, comparator) in expectations:
+        for metric, comparator in expectations:
             try:
                 old_value = self._initial_samples[metric]
             except KeyError:
@@ -148,7 +154,7 @@ class MetricCheck(object):
         true, just evaluate whether they are and return a boolean.
         """
         samples = self._capture([e[0] for e in expectations])
-        for (metric, comparator) in expectations:
+        for metric, comparator in expectations:
             old_value = self._initial_samples.get(metric, None)
             if old_value is None:
                 return False
@@ -168,10 +174,12 @@ class MetricCheck(object):
         metrics = [metric for e in expectations for metric in e[0]]
         samples = self._capture(metrics)
 
-        for (metrics, comparator) in expectations:
-            old_samples_dict = dict((k, self._initial_samples[k])
-                                    for k in metrics
-                                    if k in self._initial_samples)
+        for metrics, comparator in expectations:
+            old_samples_dict = dict(
+                (k, self._initial_samples[k])
+                for k in metrics
+                if k in self._initial_samples
+            )
             if len(old_samples_dict) != len(samples):
                 return False
 

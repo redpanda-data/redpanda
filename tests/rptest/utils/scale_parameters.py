@@ -51,7 +51,7 @@ class ScaleParameters:
         mib_per_partition=DEFAULT_MIB_PER_PARTITION,
         topic_replicas_per_shard=DEFAULT_PARTITIONS_PER_SHARD,
         tiered_storage_enabled=False,
-        partition_memory_reserve_percentage=DEFAULT_PARTITIONS_MEMORY_ALLOCATION_PERCENT
+        partition_memory_reserve_percentage=DEFAULT_PARTITIONS_MEMORY_ALLOCATION_PERCENT,
     ):
         self.redpanda = redpanda
         self.tiered_storage_enabled = tiered_storage_enabled
@@ -98,22 +98,29 @@ class ScaleParameters:
         # Calculate how many partitions we will aim to create, based
         # on the size & count of nodes.  This enables running the
         # test on various instance sizes without explicitly adjusting.
-        shard_replicas_from_memory = (partition_memory_reserve_percentage /
-                                      100 * effective_node_memory //
-                                      self.node_cpus // mib_per_partition)
+        shard_replicas_from_memory = (
+            partition_memory_reserve_percentage
+            / 100
+            * effective_node_memory
+            // self.node_cpus
+            // mib_per_partition
+        )
 
         # the per-shard limit is the less of the "per shard" and "per memory" limits
-        shard_replicas_effective = min(shard_replicas_from_memory,
-                                       topic_replicas_per_shard)
+        shard_replicas_effective = min(
+            shard_replicas_from_memory, topic_replicas_per_shard
+        )
 
         self.logger.info(
             f"shard_replicas_effective: {shard_replicas_effective} = "
             f"min(topic_replicas_per_shard {topic_replicas_per_shard}, "
-            f"shard_replicas_from_memory {shard_replicas_from_memory})")
+            f"shard_replicas_from_memory {shard_replicas_from_memory})"
+        )
 
         self.partition_limit = node_count * (
-            self.node_cpus * (shard_replicas_effective // replication_factor) -
-            internal_partition_slack)
+            self.node_cpus * (shard_replicas_effective // replication_factor)
+            - internal_partition_slack
+        )
 
         self.logger.info(
             f"Cluster partition limit is {self.partition_limit} = "
@@ -134,16 +141,17 @@ class ScaleParameters:
             self.logger.info(
                 f"Cluster partition limit is {self.partition_limit} = "
                 f"{node_count} * {self.node_cpus} * ({shard_replicas_effective} // {replication_factor}) "
-                f"- {node_count} * {shard0_reserve}")
+                f"- {node_count} * {shard0_reserve}"
+            )
 
-        partition_replicas_per_node = int(self.partition_limit *
-                                          replication_factor // node_count)
+        partition_replicas_per_node = int(
+            self.partition_limit * replication_factor // node_count
+        )
 
         # Aim to use about half the disk space: set retention limits
         # to enforce that.  This enables traffic tests to run as long
         # as they like without risking filling the disk.
-        self.retention_bytes = int(
-            (node_disk_free / 2) / partition_replicas_per_node)
+        self.retention_bytes = int((node_disk_free / 2) / partition_replicas_per_node)
         self.local_retention_bytes = None
 
         # Choose an appropriate segment size to enable retention
@@ -171,8 +179,9 @@ class ScaleParameters:
             # Retain as much data in cloud as one big batch of data.
             # NOTE: we consider the existing `retention_bytes` (computed above)
             # so the test doesn't take too much space on disk.
-            self.local_retention_bytes = min(self.retention_bytes,
-                                             self.segment_size * 24)
+            self.local_retention_bytes = min(
+                self.retention_bytes, self.segment_size * 24
+            )
 
             # One of the goals of this test with tiered storage enabled is to
             # test with a large number of managed cloud segments.
@@ -183,15 +192,15 @@ class ScaleParameters:
             # Set a max upload interval such that won't swamp S3 -- we should
             # already be uploading somewhat frequently given the segment size.
             cloud_storage_segment_max_upload_interval_sec = 300
-            cloud_storage_housekeeping_interval_ms = cloud_storage_segment_max_upload_interval_sec * 1000
+            cloud_storage_housekeeping_interval_ms = (
+                cloud_storage_segment_max_upload_interval_sec * 1000
+            )
 
             self.si_settings = SISettings(
                 redpanda._context,
                 log_segment_size=self.segment_size,
-                cloud_storage_segment_max_upload_interval_sec=
-                cloud_storage_segment_max_upload_interval_sec,
-                cloud_storage_housekeeping_interval_ms=
-                cloud_storage_housekeeping_interval_ms,
+                cloud_storage_segment_max_upload_interval_sec=cloud_storage_segment_max_upload_interval_sec,
+                cloud_storage_housekeeping_interval_ms=cloud_storage_housekeeping_interval_ms,
                 use_bucket_cleanup_policy=True,
                 skip_end_of_test_scrubbing=True,
             )
@@ -205,12 +214,13 @@ class ScaleParameters:
             # A 24 core i3en.6xlarge has about 1GB/s disk write
             # bandwidth.  Divide by 2 to give comfortable room for variation.
             # This is total bandwidth from a group of producers.
-            self.expect_bandwidth = (node_count / replication_factor) * (
-                self.node_cpus / 24.0) * 1E9 * 0.5
+            self.expect_bandwidth = (
+                (node_count / replication_factor) * (self.node_cpus / 24.0) * 1e9 * 0.5
+            )
 
             # Single-producer tests are slower, bottlenecked on the
             # client side.
-            self.expect_single_bandwidth = 200E6
+            self.expect_single_bandwidth = 200e6
 
             if tiered_storage_enabled:
                 # We read very tiny segments 32KiB over high latency link
@@ -219,28 +229,32 @@ class ScaleParameters:
                 # which is to say 200 segments per second. 200 * 32KiB = 6.25MiB
                 # per node. This is if we ignore all other sources of latency,
                 # contention, and S3 rate limiting or instabilities.
-                self.expect_bandwidth = node_count * 6 * 1E6
+                self.expect_bandwidth = node_count * 6 * 1e6
                 # Minimum of server and client bottlenecks.
                 self.expect_single_bandwidth = min(
-                    self.expect_bandwidth, self.expect_single_bandwidth)
+                    self.expect_bandwidth, self.expect_single_bandwidth
+                )
         else:
             # Docker environment: curb your expectations.  Not only is storage
             # liable to be slow, we have many nodes sharing the same drive.
             self.expect_bandwidth = 5 * 1024 * 1024
-            self.expect_single_bandwidth = 10E6
+            self.expect_single_bandwidth = 10e6
 
         # Clamp the node memory to exercise the partition limit.
         # Not all internal partitions have rf=replication_factor so this
         # over-allocates but making it more accurate would be complicated.
         per_node_slack = internal_partition_slack * replication_factor / node_count
-        required_node_memory = mib_per_partition * (
-            partition_replicas_per_node +
-            per_node_slack) / (self.partition_memory_reserve_percentage / 100.)
+        required_node_memory = (
+            mib_per_partition
+            * (partition_replicas_per_node + per_node_slack)
+            / (self.partition_memory_reserve_percentage / 100.0)
+        )
 
         rnm_message = (
             f"required_node_memory:  {required_node_memory} MiB = {mib_per_partition} * ("
             f"{partition_replicas_per_node} + {per_node_slack}) / "
-            f"({self.partition_memory_reserve_percentage} / 100.)")
+            f"({self.partition_memory_reserve_percentage} / 100.)"
+        )
 
         self.logger.info(rnm_message)
 
@@ -248,19 +262,19 @@ class ScaleParameters:
         if not self.redpanda.dedicated_nodes:
             # In docker, assume we're on a laptop drive and not doing
             # real testing, so disable fsync to make test run faster.
-            resource_settings_args['bypass_fsync'] = True
+            resource_settings_args["bypass_fsync"] = True
 
-            required_node_memory = max(required_node_memory,
-                                       ResourceSettings.DEFAULT_MEMORY_MB)
+            required_node_memory = max(
+                required_node_memory, ResourceSettings.DEFAULT_MEMORY_MB
+            )
         else:
             # On dedicated nodes we will use an explicit reactor stall threshold
             # as a success condition.
-            resource_settings_args['reactor_stall_threshold'] = 100
+            resource_settings_args["reactor_stall_threshold"] = 100
 
-        resource_settings_args['memory_mb'] = int(required_node_memory)
+        resource_settings_args["memory_mb"] = int(required_node_memory)
 
-        self.redpanda.set_resource_settings(
-            ResourceSettings(**resource_settings_args))
+        self.redpanda.set_resource_settings(ResourceSettings(**resource_settings_args))
 
         self.logger.info(
             f"Selected retention.bytes={self.retention_bytes}, retention.local.target.bytes={self.local_retention_bytes}, segment.bytes={self.segment_size}"
@@ -272,7 +286,8 @@ class ScaleParameters:
             raise RuntimeError(
                 f"Node memory is too small. Effective memory: {effective_node_memory}MB "
                 f"({node_memory_mib}MB node - {reserved_memory}MB reserved), "
-                f"required memory: {required_node_memory}MB, ({rnm_message})")
+                f"required memory: {required_node_memory}MB, ({rnm_message})"
+            )
 
     @property
     def logger(self):

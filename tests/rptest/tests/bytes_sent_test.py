@@ -21,7 +21,8 @@ class BytesSentTest(RedpandaTest):
     """
     Produce and consume some data then confirm the bytes sent metric.
     """
-    topics = (TopicSpec(), )
+
+    topics = (TopicSpec(),)
 
     def __init__(self, test_context):
         super(BytesSentTest, self).__init__(test_context=test_context)
@@ -74,10 +75,9 @@ class BytesSentTest(RedpandaTest):
             # are fetched.
             return self._bytes_received > 0
 
-        wait_until(count_bytes,
-                   timeout_sec=30,
-                   backoff_sec=5,
-                   err_msg="count_bytes() failed")
+        wait_until(
+            count_bytes, timeout_sec=30, backoff_sec=5, err_msg="count_bytes() failed"
+        )
 
         consumer.stop()
 
@@ -121,6 +121,4 @@ class BytesSentTest(RedpandaTest):
 
         # Total bytes sent should be within 5% threshold.
         # Threshold of 5% is generally an OK place to start
-        assert in_percent_threshold(total_sent,
-                                    self._bytes_received,
-                                    threshold=5.0)
+        assert in_percent_threshold(total_sent, self._bytes_received, threshold=5.0)

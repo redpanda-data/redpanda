@@ -10,8 +10,7 @@ from typing import Callable, Optional, Protocol
 
 
 class ConvertableToBool(Protocol):
-    def __bool__(self) -> bool:
-        ...
+    def __bool__(self) -> bool: ...
 
 
 PredicateT = Callable[[str], ConvertableToBool]
@@ -21,6 +20,7 @@ class AllowLogsOnPredicate:
     """
     Calls the supplied test method to determine if ERROR logs should be allowed
     """
+
     def __init__(self, method: str):
         """
         predicate_method: The name of the method on the test which will accept a log entry,
@@ -35,12 +35,11 @@ class AllowLogsOnPredicate:
         has been constructed with the method name. Validates and sets the method to be
         called per log entry.
         """
-        assert hasattr(
-            test_case, self.method
-        ), f"Test {test_case} does not have expected method {self.method}"
+        assert hasattr(test_case, self.method), (
+            f"Test {test_case} does not have expected method {self.method}"
+        )
         self.predicate = getattr(test_case, self.method)
-        assert callable(
-            self.predicate), f"{self.predicate} is not a callable method"
+        assert callable(self.predicate), f"{self.predicate} is not a callable method"
 
     def search(self, log_line: str) -> ConvertableToBool:
         """
@@ -48,5 +47,7 @@ class AllowLogsOnPredicate:
         expected to be called with, where None is returned for failed searches. This conversion allows
         the predicate to return falsy values to reject a log from being allowed.
         """
-        assert self.predicate is not None, f"Log predicate method {self.method} is not initialized"
+        assert self.predicate is not None, (
+            f"Log predicate method {self.method} is not initialized"
+        )
         return self.predicate(log_line) or None

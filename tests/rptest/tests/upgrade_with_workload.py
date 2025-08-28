@@ -11,7 +11,7 @@ from rptest.services.redpanda import RedpandaService, RESTART_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import RedpandaInstaller
 
 
-class MixedVersionWorkloadRunner():
+class MixedVersionWorkloadRunner:
     ALLOWED_LOGS = RESTART_LOG_ALLOW_LIST
 
     # For testing RPC compatibility, pick a version that doesn't have serde
@@ -19,8 +19,7 @@ class MixedVersionWorkloadRunner():
     PRE_SERDE_VERSION = (22, 1)
 
     @staticmethod
-    def upgrade_with_workload(redpanda: RedpandaService, initial_version,
-                              workload_fn):
+    def upgrade_with_workload(redpanda: RedpandaService, initial_version, workload_fn):
         """
         Runs through an upgrade while running the given workload during the
         intermediate mixed-cluster stages.

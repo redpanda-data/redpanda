@@ -39,7 +39,7 @@ class TransformVerifierProduceStatus(typing.NamedTuple):
             done=data["done"],
         )
 
-    def merge(self, other: 'TransformVerifierProduceStatus'):
+    def merge(self, other: "TransformVerifierProduceStatus"):
         combined = self.latest_seqnos.copy()
         for k, v in other.latest_seqnos.items():
             combined[k] = max(combined.get(k, 0), v)
@@ -106,7 +106,7 @@ class TransformVerifierConsumeStatus(typing.NamedTuple):
             error_count=data["error_count"],
         )
 
-    def merge(self, other: 'TransformVerifierConsumeStatus'):
+    def merge(self, other: "TransformVerifierConsumeStatus"):
         combined = self.latest_seqnos.copy()
         for k, v in other.latest_seqnos.items():
             combined[k] = max(combined.get(k, 0), v)
@@ -129,11 +129,13 @@ class TransformVerifierConsumeConfig(typing.NamedTuple):
     validate: TransformVerifierProduceStatus
 
     def serialize_cmd(self) -> str:
-        return " ".join([
-            "consume",
-            f"--topic={self.topic}",
-            f"--bytes-per-second={self.bytes_per_second}",
-        ])
+        return " ".join(
+            [
+                "consume",
+                f"--topic={self.topic}",
+                f"--bytes-per-second={self.bytes_per_second}",
+            ]
+        )
 
     def deserialize_status(self, buf: str | bytes | bytearray):
         return TransformVerifierConsumeStatus.deserialize(buf)
@@ -160,15 +162,11 @@ class TransformVerifierService(Service):
     )
 
     """
+
     EXE = "transform-verifier"
     LOG_PATH = "/tmp/transform-verifier.log"
 
-    logs = {
-        "transform_verifier_log": {
-            "path": LOG_PATH,
-            "collect_default": True
-        }
-    }
+    logs = {"transform_verifier_log": {"path": LOG_PATH, "collect_default": True}}
 
     redpanda: RedpandaService
     report_port: int
@@ -176,12 +174,13 @@ class TransformVerifierService(Service):
     _pid: typing.Optional[int]
 
     @classmethod
-    def oneshot(cls,
-                context: TestContext,
-                redpanda: RedpandaService,
-                config: TransformVerifierConsumeConfig
-                | TransformVerifierProduceConfig,
-                timeout_sec=300):
+    def oneshot(
+        cls,
+        context: TestContext,
+        redpanda: RedpandaService,
+        config: TransformVerifierConsumeConfig | TransformVerifierProduceConfig,
+        timeout_sec=300,
+    ):
         """
         Common pattern to use the service
         """
@@ -197,9 +196,12 @@ class TransformVerifierService(Service):
             service.stop()
             raise
 
-    def __init__(self, context: TestContext, redpanda: RedpandaService,
-                 config: TransformVerifierConsumeConfig
-                 | TransformVerifierProduceConfig):
+    def __init__(
+        self,
+        context: TestContext,
+        redpanda: RedpandaService,
+        config: TransformVerifierConsumeConfig | TransformVerifierProduceConfig,
+    ):
         super().__init__(context, num_nodes=1)
         self.redpanda = redpanda
 
@@ -217,12 +219,14 @@ class TransformVerifierService(Service):
             node.account.remove(self.LOG_PATH)
 
     def start_node(self, node):
-        cmd = " ".join([
-            f"/opt/redpanda-tests/go/transform-verifier/{self.EXE}",
-            self.config.serialize_cmd(),
-            f"--brokers={self.redpanda.brokers()}",
-            f"--port={self.remote_port}",
-        ])
+        cmd = " ".join(
+            [
+                f"/opt/redpanda-tests/go/transform-verifier/{self.EXE}",
+                self.config.serialize_cmd(),
+                f"--brokers={self.redpanda.brokers()}",
+                f"--port={self.remote_port}",
+            ]
+        )
         cmd = f"nohup {cmd} >> {self.LOG_PATH} 2>&1 & echo $!"
         self.logger.info(f"start_node[{node.name}]: {cmd}")
         pid_str = node.account.ssh_output(cmd, timeout_sec=10)
@@ -255,8 +259,7 @@ class TransformVerifierService(Service):
             poll_for_complete,
             timeout_sec=timeout_sec or 5,
             backoff_sec=0.5,
-            err_msg=
-            f"Timed out for transform verifier to complete {self.who_am_i()}, latest status: {latest_status}"
+            err_msg=f"Timed out for transform verifier to complete {self.who_am_i()}, latest status: {latest_status}",
         )
         return True
 
@@ -275,14 +278,15 @@ class TransformVerifierService(Service):
             self.logger.warn("unable to request /stop {self.who_am_i()}: {e}")
 
         try:
-            wait_until(lambda: not node.account.exists(f"/proc/{self._pid}"),
-                       timeout_sec=10,
-                       backoff_sec=0.5)
+            wait_until(
+                lambda: not node.account.exists(f"/proc/{self._pid}"),
+                timeout_sec=10,
+                backoff_sec=0.5,
+            )
             self._pid = None
             return
         except TimeoutError as e:
-            self.logger.warn(
-                "gracefully stopping {self.who_am_i()} failed: {e}")
+            self.logger.warn("gracefully stopping {self.who_am_i()} failed: {e}")
 
         # Gracefully stop did not work, try a hard kill
         self.logger.debug(f"Killing pid for {self.who_am_i()}")
@@ -310,9 +314,8 @@ class TransformVerifierService(Service):
         wait_until(
             lambda: self._is_ready(node),
             timeout_sec=20,
-            backoff_sec=.25,
-            err_msg=
-            f"Timed out waiting for status endpoint {self.who_am_i()} to be available"
+            backoff_sec=0.25,
+            err_msg=f"Timed out waiting for status endpoint {self.who_am_i()} to be available",
         )
 
     def _execute_cmd(self, node, cmd):
@@ -335,8 +338,7 @@ class TransformVerifierService(Service):
         except Exception as e:
             # Broad exception handling for any lower level connection errors etc
             # that might not be properly classed as `requests` exception.
-            self.logger.debug(
-                f"Status endpoint {self.who_am_i()} not ready: {e}")
+            self.logger.debug(f"Status endpoint {self.who_am_i()} not ready: {e}")
             return False
         else:
             return True
@@ -349,6 +351,5 @@ class TransformVerifierService(Service):
         r = requests.get(self._remote_url(node, "status"), timeout=10)
         r.raise_for_status()
         status = self.config.deserialize_status(r.text)
-        self.logger.debug(
-            f"Status endpoint {self.who_am_i()} response: {status}")
+        self.logger.debug(f"Status endpoint {self.who_am_i()} response: {status}")
         return status

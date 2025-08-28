@@ -28,21 +28,20 @@ class P12TLSProvider(TLSProvider):
     def ca(self) -> CertificateAuthority:
         return self.tls.ca
 
-    def create_broker_cert(self, service: Service,
-                           node: ClusterNode) -> Certificate:
+    def create_broker_cert(self, service: Service, node: ClusterNode) -> Certificate:
         assert node in service.nodes
         return self.tls.create_cert(node.name)
 
     def create_service_client_cert(self, _: Service, name: str) -> Certificate:
-        return self.tls.create_cert(socket.gethostname(),
-                                    name=name,
-                                    common_name=name)
+        return self.tls.create_cert(socket.gethostname(), name=name, common_name=name)
 
     def use_pkcs12_file(self) -> bool:
         return True
 
     def p12_password(self, node: ClusterNode) -> str:
-        assert node.name in self.tls.certs, f"No certificate associated with node {node.name}"
+        assert node.name in self.tls.certs, (
+            f"No certificate associated with node {node.name}"
+        )
         return self.tls.certs[node.name].p12_password
 
 
@@ -50,11 +49,9 @@ class PKCS12Test(RedpandaTest):
     """
     Tests used to validate the functionality of using a PKCS#12 file
     """
+
     def __init__(self, *args, **kwargs):
-        super().__init__(*args,
-                         num_brokers=3,
-                         skip_if_no_redpanda_log=True,
-                         **kwargs)
+        super().__init__(*args, num_brokers=3, skip_if_no_redpanda_log=True, **kwargs)
         self.user, self.password, self.algorithm = self.redpanda.SUPERUSER_CREDENTIALS
         self.admin = Admin(self.redpanda)
 
@@ -65,9 +62,9 @@ class PKCS12Test(RedpandaTest):
     def _prepare_cluster(self):
         self.tls = TLSCertManager(self.logger)
         self.provider = P12TLSProvider(self.tls)
-        self.user_cert = self.tls.create_cert(socket.gethostname(),
-                                              common_name="walterP",
-                                              name="user")
+        self.user_cert = self.tls.create_cert(
+            socket.gethostname(), common_name="walterP", name="user"
+        )
 
         self.security = SecurityConfig()
         self.security.endpoint_authn_method = "mtls_identity"
@@ -76,10 +73,13 @@ class PKCS12Test(RedpandaTest):
         self.security.enable_sasl = False
 
         self.redpanda.set_security_settings(self.security)
-        self.redpanda.add_extra_rp_conf({
-            'kafka_mtls_principal_mapping_rules':
-            [self.security.principal_mapping_rules]
-        })
+        self.redpanda.add_extra_rp_conf(
+            {
+                "kafka_mtls_principal_mapping_rules": [
+                    self.security.principal_mapping_rules
+                ]
+            }
+        )
 
         super().setUp()
         self.admin.create_user("walterP", self.password, self.algorithm)

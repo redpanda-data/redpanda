@@ -13,6 +13,7 @@ class HTObserveTest(RedpandaCloudTest):
     Cloudv2 only - ensure no firing alarms for cloud cluster - should be ran after all other tests
     this is acomplished by setting @cluster(num_nodes=0) which is good enough
     """
+
     def __init__(self, test_context):
         super(HTObserveTest, self).__init__(test_context=test_context)
         self._ctx = test_context
@@ -24,35 +25,38 @@ class HTObserveTest(RedpandaCloudTest):
         self._clusterId = self.redpanda._cloud_cluster.cluster_id
 
     def load_grafana_rules(self):
-        headers = {'Authorization': "Bearer {}".format(self._token)}
+        headers = {"Authorization": "Bearer {}".format(self._token)}
         with requests.get(self._endpoint, headers=headers, stream=True) as r:
             if r.status_code != requests.status_codes.codes.ok:
                 r.raise_for_status()
-            return json.load(BytesIO(r.content),
-                             object_hook=lambda d: SimpleNamespace(**d))
+            return json.load(
+                BytesIO(r.content), object_hook=lambda d: SimpleNamespace(**d)
+            )
 
     def cluster_alerts(self, rule_groups):
         alerts = []
         for group in rule_groups:
             for rule in group.rules:
-                if rule.state != 'firing' or len(rule.alerts) == 0:
+                if rule.state != "firing" or len(rule.alerts) == 0:
                     continue
 
-                if rule.health == 'error':
+                if rule.health == "error":
                     continue
 
                 for alert in rule.alerts:
-                    if alert.state != 'Alerting':
+                    if alert.state != "Alerting":
                         continue
 
-                    if hasattr(
-                            alert.labels, 'redpanda_agent'
-                    ) and alert.labels.redpanda_agent == self._clusterId:
+                    if (
+                        hasattr(alert.labels, "redpanda_agent")
+                        and alert.labels.redpanda_agent == self._clusterId
+                    ):
                         alerts.append(alert)
 
-                    if hasattr(
-                            alert.labels, 'redpanda_id'
-                    ) and alert.labels.redpanda_id == self._clusterId:
+                    if (
+                        hasattr(alert.labels, "redpanda_id")
+                        and alert.labels.redpanda_id == self._clusterId
+                    ):
                         alerts.append(alert)
 
         return alerts

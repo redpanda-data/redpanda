@@ -23,7 +23,7 @@ class PausableIdempotentProducer(Service):
     logs = {
         "pausable_idempotent_producer_stdout_stderr": {
             "path": OUTPUT_LOG,
-            "collect_default": True
+            "collect_default": True,
         }
     }
 
@@ -33,7 +33,8 @@ class PausableIdempotentProducer(Service):
 
     def is_alive(self, node):
         result = node.account.ssh_output(
-            "bash /opt/remote/control/alive.sh pausable_idempotent_producer")
+            "bash /opt/remote/control/alive.sh pausable_idempotent_producer"
+        )
         result = result.decode("utf-8")
         return "YES" in result
 
@@ -45,36 +46,35 @@ class PausableIdempotentProducer(Service):
             return False
 
     def raise_on_violation(self, node):
-        self.logger.info(
-            f"Scanning node {node.account.hostname} log for violations...")
+        self.logger.info(f"Scanning node {node.account.hostname} log for violations...")
 
-        for line in node.account.ssh_capture(
-                f"grep -e Exception {OUTPUT_LOG} || true"):
+        for line in node.account.ssh_capture(f"grep -e Exception {OUTPUT_LOG} || true"):
             raise IdempotencyClientFailure(line)
 
     def start_node(self, node, timeout_sec=10):
         node.account.ssh(
-            f"bash /opt/remote/control/start.sh pausable_idempotent_producer \"java -cp /opt/verifiers/verifiers.jar io.vectorized.idempotency.App\""
+            f'bash /opt/remote/control/start.sh pausable_idempotent_producer "java -cp /opt/verifiers/verifiers.jar io.vectorized.idempotency.App"'
         )
         wait_until(
             lambda: self.is_alive(node),
             timeout_sec=timeout_sec,
             backoff_sec=1,
-            err_msg=
-            f"pausable_idempotent_producer service {node.account.hostname} failed to start within {timeout_sec} sec",
-            retry_on_exc=False)
+            err_msg=f"pausable_idempotent_producer service {node.account.hostname} failed to start within {timeout_sec} sec",
+            retry_on_exc=False,
+        )
         self._node = node
         wait_until(
             lambda: self.is_ready(),
             timeout_sec=timeout_sec,
             backoff_sec=1,
-            err_msg=
-            f"pausable_idempotent_producer service {node.account.hostname} failed to become ready within {timeout_sec} sec",
-            retry_on_exc=False)
+            err_msg=f"pausable_idempotent_producer service {node.account.hostname} failed to become ready within {timeout_sec} sec",
+            retry_on_exc=False,
+        )
 
     def stop_node(self, node):
         node.account.ssh(
-            "bash /opt/remote/control/stop.sh pausable_idempotent_producer")
+            "bash /opt/remote/control/stop.sh pausable_idempotent_producer"
+        )
         self.raise_on_violation(node)
 
     def clean_node(self, node):
@@ -85,9 +85,9 @@ class PausableIdempotentProducer(Service):
             lambda: not (self.is_alive(node)),
             timeout_sec=timeout_sec,
             backoff_sec=1,
-            err_msg=
-            f"pausable_idempotent_producer service {node.account.hostname} failed to stop within {timeout_sec} sec",
-            retry_on_exc=False)
+            err_msg=f"pausable_idempotent_producer service {node.account.hostname} failed to stop within {timeout_sec} sec",
+            retry_on_exc=False,
+        )
         return True
 
     def remote_ping(self):
@@ -98,12 +98,14 @@ class PausableIdempotentProducer(Service):
 
     def start_producer(self, topic, partitions):
         ip = self._node.account.hostname
-        r = requests.post(f"http://{ip}:8080/start-producer",
-                          json={
-                              "brokers": self._redpanda.brokers(),
-                              "topic": topic,
-                              "partitions": partitions,
-                          })
+        r = requests.post(
+            f"http://{ip}:8080/start-producer",
+            json={
+                "brokers": self._redpanda.brokers(),
+                "topic": topic,
+                "partitions": partitions,
+            },
+        )
         if r.status_code != 200:
             raise Exception(
                 f"unexpected status code: {r.status_code} content: {r.content}"
@@ -126,9 +128,9 @@ class PausableIdempotentProducer(Service):
             check_progress,
             timeout_sec=timeout_sec,
             backoff_sec=1,
-            err_msg=
-            f"pausable_idempotent_producer service {self._node.account.hostname} failed to make progress in {timeout_sec} sec",
-            retry_on_exc=False)
+            err_msg=f"pausable_idempotent_producer service {self._node.account.hostname} failed to make progress in {timeout_sec} sec",
+            retry_on_exc=False,
+        )
 
     def pause_producer(self):
         ip = self._node.account.hostname

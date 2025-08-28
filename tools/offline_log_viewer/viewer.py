@@ -7,7 +7,10 @@ from controller import ControllerLog, ControllerSnapshot
 from consumer_groups import GroupsLog
 from consumer_offsets import OffsetsLog
 from crash_report import decode_crash_report
-from topic_manifest import decode_topic_manifest, decode_topic_manifest_to_legacy_v1_json
+from topic_manifest import (
+    decode_topic_manifest,
+    decode_topic_manifest_to_legacy_v1_json,
+)
 from tx_coordinator import TxLog
 
 import itertools
@@ -17,11 +20,12 @@ from kafka import KafkaLog
 import logging
 import json
 
-logger = logging.getLogger('viewer')
+logger = logging.getLogger("viewer")
 
 
 class SerializableGenerator(list):
     """Generator that is serializable by JSON"""
+
     def __init__(self, iterable):
         tmp_body = iter(iterable)
         try:
@@ -57,20 +61,21 @@ def print_controller(store, bin_dump: bool):
         if ntp.nspace == "redpanda" and ntp.topic == "controller":
             ctrl = ControllerLog(ntp, bin_dump)
             iter_json = json.JSONEncoder(indent=2).iterencode(
-                SerializableGenerator(ctrl))
+                SerializableGenerator(ctrl)
+            )
             for j in iter_json:
-                print(j, end='')
+                print(j, end="")
 
 
 def print_controller_snapshot(store, bin_dump: bool):
     for ntp in store.ntps:
         if ntp.nspace == "redpanda" and ntp.topic == "controller":
-
             snap = ControllerSnapshot(ntp, bin_dump=bin_dump)
             iter_json = json.JSONEncoder(indent=2).iterencode(
-                SerializableGenerator(snap.to_dict().items()))
+                SerializableGenerator(snap.to_dict().items())
+            )
             for j in iter_json:
-                print(j, end='')
+                print(j, end="")
 
 
 def print_topic_manifest(serde_file_path, legacy_json: bool):
@@ -78,9 +83,11 @@ def print_topic_manifest(serde_file_path, legacy_json: bool):
         logger.error(f"File doesn't exist {serde_file_path}")
         sys.exit(1)
 
-    res = decode_topic_manifest_to_legacy_v1_json(
-        serde_file_path) if legacy_json else decode_topic_manifest(
-            serde_file_path)
+    res = (
+        decode_topic_manifest_to_legacy_v1_json(serde_file_path)
+        if legacy_json
+        else decode_topic_manifest(serde_file_path)
+    )
     print(json.dumps(res, indent=2))
 
 
@@ -90,12 +97,13 @@ def print_kafka(store, topic, headers_only):
             if topic and ntp.topic != topic:
                 continue
 
-            logger.info(f'topic: {ntp.topic}, partition: {ntp.partition}')
+            logger.info(f"topic: {ntp.topic}, partition: {ntp.partition}")
             log = KafkaLog(ntp, headers_only=headers_only)
             json_iter = json.JSONEncoder(indent=2).iterencode(
-                SerializableGenerator(log))
+                SerializableGenerator(log)
+            )
             for record in json_iter:
-                print(record, end='')
+                print(record, end="")
 
 
 def print_groups(store):
@@ -114,7 +122,7 @@ def print_consumer_offsets(store):
             logs[str(ntp)] = SerializableGenerator(OffsetsLog(ntp))
     json_records = json.JSONEncoder(indent=2).iterencode(logs)
     for record in json_records:
-        print(record, end='')
+        print(record, end="")
 
 
 def print_tx_coordinator(store):
@@ -131,19 +139,17 @@ def print_crash_report(path: str) -> None:
     Parses either a specific crash report or the all crashes in the crash_reports directory
     """
     if not os.path.exists(path):
-        logger.error(f'Crash file {path} does not exist')
+        logger.error(f"Crash file {path} does not exist")
         sys.exit(1)
 
     if os.path.isdir(path):
         crash_reports_dir = os.path.join(path, "crash_reports")
         if not os.path.isdir(crash_reports_dir):
-            logger.error(f'Could not find crash_reports directory in {path}')
+            logger.error(f"Could not find crash_reports directory in {path}")
             sys.exit(1)
-        crash_files = [
-            f for f in os.listdir(crash_reports_dir) if f.endswith(".crash")
-        ]
+        crash_files = [f for f in os.listdir(crash_reports_dir) if f.endswith(".crash")]
         if not crash_files:
-            logger.error(f'No crash reports found in {crash_reports_dir}')
+            logger.error(f"No crash reports found in {crash_reports_dir}")
             sys.exit(1)
         res = {}
         for f in crash_files:
@@ -191,35 +197,46 @@ def main():
     import argparse
 
     def generate_options():
-        parser = argparse.ArgumentParser(description='Redpanda log analyzer')
+        parser = argparse.ArgumentParser(description="Redpanda log analyzer")
         parser.add_argument(
-            '--path',
+            "--path",
             type=str,
-            help='Path to data dir of the node desired to be analyzed')
-        parser.add_argument('--type',
-                            type=str,
-                            choices=[
-                                'controller', 'kvstore', 'kafka',
-                                'consumer_offsets', 'legacy-group',
-                                'kafka_records', 'tx_coordinator',
-                                'topic_manifest', 'topic_manifest_legacy',
-                                'controller_snapshot', 'crash_report'
-                            ],
-                            required=True,
-                            help='operation to execute')
+            help="Path to data dir of the node desired to be analyzed",
+        )
         parser.add_argument(
-            '--topic',
+            "--type",
+            type=str,
+            choices=[
+                "controller",
+                "kvstore",
+                "kafka",
+                "consumer_offsets",
+                "legacy-group",
+                "kafka_records",
+                "tx_coordinator",
+                "topic_manifest",
+                "topic_manifest_legacy",
+                "controller_snapshot",
+                "crash_report",
+            ],
+            required=True,
+            help="operation to execute",
+        )
+        parser.add_argument(
+            "--topic",
             type=str,
             required=False,
-            help='for kafka type, if set, parse only this topic')
-        parser.add_argument('-v', "--verbose", action="store_true")
+            help="for kafka type, if set, parse only this topic",
+        )
+        parser.add_argument("-v", "--verbose", action="store_true")
         parser.add_argument(
-            '--dump',
-            action='store_true',
-            help='output binary dumps of keys and values being parsed')
-        parser.add_argument('--force',
-                            action='store_true',
-                            help='Skip data directory validation')
+            "--dump",
+            action="store_true",
+            help="output binary dumps of keys and values being parsed",
+        )
+        parser.add_argument(
+            "--force", action="store_true", help="Skip data directory validation"
+        )
         return parser
 
     parser = generate_options()
@@ -227,7 +244,8 @@ def main():
 
     if options.type in ["topic_manifest", "topic_manifest_legacy"]:
         print_topic_manifest(
-            options.path, legacy_json=options.type == "topic_manifest_legacy")
+            options.path, legacy_json=options.type == "topic_manifest_legacy"
+        )
         sys.exit(0)
     elif options.type in ["crash_report"]:
         print_crash_report(options.path)
@@ -266,5 +284,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

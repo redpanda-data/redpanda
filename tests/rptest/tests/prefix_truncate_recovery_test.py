@@ -40,7 +40,8 @@ class PrefixTruncateRecoveryTestBase(RedpandaTest):
     step tries to force leadership so that verification may query metadata from
     specific nodes where the kafka protocol only returns state from leaders.
     """
-    topics = (TopicSpec(cleanup_policy=TopicSpec.CLEANUP_DELETE), )
+
+    topics = (TopicSpec(cleanup_policy=TopicSpec.CLEANUP_DELETE),)
 
     def __init__(self, test_context):
         extra_rp_conf = dict(
@@ -50,10 +51,9 @@ class PrefixTruncateRecoveryTestBase(RedpandaTest):
             enable_leader_balancer=False,
         )
 
-        super(PrefixTruncateRecoveryTestBase,
-              self).__init__(test_context=test_context,
-                             num_brokers=3,
-                             extra_rp_conf=extra_rp_conf)
+        super(PrefixTruncateRecoveryTestBase, self).__init__(
+            test_context=test_context, num_brokers=3, extra_rp_conf=extra_rp_conf
+        )
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self.kafka_cat = KafkaCat(self.redpanda)
@@ -66,8 +66,7 @@ class PrefixTruncateRecoveryTestBase(RedpandaTest):
         Test that for each specified node that there are no reported under
         replicated partitions corresponding to the test topic.
         """
-        metric = self.redpanda.metrics_sample("under_replicated_replicas",
-                                              nodes)
+        metric = self.redpanda.metrics_sample("under_replicated_replicas", nodes)
 
         topic = self.topics[0].name
         partition_count = self.topics[0].partition_count
@@ -76,7 +75,8 @@ class PrefixTruncateRecoveryTestBase(RedpandaTest):
         # Ensure we have samples reported for all partitions.
         expected_partitions = set(range(partition_count))
         reported_partitions = set(
-            [int(sample.labels['partition']) for sample in metric.samples])
+            [int(sample.labels["partition"]) for sample in metric.samples]
+        )
 
         if expected_partitions != reported_partitions:
             return False
@@ -118,10 +118,12 @@ class PrefixTruncateRecoveryTestBase(RedpandaTest):
         admin = Admin(self.redpanda)
         offsets = []
         for node in self.redpanda.nodes:
-            admin.transfer_leadership_to(namespace="kafka",
-                                         topic=self.topic,
-                                         partition=0,
-                                         target_id=self.redpanda.idx(node))
+            admin.transfer_leadership_to(
+                namespace="kafka",
+                topic=self.topic,
+                partition=0,
+                target_id=self.redpanda.idx(node),
+            )
             # % ERROR: offsets_for_times failed: Local: Unknown partition
             # may occur here presumably because there is an interaction
             # with leadership transfer. the built-in retries in list_offsets
@@ -143,18 +145,23 @@ class PrefixTruncateRecoveryTestBase(RedpandaTest):
         wait_until(
             lambda: self.produce_until_reclaim(living_nodes, deleted, acks),
             timeout_sec=90,
-            backoff_sec=1)
+            backoff_sec=1,
+        )
 
         # We should now observe the under-replicated state.
-        wait_until(lambda: not self.fully_replicated(living_nodes),
-                   timeout_sec=90,
-                   backoff_sec=1)
+        wait_until(
+            lambda: not self.fully_replicated(living_nodes),
+            timeout_sec=90,
+            backoff_sec=1,
+        )
 
         # Continue the node and wait until it's fully replicated.
         self.redpanda.start_node(dst_node)
-        wait_until(lambda: self.fully_replicated(self.redpanda.nodes),
-                   timeout_sec=90,
-                   backoff_sec=1)
+        wait_until(
+            lambda: self.fully_replicated(self.redpanda.nodes),
+            timeout_sec=90,
+            backoff_sec=1,
+        )
         self.verify_offsets()
 
 
@@ -165,9 +172,11 @@ class PrefixTruncateRecoveryTest(PrefixTruncateRecoveryTestBase):
         # cover boundary conditions of partition being empty/non-empty
         if not start_empty:
             self.kafka_tools.produce(self.topic, 2048, 1024, acks=acks)
-            wait_until(lambda: self.fully_replicated(self.redpanda.nodes),
-                       timeout_sec=90,
-                       backoff_sec=5)
+            wait_until(
+                lambda: self.fully_replicated(self.redpanda.nodes),
+                timeout_sec=90,
+                backoff_sec=5,
+            )
         self.run_recovery(acks=acks, dst_node=self.redpanda.nodes[0])
 
 
@@ -176,18 +185,19 @@ class PrefixTruncateRecoveryUpgradeTest(PrefixTruncateRecoveryTestBase):
     Exercises the work required to install a snapshot works through the stages
     of an upgrade.
     """
+
     def __init__(self, test_context):
         super(PrefixTruncateRecoveryUpgradeTest, self).__init__(test_context)
         self.initial_version = MixedVersionWorkloadRunner.PRE_SERDE_VERSION
 
     def setUp(self):
-        self.redpanda._installer.install(self.redpanda.nodes,
-                                         self.initial_version)
+        self.redpanda._installer.install(self.redpanda.nodes, self.initial_version)
         super(PrefixTruncateRecoveryUpgradeTest, self).setUp()
 
-    @cluster(num_nodes=3,
-             log_allow_list=LOG_ALLOW_LIST +
-             MixedVersionWorkloadRunner.ALLOWED_LOGS)
+    @cluster(
+        num_nodes=3,
+        log_allow_list=LOG_ALLOW_LIST + MixedVersionWorkloadRunner.ALLOWED_LOGS,
+    )
     def test_recover_during_upgrade(self):
         def _run_recovery(src_node, dst_node):
             # Force leadership to 'src_node' so we can deterministically check
@@ -195,16 +205,20 @@ class PrefixTruncateRecoveryUpgradeTest(PrefixTruncateRecoveryTestBase):
             # Note it's possible to see surprising error codes on older
             # versions following a node restart (e.g. 500 insteaad of 503/504);
             # just retry until leadership is moved.
-            wait_until(lambda: self.redpanda._admin.transfer_leadership_to(
-                namespace="kafka",
-                topic=self.topic,
-                partition=0,
-                target_id=self.redpanda.idx(src_node)),
-                       timeout_sec=30,
-                       backoff_sec=2,
-                       retry_on_exc=True)
+            wait_until(
+                lambda: self.redpanda._admin.transfer_leadership_to(
+                    namespace="kafka",
+                    topic=self.topic,
+                    partition=0,
+                    target_id=self.redpanda.idx(src_node),
+                ),
+                timeout_sec=30,
+                backoff_sec=2,
+                retry_on_exc=True,
+            )
             # Speed the test up a bit by using acks=1.
             self.run_recovery(acks=1, dst_node=dst_node)
 
         MixedVersionWorkloadRunner.upgrade_with_workload(
-            self.redpanda, self.initial_version, _run_recovery)
+            self.redpanda, self.initial_version, _run_recovery
+        )

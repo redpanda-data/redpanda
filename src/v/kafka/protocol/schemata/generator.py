@@ -85,24 +85,14 @@ path_type_map = {
         "GroupInstanceId": ("kafka::group_instance_id", "string"),
     },
     "AddPartitionsToTxnRequestData": {
-        "Topics": {
-            "Partitions": ("model::partition_id", "int32")
-        }
+        "Topics": {"Partitions": ("model::partition_id", "int32")}
     },
     "AddPartitionsToTxnResponseData": {
-        "Results": {
-            "Results": {
-                "PartitionIndex": ("model::partition_id", "int32")
-            }
-        }
+        "Results": {"Results": {"PartitionIndex": ("model::partition_id", "int32")}}
     },
     "OffsetDeleteRequestData": {
         "GroupId": ("kafka::group_id", "string"),
-        "Topics": {
-            "Partitions": {
-                "PartitionIndex": ("model::partition_id", "int32")
-            }
-        }
+        "Topics": {"Partitions": {"PartitionIndex": ("model::partition_id", "int32")}},
     },
     "OffsetDeleteResponseData": {
         "ErrorCode": ("kafka::error_code", "int16"),
@@ -111,7 +101,7 @@ path_type_map = {
                 "PartitionIndex": ("model::partition_id", "int32"),
                 "ErrorCode": ("kafka::error_code", "int16"),
             }
-        }
+        },
     },
     "TxnOffsetCommitRequestData": {
         "MemberId": ("kafka::member_id", "string"),
@@ -122,7 +112,7 @@ path_type_map = {
                 "CommittedOffset": ("model::offset", "int64"),
                 "CommittedLeaderEpoch": ("kafka::leader_epoch", "int32"),
             },
-        }
+        },
     },
     "JoinGroupRequestData": {
         "MemberId": ("kafka::member_id", "string"),
@@ -316,7 +306,7 @@ path_type_map = {
                 "Offset": ("model::offset", "int64"),
             }
         },
-        "TimeoutMs": ("std::chrono::milliseconds", "int32")
+        "TimeoutMs": ("std::chrono::milliseconds", "int32"),
     },
     "DeleteRecordsResponseData": {
         "ThrottleTimeMs": ("std::chrono::milliseconds", "int32"),
@@ -324,9 +314,9 @@ path_type_map = {
             "Partitions": {
                 "PartitionIndex": ("model::partition_id", "int32"),
                 "LowWatermark": ("model::offset", "int64"),
-                "ErrorCode": ("kafka::error_code", "int16")
+                "ErrorCode": ("kafka::error_code", "int16"),
             }
-        }
+        },
     },
     "AlterPartitionReassignmentsRequestData": {
         "TimeoutMs": ("std::chrono::milliseconds", "int32"),
@@ -334,7 +324,7 @@ path_type_map = {
             "Partitions": {
                 "PartitionIndex": ("model::partition_id", "int32"),
             },
-        }
+        },
     },
     "AlterPartitionReassignmentsResponseData": {
         "ThrottleTimeMs": ("std::chrono::milliseconds", "int32"),
@@ -342,13 +332,13 @@ path_type_map = {
             "Partitions": {
                 "PartitionIndex": ("model::partition_id", "int32"),
             },
-        }
+        },
     },
     "ListPartitionReassignmentsRequestData": {
         "TimeoutMs": ("std::chrono::milliseconds", "int32"),
         "Topics": {
             "PartitionIndexes": ("model::partition_id", "int32"),
-        }
+        },
     },
     "ListPartitionReassignmentsResponseData": {
         "ThrottleTimeMs": ("std::chrono::milliseconds", "int32"),
@@ -356,7 +346,7 @@ path_type_map = {
             "Partitions": {
                 "PartitionIndex": ("model::partition_id", "int32"),
             },
-        }
+        },
     },
     "DescribeProducersRequestData": {
         "Topics": {
@@ -395,10 +385,13 @@ field_name_type_map = {
 
 # primitive types
 basic_type_map = dict(
-    string=("ss::sstring", "read_string_with_control_check()",
-            "read_nullable_string_with_control_check()",
-            "read_flex_string_with_control_check()",
-            "read_nullable_flex_string_with_control_check()"),
+    string=(
+        "ss::sstring",
+        "read_string_with_control_check()",
+        "read_nullable_string_with_control_check()",
+        "read_flex_string_with_control_check()",
+        "read_nullable_flex_string_with_control_check()",
+    ),
     bytes=("bytes", "read_bytes()", None, "read_flex_bytes()", None),
     bool=("bool", "read_bool()"),
     int8=("int8_t", "read_int8()"),
@@ -407,10 +400,20 @@ basic_type_map = dict(
     int64=("int64_t", "read_int64()"),
     float64=("float64_t", "read_float64()"),
     uuid=("uuid", "read_uuid()"),
-    iobuf=("iobuf", None, "read_fragmented_nullable_bytes()", None,
-           "read_fragmented_nullable_flex_bytes()"),
-    fetch_record_set=("batch_reader", None, "read_nullable_batch_reader()",
-                      None, "read_nullable_flex_batch_reader()"),
+    iobuf=(
+        "iobuf",
+        None,
+        "read_fragmented_nullable_bytes()",
+        None,
+        "read_fragmented_nullable_flex_bytes()",
+    ),
+    fetch_record_set=(
+        "batch_reader",
+        None,
+        "read_nullable_batch_reader()",
+        None,
+        "read_nullable_flex_batch_reader()",
+    ),
 )
 
 # Declare some fields as sensitive. Utmost care should be taken to ensure the
@@ -484,25 +487,25 @@ extra_headers = {
 # These types, when they appear as the member type of an array, will override
 # the container type from std::vector
 override_member_container = {
-    'metadata_response_partition': 'chunked_vector',
-    'metadata_response_topic': 'chunked_vector',
-    'fetchable_partition_response': 'chunked_vector',
-    'offset_fetch_response_partition': 'chunked_vector',
-    'int32_t': 'std::vector',
-    'model::node_id': 'std::vector',
-    'model::partition_id': 'std::vector',
-    'reassignable_partition_response': 'std::vector',
-    'reassignable_partition': 'std::vector',
-    'describe_configs_synonym': 'std::vector',
-    'createable_topic_config': 'std::vector',
-    'creatable_topic_configs': 'std::vector',
-    'creatable_replica_assignment': 'std::vector',
-    'offset_fetch_request_topic': 'std::vector',
-    'partition_produce_response': 'std::vector',
-    'creatable_acl_result': 'std::vector',
-    'offset_delete_request_partition': 'std::vector',
-    'deletable_group_result': 'std::vector',
-    'delete_acls_matching_acl': 'std::vector',
+    "metadata_response_partition": "chunked_vector",
+    "metadata_response_topic": "chunked_vector",
+    "fetchable_partition_response": "chunked_vector",
+    "offset_fetch_response_partition": "chunked_vector",
+    "int32_t": "std::vector",
+    "model::node_id": "std::vector",
+    "model::partition_id": "std::vector",
+    "reassignable_partition_response": "std::vector",
+    "reassignable_partition": "std::vector",
+    "describe_configs_synonym": "std::vector",
+    "createable_topic_config": "std::vector",
+    "creatable_topic_configs": "std::vector",
+    "creatable_replica_assignment": "std::vector",
+    "offset_fetch_request_topic": "std::vector",
+    "partition_produce_response": "std::vector",
+    "creatable_acl_result": "std::vector",
+    "offset_delete_request_partition": "std::vector",
+    "deletable_group_result": "std::vector",
+    "delete_acls_matching_acl": "std::vector",
 }
 
 
@@ -636,7 +639,8 @@ DROP_STREAM_OPERATOR = [
 # `operator==()`, because one or more of its member variables are not
 # comparable
 WITHOUT_DEFAULT_EQUALITY_OPERATOR = {
-    'kafka::batch_reader', 'kafka::produce_request_record_data'
+    "kafka::batch_reader",
+    "kafka::produce_request_record_data",
 }
 
 # The following is a list of tag types which contain fields where their
@@ -661,6 +665,7 @@ class VersionRange:
     A version range is fundamentally a range [min, max] but there are several
     different ways in the kafka schema format to specify the bounds.
     """
+
     def __init__(self, spec):
         self.min, self.max = self._parse(spec)
 
@@ -681,7 +686,7 @@ class VersionRange:
             max = int(match.group("max"))
             return min, max
 
-    guard_modes = enum.Enum('guard_modes', 'GUARD, NO_GUARD, NO_SOURCE')
+    guard_modes = enum.Enum("guard_modes", "GUARD, NO_GUARD, NO_SOURCE")
 
     @property
     def guard_enum(self):
@@ -701,8 +706,11 @@ class VersionRange:
                 cond.append(f"version <= api_version({self.max})")
             cond = " && ".join(cond)
 
-        return (self.guard_enum.NO_GUARD,
-                None) if cond == "" else (self.guard_enum.GUARD, cond)
+        return (
+            (self.guard_enum.NO_GUARD, None)
+            if cond == ""
+            else (self.guard_enum.GUARD, cond)
+        )
 
     def guard(self, flex, first_flex):
         """
@@ -732,7 +740,8 @@ class VersionRange:
 def snake_case(name):
     """Convert camel to snake case"""
     return name[0].lower() + "".join(
-        [f"_{c.lower()}" if c.isupper() else c for c in name[1:]])
+        [f"_{c.lower()}" if c.isupper() else c for c in name[1:]]
+    )
 
 
 class FieldType:
@@ -769,7 +778,7 @@ class FieldType:
             # prefixed with [], these types are listed in the TAGGED_WITH_FIELDS map
             is_array = is_array or (type_name in TAGGED_WITH_FIELDS)
             assert is_array
-            path = path + (field["name"], )
+            path = path + (field["name"],)
             type_name = apply_struct_renames(path, type_name)
             t = StructType(type_name, field["fields"], path)
 
@@ -879,7 +888,8 @@ class StructType(FieldType):
     @property
     def is_streamable(self):
         return self._name not in DROP_STREAM_OPERATOR and all(
-            field.is_streamable for field in self.fields)
+            field.is_streamable for field in self.fields
+        )
 
 
 class ArrayType(FieldType):
@@ -901,7 +911,7 @@ class Field:
     def __init__(self, field, field_type, path):
         self._field = field
         self._type = field_type
-        self._path = path + (self._field["name"], )
+        self._path = path + (self._field["name"],)
         self._versions = VersionRange(self._field["versions"])
         self._nullable_versions = self._field.get("nullableVersions", None)
         if self._nullable_versions is not None:
@@ -1062,9 +1072,11 @@ class Field:
             # sensitive decendents defined. This field is an ancestor of a
             # sensitive field, but it itself isn't sensitive.
             return False
-        assert d is None or d is True, \
-            "expected field '{}' to be missing or True; field path: {}, remaining path: {}" \
-            .format(self._field["name"], self._path, d)
+        assert d is None or d is True, (
+            "expected field '{}' to be missing or True; field path: {}, remaining path: {}".format(
+                self._field["name"], self._path, d
+            )
+        )
         return d
 
     @property
@@ -1084,9 +1096,9 @@ class Field:
         gen = self.type_name_parts()
         name = next(gen)
         if isinstance(self._type, ArrayType):
-            name = f'{next(gen)}<{name}>'
+            name = f"{next(gen)}<{name}>"
         if self.nullable():
-            return f'{next(gen)}<{name}>', None
+            return f"{next(gen)}<{name}>", None
         return name, next(gen)
 
     def type_name_parts(self):
@@ -1793,10 +1805,11 @@ std::ostream& operator<<(std::ostream& o, const {{ struct.name }}&) {
 # type is not a native kafka type, but is still represented in the code
 # generator for some scenarios involving overloads / customizing output.
 ALLOWED_SCALAR_TYPES = list(set(SCALAR_TYPES) - set(["iobuf"]))
-ALLOWED_TYPES = \
-    ALLOWED_SCALAR_TYPES + \
-    [f"[]{t}" for t in ALLOWED_SCALAR_TYPES +
-        STRUCT_TYPES] + TAGGED_WITH_FIELDS
+ALLOWED_TYPES = (
+    ALLOWED_SCALAR_TYPES
+    + [f"[]{t}" for t in ALLOWED_SCALAR_TYPES + STRUCT_TYPES]
+    + TAGGED_WITH_FIELDS
+)
 
 # yapf: disable
 SCHEMA = {
@@ -1896,9 +1909,9 @@ SCHEMA = {
 # helper called from template to render a nice struct comment
 def render_struct_comment(struct):
     indent = " * "
-    wrapper = textwrap.TextWrapper(initial_indent=indent,
-                                   subsequent_indent=indent,
-                                   width=80)
+    wrapper = textwrap.TextWrapper(
+        initial_indent=indent, subsequent_indent=indent, width=80
+    )
     comment = wrapper.fill(f"The {struct.name} message.") + "\n"
     comment += indent + "\n"
 
@@ -1908,10 +1921,11 @@ def render_struct_comment(struct):
 
     for field in struct.fields:
         field_indent = indent + f"{field.name:>{max_width}}: "
-        wrapper = textwrap.TextWrapper(initial_indent=field_indent,
-                                       subsequent_indent=indent + " " *
-                                       (2 + max_width),
-                                       width=80)
+        wrapper = textwrap.TextWrapper(
+            initial_indent=field_indent,
+            subsequent_indent=indent + " " * (2 + max_width),
+            width=80,
+        )
         about = field.about() + f" Supported versions: {field.versions()}"
         comment += wrapper.fill(about) + "\n"
 
@@ -1954,7 +1968,7 @@ def codegen(schema_path):
     # but its naming in snake case will conflict with our high level request and
     # response types so arrange for a "_data" suffix to be generated.
     type_name = f"{msg['name']}Data"
-    struct = StructType(type_name, msg["fields"], (type_name, ))
+    struct = StructType(type_name, msg["fields"], (type_name,))
 
     # request or response
     op_type = msg["type"]
@@ -1988,12 +2002,12 @@ def codegen(schema_path):
         api_key=api_key,
         request_name=request_name,
         first_flex=first_flex,
-        valid_range=valid_range)
+        valid_range=valid_range,
+    )
 
-    src = jinja2.Template(SOURCE_TEMPLATE).render(struct=struct,
-                                                  op_type=op_type,
-                                                  fail=fail,
-                                                  first_flex=first_flex)
+    src = jinja2.Template(SOURCE_TEMPLATE).render(
+        struct=struct, op_type=op_type, fail=fail, first_flex=first_flex
+    )
 
     return hdr, src, struct.headers("source")
 
@@ -2024,13 +2038,14 @@ if __name__ == "__main__":
         hdr, src, extra = codegen(schema)
         sources.append((schema.name, src))
         extra_schema_headers.update(extra)
-        with open(hdr_path, 'w') as f:
+        with open(hdr_path, "w") as f:
             f.write(hdr)
 
     src = jinja2.Template(COMBINED_SOURCE_TEMPLATE).render(
         schema_headers=map(lambda p: p.name, headers),
         extra_headers=extra_schema_headers,
-        sources=sources)
+        sources=sources,
+    )
 
-    with open(source, 'w') as f:
+    with open(source, "w") as f:
         f.write(src)

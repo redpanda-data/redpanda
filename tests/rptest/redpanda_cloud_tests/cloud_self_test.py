@@ -20,12 +20,13 @@ class RedpandaCloudSelfTest(RedpandaCloudTest):
     on the cloud work as expected. For things that are implemented by
     RedpandaMixedTest, they should be tested in RedpandaMixedSelfTest instead.
     """
+
     def __init__(self, test_context: TestContext, *args: Any, **kwargs: Any):
         super().__init__(test_context, *args, **kwargs)
 
-        assert isinstance(
-            self.redpanda,
-            RedpandaServiceCloud), 'test should only run on cloud'
+        assert isinstance(self.redpanda, RedpandaServiceCloud), (
+            "test should only run on cloud"
+        )
 
     @cluster(num_nodes=0)
     def test_healthy(self):

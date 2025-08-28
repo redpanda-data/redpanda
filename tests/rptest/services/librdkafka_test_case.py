@@ -23,10 +23,7 @@ class LibrdkafkaTestcase(BackgroundThreadService):
     KAFKA_PATH = f"/opt/kafka-{KAFKA_VERSION}"
 
     logs = {
-        "test_case_output": {
-            "path": LOG_FILE,
-            "collect_default": False
-        },
+        "test_case_output": {"path": LOG_FILE, "collect_default": False},
     }
 
     def __init__(self, context, redpanda, test_case_number):
@@ -37,12 +34,11 @@ class LibrdkafkaTestcase(BackgroundThreadService):
         self.error = None
 
     def _worker(self, _idx, node):
-        node.account.ssh("mkdir -p %s" % LibrdkafkaTestcase.ROOT,
-                         allow_fail=False)
+        node.account.ssh("mkdir -p %s" % LibrdkafkaTestcase.ROOT, allow_fail=False)
         # configure test cases
         node.account.create_file(
-            LibrdkafkaTestcase.CONF_FILE,
-            f"bootstrap.servers={self.redpanda.brokers()}")
+            LibrdkafkaTestcase.CONF_FILE, f"bootstrap.servers={self.redpanda.brokers()}"
+        )
         # compile test case
         self.logger.info(f"running librdkafka test {self.test_case_number}")
 

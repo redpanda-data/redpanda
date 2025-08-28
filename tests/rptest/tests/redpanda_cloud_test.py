@@ -18,8 +18,8 @@ class RedpandaCloudTest(RedpandaTestBase):
     """
     Base class for tests which run only against the Redpanda Cloud.
     """
-    def __init__(self, test_context: TestContext):
 
+    def __init__(self, test_context: TestContext):
         super().__init__(test_context=test_context)
 
         self.redpanda = make_redpanda_cloud_service(test_context)
@@ -30,10 +30,12 @@ class RedpandaCloudTest(RedpandaTestBase):
 
     def setup(self):
         super().setup()
-        wait_until(lambda: self.redpanda.cluster_healthy(),
-                   timeout_sec=20,
-                   backoff_sec=5,
-                   err_msg='cluster unhealthy before start of test')
+        wait_until(
+            lambda: self.redpanda.cluster_healthy(),
+            timeout_sec=20,
+            backoff_sec=5,
+            err_msg="cluster unhealthy before start of test",
+        )
 
     def client(self):
         return self._client

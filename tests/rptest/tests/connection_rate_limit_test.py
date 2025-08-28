@@ -30,7 +30,7 @@ class ConnectionRateLimitTest(PreallocNodesTest):
     RATE_LIMIT = 4
     REFRESH_TOKENS_TIME_SEC = 2
 
-    topics = (TopicSpec(partition_count=1, replication_factor=1), )
+    topics = (TopicSpec(partition_count=1, replication_factor=1),)
 
     def __init__(self, test_context):
         resource_setting = ResourceSettings(num_cpus=1)
@@ -39,20 +39,27 @@ class ConnectionRateLimitTest(PreallocNodesTest):
             num_brokers=1,
             node_prealloc_count=1,
             extra_rp_conf={"kafka_connection_rate_limit": self.RATE_LIMIT},
-            resource_settings=resource_setting)
+            resource_settings=resource_setting,
+        )
 
-        self._producer = KgoVerifierProducer(test_context, self.redpanda,
-                                             self.topics[0], self.MSG_SIZE,
-                                             self.PRODUCE_COUNT,
-                                             self.preallocated_nodes)
+        self._producer = KgoVerifierProducer(
+            test_context,
+            self.redpanda,
+            self.topics[0],
+            self.MSG_SIZE,
+            self.PRODUCE_COUNT,
+            self.preallocated_nodes,
+        )
 
     def start_consumer(self):
-        return RpkConsumer(context=self.test_context,
-                           redpanda=self.redpanda,
-                           topic=self.topics[0],
-                           num_msgs=1,
-                           save_msgs=True,
-                           retry_sec=(1 / self.RATE_LIMIT))
+        return RpkConsumer(
+            context=self.test_context,
+            redpanda=self.redpanda,
+            topic=self.topics[0],
+            num_msgs=1,
+            save_msgs=True,
+            retry_sec=(1 / self.RATE_LIMIT),
+        )
 
     def stop_consumer(self, consumer):
         try:
@@ -76,7 +83,8 @@ class ConnectionRateLimitTest(PreallocNodesTest):
             need_finish = True
             for i in range(consumers_count):
                 self.logger.debug(
-                    f"Offset for {i} consumer: {len(consumers[i].messages)}")
+                    f"Offset for {i} consumer: {len(consumers[i].messages)}"
+                )
 
                 if len(consumers[i].messages) == 0:
                     need_finish = False
@@ -88,9 +96,7 @@ class ConnectionRateLimitTest(PreallocNodesTest):
 
             return need_finish
 
-        wait_until(consumed,
-                   timeout_sec=190,
-                   backoff_sec=(1 / self.RATE_LIMIT))
+        wait_until(consumed, timeout_sec=190, backoff_sec=(1 / self.RATE_LIMIT))
 
         finish = time.time()
 
@@ -119,8 +125,11 @@ class ConnectionRateLimitTest(PreallocNodesTest):
         time1 = self.get_read_time(self.RANDOM_READ_PARALLEL)
         time2 = self.get_read_time(self.RANDOM_READ_PARALLEL * 2)
 
-        metrics = MetricCheck(self.logger, self.redpanda,
-                              self.redpanda.nodes[0], RATE_METRIC, {})
+        metrics = MetricCheck(
+            self.logger, self.redpanda, self.redpanda.nodes[0], RATE_METRIC, {}
+        )
         metrics.evaluate([(RATE_METRIC, lambda a, b: b > 0)])
 
-        assert time2 >= time1 * 1.6, f'Time for first iteration:{time1} Time for second iteration:{time2}'
+        assert time2 >= time1 * 1.6, (
+            f"Time for first iteration:{time1} Time for second iteration:{time2}"
+        )

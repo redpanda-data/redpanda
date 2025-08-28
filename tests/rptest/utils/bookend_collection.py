@@ -10,7 +10,7 @@
 import collections
 import typing
 
-T = typing.TypeVar('T')
+T = typing.TypeVar("T")
 
 
 class BookendCollection(typing.Generic[T]):
@@ -21,10 +21,12 @@ class BookendCollection(typing.Generic[T]):
     bookend (noun): a support placed at the end of a row of books to keep them
     upright, typically forming one of a pair.
     """
+
     class Gap:
         """
         A placeholder for dropped elements.
         """
+
         def __init__(self, size: int):
             self.size = size
 
@@ -32,8 +34,7 @@ class BookendCollection(typing.Generic[T]):
             return "<Gap size={}>".format(self.size)
 
         def __eq__(self, other) -> bool:
-            return isinstance(other,
-                              self.__class__) and self.size == other.size
+            return isinstance(other, self.__class__) and self.size == other.size
 
     def __init__(self, *, head: int, tail: int):
         assert head > 0, "head must be greater than 0"

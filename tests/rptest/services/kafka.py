@@ -1,12 +1,17 @@
 from ducktape.utils.util import wait_until
-from rptest.services.redpanda_types import PLAINTEXT_SECURITY, KafkaClientSecurity, RedpandaServiceForClients
+from rptest.services.redpanda_types import (
+    PLAINTEXT_SECURITY,
+    KafkaClientSecurity,
+    RedpandaServiceForClients,
+)
 
 
 class KafkaServiceAdapter(RedpandaServiceForClients):
-    '''
-        Simple adapter to match KafkaService interface with
-        what is required by Redpanda test clients
-    '''
+    """
+    Simple adapter to match KafkaService interface with
+    what is required by Redpanda test clients
+    """
+
     def __init__(self, test_context, kafka_service):
         self._context = test_context
         self._kafka_service = kafka_service
@@ -43,6 +48,5 @@ class KafkaServiceAdapter(RedpandaServiceForClients):
 
     # required for rpk
     def find_binary(self, name):
-        rp_install_path_root = self._context.globals.get(
-            "rp_install_path_root", None)
+        rp_install_path_root = self._context.globals.get("rp_install_path_root", None)
         return f"{rp_install_path_root}/bin/{name}"

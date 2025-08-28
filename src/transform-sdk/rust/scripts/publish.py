@@ -53,7 +53,7 @@ def update_dependencies(manifest: tomlkit.TOMLDocument, version: str):
 
 def publish(version: str, dry_run: bool):
     # Cargo does not like the prefix we add to tags, so remove it.
-    version = version.removeprefix('transform-sdk/v')
+    version = version.removeprefix("transform-sdk/v")
 
     # Set the workspace version in the TOML file
     manifest = tomlkit.loads(CARGO_TOML_FILE.read_text())
@@ -70,16 +70,14 @@ def publish(version: str, dry_run: bool):
 
     # The order matters here so that we get the right versions in the registry
     # before deploying the next crate
-    for pkg in [
-            "-varint", "-sr-types", "-sr-sys", "-sr", "-types", "-sys", ""
-    ]:
+    for pkg in ["-varint", "-sr-types", "-sr-sys", "-sr", "-types", "-sys", ""]:
         publish_package(f"redpanda-transform-sdk{pkg}", dry_run)
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--version', type=str, required=True)
-parser.add_argument('--dry', action='store_true')
+parser.add_argument("--version", type=str, required=True)
+parser.add_argument("--dry", action="store_true")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     args = parser.parse_args()
     publish(version=args.version, dry_run=args.dry)

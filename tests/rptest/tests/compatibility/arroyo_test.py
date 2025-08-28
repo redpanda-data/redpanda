@@ -18,6 +18,7 @@ class ArroyoTest(PreallocNodesTest):
 
     The test suite lives here under tests/ in https://github.com/getsentry/arroyo.
     """
+
     TEST_SUITE_PATH = "/opt/arroyo"
 
     def __init__(self, ctx, *args, **kwargs):
@@ -31,7 +32,8 @@ class ArroyoTest(PreallocNodesTest):
                 # not_coordinator error_code
                 "enable_leader_balancer": False
             },
-            **kwargs)
+            **kwargs,
+        )
 
     @cluster(num_nodes=4)
     def test_arroyo_test_suite(self):
@@ -42,14 +44,15 @@ class ArroyoTest(PreallocNodesTest):
 
             failed = False
             for line in test_node.account.ssh_capture(
-                    f"{env_preamble} "
-                    f"python3 -m pytest {ArroyoTest.TEST_SUITE_PATH} "
-                    "-k KafkaStreamsTestCase -rf",
-                    combine_stderr=True,
-                    allow_fail=False,
-                    timeout_sec=120):
+                f"{env_preamble} "
+                f"python3 -m pytest {ArroyoTest.TEST_SUITE_PATH} "
+                "-k KafkaStreamsTestCase -rf",
+                combine_stderr=True,
+                allow_fail=False,
+                timeout_sec=120,
+            ):
                 self.logger.info(line)
-                if 'FAILED' in line:
+                if "FAILED" in line:
                     failed = True
 
             if failed:
@@ -58,6 +61,6 @@ class ArroyoTest(PreallocNodesTest):
             # Possible reasons to enter this finally block are
             # 1. ssh_capture timeouts
             # 2. assert in source itself
-            test_node.account.kill_process('arroyo',
-                                           clean_shutdown=False,
-                                           allow_fail=True)
+            test_node.account.kill_process(
+                "arroyo", clean_shutdown=False, allow_fail=True
+            )

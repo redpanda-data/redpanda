@@ -18,6 +18,7 @@ class SaramaInterceptors(ExampleBase):
     """
     The helper class for Sarama's interceptors example
     """
+
     def __init__(self, redpanda, topic):
         super(SaramaInterceptors, self).__init__(redpanda)
 
@@ -27,7 +28,7 @@ class SaramaInterceptors(ExampleBase):
     # The internal condition to determine if the
     # example is successful. Returns boolean.
     def _condition(self, line):
-        return 'SpanContext' in line
+        return "SpanContext" in line
 
     # Return the command to call in the shell
     def cmd(self):
@@ -44,6 +45,7 @@ class SaramaHttpServer(ExampleBase):
     """
     The helper class for Sarama's http server example
     """
+
     def __init__(self, redpanda):
         super(SaramaHttpServer, self).__init__(redpanda)
 
@@ -53,7 +55,7 @@ class SaramaHttpServer(ExampleBase):
     # The internal condition to determine if the
     # example is successful. Returns boolean.
     def _condition(self, line):
-        return 'Listening for requests' in line
+        return "Listening for requests" in line
 
     # Return the command to call in the shell
     def cmd(self):
@@ -80,6 +82,7 @@ class SaramaConsumerGroup(ExampleBase):
     """
     The helper class for Sarama's consumergroup example
     """
+
     def __init__(self, redpanda, topic, count):
         super(SaramaConsumerGroup, self).__init__(redpanda)
 
@@ -91,13 +94,13 @@ class SaramaConsumerGroup(ExampleBase):
     # The internal condition to determine if the
     # example is successful. Returns boolean.
     def _condition(self, line):
-        self._count -= 'Message claimed:' in line
+        self._count -= "Message claimed:" in line
         return self._count <= 0
 
     # Return the command to call in the shell
     def cmd(self):
         EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/consumergroup")
-        cmd = f"consumer -brokers=\"{self._redpanda.brokers()}\" -topics=\"{self._topic}\" -group=\"example\""
+        cmd = f'consumer -brokers="{self._redpanda.brokers()}" -topics="{self._topic}" -group="example"'
         return os.path.join(EXAMPLE_DIR, cmd)
 
     # Return the process name to kill

@@ -30,17 +30,18 @@ class RpkClusterQuotaTest(RedpandaTest):
         q1 = self._rpk.describe_cluster_quotas()
         assert len(q1) == 0
 
-        self._rpk.alter_cluster_quotas(default=["client-id"],
-                                       add=["producer_byte_rate=11111"])
-        self._rpk.alter_cluster_quotas(name=["client-id-prefix=foo-"],
-                                       add=["consumer_byte_rate=2222"])
+        self._rpk.alter_cluster_quotas(
+            default=["client-id"], add=["producer_byte_rate=11111"]
+        )
+        self._rpk.alter_cluster_quotas(
+            name=["client-id-prefix=foo-"], add=["consumer_byte_rate=2222"]
+        )
 
         q2 = self._rpk.describe_cluster_quotas()
-        assert len(
-            q2["quotas"]) == 2  # Quick check, just that we have something.
+        assert len(q2["quotas"]) == 2  # Quick check, just that we have something.
 
         # Same values, NoOp:
-        import1 = '''
+        import1 = """
 {
    "quotas":[
       {
@@ -73,12 +74,12 @@ class RpkClusterQuotaTest(RedpandaTest):
       }
    ]
 }
-'''
+"""
         out = self._rpk.import_cluster_quota(import1, output_format="text")
         assert "No changes detected from import" in out
 
         # Remove 1 (default client-id), Add 1 (producer byte rate).
-        import2 = '''
+        import2 = """
 {
    "quotas":[
       {
@@ -101,7 +102,7 @@ class RpkClusterQuotaTest(RedpandaTest):
       }
    ]
 }
-'''
+"""
 
         def assertChanges(quotas, entity, quotaType, old, new):
             found = False
@@ -114,19 +115,15 @@ class RpkClusterQuotaTest(RedpandaTest):
                 raise Exception(f"unable to find quota entity {entity}")
 
         with tempfile.NamedTemporaryFile() as tf:
-            tf.write(bytes(import2, 'UTF-8'))
+            tf.write(bytes(import2, "UTF-8"))
             tf.seek(0)
             out = self._rpk.import_cluster_quota(tf.name)
-            assertChanges(out,
-                          "client-id=<default>",
-                          "producer_byte_rate",
-                          old="11111",
-                          new="-")  # New Value as '-' means it was deleted
-            assertChanges(out,
-                          "client-id-prefix=foo-",
-                          "producer_byte_rate",
-                          old="-",
-                          new="3333")
+            assertChanges(
+                out, "client-id=<default>", "producer_byte_rate", old="11111", new="-"
+            )  # New Value as '-' means it was deleted
+            assertChanges(
+                out, "client-id-prefix=foo-", "producer_byte_rate", old="-", new="3333"
+            )
 
         # Retry with same value, it should not detect any changes:
         out = self._rpk.import_cluster_quota(import2, output_format="text")
@@ -136,8 +133,10 @@ class RpkClusterQuotaTest(RedpandaTest):
         q3 = self._rpk.describe_cluster_quotas()
         quotas = q3["quotas"]
         assert len(quotas) == 1 and len(quotas[0]["entity"]) == 1
-        assert quotas[0]["entity"][0]["type"] == "client-id-prefix" and quotas[
-            0]["entity"][0]["name"] == "foo-"
+        assert (
+            quotas[0]["entity"][0]["type"] == "client-id-prefix"
+            and quotas[0]["entity"][0]["name"] == "foo-"
+        )
 
         def assertValues(values, key, expectedVal):
             found = False

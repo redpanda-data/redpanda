@@ -21,18 +21,22 @@ from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
 
 
 class FullNodeRecoveryTest(EndToEndTest):
-    PARTIAL_RECOVERY = 'partial'
-    FULL_RECOVERY = 'full'
+    PARTIAL_RECOVERY = "partial"
+    FULL_RECOVERY = "full"
     """
     This test validates recovery of redpanda node after data directory wipe
     """
-    def __init__(self, test_context):
-        extra_rp_conf = dict(enable_leader_balancer=False,
-                             default_topic_replications=3,
-                             group_topic_partitions=3)
 
-        super(FullNodeRecoveryTest, self).__init__(test_context=test_context,
-                                                   extra_rp_conf=extra_rp_conf)
+    def __init__(self, test_context):
+        extra_rp_conf = dict(
+            enable_leader_balancer=False,
+            default_topic_replications=3,
+            group_topic_partitions=3,
+        )
+
+        super(FullNodeRecoveryTest, self).__init__(
+            test_context=test_context, extra_rp_conf=extra_rp_conf
+        )
 
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @parametrize(recovery_type=PARTIAL_RECOVERY)
@@ -74,12 +78,11 @@ class FullNodeRecoveryTest(EndToEndTest):
         # stop one of the nodes and remove its data
         stopped = random.choice(self.redpanda.nodes)
         # prepare seed servers list
-        seeds = map(lambda n: {
-            "address": n.account.hostname,
-            "port": 33145
-        }, self.redpanda.nodes)
-        seeds = list(
-            filter(lambda n: n['address'] != stopped.account.hostname, seeds))
+        seeds = map(
+            lambda n: {"address": n.account.hostname, "port": 33145},
+            self.redpanda.nodes,
+        )
+        seeds = list(filter(lambda n: n["address"] != stopped.account.hostname, seeds))
 
         self.redpanda.stop_node(stopped)
         if recovery_type == FullNodeRecoveryTest.FULL_RECOVERY:
@@ -91,26 +94,36 @@ class FullNodeRecoveryTest(EndToEndTest):
         # start node with the same node id, and not empty seed server list to
 
         # give node more time to start as it has to recover
-        self.redpanda.start_node(stopped,
-                                 override_cfg_params={'seed_servers': seeds},
-                                 timeout=90)
+        self.redpanda.start_node(
+            stopped, override_cfg_params={"seed_servers": seeds}, timeout=90
+        )
 
         def all_topics_recovered():
-            metric = self.redpanda.metrics_sample("under_replicated_replicas",
-                                                  self.redpanda.nodes)
+            metric = self.redpanda.metrics_sample(
+                "under_replicated_replicas", self.redpanda.nodes
+            )
             under_replicated = filter(lambda s: s.value == 1, metric.samples)
             under_replicated = list(
                 map(
-                    lambda s: (s.labels['namespace'], s.labels['topic'], s.
-                               labels['partition']), under_replicated))
+                    lambda s: (
+                        s.labels["namespace"],
+                        s.labels["topic"],
+                        s.labels["partition"],
+                    ),
+                    under_replicated,
+                )
+            )
             self.redpanda.logger.info(
-                f"under replicated partitions: {list(under_replicated)}")
+                f"under replicated partitions: {list(under_replicated)}"
+            )
             return len(under_replicated) == 0
 
-        self.run_validation(min_records=20000,
-                            enable_idempotence=False,
-                            producer_timeout_sec=60,
-                            consumer_timeout_sec=180)
+        self.run_validation(
+            min_records=20000,
+            enable_idempotence=False,
+            producer_timeout_sec=60,
+            consumer_timeout_sec=180,
+        )
 
         # wait for prepopulated topic to recover
         wait_until(all_topics_recovered, 60, 1)

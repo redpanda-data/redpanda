@@ -25,7 +25,11 @@ from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaService, MetricsEndpoint
+from rptest.services.redpanda import (
+    RESTART_LOG_ALLOW_LIST,
+    RedpandaService,
+    MetricsEndpoint,
+)
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.tests.redpanda_test import RedpandaTest
@@ -58,9 +62,10 @@ class ConsumerGroupTest(RedpandaTest):
             # disable leader balancer to make sure that group will not be realoaded because of leadership changes
             extra_rp_conf={
                 "enable_leader_balancer": False,
-                "default_topic_replications": 3
+                "default_topic_replications": 3,
             },
-            **kwargs)
+            **kwargs,
+        )
 
         self.rpk = RpkTool(self.redpanda)
         self.kcl = RawKCL(self.redpanda)
@@ -69,15 +74,12 @@ class ConsumerGroupTest(RedpandaTest):
         properties = {}
         properties.update(base_properties)
         if instance_id:
-            properties['group.instance.id'] = instance_id
+            properties["group.instance.id"] = instance_id
         return properties
 
-    def create_consumer(self,
-                        topic,
-                        group,
-                        instance_name,
-                        instance_id=None,
-                        consumer_properties={}):
+    def create_consumer(
+        self, topic, group, instance_name, instance_id=None, consumer_properties={}
+    ):
         return KafkaCliConsumer(
             self.test_context,
             self.redpanda,
@@ -86,31 +88,37 @@ class ConsumerGroupTest(RedpandaTest):
             from_beginning=True,
             instance_name=instance_name,
             formatter_properties={
-                'print.value': 'false',
-                'print.key': 'false',
-                'print.partition': 'true',
-                'print.offset': 'true',
+                "print.value": "false",
+                "print.key": "false",
+                "print.partition": "true",
+                "print.offset": "true",
             },
             consumer_properties=ConsumerGroupTest.make_consumer_properties(
-                consumer_properties, instance_id))
+                consumer_properties, instance_id
+            ),
+        )
 
-    def create_consumers(self,
-                         consumer_count,
-                         topic,
-                         group,
-                         static_members,
-                         consumer_properties={},
-                         err_msg=""):
-
+    def create_consumers(
+        self,
+        consumer_count,
+        topic,
+        group,
+        static_members,
+        consumer_properties={},
+        err_msg="",
+    ):
         consumers = []
         for i in range(0, consumer_count):
             instance_id = f"panda-consumer-{i}" if static_members else None
             consumers.append(
-                self.create_consumer(topic,
-                                     group=group,
-                                     instance_id=instance_id,
-                                     instance_name=f"cli-consumer-{i}",
-                                     consumer_properties=consumer_properties))
+                self.create_consumer(
+                    topic,
+                    group=group,
+                    instance_id=instance_id,
+                    instance_name=f"cli-consumer-{i}",
+                    consumer_properties=consumer_properties,
+                )
+            )
 
         for c in consumers:
             c.start()
@@ -126,8 +134,7 @@ class ConsumerGroupTest(RedpandaTest):
         return consumers
 
     def co_topic_is_ready(self):
-        return len(
-            self.client().describe_topic('__consumer_offsets').partitions) > 0
+        return len(self.client().describe_topic("__consumer_offsets").partitions) > 0
 
     def consumed_at_least(consumers, count):
         return all([c._message_cnt > count for c in consumers])
@@ -145,22 +152,21 @@ class ConsumerGroupTest(RedpandaTest):
 
         for p in rpk_group.partitions:
             if static_members:
-                assert 'panda-consumer' in p.instance_id
+                assert "panda-consumer" in p.instance_id
             else:
                 assert p.instance_id is None
 
     def create_topic(self, p_cnt):
         # create topic
-        self.topic_spec = TopicSpec(partition_count=p_cnt,
-                                    replication_factor=3)
+        self.topic_spec = TopicSpec(partition_count=p_cnt, replication_factor=3)
 
         self.client().create_topic(specs=self.topic_spec)
 
     def start_producer(self, msg_cnt=5000):
-
         # produce some messages to the topic
-        self.producer = RpkProducer(self._ctx, self.redpanda,
-                                    self.topic_spec.name, 128, msg_cnt, -1)
+        self.producer = RpkProducer(
+            self._ctx, self.redpanda, self.topic_spec.name, 128, msg_cnt, -1
+        )
         self.producer.start()
 
     @cluster(num_nodes=6)
@@ -171,22 +177,25 @@ class ConsumerGroupTest(RedpandaTest):
         Test validating that consumers are able to join the group and consume topic
         """
         self.create_topic(20)
-        group = 'test-gr-1'
+        group = "test-gr-1"
 
         # use 2 consumers
-        consumers = self.create_consumers(2,
-                                          self.topic_spec.name,
-                                          group,
-                                          static_members=static_members)
+        consumers = self.create_consumers(
+            2, self.topic_spec.name, group, static_members=static_members
+        )
 
         self.start_producer()
         # wait for some messages
         wait_until(
             lambda: ConsumerGroupTest.group_consumed_at_least(
-                consumers, 50 * len(consumers)), 30, 2)
-        self.validate_group_state(group,
-                                  expected_state="Stable",
-                                  static_members=static_members)
+                consumers, 50 * len(consumers)
+            ),
+            30,
+            2,
+        )
+        self.validate_group_state(
+            group, expected_state="Stable", static_members=static_members
+        )
 
         self.producer.wait()
         self.producer.free()
@@ -199,8 +208,7 @@ class ConsumerGroupTest(RedpandaTest):
         gd = RpkTool(self.redpanda).group_describe(group=group)
         viewer = OfflineLogViewer(self.redpanda)
         for node in self.redpanda.nodes:
-            consumer_offsets_partitions = viewer.read_consumer_offsets(
-                node=node)
+            consumer_offsets_partitions = viewer.read_consumer_offsets(node=node)
             offsets = {}
             groups = set()
             for partition, records in consumer_offsets_partitions.items():
@@ -209,21 +217,22 @@ class ConsumerGroupTest(RedpandaTest):
                 )
                 for r in records:
                     self.logger.info(f"{r}")
-                    if r['key']['type'] == 'group_metadata':
-                        groups.add(r['key']['group_id'])
-                    elif r['key']['type'] == 'offset_commit':
+                    if r["key"]["type"] == "group_metadata":
+                        groups.add(r["key"]["group_id"])
+                    elif r["key"]["type"] == "offset_commit":
                         tp = f"{r['key']['topic']}/{r['key']['partition']}"
                         if tp not in offsets:
                             offsets[tp] = -1
-                        offsets[tp] = max(r['val']['committed_offset'],
-                                          offsets[tp])
+                        offsets[tp] = max(r["val"]["committed_offset"], offsets[tp])
 
             assert len(groups) == 1 and group in groups
-            assert all([
-                f"{p.topic}/{p.partition}" in offsets
-                and offsets[f"{p.topic}/{p.partition}"] == p.current_offset
-                for p in gd.partitions
-            ])
+            assert all(
+                [
+                    f"{p.topic}/{p.partition}" in offsets
+                    and offsets[f"{p.topic}/{p.partition}"] == p.current_offset
+                    for p in gd.partitions
+                ]
+            )
 
     @cluster(num_nodes=6)
     def test_mixed_consumers_join(self):
@@ -231,25 +240,30 @@ class ConsumerGroupTest(RedpandaTest):
         Test validating that dynamic and static consumers may exists in the same group
         """
         self.create_topic(20)
-        group = 'test-gr-1'
+        group = "test-gr-1"
         consumers = []
         consumers.append(
-            self.create_consumer(topic=self.topic_spec.name,
-                                 group=group,
-                                 instance_name="static-consumer",
-                                 instance_id="panda-instance"))
+            self.create_consumer(
+                topic=self.topic_spec.name,
+                group=group,
+                instance_name="static-consumer",
+                instance_id="panda-instance",
+            )
+        )
         consumers.append(
-            self.create_consumer(topic=self.topic_spec.name,
-                                 group=group,
-                                 instance_name="dynamic-consumer",
-                                 instance_id=None))
+            self.create_consumer(
+                topic=self.topic_spec.name,
+                group=group,
+                instance_name="dynamic-consumer",
+                instance_id=None,
+            )
+        )
 
         for c in consumers:
             c.start()
         self.start_producer()
         # wait for some messages
-        wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50),
-                   30, 2)
+        wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50), 30, 2)
 
         rpk = RpkTool(self.redpanda)
         # validate group state
@@ -298,23 +312,23 @@ class ConsumerGroupTest(RedpandaTest):
         """
         self.create_topic(20)
 
-        group = 'test-gr-1'
+        group = "test-gr-1"
 
         consumers = self.create_consumers(
             2,
             self.topic_spec.name,
             group,
             static_members=static_members,
-            consumer_properties={"session.timeout.ms": 40000})
+            consumer_properties={"session.timeout.ms": 40000},
+        )
         self.start_producer()
         # wait for some messages
-        wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50),
-                   30, 2)
+        wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50), 30, 2)
         rpk = RpkTool(self.redpanda)
         # at this point we have 2 consumers in stable group
-        self.validate_group_state(group,
-                                  expected_state="Stable",
-                                  static_members=static_members)
+        self.validate_group_state(
+            group, expected_state="Stable", static_members=static_members
+        )
 
         # stop one of the consumers
         consumers[0].stop()
@@ -336,9 +350,9 @@ class ConsumerGroupTest(RedpandaTest):
         if static_members:
             # with static members group should be stable immediately as the
             # consumer is rejoining with the same instance id
-            self.validate_group_state(group,
-                                      expected_state="Stable",
-                                      static_members=static_members)
+            self.validate_group_state(
+                group, expected_state="Stable", static_members=static_members
+            )
         else:
             # group should get back to its original 2 members state
             self.wait_for_members(group, 2)
@@ -359,24 +373,24 @@ class ConsumerGroupTest(RedpandaTest):
         Test validating that consumer is evicted if it failed to deliver heartbeat to the broker
         """
         self.create_topic(20)
-        group = 'test-gr-1'
+        group = "test-gr-1"
         # using short session timeout to make the test finish faster
         consumers = self.create_consumers(
             2,
             self.topic_spec.name,
             group,
             static_members=static_members,
-            consumer_properties={"session.timeout.ms": 6000})
+            consumer_properties={"session.timeout.ms": 6000},
+        )
 
         self.start_producer()
         # wait for some messages
-        wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50),
-                   30, 2)
+        wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50), 30, 2)
         rpk = RpkTool(self.redpanda)
         # at this point we have 2 consumers in stable group
-        self.validate_group_state(group,
-                                  expected_state="Stable",
-                                  static_members=static_members)
+        self.validate_group_state(
+            group, expected_state="Stable", static_members=static_members
+        )
 
         # stop one of the consumers
         consumers[0].stop()
@@ -389,9 +403,9 @@ class ConsumerGroupTest(RedpandaTest):
 
         # group should get back to its original 2 members state
         self.wait_for_members(group, 2)
-        self.validate_group_state(group,
-                                  expected_state="Stable",
-                                  static_members=static_members)
+        self.validate_group_state(
+            group, expected_state="Stable", static_members=static_members
+        )
 
         self.producer.wait()
         self.producer.free()
@@ -413,29 +427,30 @@ class ConsumerGroupTest(RedpandaTest):
         self.producer.wait()
         self.producer.free()
 
-        group_id = 'test-gr-1'
+        group_id = "test-gr-1"
 
         # Consume all messages and commit offsets.
-        self.consumer = VerifiableConsumer(self.test_context,
-                                           num_nodes=1,
-                                           redpanda=self.redpanda,
-                                           topic=self.topic_spec.name,
-                                           group_id=group_id,
-                                           max_messages=1000)
+        self.consumer = VerifiableConsumer(
+            self.test_context,
+            num_nodes=1,
+            redpanda=self.redpanda,
+            topic=self.topic_spec.name,
+            group_id=group_id,
+            max_messages=1000,
+        )
         self.consumer.start()
         self.consumer.wait()
 
         test_admin = KafkaTestAdminClient(self.redpanda)
         offsets = test_admin.list_offsets(
-            group_id, [TopicPartition(self.topic_spec.name, 0)])
+            group_id, [TopicPartition(self.topic_spec.name, 0)]
+        )
 
         # Test that the consumer committed what we expected.
         self.logger.info(f"Got offsets: {offsets}")
         assert len(offsets) == 1
-        assert offsets[TestTopicPartition(self.topic_spec.name,
-                                          0)].offset == 1000
-        assert offsets[TestTopicPartition(self.topic_spec.name,
-                                          0)].leader_epoch > 0
+        assert offsets[TestTopicPartition(self.topic_spec.name, 0)].offset == 1000
+        assert offsets[TestTopicPartition(self.topic_spec.name, 0)].leader_epoch > 0
 
         # Remember the old offsets to compare them after the restart.
         prev_offsets = offsets
@@ -449,7 +464,8 @@ class ConsumerGroupTest(RedpandaTest):
             try:
                 test_admin = KafkaTestAdminClient(self.redpanda)
                 return test_admin.list_offsets(
-                    group_id, [TopicPartition(self.topic_spec.name, 0)])
+                    group_id, [TopicPartition(self.topic_spec.name, 0)]
+                )
             except Exception as e:
                 self.logger.debug(f"Failed to list offsets: {e}")
                 return None
@@ -458,12 +474,12 @@ class ConsumerGroupTest(RedpandaTest):
             try_list_offsets,
             timeout_sec=30,
             backoff_sec=3,
-            err_msg="Failed to make list_offsets request")
+            err_msg="Failed to make list_offsets request",
+        )
 
         self.logger.info(f"Got offsets after restart: {offsets}")
         assert len(offsets) == 1
-        assert offsets == prev_offsets, \
-            f"Expected {prev_offsets}, got {offsets}."
+        assert offsets == prev_offsets, f"Expected {prev_offsets}, got {offsets}."
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(static_members=True)
@@ -472,7 +488,7 @@ class ConsumerGroupTest(RedpandaTest):
         """
         Test validating that all offsets persisted in the group are removed when corresponding partition is removed.
         """
-        group = 'test-gr-1'
+        group = "test-gr-1"
         self.create_topic(20)
 
         # using short session timeout to make the test finish faster
@@ -481,16 +497,16 @@ class ConsumerGroupTest(RedpandaTest):
             self.topic_spec.name,
             group,
             static_members=static_members,
-            consumer_properties={"session.timeout.ms": 6000})
+            consumer_properties={"session.timeout.ms": 6000},
+        )
 
         self.start_producer()
         # wait for some messages
-        wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50),
-                   30, 2)
+        wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50), 30, 2)
         # at this point we have stable group
-        self.validate_group_state(group,
-                                  expected_state="Stable",
-                                  static_members=static_members)
+        self.validate_group_state(
+            group, expected_state="Stable", static_members=static_members
+        )
 
         # stop consumers
         for c in consumers:
@@ -539,12 +555,11 @@ class ConsumerGroupTest(RedpandaTest):
             self.topic_spec.name,
             group,
             static_members=static_members,
-            consumer_properties={"session.timeout.ms": 6000})
+            consumer_properties={"session.timeout.ms": 6000},
+        )
 
         self.start_producer()
-        wait_until(
-            lambda: ConsumerGroupTest.consumed_at_least(consumers, 2000), 30,
-            2)
+        wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 2000), 30, 2)
         for c in consumers:
             c.stop()
             c.wait()
@@ -560,21 +575,26 @@ class ConsumerGroupTest(RedpandaTest):
         groups_in_round = 100
 
         import asyncio
+
         ev_loop = asyncio.new_event_loop()
 
         def poll_once(i):
-            consumer = KafkaConsumer(group_id=f"g-{i}",
-                                     bootstrap_servers=self.redpanda.brokers(),
-                                     enable_auto_commit=True)
+            consumer = KafkaConsumer(
+                group_id=f"g-{i}",
+                bootstrap_servers=self.redpanda.brokers(),
+                enable_auto_commit=True,
+            )
             consumer.subscribe([self.topic_spec.name])
             consumer.poll(1)
             consumer.close(autocommit=True)
 
         async def create_groups(r):
-            await asyncio.gather(*[
-                asyncio.to_thread(poll_once, i + r * groups_in_round)
-                for i in range(groups_in_round)
-            ])
+            await asyncio.gather(
+                *[
+                    asyncio.to_thread(poll_once, i + r * groups_in_round)
+                    for i in range(groups_in_round)
+                ]
+            )
 
         for r in range(rounds):
             ev_loop.run_until_complete(create_groups(r))
@@ -601,7 +621,7 @@ class ConsumerGroupTest(RedpandaTest):
         """
         self.create_topic(20)
 
-        group = 'test-gr-1'
+        group = "test-gr-1"
 
         rpk = RpkTool(self.redpanda)
 
@@ -611,7 +631,8 @@ class ConsumerGroupTest(RedpandaTest):
             group=group,
             instance_name="static-consumer",
             instance_id="panda-instance",
-            consumer_properties={"client.id": "my-client-1"})
+            consumer_properties={"client.id": "my-client-1"},
+        )
 
         consumer1.start()
         wait_until(self.co_topic_is_ready, 10, 1)
@@ -624,7 +645,8 @@ class ConsumerGroupTest(RedpandaTest):
             lambda: ConsumerGroupTest.consumed_at_least([consumer1], 50),
             timeout_sec=30,
             backoff_sec=2,
-            err_msg="consumer1 did not consume messages")
+            err_msg="consumer1 did not consume messages",
+        )
 
         # validate initial state
         rpk_group_1 = rpk.group_describe(group)
@@ -632,7 +654,7 @@ class ConsumerGroupTest(RedpandaTest):
         assert rpk_group_1.state == "Stable", f"Describe: {rpk_group_1}"
         assert rpk_group_1.members == 1, f"Describe: {rpk_group_1}"
         for p in rpk_group_1.partitions:
-            assert p.client_id == 'my-client-1', f"Describe: {p}"
+            assert p.client_id == "my-client-1", f"Describe: {p}"
 
         # clean up
         self.producer.wait()
@@ -648,7 +670,8 @@ class ConsumerGroupTest(RedpandaTest):
             group=group,
             instance_name="static-consumer",
             instance_id="panda-instance",
-            consumer_properties={"client.id": "my-client-2"})
+            consumer_properties={"client.id": "my-client-2"},
+        )
 
         consumer2.start()
 
@@ -660,7 +683,8 @@ class ConsumerGroupTest(RedpandaTest):
             lambda: ConsumerGroupTest.consumed_at_least([consumer2], 50),
             timeout_sec=30,
             backoff_sec=2,
-            err_msg="consumer2 did not consume messages")
+            err_msg="consumer2 did not consume messages",
+        )
 
         # validate updated state
         rpk_group_2 = rpk.group_describe(group)
@@ -668,7 +692,7 @@ class ConsumerGroupTest(RedpandaTest):
         assert rpk_group_2.state == "Stable", f"Describe: {rpk_group_2}"
         assert rpk_group_2.members == 1, f"Describe: {rpk_group_2}"
         for p in rpk_group_2.partitions:
-            assert p.client_id == 'my-client-2', f"Describe: {p}"
+            assert p.client_id == "my-client-2", f"Describe: {p}"
 
         # clean up
         consumer2.stop()
@@ -686,19 +710,18 @@ class ConsumerGroupTest(RedpandaTest):
         the group
         """
         self.create_topic(20)
-        group = 'test-gr-1'
+        group = "test-gr-1"
 
         self.redpanda._admin.set_log_level("kafka", "trace")
 
         self.redpanda.logger.info("Starting my-consumer-1")
-        consumer1 = self.create_consumer(topic=self.topic_spec.name,
-                                         group=group,
-                                         instance_name="static-consumer",
-                                         instance_id="panda-instance",
-                                         consumer_properties={
-                                             "client.id": "client-1",
-                                             "session.timeout.ms": 10000
-                                         })
+        consumer1 = self.create_consumer(
+            topic=self.topic_spec.name,
+            group=group,
+            instance_name="static-consumer",
+            instance_id="panda-instance",
+            consumer_properties={"client.id": "client-1", "session.timeout.ms": 10000},
+        )
         consumer1.start()
 
         self.redpanda.logger.info("Starting producer")
@@ -712,7 +735,8 @@ class ConsumerGroupTest(RedpandaTest):
             lambda: ConsumerGroupTest.consumed_at_least([consumer1], 50),
             timeout_sec=30,
             backoff_sec=2,
-            err_msg="consumer-1 did not consume messages")
+            err_msg="consumer-1 did not consume messages",
+        )
 
         self.redpanda.logger.info(
             "Stop consumer-1, without sending LeaveGroupReq since it is a static consumer"
@@ -721,26 +745,26 @@ class ConsumerGroupTest(RedpandaTest):
         consumer1.wait()
         consumer1.free()
 
-        self.redpanda.logger.info(
-            "Send a JoinGroupReq without completing the join")
+        self.redpanda.logger.info("Send a JoinGroupReq without completing the join")
         # This simulates the first JoinGroupRequest a new consumer sends. It
         # does not include a member id, so the broker responds with a
         # member_id_required error and **adds this consumer to the list of
         # pending members**
-        resp = self.kcl.raw_join_group({
-            "Version": 5,
-            "Group": group,
-            "SessionTimeoutMillis": 60000,
-            "RebalanceTimeoutMillis": 60000,
-            "ProtocolType": "consumer",
-            "Protocols": [{
-                "Name": "range"
-            }]
-        })
+        resp = self.kcl.raw_join_group(
+            {
+                "Version": 5,
+                "Group": group,
+                "SessionTimeoutMillis": 60000,
+                "RebalanceTimeoutMillis": 60000,
+                "ProtocolType": "consumer",
+                "Protocols": [{"Name": "range"}],
+            }
+        )
         self.redpanda.logger.debug(f"JoinGroupResponse: {resp}")
         member_id_required = 79
-        assert resp['ErrorCode'] == member_id_required,\
+        assert resp["ErrorCode"] == member_id_required, (
             f"Unexpected response ErrorCode: {resp}"
+        )
 
         self.redpanda.logger.info("Wait out the session timeout of consumer-1")
         time.sleep(10)
@@ -762,8 +786,7 @@ class ConsumerGroupTest(RedpandaTest):
             group_is_empty,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=
-            "The consumer group should become Empty when the last member expires"
+            err_msg="The consumer group should become Empty when the last member expires",
         )
 
         self.producer.wait()
@@ -782,7 +805,7 @@ class ConsumerGroupTest(RedpandaTest):
         """
         Test validating the behavior of group metrics
         """
-        #Make a copy as we modify it later
+        # Make a copy as we modify it later
         enabled_group_metrics = metrics[:]
 
         def flip_option(option):
@@ -792,74 +815,74 @@ class ConsumerGroupTest(RedpandaTest):
                 enabled_group_metrics.append(option)
 
         self.redpanda.set_cluster_config(
-            {"enable_consumer_group_metrics": enabled_group_metrics})
+            {"enable_consumer_group_metrics": enabled_group_metrics}
+        )
 
         self.create_topic(20)
-        group = f'test-gr-{"-".join(metrics)}-{random.randint(1, 1000)}'
+        group = f"test-gr-{'-'.join(metrics)}-{random.randint(1, 1000)}"
         # use 2 consumers
         consumers = self.create_consumers(
             2,
             self.topic_spec.name,
             group,
             static_members=False,
-            err_msg=f"Failed to create consumers for group {group}")
+            err_msg=f"Failed to create consumers for group {group}",
+        )
 
         self.start_producer()
         # wait for some messages
         wait_until(
             lambda: ConsumerGroupTest.group_consumed_at_least(
-                consumers, 50 * len(consumers)), 30, 2,
-            "Test setup failed. Waiting on consumers timed out.")
-        self.validate_group_state(group,
-                                  expected_state="Stable",
-                                  static_members=False)
+                consumers, 50 * len(consumers)
+            ),
+            30,
+            2,
+            "Test setup failed. Waiting on consumers timed out.",
+        )
+        self.validate_group_state(group, expected_state="Stable", static_members=False)
 
         metrics = {
             "group": [
                 "redpanda_kafka_consumer_group_consumers",
-                "redpanda_kafka_consumer_group_topics"
+                "redpanda_kafka_consumer_group_topics",
             ],
             "partition": ["redpanda_kafka_consumer_group_committed_offset"],
             "consumer_lag": [
                 "redpanda_kafka_consumer_group_lag_max",
-                "redpanda_kafka_consumer_group_lag_sum"
-            ]
+                "redpanda_kafka_consumer_group_lag_sum",
+            ],
         }
 
         def get_group_metrics_from_nodes(patterns):
             samples = self.redpanda.metrics_samples(
-                patterns, self.redpanda.started_nodes(),
-                MetricsEndpoint.PUBLIC_METRICS)
-            success = samples is not None and set(
-                samples.keys()) == set(patterns)
+                patterns, self.redpanda.started_nodes(), MetricsEndpoint.PUBLIC_METRICS
+            )
+            success = samples is not None and set(samples.keys()) == set(patterns)
             return success
 
         for option, patterns in metrics.items():
             expected_value = option in enabled_group_metrics
             wait_until(
-                lambda: get_group_metrics_from_nodes(patterns
-                                                     ) == expected_value,
+                lambda: get_group_metrics_from_nodes(patterns) == expected_value,
                 30,
                 1,
-                err_msg=
-                f"Looking for metrics in '{option}'. Timed-out while expecting value '{expected_value}'"
+                err_msg=f"Looking for metrics in '{option}'. Timed-out while expecting value '{expected_value}'",
             )
 
         for option in metrics.keys():
             flip_option(option)
 
         self.redpanda.set_cluster_config(
-            {"enable_consumer_group_metrics": enabled_group_metrics})
+            {"enable_consumer_group_metrics": enabled_group_metrics}
+        )
 
         for option, patterns in metrics.items():
             expected_value = option in enabled_group_metrics
             wait_until(
-                lambda: get_group_metrics_from_nodes(patterns
-                                                     ) == expected_value,
+                lambda: get_group_metrics_from_nodes(patterns) == expected_value,
                 30,
                 1,
-                err_msg=
-                f"Looking for metrics in '{option}'. Timed-out while expecting value '{expected_value}'"
+                err_msg=f"Looking for metrics in '{option}'. Timed-out while expecting value '{expected_value}'",
             )
 
         self.producer.wait()
@@ -879,90 +902,99 @@ class ConsumerGroupTest(RedpandaTest):
         topic_count = 1
         partition_count = 20
         consumer_count = 4
-        group = 'test-lag-metrics-group'
+        group = "test-lag-metrics-group"
         # Use a small batch size to ensure that fetches are distributed across all partitions
         batch_size = 1
         produce_msg_cnt_min = 1000
-        consume_count = (topic_count * partition_count *
-                         produce_msg_cnt_min) // (2 * consumer_count)
+        consume_count = (topic_count * partition_count * produce_msg_cnt_min) // (
+            2 * consumer_count
+        )
 
-        self.redpanda.set_cluster_config({
-            "enable_consumer_group_metrics":
-            ["group", "partition", "consumer_lag"],
-            "consumer_group_lag_collection_interval_sec":
-            lag_collection_interval,
-        })
+        self.redpanda.set_cluster_config(
+            {
+                "enable_consumer_group_metrics": ["group", "partition", "consumer_lag"],
+                "consumer_group_lag_collection_interval_sec": lag_collection_interval,
+            }
+        )
 
-        self.admin_client = AdminClient(
-            {"bootstrap.servers": self.redpanda.brokers()})
+        self.admin_client = AdminClient({"bootstrap.servers": self.redpanda.brokers()})
 
         topics = [f"test-lag-metrics-topic-{i}" for i in range(topic_count)]
 
-        self.client().create_topic(specs=[
-            TopicSpec(name=name,
-                      partition_count=partition_count,
-                      replication_factor=3) for name in topics
-        ])
+        self.client().create_topic(
+            specs=[
+                TopicSpec(
+                    name=name, partition_count=partition_count, replication_factor=3
+                )
+                for name in topics
+            ]
+        )
 
         def create_consumer(instance_id: int) -> Consumer:
             return Consumer(
                 {
                     "group.id": group,
                     "group.instance.id": f"consumer-{instance_id}",
-                    'bootstrap.servers': self.redpanda.brokers(),
+                    "bootstrap.servers": self.redpanda.brokers(),
                     "session.timeout.ms": 10000,
-                    'auto.offset.reset': 'earliest',
-                    'enable.auto.offset.store': True,
-                    'enable.auto.commit': False,
-                    'max.partition.fetch.bytes': batch_size,
-                    'log_level': 7,
-                    'debug': 'cgrp',
+                    "auto.offset.reset": "earliest",
+                    "enable.auto.offset.store": True,
+                    "enable.auto.commit": False,
+                    "max.partition.fetch.bytes": batch_size,
+                    "log_level": 7,
+                    "debug": "cgrp",
                 },
-                logger=self.logger)
+                logger=self.logger,
+            )
 
         consumers = [create_consumer(i) for i in range(consumer_count)]
         for consumer in consumers:
             consumer.subscribe(topics)
 
         self.logger.info("Waiting for group to become stable")
-        wait_until(lambda: self.admin_client
-                   .describe_consumer_groups(group_ids=[group])[group].result(
-                   ).state == ConsumerGroupState.STABLE,
-                   20,
-                   1,
-                   retry_on_exc=True,
-                   err_msg="Timeout waiting on group to reach stable state")
+        wait_until(
+            lambda: self.admin_client.describe_consumer_groups(group_ids=[group])[group]
+            .result()
+            .state
+            == ConsumerGroupState.STABLE,
+            20,
+            1,
+            retry_on_exc=True,
+            err_msg="Timeout waiting on group to reach stable state",
+        )
 
         produced_offsets = {
-            TopicPartition(topic, partition):
-            random.randint(produce_msg_cnt_min, produce_msg_cnt_min * 2)
+            TopicPartition(topic, partition): random.randint(
+                produce_msg_cnt_min, produce_msg_cnt_min * 2
+            )
             for topic in topics
             for partition in range(partition_count)
         }
 
         self.logger.info("Producing")
 
-        producer = Producer({
-            "bootstrap.servers": self.redpanda.brokers(),
-            'batch.size': batch_size,
-            'acks': 'all',
-        })
+        producer = Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "batch.size": batch_size,
+                "acks": "all",
+            }
+        )
         for tp, offset in produced_offsets.items():
-            self.logger.debug(
-                f"  Producing {tp.topic}/{tp.partition} ({offset} msgs)")
+            self.logger.debug(f"  Producing {tp.topic}/{tp.partition} ({offset} msgs)")
             for i in range(offset):
-                producer.produce(tp.topic,
-                                 partition=tp.partition,
-                                 key=None,
-                                 value=f"message-{i}")
+                producer.produce(
+                    tp.topic, partition=tp.partition, key=None, value=f"message-{i}"
+                )
             producer.flush()
             self.logger.debug(f"  Produced {tp} - flushed {offset} msgs")
 
         self.logger.info("Consuming")
         for consumer in consumers:
             consumer.consume(num_messages=consume_count, timeout=10)
-            assert len(consumer.assignment()
-                       ) != 0, "Consumer was not assigned any partitions"
+            assert len(consumer.assignment()) != 0, (
+                "Consumer was not assigned any partitions"
+            )
             self.logger.debug("  Consumed")
 
         self.logger.info("Waiting for lag_metrics")
@@ -973,27 +1005,25 @@ class ConsumerGroupTest(RedpandaTest):
                 "redpanda_kafka_max_offset",
                 "redpanda_kafka_consumer_group_committed_offset",
                 "redpanda_kafka_consumer_group_lag_max",
-                "redpanda_kafka_consumer_group_lag_sum"
+                "redpanda_kafka_consumer_group_lag_sum",
             ]
             return self.redpanda.metrics_samples(
-                metrics, self.redpanda.started_nodes(),
-                MetricsEndpoint.PUBLIC_METRICS)
+                metrics, self.redpanda.started_nodes(), MetricsEndpoint.PUBLIC_METRICS
+            )
 
         def metrics_committed(metrics):
             return [
-                s.value for s in
-                metrics["redpanda_kafka_consumer_group_committed_offset"].
-                label_filter({
-                    "redpanda_group": group
-                }).samples
+                s.value
+                for s in metrics["redpanda_kafka_consumer_group_committed_offset"]
+                .label_filter({"redpanda_group": group})
+                .samples
             ]
 
         def metrics_hwm(metrics):
             hwm_by_tp = {}
             for s in metrics["redpanda_kafka_max_offset"].samples:
                 if s.labels["redpanda_topic"] in topics:
-                    key = tuple(
-                        (k, v) for k, v in s.labels.items() if k != "node")
+                    key = tuple((k, v) for k, v in s.labels.items() if k != "node")
                     hwm_by_tp.setdefault(key, []).append(s.value)
             return [max(hwm) for hwm in hwm_by_tp.values()]
 
@@ -1001,19 +1031,19 @@ class ConsumerGroupTest(RedpandaTest):
             # Arbitrarily reduce across nodes with max, there should be only one
             return max(
                 s.value
-                for s in metrics["redpanda_kafka_consumer_group_lag_sum"].
-                label_filter({
-                    "redpanda_group": group
-                }).samples)
+                for s in metrics["redpanda_kafka_consumer_group_lag_sum"]
+                .label_filter({"redpanda_group": group})
+                .samples
+            )
 
         def metrics_lag_max(metrics):
             # Arbitrarily reduce across nodes with max, there should be only one
             return max(
                 s.value
-                for s in metrics["redpanda_kafka_consumer_group_lag_max"].
-                label_filter({
-                    "redpanda_group": group
-                }).samples)
+                for s in metrics["redpanda_kafka_consumer_group_lag_max"]
+                .label_filter({"redpanda_group": group})
+                .samples
+            )
 
         expected_hwm_sum = sum(produced_offsets.values())
         expected_hwm_len = len(produced_offsets)
@@ -1022,7 +1052,9 @@ class ConsumerGroupTest(RedpandaTest):
         hwm_len = len(hwm_metrics)
         hwm_sum = sum(hwm_metrics)
 
-        assert expected_hwm_len == hwm_len, f"Expected {expected_hwm_len}, got {hwm_len}"
+        assert expected_hwm_len == hwm_len, (
+            f"Expected {expected_hwm_len}, got {hwm_len}"
+        )
         assert expected_hwm_sum == hwm_sum, f"Expected {0}, got {hwm_sum}"
 
         # Nothing committed yet, expect no metrics
@@ -1037,18 +1069,22 @@ class ConsumerGroupTest(RedpandaTest):
         for consumer in consumers:
             consumer.commit(asynchronous=False)
             self.logger.debug(
-                f"  Committed: {consumer.committed(consumer.assignment())}")
+                f"  Committed: {consumer.committed(consumer.assignment())}"
+            )
 
         self.logger.info("Waiting for lag_metrics")
         time.sleep(lag_collection_interval + 1)
 
         expected_committed_sum = sum(
-            max(0, tp.offset) for consumer in consumers
-            for tp in consumer.committed(consumer.assignment()) or [])
+            max(0, tp.offset)
+            for consumer in consumers
+            for tp in consumer.committed(consumer.assignment()) or []
+        )
         expected_lag_max = max(
-            produced_offsets[TopicPartition(tp.topic, tp.partition)] -
-            tp.offset for consumer in consumers
-            for tp in (consumer.committed(consumer.assignment()) or []))
+            produced_offsets[TopicPartition(tp.topic, tp.partition)] - tp.offset
+            for consumer in consumers
+            for tp in (consumer.committed(consumer.assignment()) or [])
+        )
 
         def check_metrics():
             metrics = get_group_metrics_from_nodes()
@@ -1062,54 +1098,71 @@ class ConsumerGroupTest(RedpandaTest):
             lag_max = metrics_lag_max(metrics)
 
             self.logger.debug(f"Expected HWM sum: {expected_hwm_sum}")
-            self.logger.debug(
-                f"Expected committed sum: {expected_committed_sum}")
+            self.logger.debug(f"Expected committed sum: {expected_committed_sum}")
             self.logger.debug(f"Metrics HWM sum: {hwm_sum}")
             self.logger.debug(f"Metrics committed sum: {committed_sum}")
             self.logger.debug(
-                f"Expected lag: {expected_hwm_sum - expected_committed_sum}")
+                f"Expected lag: {expected_hwm_sum - expected_committed_sum}"
+            )
             self.logger.debug(f"Calculated lag: {hwm_sum - committed_sum}")
             self.logger.debug(f"Metrics lag sum: {lag_sum}")
             self.logger.debug(f"Metrics lag max: {lag_max}")
 
-            assert expected_hwm_len == committed_len, f"Expected {expected_hwm_len}, got {committed_len}. Not all partitions were consumed, tweak the produce and consume counts"
-            assert expected_hwm_len == hwm_len, f"Expected {expected_hwm_len}, got {hwm_len}. Not all partitions were consumed, tweak the produce and consume counts"
+            assert expected_hwm_len == committed_len, (
+                f"Expected {expected_hwm_len}, got {committed_len}. Not all partitions were consumed, tweak the produce and consume counts"
+            )
+            assert expected_hwm_len == hwm_len, (
+                f"Expected {expected_hwm_len}, got {hwm_len}. Not all partitions were consumed, tweak the produce and consume counts"
+            )
 
             # Check redpanda_kafka_max_offset
-            assert expected_hwm_sum == hwm_sum, f"Expected {expected_hwm_sum}, got {hwm_sum}"
-            #Check redpanda_kafka_consumer_group_committed_offset
-            assert expected_committed_sum == committed_sum, f"Expected {expected_committed_sum}, got {committed_sum}"
+            assert expected_hwm_sum == hwm_sum, (
+                f"Expected {expected_hwm_sum}, got {hwm_sum}"
+            )
+            # Check redpanda_kafka_consumer_group_committed_offset
+            assert expected_committed_sum == committed_sum, (
+                f"Expected {expected_committed_sum}, got {committed_sum}"
+            )
             # Check redpanda_kafka_consumer_group_lag_sum
-            assert hwm_sum - committed_sum == lag_sum, f"Expected {hwm_sum - committed_sum}, got {lag_sum}"
+            assert hwm_sum - committed_sum == lag_sum, (
+                f"Expected {hwm_sum - committed_sum}, got {lag_sum}"
+            )
             # Check redpanda_kafka_consumer_group_lag_max
-            assert expected_lag_max == lag_max, f"Expected {expected_lag_max}, got {lag_max}"
+            assert expected_lag_max == lag_max, (
+                f"Expected {expected_lag_max}, got {lag_max}"
+            )
 
         check_metrics()
 
         admin = Admin(self.redpanda)
 
         def move_partition(topic, partition):
-            moved = admin.transfer_leadership_to(namespace="kafka",
-                                                 topic=topic,
-                                                 partition=partition,
-                                                 target_id=None)
+            moved = admin.transfer_leadership_to(
+                namespace="kafka", topic=topic, partition=partition, target_id=None
+            )
             assert moved, "Failed to move leader"
             return moved
 
         def get_coordinator():
-            return self.admin_client.describe_consumer_groups(
-                group_ids=[group])[group].result().coordinator
+            return (
+                self.admin_client.describe_consumer_groups(group_ids=[group])[group]
+                .result()
+                .coordinator
+            )
 
         coordinator = get_coordinator()
         moved = move_partition(topic="__consumer_offsets", partition=0)
         assert moved, "Failed to move coordinator"
-        wait_until(lambda: self.admin_client
-                   .describe_consumer_groups(group_ids=[group])[group].result(
-                   ).state == ConsumerGroupState.STABLE,
-                   20,
-                   1,
-                   retry_on_exc=True,
-                   err_msg="Timeout waiting on group to reach stable state")
+        wait_until(
+            lambda: self.admin_client.describe_consumer_groups(group_ids=[group])[group]
+            .result()
+            .state
+            == ConsumerGroupState.STABLE,
+            20,
+            1,
+            retry_on_exc=True,
+            err_msg="Timeout waiting on group to reach stable state",
+        )
 
         assert get_coordinator() != coordinator, "Coordinator did not change"
 
@@ -1129,41 +1182,42 @@ class ConsumerGroupTest(RedpandaTest):
 
 
 @dataclass
-class OffsetAndMetadata():
+class OffsetAndMetadata:
     offset: int
     leader_epoch: int
     metadata: str
 
 
-TestTopicPartition = namedtuple('TestTopicPartition', ['topic', 'partition'])
+TestTopicPartition = namedtuple("TestTopicPartition", ["topic", "partition"])
 
 
-class KafkaTestAdminClient():
+class KafkaTestAdminClient:
     """
     A wrapper around KafkaAdminClient with support for newer Kafka versions.
     At the time of writing, KafkaAdminClient doesn't support KIP-320
     (leader epoch) for consumer groups.
     """
+
     def __init__(self, redpanda: RedpandaService):
         self._bootstrap_servers = redpanda.brokers()
-        self._admin = KafkaAdminClient(
-            bootstrap_servers=self._bootstrap_servers)
+        self._admin = KafkaAdminClient(bootstrap_servers=self._bootstrap_servers)
 
     def list_offsets(
         self, group_id: str, partitions: List[TopicPartition]
     ) -> Dict[TestTopicPartition, OffsetAndMetadata]:
         coordinator = self._admin._find_coordinator_ids([group_id])[group_id]
-        future = self._list_offsets_send_request(group_id, coordinator,
-                                                 partitions)
+        future = self._list_offsets_send_request(group_id, coordinator, partitions)
         self._admin._wait_for_futures([future])
         response = future.value
         return self._list_offsets_send_process_response(response)
 
-    def _list_offsets_send_request(self, group_id: str, coordinator: int,
-                                   partitions: List[TopicPartition]):
-        request = OffsetFetchRequest_v5(consumer_group=group_id,
-                                        topics=[(p.topic, [p.partition])
-                                                for p in partitions])
+    def _list_offsets_send_request(
+        self, group_id: str, coordinator: int, partitions: List[TopicPartition]
+    ):
+        request = OffsetFetchRequest_v5(
+            consumer_group=group_id,
+            topics=[(p.topic, [p.partition]) for p in partitions],
+        )
         return self._admin._send_request_to_node(coordinator, request)
 
     def _list_offsets_send_process_response(self, response):
@@ -1177,7 +1231,8 @@ class KafkaTestAdminClient():
                 if error_code != 0:
                     raise Exception(f"Error code: {error_code}")
                 offsets[(topic, partition)] = OffsetAndMetadata(
-                    offset, leader_epoch, metadata)
+                    offset, leader_epoch, metadata
+                )
         return offsets
 
 
@@ -1185,16 +1240,25 @@ class OffsetFetchResponse_v5(Response):
     API_KEY = 9
     API_VERSION = 5
     SCHEMA = types.Schema(
-        ('throttle_time_ms', types.Int32),
-        ('topics',
-         types.Array(
-             ('topic', types.String('utf-8')),
-             ('partitions',
-              types.Array(('partition', types.Int32), ('offset', types.Int64),
-                          ('leader_epoch', types.Int32),
-                          ('metadata', types.String('utf-8')),
-                          ('error_code', types.Int16))))),
-        ('error_code', types.Int16))
+        ("throttle_time_ms", types.Int32),
+        (
+            "topics",
+            types.Array(
+                ("topic", types.String("utf-8")),
+                (
+                    "partitions",
+                    types.Array(
+                        ("partition", types.Int32),
+                        ("offset", types.Int64),
+                        ("leader_epoch", types.Int32),
+                        ("metadata", types.String("utf-8")),
+                        ("error_code", types.Int16),
+                    ),
+                ),
+            ),
+        ),
+        ("error_code", types.Int16),
+    )
 
 
 class OffsetFetchRequest_v5(Request):
@@ -1211,9 +1275,8 @@ class TestConsumer:
         self.group = group
         self.topic = topic
         self.consumer_thread = threading.Thread(
-            name=f'consumer-{id}',
-            target=lambda this: this.loop(),
-            args=[self])
+            name=f"consumer-{id}", target=lambda this: this.loop(), args=[self]
+        )
         self.stopped = threading.Event()
         self.restart = threading.Event()
         self.logger = logger
@@ -1229,28 +1292,32 @@ class TestConsumer:
         self.consumer_thread.join()
 
     def loop(self):
-        self.consumer = Consumer({
-            "group.id": self.group,
-            "group.instance.id": f"consumer-{self.id}",
-            'bootstrap.servers': self.bootstrap_servers,
-            "session.timeout.ms": 10000,
-            'auto.offset.reset': 'earliest',
-            'enable.auto.offset.store': False,
-        })
+        self.consumer = Consumer(
+            {
+                "group.id": self.group,
+                "group.instance.id": f"consumer-{self.id}",
+                "bootstrap.servers": self.bootstrap_servers,
+                "session.timeout.ms": 10000,
+                "auto.offset.reset": "earliest",
+                "enable.auto.offset.store": False,
+            }
+        )
         self.consumer.subscribe([self.topic])
         self.logger.info(f"starting consumer with id: {self.id}")
         while not self.stopped.is_set():
             if self.restart.is_set():
                 self.logger.info(f"restarting consumer with id: {self.id}")
                 self.consumer.close()
-                self.consumer = Consumer({
-                    "group.id": self.group,
-                    "group.instance.id": f"consumer-{self.id}",
-                    'bootstrap.servers': self.bootstrap_servers,
-                    "session.timeout.ms": 10000,
-                    'auto.offset.reset': 'earliest',
-                    'enable.auto.offset.store': False,
-                })
+                self.consumer = Consumer(
+                    {
+                        "group.id": self.group,
+                        "group.instance.id": f"consumer-{self.id}",
+                        "bootstrap.servers": self.bootstrap_servers,
+                        "session.timeout.ms": 10000,
+                        "auto.offset.reset": "earliest",
+                        "enable.auto.offset.store": False,
+                    }
+                )
                 self.consumer.subscribe([self.topic])
                 self.consumer.poll(0.5)
                 self.restart.clear()
@@ -1261,8 +1328,7 @@ class TestConsumer:
                 if msg is None:
                     continue
                 if msg.error():
-                    self.logger.error(
-                        f"consumer {self.id} error - {msg.error()}")
+                    self.logger.error(f"consumer {self.id} error - {msg.error()}")
                     continue
 
                 self.consumer.store_offsets(msg)
@@ -1285,21 +1351,16 @@ class TestConsumer:
 
 
 class TestConsumer:
-    def __init__(self,
-                 bootstrap_servers,
-                 group,
-                 topic,
-                 id,
-                 logger,
-                 session_timeout_ms=10000):
+    def __init__(
+        self, bootstrap_servers, group, topic, id, logger, session_timeout_ms=10000
+    ):
         self.bootstrap_servers = bootstrap_servers
         self.id = id
         self.group = group
         self.topic = topic
         self.consumer_thread = threading.Thread(
-            name=f'consumer-{id}',
-            target=lambda this: this.loop(),
-            args=[self])
+            name=f"consumer-{id}", target=lambda this: this.loop(), args=[self]
+        )
         self.stopped = threading.Event()
         self.restart = threading.Event()
         self.logger = logger
@@ -1323,15 +1384,16 @@ class TestConsumer:
             {
                 "group.id": self.group,
                 "group.instance.id": f"consumer-{self.id}",
-                'bootstrap.servers': self.bootstrap_servers,
+                "bootstrap.servers": self.bootstrap_servers,
                 "session.timeout.ms": self.session_timeout_ms,
-                'auto.offset.reset': 'earliest',
-                'enable.auto.offset.store': True,
-                'enable.auto.commit': False,
-                'log_level': 7,
-                'debug': 'cgrp',
+                "auto.offset.reset": "earliest",
+                "enable.auto.offset.store": True,
+                "enable.auto.commit": False,
+                "log_level": 7,
+                "debug": "cgrp",
             },
-            logger=self.logger)
+            logger=self.logger,
+        )
         self.consumer.subscribe([self.topic])
 
     def loop(self):
@@ -1351,8 +1413,7 @@ class TestConsumer:
                 if msg is None:
                     continue
                 if msg.error():
-                    self.logger.error(
-                        f"consumer {self.id} error - {msg.error()}")
+                    self.logger.error(f"consumer {self.id} error - {msg.error()}")
                     continue
 
                 with self.lock:
@@ -1375,47 +1436,50 @@ class TestConsumer:
 
 class ConsumerGroupStaticMembersRebalance(RedpandaTest):
     def __init__(self, test_context):
-        super(ConsumerGroupStaticMembersRebalance,
-              self).__init__(test_context=test_context, num_brokers=3)
+        super(ConsumerGroupStaticMembersRebalance, self).__init__(
+            test_context=test_context, num_brokers=3
+        )
         self.installer = self.redpanda._installer
 
     def get_group_description(self):
         description = self.admin_client.describe_consumer_groups(
-            group_ids=[self.group_id])[self.group_id].result()
+            group_ids=[self.group_id]
+        )[self.group_id].result()
         return description
 
     @cluster(num_nodes=4)
     @skip_debug_mode
     def verify_consumer_group_state_after_action(
-            self,
-            disturbance_action,
-            post_rebalance_check,
-            consumer_session_timeout=10000):
+        self, disturbance_action, post_rebalance_check, consumer_session_timeout=10000
+    ):
         self.consumer_count = 120
-        topic = TopicSpec(name="test-topic-1",
-                          partition_count=self.consumer_count)
+        topic = TopicSpec(name="test-topic-1", partition_count=self.consumer_count)
         DefaultClient(self.redpanda).create_topic(topic)
         self.group_id = "test-group-1"
 
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       topic.name,
-                                       msg_size=128,
-                                       msg_count=5000000)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            topic.name,
+            msg_size=128,
+            msg_count=5000000,
+        )
         producer.start()
         self.consumers: list[TestConsumer] = []
 
         for c_id in range(self.consumer_count):
             self.consumers.append(
-                TestConsumer(bootstrap_servers=self.redpanda.brokers(),
-                             group=self.group_id,
-                             topic=topic.name,
-                             id=c_id,
-                             logger=self.logger,
-                             session_timeout_ms=consumer_session_timeout))
+                TestConsumer(
+                    bootstrap_servers=self.redpanda.brokers(),
+                    group=self.group_id,
+                    topic=topic.name,
+                    id=c_id,
+                    logger=self.logger,
+                    session_timeout_ms=consumer_session_timeout,
+                )
+            )
 
-        self.admin_client = AdminClient(
-            {"bootstrap.servers": self.redpanda.brokers()})
+        self.admin_client = AdminClient({"bootstrap.servers": self.redpanda.brokers()})
 
         def consumers_made_progress():
             return all(c.get_last_consumed() >= 0 for c in self.consumers)
@@ -1437,22 +1501,28 @@ class ConsumerGroupStaticMembersRebalance(RedpandaTest):
             gr = self.get_group_description()
             return gr.state == ConsumerGroupState.STABLE
 
-        wait_until(group_is_in_stable_state,
-                   60,
-                   0.2,
-                   retry_on_exc=True,
-                   err_msg="Timeout waiting on group to reach stable state")
+        wait_until(
+            group_is_in_stable_state,
+            60,
+            0.2,
+            retry_on_exc=True,
+            err_msg="Timeout waiting on group to reach stable state",
+        )
         self.logger.info("group rebalanced, waiting for progress")
 
         def all_consumers_made_progress():
-            return all(c.get_last_consumed() > progress_snapshot[c.id]
-                       for c in self.consumers if not c.is_stopped())
+            return all(
+                c.get_last_consumed() > progress_snapshot[c.id]
+                for c in self.consumers
+                if not c.is_stopped()
+            )
 
         wait_until(
             all_consumers_made_progress,
             60,
             0.5,
-            err_msg="Timeout waiting for all consumers to make progress")
+            err_msg="Timeout waiting for all consumers to make progress",
+        )
 
         assert post_rebalance_check(), "post rebalance check failed"
 
@@ -1468,14 +1538,13 @@ class ConsumerGroupStaticMembersRebalance(RedpandaTest):
             last_consumed = consumer_to_restart.get_last_consumed()
             consumer_to_restart.restart_consumer()
             after_restart = self.get_group_description()
-            self.logger.info("group state after restart: %s",
-                             after_restart.state)
+            self.logger.info("group state after restart: %s", after_restart.state)
             assert after_restart.state == ConsumerGroupState.STABLE
             assert len(after_restart.members) == self.consumer_count
 
             wait_until(
-                lambda: consumer_to_restart.get_last_consumed() >
-                last_consumed, 60, 1)
+                lambda: consumer_to_restart.get_last_consumed() > last_consumed, 60, 1
+            )
             # now stop consumer, after a timeout group should rebalance and the member should be removed
             consumer_to_restart.stop()
 
@@ -1487,16 +1556,20 @@ class ConsumerGroupStaticMembersRebalance(RedpandaTest):
 
         def verify_consumer_is_missing():
             gr = self.get_group_description()
-            self.logger.info("post test group state: %s, members count: %s",
-                             gr.state, len(gr.members))
+            self.logger.info(
+                "post test group state: %s, members count: %s",
+                gr.state,
+                len(gr.members),
+            )
             return len(gr.members) == self.consumer_count - 1
 
         self.verify_consumer_group_state_after_action(
             restart_then_stop_consumer,
             verify_consumer_is_missing,
-            consumer_session_timeout=10000)
+            consumer_session_timeout=10000,
+        )
 
-    #this test fails as the consumer are fenced when Redpanda is
+    # this test fails as the consumer are fenced when Redpanda is
     @ignore
     @cluster(num_nodes=4)
     @skip_debug_mode
@@ -1512,27 +1585,29 @@ class ConsumerGroupStaticMembersRebalance(RedpandaTest):
 
         def verify_all_consumers_are_present():
             gr = self.get_group_description()
-            self.logger.info("post test group state: %s, members count: %d",
-                             gr.state, len(gr.members))
+            self.logger.info(
+                "post test group state: %s, members count: %d",
+                gr.state,
+                len(gr.members),
+            )
             return len(gr.members) == self.consumer_count
 
         self.verify_consumer_group_state_after_action(
             restart_then_stop_consumer,
             verify_all_consumers_are_present,
-            consumer_session_timeout=10000)
+            consumer_session_timeout=10000,
+        )
 
 
 class OffsetCommitter:
-    def __init__(self, bootstrap_servers, group, topic, id, logger,
-                 partition_id: int):
+    def __init__(self, bootstrap_servers, group, topic, id, logger, partition_id: int):
         self.bootstrap_servers = bootstrap_servers
         self.id = id
         self.group = group
         self.topic = topic
         self.consumer_thread = threading.Thread(
-            name=f'consumer-{id}',
-            target=lambda this: this.loop(),
-            args=[self])
+            name=f"consumer-{id}", target=lambda this: this.loop(), args=[self]
+        )
         self.stopped = threading.Event()
 
         self.logger = logger
@@ -1557,12 +1632,13 @@ class OffsetCommitter:
             {
                 "group.id": self.group,
                 "client.id": f"consumer-{self.id}",
-                'bootstrap.servers': self.bootstrap_servers,
-                'auto.offset.reset': 'earliest',
-                'enable.auto.offset.store': True,
-                'enable.auto.commit': False,
+                "bootstrap.servers": self.bootstrap_servers,
+                "auto.offset.reset": "earliest",
+                "enable.auto.offset.store": True,
+                "enable.auto.commit": False,
             },
-            logger=self.logger)
+            logger=self.logger,
+        )
 
         self.consumer.assign([TopicPartition(self.topic, self.partition_id)])
 
@@ -1573,12 +1649,12 @@ class OffsetCommitter:
             try:
                 to_commit = self.next
                 self.next += 1
-                ret = self.consumer.commit(offsets=[
-                    TopicPartition(self.topic,
-                                   self.partition_id,
-                                   offset=to_commit)
-                ],
-                                           asynchronous=False)
+                ret = self.consumer.commit(
+                    offsets=[
+                        TopicPartition(self.topic, self.partition_id, offset=to_commit)
+                    ],
+                    asynchronous=False,
+                )
                 with self.lock:
                     self.last_committed = ret[0].offset
             except Exception as e:
@@ -1593,33 +1669,37 @@ class OffsetCommitter:
 
 class ConsumerGroupOffsetResetTest(RedpandaTest):
     """
-    This tests simulates a large number of consumers trying to commit consumer 
-    group offsets. The test doesn't produce or fetch any messages, 
-    it just stress tests OffsetCommit requests and validates the final 
+    This tests simulates a large number of consumers trying to commit consumer
+    group offsets. The test doesn't produce or fetch any messages,
+    it just stress tests OffsetCommit requests and validates the final
     state of the consumer group.
     """
+
     def __init__(self, test_context):
-        super(ConsumerGroupOffsetResetTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=3,
-                             extra_rp_conf={
-                                 "group_topic_partitions": 1,
-                                 "compacted_log_segment_size": 1024 * 1024,
-                                 "log_compaction_interval_ms": 1000,
-                                 "group_offset_retention_sec": 20,
-                             })
+        super(ConsumerGroupOffsetResetTest, self).__init__(
+            test_context=test_context,
+            num_brokers=3,
+            extra_rp_conf={
+                "group_topic_partitions": 1,
+                "compacted_log_segment_size": 1024 * 1024,
+                "log_compaction_interval_ms": 1000,
+                "group_offset_retention_sec": 20,
+            },
+        )
 
     def get_group_description(self):
         description = self.admin_client.describe_consumer_groups(
-            group_ids=[self.group_id])[self.group_id].result()
+            group_ids=[self.group_id]
+        )[self.group_id].result()
         return description
 
     def list_consumer_group_offsets(self, topic):
         topic_partitions = [
             TopicPartition(topic, p) for p in range(self.consumer_count)
         ]
-        cg_tp = ConsumerGroupTopicPartitions(self.group_id,
-                                             topic_partitions=topic_partitions)
+        cg_tp = ConsumerGroupTopicPartitions(
+            self.group_id, topic_partitions=topic_partitions
+        )
         offsets = self.admin_client.list_consumer_group_offsets([cg_tp])
 
         return offsets[self.group_id].result()
@@ -1631,8 +1711,10 @@ class ConsumerGroupOffsetResetTest(RedpandaTest):
         last_total = 0
         while self.total_committed() < total_commits:
             wait_until(
-                lambda: self.total_committed() > last_total, 60, 2,
-                "Timeout waiting for consumers to make progress committing offsets"
+                lambda: self.total_committed() > last_total,
+                60,
+                2,
+                "Timeout waiting for consumers to make progress committing offsets",
             )
             last_total = self.total_committed()
             self.logger.debug(f"Total offsets committed: {last_total}")
@@ -1654,8 +1736,7 @@ class ConsumerGroupOffsetResetTest(RedpandaTest):
         self.group_id = "test-group-1"
 
         self.consumer_count = 1
-        self.admin_client = AdminClient(
-            {"bootstrap.servers": self.redpanda.brokers()})
+        self.admin_client = AdminClient({"bootstrap.servers": self.redpanda.brokers()})
 
         self.consumers = [
             OffsetCommitter(
@@ -1672,35 +1753,39 @@ class ConsumerGroupOffsetResetTest(RedpandaTest):
 
         # No consumers have subscribed. Group should be in empty state
         desc = rpk.group_describe(self.group_id)
-        assert desc.state == "Empty", \
-                f"Expected group.state 'Empty' but got '{desc.state}', instead\n" \
-                f"Group description: {desc}"
+        assert desc.state == "Empty", (
+            f"Expected group.state 'Empty' but got '{desc.state}', instead\n"
+            f"Group description: {desc}"
+        )
 
         # Try to delete offsets while there is an assigned consumer
         # who keeps commiting offsets
         res = rpk.offset_delete(self.group_id, {topic.name: [0]})[0]
-        assert res.status == "OK", \
-                f"Expected res.status 'OK' but got '{res.status}', instead\n" \
-                f"Response:  {res}"
+        assert res.status == "OK", (
+            f"Expected res.status 'OK' but got '{res.status}', instead\n"
+            f"Response:  {res}"
+        )
 
         def wait_for_new_commits():
-            tp = self.list_consumer_group_offsets(
-                topic.name).topic_partitions[0]
+            tp = self.list_consumer_group_offsets(topic.name).topic_partitions[0]
             return tp.offset != INVALID_OFFSET
 
         wait_until(
             wait_for_new_commits,
             timeout_sec=10,
             backoff_sec=1,
-            err_msg="Timeout while waiting for consumer to commit more offsets"
+            err_msg="Timeout while waiting for consumer to commit more offsets",
         )
 
         self.consumers[0].stop()
 
         res = rpk.offset_delete(self.group_id, {topic.name: [0]})
-        assert res[0].status == "OK", \
-                f"Expected res.status 'OK' but got '{res[0].status}', instead\n" \
-                f"Response:  {res[0]}"
+        assert res[0].status == "OK", (
+            f"Expected res.status 'OK' but got '{res[0].status}', instead\n"
+            f"Response:  {res[0]}"
+        )
 
         tp = self.list_consumer_group_offsets(topic.name).topic_partitions[0]
-        assert tp.offset == INVALID_OFFSET, f"Expected offset '{INVALID_OFFSET}' but got '{tp.offset}', instead"
+        assert tp.offset == INVALID_OFFSET, (
+            f"Expected offset '{INVALID_OFFSET}' but got '{tp.offset}', instead"
+        )

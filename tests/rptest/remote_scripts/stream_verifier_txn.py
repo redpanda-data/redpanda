@@ -30,10 +30,10 @@ global title
 app_name = "StreamVerifierTx"
 title = f"{app_name}, python transaction verifier"
 log_level = logging.INFO
-LOGGER_STARTUP = 'startup'
-LOGGER_MAIN = 'main'
-LOGGER_CORE = 'core'
-LOGGER_CLI_COMMAND = 'cli_command'
+LOGGER_STARTUP = "startup"
+LOGGER_MAIN = "main"
+LOGGER_CORE = "core"
+LOGGER_CLI_COMMAND = "cli_command"
 LOGGER_WEB_PRODUCE = "web_produce"
 LOGGER_WEB_CONSUME = "web_consume"
 
@@ -42,9 +42,7 @@ CONSUMER_LOGGING_THRESHOLD = 100
 CONSUME_STOP_EOF = "eof"
 CONSUME_STOP_SLEEP = "sleep"
 CONSUME_STOP_CONTINUOUS = "continuous"
-consume_stop_options = [
-    CONSUME_STOP_EOF, CONSUME_STOP_SLEEP, CONSUME_STOP_CONTINUOUS
-]
+consume_stop_options = [CONSUME_STOP_EOF, CONSUME_STOP_SLEEP, CONSUME_STOP_CONTINUOUS]
 
 
 # Class to serialize int64
@@ -59,8 +57,9 @@ class NpEncoder(json.JSONEncoder):
         return super(NpEncoder, self).default(obj)
 
 
-def setup_logger(child_logger_name: str = "",
-                 level: int = logging.DEBUG) -> logging.Logger:
+def setup_logger(
+    child_logger_name: str = "", level: int = logging.DEBUG
+) -> logging.Logger:
     """Create main logger or its child based on naming
 
     Args:
@@ -72,8 +71,8 @@ def setup_logger(child_logger_name: str = "",
     """
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(
-        logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
     handler.setLevel(level)
     logger_name = "stream_verifier"
     if len(child_logger_name) > 0:
@@ -88,12 +87,13 @@ def setup_logger(child_logger_name: str = "",
 
 def write_json(ioclass: IO, data: dict) -> None:
     ioclass.write(json.dumps(data))
-    ioclass.write('\n')
+    ioclass.write("\n")
     ioclass.flush()
 
 
-def validate_keys(incoming: list[str], local: list[str],
-                  forbidden: list[str]) -> list[str]:
+def validate_keys(
+    incoming: list[str], local: list[str], forbidden: list[str]
+) -> list[str]:
     error_msgs = []
     # Validate incoming keys
     for k in incoming:
@@ -104,11 +104,14 @@ def validate_keys(incoming: list[str], local: list[str],
     return error_msgs
 
 
-def validate_option(option: str, value: str,
-                    available_values: list[str]) -> Tuple[bool, str]:
+def validate_option(
+    option: str, value: str, available_values: list[str]
+) -> Tuple[bool, str]:
     if value not in available_values:
-        error_msg = f"{option} value of {value} is invalid. " \
+        error_msg = (
+            f"{option} value of {value} is invalid. "
             f"Expected on of: {', '.join(available_values)}"
+        )
         return False, error_msg
     else:
         return True, ""
@@ -126,6 +129,7 @@ class AppCfg(Updateable):
     """Holds configuration for the app along with
     functions to handle REST calls to update it
     """
+
     app_name: str = app_name
     brokers: str = "localhost:9092"
     # topic group id for Consumer configuration
@@ -166,7 +170,7 @@ class AppCfg(Updateable):
     @property
     def forbidden_keys(self) -> list[str]:
         # non-updatable vars via REST handle
-        return ['web_port', 'app_name']
+        return ["web_port", "app_name"]
 
     def on_get(self, req, resp):
         """Handles 'GET:<host:port>/' calls. Returns current app config
@@ -218,9 +222,11 @@ class AppCfg(Updateable):
 
         # Validate specific option
         if "consume_stop_criteria" in keys_req:
-            valid, error = validate_option("consume_stop_criteria",
-                                           req.media["consume_stop_criteria"],
-                                           consume_stop_options)
+            valid, error = validate_option(
+                "consume_stop_criteria",
+                req.media["consume_stop_criteria"],
+                consume_stop_options,
+            )
             if not valid:
                 error_msgs += [error]
 
@@ -237,7 +243,7 @@ class AppCfg(Updateable):
             logger.debug(f"...updated app config: {vars(self)}")
             resp.status = falcon.HTTP_200
             resp.content_type = falcon.MEDIA_JSON
-            resp.media = {'result': "OK"}
+            resp.media = {"result": "OK"}
 
 
 # singleton for app_config
@@ -258,6 +264,7 @@ class TopicStatus(Updateable):
     Returns:
         _type_: _description_
     """
+
     topic_group_id: str
     # topic to consume from
     source_topic_name: str
@@ -310,15 +317,18 @@ class TopicStatus(Updateable):
     def forbidden_keys(self) -> list[str]:
         # non-updatable vars via REST handle
         return [
-            'producer', 'message_generator', 'message_validator',
-            'message_transform', 'terminate', 'reached_eof'
+            "producer",
+            "message_generator",
+            "message_validator",
+            "message_transform",
+            "terminate",
+            "reached_eof",
         ]
 
 
 # This can hold future checksum checks or similar
 class MessageValidators:
-    """Class to hold message validation strategies
-    """
+    """Class to hold message validation strategies"""
 
     previous_number = -1
 
@@ -343,8 +353,8 @@ class MessageValidators:
 
 
 class MessageTransforms:
-    """Class to hold message transforming functions
-    """
+    """Class to hold message transforming functions"""
+
     @staticmethod
     def dezero_transform(src_key: str, src_value: str) -> List:
         """Removes zeroes from all numbers in value
@@ -362,9 +372,9 @@ class MessageTransforms:
         active_number = ""
         new_value = ""
         if isinstance(src_key, bytes):
-            src_key = src_key.decode('utf-8')
+            src_key = src_key.decode("utf-8")
         if isinstance(src_value, bytes):
-            src_value = src_value.decode('utf-8')
+            src_value = src_value.decode("utf-8")
         for char in src_value:
             if char in string.digits:
                 active_number += char
@@ -382,11 +392,10 @@ class MessageTransforms:
 
 
 class MessageGenerators:
-    """Various Generator functions to use in Producer
-    """
+    """Various Generator functions to use in Producer"""
+
     @staticmethod
-    def gen_indexed_messages(start_index: int,
-                             message_count: int) -> Generator:
+    def gen_indexed_messages(start_index: int, message_count: int) -> Generator:
         """Generates indexed messages:
         'key_0'/'0000', 'key_1'/'0001', ...
 
@@ -403,14 +412,14 @@ class MessageGenerators:
             yield key, value
 
 
-class StreamVerifier():
-    """Main class to process messages
-    """
+class StreamVerifier:
+    """Main class to process messages"""
+
     def __init__(self, brokers):
         # Create core logger
         self.logger = setup_logger(LOGGER_CORE)
         # Remove quotes from broker config value if an
-        self.brokers = brokers.strip('\"').strip("'")
+        self.brokers = brokers.strip('"').strip("'")
         # Create initial universal topics config
         _live_cfg = {
             # For produce only mode just set them to the same value
@@ -442,13 +451,17 @@ class StreamVerifier():
         self.atomic_thread = None
 
     @staticmethod
-    def _worker_thread(func, topic: TopicStatus, consume_stop: str,
-                       consume_sleep: int, logger: logging.Logger):
+    def _worker_thread(
+        func,
+        topic: TopicStatus,
+        consume_stop: str,
+        consume_sleep: int,
+        logger: logging.Logger,
+    ):
         msgs_processed = 0
         last_message_count = 0
         # Message processing loop
-        while msgs_processed < topic.total_messages or \
-                topic.total_messages < 0:
+        while msgs_processed < topic.total_messages or topic.total_messages < 0:
             topic_status = func(logger, topic)
             msgs_processed += topic_status.processed_count
             topic_status.processed_count = 0
@@ -459,7 +472,7 @@ class StreamVerifier():
 
             # Check EOF flag and break out if all set
             if topic.reached_eof:
-                logger.info('EOF reached')
+                logger.info("EOF reached")
                 # EOF checks will work only for Consume enabled actions
                 # Produce actions will exit on reaching total_messages
                 if consume_stop == CONSUME_STOP_EOF:
@@ -473,21 +486,18 @@ class StreamVerifier():
                         logger.info(f"Sleeping for {consume_sleep}s")
                         sleep(consume_sleep)
                     else:
-                        logger.info(f"No new messages after {consume_sleep}s, "
-                                    "exiting")
+                        logger.info(f"No new messages after {consume_sleep}s, exiting")
                         break
                 elif consume_stop == CONSUME_STOP_CONTINUOUS:
                     # Nothing to do, just go to another iteration
                     pass
 
             # Log pretty name of underlying func
-            logger.info(f"{func.__qualname__}, "
-                        f"processed so far {msgs_processed}")
+            logger.info(f"{func.__qualname__}, processed so far {msgs_processed}")
 
             # Check termination flag in all topics before the next chunk
             if topic.terminate:
-                logger.warning("Got terminate signal, "
-                               "exiting from message processing")
+                logger.warning("Got terminate signal, exiting from message processing")
                 break
         logger.info("End of processing messages.")
 
@@ -495,8 +505,14 @@ class StreamVerifier():
         thread = threading.Thread(
             name=thread_name,
             target=self._worker_thread,
-            args=(func, self.live_topic, app_config.consume_stop_criteria,
-                  app_config.consume_sleep_time_s, self.logger))
+            args=(
+                func,
+                self.live_topic,
+                app_config.consume_stop_criteria,
+                app_config.consume_sleep_time_s,
+                self.logger,
+            ),
+        )
         thread.start()
         return thread
 
@@ -511,10 +527,8 @@ class StreamVerifier():
         self.live_topic.last_message_ts = datetime.now().timestamp()
         self.live_topic.terminate = False
         self.live_topic.errors = []
-        self.live_topic.message_generator = \
-            MessageGenerators().gen_indexed_messages
-        self.live_topic.producer = ck.Producer(
-            {'bootstrap.servers': self.brokers})
+        self.live_topic.message_generator = MessageGenerators().gen_indexed_messages
+        self.live_topic.producer = ck.Producer({"bootstrap.servers": self.brokers})
 
     #
     # Produce functions
@@ -528,16 +542,17 @@ class StreamVerifier():
         """
         self.logger.info("Start of sending messages")
         self.produce_thread = self.create_thread(
-            self._async_send_messages, thread_name="stream_produce_thread")
+            self._async_send_messages, thread_name="stream_produce_thread"
+        )
         if wait:
             self.produce_thread.join()
 
     @staticmethod
-    def _async_send_messages(logger: logging.Logger,
-                             topic: TopicStatus) -> TopicStatus:
+    def _async_send_messages(logger: logging.Logger, topic: TopicStatus) -> TopicStatus:
         # Thread safe function to send messages as fast as possible
-        def ensure_message_rate(rate_ms: float, last_message_ts: float,
-                                logger: logging.Logger):
+        def ensure_message_rate(
+            rate_ms: float, last_message_ts: float, logger: logging.Logger
+        ):
             def time_since_last_msg() -> int:
                 diff_ms = datetime.now().timestamp() - last_message_ts
                 return int(diff_ms * 1000)
@@ -547,26 +562,22 @@ class StreamVerifier():
                 _time_since = time_since_last_msg()
                 if _time_since < rate_ms:
                     wait_time = (rate_ms - _time_since) / 1000
-                    logger.debug(
-                        f"...waiting {wait_time}s before sending message")
+                    logger.debug(f"...waiting {wait_time}s before sending message")
                     sleep(wait_time)
 
         if topic.message_generator is None:
-            topic.errors.append("Message generator is not defined, "
-                                "unable to produce")
+            topic.errors.append("Message generator is not defined, unable to produce")
             return topic
 
-        for key, value in topic.message_generator(topic.index,
-                                                  topic.msgs_per_transaction):
+        for key, value in topic.message_generator(
+            topic.index, topic.msgs_per_transaction
+        ):
             # Handle message rate
-            ensure_message_rate(topic.msgs_rate_ms, topic.last_message_ts,
-                                logger)
+            ensure_message_rate(topic.msgs_rate_ms, topic.last_message_ts, logger)
 
             # Async message sending
             try:
-                topic.producer.produce(topic.target_topic_name,
-                                       key=key,
-                                       value=value)
+                topic.producer.produce(topic.target_topic_name, key=key, value=value)
                 topic.index += 1
                 topic.processed_count += 1
             except ck.KafkaException as e:
@@ -589,8 +600,7 @@ class StreamVerifier():
     # Consume functions
     #
     def init_consumers(self):
-        """Precreates topic status lists for Consuming thread.
-        """
+        """Precreates topic status lists for Consuming thread."""
         self.logger.info("Initializing consumers")
         # Instanciate validator
         validators = MessageValidators()
@@ -604,11 +614,11 @@ class StreamVerifier():
         self.live_topic.last_message_ts = datetime.now().timestamp()
         # consumer config
         self.live_topic.consumer_config = {
-            'bootstrap.servers': self.brokers,
-            'group.id': app_config.topic_group_id,
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
-            'enable.partition.eof': True,
+            "bootstrap.servers": self.brokers,
+            "group.id": app_config.topic_group_id,
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,
+            "enable.partition.eof": True,
         }
         # EOF flag
         self.live_topic.reached_eof = False
@@ -628,14 +638,14 @@ class StreamVerifier():
         """
         self.logger.info("Start of consuming messages")
         self.consume_thread = self.create_thread(
-            self._consume_from_topic, thread_name="stream_consume_thread")
+            self._consume_from_topic, thread_name="stream_consume_thread"
+        )
         if wait:
             self.consume_thread.join()
         return
 
     @staticmethod
-    def _consume_from_topic(logger: logging.Logger,
-                            topic: TopicStatus) -> TopicStatus:
+    def _consume_from_topic(logger: logging.Logger, topic: TopicStatus) -> TopicStatus:
         """Consumes all messages from topic
 
         Args:
@@ -648,6 +658,7 @@ class StreamVerifier():
         Returns:
             int: number of consumed messages
         """
+
         def time_since_last_msg() -> int:
             diff_ms = datetime.now().timestamp() - topic.last_message_ts
             return int(diff_ms * 1000)
@@ -670,8 +681,9 @@ class StreamVerifier():
 
                 # Exit on timeout
                 if _since_last_msg_ms > topic.consume_timeout_s:
-                    logger.error("Timeout consuming messages "
-                                 f"from {topic.source_topic_name}")
+                    logger.error(
+                        f"Timeout consuming messages from {topic.source_topic_name}"
+                    )
                     break
 
                 # Poll for the message
@@ -683,16 +695,20 @@ class StreamVerifier():
                 if msg.error():
                     if msg.error().code() == ck.KafkaError._PARTITION_EOF:
                         # End of partition event
-                        logger.info(f"Consumer of '{msg.topic()}' "
-                                    f"[{msg.partition()}] reached "
-                                    f"end at offset {msg.offset()}")
+                        logger.info(
+                            f"Consumer of '{msg.topic()}' "
+                            f"[{msg.partition()}] reached "
+                            f"end at offset {msg.offset()}"
+                        )
                         topic.reached_eof = True
                         break
                     # If not EOF, save the error and exit
                     else:
-                        logger.error("Failed to consume message from "
-                                     f"'{topic.source_topic_name}': "
-                                     f"{msg.error().str()}")
+                        logger.error(
+                            "Failed to consume message from "
+                            f"'{topic.source_topic_name}': "
+                            f"{msg.error().str()}"
+                        )
                         topic.errors.append(msg.error().str())
                         break
                 else:
@@ -704,17 +720,19 @@ class StreamVerifier():
                             int_value = int(value)
                             iscorrect = topic.message_validator(int_value)
                             if not iscorrect:
-                                error_message = \
-                                    f"Message value of '{value}' failed " \
-                                    "validation check of " \
+                                error_message = (
+                                    f"Message value of '{value}' failed "
+                                    "validation check of "
                                     f"'{topic.message_validator.__qualname__}'"
+                                )
                             else:
                                 error_message = ""
                         except Exception:
-                            error_message = \
-                                f"Invalid message value of '{value}' " \
-                                "for selected validator " \
+                            error_message = (
+                                f"Invalid message value of '{value}' "
+                                "for selected validator "
                                 f"{topic.message_validator.__qualname__}"
+                            )
                         finally:
                             # Validation errors does not break message flow
                             # so no loop exit.
@@ -729,8 +747,10 @@ class StreamVerifier():
                     topic.processed_count += 1
                     # log only milestones to eliminate IO stress
                     if topic.index % CONSUMER_LOGGING_THRESHOLD == 0:
-                        logger.debug(f"...consumed {topic.index} messages "
-                                     f"from {topic.source_topic_name}")
+                        logger.debug(
+                            f"...consumed {topic.index} messages "
+                            f"from {topic.source_topic_name}"
+                        )
 
                 # exit if terminate flag is set
                 if topic.terminate:
@@ -747,8 +767,7 @@ class StreamVerifier():
     # Atomic Produce functions
     #
     def init_atomic_produce(self):
-        """Precreates topic list for atomic operation
-        """
+        """Precreates topic list for atomic operation"""
         self.logger.info("Initializing topic pairs for atomic processing")
         self.live_topic.total_messages = -1
         # consumed messages so far
@@ -758,12 +777,12 @@ class StreamVerifier():
         self.live_topic.last_message_ts = datetime.now().timestamp()
         # consumer config
         self.live_topic.consumer_config = {
-            'bootstrap.servers': self.brokers,
-            'group.id': app_config.topic_group_id,
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
-            'enable.partition.eof': True,
-            "isolation.level": "read_committed"
+            "bootstrap.servers": self.brokers,
+            "group.id": app_config.topic_group_id,
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,
+            "enable.partition.eof": True,
+            "isolation.level": "read_committed",
         }
         # EOF flag
         self.live_topic.reached_eof = False
@@ -772,12 +791,12 @@ class StreamVerifier():
         self.live_topic.errors = []
         # This is consume topic action,
         # No generation or transform needed
-        self.live_topic.producer = ck.Producer({
-            'bootstrap.servers':
-            self.brokers,
-            'transactional.id':
-            self.live_topic.transaction_id
-        })
+        self.live_topic.producer = ck.Producer(
+            {
+                "bootstrap.servers": self.brokers,
+                "transactional.id": self.live_topic.transaction_id,
+            }
+        )
         self.live_topic.producer.init_transactions()
         return
 
@@ -790,17 +809,20 @@ class StreamVerifier():
         """
         self.logger.info("Start of atomic consume/produce of messages")
         self.atomic_thread = self.create_thread(
-            self._consume_atomic_produce, thread_name="stream_atomic_thread")
+            self._consume_atomic_produce, thread_name="stream_atomic_thread"
+        )
         if wait:
             self.atomic_thread.join()
         return
 
     @staticmethod
-    def _consume_atomic_produce(logger: logging.Logger,
-                                topic: TopicStatus) -> TopicStatus:
+    def _consume_atomic_produce(
+        logger: logging.Logger, topic: TopicStatus
+    ) -> TopicStatus:
         # Thread safe function to send messages as fast as possible
-        def ensure_message_rate(rate_ms: float, last_message_ts: float,
-                                logger: logging.Logger):
+        def ensure_message_rate(
+            rate_ms: float, last_message_ts: float, logger: logging.Logger
+        ):
             def time_since_last_msg() -> int:
                 diff_ms = datetime.now().timestamp() - last_message_ts
                 return int(diff_ms * 1000)
@@ -810,8 +832,7 @@ class StreamVerifier():
                 _time_since = time_since_last_msg()
                 if _time_since < rate_ms:
                     wait_time = (rate_ms - _time_since) / 1000
-                    logger.debug(
-                        f"...waiting {wait_time}s before sending message")
+                    logger.debug(f"...waiting {wait_time}s before sending message")
                     sleep(wait_time)
 
         def time_since_last_msg_ms() -> int:
@@ -834,24 +855,24 @@ class StreamVerifier():
                     topic.producer.abort_transaction()
                     active_tx = False
 
-            consumer.subscribe([topic.source_topic_name],
-                               on_assign=on_assign,
-                               on_revoke=on_revoke)
+            consumer.subscribe(
+                [topic.source_topic_name], on_assign=on_assign, on_revoke=on_revoke
+            )
 
             processed_count = 0
             # Reset message timing
             topic.last_message_ts = datetime.now().timestamp()
             while True:
                 # Handle message rate
-                ensure_message_rate(topic.msgs_rate_ms, topic.last_message_ts,
-                                    logger)
+                ensure_message_rate(topic.msgs_rate_ms, topic.last_message_ts, logger)
 
                 # calculate elapsed time
                 _since_last_msg_ms = time_since_last_msg_ms()
                 # Exit on timeout
                 if _since_last_msg_ms > topic.consume_timeout_s * 1000:
-                    logger.error("Timeout consuming messages "
-                                 f"from {topic.source_topic_name}")
+                    logger.error(
+                        f"Timeout consuming messages from {topic.source_topic_name}"
+                    )
                     break
 
                 msg = consumer.poll(timeout=app_config.consume_poll_timeout)
@@ -860,14 +881,18 @@ class StreamVerifier():
                     if err is not None:
                         if err.code() == ck.KafkaError._PARTITION_EOF:
                             # End of partition event
-                            logger.info(f"Consumer of '{msg.topic()}' "
-                                        f"[{msg.partition()}] reached "
-                                        f"end at offset {msg.offset()}")
+                            logger.info(
+                                f"Consumer of '{msg.topic()}' "
+                                f"[{msg.partition()}] reached "
+                                f"end at offset {msg.offset()}"
+                            )
                             topic.reached_eof = True
                             break
                         else:
-                            logger.error("Failed to consume messages "
-                                         f"from {topic.source_topic_name}")
+                            logger.error(
+                                "Failed to consume messages "
+                                f"from {topic.source_topic_name}"
+                            )
                             topic.errors.append(err.str())
                             break
                     if not active_tx:
@@ -878,16 +903,17 @@ class StreamVerifier():
                     processed_count += 1
                     # If message transform is defined, use it
                     if topic.message_transform is not None:
-                        t_key, t_value = topic.message_transform(
-                            msg.key(), msg.value())
+                        t_key, t_value = topic.message_transform(msg.key(), msg.value())
                     else:
                         t_key = msg.key().decode()
                         t_value = msg.value().decode()
 
-                    topic.producer.produce(topic.target_topic_name,
-                                           value=t_value,
-                                           key=t_key,
-                                           partition=msg.partition())
+                    topic.producer.produce(
+                        topic.target_topic_name,
+                        value=t_value,
+                        key=t_key,
+                        partition=msg.partition(),
+                    )
                     # Save message timestamp on successfull produce
                     topic.last_message_ts = datetime.now().timestamp()
                     # Commit if reached msgs per tx
@@ -896,11 +922,13 @@ class StreamVerifier():
                             f"[{topic.transaction_id}] Committing transaction "
                             f"after {topic.msgs_per_transaction} messages. "
                             "Current consumer positions: "
-                            f"{consumer.position(consumer.assignment())}")
+                            f"{consumer.position(consumer.assignment())}"
+                        )
 
                         topic.producer.send_offsets_to_transaction(
                             consumer.position(consumer.assignment()),
-                            consumer.consumer_group_metadata())
+                            consumer.consumer_group_metadata(),
+                        )
                         topic.producer.commit_transaction()
                         active_tx = False
 
@@ -912,7 +940,9 @@ class StreamVerifier():
             if active_tx:
                 topic.producer.send_offsets_to_transaction(
                     consumer.position(consumer.assignment()),
-                    consumer.consumer_group_metadata(), 60)
+                    consumer.consumer_group_metadata(),
+                    60,
+                )
 
                 topic.producer.commit_transaction()
                 active_tx = False
@@ -925,8 +955,10 @@ class StreamVerifier():
                 logger.info(f"[{topic.transaction_id}] {error_message}")
                 topic.reached_eof = True
         except ck.KafkaError as e:
-            logger.error(f"Client error reported: {e.error} - {e.reason}, "
-                         f"retryable: {e.retryable}")
+            logger.error(
+                f"Client error reported: {e.error} - {e.reason}, "
+                f"retryable: {e.retryable}"
+            )
         finally:
             consumer.close()
             topic.producer.flush()
@@ -936,9 +968,9 @@ class StreamVerifier():
 
     def get_high_watermarks(self, topic_name: str) -> dict:
         cfg = {
-            'bootstrap.servers': self.brokers,
-            'group.id': self.live_topic.topic_group_id,
-            'auto.offset.reset': 'latest',
+            "bootstrap.servers": self.brokers,
+            "group.id": self.live_topic.topic_group_id,
+            "auto.offset.reset": "latest",
         }
         c = ck.Consumer(cfg)
         all_topics = c.list_topics().topics
@@ -958,9 +990,7 @@ class StreamVerifier():
                 while num_retries > 0:
                     num_retries -= 1
                     try:
-                        (lo, hi) = c.get_watermark_offsets(p,
-                                                           timeout=10,
-                                                           cached=False)
+                        (lo, hi) = c.get_watermark_offsets(p, timeout=10, cached=False)
                         break
                     except ck.KafkaException as e:
                         err = e
@@ -997,23 +1027,20 @@ class StreamVerifier():
         # Avoid double calling of hwm func
         offsets = {}
         if t.target_topic_name:
-            offsets[t.target_topic_name] = self.get_high_watermarks(
-                t.target_topic_name)
+            offsets[t.target_topic_name] = self.get_high_watermarks(t.target_topic_name)
         if t.source_topic_name and t.source_topic_name != t.target_topic_name:
-            offsets[t.source_topic_name] = self.get_high_watermarks(
-                t.source_topic_name)
+            offsets[t.source_topic_name] = self.get_high_watermarks(t.source_topic_name)
 
         response = {
             "offsets": offsets,
             "processed_messages": 0 if t is None else t.index,
             "topic_config": topic_cfg,
-            "errors": [] if t is None else t.errors
+            "errors": [] if t is None else t.errors,
         }
         return response
 
     def terminate(self):
-        """Sets terminate flag for all topics and flushes producers
-        """
+        """Sets terminate flag for all topics and flushes producers"""
         operation = "current"
         if self.produce_thread is not None:
             operation = "produce"
@@ -1058,6 +1085,7 @@ class StreamVerifierWeb(StreamVerifier):
 
     On DELETE terminates current produce command
     """
+
     def __init__(self, cfg):
         self.cfg = cfg
         self.wlogger = setup_logger(LOGGER_WEB_PRODUCE)
@@ -1065,6 +1093,7 @@ class StreamVerifierWeb(StreamVerifier):
 
     def on_get(self, req: falcon.Request, resp: falcon.Response):
         """Handles GET requests"""
+
         def is_active(thread):
             return "ACTIVE" if self.is_alive(thread) else "READY"
 
@@ -1072,10 +1101,10 @@ class StreamVerifierWeb(StreamVerifier):
         resp.status = falcon.HTTP_200  # This is the default status
         resp.content_type = falcon.MEDIA_JSON  # Default is JSON, so override
         status = self.status()
-        status['status'] = {
+        status["status"] = {
             COMMAND_PRODUCE: is_active(self.produce_thread),
             COMMAND_CONSUME: is_active(self.consume_thread),
-            COMMAND_ATOMIC: is_active(self.atomic_thread)
+            COMMAND_ATOMIC: is_active(self.atomic_thread),
         }
         resp.media = status
 
@@ -1086,8 +1115,7 @@ class StreamVerifierWeb(StreamVerifier):
         resp.content_type = falcon.MEDIA_JSON  # Default is JSON, so override
         resp.media = self.status()
 
-    def _validate_media_type(self, req: falcon.Request,
-                             resp: falcon.Response) -> bool:
+    def _validate_media_type(self, req: falcon.Request, resp: falcon.Response) -> bool:
         if req.content_type != falcon.MEDIA_JSON:
             resp.status = falcon.HTTP_400
             resp.content_type = falcon.MEDIA_JSON
@@ -1101,9 +1129,13 @@ class StreamVerifierWeb(StreamVerifier):
         resp.content_type = falcon.MEDIA_JSON
         resp.media = {"errors": errors}
 
-    def _validate_request(self, topics_cfg_keys: list[str],
-                          forbidden: list[str], req: falcon.Request,
-                          resp: falcon.Response) -> bool:
+    def _validate_request(
+        self,
+        topics_cfg_keys: list[str],
+        forbidden: list[str],
+        req: falcon.Request,
+        resp: falcon.Response,
+    ) -> bool:
         error_msgs = validate_keys(req.media, topics_cfg_keys, forbidden)
         if error_msgs:
             msg = f"Incoming request invalid: {', '.join(error_msgs)}"
@@ -1113,9 +1145,12 @@ class StreamVerifierWeb(StreamVerifier):
         else:
             return True
 
-    def _check_active_thread(self, thread: threading.Thread | None,
-                             req: falcon.Request,
-                             resp: falcon.Response) -> bool:
+    def _check_active_thread(
+        self,
+        thread: threading.Thread | None,
+        req: falcon.Request,
+        resp: falcon.Response,
+    ) -> bool:
         if thread is not None:
             if thread.is_alive():
                 self._http_400(["Active job not finished"], resp)
@@ -1145,6 +1180,7 @@ class StreamVerifierProduce(StreamVerifierWeb):
     }
 
     """
+
     def on_post(self, req: falcon.Request, resp: falcon.Response):
         self.wlogger.debug("Processing produce post request")
 
@@ -1163,12 +1199,11 @@ class StreamVerifierProduce(StreamVerifierWeb):
             return
         else:
             # Update topic configs
-            if 'msg_rate_limit' in req.media:
-                app_config.msg_rate_limit = req.media.pop('msg_rate_limit')
+            if "msg_rate_limit" in req.media:
+                app_config.msg_rate_limit = req.media.pop("msg_rate_limit")
                 self.live_topic.msgs_rate_ms = app_config.msgs_rate_ms
-            if 'target_topic_name' in req.media:
-                self.live_topic.target_topic_name = req.media[
-                    'target_topic_name']
+            if "target_topic_name" in req.media:
+                self.live_topic.target_topic_name = req.media["target_topic_name"]
             for k, v in req.media.items():
                 self.live_topic.__setattr__(k, v)
             # start producers
@@ -1177,7 +1212,7 @@ class StreamVerifierProduce(StreamVerifierWeb):
 
             resp.status = falcon.HTTP_200
             resp.content_type = falcon.MEDIA_JSON
-            resp.media = {'result': "OK"}
+            resp.media = {"result": "OK"}
 
 
 class StreamVerifierConsume(StreamVerifierWeb):
@@ -1202,6 +1237,7 @@ class StreamVerifierConsume(StreamVerifierWeb):
     }
 
     """
+
     def on_post(self, req: falcon.Request, resp: falcon.Response):
         self.wlogger.debug("Processing consume post request")
         # Validate request
@@ -1228,7 +1264,7 @@ class StreamVerifierConsume(StreamVerifierWeb):
 
         resp.status = falcon.HTTP_200
         resp.content_type = falcon.MEDIA_JSON
-        resp.media = {'result': "OK"}
+        resp.media = {"result": "OK"}
 
 
 class StreamVerifierAtomic(StreamVerifierWeb):
@@ -1253,6 +1289,7 @@ class StreamVerifierAtomic(StreamVerifierWeb):
     }
 
     """
+
     def on_post(self, req: falcon.Request, resp: falcon.Response):
         self.wlogger.debug("Processing atomic consume/produce post request")
         # Validate request
@@ -1269,7 +1306,7 @@ class StreamVerifierAtomic(StreamVerifierWeb):
         if not self._validate_request(topics_cfg_keys, [], req, resp):
             # response is already populated inside validate_request
             return
-        elif req.media['source_topic_name'] == req.media['target_topic_name']:
+        elif req.media["source_topic_name"] == req.media["target_topic_name"]:
             self._http_400(["Source and taget topics can't be equal"], resp)
             return
         else:
@@ -1282,13 +1319,12 @@ class StreamVerifierAtomic(StreamVerifierWeb):
 
             resp.status = falcon.HTTP_200
             resp.content_type = falcon.MEDIA_JSON
-            resp.media = {'result': "OK"}
+            resp.media = {"result": "OK"}
 
 
 def start_webserver():
     def terminate_handler(signum, frame):
-        """SIGTERM handler
-        """
+        """SIGTERM handler"""
         signame = signal.Signals(signum).name
         logger.info(f"{signame} ({signum}) received, terminating threads")
         producer.terminate()
@@ -1302,13 +1338,15 @@ def start_webserver():
     logger = setup_logger(LOGGER_STARTUP)
 
     app = falcon.App()
-    json_handler = falcon.media.JSONHandler(dumps=partial(
-        json.dumps,
-        cls=NpEncoder,
-        sort_keys=True,
-    ), )
+    json_handler = falcon.media.JSONHandler(
+        dumps=partial(
+            json.dumps,
+            cls=NpEncoder,
+            sort_keys=True,
+        ),
+    )
     extra_handlers = {
-        'application/json': json_handler,
+        "application/json": json_handler,
     }
 
     app = falcon.App()
@@ -1328,12 +1366,12 @@ def start_webserver():
     add_route("/atomic", atomic)
 
     # Create and run service
-    with make_server('', app_config.web_port, app) as httpd:
+    with make_server("", app_config.web_port, app) as httpd:
         # Serve until process is killed, SGTERM received or Keyboard interrupt
         try:
             logger.debug("Registering SIGTERM")
             signal.signal(signal.SIGTERM, terminate_handler)
-            logger.info(f'Serving on port {app_config.web_port}...')
+            logger.info(f"Serving on port {app_config.web_port}...")
             httpd.serve_forever()
         except KeyboardInterrupt:
             logger.info("Got keyboard interupt, exiting")
@@ -1341,10 +1379,10 @@ def start_webserver():
             consumer.terminate()
 
 
-COMMAND_PRODUCE = 'produce'
-COMMAND_ATOMIC = 'atomic'
-COMMAND_CONSUME = 'consume'
-COMMAND_SERVICE = 'webservice'
+COMMAND_PRODUCE = "produce"
+COMMAND_ATOMIC = "atomic"
+COMMAND_CONSUME = "consume"
+COMMAND_SERVICE = "webservice"
 commands = [COMMAND_PRODUCE, COMMAND_ATOMIC, COMMAND_CONSUME]
 
 
@@ -1364,8 +1402,10 @@ def process_command(command, cfg, ioclass):
         elif command == COMMAND_ATOMIC:
             logger.info("Init Atomic Consume and Produce command")
             verifier.init_atomic_produce()
-            logger.info(f"Consuming from {cfg.topic_consume} and "
-                        f"producing to {cfg.topic_produce}")
+            logger.info(
+                f"Consuming from {cfg.topic_consume} and "
+                f"producing to {cfg.topic_produce}"
+            )
             verifier.atomic_produce()
             data = verifier.status()
         elif command == COMMAND_CONSUME:
@@ -1374,14 +1414,15 @@ def process_command(command, cfg, ioclass):
             logger.info(f"Consuming all messages from {cfg.topic_consume}")
             verifier.consume()
             data = verifier.status()
-    except (ck.KafkaException) as e:
-        data = {'error': f"{e.__str__()} for '{cfg.brokers}'"}
+    except ck.KafkaException as e:
+        data = {"error": f"{e.__str__()} for '{cfg.brokers}'"}
     except KeyboardInterrupt:
         logger.info("Got keyboard interupt, exiting")
         verifier.terminate()
         data = verifier.status()
     except Exception as e:
         import traceback
+
         # If timeout happens, it will go here
         # and be reported and handled like a normal error
         exc_fmt = traceback.format_exception(type(e), e, e.__traceback__)
@@ -1396,7 +1437,7 @@ def process_command(command, cfg, ioclass):
                 trimmed += [line[:256] + f"...({_size} chars)"]
             else:
                 trimmed += [line]
-        data = {'error': ''.join(trimmed)}
+        data = {"error": "".join(trimmed)}
     finally:
         write_json(ioclass, data)
 
@@ -1413,9 +1454,9 @@ def main(args):
     logger.info(f"Using log level {logging.getLevelName(log_level)}")
 
     if args.command in [COMMAND_CONSUME, COMMAND_ATOMIC]:
-        isvalid, error = validate_option("--consume-stop-criteria",
-                                         args.consume_stop_criteria,
-                                         consume_stop_options)
+        isvalid, error = validate_option(
+            "--consume-stop-criteria", args.consume_stop_criteria, consume_stop_options
+        )
         if not isvalid:
             logger.error(error)
             sys.exit(1)
@@ -1432,119 +1473,149 @@ def main(args):
     elif args.command in commands:
         process_command(args.command, app_config, sys.stdout)
     else:
-        write_json(sys.stdout, {'error': f"unknown command '{args.command}'"})
+        write_json(sys.stdout, {"error": f"unknown command '{args.command}'"})
         sys.exit(1)
 
     return
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=title)
-    parser.add_argument('-b',
-                        '--brokers',
-                        dest="brokers",
-                        default='localhost:9092',
-                        help="Bootstrap broker(s) (host[:port])")
+    parser.add_argument(
+        "-b",
+        "--brokers",
+        dest="brokers",
+        default="localhost:9092",
+        help="Bootstrap broker(s) (host[:port])",
+    )
 
-    parser.add_argument('-d',
-                        '--debug',
-                        dest="isdebug",
-                        action="store_true",
-                        default=False,
-                        help="Debug log level")
+    parser.add_argument(
+        "-d",
+        "--debug",
+        dest="isdebug",
+        action="store_true",
+        default=False,
+        help="Debug log level",
+    )
 
-    parser.add_argument("-g",
-                        "--group-id",
-                        dest="topic_group_id",
-                        default="group-stream-verifier-tx",
-                        help="Group it to use")
+    parser.add_argument(
+        "-g",
+        "--group-id",
+        dest="topic_group_id",
+        default="group-stream-verifier-tx",
+        help="Group it to use",
+    )
 
-    subparsers = parser.add_subparsers(dest='command', required=True)
+    subparsers = parser.add_subparsers(dest="command", required=True)
     parser_produce = subparsers.add_parser(COMMAND_PRODUCE)
-    parser_produce.add_argument("--topic-produce",
-                                dest="topic_produce",
-                                default="stream-topic-src",
-                                help="Topic to produce messages to")
+    parser_produce.add_argument(
+        "--topic-produce",
+        dest="topic_produce",
+        default="stream-topic-src",
+        help="Topic to produce messages to",
+    )
 
-    parser_produce.add_argument('--rps',
-                                dest='msg_rate_limit',
-                                default=0,
-                                type=int,
-                                help="Producer's message rate per sec")
-    parser_produce.add_argument('-t',
-                                '--total',
-                                dest='msg_total',
-                                default=256,
-                                type=int,
-                                help="Producer's message rate per sec")
+    parser_produce.add_argument(
+        "--rps",
+        dest="msg_rate_limit",
+        default=0,
+        type=int,
+        help="Producer's message rate per sec",
+    )
+    parser_produce.add_argument(
+        "-t",
+        "--total",
+        dest="msg_total",
+        default=256,
+        type=int,
+        help="Producer's message rate per sec",
+    )
 
     parser_consume = subparsers.add_parser(COMMAND_CONSUME)
-    parser_consume.add_argument("--topic-consume",
-                                dest="topic_consume",
-                                default="stream-topic-dst",
-                                help="Topic to use for consumption. ")
+    parser_consume.add_argument(
+        "--topic-consume",
+        dest="topic_consume",
+        default="stream-topic-dst",
+        help="Topic to use for consumption. ",
+    )
 
-    parser_consume.add_argument('--consume-stop-criteria',
-                                dest="consume_stop_criteria",
-                                default="sleep",
-                                type=str,
-                                help="When to stop consumption: "
-                                "'eof' - on first partition EOF, "
-                                "'sleep' - on no new messages received "
-                                "after sleep time after EOF, "
-                                "'continuos' - stop only on terminate signal")
+    parser_consume.add_argument(
+        "--consume-stop-criteria",
+        dest="consume_stop_criteria",
+        default="sleep",
+        type=str,
+        help="When to stop consumption: "
+        "'eof' - on first partition EOF, "
+        "'sleep' - on no new messages received "
+        "after sleep time after EOF, "
+        "'continuos' - stop only on terminate signal",
+    )
 
-    parser_consume.add_argument('--consume-sleep-timeout',
-                                dest="consume_sleep_time_s",
-                                default=60,
-                                type=int,
-                                help="Time to sleep after EOF in sleep "
-                                "stop criteria")
+    parser_consume.add_argument(
+        "--consume-sleep-timeout",
+        dest="consume_sleep_time_s",
+        default=60,
+        type=int,
+        help="Time to sleep after EOF in sleep stop criteria",
+    )
 
     parser_atomic = subparsers.add_parser(COMMAND_ATOMIC)
-    parser_atomic.add_argument('-t',
-                               '--total',
-                               dest='msg_total',
-                               default=256,
-                               type=int,
-                               help="Producer's message rate per sec")
-    parser_atomic.add_argument('--rps',
-                               dest='msg_rate_limit',
-                               default=0,
-                               type=int,
-                               help="Producer's message rate per sec")
-    parser_atomic.add_argument("--topic-produce",
-                               dest="topic_produce",
-                               default="stream-topic-src",
-                               help="Topic to use for producing messages to")
+    parser_atomic.add_argument(
+        "-t",
+        "--total",
+        dest="msg_total",
+        default=256,
+        type=int,
+        help="Producer's message rate per sec",
+    )
+    parser_atomic.add_argument(
+        "--rps",
+        dest="msg_rate_limit",
+        default=0,
+        type=int,
+        help="Producer's message rate per sec",
+    )
+    parser_atomic.add_argument(
+        "--topic-produce",
+        dest="topic_produce",
+        default="stream-topic-src",
+        help="Topic to use for producing messages to",
+    )
 
-    parser_atomic.add_argument("--topic-consume",
-                               dest="topic_consume",
-                               default="stream-topic-src",
-                               help="Topic to use for consuming messages from")
+    parser_atomic.add_argument(
+        "--topic-consume",
+        dest="topic_consume",
+        default="stream-topic-src",
+        help="Topic to use for consuming messages from",
+    )
 
-    parser_atomic.add_argument('--consume-stop-criteria',
-                               dest="consume_stop_criteria",
-                               default="sleep",
-                               type=str,
-                               help="When to stop consumption: "
-                               "'eof' - on first partition EOF, "
-                               "'sleep' - on no new messages received "
-                               "after sleep time after EOF, "
-                               "'continuos' - stop only on terminate signal")
+    parser_atomic.add_argument(
+        "--consume-stop-criteria",
+        dest="consume_stop_criteria",
+        default="sleep",
+        type=str,
+        help="When to stop consumption: "
+        "'eof' - on first partition EOF, "
+        "'sleep' - on no new messages received "
+        "after sleep time after EOF, "
+        "'continuos' - stop only on terminate signal",
+    )
 
-    parser_atomic.add_argument('--consume-sleep-timeout',
-                               dest="consume_sleep_time_s",
-                               default=60,
-                               type=int,
-                               help="Time to sleep after EOF in sleep "
-                               "stop criteria")
+    parser_atomic.add_argument(
+        "--consume-sleep-timeout",
+        dest="consume_sleep_time_s",
+        default=60,
+        type=int,
+        help="Time to sleep after EOF in sleep stop criteria",
+    )
 
     parser_service = subparsers.add_parser(COMMAND_SERVICE)
-    parser_service.add_argument('--port',
-                                dest='web_port',
-                                default=8090,
-                                type=int,
-                                help="Webservice port to bind to")
+    parser_service.add_argument(
+        "--port",
+        dest="web_port",
+        default=8090,
+        type=int,
+        help="Webservice port to bind to",
+    )
 
     main(parser.parse_args())
