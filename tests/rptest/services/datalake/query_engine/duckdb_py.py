@@ -24,6 +24,7 @@ class DuckDBPy(Service, QueryEngineBase):
     Might not be ready for widespread use yet, but it is enough for testing
     our Iceberg implementation compatibility with DuckDB.
     """
+
     def __init__(
         self,
         ctx: TestContext,
@@ -46,8 +47,9 @@ class DuckDBPy(Service, QueryEngineBase):
         #   not S3 or S3Tables is not yet supported.
         #   —https://duckdb.org/docs/stable/core_extensions/iceberg/iceberg_rest_catalogs#limitations
         self._storage_credentials = cloud_storage.Credentials.from_context(ctx)
-        assert isinstance(self._storage_credentials, cloud_storage.S3Credentials), \
+        assert isinstance(self._storage_credentials, cloud_storage.S3Credentials), (
             "DuckDBPy query service is implemented only for S3 credentials"
+        )
 
     @staticmethod
     def engine_name() -> QueryEngineType:
@@ -71,10 +73,11 @@ class DuckDBPy(Service, QueryEngineBase):
             )""")
 
         # Currently only supporting S3 storage
-        assert isinstance(self._storage_credentials,
-                          cloud_storage.S3Credentials)
+        assert isinstance(self._storage_credentials, cloud_storage.S3Credentials)
         # DuckDB requires endpoint to be of the form "hostname:port"
-        assert self._storage_credentials.endpoint is not None, "S3 endpoint must not be None"
+        assert self._storage_credentials.endpoint is not None, (
+            "S3 endpoint must not be None"
+        )
         parsed = urlparse(self._storage_credentials.endpoint)
         endpoint = parsed.hostname
         if parsed.port:
@@ -92,9 +95,14 @@ class DuckDBPy(Service, QueryEngineBase):
                 ENDPOINT ?,
                 USE_SSL false,
                 URL_STYLE 'path'
-            );""", (self._storage_credentials.access_key,
-                    self._storage_credentials.secret_key,
-                    self._storage_credentials.region, endpoint)).fetchone()
+            );""",
+            (
+                self._storage_credentials.access_key,
+                self._storage_credentials.secret_key,
+                self._storage_credentials.region,
+                endpoint,
+            ),
+        ).fetchone()
 
         if create_secret_res is None or not create_secret_res[0]:
             raise RuntimeError(
@@ -112,16 +120,16 @@ class DuckDBPy(Service, QueryEngineBase):
         raise NotImplementedError("count_parquet_files is not implemented yet")
 
     def optimize_parquet_files(self, namespace: str, table: str) -> None:
-        raise NotImplementedError(
-            "optimize_parquet_files is not implemented yet")
+        raise NotImplementedError("optimize_parquet_files is not implemented yet")
 
 
-class Connection():
+class Connection:
     """
     PEP 249 compliant client connection wrapper for DuckDBPyConnection
     so that we can pre-execute some setup commands and provide a custom cursor method.
     See https://peps.python.org/pep-0249/#connection-objects
     """
+
     def __init__(self, conn: duckdb.DuckDBPyConnection):
         self.conn = conn
 

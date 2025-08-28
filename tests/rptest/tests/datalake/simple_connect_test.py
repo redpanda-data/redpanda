@@ -55,20 +55,22 @@ class RedpandaConnectIcebergTest(RedpandaTest, DataMigrationTestMixin):
         super(RedpandaConnectIcebergTest, self).__init__(
             test_context=test_context,
             num_brokers=3,
-            si_settings=SISettings(test_context,
-                                   cloud_storage_enable_remote_read=False,
-                                   cloud_storage_enable_remote_write=False),
+            si_settings=SISettings(
+                test_context,
+                cloud_storage_enable_remote_read=False,
+                cloud_storage_enable_remote_write=False,
+            ),
             extra_rp_conf={
-                "iceberg_enabled":
-                True,
-                "iceberg_catalog_commit_interval_ms":
-                self.FAST_COMMIT_INTVL_S * 1000,
+                "iceberg_enabled": True,
+                "iceberg_catalog_commit_interval_ms": self.FAST_COMMIT_INTVL_S * 1000,
             },
-            schema_registry_config=SchemaRegistryConfig())
+            schema_registry_config=SchemaRegistryConfig(),
+        )
         self.dl = DatalakeServices(
             self.test_context,
             redpanda=self.redpanda,
-            include_query_engines=[QueryEngineType.SPARK])
+            include_query_engines=[QueryEngineType.SPARK],
+        )
 
     def setUp(self):
         self.dl.setUp()
@@ -76,10 +78,10 @@ class RedpandaConnectIcebergTest(RedpandaTest, DataMigrationTestMixin):
             self.TOPIC_NAME,
             partitions=self.PARTITION_COUNT,
             replicas=3,
-            iceberg_mode="value_schema_id_prefix")
+            iceberg_mode="value_schema_id_prefix",
+        )
         rpk = RpkTool(self.redpanda)
-        rpk.create_schema_from_str("verifier_schema",
-                                   self.verifier_schema_avro)
+        rpk.create_schema_from_str("verifier_schema", self.verifier_schema_avro)
 
     def tearDown(self):
         self.dl.tearDown()
@@ -89,17 +91,15 @@ class RedpandaConnectIcebergTest(RedpandaTest, DataMigrationTestMixin):
     def test_translating_avro_serialized_records(self, cloud_storage_type):
         connect = RedpandaConnectService(self.test_context, self.redpanda)
         connect.start()
-        verifier = DatalakeVerifier(self.redpanda, self.TOPIC_NAME,
-                                    self.dl.spark())
+        verifier = DatalakeVerifier(self.redpanda, self.TOPIC_NAME, self.dl.spark())
         mapping = dict(
             ordinal="this",
             timestamp="timestamp_unix_milli()",
             verifier_string="uuid_v4()",
         )
-        avro_stream_config = counter_stream_config(self.redpanda,
-                                                   self.TOPIC_NAME,
-                                                   "verifier_schema", mapping,
-                                                   3000)
+        avro_stream_config = counter_stream_config(
+            self.redpanda, self.TOPIC_NAME, "verifier_schema", mapping, 3000
+        )
         connect.start_stream(name="ducky_stream", config=avro_stream_config)
         verifier.start()
         connect.stop_stream("ducky_stream")

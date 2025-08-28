@@ -22,7 +22,10 @@ from rptest.tests.datalake.catalog_service_factory import supported_catalog_type
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.datalake.utils import supported_storage_types
 from rptest.tests.datalake.schemas.schema_generator import SchemaGenerator
-from rptest.tests.datalake.schemas.data_types import ProducerType, ALL_PRIMITIVE_DATA_TYPES
+from rptest.tests.datalake.schemas.data_types import (
+    ProducerType,
+    ALL_PRIMITIVE_DATA_TYPES,
+)
 from ducktape.mark import matrix
 
 QUERY_ENGINES = [
@@ -37,14 +40,15 @@ def get_random_primitive_field(schema_json):
 
     def traverse_fields(fields, qualified_name=""):
         for field in fields:
-            if isinstance(field["type"],
-                          str) and field["type"] in avro_data_types:
+            if isinstance(field["type"], str) and field["type"] in avro_data_types:
                 fully_qualified_prim_field_names.append(
-                    (f"{qualified_name}{field['name']}", field["type"]))
+                    (f"{qualified_name}{field['name']}", field["type"])
+                )
             elif isinstance(field["type"], dict):
                 if "fields" in field["type"]:
-                    traverse_fields(field["type"]["fields"],
-                                    f"{qualified_name}{field['name']}.")
+                    traverse_fields(
+                        field["type"]["fields"], f"{qualified_name}{field['name']}."
+                    )
 
     traverse_fields(schema_json["fields"])
     return random.choice(fully_qualified_prim_field_names)
@@ -73,8 +77,7 @@ class SchemaScaleTester:
         )
 
         if use_partition_spec:
-            random_primitive_field = get_random_primitive_field(
-                self.schema.to_json())
+            random_primitive_field = get_random_primitive_field(self.schema.to_json())
             self.partition_spec = f"({random_primitive_field[0]})"
             self.redpanda.logger.debug(
                 f"Using randomly selected field for partition spec: {random_primitive_field}"
@@ -83,17 +86,19 @@ class SchemaScaleTester:
     def _make_avro_producer(self) -> AvroProducer:
         self.avro_producer = AvroProducer(
             {
-                'bootstrap.servers': self.redpanda.brokers(),
-                'schema.registry.url': self.redpanda.schema_reg().split(",")[0]
+                "bootstrap.servers": self.redpanda.brokers(),
+                "schema.registry.url": self.redpanda.schema_reg().split(",")[0],
             },
-            default_value_schema=avro.loads(json.dumps(self.schema.to_json())))
+            default_value_schema=avro.loads(json.dumps(self.schema.to_json())),
+        )
 
     def _make_random_record(self, validate: bool = False):
-        assert self.schema and self.schema_fields and self.schema_template, "Need to set schema before _make_random_record() is called"
-        return SchemaGenerator.make_random_record(self.schema,
-                                                  self.schema_fields,
-                                                  self.schema_template,
-                                                  validate=validate)
+        assert self.schema and self.schema_fields and self.schema_template, (
+            "Need to set schema before _make_random_record() is called"
+        )
+        return SchemaGenerator.make_random_record(
+            self.schema, self.schema_fields, self.schema_template, validate=validate
+        )
 
     def produce(
         self,
@@ -103,12 +108,12 @@ class SchemaScaleTester:
         should_translate: bool = True,
         mode: ProducerType = ProducerType.AVRO,
     ):
-
         for i in range(count):
             record = self._make_random_record(validate=True)
             if i == 0:
                 self.redpanda.logger.debug(
-                    f"Producing randomly generated record: {record}")
+                    f"Producing randomly generated record: {record}"
+                )
             self.avro_producer.produce(topic=topic_name, value=record)
 
         self.avro_producer.flush()
@@ -121,31 +126,34 @@ class SchemaScaleTester:
         dl: DatalakeServices,
         query_engine: QueryEngineType,
     ):
-        qe = dl.spark() if query_engine == QueryEngineType.SPARK else dl.trino(
-        )
+        qe = dl.spark() if query_engine == QueryEngineType.SPARK else dl.trino()
         table = qe.run_query_fetch_all(f"describe {self.table_name}")
         self.redpanda.logger.debug(f"Describe table result: {table}")
 
     def check_no_dlq_table(self, dl: DatalakeServices):
         # For only valid records produced, no DLQ table should be created.
         dlq_table_name = f"{self.topic_name}~dlq"
-        assert not dl.table_exists(
-            dlq_table_name), "Expected no DLQ table in catalog"
+        assert not dl.table_exists(dlq_table_name), "Expected no DLQ table in catalog"
 
-    def do_test_schema_scale(self, dl: DatalakeServices,
-                             query_engine: QueryEngineType,
-                             use_partition_spec: bool):
+    def do_test_schema_scale(
+        self,
+        dl: DatalakeServices,
+        query_engine: QueryEngineType,
+        use_partition_spec: bool,
+    ):
         config = {
             TopicSpec.PROPERTY_ICEBERG_INVALID_RECORD_ACTION: "dlq_table",
-            TopicSpec.PROPERTY_CLEANUP_POLICY: TopicSpec.CLEANUP_COMPACT_DELETE
+            TopicSpec.PROPERTY_CLEANUP_POLICY: TopicSpec.CLEANUP_COMPACT_DELETE,
         }
         if self.partition_spec is not None:
             config["redpanda.iceberg.partition.spec"] = self.partition_spec
 
-        dl.create_iceberg_enabled_topic(self.topic_name,
-                                        iceberg_mode="value_schema_id_prefix",
-                                        config=config,
-                                        partitions=10)
+        dl.create_iceberg_enabled_topic(
+            self.topic_name,
+            iceberg_mode="value_schema_id_prefix",
+            config=config,
+            partitions=10,
+        )
 
         # Generate a random schema
         self._make_schema(use_partition_spec)
@@ -166,20 +174,21 @@ class SchemaScaleTester:
 
 class SchemaScaleTest(RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):
-        super(SchemaScaleTest,
-              self).__init__(test_ctx,
-                             num_brokers=1,
-                             si_settings=SISettings(test_context=test_ctx),
-                             extra_rp_conf={
-                                 "iceberg_enabled": "true",
-                                 "iceberg_catalog_commit_interval_ms": 5000,
-                                 "log_compaction_interval_ms": 5000,
-                                 "min_cleanable_dirty_ratio": 0.0
-                             },
-                             schema_registry_config=SchemaRegistryConfig(),
-                             pandaproxy_config=PandaproxyConfig(),
-                             *args,
-                             **kwargs)
+        super(SchemaScaleTest, self).__init__(
+            test_ctx,
+            num_brokers=1,
+            si_settings=SISettings(test_context=test_ctx),
+            extra_rp_conf={
+                "iceberg_enabled": "true",
+                "iceberg_catalog_commit_interval_ms": 5000,
+                "log_compaction_interval_ms": 5000,
+                "min_cleanable_dirty_ratio": 0.0,
+            },
+            schema_registry_config=SchemaRegistryConfig(),
+            pandaproxy_config=PandaproxyConfig(),
+            *args,
+            **kwargs,
+        )
         self.test_ctx = test_ctx
 
     def setUp(self):
@@ -187,19 +196,23 @@ class SchemaScaleTest(RedpandaTest):
         pass
 
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            query_engine=QUERY_ENGINES,
-            catalog_type=supported_catalog_types(),
-            use_partition_spec=[False])
-    def schema_scale_test(self, cloud_storage_type, query_engine, catalog_type,
-                          use_partition_spec):
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[query_engine],
-                              catalog_type=catalog_type) as dl:
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=QUERY_ENGINES,
+        catalog_type=supported_catalog_types(),
+        use_partition_spec=[False],
+    )
+    def schema_scale_test(
+        self, cloud_storage_type, query_engine, catalog_type, use_partition_spec
+    ):
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[query_engine],
+            catalog_type=catalog_type,
+        ) as dl:
             # Test 5 randomly generated schemas.
             for i in range(5):
                 topic_name = f"test_{i}"
                 tester = SchemaScaleTester(self.redpanda, topic_name)
-                tester.do_test_schema_scale(dl, query_engine,
-                                            use_partition_spec)
+                tester.do_test_schema_scale(dl, query_engine, use_partition_spec)

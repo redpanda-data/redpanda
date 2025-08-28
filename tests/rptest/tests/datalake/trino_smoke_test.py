@@ -17,20 +17,20 @@ from ducktape.mark import matrix
 
 class TrinoSmokeTest(IcebergRESTCatalogTest):
     """Tests basic trino functionality with iceberg connector"""
+
     def __init__(self, test_ctx, *args, **kwargs):
         self.test_ctx = test_ctx
-        super(TrinoSmokeTest, self).__init__(test_ctx,
-                                             num_brokers=1,
-                                             *args,
-                                             **kwargs)
+        super(TrinoSmokeTest, self).__init__(test_ctx, num_brokers=1, *args, **kwargs)
         self.trino: Optional[TrinoService] = None
 
     def setUp(self):
         super().setUp()
-        self.trino = TrinoService(self.test_ctx,
-                                  self.catalog_service.iceberg_rest_url,
-                                  self.catalog_service.cloud_storage_warehouse,
-                                  self.catalog_service.catalog_type())
+        self.trino = TrinoService(
+            self.test_ctx,
+            self.catalog_service.iceberg_rest_url,
+            self.catalog_service.cloud_storage_warehouse,
+            self.catalog_service.catalog_type(),
+        )
         self.trino.start()
 
     def tearDown(self):
@@ -59,7 +59,7 @@ class TrinoSmokeTest(IcebergRESTCatalogTest):
                 cursor.fetchall()
                 cursor.execute("SELECT count(*) from redpanda.test")
                 row = cursor.fetchone()
-                assert row == (1, ), row
+                assert row == (1,), row
             finally:
                 cursor.close()
         finally:

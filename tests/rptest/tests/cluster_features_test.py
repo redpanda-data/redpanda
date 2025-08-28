@@ -40,23 +40,21 @@ class FeaturesTestBase(RedpandaTest):
     def setUp(self):
         super().setUp()
         features = self.admin.get_features()
-        self.head_latest_logical_version = features['node_latest_version']
-        self.head_earliest_logical_version = features['node_earliest_version']
+        self.head_latest_logical_version = features["node_latest_version"]
+        self.head_earliest_logical_version = features["node_earliest_version"]
 
         # Sanity check that the cluster is at a clean initial state where
         # the original == latest == active
-        self.logger.info(
-            f"Initial feature state: {json.dumps(features, indent=2)}")
-        assert (features['node_latest_version'] >= 1)
-        assert (features['node_earliest_version'] >= 1)
-        assert (features['node_latest_version'] ==
-                features['original_cluster_version'])
-        assert (features['node_latest_version'] == features['cluster_version'])
-        assert (features['node_earliest_version']
-                <= features['node_latest_version'])
+        self.logger.info(f"Initial feature state: {json.dumps(features, indent=2)}")
+        assert features["node_latest_version"] >= 1
+        assert features["node_earliest_version"] >= 1
+        assert features["node_latest_version"] == features["original_cluster_version"]
+        assert features["node_latest_version"] == features["cluster_version"]
+        assert features["node_earliest_version"] <= features["node_latest_version"]
 
         self.previous_version = self.installer.highest_from_prior_feature_version(
-            RedpandaInstaller.HEAD)
+            RedpandaInstaller.HEAD
+        )
 
     """
     Test cases defined in this parent class are executed as part
@@ -66,7 +64,7 @@ class FeaturesTestBase(RedpandaTest):
     def _get_features_map(self, feature_response=None, node=None):
         if feature_response is None:
             feature_response = self.admin.get_features(node=node)
-        return dict((f['name'], f) for f in feature_response['features'])
+        return dict((f["name"], f) for f in feature_response["features"])
 
     def _assert_default_features(self):
         """
@@ -81,11 +79,11 @@ class FeaturesTestBase(RedpandaTest):
         # of `latest_version` in the redpanda source.  Update it when
         # that happens.
         initial_version = features_response["cluster_version"]
-        assert initial_version == self.head_latest_logical_version, \
+        assert initial_version == self.head_latest_logical_version, (
             f"Version mismatch: {initial_version} vs {self.head_latest_logical_version}"
+        )
 
-        assert self._get_features_map(
-            features_response)['license']['state'] == 'active'
+        assert self._get_features_map(features_response)["license"]["state"] == "active"
 
         return features_response
 
@@ -94,10 +92,10 @@ class FeaturesTestBase(RedpandaTest):
         Apply a GET check to all nodes, for writes that are expected to
         propagate via controller log
         """
+
         def check():
             for node in self.redpanda.nodes:
-                node_version = self.admin.get_features(
-                    node=node)['cluster_version']
+                node_version = self.admin.get_features(node=node)["cluster_version"]
                 if node_version != target_version:
                     return False
 
@@ -112,6 +110,7 @@ class FeaturesTestBase(RedpandaTest):
         Apply a GET check to all nodes, for writes that are expected to
         propagate via controller log
         """
+
         def check():
             for node in self.redpanda.nodes:
                 feature_map = self._get_features_map(node=node)
@@ -129,6 +128,7 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
     """
     Multi-node variant of tests is the 'normal' execution path for feature manager.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=3, **kwargs)
 
@@ -145,28 +145,26 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         # Parameters of the compiled-in test feature
         feature_alpha_version = 2001
 
-        initial_version = self.admin.get_features()['cluster_version']
-        assert (initial_version < feature_alpha_version)
+        initial_version = self.admin.get_features()["cluster_version"]
+        assert initial_version < feature_alpha_version
         # Initially, before setting the magic environment variable, dummy test features
         # should be hidden
         assert FEATURE_ALPHA_NAME not in self._get_features_map().keys()
 
-        self.redpanda.set_environment({'__REDPANDA_TEST_FEATURES': "ON"})
+        self.redpanda.set_environment({"__REDPANDA_TEST_FEATURES": "ON"})
         self.redpanda.restart_nodes(self.redpanda.nodes)
-        assert self._get_features_map(
-        )[FEATURE_ALPHA_NAME]['state'] == 'unavailable'
+        assert self._get_features_map()[FEATURE_ALPHA_NAME]["state"] == "unavailable"
 
         # Version is too low, feature should be unavailable
-        assert initial_version == self.admin.get_features()['cluster_version']
+        assert initial_version == self.admin.get_features()["cluster_version"]
 
-        self.redpanda.set_environment({
-            '__REDPANDA_TEST_FEATURES':
-            "ON",
-            '__REDPANDA_EARLIEST_LOGICAL_VERSION':
-            f'{self.head_latest_logical_version}',
-            '__REDPANDA_LATEST_LOGICAL_VERSION':
-            f'{feature_alpha_version}'
-        })
+        self.redpanda.set_environment(
+            {
+                "__REDPANDA_TEST_FEATURES": "ON",
+                "__REDPANDA_EARLIEST_LOGICAL_VERSION": f"{self.head_latest_logical_version}",
+                "__REDPANDA_LATEST_LOGICAL_VERSION": f"{feature_alpha_version}",
+            }
+        )
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
         # Wait for version to increment: this is a little slow because we wait
@@ -177,32 +175,36 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         # Feature should become available now that version increased.  It should NOT
         # become active, because it has an explicit_only policy for activation.
         self._wait_for_feature_everywhere(
-            lambda fm: fm[FEATURE_ALPHA_NAME]['state'] == 'available')
+            lambda fm: fm[FEATURE_ALPHA_NAME]["state"] == "available"
+        )
 
         # Disable the feature, see that it enters the expected state
         self.admin.put_feature(FEATURE_ALPHA_NAME, {"state": "disabled"})
         self._wait_for_feature_everywhere(
-            lambda fm: fm[FEATURE_ALPHA_NAME]['state'] == 'disabled')
+            lambda fm: fm[FEATURE_ALPHA_NAME]["state"] == "disabled"
+        )
 
         state = self._get_features_map()[FEATURE_ALPHA_NAME]
-        assert state['state'] == 'disabled'
-        assert state['was_active'] == False
+        assert state["state"] == "disabled"
+        assert state["was_active"] == False
 
         # Write to admin API to enable the feature
         self.admin.put_feature(FEATURE_ALPHA_NAME, {"state": "active"})
 
         # This is an async check because propagation of feature_table is async
         self._wait_for_feature_everywhere(
-            lambda fm: fm[FEATURE_ALPHA_NAME]['state'] == 'active')
+            lambda fm: fm[FEATURE_ALPHA_NAME]["state"] == "active"
+        )
 
         # Disable the feature, see that it enters the expected state
         self.admin.put_feature(FEATURE_ALPHA_NAME, {"state": "disabled"})
         self._wait_for_feature_everywhere(
-            lambda fm: fm[FEATURE_ALPHA_NAME]['state'] == 'disabled')
+            lambda fm: fm[FEATURE_ALPHA_NAME]["state"] == "disabled"
+        )
 
         state = self._get_features_map()[FEATURE_ALPHA_NAME]
-        assert state['state'] == 'disabled'
-        assert state['was_active'] == True
+        assert state["state"] == "disabled"
+        assert state["was_active"] == True
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_license_upload_and_query(self):
@@ -211,20 +213,14 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         """
         license = sample_license()
         if license is None:
-            self.logger.info(
-                "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
+            self.logger.info("Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
             return
         expected_license_contents = {
-            'expires':
-            4813252273,
-            'format_version':
-            0,
-            'org':
-            'redpanda-testing',
-            'type':
-            'enterprise',
-            'sha256':
-            '2730125070a934ca1067ed073d7159acc9975dc61015892308aae186f7455daf'
+            "expires": 4813252273,
+            "format_version": 0,
+            "org": "redpanda-testing",
+            "type": "enterprise",
+            "sha256": "2730125070a934ca1067ed073d7159acc9975dc61015892308aae186f7455daf",
         }
 
         assert self.admin.put_license(license).status_code == 200
@@ -244,9 +240,10 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         resp = wait_until_result(
             lambda: check_license(self.admin.is_sample_license),
             timeout_sec=20,
-            backoff_sec=1)
-        assert resp['license'] is not None
-        assert expected_license_contents == resp['license'], resp['license']
+            backoff_sec=1,
+        )
+        assert resp["license"] is not None
+        assert expected_license_contents == resp["license"], resp["license"]
 
         license_v1 = sample_license_v1()
         if license_v1 is None:
@@ -255,31 +252,26 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
             )
             return
         expected_license_contents_v1 = {
-            'format_version':
-            1,
-            'org':
-            'redpanda-testing',
-            'type':
-            'testing_license',
-            'products': ['some_prod', 'some_other_prod'],
-            'expires':
-            4344165449,
-            'sha256':
-            '0937a2d8e4437a63373c1c1cb0f5f62c5cae9366fea1b00467b4c4eaab8ca4cf'
+            "format_version": 1,
+            "org": "redpanda-testing",
+            "type": "testing_license",
+            "products": ["some_prod", "some_other_prod"],
+            "expires": 4344165449,
+            "sha256": "0937a2d8e4437a63373c1c1cb0f5f62c5cae9366fea1b00467b4c4eaab8ca4cf",
         }
 
         assert self.admin.put_license(license_v1).status_code == 200
 
         def is_v1_license(lic):
-            if lic is None or 'license' not in lic:
+            if lic is None or "license" not in lic:
                 return False
-            return lic['license']['format_version'] == 1
+            return lic["license"]["format_version"] == 1
 
-        resp = wait_until_result(lambda: check_license(is_v1_license),
-                                 timeout_sec=20,
-                                 backoff_sec=1)
-        assert resp['license'] is not None
-        assert expected_license_contents_v1 == resp['license'], resp['license']
+        resp = wait_until_result(
+            lambda: check_license(is_v1_license), timeout_sec=20, backoff_sec=1
+        )
+        assert resp["license"] is not None
+        assert expected_license_contents_v1 == resp["license"], resp["license"]
 
         # Set back to v0 for sanity check
         assert self.admin.put_license(license).status_code == 200
@@ -287,15 +279,17 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         resp = wait_until_result(
             lambda: check_license(self.admin.is_sample_license),
             timeout_sec=20,
-            backoff_sec=1)
-        assert resp['license'] is not None
-        assert expected_license_contents == resp['license'], resp['license']
+            backoff_sec=1,
+        )
+        assert resp["license"] is not None
+        assert expected_license_contents == resp["license"], resp["license"]
 
 
 class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
     """
     Multi-node variant of tests that exercise upgrades from older versions.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=3, **kwargs)
 
@@ -311,21 +305,22 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
         Verify that on updating to a new logical version, the cluster
         version does not increment until all nodes are up to date.
         """
-        initial_version = self.admin.get_features()['cluster_version']
-        assert initial_version < self.head_latest_logical_version, \
+        initial_version = self.admin.get_features()["cluster_version"]
+        assert initial_version < self.head_latest_logical_version, (
             f"downgraded logical version {initial_version}"
+        )
 
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
 
         # Restart nodes one by one.  Version shouldn't increment until all three are done.
         self.redpanda.restart_nodes([self.redpanda.nodes[0]])
         _ = wait_for_num_versions(self.redpanda, 2)
-        assert initial_version == self.admin.get_features()['cluster_version']
+        assert initial_version == self.admin.get_features()["cluster_version"]
 
         self.redpanda.restart_nodes([self.redpanda.nodes[1]])
         # Even after waiting a bit, the logical version shouldn't change.
         time.sleep(5)
-        assert initial_version == self.admin.get_features()['cluster_version']
+        assert initial_version == self.admin.get_features()["cluster_version"]
 
         self.redpanda.restart_nodes([self.redpanda.nodes[2]])
 
@@ -339,8 +334,10 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
         def complete():
             for n in self.redpanda.nodes:
                 features = self.admin.get_features(node=n)
-                if features['cluster_version'] != self.head_latest_logical_version \
-                        or features['original_cluster_version'] != initial_version:
+                if (
+                    features["cluster_version"] != self.head_latest_logical_version
+                    or features["original_cluster_version"] != initial_version
+                ):
                     return False
             return True
 
@@ -356,9 +353,10 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
         Verify that on a rollback before updating all nodes, the cluster
         version does not increment.
         """
-        initial_version = self.admin.get_features()['cluster_version']
-        assert initial_version < self.head_latest_logical_version, \
+        initial_version = self.admin.get_features()["cluster_version"]
+        assert initial_version < self.head_latest_logical_version, (
             f"downgraded logical version {initial_version}"
+        )
 
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
         # Restart nodes one by one.  Version shouldn't increment until all three are done.
@@ -366,17 +364,17 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
         _ = wait_for_num_versions(self.redpanda, 2)
         # Even after waiting a bit, the logical version shouldn't change.
         time.sleep(5)
-        assert initial_version == self.admin.get_features()['cluster_version']
+        assert initial_version == self.admin.get_features()["cluster_version"]
 
         self.redpanda.restart_nodes([self.redpanda.nodes[1]])
         time.sleep(5)
-        assert initial_version == self.admin.get_features()['cluster_version']
+        assert initial_version == self.admin.get_features()["cluster_version"]
 
         self.installer.install(self.redpanda.nodes, self.previous_version)
         self.redpanda.restart_nodes([self.redpanda.nodes[0]])
         self.redpanda.restart_nodes([self.redpanda.nodes[1]])
         _ = wait_for_num_versions(self.redpanda, 1)
-        assert initial_version == self.admin.get_features()['cluster_version']
+        assert initial_version == self.admin.get_features()["cluster_version"]
 
 
 class FeaturesSingleNodeTest(FeaturesTestBase):
@@ -384,6 +382,7 @@ class FeaturesSingleNodeTest(FeaturesTestBase):
     A single node variant to make sure feature_manager does its job in the absence
     of any health reports.
     """
+
     def __init__(self, *args, **kwargs):
         # Skip immediate parent constructor
         super().__init__(*args, num_brokers=1, **kwargs)
@@ -397,6 +396,7 @@ class FeaturesSingleNodeUpgradeTest(FeaturesTestBase):
     """
     Single-node variant of tests that exercise upgrades from older versions.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=1, **kwargs)
 
@@ -411,24 +411,26 @@ class FeaturesSingleNodeUpgradeTest(FeaturesTestBase):
         Verify that on updating to a new logical version, the cluster
         version does not increment until all nodes are up to date.
         """
-        initial_version = self.admin.get_features()['cluster_version']
-        assert initial_version < self.head_latest_logical_version, \
+        initial_version = self.admin.get_features()["cluster_version"]
+        assert initial_version < self.head_latest_logical_version, (
             f"downgraded logical version {initial_version}"
+        )
 
         # Restart nodes one by one.  Version shouldn't increment until all three are done.
-        self.installer.install([self.redpanda.nodes[0]],
-                               RedpandaInstaller.HEAD)
+        self.installer.install([self.redpanda.nodes[0]], RedpandaInstaller.HEAD)
         self.redpanda.restart_nodes([self.redpanda.nodes[0]])
-        wait_until(lambda: self.head_latest_logical_version == self.admin.
-                   get_features()['cluster_version'],
-                   timeout_sec=10,
-                   backoff_sec=1)
+        wait_until(
+            lambda: self.head_latest_logical_version
+            == self.admin.get_features()["cluster_version"],
+            timeout_sec=10,
+            backoff_sec=1,
+        )
 
 
 OLD_NODE_JOIN_LOG_ALLOW_LIST = [
     # We expect startup failure when an old node joins, so we allow the corresponding
     # error message.
-    r'Failure during startup: seastar::abort_requested_exception \(abort requested\)'
+    r"Failure during startup: seastar::abort_requested_exception \(abort requested\)"
 ]
 
 
@@ -451,7 +453,8 @@ class FeaturesNodeJoinTest(FeaturesTestBase):
         # Pick a node to roleplay an old version of redpanda
         old_node = self.redpanda.nodes[-1]
         old_version = self.installer.highest_from_prior_feature_version(
-            self.installer.HEAD)
+            self.installer.HEAD
+        )
         self.logger.info(f"Selected old version {old_version}")
         self.installer.install([old_node], old_version)
 
@@ -462,9 +465,10 @@ class FeaturesNodeJoinTest(FeaturesTestBase):
         # one during start()
         self.redpanda.clean_node(old_node, preserve_current_install=True)
 
-        initial_version = self.admin.get_features()['cluster_version']
-        assert initial_version == self.head_latest_logical_version, \
+        initial_version = self.admin.get_features()["cluster_version"]
+        assert initial_version == self.head_latest_logical_version, (
             f"Version mismatch: {initial_version} vs {self.head_latest_logical_version}"
+        )
 
         try:
             self.redpanda.start_node(old_node)
@@ -481,12 +485,11 @@ class FeaturesNodeJoinTest(FeaturesTestBase):
 
         # Timeout long enough for join retries & health monitor tick (registered
         # requires `is_alive`)
-        wait_until(lambda: self.redpanda.registered(old_node),
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(
+            lambda: self.redpanda.registered(old_node), timeout_sec=30, backoff_sec=1
+        )
 
-    def _test_synthetic_versions(self, joiner_earliest_version,
-                                 joiner_latest_version):
+    def _test_synthetic_versions(self, joiner_earliest_version, joiner_latest_version):
         """
         Verify that when an bad-versioned node tries to join a cluster,
         it is rejected.  Do this using the same physical version, but with a synthetic
@@ -505,9 +508,10 @@ class FeaturesNodeJoinTest(FeaturesTestBase):
         # one during start()
         self.redpanda.clean_node(old_node, preserve_current_install=True)
 
-        initial_version = self.admin.get_features()['cluster_version']
-        assert initial_version == self.head_latest_logical_version, \
+        initial_version = self.admin.get_features()["cluster_version"]
+        assert initial_version == self.head_latest_logical_version, (
             f"Version mismatch: {initial_version} vs {self.head_latest_logical_version}"
+        )
 
         try:
             self.logger.info(
@@ -516,11 +520,11 @@ class FeaturesNodeJoinTest(FeaturesTestBase):
             # Set the joining node's version to something bad, it should be forbidden
             # to join the cluster.
             self.redpanda.set_environment(
-                {"__REDPANDA_LATEST_LOGICAL_VERSION": joiner_latest_version})
-            self.redpanda.set_environment({
-                "__REDPANDA_EARLIEST_LOGICAL_VERSION":
-                joiner_earliest_version
-            })
+                {"__REDPANDA_LATEST_LOGICAL_VERSION": joiner_latest_version}
+            )
+            self.redpanda.set_environment(
+                {"__REDPANDA_EARLIEST_LOGICAL_VERSION": joiner_earliest_version}
+            )
             self.redpanda.start_node(old_node)
         except DucktapeTimeoutError:
             pass
@@ -531,38 +535,44 @@ class FeaturesNodeJoinTest(FeaturesTestBase):
 
         # Restart it with a sufficiently recent version and join should succeed
         self.logger.info(
-            f"Starting node {old_node.name} with version {initial_version}")
+            f"Starting node {old_node.name} with version {initial_version}"
+        )
         self.redpanda.set_environment(
-            {"__REDPANDA_LATEST_LOGICAL_VERSION": initial_version})
+            {"__REDPANDA_LATEST_LOGICAL_VERSION": initial_version}
+        )
         self.redpanda.set_environment(
-            {"__REDPANDA_EARLIEST_LOGICAL_VERSION": initial_version})
+            {"__REDPANDA_EARLIEST_LOGICAL_VERSION": initial_version}
+        )
         self.redpanda.restart_nodes([old_node])
 
         # Timeout long enough for join retries & health monitor tick (registered
         # requires `is_alive`)
-        wait_until(lambda: self.redpanda.registered(old_node),
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(
+            lambda: self.redpanda.registered(old_node), timeout_sec=30, backoff_sec=1
+        )
 
     @cluster(num_nodes=4, log_allow_list=OLD_NODE_JOIN_LOG_ALLOW_LIST)
     def test_synthetic_old_node_join(self):
         # A node that reports a version range below the current version's earliest logical version
         # This fails the check that joining node's latest version must be >= the cluster active version
-        self._test_synthetic_versions(self.head_earliest_logical_version - 2,
-                                      self.head_latest_logical_version - 1)
+        self._test_synthetic_versions(
+            self.head_earliest_logical_version - 2, self.head_latest_logical_version - 1
+        )
 
     @cluster(num_nodes=4, log_allow_list=OLD_NODE_JOIN_LOG_ALLOW_LIST)
     def test_synthetic_too_new_node_join(self):
         # A node that reports a version range starting above the current active version.
         # This fails the test that joining nodes must have an earliest version <= the
         # active version.
-        self._test_synthetic_versions(self.head_latest_logical_version + 1,
-                                      self.head_latest_logical_version + 2)
+        self._test_synthetic_versions(
+            self.head_latest_logical_version + 1, self.head_latest_logical_version + 2
+        )
 
 
 class FeaturesUpgradeAssertionTest(FeaturesTestBase):
-    @cluster(num_nodes=3,
-             log_allow_list="Attempted to upgrade from incompatible version")
+    @cluster(
+        num_nodes=3, log_allow_list="Attempted to upgrade from incompatible version"
+    )
     def test_upgrade_assertion(self):
         """
         That if we try to upgrade to a version whose earliest_logical_version is ahead
@@ -573,14 +583,15 @@ class FeaturesUpgradeAssertionTest(FeaturesTestBase):
         upgrade_node = self.redpanda.nodes[-1]
         self.redpanda.stop_node(upgrade_node)
 
-        self.redpanda.set_environment({
-            "__REDPANDA_LATEST_LOGICAL_VERSION":
-            self.head_latest_logical_version + 2
-        })
-        self.redpanda.set_environment({
-            "__REDPANDA_EARLIEST_LOGICAL_VERSION":
-            self.head_latest_logical_version + 1
-        })
+        self.redpanda.set_environment(
+            {"__REDPANDA_LATEST_LOGICAL_VERSION": self.head_latest_logical_version + 2}
+        )
+        self.redpanda.set_environment(
+            {
+                "__REDPANDA_EARLIEST_LOGICAL_VERSION": self.head_latest_logical_version
+                + 1
+            }
+        )
 
         # Startup should fail with an incompatible version
         with expect_exception(DucktapeTimeoutError, lambda _: True):
@@ -591,8 +602,8 @@ class FeaturesUpgradeAssertionTest(FeaturesTestBase):
 
         # With the config set to override checks, start should succeed
         self.redpanda.start_node(
-            upgrade_node,
-            override_cfg_params={'upgrade_override_checks': True})
+            upgrade_node, override_cfg_params={"upgrade_override_checks": True}
+        )
 
 
 class FeaturesUpgradeActivationTest(FeaturesTestBase):
@@ -604,112 +615,109 @@ class FeaturesUpgradeActivationTest(FeaturesTestBase):
     @parametrize(upgrade=True)
     def test_new_cluster_only_activation(self, upgrade: bool):
         if upgrade:
-            self.redpanda.set_environment({
-                '__REDPANDA_TEST_FEATURES':
-                "ON",
-                "__REDPANDA_LATEST_LOGICAL_VERSION":
-                TEST_FEATURES_VERSION - 1
-            })
+            self.redpanda.set_environment(
+                {
+                    "__REDPANDA_TEST_FEATURES": "ON",
+                    "__REDPANDA_LATEST_LOGICAL_VERSION": TEST_FEATURES_VERSION - 1,
+                }
+            )
         else:
-            self.redpanda.set_environment({
-                '__REDPANDA_TEST_FEATURES':
-                "ON",
-                "__REDPANDA_LATEST_LOGICAL_VERSION":
-                TEST_FEATURES_VERSION,
-            })
+            self.redpanda.set_environment(
+                {
+                    "__REDPANDA_TEST_FEATURES": "ON",
+                    "__REDPANDA_LATEST_LOGICAL_VERSION": TEST_FEATURES_VERSION,
+                }
+            )
 
         self.redpanda.start()
 
         if upgrade:
-            for f in [
-                    FEATURE_ALPHA_NAME, FEATURE_CHARLIE_NAME,
-                    FEATURE_CHARLIE_NAME
-            ]:
+            for f in [FEATURE_ALPHA_NAME, FEATURE_CHARLIE_NAME, FEATURE_CHARLIE_NAME]:
                 # Pre-upgrade, none of the features should be available
-                assert self._get_features_map()[f]['state'] == 'unavailable'
+                assert self._get_features_map()[f]["state"] == "unavailable"
 
-            self.redpanda.set_environment({
-                '__REDPANDA_TEST_FEATURES':
-                "ON",
-                "__REDPANDA_LATEST_LOGICAL_VERSION":
-                TEST_FEATURES_VERSION,
-            })
+            self.redpanda.set_environment(
+                {
+                    "__REDPANDA_TEST_FEATURES": "ON",
+                    "__REDPANDA_LATEST_LOGICAL_VERSION": TEST_FEATURES_VERSION,
+                }
+            )
             self.redpanda.restart_nodes(self.redpanda.nodes)
-            self.redpanda.wait_until(lambda: self._get_features_map()[
-                FEATURE_ALPHA_NAME]['state'] == 'available',
-                                     timeout_sec=30,
-                                     backoff_sec=1)
+            self.redpanda.wait_until(
+                lambda: self._get_features_map()[FEATURE_ALPHA_NAME]["state"]
+                == "available",
+                timeout_sec=30,
+                backoff_sec=1,
+            )
         else:
             # No upgrade: feature should be available from time zero.
-            assert self._get_features_map(
-            )[FEATURE_ALPHA_NAME]['state'] == 'available'
+            assert self._get_features_map()[FEATURE_ALPHA_NAME]["state"] == "available"
 
         # Once we are on the test feature version, auto-active features should be on
-        assert self._get_features_map(
-        )[FEATURE_BRAVO_NAME]['state'] == 'active'
+        assert self._get_features_map()[FEATURE_BRAVO_NAME]["state"] == "active"
 
         # Once we are on the test feature version, new_clusters_only features' state
         # should depend on whether we upgraded or we were always at this version.
-        assert self._get_features_map()[FEATURE_CHARLIE_NAME][
-            'state'] == 'available' if upgrade else 'active'
+        assert (
+            self._get_features_map()[FEATURE_CHARLIE_NAME]["state"] == "available"
+            if upgrade
+            else "active"
+        )
 
     @cluster(num_nodes=1)
     @parametrize(disable=False)
     @parametrize(disable=True)
     def test_policy_change_in_minor_release(self, disable: bool):
-        self.redpanda.set_environment({
-            '__REDPANDA_TEST_FEATURES':
-            "ON",
-            "__REDPANDA_LATEST_LOGICAL_VERSION":
-            TEST_FEATURES_VERSION,
-            "__REDPANDA_TEST_FEATURE_NO_AUTO_ACTIVATE_BRAVO":
-            'true',
-        })
+        self.redpanda.set_environment(
+            {
+                "__REDPANDA_TEST_FEATURES": "ON",
+                "__REDPANDA_LATEST_LOGICAL_VERSION": TEST_FEATURES_VERSION,
+                "__REDPANDA_TEST_FEATURE_NO_AUTO_ACTIVATE_BRAVO": "true",
+            }
+        )
         self.logger.info(f"test: env={self.redpanda._environment}")
         self.redpanda.start()
 
         # The feature's policy is explicit_only, it should only go to available, not active
-        assert self._get_features_map(
-        )[FEATURE_BRAVO_NAME]['state'] == 'available'
+        assert self._get_features_map()[FEATURE_BRAVO_NAME]["state"] == "available"
 
         # Ensure that the config manager background loop isn't activating wrongly
         time.sleep(10)
-        assert self._get_features_map(
-        )[FEATURE_BRAVO_NAME]['state'] == 'available'
+        assert self._get_features_map()[FEATURE_BRAVO_NAME]["state"] == "available"
 
         # Ensure that restarts don't activate the feature
         self.redpanda.restart_nodes(self.redpanda.nodes)
         time.sleep(10)
-        assert self._get_features_map(
-        )[FEATURE_BRAVO_NAME]['state'] == 'available'
+        assert self._get_features_map()[FEATURE_BRAVO_NAME]["state"] == "available"
 
         if disable:
             # Explicitly disable the feature: this should prevent it auto activating
             # after the simulated upgrade
             self.admin.put_feature(FEATURE_BRAVO_NAME, {"state": "disabled"})
             self._wait_for_feature_everywhere(
-                lambda fm: fm[FEATURE_BRAVO_NAME]['state'] == 'disabled')
+                lambda fm: fm[FEATURE_BRAVO_NAME]["state"] == "disabled"
+            )
 
         # Simulate upgrading to a .z release that changes the feature's policy to ::always
         self.redpanda.unset_environment(
-            ["__REDPANDA_TEST_FEATURE_NO_AUTO_ACTIVATE_BRAVO"])
-        self.redpanda.set_environment({
-            '__REDPANDA_TEST_FEATURES':
-            "ON",
-            "__REDPANDA_LATEST_LOGICAL_VERSION":
-            TEST_FEATURES_VERSION
-        })
+            ["__REDPANDA_TEST_FEATURE_NO_AUTO_ACTIVATE_BRAVO"]
+        )
+        self.redpanda.set_environment(
+            {
+                "__REDPANDA_TEST_FEATURES": "ON",
+                "__REDPANDA_LATEST_LOGICAL_VERSION": TEST_FEATURES_VERSION,
+            }
+        )
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
         if disable:
             # Because feature was explicitly disabled, it should not auto-activate
-            assert self._get_features_map(
-            )[FEATURE_BRAVO_NAME]['state'] == 'disabled'
+            assert self._get_features_map()[FEATURE_BRAVO_NAME]["state"] == "disabled"
             time.sleep(10)
             # ...even after time for some background ticks
-            assert self._get_features_map(
-            )[FEATURE_BRAVO_NAME]['state'] == 'disabled'
+            assert self._get_features_map()[FEATURE_BRAVO_NAME]["state"] == "disabled"
         else:
             # Now that the feature's policy is to auto-activate, it should activate
             self._wait_for_feature_everywhere(
-                lambda fm: fm[FEATURE_BRAVO_NAME]['state'] == 'active')
+                lambda fm: fm[FEATURE_BRAVO_NAME]["state"] == "active"
+            )

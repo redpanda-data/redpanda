@@ -10,10 +10,11 @@ from model import *
 from reader import Reader
 from storage import BatchType, Header, Record, Segment
 
-logger = logging.getLogger('kvstore')
+logger = logging.getLogger("kvstore")
 
 STM_SNAPSHOT_KEY_PATTERN = re.compile(
-    "^(?P<name>.+)/{(?P<namespace>.+)/(?P<topic>.+)/(?P<partition>\d+)}$")
+    "^(?P<name>.+)/{(?P<namespace>.+)/(?P<topic>.+)/(?P<partition>\d+)}$"
+)
 
 
 class SnapshotBatch:
@@ -45,9 +46,21 @@ class SnapshotBatch:
         term = rdr.read_int64()
         compressed = rdr.read_int8()
 
-        header = Header(h_crc, h_sz, h_bo, h_tp, h_batch_crc, h_attrs, h_lod,
-                        first_ts, last_ts, producer_id, producer_epoch,
-                        base_seq, record_cnt)
+        header = Header(
+            h_crc,
+            h_sz,
+            h_bo,
+            h_tp,
+            h_batch_crc,
+            h_attrs,
+            h_lod,
+            first_ts,
+            last_ts,
+            producer_id,
+            producer_epoch,
+            base_seq,
+            record_cnt,
+        )
 
         records = []
 
@@ -96,13 +109,13 @@ class KvStoreRecordDecoder:
         return "unknown"
 
     def decode(self):
-
         assert self.batch_type == BatchType.kvstore
         ret = {}
-        ret['epoch'] = self.header.first_ts
-        ret['offset'] = self.header.base_offset + self.offset_delta
-        ret['ts'] = datetime.datetime.utcfromtimestamp(
-            self.header.first_ts / 1000.0).strftime('%Y-%m-%d %H:%M:%S')
+        ret["epoch"] = self.header.first_ts
+        ret["offset"] = self.header.base_offset + self.offset_delta
+        ret["ts"] = datetime.datetime.utcfromtimestamp(
+            self.header.first_ts / 1000.0
+        ).strftime("%Y-%m-%d %H:%M:%S")
 
         k_rdr = Reader(self.k_stream)
 
@@ -110,17 +123,17 @@ class KvStoreRecordDecoder:
 
         key_buf = k_rdr.stream.read()
 
-        ret['key_space'] = self._decode_ks(keyspace)
-        ret['key_buf'] = key_buf
+        ret["key_space"] = self._decode_ks(keyspace)
+        ret["key_buf"] = key_buf
         if self.value_is_optional_type:
             data_rdr = Reader(self.v_stream)
             data = data_rdr.read_optional(lambda r: r.read_iobuf())
         else:
             data = self.record.value
         if data:
-            ret['data'] = data
+            ret["data"] = data
         else:
-            ret['data'] = None
+            ret["data"] = None
 
         return ret
 
@@ -145,11 +158,11 @@ SNAP_HDR_FMT = "<IIbi"
 SNAP_HDR_SIZE = struct.calcsize(SNAP_HDR_FMT)
 
 SnapshotHeader = collections.namedtuple(
-    'SnapshotHeader',
-    ('header_crc', 'metadata_crc', 'version', 'metadata_size'))
+    "SnapshotHeader", ("header_crc", "metadata_crc", "version", "metadata_size")
+)
 
 
-class Snapshot():
+class Snapshot:
     def __init__(self, snapshot_file_path):
         self.path = snapshot_file_path
         self.header = None
@@ -160,8 +173,7 @@ class Snapshot():
         with open(self.path, "rb") as f:
             data = f.read(SNAP_HDR_SIZE)
             if len(data) == SNAP_HDR_SIZE:
-                self.header = SnapshotHeader(
-                    *struct.unpack(SNAP_HDR_FMT, data))
+                self.header = SnapshotHeader(*struct.unpack(SNAP_HDR_FMT, data))
             if self.header:
                 self.meta = f.read(self.header.metadata_size)
                 self.data = f.read()
@@ -180,14 +192,13 @@ class KvSnapshot:
         data_str = BytesIO(self.snap.data)
         rdr = Reader(data_str)
         data_sz = rdr.read_int32()
-        self.data_batch = SnapshotBatch.from_stream(
-            f=BytesIO(rdr.read_bytes(data_sz)))
+        self.data_batch = SnapshotBatch.from_stream(f=BytesIO(rdr.read_bytes(data_sz)))
 
 
 def read_vnode(rdr):
     ret = {}
-    ret['id'] = rdr.read_int32()
-    ret['revision'] = rdr.read_int64()
+    ret["id"] = rdr.read_int32()
+    ret["revision"] = rdr.read_int64()
     return ret
 
 
@@ -205,22 +216,22 @@ def read_configurations_map(rdr):
 def decode_raft_key(k):
     rdr = Reader(BytesIO(k))
     ret = {}
-    ret['type'] = rdr.read_int8()
-    ret['name'] = decode_raft_meta_key(ret['type'])
-    ret['group'] = rdr.read_int64()
+    ret["type"] = rdr.read_int8()
+    ret["name"] = decode_raft_meta_key(ret["type"])
+    ret["group"] = rdr.read_int64()
     return ret
 
 
 def decode_offset_translator_key(k):
     rdr = Reader(BytesIO(k))
     ret = {}
-    ret['type'] = rdr.read_int8()
-    if ret['type'] == 0:
-        ret['name'] = "offset_map"
+    ret["type"] = rdr.read_int8()
+    if ret["type"] == 0:
+        ret["name"] = "offset_map"
     else:
-        ret['name'] = 'highest_known_offset'
+        ret["name"] = "highest_known_offset"
 
-    ret['group'] = rdr.read_int64()
+    ret["group"] = rdr.read_int64()
     return ret
 
 
@@ -255,28 +266,28 @@ def decode_storage_key_name(key_type):
 def decode_storage_key(k):
     rdr = Reader(BytesIO(k))
     ret = {}
-    ret['type'] = rdr.read_int8()
-    ret['name'] = decode_storage_key_name(ret['type'])
-    ret['ntp'] = read_ntp(rdr)
+    ret["type"] = rdr.read_int8()
+    ret["name"] = decode_storage_key_name(ret["type"])
+    ret["ntp"] = read_ntp(rdr)
     return ret
 
 
 def decode_shard_placement_key(k):
     rdr = Reader(BytesIO(k))
     ret = {}
-    ret['type'] = rdr.read_int32()
-    if ret['type'] == 0:
-        ret['name'] = "persistence_enabled"
-    elif ret['type'] == 1:
-        ret['name'] = "assignment"
-        ret['group'] = rdr.read_int64()
-    elif ret['type'] == 2:
-        ret['name'] = "current_state"
-        ret['group'] = rdr.read_int64()
-    elif ret['type'] == 3:
-        ret['name'] = "balancer_state"
+    ret["type"] = rdr.read_int32()
+    if ret["type"] == 0:
+        ret["name"] = "persistence_enabled"
+    elif ret["type"] == 1:
+        ret["name"] = "assignment"
+        ret["group"] = rdr.read_int64()
+    elif ret["type"] == 2:
+        ret["name"] = "current_state"
+        ret["group"] = rdr.read_int64()
+    elif ret["type"] == 3:
+        ret["name"] = "balancer_state"
     else:
-        ret['name'] = "unknown"
+        ret["name"] = "unknown"
     return ret
 
 
@@ -294,7 +305,7 @@ def decode_key(ks, key):
         data = decode_shard_placement_key(key)
     else:
         data = key.hex()
-    return {'keyspace': ks, 'data': data}
+    return {"keyspace": ks, "data": data}
 
 
 def decode_raft_meta_key(type):
@@ -327,26 +338,26 @@ def decode_offset_translator_value(type, v):
 
     def read_peristed_batch(rdr):
         ret = {}
-        ret['base_offset'] = rdr.read_int64()
-        ret['length'] = rdr.read_int32()
+        ret["base_offset"] = rdr.read_int64()
+        ret["length"] = rdr.read_int32()
         return ret
 
     if type == 1:
-        ret['offset'] = rdr.read_int64()
+        ret["offset"] = rdr.read_int64()
     else:
         rdr.read_envelope()
-        ret['start_delta'] = rdr.read_int64()
-        ret['persisted_batches'] = rdr.read_serde_vector(read_peristed_batch)
+        ret["start_delta"] = rdr.read_int64()
+        ret["persisted_batches"] = rdr.read_serde_vector(read_peristed_batch)
     return ret
 
 
 def decode_value(dk, v):
-    if dk['keyspace'] == 'consensus':
-        return decode_raft_value(dk['data']['type'], v)
-    elif dk['keyspace'] == 'storage':
-        return decode_storage_value(dk['data']['type'], v)
-    elif dk['keyspace'] == 'offset_translator':
-        return decode_offset_translator_value(dk['data']['type'], v)
+    if dk["keyspace"] == "consensus":
+        return decode_raft_value(dk["data"]["type"], v)
+    elif dk["keyspace"] == "storage":
+        return decode_storage_value(dk["data"]["type"], v)
+    elif dk["keyspace"] == "offset_translator":
+        return decode_offset_translator_value(dk["data"]["type"], v)
     return v.hex()
 
 
@@ -355,8 +366,8 @@ def decode_raft_value(type, v):
 
     if type == 0:  # voted for
         ret = {}
-        ret['vnode'] = read_vnode(rdr)
-        ret['term'] = rdr.read_int64()
+        ret["vnode"] = read_vnode(rdr)
+        ret["term"] = rdr.read_int64()
         return ret
     elif type == 1:  # config map
         return read_configurations_map(rdr)
@@ -379,11 +390,11 @@ class KvStore:
         self.kv = {}
 
     def _apply(self, entry):
-        key = (entry['key_space'], entry['key_buf'])
+        key = (entry["key_space"], entry["key_buf"])
         logger.debug(f"applying {entry}")
 
-        if entry['data'] is not None:
-            self.kv[key] = entry['data']
+        if entry["data"] is not None:
+            self.kv[key] = entry["data"]
         else:
             try:
                 del self.kv[key]
@@ -399,9 +410,9 @@ class KvStore:
             logger.info(f"snapshot last offset: {snap.last_offset}")
             snapshot_offset = snap.last_offset
             for r in snap.data_batch:
-                d = KvStoreRecordDecoder(r,
-                                         snap.data_batch,
-                                         value_is_optional_type=False)
+                d = KvStoreRecordDecoder(
+                    r, snap.data_batch, value_is_optional_type=False
+                )
                 self._apply(d.decode())
         else:
             logger.info(f"{self.ntp.path}/snapshot does not exist")
@@ -414,9 +425,7 @@ class KvStore:
                     if snapshot_offset is not None and offset <= snapshot_offset:
                         continue
 
-                    d = KvStoreRecordDecoder(r,
-                                             batch,
-                                             value_is_optional_type=True)
+                    d = KvStoreRecordDecoder(r, batch, value_is_optional_type=True)
                     self._apply(d.decode())
 
     def items(self):
@@ -424,5 +433,5 @@ class KvStore:
         for k, v in self.kv.items():
             dk = decode_key(k[0], k[1])
             dv = decode_value(dk, v)
-            ret.append({'key': dk, 'value': dv})
+            ret.append({"key": dk, "value": dv})
         return ret

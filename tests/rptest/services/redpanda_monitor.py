@@ -25,15 +25,15 @@ class RedpandaMonitor(BackgroundThreadService):
     def _worker(self, idx, node):
         self.stopping.clear()
 
-        self.redpanda.logger.info(
-            f"Started RedpandaMonitor on {node.account.hostname}")
+        self.redpanda.logger.info(f"Started RedpandaMonitor on {node.account.hostname}")
 
         while not self.stopping.is_set():
             started_dead_nodes = []
             for n in self.redpanda.started_nodes():
                 try:
                     self.redpanda.logger.info(
-                        f"RedpandaMonitor checking {n.account.hostname}")
+                        f"RedpandaMonitor checking {n.account.hostname}"
+                    )
                     pid = self.redpanda.redpanda_pid(n)
                     if pid is None:
                         started_dead_nodes.append(n)
@@ -49,10 +49,9 @@ class RedpandaMonitor(BackgroundThreadService):
             for n in started_dead_nodes:
                 try:
                     self.redpanda.logger.info(
-                        f"RedpandaMonitor restarting {n.account.hostname}")
-                    self.redpanda.start_node(node=n,
-                                             write_config=False,
-                                             timeout=60)
+                        f"RedpandaMonitor restarting {n.account.hostname}"
+                    )
+                    self.redpanda.start_node(node=n, write_config=False, timeout=60)
                 except Exception as e:
                     self.redpanda.logger.error(
                         f"RedpandaMonitor failed to restart {n.account.hostname}: {e}"
@@ -60,12 +59,12 @@ class RedpandaMonitor(BackgroundThreadService):
 
             time.sleep(self.interval)
 
-        self.redpanda.logger.info(
-            f"Stopped RedpandaMonitor on {node.account.hostname}")
+        self.redpanda.logger.info(f"Stopped RedpandaMonitor on {node.account.hostname}")
 
     def stop_node(self, node):
         self.redpanda.logger.info(
-            f"Stopping RedpandaMonitor on {node.account.hostname}")
+            f"Stopping RedpandaMonitor on {node.account.hostname}"
+        )
         self.stopping.set()
 
     def clean_node(self, nodes):

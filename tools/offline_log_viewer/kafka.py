@@ -10,6 +10,7 @@ class KafkaControlRecordType(Enum):
     used for transactional control records.
     Keep this in sync with model::control_record_type
     """
+
     tx_abort = 0
     tx_commit = 1
     unknown = -1
@@ -61,13 +62,13 @@ def decode_archival_metadata_command(kr, vr):
 
         def spec(rdr, version):
             o = {}
-            o['ntp_revision_deprecated'] = rdr.read_int64(),
-            o['name'] = rdr.read_string(),
-            o['meta'] = read_cloud_storage_segment_meta(rdr),
+            o["ntp_revision_deprecated"] = (rdr.read_int64(),)
+            o["name"] = (rdr.read_string(),)
+            o["meta"] = (read_cloud_storage_segment_meta(rdr),)
             if version >= 1:
-                o['is_validated'] = rdr.read_bool(),
+                o["is_validated"] = (rdr.read_bool(),)
             else:
-                o['is_validated'] = False
+                o["is_validated"] = False
             return o
 
         return vr.read_envelope(spec, reader_version=1)

@@ -22,13 +22,15 @@ class CloudIcebergBigquery(RedpandaCloudTest):
     """
     Verify cluster infra/config match config profile used to launch - only applies to cloudv2
     """
+
     def __init__(self, test_context):
         super().__init__(test_context=test_context)
         self._ctx = test_context
         self._ipClient = InstallPackClient(
             self.redpanda._cloud_cluster.config.install_pack_url_template,
             self.redpanda._cloud_cluster.config.install_pack_auth_type,
-            self.redpanda._cloud_cluster.config.install_pack_auth)
+            self.redpanda._cloud_cluster.config.install_pack_auth,
+        )
 
     def setUp(self):
         super().setUp()
@@ -37,8 +39,9 @@ class CloudIcebergBigquery(RedpandaCloudTest):
         install_pack_version = cloud_cluster.get_install_pack_version()
         self._ip = self._ipClient.getInstallPack(install_pack_version)
         self._clusterId = cloud_cluster.cluster_id
-        self._configProfile = self._ip['config_profiles'][
-            cloud_cluster.config.config_profile_name]
+        self._configProfile = self._ip["config_profiles"][
+            cloud_cluster.config.config_profile_name
+        ]
 
     def test_cloud_iceberg_bigquery(self):
         self.rpk = RpkTool(self.redpanda)
@@ -50,17 +53,17 @@ class CloudIcebergBigquery(RedpandaCloudTest):
 
         self.logger.debug(f"Cloud provider is {cloud_provider}")
 
-        storage_uri_prefix = 'gs'
+        storage_uri_prefix = "gs"
         if cloud_provider == "aws":
-            storage_uri_prefix = 's3'
+            storage_uri_prefix = "s3"
 
         self.logger.debug(f"storage_uri_prefix is {storage_uri_prefix}")
 
-        test_topic = 'test_topic'
+        test_topic = "test_topic"
         self.rpk.create_topic(test_topic)
-        self.rpk.alter_topic_config(test_topic,
-                                    TopicSpec.PROPERTY_ICEBERG_MODE,
-                                    'key_value')
+        self.rpk.alter_topic_config(
+            test_topic, TopicSpec.PROPERTY_ICEBERG_MODE, "key_value"
+        )
 
         MESSAGE_COUNT = 20
         for i in range(MESSAGE_COUNT):
@@ -100,8 +103,7 @@ class CloudIcebergBigquery(RedpandaCloudTest):
 
                 return results
             except Exception as e:
-                self.logger.error(
-                    f"Error executing query '{description}': {e}")
+                self.logger.error(f"Error executing query '{description}': {e}")
                 raise
 
         # Create Dataset
@@ -112,7 +114,8 @@ class CloudIcebergBigquery(RedpandaCloudTest):
             try:
                 client.create_dataset(dataset_ref)  # API request
                 self.logger.debug(
-                    f"Dataset '{project}:{dataset_id}' successfully created.")
+                    f"Dataset '{project}:{dataset_id}' successfully created."
+                )
             except Conflict:
                 self.logger.debug(
                     f"Dataset '{project}:{dataset_id}' already exists. Skipping creation."
@@ -130,27 +133,23 @@ class CloudIcebergBigquery(RedpandaCloudTest):
 
             try:
                 client.create_table(table)
-                self.logger.debug(
-                    f"External table '{table_ref}' successfully created.")
+                self.logger.debug(f"External table '{table_ref}' successfully created.")
             except Conflict:
                 self.logger.debug(
                     f"External table '{table_ref}' already exists. Skipping creation."
                 )
             except BadRequest as e:
-                self.logger.debug(
-                    f"Error creating external table: {e.message}")
+                self.logger.debug(f"Error creating external table: {e.message}")
 
         def delete_dataset(client, project, dataset_id):
             dataset_ref = f"{project}.{dataset_id}"
             try:
-                client.delete_dataset(dataset_ref,
-                                      delete_contents=True,
-                                      not_found_ok=True)
-                self.logger.debug(
-                    f"Dataset '{dataset_ref}' deleted successfully.")
+                client.delete_dataset(
+                    dataset_ref, delete_contents=True, not_found_ok=True
+                )
+                self.logger.debug(f"Dataset '{dataset_ref}' deleted successfully.")
             except Exception as e:
-                self.logger.error(
-                    f"Error deleting dataset '{dataset_ref}': {e}")
+                self.logger.error(f"Error deleting dataset '{dataset_ref}': {e}")
 
         create_dataset(bq_client, PROJECT, DATASET_ID, REGION)
         create_external_table(bq_client, PROJECT, TABLE_ID, STORAGE_URI)
@@ -161,11 +160,11 @@ class CloudIcebergBigquery(RedpandaCloudTest):
         try:
             # Test SELECT query
             try:
-                select_results = run_query(bq_client, select_query,
-                                           "SELECT query (LIMIT 10)")
+                select_results = run_query(
+                    bq_client, select_query, "SELECT query (LIMIT 10)"
+                )
                 assert select_results, "SELECT query returned no results!"
-                self.logger.info(
-                    f"SELECT query returned {len(select_results)} rows.")
+                self.logger.info(f"SELECT query returned {len(select_results)} rows.")
                 # TODO Add assertions for specific data formats
             except Exception as e:
                 self.logger.error(f"Failed to execute SELECT query: {e}")
@@ -173,12 +172,12 @@ class CloudIcebergBigquery(RedpandaCloudTest):
 
             # Test COUNT query
             try:
-                count_results = run_query(bq_client, count_query,
-                                          "COUNT query")
+                count_results = run_query(bq_client, count_query, "COUNT query")
                 total_rows = count_results[0].total_rows if count_results else 0
 
                 assert total_rows == MESSAGE_COUNT, (
-                    f"Expected {MESSAGE_COUNT} rows, but got {total_rows}!")
+                    f"Expected {MESSAGE_COUNT} rows, but got {total_rows}!"
+                )
                 self.logger.info(
                     f"COUNT query result: {total_rows} rows, expected {MESSAGE_COUNT}."
                 )

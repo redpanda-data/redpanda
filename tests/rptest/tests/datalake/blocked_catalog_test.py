@@ -36,18 +36,17 @@ class DatalakeBlockedCatalogTest(RedpandaTest):
                 "iceberg_enabled": True,
                 "iceberg_catalog_commit_interval_ms": 1000,
                 "iceberg_target_lag_ms": 1000,
-
                 # Trim local storage aggressively.
                 "retention_local_target_capacity_bytes": 1024,
                 "retention_local_trim_interval": 1000,
                 "log_segment_ms": 1000,
                 "log_segment_ms_min": 1000,
-
                 # Aggressively GC in tiered storage.
                 "cloud_storage_housekeeping_interval_ms": 1000,
             },
             *args,
-            **kwargs)
+            **kwargs,
+        )
         self.rpcn = RedpandaConnectService(self.test_context, self.redpanda)
         self.topic_name: str = "tapioca"
         self.stream_name: str = "tapioca_stream"
@@ -62,7 +61,8 @@ class DatalakeBlockedCatalogTest(RedpandaTest):
             self.topic_name,
             "",  # subject
             cnt=0,  # indefinite count
-            interval_ms=10)
+            interval_ms=10,
+        )
 
     def local_storage_trimmed(self) -> bool:
         """
@@ -110,8 +110,10 @@ class DatalakeBlockedCatalogTest(RedpandaTest):
         Returns the partitions high watermark and start offset.
         """
         rpk = RpkTool(self.redpanda)
-        hwm_lsos = [(p.high_watermark, p.start_offset)
-                    for p in rpk.describe_topic(self.topic_name)]
+        hwm_lsos = [
+            (p.high_watermark, p.start_offset)
+            for p in rpk.describe_topic(self.topic_name)
+        ]
         assert len(hwm_lsos) == 1, f"Expected one partition: {hwm_lsos}"
         return hwm_lsos[0]
 
@@ -124,11 +126,13 @@ class DatalakeBlockedCatalogTest(RedpandaTest):
         """
         TARGET_STEP_SIZE = 500
         num_steps = hwm // TARGET_STEP_SIZE
-        ranges = [(i * hwm // num_steps, (i + 1) * hwm // num_steps)
-                  for i in range(num_steps)]
+        ranges = [
+            (i * hwm // num_steps, (i + 1) * hwm // num_steps) for i in range(num_steps)
+        ]
         for start, end_excl in ranges:
             actual = [
-                r[0] for r in spark.run_query_fetch_all(
+                r[0]
+                for r in spark.run_query_fetch_all(
                     f"select redpanda.offset from redpanda.{self.topic_name} where redpanda.offset >= {start} and redpanda.offset < {end_excl} order by redpanda.offset"
                 )
             ]
@@ -143,17 +147,19 @@ class DatalakeBlockedCatalogTest(RedpandaTest):
         that once unblocked, translation proceeds from the start of the log
         that resides in tiered storage.
         """
-        with DatalakeServices(self.test_context,
-                              redpanda=self.redpanda,
-                              include_query_engines=[QueryEngineType.SPARK],
-                              catalog_type=CatalogType.REST_JDBC) as dl:
+        with DatalakeServices(
+            self.test_context,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.SPARK],
+            catalog_type=CatalogType.REST_JDBC,
+        ) as dl:
             dl.create_iceberg_enabled_topic(self.topic_name)
             spark = dl.spark()
 
-            with firewall_blocked(self.redpanda.nodes,
-                                  dl.catalog_service.iceberg_rest_port):
-                self.rpcn.start_stream(self.stream_name,
-                                       self.make_rpcn_config())
+            with firewall_blocked(
+                self.redpanda.nodes, dl.catalog_service.iceberg_rest_port
+            ):
+                self.rpcn.start_stream(self.stream_name, self.make_rpcn_config())
 
                 # Give some time for Redpanda to attempt some translation, but
                 # ultimately not create the table because of the firewall.
@@ -162,9 +168,7 @@ class DatalakeBlockedCatalogTest(RedpandaTest):
 
                 # Because we've set such an aggressive local target capacity,
                 # we should trim local data, despite not translating anything.
-                wait_until(self.local_storage_trimmed,
-                           timeout_sec=30,
-                           backoff_sec=1)
+                wait_until(self.local_storage_trimmed, timeout_sec=30, backoff_sec=1)
                 assert not dl.table_exists(self.topic_name)
 
             dl.wait_for_translation_until_offset(self.topic_name, 100)
@@ -185,23 +189,26 @@ class DatalakeBlockedCatalogTest(RedpandaTest):
         that once unblocked, translation proceeds from the start of the log
         that resides in tiered storage.
         """
-        with DatalakeServices(self.test_context,
-                              redpanda=self.redpanda,
-                              include_query_engines=[QueryEngineType.SPARK],
-                              catalog_type=CatalogType.REST_JDBC) as dl:
+        with DatalakeServices(
+            self.test_context,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.SPARK],
+            catalog_type=CatalogType.REST_JDBC,
+        ) as dl:
             dl.create_iceberg_enabled_topic(self.topic_name)
             self.rpcn.start_stream(self.stream_name, self.make_rpcn_config())
             dl.wait_for_translation_until_offset(self.topic_name, 100)
-            wait_until(self.local_storage_trimmed,
-                       timeout_sec=30,
-                       backoff_sec=1)
+            wait_until(self.local_storage_trimmed, timeout_sec=30, backoff_sec=1)
 
             spark = dl.spark()
-            with firewall_blocked(self.redpanda.nodes,
-                                  dl.catalog_service.iceberg_rest_port):
-                wait_until(lambda: self.iceberg_writes_quiesced(spark),
-                           timeout_sec=30,
-                           backoff_sec=1)
+            with firewall_blocked(
+                self.redpanda.nodes, dl.catalog_service.iceberg_rest_port
+            ):
+                wait_until(
+                    lambda: self.iceberg_writes_quiesced(spark),
+                    timeout_sec=30,
+                    backoff_sec=1,
+                )
 
             self.rpcn.stop_stream(self.stream_name, should_finish=None)
 
@@ -214,42 +221,41 @@ class DatalakeBlockedCatalogTest(RedpandaTest):
             DatalakeVerifier.oneshot(self.redpanda, self.topic_name, spark)
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            with_spillover=[True, False])
-    def test_block_cloud_retention_before_translation(self, cloud_storage_type,
-                                                      with_spillover):
+    @matrix(cloud_storage_type=supported_storage_types(), with_spillover=[True, False])
+    def test_block_cloud_retention_before_translation(
+        self, cloud_storage_type, with_spillover
+    ):
         """
         Test that blocks the catalog before the first translation and ensures
         that cloud retention is blocked while local space management can make
         progress.
         """
-        with DatalakeServices(self.test_context,
-                              redpanda=self.redpanda,
-                              include_query_engines=[QueryEngineType.SPARK],
-                              catalog_type=CatalogType.REST_JDBC) as dl:
-            dl.create_iceberg_enabled_topic(self.topic_name,
-                                            config=dict({"retention.ms": 1}))
+        with DatalakeServices(
+            self.test_context,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.SPARK],
+            catalog_type=CatalogType.REST_JDBC,
+        ) as dl:
+            dl.create_iceberg_enabled_topic(
+                self.topic_name, config=dict({"retention.ms": 1})
+            )
             spark = dl.spark()
             rpk = RpkTool(self.redpanda)
             if with_spillover:
-                rpk.cluster_config_set("cloud_storage_spillover_manifest_size",
-                                       "null")
+                rpk.cluster_config_set("cloud_storage_spillover_manifest_size", "null")
                 rpk.cluster_config_set(
-                    "cloud_storage_spillover_manifest_max_segments", "1")
+                    "cloud_storage_spillover_manifest_max_segments", "1"
+                )
 
-            with firewall_blocked(self.redpanda.nodes,
-                                  dl.catalog_service.iceberg_rest_port):
-                self.rpcn.start_stream(self.stream_name,
-                                       self.make_rpcn_config())
+            with firewall_blocked(
+                self.redpanda.nodes, dl.catalog_service.iceberg_rest_port
+            ):
+                self.rpcn.start_stream(self.stream_name, self.make_rpcn_config())
                 time.sleep(5)
                 assert not dl.table_exists(self.topic_name)
-                wait_until(self.local_storage_trimmed,
-                           timeout_sec=30,
-                           backoff_sec=1)
+                wait_until(self.local_storage_trimmed, timeout_sec=30, backoff_sec=1)
                 if with_spillover:
-                    wait_until(self.has_spilled_over,
-                               timeout_sec=30,
-                               backoff_sec=1)
+                    wait_until(self.has_spilled_over, timeout_sec=30, backoff_sec=1)
                 assert not dl.table_exists(self.topic_name)
 
                 # Despite our retention settings being so low, we shouldn't
@@ -275,27 +281,29 @@ class DatalakeBlockedCatalogTest(RedpandaTest):
         that cloud retention is blocked while local space management can make
         progress.
         """
-        with DatalakeServices(self.test_context,
-                              redpanda=self.redpanda,
-                              include_query_engines=[QueryEngineType.SPARK],
-                              catalog_type=CatalogType.REST_JDBC) as dl:
-            dl.create_iceberg_enabled_topic(self.topic_name,
-                                            config=dict({"retention.ms": 1}))
+        with DatalakeServices(
+            self.test_context,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.SPARK],
+            catalog_type=CatalogType.REST_JDBC,
+        ) as dl:
+            dl.create_iceberg_enabled_topic(
+                self.topic_name, config=dict({"retention.ms": 1})
+            )
             self.rpcn.start_stream(self.stream_name, self.make_rpcn_config())
             dl.wait_for_translation_until_offset(self.topic_name, 100)
-            wait_until(self.local_storage_trimmed,
-                       timeout_sec=30,
-                       backoff_sec=1)
+            wait_until(self.local_storage_trimmed, timeout_sec=30, backoff_sec=1)
 
             spark = dl.spark()
-            with firewall_blocked(self.redpanda.nodes,
-                                  dl.catalog_service.iceberg_rest_port):
-                wait_until(lambda: self.iceberg_writes_quiesced(spark),
-                           timeout_sec=30,
-                           backoff_sec=1)
-                wait_until(self.log_start_quiesced,
-                           timeout_sec=30,
-                           backoff_sec=1)
+            with firewall_blocked(
+                self.redpanda.nodes, dl.catalog_service.iceberg_rest_port
+            ):
+                wait_until(
+                    lambda: self.iceberg_writes_quiesced(spark),
+                    timeout_sec=30,
+                    backoff_sec=1,
+                )
+                wait_until(self.log_start_quiesced, timeout_sec=30, backoff_sec=1)
 
             self.rpcn.stop_stream(self.stream_name, should_finish=None)
 

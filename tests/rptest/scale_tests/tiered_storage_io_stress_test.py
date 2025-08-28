@@ -18,14 +18,19 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierRandomConsumer,
     KgoVerifierConsumerGroupConsumer,
 )
-from rptest.services.redpanda import CloudStorageType, SISettings, RESTART_LOG_ALLOW_LIST, get_cloud_storage_type
+from rptest.services.redpanda import (
+    CloudStorageType,
+    SISettings,
+    RESTART_LOG_ALLOW_LIST,
+    get_cloud_storage_type,
+)
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.si_utils import quiesce_uploads
 
 KGO_LOG_ALLOW_LIST = [
     # rpc - server.cc:116 - kafka rpc protocol - Error[applying protocol] remote address: 172.18.0.31:56896 - std::out_of_range (Invalid skip(n). Expected:1000097, but skipped:524404)
-    r'rpc - .* - std::out_of_range'
+    r"rpc - .* - std::out_of_range"
 ]
 
 KGO_RESTART_LOG_ALLOW_LIST = KGO_LOG_ALLOW_LIST + RESTART_LOG_ALLOW_LIST
@@ -38,7 +43,7 @@ class TieredStorageIoStressTest(PreallocNodesTest):
     RANDOM_READ_PARALLEL = 20
     CONSUMER_GROUP_READERS = 8
 
-    topics = (TopicSpec(partition_count=100, replication_factor=3), )
+    topics = (TopicSpec(partition_count=100, replication_factor=3),)
 
     def __init__(self, test_context, *args, **kwargs):
         extra_rp_conf = {
@@ -46,56 +51,66 @@ class TieredStorageIoStressTest(PreallocNodesTest):
             # of restarts with lots of partitions, and current high
             # metric counts make that sometimes cause reactor stalls
             # during shutdown on debug builds.
-            'disable_metrics': True,
-
+            "disable_metrics": True,
             # We will run relatively large number of partitions
             # and want it to work with slow debug builds and
             # on noisy developer workstations: relax the raft
             # intervals
-            'election_timeout_ms': 5000,
-            'raft_heartbeat_interval_ms': 500,
-            'log_segment_size_jitter_percent': 5,
+            "election_timeout_ms": 5000,
+            "raft_heartbeat_interval_ms": 500,
+            "log_segment_size_jitter_percent": 5,
         }
 
         # Enable segment size jitter as this is a stress test and does not
         # rely on exact segment counts.
-        extra_rp_conf['log_segment_size_jitter_percent'] = 5
+        extra_rp_conf["log_segment_size_jitter_percent"] = 5
 
         # Set a modest reader concurrency limit to run safely on GB-per-core
         # test environments
-        extra_rp_conf['cloud_storage_max_segment_readers_per_shard'] = 500
+        extra_rp_conf["cloud_storage_max_segment_readers_per_shard"] = 500
 
-        super().__init__(test_context=test_context,
-                         node_prealloc_count=1,
-                         *args,
-                         extra_rp_conf=extra_rp_conf,
-                         **kwargs)
+        super().__init__(
+            test_context=test_context,
+            node_prealloc_count=1,
+            *args,
+            extra_rp_conf=extra_rp_conf,
+            **kwargs,
+        )
 
-        self._producer = KgoVerifierProducer(test_context, self.redpanda,
-                                             self.topic, self.MSG_SIZE,
-                                             self.PRODUCE_COUNT,
-                                             self.preallocated_nodes)
+        self._producer = KgoVerifierProducer(
+            test_context,
+            self.redpanda,
+            self.topic,
+            self.MSG_SIZE,
+            self.PRODUCE_COUNT,
+            self.preallocated_nodes,
+        )
         self._seq_consumer = KgoVerifierSeqConsumer(
             test_context,
             self.redpanda,
             self.topic,
             self.MSG_SIZE,
-            nodes=self.preallocated_nodes)
+            nodes=self.preallocated_nodes,
+        )
         self._rand_consumer = KgoVerifierRandomConsumer(
-            test_context, self.redpanda, self.topic, self.MSG_SIZE,
-            self.RANDOM_READ_COUNT, self.RANDOM_READ_PARALLEL,
-            self.preallocated_nodes)
+            test_context,
+            self.redpanda,
+            self.topic,
+            self.MSG_SIZE,
+            self.RANDOM_READ_COUNT,
+            self.RANDOM_READ_PARALLEL,
+            self.preallocated_nodes,
+        )
         self._cg_consumer = KgoVerifierConsumerGroupConsumer(
             test_context,
             self.redpanda,
             self.topic,
             self.MSG_SIZE,
             self.CONSUMER_GROUP_READERS,
-            nodes=self.preallocated_nodes)
+            nodes=self.preallocated_nodes,
+        )
 
-        self._consumers = [
-            self._seq_consumer, self._rand_consumer, self._cg_consumer
-        ]
+        self._consumers = [self._seq_consumer, self._rand_consumer, self._cg_consumer]
 
     def setUp(self):
         # Defer redpanda startup to test body
@@ -103,17 +118,18 @@ class TieredStorageIoStressTest(PreallocNodesTest):
 
     def _workload(self, segment_size: int, interval_uploads: bool):
         rpk = RpkTool(self.redpanda)
-        rpk.alter_topic_config(self.topic, 'redpanda.remote.write', 'true')
-        rpk.alter_topic_config(self.topic, 'redpanda.remote.read', 'true')
-        rpk.alter_topic_config(self.topic, 'retention.local.target.bytes',
-                               str(segment_size))
+        rpk.alter_topic_config(self.topic, "redpanda.remote.write", "true")
+        rpk.alter_topic_config(self.topic, "redpanda.remote.read", "true")
+        rpk.alter_topic_config(
+            self.topic, "retention.local.target.bytes", str(segment_size)
+        )
 
         self._producer.start(clean=False)
 
         # Once we've written a significant amount of data, check that some of it showed up in S3
-        self._producer.wait_for_acks(self.PRODUCE_COUNT // 10,
-                                     timeout_sec=300,
-                                     backoff_sec=5)
+        self._producer.wait_for_acks(
+            self.PRODUCE_COUNT // 10, timeout_sec=300, backoff_sec=5
+        )
 
         objects = list(self.redpanda.get_objects_from_si())
         assert len(objects) > 0
@@ -135,8 +151,13 @@ class TieredStorageIoStressTest(PreallocNodesTest):
         for consumer in self._consumers:
             consumer.wait()
 
-        assert self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
-        assert self._rand_consumer.consumer_status.validator.total_reads >= self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
+        assert (
+            self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
+        )
+        assert (
+            self._rand_consumer.consumer_status.validator.total_reads
+            >= self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
+        )
         assert self._cg_consumer.consumer_status.validator.valid_reads >= wrote_at_least
 
         if interval_uploads:
@@ -148,9 +169,9 @@ class TieredStorageIoStressTest(PreallocNodesTest):
     @matrix(
         cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True),
         segment_size=[1024 * 1024, 128 * 1024 * 1024],
-        interval_uploads=[True, False])
-    def test_io_stress(self, cloud_storage_type, segment_size,
-                       interval_uploads):
+        interval_uploads=[True, False],
+    )
+    def test_io_stress(self, cloud_storage_type, segment_size, interval_uploads):
         # We expect to produce & consume at least this fast
         expected_throughput = 100 * 1024 * 1024
 
@@ -158,11 +179,13 @@ class TieredStorageIoStressTest(PreallocNodesTest):
             self.test_context,
             log_segment_size=segment_size,
             cloud_storage_segment_max_upload_interval_sec=30
-            if interval_uploads else None,
-
+            if interval_uploads
+            else None,
             # A cache large enough to accommodate a respectable read throughput
             cloud_storage_cache_size=SISettings.cache_size_for_throughput(
-                expected_throughput))
+                expected_throughput
+            ),
+        )
         self.redpanda.set_si_settings(si_settings)
 
         self.redpanda.start()

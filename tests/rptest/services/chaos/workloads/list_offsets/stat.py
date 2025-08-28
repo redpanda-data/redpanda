@@ -22,10 +22,9 @@ logger = logging.getLogger("stat")
 
 def gnuplot(path, _cwd=None):
     logger.debug(f"running `gnuplot {path}'...")
-    result = subprocess.run(["gnuplot", path],
-                            cwd=_cwd,
-                            check=True,
-                            capture_output=True)
+    result = subprocess.run(
+        ["gnuplot", path], cwd=_cwd, check=True, capture_output=True
+    )
     if len(result.stdout) > 0:
         logger.debug(f"stdout: {result.stdout}")
     if len(result.stderr) > 0:
@@ -172,23 +171,27 @@ class LogPlayer:
             del self.op_started[thread_id]
         elif self.curr_state[thread_id] in [State.TIMEOUT, State.ERROR]:
             if self.should_measure:
-                self.latency_err_history.append([
-                    int((self.ts_us - self.started_us) / 1000),
-                    self.ts_us - self.op_started[thread_id]
-                ])
+                self.latency_err_history.append(
+                    [
+                        int((self.ts_us - self.started_us) / 1000),
+                        self.ts_us - self.op_started[thread_id],
+                    ]
+                )
             del self.op_started[thread_id]
         elif self.curr_state[thread_id] == State.OK:
             if self.should_measure:
-                self.latency_ok_history.append([
-                    int((self.ts_us - self.started_us) / 1000),
-                    self.ts_us - self.op_started[thread_id]
-                ])
+                self.latency_ok_history.append(
+                    [
+                        int((self.ts_us - self.started_us) / 1000),
+                        self.ts_us - self.op_started[thread_id],
+                    ]
+                )
 
     def apply(self, line):
-        parts = line.rstrip().split('\t')
+        parts = line.rstrip().split("\t")
 
         if parts[2] not in cmds:
-            raise Exception(f"unknown cmd \"{parts[2]}\"")
+            raise Exception(f'unknown cmd "{parts[2]}"')
 
         if self.ts_us == None:
             self.ts_us = int(parts[1])
@@ -206,11 +209,9 @@ class LogPlayer:
                 self.should_measure = True
             if self.should_measure:
                 if name == "injecting" or name == "injected":
-                    self.faults.append(
-                        int((self.ts_us - self.started_us) / 1000))
+                    self.faults.append(int((self.ts_us - self.started_us) / 1000))
                 elif name == "healing" or name == "healed":
-                    self.recoveries.append(
-                        int((self.ts_us - self.started_us) / 1000))
+                    self.recoveries.append(int((self.ts_us - self.started_us) / 1000))
             return
         if new_state == State.VIOLATION:
             return
@@ -223,7 +224,7 @@ class LogPlayer:
         if self.curr_state[thread_id] == None:
             if new_state != State.STARTED:
                 raise Exception(
-                    f"first logged command of a new thread should be started, got: \"{parts[2]}\""
+                    f'first logged command of a new thread should be started, got: "{parts[2]}"'
                 )
             self.curr_state[thread_id] = new_state
         else:
@@ -307,7 +308,9 @@ def render_overview(title, workload_dir, stat):
                     p99=p99,
                     faults=stat.faults,
                     recoveries=stat.recoveries,
-                    throughput=int(max_throughput * 1.2)))
+                    throughput=int(max_throughput * 1.2),
+                )
+            )
 
         gnuplot(overview_gnuplot_path, _cwd=workload_dir)
         ops = len(stat.latency_ok_history)
@@ -315,17 +318,13 @@ def render_overview(title, workload_dir, stat):
         return {
             "result": Result.PASSED,
             "latency_us": {
-                "tx": {
-                    "min": min_latency_us,
-                    "max": max_latency_us,
-                    "p99": p99
-                }
+                "tx": {"min": min_latency_us, "max": max_latency_us, "p99": p99}
             },
             "max_unavailability_us": max_unavailability_us,
             "throughput": {
                 "avg/s": int(float(1000 * ops) / duration_ms),
-                "max/s": max_throughput
-            }
+                "max/s": max_throughput,
+            },
         }
     except:
         e, v = sys.exc_info()[:2]
@@ -343,8 +342,7 @@ def render_overview(title, workload_dir, stat):
 
 def render_availability(title, workload_dir, stat):
     availability_log_path = os.path.join(workload_dir, "availability.log")
-    availability_gnuplot_path = os.path.join(workload_dir,
-                                             "availability.gnuplot")
+    availability_gnuplot_path = os.path.join(workload_dir, "availability.gnuplot")
 
     try:
         availability_log = open(availability_log_path, "w")
@@ -357,8 +355,7 @@ def render_availability(title, workload_dir, stat):
         availability_log.close()
 
         with open(availability_gnuplot_path, "w") as gnuplot_file:
-            gnuplot_file.write(
-                jinja2.Template(AVAILABILITY).render(title=title))
+            gnuplot_file.write(jinja2.Template(AVAILABILITY).render(title=title))
 
         gnuplot(availability_gnuplot_path, _cwd=workload_dir)
     except:
@@ -373,8 +370,7 @@ def render_availability(title, workload_dir, stat):
 
 def render_percentiles(title, workload_dir, stat):
     percentiles_log_path = os.path.join(workload_dir, "percentiles.log")
-    percentiles_gnuplot_path = os.path.join(workload_dir,
-                                            "percentiles.gnuplot")
+    percentiles_gnuplot_path = os.path.join(workload_dir, "percentiles.gnuplot")
 
     try:
         percentiles = open(percentiles_log_path, "w")
@@ -391,9 +387,10 @@ def render_percentiles(title, workload_dir, stat):
 
         with open(percentiles_gnuplot_path, "w") as latency_file:
             latency_file.write(
-                jinja2.Template(LATENCY).render(title=title,
-                                                yrange=int(p99 * 1.2),
-                                                p99=p99))
+                jinja2.Template(LATENCY).render(
+                    title=title, yrange=int(p99 * 1.2), p99=p99
+                )
+            )
 
         gnuplot(percentiles_gnuplot_path, _cwd=workload_dir)
     except:
@@ -410,8 +407,7 @@ def collect(title, workload_dir, workload_nodes):
     logger.setLevel(logging.DEBUG)
     logger_handler_path = os.path.join(workload_dir, "stat.log")
     handler = logging.FileHandler(logger_handler_path)
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
     logger.addHandler(handler)
 
     ret = {"result": Result.PASSED}
@@ -421,8 +417,7 @@ def collect(title, workload_dir, workload_nodes):
         if os.path.isdir(node_dir):
             player = LogPlayer()
 
-            with open(os.path.join(node_dir, "workload.log"),
-                      "r") as workload_file:
+            with open(os.path.join(node_dir, "workload.log"), "r") as workload_file:
                 last_line = None
                 for line in workload_file:
                     if last_line != None:
@@ -444,8 +439,7 @@ def collect(title, workload_dir, workload_nodes):
             logger.info(f"can't find logs for node {node}")
 
         ret[node] = node_result
-        ret["result"] = Result.more_severe(ret["result"],
-                                           node_result["result"])
+        ret["result"] = Result.more_severe(ret["result"], node_result["result"])
 
     total.latency_err_history.sort(key=lambda x: x[0])
     total.latency_ok_history.sort(key=lambda x: x[0])

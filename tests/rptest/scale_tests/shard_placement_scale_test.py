@@ -17,8 +17,7 @@ from rptest.tests.prealloc_nodes import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.services.redpanda import SISettings, LoggingConfig
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
-from rptest.services.openmessaging_benchmark_configs import \
-    OMBSampleConfigurations
+from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
 
 
 class ShardPlacementScaleTest(RedpandaTest):
@@ -30,8 +29,9 @@ class ShardPlacementScaleTest(RedpandaTest):
             num_brokers=5,
             si_settings=si_settings,
             # trace logging kills preformance, so we run with info level.
-            log_config=LoggingConfig('info'),
-            **kwargs)
+            log_config=LoggingConfig("info"),
+            **kwargs,
+        )
 
     def setUp(self):
         # start the nodes manually
@@ -75,26 +75,28 @@ class ShardPlacementScaleTest(RedpandaTest):
             "consumer_config": {
                 "auto.offset.reset": "earliest",
                 "enable.auto.commit": "false",
-                "max.partition.fetch.bytes": 131072
+                "max.partition.fetch.bytes": 131072,
             },
         }
         validator = {
-            OMBSampleConfigurations.AVG_THROUGHPUT_MBPS:
-            [OMBSampleConfigurations.gte(producer_rate_mbps)]
+            OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
+                OMBSampleConfigurations.gte(producer_rate_mbps)
+            ]
         }
 
-        self._benchmark = OpenMessagingBenchmark(ctx=self.test_context,
-                                                 redpanda=self.redpanda,
-                                                 driver=driver,
-                                                 workload=(workload,
-                                                           validator),
-                                                 topology="ensemble")
+        self._benchmark = OpenMessagingBenchmark(
+            ctx=self.test_context,
+            redpanda=self.redpanda,
+            driver=driver,
+            workload=(workload, validator),
+            topology="ensemble",
+        )
         self._benchmark.start()
         self.logger.info(f"OMB started")
 
     def omb_topics(self):
         rpk = RpkTool(self.redpanda)
-        return [t for t in rpk.list_topics() if t.startswith('test-topic-')]
+        return [t for t in rpk.list_topics() if t.startswith("test-topic-")]
 
     def finish_omb(self):
         benchmark_time_min = self._benchmark.benchmark_time_mins() + 2
@@ -121,21 +123,20 @@ class ShardPlacementScaleTest(RedpandaTest):
         omb_topic = self.omb_topics()[0]
 
         partitions = [
-            p["partition_id"] for p in admin.get_partitions(node=node)
+            p["partition_id"]
+            for p in admin.get_partitions(node=node)
             if p["topic"] == omb_topic
         ]
         partitions = random.sample(partitions, len(partitions) // 5)
 
         self.logger.info(
             f"moving {len(partitions)} partitions of topic {omb_topic}"
-            f" on node {node.name}")
+            f" on node {node.name}"
+        )
         for partition in partitions:
             core = random.randrange(n_cores)
             self.logger.info(f"moving {omb_topic}/{partition} to core {core}")
-            admin.set_partition_replica_core(omb_topic,
-                                             partition,
-                                             node_id,
-                                             core=core)
+            admin.set_partition_replica_core(omb_topic, partition, node_id, core=core)
         self.logger.info("finished moving")
 
         time.sleep(100)
@@ -147,9 +148,11 @@ class ShardPlacementScaleTest(RedpandaTest):
     @cluster(num_nodes=8)
     @skip_debug_mode
     def test_node_add(self):
-        self.redpanda.add_extra_rp_conf({
-            "core_balancing_continuous": True,
-        })
+        self.redpanda.add_extra_rp_conf(
+            {
+                "core_balancing_continuous": True,
+            }
+        )
 
         seed_nodes = self.redpanda.nodes[0:4]
         joiner_nodes = self.redpanda.nodes[4:]
@@ -160,8 +163,7 @@ class ShardPlacementScaleTest(RedpandaTest):
 
         time.sleep(120)
         self.redpanda.start(nodes=joiner_nodes)
-        self.logger.info(
-            f"added nodes {[n.name for n in joiner_nodes]} to the cluster")
+        self.logger.info(f"added nodes {[n.name for n in joiner_nodes]} to the cluster")
 
         self.finish_omb()
 
@@ -169,13 +171,11 @@ class ShardPlacementScaleTest(RedpandaTest):
 
         admin = Admin(self.redpanda)
 
-        self.redpanda.wait_node_add_rebalance_finished(joiner_nodes,
-                                                       admin=admin)
+        self.redpanda.wait_node_add_rebalance_finished(joiner_nodes, admin=admin)
 
         omb_topic = self.omb_topics()[0]
         for node in joiner_nodes:
             partitions = [
-                p for p in admin.get_partitions(node=node)
-                if p["topic"] == omb_topic
+                p for p in admin.get_partitions(node=node) if p["topic"] == omb_topic
             ]
             assert len(partitions) > 0

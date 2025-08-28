@@ -28,8 +28,13 @@ class PreallocNodesTest(RedpandaTest):
 
     _preallocated_nodes: list[ClusterNode]
 
-    def __init__(self, test_context: TestContext, node_prealloc_count: int,
-                 *args: Any, **kwargs: Any):
+    def __init__(
+        self,
+        test_context: TestContext,
+        node_prealloc_count: int,
+        *args: Any,
+        **kwargs: Any,
+    ):
         super(PreallocNodesTest, self).__init__(test_context, *args, **kwargs)
         self.node_prealloc_count = node_prealloc_count
 
@@ -40,10 +45,11 @@ class PreallocNodesTest(RedpandaTest):
     def preallocated_nodes(self):
         if not self._preallocated_nodes:
             self._preallocated_nodes = self.test_context.cluster.alloc(
-                ClusterSpec.simple_linux(self.node_prealloc_count))
+                ClusterSpec.simple_linux(self.node_prealloc_count)
+            )
 
             for node in self._preallocated_nodes:
-                self.logger.debug(f'Allocated node {node.name}')
+                self.logger.debug(f"Allocated node {node.name}")
 
         return self._preallocated_nodes
 
@@ -67,9 +73,11 @@ class PreallocNodesTest(RedpandaTest):
             # with subsequent tests' use of the node. Clear them down first.
             # For example, those tests that use KgoVerifierProducer.
             for node in self.preallocated_nodes:
-                wait_until(lambda: self.redpanda.sockets_clear(node),
-                           timeout_sec=120,
-                           backoff_sec=10)
+                wait_until(
+                    lambda: self.redpanda.sockets_clear(node),
+                    timeout_sec=120,
+                    backoff_sec=10,
+                )
 
                 # Free the hand-allocated nodes
                 self.logger.debug(f"Freeing node {node.name}")

@@ -18,10 +18,17 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import SISettings, get_cloud_storage_type, make_redpanda_service
+from rptest.services.redpanda import (
+    SISettings,
+    get_cloud_storage_type,
+    make_redpanda_service,
+)
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import Scale
-from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierProducer,
+    KgoVerifierSeqConsumer,
+)
 
 
 class EndToEndCloudTopicsBase(EndToEndTest):
@@ -29,24 +36,27 @@ class EndToEndCloudTopicsBase(EndToEndTest):
 
     num_brokers = 3
 
-    topics = (TopicSpec(
-        name=s3_topic_name,
-        partition_count=5,
-        replication_factor=3,
-    ), )
+    topics = (
+        TopicSpec(
+            name=s3_topic_name,
+            partition_count=5,
+            replication_factor=3,
+        ),
+    )
 
     def __init__(self, test_context, extra_rp_conf=None, environment=None):
-        super(EndToEndCloudTopicsBase,
-              self).__init__(test_context=test_context)
+        super(EndToEndCloudTopicsBase, self).__init__(test_context=test_context)
 
         self.test_context = test_context
         self.topic = self.s3_topic_name
 
         conf = dict(
             enable_developmental_unrecoverable_data_corrupting_features=int(
-                time.time()),
+                time.time()
+            ),
             development_enable_cloud_topics=True,
-            enable_cluster_metadata_upload_loop=False)
+            enable_cluster_metadata_upload_loop=False,
+        )
 
         if extra_rp_conf:
             for k, v in conf.items():
@@ -65,11 +75,13 @@ class EndToEndCloudTopicsBase(EndToEndTest):
         self.si_settings.load_context(self.logger, test_context)
         self.scale = Scale(test_context)
 
-        self.redpanda = make_redpanda_service(context=self.test_context,
-                                              num_brokers=self.num_brokers,
-                                              si_settings=self.si_settings,
-                                              extra_rp_conf=extra_rp_conf,
-                                              environment=environment)
+        self.redpanda = make_redpanda_service(
+            context=self.test_context,
+            num_brokers=self.num_brokers,
+            si_settings=self.si_settings,
+            extra_rp_conf=extra_rp_conf,
+            environment=environment,
+        )
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
 
@@ -77,28 +89,29 @@ class EndToEndCloudTopicsBase(EndToEndTest):
         assert self.redpanda
         self.redpanda.start()
         for topic in self.topics:
-            self.rpk.create_topic(topic=topic.name,
-                                  partitions=topic.partition_count,
-                                  replicas=topic.replication_factor,
-                                  config={
-                                      "redpanda.cloud_topic.enabled": "true",
-                                  })
+            self.rpk.create_topic(
+                topic=topic.name,
+                partitions=topic.partition_count,
+                replicas=topic.replication_factor,
+                config={
+                    "redpanda.cloud_topic.enabled": "true",
+                },
+            )
 
 
 class EndToEndCloudTopicsTest(EndToEndCloudTopicsBase):
     def __init__(self, test_context, extra_rp_conf=None, env=None):
-        super(EndToEndCloudTopicsTest, self).__init__(test_context,
-                                                      extra_rp_conf, env)
+        super(EndToEndCloudTopicsTest, self).__init__(test_context, extra_rp_conf, env)
 
     def await_num_produced(self, min_records, timeout_sec=120):
-        wait_until(lambda: self.producer.num_acked > min_records,
-                   timeout_sec=timeout_sec,
-                   err_msg="Producer failed to produce messages for %ds." %\
-                   timeout_sec)
+        wait_until(
+            lambda: self.producer.num_acked > min_records,
+            timeout_sec=timeout_sec,
+            err_msg="Producer failed to produce messages for %ds." % timeout_sec,
+        )
 
     @cluster(num_nodes=5)
     def test_write(self):
-
         self.start_producer()
 
         self.await_num_produced(min_records=50000)
@@ -109,9 +122,11 @@ class EndToEndCloudTopicsTest(EndToEndCloudTopicsBase):
 
 class EndToEndCloudTopicsTxTest(EndToEndCloudTopicsBase):
     """Cloud topics end-to-end test with transactions used."""
+
     def __init__(self, test_context, extra_rp_conf=None, env=None):
-        super(EndToEndCloudTopicsTxTest,
-              self).__init__(test_context, extra_rp_conf, env)
+        super(EndToEndCloudTopicsTxTest, self).__init__(
+            test_context, extra_rp_conf, env
+        )
         self.producer = None
         self.consumer = None
         self.msg_size = 4096
@@ -128,19 +143,22 @@ class EndToEndCloudTopicsTxTest(EndToEndCloudTopicsBase):
             use_transactions=False,
             transaction_abort_rate=0.1,
             msgs_per_transaction=self.per_transaction,
-            debug_logs=True)
+            debug_logs=True,
+        )
         self.producer.start()
         self.producer.wait()
 
     def start_consumer_with_tx(self):
         traffic_node = self.producer.nodes[0]
-        self.consumer = KgoVerifierSeqConsumer(self.test_context,
-                                               self.redpanda,
-                                               self.topic,
-                                               self.msg_size,
-                                               loop=False,
-                                               nodes=[traffic_node],
-                                               use_transactions=True)
+        self.consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            self.msg_size,
+            loop=False,
+            nodes=[traffic_node],
+            use_transactions=True,
+        )
         self.consumer.start(clean=False)
         self.consumer.wait()
 

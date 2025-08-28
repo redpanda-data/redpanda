@@ -26,20 +26,20 @@ class DeleteRetentionMsTest(RedpandaTest):
     @cluster(num_nodes=1)
     def test_get_cluster_config(self):
         # Default value
-        cluster_default = self.rpk.cluster_config_get('tombstone_retention_ms')
-        assert cluster_default == 'null'
+        cluster_default = self.rpk.cluster_config_get("tombstone_retention_ms")
+        assert cluster_default == "null"
 
     @cluster(num_nodes=1)
     def test_set_cluster_config(self):
-        self.rpk.cluster_config_set('tombstone_retention_ms', 1234567890)
-        cluster_prop = self.rpk.cluster_config_get('tombstone_retention_ms')
+        self.rpk.cluster_config_set("tombstone_retention_ms", 1234567890)
+        cluster_prop = self.rpk.cluster_config_get("tombstone_retention_ms")
         assert cluster_prop == "1234567890"
 
         topic_name = "tapioca"
         topic = TopicSpec(name=topic_name)
         self.rpk.create_topic(topic_name, partitions=1)
         topic_desc = self.rpk.describe_topic_configs(topic_name)
-        assert topic_desc['delete.retention.ms'][0] == '1234567890'
+        assert topic_desc["delete.retention.ms"][0] == "1234567890"
 
     @cluster(num_nodes=1)
     def test_alter_topic_config(self):
@@ -49,45 +49,44 @@ class DeleteRetentionMsTest(RedpandaTest):
         topic_desc = self.rpk.describe_topic_configs(topic_name)
 
         # Upon topic construction, this property is actually "disabled" by default.
-        assert topic_desc['delete.retention.ms'][0] == '-1'
-        assert topic_desc['delete.retention.ms'][1] == 'DEFAULT_CONFIG'
+        assert topic_desc["delete.retention.ms"][0] == "-1"
+        assert topic_desc["delete.retention.ms"][1] == "DEFAULT_CONFIG"
 
         # Set value
-        self.rpk.alter_topic_config(topic_name, 'delete.retention.ms',
-                                    1234567890)
+        self.rpk.alter_topic_config(topic_name, "delete.retention.ms", 1234567890)
         topic_desc = self.rpk.describe_topic_configs(topic_name)
-        assert topic_desc['delete.retention.ms'][0] == '1234567890'
-        assert topic_desc['delete.retention.ms'][1] == 'DYNAMIC_TOPIC_CONFIG'
+        assert topic_desc["delete.retention.ms"][0] == "1234567890"
+        assert topic_desc["delete.retention.ms"][1] == "DYNAMIC_TOPIC_CONFIG"
 
         # Set cluster value
-        self.rpk.cluster_config_set('tombstone_retention_ms', 100)
+        self.rpk.cluster_config_set("tombstone_retention_ms", 100)
 
         # Assert topic property and source haven't changed.
         topic_desc = self.rpk.describe_topic_configs(topic_name)
-        assert topic_desc['delete.retention.ms'][0] == '1234567890'
-        assert topic_desc['delete.retention.ms'][1] == 'DYNAMIC_TOPIC_CONFIG'
+        assert topic_desc["delete.retention.ms"][0] == "1234567890"
+        assert topic_desc["delete.retention.ms"][1] == "DYNAMIC_TOPIC_CONFIG"
 
         # Delete topic config
-        self.rpk.delete_topic_config(topic_name, 'delete.retention.ms')
+        self.rpk.delete_topic_config(topic_name, "delete.retention.ms")
         topic_desc = self.rpk.describe_topic_configs(topic_name)
-        assert topic_desc['delete.retention.ms'][0] == '100'
-        assert topic_desc['delete.retention.ms'][1] == 'DEFAULT_CONFIG'
+        assert topic_desc["delete.retention.ms"][0] == "100"
+        assert topic_desc["delete.retention.ms"][1] == "DEFAULT_CONFIG"
 
         # Disable topic value
-        self.rpk.alter_topic_config(topic_name, 'delete.retention.ms', -1)
+        self.rpk.alter_topic_config(topic_name, "delete.retention.ms", -1)
         topic_desc = self.rpk.describe_topic_configs(topic_name)
-        assert topic_desc['delete.retention.ms'][0] == '-1'
-        assert topic_desc['delete.retention.ms'][1] == 'DYNAMIC_TOPIC_CONFIG'
+        assert topic_desc["delete.retention.ms"][0] == "-1"
+        assert topic_desc["delete.retention.ms"][1] == "DYNAMIC_TOPIC_CONFIG"
 
         # Set empty cluster value and delete topic config
-        self.rpk.cluster_config_set('tombstone_retention_ms', "")
-        self.rpk.delete_topic_config(topic_name, 'delete.retention.ms')
+        self.rpk.cluster_config_set("tombstone_retention_ms", "")
+        self.rpk.delete_topic_config(topic_name, "delete.retention.ms")
         topic_desc = self.rpk.describe_topic_configs(topic_name)
-        assert topic_desc['delete.retention.ms'][0] == '-1'
-        assert topic_desc['delete.retention.ms'][1] == 'DEFAULT_CONFIG'
+        assert topic_desc["delete.retention.ms"][0] == "-1"
+        assert topic_desc["delete.retention.ms"][1] == "DEFAULT_CONFIG"
 
         # Disable topic config
-        self.rpk.delete_topic_config(topic_name, 'delete.retention.ms')
+        self.rpk.delete_topic_config(topic_name, "delete.retention.ms")
         topic_desc = self.rpk.describe_topic_configs(topic_name)
-        assert topic_desc['delete.retention.ms'][0] == '-1'
-        assert topic_desc['delete.retention.ms'][1] == 'DEFAULT_CONFIG'
+        assert topic_desc["delete.retention.ms"][0] == "-1"
+        assert topic_desc["delete.retention.ms"][1] == "DEFAULT_CONFIG"

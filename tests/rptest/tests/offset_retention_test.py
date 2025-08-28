@@ -18,7 +18,11 @@ from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions, ver_string
+from rptest.services.redpanda_installer import (
+    RedpandaInstaller,
+    wait_for_num_versions,
+    ver_string,
+)
 
 
 class OffsetRetentionDisabledAfterUpgrade(RedpandaTest):
@@ -34,6 +38,7 @@ class OffsetRetentionDisabledAfterUpgrade(RedpandaTest):
     Offsets committed prior to v23 that are normally non-reclaimable become
     reclaimable if they are updated following the upgrade.
     """
+
     topics = (TopicSpec(), TopicSpec(), TopicSpec(), TopicSpec(), TopicSpec())
 
     # pre-defined named topics used to simulate use of topics that are used only
@@ -53,8 +58,9 @@ class OffsetRetentionDisabledAfterUpgrade(RedpandaTest):
     feature_config_names = feature_config_timing | {feature_config_legacy}
 
     def __init__(self, test_context):
-        super(OffsetRetentionDisabledAfterUpgrade,
-              self).__init__(test_context=test_context, num_brokers=3)
+        super(OffsetRetentionDisabledAfterUpgrade, self).__init__(
+            test_context=test_context, num_brokers=3
+        )
         self.installer = self.redpanda._installer
 
     def setUp(self):
@@ -103,8 +109,7 @@ class OffsetRetentionDisabledAfterUpgrade(RedpandaTest):
         # after upgrade legacy support should be disabled
         assert config[self.feature_config_legacy] == False
 
-    def _offset_removal_occurred(self, period, pre_upgrade,
-                                 pre_legacy_support):
+    def _offset_removal_occurred(self, period, pre_upgrade, pre_legacy_support):
         rpk = RpkTool(self.redpanda)
         group = "hey_group"
 
@@ -131,13 +136,14 @@ class OffsetRetentionDisabledAfterUpgrade(RedpandaTest):
                 return False
 
             pre = any(p.topic == self.pre_v23_topic for p in desc.partitions)
-            prepost = any(p.topic == self.prepost_v23_topic
-                          for p in desc.partitions)
-            prepost_idle = any(p.topic == self.prepost_v23_topic_idle
-                               for p in desc.partitions)
+            prepost = any(p.topic == self.prepost_v23_topic for p in desc.partitions)
+            prepost_idle = any(
+                p.topic == self.prepost_v23_topic_idle for p in desc.partitions
+            )
             post = any(p.topic == self.post_v23_topic for p in desc.partitions)
-            post_idle = any(p.topic == self.post_v23_topic_idle
-                            for p in desc.partitions)
+            post_idle = any(
+                p.topic == self.post_v23_topic_idle for p in desc.partitions
+            )
 
             assert pre, "pre-topic offsets should never be reclaimed"
 
@@ -174,9 +180,9 @@ class OffsetRetentionDisabledAfterUpgrade(RedpandaTest):
                 rpk.produce(self.prepost_v23_topic_idle, "k", "v")
                 rpk.consume(self.prepost_v23_topic_idle, n=1, group=group)
 
-            wait_until(lambda: offsets_exist(pre_legacy_support),
-                       timeout_sec=1,
-                       backoff_sec=1)
+            wait_until(
+                lambda: offsets_exist(pre_legacy_support), timeout_sec=1, backoff_sec=1
+            )
             time.sleep(1)
 
         # after one half life the offset should still exist. prior to legacy
@@ -216,25 +222,25 @@ class OffsetRetentionDisabledAfterUpgrade(RedpandaTest):
         # enable legacy. enablng legacy support takes affect at the next
         # retention check. since that is configured above to happen every second
         # then the response time should be adequate.
-        rpk.cluster_config_set("legacy_group_offset_retention_enabled",
-                               str(True))
+        rpk.cluster_config_set("legacy_group_offset_retention_enabled", str(True))
         assert self._offset_removal_occurred(period, False, False)
 
 
 class OffsetRetentionTest(RedpandaTest):
-    topics = (TopicSpec(), )
+    topics = (TopicSpec(),)
     period = 30
 
     def __init__(self, test_context):
         # retention time is set to 30 seconds and expired offset queries happen
         # every second. these are likely unrealistic in practice, but allow us
         # to build tests that are quick and responsive.
-        super(OffsetRetentionTest,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf=dict(
-                                 group_offset_retention_sec=self.period,
-                                 group_offset_retention_check_ms=1000,
-                             ))
+        super(OffsetRetentionTest, self).__init__(
+            test_context=test_context,
+            extra_rp_conf=dict(
+                group_offset_retention_sec=self.period,
+                group_offset_retention_check_ms=1000,
+            ),
+        )
 
         self.rpk = RpkTool(self.redpanda)
 
@@ -265,7 +271,7 @@ class OffsetRetentionTest(RedpandaTest):
 
 
 class OffsetDeletionTest(RedpandaTest):
-    topics = (TopicSpec(partition_count=3), )
+    topics = (TopicSpec(partition_count=3),)
     group = "hey_hey_group"
 
     def __init__(self, test_context):
@@ -280,8 +286,9 @@ class OffsetDeletionTest(RedpandaTest):
             topic=topic,
             group=self.group,
             from_beginning=True,
-            consumer_properties={'session.timeout.ms': session_timeout_ms},
-            instance_name=f'cli-consumer-offset-delete-test-{topic}')
+            consumer_properties={"session.timeout.ms": session_timeout_ms},
+            instance_name=f"cli-consumer-offset-delete-test-{topic}",
+        )
 
     @cluster(num_nodes=5)
     def test_offset_deletion(self):
@@ -289,14 +296,14 @@ class OffsetDeletionTest(RedpandaTest):
             # rpk group describe show non-empty groups so we want to make sure that
             # we filter for the ones we are expecting.
             desc = self.rpk.group_describe(self.group)
-            topic_partitions = [
-                p for p in desc.partitions if p.topic in topic_names
-            ]
+            topic_partitions = [p for p in desc.partitions if p.topic in topic_names]
             return len(topic_partitions) == n
 
         def assert_status(output, expected_status, expected_topic):
             for response in output:
-                assert response.topic == expected_topic, f"Expected: {expected_topic} Observed: {response.topic}"
+                assert response.topic == expected_topic, (
+                    f"Expected: {expected_topic} Observed: {response.topic}"
+                )
                 assert response.status == expected_status, response.status
 
         # Produce some data to a topic and consume assigning new consumer group
@@ -305,9 +312,11 @@ class OffsetDeletionTest(RedpandaTest):
             self.rpk.produce(self.topic, "k", "v", partition=1)
             self.rpk.produce(self.topic, "k", "v", partition=2)
         self.rpk.consume(self.topic, n=3, group=self.group)
-        wait_until(partial(wait_for_partitions_in_group, 3, [self.topic]),
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(
+            partial(wait_for_partitions_in_group, 3, [self.topic]),
+            timeout_sec=30,
+            backoff_sec=1,
+        )
 
         # Assert offset-delete errors when request contains missing topic-partitions
         missing_topic = f"{self.topic}-foo"
@@ -316,7 +325,7 @@ class OffsetDeletionTest(RedpandaTest):
         def assert_unknown_topic_or_partition(e):
             output = e.parsed_output
             assert len(output) == 3
-            assert_status(output, 'UNKNOWN_TOPIC_OR_PARTITION', missing_topic)
+            assert_status(output, "UNKNOWN_TOPIC_OR_PARTITION", missing_topic)
             return True
 
         with expect_exception(RpkException, assert_unknown_topic_or_partition):
@@ -324,8 +333,7 @@ class OffsetDeletionTest(RedpandaTest):
 
         # Assert offset-delete errors when non-existent group is passed in
         topic_partitions = {self.topic: [0, 1, 2]}
-        with expect_exception(RpkException,
-                              lambda e: 'GROUP_ID_NOT_FOUND' in str(e)):
+        with expect_exception(RpkException, lambda e: "GROUP_ID_NOT_FOUND" in str(e)):
             self.rpk.offset_delete("missing", topic_partitions)
 
         # Assert offset-delete errors when attempting to delete offsets of topic
@@ -333,14 +341,16 @@ class OffsetDeletionTest(RedpandaTest):
         consumer = self.make_consumer(self.topic)
         consumer.start()
         consumer.wait_for_messages(1)
-        wait_until(partial(wait_for_partitions_in_group, 3, [self.topic]),
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(
+            partial(wait_for_partitions_in_group, 3, [self.topic]),
+            timeout_sec=30,
+            backoff_sec=1,
+        )
 
         def assert_group_already_subscribed(e):
             output = e.parsed_output
             assert len(output) == 3
-            assert_status(output, 'GROUP_SUBSCRIBED_TO_TOPIC', self.topic)
+            assert_status(output, "GROUP_SUBSCRIBED_TO_TOPIC", self.topic)
             return True
 
         with expect_exception(RpkException, assert_group_already_subscribed):
@@ -353,7 +363,7 @@ class OffsetDeletionTest(RedpandaTest):
         # Assert offset-delete removes offsets of dead groups
         output = self.rpk.offset_delete(self.group, topic_partitions)
         assert len(output) == 3
-        assert_status(output, 'OK', self.topic)
+        assert_status(output, "OK", self.topic)
 
         desc = self.rpk.group_describe(self.group)
         assert len(desc.partitions) == 0
@@ -368,16 +378,16 @@ class OffsetDeletionTest(RedpandaTest):
         # Add two new consumers to the group
         consumer_a = self.make_consumer(self.topic)
         min_default_group_session_timeout_ms = 6000
-        consumer_b = self.make_consumer(new_topic,
-                                        min_default_group_session_timeout_ms)
+        consumer_b = self.make_consumer(new_topic, min_default_group_session_timeout_ms)
         consumer_a.start()
         consumer_b.start()
 
         # Wait until both have joined the group
-        wait_until(partial(wait_for_partitions_in_group, 6,
-                           [self.topic, new_topic]),
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(
+            partial(wait_for_partitions_in_group, 6, [self.topic, new_topic]),
+            timeout_sec=30,
+            backoff_sec=1,
+        )
 
         # Have them both consume some data
         consumer_a.wait_for_messages(1)
@@ -389,9 +399,11 @@ class OffsetDeletionTest(RedpandaTest):
 
         # After consumer_b shuts down wait for the group rebalance to occur
         # and unsubscription of topic/partitions it was assigned to
-        wait_until(partial(wait_for_partitions_in_group, 3, [self.topic]),
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(
+            partial(wait_for_partitions_in_group, 3, [self.topic]),
+            timeout_sec=30,
+            backoff_sec=1,
+        )
 
         # Remove the offsets that it had been keeping in redpanda
         def validate_output(e):
@@ -402,8 +414,7 @@ class OffsetDeletionTest(RedpandaTest):
             assert len(good_responses) == 3
             assert len(bad_responses) == 1
             assert_status(good_responses, "OK", new_topic)
-            assert_status(bad_responses, "UNKNOWN_TOPIC_OR_PARTITION",
-                          new_topic)
+            assert_status(bad_responses, "UNKNOWN_TOPIC_OR_PARTITION", new_topic)
             return True
 
         with expect_exception(RpkException, validate_output):

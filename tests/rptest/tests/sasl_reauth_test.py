@@ -25,7 +25,7 @@ from ducktape.cluster.cluster import ClusterNode
 
 import typing
 
-EXAMPLE_TOPIC = 'foo'
+EXAMPLE_TOPIC = "foo"
 
 REAUTH_METRIC = "sasl_session_reauth_attempts_total"
 EXPIRATION_METRIC = "sasl_session_expiration_total"
@@ -35,7 +35,7 @@ def get_metrics_from_node(
     redpanda: RedpandaService,
     node: ClusterNode,
     patterns: list[str],
-    endpoint: MetricsEndpoint = MetricsEndpoint.METRICS
+    endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
 ) -> Optional[dict[str, MetricSamples]]:
     def get_metrics_from_node_sync(patterns: list[str]):
         samples = redpanda.metrics_samples(patterns, [node], endpoint)
@@ -43,15 +43,16 @@ def get_metrics_from_node(
         return success, samples
 
     try:
-        return wait_until_result(lambda: get_metrics_from_node_sync(patterns),
-                                 timeout_sec=2,
-                                 backoff_sec=.1)
+        return wait_until_result(
+            lambda: get_metrics_from_node_sync(patterns), timeout_sec=2, backoff_sec=0.1
+        )
     except TimeoutError as e:
         return None
 
 
-def get_sasl_metrics(redpanda: RedpandaService,
-                     endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
+def get_sasl_metrics(
+    redpanda: RedpandaService, endpoint: MetricsEndpoint = MetricsEndpoint.METRICS
+):
     sasl_metrics = [
         EXPIRATION_METRIC,
         REAUTH_METRIC,
@@ -65,34 +66,40 @@ def get_sasl_metrics(redpanda: RedpandaService,
     for samples in node_samples:
         for k in samples.keys():
             result[k] = result.get(k, 0) + sum(
-                [int(s.value) for s in samples[k].samples])
+                [int(s.value) for s in samples[k].samples]
+            )
     return result
 
 
 class SASLReauthBase(RedpandaTest):
-    def __init__(self,
-                 conn_max_reauth: typing.Union[int, None] = 8000,
-                 **kwargs):
+    def __init__(self, conn_max_reauth: typing.Union[int, None] = 8000, **kwargs):
         security = SecurityConfig()
         security.enable_sasl = True
         super().__init__(
             num_brokers=3,
             security=security,
-            extra_rp_conf={'kafka_sasl_max_reauth_ms': conn_max_reauth},
-            **kwargs)
+            extra_rp_conf={"kafka_sasl_max_reauth_ms": conn_max_reauth},
+            **kwargs,
+        )
 
-        self.su_username, self.su_password, self.su_algorithm = self.redpanda.SUPERUSER_CREDENTIALS
+        self.su_username, self.su_password, self.su_algorithm = (
+            self.redpanda.SUPERUSER_CREDENTIALS
+        )
 
-        self.rpk = RpkTool(self.redpanda,
-                           username=self.su_username,
-                           password=self.su_password,
-                           sasl_mechanism=self.su_algorithm)
+        self.rpk = RpkTool(
+            self.redpanda,
+            username=self.su_username,
+            password=self.su_password,
+            sasl_mechanism=self.su_algorithm,
+        )
 
     def make_su_client(self):
-        return PythonLibrdkafka(self.redpanda,
-                                username=self.su_username,
-                                password=self.su_password,
-                                algorithm=self.su_algorithm)
+        return PythonLibrdkafka(
+            self.redpanda,
+            username=self.su_username,
+            password=self.su_password,
+            algorithm=self.su_algorithm,
+        )
 
 
 class ReauthConfigTest(SASLReauthBase):
@@ -109,9 +116,7 @@ class ReauthConfigTest(SASLReauthBase):
     PRODUCE_ITER = int(PRODUCE_DURATION_S / PRODUCE_INTERVAL_S)
 
     def __init__(self, test_context, **kwargs):
-        super().__init__(test_context=test_context,
-                         conn_max_reauth=None,
-                         **kwargs)
+        super().__init__(test_context=test_context, conn_max_reauth=None, **kwargs)
 
     @cluster(num_nodes=3)
     def test_reauth_disabled(self):
@@ -121,32 +126,32 @@ class ReauthConfigTest(SASLReauthBase):
         producer.poll(1.0)
 
         expected_topics = set([EXAMPLE_TOPIC])
-        wait_until(lambda: set(producer.list_topics(timeout=5).topics.keys())
-                   == expected_topics,
-                   timeout_sec=5)
+        wait_until(
+            lambda: set(producer.list_topics(timeout=5).topics.keys())
+            == expected_topics,
+            timeout_sec=5,
+        )
 
         for i in range(0, self.PRODUCE_ITER):
             producer.poll(0.0)
-            producer.produce(topic=EXAMPLE_TOPIC, key='bar', value=str(i))
+            producer.produce(topic=EXAMPLE_TOPIC, key="bar", value=str(i))
             time.sleep(self.PRODUCE_INTERVAL_S)
 
         producer.flush(timeout=5)
 
         metrics = get_sasl_metrics(self.redpanda)
         self.redpanda.logger.debug(f"SASL metrics: {metrics}")
-        assert (EXPIRATION_METRIC in metrics.keys())
-        assert (metrics[EXPIRATION_METRIC] == 0
-                ), "SCRAM sessions should not expire"
-        assert (REAUTH_METRIC in metrics.keys())
-        assert (metrics[REAUTH_METRIC] == 0
-                ), "Expected no reauths with max_reauth = NULL"
+        assert EXPIRATION_METRIC in metrics.keys()
+        assert metrics[EXPIRATION_METRIC] == 0, "SCRAM sessions should not expire"
+        assert REAUTH_METRIC in metrics.keys()
+        assert metrics[REAUTH_METRIC] == 0, "Expected no reauths with max_reauth = NULL"
 
     @cluster(num_nodes=3)
     def test_enable_after_start(self):
-        '''
+        """
         We should be able to enable reauthentication on a live cluster
-        '''
-        new_cfg = {'kafka_sasl_max_reauth_ms': self.MAX_REAUTH_MS}
+        """
+        new_cfg = {"kafka_sasl_max_reauth_ms": self.MAX_REAUTH_MS}
         self.redpanda.set_cluster_config(new_cfg)
 
         self.rpk.create_topic(EXAMPLE_TOPIC)
@@ -155,22 +160,24 @@ class ReauthConfigTest(SASLReauthBase):
         producer.poll(1.0)
 
         expected_topics = set([EXAMPLE_TOPIC])
-        wait_until(lambda: set(producer.list_topics(timeout=5).topics.keys())
-                   == expected_topics,
-                   timeout_sec=5)
+        wait_until(
+            lambda: set(producer.list_topics(timeout=5).topics.keys())
+            == expected_topics,
+            timeout_sec=5,
+        )
 
         for i in range(0, self.PRODUCE_ITER):
             producer.poll(0.0)
-            producer.produce(topic=EXAMPLE_TOPIC, key='bar', value=str(i))
+            producer.produce(topic=EXAMPLE_TOPIC, key="bar", value=str(i))
             time.sleep(self.PRODUCE_INTERVAL_S)
 
         producer.flush(timeout=5)
 
         metrics = get_sasl_metrics(self.redpanda)
         self.redpanda.logger.debug(f"SASL metrics: {metrics}")
-        assert (EXPIRATION_METRIC in metrics.keys())
-        assert (metrics[EXPIRATION_METRIC] == 0
-                ), "Client should reauth before session expiry"
-        assert (REAUTH_METRIC in metrics.keys())
-        assert (metrics[REAUTH_METRIC]
-                > 0), "Expected client reauth on some broker..."
+        assert EXPIRATION_METRIC in metrics.keys()
+        assert metrics[EXPIRATION_METRIC] == 0, (
+            "Client should reauth before session expiry"
+        )
+        assert REAUTH_METRIC in metrics.keys()
+        assert metrics[REAUTH_METRIC] > 0, "Expected client reauth on some broker..."

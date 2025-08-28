@@ -15,18 +15,19 @@ from pathlib import Path
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: bench_wrapper.py <benchmark_executable> [args...]",
-              file=sys.stderr)
+        print(
+            "Usage: bench_wrapper.py <benchmark_executable> [args...]", file=sys.stderr
+        )
         sys.exit(1)
 
     exe = Path(sys.argv[1]).resolve()
     exec_in_shm = os.getenv("MB_EXEC_IN_SHM", "1") == "1"
     rundir = Path(
-        os.getenv("MB_RUNDIR",
-                  "/dev/shm/vectorized_io" if exec_in_shm == 1 else "."))
+        os.getenv("MB_RUNDIR", "/dev/shm/vectorized_io" if exec_in_shm == 1 else ".")
+    )
     redirect_stderr = bool(
-        os.getenv("MB_REDIRECT_STDERR",
-                  os.getenv("MB_REDIRECT_STDERR_DEFAULT", "0")))
+        os.getenv("MB_REDIRECT_STDERR", os.getenv("MB_REDIRECT_STDERR_DEFAULT", "0"))
+    )
     verbose = int(os.getenv("MB_VERBOSE", "0"))
 
     # Resolve environment variables we pass to our benchmarks to absolute paths
@@ -59,10 +60,12 @@ def main():
     print(f"[bench-wrapper] running benchmark : {exe.name}", file=sys.stderr)
     print(
         f"[bench-wrapper] verbose={verbose}, exec_in_shm={exec_in_shm}, redirect_stderr={redirect_stderr}",
-        file=sys.stderr)
+        file=sys.stderr,
+    )
     print(f"[bench-wrapper] rundir            : {rundir}", file=sys.stderr)
-    print(f"[bench-wrapper] command           : {' '.join(sys.argv[1:])}",
-          file=sys.stderr)
+    print(
+        f"[bench-wrapper] command           : {' '.join(sys.argv[1:])}", file=sys.stderr
+    )
 
     if verbose != 0:
         print("[bench-wrapper] env begin:", file=sys.stderr)
@@ -83,8 +86,7 @@ def main():
         if proc.stderr:
             print(proc.stderr, file=sys.stderr)
     else:
-        print("[bench-wrapper] benchmark completed successfully",
-              file=sys.stderr)
+        print("[bench-wrapper] benchmark completed successfully", file=sys.stderr)
     sys.exit(proc.returncode)
 
 

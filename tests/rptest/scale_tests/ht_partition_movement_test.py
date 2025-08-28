@@ -9,24 +9,28 @@
 
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
-from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierConsumerGroupConsumer,
+    KgoVerifierProducer,
+)
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.clients.types import TopicSpec
 from ducktape.mark import parametrize
 
 
-class HighThroughputPartitionMovementTest(PreallocNodesTest,
-                                          PartitionMovementMixin):
+class HighThroughputPartitionMovementTest(PreallocNodesTest, PartitionMovementMixin):
     def __init__(self, test_context, *args, **kwargs):
-        super().__init__(test_context=test_context,
-                         node_prealloc_count=1,
-                         num_brokers=5,
-                         extra_rp_conf={
-                             "raft_learner_recovery_rate": 10 * 1073741824,
-                         },
-                         *args,
-                         **kwargs)
+        super().__init__(
+            test_context=test_context,
+            node_prealloc_count=1,
+            num_brokers=5,
+            extra_rp_conf={
+                "raft_learner_recovery_rate": 10 * 1073741824,
+            },
+            *args,
+            **kwargs,
+        )
 
         if not self.redpanda.dedicated_nodes:
             # Mini mode, for developers working on the test on their workstation.
@@ -50,12 +54,15 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
             topic_name,
             self._message_size,
             self._message_cnt,
-            custom_node=self.preallocated_nodes)
+            custom_node=self.preallocated_nodes,
+        )
         self.producer.start(clean=False)
 
-        wait_until(lambda: self.producer.produce_status.acked > 10,
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(
+            lambda: self.producer.produce_status.acked > 10,
+            timeout_sec=30,
+            backoff_sec=1,
+        )
 
     def _start_consumer(self, topic_name):
         self.consumer = KgoVerifierConsumerGroupConsumer(
@@ -64,7 +71,8 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
             topic_name,
             self._message_size,
             readers=self._consumers,
-            nodes=self.preallocated_nodes)
+            nodes=self.preallocated_nodes,
+        )
         self.consumer.start(clean=False)
 
     def verify(self, topic_name):
@@ -78,15 +86,19 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
         self._start_consumer(topic_name)
         self.consumer.wait()
 
-        assert self.consumer.consumer_status.validator.valid_reads >= self.producer.produce_status.acked
+        assert (
+            self.consumer.consumer_status.validator.valid_reads
+            >= self.producer.produce_status.acked
+        )
         assert self.consumer.consumer_status.validator.invalid_reads == 0
 
     @cluster(num_nodes=6)
     @parametrize(replication_factor=1)
     @parametrize(replication_factor=3)
     def test_moving_single_partition_under_load(self, replication_factor):
-        topic = TopicSpec(partition_count=self._partitions,
-                          replication_factor=replication_factor)
+        topic = TopicSpec(
+            partition_count=self._partitions, replication_factor=replication_factor
+        )
         self.client().create_topic(topic)
 
         self._start_producer(topic.name)
@@ -103,21 +115,24 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
 
     def _random_move_and_cancel(self, topic, partition):
         previous_assignment, new_assignment = self._dispatch_random_partition_move(
-            topic, partition, allow_no_op=False)
+            topic, partition, allow_no_op=False
+        )
 
-        self._request_move_cancel(unclean_abort=False,
-                                  topic=topic,
-                                  partition=partition,
-                                  previous_assignment=previous_assignment,
-                                  new_assignment=new_assignment)
+        self._request_move_cancel(
+            unclean_abort=False,
+            topic=topic,
+            partition=partition,
+            previous_assignment=previous_assignment,
+            new_assignment=new_assignment,
+        )
 
     @cluster(num_nodes=6)
     @parametrize(replication_factor=1)
     @parametrize(replication_factor=3)
-    def test_interrupting_partition_movement_under_load(
-            self, replication_factor):
-        topic = TopicSpec(partition_count=self._partitions,
-                          replication_factor=replication_factor)
+    def test_interrupting_partition_movement_under_load(self, replication_factor):
+        topic = TopicSpec(
+            partition_count=self._partitions, replication_factor=replication_factor
+        )
         self.client().create_topic(topic)
 
         self._start_producer(topic.name)

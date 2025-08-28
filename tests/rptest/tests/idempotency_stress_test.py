@@ -24,10 +24,10 @@ MB = 1024 * 1024
 
 class IdempotencyStressTest(PreallocNodesTest):
     def __init__(self, *args, **kwargs):
-        kwargs['extra_rp_conf'] = {
+        kwargs["extra_rp_conf"] = {
             # Enable segment size jitter as this is a stress test and does not
             # rely on exact segment counts.
-            'log_segment_size_jitter_percent': 5,
+            "log_segment_size_jitter_percent": 5,
         }
         super().__init__(
             *args,
@@ -82,7 +82,8 @@ class IdempotencyStressTest(PreallocNodesTest):
             custom_node=custom_node,
             rate_limit_bps=self.throughput,
             debug_logs=False,
-            msgs_per_producer_id=self.msgs_per_producer)
+            msgs_per_producer_id=self.msgs_per_producer,
+        )
 
     def validate_metrics(self, expected_size):
         metrics = self.redpanda.metrics_sample("idempotency_pid_cache_size")
@@ -103,15 +104,18 @@ class IdempotencyStressTest(PreallocNodesTest):
         self.topic_name = "idempotency_stress_test"
 
         self.redpanda.set_cluster_config(
-            {"max_concurrent_producer_ids": max_producer_ids})
+            {"max_concurrent_producer_ids": max_producer_ids}
+        )
 
         self.client().create_topic(
-            TopicSpec(name=self.topic_name,
-                      partition_count=self.partition_count,
-                      segment_bytes=self.segment_size))
+            TopicSpec(
+                name=self.topic_name,
+                partition_count=self.partition_count,
+                segment_bytes=self.segment_size,
+            )
+        )
 
-        producer = self._create_producer(self.topic_name,
-                                         [self.preallocated_nodes[0]])
+        producer = self._create_producer(self.topic_name, [self.preallocated_nodes[0]])
         producer.start()
         producer.wait_for_acks(self.msg_cnt, 600, 1)
         producer.stop()
@@ -120,8 +124,8 @@ class IdempotencyStressTest(PreallocNodesTest):
             lambda: self.validate_metrics(max_producer_ids),
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=
-            f"Idempotent producer cache size exceeded {max_producer_ids}")
+            err_msg=f"Idempotent producer cache size exceeded {max_producer_ids}",
+        )
 
     @cluster(num_nodes=6)
     @matrix(min_per_vcluster=[20, 33, 50])
@@ -132,17 +136,21 @@ class IdempotencyStressTest(PreallocNodesTest):
         topics = [f"id-stress-{i}" for i in range(v_clusters)]
         clusters = [f"000000000{i}0000000000" for i in range(v_clusters)]
 
-        self.redpanda.set_cluster_config({
-            "max_concurrent_producer_ids": max_producer_ids,
-            "virtual_cluster_min_producer_ids": min_per_vcluster,
-            "enable_mpx_extensions": True,
-        })
+        self.redpanda.set_cluster_config(
+            {
+                "max_concurrent_producer_ids": max_producer_ids,
+                "virtual_cluster_min_producer_ids": min_per_vcluster,
+                "enable_mpx_extensions": True,
+            }
+        )
         rpk = RpkTool(self.redpanda)
         for topic, vcluster in zip(topics, clusters):
-            rpk.create_topic(topic,
-                             partitions=3,
-                             replicas=3,
-                             config={"redpanda.virtual.cluster.id": vcluster})
+            rpk.create_topic(
+                topic,
+                partitions=3,
+                replicas=3,
+                config={"redpanda.virtual.cluster.id": vcluster},
+            )
 
         producers = []
         for i in range(v_clusters):
@@ -150,13 +158,14 @@ class IdempotencyStressTest(PreallocNodesTest):
             try:
                 producers[i].start()
                 if i >= math.floor(max_producer_ids / min_per_vcluster):
-                    assert False, f"Producer {i} should not start as it would exceed the total number of allowed producers"
+                    assert False, (
+                        f"Producer {i} should not start as it would exceed the total number of allowed producers"
+                    )
                 producers.append(producer)
             except:
                 pass
 
         for p in producers:
-
             p.wait_for_acks(self.msg_cnt, 600, 1)
             p.stop()
 
@@ -164,5 +173,5 @@ class IdempotencyStressTest(PreallocNodesTest):
             lambda: self.validate_metrics(max_producer_ids),
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=
-            f"Idempotent producer cache size exceeded {max_producer_ids}")
+            err_msg=f"Idempotent producer cache size exceeded {max_producer_ids}",
+        )

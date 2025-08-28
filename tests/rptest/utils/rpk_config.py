@@ -17,12 +17,12 @@ from rptest.services.redpanda import RedpandaService
 def read_rpk_cfg(node):
     with tempfile.TemporaryDirectory() as d:
         node.account.copy_from(RedpandaService.RPK_CONFIG_FILE, d)
-        with open(os.path.join(d, 'rpk.yaml')) as f:
+        with open(os.path.join(d, "rpk.yaml")) as f:
             return yaml.full_load(f.read())
 
 
 def read_redpanda_cfg(node):
     with tempfile.TemporaryDirectory() as d:
         node.account.copy_from(RedpandaService.NODE_CONFIG_FILE, d)
-        with open(os.path.join(d, 'redpanda.yaml')) as f:
+        with open(os.path.join(d, "redpanda.yaml")) as f:
             return yaml.full_load(f.read())

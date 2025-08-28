@@ -41,7 +41,8 @@ def get_tgkill_syscall_number():
         return 131
     else:
         raise NotImplementedError(
-            f"tgkill syscall number not known for architecture: {machine}")
+            f"tgkill syscall number not known for architecture: {machine}"
+        )
 
 
 def tgkill(tgid, tid, sig):
@@ -67,12 +68,11 @@ def main():
         sys.exit(1)
     try:
         tgkill(tgid, tid, sig)
-        print(
-            f"Successfully sent signal {sig} to thread {tid} in group {tgid}.")
+        print(f"Successfully sent signal {sig} to thread {tid} in group {tgid}.")
     except OSError as e:
         print(f"Error sending signal: {e}")
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

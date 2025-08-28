@@ -27,30 +27,34 @@ from rptest.tests.datalake.catalog_service_factory import supported_catalog_type
 
 class DatalakeRecoveryModeTest(RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):
-        super(DatalakeRecoveryModeTest,
-              self).__init__(test_ctx,
-                             num_brokers=3,
-                             si_settings=SISettings(test_ctx),
-                             extra_rp_conf={
-                                 "iceberg_enabled": "true",
-                                 "iceberg_catalog_commit_interval_ms": 5000
-                             },
-                             *args,
-                             **kwargs)
+        super(DatalakeRecoveryModeTest, self).__init__(
+            test_ctx,
+            num_brokers=3,
+            si_settings=SISettings(test_ctx),
+            extra_rp_conf={
+                "iceberg_enabled": "true",
+                "iceberg_catalog_commit_interval_ms": 5000,
+            },
+            *args,
+            **kwargs,
+        )
 
     def setUp(self):
         # redpanda will be started by DatalakeServices
         pass
 
     @cluster(num_nodes=6)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            catalog_type=supported_catalog_types())
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        catalog_type=supported_catalog_types(),
+    )
     def test_recovery_mode(self, cloud_storage_type, catalog_type):
-        with DatalakeServices(self.test_context,
-                              redpanda=self.redpanda,
-                              catalog_type=catalog_type,
-                              include_query_engines=[QueryEngineType.SPARK
-                                                     ]) as dl:
+        with DatalakeServices(
+            self.test_context,
+            redpanda=self.redpanda,
+            catalog_type=catalog_type,
+            include_query_engines=[QueryEngineType.SPARK],
+        ) as dl:
             count = 1000
             rpk = RpkTool(self.redpanda)
 
@@ -62,25 +66,26 @@ class DatalakeRecoveryModeTest(RedpandaTest):
             # test partial recovery mode
             self.redpanda.restart_nodes(
                 random.sample(self.redpanda.nodes, 1),
-                override_cfg_params={"recovery_mode_enabled": True})
+                override_cfg_params={"recovery_mode_enabled": True},
+            )
 
             time.sleep(15)
 
             self.redpanda.restart_nodes(
-                self.redpanda.nodes,
-                override_cfg_params={"recovery_mode_enabled": True})
+                self.redpanda.nodes, override_cfg_params={"recovery_mode_enabled": True}
+            )
             self.redpanda.wait_for_membership(first_start=False)
 
             admin = Admin(self.redpanda)
             admin.await_stable_leader(namespace="redpanda", topic="controller")
 
-            rpk.alter_topic_config("bar", TopicSpec.PROPERTY_ICEBERG_MODE,
-                                   "key_value")
+            rpk.alter_topic_config("bar", TopicSpec.PROPERTY_ICEBERG_MODE, "key_value")
             time.sleep(15)
 
             self.redpanda.restart_nodes(
                 self.redpanda.nodes,
-                override_cfg_params={"recovery_mode_enabled": False})
+                override_cfg_params={"recovery_mode_enabled": False},
+            )
             self.redpanda.wait_for_membership(first_start=False)
 
             dl.produce_to_topic("foo", 1024, count)
@@ -90,15 +95,17 @@ class DatalakeRecoveryModeTest(RedpandaTest):
             dl.wait_for_translation("bar", msg_count=count, timeout=120)
 
     @cluster(num_nodes=6)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            catalog_type=supported_catalog_types())
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        catalog_type=supported_catalog_types(),
+    )
     def test_disabled_partitions(self, cloud_storage_type, catalog_type):
-        with DatalakeServices(self.test_context,
-                              redpanda=self.redpanda,
-                              catalog_type=catalog_type,
-                              include_query_engines=[QueryEngineType.SPARK
-                                                     ]) as dl:
-
+        with DatalakeServices(
+            self.test_context,
+            redpanda=self.redpanda,
+            catalog_type=catalog_type,
+            include_query_engines=[QueryEngineType.SPARK],
+        ) as dl:
             count = 1000
             rpk = RpkTool(self.redpanda)
 
@@ -111,8 +118,7 @@ class DatalakeRecoveryModeTest(RedpandaTest):
             admin.set_partitions_disabled(ns="kafka", topic="foo")
             admin.set_partitions_disabled(ns="kafka", topic="bar")
 
-            rpk.alter_topic_config("bar", TopicSpec.PROPERTY_ICEBERG_MODE,
-                                   "key_value")
+            rpk.alter_topic_config("bar", TopicSpec.PROPERTY_ICEBERG_MODE, "key_value")
 
             time.sleep(15)
             admin.set_partitions_disabled(ns="kafka", topic="foo", value=False)

@@ -18,6 +18,7 @@ class SaramaInterceptors(ExampleBase):
     """
     The helper class for Sarama's interceptors example
     """
+
     def __init__(self, redpanda, version, topic):
         super(SaramaInterceptors, self).__init__(redpanda)
 
@@ -28,7 +29,7 @@ class SaramaInterceptors(ExampleBase):
     # The internal condition to determine if the
     # example is successful. Returns boolean.
     def _condition(self, line):
-        return 'producing 2 messages to topic' in line
+        return "producing 2 messages to topic" in line
 
     # Return the command to call in the shell
     def cmd(self):
@@ -45,6 +46,7 @@ class SaramaHttpServer(ExampleBase):
     """
     The helper class for Sarama's http server example
     """
+
     def __init__(self, redpanda, version):
         super(SaramaHttpServer, self).__init__(redpanda)
 
@@ -55,7 +57,7 @@ class SaramaHttpServer(ExampleBase):
     # The internal condition to determine if the
     # example is successful. Returns boolean.
     def _condition(self, line):
-        return 'Listening for requests' in line
+        return "Listening for requests" in line
 
     # Return the command to call in the shell
     def cmd(self):
@@ -82,6 +84,7 @@ class SaramaConsumerGroup(ExampleBase):
     """
     The helper class for Sarama's consumergroup example
     """
+
     def __init__(self, redpanda, version, topic, count):
         super(SaramaConsumerGroup, self).__init__(redpanda)
 
@@ -94,13 +97,13 @@ class SaramaConsumerGroup(ExampleBase):
     # The internal condition to determine if the
     # example is successful. Returns boolean.
     def _condition(self, line):
-        self._count -= 'Message claimed:' in line
+        self._count -= "Message claimed:" in line
         return self._count <= 0
 
     # Return the command to call in the shell
     def cmd(self):
         EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/consumergroup")
-        cmd = f"consumer -brokers=\"{self._redpanda.brokers()}\" -topics=\"{self._topic}\" -group=\"example\" -version {self._version}"
+        cmd = f'consumer -brokers="{self._redpanda.brokers()}" -topics="{self._topic}" -group="example" -version {self._version}'
         return os.path.join(EXAMPLE_DIR, cmd)
 
     # Return the process name to kill

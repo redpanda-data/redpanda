@@ -20,7 +20,7 @@ class DefaultClientTest(RedpandaMixedTest):
 
     @cluster(num_nodes=1)
     def test_create_delete_topic(self):
-        name = 'test-create-delete-topic'
+        name = "test-create-delete-topic"
         spec = TopicSpec(name=name, replication_factor=1)
 
         client = self.client()
@@ -40,7 +40,7 @@ class KafkaCliToolsTest(RedpandaMixedTest):
 
     @cluster(num_nodes=1)
     def test_produce_consume(self):
-        name = 'test-produce-consume'
+        name = "test-produce-consume"
         spec = TopicSpec(name=name, replication_factor=1)
         client = KafkaCliTools(self.redpanda)
         rpk = RpkTool(self.redpanda)
@@ -65,23 +65,24 @@ class RedpandaMixedTestSelfTest(RedpandaMixedTest):
 
         rpk.list_topics()
 
-        name = 'test-rpk-create-topic'
+        name = "test-rpk-create-topic"
         rpk.create_topic(name)
         rpk.delete_topic(name)
 
     @cluster(num_nodes=1)
     def test_metrics(self):
-        """Test metrics_sample() can retrieve internal metrics.
-        """
+        """Test metrics_sample() can retrieve internal metrics."""
         vectorized_application_uptime = self.redpanda.metrics_sample(
-            sample_pattern='vectorized_application_uptime')
-        assert vectorized_application_uptime is not None, 'expected some metrics'
+            sample_pattern="vectorized_application_uptime"
+        )
+        assert vectorized_application_uptime is not None, "expected some metrics"
 
         sample_patterns = [
-            'vectorized_application_uptime', 'vectorized_reactor_utilization'
+            "vectorized_application_uptime",
+            "vectorized_reactor_utilization",
         ]
         samples = self.redpanda.metrics_samples(sample_patterns)
-        assert samples is not None, 'expected sample patterns to match'
+        assert samples is not None, "expected sample patterns to match"
 
-        count = self.redpanda.metric_sum('vectorized_application_uptime')
-        assert count > 0, 'expected count greater than 0'
+        count = self.redpanda.metric_sum("vectorized_application_uptime")
+        assert count > 0, "expected count greater than 0"

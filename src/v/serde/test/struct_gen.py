@@ -39,6 +39,7 @@ class Type:
     >>> str(Type(BasicType.STRUCT, Struct('my_struct')))
     'my_struct'
     """
+
     def __init__(self, basic_type: BasicType, template_type=None):
         self._basic_type = basic_type
         self._template_type = template_type
@@ -77,6 +78,7 @@ class Field:
     >>> str(Field("_str_vec", Type(basic_type = BasicType.VECTOR, template_type = Type(BasicType.STRING))))
     'std::vector<ss::sstring> _str_vec;'
     """
+
     def __init__(self, name: str, field_type: Type):
         self._name = name
         self._type = field_type
@@ -90,11 +92,14 @@ class Struct:
     >>> str(Struct(name = 'my_struct', fields = [[Field('_f1', Type(BasicType.INT_32))]]))
     'struct my_struct : serde::envelope<my_struct, serde::version<10>, serde::compat_version<5>> {\\n  std::int32_t _f1;\\n};'
     """
-    def __init__(self,
-                 name: str,
-                 version: int,
-                 compat_version: int,
-                 field_generations: List[List[Field]] = []):
+
+    def __init__(
+        self,
+        name: str,
+        version: int,
+        compat_version: int,
+        field_generations: List[List[Field]] = [],
+    ):
         self._name = name
         self._version = version
         self._compat_version = compat_version
@@ -137,7 +142,8 @@ class Struct:
         );
     }
 };
-""").render(s=self)
+"""
+        ).render(s=self)
 
 
 FILE_TEMPLATE = """#include "serde/envelope.h"
@@ -172,10 +178,12 @@ using types_{{ outer_loop.index * 10 + loop.index }} = type_list<
  
 """
 
-my_struct = Struct(name='my_struct',
-                   field_generations=[[Field('_f1', Type(BasicType.INT_32))]],
-                   version=0,
-                   compat_version=0)
+my_struct = Struct(
+    name="my_struct",
+    field_generations=[[Field("_f1", Type(BasicType.INT_32))]],
+    version=0,
+    compat_version=0,
+)
 
 types = [
     Type(BasicType.INT_8),
@@ -190,7 +198,7 @@ types = [
     Type(BasicType.VECTOR, Type(BasicType.INT_32)),
     Type(BasicType.VECTOR, Type(BasicType.OPTIONAL, Type(BasicType.STRING))),
     Type(BasicType.OPTIONAL, Type(BasicType.STRING)),
-    Type(BasicType.STRUCT, my_struct)
+    Type(BasicType.STRUCT, my_struct),
 ]
 
 
@@ -212,30 +220,37 @@ def gen_struct(version: int, compat_version: int):
     extend_fields_2 = gen_fields(len(base_fields) + len(extend_fields_1))
     struct_idx += 1
     return [
-        Struct(name="my_struct_{}_v1".format(struct_idx),
-               field_generations=[base_fields],
-               version=version,
-               compat_version=compat_version),
-        Struct(name="my_struct_{}_v2".format(struct_idx),
-               field_generations=[base_fields, extend_fields_1],
-               version=version + 1,
-               compat_version=compat_version),
+        Struct(
+            name="my_struct_{}_v1".format(struct_idx),
+            field_generations=[base_fields],
+            version=version,
+            compat_version=compat_version,
+        ),
+        Struct(
+            name="my_struct_{}_v2".format(struct_idx),
+            field_generations=[base_fields, extend_fields_1],
+            version=version + 1,
+            compat_version=compat_version,
+        ),
         Struct(
             name="my_struct_{}_v3".format(struct_idx),
             field_generations=[base_fields, extend_fields_1, extend_fields_2],
             version=version + 2,
-            compat_version=compat_version)
+            compat_version=compat_version,
+        ),
     ]
 
 
 def extend_type_list(struct_type: Type):
-    types.extend([
-        struct_type,
-        Type(BasicType.OPTIONAL, struct_type),
-        Type(BasicType.VECTOR, struct_type),
-        Type(BasicType.OPTIONAL, Type(BasicType.VECTOR, struct_type)),
-        Type(BasicType.VECTOR, Type(BasicType.OPTIONAL, struct_type))
-    ])
+    types.extend(
+        [
+            struct_type,
+            Type(BasicType.OPTIONAL, struct_type),
+            Type(BasicType.VECTOR, struct_type),
+            Type(BasicType.OPTIONAL, Type(BasicType.VECTOR, struct_type)),
+            Type(BasicType.VECTOR, Type(BasicType.OPTIONAL, struct_type)),
+        ]
+    )
 
 
 def gen_structs(version, compat_version):
@@ -256,6 +271,6 @@ if __name__ == "__main__":
     with open(out_file, "w") as f:
         f.write(
             jinja2.Template(FILE_TEMPLATE).render(
-                structs_lists=[[[my_struct]],
-                               gen_structs(3, 3),
-                               gen_structs(4, 4)]))
+                structs_lists=[[[my_struct]], gen_structs(3, 3), gen_structs(4, 4)]
+            )
+        )

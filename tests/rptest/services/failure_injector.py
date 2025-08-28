@@ -19,7 +19,6 @@ from rptest.services.redpanda import RedpandaServiceCloud
 
 
 class FailureSpec:
-
     FAILURE_KILL = 0
     FAILURE_TERMINATE = 1
     FAILURE_SUSPEND = 2
@@ -36,8 +35,10 @@ class FailureSpec:
         FAILURE_TERMINATE,
     ]
     NETEM_FAILURE_TYPES = [
-        FAILURE_NETEM_RANDOM_DELAY, FAILURE_NETEM_PACKET_LOSS,
-        FAILURE_NETEM_PACKET_CORRUPT, FAILURE_NETEM_PACKET_DUPLICATE
+        FAILURE_NETEM_RANDOM_DELAY,
+        FAILURE_NETEM_PACKET_LOSS,
+        FAILURE_NETEM_PACKET_CORRUPT,
+        FAILURE_NETEM_PACKET_DUPLICATE,
     ]
 
     def __init__(self, type, node, length=None):
@@ -77,7 +78,8 @@ class FailureInjectorBase:
     def inject_failure(self, spec):
         if spec in self._in_flight:
             self.redpanda.logger.info(
-                f"Ignoring failure injection, already in flight {spec}")
+                f"Ignoring failure injection, already in flight {spec}"
+            )
             return
 
         self.redpanda.logger.info(f"injecting failure: {spec}")
@@ -86,7 +88,8 @@ class FailureInjectorBase:
         except Exception as e:
             self.redpanda.logger.info(f"injecting failure error: {e}")
             if spec.type == FailureSpec.FAILURE_TERMINATE and isinstance(
-                    e, TimeoutError):
+                e, TimeoutError
+            ):
                 # A timeout during termination indicates a shutdown hang in redpanda: this
                 # is a bug and we should fail the test on it.  Otherwise we'd leave the node
                 # in a weird state & get some non-obvious failure later in the test, such
@@ -119,9 +122,9 @@ class FailureInjectorBase:
                                 f"Timed cleanup complete spec={spec}, _in_flight={self._in_flight}"
                             )
 
-                    stop_timer = threading.Timer(function=cleanup,
-                                                 args=[],
-                                                 interval=spec.length)
+                    stop_timer = threading.Timer(
+                        function=cleanup, args=[], interval=spec.length
+                    )
                     self._in_flight[spec] = self.now() + spec.length
                     self.redpanda.logger.debug(
                         f"Timed cleanup scheduled spec={spec}, run_time={self._in_flight[spec]}, _in_flight={self._in_flight}"
@@ -132,8 +135,7 @@ class FailureInjectorBase:
         return len(self._in_flight)
 
     def time_till_next_recovery(self):
-        return min(run_time
-                   for spec, run_time in self._in_flight.items()) - self.now()
+        return min(run_time for spec, run_time in self._in_flight.items()) - self.now()
 
     @classmethod
     def now(cls):
@@ -224,16 +226,14 @@ class FailureInjector(FailureInjectorBase):
         super(FailureInjector, self).__init__(redpanda)
 
     def _kill(self, node):
-        self.redpanda.logger.info(
-            f"killing redpanda on {node.account.hostname}")
-        self.redpanda.signal_redpanda(node,
-                                      signal=signal.SIGKILL,
-                                      idempotent=True)
+        self.redpanda.logger.info(f"killing redpanda on {node.account.hostname}")
+        self.redpanda.signal_redpanda(node, signal=signal.SIGKILL, idempotent=True)
         timeout_sec = 10
-        wait_until(lambda: self.redpanda.redpanda_pid(node) == None,
-                   timeout_sec=timeout_sec,
-                   err_msg="Redpanda failed to kill in %d seconds" %
-                   timeout_sec)
+        wait_until(
+            lambda: self.redpanda.redpanda_pid(node) == None,
+            timeout_sec=timeout_sec,
+            err_msg="Redpanda failed to kill in %d seconds" % timeout_sec,
+        )
 
     def _isolate(self, node):
         self.redpanda.logger.info(f"isolating node {node.account.hostname}")
@@ -250,14 +250,16 @@ class FailureInjector(FailureInjectorBase):
             node.account.ssh(cmd)
         except Exception as e:
             self.redpanda.logger.error(
-                f"Failed to clean up OUTPUT rule on {node.name}: {e}")
+                f"Failed to clean up OUTPUT rule on {node.name}: {e}"
+            )
 
         try:
             cmd = "iptables -D INPUT -p tcp --destination-port 33145 -j DROP"
             node.account.ssh(cmd)
         except Exception as e:
             self.redpanda.logger.error(
-                f"Failed to clean up INPUT rule on {node.name}: {e}")
+                f"Failed to clean up INPUT rule on {node.name}: {e}"
+            )
 
     def _delete_netem(self, node):
         tc_netem.tc_netem_delete(node)
@@ -271,7 +273,7 @@ class FailureInjector(FailureInjectorBase):
             lambda n: n.account.ssh("iptables -P OUTPUT ACCEPT"),
             lambda n: n.account.ssh("iptables -F"),
             lambda n: n.account.ssh("iptables -X"),
-            lambda n: self._delete_netem(n)
+            lambda n: self._delete_netem(n),
         ]
 
         for n in self.redpanda.nodes:
@@ -282,35 +284,30 @@ class FailureInjector(FailureInjectorBase):
                     # Cleanups can fail, e.g. rule does not exist
                     self.redpanda.logger.warn(f"_heal_all: {e}")
 
-        self.redpanda.logger.debug(
-            f"before _heal_all _in_flight={self._in_flight}")
+        self.redpanda.logger.debug(f"before _heal_all _in_flight={self._in_flight}")
         self._in_flight = {
             spec: run_time
             for spec, run_time in self._in_flight.items()
             if spec.type != FailureSpec.FAILURE_ISOLATE
         }
-        self.redpanda.logger.debug(
-            f"after _heal_all _in_flight={self._in_flight}")
+        self.redpanda.logger.debug(f"after _heal_all _in_flight={self._in_flight}")
 
     def _continue_all(self):
         self.redpanda.logger.info(f"continuing execution on all nodes")
         for n in self.redpanda.nodes:
             if self.redpanda.check_node(n):
                 self._continue(n)
-        self.redpanda.logger.debug(
-            f"before _continue_all _in_flight={self._in_flight}")
+        self.redpanda.logger.debug(f"before _continue_all _in_flight={self._in_flight}")
         self._in_flight = {
             spec: run_time
             for spec, run_time in self._in_flight.items()
             if spec.type != FailureSpec.FAILURE_SUSPEND
         }
-        self.redpanda.logger.debug(
-            f"after _continue_all _in_flight={self._in_flight}")
+        self.redpanda.logger.debug(f"after _continue_all _in_flight={self._in_flight}")
 
     def _undo_all(self):
         self.redpanda.logger.info(f"running scheduled undos earlier")
-        self.redpanda.logger.debug(
-            f"before _undo_all _in_flight={self._in_flight}")
+        self.redpanda.logger.debug(f"before _undo_all _in_flight={self._in_flight}")
         while self._in_flight:
             try:
                 spec, run_time = self._in_flight.popitem()
@@ -324,31 +321,28 @@ class FailureInjector(FailureInjectorBase):
                 self._stop_func(spec.type, wait=True)(spec.node)
 
     def _suspend(self, node):
-        self.redpanda.logger.info(
-            f"suspending redpanda on {node.account.hostname}")
+        self.redpanda.logger.info(f"suspending redpanda on {node.account.hostname}")
         self.redpanda.signal_redpanda(node, signal=signal.SIGSTOP)
 
     def _terminate(self, node):
-        self.redpanda.logger.info(
-            f"terminating redpanda on {node.account.hostname}")
+        self.redpanda.logger.info(f"terminating redpanda on {node.account.hostname}")
         self.redpanda.signal_redpanda(node, signal=signal.SIGTERM)
         timeout_sec = 30
-        wait_until(lambda: self.redpanda.redpanda_pid(node) == None,
-                   timeout_sec=timeout_sec,
-                   err_msg="Redpanda failed to terminate in %d seconds" %
-                   timeout_sec)
+        wait_until(
+            lambda: self.redpanda.redpanda_pid(node) == None,
+            timeout_sec=timeout_sec,
+            err_msg="Redpanda failed to terminate in %d seconds" % timeout_sec,
+        )
 
     def _continue(self, node):
-        self.redpanda.logger.info(
-            f"continuing execution on {node.account.hostname}")
+        self.redpanda.logger.info(f"continuing execution on {node.account.hostname}")
         self.redpanda.signal_redpanda(node, signal=signal.SIGCONT)
 
     def _start(self, node):
         # make this idempotent
         pid = self.redpanda.redpanda_pid(node)
         if pid == None:
-            self.redpanda.logger.info(
-                f"starting redpanda on {node.account.hostname}")
+            self.redpanda.logger.info(f"starting redpanda on {node.account.hostname}")
             self.redpanda.start_redpanda(node)
         else:
             self.redpanda.logger.info(
@@ -361,7 +355,8 @@ class FailureInjector(FailureInjectorBase):
 
     def _netem(self, node, op):
         self.redpanda.logger.info(
-            f"executing: '{op.get_command()}' on '{node.account.hostname}'")
+            f"executing: '{op.get_command()}' on '{node.account.hostname}'"
+        )
         tc_netem.tc_netem_add(node=node, option=op)
 
     def _netem_delay(self, node):
@@ -369,7 +364,8 @@ class FailureInjector(FailureInjectorBase):
             random.randint(1000, 5000),
             random.randint(100, 1000),
             correlation_us=None,
-            distribution=tc_netem.NetemDelayDistribution.PARETO_NORMAL)
+            distribution=tc_netem.NetemDelayDistribution.PARETO_NORMAL,
+        )
 
         self._netem(node, op=op)
 
@@ -389,17 +385,18 @@ class FailureInjector(FailureInjectorBase):
 class FailureInjectorCloud(FailureInjectorBase):
     def __init__(self, redpanda):
         super(FailureInjectorCloud, self).__init__(redpanda)
-        remote_uri = f'redpanda@{redpanda._cloud_cluster.cluster_id}-agent'
+        remote_uri = f"redpanda@{redpanda._cloud_cluster.cluster_id}-agent"
         self._kubectl = KubectlTool(
             redpanda,
             remote_uri=remote_uri,
-            cluster_id=redpanda._cloud_cluster.cluster_id)
+            cluster_id=redpanda._cloud_cluster.cluster_id,
+        )
 
     def _isolate(self, node):
-        self.redpanda.logger.info(f'isolating node with privilaged pod')
-        cmd = 'apt update;apt install -y iptables;iptables -A OUTPUT -p tcp --destination-port 33145 -j DROP'
+        self.redpanda.logger.info(f"isolating node with privilaged pod")
+        cmd = "apt update;apt install -y iptables;iptables -A OUTPUT -p tcp --destination-port 33145 -j DROP"
         self._kubectl.exec_privileged(cmd)
-        cmd = 'apt update;apt install -y iptables;iptables -A INPUT -p tcp --destination-port 33145 -j DROP'
+        cmd = "apt update;apt install -y iptables;iptables -A INPUT -p tcp --destination-port 33145 -j DROP"
         self._kubectl.exec_privileged(cmd)
 
 

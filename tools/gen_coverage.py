@@ -22,7 +22,11 @@ import tempfile
 
 def merge_profraw_files(profraw_files, data_profile):
     llvm_profdata_merge = [
-        "llvm-profdata", "merge", "-sparse", "-o", f"{data_profile.name}"
+        "llvm-profdata",
+        "merge",
+        "-sparse",
+        "-o",
+        f"{data_profile.name}",
     ]
     for profraw in profraw_files:
         llvm_profdata_merge.append(profraw)
@@ -37,21 +41,20 @@ def check_ignore(cmd_list, ignore_regex):
 
 def gen_coverage_json(rp_binary, data_profile, ignore_regex):
     llvm_cov_export = [
-        "llvm-cov", "export", f"{rp_binary}",
-        f"-instr-profile={data_profile.name}"
+        "llvm-cov",
+        "export",
+        f"{rp_binary}",
+        f"-instr-profile={data_profile.name}",
     ]
 
     check_ignore(llvm_cov_export, ignore_regex)
 
-    results = subprocess.run(llvm_cov_export,
-                             capture_output=True,
-                             encoding="utf-8")
+    results = subprocess.run(llvm_cov_export, capture_output=True, encoding="utf-8")
 
     results = json.loads(results.stdout)
     report = []
 
     for f_cov in results["data"][0]["files"]:
-
         # Add the filename to the summary
         summary = f_cov["summary"]
         summary["filename"] = f_cov["filename"]
@@ -67,9 +70,14 @@ def gen_coverage_json(rp_binary, data_profile, ignore_regex):
 
 def gen_coverage_html(rp_binary, data_profile, ignore_regex, out_dir):
     llvm_cov_show = [
-        "llvm-cov", "show", f"{rp_binary}",
-        f"-instr-profile={data_profile.name}", f"--output-dir={out_dir}",
-        "-format=html", "-show-line-counts-or-regions", "-Xdemangler=c++filt"
+        "llvm-cov",
+        "show",
+        f"{rp_binary}",
+        f"-instr-profile={data_profile.name}",
+        f"--output-dir={out_dir}",
+        "-format=html",
+        "-show-line-counts-or-regions",
+        "-Xdemangler=c++filt",
     ]
 
     check_ignore(llvm_cov_show, ignore_regex)
@@ -81,12 +89,24 @@ def gen_coverage_html(rp_binary, data_profile, ignore_regex, out_dir):
 
 def gen_coverage_csv(report_json):
     field_names = [
-        "filename", "functions.count", "functions.covered",
-        "functions.percent", "lines.count", "lines.covered", "lines.percent",
-        "regions.count", "regions.covered", "regions.notcovered",
-        "regions.percent", "branches.count", "branches.covered",
-        "branches.notcovered", "branches.percent", "instantiations.count",
-        "instantiations.covered", "instantiations.percent"
+        "filename",
+        "functions.count",
+        "functions.covered",
+        "functions.percent",
+        "lines.count",
+        "lines.covered",
+        "lines.percent",
+        "regions.count",
+        "regions.covered",
+        "regions.notcovered",
+        "regions.percent",
+        "branches.count",
+        "branches.covered",
+        "branches.notcovered",
+        "branches.percent",
+        "instantiations.count",
+        "instantiations.covered",
+        "instantiations.percent",
     ]
 
     def to_csv_dict(f_cov):
@@ -114,11 +134,13 @@ def gen_coverage_csv(report_json):
         return csv_dict
 
     with open("coverage.csv", "w", newline="") as csv_file:
-        writer = csv.DictWriter(csv_file,
-                                fieldnames=field_names,
-                                delimiter=',',
-                                quotechar='"',
-                                quoting=csv.QUOTE_NONNUMERIC)
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=field_names,
+            delimiter=",",
+            quotechar='"',
+            quoting=csv.QUOTE_NONNUMERIC,
+        )
 
         writer.writeheader()
 
@@ -131,30 +153,35 @@ def main(args):
     data_profile = tempfile.NamedTemporaryFile()
 
     # merge profraw files into the data profile
-    merge_profraw_files(profraw_files=args.profraw_files,
-                        data_profile=data_profile)
+    merge_profraw_files(profraw_files=args.profraw_files, data_profile=data_profile)
 
     if args.html:
         # get coverage report in HTML format
-        gen_coverage_html(rp_binary=rp_binary,
-                          data_profile=data_profile,
-                          ignore_regex=args.ignore_regex,
-                          out_dir=args.out_dir)
+        gen_coverage_html(
+            rp_binary=rp_binary,
+            data_profile=data_profile,
+            ignore_regex=args.ignore_regex,
+            out_dir=args.out_dir,
+        )
 
     elif args.csv:
         # First, get coverage report in JSON format
-        report_json = gen_coverage_json(rp_binary=rp_binary,
-                                        data_profile=data_profile,
-                                        ignore_regex=args.ignore_regex)
+        report_json = gen_coverage_json(
+            rp_binary=rp_binary,
+            data_profile=data_profile,
+            ignore_regex=args.ignore_regex,
+        )
 
         # convert JSON report to CSV
         gen_coverage_csv(report_json)
 
     else:
         # get coverage report in JSON format
-        report = gen_coverage_json(rp_binary=rp_binary,
-                                   data_profile=data_profile,
-                                   ignore_regex=args.ignore_regex)
+        report = gen_coverage_json(
+            rp_binary=rp_binary,
+            data_profile=data_profile,
+            ignore_regex=args.ignore_regex,
+        )
 
         with open("coverage.json", "w") as out_file:
             json.dump(report, out_file, indent=4, sort_keys=True)
@@ -162,33 +189,36 @@ def main(args):
     data_profile.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description=
-        "Given a list of .profraw files, write code coverage reports to disk")
-    parser.add_argument("profraw_files",
-                        metavar=".profraw",
-                        type=str,
-                        nargs="+",
-                        help="A list of .profraw files")
-    parser.add_argument("--build-root",
-                        type=str,
-                        required=True,
-                        help="The path to redpanda/vbuild")
-    parser.add_argument("--ignore-regex",
-                        type=str,
-                        help="Ignore files that match the regex")
-    parser.add_argument("--csv",
-                        action="store_true",
-                        help="Enables output in CSV format")
+        description="Given a list of .profraw files, write code coverage reports to disk"
+    )
+    parser.add_argument(
+        "profraw_files",
+        metavar=".profraw",
+        type=str,
+        nargs="+",
+        help="A list of .profraw files",
+    )
+    parser.add_argument(
+        "--build-root", type=str, required=True, help="The path to redpanda/vbuild"
+    )
+    parser.add_argument(
+        "--ignore-regex", type=str, help="Ignore files that match the regex"
+    )
+    parser.add_argument(
+        "--csv", action="store_true", help="Enables output in CSV format"
+    )
     parser.add_argument(
         "--out-dir",
         type=str,
-        help="Directory to write coverage results. Requires --html")
+        help="Directory to write coverage results. Requires --html",
+    )
     parser.add_argument(
         "--html",
         action="store_true",
-        help="Enables output in HTML format. Requires --out-dir")
+        help="Enables output in HTML format. Requires --out-dir",
+    )
 
     args = parser.parse_args()
 

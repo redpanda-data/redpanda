@@ -25,13 +25,14 @@ from rptest.util import (
 class FetchAfterDeleteTest(RedpandaTest):
     def __init__(self, test_context):
         self.segment_size = 1048576
-        super(FetchAfterDeleteTest,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf={
-                                 "log_compaction_interval_ms": 5000,
-                                 "log_segment_size": self.segment_size,
-                                 "enable_leader_balancer": False,
-                             })
+        super(FetchAfterDeleteTest, self).__init__(
+            test_context=test_context,
+            extra_rp_conf={
+                "log_compaction_interval_ms": 5000,
+                "log_segment_size": self.segment_size,
+                "enable_leader_balancer": False,
+            },
+        )
 
     def setUp(self):
         # Override parent's setUp so that we can start redpanda later
@@ -45,9 +46,11 @@ class FetchAfterDeleteTest(RedpandaTest):
 
         self.redpanda.start()
 
-        topic = TopicSpec(partition_count=1,
-                          replication_factor=3,
-                          cleanup_policy=TopicSpec.CLEANUP_DELETE)
+        topic = TopicSpec(
+            partition_count=1,
+            replication_factor=3,
+            cleanup_policy=TopicSpec.CLEANUP_DELETE,
+        )
         self.client().create_topic(topic)
 
         kafka_tools = KafkaCliTools(self.redpanda)
@@ -59,32 +62,33 @@ class FetchAfterDeleteTest(RedpandaTest):
             partition_idx=0,
             count=10,
         )
-        consumer_group = 'test'
+        consumer_group = "test"
         rpk = RpkTool(self.redpanda)
 
         def consume(n=1):
-
             out = rpk.consume(topic.name, group=consumer_group, n=n)
-            split = out.split('}')
+            split = out.split("}")
             split = filter(lambda s: "{" in s, split)
 
             return map(lambda s: json.loads(s + "}"), split)
 
-        #consume from the beggining
+        # consume from the beggining
         msgs = consume(10)
         last = list(msgs).pop()
-        offset = last['offset']
+        offset = last["offset"]
 
         # change retention time
         retention_bytes = 2 * self.segment_size
         kafka_tools.alter_topic_config(
-            topic.name, {
+            topic.name,
+            {
                 TopicSpec.PROPERTY_RETENTION_BYTES: retention_bytes,
-            })
+            },
+        )
 
-        wait_for_local_storage_truncate(self.redpanda,
-                                        topic.name,
-                                        target_bytes=retention_bytes)
+        wait_for_local_storage_truncate(
+            self.redpanda, topic.name, target_bytes=retention_bytes
+        )
 
         partitions = list(rpk.describe_topic(topic.name))
         p = partitions[0]
@@ -92,4 +96,4 @@ class FetchAfterDeleteTest(RedpandaTest):
         # consume from the offset that doesn't exists,
         # the one that was committed previously was already removed
         out = list(consume(1))
-        assert out[0]['offset'] == p.start_offset
+        assert out[0]["offset"] == p.start_offset

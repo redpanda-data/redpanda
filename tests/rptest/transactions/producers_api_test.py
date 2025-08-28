@@ -8,7 +8,9 @@
 # by the Apache License, Version 2.0
 import threading
 from time import sleep
-from rptest.transactions.verifiers.consumer_offsets_verifier import ConsumerOffsetsVerifier
+from rptest.transactions.verifiers.consumer_offsets_verifier import (
+    ConsumerOffsetsVerifier,
+)
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
@@ -16,21 +18,20 @@ from rptest.services.cluster import cluster
 
 class ProducersAdminAPITest(RedpandaTest):
     def __init__(self, test_context):
-        super(ProducersAdminAPITest,
-              self).__init__(test_context=test_context,
-                             num_brokers=3,
-                             extra_rp_conf={
-                                 "group_topic_partitions": 1,
-                                 "group_new_member_join_timeout": 3000,
-                                 "enable_leader_balancer": False
-                             })
+        super(ProducersAdminAPITest, self).__init__(
+            test_context=test_context,
+            num_brokers=3,
+            extra_rp_conf={
+                "group_topic_partitions": 1,
+                "group_new_member_join_timeout": 3000,
+                "enable_leader_balancer": False,
+            },
+        )
         self._stop_scraping = threading.Event()
 
     def get_producer_state(self, topic: str):
         admin = self.redpanda._admin
-        return admin.get_producers_state(namespace="kafka",
-                                         topic=topic,
-                                         partition=0)
+        return admin.get_producers_state(namespace="kafka", topic=topic, partition=0)
 
     @cluster(num_nodes=3)
     def test_producers_state_api_during_load(self):
@@ -54,17 +55,18 @@ class ProducersAdminAPITest(RedpandaTest):
 
         # Basic sanity checks
         co_producers = self.get_producer_state("__consumer_offsets")
-        assert len(
-            co_producers["producers"]
-        ) == 10, "Not all producers states found in consumer_offsets partition"
+        assert len(co_producers["producers"]) == 10, (
+            "Not all producers states found in consumer_offsets partition"
+        )
         expected_groups = set([f"group-{i}" for i in range(10)])
-        state_groups = set([
-            producer["transaction_group_id"]
-            for producer in co_producers["producers"]
-        ])
-        assert expected_groups == state_groups, f"Not all groups reported. expected: {expected_groups}, repoted: {state_groups}"
+        state_groups = set(
+            [producer["transaction_group_id"] for producer in co_producers["producers"]]
+        )
+        assert expected_groups == state_groups, (
+            f"Not all groups reported. expected: {expected_groups}, repoted: {state_groups}"
+        )
 
         topic_producers = self.get_producer_state(verifier._topic)
-        assert len(
-            topic_producers["producers"]
-        ) == 10, "Not all producers states found in data topic partition"
+        assert len(topic_producers["producers"]) == 10, (
+            "Not all producers states found in data topic partition"
+        )

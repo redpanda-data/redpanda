@@ -23,24 +23,26 @@ MSG_TOKEN = "_"
 
 
 class RpkConsumer(BackgroundThreadService):
-    def __init__(self,
-                 context,
-                 redpanda,
-                 topic,
-                 partitions=[],
-                 offset='oldest',
-                 ignore_errors=True,
-                 retries=3,
-                 group='',
-                 save_msgs=True,
-                 fetch_max_bytes=None,
-                 num_msgs=None,
-                 retry_sec=5,
-                 username=None,
-                 password=None,
-                 mechanism=None,
-                 tls_cert: Optional[tls.Certificate] = None,
-                 tls_enabled: Optional[bool] = None):
+    def __init__(
+        self,
+        context,
+        redpanda,
+        topic,
+        partitions=[],
+        offset="oldest",
+        ignore_errors=True,
+        retries=3,
+        group="",
+        save_msgs=True,
+        fetch_max_bytes=None,
+        num_msgs=None,
+        retry_sec=5,
+        username=None,
+        password=None,
+        mechanism=None,
+        tls_cert: Optional[tls.Certificate] = None,
+        tls_enabled: Optional[bool] = None,
+    ):
         super(RpkConsumer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -68,37 +70,41 @@ class RpkConsumer(BackgroundThreadService):
         if self._tls_cert is not None:
             node = self.nodes[0]
             self.logger.info(
-                f'Writing RpkConsumer node tls key file: {self._tls_cert.key}')
+                f"Writing RpkConsumer node tls key file: {self._tls_cert.key}"
+            )
             node.account.mkdirs(os.path.dirname(self._tls_cert.key))
             node.account.copy_to(self._tls_cert.key, self._tls_cert.key)
 
             self.logger.info(
-                f'Writing RpkConsumer node tls cert file: {self._tls_cert.crt}'
+                f"Writing RpkConsumer node tls cert file: {self._tls_cert.crt}"
             )
             node.account.mkdirs(os.path.dirname(self._tls_cert.crt))
             node.account.copy_to(self._tls_cert.crt, self._tls_cert.crt)
 
             self.logger.info(
-                f'Writing RpkConsumer node tls ca file: {self._tls_cert.ca.crt}'
+                f"Writing RpkConsumer node tls ca file: {self._tls_cert.ca.crt}"
             )
             node.account.mkdirs(os.path.dirname(self._tls_cert.ca.crt))
             node.account.copy_to(self._tls_cert.ca.crt, self._tls_cert.ca.crt)
 
         # if testing redpanda cloud, override with default superuser
-        if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
+        if hasattr(redpanda, "GLOBAL_CLOUD_CLUSTER_CONFIG"):
             security_config = redpanda.security_config()
-            self._mechanism = security_config.get('sasl_mechanism', None)
-            self._user = security_config.get('sasl_plain_username', None)
-            self._pass = security_config.get('sasl_plain_password', None)
-            self._tls_enabled = security_config.get('enable_tls', False)
+            self._mechanism = security_config.get("sasl_mechanism", None)
+            self._user = security_config.get("sasl_plain_username", None)
+            self._pass = security_config.get("sasl_plain_password", None)
+            self._tls_enabled = security_config.get("enable_tls", False)
 
     def _worker(self, idx, node):
         err = None
 
         self._stopping.clear()
         attempt = 0
-        while attempt <= self._retries and not self._stopping.is_set() and (
-                self._num_msgs is None or self.message_count < self._num_msgs):
+        while (
+            attempt <= self._retries
+            and not self._stopping.is_set()
+            and (self._num_msgs is None or self.message_count < self._num_msgs)
+        ):
             try:
                 self._consume(node)
             except Exception as e:
@@ -120,11 +126,10 @@ class RpkConsumer(BackgroundThreadService):
             self.error = err
 
     def stop_node(self, node):
-        self._redpanda.logger.info(
-            f"Stopping RpkConsumer on ({node.account.hostname})")
+        self._redpanda.logger.info(f"Stopping RpkConsumer on ({node.account.hostname})")
         self._stopping.set()
         try:
-            node.account.kill_process('rpk', clean_shutdown=False)
+            node.account.kill_process("rpk", clean_shutdown=False)
         except RemoteCommandError as e:
             if b"No such process" in e.msg:
                 pass
@@ -136,15 +141,19 @@ class RpkConsumer(BackgroundThreadService):
         # path used by each node may differ from that returned by
         # redpanda.find_binary(), e.g. if using a RedpandaInstaller.
         rp_install_path_root = self._redpanda._context.globals.get(
-            "rp_install_path_root", None)
+            "rp_install_path_root", None
+        )
         rpk_binary = f"{rp_install_path_root}/bin/rpk"
         # Important to use --read-committed, because otherwise the output parsing would have
         # to somehow handle when rpk errors out on a rewind of the consumed offset
-        cmd = '%s topic consume --read-committed --offset %s --pretty-print=false --brokers %s %s' % (
-            rpk_binary,
-            self._offset,
-            self._redpanda.brokers(),
-            self._topic,
+        cmd = (
+            "%s topic consume --read-committed --offset %s --pretty-print=false --brokers %s %s"
+            % (
+                rpk_binary,
+                self._offset,
+                self._redpanda.brokers(),
+                self._topic,
+            )
         )
 
         if not self._save_msgs:
@@ -153,27 +162,27 @@ class RpkConsumer(BackgroundThreadService):
             cmd += f' -f "{MSG_TOKEN}\\n"'
 
         if self._group:
-            cmd += ' -g %s' % self._group
+            cmd += " -g %s" % self._group
 
         if self._partitions:
-            cmd += ' -p %s' % ','.join([str(p) for p in self._partitions])
+            cmd += " -p %s" % ",".join([str(p) for p in self._partitions])
 
         if self._fetch_max_bytes is not None:
-            cmd += f' --fetch-max-bytes={self._fetch_max_bytes}'
+            cmd += f" --fetch-max-bytes={self._fetch_max_bytes}"
 
         if self._num_msgs is not None:
-            cmd += f' -n {self._num_msgs}'
+            cmd += f" -n {self._num_msgs}"
 
         if self._user:
-            cmd += f' -X user={self._user}'
-            cmd += f' -X pass={self._pass}'
-            cmd += f' -X sasl.mechanism={self._mechanism}'
+            cmd += f" -X user={self._user}"
+            cmd += f" -X pass={self._pass}"
+            cmd += f" -X sasl.mechanism={self._mechanism}"
 
         if self._tls_cert:
-            cmd += f' -X tls.key={self._tls_cert.key} -X tls.cert={self._tls_cert.crt} -X tls.ca={self._tls_cert.ca.crt}'
+            cmd += f" -X tls.key={self._tls_cert.key} -X tls.cert={self._tls_cert.crt} -X tls.ca={self._tls_cert.ca.crt}"
 
         if self._tls_enabled:
-            cmd += f' -X tls.enabled={str(self._tls_enabled)}'
+            cmd += f" -X tls.enabled={str(self._tls_enabled)}"
 
         for line in node.account.ssh_capture(cmd):
             if self._stopping.is_set():

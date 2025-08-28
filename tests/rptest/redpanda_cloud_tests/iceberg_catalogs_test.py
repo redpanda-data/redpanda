@@ -27,11 +27,11 @@ from rptest.services.redpanda import RedpandaServiceCloud
 from rptest.services.databricks_workspace import DatabricksWorkspace
 from rptest.context.databricks import DatabricksContext, OauthCredentials
 from rptest.services.catalog_service import CatalogType
-#from rptest.tests.datalake.datalake_services import DatalakeServices
-#from rptest.tests.datalake.query_engine_base import QueryEngineType
-#from rptest.tests.datalake.utils import supported_storage_types
-#from rptest.tests.redpanda_test import RedpandaTest
-#from rptest.utils.mode_checks import cleanup_on_early_exit
+# from rptest.tests.datalake.datalake_services import DatalakeServices
+# from rptest.tests.datalake.query_engine_base import QueryEngineType
+# from rptest.tests.datalake.utils import supported_storage_types
+# from rptest.tests.redpanda_test import RedpandaTest
+# from rptest.utils.mode_checks import cleanup_on_early_exit
 
 
 def supported_catalog_types():
@@ -46,13 +46,15 @@ class IcebergCloudCatalogsTest(RedpandaCloudTest):
     """
     Verify that cluster infra/config matches config profile used to launch - only applies to cloudv2
     """
+
     def __init__(self, test_context):
         super().__init__(test_context=test_context)
         self._ctx = test_context
         self._ipClient = InstallPackClient(
             self.redpanda._cloud_cluster.config.install_pack_url_template,
             self.redpanda._cloud_cluster.config.install_pack_auth_type,
-            self.redpanda._cloud_cluster.config.install_pack_auth)
+            self.redpanda._cloud_cluster.config.install_pack_auth,
+        )
 
     def setUp(self):
         super().setUp()
@@ -61,8 +63,9 @@ class IcebergCloudCatalogsTest(RedpandaCloudTest):
         install_pack_version = cloud_cluster.get_install_pack_version()
         self._ip = self._ipClient.getInstallPack(install_pack_version)
         self._clusterId = cloud_cluster.cluster_id
-        self._configProfile = self._ip['config_profiles'][
-            cloud_cluster.config.config_profile_name]
+        self._configProfile = self._ip["config_profiles"][
+            cloud_cluster.config.config_profile_name
+        ]
 
     def test_healthy(self):
         r = self.redpanda.cluster_unhealthy_reason()
@@ -82,13 +85,14 @@ class IcebergCloudCatalogsTest(RedpandaCloudTest):
         catalog_info = databricks_client.create_catalog(bucket=bucket)
         properties = {"iceberg_enabled": True}
         enable_resp = cloud_cluster.update_cluster_property_public(
-            self._clusterId, properties)
+            self._clusterId, properties
+        )
         self.logger.debug(f"Enable iceberg response: {enable_resp}")
 
         # Parameters for creating Redpanda secret
         secret_id = "UNITY_CLIENT_SECRET"
 
-        #secret_data = dbx_ctx.client_secret
+        # secret_data = dbx_ctx.client_secret
         # Access credentials (client_secret, client_id) from dbx_ctx.credentials
         if isinstance(dbx_ctx.credentials, OauthCredentials):
             secret_data = dbx_ctx.credentials.client_secret
@@ -105,19 +109,14 @@ class IcebergCloudCatalogsTest(RedpandaCloudTest):
 
         # Construct the payload for the request
         properties = {
-            "iceberg_rest_catalog_endpoint":
-            iceberg_rest_catalog_endpoint,
-            "iceberg_rest_catalog_authentication_mode":
-            "oauth2"
-            if isinstance(dbx_ctx.credentials, OauthCredentials) else "bearer",
-            "iceberg_rest_catalog_client_id":
-            databricks_client_id,
-            "iceberg_rest_catalog_client_secret":
-            "${secrets.UNITY_CLIENT_SECRET}",
-            "iceberg_rest_catalog_warehouse":
-            catalog_info.name,
-            "iceberg_catalog_type":
-            "rest"
+            "iceberg_rest_catalog_endpoint": iceberg_rest_catalog_endpoint,
+            "iceberg_rest_catalog_authentication_mode": "oauth2"
+            if isinstance(dbx_ctx.credentials, OauthCredentials)
+            else "bearer",
+            "iceberg_rest_catalog_client_id": databricks_client_id,
+            "iceberg_rest_catalog_client_secret": "${secrets.UNITY_CLIENT_SECRET}",
+            "iceberg_rest_catalog_warehouse": catalog_info.name,
+            "iceberg_catalog_type": "rest",
         }
 
         # Log the constructed payload for debugging
@@ -126,8 +125,8 @@ class IcebergCloudCatalogsTest(RedpandaCloudTest):
         try:
             # Send the HTTP PATCH request
             response = client.update_cluster_property_public(
-                cluster_id=cloud_cluster.current.cluster_id,
-                properties=properties)
+                cluster_id=cloud_cluster.current.cluster_id, properties=properties
+            )
 
             if response:
                 self.logger.debug(f"Update successful: {response.json()}")
@@ -136,14 +135,15 @@ class IcebergCloudCatalogsTest(RedpandaCloudTest):
 
         except Exception as e:
             self.logger.error(
-                f"An error occurred while updating cluster properties: {e}")
+                f"An error occurred while updating cluster properties: {e}"
+            )
 
         self.rpk = RpkTool(self.redpanda)
-        test_topic = 'test_topic'
+        test_topic = "test_topic"
         self.rpk.create_topic(test_topic)
-        self.rpk.alter_topic_config(test_topic,
-                                    TopicSpec.PROPERTY_ICEBERG_MODE,
-                                    'key_value')
+        self.rpk.alter_topic_config(
+            test_topic, TopicSpec.PROPERTY_ICEBERG_MODE, "key_value"
+        )
 
         MESSAGE_COUNT = 100
         for i in range(MESSAGE_COUNT):

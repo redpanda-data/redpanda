@@ -28,8 +28,7 @@ class ControllerAvailabilityTest(Test):
         super().__init__(test_ctx, *args, **kwargs)
 
     def start_redpanda(self, cluster_size):
-        self.redpanda = make_redpanda_service(self.ctx,
-                                              num_brokers=cluster_size)
+        self.redpanda = make_redpanda_service(self.ctx, num_brokers=cluster_size)
         self.redpanda.start()
         self.admin = Admin(self.redpanda)
 
@@ -37,9 +36,9 @@ class ControllerAvailabilityTest(Test):
         return int(ceil(cluster_size / 2.0) - 1)
 
     def _controller_stable(self):
-
         started_ids = set(
-            [self.redpanda.node_id(n) for n in self.redpanda.started_nodes()])
+            [self.redpanda.node_id(n) for n in self.redpanda.started_nodes()]
+        )
         self.logger.info(f"started redpanda nodes: {started_ids}")
 
         controller = self.redpanda.controller()
@@ -60,33 +59,33 @@ class ControllerAvailabilityTest(Test):
         statuses = []
         for n in self.redpanda.started_nodes():
             controller_status = self.admin.get_controller_status(n)
-            self.logger.info(
-                f"Status: {controller_status} from {n.account.hostname}")
+            self.logger.info(f"Status: {controller_status} from {n.account.hostname}")
             statuses.append(controller_status)
 
         return all([cs == statuses[0] for cs in statuses[1:]])
 
     def _check_metrics(self, cluster_size):
         sent_vote_metrics = self.redpanda.metrics_sample(
-            "sent_vote_requests", self.redpanda.started_nodes())
+            "sent_vote_requests", self.redpanda.started_nodes()
+        )
 
         for m in sent_vote_metrics.samples:
             self.logger.debug("Vote requests metric sample: {m}")
-            assert (
-                m.value <= 2 * cluster_size
-            ), f"two rounds of leader election must be enough to elect a leader, current node vote request count: {m.value}"
+            assert m.value <= 2 * cluster_size, (
+                f"two rounds of leader election must be enough to elect a leader, current node vote request count: {m.value}"
+            )
 
     @cluster(num_nodes=5)
     @matrix(cluster_size=[3, 4, 5], stop=["single", "minority"])
     def test_controller_availability_with_nodes_down(self, cluster_size, stop):
         # start cluster
         self.start_redpanda(cluster_size)
-        to_kill = self._tolerated_failures(
-            cluster_size) if stop == "minority" else 1
+        to_kill = self._tolerated_failures(cluster_size) if stop == "minority" else 1
 
         # stop first two nodes with the highest priorities
-        nodes = sorted(self.redpanda.nodes.copy(),
-                       key=lambda n: self.redpanda.node_id(n))
+        nodes = sorted(
+            self.redpanda.nodes.copy(), key=lambda n: self.redpanda.node_id(n)
+        )
 
         for n in nodes[0:to_kill]:
             self.logger.info(
@@ -101,8 +100,12 @@ class ControllerAvailabilityTest(Test):
         # 3s + 3*1.5*1.5s = 9.75s. In reality, other delays occasionally
         # make 10s insufficient.
         TIMEOUT_SEC = 15
-        wait_until(lambda: self._controller_stable(), TIMEOUT_SEC, 0.5,
-                   "Controller is not available")
+        wait_until(
+            lambda: self._controller_stable(),
+            TIMEOUT_SEC,
+            0.5,
+            "Controller is not available",
+        )
         self._check_metrics(cluster_size)
 
         cleanup_on_early_exit(self)

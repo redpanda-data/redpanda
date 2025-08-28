@@ -7,7 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.transactions.verifiers.consumer_offsets_verifier import ConsumerOffsetsVerifier
+from rptest.transactions.verifiers.consumer_offsets_verifier import (
+    ConsumerOffsetsVerifier,
+)
 from rptest.services.cluster import cluster
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.redpanda_test import RedpandaTest
@@ -17,17 +19,18 @@ from ducktape.mark import matrix
 
 class VerifyConsumerOffsets(RedpandaTest):
     def __init__(self, test_context):
-        super(VerifyConsumerOffsets,
-              self).__init__(test_context=test_context,
-                             num_brokers=3,
-                             extra_rp_conf={
-                                 "group_topic_partitions": 1,
-                                 "log_segment_size": 1024 * 1024,
-                                 "log_segment_ms": 60000,
-                                 "log_compaction_interval_ms": 10,
-                                 "group_new_member_join_timeout": 3000,
-                                 "group_initial_rebalance_delay": 0
-                             })
+        super(VerifyConsumerOffsets, self).__init__(
+            test_context=test_context,
+            num_brokers=3,
+            extra_rp_conf={
+                "group_topic_partitions": 1,
+                "log_segment_size": 1024 * 1024,
+                "log_segment_ms": 60000,
+                "log_compaction_interval_ms": 10,
+                "group_new_member_join_timeout": 3000,
+                "group_initial_rebalance_delay": 0,
+            },
+        )
 
     @cluster(num_nodes=3)
     def test_consumer_group_offsets(self):
@@ -37,27 +40,24 @@ class VerifyConsumerOffsets(RedpandaTest):
 
 class VerifyConsumerOffsetsThruUpgrades(RedpandaTest):
     def __init__(self, test_context):
-        super(VerifyConsumerOffsetsThruUpgrades,
-              self).__init__(test_context=test_context,
-                             num_brokers=3,
-                             extra_rp_conf={
-                                 "group_topic_partitions": 1,
-                                 "log_segment_size": 1024 * 1024,
-                                 "log_segment_ms": 60000,
-                                 "log_compaction_interval_ms": 10,
-                                 "group_new_member_join_timeout": 3000,
-                                 "group_initial_rebalance_delay": 0
-                             })
+        super(VerifyConsumerOffsetsThruUpgrades, self).__init__(
+            test_context=test_context,
+            num_brokers=3,
+            extra_rp_conf={
+                "group_topic_partitions": 1,
+                "log_segment_size": 1024 * 1024,
+                "log_segment_ms": 60000,
+                "log_compaction_interval_ms": 10,
+                "group_new_member_join_timeout": 3000,
+                "group_initial_rebalance_delay": 0,
+            },
+        )
 
-    def rp_install_version(self,
-                           num_previous: int,
-                           version=RedpandaInstaller.HEAD):
+    def rp_install_version(self, num_previous: int, version=RedpandaInstaller.HEAD):
         if num_previous == 0:
             return version
-        previous = self.redpanda._installer.highest_from_prior_feature_version(
-            version)
-        return self.rp_install_version(num_previous=num_previous - 1,
-                                       version=previous)
+        previous = self.redpanda._installer.highest_from_prior_feature_version(version)
+        return self.rp_install_version(num_previous=num_previous - 1, version=previous)
 
     def setUp(self):
         pass
@@ -66,25 +66,25 @@ class VerifyConsumerOffsetsThruUpgrades(RedpandaTest):
         def consumer_offsets_is_compactible():
             try:
                 state = self.redpanda._admin.get_partition_state(
-                    namespace="kafka", topic="__consumer_offsets", partition=0)
+                    namespace="kafka", topic="__consumer_offsets", partition=0
+                )
                 collectible = []
                 for replica in state["replicas"]:
                     for stm in replica["raft_state"]["stms"]:
                         if stm["name"] == "group_tx_tracker_stm.snapshot":
                             collectible.append(
-                                stm["last_applied_offset"] ==
-                                stm["max_removable_local_log_offset"])
+                                stm["last_applied_offset"]
+                                == stm["max_removable_local_log_offset"]
+                            )
                 return len(collectible) == 3 and all(collectible)
             except Exception as e:
-                self.redpanda.logger.debug(
-                    f"failed to get parition state: {e}")
+                self.redpanda.logger.debug(f"failed to get parition state: {e}")
 
         wait_until(
             consumer_offsets_is_compactible,
             timeout_sec=30,
             backoff_sec=1,
-            err_msg=
-            f"Timed out waiting for consumer offsets partition to be compactible"
+            err_msg=f"Timed out waiting for consumer offsets partition to be compactible",
         )
 
     @cluster(num_nodes=3)
@@ -101,8 +101,7 @@ class VerifyConsumerOffsetsThruUpgrades(RedpandaTest):
         # After the upgrade + compaction the following invariants are checked
         # - The state of group offets is correct as snapshotted prior to all upgrades
         # - The log is fully compactible.
-        initial_version = self.rp_install_version(
-            num_previous=versions_to_upgrade)
+        initial_version = self.rp_install_version(num_previous=versions_to_upgrade)
         self.redpanda._installer.install(self.redpanda.nodes, initial_version)
         super(VerifyConsumerOffsetsThruUpgrades, self).setUp()
 
@@ -110,8 +109,9 @@ class VerifyConsumerOffsetsThruUpgrades(RedpandaTest):
         verifier.verify()
 
         versions = self.load_version_range(initial_version)
-        for v in self.upgrade_through_versions(versions_in=versions,
-                                               already_running=True):
+        for v in self.upgrade_through_versions(
+            versions_in=versions, already_running=True
+        ):
             self.logger.info(f"Updated to {v}")
             verifier.verify()
 

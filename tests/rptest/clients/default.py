@@ -57,8 +57,9 @@ class DefaultClient:
         for spec in specs:
             client.create_topic(spec)
 
-    def create_topic_with_assignment(self, name: str,
-                                     assignments: Sequence[Sequence[int]]):
+    def create_topic_with_assignment(
+        self, name: str, assignments: Sequence[Sequence[int]]
+    ):
         client = KafkaCliTools(self._redpanda)
         client.create_topic_with_assignment(name, assignments)
 
@@ -84,15 +85,15 @@ class DefaultClient:
         Describe topics. Pass topics=None to describe all topics, or a pass a
         list of topic names to restrict the call to a set of specific topics.
         """
+
         def make_partition_desc(p_md):
-            return PartitionDescription(id=p_md.id,
-                                        leader=p_md.leader,
-                                        replicas=p_md.replicas)
+            return PartitionDescription(
+                id=p_md.id, leader=p_md.leader, replicas=p_md.replicas
+            )
 
         def make_topic_desc(tp_md):
             partitions = [
-                make_partition_desc(p_md)
-                for p_md in tp_md.partitions.values()
+                make_partition_desc(p_md) for p_md in tp_md.partitions.values()
             ]
             return TopicDescription(name=tp_md.topic, partitions=partitions)
 
@@ -110,24 +111,23 @@ class DefaultClient:
     def describe_topic(self, topic: str):
         td = self.describe_topics([topic])
         assert len(td) == 1, f"Received {len(td)} topics expected 1: {td}"
-        assert td[
-            0].name == topic, f"Received topic {td[0].name} expected {topic}: {td}"
+        assert td[0].name == topic, (
+            f"Received topic {td[0].name} expected {topic}: {td}"
+        )
         return td[0]
 
     def alter_topic_partition_count(self, topic: str, count: int):
         client = KafkaCliTools(self._redpanda)
         client.create_topic_partitions(topic, count)
 
-    def alter_topic_config(self, topic: str, key: str,
-                           value: typing.Union[str, int]):
+    def alter_topic_config(self, topic: str, key: str, value: typing.Union[str, int]):
         """
         Alter a topic configuration property.
         """
         rpk = RpkTool(self._redpanda)
         rpk.alter_topic_config(topic, key, value)
 
-    def alter_topic_configs(self, topic: str,
-                            props: dict[str, typing.Union[str, int]]):
+    def alter_topic_configs(self, topic: str, props: dict[str, typing.Union[str, int]]):
         """
         Alter multiple topic configuration properties.
         """
@@ -146,11 +146,13 @@ class DefaultClient:
         rpk = RpkTool(self._redpanda)
         rpk.delete_topic_config(topic, key)
 
-    def alter_broker_config(self,
-                            values: dict[str, typing.Any],
-                            incremental: bool,
-                            *,
-                            broker: typing.Optional[int] = None):
+    def alter_broker_config(
+        self,
+        values: dict[str, typing.Any],
+        incremental: bool,
+        *,
+        broker: typing.Optional[int] = None,
+    ):
         kcl = KCL(self._redpanda)
         return kcl.alter_broker_config(values, incremental, broker)
 

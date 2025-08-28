@@ -32,12 +32,11 @@ class PrintingHandler(http.server.BaseHTTPRequestHandler):
 
         # print request content
         req = {}
-        req['method'] = self.command
-        req['path'] = self.path
-        if 'Content-Length' in self.headers:
-            req['content_length'] = int(self.headers.get('Content-Length'))
-            req['body'] = self.rfile.read(
-                req['content_length']).decode('ascii')
+        req["method"] = self.command
+        req["path"] = self.path
+        if "Content-Length" in self.headers:
+            req["content_length"] = int(self.headers.get("Content-Length"))
+            req["body"] = self.rfile.read(req["content_length"]).decode("ascii")
 
         print(json.dumps(req), flush=True)
 
@@ -50,11 +49,8 @@ def main():
     import argparse
 
     def generate_options():
-        parser = argparse.ArgumentParser(description='Simple HTTP server')
-        parser.add_argument('--port',
-                            type=int,
-                            help='Port to listen on',
-                            default=8080)
+        parser = argparse.ArgumentParser(description="Simple HTTP server")
+        parser.add_argument("--port", type=int, help="Port to listen on", default=8080)
         return parser
 
     parser = generate_options()
@@ -69,5 +65,5 @@ def main():
         httpd.serve_forever()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

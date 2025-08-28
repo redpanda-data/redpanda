@@ -35,8 +35,7 @@ class RpkConnectTest(RedpandaTest):
             installed,
             timeout_sec=120,
             backoff_sec=2,
-            err_msg=
-            f"could not find 'redpanda-connect' in plugin list after installing"
+            err_msg=f"could not find 'redpanda-connect' in plugin list after installing",
         )
 
     @cluster(num_nodes=1)
@@ -77,8 +76,8 @@ class RpkConnectTest(RedpandaTest):
         # rpk shouldn't install either if the user runs --version without
         # connect being installed first.
         with expect_exception(
-                RpkException,
-                lambda e: "rpk connect is not installed" in str(e)):
+            RpkException, lambda e: "rpk connect is not installed" in str(e)
+        ):
             rpk_remote.connect_version()
 
         # Now, rpk should download and install on-the-fly Connect when

@@ -20,16 +20,15 @@ class RollingRestartTest(RedpandaCloudTest):
 
     @cluster(num_nodes=1)
     def test_restart_pod(self):
-        """Simple test of restart_pod() with a random pod in the cluster.
-        """
+        """Simple test of restart_pod() with a random pod in the cluster."""
 
         pod = random.choice(self.redpanda.pods)
-        self.logger.info(f'test restart of pod {pod.name}')
+        self.logger.info(f"test restart of pod {pod.name}")
         self.redpanda.restart_pod(pod.name)
 
     @cluster(num_nodes=1)
     def test_rolling_restart(self):
         """Simple test of rolling_restart_pods() with default args."""
 
-        self.logger.info('test rolling restart of all pods in the cluster')
+        self.logger.info("test rolling restart of all pods in the cluster")
         self.redpanda.rolling_restart_pods()

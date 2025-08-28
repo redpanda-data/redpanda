@@ -14,7 +14,7 @@ from rptest.clients.types import TopicSpec
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import firewall_blocked
 from rptest.clients.rpk import RpkTool
-from confluent_kafka import (admin, Producer, KafkaException, Consumer)
+from confluent_kafka import admin, Producer, KafkaException, Consumer
 from ducktape.mark import parametrize
 
 import time
@@ -28,18 +28,19 @@ def on_delivery(err, msg):
 
 
 class IsolatedDecommissionedNodeTest(PreallocNodesTest):
-    topics = (TopicSpec(partition_count=1, replication_factor=3), )
+    topics = (TopicSpec(partition_count=1, replication_factor=3),)
 
     def __init__(self, test_context):
         extra_rp_conf = {
             "enable_leader_balancer": False,
         }
 
-        super(IsolatedDecommissionedNodeTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=3,
-                             node_prealloc_count=3,
-                             extra_rp_conf=extra_rp_conf)
+        super(IsolatedDecommissionedNodeTest, self).__init__(
+            test_context=test_context,
+            num_brokers=3,
+            node_prealloc_count=3,
+            extra_rp_conf=extra_rp_conf,
+        )
 
         self.internal_port = 33145
         self.admin = Admin(self.redpanda)
@@ -54,16 +55,18 @@ class IsolatedDecommissionedNodeTest(PreallocNodesTest):
         max_retries = 5
         retries_count = 0
 
-        consumer = Consumer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': f"consumer-{uuid.uuid4()}",
-            'auto.offset.reset': 'earliest',
-            'isolation.level': 'read_committed',
-        })
+        consumer = Consumer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "group.id": f"consumer-{uuid.uuid4()}",
+                "auto.offset.reset": "earliest",
+                "isolation.level": "read_committed",
+            }
+        )
 
         consumer.subscribe([topic_name])
         num_consumed = 0
-        prev_rec = bytes("0", 'UTF-8')
+        prev_rec = bytes("0", "UTF-8")
 
         while num_consumed != self.max_records and retries_count < max_retries:
             max_consume_records = 10
@@ -77,13 +80,15 @@ class IsolatedDecommissionedNodeTest(PreallocNodesTest):
             for record in records:
                 retries_count = 0
                 assert prev_rec == record.key(), f"{prev_rec}, {record.key()}"
-                prev_rec = bytes(str(int(prev_rec) + 1), 'UTF-8')
+                prev_rec = bytes(str(int(prev_rec) + 1), "UTF-8")
 
             num_consumed += len(records)
 
         consumer.close()
 
-        assert num_consumed == self.max_records, f"Can not consume all data. Consumed: {num_consumed}, expected: {self.max_records}"
+        assert num_consumed == self.max_records, (
+            f"Can not consume all data. Consumed: {num_consumed}, expected: {self.max_records}"
+        )
 
     @cluster(num_nodes=3)
     def create_topic_on_isolated_node_test(self):
@@ -93,14 +98,17 @@ class IsolatedDecommissionedNodeTest(PreallocNodesTest):
         with firewall_blocked([self.isolated_node], self.internal_port, True):
             wait_until(self.is_node_isolated, timeout_sec=90, backoff_sec=1)
 
-            confluent_admin = admin.AdminClient({
-                "bootstrap.servers":
-                self.redpanda.broker_address(self.isolated_node),
-            })
+            confluent_admin = admin.AdminClient(
+                {
+                    "bootstrap.servers": self.redpanda.broker_address(
+                        self.isolated_node
+                    ),
+                }
+            )
 
-            confluent_admin.create_topics([
-                admin.NewTopic("123", replication_factor=1, num_partitions=1)
-            ])
+            confluent_admin.create_topics(
+                [admin.NewTopic("123", replication_factor=1, num_partitions=1)]
+            )
 
     @cluster(num_nodes=3)
     @parametrize(isolation_handler_mode=True)
@@ -118,24 +126,31 @@ class IsolatedDecommissionedNodeTest(PreallocNodesTest):
         def wait_leader():
             try:
                 self.leader_for_all = self.admin.get_partition_leader(
-                    namespace="kafka", topic=str(topic), partition=0)
+                    namespace="kafka", topic=str(topic), partition=0
+                )
                 return True
             except:
                 return False
 
-        wait_until(wait_leader,
-                   timeout_sec=10,
-                   backoff_sec=1,
-                   err_msg="Can not get leader for first topic")
+        wait_until(
+            wait_leader,
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg="Can not get leader for first topic",
+        )
 
-        self.admin.partition_transfer_leadership('redpanda', 'controller', 0,
-                                                 self.leader_for_all)
-        wait_until(lambda: self.admin.get_partition_leader(
-            namespace="redpanda", topic="controller", partition=0) == self.
-                   leader_for_all,
-                   timeout_sec=10,
-                   backoff_sec=1,
-                   err_msg="Leadership did not stabilize")
+        self.admin.partition_transfer_leadership(
+            "redpanda", "controller", 0, self.leader_for_all
+        )
+        wait_until(
+            lambda: self.admin.get_partition_leader(
+                namespace="redpanda", topic="controller", partition=0
+            )
+            == self.leader_for_all,
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg="Leadership did not stabilize",
+        )
 
         self.not_isolated_node = None
         for node in self.redpanda.nodes:
@@ -145,19 +160,20 @@ class IsolatedDecommissionedNodeTest(PreallocNodesTest):
                 self.not_isolated_node = node
 
         with firewall_blocked([self.isolated_node], self.internal_port, True):
-
             wait_until(self.is_node_isolated, timeout_sec=90, backoff_sec=1)
 
-            producer = Producer({
-                "bootstrap.servers":
-                self.redpanda.broker_address(self.isolated_node),
-            })
+            producer = Producer(
+                {
+                    "bootstrap.servers": self.redpanda.broker_address(
+                        self.isolated_node
+                    ),
+                }
+            )
 
             for i in range(self.max_records):
-                producer.produce(str(topic),
-                                 key=str(i),
-                                 value=str(i),
-                                 callback=on_delivery)
+                producer.produce(
+                    str(topic), key=str(i), value=str(i), callback=on_delivery
+                )
             try:
                 producer.flush(10.0)
             except ck.cimpl.KafkaException as e:

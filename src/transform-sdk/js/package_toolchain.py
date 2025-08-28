@@ -43,13 +43,24 @@ with tempfile.TemporaryDirectory() as temp_dir:
             file = f"{BINARYEN_TARGET_MAPPING[(os, arch)]}.tar.gz"
             download_via_curl(BINARYEN_BASE_URL + file, temp_dir / file)
             with tarfile.open(temp_dir / file) as tar:
-                tar.extractall(path=temp_dir / f"{os}-{arch}",
-                               filter='fully_trusted')
+                tar.extractall(path=temp_dir / f"{os}-{arch}", filter="fully_trusted")
             output = install_dir / f"javascript-{os}-{arch}.tar.gz"
-            with tarfile.open(output, mode='w:gz') as tar:
-                wasm_merge = temp_dir / f"{os}-{arch}" / f"binaryen-version_{BINARYEN_VERSION}" / "bin" / "wasm-merge"
+            with tarfile.open(output, mode="w:gz") as tar:
+                wasm_merge = (
+                    temp_dir
+                    / f"{os}-{arch}"
+                    / f"binaryen-version_{BINARYEN_VERSION}"
+                    / "bin"
+                    / "wasm-merge"
+                )
                 tar.add(wasm_merge, arcname=f"bin/{wasm_merge.name}")
                 tar.add(js_wasm_vm, arcname=f"bin/{js_wasm_vm.name}")
                 if os == "darwin":
-                    dylib = temp_dir / f"{os}-{arch}" / f"binaryen-version_{BINARYEN_VERSION}" / "lib" / "libbinaryen.dylib"
+                    dylib = (
+                        temp_dir
+                        / f"{os}-{arch}"
+                        / f"binaryen-version_{BINARYEN_VERSION}"
+                        / "lib"
+                        / "libbinaryen.dylib"
+                    )
                     tar.add(dylib, arcname=f"lib/libbinaryen.dylib")

@@ -8,13 +8,18 @@
 
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import CloudStorageType, SISettings, get_cloud_storage_type
+from rptest.services.redpanda import (
+    CloudStorageType,
+    SISettings,
+    get_cloud_storage_type,
+)
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.util import (
-    wait_until, )
+    wait_until,
+)
 from rptest.utils.si_utils import BucketView
 
 from ducktape.mark import matrix
@@ -31,9 +36,7 @@ CONNECTION_ERROR_LOGS = [
 
 class AdjacentSegmentMergingTest(RedpandaTest):
     s3_topic_name = "panda-topic"
-    topics = (TopicSpec(name=s3_topic_name,
-                        partition_count=1,
-                        replication_factor=3), )
+    topics = (TopicSpec(name=s3_topic_name, partition_count=1, replication_factor=3),)
 
     def __init__(self, test_context):
         si_settings = SISettings(
@@ -41,7 +44,8 @@ class AdjacentSegmentMergingTest(RedpandaTest):
             cloud_storage_max_connections=10,
             log_segment_size=1024 * 1024,
             cloud_storage_segment_max_upload_interval_sec=1,
-            cloud_storage_enable_remote_write=True)
+            cloud_storage_enable_remote_write=True,
+        )
 
         xtra_conf = dict(
             cloud_storage_housekeeping_interval_ms=10000,
@@ -52,10 +56,9 @@ class AdjacentSegmentMergingTest(RedpandaTest):
 
         self.bucket_name = si_settings.cloud_storage_bucket
 
-        super(AdjacentSegmentMergingTest,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf=xtra_conf,
-                             si_settings=si_settings)
+        super(AdjacentSegmentMergingTest, self).__init__(
+            test_context=test_context, extra_rp_conf=xtra_conf, si_settings=si_settings
+        )
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
@@ -71,7 +74,7 @@ class AdjacentSegmentMergingTest(RedpandaTest):
         The total amount of data produced is smaller than the target segment
         size. Because of that, after the housekeeping we should end up with
         only one segment in the cloud.
-        The retention is not enable so the reupload process can use data 
+        The retention is not enable so the reupload process can use data
         available locally.
         """
         for _ in range(10):
@@ -85,11 +88,11 @@ class AdjacentSegmentMergingTest(RedpandaTest):
             try:
                 num_good = 0
                 for ntp, manifest in BucketView(
-                        self.redpanda).partition_manifests.items():
+                    self.redpanda
+                ).partition_manifests.items():
                     target_lower_bound = 1024 * 1024 * 8
                     for name, meta in manifest["segments"].items():
-                        self.logger.info(
-                            f"segment {name}, segment_meta: {meta}")
+                        self.logger.info(f"segment {name}, segment_meta: {meta}")
                         if meta["size_bytes"] >= target_lower_bound:
                             # we will only see large segments with size
                             # greater than lower bound if housekeeping
@@ -98,9 +101,12 @@ class AdjacentSegmentMergingTest(RedpandaTest):
                 return num_good > 0
             except Exception as err:
                 import traceback
-                self.logger.info("".join(
-                    traceback.format_exception(type(err), err,
-                                               err.__traceback__)))
+
+                self.logger.info(
+                    "".join(
+                        traceback.format_exception(type(err), err, err.__traceback__)
+                    )
+                )
                 return False
 
         wait_until(manifest_has_one_segment, 60)

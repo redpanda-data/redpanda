@@ -31,6 +31,7 @@ class InternalTopicProtectionTest(RedpandaTest):
     Verify that the `kafka_nodelete_topics` and `kafka_noproduce_topics`
     configuration properties function as intended.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, extra_rp_conf={}, **kwargs)
 
@@ -42,13 +43,12 @@ class InternalTopicProtectionTest(RedpandaTest):
     @parametrize(protect_config="kafka_nodelete_topics")
     @parametrize(protect_config="kafka_noproduce_topics")
     def kafka_protections_disable_config_test(
-            self,
-            protect_config,
-            config="retention.ms",
-            original_val=str(4 * 60 * 60 * 60),  # 4 hrs
-            new_val=str(5 * 60 * 60 * 60)  # 5 hrs
+        self,
+        protect_config,
+        config="retention.ms",
+        original_val=str(4 * 60 * 60 * 60),  # 4 hrs
+        new_val=str(5 * 60 * 60 * 60),  # 5 hrs
     ):
-
         test_topic = "test_topic"
         self.rpk.create_topic(test_topic, 3, config={config: original_val})
 
@@ -57,15 +57,17 @@ class InternalTopicProtectionTest(RedpandaTest):
 
         # Ensure config of protected topic can't be changed.
         with expect_exception(
-                RpkException,
-                lambda e: "TOPIC_AUTHORIZATION_FAILED" in str(e)):
+            RpkException, lambda e: "TOPIC_AUTHORIZATION_FAILED" in str(e)
+        ):
             self.rpk.alter_topic_config(test_topic, config, new_val)
 
         # Allow time for a potential change to be propagated.
         time.sleep(10)
         config_val, _ = self.rpk.describe_topic_configs(test_topic)[config]
 
-        assert config_val == original_val, "Topic config was changed even with protection"
+        assert config_val == original_val, (
+            "Topic config was changed even with protection"
+        )
 
         # Ensure config of protected topic can't be deleted.
         self.rpk.delete_topic_config(test_topic, config)
@@ -74,7 +76,9 @@ class InternalTopicProtectionTest(RedpandaTest):
         time.sleep(10)
         config_val, _ = self.rpk.describe_topic_configs(test_topic)[config]
 
-        assert config_val == original_val, "Topic config was deleted even with protection"
+        assert config_val == original_val, (
+            "Topic config was deleted even with protection"
+        )
 
         # Remove topic from protection list and ensure config can be changed
         self.redpanda.set_cluster_config({protect_config: []})
@@ -96,8 +100,7 @@ class InternalTopicProtectionTest(RedpandaTest):
             def has_partition():
                 nonlocal partition
                 partition = [
-                    p for p in self.rpk.describe_topic(topic)
-                    if p.id == partition_id
+                    p for p in self.rpk.describe_topic(topic) if p.id == partition_id
                 ]
                 return len(partition) == 1
 
@@ -107,12 +110,12 @@ class InternalTopicProtectionTest(RedpandaTest):
 
         if client_type == "rpk":
             produce_fn = lambda topic, msg: self.rpk.produce(
-                topic, "key", msg, timeout=30)
+                topic, "key", msg, timeout=30
+            )
             failure_exception_type = RpkException
 
         elif client_type == "kafka_tools":
-            produce_fn = lambda topic, msg: self.kafka_cat.produce_one(
-                topic, msg)
+            produce_fn = lambda topic, msg: self.kafka_cat.produce_one(topic, msg)
             failure_exception_type = subprocess.CalledProcessError
 
         else:
@@ -122,14 +125,13 @@ class InternalTopicProtectionTest(RedpandaTest):
         self.kafka_tools.create_topic(TopicSpec(name=test_topic))
         partition_id = 0
 
-        wait_until(lambda: test_topic in self.rpk.list_topics(),
-                   timeout_sec=90,
-                   backoff_sec=3)
+        wait_until(
+            lambda: test_topic in self.rpk.list_topics(), timeout_sec=90, backoff_sec=3
+        )
 
         # Ensure topic can't be produced to via the Kafka API when
         # it's in the kafka_noproduce_topics list.
-        self.redpanda.set_cluster_config(
-            {"kafka_noproduce_topics": [test_topic]})
+        self.redpanda.set_cluster_config({"kafka_noproduce_topics": [test_topic]})
 
         pre_produce_hw = get_hw(test_topic, partition_id)
         try:
@@ -164,23 +166,22 @@ class InternalTopicProtectionTest(RedpandaTest):
             assert False, "Unknown client type"
 
         test_topic = "nodelete_topic"
-        self.kafka_tools.create_topic(
-            TopicSpec(name=test_topic, partition_count=3))
+        self.kafka_tools.create_topic(TopicSpec(name=test_topic, partition_count=3))
 
-        wait_until(lambda: test_topic in client.list_topics(),
-                   timeout_sec=90,
-                   backoff_sec=3)
+        wait_until(
+            lambda: test_topic in client.list_topics(), timeout_sec=90, backoff_sec=3
+        )
 
         # Ensure topic can't be deleted via the Kafka API when it's
         # in the nodelete list.
-        self.redpanda.set_cluster_config(
-            {"kafka_nodelete_topics": [test_topic]})
+        self.redpanda.set_cluster_config({"kafka_nodelete_topics": [test_topic]})
         try:
             client.delete_topic(test_topic)
             assert False, "Call to delete topic must fail"
         except Exception:
             self.redpanda.logger.info(
-                f"we were expecting delete_topic to fail", exc_info=True)
+                f"we were expecting delete_topic to fail", exc_info=True
+            )
             pass
 
         # allow time for any erronous deletion to be propagated
@@ -192,9 +193,11 @@ class InternalTopicProtectionTest(RedpandaTest):
         self.redpanda.set_cluster_config({"kafka_nodelete_topics": []})
         client.delete_topic(test_topic)
 
-        wait_until(lambda: test_topic not in client.list_topics(),
-                   timeout_sec=90,
-                   backoff_sec=3)
+        wait_until(
+            lambda: test_topic not in client.list_topics(),
+            timeout_sec=90,
+            backoff_sec=3,
+        )
 
 
 class InternalTopicProtectionLargeClusterTest(RedpandaTest):
@@ -202,9 +205,10 @@ class InternalTopicProtectionLargeClusterTest(RedpandaTest):
     Verifies that constraints against minimum RF do not apply against
     internally created topics
     """
+
     def __init__(self, *args, **kwargs):
-        kwargs['num_brokers'] = 5
-        kwargs['schema_registry_config'] = SchemaRegistryConfig()
+        kwargs["num_brokers"] = 5
+        kwargs["schema_registry_config"] = SchemaRegistryConfig()
         super().__init__(*args, extra_rp_conf={}, **kwargs)
 
         self.rpk = RpkTool(self.redpanda)
@@ -212,15 +216,14 @@ class InternalTopicProtectionLargeClusterTest(RedpandaTest):
 
     def _modify_cluster_config(self, upsert):
         patch_result = self.admin.patch_cluster_config(upsert=upsert)
-        wait_for_version_sync(self.admin, self.redpanda,
-                              patch_result['config_version'])
+        wait_for_version_sync(self.admin, self.redpanda, patch_result["config_version"])
 
     def setUp(self):
         super().setUp()
         # Set default RF to 5
         # Set minimum Rf to 5
-        self._modify_cluster_config({'default_topic_replications': 5})
-        self._modify_cluster_config({'minimum_topic_replications': 5})
+        self._modify_cluster_config({"default_topic_replications": 5})
+        self._modify_cluster_config({"minimum_topic_replications": 5})
 
     @cluster(num_nodes=5)
     def test_schemas_topic(self):
@@ -228,44 +231,49 @@ class InternalTopicProtectionLargeClusterTest(RedpandaTest):
         _ = get_subjects(self.redpanda.nodes, self.logger)
 
         topics = self.rpk.list_topics()
-        assert "_schemas" in topics, f'_schemas not in topics {topics}'
+        assert "_schemas" in topics, f"_schemas not in topics {topics}"
 
         def schemas_topic_ready():
-            partitions = list(self.rpk.describe_topic('_schemas'))
+            partitions = list(self.rpk.describe_topic("_schemas"))
             return (len(partitions) > 0, partitions)
 
         partitions = wait_until_result(
             schemas_topic_ready,
             timeout_sec=30,
             backoff_sec=1,
-            err_msg='_schemas topic never became ready')
+            err_msg="_schemas topic never became ready",
+        )
         config = partitions[0]
-        assert len(
-            config.replicas
-        ) == 3, f'Expected RF of 3 for _schemas but got {len(config.replicas)}'
+        assert len(config.replicas) == 3, (
+            f"Expected RF of 3 for _schemas but got {len(config.replicas)}"
+        )
 
         self.redpanda.restart_nodes(nodes=self.redpanda.nodes)
 
         num_found = self.redpanda.count_log_node(
             self.redpanda.nodes[0],
-            "Topic {kafka/_schemas} has a replication factor less than specified"
+            "Topic {kafka/_schemas} has a replication factor less than specified",
         )
-        assert num_found == 0, f'Expected to find 0 messages about _schemas but found {num_found}'
+        assert num_found == 0, (
+            f"Expected to find 0 messages about _schemas but found {num_found}"
+        )
 
     @cluster(num_nodes=5)
     def test_consumer_offset_topic(self):
         self.rpk.create_topic("test")
         self.rpk.produce("test", key="key1", msg="Hi there")
         self.rpk.consume("test", group="TestGroup", n=1)
-        config = list(self.rpk.describe_topic('__consumer_offsets'))[0]
-        assert len(
-            config.replicas
-        ) == 3, f'Expected RF of 3 for __consumer_offsets but got {len(config.replicas)}'
+        config = list(self.rpk.describe_topic("__consumer_offsets"))[0]
+        assert len(config.replicas) == 3, (
+            f"Expected RF of 3 for __consumer_offsets but got {len(config.replicas)}"
+        )
 
         self.redpanda.restart_nodes(nodes=self.redpanda.nodes)
 
         num_found = self.redpanda.count_log_node(
             self.redpanda.nodes[0],
-            "Topic {kafka/__consumer_offsets} has a replication factor less than specified"
+            "Topic {kafka/__consumer_offsets} has a replication factor less than specified",
         )
-        assert num_found == 0, f'Expected to find 0 messages about _schemas but found {num_found}'
+        assert num_found == 0, (
+            f"Expected to find 0 messages about _schemas but found {num_found}"
+        )

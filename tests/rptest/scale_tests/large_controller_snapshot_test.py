@@ -28,20 +28,23 @@ class LargeControllerSnapshotTest(RedpandaTest):
             # because we want to stress the controller itself, so we won't apply
             # produce load.
             extra_rp_conf={
-                'controller_snapshot_max_age_sec': 3,
-                'topic_partitions_per_shard': 10_000,
-                'topic_memory_per_partition': None,
-                'partition_autobalancing_concurrent_moves': 1000,
+                "controller_snapshot_max_age_sec": 3,
+                "topic_partitions_per_shard": 10_000,
+                "topic_memory_per_partition": None,
+                "partition_autobalancing_concurrent_moves": 1000,
             },
             # Reduce per-partition log spam
-            log_config=LoggingConfig('info',
-                                     logger_levels={
-                                         'storage': 'warn',
-                                         'storage-gc': 'warn',
-                                         'raft': 'warn',
-                                         'offset_translator': 'warn'
-                                     }),
-            **kwargs)
+            log_config=LoggingConfig(
+                "info",
+                logger_levels={
+                    "storage": "warn",
+                    "storage-gc": "warn",
+                    "raft": "warn",
+                    "offset_translator": "warn",
+                },
+            ),
+            **kwargs,
+        )
 
     def setUp(self):
         # start the nodes manually
@@ -100,29 +103,31 @@ class LargeControllerSnapshotTest(RedpandaTest):
             admin = Admin(self.redpanda, default_node=seed_nodes[0])
             rpk = RpkTool(self.redpanda)
             for un in names:
-                admin.create_user(username=un,
-                                  password='p4ssw0rd',
-                                  algorithm='SCRAM-SHA-256')
-                rpk.acl_create_allow_cluster(username=un, op='describe')
+                admin.create_user(
+                    username=un, password="p4ssw0rd", algorithm="SCRAM-SHA-256"
+                )
+                rpk.acl_create_allow_cluster(username=un, op="describe")
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             step = 10
-            user_names = [[
-                f"user_{i:06d}" for i in range(start, start + step)
-            ] for start in range(0, n_users, step)]
+            user_names = [
+                [f"user_{i:06d}" for i in range(start, start + step)]
+                for start in range(0, n_users, step)
+            ]
             executor.map(create_users, user_names)
 
         # wait until everything is snapshotted
         self.logger.info(f"waiting until all commands are snapshotted...")
 
         controller_max_offset = max(
-            admin.get_controller_status(n)['committed_index']
-            for n in seed_nodes)
+            admin.get_controller_status(n)["committed_index"] for n in seed_nodes
+        )
         self.logger.info(f"controller max offset is {controller_max_offset}")
 
         for n in seed_nodes:
             self.redpanda.wait_for_controller_snapshot(
-                node=n, prev_start_offset=(controller_max_offset - 1))
+                node=n, prev_start_offset=(controller_max_offset - 1)
+            )
 
         # add a node to the cluster
         self.logger.info(f"adding a node to the cluster...")
@@ -131,23 +136,27 @@ class LargeControllerSnapshotTest(RedpandaTest):
         # using redpanda.start()
         self.redpanda.clean_node(joiner_node)
         self.redpanda.start_node(joiner_node)
-        wait_until(lambda: self.redpanda.registered(joiner_node),
-                   timeout_sec=60,
-                   backoff_sec=5)
+        wait_until(
+            lambda: self.redpanda.registered(joiner_node), timeout_sec=60, backoff_sec=5
+        )
 
         # reboot the cluster to test that the cluster stabilizes after rebooting with high
         # partition count and a large controller snapshot
         self.logger.info(f"rebooting the cluster...")
 
         with concurrent.futures.ThreadPoolExecutor(
-                max_workers=len(self.redpanda.nodes)) as executor:
+            max_workers=len(self.redpanda.nodes)
+        ) as executor:
             futs = []
             for node in self.redpanda.nodes:
                 futs.append(
-                    executor.submit(self.redpanda.restart_nodes,
-                                    nodes=[node],
-                                    start_timeout=60,
-                                    stop_timeout=60 * 5))
+                    executor.submit(
+                        self.redpanda.restart_nodes,
+                        nodes=[node],
+                        start_timeout=60,
+                        stop_timeout=60 * 5,
+                    )
+                )
 
             for f in futs:
                 # Raise on error
@@ -162,13 +171,11 @@ class LargeControllerSnapshotTest(RedpandaTest):
             assert actual == n_users + 1, f"unexpected number of users {actual}"
 
         # wait until rebalance on node addition is finished
-        self.logger.info(
-            f"waiting until partitions are rebalanced to the new node...")
+        self.logger.info(f"waiting until partitions are rebalanced to the new node...")
 
         def rebalance_finished():
             in_progress = admin.list_reconfigurations(node=seed_nodes[0])
-            self.logger.info(
-                f"current number of reconfigurations: {len(in_progress)}")
+            self.logger.info(f"current number of reconfigurations: {len(in_progress)}")
             if len(in_progress) > 0:
                 return False
 

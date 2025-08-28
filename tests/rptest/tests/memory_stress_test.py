@@ -31,6 +31,7 @@ class MemoryStressTest(RedpandaTest):
     """
     Try various ways to reach out-of-memory condition in a broker via Kafka API
     """
+
     def setUp(self):
         # Override parent setUp so that we don't start redpanda until each test,
         # enabling each test case to customize its ResourceSettings
@@ -49,15 +50,14 @@ class MemoryStressTest(RedpandaTest):
         """
         # memory_mb does not work with debug redpanda build, therefore the test
         # only makes sense with release redpanda, hence @skip_debug_mode
-        self.redpanda.set_resource_settings(
-            ResourceSettings(memory_mb=512, num_cpus=1))
+        self.redpanda.set_resource_settings(ResourceSettings(memory_mb=512, num_cpus=1))
         self.redpanda.set_seed_servers(self.redpanda.nodes)
-        self.redpanda.add_extra_rp_conf({
-            "kafka_batch_max_bytes":
-            10 * 1024 * 1024,
-            "kafka_memory_share_for_fetch":
-            memory_share_for_fetch
-        })
+        self.redpanda.add_extra_rp_conf(
+            {
+                "kafka_batch_max_bytes": 10 * 1024 * 1024,
+                "kafka_memory_share_for_fetch": memory_share_for_fetch,
+            }
+        )
         self.redpanda.start(omit_seeds_on_idx_one=False)
 
         # the maximum message size that does not make redpanda OOM with all
@@ -65,28 +65,31 @@ class MemoryStressTest(RedpandaTest):
         msg_size = 1024 * 1024
         partition_count = 400
         self.topics = [
-            TopicSpec(partition_count=partition_count,
-                      max_message_bytes=msg_size * 2)
+            TopicSpec(partition_count=partition_count, max_message_bytes=msg_size * 2)
         ]
         self._create_initial_topics()
 
         msg_count = partition_count
-        rpk_response_timeout = 10 + partition_count // 10 + msg_count * msg_size // (
-            150 * 500_000)
+        rpk_response_timeout = (
+            10 + partition_count // 10 + msg_count * msg_size // (150 * 500_000)
+        )
         produce_timeout = msg_count * msg_size // 2184533
         self.logger.info(
             f"Starting producer. msg_size={msg_size}, msg_count={msg_count}, "
             f"partiton_count={partition_count}, rpk_response_timeout={rpk_response_timeout}, "
-            f"produce_timeout={produce_timeout}")
+            f"produce_timeout={produce_timeout}"
+        )
 
-        producer = RpkProducer(self.test_context,
-                               self.redpanda,
-                               self.topic,
-                               msg_size=msg_size,
-                               msg_count=msg_count,
-                               printable=True,
-                               produce_timeout=rpk_response_timeout,
-                               max_message_bytes=msg_size * 2)
+        producer = RpkProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=msg_size,
+            msg_count=msg_count,
+            printable=True,
+            produce_timeout=rpk_response_timeout,
+            max_message_bytes=msg_size * 2,
+        )
         producer.start()
         producer.wait(produce_timeout)
         producer.stop()
@@ -99,27 +102,36 @@ class MemoryStressTest(RedpandaTest):
             for k in range(2):
                 if consumer_type == Consumers.RPK:
                     consumers.append(
-                        RpkConsumer(self.test_context,
-                                    self.redpanda,
-                                    self.topic,
-                                    fetch_max_bytes=1024 * 1024 * 3,
-                                    num_msgs=msg_count))
+                        RpkConsumer(
+                            self.test_context,
+                            self.redpanda,
+                            self.topic,
+                            fetch_max_bytes=1024 * 1024 * 3,
+                            num_msgs=msg_count,
+                        )
+                    )
                 elif consumer_type == Consumers.KAF:
                     consumers.append(
-                        KafConsumer(self.test_context,
-                                    self.redpanda,
-                                    self.topic,
-                                    offset_for_read="oldest",
-                                    num_records=msg_count))
+                        KafConsumer(
+                            self.test_context,
+                            self.redpanda,
+                            self.topic,
+                            offset_for_read="oldest",
+                            num_records=msg_count,
+                        )
+                    )
                 elif consumer_type == Consumers.VERIFIABLE:
                     if k == 0:  # more than one are not stable enough
                         consumers.append(
-                            VerifiableConsumer(self.test_context,
-                                               1,
-                                               self.redpanda,
-                                               self.topic,
-                                               "verifiable-group",
-                                               max_messages=msg_count))
+                            VerifiableConsumer(
+                                self.test_context,
+                                1,
+                                self.redpanda,
+                                self.topic,
+                                "verifiable-group",
+                                max_messages=msg_count,
+                            )
+                        )
                 else:
                     assert False, "unsupported consumer type"
             for consumer in consumers:

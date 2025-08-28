@@ -18,13 +18,21 @@ import json
 
 from confluent_kafka import avro, Producer
 from confluent_kafka.avro import AvroProducer
-from rptest.services.redpanda import PandaproxyConfig, SchemaRegistryConfig, SISettings, MetricsEndpoint
+from rptest.services.redpanda import (
+    PandaproxyConfig,
+    SchemaRegistryConfig,
+    SISettings,
+    MetricsEndpoint,
+)
 from rptest.services.redpanda import CloudStorageType, SISettings
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
-from rptest.tests.datalake.catalog_service_factory import supported_catalog_types, filesystem_catalog_type
+from rptest.tests.datalake.catalog_service_factory import (
+    supported_catalog_types,
+    filesystem_catalog_type,
+)
 from ducktape.mark import matrix, ignore
 from ducktape.utils.util import wait_until
 from rptest.services.metrics_check import MetricCheck
@@ -36,8 +44,7 @@ from rptest.utils.mode_checks import skip_debug_mode
 
 
 class AvroSchema:
-    def __init__(self, schema_str, record_generator, expected_trino,
-                 expected_spark):
+    def __init__(self, schema_str, record_generator, expected_trino, expected_spark):
         self.schema_str = schema_str
         self.record_generator = record_generator
         self.expected_trino = expected_trino
@@ -125,160 +132,228 @@ avro_schema_with_null_union_str = """
 """
 
 AVRO_SCHEMA_TEST_CASES = {
-    "primitive":
-    AvroSchema(
+    "primitive": AvroSchema(
         schema_str="""{"type": "long", "name": "a_number"}""",
         record_generator=lambda t: int(t),
-        expected_trino=
-        [('redpanda',
-          'row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)',
-          '', ''), ('root', 'bigint', '', '')],
-        expected_spark=
-        [('redpanda',
-          'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>',
-          None), ('root', 'bigint', None), ('', '', ''),
-         ('# Partitioning', '', ''),
-         ('Part 0', 'hours(redpanda.timestamp)', '')]),
-    "basic":
-    AvroSchema(
+        expected_trino=[
+            (
+                "redpanda",
+                "row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)",
+                "",
+                "",
+            ),
+            ("root", "bigint", "", ""),
+        ],
+        expected_spark=[
+            (
+                "redpanda",
+                "struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>",
+                None,
+            ),
+            ("root", "bigint", None),
+            ("", "", ""),
+            ("# Partitioning", "", ""),
+            ("Part 0", "hours(redpanda.timestamp)", ""),
+        ],
+    ),
+    "basic": AvroSchema(
         schema_str=avro_schema_str,
-        record_generator=lambda t: {
-            "number": int(t),
-            "timestamp_us": int(t * 1000000)
-        },
-        expected_trino=
-        [('redpanda',
-          'row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)',
-          '', ''), ('number', 'bigint', '', ''),
-         ('timestamp_us', 'timestamp(6)', '', '')],
-        expected_spark=
-        [('redpanda',
-          'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>',
-          None), ('number', 'bigint', None),
-         ('timestamp_us', 'timestamp_ntz', None), ('', '', ''),
-         ('# Partitioning', '', ''),
-         ('Part 0', 'hours(redpanda.timestamp)', '')]),
-    "enum":
-    AvroSchema(
+        record_generator=lambda t: {"number": int(t), "timestamp_us": int(t * 1000000)},
+        expected_trino=[
+            (
+                "redpanda",
+                "row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)",
+                "",
+                "",
+            ),
+            ("number", "bigint", "", ""),
+            ("timestamp_us", "timestamp(6)", "", ""),
+        ],
+        expected_spark=[
+            (
+                "redpanda",
+                "struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>",
+                None,
+            ),
+            ("number", "bigint", None),
+            ("timestamp_us", "timestamp_ntz", None),
+            ("", "", ""),
+            ("# Partitioning", "", ""),
+            ("Part 0", "hours(redpanda.timestamp)", ""),
+        ],
+    ),
+    "enum": AvroSchema(
         schema_str=avro_schema_with_enum_str,
         record_generator=lambda t: {
             "number": int(t),
             "timestamp_us": int(t * 1000000),
-            "suit": random.choice(["SPADES", "HEARTS", "DIAMONDS", "CLUBS"])
+            "suit": random.choice(["SPADES", "HEARTS", "DIAMONDS", "CLUBS"]),
         },
-        expected_trino=
-        [('redpanda',
-          'row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)',
-          '', ''), ('number', 'bigint', '', ''),
-         ('timestamp_us', 'timestamp(6)', '', ''), ('suit', 'bigint', '', '')],
-        expected_spark=
-        [('redpanda',
-          'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>',
-          None), ('number', 'bigint', None),
-         ('timestamp_us', 'timestamp_ntz', None), ('suit', 'bigint', None),
-         ('', '', ''), ('# Partitioning', '', ''),
-         ('Part 0', 'hours(redpanda.timestamp)', '')]),
-    "array":
-    AvroSchema(
+        expected_trino=[
+            (
+                "redpanda",
+                "row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)",
+                "",
+                "",
+            ),
+            ("number", "bigint", "", ""),
+            ("timestamp_us", "timestamp(6)", "", ""),
+            ("suit", "bigint", "", ""),
+        ],
+        expected_spark=[
+            (
+                "redpanda",
+                "struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>",
+                None,
+            ),
+            ("number", "bigint", None),
+            ("timestamp_us", "timestamp_ntz", None),
+            ("suit", "bigint", None),
+            ("", "", ""),
+            ("# Partitioning", "", ""),
+            ("Part 0", "hours(redpanda.timestamp)", ""),
+        ],
+    ),
+    "array": AvroSchema(
         schema_str=avro_schema_with_array_str,
         record_generator=lambda t: {
             "number": int(t),
             "timestamp_us": int(t * 1000000),
-            "arr": [int(t) + i for i in range(random.randint(0, 10))]
+            "arr": [int(t) + i for i in range(random.randint(0, 10))],
         },
-        expected_trino=
-        [('redpanda',
-          'row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)',
-          '', ''), ('number', 'bigint', '', ''),
-         ('timestamp_us', 'timestamp(6)', '', ''),
-         ('arr', 'array(bigint)', '', '')],
-        expected_spark=
-        [('redpanda',
-          'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>',
-          None), ('number', 'bigint', None),
-         ('timestamp_us', 'timestamp_ntz', None),
-         ('arr', 'array<bigint>', None), ('', '', ''),
-         ('# Partitioning', '', ''),
-         ('Part 0', 'hours(redpanda.timestamp)', '')]),
-    "map":
-    AvroSchema(
+        expected_trino=[
+            (
+                "redpanda",
+                "row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)",
+                "",
+                "",
+            ),
+            ("number", "bigint", "", ""),
+            ("timestamp_us", "timestamp(6)", "", ""),
+            ("arr", "array(bigint)", "", ""),
+        ],
+        expected_spark=[
+            (
+                "redpanda",
+                "struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>",
+                None,
+            ),
+            ("number", "bigint", None),
+            ("timestamp_us", "timestamp_ntz", None),
+            ("arr", "array<bigint>", None),
+            ("", "", ""),
+            ("# Partitioning", "", ""),
+            ("Part 0", "hours(redpanda.timestamp)", ""),
+        ],
+    ),
+    "map": AvroSchema(
         schema_str=avro_schema_with_map_str,
         record_generator=lambda t: {
             "number": int(t),
             "timestamp_us": int(t * 1000000),
-            "kv": {
-                str(t): int(t)
-            }
+            "kv": {str(t): int(t)},
         },
-        expected_trino=
-        [('redpanda',
-          'row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)',
-          '', ''), ('number', 'bigint', '', ''),
-         ('timestamp_us', 'timestamp(6)', '', ''),
-         ('kv', 'map(varchar, bigint)', '', '')],
-        expected_spark=
-        [('redpanda',
-          'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>',
-          None), ('number', 'bigint', None),
-         ('timestamp_us', 'timestamp_ntz', None),
-         ('kv', 'map<string,bigint>', None), ('', '', ''),
-         ('# Partitioning', '', ''),
-         ('Part 0', 'hours(redpanda.timestamp)', '')]),
-    "union":
-    AvroSchema(
+        expected_trino=[
+            (
+                "redpanda",
+                "row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)",
+                "",
+                "",
+            ),
+            ("number", "bigint", "", ""),
+            ("timestamp_us", "timestamp(6)", "", ""),
+            ("kv", "map(varchar, bigint)", "", ""),
+        ],
+        expected_spark=[
+            (
+                "redpanda",
+                "struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>",
+                None,
+            ),
+            ("number", "bigint", None),
+            ("timestamp_us", "timestamp_ntz", None),
+            ("kv", "map<string,bigint>", None),
+            ("", "", ""),
+            ("# Partitioning", "", ""),
+            ("Part 0", "hours(redpanda.timestamp)", ""),
+        ],
+    ),
+    "union": AvroSchema(
         schema_str=avro_schema_with_union_str,
         record_generator=lambda t: {
             "number": int(t),
             "timestamp_us": int(t * 1000000),
-            "str_or_long": random.choice([str(t), int(t)])
+            "str_or_long": random.choice([str(t), int(t)]),
         },
-        expected_trino=
-        [('redpanda',
-          'row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)',
-          '', ''), ('number', 'bigint', '', ''),
-         ('timestamp_us', 'timestamp(6)', '', ''),
-         ('str_or_long', 'row(union_opt_0 varchar, union_opt_1 bigint)', '',
-          '')],
-        expected_spark=
-        [('redpanda',
-          'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>',
-          None), ('number', 'bigint', None),
-         ('timestamp_us', 'timestamp_ntz', None),
-         ('str_or_long', 'struct<union_opt_0:string,union_opt_1:bigint>',
-          None), ('', '', ''), ('# Partitioning', '', ''),
-         ('Part 0', 'hours(redpanda.timestamp)', '')]),
-    "null_union":
-    AvroSchema(
+        expected_trino=[
+            (
+                "redpanda",
+                "row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)",
+                "",
+                "",
+            ),
+            ("number", "bigint", "", ""),
+            ("timestamp_us", "timestamp(6)", "", ""),
+            ("str_or_long", "row(union_opt_0 varchar, union_opt_1 bigint)", "", ""),
+        ],
+        expected_spark=[
+            (
+                "redpanda",
+                "struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>",
+                None,
+            ),
+            ("number", "bigint", None),
+            ("timestamp_us", "timestamp_ntz", None),
+            ("str_or_long", "struct<union_opt_0:string,union_opt_1:bigint>", None),
+            ("", "", ""),
+            ("# Partitioning", "", ""),
+            ("Part 0", "hours(redpanda.timestamp)", ""),
+        ],
+    ),
+    "null_union": AvroSchema(
         schema_str=avro_schema_with_null_union_str,
         record_generator=lambda t: {
             "number": int(t),
             "timestamp_us": int(t * 1000000),
-            "optional_long": random.choice([None, int(t)])
+            "optional_long": random.choice([None, int(t)]),
         },
-        expected_trino=
-        [('redpanda',
-          'row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)',
-          '', ''), ('number', 'bigint', '', ''),
-         ('timestamp_us', 'timestamp(6)', '', ''),
-         ('optional_long', 'row(union_opt_1 bigint)', '', '')],
-        expected_spark=
-        [('redpanda',
-          'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>',
-          None), ('number', 'bigint', None),
-         ('timestamp_us', 'timestamp_ntz', None),
-         ('optional_long', 'struct<union_opt_1:bigint>', None), ('', '', ''),
-         ('# Partitioning', '', ''),
-         ('Part 0', 'hours(redpanda.timestamp)', '')]),
+        expected_trino=[
+            (
+                "redpanda",
+                "row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)",
+                "",
+                "",
+            ),
+            ("number", "bigint", "", ""),
+            ("timestamp_us", "timestamp(6)", "", ""),
+            ("optional_long", "row(union_opt_1 bigint)", "", ""),
+        ],
+        expected_spark=[
+            (
+                "redpanda",
+                "struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>",
+                None,
+            ),
+            ("number", "bigint", None),
+            ("timestamp_us", "timestamp_ntz", None),
+            ("optional_long", "struct<union_opt_1:bigint>", None),
+            ("", "", ""),
+            ("# Partitioning", "", ""),
+            ("Part 0", "hours(redpanda.timestamp)", ""),
+        ],
+    ),
 }
 
 
 class JsonSchemaTestCase:
-    def __init__(self,
-                 schema_str,
-                 record_generator,
-                 expected_spark,
-                 skip_encoding=False,
-                 dlq_cause=None):
+    def __init__(
+        self,
+        schema_str,
+        record_generator,
+        expected_spark,
+        skip_encoding=False,
+        dlq_cause=None,
+    ):
         """
         :param skip_encoding: If True, the record generator will return a JSON string
             that needs to be produced as-is. If False, the record generator will return
@@ -299,21 +374,20 @@ class JsonSchemaTestCase:
 
 
 TRINO_RP_FIELD_TYPE = (
-    'redpanda',
-    'row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)',
-    '',
-    '',
+    "redpanda",
+    "row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)",
+    "",
+    "",
 )
 
 SPARK_RP_FIELD_TYPE = (
-    'redpanda',
-    'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>',
+    "redpanda",
+    "struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>",
     None,
 )
 
 JSON_SCHEMA_TEST_CASES = {
-    "basic":
-    JsonSchemaTestCase(
+    "basic": JsonSchemaTestCase(
         schema_str="""{
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -323,24 +397,20 @@ JSON_SCHEMA_TEST_CASES = {
             },
             "required": ["number", "timestamp_us"]
         }""",
-        record_generator=lambda t: {
-            "number": int(t),
-            "timestamp_us": int(t * 1000000)
-        },
+        record_generator=lambda t: {"number": int(t), "timestamp_us": int(t * 1000000)},
         expected_spark=[
             SPARK_RP_FIELD_TYPE,
-            ('number', 'bigint', None),
-            ('timestamp_us', 'bigint', None),
-            ('', '', ''),
-            ('# Partitioning', '', ''),
-            ('Part 0', 'hours(redpanda.timestamp)', ''),
+            ("number", "bigint", None),
+            ("timestamp_us", "bigint", None),
+            ("", "", ""),
+            ("# Partitioning", "", ""),
+            ("Part 0", "hours(redpanda.timestamp)", ""),
         ],
     ),
 }
 
 JSON_SCHEMA_DLQ_TEST_CASES = {
-    "bad_schema_dialect":
-    JsonSchemaTestCase(
+    "bad_schema_dialect": JsonSchemaTestCase(
         schema_str="""{
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
@@ -355,8 +425,7 @@ JSON_SCHEMA_DLQ_TEST_CASES = {
         # This cause is slightly misleading.
         dlq_cause="failed_kafka_schema_resolution",
     ),
-    "mismatched_types":
-    JsonSchemaTestCase(
+    "mismatched_types": JsonSchemaTestCase(
         schema_str="""{
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -370,8 +439,7 @@ JSON_SCHEMA_DLQ_TEST_CASES = {
         expected_spark=None,
         dlq_cause="failed_data_translation",
     ),
-    "bad_input":
-    JsonSchemaTestCase(
+    "bad_input": JsonSchemaTestCase(
         schema_str="""{
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -390,18 +458,19 @@ JSON_SCHEMA_DLQ_TEST_CASES = {
 
 class DatalakeE2ETests(RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):
-        super(DatalakeE2ETests,
-              self).__init__(test_ctx,
-                             num_brokers=1,
-                             si_settings=SISettings(test_context=test_ctx),
-                             extra_rp_conf={
-                                 "iceberg_enabled": "true",
-                                 "iceberg_catalog_commit_interval_ms": 5000
-                             },
-                             schema_registry_config=SchemaRegistryConfig(),
-                             pandaproxy_config=PandaproxyConfig(),
-                             *args,
-                             **kwargs)
+        super(DatalakeE2ETests, self).__init__(
+            test_ctx,
+            num_brokers=1,
+            si_settings=SISettings(test_context=test_ctx),
+            extra_rp_conf={
+                "iceberg_enabled": "true",
+                "iceberg_catalog_commit_interval_ms": 5000,
+            },
+            schema_registry_config=SchemaRegistryConfig(),
+            pandaproxy_config=PandaproxyConfig(),
+            *args,
+            **kwargs,
+        )
         self.test_ctx = test_ctx
         self.topic_name = "test"
 
@@ -410,50 +479,56 @@ class DatalakeE2ETests(RedpandaTest):
         pass
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
-            catalog_type=supported_catalog_types())
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
+        catalog_type=supported_catalog_types(),
+    )
     def test_e2e_basic(self, cloud_storage_type, query_engine, catalog_type):
         # Create a topic
         # Produce some events
         # Ensure they end up in datalake
         count = 100
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[query_engine],
-                              catalog_type=catalog_type) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[query_engine],
+            catalog_type=catalog_type,
+        ) as dl:
             dl.create_iceberg_enabled_topic(self.topic_name, partitions=10)
             dl.produce_to_topic(self.topic_name, 1024, count)
             dl.wait_for_translation(self.topic_name, msg_count=count)
 
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
-            catalog_type=supported_catalog_types())
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
+        catalog_type=supported_catalog_types(),
+    )
     def test_avro_schema(self, cloud_storage_type, query_engine, catalog_type):
         count = 100
 
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[query_engine],
-                              catalog_type=catalog_type) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[query_engine],
+            catalog_type=catalog_type,
+        ) as dl:
             for test_case, schema in AVRO_SCHEMA_TEST_CASES.items():
-                self.redpanda.logger.debug(
-                    f"Running avro schema test case {test_case}")
+                self.redpanda.logger.debug(f"Running avro schema test case {test_case}")
                 test_case_topic_name = f"{test_case}_test_case"
                 table_name = f"redpanda.{test_case_topic_name}"
                 dl.create_iceberg_enabled_topic(
-                    test_case_topic_name,
-                    iceberg_mode="value_schema_id_prefix")
+                    test_case_topic_name, iceberg_mode="value_schema_id_prefix"
+                )
                 raw_schema = avro.loads(schema.schema_str)
                 producer = AvroProducer(
                     {
-                        'bootstrap.servers':
-                        self.redpanda.brokers(),
-                        'schema.registry.url':
-                        self.redpanda.schema_reg().split(",")[0]
+                        "bootstrap.servers": self.redpanda.brokers(),
+                        "schema.registry.url": self.redpanda.schema_reg().split(",")[0],
                     },
-                    default_value_schema=raw_schema)
+                    default_value_schema=raw_schema,
+                )
                 for _ in range(count):
                     t = time.time()
                     record = schema.generate_record(t)
@@ -465,38 +540,46 @@ class DatalakeE2ETests(RedpandaTest):
                     trino = dl.trino()
                     trino_expected_out = schema.expected_trino
                     trino_describe_out = trino.run_query_fetch_all(
-                        f"describe {table_name}")
+                        f"describe {table_name}"
+                    )
                     assert trino_describe_out == trino_expected_out, str(
-                        trino_describe_out)
+                        trino_describe_out
+                    )
                 else:
                     spark = dl.spark()
                     spark_expected_out = schema.expected_spark
                     spark_describe_out = spark.run_query_fetch_all(
-                        f"describe {table_name}")
+                        f"describe {table_name}"
+                    )
                     assert spark_describe_out == spark_expected_out, str(
-                        spark_describe_out)
+                        spark_describe_out
+                    )
 
     # Note: nothing unique about this test so run it with single catalog/query engine.
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            query_engine=[QueryEngineType.SPARK],
-            catalog_type=[CatalogType.REST_JDBC])
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=[QueryEngineType.SPARK],
+        catalog_type=[CatalogType.REST_JDBC],
+    )
     def test_json_schema(self, cloud_storage_type, query_engine, catalog_type):
         count = 100
 
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[query_engine],
-                              catalog_type=catalog_type) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[query_engine],
+            catalog_type=catalog_type,
+        ) as dl:
             for tc_name, tc_data in JSON_SCHEMA_TEST_CASES.items():
                 self.logger.info(f"Running JSON schema test case {tc_name}")
                 test_case_topic_name = f"{tc_name}_test_case"
                 table_name = f"redpanda.{test_case_topic_name}"
                 dl.create_iceberg_enabled_topic(
-                    test_case_topic_name, iceberg_mode="value_schema_latest")
+                    test_case_topic_name, iceberg_mode="value_schema_latest"
+                )
 
-                self.logger.info(
-                    f"Creating schema for topic {test_case_topic_name}")
+                self.logger.info(f"Creating schema for topic {test_case_topic_name}")
                 rpk = RpkTool(self.redpanda)
                 rpk.create_schema_from_str(
                     subject=f"{test_case_topic_name}-value",
@@ -504,14 +587,13 @@ class DatalakeE2ETests(RedpandaTest):
                     schema_suffix="json",
                 )
 
-                self.logger.info(
-                    f"Producing records for topic {test_case_topic_name}")
-                producer = Producer(
-                    {'bootstrap.servers': self.redpanda.brokers()})
+                self.logger.info(f"Producing records for topic {test_case_topic_name}")
+                producer = Producer({"bootstrap.servers": self.redpanda.brokers()})
                 for i in range(count):
                     t = time.time()
-                    producer.produce(topic=test_case_topic_name,
-                                     value=tc_data.generate_record(t))
+                    producer.produce(
+                        topic=test_case_topic_name, value=tc_data.generate_record(t)
+                    )
                 producer.flush()
 
                 self.logger.info(
@@ -521,20 +603,19 @@ class DatalakeE2ETests(RedpandaTest):
 
                 spark = dl.spark()
                 spark_expected_out = tc_data.expected_spark
-                spark_describe_out = spark.run_query_fetch_all(
-                    f"describe {table_name}")
-                assert spark_describe_out == spark_expected_out, str(
-                    spark_describe_out)
+                spark_describe_out = spark.run_query_fetch_all(f"describe {table_name}")
+                assert spark_describe_out == spark_expected_out, str(spark_describe_out)
 
     # Run json unicode tests with all combinations of query engine and catalog type
     # because it is the only format that supports unicode characters in field names
     # and we want to ensure that everyone interoperates correctly with unicode.
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
-            catalog_type=supported_catalog_types())
-    def test_json_schema_unicode(self, cloud_storage_type, query_engine,
-                                 catalog_type):
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
+        catalog_type=supported_catalog_types(),
+    )
+    def test_json_schema_unicode(self, cloud_storage_type, query_engine, catalog_type):
         count = 100
 
         schema_str = """{
@@ -555,27 +636,29 @@ class DatalakeE2ETests(RedpandaTest):
 
         expected_spark = [
             SPARK_RP_FIELD_TYPE,
-            ('col.with.dots', 'bigint', None),
-            ('my_🍀_number', 'bigint', None),
-            ('', '', ''),
-            ('# Partitioning', '', ''),
-            ('Part 0', 'hours(redpanda.timestamp)', ''),
+            ("col.with.dots", "bigint", None),
+            ("my_🍀_number", "bigint", None),
+            ("", "", ""),
+            ("# Partitioning", "", ""),
+            ("Part 0", "hours(redpanda.timestamp)", ""),
         ]
 
         expected_trino = [
             TRINO_RP_FIELD_TYPE,
-            ('col.with.dots', 'bigint', '', ''),
-            ('my_🍀_number', 'bigint', '', ''),
+            ("col.with.dots", "bigint", "", ""),
+            ("my_🍀_number", "bigint", "", ""),
         ]
 
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[query_engine],
-                              catalog_type=catalog_type) as dl:
-
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[query_engine],
+            catalog_type=catalog_type,
+        ) as dl:
             table_name = f"redpanda.{self.topic_name}"
-            dl.create_iceberg_enabled_topic(self.topic_name,
-                                            iceberg_mode="value_schema_latest")
+            dl.create_iceberg_enabled_topic(
+                self.topic_name, iceberg_mode="value_schema_latest"
+            )
 
             self.logger.info(f"Creating schema for topic {self.topic_name}")
             rpk = RpkTool(self.redpanda)
@@ -586,34 +669,28 @@ class DatalakeE2ETests(RedpandaTest):
             )
 
             self.logger.info(f"Producing records for topic {self.topic_name}")
-            producer = Producer({'bootstrap.servers': self.redpanda.brokers()})
+            producer = Producer({"bootstrap.servers": self.redpanda.brokers()})
             for _ in range(count):
                 t = time.time()
                 record = record_generator(t)
-                producer.produce(topic=self.topic_name,
-                                 value=json.dumps(record))
+                producer.produce(topic=self.topic_name, value=json.dumps(record))
             producer.flush()
 
-            self.logger.info(
-                f"Waiting for translation for topic {self.topic_name}")
+            self.logger.info(f"Waiting for translation for topic {self.topic_name}")
             dl.wait_for_translation(self.topic_name, msg_count=count)
 
             if query_engine == QueryEngineType.SPARK:
                 spark = dl.spark()
-                spark_describe_out = spark.run_query_fetch_all(
-                    f"describe {table_name}")
+                spark_describe_out = spark.run_query_fetch_all(f"describe {table_name}")
 
-                assert spark_describe_out == expected_spark, str(
-                    spark_describe_out)
+                assert spark_describe_out == expected_spark, str(spark_describe_out)
 
                 with spark.run_query(
-                        f"SELECT `my_🍀_number`, `col.with.dots` FROM {table_name} LIMIT 1"
+                    f"SELECT `my_🍀_number`, `col.with.dots` FROM {table_name} LIMIT 1"
                 ) as cursor:
                     assert cursor.description == [
-                        ('my_🍀_number', 'BIGINT_TYPE', None, None, None, None,
-                         True),
-                        ('col.with.dots', 'BIGINT_TYPE', None, None, None,
-                         None, True)
+                        ("my_🍀_number", "BIGINT_TYPE", None, None, None, None, True),
+                        ("col.with.dots", "BIGINT_TYPE", None, None, None, None, True),
                     ]
                     row = cursor.fetchone()
                     assert row is not None
@@ -621,20 +698,16 @@ class DatalakeE2ETests(RedpandaTest):
                     assert row[1] > 0
             elif query_engine == QueryEngineType.TRINO:
                 trino = dl.trino()
-                trino_describe_out = trino.run_query_fetch_all(
-                    f"describe {table_name}")
+                trino_describe_out = trino.run_query_fetch_all(f"describe {table_name}")
 
-                assert trino_describe_out == expected_trino, str(
-                    trino_describe_out)
+                assert trino_describe_out == expected_trino, str(trino_describe_out)
 
                 with trino.run_query(
-                        f"""SELECT "my_🍀_number", "col.with.dots" FROM {table_name} LIMIT 1"""
+                    f"""SELECT "my_🍀_number", "col.with.dots" FROM {table_name} LIMIT 1"""
                 ) as cursor:
                     assert cursor.description == [
-                        ('my_🍀_number', 'bigint', None, None, None, None,
-                         True),
-                        ('col.with.dots', 'bigint', None, None, None, None,
-                         True)
+                        ("my_🍀_number", "bigint", None, None, None, None, True),
+                        ("col.with.dots", "bigint", None, None, None, None, True),
                     ]
                     row = cursor.fetchone()
                     assert row is not None
@@ -642,30 +715,33 @@ class DatalakeE2ETests(RedpandaTest):
                     assert row[1] > 0
             else:
                 raise RuntimeError(
-                    f"Unsupported query engine {query_engine} for this test")
+                    f"Unsupported query engine {query_engine} for this test"
+                )
 
     # Note: nothing unique about this test so run it with single catalog/query engine.
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            query_engine=[QueryEngineType.SPARK],
-            catalog_type=[CatalogType.REST_JDBC])
-    def test_json_schema_dlq(self, cloud_storage_type, query_engine,
-                             catalog_type):
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=[QueryEngineType.SPARK],
+        catalog_type=[CatalogType.REST_JDBC],
+    )
+    def test_json_schema_dlq(self, cloud_storage_type, query_engine, catalog_type):
         count = 100
 
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[query_engine],
-                              catalog_type=catalog_type) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[query_engine],
+            catalog_type=catalog_type,
+        ) as dl:
             for tc_name, tc_data in JSON_SCHEMA_DLQ_TEST_CASES.items():
-                self.logger.info(
-                    f"Running JSON schema dlq test case {tc_name}")
+                self.logger.info(f"Running JSON schema dlq test case {tc_name}")
                 test_case_topic_name = f"{tc_name}_test_case"
                 dl.create_iceberg_enabled_topic(
-                    test_case_topic_name, iceberg_mode="value_schema_latest")
+                    test_case_topic_name, iceberg_mode="value_schema_latest"
+                )
 
-                self.logger.info(
-                    f"Creating schema for topic {test_case_topic_name}")
+                self.logger.info(f"Creating schema for topic {test_case_topic_name}")
                 rpk = RpkTool(self.redpanda)
                 rpk.create_schema_from_str(
                     subject=f"{test_case_topic_name}-value",
@@ -673,14 +749,13 @@ class DatalakeE2ETests(RedpandaTest):
                     schema_suffix="json",
                 )
 
-                self.logger.info(
-                    f"Producing records for topic {test_case_topic_name}")
-                producer = Producer(
-                    {'bootstrap.servers': self.redpanda.brokers()})
+                self.logger.info(f"Producing records for topic {test_case_topic_name}")
+                producer = Producer({"bootstrap.servers": self.redpanda.brokers()})
                 for i in range(count):
                     t = time.time()
-                    producer.produce(topic=test_case_topic_name,
-                                     value=tc_data.generate_record(t))
+                    producer.produce(
+                        topic=test_case_topic_name, value=tc_data.generate_record(t)
+                    )
                 producer.flush()
 
                 self.logger.info(
@@ -689,10 +764,10 @@ class DatalakeE2ETests(RedpandaTest):
                 dl.wait_for_translation(
                     test_case_topic_name,
                     msg_count=count,
-                    table_override=f"{test_case_topic_name}~dlq")
+                    table_override=f"{test_case_topic_name}~dlq",
+                )
 
-                topic_leader = self.redpanda.partitions(
-                    test_case_topic_name)[0].leader
+                topic_leader = self.redpanda.partitions(test_case_topic_name)[0].leader
 
                 assert tc_data.dlq_cause is not None
 
@@ -705,22 +780,30 @@ class DatalakeE2ETests(RedpandaTest):
                     topic_leader,
                     ["redpanda_iceberg_translation_invalid_records_total"],
                     labels={
-                        'redpanda_namespace': 'kafka',
-                        'redpanda_topic': test_case_topic_name,
-                        'redpanda_cause': tc_data.dlq_cause,
+                        "redpanda_namespace": "kafka",
+                        "redpanda_topic": test_case_topic_name,
+                        "redpanda_cause": tc_data.dlq_cause,
                     },
                     reduce=sum,
-                    metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS).expect([
-                        ('redpanda_iceberg_translation_invalid_records_total',
-                         lambda _, val: val == count)
-                    ])
+                    metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+                ).expect(
+                    [
+                        (
+                            "redpanda_iceberg_translation_invalid_records_total",
+                            lambda _, val: val == count,
+                        )
+                    ]
+                )
 
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
-            catalog_type=supported_catalog_types())
-    def test_latest_protobuf_schema(self, cloud_storage_type, query_engine,
-                                    catalog_type):
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
+        catalog_type=supported_catalog_types(),
+    )
+    def test_latest_protobuf_schema(
+        self, cloud_storage_type, query_engine, catalog_type
+    ):
         count = 100
         table_name = f"redpanda.{self.topic_name}"
 
@@ -779,29 +862,34 @@ class DatalakeE2ETests(RedpandaTest):
         Person = factory.GetPrototype(person_desc)
 
         def produce_protos():
-            producer = Producer({'bootstrap.servers': self.redpanda.brokers()})
+            producer = Producer({"bootstrap.servers": self.redpanda.brokers()})
             for i in range(count):
-                record = json.dumps({
-                    "name": f"Bob{i} Protopants",
-                    "id": 1 + i,
-                    "email": f"foobar{i}@gmail.com",
-                    "address": {
-                        "street": f"{i} Main St.",
-                        "city": "Protoville" if i % 2 == 0 else "Buftown",
-                        "state": "District 13" if i % 3 == 0 else "Hooli",
-                        "zip": "8675309" if i % 4 == 0 else "12345"
+                record = json.dumps(
+                    {
+                        "name": f"Bob{i} Protopants",
+                        "id": 1 + i,
+                        "email": f"foobar{i}@gmail.com",
+                        "address": {
+                            "street": f"{i} Main St.",
+                            "city": "Protoville" if i % 2 == 0 else "Buftown",
+                            "state": "District 13" if i % 3 == 0 else "Hooli",
+                            "zip": "8675309" if i % 4 == 0 else "12345",
+                        },
                     }
-                })
+                )
                 person_proto = Person()
                 pb_json_format.Parse(record, person_proto)
-                producer.produce(topic=self.topic_name,
-                                 value=person_proto.SerializeToString())
+                producer.produce(
+                    topic=self.topic_name, value=person_proto.SerializeToString()
+                )
             producer.flush()
 
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[query_engine],
-                              catalog_type=catalog_type) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[query_engine],
+            catalog_type=catalog_type,
+        ) as dl:
             rpk = RpkTool(self.redpanda)
             rpk.create_schema_from_str(
                 subject=f"{self.topic_name}-value",
@@ -809,8 +897,8 @@ class DatalakeE2ETests(RedpandaTest):
                 schema_suffix="proto",
             )
             dl.create_iceberg_enabled_topic(
-                self.topic_name,
-                iceberg_mode="value_schema_latest:protobuf_name=Person")
+                self.topic_name, iceberg_mode="value_schema_latest:protobuf_name=Person"
+            )
             produce_protos()
             dl.wait_for_translation(self.topic_name, msg_count=count)
 
@@ -821,11 +909,9 @@ class DatalakeE2ETests(RedpandaTest):
                     ('name', 'varchar', '', ''),
                     ('id', 'integer', '', ''),
                     ('email', 'varchar', '', ''),
-                ] # yapf: disable
-                trino_describe_out = trino.run_query_fetch_all(
-                    f"describe {table_name}")
-                assert trino_describe_out == trino_expected_out, str(
-                    trino_describe_out)
+                ]  # yapf: disable
+                trino_describe_out = trino.run_query_fetch_all(f"describe {table_name}")
+                assert trino_describe_out == trino_expected_out, str(trino_describe_out)
             else:
                 spark = dl.spark()
                 spark_expected_out = [
@@ -836,11 +922,9 @@ class DatalakeE2ETests(RedpandaTest):
                     ('', '', ''),
                     ('# Partitioning', '', ''),
                     ('Part 0', 'hours(redpanda.timestamp)', '')
-                ] # yapf: disable
-                spark_describe_out = spark.run_query_fetch_all(
-                    f"describe {table_name}")
-                assert spark_describe_out == spark_expected_out, str(
-                    spark_describe_out)
+                ]  # yapf: disable
+                spark_describe_out = spark.run_query_fetch_all(f"describe {table_name}")
+                assert spark_describe_out == spark_expected_out, str(spark_describe_out)
 
             # Be absolutely sure that the latest schema is being used by the
             # translator by waiting for the cache to expire the latest schema.
@@ -849,11 +933,10 @@ class DatalakeE2ETests(RedpandaTest):
                 schema=protobuf_schema_v2,
                 schema_suffix="proto",
             )
-            rpk.cluster_config_set('iceberg_latest_schema_cache_ttl_ms', '500')
+            rpk.cluster_config_set("iceberg_latest_schema_cache_ttl_ms", "500")
             time.sleep(1)
             produce_protos()
-            dl.wait_for_translation_until_offset(self.topic_name,
-                                                 2 * count - 1)
+            dl.wait_for_translation_until_offset(self.topic_name, 2 * count - 1)
 
             if query_engine == QueryEngineType.TRINO:
                 trino = dl.trino()
@@ -863,11 +946,9 @@ class DatalakeE2ETests(RedpandaTest):
                     ('id', 'integer', '', ''),
                     ('email', 'varchar', '', ''),
                     ('address', 'row(street varchar, city varchar, state varchar, zip varchar)', '', ''),
-                ] # yapf: disable
-                trino_describe_out = trino.run_query_fetch_all(
-                    f"describe {table_name}")
-                assert trino_describe_out == trino_expected_out, str(
-                    trino_describe_out)
+                ]  # yapf: disable
+                trino_describe_out = trino.run_query_fetch_all(f"describe {table_name}")
+                assert trino_describe_out == trino_expected_out, str(trino_describe_out)
             else:
                 spark = dl.spark()
                 spark_expected_out = [
@@ -879,18 +960,17 @@ class DatalakeE2ETests(RedpandaTest):
                     ('', '', ''),
                     ('# Partitioning', '', ''),
                     ('Part 0', 'hours(redpanda.timestamp)', '')
-                ] # yapf: disable
-                spark_describe_out = spark.run_query_fetch_all(
-                    f"describe {table_name}")
-                assert spark_describe_out == spark_expected_out, str(
-                    spark_describe_out)
+                ]  # yapf: disable
+                spark_describe_out = spark.run_query_fetch_all(f"describe {table_name}")
+                assert spark_describe_out == spark_expected_out, str(spark_describe_out)
 
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            query_engine=[QueryEngineType.SPARK],
-            catalog_type=[CatalogType.REST_JDBC])
-    def test_protobuf_references(self, cloud_storage_type, query_engine,
-                                 catalog_type):
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=[QueryEngineType.SPARK],
+        catalog_type=[CatalogType.REST_JDBC],
+    )
+    def test_protobuf_references(self, cloud_storage_type, query_engine, catalog_type):
         proto_addr = """
 syntax = "proto3";
 
@@ -937,27 +1017,32 @@ message_type {
         count = 100
 
         def produce_protos():
-            producer = Producer({'bootstrap.servers': self.redpanda.brokers()})
+            producer = Producer({"bootstrap.servers": self.redpanda.brokers()})
             for i in range(count):
-                record = json.dumps({
-                    "name": f"Bob{i} Protopants",
-                    "address": {
-                        "street": f"{i} Main St.",
-                        "city": "Protoville" if i % 2 == 0 else "Buftown",
-                        "state": "District 13" if i % 3 == 0 else "Hooli",
-                        "zip": "8675309" if i % 4 == 0 else "12345"
+                record = json.dumps(
+                    {
+                        "name": f"Bob{i} Protopants",
+                        "address": {
+                            "street": f"{i} Main St.",
+                            "city": "Protoville" if i % 2 == 0 else "Buftown",
+                            "state": "District 13" if i % 3 == 0 else "Hooli",
+                            "zip": "8675309" if i % 4 == 0 else "12345",
+                        },
                     }
-                })
+                )
                 person_proto = Person()
                 pb_json_format.Parse(record, person_proto)
-                producer.produce(topic=self.topic_name,
-                                 value=person_proto.SerializeToString())
+                producer.produce(
+                    topic=self.topic_name, value=person_proto.SerializeToString()
+                )
             producer.flush()
 
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[query_engine],
-                              catalog_type=catalog_type) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[query_engine],
+            catalog_type=catalog_type,
+        ) as dl:
             rpk = RpkTool(self.redpanda)
 
             subj_person = "subject_for_person"
@@ -967,11 +1052,11 @@ message_type {
                 subj_person,
                 proto_person,
                 "proto",
-                references=f"address.proto:{subj_addr}:1")  # ID 2
+                references=f"address.proto:{subj_addr}:1",
+            )  # ID 2
             dl.create_iceberg_enabled_topic(
                 self.topic_name,
-                iceberg_mode=
-                f"value_schema_latest:subject={subj_person},protobuf_name=Person"
+                iceberg_mode=f"value_schema_latest:subject={subj_person},protobuf_name=Person",
             )
             produce_protos()
             dl.wait_for_translation(self.topic_name, msg_count=count)
@@ -985,22 +1070,23 @@ message_type {
                 ('', '', ''),
                 ('# Partitioning', '', ''),
                 ('Part 0', 'hours(redpanda.timestamp)', '')
-            ] # yapf: disable
-            spark_describe_out = spark.run_query_fetch_all(
-                f"describe {table_name}")
-            assert spark_describe_out == spark_expected_out, str(
-                spark_describe_out)
+            ]  # yapf: disable
+            spark_describe_out = spark.run_query_fetch_all(f"describe {table_name}")
+            assert spark_describe_out == spark_expected_out, str(spark_describe_out)
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            catalog_type=supported_catalog_types())
-    def test_upload_after_external_update(self, cloud_storage_type,
-                                          catalog_type):
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        catalog_type=supported_catalog_types(),
+    )
+    def test_upload_after_external_update(self, cloud_storage_type, catalog_type):
         table_name = f"redpanda.{self.topic_name}"
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[QueryEngineType.SPARK],
-                              catalog_type=catalog_type) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.SPARK],
+            catalog_type=catalog_type,
+        ) as dl:
             count = 100
             dl.create_iceberg_enabled_topic(self.topic_name, partitions=1)
             dl.produce_to_topic(self.topic_name, 1024, count)
@@ -1011,29 +1097,30 @@ message_type {
             assert count_after_del == 0, f"{count_after_del} rows, expected 0"
 
             dl.produce_to_topic(self.topic_name, 1024, count)
-            dl.wait_for_translation_until_offset(self.topic_name,
-                                                 2 * count - 1)
-            count_after_produce = spark.count_table("redpanda",
-                                                    self.topic_name)
-            assert count_after_produce == count, f"{count_after_produce} rows, expected {count}"
+            dl.wait_for_translation_until_offset(self.topic_name, 2 * count - 1)
+            count_after_produce = spark.count_table("redpanda", self.topic_name)
+            assert count_after_produce == count, (
+                f"{count_after_produce} rows, expected {count}"
+            )
 
     @cluster(num_nodes=4)
-    @ignore(catalog_type=CatalogType.NESSIE,
-            cloud_storage_type=CloudStorageType.S3)
-    @ignore(catalog_type=CatalogType.NESSIE,
-            cloud_storage_type=CloudStorageType.ABS)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            catalog_type=supported_catalog_types())
+    @ignore(catalog_type=CatalogType.NESSIE, cloud_storage_type=CloudStorageType.S3)
+    @ignore(catalog_type=CatalogType.NESSIE, cloud_storage_type=CloudStorageType.ABS)
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        catalog_type=supported_catalog_types(),
+    )
     def test_remove_expired_snapshots(self, cloud_storage_type, catalog_type):
         """
         Nessie doesn't support tags, so it is ignored for this test.
         """
         table_name = f"redpanda.{self.topic_name}"
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              catalog_type=catalog_type,
-                              include_query_engines=[QueryEngineType.SPARK
-                                                     ]) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            catalog_type=catalog_type,
+            include_query_engines=[QueryEngineType.SPARK],
+        ) as dl:
             dl.create_iceberg_enabled_topic(self.topic_name, partitions=1)
             count = 0
             records_per_round = 100
@@ -1051,11 +1138,14 @@ message_type {
             def num_snapshots() -> int:
                 # Example: [(2445569139027301708, 1739213500520), (2859411459768103060, 1739213495458), (1069851874616045025, 1739213485410), (5648673429948705023, 1739213475351), (7558202443004267034, 1739213465282)]
                 snapshots_out = spark.run_query_fetch_all(
-                    f"call system.ancestors_of('{table_name}')")
+                    f"call system.ancestors_of('{table_name}')"
+                )
                 return len(snapshots_out)
 
             num_snaps = num_snapshots()
-            assert num_snaps >= num_rounds, f"Expected >={num_rounds} snapshots, got {num_snaps}"
+            assert num_snaps >= num_rounds, (
+                f"Expected >={num_rounds} snapshots, got {num_snaps}"
+            )
 
             # Encourage aggressive snapshot cleanup for the table. This
             # shouldn't affect Redpanda's snapshots, since Redpanda will tag
@@ -1063,15 +1153,14 @@ message_type {
             spark.make_client().cursor().execute(
                 f"alter table {table_name} set tblproperties("
                 "'history.expire.max-snapshot-age-ms'='1000', "
-                "'history.expire.max-ref-age-ms'='1000')")
+                "'history.expire.max-ref-age-ms'='1000')"
+            )
 
             # Expect one snapshot retained during snapshot removal + 1 that is
             # added to the table.
             dl.produce_to_topic(self.topic_name, 1, 1)
             dl.wait_for_translation(self.topic_name, count + 1)
-            wait_until(lambda: num_snapshots() == 2,
-                       timeout_sec=30,
-                       backoff_sec=1)
+            wait_until(lambda: num_snapshots() == 2, timeout_sec=30, backoff_sec=1)
 
             # Externally create another snapshot.
             spark.make_client().cursor().execute(
@@ -1083,12 +1172,15 @@ message_type {
             # Redpanda won't attempt removal until the next time we add.
             time.sleep(10)
             num_snaps = num_snapshots()
-            assert num_snaps == 3, f"Expected Redpanda to retain 3 snapshots: {num_snaps}"
+            assert num_snaps == 3, (
+                f"Expected Redpanda to retain 3 snapshots: {num_snaps}"
+            )
 
             # Spark should keep the latest snapshot (the one it created) and
             # the one created by Redpanda.
             spark.make_client().cursor().execute(
-                f"call system.expire_snapshots('{table_name}')")
+                f"call system.expire_snapshots('{table_name}')"
+            )
             num_snaps = num_snapshots()
             assert num_snaps == 2, f"Expected Spark to retain 2 snapshots: {num_snaps}"
 
@@ -1110,19 +1202,21 @@ message_type {
             time.sleep(2)
             dl.produce_to_topic(self.topic_name, 1, 1)
             dl.wait_for_translation(self.topic_name, count + 4)
-            wait_until(lambda: num_snapshots() == 2,
-                       timeout_sec=30,
-                       backoff_sec=1)
+            wait_until(lambda: num_snapshots() == 2, timeout_sec=30, backoff_sec=1)
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            catalog_type=supported_catalog_types())
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        catalog_type=supported_catalog_types(),
+    )
     def test_topic_lifecycle(self, cloud_storage_type, catalog_type):
         count = 100
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[QueryEngineType.SPARK],
-                              catalog_type=catalog_type) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.SPARK],
+            catalog_type=catalog_type,
+        ) as dl:
             rpk = RpkTool(self.redpanda)
 
             # produce some data then delete the topic
@@ -1130,8 +1224,7 @@ message_type {
             dl.produce_to_topic(self.topic_name, 1024, count)
             dl.wait_for_translation(self.topic_name, msg_count=count)
 
-            rpk.alter_topic_config(self.topic_name, "redpanda.iceberg.delete",
-                                   "false")
+            rpk.alter_topic_config(self.topic_name, "redpanda.iceberg.delete", "false")
             rpk.delete_topic(self.topic_name)
 
             # table is not deleted, it will contain messages
@@ -1148,13 +1241,14 @@ message_type {
             catalog_client = dl.catalog_client()
 
             def table_deleted():
-                return not dl.table_exists(self.topic_name,
-                                           client=catalog_client)
+                return not dl.table_exists(self.topic_name, client=catalog_client)
 
-            wait_until(table_deleted,
-                       timeout_sec=30,
-                       backoff_sec=5,
-                       err_msg="table was not deleted")
+            wait_until(
+                table_deleted,
+                timeout_sec=30,
+                backoff_sec=5,
+                err_msg="table was not deleted",
+            )
 
             # recreate an empty topic a few times
             for _ in range(3):
@@ -1167,81 +1261,89 @@ message_type {
             dl.wait_for_translation(self.topic_name, msg_count=count)
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            catalog_type=supported_catalog_types())
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        catalog_type=supported_catalog_types(),
+    )
     def test_iceberg_files_location(self, cloud_storage_type, catalog_type):
         """
         Test that redpanda writes data files to the correct location
         as directed by the catalog.
         """
         count = 100
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              catalog_type=catalog_type,
-                              include_query_engines=[QueryEngineType.SPARK
-                                                     ]) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            catalog_type=catalog_type,
+            include_query_engines=[QueryEngineType.SPARK],
+        ) as dl:
             dl.create_iceberg_enabled_topic(self.topic_name, partitions=2)
             dl.produce_to_topic(self.topic_name, 1024, count)
             dl.wait_for_translation(self.topic_name, msg_count=count)
 
-            table = dl.catalog_client().load_table(
-                f"redpanda.{self.topic_name}")
+            table = dl.catalog_client().load_table(f"redpanda.{self.topic_name}")
 
             spark = dl.spark()
             table_name = f"redpanda.{self.topic_name}"
 
             def assert_location_prefix(rows, prefix: str):
-                assert len(
-                    rows
-                ) > 0, "Expected at least one row to be able to validate the location prefix invariant"
+                assert len(rows) > 0, (
+                    "Expected at least one row to be able to validate the location prefix invariant"
+                )
 
                 for row in rows:
-                    assert row[0].startswith(
-                        prefix), f"Expected {row[0]} to start with {prefix}"
+                    assert row[0].startswith(prefix), (
+                        f"Expected {row[0]} to start with {prefix}"
+                    )
 
             files = spark.run_query_fetch_all(
-                f"select file_path from {table_name}.files")
+                f"select file_path from {table_name}.files"
+            )
             assert_location_prefix(files, table.location())
 
             manifests = spark.run_query_fetch_all(
-                f"select path from {table_name}.manifests")
+                f"select path from {table_name}.manifests"
+            )
             assert_location_prefix(manifests, table.location())
 
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            catalog_type=supported_catalog_types(),
-            custom_partition_spec=[None, "(timestamp_us)", "(number)"])
-    def test_iceberg_partition_key_file_location(self, cloud_storage_type,
-                                                 catalog_type,
-                                                 custom_partition_spec: str):
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        catalog_type=supported_catalog_types(),
+        custom_partition_spec=[None, "(timestamp_us)", "(number)"],
+    )
+    def test_iceberg_partition_key_file_location(
+        self, cloud_storage_type, catalog_type, custom_partition_spec: str
+    ):
         """
         Test that the data file location includes the partition key
         """
         count = 100
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              catalog_type=catalog_type,
-                              include_query_engines=[QueryEngineType.SPARK
-                                                     ]) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            catalog_type=catalog_type,
+            include_query_engines=[QueryEngineType.SPARK],
+        ) as dl:
             config = {}
             if custom_partition_spec:
-                config[
-                    "redpanda.iceberg.partition.spec"] = custom_partition_spec
+                config["redpanda.iceberg.partition.spec"] = custom_partition_spec
 
             dl.create_iceberg_enabled_topic(
                 self.topic_name,
                 partitions=2,
                 iceberg_mode="value_schema_id_prefix",
-                config=config)
+                config=config,
+            )
 
             schema = avro.loads(avro_schema_str)
             producer = AvroProducer(
                 {
-                    'bootstrap.servers': self.redpanda.brokers(),
-                    'schema.registry.url':
-                    self.redpanda.schema_reg().split(",")[0]
+                    "bootstrap.servers": self.redpanda.brokers(),
+                    "schema.registry.url": self.redpanda.schema_reg().split(",")[0],
                 },
-                default_value_schema=schema)
+                default_value_schema=schema,
+            )
             current_date = datetime.datetime.now()
             for _ in range(count):
                 t = time.time()
@@ -1253,28 +1355,36 @@ message_type {
 
             spark = dl.spark()
             table_name = f"redpanda.{self.topic_name}"
-            uri_pattern = re.compile(
-                r"(?P<scheme>.*?)://(?P<bucket>.*?)/(?P<key>.*)")
+            uri_pattern = re.compile(r"(?P<scheme>.*?)://(?P<bucket>.*?)/(?P<key>.*)")
 
             def validate_data_file_path(file_url):
                 m = uri_pattern.match(file_url)
                 assert m, f"Expected file url to match URI pattern: {file_url}"
-                assert m['bucket'].startswith(
-                    self.si_settings.cloud_storage_bucket
-                ), f"Expected bucket {m['bucket']} to be {self.si_settings.cloud_storage_bucket}"
+                assert m["bucket"].startswith(self.si_settings.cloud_storage_bucket), (
+                    f"Expected bucket {m['bucket']} to be {self.si_settings.cloud_storage_bucket}"
+                )
 
-                path_parts = m['key'].split("/")
+                path_parts = m["key"].split("/")
                 partition_key = path_parts[4]
 
                 if custom_partition_spec is None:
-                    assert f"redpanda.timestamp_hour={current_date.year}" in partition_key, f"Expected default partition key in data file location {partition_key}"
+                    assert (
+                        f"redpanda.timestamp_hour={current_date.year}" in partition_key
+                    ), (
+                        f"Expected default partition key in data file location {partition_key}"
+                    )
                 elif custom_partition_spec == "(timestamp_us)":
-                    assert f"timestamp_us={current_date.year}" in partition_key, f"Expected timestamp_us partition key in data file location {partition_key}"
+                    assert f"timestamp_us={current_date.year}" in partition_key, (
+                        f"Expected timestamp_us partition key in data file location {partition_key}"
+                    )
                 elif custom_partition_spec == "(number)":
-                    assert "number=" in partition_key, f"Expected number partition key in data file location {partition_key}"
+                    assert "number=" in partition_key, (
+                        f"Expected number partition key in data file location {partition_key}"
+                    )
 
             files = spark.run_query_fetch_all(
-                f"select file_path from {table_name}.files")
+                f"select file_path from {table_name}.files"
+            )
             assert len(files) > 0, "Expected at least one file"
             for f_tuple in files:
                 f_name = f_tuple[0]
@@ -1282,72 +1392,73 @@ message_type {
 
 
 class DatalakeMetricsTest(RedpandaTest):
-
-    commit_lag = 'vectorized_cluster_partition_iceberg_offsets_pending_commit'
-    translation_lag = 'vectorized_cluster_partition_iceberg_offsets_pending_translation'
+    commit_lag = "vectorized_cluster_partition_iceberg_offsets_pending_commit"
+    translation_lag = "vectorized_cluster_partition_iceberg_offsets_pending_translation"
 
     def __init__(self, test_ctx, *args, **kwargs):
-        super(DatalakeMetricsTest,
-              self).__init__(test_ctx,
-                             num_brokers=3,
-                             si_settings=SISettings(test_context=test_ctx),
-                             extra_rp_conf={
-                                 "iceberg_enabled": "true",
-                                 "iceberg_catalog_commit_interval_ms": "1000",
-                                 "enable_leader_balancer": False
-                             },
-                             schema_registry_config=SchemaRegistryConfig(),
-                             pandaproxy_config=PandaproxyConfig(),
-                             *args,
-                             **kwargs)
+        super(DatalakeMetricsTest, self).__init__(
+            test_ctx,
+            num_brokers=3,
+            si_settings=SISettings(test_context=test_ctx),
+            extra_rp_conf={
+                "iceberg_enabled": "true",
+                "iceberg_catalog_commit_interval_ms": "1000",
+                "enable_leader_balancer": False,
+            },
+            schema_registry_config=SchemaRegistryConfig(),
+            pandaproxy_config=PandaproxyConfig(),
+            *args,
+            **kwargs,
+        )
         self.test_ctx = test_ctx
         self.topic_name = "test"
 
     def setUp(self):
         pass
 
-    def wait_for_lag(self,
-                     metric_check: MetricCheck,
-                     metric_name: str,
-                     count: int,
-                     timeout_sec: int = 30):
+    def wait_for_lag(
+        self,
+        metric_check: MetricCheck,
+        metric_name: str,
+        count: int,
+        timeout_sec: int = 30,
+    ):
         wait_until(
-            lambda: metric_check.evaluate([(metric_name, lambda _, val: val ==
-                                            count)]),
+            lambda: metric_check.evaluate([(metric_name, lambda _, val: val == count)]),
             timeout_sec=timeout_sec,
             backoff_sec=5,
-            err_msg=f"Timed out waiting for {metric_name} to reach: {count}")
+            err_msg=f"Timed out waiting for {metric_name} to reach: {count}",
+        )
 
     @cluster(num_nodes=5)
     @matrix(cloud_storage_type=supported_storage_types())
     def test_lag_metrics(self, cloud_storage_type):
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[],
-                              catalog_type=supported_catalog_types()[0]) as dl:
-
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[],
+            catalog_type=supported_catalog_types()[0],
+        ) as dl:
             # Stop the catalog to halt the translation flow
             dl.catalog_service.stop()
 
-            dl.create_iceberg_enabled_topic(self.topic_name,
-                                            partitions=1,
-                                            replicas=3)
+            dl.create_iceberg_enabled_topic(self.topic_name, partitions=1, replicas=3)
             topic_leader = self.redpanda.partitions(self.topic_name)[0].leader
             count = randint(12, 21)
             dl.produce_to_topic(self.topic_name, 1, msg_count=count)
 
-            m = MetricCheck(self.redpanda.logger,
-                            self.redpanda,
-                            topic_leader, [
-                                DatalakeMetricsTest.commit_lag,
-                                DatalakeMetricsTest.translation_lag
-                            ],
-                            labels={
-                                'namespace': 'kafka',
-                                'topic': self.topic_name,
-                                'partition': '0'
-                            },
-                            reduce=sum)
+            m = MetricCheck(
+                self.redpanda.logger,
+                self.redpanda,
+                topic_leader,
+                [DatalakeMetricsTest.commit_lag, DatalakeMetricsTest.translation_lag],
+                labels={
+                    "namespace": "kafka",
+                    "topic": self.topic_name,
+                    "partition": "0",
+                },
+                reduce=sum,
+            )
 
             # Wait for lag build up
             self.wait_for_lag(m, DatalakeMetricsTest.translation_lag, count)
@@ -1361,57 +1472,79 @@ class DatalakeMetricsTest(RedpandaTest):
             # the committed offset is fed by a commit task that is concurrent to
             # the translation loop, so we may have to wait one `wait_for_data`
             # timeout period (30s) before the lag goes to zero.
-            self.wait_for_lag(m,
-                              DatalakeMetricsTest.commit_lag,
-                              0,
-                              timeout_sec=45)
+            self.wait_for_lag(m, DatalakeMetricsTest.commit_lag, 0, timeout_sec=45)
 
     @cluster(num_nodes=5)
     @matrix(cloud_storage_type=supported_storage_types())
     def test_rest_catalog_metrics(self, cloud_storage_type):
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[],
-                              catalog_type=CatalogType.REST_JDBC) as dl:
-            commit_table_metric = "redpanda_iceberg_rest_client_num_commit_table_update_requests_total"
-            create_table_metric = "redpanda_iceberg_rest_client_num_create_table_requests_total"
-            load_table_metric = "redpanda_iceberg_rest_client_num_load_table_requests_total"
-            drop_table_metric = "redpanda_iceberg_rest_client_num_drop_table_requests_total"
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[],
+            catalog_type=CatalogType.REST_JDBC,
+        ) as dl:
+            commit_table_metric = (
+                "redpanda_iceberg_rest_client_num_commit_table_update_requests_total"
+            )
+            create_table_metric = (
+                "redpanda_iceberg_rest_client_num_create_table_requests_total"
+            )
+            load_table_metric = (
+                "redpanda_iceberg_rest_client_num_load_table_requests_total"
+            )
+            drop_table_metric = (
+                "redpanda_iceberg_rest_client_num_drop_table_requests_total"
+            )
             timeouts_metric = "redpanda_iceberg_rest_client_num_request_timeouts_total"
 
-            dl.create_iceberg_enabled_topic(self.topic_name,
-                                            partitions=1,
-                                            replicas=3)
+            dl.create_iceberg_enabled_topic(self.topic_name, partitions=1, replicas=3)
             dl.produce_to_topic(self.topic_name, 1024, 10)
 
             # Wait until we have committed to the table -- this implies several
             # other metrics should be ticked as well.
-            wait_until(lambda: self.redpanda.metric_sum(
-                commit_table_metric, MetricsEndpoint.PUBLIC_METRICS) > 0,
-                       timeout_sec=30,
-                       backoff_sec=1)
+            wait_until(
+                lambda: self.redpanda.metric_sum(
+                    commit_table_metric, MetricsEndpoint.PUBLIC_METRICS
+                )
+                > 0,
+                timeout_sec=30,
+                backoff_sec=1,
+            )
 
             create_metric_val = self.redpanda.metric_sum(
-                create_table_metric, MetricsEndpoint.PUBLIC_METRICS)
-            assert create_metric_val > 0, f"Expected >0 for {create_table_metric}: {create_metric_val}"
+                create_table_metric, MetricsEndpoint.PUBLIC_METRICS
+            )
+            assert create_metric_val > 0, (
+                f"Expected >0 for {create_table_metric}: {create_metric_val}"
+            )
 
             load_metric_val = self.redpanda.metric_sum(
-                load_table_metric, MetricsEndpoint.PUBLIC_METRICS)
-            assert load_metric_val > 0, f"Expected >0 for {load_table_metric}: {load_metric_val}"
+                load_table_metric, MetricsEndpoint.PUBLIC_METRICS
+            )
+            assert load_metric_val > 0, (
+                f"Expected >0 for {load_table_metric}: {load_metric_val}"
+            )
 
             # The metric for dropped tables should not show up until we drop
             # the topic.
             drop_metric_val = self.redpanda.metric_sum(
-                drop_table_metric, MetricsEndpoint.PUBLIC_METRICS)
-            assert drop_metric_val == 0, f"Expected ==0 for {drop_table_metric}: {drop_metric_val}"
+                drop_table_metric, MetricsEndpoint.PUBLIC_METRICS
+            )
+            assert drop_metric_val == 0, (
+                f"Expected ==0 for {drop_table_metric}: {drop_metric_val}"
+            )
 
             rpk = RpkTool(self.redpanda)
             rpk.delete_topic(self.topic_name)
 
-            wait_until(lambda: self.redpanda.metric_sum(
-                drop_table_metric, MetricsEndpoint.PUBLIC_METRICS) > 0,
-                       timeout_sec=30,
-                       backoff_sec=1)
+            wait_until(
+                lambda: self.redpanda.metric_sum(
+                    drop_table_metric, MetricsEndpoint.PUBLIC_METRICS
+                )
+                > 0,
+                timeout_sec=30,
+                backoff_sec=1,
+            )
 
             # Stop the catalog to halt the translation flow
             dl.catalog_service.stop()
@@ -1419,17 +1552,22 @@ class DatalakeMetricsTest(RedpandaTest):
             # Our topic is deleted, so we shouldn't see any errors until we
             # start producing again.
             timeouts_metric_val = self.redpanda.metric_sum(
-                timeouts_metric, MetricsEndpoint.PUBLIC_METRICS)
-            assert timeouts_metric_val == 0, f"Expected ==0 for {timeouts_metric}: {timeouts_metric_val}"
+                timeouts_metric, MetricsEndpoint.PUBLIC_METRICS
+            )
+            assert timeouts_metric_val == 0, (
+                f"Expected ==0 for {timeouts_metric}: {timeouts_metric_val}"
+            )
 
-            dl.create_iceberg_enabled_topic(self.topic_name,
-                                            partitions=1,
-                                            replicas=3)
+            dl.create_iceberg_enabled_topic(self.topic_name, partitions=1, replicas=3)
             dl.produce_to_topic(self.topic_name, 1024, 10)
-            wait_until(lambda: self.redpanda.metric_sum(
-                timeouts_metric, MetricsEndpoint.PUBLIC_METRICS) > 0,
-                       timeout_sec=30,
-                       backoff_sec=1)
+            wait_until(
+                lambda: self.redpanda.metric_sum(
+                    timeouts_metric, MetricsEndpoint.PUBLIC_METRICS
+                )
+                > 0,
+                timeout_sec=30,
+                backoff_sec=1,
+            )
 
 
 class DatalakeDelayedEnablementTest(RedpandaTest):
@@ -1442,15 +1580,14 @@ class DatalakeDelayedEnablementTest(RedpandaTest):
             extra_rp_conf={
                 "iceberg_catalog_commit_interval_ms": 5000,
                 "log_compaction_interval_ms": 2000,
-                "storage_target_replay_bytes": self.target_reply_bytes
+                "storage_target_replay_bytes": self.target_reply_bytes,
             },
             schema_registry_config=SchemaRegistryConfig(),
             pandaproxy_config=PandaproxyConfig(),
-            environment={
-                "__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"
-            },
+            environment={"__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"},
             *args,
-            **kwargs)
+            **kwargs,
+        )
         self.test_ctx = test_ctx
 
     def setUp(self):
@@ -1461,17 +1598,17 @@ class DatalakeDelayedEnablementTest(RedpandaTest):
         partitions = admin.get_partitions(topic=topic_name)
 
         for p in partitions:
-            p_id = p['partition_id']
-            status = admin.get_partition_state("kafka",
-                                               topic=topic_name,
-                                               partition=p['partition_id'])
-            for replica in status['replicas']:
-                c_index = replica['raft_state']['commit_index']
-                for stm in replica['raft_state']['stms']:
+            p_id = p["partition_id"]
+            status = admin.get_partition_state(
+                "kafka", topic=topic_name, partition=p["partition_id"]
+            )
+            for replica in status["replicas"]:
+                c_index = replica["raft_state"]["commit_index"]
+                for stm in replica["raft_state"]["stms"]:
                     self.logger.debug(
                         f"{topic_name}/{p_id} state machine: {stm['name']} on: {replica['raft_state']['node_id']} last_applied_offset: {stm['last_applied_offset']}"
                     )
-                    if stm['last_applied_offset'] < c_index:
+                    if stm["last_applied_offset"] < c_index:
                         return False
 
         return True
@@ -1506,7 +1643,8 @@ class DatalakeDelayedEnablementTest(RedpandaTest):
         try:
             samples = self.redpanda.metrics_sample(
                 "vectorized_io_queue_total_read_bytes_total",
-                nodes=self.redpanda.started_nodes())
+                nodes=self.redpanda.started_nodes(),
+            )
         except Exception as e:
             self.logger.warn(
                 f"Cannot check metrics, did a test finish with all nodes down? ({e})"
@@ -1526,28 +1664,31 @@ class DatalakeDelayedEnablementTest(RedpandaTest):
 
     @cluster(num_nodes=6)
     # this test doesn't have to run with different catalog types
-    @matrix(cloud_storage_type=supported_storage_types(),
-            catalog_type=[CatalogType.REST_JDBC])
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        catalog_type=[CatalogType.REST_JDBC],
+    )
     @skip_debug_mode
-    def test_enabling_iceberg_in_existing_cluster(self, cloud_storage_type,
-                                                  catalog_type):
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[QueryEngineType.SPARK],
-                              catalog_type=catalog_type) as dl:
-
+    def test_enabling_iceberg_in_existing_cluster(
+        self, cloud_storage_type, catalog_type
+    ):
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.SPARK],
+            catalog_type=catalog_type,
+        ) as dl:
             topic_name = "delayed-iceberg-topic"
-            RpkTool(self.redpanda).create_topic(topic_name,
-                                                partitions=3,
-                                                replicas=3,
-                                                config={
-                                                    "segment.bytes":
-                                                    1024 * 1024,
-                                                    "redpanda.remote.read":
-                                                    False,
-                                                    "redpanda.remote.write":
-                                                    False
-                                                })
+            RpkTool(self.redpanda).create_topic(
+                topic_name,
+                partitions=3,
+                replicas=3,
+                config={
+                    "segment.bytes": 1024 * 1024,
+                    "redpanda.remote.read": False,
+                    "redpanda.remote.write": False,
+                },
+            )
 
             # produce ~120 MiB to the topic
             dl.produce_to_topic(topic_name, 1024, 120 * 1024)
@@ -1555,26 +1696,33 @@ class DatalakeDelayedEnablementTest(RedpandaTest):
             time.sleep(5)
 
             def wait_for_topic(topic_name: str):
-                wait_until(lambda: self.is_topic_fully_caught_up(topic_name),
-                           timeout_sec=30,
-                           backoff_sec=1,
-                           err_msg=f"Error waiting for topic {topic_name} \
-                        state machines to catch up")
+                wait_until(
+                    lambda: self.is_topic_fully_caught_up(topic_name),
+                    timeout_sec=30,
+                    backoff_sec=1,
+                    err_msg=f"Error waiting for topic {topic_name} \
+                        state machines to catch up",
+                )
 
             wait_for_topic(topic_name)
             dl.redpanda.restart_nodes(dl.redpanda.nodes)
 
             wait_for_topic(topic_name)
             bytes_read_before = self.estimate_total_disk_bytes_read()
-            assert bytes_read_before, "Bytes read before enabling Iceberg should not be zero/none"
+            assert bytes_read_before, (
+                "Bytes read before enabling Iceberg should not be zero/none"
+            )
 
             # enable iceberg, this will restart the cluster
-            dl.redpanda.set_cluster_config({"iceberg_enabled": True},
-                                           expect_restart=True)
+            dl.redpanda.set_cluster_config(
+                {"iceberg_enabled": True}, expect_restart=True
+            )
 
             wait_for_topic(topic_name)
             bytes_read_after = self.estimate_total_disk_bytes_read()
-            assert bytes_read_after, "Bytes read after enabling Iceberg should not be zero/none"
+            assert bytes_read_after, (
+                "Bytes read after enabling Iceberg should not be zero/none"
+            )
 
             self.logger.info(
                 f"Bytes read before: {bytes_read_before}, bytes read after: {bytes_read_after}"
@@ -1582,6 +1730,7 @@ class DatalakeDelayedEnablementTest(RedpandaTest):
             # we introduce a small tolerance here, since the read bytes may
             # increase slightly due to term changes and leader elections.
             max_read_bytes = bytes_read_before + self.target_reply_bytes
-            assert bytes_read_after <= max_read_bytes,\
-                f"Enabling Iceberg in the cluster should not cause a major read increase," \
+            assert bytes_read_after <= max_read_bytes, (
+                f"Enabling Iceberg in the cluster should not cause a major read increase,"
                 f" expected ({bytes_read_after=}) <= ({max_read_bytes=})"
+            )

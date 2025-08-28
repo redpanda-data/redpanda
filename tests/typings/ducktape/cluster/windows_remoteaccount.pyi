@@ -1,6 +1,9 @@
 from _typeshed import Incomplete
 from ducktape.cluster.cluster_spec import WINDOWS as WINDOWS
-from ducktape.cluster.remoteaccount import RemoteAccount as RemoteAccount, RemoteCommandError as RemoteCommandError
+from ducktape.cluster.remoteaccount import (
+    RemoteAccount as RemoteAccount,
+    RemoteCommandError as RemoteCommandError,
+)
 
 class WindowsRemoteAccount(RemoteAccount):
     WINRM_USERNAME: str

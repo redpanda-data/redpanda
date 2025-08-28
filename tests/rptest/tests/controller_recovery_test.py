@@ -17,6 +17,7 @@ class ControllerRecoveryTest(RedpandaTest):
     """
     Test controller failover.
     """
+
     def _failover(self):
         """
         stop controller node and wait for failover
@@ -28,10 +29,12 @@ class ControllerRecoveryTest(RedpandaTest):
             curr = self.redpanda.controller()
             return curr and curr != prev
 
-        wait_until(new_controller_elected,
-                   timeout_sec=20,
-                   backoff_sec=1,
-                   err_msg="Controller did not failover")
+        wait_until(
+            new_controller_elected,
+            timeout_sec=20,
+            backoff_sec=1,
+            err_msg="Controller did not failover",
+        )
 
         return prev
 
@@ -42,7 +45,7 @@ class ControllerRecoveryTest(RedpandaTest):
             lambda: self.redpanda.healthy(),
             timeout_sec=20,
             backoff_sec=2,
-            err_msg=f"Cluster did not become healthy after {controller} restart"
+            err_msg=f"Cluster did not become healthy after {controller} restart",
         )
 
     @cluster(num_nodes=3)

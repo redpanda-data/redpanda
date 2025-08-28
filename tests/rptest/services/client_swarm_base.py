@@ -28,12 +28,14 @@ class ClientSwarmBase(Service, ABC):
 
     logs = {"repeater_log": {"path": LOG_PATH, "collect_default": True}}
 
-    def __init__(self,
-                 context: TestContext,
-                 redpanda: AnyRedpandaService,
-                 topic: str,
-                 log_level: str = "DEBUG",
-                 properties={}):
+    def __init__(
+        self,
+        context: TestContext,
+        redpanda: AnyRedpandaService,
+        topic: str,
+        log_level: str = "DEBUG",
+        properties={},
+    ):
         super().__init__(context, num_nodes=1)
 
         self._redpanda = redpanda
@@ -48,11 +50,10 @@ class ClientSwarmBase(Service, ABC):
             ksc = redpanda.kafka_client_security()
             sc = ksc.simple_credentials()
             assert sc
-            properties['security.protocol'] = ksc.security_protocol.name.lower(
-            )
-            properties['sasl.mechanism'] = sc.mechanism
-            properties['sasl.username'] = sc.username
-            properties['sasl.password'] = sc.password
+            properties["security.protocol"] = ksc.security_protocol.name.lower()
+            properties["sasl.mechanism"] = sc.mechanism
+            properties["sasl.username"] = sc.username
+            properties["sasl.password"] = sc.password
 
     def clean_node(self, node):
         self._redpanda.logger.debug(f"{self.__class__.__name__}.clean_node")
@@ -66,7 +67,9 @@ class ClientSwarmBase(Service, ABC):
         pass
 
     def start_node(self, node, clean=None):
-        assert self._node is None or self._node == node, f'started on more than one node? {self._node} {node}'
+        assert self._node is None or self._node == node, (
+            f"started on more than one node? {self._node} {node}"
+        )
         self._node = node
 
         cmd = f"{self.EXE}"
@@ -78,21 +81,19 @@ class ClientSwarmBase(Service, ABC):
             cmd += f" --properties {k}={v}"
         cmd += f" --client-spawn-wait-ms={self.CLIENT_SPAWN_WAIT_MS}"
 
-        cmd = f"RUST_LOG={self._log_level} bash /opt/remote/control/start.sh {self.EXE} \"{cmd}\""
+        cmd = f'RUST_LOG={self._log_level} bash /opt/remote/control/start.sh {self.EXE} "{cmd}"'
         node.account.ssh(cmd)
         self._redpanda.wait_until(
             self.is_alive,
             timeout_sec=600,
             backoff_sec=1,
-            err_msg=
-            f"producer_swarm service {node.account.hostname} failed to start within {600} sec",
+            err_msg=f"producer_swarm service {node.account.hostname} failed to start within {600} sec",
         )
         self._redpanda.wait_until(
             lambda: self.is_metrics_available(node),
             timeout_sec=30,
             backoff_sec=1,
-            err_msg=
-            f"producer_swarm metrics endpoint at {self._remote_url(node, 'metrics/summary')} failed to answer after {30} sec",
+            err_msg=f"producer_swarm metrics endpoint at {self._remote_url(node, 'metrics/summary')} failed to answer after {30} sec",
         )
 
     def is_metrics_available(self, node):
@@ -106,16 +107,17 @@ class ClientSwarmBase(Service, ABC):
 
     def is_alive(self) -> bool:
         result = self._node.account.ssh_output(
-            f"bash /opt/remote/control/alive.sh {self.EXE}")
+            f"bash /opt/remote/control/alive.sh {self.EXE}"
+        )
         result = result.decode("utf-8")
         return "YES" in result
 
     def wait_node(self, node, timeout_sec=600) -> bool:
         assert self._node == node
         try:
-            self._redpanda.wait_until(lambda: not self.is_alive(),
-                                      timeout_sec=timeout_sec,
-                                      backoff_sec=5)
+            self._redpanda.wait_until(
+                lambda: not self.is_alive(), timeout_sec=timeout_sec, backoff_sec=5
+            )
         except TimeoutError:
             return False
         return True
@@ -128,7 +130,7 @@ class ClientSwarmBase(Service, ABC):
 
     def _get(self, node, rest_handle):
         """
-            Perform a GET to client_swarm's metrics API.
+        Perform a GET to client_swarm's metrics API.
         """
         url = self._remote_url(node, rest_handle)
         try:
@@ -154,6 +156,7 @@ class ClientSwarmBase(Service, ABC):
         To get the number of _currently_ active clients, use clients_alive."""
         clients_stopped: int
         """The number of clients that have stopped as they reached their target message count."""
+
         @property
         def clients_alive(self):
             """The number of clients running as of this snapshot."""
@@ -164,8 +167,7 @@ class ClientSwarmBase(Service, ABC):
             """The total number of messages we attempted to send, whether successful or not."""
             return self.total_success + self.total_error
 
-    def get_metrics_summary(self,
-                            seconds: int | None = None) -> MetricsSummary:
+    def get_metrics_summary(self, seconds: int | None = None) -> MetricsSummary:
         path = f"metrics/summary"
         if seconds:
             path = f"{path}?seconds={seconds}"
@@ -178,19 +180,21 @@ class ClientSwarmBase(Service, ABC):
 
         # response looks like:
         # {'min': 0, 'max': 10, 'median': 0, 'counts_from_start': {'success_count': 1078, 'error_count': 0}, 'clients_started': 10, 'clients_stopped': 0}
-        cfs = res['counts_from_start']
-        return self.MetricsSummary(i("min", type=float), i("median",
-                                                           type=float),
-                                   i("max", type=float),
-                                   i('success_count', cfs),
-                                   i('error_count', cfs), i('clients_started'),
-                                   i('clients_stopped'))
+        cfs = res["counts_from_start"]
+        return self.MetricsSummary(
+            i("min", type=float),
+            i("median", type=float),
+            i("max", type=float),
+            i("success_count", cfs),
+            i("error_count", cfs),
+            i("clients_started"),
+            i("clients_stopped"),
+        )
 
     def await_progress(self, target_msg_rate, timeout_sec, err_msg=None):
         def check():
             return self.get_metrics_summary(seconds=20).p50 >= target_msg_rate
 
-        self._redpanda.wait_until(check,
-                                  timeout_sec=timeout_sec,
-                                  backoff_sec=1,
-                                  err_msg=err_msg)
+        self._redpanda.wait_until(
+            check, timeout_sec=timeout_sec, backoff_sec=1, err_msg=err_msg
+        )

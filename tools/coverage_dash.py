@@ -18,7 +18,8 @@ KCLIENTS = ["FranzGo", "KafkaStreams", "Sarama"]
 logger = logging.getLogger(__name__)
 logger_handler = logging.StreamHandler()
 logger_handler.setFormatter(
-    logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+)
 logger.addHandler(logger_handler)
 logger.setLevel(logging.INFO)
 
@@ -53,11 +54,9 @@ def get_profraw_files(test_dir):
     # need shell=True for wildcard use
     find = f'find "{test_dir}" -name "*.profraw"'
     if is_safe_path(find):
-        results = subprocess.run(find,
-                                 shell=True,
-                                 capture_output=True,
-                                 encoding="utf-8",
-                                 check=True)
+        results = subprocess.run(
+            find, shell=True, capture_output=True, encoding="utf-8", check=True
+        )
         results = results.stdout.strip().split("\n")
         by_test = create_profraw_files_dict(results)
         return by_test
@@ -71,15 +70,16 @@ def gen_coverage(test_dir, profraw_files, rp_binary, ignore_regex):
     def process_one(test_name, files):
         data_profile = tempfile.NamedTemporaryFile()
 
-        rpcov.merge_profraw_files(profraw_files=files,
-                                  data_profile=data_profile)
-        rpcov.gen_coverage_html(rp_binary=rp_binary,
-                                data_profile=data_profile,
-                                ignore_regex=ignore_regex,
-                                out_dir=test_name)
-        cov_json = rpcov.gen_coverage_json(rp_binary=rp_binary,
-                                           data_profile=data_profile,
-                                           ignore_regex=ignore_regex)
+        rpcov.merge_profraw_files(profraw_files=files, data_profile=data_profile)
+        rpcov.gen_coverage_html(
+            rp_binary=rp_binary,
+            data_profile=data_profile,
+            ignore_regex=ignore_regex,
+            out_dir=test_name,
+        )
+        cov_json = rpcov.gen_coverage_json(
+            rp_binary=rp_binary, data_profile=data_profile, ignore_regex=ignore_regex
+        )
 
         # Writes coverage.json for each test
         cov_path = os.path.join(test_name, "coverage.json")
@@ -96,13 +96,11 @@ def gen_coverage(test_dir, profraw_files, rp_binary, ignore_regex):
     # other things.
     logger.info("Calculating total coverage...")
     total_path = os.path.join(test_dir, "coverage_total")
-    process_one(total_path,
-                list(itertools.chain.from_iterable(profraw_files.values())))
+    process_one(total_path, list(itertools.chain.from_iterable(profraw_files.values())))
 
     logger.info("Calculating per-test coverage...")
     futures = []
-    executor = ThreadPoolExecutor(
-        max_workers=max(multiprocessing.cpu_count() / 2, 1))
+    executor = ThreadPoolExecutor(max_workers=max(multiprocessing.cpu_count() / 2, 1))
     for test_name, files in profraw_files.items():
         futures.append(executor.submit(process_one, test_name, files))
 
@@ -121,8 +119,8 @@ def check_compat_tests(test_dir):
     compat_results = {}
     for kclient in KCLIENTS:
         kclient_tests = list(
-            filter(lambda test: kclient in test["test_id"],
-                   report_json["results"]))
+            filter(lambda test: kclient in test["test_id"], report_json["results"])
+        )
 
         num_pass = 0
         total = len(kclient_tests)
@@ -238,8 +236,7 @@ tr:nth-child(even) {
 
 
 def main(args):
-    duck_sess = os.path.join(args.build_root, "ducktape/results",
-                             args.ducktape_session)
+    duck_sess = os.path.join(args.build_root, "ducktape/results", args.ducktape_session)
 
     logger.info("Getting profraw files ...")
     profraw_files = get_profraw_files(test_dir=duck_sess)
@@ -248,10 +245,12 @@ def main(args):
     # generate code coverage report for each ducktape test
     # and capture the totals
     logger.info("Generating coverage reports ...")
-    cov_totals = gen_coverage(test_dir=duck_sess,
-                              profraw_files=profraw_files,
-                              rp_binary=rp_binary,
-                              ignore_regex=args.coverage_ignore_regex)
+    cov_totals = gen_coverage(
+        test_dir=duck_sess,
+        profraw_files=profraw_files,
+        rp_binary=rp_binary,
+        ignore_regex=args.coverage_ignore_regex,
+    )
 
     # check test status for the Kafka Clients we do compat testing on
     logger.info("Checking status of compat tests ...")
@@ -260,29 +259,31 @@ def main(args):
     # write coverage dash html file
     logger.info("Writing coverage dashboard html ...")
     dash_path = os.path.join(duck_sess, "coverage_dash.html")
-    create_dashboard_page(duck_sess=args.ducktape_session,
-                          dash_path=dash_path,
-                          cov_totals=cov_totals,
-                          compat_results=compat_results)
+    create_dashboard_page(
+        duck_sess=args.ducktape_session,
+        dash_path=dash_path,
+        cov_totals=cov_totals,
+        compat_results=compat_results,
+    )
 
     logger.info("... Done.")
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description="Summarize the last ducktape test")
-    parser.add_argument("--build-root",
-                        type=str,
-                        required=True,
-                        help="the path to redpanda/vbuild")
-    parser.add_argument("--ducktape-session",
-                        type=str,
-                        required=True,
-                        help="the dir of the ducktape session")
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Summarize the last ducktape test")
+    parser.add_argument(
+        "--build-root", type=str, required=True, help="the path to redpanda/vbuild"
+    )
+    parser.add_argument(
+        "--ducktape-session",
+        type=str,
+        required=True,
+        help="the dir of the ducktape session",
+    )
     parser.add_argument(
         "--coverage-ignore-regex",
         type=str,
-        help="When calculating code coverage, ignore files that match the regex"
+        help="When calculating code coverage, ignore files that match the regex",
     )
 
     args = parser.parse_args()

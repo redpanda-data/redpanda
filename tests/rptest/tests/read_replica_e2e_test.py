@@ -20,13 +20,22 @@ from rptest.util import expect_exception
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 
-from rptest.services.redpanda import CloudStorageType, CloudStorageTypeAndUrlStyle, MetricsEndpoint, RedpandaService, get_cloud_storage_type, get_cloud_storage_url_style, get_cloud_storage_type_and_url_style, make_redpanda_service
+from rptest.services.redpanda import (
+    CloudStorageType,
+    CloudStorageTypeAndUrlStyle,
+    MetricsEndpoint,
+    RedpandaService,
+    get_cloud_storage_type,
+    get_cloud_storage_url_style,
+    get_cloud_storage_type_and_url_style,
+    make_redpanda_service,
+)
 from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.expect_rate import ExpectRate, RateTarget
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
 from rptest.services.verifiable_consumer import VerifiableConsumer
-from rptest.util import (wait_until, wait_until_result)
+from rptest.util import wait_until, wait_until_result
 from rptest.utils.mode_checks import skip_fips_mode
 
 
@@ -46,8 +55,7 @@ READ_REPLICA_LOG_ALLOW_LIST = [
 ]
 
 
-def get_lwm_per_partition(cluster: RedpandaService, topic_name,
-                          partition_count):
+def get_lwm_per_partition(cluster: RedpandaService, topic_name, partition_count):
     id_to_lwm = dict()
     rpk = RpkTool(cluster)
     for prt in rpk.describe_topic(topic_name):
@@ -57,25 +65,25 @@ def get_lwm_per_partition(cluster: RedpandaService, topic_name,
     return True, id_to_lwm
 
 
-def lwms_are_identical(logger, src_cluster, dst_cluster, topic_name,
-                       partition_count):
+def lwms_are_identical(logger, src_cluster, dst_cluster, topic_name, partition_count):
     # Collect the HWMs for each partition before stopping.
-    src_lwms = wait_until_result(lambda: get_lwm_per_partition(
-        src_cluster, topic_name, partition_count),
-                                 timeout_sec=30,
-                                 backoff_sec=1)
+    src_lwms = wait_until_result(
+        lambda: get_lwm_per_partition(src_cluster, topic_name, partition_count),
+        timeout_sec=30,
+        backoff_sec=1,
+    )
 
     # Ensure that our HWMs on the destination are the same.
-    rr_lwms = wait_until_result(lambda: get_lwm_per_partition(
-        dst_cluster, topic_name, partition_count),
-                                timeout_sec=30,
-                                backoff_sec=1)
+    rr_lwms = wait_until_result(
+        lambda: get_lwm_per_partition(dst_cluster, topic_name, partition_count),
+        timeout_sec=30,
+        backoff_sec=1,
+    )
     logger.info(f"{src_lwms} vs {rr_lwms}")
     return src_lwms == rr_lwms
 
 
-def get_hwm_per_partition(cluster: RedpandaService, topic_name,
-                          partition_count):
+def get_hwm_per_partition(cluster: RedpandaService, topic_name, partition_count):
     id_to_hwm = dict()
     rpk = RpkTool(cluster)
     for prt in rpk.describe_topic(topic_name):
@@ -85,19 +93,20 @@ def get_hwm_per_partition(cluster: RedpandaService, topic_name,
     return True, id_to_hwm
 
 
-def hwms_are_identical(logger, src_cluster, dst_cluster, topic_name,
-                       partition_count):
+def hwms_are_identical(logger, src_cluster, dst_cluster, topic_name, partition_count):
     # Collect the HWMs for each partition before stopping.
-    src_hwms = wait_until_result(lambda: get_hwm_per_partition(
-        src_cluster, topic_name, partition_count),
-                                 timeout_sec=30,
-                                 backoff_sec=1)
+    src_hwms = wait_until_result(
+        lambda: get_hwm_per_partition(src_cluster, topic_name, partition_count),
+        timeout_sec=30,
+        backoff_sec=1,
+    )
 
     # Ensure that our HWMs on the destination are the same.
-    rr_hwms = wait_until_result(lambda: get_hwm_per_partition(
-        dst_cluster, topic_name, partition_count),
-                                timeout_sec=30,
-                                backoff_sec=1)
+    rr_hwms = wait_until_result(
+        lambda: get_hwm_per_partition(dst_cluster, topic_name, partition_count),
+        timeout_sec=30,
+        backoff_sec=1,
+    )
     logger.info(f"{src_hwms} vs {rr_hwms}")
     return src_hwms == rr_hwms
 
@@ -107,22 +116,20 @@ def create_read_replica_topic(dst_cluster, topic_name, bucket_name) -> None:
     # NOTE: we set 'redpanda.remote.readreplica' to ORIGIN
     # cluster's bucket
     conf = {
-        'redpanda.remote.readreplica': bucket_name,
+        "redpanda.remote.readreplica": bucket_name,
     }
     rpk_dst_cluster.create_topic(topic_name, config=conf)
 
     def has_leader():
-        partitions = list(
-            rpk_dst_cluster.describe_topic(topic_name, tolerant=True))
+        partitions = list(rpk_dst_cluster.describe_topic(topic_name, tolerant=True))
         for part in partitions:
             if part.leader == -1:
                 return False
         return True
 
-    wait_until(has_leader,
-               timeout_sec=60,
-               backoff_sec=10,
-               err_msg="No leader in read-replica")
+    wait_until(
+        has_leader, timeout_sec=60, backoff_sec=10, err_msg="No leader in read-replica"
+    )
 
 
 class TestReadReplicaService(EndToEndTest):
@@ -143,8 +150,10 @@ class TestReadReplicaService(EndToEndTest):
                 cloud_storage_spillover_manifest_max_segments=4,
                 # Ensure metadata spilling happens promptly
                 cloud_storage_housekeeping_interval_ms=100,
-                fast_uploads=True),
-            extra_rp_conf=extra_rp_conf)
+                fast_uploads=True,
+            ),
+            extra_rp_conf=extra_rp_conf,
+        )
 
         # Read reaplica shouldn't have it's own bucket.
         # We're adding 'none' as a bucket name without creating
@@ -157,7 +166,8 @@ class TestReadReplicaService(EndToEndTest):
             log_segment_size=TestReadReplicaService.log_segment_size,
             cloud_storage_readreplica_manifest_sync_timeout_ms=500,
             cloud_storage_segment_max_upload_interval_sec=5,
-            cloud_storage_housekeeping_interval_ms=10)
+            cloud_storage_housekeeping_interval_ms=10,
+        )
         self.second_cluster = None
 
     def start_second_cluster(self, num_brokers=3) -> None:
@@ -167,12 +177,14 @@ class TestReadReplicaService(EndToEndTest):
             self.test_context,
             num_brokers=num_brokers,
             si_settings=self.rr_settings,
-            extra_rp_conf=extra_rp_conf)
+            extra_rp_conf=extra_rp_conf,
+        )
         self.second_cluster.start(start_si=False)
 
     def create_read_replica_topic(self) -> None:
-        create_read_replica_topic(self.second_cluster, self.topic_name,
-                                  self.si_settings.cloud_storage_bucket)
+        create_read_replica_topic(
+            self.second_cluster, self.topic_name, self.si_settings.cloud_storage_bucket
+        )
 
     def start_consumer(self) -> None:
         # important side effect for superclass; we will use the replica
@@ -182,8 +194,9 @@ class TestReadReplicaService(EndToEndTest):
             num_nodes=1,
             redpanda=self.second_cluster,
             topic=self.topic_name,
-            group_id='consumer_test_group',
-            on_record_consumed=self.on_record_consumed)
+            group_id="consumer_test_group",
+            on_record_consumed=self.on_record_consumed,
+        )
         self.consumer.start()
 
     def start_producer(self) -> None:
@@ -193,38 +206,45 @@ class TestReadReplicaService(EndToEndTest):
             redpanda=self.redpanda,
             topic=self.topic_name,
             throughput=1000,
-            message_validator=is_int_with_prefix)
+            message_validator=is_int_with_prefix,
+        )
         self.producer.start()
 
     def create_read_replica_topic_success(self) -> bool:
         try:
             self.create_read_replica_topic()
         except RpkException as e:
-            if "The server experienced an unexpected error when processing the request" in str(
-                    e):
+            if (
+                "The server experienced an unexpected error when processing the request"
+                in str(e)
+            ):
                 return False
             else:
                 raise
         else:
             return True
 
-    def _setup_read_replica(self,
-                            num_messages=0,
-                            partition_count=3,
-                            producer_timeout=None,
-                            num_source_brokers=3,
-                            num_rrr_brokers=3) -> None:
+    def _setup_read_replica(
+        self,
+        num_messages=0,
+        partition_count=3,
+        producer_timeout=None,
+        num_source_brokers=3,
+        num_rrr_brokers=3,
+    ) -> None:
         if producer_timeout is None:
             producer_timeout = 30
 
-        self.logger.info(f"Setup read replica \"{self.topic_name}\", : "
-                         f"{num_messages} msg, {partition_count} "
-                         "partitions.")
+        self.logger.info(
+            f'Setup read replica "{self.topic_name}", : '
+            f"{num_messages} msg, {partition_count} "
+            "partitions."
+        )
         # Create original topic
         self.start_redpanda(num_source_brokers, si_settings=self.si_settings)
-        spec = TopicSpec(name=self.topic_name,
-                         partition_count=partition_count,
-                         replication_factor=3)
+        spec = TopicSpec(
+            name=self.topic_name, partition_count=partition_count, replication_factor=3
+        )
 
         DefaultClient(self.redpanda).create_topic(spec)
 
@@ -233,11 +253,12 @@ class TestReadReplicaService(EndToEndTest):
             wait_until(
                 lambda: self.producer.num_acked > num_messages,
                 timeout_sec=producer_timeout,
-                err_msg=
-                f"Producer only produced {self.producer.num_acked}/{num_messages} messages in {producer_timeout}"
+                err_msg=f"Producer only produced {self.producer.num_acked}/{num_messages} messages in {producer_timeout}",
             )
-            self.logger.info("Stopping producer after writing up to offsets %s" %\
-                            str(self.producer.last_acked_offsets))
+            self.logger.info(
+                "Stopping producer after writing up to offsets %s"
+                % str(self.producer.last_acked_offsets)
+            )
             self.producer.stop()
 
         self.start_second_cluster(num_rrr_brokers)
@@ -247,15 +268,20 @@ class TestReadReplicaService(EndToEndTest):
             self.create_read_replica_topic_success,
             timeout_sec=300,
             backoff_sec=5,
-            err_msg="Could not create read replica topic. Most likely " +
-            "because topic manifest is not in S3.")
+            err_msg="Could not create read replica topic. Most likely "
+            + "because topic manifest is not in S3.",
+        )
         if num_messages > 0:
-            wait_until(lambda: self.second_cluster.metric_sum(
-                "redpanda_kafka_max_offset",
-                topic=self.topic_name,
-                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS) > 0,
-                       timeout_sec=10,
-                       backoff_sec=1)
+            wait_until(
+                lambda: self.second_cluster.metric_sum(
+                    "redpanda_kafka_max_offset",
+                    topic=self.topic_name,
+                    metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+                )
+                > 0,
+                timeout_sec=10,
+                backoff_sec=1,
+            )
 
     def _bucket_usage(self) -> BucketUsage:
         assert self.redpanda and self.redpanda.cloud_storage_client
@@ -267,14 +293,17 @@ class TestReadReplicaService(EndToEndTest):
             num_objects += 1
             total_bytes += o.content_length
             keys.add(o.key)
-        self.redpanda.logger.info(f"bucket usage {num_objects} objects, " +
-                                  f"{total_bytes} bytes for {bucket}")
+        self.redpanda.logger.info(
+            f"bucket usage {num_objects} objects, "
+            + f"{total_bytes} bytes for {bucket}"
+        )
         return BucketUsage(num_objects, total_bytes, keys)
 
-    def _bucket_delta(self, bu1: BucketUsage,
-                      bu2: BucketUsage) -> Optional[BucketUsage]:
-        """ Return None if both bucket usage reports are equal.
-            Otherwise, return deltas. """
+    def _bucket_delta(
+        self, bu1: BucketUsage, bu2: BucketUsage
+    ) -> Optional[BucketUsage]:
+        """Return None if both bucket usage reports are equal.
+        Otherwise, return deltas."""
         obj_delta = bu2.num_objects - bu1.num_objects
         bytes_delta = bu2.total_bytes - bu1.total_bytes
         keys_delta = bu2.keys.difference(bu1.keys)
@@ -286,19 +315,17 @@ class TestReadReplicaService(EndToEndTest):
     @cluster(num_nodes=7, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(
         partition_count=[5],
-        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True))
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True),
+    )
     def test_identical_lwms_after_delete_records(
-            self, partition_count: int,
-            cloud_storage_type: CloudStorageType) -> None:
-        self._setup_read_replica(partition_count=partition_count,
-                                 num_messages=1000)
+        self, partition_count: int, cloud_storage_type: CloudStorageType
+    ) -> None:
+        self._setup_read_replica(partition_count=partition_count, num_messages=1000)
         rpk = RpkTool(self.redpanda)
 
         def set_lwm(new_lwm):
-            response = rpk.trim_prefix(self.topic_name,
-                                       new_lwm,
-                                       partitions=[0])
-            assert response[0].error_msg == '', response[0].error_msg
+            response = rpk.trim_prefix(self.topic_name, new_lwm, partitions=[0])
+            assert response[0].error_msg == "", response[0].error_msg
             assert response[0].new_start_offset == new_lwm
 
         def check_lwm(new_lwm):
@@ -318,28 +345,26 @@ class TestReadReplicaService(EndToEndTest):
         wait_until(lambda: check_lwm(5), timeout_sec=10, backoff_sec=1)
 
         def clusters_report_identical_lwms():
-            return lwms_are_identical(self.logger, self.redpanda,
-                                      self.second_cluster, self.topic_name,
-                                      partition_count)
+            return lwms_are_identical(
+                self.logger,
+                self.redpanda,
+                self.second_cluster,
+                self.topic_name,
+                partition_count,
+            )
 
-        wait_until(clusters_report_identical_lwms,
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(clusters_report_identical_lwms, timeout_sec=30, backoff_sec=1)
 
         # As a sanity check, ensure the same is true after a restart.
         self.redpanda.restart_nodes(self.redpanda.nodes)
-        wait_until(clusters_report_identical_lwms,
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(clusters_report_identical_lwms, timeout_sec=30, backoff_sec=1)
 
         check_lwm(5)
         set_lwm(6)
         check_lwm(6)
 
         self.second_cluster.restart_nodes(self.second_cluster.nodes)
-        wait_until(clusters_report_identical_lwms,
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(clusters_report_identical_lwms, timeout_sec=30, backoff_sec=1)
         check_lwm(6)
         set_lwm(7)
         check_lwm(7)
@@ -347,61 +372,65 @@ class TestReadReplicaService(EndToEndTest):
     @cluster(num_nodes=8, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(
         partition_count=[5],
-        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True))
-    def test_identical_hwms(self, partition_count: int,
-                            cloud_storage_type: CloudStorageType) -> None:
-        self._setup_read_replica(partition_count=partition_count,
-                                 num_messages=1000)
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True),
+    )
+    def test_identical_hwms(
+        self, partition_count: int, cloud_storage_type: CloudStorageType
+    ) -> None:
+        self._setup_read_replica(partition_count=partition_count, num_messages=1000)
         self.start_consumer()
         self.run_validation(min_records=1000)  # calls self.consumer.stop()
 
         def clusters_report_identical_hwms():
-            return hwms_are_identical(self.logger, self.redpanda,
-                                      self.second_cluster, self.topic_name,
-                                      partition_count)
+            return hwms_are_identical(
+                self.logger,
+                self.redpanda,
+                self.second_cluster,
+                self.topic_name,
+                partition_count,
+            )
 
-        wait_until(clusters_report_identical_hwms,
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(clusters_report_identical_hwms, timeout_sec=30, backoff_sec=1)
 
         # As a sanity check, ensure the same is true after a restart.
         self.redpanda.restart_nodes(self.redpanda.nodes)
-        wait_until(clusters_report_identical_hwms,
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(clusters_report_identical_hwms, timeout_sec=30, backoff_sec=1)
 
         self.second_cluster.restart_nodes(self.second_cluster.nodes)
-        wait_until(clusters_report_identical_hwms,
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(clusters_report_identical_hwms, timeout_sec=30, backoff_sec=1)
 
     @cluster(num_nodes=7, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(partition_count=[10], cloud_storage_type=get_cloud_storage_type())
-    def test_writes_forbidden(self, partition_count: int,
-                              cloud_storage_type: CloudStorageType) -> None:
+    def test_writes_forbidden(
+        self, partition_count: int, cloud_storage_type: CloudStorageType
+    ) -> None:
         """
         Verify that the read replica cluster does not permit writes,
         and does not perform other data-modifying actions such as
         removing objects from S3 on topic deletion.
         """
 
-        self._setup_read_replica(partition_count=partition_count,
-                                 num_messages=1000)
+        self._setup_read_replica(partition_count=partition_count, num_messages=1000)
         second_rpk = RpkTool(self.second_cluster)
         with expect_exception(
-                RpkException, lambda e:
-                "unable to produce record: INVALID_TOPIC_EXCEPTION: The request attempted to perform an operation on an invalid topic."
-                in str(e)):
+            RpkException,
+            lambda e: "unable to produce record: INVALID_TOPIC_EXCEPTION: The request attempted to perform an operation on an invalid topic."
+            in str(e),
+        ):
             second_rpk.produce(self.topic_name, "", "test payload")
 
         objects_before = set(
             self.redpanda.cloud_storage_client.list_objects(
-                self.si_settings.cloud_storage_bucket))
+                self.si_settings.cloud_storage_bucket
+            )
+        )
         assert len(objects_before) > 0
         second_rpk.delete_topic(self.topic_name)
         objects_after = set(
             self.redpanda.cloud_storage_client.list_objects(
-                self.si_settings.cloud_storage_bucket))
+                self.si_settings.cloud_storage_bucket
+            )
+        )
         if len(objects_after) < len(objects_before):
             deleted = objects_before - objects_after
             self.logger.error(f"Objects unexpectedly deleted: {deleted}")
@@ -416,21 +445,23 @@ class TestReadReplicaService(EndToEndTest):
     @cluster(num_nodes=9, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(
         partition_count=[10],
-        cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(
-        ))
+        cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(),
+    )
     def test_simple_end_to_end(
-        self, partition_count: int,
-        cloud_storage_type_and_url_style: List[CloudStorageTypeAndUrlStyle]
+        self,
+        partition_count: int,
+        cloud_storage_type_and_url_style: List[CloudStorageTypeAndUrlStyle],
     ) -> None:
         data_timeout = 300
-        self._setup_read_replica(num_messages=100000,
-                                 partition_count=partition_count,
-                                 producer_timeout=300)
+        self._setup_read_replica(
+            num_messages=100000, partition_count=partition_count, producer_timeout=300
+        )
 
         # Consume from read replica topic and validate
         self.start_consumer()
         self.run_validation(
-            consumer_timeout_sec=data_timeout)  # calls self.consumer.stop()
+            consumer_timeout_sec=data_timeout
+        )  # calls self.consumer.stop()
 
         # Run consumer again, this time with source cluster stopped.
         # Now we can test that replicas do not write to s3.
@@ -440,10 +471,9 @@ class TestReadReplicaService(EndToEndTest):
         total_bytes = lambda: self._bucket_usage().total_bytes
         assert self.redpanda and self.redpanda.logger
         er = ExpectRate(total_bytes, self.redpanda.logger)
-        zero_growth = RateTarget(max_total_sec=60,
-                                 target_sec=20,
-                                 target_min_rate=0,
-                                 target_max_rate=0)
+        zero_growth = RateTarget(
+            max_total_sec=60, target_sec=20, target_min_rate=0, target_max_rate=0
+        )
         er.expect_rate(zero_growth)
 
         # Get current bucket usage
@@ -468,22 +498,26 @@ class TestReadReplicaService(EndToEndTest):
             except:
                 return False, None
 
-        res = wait_until_result(try_get_partitions,
-                                timeout_sec=30,
-                                backoff_sec=1)
+        res = wait_until_result(try_get_partitions, timeout_sec=30, backoff_sec=1)
 
         return [dict(node_id=a["node_id"]) for a in res["replicas"]]
 
-    def _set_partition_assignments(self, topic, partition, assignments,
-                                   admin: Admin):
+    def _set_partition_assignments(self, topic, partition, assignments, admin: Admin):
         self.logger.info(
-            f"setting assignments for {topic}/{partition} to {assignments}")
+            f"setting assignments for {topic}/{partition} to {assignments}"
+        )
 
-        admin.set_partition_replicas(topic, partition,
-                                     [{
-                                         "core": 0,
-                                         "node_id": a["node_id"],
-                                     } for a in assignments])
+        admin.set_partition_replicas(
+            topic,
+            partition,
+            [
+                {
+                    "core": 0,
+                    "node_id": a["node_id"],
+                }
+                for a in assignments
+            ],
+        )
 
     # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
     @skip_fips_mode
@@ -492,49 +526,54 @@ class TestReadReplicaService(EndToEndTest):
     def test_partition_movement(self, partition_count: int) -> None:
         data_timeout = 300
         num_messages = 100000
-        self._setup_read_replica(num_messages=num_messages,
-                                 partition_count=partition_count,
-                                 producer_timeout=300,
-                                 num_rrr_brokers=4)
+        self._setup_read_replica(
+            num_messages=num_messages,
+            partition_count=partition_count,
+            producer_timeout=300,
+            num_rrr_brokers=4,
+        )
 
         # Consume from read replica topic and validate
         self.start_consumer()
         self.run_validation(
-            min_records=num_messages,
-            consumer_timeout_sec=data_timeout)  # calls self.consumer.stop()
+            min_records=num_messages, consumer_timeout_sec=data_timeout
+        )  # calls self.consumer.stop()
 
         # Initiate partition movement in RRR cluster
         admin = Admin(self.second_cluster)
         brokers = admin.get_brokers()
         for part_id in range(0, partition_count):
-            assignments = self._get_node_assignments(admin, self.topic_name,
-                                                     part_id)
+            assignments = self._get_node_assignments(admin, self.topic_name, part_id)
             self.logger.info(
                 f"initial assignments for {self.topic_name}/{part_id}: {assignments}"
             )
-            replicas = set([r['node_id'] for r in assignments])
+            replicas = set([r["node_id"] for r in assignments])
             for b in brokers:
-                if b['node_id'] not in replicas:
-                    assignments[0] = {"node_id": b['node_id']}
+                if b["node_id"] not in replicas:
+                    assignments[0] = {"node_id": b["node_id"]}
                     break
             self.logger.info(
                 f"new assignments for {self.topic_name}/{part_id}: {assignments}"
             )
-            self._set_partition_assignments(self.topic_name, part_id,
-                                            assignments, admin)
+            self._set_partition_assignments(
+                self.topic_name, part_id, assignments, admin
+            )
 
         # Wait until reconfigurations are started and then completed
-        wait_until(lambda: len(admin.list_reconfigurations()) > 0,
-                   30,
-                   err_msg="Reconfigurations are not started")
-        wait_until(lambda: len(admin.list_reconfigurations()) == 0,
-                   30,
-                   err_msg="Reconfiguration are not completed in time")
+        wait_until(
+            lambda: len(admin.list_reconfigurations()) > 0,
+            30,
+            err_msg="Reconfigurations are not started",
+        )
+        wait_until(
+            lambda: len(admin.list_reconfigurations()) == 0,
+            30,
+            err_msg="Reconfiguration are not completed in time",
+        )
 
         # Consume all messages
         self.start_consumer()
-        self.run_validation(min_records=num_messages,
-                            consumer_timeout_sec=data_timeout)
+        self.run_validation(min_records=num_messages, consumer_timeout_sec=data_timeout)
 
 
 class ReadReplicasUpgradeTest(EndToEndTest):
@@ -550,7 +589,9 @@ class ReadReplicasUpgradeTest(EndToEndTest):
                 log_segment_size=self.log_segment_size,
                 cloud_storage_readreplica_manifest_sync_timeout_ms=500,
                 cloud_storage_segment_max_upload_interval_sec=3,
-                fast_uploads=True))
+                fast_uploads=True,
+            ),
+        )
 
         # Unlike other read replica tests, create a bucket so we can upgrade to
         # a version that uses cluster metadata uploads by default (that expects
@@ -562,23 +603,23 @@ class ReadReplicasUpgradeTest(EndToEndTest):
             log_segment_size=self.log_segment_size,
             cloud_storage_readreplica_manifest_sync_timeout_ms=500,
             cloud_storage_segment_max_upload_interval_sec=1,
-            cloud_storage_housekeeping_interval_ms=1)
+            cloud_storage_housekeeping_interval_ms=1,
+        )
         self.second_cluster = None
 
     # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
     @skip_fips_mode
     @cluster(num_nodes=8)
-    @matrix(cloud_storage_type=get_cloud_storage_type(
-        applies_only_on=[CloudStorageType.S3]))
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
     def test_upgrades(self, cloud_storage_type):
         partition_count = 1
         install_opts = InstallOptions(install_previous_version=True)
-        self.start_redpanda(3,
-                            si_settings=self.si_settings,
-                            install_opts=install_opts)
-        spec = TopicSpec(name=self.topic_name,
-                         partition_count=partition_count,
-                         replication_factor=3)
+        self.start_redpanda(3, si_settings=self.si_settings, install_opts=install_opts)
+        spec = TopicSpec(
+            name=self.topic_name, partition_count=partition_count, replication_factor=3
+        )
         DefaultClient(self.redpanda).create_topic(spec)
         self.producer = VerifiableProducer(
             self.test_context,
@@ -586,29 +627,40 @@ class ReadReplicasUpgradeTest(EndToEndTest):
             redpanda=self.redpanda,
             topic=self.topic_name,
             throughput=100,
-            message_validator=is_int_with_prefix)
+            message_validator=is_int_with_prefix,
+        )
         self.producer.start()
-        wait_until(lambda: self.producer.num_acked > 1000,
-                       timeout_sec=30,
-                       err_msg="Producer failed to produce messages for %ds." %\
-                       30)
+        wait_until(
+            lambda: self.producer.num_acked > 1000,
+            timeout_sec=30,
+            err_msg="Producer failed to produce messages for %ds." % 30,
+        )
         self.producer.stop()
 
         self.second_cluster = make_redpanda_service(
-            self.test_context, num_brokers=3, si_settings=self.rr_settings)
-        previous_version = self.second_cluster._installer.highest_from_prior_feature_version(
-            RedpandaInstaller.HEAD)
-        self.second_cluster._installer.install(self.second_cluster.nodes,
-                                               previous_version)
+            self.test_context, num_brokers=3, si_settings=self.rr_settings
+        )
+        previous_version = (
+            self.second_cluster._installer.highest_from_prior_feature_version(
+                RedpandaInstaller.HEAD
+            )
+        )
+        self.second_cluster._installer.install(
+            self.second_cluster.nodes, previous_version
+        )
         self.second_cluster.start(start_si=True)
-        create_read_replica_topic(self.second_cluster, self.topic_name,
-                                  self.si_settings.cloud_storage_bucket)
+        create_read_replica_topic(
+            self.second_cluster, self.topic_name, self.si_settings.cloud_storage_bucket
+        )
 
         def cluster_has_offsets(cluster):
-            hwms = wait_until_result(lambda: get_hwm_per_partition(
-                cluster, self.topic_name, partition_count),
-                                     timeout_sec=30,
-                                     backoff_sec=1)
+            hwms = wait_until_result(
+                lambda: get_hwm_per_partition(
+                    cluster, self.topic_name, partition_count
+                ),
+                timeout_sec=30,
+                backoff_sec=1,
+            )
             if len(hwms) != partition_count:
                 return False, None
             if any([hwms[p] == 0 for p in range(partition_count)]):
@@ -618,34 +670,39 @@ class ReadReplicasUpgradeTest(EndToEndTest):
         rr_hwms = wait_until_result(
             lambda: cluster_has_offsets(self.second_cluster),
             timeout_sec=30,
-            backoff_sec=1)
+            backoff_sec=1,
+        )
         self.logger.info(f"pre-upgrade read replica HWMs: {rr_hwms}")
         # Upgrade the read replica cluster first.
-        self.second_cluster._installer.install(self.second_cluster.nodes,
-                                               RedpandaInstaller.HEAD)
+        self.second_cluster._installer.install(
+            self.second_cluster.nodes, RedpandaInstaller.HEAD
+        )
         self.second_cluster.restart_nodes(self.second_cluster.nodes)
 
         new_rr_hwms = wait_until_result(
             lambda: cluster_has_offsets(self.second_cluster),
             timeout_sec=30,
-            backoff_sec=1)
+            backoff_sec=1,
+        )
         self.logger.info(f"post-upgrade read replica HWMs: {new_rr_hwms}")
 
         # Then upgrade the source cluster and make sure the source and RRR
         # cluster match.
-        self.redpanda._installer.install(self.redpanda.nodes,
-                                         RedpandaInstaller.HEAD)
+        self.redpanda._installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
         # Speed up uploads of the manifest.
         rpk = RpkTool(self.redpanda)
-        rpk.cluster_config_set(
-            "cloud_storage_manifest_max_upload_interval_sec", "5")
+        rpk.cluster_config_set("cloud_storage_manifest_max_upload_interval_sec", "5")
 
         def clusters_report_identical_hwms():
-            return hwms_are_identical(self.logger, self.redpanda,
-                                      self.second_cluster, self.topic_name,
-                                      partition_count)
+            return hwms_are_identical(
+                self.logger,
+                self.redpanda,
+                self.second_cluster,
+                self.topic_name,
+                partition_count,
+            )
 
         # NOTE: immediately after restarting, on older versions the HWMs may
         # not be identical until after we upload some data.
@@ -657,16 +714,16 @@ class ReadReplicasUpgradeTest(EndToEndTest):
             redpanda=self.redpanda,
             topic=self.topic_name,
             throughput=100,
-            message_validator=is_int_with_prefix)
+            message_validator=is_int_with_prefix,
+        )
         self.producer.start()
-        wait_until(lambda: self.producer.num_acked > 1000,
-                       timeout_sec=30,
-                       err_msg="Producer failed to produce messages for %ds." %\
-                       30)
+        wait_until(
+            lambda: self.producer.num_acked > 1000,
+            timeout_sec=30,
+            err_msg="Producer failed to produce messages for %ds." % 30,
+        )
         self.producer.stop()
-        wait_until(clusters_report_identical_hwms,
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(clusters_report_identical_hwms, timeout_sec=30, backoff_sec=1)
 
 
 class TestMisconfiguredReadReplicaService(EndToEndTest):
@@ -679,7 +736,7 @@ class TestMisconfiguredReadReplicaService(EndToEndTest):
         self.start_redpanda(1)
         rpk = RpkTool(self.redpanda)
         conf = {
-            'redpanda.remote.readreplica': "dummy_bucket",
+            "redpanda.remote.readreplica": "dummy_bucket",
         }
         topic_name = "no_cloud_no_problems"
         try:

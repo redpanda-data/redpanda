@@ -22,21 +22,23 @@ from rptest.clients.rpk import RpkTool
 
 
 class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):
-    topics = (TopicSpec(partition_count=1, replication_factor=3),
-              TopicSpec(partition_count=1, replication_factor=3))
+    topics = (
+        TopicSpec(partition_count=1, replication_factor=3),
+        TopicSpec(partition_count=1, replication_factor=3),
+    )
 
     def __init__(self, test_context):
         extra_rp_conf = {
-            'unsafe_enable_consumer_offsets_delete_retention': True,
-            'group_topic_partitions': 1,  # to reduce log noise
-            'log_segment_size_min': 99,
+            "unsafe_enable_consumer_offsets_delete_retention": True,
+            "group_topic_partitions": 1,  # to reduce log noise
+            "log_segment_size_min": 99,
             # to be able to make changes to CO
-            'kafka_nodelete_topics': [],
-            'kafka_noproduce_topics': [],
+            "kafka_nodelete_topics": [],
+            "kafka_noproduce_topics": [],
         }
-        super(TransactionsStreamsTest,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf=extra_rp_conf)
+        super(TransactionsStreamsTest, self).__init__(
+            test_context=test_context, extra_rp_conf=extra_rp_conf
+        )
         self.input_t = self.topics[0]
         self.output_t = self.topics[1]
 
@@ -45,8 +47,9 @@ class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):
         rpk.consume(topic=self.input_t.name, n=1, group="test-group")
         topic = "__consumer_offsets"
         # Aggressive roll settings to clear multiple small segments
-        rpk.alter_topic_config(topic, TopicSpec.PROPERTY_CLEANUP_POLICY,
-                               TopicSpec.CLEANUP_DELETE)
+        rpk.alter_topic_config(
+            topic, TopicSpec.PROPERTY_CLEANUP_POLICY, TopicSpec.CLEANUP_DELETE
+        )
         rpk.alter_topic_config(topic, TopicSpec.PROPERTY_SEGMENT_SIZE, 100)
 
     @cluster(num_nodes=3)
@@ -58,15 +61,15 @@ class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):
         self.setup_consumer_offsets(rpk)
         # Populate consumer offsets with transactional offset commits/aborts
         producer_conf = {
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': 'streams',
+            "bootstrap.servers": self.redpanda.brokers(),
+            "transactional.id": "streams",
         }
         producer = ck.Producer(producer_conf)
         consumer_conf = {
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': "test",
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
+            "bootstrap.servers": self.redpanda.brokers(),
+            "group.id": "test",
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,
         }
         consumer = ck.Consumer(consumer_conf)
         consumer.subscribe([self.input_t])
@@ -77,14 +80,17 @@ class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):
             records = self.consume(consumer)
             producer.begin_transaction()
             for record in records:
-                producer.produce(self.output_t.name,
-                                 record.value(),
-                                 record.key(),
-                                 on_delivery=self.on_delivery)
+                producer.produce(
+                    self.output_t.name,
+                    record.value(),
+                    record.key(),
+                    on_delivery=self.on_delivery,
+                )
 
             producer.send_offsets_to_transaction(
                 consumer.position(consumer.assignment()),
-                consumer.consumer_group_metadata())
+                consumer.consumer_group_metadata(),
+            )
 
             producer.flush()
 
@@ -118,8 +124,6 @@ class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):
                 break
             rpk.trim_prefix(co_topic, truncate_offset, partitions=[0])
             admin.partition_transfer_leadership("kafka", co_topic, partition=0)
-            admin.await_stable_leader(topic=co_topic,
-                                      replication=3,
-                                      timeout_s=30)
+            admin.await_stable_leader(topic=co_topic, replication=3, timeout_s=30)
             truncate_offset += 200
             attempts = attempts - 1

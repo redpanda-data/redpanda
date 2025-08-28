@@ -13,7 +13,11 @@ from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierConsumerGroupConsumer, KgoVerifierSeqConsumer
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierProducer,
+    KgoVerifierConsumerGroupConsumer,
+    KgoVerifierSeqConsumer,
+)
 from rptest.services.redpanda import MetricsEndpoint
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.redpanda_test import RedpandaTest
@@ -22,14 +26,16 @@ from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.clients.rpk import RpkTool
 
 
-class LogCompactionTestBase():
-    def topic_setup(self,
-                    cleanup_policy,
-                    replication_factor,
-                    key_set_cardinality,
-                    partition_count=10,
-                    tombstone_probability=0.4,
-                    min_cleanable_dirty_ratio=0.0):
+class LogCompactionTestBase:
+    def topic_setup(
+        self,
+        cleanup_policy,
+        replication_factor,
+        key_set_cardinality,
+        partition_count=10,
+        tombstone_probability=0.4,
+        min_cleanable_dirty_ratio=0.0,
+    ):
         """
         Sets variables and creates topic.
         """
@@ -52,7 +58,8 @@ class LogCompactionTestBase():
             replication_factor=self.replication_factor,
             partition_count=self.partition_count,
             cleanup_policy=self.cleanup_policy,
-            min_cleanable_dirty_ratio=self.min_cleanable_dirty_ratio)
+            min_cleanable_dirty_ratio=self.min_cleanable_dirty_ratio,
+        )
         self.client().create_topic(self.topic_spec)
 
     def produce_and_consume(self):
@@ -74,7 +81,8 @@ class LogCompactionTestBase():
             tolerate_data_loss=False,
             tombstone_probability=self.tombstone_probability,
             validate_latest_values=True,
-            custom_node=self.preallocated_nodes)
+            custom_node=self.preallocated_nodes,
+        )
 
         # Produce and wait
         producer.start()
@@ -82,10 +90,12 @@ class LogCompactionTestBase():
         def seen_dirty_ratio_above_zero():
             return self.get_dirty_ratio() > 0.0
 
-        wait_until(seen_dirty_ratio_above_zero,
-                   timeout_sec=10,
-                   backoff_sec=0.001,
-                   err_msg="Did not see a non-zero dirty ratio.")
+        wait_until(
+            seen_dirty_ratio_above_zero,
+            timeout_sec=10,
+            backoff_sec=0.001,
+            err_msg="Did not see a non-zero dirty ratio.",
+        )
 
         producer.wait_for_latest_value_map()
         producer.wait(timeout_sec=180)
@@ -93,15 +103,17 @@ class LogCompactionTestBase():
         assert producer.produce_status.tombstones_produced > 0
         assert producer.produce_status.bad_offsets == 0
 
-        consumer = KgoVerifierSeqConsumer(self.test_context,
-                                          self.redpanda,
-                                          self.topic_spec.name,
-                                          self.msg_size,
-                                          debug_logs=True,
-                                          trace_logs=True,
-                                          compacted=True,
-                                          loop=False,
-                                          nodes=self.preallocated_nodes)
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic_spec.name,
+            self.msg_size,
+            debug_logs=True,
+            trace_logs=True,
+            compacted=True,
+            loop=False,
+            nodes=self.preallocated_nodes,
+        )
 
         # Consume and wait. clean=False to not accidentally remove latest value map.
         consumer.start(clean=False)
@@ -118,72 +130,80 @@ class LogCompactionTestBase():
         return self.redpanda.metric_sum(
             metric_name="vectorized_storage_log_tombstones_removed_total",
             metrics_endpoint=MetricsEndpoint.METRICS,
-            topic=self.topic_spec.name)
+            topic=self.topic_spec.name,
+        )
 
     def get_cleanly_compacted_segments(self):
         return self.redpanda.metric_sum(
-            metric_name=
-            "vectorized_storage_log_cleanly_compacted_segment_total",
+            metric_name="vectorized_storage_log_cleanly_compacted_segment_total",
             metrics_endpoint=MetricsEndpoint.METRICS,
-            topic=self.topic_spec.name)
+            topic=self.topic_spec.name,
+        )
 
     def get_segments_marked_tombstone_free(self):
         return self.redpanda.metric_sum(
-            metric_name=
-            "vectorized_storage_log_segments_marked_tombstone_free_total",
+            metric_name="vectorized_storage_log_segments_marked_tombstone_free_total",
             metrics_endpoint=MetricsEndpoint.METRICS,
-            topic=self.topic_spec.name)
+            topic=self.topic_spec.name,
+        )
 
     def get_complete_sliding_window_rounds(self):
         return self.redpanda.metric_sum(
-            metric_name=
-            "vectorized_storage_log_complete_sliding_window_rounds_total",
+            metric_name="vectorized_storage_log_complete_sliding_window_rounds_total",
             metrics_endpoint=MetricsEndpoint.METRICS,
-            topic=self.topic_spec.name)
+            topic=self.topic_spec.name,
+        )
 
     def get_chunked_compaction_runs(self):
         return self.redpanda.metric_sum(
             metric_name="vectorized_storage_log_chunked_compaction_runs_total",
             metrics_endpoint=MetricsEndpoint.METRICS,
-            topic=self.topic_spec.name)
+            topic=self.topic_spec.name,
+        )
 
     def get_dirty_segment_bytes(self, nodes=None):
         return self.redpanda.metric_sum(
             metric_name="vectorized_storage_log_dirty_segment_bytes",
             metrics_endpoint=MetricsEndpoint.METRICS,
             topic=self.topic_spec.name,
-            nodes=nodes)
+            nodes=nodes,
+        )
 
     def get_closed_segment_bytes(self, nodes=None):
         return self.redpanda.metric_sum(
             metric_name="vectorized_storage_log_closed_segment_bytes",
             metrics_endpoint=MetricsEndpoint.METRICS,
             topic=self.topic_spec.name,
-            nodes=nodes)
+            nodes=nodes,
+        )
 
     def get_dirty_ratio(self, nodes=None):
         dirty_segment_bytes = self.get_dirty_segment_bytes(nodes=nodes)
         closed_segment_bytes = self.get_closed_segment_bytes(nodes=nodes)
-        return 0.0 if closed_segment_bytes == 0 else float(
-            dirty_segment_bytes) / float(closed_segment_bytes)
+        return (
+            0.0
+            if closed_segment_bytes == 0
+            else float(dirty_segment_bytes) / float(closed_segment_bytes)
+        )
 
 
-class LogCompactionTest(LogCompactionTestBase, PreallocNodesTest,
-                        PartitionMovementMixin):
+class LogCompactionTest(
+    LogCompactionTestBase, PreallocNodesTest, PartitionMovementMixin
+):
     def __init__(self, test_context):
         self.test_context = test_context
         # Run with small segments, a low retention value and a very frequent compaction interval.
         key_map_memory_kb = self.test_context.injected_args[
-            'storage_compaction_key_map_memory_kb']
-        key_set_cardinality = self.test_context.injected_args[
-            'key_set_cardinality']
+            "storage_compaction_key_map_memory_kb"
+        ]
+        key_set_cardinality = self.test_context.injected_args["key_set_cardinality"]
         self.extra_rp_conf = {
-            'log_compaction_interval_ms': 4000,
-            'log_segment_size': 2 * 1024**2,  # 2 MiB
-            'retention_bytes': 25 * 1024**2,  # 25 MiB
-            'compacted_log_segment_size': 1024**2,  # 1 MiB
-            'storage_compaction_key_map_memory': key_map_memory_kb * 1024,
-            'min_cleanable_dirty_ratio': 0.0
+            "log_compaction_interval_ms": 4000,
+            "log_segment_size": 2 * 1024**2,  # 2 MiB
+            "retention_bytes": 25 * 1024**2,  # 25 MiB
+            "compacted_log_segment_size": 1024**2,  # 1 MiB
+            "storage_compaction_key_map_memory": key_map_memory_kb * 1024,
+            "min_cleanable_dirty_ratio": 0.0,
         }
 
         # This environment variable is required to get around the map memory bounds
@@ -200,11 +220,13 @@ class LogCompactionTest(LogCompactionTestBase, PreallocNodesTest,
         entry_size = 40
         indexed_key_estimation = key_map_memory_kb * 1024 // entry_size
         self.needs_chunked_compaction = indexed_key_estimation < keys_per_segment
-        super().__init__(test_context=test_context,
-                         num_brokers=3,
-                         node_prealloc_count=1,
-                         extra_rp_conf=self.extra_rp_conf,
-                         environment=environment)
+        super().__init__(
+            test_context=test_context,
+            num_brokers=3,
+            node_prealloc_count=1,
+            extra_rp_conf=self.extra_rp_conf,
+            environment=environment,
+        )
 
     def validate_log(self, cleanup_policy):
         """
@@ -227,11 +249,14 @@ class LogCompactionTest(LogCompactionTestBase, PreallocNodesTest,
             # have occured as well as the number of tombstones records
             # removed have stabilized over some period longer than
             # log_compaction_interval_ms (and expected time for compaction to complete).
-            new_sliding_window_rounds = self.get_complete_sliding_window_rounds(
-            )
+            new_sliding_window_rounds = self.get_complete_sliding_window_rounds()
             new_tombstones_removed = self.get_removed_tombstones()
             new_chunked_compaction_runs = self.get_chunked_compaction_runs()
-            res = self.prev_sliding_window_rounds == new_sliding_window_rounds and self.prev_tombstones_removed == new_tombstones_removed and self.prev_chunked_compaction_runs == new_chunked_compaction_runs
+            res = (
+                self.prev_sliding_window_rounds == new_sliding_window_rounds
+                and self.prev_tombstones_removed == new_tombstones_removed
+                and self.prev_chunked_compaction_runs == new_chunked_compaction_runs
+            )
             self.prev_sliding_window_rounds = new_sliding_window_rounds
             self.prev_tombstones_removed = new_tombstones_removed
             self.prev_chunked_compaction_runs = new_chunked_compaction_runs
@@ -240,9 +265,9 @@ class LogCompactionTest(LogCompactionTestBase, PreallocNodesTest,
         wait_until(
             compaction_has_completed,
             timeout_sec=120,
-            backoff_sec=self.extra_rp_conf['log_compaction_interval_ms'] /
-            1000 * 4,
-            err_msg="Compaction did not stabilize.")
+            backoff_sec=self.extra_rp_conf["log_compaction_interval_ms"] / 1000 * 4,
+            err_msg="Compaction did not stabilize.",
+        )
 
         assert self.get_complete_sliding_window_rounds() > 0
         assert self.get_cleanly_compacted_segments() > 0
@@ -260,20 +285,22 @@ class LogCompactionTest(LogCompactionTestBase, PreallocNodesTest,
         wait_until(
             log_is_fully_clean,
             timeout_sec=120,
-            backoff_sec=self.extra_rp_conf['log_compaction_interval_ms'] /
-            1000,
-            err_msg="Did not see a fully clean log.")
+            backoff_sec=self.extra_rp_conf["log_compaction_interval_ms"] / 1000,
+            err_msg="Did not see a fully clean log.",
+        )
 
-        consumer = KgoVerifierSeqConsumer(self.test_context,
-                                          self.redpanda,
-                                          self.topic_spec.name,
-                                          self.msg_size,
-                                          debug_logs=True,
-                                          trace_logs=True,
-                                          compacted=True,
-                                          loop=False,
-                                          validate_latest_values=True,
-                                          nodes=self.preallocated_nodes)
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic_spec.name,
+            self.msg_size,
+            debug_logs=True,
+            trace_logs=True,
+            compacted=True,
+            loop=False,
+            validate_latest_values=True,
+            nodes=self.preallocated_nodes,
+        )
 
         # Consume and wait. clean=False to not accidentally remove latest value map.
         consumer.start(clean=False)
@@ -289,9 +316,9 @@ class LogCompactionTest(LogCompactionTestBase, PreallocNodesTest,
         # Set log_retention_ms to an arbitrarily tiny value and wait for log truncation.
         # This is done by watching the number of bytes in closed segments,
         # which will decrease as segments are removed.
-        self.client().alter_topic_config(self.topic_spec.name,
-                                         TopicSpec.PROPERTY_RETENTION_TIME,
-                                         1000)
+        self.client().alter_topic_config(
+            self.topic_spec.name, TopicSpec.PROPERTY_RETENTION_TIME, 1000
+        )
 
         def all_segments_removed():
             closed_segment_bytes = self.get_closed_segment_bytes()
@@ -299,36 +326,39 @@ class LogCompactionTest(LogCompactionTestBase, PreallocNodesTest,
 
             return dirty_segment_bytes == 0 and closed_segment_bytes == 0
 
-        wait_until(all_segments_removed,
-                   timeout_sec=120,
-                   backoff_sec=1,
-                   err_msg="Closed segment bytes did not reach zero.")
+        wait_until(
+            all_segments_removed,
+            timeout_sec=120,
+            backoff_sec=1,
+            err_msg="Closed segment bytes did not reach zero.",
+        )
 
     @skip_debug_mode
     @cluster(num_nodes=4)
-    @matrix(cleanup_policy=[
-        TopicSpec.CLEANUP_COMPACT, TopicSpec.CLEANUP_COMPACT_DELETE
-    ],
-            key_set_cardinality=[100, 1000],
-            storage_compaction_key_map_memory_kb=[3, 10, 128 * 1024])
-    def compaction_stress_test(self, cleanup_policy, key_set_cardinality,
-                               storage_compaction_key_map_memory_kb):
+    @matrix(
+        cleanup_policy=[TopicSpec.CLEANUP_COMPACT, TopicSpec.CLEANUP_COMPACT_DELETE],
+        key_set_cardinality=[100, 1000],
+        storage_compaction_key_map_memory_kb=[3, 10, 128 * 1024],
+    )
+    def compaction_stress_test(
+        self, cleanup_policy, key_set_cardinality, storage_compaction_key_map_memory_kb
+    ):
         """
         Uses partition movement and frequent compaction/garbage collecting to
         validate tombstone removal and general compaction behavior.
         """
-        self.topic_setup(cleanup_policy=cleanup_policy,
-                         replication_factor=3,
-                         key_set_cardinality=key_set_cardinality)
+        self.topic_setup(
+            cleanup_policy=cleanup_policy,
+            replication_factor=3,
+            key_set_cardinality=key_set_cardinality,
+        )
 
         class PartitionMoveExceptionReporter:
             exc = None
 
-        def background_test_loop(reporter,
-                                 fn,
-                                 iterations=10,
-                                 sleep_sec=1,
-                                 allowable_retries=3):
+        def background_test_loop(
+            reporter, fn, iterations=10, sleep_sec=1, allowable_retries=3
+        ):
             try:
                 while iterations > 0:
                     try:
@@ -345,19 +375,15 @@ class LogCompactionTest(LogCompactionTestBase, PreallocNodesTest,
         def issue_partition_move():
             try:
                 self._dispatch_random_partition_move(self.topic_spec.name, 0)
-                self._wait_for_move_in_progress(self.topic_spec.name,
-                                                0,
-                                                timeout=5)
+                self._wait_for_move_in_progress(self.topic_spec.name, 0, timeout=5)
             except Exception as e:
                 reporter.exc = e
 
         partition_move_thread = threading.Thread(
             target=background_test_loop,
             args=(PartitionMoveExceptionReporter, issue_partition_move),
-            kwargs={
-                'iterations': 5,
-                'sleep_sec': 1
-            })
+            kwargs={"iterations": 5, "sleep_sec": 1},
+        )
 
         # Start partition movement thread
         partition_move_thread.start()
@@ -381,35 +407,41 @@ class LogCompactionSchedulingTest(LogCompactionTestBase, PreallocNodesTest):
         self.test_context = test_context
         # Run with small segments and a very frequent compaction interval.
         self.extra_rp_conf = {
-            'log_compaction_interval_ms': 4000,
-            'log_segment_size': 2 * 1024**2,  # 2 MiB
-            'compacted_log_segment_size': 1024**2,  # 1 MiB
+            "log_compaction_interval_ms": 4000,
+            "log_segment_size": 2 * 1024**2,  # 2 MiB
+            "compacted_log_segment_size": 1024**2,  # 1 MiB
         }
 
-        super().__init__(test_context=test_context,
-                         num_brokers=3,
-                         node_prealloc_count=1,
-                         extra_rp_conf=self.extra_rp_conf)
+        super().__init__(
+            test_context=test_context,
+            num_brokers=3,
+            node_prealloc_count=1,
+            extra_rp_conf=self.extra_rp_conf,
+        )
 
         self._rpk_client = RpkTool(self.redpanda)
 
     def set_min_cleanable_dirty_ratio(self, dirty_ratio):
         self.min_cleanable_dirty_ratio = dirty_ratio
         self._rpk_client.alter_topic_config(
-            self.topic_spec.name, TopicSpec.PROPERTY_MIN_CLEANABLE_DIRTY_RATIO,
-            dirty_ratio)
+            self.topic_spec.name,
+            TopicSpec.PROPERTY_MIN_CLEANABLE_DIRTY_RATIO,
+            dirty_ratio,
+        )
 
     def consume_and_validate_log(self):
-        consumer = KgoVerifierSeqConsumer(self.test_context,
-                                          self.redpanda,
-                                          self.topic_spec.name,
-                                          self.msg_size,
-                                          debug_logs=True,
-                                          trace_logs=True,
-                                          compacted=True,
-                                          loop=False,
-                                          validate_latest_values=True,
-                                          nodes=self.preallocated_nodes)
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic_spec.name,
+            self.msg_size,
+            debug_logs=True,
+            trace_logs=True,
+            compacted=True,
+            loop=False,
+            validate_latest_values=True,
+            nodes=self.preallocated_nodes,
+        )
 
         # Consume and wait. clean=False to not accidentally remove latest value map.
         consumer.start(clean=False)
@@ -427,11 +459,13 @@ class LogCompactionSchedulingTest(LogCompactionTestBase, PreallocNodesTest):
         """
 
         # Create a topic with `compact` policy, and a min.cleanable.dirty.ratio of 1.0.
-        self.topic_setup(cleanup_policy=TopicSpec.CLEANUP_COMPACT,
-                         replication_factor=3,
-                         key_set_cardinality=key_set_cardinality,
-                         partition_count=10,
-                         min_cleanable_dirty_ratio=1.0)
+        self.topic_setup(
+            cleanup_policy=TopicSpec.CLEANUP_COMPACT,
+            replication_factor=3,
+            key_set_cardinality=key_set_cardinality,
+            partition_count=10,
+            min_cleanable_dirty_ratio=1.0,
+        )
 
         self.produce_and_consume()
 
@@ -439,8 +473,7 @@ class LogCompactionSchedulingTest(LogCompactionTestBase, PreallocNodesTest):
         self.prev_sliding_window_rounds = -1
 
         def compaction_has_completed():
-            new_sliding_window_rounds = self.get_complete_sliding_window_rounds(
-            )
+            new_sliding_window_rounds = self.get_complete_sliding_window_rounds()
 
             res = self.prev_sliding_window_rounds == new_sliding_window_rounds
             self.prev_sliding_window_rounds = new_sliding_window_rounds
@@ -449,9 +482,9 @@ class LogCompactionSchedulingTest(LogCompactionTestBase, PreallocNodesTest):
         wait_until(
             compaction_has_completed,
             timeout_sec=120,
-            backoff_sec=self.extra_rp_conf['log_compaction_interval_ms'] /
-            1000 * 4,
-            err_msg="Compaction did not stabilize.")
+            backoff_sec=self.extra_rp_conf["log_compaction_interval_ms"] / 1000 * 4,
+            err_msg="Compaction did not stabilize.",
+        )
 
         # We may race with a segment roll which won't be compacted (due to high min.cleanable.dirty.ratio),
         # so we cannot assert dirty_segment_bytes == 0 here.
@@ -461,25 +494,26 @@ class LogCompactionSchedulingTest(LogCompactionTestBase, PreallocNodesTest):
 
         # Check the dirty ratio after the segments were rolled and added to the dirty/closed bytes
         def seen_dirty_ratio_above_zero():
-            return all([
-                self.get_dirty_ratio([node]) > 0.0
-                for node in self.redpanda.nodes
-            ])
+            return all(
+                [self.get_dirty_ratio([node]) > 0.0 for node in self.redpanda.nodes]
+            )
 
         wait_until(
             seen_dirty_ratio_above_zero,
             timeout_sec=30,
             backoff_sec=1,
-            err_msg="Did not see a non-zero dirty ratio across all brokers.")
+            err_msg="Did not see a non-zero dirty ratio across all brokers.",
+        )
 
         # Sleep for a period of time. We want to assert that no compaction rounds have
         # occured for our topic, which still has a min.cleanable.dirty.ratio of 1.0, but
         # a large number of closed, clean segments with only a small number of dirty segments.
-        time.sleep(self.extra_rp_conf['log_compaction_interval_ms'] * 3 / 1000)
+        time.sleep(self.extra_rp_conf["log_compaction_interval_ms"] * 3 / 1000)
 
-        complete_sliding_window_rounds = self.get_complete_sliding_window_rounds(
+        complete_sliding_window_rounds = self.get_complete_sliding_window_rounds()
+        assert complete_sliding_window_rounds == 0, (
+            f"Expected complete sliding window rounds == 0 for a topic with min.cleanable.dirty.ratio == 1.0, got {complete_sliding_window_rounds}."
         )
-        assert complete_sliding_window_rounds == 0, f"Expected complete sliding window rounds == 0 for a topic with min.cleanable.dirty.ratio == 1.0, got {complete_sliding_window_rounds}."
 
         # Set the min.cleanable.dirty.ratio for our topic to 0.0. Expect to
         # see the rolled segment compacted along with the rest of the log
@@ -488,16 +522,18 @@ class LogCompactionSchedulingTest(LogCompactionTestBase, PreallocNodesTest):
         wait_until(
             compaction_has_completed,
             timeout_sec=120,
-            backoff_sec=self.extra_rp_conf['log_compaction_interval_ms'] /
-            1000 * 4,
-            err_msg="Compaction did not stabilize.")
+            backoff_sec=self.extra_rp_conf["log_compaction_interval_ms"] / 1000 * 4,
+            err_msg="Compaction did not stabilize.",
+        )
 
         def no_dirty_bytes():
-            return all([
-                self.get_dirty_segment_bytes([node]) == 0
-                and self.get_closed_segment_bytes([node]) > 0
-                for node in self.redpanda.nodes
-            ])
+            return all(
+                [
+                    self.get_dirty_segment_bytes([node]) == 0
+                    and self.get_closed_segment_bytes([node]) > 0
+                    for node in self.redpanda.nodes
+                ]
+            )
 
         # All dirty bytes should have eventually be cleaned
         # up by unconditional compaction
@@ -505,8 +541,7 @@ class LogCompactionSchedulingTest(LogCompactionTestBase, PreallocNodesTest):
             no_dirty_bytes,
             timeout_sec=120,
             backoff_sec=1,
-            err_msg=
-            f"Did not see dirty_segment_bytes == 0 and closed_segment_bytes > 0 across all brokers."
+            err_msg=f"Did not see dirty_segment_bytes == 0 and closed_segment_bytes > 0 across all brokers.",
         )
 
         # Perform validation with KgoVerifierSeqConsumer
@@ -518,23 +553,24 @@ class LogCompactionEnableSlidingWindow(RedpandaTest):
     Test that enabling log_compaction_use_sliding_window when Redpanda is started with it
     disabled does not result in any broker crashes.
     """
+
     def __init__(self, test_context):
         self.test_context = test_context
 
         # Start with sliding window compaction set per the starting_config argument.
         use_sliding_window_starting_config = self.test_context.injected_args[
-            'starting_config']
+            "starting_config"
+        ]
         self.extra_rp_conf = {
-            'log_compaction_use_sliding_window':
-            use_sliding_window_starting_config,
-            'log_compaction_interval_ms': 100,
-            'log_segment_size': 2 * 1024**2,  # 2 MiB
-            'compacted_log_segment_size': 1024**2,  # 1 MiB
+            "log_compaction_use_sliding_window": use_sliding_window_starting_config,
+            "log_compaction_interval_ms": 100,
+            "log_segment_size": 2 * 1024**2,  # 2 MiB
+            "compacted_log_segment_size": 1024**2,  # 1 MiB
         }
 
-        super().__init__(test_context=test_context,
-                         num_brokers=1,
-                         extra_rp_conf=self.extra_rp_conf)
+        super().__init__(
+            test_context=test_context, num_brokers=1, extra_rp_conf=self.extra_rp_conf
+        )
 
         self._rpk_client = RpkTool(self.redpanda)
 
@@ -545,11 +581,14 @@ class LogCompactionEnableSlidingWindow(RedpandaTest):
         # If Redpanda was started with log_compaction_use_sliding_window=false and
         # we set it to true, the memory reservation for compaction will be left at 0.
         self._rpk_client.cluster_config_set(
-            "log_compaction_use_sliding_window", next_sliding_window_config)
+            "log_compaction_use_sliding_window", next_sliding_window_config
+        )
 
-        topic_spec = TopicSpec(cleanup_policy=TopicSpec.CLEANUP_COMPACT,
-                               min_cleanable_dirty_ratio=0.0,
-                               replication_factor=1)
+        topic_spec = TopicSpec(
+            cleanup_policy=TopicSpec.CLEANUP_COMPACT,
+            min_cleanable_dirty_ratio=0.0,
+            replication_factor=1,
+        )
         self.client().create_topic(topic_spec)
 
         # The number of times log_compaction_use_sliding_window will be flipped on/off.
@@ -557,34 +596,38 @@ class LogCompactionEnableSlidingWindow(RedpandaTest):
         num_rounds = 5
         for i in range(0, num_rounds):
             # Produce a small amount of segments and wait
-            producer = KgoVerifierProducer(context=self.test_context,
-                                           redpanda=self.redpanda,
-                                           topic=topic_spec.name,
-                                           msg_size=1024,
-                                           msg_count=10000)
+            producer = KgoVerifierProducer(
+                context=self.test_context,
+                redpanda=self.redpanda,
+                topic=topic_spec.name,
+                msg_size=1024,
+                msg_count=10000,
+            )
 
             producer.start()
             producer.wait(timeout_sec=180)
 
             def seen_compacted_segments():
                 num_compacted_segments = self.redpanda.metric_sum(
-                    metric_name=
-                    "vectorized_storage_log_compacted_segment_total",
+                    metric_name="vectorized_storage_log_compacted_segment_total",
                     metrics_endpoint=MetricsEndpoint.METRICS,
                     topic=topic_spec.name,
-                    expect_metric=True)
+                    expect_metric=True,
+                )
                 ret = num_compacted_segments > self.prev_num_compacted_segments
                 self.prev_num_compacted_segments = num_compacted_segments
                 return ret
 
-            wait_until(seen_compacted_segments,
-                       timeout_sec=60,
-                       backoff_sec=1,
-                       err_msg=f"Did not see any compacted segments.")
+            wait_until(
+                seen_compacted_segments,
+                timeout_sec=60,
+                backoff_sec=1,
+                err_msg=f"Did not see any compacted segments.",
+            )
 
             producer.free()
 
             next_sliding_window_config = not next_sliding_window_config
             self._rpk_client.cluster_config_set(
-                "log_compaction_use_sliding_window",
-                next_sliding_window_config)
+                "log_compaction_use_sliding_window", next_sliding_window_config
+            )

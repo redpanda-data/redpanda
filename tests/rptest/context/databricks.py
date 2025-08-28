@@ -44,27 +44,32 @@ class DatabricksContext:
 
     @staticmethod
     def available(test_context: TestContext) -> bool:
-        return GLOBAL_DATABRICKS_WORKSPACE_URL in test_context.globals and test_context.globals.get(
-            GLOBAL_DATABRICKS_WORKSPACE_URL).strip() != ""
+        return (
+            GLOBAL_DATABRICKS_WORKSPACE_URL in test_context.globals
+            and test_context.globals.get(GLOBAL_DATABRICKS_WORKSPACE_URL).strip() != ""
+        )
 
     @staticmethod
-    def from_context(test_context: TestContext) -> 'DatabricksContext':
+    def from_context(test_context: TestContext) -> "DatabricksContext":
         # I.e. https://dbc-0f5177e3-6aa4.cloud.databricks.com/
-        workspace_url = test_context.globals.get(
-            GLOBAL_DATABRICKS_WORKSPACE_URL)
+        workspace_url = test_context.globals.get(GLOBAL_DATABRICKS_WORKSPACE_URL)
 
         credentials = Credentials.from_context(test_context)
 
         # I.e. /sql/1.0/warehouses/876tfg
         sql_warehouse_path = test_context.globals.get(
-            GLOBAL_DATABRICKS_SQL_WAREHOUSE_PATH)
+            GLOBAL_DATABRICKS_SQL_WAREHOUSE_PATH
+        )
 
         ext_loc_credential_name = test_context.globals.get(
-            GLOBAL_DATABRICKS_EXT_LOC_CREDENTIAL_NAME)
+            GLOBAL_DATABRICKS_EXT_LOC_CREDENTIAL_NAME
+        )
 
         assert workspace_url, "Missing databricks workspace url"
         assert sql_warehouse_path, "Missing databricks sql warehouse path"
-        assert ext_loc_credential_name, "Missing databricks external location credential name"
+        assert ext_loc_credential_name, (
+            "Missing databricks external location credential name"
+        )
 
         # Remove trailing slash so that no one has to worry about it.
         workspace_url = str(workspace_url).rstrip("/")
@@ -106,14 +111,12 @@ class DatabricksContext:
             config_kwargs["client_id"] = self.credentials.client_id
             config_kwargs["client_secret"] = self.credentials.client_secret
         else:
-            raise ValueError(
-                f"Unsupported credentials type: {type(self.credentials)}")
+            raise ValueError(f"Unsupported credentials type: {type(self.credentials)}")
 
         return Config(**config_kwargs)
 
     @property
-    def credentials_provider(
-            self) -> Callable[[], Optional[CredentialsProvider]]:
+    def credentials_provider(self) -> Callable[[], Optional[CredentialsProvider]]:
         """
         Note: This method is a @property to avoid ambiguity whether the user
         needs to call the method or not when Databricks sdk expects a
@@ -127,32 +130,27 @@ class DatabricksContext:
         elif isinstance(self.credentials, OauthCredentials):
             return lambda: oauth_service_principal(self.databricks_config)
         else:
-            raise ValueError(
-                f"Unsupported credentials type: {type(self.credentials)}")
+            raise ValueError(f"Unsupported credentials type: {type(self.credentials)}")
 
 
 class Credentials(ABC):
     @staticmethod
     def from_context(test_context: TestContext) -> "Credentials":
-        if _opt_str_not_empty(
-                test_context.globals.get(GLOBAL_DATABRICKS_TOKEN)):
+        if _opt_str_not_empty(test_context.globals.get(GLOBAL_DATABRICKS_TOKEN)):
             return PatCredentials(
-                token=test_context.globals.get(GLOBAL_DATABRICKS_TOKEN))
-        elif _opt_str_not_empty(
-                test_context.globals.get(GLOBAL_DATABRICKS_CLIENT_ID)):
+                token=test_context.globals.get(GLOBAL_DATABRICKS_TOKEN)
+            )
+        elif _opt_str_not_empty(test_context.globals.get(GLOBAL_DATABRICKS_CLIENT_ID)):
             # We assume that if client_id is set, client_secret is also set.
             client_id = test_context.globals.get(GLOBAL_DATABRICKS_CLIENT_ID)
-            client_secret = test_context.globals.get(
-                GLOBAL_DATABRICKS_CLIENT_SECRET)
+            client_secret = test_context.globals.get(GLOBAL_DATABRICKS_CLIENT_SECRET)
 
             assert client_id, "Missing databricks client id"
             assert client_secret, "Missing databricks client secret"
 
             return OauthCredentials(
-                client_id=test_context.globals.get(
-                    GLOBAL_DATABRICKS_CLIENT_ID),
-                client_secret=test_context.globals.get(
-                    GLOBAL_DATABRICKS_CLIENT_SECRET),
+                client_id=test_context.globals.get(GLOBAL_DATABRICKS_CLIENT_ID),
+                client_secret=test_context.globals.get(GLOBAL_DATABRICKS_CLIENT_SECRET),
             )
         else:
             raise ValueError(
@@ -164,6 +162,7 @@ class PatCredentials(Credentials):
     """
     https://docs.databricks.com/aws/en/dev-tools/auth/pat
     """
+
     def __init__(self, token: str):
         self.token = token
 
@@ -173,6 +172,7 @@ class OauthCredentials(Credentials):
     """
     https://docs.databricks.com/aws/en/dev-tools/auth/oauth-m2m
     """
+
     client_id: str
     client_secret: str
 

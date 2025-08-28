@@ -19,13 +19,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Install yapf
-        run: |
-          python3 -mvenv /tmp/venv/yapf
-          source /tmp/venv/yapf/bin/activate
-          pip install yapf==0.40.1
-      - name: Run yapf
-        run: |
-          python3 -mvenv /tmp/env/yapf
-          source /tmp/venv/yapf/bin/activate
-          find . -type f -name '*.py' | xargs -n8 yapf -d
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: "format --check --diff"
+          version: "0.12.10"

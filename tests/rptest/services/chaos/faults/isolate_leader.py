@@ -14,12 +14,14 @@ from .fault import RecoverableFault
 
 
 class IsolateLeaderFault(RecoverableFault):
-    def __init__(self,
-                 redpanda,
-                 topic: str,
-                 partition: int = 0,
-                 namespace: str = "kafka",
-                 name: str = "isolate_leader"):
+    def __init__(
+        self,
+        redpanda,
+        topic: str,
+        partition: int = 0,
+        namespace: str = "kafka",
+        name: str = "isolate_leader",
+    ):
         self._name = name
         self.redpanda = redpanda
         self.topic = topic
@@ -34,7 +36,8 @@ class IsolateLeaderFault(RecoverableFault):
 
     def inject(self):
         leader_id = Admin(self.redpanda).await_stable_leader(
-            self.topic, partition=self.partition, namespace=self.namespace)
+            self.topic, partition=self.partition, namespace=self.namespace
+        )
         self._leader = self.redpanda.get_node_by_id(leader_id)
         FailureInjector(self.redpanda)._isolate(self._leader)
 
