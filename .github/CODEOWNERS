@@ -4,11 +4,6 @@
 licenses           @emaxerrno
 
 #
-# cloud
-#
-/src/go/k8s   @redpanda-data/k8s
-
-#
 # build
 #
 /.clang-format             @redpanda-data/devprod
@@ -17,11 +12,7 @@ licenses           @emaxerrno
 /.github                   @redpanda-data/devprod
 /.gitignore                @redpanda-data/devprod
 /.gitorderfile             @redpanda-data/devprod
-/.style.yapf               @redpanda-data/devprod
-/build.sh                  @redpanda-data/devprod
-/cmake                     @redpanda-data/devprod        @benpope
-/install-dependencies.sh   @redpanda-data/devprod
-/.yapfignore               @redpanda-data/devprod
+/.ruff.toml                @redpanda-data/devprod
 
 #
 # crypto
