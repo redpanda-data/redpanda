@@ -5451,7 +5451,8 @@ class RedpandaService(RedpandaServiceBase):
 
         return cloud_storage_partitions
 
-    def wait_for_internal_scrub(self, cloud_storage_partitions):
+    def wait_for_internal_scrub(self,
+                                cloud_storage_partitions: set[Partition]):
         """
         Configure the scrubber such that it will run aggresively
         until the entire partition is scrubbed. Once that happens,
@@ -5478,27 +5479,8 @@ class RedpandaService(RedpandaServiceBase):
             },
             tolerate_stopped_nodes=True)
 
-        unavailable = set()
-        for p in cloud_storage_partitions:
-            try:
-                leader_id = self._admin.await_stable_leader(topic=p.topic,
-                                                            partition=p.index)
+        self._reset_scrubbing_metadata(cloud_storage_partitions)
 
-                self._admin.reset_scrubbing_metadata(
-                    namespace="kafka",
-                    topic=p.topic,
-                    partition=p.index,
-                    node=self.get_node_by_id(leader_id))
-            except HTTPError as he:
-                if he.response.status_code == 404:
-                    # Old redpanda, doesn't have this endpoint.  We can't
-                    # do our upload check.
-                    unavailable.add(p)
-                    continue
-                else:
-                    raise
-
-        cloud_storage_partitions -= unavailable
         scrubbed = set()
         all_anomalies = []
 
@@ -5567,6 +5549,31 @@ class RedpandaService(RedpandaServiceBase):
         wait_until(all_partitions_scrubbed, timeout_sec=timeout, backoff_sec=5)
 
         return all_anomalies
+
+    def _reset_scrubbing_metadata(self,
+                                  cloud_storage_partitions: set[Partition]):
+        def reset_partition(p: Partition):
+            leader_id = self._admin.await_stable_leader(topic=p.topic,
+                                                        partition=p.index)
+
+            self._admin.reset_scrubbing_metadata(
+                namespace="kafka",
+                topic=p.topic,
+                partition=p.index,
+                node=self.get_node_by_id(leader_id))
+
+        # Arbitrary constant to limit the load on the shard. We assume that
+        # partitions are distributed uniformly across all shards.
+        CONCURRENT_RESETS_PER_SHARD = 10
+
+        max_workers = min(
+            len(cloud_storage_partitions),
+            CONCURRENT_RESETS_PER_SHARD * self.num_nodes *
+            self.get_node_cpu_count())
+
+        with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_workers) as executor:
+            list(executor.map(reset_partition, cloud_storage_partitions))
 
     def set_expected_controller_records(self, max_records: Optional[int]):
         self._expect_max_controller_records = max_records
