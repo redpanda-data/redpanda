@@ -17,21 +17,12 @@ namespace datalake {
 
 class table_id_provider {
 public:
-    static iceberg::table_identifier table_id(model::topic t) {
-        return {
-          // TODO: namespace as a topic property? Keep it in the table metadata?
-          .ns = {"redpanda"},
-          .table = std::move(t),
-        };
-    }
+    static iceberg::table_identifier table_id(const model::topic& t);
 
-    static iceberg::table_identifier dlq_table_id(const model::topic& t) {
-        return {
-          // TODO: namespace as a topic property? Keep it in the table metadata?
-          .ns = {"redpanda"},
-          .table = fmt::format("{}~dlq", t()),
-        };
-    }
+    static iceberg::table_identifier dlq_table_id(const model::topic& t);
+
+private:
+    static model::topic sanitize_topic_name(const model::topic& topic);
 };
 
 } // namespace datalake

@@ -327,7 +327,6 @@ redpanda_cc_library(
         ":record_schema_resolver",
         ":record_translator",
         ":table_creator",
-        ":table_id_provider",
         "//src/v/base",
         "//src/v/iceberg/conversion:conversion_outcome",
         "//src/v/storage:parser_utils",
@@ -340,6 +339,7 @@ redpanda_cc_library(
         ":location",
         ":partitioning_writer",
         ":schema_identifier",
+        ":table_id_provider",
         ":types",
         ":writer",
         "//src/v/container:chunked_hash_map",
@@ -484,8 +484,15 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "table_id_provider",
+    srcs = [
+        "table_id_provider.cc",
+    ],
     hdrs = [
         "table_id_provider.h",
+    ],
+    implementation_deps = [
+        "//src/v/config",
+        "@boost//:algorithm",
     ],
     include_prefix = "datalake",
     visibility = ["//visibility:public"],
