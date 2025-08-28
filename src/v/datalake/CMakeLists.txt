@@ -51,6 +51,17 @@ v_cc_library(
 )
 
 v_cc_library(
+  NAME datalake_table_id_provider
+  SRCS
+    table_id_provider.cc
+  DEPS
+    v::config
+    v::iceberg
+    v::model
+    fmt::fmt
+)
+
+v_cc_library(
   NAME datalake_writer
   SRCS
     catalog_schema_manager.cc
@@ -77,6 +88,7 @@ v_cc_library(
   DEPS
     v::cloud_io
     v::datalake_common
+    v::datalake_table_id_provider
     v::datalake_translation_probe
     v::pandaproxy_schema_registry
     v::schema
