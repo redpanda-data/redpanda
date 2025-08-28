@@ -20,6 +20,7 @@ class TxReadsWritesTest(RedpandaTest):
     """
     Verify that segment indices are recovered on startup.
     """
+
     def __init__(self, test_context):
         extra_rp_conf = {
             "default_topic_replications": 1,
@@ -28,8 +29,9 @@ class TxReadsWritesTest(RedpandaTest):
             "partition_autobalancing_mode": "off",
         }
 
-        super(TxReadsWritesTest, self).__init__(test_context=test_context,
-                                                extra_rp_conf=extra_rp_conf)
+        super(TxReadsWritesTest, self).__init__(
+            test_context=test_context, extra_rp_conf=extra_rp_conf
+        )
 
     @cluster(num_nodes=3)
     def test_reads_writes(self):
@@ -47,14 +49,12 @@ class TxReadsWritesTest(RedpandaTest):
                 java="java",
                 verifier_jar=verifier_jar,
                 test=test,
-                brokers=self.redpanda.brokers())
-            subprocess.check_output(["/bin/sh", "-c", cmd],
-                                    stderr=subprocess.STDOUT)
-            self.redpanda.logger.info(
-                "txn test \"{test}\" passed".format(test=test))
+                brokers=self.redpanda.brokers(),
+            )
+            subprocess.check_output(["/bin/sh", "-c", cmd], stderr=subprocess.STDOUT)
+            self.redpanda.logger.info('txn test "{test}" passed'.format(test=test))
         except subprocess.CalledProcessError as e:
-            self.redpanda.logger.info(
-                "txn test \"{test}\" failed".format(test=test))
+            self.redpanda.logger.info('txn test "{test}" failed'.format(test=test))
             errors = ""
             errors += test + "\n"
             errors += str(e.output) + "\n"

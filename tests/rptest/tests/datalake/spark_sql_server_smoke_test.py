@@ -19,20 +19,20 @@ from rptest.tests.datalake.utils import supported_storage_types
 
 class SparkSmokeTest(IcebergRESTCatalogTest):
     """Tests basic Spark functionality with iceberg REST server"""
+
     def __init__(self, test_ctx, *args, **kwargs):
         self.test_ctx = test_ctx
-        super(SparkSmokeTest, self).__init__(test_ctx,
-                                             num_brokers=1,
-                                             *args,
-                                             **kwargs)
+        super(SparkSmokeTest, self).__init__(test_ctx, num_brokers=1, *args, **kwargs)
         self.spark: Optional[SparkService] = None
 
     def setUp(self):
         super().setUp()
-        self.spark = SparkService(self.test_ctx,
-                                  self.catalog_service.iceberg_rest_url,
-                                  self.catalog_service.cloud_storage_warehouse,
-                                  self.catalog_service.catalog_type())
+        self.spark = SparkService(
+            self.test_ctx,
+            self.catalog_service.iceberg_rest_url,
+            self.catalog_service.cloud_storage_warehouse,
+            self.catalog_service.catalog_type(),
+        )
         self.spark.start()
 
     def tearDown(self):
@@ -53,11 +53,10 @@ class SparkSmokeTest(IcebergRESTCatalogTest):
                 cursor.execute(
                     "CREATE TABLE redpanda.test(id bigint NOT NULL, data string) USING iceberg"
                 )
-                cursor.execute(
-                    "INSERT into redpanda.test values(2024, 'Wohn Jick')")
+                cursor.execute("INSERT into redpanda.test values(2024, 'Wohn Jick')")
                 cursor.execute("SELECT count(*) from redpanda.test")
                 row = cursor.fetchone()
-                assert row == (1, ), row
+                assert row == (1,), row
             finally:
                 cursor.close()
         finally:

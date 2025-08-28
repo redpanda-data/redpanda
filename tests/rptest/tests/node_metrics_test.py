@@ -23,31 +23,31 @@ def assert_lists_equal(l1: list[float], l2: list[float]):
 
 
 class NodeMetricsTest(RedpandaTest):
-    """ Basic tests for node-level metrics. See partitions_metrics_test.py for
-    per-partition metrics. """
+    """Basic tests for node-level metrics. See partitions_metrics_test.py for
+    per-partition metrics."""
 
-    topics = (TopicSpec(), )  # override
+    topics = (TopicSpec(),)  # override
 
     def __init__(self, test_ctx):
         super().__init__(test_context=test_ctx)
         self.node_metrics = NodeMetrics(self.redpanda)
 
     def _count_greater(self, l1: list[float], l2: list[float]) -> int:
-        """ return number of elements in l1 that were *strictly greater* than their
-        counterpart in l2. """
+        """return number of elements in l1 that were *strictly greater* than their
+        counterpart in l2."""
         num_greater = 0
         for v, u in zip(l1, l2):
             if v > u:
                 num_greater += 1
             self.redpanda.logger.debug(
-                f"count_greater({v} - {u} = {v - u}) -> {num_greater}")
+                f"count_greater({v} - {u} = {v - u}) -> {num_greater}"
+            )
 
-        self.redpanda.logger.debug(
-            f"count_greater: {l1} / {l2} -> {num_greater}")
+        self.redpanda.logger.debug(f"count_greater: {l1} / {l2} -> {num_greater}")
         return num_greater
 
     def _produce_consumed_space(self, orig_free: list[float]) -> bool:
-        """ Test helper: produce about 10MiB of data and return true if any of
+        """Test helper: produce about 10MiB of data and return true if any of
         the nodes saw a reduction in free space.
         """
         num_records = 10240
@@ -62,7 +62,6 @@ class NodeMetricsTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_node_storage_metrics(self):
-
         # disk metrics are updated via health monitor's periodic tick().
         t0 = time()
         self.node_metrics.wait_until_ready()
@@ -72,8 +71,7 @@ class NodeMetricsTest(RedpandaTest):
         orig_total = self.node_metrics.disk_total_bytes()
         orig_free = self.node_metrics.disk_free_bytes()
 
-        self.redpanda.logger.debug(
-            f'orig total {orig_total}, orig free {orig_free}')
+        self.redpanda.logger.debug(f"orig total {orig_total}, orig free {orig_free}")
 
         # for alert field, just confirm it exists and in valid range. Actual
         # logic is covered by local_monitor_test.cc
@@ -94,9 +92,11 @@ class NodeMetricsTest(RedpandaTest):
         # internal space monitoring logic is covered by unit tests, so just
         # validating that these metrics exist and are non-zero is a good
         # integration test.
-        wait_until(lambda: self._produce_consumed_space(orig_free),
-                   timeout_sec=120,
-                   err_msg="Failed to consume free space metric via producer")
+        wait_until(
+            lambda: self._produce_consumed_space(orig_free),
+            timeout_sec=120,
+            err_msg="Failed to consume free space metric via producer",
+        )
 
         t2 = time()
 
@@ -104,9 +104,11 @@ class NodeMetricsTest(RedpandaTest):
         new_total = self.node_metrics.disk_total_bytes()
         assert_lists_equal(orig_total, new_total)
         self.redpanda.logger.info(
-            f"Elapsed: {t1-t0} sec to first metrics, {t2-t1} to consume space metric"
+            f"Elapsed: {t1 - t0} sec to first metrics, {t2 - t1} to consume space metric"
         )
 
         # Assert cache disk metrics match data disk metrics since it is the same disk in this test setup.
-        assert_lists_equal(self.node_metrics.disk_total_bytes(),
-                           self.node_metrics.cache_disk_total_bytes())
+        assert_lists_equal(
+            self.node_metrics.disk_total_bytes(),
+            self.node_metrics.cache_disk_total_bytes(),
+        )

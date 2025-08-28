@@ -27,29 +27,36 @@ class ConnectionRateLimitTest(PreallocNodesTest):
     MSG_SIZE = 1000000
     PRODUCE_COUNT = 5000
 
-    topics = (TopicSpec(partition_count=1, replication_factor=1), )
+    topics = (TopicSpec(partition_count=1, replication_factor=1),)
 
     def __init__(self, test_context):
         resource_setting = ResourceSettings(num_cpus=1)
-        super(ConnectionRateLimitTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=1,
-                             node_prealloc_count=1,
-                             resource_settings=resource_setting)
+        super(ConnectionRateLimitTest, self).__init__(
+            test_context=test_context,
+            num_brokers=1,
+            node_prealloc_count=1,
+            resource_settings=resource_setting,
+        )
 
-        self._producer = KgoVerifierProducer(test_context, self.redpanda,
-                                             self.topics[0], self.MSG_SIZE,
-                                             self.PRODUCE_COUNT,
-                                             self.preallocated_nodes)
+        self._producer = KgoVerifierProducer(
+            test_context,
+            self.redpanda,
+            self.topics[0],
+            self.MSG_SIZE,
+            self.PRODUCE_COUNT,
+            self.preallocated_nodes,
+        )
         self.consumers = []
 
     def make_consumer(self, retry_sec):
-        return RpkConsumer(context=self.test_context,
-                           redpanda=self.redpanda,
-                           topic=self.topics[0],
-                           num_msgs=self.PRODUCE_COUNT,
-                           save_msgs=False,
-                           retry_sec=retry_sec)
+        return RpkConsumer(
+            context=self.test_context,
+            redpanda=self.redpanda,
+            topic=self.topics[0],
+            num_msgs=self.PRODUCE_COUNT,
+            save_msgs=False,
+            retry_sec=retry_sec,
+        )
 
     def stop_consumer(self, consumer):
         try:
@@ -68,8 +75,7 @@ class ConnectionRateLimitTest(PreallocNodesTest):
             c.start()
 
     def consumers_finished(self):
-        return all(
-            [c.message_count == self.PRODUCE_COUNT for c in self.consumers])
+        return all([c.message_count == self.PRODUCE_COUNT for c in self.consumers])
 
     def stop_consumers(self):
         for c in self.consumers:
@@ -83,17 +89,18 @@ class ConnectionRateLimitTest(PreallocNodesTest):
         self._producer.wait()
         self._producer.free()
 
-        metrics = MetricCheck(self.logger, self.redpanda,
-                              self.redpanda.nodes[0], RATE_METRIC, {})
+        metrics = MetricCheck(
+            self.logger, self.redpanda, self.redpanda.nodes[0], RATE_METRIC, {}
+        )
 
         n_consumers = 6
 
         for rate_limit in [1, 2, 4]:
             self.logger.info(f"Checking rate_limit: {rate_limit}")
             self.redpanda.set_cluster_config(
-                {"kafka_connection_rate_limit": rate_limit},
-                expect_restart=False)
-            self.make_consumers(n_consumers, retry_sec=1. / rate_limit)
+                {"kafka_connection_rate_limit": rate_limit}, expect_restart=False
+            )
+            self.make_consumers(n_consumers, retry_sec=1.0 / rate_limit)
             self.start_consumers()
 
             old_connections = None
@@ -109,7 +116,9 @@ class ConnectionRateLimitTest(PreallocNodesTest):
                 # As the rate of connections is calculated through a metric,
                 # it is still quite reliant on timing effects. To try to account
                 # for these, as scale factor of 2 is used.
-                assert rate <= 2 * rate_limit, f"Expected rate <= 2*{rate_limit}. Got rate = {rate}."
+                assert rate <= 2 * rate_limit, (
+                    f"Expected rate <= 2*{rate_limit}. Got rate = {rate}."
+                )
                 return True
 
             def check_metrics():

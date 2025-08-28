@@ -26,6 +26,7 @@ class KcatConsumer(BackgroundThreadService):
     It is easier to manage that to spawn an instance of ducktape in a separate
     node and still communicate to it via ssh.
     """
+
     class OffsetMeta(Enum):
         beginning = "beginning"
         end = "end"
@@ -36,19 +37,21 @@ class KcatConsumer(BackgroundThreadService):
         end = "end"
         error = "error"
 
-    def __init__(self,
-                 context,
-                 redpanda,
-                 topic,
-                 partition: Optional[int] = None,
-                 *,
-                 offset: Any = None,
-                 first_timestamp: Optional[int] = None,
-                 offset_default: Optional[OffsetDefaultMeta] = None,
-                 num_msgs: Optional[int] = None,
-                 cgroup_name: Optional[str] = None,
-                 auto_commit_interval_ms: Optional[int] = None,
-                 caption: Optional[str] = None):
+    def __init__(
+        self,
+        context,
+        redpanda,
+        topic,
+        partition: Optional[int] = None,
+        *,
+        offset: Any = None,
+        first_timestamp: Optional[int] = None,
+        offset_default: Optional[OffsetDefaultMeta] = None,
+        num_msgs: Optional[int] = None,
+        cgroup_name: Optional[str] = None,
+        auto_commit_interval_ms: Optional[int] = None,
+        caption: Optional[str] = None,
+    ):
         """
         offset : int or OffsetMeta or None
             The offset to start consuming from. Must be None if first_timestamp
@@ -86,7 +89,9 @@ class KcatConsumer(BackgroundThreadService):
         if cgroup_name is None:
             self._cmd += ["-C", "-t", f"{topic}"]
         else:
-            assert partition is None, "Partition argument is not used in high-level consumer mode"
+            assert partition is None, (
+                "Partition argument is not used in high-level consumer mode"
+            )
             self._cmd += ["-G", cgroup_name]
             trailopts += [topic]
 
@@ -94,15 +99,17 @@ class KcatConsumer(BackgroundThreadService):
             self._cmd += ["-X", "enable.auto.commit=false"]
         else:
             self._cmd += [
-                "-X", "enable.auto.commit=true", "-X",
-                f"auto.commit.interval.ms={auto_commit_interval_ms}"
+                "-X",
+                "enable.auto.commit=true",
+                "-X",
+                f"auto.commit.interval.ms={auto_commit_interval_ms}",
             ]
 
         if partition:
             self._cmd += ["-p", f"{partition}"]
-        assert (offset is None) or (
-            first_timestamp
-            is None), "Cannot specify both offset and timestamp"
+        assert (offset is None) or (first_timestamp is None), (
+            "Cannot specify both offset and timestamp"
+        )
 
         if offset is not None:
             # <value>  (absolute offset)
@@ -119,9 +126,7 @@ class KcatConsumer(BackgroundThreadService):
 
         if offset_default is not None:
             if isinstance(offset_default, KcatConsumer.OffsetDefaultMeta):
-                self._cmd += [
-                    "-X", f"auto.offset.reset={offset_default.value}"
-                ]
+                self._cmd += ["-X", f"auto.offset.reset={offset_default.value}"]
             else:
                 assert False, "offset_default must be an OffsetMeta"
 
@@ -131,31 +136,39 @@ class KcatConsumer(BackgroundThreadService):
         if getattr(self._redpanda, "sasl_enabled", lambda: False)():
             cfg = self._redpanda.security_config()
             self._cmd += [
-                "-X", f"security.protocol={cfg['security_protocol']}", "-X"
-                f"sasl.mechanism={cfg['sasl_mechanism']}", "-X",
-                f"sasl.username={cfg['sasl_plain_username']}", "-X",
-                f"sasl.password={cfg['sasl_plain_password']}"
+                "-X",
+                f"security.protocol={cfg['security_protocol']}",
+                f"-Xsasl.mechanism={cfg['sasl_mechanism']}",
+                "-X",
+                f"sasl.username={cfg['sasl_plain_username']}",
+                "-X",
+                f"sasl.password={cfg['sasl_plain_password']}",
             ]
-            if cfg['sasl_mechanism'] == "GSSAPI":
+            if cfg["sasl_mechanism"] == "GSSAPI":
                 self._cmd += [
-                    "-X", "sasl.kerberos.service.name=redpanda",
-                    '-Xsasl.kerberos.kinit.cmd=kinit client -t /var/lib/redpanda/client.keytab'
+                    "-X",
+                    "sasl.kerberos.service.name=redpanda",
+                    "-Xsasl.kerberos.kinit.cmd=kinit client -t /var/lib/redpanda/client.keytab",
                 ]
 
         self._cmd += trailopts
 
     class SSHCapturedPipes:
-        def __init__(self, stdin: paramiko.channel.ChannelStdinFile,
-                     stdout: paramiko.channel.ChannelFile,
-                     stderr: paramiko.channel.ChannelStderrFile, cmd: str,
-                     logger) -> None:
+        def __init__(
+            self,
+            stdin: paramiko.channel.ChannelStdinFile,
+            stdout: paramiko.channel.ChannelFile,
+            stderr: paramiko.channel.ChannelStderrFile,
+            cmd: str,
+            logger,
+        ) -> None:
             self.stdin = stdin
             self.stdout = stdout
             self.stderr = stderr
             self._cmd = cmd
             self.logger = logger
 
-        def __enter__(self) -> 'KcatConsumer.SSHCapturedPipes':
+        def __enter__(self) -> "KcatConsumer.SSHCapturedPipes":
             return self
 
         def __exit__(self, exc_type, exc_value, traceback) -> None:
@@ -165,20 +178,18 @@ class KcatConsumer(BackgroundThreadService):
                     if self.logger is not None:
                         self.logger.debug(
                             "Running ssh command '%s' exited with status %d and message: %s"
-                            % (self._cmd, exit_status, self.stderr.read()))
+                            % (self._cmd, exit_status, self.stderr.read())
+                        )
                     else:
-                        raise RemoteCommandError(self, self._cmd, exit_status,
-                                                 self.stderr.read())
+                        raise RemoteCommandError(
+                            self, self._cmd, exit_status, self.stderr.read()
+                        )
             finally:
                 self.stdin.close()
                 self.stdout.close()
                 self.stderr.close()
 
-    def ssh_capture_with_pipes(self,
-                               node,
-                               cmd,
-                               allow_fail=False,
-                               timeout_sec=None):
+    def ssh_capture_with_pipes(self, node, cmd, allow_fail=False, timeout_sec=None):
         self._redpanda.logger.debug("Running ssh command: %s" % cmd)
 
         client = node.account.ssh_client
@@ -188,13 +199,13 @@ class KcatConsumer(BackgroundThreadService):
         chan.exec_command(cmd)
         chan.set_combine_stderr(False)
 
-        stdin = chan.makefile('wb', -1)  # set bufsize to -1
-        stdout = chan.makefile('r', -1)
-        stderr = chan.makefile_stderr('r', -1)
+        stdin = chan.makefile("wb", -1)  # set bufsize to -1
+        stdout = chan.makefile("r", -1)
+        stderr = chan.makefile_stderr("r", -1)
 
         return KcatConsumer.SSHCapturedPipes(
-            stdin, stdout, stderr, cmd,
-            self._redpanda.logger if allow_fail else None)
+            stdin, stdout, stderr, cmd, self._redpanda.logger if allow_fail else None
+        )
 
     def _worker(self, worker_idx, node):
         self._stopping.clear()
@@ -204,7 +215,8 @@ class KcatConsumer(BackgroundThreadService):
                 stderr_reader = threading.Thread(
                     name=self.service_id + "-errrdr-" + str(worker_idx),
                     target=self._stderr_reader,
-                    args=(worker_idx, node, p.stderr))
+                    args=(worker_idx, node, p.stderr),
+                )
                 stderr_reader.start()
                 try:
                     self._stdout_reader(p.stdout)
@@ -221,8 +233,8 @@ class KcatConsumer(BackgroundThreadService):
             self.done = True
 
     def _stdout_reader(self, stdout: paramiko.channel.ChannelFile) -> None:
-        #self._redpanda.logger.debug(f"start ({stdout})")
-        for line in iter(stdout.readline, ''):
+        # self._redpanda.logger.debug(f"start ({stdout})")
+        for line in iter(stdout.readline, ""):
             if self._pid is None:
                 self._pid = line.strip()
                 continue
@@ -243,39 +255,46 @@ class KcatConsumer(BackgroundThreadService):
                 )
                 raise
 
-    def _stderr_reader(self, node_idx, node,
-                       stderr: paramiko.channel.ChannelStderrFile) -> None:
-        for line in iter(stderr.readline, ''):
+    def _stderr_reader(
+        self, node_idx, node, stderr: paramiko.channel.ChannelStderrFile
+    ) -> None:
+        for line in iter(stderr.readline, ""):
             if self._stopping.is_set():
                 break
 
             if line[:1] == "%":
                 m = re.search(
                     "Reached end of topic (?P<topic>.+) \[(?P<partition>\d+)\] at offset (?P<offset>\d+)",
-                    line)
+                    line,
+                )
                 if m:
                     partition = int(m.group("partition"))
                     if m.group("topic") != self._topic:
                         self._redpanda.logger.warning(
-                            "{}Topic reported by kcat ({}}) is different from the requested ({}). Line: {}"
-                            .format(self._caption, m.group("topic"),
-                                    self._topic, line.strip()))
+                            "{}Topic reported by kcat ({}}) is different from the requested ({}). Line: {}".format(
+                                self._caption,
+                                m.group("topic"),
+                                self._topic,
+                                line.strip(),
+                            )
+                        )
                     elif self._partition is not None and partition != self._partition:
                         self._redpanda.logger.warning(
-                            "{}Partition reported by kcat ({}) is different from the requested ({}). Line: {}"
-                            .format(self._caption, partition, self._partition,
-                                    line.strip()))
+                            "{}Partition reported by kcat ({}) is different from the requested ({}). Line: {}".format(
+                                self._caption, partition, self._partition, line.strip()
+                            )
+                        )
                     else:
                         self._end_of_topic[partition] = int(m.group("offset"))
                         self._redpanda.logger.debug(
                             f"{self._caption}Reached end of the topic partition {partition} at offset {self._end_of_topic[partition]}"
                         )
                 else:
-                    self._redpanda.logger.debug(
-                        f"{self._caption}{line.strip()}")
+                    self._redpanda.logger.debug(f"{self._caption}{line.strip()}")
             else:
                 self._redpanda.logger.warn(
-                    f"{self._caption}Unrecognized kcat output: {line.strip()}")
+                    f"{self._caption}Unrecognized kcat output: {line.strip()}"
+                )
 
     def stop_node(self, node):
         self._stopping.set()
@@ -293,7 +312,8 @@ class KcatConsumer(BackgroundThreadService):
         return sum(self._consumed_count.values())
 
     def set_on_message(
-            self, on_message: Callable[['KcatConsumer', dict], None]) -> None:
+        self, on_message: Callable[["KcatConsumer", dict], None]
+    ) -> None:
         self._on_message = on_message
 
     def default_on_message(self, message: dict) -> None:

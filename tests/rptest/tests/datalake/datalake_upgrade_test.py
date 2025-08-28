@@ -23,14 +23,15 @@ from rptest.tests.datalake.catalog_service_factory import filesystem_catalog_typ
 
 class DatalakeUpgradeTest(RedpandaTest):
     def __init__(self, test_context):
-        super(DatalakeUpgradeTest,
-              self).__init__(test_context,
-                             num_brokers=3,
-                             si_settings=SISettings(test_context=test_context),
-                             extra_rp_conf={
-                                 "iceberg_enabled": "true",
-                                 "iceberg_catalog_commit_interval_ms": 5000
-                             })
+        super(DatalakeUpgradeTest, self).__init__(
+            test_context,
+            num_brokers=3,
+            si_settings=SISettings(test_context=test_context),
+            extra_rp_conf={
+                "iceberg_enabled": "true",
+                "iceberg_catalog_commit_interval_ms": 5000,
+            },
+        )
         self.test_ctx = test_context
         self.topic_name = "upgrade_topic"
 
@@ -39,13 +40,14 @@ class DatalakeUpgradeTest(RedpandaTest):
         self.min_version_with_lag_support: RedpandaVersionTriple = (25, 1, 1)
 
     def setUp(self):
-        self.redpanda._installer.install(self.redpanda.nodes,
-                                         self.initial_version)
+        self.redpanda._installer.install(self.redpanda.nodes, self.initial_version)
 
     @cluster(num_nodes=6)
     @skip_debug_mode
-    @matrix(cloud_storage_type=supported_storage_types(),
-            query_engine=[QueryEngineType.SPARK])
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=[QueryEngineType.SPARK],
+    )
     def test_upload_through_upgrade(self, cloud_storage_type, query_engine):
         """
         Test that Iceberg translation can progress through different versions
@@ -56,13 +58,15 @@ class DatalakeUpgradeTest(RedpandaTest):
         lag_set = self.initial_version >= self.min_version_with_lag_support
 
         total_count = 0
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              catalog_type=filesystem_catalog_type(),
-                              include_query_engines=[query_engine]) as dl:
-            dl.create_iceberg_enabled_topic(self.topic_name,
-                                            partitions=10,
-                                            target_lag_ms=10000)
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            catalog_type=filesystem_catalog_type(),
+            include_query_engines=[query_engine],
+        ) as dl:
+            dl.create_iceberg_enabled_topic(
+                self.topic_name, partitions=10, target_lag_ms=10000
+            )
 
             def run_workload():
                 nonlocal total_count
@@ -71,15 +75,15 @@ class DatalakeUpgradeTest(RedpandaTest):
                 total_count += count
                 dl.wait_for_translation(self.topic_name, msg_count=total_count)
 
-            for v in self.upgrade_through_versions(versions_in=versions,
-                                                   already_running=True):
+            for v in self.upgrade_through_versions(
+                versions_in=versions, already_running=True
+            ):
                 self.logger.info(f"Updated to {v}")
                 if not lag_set and v >= self.min_version_with_lag_support:
                     # When upgrading from older versions, unsupported topic properties
                     # are just ignored. Force a cluster config change right after upgrading
                     # to first version with the support
-                    self.redpanda.set_cluster_config(
-                        {"iceberg_target_lag_ms": 10000})
+                    self.redpanda.set_cluster_config({"iceberg_target_lag_ms": 10000})
                     lag_set = True
                 run_workload()
 
@@ -97,8 +101,9 @@ class DatalakeUpgradeTest(RedpandaTest):
                                                     FROM redpanda.{self.topic_name}
                                                     WHERE redpanda.timestamp >= '2025-01-01 00:00:00'
                                                     """)
-            assert result[
-                0] == total_count, f"Expected {total_count} rows, got {result[0]}"
+            assert result[0] == total_count, (
+                f"Expected {total_count} rows, got {result[0]}"
+            )
 
             # Check that all fields are queryable and the structure of the row
             # matches the expected structure.
@@ -107,8 +112,8 @@ class DatalakeUpgradeTest(RedpandaTest):
                                       FROM redpanda.{self.topic_name}
                                       """) as cursor:
                 assert cursor.description == [
-                    ('redpanda', 'STRUCT_TYPE', None, None, None, None, True),
-                    ('value', 'BINARY_TYPE', None, None, None, None, True)
+                    ("redpanda", "STRUCT_TYPE", None, None, None, None, True),
+                    ("value", "BINARY_TYPE", None, None, None, None, True),
                 ], f"Unexpected cursor description: {cursor.description}"
 
                 rows = cursor.fetchall()
@@ -120,10 +125,12 @@ class DatalakeUpgradeTest(RedpandaTest):
                 # and binary data which looks like numbers is represented as numbers.
                 # If assert below begin to fail maybe we have changed the client and
                 # now it is possible to check the types.
-                assert isinstance(rows[0][0],
-                                  str), f"Unexpected type {type(rows[0][0])}"
-                assert isinstance(rows[0][1],
-                                  bytes), f"Unexpected type {type(rows[0][1])}"
+                assert isinstance(rows[0][0], str), (
+                    f"Unexpected type {type(rows[0][0])}"
+                )
+                assert isinstance(rows[0][1], bytes), (
+                    f"Unexpected type {type(rows[0][1])}"
+                )
 
             # Check nested fields of redpanda struct. Fetch all rows
             with dl.spark().run_query(f"""
@@ -137,5 +144,9 @@ class DatalakeUpgradeTest(RedpandaTest):
                 # not fail internally but it should be enough to check a single
                 # row from the result set.
                 assert json.loads(rows[0][0]).keys() == {
-                    "partition", "offset", "timestamp", "headers", "key"
+                    "partition",
+                    "offset",
+                    "timestamp",
+                    "headers",
+                    "key",
                 }, f"Unexpected JSON keys: {json.loads(rows[0][0]).keys()}"

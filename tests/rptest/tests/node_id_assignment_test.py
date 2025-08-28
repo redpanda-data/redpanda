@@ -19,9 +19,7 @@ def wipe_and_restart(redpanda, node):
     Stops, clears, and restarts a node, priming it to be assigned a node ID.
     """
     redpanda.stop_node(node)
-    redpanda.clean_node(node,
-                        preserve_logs=True,
-                        preserve_current_install=True)
+    redpanda.clean_node(node, preserve_logs=True, preserve_current_install=True)
     redpanda.start_node(node, auto_assign_node_id=True)
 
 
@@ -58,14 +56,13 @@ class NodeIdAssignment(RedpandaTest):
     Test that exercises cluster formation when node IDs are automatically
     assigned by Redpanda.
     """
+
     def __init__(self, test_context):
-        super(NodeIdAssignment, self).__init__(test_context=test_context,
-                                               num_brokers=3)
+        super(NodeIdAssignment, self).__init__(test_context=test_context, num_brokers=3)
         self.admin = self.redpanda._admin
 
     def setUp(self):
-        self.redpanda.start(auto_assign_node_id=True,
-                            omit_seeds_on_idx_one=False)
+        self.redpanda.start(auto_assign_node_id=True, omit_seeds_on_idx_one=False)
         self._create_initial_topics()
 
     def node_ids(self):
@@ -92,7 +89,9 @@ class NodeIdAssignment(RedpandaTest):
 
         wipe_and_restart(self.redpanda, replaced_node)
         new_node_id = self.redpanda.node_id(replaced_node, force_refresh=True)
-        assert new_node_id not in original_node_ids, f"Cleaned node came back with node ID {new_node_id}"
+        assert new_node_id not in original_node_ids, (
+            f"Cleaned node came back with node ID {new_node_id}"
+        )
 
     @cluster(num_nodes=3)
     def test_rejoin_after_decommission(self):
@@ -107,7 +106,9 @@ class NodeIdAssignment(RedpandaTest):
         wait_for_node_removed(self.admin, original_node_id)
 
         new_node_id = self.redpanda.node_id(original_node, force_refresh=True)
-        assert original_node_id == new_node_id, f"Node came back with different node ID {new_node_id}"
+        assert original_node_id == new_node_id, (
+            f"Node came back with different node ID {new_node_id}"
+        )
 
     @cluster(num_nodes=3)
     def test_assign_after_clear(self):
@@ -125,7 +126,9 @@ class NodeIdAssignment(RedpandaTest):
         brokers = self.admin.get_brokers()
         assert 4 == len(brokers), f"Got {len(brokers)} brokers"
         new_node_id = self.redpanda.node_id(clean_node, force_refresh=True)
-        assert new_node_id not in original_node_ids, f"Cleaned node came back with node ID {new_node_id}"
+        assert new_node_id not in original_node_ids, (
+            f"Cleaned node came back with node ID {new_node_id}"
+        )
         check_node_ids_persist(self.redpanda)
 
     @cluster(num_nodes=3, log_allow_list=["doesn't match stored node ID"])
@@ -136,31 +139,37 @@ class NodeIdAssignment(RedpandaTest):
         """
         node = self.redpanda.nodes[-1]
         self.redpanda.stop_node(node)
-        self.redpanda.start_node(node,
-                                 override_cfg_params=dict({"node_id": 10}),
-                                 expect_fail=True)
+        self.redpanda.start_node(
+            node, override_cfg_params=dict({"node_id": 10}), expect_fail=True
+        )
 
 
 class NodeIdAssignmentParallel(RedpandaTest):
     """
     Test that adds several nodes at once, assigning each a unique node ID.
     """
+
     def __init__(self, test_context):
-        super(NodeIdAssignmentParallel,
-              self).__init__(test_context=test_context, num_brokers=4)
+        super(NodeIdAssignmentParallel, self).__init__(
+            test_context=test_context, num_brokers=4
+        )
 
     def setUp(self):
         # Start just one node so we can add several at the same time.
         self.redpanda.set_seed_servers([self.redpanda.nodes[0]])
-        self.redpanda.start([self.redpanda.nodes[0]],
-                            auto_assign_node_id=True,
-                            omit_seeds_on_idx_one=False)
+        self.redpanda.start(
+            [self.redpanda.nodes[0]],
+            auto_assign_node_id=True,
+            omit_seeds_on_idx_one=False,
+        )
 
     @cluster(num_nodes=4)
     def test_assign_multiple_nodes(self):
-        self.redpanda.start(self.redpanda.nodes[1:],
-                            auto_assign_node_id=True,
-                            omit_seeds_on_idx_one=False)
+        self.redpanda.start(
+            self.redpanda.nodes[1:],
+            auto_assign_node_id=True,
+            omit_seeds_on_idx_one=False,
+        )
 
         def check_num_nodes():
             brokers = self.redpanda._admin.get_brokers()
@@ -175,9 +184,11 @@ class NodeIdAssignmentUpgrade(RedpandaTest):
     Test that exercises cluster formation when node IDs are automatically
     assigned by Redpanda after an upgrade.
     """
+
     def __init__(self, test_context):
-        super(NodeIdAssignmentUpgrade,
-              self).__init__(test_context=test_context, num_brokers=3)
+        super(NodeIdAssignmentUpgrade, self).__init__(
+            test_context=test_context, num_brokers=3
+        )
         self.installer = self.redpanda._installer
         self.admin = self.redpanda._admin
 
@@ -200,17 +211,15 @@ class NodeIdAssignmentUpgrade(RedpandaTest):
         Upgrade a cluster and then immediately start using the node ID
         assignment feature.
         """
-        original_node_ids = [
-            self.redpanda.node_id(n) for n in self.redpanda.nodes
-        ]
+        original_node_ids = [self.redpanda.node_id(n) for n in self.redpanda.nodes]
         self.installer.install(self.redpanda.nodes, (22, 3))
-        self.redpanda.restart_nodes(self.redpanda.nodes,
-                                    auto_assign_node_id=True)
+        self.redpanda.restart_nodes(self.redpanda.nodes, auto_assign_node_id=True)
         wait_until(
             lambda: self.admin.supports_feature("node_id_assignment"),
             timeout_sec=30,
             backoff_sec=1,
-            err_msg="Timeout waiting for cluster to support 'license' feature")
+            err_msg="Timeout waiting for cluster to support 'license' feature",
+        )
 
         clean_node = self.redpanda.nodes[-1]
         wipe_and_restart(self.redpanda, clean_node)
@@ -218,4 +227,6 @@ class NodeIdAssignmentUpgrade(RedpandaTest):
         brokers = self.admin.get_brokers()
         assert 4 == len(brokers), f"Got {len(brokers)} brokers"
         new_node_id = self.redpanda.node_id(clean_node, force_refresh=True)
-        assert new_node_id not in original_node_ids, f"Cleaned node came back with node ID {new_node_id}"
+        assert new_node_id not in original_node_ids, (
+            f"Cleaned node came back with node ID {new_node_id}"
+        )

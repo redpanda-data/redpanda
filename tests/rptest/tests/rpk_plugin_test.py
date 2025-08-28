@@ -39,8 +39,7 @@ class RpkPluginTest(RedpandaTest):
         test_token = "test_token"
 
         # First we validate only passing the redpanda_id and token.
-        out = self._rpk.cloud_byoc_aws_apply(redpanda_id=test_id,
-                                             token=test_token)
+        out = self._rpk.cloud_byoc_aws_apply(redpanda_id=test_id, token=test_token)
         assert len(out["args"]) == 0
         assert find_flag(out["flags"], "--redpanda-id", test_id)
         assert find_flag(out["flags"], "--cloud-api-token", test_token)
@@ -49,7 +48,8 @@ class RpkPluginTest(RedpandaTest):
         out = self._rpk.cloud_byoc_aws_apply(
             redpanda_id=test_id,
             token=test_token,
-            extra_flags=["-X", "brokers=127.0.0.1:9092", "--verbose"])
+            extra_flags=["-X", "brokers=127.0.0.1:9092", "--verbose"],
+        )
 
         assert len(out["args"]) == 0
 
@@ -62,14 +62,17 @@ class RpkPluginTest(RedpandaTest):
 
         # Now we validate that we pass other byoc-only flags.
         region = "us-east-2"
-        out = self._rpk.cloud_byoc_aws_apply(redpanda_id=test_id,
-                                             token=test_token,
-                                             extra_flags=[
-                                                 "-X",
-                                                 "brokers=127.0.0.1:9092",
-                                                 "--verbose", "--region",
-                                                 region
-                                             ])
+        out = self._rpk.cloud_byoc_aws_apply(
+            redpanda_id=test_id,
+            token=test_token,
+            extra_flags=[
+                "-X",
+                "brokers=127.0.0.1:9092",
+                "--verbose",
+                "--region",
+                region,
+            ],
+        )
 
         assert len(out["args"]) == 0
 

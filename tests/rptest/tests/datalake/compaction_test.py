@@ -10,7 +10,10 @@
 from time import time
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.types import TopicSpec
-from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierProducer,
+    KgoVerifierSeqConsumer,
+)
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.services.redpanda import MetricsEndpoint
@@ -38,10 +41,11 @@ class CompactionGapsTest(RedpandaTest):
                 "log_compaction_interval_ms": 10000,
                 "min_cleanable_dirty_ratio": 0.0,
                 "log_compaction_merge_max_ranges": 1,
-                "log_compaction_merge_max_segments_per_range": 2
+                "log_compaction_merge_max_segments_per_range": 2,
             },
             *args,
-            **kwargs)
+            **kwargs,
+        )
         self.test_ctx = test_ctx
         self.topic_name = "test"
         self.segment_size = 5 * 1024 * 1024
@@ -66,7 +70,8 @@ class CompactionGapsTest(RedpandaTest):
             lambda: self.partition_segments() == count,
             timeout_sec=120,
             backoff_sec=2,
-            err_msg=f"Timed out waiting for segment count to reach {count}")
+            err_msg=f"Timed out waiting for segment count to reach {count}",
+        )
 
     def produce_until_segment_count(self, count):
         timeout_sec = 180
@@ -76,30 +81,34 @@ class CompactionGapsTest(RedpandaTest):
             if current_segment_count >= count:
                 return
             if time() > deadline:
-                assert False, f"Unable to reach segment count {count} in {timeout_sec}s, current count {current_segment_count}"
-            KgoVerifierProducer.oneshot(self.test_ctx,
-                                        self.redpanda,
-                                        self.topic_name,
-                                        2024,
-                                        10000,
-                                        key_set_cardinality=2)
+                assert False, (
+                    f"Unable to reach segment count {count} in {timeout_sec}s, current count {current_segment_count}"
+                )
+            KgoVerifierProducer.oneshot(
+                self.test_ctx,
+                self.redpanda,
+                self.topic_name,
+                2024,
+                10000,
+                key_set_cardinality=2,
+            )
 
     def ensure_translation(self, dl: DatalakeServices):
-        (_, max_offset) = self.kafka_cat.list_offsets(topic=self.topic_name,
-                                                      partition=0)
-        self.redpanda.logger.debug(
-            f"Ensuring translation until: {max_offset - 1}")
+        (_, max_offset) = self.kafka_cat.list_offsets(
+            topic=self.topic_name, partition=0
+        )
+        self.redpanda.logger.debug(f"Ensuring translation until: {max_offset - 1}")
         dl.wait_for_translation_until_offset(self.topic_name, max_offset - 1)
 
     def do_test_no_gaps(self, dl: DatalakeServices):
-
-        dl.create_iceberg_enabled_topic(self.topic_name,
-                                        iceberg_mode="key_value",
-                                        config={
-                                            "cleanup.policy":
-                                            TopicSpec.CLEANUP_COMPACT,
-                                            "segment.bytes": self.segment_size
-                                        })
+        dl.create_iceberg_enabled_topic(
+            self.topic_name,
+            iceberg_mode="key_value",
+            config={
+                "cleanup.policy": TopicSpec.CLEANUP_COMPACT,
+                "segment.bytes": self.segment_size,
+            },
+        )
 
         for _ in range(5):
             self.produce_until_segment_count(5)
@@ -117,13 +126,17 @@ class CompactionGapsTest(RedpandaTest):
 
     @cluster(num_nodes=4)
     @skip_debug_mode
-    @matrix(cloud_storage_type=supported_storage_types(),
-            catalog_type=supported_catalog_types())
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        catalog_type=supported_catalog_types(),
+    )
     def test_translation_no_gaps(self, cloud_storage_type, catalog_type):
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[QueryEngineType.TRINO],
-                              catalog_type=catalog_type) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.TRINO],
+            catalog_type=catalog_type,
+        ) as dl:
             self.do_test_no_gaps(dl)
 
 
@@ -140,17 +153,17 @@ class CompactionTest(RedpandaTest):
             "log_segment_size": 2 * 1024**2,  # 2 MiB
             "compacted_log_segment_size": 1024**2,  # 1 MiB
             "min_cleanable_dirty_ratio": 0.0,
-            "cloud_storage_enable_remote_read": "false"
+            "cloud_storage_enable_remote_read": "false",
         }
 
-        super(CompactionTest,
-              self).__init__(test_ctx,
-                             num_brokers=1,
-                             si_settings=SISettings(test_context=test_ctx,
-                                                    fast_uploads=True),
-                             extra_rp_conf=self.extra_rp_conf,
-                             *args,
-                             **kwargs)
+        super(CompactionTest, self).__init__(
+            test_ctx,
+            num_brokers=1,
+            si_settings=SISettings(test_context=test_ctx, fast_uploads=True),
+            extra_rp_conf=self.extra_rp_conf,
+            *args,
+            **kwargs,
+        )
         self.test_ctx = test_ctx
         self.topic_name = "tapioca"
         self.msg_size = 1024  # 1 KiB
@@ -163,13 +176,15 @@ class CompactionTest(RedpandaTest):
         pass
 
     def produce(self):
-        producer = KgoVerifierProducer(self.test_ctx,
-                                       self.redpanda,
-                                       self.topic_name,
-                                       msg_size=self.msg_size,
-                                       msg_count=self.msg_count,
-                                       key_set_cardinality=100,
-                                       validate_latest_values=True)
+        producer = KgoVerifierProducer(
+            self.test_ctx,
+            self.redpanda,
+            self.topic_name,
+            msg_size=self.msg_size,
+            msg_count=self.msg_count,
+            key_set_cardinality=100,
+            validate_latest_values=True,
+        )
 
         producer.start(clean=True)
         producer.wait()
@@ -183,30 +198,33 @@ class CompactionTest(RedpandaTest):
             return self.redpanda.metric_sum(
                 metric_name="vectorized_storage_log_dirty_segment_bytes",
                 metrics_endpoint=MetricsEndpoint.METRICS,
-                topic=self.topic_name)
+                topic=self.topic_name,
+            )
 
         def get_complete_sliding_window_rounds():
             return self.redpanda.metric_sum(
-                metric_name=
-                "vectorized_storage_log_complete_sliding_window_rounds_total",
+                metric_name="vectorized_storage_log_complete_sliding_window_rounds_total",
                 metrics_endpoint=MetricsEndpoint.METRICS,
-                topic=self.topic_name)
+                topic=self.topic_name,
+            )
 
         self.prev_sliding_window_rounds = -1
 
         def compaction_has_completed():
             new_sliding_window_rounds = get_complete_sliding_window_rounds()
-            res = self.prev_sliding_window_rounds == new_sliding_window_rounds and get_dirty_segment_bytes(
-            ) == 0
+            res = (
+                self.prev_sliding_window_rounds == new_sliding_window_rounds
+                and get_dirty_segment_bytes() == 0
+            )
             self.prev_sliding_window_rounds = new_sliding_window_rounds
             return res
 
         wait_until(
             compaction_has_completed,
             timeout_sec=180,
-            backoff_sec=self.extra_rp_conf['log_compaction_interval_ms'] /
-            1000 * 4,
-            err_msg="Compaction did not stabilize.")
+            backoff_sec=self.extra_rp_conf["log_compaction_interval_ms"] / 1000 * 4,
+            err_msg="Compaction did not stabilize.",
+        )
 
     def verify_log_and_table(self, dl: DatalakeServices):
         # Verify a fully compacted log with a sequential consumer
@@ -224,24 +242,25 @@ class CompactionTest(RedpandaTest):
         consumer.wait(timeout_sec=120)
         consumer.free()
 
-        verifier = DatalakeVerifier(self.redpanda,
-                                    self.topic_name,
-                                    dl.trino(),
-                                    compacted=True)
+        verifier = DatalakeVerifier(
+            self.redpanda, self.topic_name, dl.trino(), compacted=True
+        )
 
         verifier.start()
         verifier.wait()
 
-        for partition, offset_consumed in verifier._max_consumed_offsets.items(
-        ):
-            assert consumer.consumer_status.validator.max_offsets_consumed[str(
-                partition)] == offset_consumed
+        for partition, offset_consumed in verifier._max_consumed_offsets.items():
+            assert (
+                consumer.consumer_status.validator.max_offsets_consumed[str(partition)]
+                == offset_consumed
+            )
 
     def do_test_compaction(self, dl: DatalakeServices):
         dl.create_iceberg_enabled_topic(
             self.topic_name,
             iceberg_mode="key_value",
-            config={"cleanup.policy": TopicSpec.CLEANUP_COMPACT})
+            config={"cleanup.policy": TopicSpec.CLEANUP_COMPACT},
+        )
 
         for _ in range(5):
             self.produce()
@@ -253,11 +272,15 @@ class CompactionTest(RedpandaTest):
 
     @cluster(num_nodes=4)
     @skip_debug_mode
-    @matrix(cloud_storage_type=supported_storage_types(),
-            catalog_type=supported_catalog_types())
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        catalog_type=supported_catalog_types(),
+    )
     def test_compaction(self, cloud_storage_type, catalog_type):
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[QueryEngineType.TRINO],
-                              catalog_type=catalog_type) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.TRINO],
+            catalog_type=catalog_type,
+        ) as dl:
             self.do_test_compaction(dl)

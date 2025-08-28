@@ -27,7 +27,13 @@ from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool, RpkException
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, LoggingConfig, MetricsEndpoint, PandaproxyConfig, SchemaRegistryConfig
+from rptest.services.redpanda import (
+    RESTART_LOG_ALLOW_LIST,
+    LoggingConfig,
+    MetricsEndpoint,
+    PandaproxyConfig,
+    SchemaRegistryConfig,
+)
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.node_operations import NodeOpsExecutor
@@ -41,12 +47,11 @@ HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
 
 HTTP_POST_HEADERS = {
     "Accept": "application/vnd.schemaregistry.v1+json",
-    "Content-Type": "application/vnd.schemaregistry.v1+json"
+    "Content-Type": "application/vnd.schemaregistry.v1+json",
 }
 
 
 class ManyTopicsTest(RedpandaTest):
-
     LEADER_BALANCER_PERIOD_MS = 60 * 1_000  # 60s
 
     # Max time to wait for the cluster to be healthy once more.
@@ -72,28 +77,29 @@ class ManyTopicsTest(RedpandaTest):
                 # Avoid having to wait 5 minutes for leader balancer to activate
                 "leader_balancer_idle_timeout": self.LEADER_BALANCER_PERIOD_MS,
                 "leader_balancer_mute_timeout": self.LEADER_BALANCER_PERIOD_MS,
-
                 # Increase connections limit to well above what this test reaches
                 "kafka_connections_max": 100_000,
                 "kafka_connections_max_per_ip": 100_000,
-
                 # We don't scrub tiered storage in this test because it is slow
                 # (on purpose) and takes unreasonable amount of time for a CI
                 # job. We should figure out how to make it faster for this
                 # use-case.
-                'cloud_storage_enable_scrubbing': False,
+                "cloud_storage_enable_scrubbing": False,
             },
             # Reduce per-partition log spam
-            log_config=LoggingConfig('info',
-                                     logger_levels={
-                                         'storage': 'warn',
-                                         'storage-gc': 'warn',
-                                         'raft': 'warn',
-                                         'offset_translator': 'warn'
-                                     }),
+            log_config=LoggingConfig(
+                "info",
+                logger_levels={
+                    "storage": "warn",
+                    "storage-gc": "warn",
+                    "raft": "warn",
+                    "offset_translator": "warn",
+                },
+            ),
             pandaproxy_config=PandaproxyConfig(),
             schema_registry_config=SchemaRegistryConfig(),
-            **kwargs)
+            **kwargs,
+        )
 
         self.admin = Admin(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
@@ -102,7 +108,8 @@ class ManyTopicsTest(RedpandaTest):
             self.redpanda,
             self.logger,
             self.thread_local,
-            progress_timeout=self.HEALTHY_WAIT_SECONDS)
+            progress_timeout=self.HEALTHY_WAIT_SECONDS,
+        )
         # Ongoing test vars
         self._current_profile = None
         self._swarm_producers = []
@@ -129,8 +136,9 @@ class ManyTopicsTest(RedpandaTest):
             )
             return None
 
-    def _produce_messages_to_random_topics(self, kclient, message_count,
-                                           num_topics, topic_names):
+    def _produce_messages_to_random_topics(
+        self, kclient, message_count, num_topics, topic_names
+    ):
         """Select random num_topics from the list topic_names
         and send message_count to it with consecutive numbers as values
 
@@ -143,15 +151,16 @@ class ManyTopicsTest(RedpandaTest):
         return values:
             used_topics_list, ununsed_topics_list, errors
         """
+
         def _send_messages(topic):
             """
-                Simple function that sends indices as messages
+            Simple function that sends indices as messages
             """
             errors = []
 
             def acked(err, msg):
                 """
-                    Simple and unsafe callback
+                Simple and unsafe callback
                 """
                 if err is not None:
                     errors.append(f"FAIL: {str(msg)}: {str(err)}")
@@ -161,10 +170,7 @@ class ManyTopicsTest(RedpandaTest):
             sent_count = 0
             for idx in range(1, message_count + 1):
                 # Async message sending func
-                p.produce(topic,
-                          key=f"key_{idx}",
-                          value=f"{idx:04}",
-                          callback=acked)
+                p.produce(topic, key=f"key_{idx}", value=f"{idx:04}", callback=acked)
                 # Make sure message sent, aka sync
                 p.flush()
                 sent_count += 1
@@ -179,8 +185,7 @@ class ManyTopicsTest(RedpandaTest):
             ]
             next_topic_batch = []
             while len(random_topic_indices) > 0:
-                next_topic_batch.append(
-                    topic_names[random_topic_indices.pop()])
+                next_topic_batch.append(topic_names[random_topic_indices.pop()])
             new_topic_names = list(set(topic_names) - set(next_topic_batch))
         else:
             next_topic_batch = topic_names
@@ -190,24 +195,20 @@ class ManyTopicsTest(RedpandaTest):
         messages_sent = 0
         errors = []
         with concurrent.futures.ThreadPoolExecutor(16) as executor:
-            for c, thread_errors in executor.map(_send_messages,
-                                                 next_topic_batch):
+            for c, thread_errors in executor.map(_send_messages, next_topic_batch):
                 messages_sent += c
                 errors += thread_errors
         self.logger.info(f"Total of {messages_sent} messages sent")
 
         total_errors = len(errors)
         if total_errors > 0:
-            self.logger.error(f"{total_errors} Errors detected "
-                              "while sending messages")
+            self.logger.error(f"{total_errors} Errors detected while sending messages")
 
         return next_topic_batch, new_topic_names, errors
 
-    def _consume_messages_from_random_topic(self,
-                                            kclient,
-                                            message_count,
-                                            topic_names,
-                                            timeout_sec=300):
+    def _consume_messages_from_random_topic(
+        self, kclient, message_count, topic_names, timeout_sec=300
+    ):
         """Consume message_count from random topic in the list topic_names
 
         Args:
@@ -228,14 +229,14 @@ class ManyTopicsTest(RedpandaTest):
         def check_consecutive(numbers_list):
             n = len(numbers_list) - 1
             # Calculate iterative difference for the array. It should be 1.
-            return (sum(numpy.diff(sorted(numbers_list)) == 1) >= n)
+            return sum(numpy.diff(sorted(numbers_list)) == 1) >= n
 
         # Select random topic from the list
         target_topic = topic_names[random.randint(0, len(topic_names))]
         # Consumer specific config
         consumer_extra_config = {
             "auto.offset.reset": "smallest",
-            "group.id": "topic_swarm_group"
+            "group.id": "topic_swarm_group",
         }
         self.logger.info(f"Start consuming from {target_topic}")
         # Consumer
@@ -262,9 +263,11 @@ class ManyTopicsTest(RedpandaTest):
                 if msg.error():
                     if msg.error().code() == KafkaError._PARTITION_EOF:
                         # End of partition event
-                        self.logger.info(f"Consumer of '{msg.topic()}' "
-                                         f"[{msg.partition()}] reached "
-                                         f"end at offset {msg.offset()}")
+                        self.logger.info(
+                            f"Consumer of '{msg.topic()}' "
+                            f"[{msg.partition()}] reached "
+                            f"end at offset {msg.offset()}"
+                        )
                         break
                     # If not EOF, raise it
                     elif msg.error():
@@ -279,24 +282,25 @@ class ManyTopicsTest(RedpandaTest):
         self.logger.info(f"Consumed {len(numbers)} messages")
         # Check that we received all numbers
         if elapsed > timeout_sec:
-            raise RuntimeError("Timeout consuming messages "
-                               f"from {target_topic}")
+            raise RuntimeError(f"Timeout consuming messages from {target_topic}")
         elif not check_consecutive(numbers):
-            raise RuntimeError("Produced and consumed messages mismatch "
-                               f"for {target_topic}")
+            raise RuntimeError(
+                f"Produced and consumed messages mismatch for {target_topic}"
+            )
 
         return
 
-    def _write_and_random_read_many_topics(self, message_count, num_topics,
-                                           topic_names):
+    def _write_and_random_read_many_topics(
+        self, message_count, num_topics, topic_names
+    ):
         """
-            Test checks that each of the many topics can be written to.
-            This produce/consume implementation will check actual data
-            of the messages to ensure that all of the messages are delivered
+        Test checks that each of the many topics can be written to.
+        This produce/consume implementation will check actual data
+        of the messages to ensure that all of the messages are delivered
 
-            Pick X number of topics, write 100 messages in each
-            Pick random one among them, consume all messages
-            Iterate.
+        Pick X number of topics, write 100 messages in each
+        Pick random one among them, consume all messages
+        Iterate.
         """
         # Prepare librdkafka python client
         kclient = PythonLibrdkafka(self.redpanda)
@@ -305,32 +309,33 @@ class ManyTopicsTest(RedpandaTest):
         )
 
         # Produce messages
-        used_topics, unused_topics, errors = \
-            self._produce_messages_to_random_topics(kclient, message_count,
-                                                    num_topics, topic_names)
+        used_topics, unused_topics, errors = self._produce_messages_to_random_topics(
+            kclient, message_count, num_topics, topic_names
+        )
 
         # Consume messages
         # Will raise RuntimeException on timeout
         # or non-consecutive message values
-        self._consume_messages_from_random_topic(kclient,
-                                                 message_count,
-                                                 used_topics,
-                                                 timeout_sec=300)
+        self._consume_messages_from_random_topic(
+            kclient, message_count, used_topics, timeout_sec=300
+        )
 
         # Return list of topics that was not used
         return unused_topics, errors
 
-    def _create_many_topics(self,
-                            brokers,
-                            node,
-                            topic_name_prefix,
-                            topic_count,
-                            batch_size,
-                            num_partitions,
-                            num_replicas,
-                            use_kafka_batching,
-                            topic_name_length=200,
-                            skip_name_randomization=False):
+    def _create_many_topics(
+        self,
+        brokers,
+        node,
+        topic_name_prefix,
+        topic_count,
+        batch_size,
+        num_partitions,
+        num_replicas,
+        use_kafka_batching,
+        topic_name_length=200,
+        skip_name_randomization=False,
+    ):
         """Function uses batched topic creation approach.
         Its either single topic per request using ThreadPool in batches or
         the whole batch in single kafka request.
@@ -350,20 +355,23 @@ class ManyTopicsTest(RedpandaTest):
         Returns:
             list: topic names and timing data
         """
+
         def log_timings_with_percentiles(timings):
             # Extract data
-            created_count = timings.get('count_created', -1)
+            created_count = timings.get("count_created", -1)
 
             # Add min/max time to the log
-            tmin = timings.get('creation-time-min', 0)
-            tmax = timings.get('creation-time-max', 0)
-            tp_str = f"...{created_count} topics: " \
-                "min = {:>7,.3f}s, " \
+            tmin = timings.get("creation-time-min", 0)
+            tmax = timings.get("creation-time-max", 0)
+            tp_str = (
+                f"...{created_count} topics: "
+                "min = {:>7,.3f}s, "
                 "max = {:>7,.3f}s, ".format(tmin, tmax)
+            )
 
             # Calculate percentiles for latest batch
             prc = [25, 50, 75, 90, 95, 99]
-            creation_times = timings.get('creation_times', [])
+            creation_times = timings.get("creation_times", [])
             tprc = numpy.percentile(creation_times, prc)
             for i in range(len(prc)):
                 tp_str += "p{} ={:7,.3f}s, ".format(prc[i], tprc[i])
@@ -391,86 +399,94 @@ class ManyTopicsTest(RedpandaTest):
         for line in node.account.ssh_capture(cmd):
             # The script will produce jsons one, per line
             # And it will have timings only
-            self.logger.debug(f"received {sys.getsizeof(line)}B "
-                              f"from '{hostname}'.")
+            self.logger.debug(f"received {sys.getsizeof(line)}B from '{hostname}'.")
             data = self._try_parse_json(node, line.strip())
             if data is not None:
-                if 'error' in data:
-                    self.logger.warning(f"Node '{hostname}' reported "
-                                        f"error:\n{data['error']}")
-                    raise RuntimeError(data['error'])
+                if "error" in data:
+                    self.logger.warning(
+                        f"Node '{hostname}' reported error:\n{data['error']}"
+                    )
+                    raise RuntimeError(data["error"])
                 else:
                     # Extract data
-                    timings = data.get('timings', {})
+                    timings = data.get("timings", {})
                     log_timings_with_percentiles(timings)
             else:
                 data = {}
 
-        topic_details = data.get('topics', [])
+        topic_details = data.get("topics", [])
         current_count = len(topic_details)
         self.logger.info(f"Created {current_count} topics")
-        assert len(topic_details) == topic_count, \
+        assert len(topic_details) == topic_count, (
             f"Topic count not reached: {current_count}/{topic_count}"
+        )
 
         return topic_details
 
     def _wait_for_topic_count(self, count):
         def has_count_topics():
             num_topics = self.redpanda.metric_sum(
-                'redpanda_cluster_topics',
+                "redpanda_cluster_topics",
                 metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
-                nodes=self.redpanda.started_nodes())
-            self.logger.info(
-                f"current topic count: {num_topics} target count: {count}")
+                nodes=self.redpanda.started_nodes(),
+            )
+            self.logger.info(f"current topic count: {num_topics} target count: {count}")
             return num_topics >= count
 
-        wait_until(lambda: has_count_topics(),
-                   timeout_sec=self.HEALTHY_WAIT_SECONDS,
-                   backoff_sec=30,
-                   err_msg=f"couldn't reach topic count target: {0}")
+        wait_until(
+            lambda: has_count_topics(),
+            timeout_sec=self.HEALTHY_WAIT_SECONDS,
+            backoff_sec=30,
+            err_msg=f"couldn't reach topic count target: {0}",
+        )
 
     def _wait_until_cluster_healthy(self, include_underreplicated=True):
         """
         Waits until the cluster is reporting no under-replicated or leaderless partitions.
         """
+
         def is_healthy():
             unavailable_count = self.redpanda.metric_sum(
-                'redpanda_cluster_unavailable_partitions',
+                "redpanda_cluster_unavailable_partitions",
                 metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
-                nodes=self.redpanda.started_nodes())
+                nodes=self.redpanda.started_nodes(),
+            )
             under_replicated_count = self.redpanda.metric_sum(
-                'vectorized_cluster_partition_under_replicated_replicas',
-                nodes=self.redpanda.started_nodes())
+                "vectorized_cluster_partition_under_replicated_replicas",
+                nodes=self.redpanda.started_nodes(),
+            )
             self.logger.info(
                 f"under-replicated partitions count: {under_replicated_count} "
-                f"unavailable_count: {unavailable_count}")
-            return unavailable_count == 0 and \
-                (under_replicated_count == 0 or not include_underreplicated)
+                f"unavailable_count: {unavailable_count}"
+            )
+            return unavailable_count == 0 and (
+                under_replicated_count == 0 or not include_underreplicated
+            )
 
         wait_until(
             lambda: is_healthy(),
             timeout_sec=self.HEALTHY_WAIT_SECONDS,
             backoff_sec=30,
-            err_msg=f"couldn't reach under-replicated count target: {0}")
+            err_msg=f"couldn't reach under-replicated count target: {0}",
+        )
 
     def _add_standby_node(self):
         # Add a new node in the cluster replace the one that will soon be decomissioned.
-        self.logger.debug(
-            f"Adding node {self._standby_broker.name} to the cluster")
+        self.logger.debug(f"Adding node {self._standby_broker.name} to the cluster")
         self.redpanda.clean_node(self._standby_broker)
-        self.redpanda.start_node(self._standby_broker,
-                                 first_start=True,
-                                 auto_assign_node_id=True)
-        wait_until(lambda: self.redpanda.registered(self._standby_broker),
-                   timeout_sec=60,
-                   backoff_sec=5)
+        self.redpanda.start_node(
+            self._standby_broker, first_start=True, auto_assign_node_id=True
+        )
+        wait_until(
+            lambda: self.redpanda.registered(self._standby_broker),
+            timeout_sec=60,
+            backoff_sec=5,
+        )
 
     def _remove_standby_node(self):
         # Add a new node in the cluster replace the one that will soon be decomissioned.
-        self.logger.debug(
-            f"Removing node {self._standby_broker.name} to the cluster")
-        self.redpanda.stop_node(self._standby_broker,
-                                timeout=self.STOP_TIMEOUT)
+        self.logger.debug(f"Removing node {self._standby_broker.name} to the cluster")
+        self.redpanda.stop_node(self._standby_broker, timeout=self.STOP_TIMEOUT)
         self.redpanda.clean_node(self._standby_broker)
 
     def _decommission_node_unsafely(self):
@@ -487,11 +503,12 @@ class ManyTopicsTest(RedpandaTest):
         # clean node so we can re-used it as the "newly" created replacement node:
         self.logger.debug(f"Adding node {node_to_decom.name} to the cluster")
         self.redpanda.clean_node(node_to_decom)
-        self.redpanda.start_node(node_to_decom,
-                                 first_start=True,
-                                 auto_assign_node_id=True)
-        self.node_ops_exec.decommission(self.redpanda.idx(node_to_decom),
-                                        node_id=node_id)
+        self.redpanda.start_node(
+            node_to_decom, first_start=True, auto_assign_node_id=True
+        )
+        self.node_ops_exec.decommission(
+            self.redpanda.idx(node_to_decom), node_id=node_id
+        )
 
     def _decommission_node_safely(self):
         """
@@ -515,29 +532,30 @@ class ManyTopicsTest(RedpandaTest):
 
     def _get_partition_count(self):
         return self.redpanda.metric_sum(
-            'redpanda_cluster_partitions',
+            "redpanda_cluster_partitions",
             metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
-            nodes=self.redpanda.started_nodes())
+            nodes=self.redpanda.started_nodes(),
+        )
 
     def _wait_for_leadership_balanced(self):
         def is_balanced(threshold=0.1):
             leaders_per_node = [
-                self.redpanda.metric_sum('vectorized_cluster_partition_leader',
-                                         nodes=[n])
+                self.redpanda.metric_sum(
+                    "vectorized_cluster_partition_leader", nodes=[n]
+                )
                 for n in self.redpanda.started_nodes()
             ]
             stddev = numpy.std(leaders_per_node)
-            error = stddev / (self._get_partition_count() /
-                              len(self.redpanda.started_nodes()))
+            error = stddev / (
+                self._get_partition_count() / len(self.redpanda.started_nodes())
+            )
             self.logger.info(
                 f"leadership info (stddev: {stddev:.2f}; want error {error:.2f} < {threshold})"
             )
 
             return error < threshold
 
-        wait_until(is_balanced,
-                   timeout_sec=self.HEALTHY_WAIT_SECONDS,
-                   backoff_sec=30)
+        wait_until(is_balanced, timeout_sec=self.HEALTHY_WAIT_SECONDS, backoff_sec=30)
 
     def _in_maintenance_mode(self, node):
         status = self.admin.maintenance_status(node)
@@ -545,33 +563,37 @@ class ManyTopicsTest(RedpandaTest):
 
     def _enable_maintenance_mode(self, node):
         self.admin.maintenance_start(node)
-        wait_until(lambda: self._in_maintenance_mode(node),
-                   timeout_sec=30,
-                   backoff_sec=5)
+        wait_until(
+            lambda: self._in_maintenance_mode(node), timeout_sec=30, backoff_sec=5
+        )
 
         def has_drained_leadership():
             status = self.admin.maintenance_status(node)
             self.logger.debug(f"Maintenance status for {node.name}: {status}")
-            if all([
-                    key in status
-                    for key in ['finished', 'errors', 'partitions']
-            ]):
-                return status["finished"] and not status["errors"] and \
-                        status["partitions"] > 0
+            if all([key in status for key in ["finished", "errors", "partitions"]]):
+                return (
+                    status["finished"]
+                    and not status["errors"]
+                    and status["partitions"] > 0
+                )
             else:
                 return False
 
         self.logger.debug(f"Waiting for node {node.name} leadership to drain")
-        wait_until(has_drained_leadership,
-                   timeout_sec=self.HEALTHY_WAIT_SECONDS,
-                   backoff_sec=30)
+        wait_until(
+            has_drained_leadership,
+            timeout_sec=self.HEALTHY_WAIT_SECONDS,
+            backoff_sec=30,
+        )
 
     def _disable_maintenance_mode(self, node):
         self.admin.maintenance_stop(node)
 
-        wait_until(lambda: not self._in_maintenance_mode(node),
-                   timeout_sec=self.HEALTHY_WAIT_SECONDS,
-                   backoff_sec=10)
+        wait_until(
+            lambda: not self._in_maintenance_mode(node),
+            timeout_sec=self.HEALTHY_WAIT_SECONDS,
+            backoff_sec=10,
+        )
 
     def _rolling_restarts(self, safe=True):
         """
@@ -579,6 +601,7 @@ class ManyTopicsTest(RedpandaTest):
         Each node is put in maintenance mode and is restarted only after all leadership
         has been drained from it.
         """
+
         def restart_node(node):
             if safe:
                 self._enable_maintenance_mode(node)
@@ -609,7 +632,8 @@ class ManyTopicsTest(RedpandaTest):
             profile.num_replicas,
             profile.use_kafka_batching,
             topic_name_length=profile.topic_name_length,
-            skip_name_randomization=False)
+            skip_name_randomization=False,
+        )
 
         # Free node that used to create topics
         self.cluster.free_single(node)
@@ -623,8 +647,7 @@ class ManyTopicsTest(RedpandaTest):
                 metrics.append(node.get_metrics_summary(seconds=20).p50)
             total_rate = sum(metrics)
             _m = [str(m) for m in metrics]
-            self.logger.debug(f"...last 20 sec rate is {total_rate} "
-                              f"({', '.join(_m)})")
+            self.logger.debug(f"...last 20 sec rate is {total_rate} ({', '.join(_m)})")
             return total_rate >= target_rate
 
         # Value for progress checks is 20 sec
@@ -638,13 +661,16 @@ class ManyTopicsTest(RedpandaTest):
             _check,
             timeout_sec=self.PROGRESS_TIMEOUT,
             backoff_sec=5,
-            err_msg="Producer Swarm nodes not making progress")
+            err_msg="Producer Swarm nodes not making progress",
+        )
 
     def _wait_for_leadership_stabilized(self, maintenance_node):
         def is_stabilized(threshold=0.1):
             leaders_per_node = [
-                self.redpanda.metric_sum('vectorized_cluster_partition_leader',
-                                         nodes=[n]) for n in nodes
+                self.redpanda.metric_sum(
+                    "vectorized_cluster_partition_leader", nodes=[n]
+                )
+                for n in nodes
             ]
             stddev = numpy.std(leaders_per_node)
             error = stddev / (self._get_partition_count() / len(nodes))
@@ -655,12 +681,8 @@ class ManyTopicsTest(RedpandaTest):
             return error < threshold
 
         # get nodes w/o maintenance one
-        nodes = [
-            n for n in self.redpanda.started_nodes() if n != maintenance_node
-        ]
-        wait_until(is_stabilized,
-                   timeout_sec=self.HEALTHY_WAIT_SECONDS,
-                   backoff_sec=30)
+        nodes = [n for n in self.redpanda.started_nodes() if n != maintenance_node]
+        wait_until(is_stabilized, timeout_sec=self.HEALTHY_WAIT_SECONDS, backoff_sec=30)
 
         return
 
@@ -671,8 +693,9 @@ class ManyTopicsTest(RedpandaTest):
     def _restart_safely(self):
         # Put node in maintenance
         maintenance_node = self._select_random_node()
-        self.logger.info("Selected maintenance node is "
-                         f"'{maintenance_node.account.hostname}'")
+        self.logger.info(
+            f"Selected maintenance node is '{maintenance_node.account.hostname}'"
+        )
         self._enable_maintenance_mode(maintenance_node)
 
         # Wait for healthy status
@@ -685,8 +708,9 @@ class ManyTopicsTest(RedpandaTest):
         self._wait_workload_progress()
 
         # Stop node in maintenance
-        self.logger.info("Stopping maintenance node of "
-                         f"'{maintenance_node.account.hostname}'")
+        self.logger.info(
+            f"Stopping maintenance node of '{maintenance_node.account.hostname}'"
+        )
         self.redpanda.stop_node(maintenance_node, timeout=self.STOP_TIMEOUT)
 
         # Again, wait for healthy cluster
@@ -700,21 +724,24 @@ class ManyTopicsTest(RedpandaTest):
         self._wait_workload_progress()
 
         # Restart node
-        self.logger.info("Starting maintenance node of "
-                         f"'{maintenance_node.account.hostname}'")
+        self.logger.info(
+            f"Starting maintenance node of '{maintenance_node.account.hostname}'"
+        )
         self.redpanda.start_node(maintenance_node)
-        self.logger.info("Disabling maintenance on node "
-                         f"'{maintenance_node.account.hostname}'")
+        self.logger.info(
+            f"Disabling maintenance on node '{maintenance_node.account.hostname}'"
+        )
         self._disable_maintenance_mode(maintenance_node)
 
     def _restart_unsafely(self):
         # Stop node in maintenance
         maintenance_node = self._select_random_node()
-        self.logger.info("Selected node for hard stop is "
-                         f"'{maintenance_node.account.hostname}'")
-        self.redpanda.stop_node(maintenance_node,
-                                timeout=self.STOP_TIMEOUT,
-                                forced=True)
+        self.logger.info(
+            f"Selected node for hard stop is '{maintenance_node.account.hostname}'"
+        )
+        self.redpanda.stop_node(
+            maintenance_node, timeout=self.STOP_TIMEOUT, forced=True
+        )
 
         # Again, wait for healthy cluster
         # There will be underreplicated partitions spike, ignore it
@@ -727,8 +754,9 @@ class ManyTopicsTest(RedpandaTest):
 
         # Restart node
         self.redpanda.start_node(maintenance_node)
-        self.logger.info("Disabling maintenance on node "
-                         f"'{maintenance_node.account.hostname}'")
+        self.logger.info(
+            f"Disabling maintenance on node '{maintenance_node.account.hostname}'"
+        )
         self._disable_maintenance_mode(maintenance_node)
 
         # Check workload progress
@@ -743,8 +771,7 @@ class ManyTopicsTest(RedpandaTest):
             self.logger.info("Ensure workloads is progressing")
             self._wait_workload_progress()
 
-            self.logger.info(f"Simulating {self._target_downtime_sec} sec "
-                             "isolation")
+            self.logger.info(f"Simulating {self._target_downtime_sec} sec isolation")
             time.sleep(self._target_downtime_sec)
 
             self.logger.info("Ensure leadership stays balanced")
@@ -753,16 +780,16 @@ class ManyTopicsTest(RedpandaTest):
             self.logger.info("Ensure workloads is progressing")
             self._wait_workload_progress()
 
-            self.logger.info("Ensure cluster healthy, "
-                             "ignoring underreplicated partitions")
+            self.logger.info(
+                "Ensure cluster healthy, ignoring underreplicated partitions"
+            )
             self._wait_until_cluster_healthy(include_underreplicated=False)
 
     def _isolate_all_nodes(self):
         if self._target_port is None:
             raise RuntimeError("Isolation port not selected")
 
-        self.logger.info("Isolating all redpanda nodes on port "
-                         f"{self._target_port}")
+        self.logger.info(f"Isolating all redpanda nodes on port {self._target_port}")
         self._isolate(self.redpanda.nodes)
 
         # Clean out isolation port
@@ -774,8 +801,9 @@ class ManyTopicsTest(RedpandaTest):
 
         # Pick random node
         isolated_node = self._select_random_node()
-        self.logger.info("Selected node for isolation "
-                         f"'{isolated_node.account.hostname}'")
+        self.logger.info(
+            f"Selected node for isolation '{isolated_node.account.hostname}'"
+        )
 
         # Isolate node using specified port
         self._isolate([isolated_node])
@@ -800,25 +828,27 @@ class ManyTopicsTest(RedpandaTest):
         #
         # Traffic checks
 
-        topics_to_go = [t['name'] for t in topic_details]
+        topics_to_go = [t["name"] for t in topic_details]
         # Messages to produce
         message_count = 100
         self.logger.info(
-            f"Starting Produce/Consume stage for {len(topics_to_go)} topics")
+            f"Starting Produce/Consume stage for {len(topics_to_go)} topics"
+        )
         producer_errors = []
         while len(topics_to_go) > 0:
             topics_to_go, errors = self._write_and_random_read_many_topics(
-                message_count, profile.batch_size, topics_to_go)
+                message_count, profile.batch_size, topics_to_go
+            )
             producer_errors += errors
-            self.logger.info(
-                f"iteration complete, topics left {len(topics_to_go)}")
+            self.logger.info(f"iteration complete, topics left {len(topics_to_go)}")
 
         total_errors = len(producer_errors)
         if total_errors > 0:
-            _errors_str = '\n'.join(producer_errors)
+            _errors_str = "\n".join(producer_errors)
             self.logger.error(f"Producer errors:\n{_errors_str}")
-        assert total_errors < 1, \
+        assert total_errors < 1, (
             f"{total_errors} errors detected while sending messages"
+        )
         self.logger.info("Produce/Consume stage complete")
 
         unsafe_start = time.time()
@@ -826,8 +856,7 @@ class ManyTopicsTest(RedpandaTest):
         self._wait_until_cluster_healthy()
         unsafe_end = time.time()
 
-        self.logger.warn(
-            f"Time it took to replace node {unsafe_end - unsafe_start}")
+        self.logger.warn(f"Time it took to replace node {unsafe_end - unsafe_start}")
 
     @cluster(num_nodes=11, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_topic_swarm(self):
@@ -866,7 +895,8 @@ class ManyTopicsTest(RedpandaTest):
             profile.num_replicas,
             profile.use_kafka_batching,
             topic_name_length=profile.topic_name_length,
-            skip_name_randomization=False)
+            skip_name_randomization=False,
+        )
 
         # Validate topics
         topics = self.rpk.list_topics(detailed=True)
@@ -879,7 +909,7 @@ class ManyTopicsTest(RedpandaTest):
         # Searches for a topic in our list
         def get_topic_index(name):
             for idx in range(len(topic_details)):
-                if name == topic_details[idx]['name']:
+                if name == topic_details[idx]["name"]:
                     return idx
             return -1
 
@@ -891,17 +921,21 @@ class ManyTopicsTest(RedpandaTest):
                 # RP has topic that is not ours
                 # Cluster was clean and it is an issue
                 err = f"Unexpected topic found: {name}"
-            elif int(replicas) != topic_details[idx]['replicas']:
+            elif int(replicas) != topic_details[idx]["replicas"]:
                 # Replication factor is wrong
-                err = f"Replication factor error: current {replicas}, " \
-                f"target {topic_details[idx]['replicas']}"
-            elif int(partitions) != topic_details[idx]['partitions']:
+                err = (
+                    f"Replication factor error: current {replicas}, "
+                    f"target {topic_details[idx]['replicas']}"
+                )
+            elif int(partitions) != topic_details[idx]["partitions"]:
                 # Partitions number is wrong
-                err = f"Partitions number error: current {partitions}, " \
-                f"target {topic_details[idx]['partitions']}"
+                err = (
+                    f"Partitions number error: current {partitions}, "
+                    f"target {topic_details[idx]['partitions']}"
+                )
             else:
                 # Topic passed the check
-                topics_ok.append(topic_details[idx]['name'])
+                topics_ok.append(topic_details[idx]["name"])
                 continue
             # one of errors happened, add topic to failed list
             # And add error message
@@ -918,10 +952,10 @@ class ManyTopicsTest(RedpandaTest):
         # Validate our list against RP
         for topic in topic_details:
             # make sure topic is present in RP
-            if topic['name'] not in topics_ok:
-                topics_unavailable.append(topic['name'])
+            if topic["name"] not in topics_ok:
+                topics_unavailable.append(topic["name"])
             else:
-                topics_available.append(topic['name'])
+                topics_available.append(topic["name"])
         unavailable = len(topics_unavailable)
         assert unavailable < 1, f"{unavailable} topics are missing in RP"
 
@@ -933,27 +967,28 @@ class ManyTopicsTest(RedpandaTest):
         # Messages to produce
         message_count = 100
         self.logger.info(
-            f"Starting Produce/Consume stage for {len(topics_to_go)} topics")
+            f"Starting Produce/Consume stage for {len(topics_to_go)} topics"
+        )
         producer_errors = []
         while len(topics_to_go) > 0:
             topics_to_go, errors = self._write_and_random_read_many_topics(
-                message_count, profile.batch_size, topics_to_go)
+                message_count, profile.batch_size, topics_to_go
+            )
             producer_errors += errors
-            self.logger.info(
-                f"iteration complete, topics left {len(topics_to_go)}")
+            self.logger.info(f"iteration complete, topics left {len(topics_to_go)}")
 
         total_errors = len(producer_errors)
         if total_errors > 0:
-            _errors_str = '\n'.join(producer_errors)
+            _errors_str = "\n".join(producer_errors)
             self.logger.error(f"Producer errors:\n{_errors_str}")
-        assert total_errors < 1, \
+        assert total_errors < 1, (
             f"{total_errors} errors detected while sending messages"
+        )
         self.logger.info("Produce/Consume stage complete")
 
         return
 
-    def _run_producers_with_constant_rate(self, profile, node_topic_count,
-                                          topics):
+    def _run_producers_with_constant_rate(self, profile, node_topic_count, topics):
         swarm_node_producers = []
         for topic in topics:
             swarm_producer = ProducerSwarm(
@@ -963,8 +998,8 @@ class ManyTopicsTest(RedpandaTest):
                 node_topic_count,
                 profile.message_count,
                 unique_topics=True,
-                messages_per_second_per_producer=profile.
-                messages_per_second_per_producer)
+                messages_per_second_per_producer=profile.messages_per_second_per_producer,
+            )
             swarm_node_producers.append(swarm_producer)
 
         # Run topic swarm for each topic group
@@ -974,20 +1009,22 @@ class ManyTopicsTest(RedpandaTest):
 
         return swarm_node_producers
 
-    def _run_consumers_with_constant_rate(self, profile, node_topic_count,
-                                          topics, group):
+    def _run_consumers_with_constant_rate(
+        self, profile, node_topic_count, topics, group
+    ):
         swarm_node_consumers = []
-        node_message_count = int(0.95 *
-                                 (profile.message_count * node_topic_count))
+        node_message_count = int(0.95 * (profile.message_count * node_topic_count))
         for topic in topics:
-            swarm_producer = ConsumerSwarm(self.test_context,
-                                           self.redpanda,
-                                           topic,
-                                           group,
-                                           node_topic_count,
-                                           node_message_count,
-                                           unique_topics=True,
-                                           unique_groups=True)
+            swarm_producer = ConsumerSwarm(
+                self.test_context,
+                self.redpanda,
+                topic,
+                group,
+                node_topic_count,
+                node_message_count,
+                unique_topics=True,
+                unique_groups=True,
+            )
             swarm_node_consumers.append(swarm_producer)
 
         # Run topic swarm for each topic group
@@ -997,8 +1034,7 @@ class ManyTopicsTest(RedpandaTest):
 
         return swarm_node_consumers
 
-    def _adjust_topic_count(self, node_topic_count, nodes_available,
-                            max_topics):
+    def _adjust_topic_count(self, node_topic_count, nodes_available, max_topics):
         # swarm node can generate traffic for 4.5k topics max due to network limitations
         new_node_topic_count = node_topic_count
         if new_node_topic_count > self.MAX_SWARM_NODE_TOPIC_COUNT:
@@ -1007,19 +1043,24 @@ class ManyTopicsTest(RedpandaTest):
                 " topics, nodes available for swarm "
                 f"{nodes_available}, topics per swarm node would be "
                 f"{node_topic_count}, which is more than one "
-                f"node can handle ({self.MAX_SWARM_NODE_TOPIC_COUNT})")
+                f"node can handle ({self.MAX_SWARM_NODE_TOPIC_COUNT})"
+            )
             new_node_topic_count = self.MAX_SWARM_NODE_TOPIC_COUNT
-            self.logger.warning("Setting swarm topic count to MAX of "
-                                f"{self.MAX_SWARM_NODE_TOPIC_COUNT} per swarm "
-                                f"node ({nodes_available} swarm nodes * "
-                                f"{self.MAX_SWARM_NODE_TOPIC_COUNT} = "
-                                f"{new_node_topic_count * nodes_available})")
+            self.logger.warning(
+                "Setting swarm topic count to MAX of "
+                f"{self.MAX_SWARM_NODE_TOPIC_COUNT} per swarm "
+                f"node ({nodes_available} swarm nodes * "
+                f"{self.MAX_SWARM_NODE_TOPIC_COUNT} = "
+                f"{new_node_topic_count * nodes_available})"
+            )
         else:
-            self.logger.warning("Using swarm topic count of "
-                                f"{node_topic_count} per swarm node "
-                                f"({nodes_available} swarm nodes * "
-                                f"{node_topic_count} = "
-                                f"{new_node_topic_count * nodes_available})")
+            self.logger.warning(
+                "Using swarm topic count of "
+                f"{node_topic_count} per swarm node "
+                f"({nodes_available} swarm nodes * "
+                f"{node_topic_count} = "
+                f"{new_node_topic_count * nodes_available})"
+            )
 
         return new_node_topic_count
 
@@ -1036,8 +1077,10 @@ class ManyTopicsTest(RedpandaTest):
             consume_node_topic_count = 0
         else:
             if nodes_available < 2:
-                raise RuntimeError("Not enough nodes for producers and "
-                                   f"consumers. Available {nodes_available}")
+                raise RuntimeError(
+                    "Not enough nodes for producers and "
+                    f"consumers. Available {nodes_available}"
+                )
             # Divide available nodes between producers and consumers
             produce_nodes = nodes_available // 2
             consume_nodes = nodes_available // 2
@@ -1063,11 +1106,13 @@ class ManyTopicsTest(RedpandaTest):
         if produce_node_topic_count > 0:
             self.logger.warning("Checking produce swarm nodes topic count")
             produce_node_topic_count = self._adjust_topic_count(
-                produce_node_topic_count, produce_nodes, max_supported_topics)
+                produce_node_topic_count, produce_nodes, max_supported_topics
+            )
         if consume_node_topic_count > 0:
             self.logger.warning("Checking consume swarm nodes topic count")
             consume_node_topic_count = self._adjust_topic_count(
-                consume_node_topic_count, consume_nodes, max_supported_topics)
+                consume_node_topic_count, consume_nodes, max_supported_topics
+            )
 
         # Grab node to run creation script on it.
         node = self.cluster.alloc(ClusterSpec.simple_linux(1))[0]
@@ -1086,10 +1131,13 @@ class ManyTopicsTest(RedpandaTest):
                 profile.num_replicas,
                 profile.use_kafka_batching,
                 topic_name_length=profile.topic_name_length,
-                skip_name_randomization=True)
+                skip_name_randomization=True,
+            )
 
-            self.logger.info(f"Created {len(topic_details)} topics with "
-                             f"prefix of '{node_topic_name_prefix}'")
+            self.logger.info(
+                f"Created {len(topic_details)} topics with "
+                f"prefix of '{node_topic_name_prefix}'"
+            )
 
             topic_prefixes.append(node_topic_name_prefix)
         # Free node that used to create topics
@@ -1101,16 +1149,18 @@ class ManyTopicsTest(RedpandaTest):
         self._start_initial_broker_set()
 
         tsm = TopicScaleProfileManager()
-        profile = tsm.get_custom_profile("topic_profile_t40k_p1",
-                                         {"message_count": 25 * 60})
+        profile = tsm.get_custom_profile(
+            "topic_profile_t40k_p1", {"message_count": 25 * 60}
+        )
         self._current_profile = profile
 
         ##
         # Create topics
         #
 
-        topic_prefixes, pnode_topic_count, cnode_topic_count = \
+        topic_prefixes, pnode_topic_count, cnode_topic_count = (
             self._stage_create_topics_adjusted(profile)
+        )
 
         # Do the healthcheck on RP
         # to make sure that all topics are settle down and have their leader
@@ -1121,19 +1171,22 @@ class ManyTopicsTest(RedpandaTest):
         #
 
         # Calculate how much time ideally needed for the producers to finish
-        running_time_sec = \
+        running_time_sec = (
             profile.message_count // profile.messages_per_second_per_producer
+        )
 
         # Run swarm producers
         swarm_producers = self._run_producers_with_constant_rate(
-            profile, pnode_topic_count, topic_prefixes)
+            profile, pnode_topic_count, topic_prefixes
+        )
 
         # Save producers for underlying test to use
         self._swarm_producers = swarm_producers
         # Run swarm consumers
         _group = "topic_swarm_group"
         swarm_consumers = self._run_consumers_with_constant_rate(
-            profile, cnode_topic_count, topic_prefixes, _group)
+            profile, cnode_topic_count, topic_prefixes, _group
+        )
 
         # Allow time for clients to start and stablize
         time.sleep(2 * 60)
@@ -1234,8 +1287,9 @@ class ManyTopicsTest(RedpandaTest):
         self.redpanda.start()
 
         # Do create topics stage
-        topic_prefixes, pnode_topic_count, cnode_topic_count = \
+        topic_prefixes, pnode_topic_count, cnode_topic_count = (
             self._stage_create_topics_adjusted(profile)
+        )
 
         # Do the healthcheck on RP
         # to make sure that all topics are settle down and have their leader
@@ -1244,23 +1298,27 @@ class ManyTopicsTest(RedpandaTest):
         # Calculate how much time ideally needed for the producers to finish
         # Logic is that we sleep for normal running time
         # And then running checks when swarm nodes running last messages delivery
-        running_time_sec = \
+        running_time_sec = (
             profile.message_count // profile.messages_per_second_per_producer
+        )
 
         # Run swarm producers
         swarm_producers = self._run_producers_with_constant_rate(
-            profile, pnode_topic_count, topic_prefixes)
+            profile, pnode_topic_count, topic_prefixes
+        )
 
         # Run swarm consumers
         _group = "topic_swarm_group"
         swarm_consumers = self._run_consumers_with_constant_rate(
-            profile, cnode_topic_count, topic_prefixes, _group)
+            profile, cnode_topic_count, topic_prefixes, _group
+        )
 
         # Wait for all messages to be produced
         # Logic is that we sleep for normal running time
         # And then running checks when swarm nodes running last messages delivery
-        running_time_sec = \
+        running_time_sec = (
             profile.message_count // profile.messages_per_second_per_producer
+        )
         self.logger.info(f"Sleeping for {running_time_sec} sec (running time)")
         # Just pause for running time to eliminate unnesesary requests
         # and not put noise into already overloaded network traffic
@@ -1291,19 +1349,18 @@ class ManyTopicsTest(RedpandaTest):
         hwms = []
         for topic_prefix in topic_prefixes:
             # messages per node
-            _topic_names = [
-                f"{topic_prefix}-{idx}" for idx in range(pnode_topic_count)
-            ]
+            _topic_names = [f"{topic_prefix}-{idx}" for idx in range(pnode_topic_count)]
             # Use Thread pool to speed things up
             with concurrent.futures.ThreadPoolExecutor(max_workers=32) as exec:
                 swarmnode_hwms = sum(exec.map(_get_hwm, _topic_names))
             # save watermark for node
             hwms.append(swarmnode_hwms)
 
-        assert all([hwm >= target_messages_per_node for hwm in hwms]), \
-            f"Message counts per swarm node mismatch: " \
-            f"target={target_messages_per_node}, " \
+        assert all([hwm >= target_messages_per_node for hwm in hwms]), (
+            f"Message counts per swarm node mismatch: "
+            f"target={target_messages_per_node}, "
             f"swarm_nodes='''{', '.join([str(num) for num in hwms])}'''"
+        )
 
         return
 
@@ -1320,7 +1377,7 @@ class ManyTopicsTest(RedpandaTest):
         self.redpanda.start()
 
         topic_details = self._stage_create_topics(profile)
-        self.logger.debug(f'topic_detals: {topic_details}')
+        self.logger.debug(f"topic_detals: {topic_details}")
 
         client = KafkaCliTools(self.redpanda)
         try:
@@ -1330,12 +1387,7 @@ class ManyTopicsTest(RedpandaTest):
             # heap space on such a large request.
             pass
 
-    def _request(self,
-                 verb,
-                 path,
-                 hostname=None,
-                 tls_enabled: bool = False,
-                 **kwargs):
+    def _request(self, verb, path, hostname=None, tls_enabled: bool = False, **kwargs):
         """
 
         :param verb: String, as for first arg to requests.request
@@ -1355,15 +1407,17 @@ class ManyTopicsTest(RedpandaTest):
         scheme = "https" if tls_enabled else "http"
         uri = f"{scheme}://{hostname}:8081/{path}"
 
-        if 'timeout' not in kwargs:
-            kwargs['timeout'] = 60
+        if "timeout" not in kwargs:
+            kwargs["timeout"] = 60
 
         # Error codes that may appear during normal API operation, do not
         # indicate an issue with the service
         acceptable_errors = {409, 422, 404}
 
         def accept_response(resp):
-            return 200 <= resp.status_code < 300 or resp.status_code in acceptable_errors
+            return (
+                200 <= resp.status_code < 300 or resp.status_code in acceptable_errors
+            )
 
         self.logger.debug(f"{verb} hostname={hostname} {path} {kwargs}")
 
@@ -1385,47 +1439,39 @@ class ManyTopicsTest(RedpandaTest):
                     f"Error after retry {r.status_code} on {verb} {path} ({r.text})"
                 )
 
-        self.logger.info(
-            f"{r.status_code} {verb} hostname={hostname} {path} {kwargs}")
+        self.logger.info(f"{r.status_code} {verb} hostname={hostname} {path} {kwargs}")
 
         return r
 
-    def _post_subjects_subject_versions(self,
-                                        subject,
-                                        data,
-                                        headers=HTTP_POST_HEADERS,
-                                        **kwargs):
-        return self._request("POST",
-                             f"subjects/{subject}/versions",
-                             headers=headers,
-                             data=data,
-                             **kwargs)
+    def _post_subjects_subject_versions(
+        self, subject, data, headers=HTTP_POST_HEADERS, **kwargs
+    ):
+        return self._request(
+            "POST", f"subjects/{subject}/versions", headers=headers, data=data, **kwargs
+        )
 
     def _get_subjects(self, deleted=False, headers=HTTP_GET_HEADERS, **kwargs):
-        return self._request("GET",
-                             f"subjects{'?deleted=true' if deleted else ''}",
-                             headers=headers,
-                             **kwargs)
+        return self._request(
+            "GET",
+            f"subjects{'?deleted=true' if deleted else ''}",
+            headers=headers,
+            **kwargs,
+        )
 
-    def _get_schemas_ids_id_versions(self,
-                                     id,
-                                     headers=HTTP_GET_HEADERS,
-                                     **kwargs):
-        return self._request("GET",
-                             f"schemas/ids/{id}/versions",
-                             headers=headers,
-                             **kwargs)
+    def _get_schemas_ids_id_versions(self, id, headers=HTTP_GET_HEADERS, **kwargs):
+        return self._request(
+            "GET", f"schemas/ids/{id}/versions", headers=headers, **kwargs
+        )
 
-    def _get_schemas_ids_id_subjects(self,
-                                     id,
-                                     deleted=False,
-                                     headers=HTTP_GET_HEADERS,
-                                     **kwargs):
+    def _get_schemas_ids_id_subjects(
+        self, id, deleted=False, headers=HTTP_GET_HEADERS, **kwargs
+    ):
         return self._request(
             "GET",
             f"schemas/ids/{id}/subjects{'?deleted=true' if deleted else ''}",
             headers=headers,
-            **kwargs)
+            **kwargs,
+        )
 
     @cluster(num_nodes=10)
     def test_many_subjects(self):
@@ -1438,33 +1484,43 @@ class ManyTopicsTest(RedpandaTest):
         id = None
 
         for i in range(num_subjects):
-            subject_name = f'subject{i}'
+            subject_name = f"subject{i}"
             result_raw = self._post_subjects_subject_versions(
-                subject=subject_name, data=schema1_data)
-            assert result_raw.status_code == requests.codes.ok, f'Failed to post {subject_name}: {result_raw.status_code}'
+                subject=subject_name, data=schema1_data
+            )
+            assert result_raw.status_code == requests.codes.ok, (
+                f"Failed to post {subject_name}: {result_raw.status_code}"
+            )
             if id is None:
                 id = result_raw.json()["id"]
             else:
-                assert id == result_raw.json(
-                )["id"], f'Id mismatch: {id} != {result_raw.json()["id"]}'
+                assert id == result_raw.json()["id"], (
+                    f"Id mismatch: {id} != {result_raw.json()['id']}"
+                )
 
         result_raw = self._get_subjects()
-        assert result_raw.status_code == requests.codes.ok, f'Failed to get subjects: {result_raw.status_code}'
-        assert len(
-            result_raw.json()
-        ) == num_subjects, f'Length of json ({len(result_raw.json())}) != expected {num_subjects}'
+        assert result_raw.status_code == requests.codes.ok, (
+            f"Failed to get subjects: {result_raw.status_code}"
+        )
+        assert len(result_raw.json()) == num_subjects, (
+            f"Length of json ({len(result_raw.json())}) != expected {num_subjects}"
+        )
 
         result_raw = self._get_schemas_ids_id_subjects(id=id)
-        assert result_raw.status_code == requests.codes.ok, f'Failed to get subjects by id: {result_raw.status_code}'
-        assert len(
-            result_raw.json()
-        ) == num_subjects, f'Length of json ({len(result_raw.json())}) != expected {num_subjects}'
+        assert result_raw.status_code == requests.codes.ok, (
+            f"Failed to get subjects by id: {result_raw.status_code}"
+        )
+        assert len(result_raw.json()) == num_subjects, (
+            f"Length of json ({len(result_raw.json())}) != expected {num_subjects}"
+        )
 
         result_raw = self._get_schemas_ids_id_versions(id=id)
-        assert result_raw.status_code == requests.codes.ok, f'Failed to get subject versions by id: {result_raw.status_code}'
-        assert len(
-            result_raw.json()
-        ) == num_subjects, f'Length of json ({len(result_raw.json())}) != expected {num_subjects}'
+        assert result_raw.status_code == requests.codes.ok, (
+            f"Failed to get subject versions by id: {result_raw.status_code}"
+        )
+        assert len(result_raw.json()) == num_subjects, (
+            f"Length of json ({len(result_raw.json())}) != expected {num_subjects}"
+        )
 
     @cluster(num_nodes=10)
     def test_many_schemas(self):
@@ -1475,21 +1531,26 @@ class ManyTopicsTest(RedpandaTest):
 
         prev_id = None
         for i in range(num_schemas):
-            subject = f'subject{i}'
-            schema_data = json.dumps(
-                {"schema": schema_fmt.format(subject=subject)})
-            result_raw = self._post_subjects_subject_versions(subject=subject,
-                                                              data=schema_data)
-            assert result_raw.status_code == requests.codes.ok, f'Failed to post {subject}: {result_raw.status_code}'
+            subject = f"subject{i}"
+            schema_data = json.dumps({"schema": schema_fmt.format(subject=subject)})
+            result_raw = self._post_subjects_subject_versions(
+                subject=subject, data=schema_data
+            )
+            assert result_raw.status_code == requests.codes.ok, (
+                f"Failed to post {subject}: {result_raw.status_code}"
+            )
             if prev_id is None:
                 prev_id = result_raw.json()["id"]
             else:
-                assert prev_id != result_raw.json(
-                )["id"], f'Expected different schema ID: {prev_id}'
+                assert prev_id != result_raw.json()["id"], (
+                    f"Expected different schema ID: {prev_id}"
+                )
                 prev_id = result_raw.json()["id"]
 
         result_raw = self._get_subjects()
-        assert result_raw.status_code == requests.codes.ok, f'Failed to get subjects: {result_raw.status_code}'
-        assert len(
-            result_raw.json()
-        ) == num_schemas, f'Length of json ({len(result_raw.json())}) != expected {num_schemas}'
+        assert result_raw.status_code == requests.codes.ok, (
+            f"Failed to get subjects: {result_raw.status_code}"
+        )
+        assert len(result_raw.json()) == num_schemas, (
+            f"Length of json ({len(result_raw.json())}) != expected {num_schemas}"
+        )

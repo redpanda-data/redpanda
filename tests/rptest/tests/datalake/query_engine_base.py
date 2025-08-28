@@ -13,14 +13,15 @@ from enum import Enum
 
 
 class QueryEngineType(str, Enum):
-    SPARK = 'spark'
-    TRINO = 'trino'
-    DATABRICKS_SQL = 'databricks_sql'
-    DUCKDB_PY = 'duckdb_py'
+    SPARK = "spark"
+    TRINO = "trino"
+    DATABRICKS_SQL = "databricks_sql"
+    DUCKDB_PY = "duckdb_py"
 
 
 class QueryEngineBase(ABC):
     """Captures all the common operations across registered query engines"""
+
     @staticmethod
     @abstractmethod
     def engine_name() -> QueryEngineType:
@@ -78,9 +79,7 @@ class QueryEngineBase(ABC):
             return cursor.fetchone()[0]
 
     @abstractmethod
-    def count_parquet_files(self, namespace, table) -> int:
-        ...
+    def count_parquet_files(self, namespace, table) -> int: ...
 
     @abstractmethod
-    def optimize_parquet_files(self, namespace, table) -> None:
-        ...
+    def optimize_parquet_files(self, namespace, table) -> None: ...

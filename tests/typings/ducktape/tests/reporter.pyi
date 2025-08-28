@@ -1,6 +1,13 @@
 from _typeshed import Incomplete
 from ducktape.json_serializable import DucktapeJSONEncoder as DucktapeJSONEncoder
-from ducktape.tests.status import FAIL as FAIL, FLAKY as FLAKY, IGNORE as IGNORE, OFAIL as OFAIL, OPASS as OPASS, PASS as PASS
+from ducktape.tests.status import (
+    FAIL as FAIL,
+    FLAKY as FLAKY,
+    IGNORE as IGNORE,
+    OFAIL as OFAIL,
+    OPASS as OPASS,
+    PASS as PASS,
+)
 from ducktape.utils.terminal_size import get_terminal_size as get_terminal_size
 from ducktape.utils.util import ducktape_version as ducktape_version
 

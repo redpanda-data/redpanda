@@ -67,15 +67,16 @@ class IcebergRESTCatalog(CatalogService):
 {{extra_config}}
 </configuration>""")
 
-    def __init__(self,
-                 ctx,
-                 cloud_storage_bucket: str,
-                 warehouse_name: str = CatalogService.DEFAULT_WAREHOUSE_NAME,
-                 filesystem_wrapper_mode: bool = False):
-        super(IcebergRESTCatalog, self).__init__(ctx,
-                                                 cloud_storage_bucket,
-                                                 warehouse_name,
-                                                 num_nodes=1)
+    def __init__(
+        self,
+        ctx,
+        cloud_storage_bucket: str,
+        warehouse_name: str = CatalogService.DEFAULT_WAREHOUSE_NAME,
+        filesystem_wrapper_mode: bool = False,
+    ):
+        super(IcebergRESTCatalog, self).__init__(
+            ctx, cloud_storage_bucket, warehouse_name, num_nodes=1
+        )
 
         self.set_filesystem_wrapper_mode(filesystem_wrapper_mode)
         # This REST server can operate in two modes.
@@ -118,24 +119,24 @@ class IcebergRESTCatalog(CatalogService):
         """
         Overridden to support Hadoop catalog case with `s3a` prefix.
         """
-        if isinstance(self.credentials,
-                      cloud_storage.S3Credentials) or isinstance(
-                          self.credentials,
-                          cloud_storage.AWSInstanceMetadataCredentials):
+        if isinstance(self.credentials, cloud_storage.S3Credentials) or isinstance(
+            self.credentials, cloud_storage.AWSInstanceMetadataCredentials
+        ):
             s3_prefix = "s3"
             if self.filesystem_wrapper_mode:
                 # For hadoop catalog compatibility
                 s3_prefix = "s3a"
-            self.cloud_storage_warehouse = f"{s3_prefix}://{self.cloud_storage_bucket}/{self.warehouse_name}"
-        elif isinstance(self.credentials,
-                        cloud_storage.GCPInstanceMetadataCredentials):
-            self.cloud_storage_warehouse = f"gs://{self.cloud_storage_bucket}/{self.warehouse_name}"
-        elif isinstance(self.credentials,
-                        cloud_storage.ABSSharedKeyCredentials):
+            self.cloud_storage_warehouse = (
+                f"{s3_prefix}://{self.cloud_storage_bucket}/{self.warehouse_name}"
+            )
+        elif isinstance(self.credentials, cloud_storage.GCPInstanceMetadataCredentials):
+            self.cloud_storage_warehouse = (
+                f"gs://{self.cloud_storage_bucket}/{self.warehouse_name}"
+            )
+        elif isinstance(self.credentials, cloud_storage.ABSSharedKeyCredentials):
             self.cloud_storage_warehouse = f"abfss://{self.cloud_storage_bucket}@{self.credentials.endpoint}/{self.warehouse_name}"
         else:
-            raise ValueError(
-                f"Unsupported credential type: {type(self.credentials)}")
+            raise ValueError(f"Unsupported credential type: {type(self.credentials)}")
 
     def _make_env(self):
         env = dict()
@@ -151,20 +152,20 @@ class IcebergRESTCatalog(CatalogService):
                 # this set to None.
                 # TODO: figure out why this isn't a problem in CI CDT.
                 env["CATALOG_S3_ENDPOINT"] = self.credentials.endpoint
-        elif isinstance(self.credentials,
-                        cloud_storage.AWSInstanceMetadataCredentials):
+        elif isinstance(self.credentials, cloud_storage.AWSInstanceMetadataCredentials):
             env["CATALOG_IO__IMPL"] = "org.apache.iceberg.aws.s3.S3FileIO"
-        elif isinstance(self.credentials,
-                        cloud_storage.GCPInstanceMetadataCredentials):
+        elif isinstance(self.credentials, cloud_storage.GCPInstanceMetadataCredentials):
             env["CATALOG_IO__IMPL"] = "org.apache.iceberg.gcp.gcs.GCSFileIO"
-        elif isinstance(self.credentials,
-                        cloud_storage.ABSSharedKeyCredentials):
+        elif isinstance(self.credentials, cloud_storage.ABSSharedKeyCredentials):
             env["CATALOG_IO__IMPL"] = "org.apache.iceberg.azure.adlsv2.ADLSFileIO"
-            env["CATALOG_adls_auth_shared__key_account_name"] = self.credentials.account_name
-            env["CATALOG_adls_auth_shared__key_account_key"] = self.credentials.account_key
+            env["CATALOG_adls_auth_shared__key_account_name"] = (
+                self.credentials.account_name
+            )
+            env["CATALOG_adls_auth_shared__key_account_key"] = (
+                self.credentials.account_key
+            )
         else:
-            raise ValueError(
-                f"Unsupported credential type: {type(self.credentials)}")
+            raise ValueError(f"Unsupported credential type: {type(self.credentials)}")
 
         env["CATALOG_WAREHOUSE"] = self.cloud_storage_warehouse
         if self.filesystem_wrapper_mode:
@@ -173,7 +174,9 @@ class IcebergRESTCatalog(CatalogService):
         else:
             self.db_file = tempfile.NamedTemporaryFile()
             env["CATALOG_CATALOG__IMPL"] = IcebergRESTCatalog.DB_CATALOG_IMPL
-            env["CATALOG_URI"] = IcebergRESTCatalog.DB_CATALOG_JDBC_URI_PREFIX + self.db_file.name
+            env["CATALOG_URI"] = (
+                IcebergRESTCatalog.DB_CATALOG_JDBC_URI_PREFIX + self.db_file.name
+            )
             env["CATALOG_JDBC_USER"] = IcebergRESTCatalog.DB_CATALOG_DB_USER
             env["CATALOG_JDBC_PASSWORD"] = IcebergRESTCatalog.DB_CATALOG_DB_PASS
         return env
@@ -186,49 +189,43 @@ class IcebergRESTCatalog(CatalogService):
             1>> {IcebergRESTCatalog.LOG_FILE} 2>> {IcebergRESTCatalog.LOG_FILE} &"
 
     def start_node(self, node, timeout_sec=60, **kwargs):
-        node.account.ssh("mkdir -p %s" % IcebergRESTCatalog.PERSISTENT_ROOT,
-                         allow_fail=False)
+        node.account.ssh(
+            "mkdir -p %s" % IcebergRESTCatalog.PERSISTENT_ROOT, allow_fail=False
+        )
         # Delete any existing hadoop config and repopulate
         node.account.ssh(f"rm -f {IcebergRESTCatalog.FS_CATALOG_CONF_PATH}")
 
         extra_config = ""
 
         if isinstance(self.credentials, cloud_storage.S3Credentials):
-            extra_config += self.dict_to_xml_properties({
-                "fs.s3a.path.style.access":
-                True,
-                "fs.s3a.endpoint":
-                self.credentials.endpoint,
-                "fs.s3a.endpoint.region":
-                self.credentials.region,
-                "fs.s3a.access.key":
-                self.credentials.access_key,
-                "fs.s3a.secret.key":
-                self.credentials.secret_key,
-            })
-        elif isinstance(self.credentials,
-                        cloud_storage.AWSInstanceMetadataCredentials):
+            extra_config += self.dict_to_xml_properties(
+                {
+                    "fs.s3a.path.style.access": True,
+                    "fs.s3a.endpoint": self.credentials.endpoint,
+                    "fs.s3a.endpoint.region": self.credentials.region,
+                    "fs.s3a.access.key": self.credentials.access_key,
+                    "fs.s3a.secret.key": self.credentials.secret_key,
+                }
+            )
+        elif isinstance(self.credentials, cloud_storage.AWSInstanceMetadataCredentials):
             pass
-        elif isinstance(self.credentials,
-                        cloud_storage.GCPInstanceMetadataCredentials):
+        elif isinstance(self.credentials, cloud_storage.GCPInstanceMetadataCredentials):
             pass
-        elif isinstance(self.credentials,
-                        cloud_storage.ABSSharedKeyCredentials):
-            extra_config += self.dict_to_xml_properties({
-                f"fs.azure.account.auth.type.{self.credentials.account_name}.dfs.core.windows.net":
-                "SharedKey",
-                f"fs.azure.account.key.{self.credentials.account_name}.dfs.core.windows.net":
-                self.credentials.account_key,
-            })
+        elif isinstance(self.credentials, cloud_storage.ABSSharedKeyCredentials):
+            extra_config += self.dict_to_xml_properties(
+                {
+                    f"fs.azure.account.auth.type.{self.credentials.account_name}.dfs.core.windows.net": "SharedKey",
+                    f"fs.azure.account.key.{self.credentials.account_name}.dfs.core.windows.net": self.credentials.account_key,
+                }
+            )
         else:
-            raise ValueError(
-                f"Unsupported credential type: {type(self.credentials)}")
+            raise ValueError(f"Unsupported credential type: {type(self.credentials)}")
 
         config_tmpl = IcebergRESTCatalog.HADOOP_CONF_TMPL.render(
-            fs_dedicated_nodes=self.dedicated_nodes, extra_config=extra_config)
+            fs_dedicated_nodes=self.dedicated_nodes, extra_config=extra_config
+        )
         self.logger.debug(f"Using hadoop config: {config_tmpl}")
-        node.account.create_file(IcebergRESTCatalog.FS_CATALOG_CONF_PATH,
-                                 config_tmpl)
+        node.account.create_file(IcebergRESTCatalog.FS_CATALOG_CONF_PATH, config_tmpl)
 
         cmd = self._cmd()
         self.logger.info(
@@ -249,30 +246,32 @@ class IcebergRESTCatalog(CatalogService):
                 self.logger.debug(f"Exception querying catalog", exc_info=True)
             return False
 
-        wait_until(_ready,
-                   timeout_sec=timeout_sec,
-                   backoff_sec=1,
-                   err_msg="Error waiting for Iceberg REST catalog to start",
-                   retry_on_exc=True)
+        wait_until(
+            _ready,
+            timeout_sec=timeout_sec,
+            backoff_sec=1,
+            err_msg="Error waiting for Iceberg REST catalog to start",
+            retry_on_exc=True,
+        )
         return True
 
     def stop_node(self, node, allow_fail=False, **_):
-        node.account.kill_java_processes(IcebergRESTCatalog.JAR,
-                                         allow_fail=allow_fail)
+        node.account.kill_java_processes(IcebergRESTCatalog.JAR, allow_fail=allow_fail)
 
         def _stopped():
-            out = node.account.ssh_output("jcmd").decode('utf-8')
+            out = node.account.ssh_output("jcmd").decode("utf-8")
             return not (IcebergRESTCatalog.JAR in out)
 
-        wait_until(_stopped,
-                   timeout_sec=10,
-                   backoff_sec=1,
-                   err_msg="Error stopping Iceberg REST catalog")
+        wait_until(
+            _stopped,
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg="Error stopping Iceberg REST catalog",
+        )
 
     def clean_node(self, node, **_):
         self.stop_node(node, allow_fail=True)
-        node.account.remove(IcebergRESTCatalog.PERSISTENT_ROOT,
-                            allow_fail=True)
+        node.account.remove(IcebergRESTCatalog.PERSISTENT_ROOT, allow_fail=True)
 
     @staticmethod
     def dict_to_xml_properties(d: dict[str, Optional[str | bool]]):
@@ -280,12 +279,16 @@ class IcebergRESTCatalog(CatalogService):
         Convert a dictionary to hadoop xml properties format.
         If a value is None, it is skipped.
         """
+
         def transform_value(v: str | bool):
             if isinstance(v, bool):
                 return str(v).lower()
             return v
 
-        return "\n".join([
-            f"<property><name>{k}</name><value>{transform_value(v)}</value></property>"
-            for k, v in d.items() if v is not None
-        ])
+        return "\n".join(
+            [
+                f"<property><name>{k}</name><value>{transform_value(v)}</value></property>"
+                for k, v in d.items()
+                if v is not None
+            ]
+        )

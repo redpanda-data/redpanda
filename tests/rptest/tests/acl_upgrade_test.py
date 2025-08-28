@@ -20,37 +20,41 @@ class ACLUpgradeTest(RedpandaTest):
     def __init__(self, test_context):
         self.security = SecurityConfig()
         self.security.enable_sasl = True
-        super(ACLUpgradeTest, self).__init__(test_context=test_context,
-                                             num_brokers=3,
-                                             security=self.security)
+        super(ACLUpgradeTest, self).__init__(
+            test_context=test_context, num_brokers=3, security=self.security
+        )
 
         self.superuser = self.redpanda.SUPERUSER_CREDENTIALS
         self.installer = self.redpanda._installer
         self.initial_version = self.installer.highest_from_prior_feature_version(
-            RedpandaInstaller.HEAD)
+            RedpandaInstaller.HEAD
+        )
 
     def setUp(self):
         # Start with previous version
         self.installer.install(self.redpanda.nodes, self.initial_version)
         self.redpanda.start()
 
-        self.rpk = RpkTool(self.redpanda,
-                           username=self.superuser.username,
-                           password=self.superuser.password,
-                           sasl_mechanism=self.superuser.algorithm)
+        self.rpk = RpkTool(
+            self.redpanda,
+            username=self.superuser.username,
+            password=self.superuser.password,
+            sasl_mechanism=self.superuser.algorithm,
+        )
 
     def create_acl(self):
         def try_create_acl():
-            self.rpk.sasl_allow_principal("User:testuser", ["all"], "topic",
-                                          "*")
+            self.rpk.sasl_allow_principal("User:testuser", ["all"], "topic", "*")
             return self.acl_exists()
 
         # Retry to handle NOT_CONTROLLER errors
-        wait_until(try_create_acl,
-                   timeout_sec=20,
-                   backoff_sec=1,
-                   retry_on_exc=True,
-                   err_msg="ACL not created")
+        wait_until(
+            try_create_acl,
+            timeout_sec=20,
+            backoff_sec=1,
+            retry_on_exc=True,
+            err_msg="ACL not created",
+        )
 
     def acl_exists(self):
         return "User:testuser" in self.rpk.acl_list()
@@ -61,8 +65,8 @@ class ACLUpgradeTest(RedpandaTest):
             timeout_sec=20,
             backoff_sec=1,
             retry_on_exc=True,
-            err_msg=
-            f"Failed: ACL expected to {'exist' if exists else 'not exist'}")
+            err_msg=f"Failed: ACL expected to {'exist' if exists else 'not exist'}",
+        )
 
     def delete_acl(self):
         def try_delete_acl():
@@ -70,11 +74,13 @@ class ACLUpgradeTest(RedpandaTest):
             return not self.acl_exists()
 
         # Retry to handle NOT_CONTROLLER errors
-        wait_until(try_delete_acl,
-                   timeout_sec=20,
-                   backoff_sec=1,
-                   retry_on_exc=True,
-                   err_msg="ACL not deleted")
+        wait_until(
+            try_delete_acl,
+            timeout_sec=20,
+            backoff_sec=1,
+            retry_on_exc=True,
+            err_msg="ACL not deleted",
+        )
 
     def _verify_acl_operations(self):
         self.create_acl()
@@ -93,10 +99,10 @@ class ACLUpgradeTest(RedpandaTest):
             self.redpanda.healthy,
             timeout_sec=60,
             backoff_sec=1,
-            err_msg="Cluster failed to stabilize after first node upgrade")
+            err_msg="Cluster failed to stabilize after first node upgrade",
+        )
 
-        self.logger.info(
-            "Verify ACL operations work on a mixed version cluster")
+        self.logger.info("Verify ACL operations work on a mixed version cluster")
         self._verify_acl_operations()
 
         self.logger.info("Completing upgrade")
@@ -107,7 +113,8 @@ class ACLUpgradeTest(RedpandaTest):
             self.redpanda.healthy,
             timeout_sec=60,
             backoff_sec=1,
-            err_msg="Cluster failed to stabilize after full upgrade")
+            err_msg="Cluster failed to stabilize after full upgrade",
+        )
 
         self.logger.info("Testing ACL operations on new version")
         self._verify_acl_operations()

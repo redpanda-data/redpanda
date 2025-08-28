@@ -28,6 +28,7 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
     """
     Check offset for leader epoch handling
     """
+
     segment_size = 1 * (2 << 20)
     local_retention = segment_size * 2
 
@@ -38,26 +39,26 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
 
     def __init__(self, test_context):
         self.extra_rp_conf = {
-            'enable_leader_balancer': False,
+            "enable_leader_balancer": False,
             "log_compaction_interval_ms": 1000,
             "cloud_storage_spillover_manifest_size": None,
         }
         si_settings = SISettings(
             test_context,
             log_segment_size=OffsetForLeaderEpochArchivalTest.segment_size,
-            cloud_storage_cache_size=5 *
-            OffsetForLeaderEpochArchivalTest.segment_size)
-        if test_context.function_name == 'test_querying_archive':
-            self.extra_rp_conf[
-                'cloud_storage_spillover_manifest_max_segments'] = 10
+            cloud_storage_cache_size=5 * OffsetForLeaderEpochArchivalTest.segment_size,
+        )
+        if test_context.function_name == "test_querying_archive":
+            self.extra_rp_conf["cloud_storage_spillover_manifest_max_segments"] = 10
             si_settings.log_segment_size = 1024
-            si_settings.fast_uploads = True,
+            si_settings.fast_uploads = (True,)
             si_settings.cloud_storage_housekeeping_interval_ms = 10000
 
-        super(OffsetForLeaderEpochArchivalTest,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf=self.extra_rp_conf,
-                             si_settings=si_settings)
+        super(OffsetForLeaderEpochArchivalTest, self).__init__(
+            test_context=test_context,
+            extra_rp_conf=self.extra_rp_conf,
+            si_settings=si_settings,
+        )
 
     def _alter_topic_retention_with_retry(self, topic):
         rpk = RpkTool(self.redpanda)
@@ -65,12 +66,15 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
         def alter_and_verify():
             try:
                 rpk.alter_topic_config(
-                    topic, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
-                    OffsetForLeaderEpochArchivalTest.local_retention)
+                    topic,
+                    TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
+                    OffsetForLeaderEpochArchivalTest.local_retention,
+                )
 
                 cfgs = rpk.describe_topic_configs(topic)
                 retention = int(
-                    cfgs[TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES][0])
+                    cfgs[TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES][0]
+                )
                 return retention == OffsetForLeaderEpochArchivalTest.local_retention
             except:
                 return False
@@ -80,24 +84,22 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(remote_reads=[False, True])
     def test_querying_remote_partitions(self, remote_reads):
-        topic = TopicSpec(redpanda_remote_read=True,
-                          redpanda_remote_write=True)
+        topic = TopicSpec(redpanda_remote_read=True, redpanda_remote_write=True)
         epoch_offsets = {}
         rpk = RpkTool(self.redpanda)
         self.client().create_topic(topic)
-        remote_reads_str = 'true' if remote_reads else 'false'
-        rpk.alter_topic_config(topic.name, "redpanda.remote.read",
-                               remote_reads_str)
-        rpk.alter_topic_config(topic.name, "redpanda.remote.write", 'true')
+        remote_reads_str = "true" if remote_reads else "false"
+        rpk.alter_topic_config(topic.name, "redpanda.remote.read", remote_reads_str)
+        rpk.alter_topic_config(topic.name, "redpanda.remote.write", "true")
         desc = rpk.describe_topic_configs(topic.name)
 
-        assert desc['redpanda.remote.read'][0] == remote_reads_str
-        assert desc['redpanda.remote.write'][0] == 'true'
+        assert desc["redpanda.remote.read"][0] == remote_reads_str
+        assert desc["redpanda.remote.write"][0] == "true"
 
         def wait_for_topic():
-            wait_until(lambda: len(list(rpk.describe_topic(topic.name))) > 0,
-                       30,
-                       backoff_sec=2)
+            wait_until(
+                lambda: len(list(rpk.describe_topic(topic.name))) > 0, 30, backoff_sec=2
+            )
 
         # restart whole cluster 6 times to trigger term rolls
         for i in range(0, 6):
@@ -118,15 +120,16 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
 
         self._alter_topic_retention_with_retry(topic.name)
 
-        wait_for_local_storage_truncate(self.redpanda,
-                                        topic.name,
-                                        target_bytes=self.local_retention)
+        wait_for_local_storage_truncate(
+            self.redpanda, topic.name, target_bytes=self.local_retention
+        )
         kcl = KCL(self.redpanda)
 
         for epoch, offset in epoch_offsets.items():
             self.logger.info(f"querying partition epoch {epoch} end offsets")
             epoch_end_offset = kcl.offset_for_leader_epoch(
-                topics=topic.name, leader_epoch=epoch)[0].epoch_end_offset
+                topics=topic.name, leader_epoch=epoch
+            )[0].epoch_end_offset
             self.logger.info(
                 f"epoch {epoch} end_offset: {epoch_end_offset}, expected offset: {offset}"
             )
@@ -141,21 +144,22 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
 
     def num_manifests_uploaded(self):
         s = self.redpanda.metric_sum(
-            metric_name=
-            "redpanda_cloud_storage_spillover_manifest_uploads_total",
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
-        self.logger.info(
-            f"redpanda_cloud_storage_spillover_manifest_uploads = {s}")
+            metric_name="redpanda_cloud_storage_spillover_manifest_uploads_total",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+        )
+        self.logger.info(f"redpanda_cloud_storage_spillover_manifest_uploads = {s}")
         return s
 
     def produce(self, topic, msg_count):
         msg_size = 1024 * 256
         topic_name = topic.name
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       topic_name,
-                                       msg_size=msg_size,
-                                       msg_count=msg_count)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            topic_name,
+            msg_size=msg_size,
+            msg_count=msg_count,
+        )
 
         producer.start()
         producer.wait()
@@ -168,8 +172,7 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
 
     @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_querying_archive(self):
-        topic = TopicSpec(redpanda_remote_read=True,
-                          redpanda_remote_write=True)
+        topic = TopicSpec(redpanda_remote_read=True, redpanda_remote_write=True)
         epoch_offsets = {}
 
         self.client().create_topic(topic)
@@ -177,9 +180,9 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
         rpk = RpkTool(self.redpanda)
 
         def wait_for_topic():
-            wait_until(lambda: len(list(rpk.describe_topic(topic.name))) > 0,
-                       30,
-                       backoff_sec=2)
+            wait_until(
+                lambda: len(list(rpk.describe_topic(topic.name))) > 0, 30, backoff_sec=2
+            )
 
         def produce_until_spillover():
             initial_uploaded = self.num_manifests_uploaded()
@@ -189,10 +192,12 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
                 num_spilled = self.num_manifests_uploaded()
                 return num_spilled > initial_uploaded
 
-            wait_until(new_manifest_spilled,
-                       timeout_sec=120,
-                       backoff_sec=2,
-                       err_msg="Manifests were not created")
+            wait_until(
+                new_manifest_spilled,
+                timeout_sec=120,
+                backoff_sec=2,
+                err_msg="Manifests were not created",
+            )
 
         for _ in range(0, 8):
             wait_for_topic()
@@ -208,23 +213,28 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
 
         def topic_config_altered():
             try:
-                rpk.alter_topic_config(topic.name,
-                                       'retention.local.target.bytes', 0x1000)
+                rpk.alter_topic_config(
+                    topic.name, "retention.local.target.bytes", 0x1000
+                )
                 return True
             except:
                 return False
 
-        wait_until(topic_config_altered,
-                   timeout_sec=120,
-                   backoff_sec=2,
-                   err_msg="Can't update topic config")
+        wait_until(
+            topic_config_altered,
+            timeout_sec=120,
+            backoff_sec=2,
+            err_msg="Can't update topic config",
+        )
 
         for pix in range(0, topic.partition_count):
-            wait_for_local_storage_truncate(self.redpanda,
-                                            topic.name,
-                                            target_bytes=0x2000,
-                                            partition_idx=pix,
-                                            timeout_sec=30)
+            wait_for_local_storage_truncate(
+                self.redpanda,
+                topic.name,
+                target_bytes=0x2000,
+                partition_idx=pix,
+                timeout_sec=30,
+            )
 
         self.logger.info(f"leader epoch high watermarks: {epoch_offsets}")
 
@@ -233,7 +243,8 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
         for epoch, offset in epoch_offsets.items():
             self.logger.info(f"querying partition epoch {epoch} end offsets")
             epoch_end_offset = kcl.offset_for_leader_epoch(
-                topics=topic.name, leader_epoch=epoch)[0].epoch_end_offset
+                topics=topic.name, leader_epoch=epoch
+            )[0].epoch_end_offset
             self.logger.info(
                 f"epoch {epoch} end_offset: {epoch_end_offset}, expected offset: {offset}"
             )

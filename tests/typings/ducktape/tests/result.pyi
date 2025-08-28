@@ -1,7 +1,14 @@
 from _typeshed import Incomplete
 from ducktape.json_serializable import DucktapeJSONEncoder as DucktapeJSONEncoder
 from ducktape.tests.reporter import SingleResultFileReporter as SingleResultFileReporter
-from ducktape.tests.status import FAIL as FAIL, FLAKY as FLAKY, IGNORE as IGNORE, OFAIL as OFAIL, OPASS as OPASS, PASS as PASS
+from ducktape.tests.status import (
+    FAIL as FAIL,
+    FLAKY as FLAKY,
+    IGNORE as IGNORE,
+    OFAIL as OFAIL,
+    OPASS as OPASS,
+    PASS as PASS,
+)
 from ducktape.tests.test import TestContext as TestContext
 from ducktape.utils.local_filesystem_utils import mkdir_p as mkdir_p
 from ducktape.utils.util import ducktape_version as ducktape_version
@@ -27,7 +34,17 @@ class TestResult:
     relative_results_dir: Incomplete
     start_time: Incomplete
     stop_time: Incomplete
-    def __init__(self, test_context, test_index, session_context, test_status=..., summary: str = ..., data: Incomplete | None = ..., start_time: int = ..., stop_time: int = ...) -> None: ...
+    def __init__(
+        self,
+        test_context,
+        test_index,
+        session_context,
+        test_status=...,
+        summary: str = ...,
+        data: Incomplete | None = ...,
+        start_time: int = ...,
+        stop_time: int = ...,
+    ) -> None: ...
     @property
     def run_time_seconds(self): ...
     def report(self) -> None: ...

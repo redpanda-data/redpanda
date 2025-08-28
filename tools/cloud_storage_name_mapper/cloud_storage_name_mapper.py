@@ -24,29 +24,29 @@ def main():
 
     def generate_options():
         parser = argparse.ArgumentParser(
-            description='Redpanda Tiered Storage Remote Write Naming Mapper')
+            description="Redpanda Tiered Storage Remote Write Naming Mapper"
+        )
         parser.add_argument(
-            '--cluster-uuid',
+            "--cluster-uuid",
             type=str,
             required=True,
-            help=
-            'Cluster UUID which created the topic. It might be different from the current '
-            'cluster UUID if cluster was recovered or topic was mounted from a different cluster.' \
-            'For legacy topics which didn\'t have cluster UUID, use value "0".' \
+            help="Cluster UUID which created the topic. It might be different from the current "
+            "cluster UUID if cluster was recovered or topic was mounted from a different cluster."
+            'For legacy topics which didn\'t have cluster UUID, use value "0".',
         )
-        parser.add_argument('path',
-                            type=str,
-                            help='Path to the file, starting with \'kafka/\'')
+        parser.add_argument(
+            "path", type=str, help="Path to the file, starting with 'kafka/'"
+        )
 
         return parser
 
     parser = generate_options()
     options, _ = parser.parse_known_args()
-    if not options.path.startswith('kafka'):
+    if not options.path.startswith("kafka"):
         print("The path should start with 'kafka'")
         sys.exit(1)
 
-    p = options.path.split('/')
+    p = options.path.split("/")
 
     if options.cluster_uuid != "0":
         path_utils = LabeledPathUtils(options.cluster_uuid)
@@ -54,8 +54,8 @@ def main():
         path_utils = PrefixedPathUtils()
 
     opt_initial_revision: Optional[int] = None
-    partition_id, revision = p[2].split('_')
-    if partition_id == '0':
+    partition_id, revision = p[2].split("_")
+    if partition_id == "0":
         # We can infer the initial revision for the topic manifest.
         opt_initial_revision = int(revision)
 
@@ -70,40 +70,41 @@ def main():
 
 class PathUtils(abc.ABC):
     @abc.abstractmethod
-    def topic_manifest_path(self, namespace: str, topic: str,
-                            initial_revision: int) -> str:
-        ...
+    def topic_manifest_path(
+        self, namespace: str, topic: str, initial_revision: int
+    ) -> str: ...
 
     @abc.abstractmethod
-    def partition_manifest_path(self, namespace: str, topic: str,
-                                partition_with_rev: str) -> str:
-        ...
+    def partition_manifest_path(
+        self, namespace: str, topic: str, partition_with_rev: str
+    ) -> str: ...
 
     @abc.abstractmethod
-    def segment_path(self, segment_path_suffix: str) -> str:
-        ...
+    def segment_path(self, segment_path_suffix: str) -> str: ...
 
 
 class PrefixedPathUtils(PathUtils):
-    def topic_manifest_path(self, namespace: str, topic: str,
-                            initial_revision: Optional[int]) -> str:
+    def topic_manifest_path(
+        self, namespace: str, topic: str, initial_revision: Optional[int]
+    ) -> str:
         x = xxhash.xxh32()
-        path = namespace + '/' + topic
-        x.update(path.encode('ascii'))
-        topic_manifest_hash = x.hexdigest()[0] + '0000000'
+        path = namespace + "/" + topic
+        x.update(path.encode("ascii"))
+        topic_manifest_hash = x.hexdigest()[0] + "0000000"
         return f"{topic_manifest_hash}/meta/{namespace}/{topic}/topic_manifest.{{json,bin}}"
 
-    def partition_manifest_path(self, namespace: str, topic: str,
-                                partition_with_rev: str) -> str:
+    def partition_manifest_path(
+        self, namespace: str, topic: str, partition_with_rev: str
+    ) -> str:
         x = xxhash.xxh32()
-        path = namespace + '/' + topic + '/' + partition_with_rev
-        x.update(path.encode('ascii'))
-        manifest_hash = x.hexdigest()[0] + '0000000'
+        path = namespace + "/" + topic + "/" + partition_with_rev
+        x.update(path.encode("ascii"))
+        manifest_hash = x.hexdigest()[0] + "0000000"
         return f"{manifest_hash}/meta/{namespace}/{topic}/{partition_with_rev}/manifest.{{json,bin}}"
 
     def segment_path(self, segment_path_suffix: str) -> str:
         x = xxhash.xxh32()
-        x.update(segment_path_suffix.encode('ascii'))
+        x.update(segment_path_suffix.encode("ascii"))
         hash = x.hexdigest()
         return f"{hash}/{segment_path_suffix}.*"
 
@@ -113,19 +114,21 @@ class LabeledPathUtils(PathUtils):
         super().__init__()
         self.cluster_uuid = cluster_uuid
 
-    def topic_manifest_path(self, namespace: str, topic: str,
-                            initial_revision: Optional[int]) -> str:
+    def topic_manifest_path(
+        self, namespace: str, topic: str, initial_revision: Optional[int]
+    ) -> str:
         if initial_revision is None:
             return "??? (can be inferred only for a path with partition id 0)"
         return f"meta/{namespace}/{topic}/{self.cluster_uuid}/{initial_revision}/topic_manifest.bin"
 
-    def partition_manifest_path(self, namespace: str, topic: str,
-                                partition_with_rev: str) -> str:
+    def partition_manifest_path(
+        self, namespace: str, topic: str, partition_with_rev: str
+    ) -> str:
         return f"{self.cluster_uuid}/meta/{namespace}/{topic}/{partition_with_rev}/manifest.bin"
 
     def segment_path(self, segment_path_suffix: str) -> str:
         return f"{self.cluster_uuid}/{segment_path_suffix}.*"
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

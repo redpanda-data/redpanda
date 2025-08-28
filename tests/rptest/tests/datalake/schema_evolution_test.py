@@ -27,7 +27,10 @@ from rptest.services.redpanda_connect import RedpandaConnectService
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
 from rptest.tests.datalake.query_engine_base import QueryEngineType
-from rptest.tests.datalake.catalog_service_factory import filesystem_catalog_type, supported_catalog_types
+from rptest.tests.datalake.catalog_service_factory import (
+    filesystem_catalog_type,
+    supported_catalog_types,
+)
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.datalake.utils import supported_storage_types
 from rptest.util import expect_exception
@@ -44,9 +47,9 @@ class TranslationContext:
 
 
 class ProducerType(str, Enum):
-    AVRO = 'avro'
-    PROTO2 = 'proto2'
-    PROTO3 = 'proto3'
+    AVRO = "avro"
+    PROTO2 = "proto2"
+    PROTO3 = "proto3"
 
 
 class ProtobufVersion(int, Enum):
@@ -63,8 +66,14 @@ message {name} {{
 }}
 """
 
-    def __init__(self, redpanda, ver: ProtobufVersion, name: str,
-                 fields: list[dict], topic_name: str):
+    def __init__(
+        self,
+        redpanda,
+        ver: ProtobufVersion,
+        name: str,
+        fields: list[dict],
+        topic_name: str,
+    ):
         self.redpanda = redpanda
         self.rpk = RpkTool(redpanda)
         self.message_name = name
@@ -72,18 +81,23 @@ message {name} {{
         self.schema = self.PROTO_TEMPLATE.format(
             ver=ver.value,
             name=self.message_name,
-            fields="\n".join([
-                f"  {'optional ' if ver == ProtobufVersion.PROTO2  else ''}{p_fields[i]['type']} {p_fields[i]['name']} = {i+1};"
-                for i in range(len(p_fields))
-            ]),
+            fields="\n".join(
+                [
+                    f"  {'optional ' if ver == ProtobufVersion.PROTO2 else ''}{p_fields[i]['type']} {p_fields[i]['name']} = {i + 1};"
+                    for i in range(len(p_fields))
+                ]
+            ),
         )
         self.schema_id = self._create_schema(topic_name)
 
     def _translate_fields(self, fields: list[dict]) -> list[dict]:
-        return [{
-            "name": f['name'],
-            "type": self._translate_type(f['type']),
-        } for f in fields]
+        return [
+            {
+                "name": f["name"],
+                "type": self._translate_type(f["type"]),
+            }
+            for f in fields
+        ]
 
     def _translate_type(self, type: str) -> str:
         if type == "int":
@@ -95,20 +109,23 @@ message {name} {{
 
     def _create_schema(self, topic: str) -> int:
         with tempfile.NamedTemporaryFile(suffix=".proto") as tf:
-            tf.write(bytes(self.schema, 'UTF-8'))
+            tf.write(bytes(self.schema, "UTF-8"))
             tf.seek(0)
             subject = f"{topic}-value"
             out = self.rpk.create_schema(subject, tf.name)
-            assert out['subject'] == subject, \
+            assert out["subject"] == subject, (
                 f"Expected {subject}, got {out['subject']}"
-            return out['id']
+            )
+            return out["id"]
 
     def produce(self, topic: str, value: dict):
-        self.rpk.produce(topic,
-                         key='',
-                         msg=json.dumps(value),
-                         schema_id=self.schema_id,
-                         proto_msg=self.message_name)
+        self.rpk.produce(
+            topic,
+            key="",
+            msg=json.dumps(value),
+            schema_id=self.schema_id,
+            proto_msg=self.message_name,
+        )
 
     def flush(self):
         pass
@@ -117,12 +134,14 @@ message {name} {{
 class GenericSchema:
     TableDescription = list[tuple[str, str]]
 
-    def __init__(self,
-                 fields: list[dict],
-                 generate_record: Callable[[float], dict],
-                 spark_table: TableDescription = [],
-                 trino_table: TableDescription = [],
-                 name="Record"):
+    def __init__(
+        self,
+        fields: list[dict],
+        generate_record: Callable[[float], dict],
+        spark_table: TableDescription = [],
+        trino_table: TableDescription = [],
+        name="Record",
+    ):
         self._rep: dict = {
             "type": "record",
             "name": name,
@@ -133,15 +152,17 @@ class GenericSchema:
         self._trino_table = trino_table
 
     def table(self, engine: QueryEngineType):
-        return self._spark_table if engine == QueryEngineType.SPARK else self._trino_table
+        return (
+            self._spark_table if engine == QueryEngineType.SPARK else self._trino_table
+        )
 
     @property
     def field_names(self) -> list[str]:
-        return [field['name'] for field in self._rep['fields']]
+        return [field["name"] for field in self._rep["fields"]]
 
     @property
     def fields(self) -> list[dict]:
-        return self._rep['fields']
+        return self._rep["fields"]
 
     def gen(self, x: float) -> dict:
         return self._generate_record(x)
@@ -149,10 +170,11 @@ class GenericSchema:
     def _avro_producer(self, dl: DatalakeServices) -> AvroProducer:
         return AvroProducer(
             {
-                'bootstrap.servers': dl.redpanda.brokers(),
-                'schema.registry.url': dl.redpanda.schema_reg().split(",")[0]
+                "bootstrap.servers": dl.redpanda.brokers(),
+                "schema.registry.url": dl.redpanda.schema_reg().split(",")[0],
             },
-            default_value_schema=avro.loads(json.dumps(self._rep)))
+            default_value_schema=avro.loads(json.dumps(self._rep)),
+        )
 
     def _proto_producer(
         self,
@@ -160,8 +182,9 @@ class GenericSchema:
         topic_name: str,
         ver=ProtobufVersion,
     ):
-        return ProtoProducer(dl.redpanda, ver, self._rep['name'],
-                             self._rep['fields'], topic_name)
+        return ProtoProducer(
+            dl.redpanda, ver, self._rep["name"], self._rep["fields"], topic_name
+        )
 
     def produce(
         self,
@@ -172,13 +195,17 @@ class GenericSchema:
         should_translate: bool = True,
         mode: ProducerType = ProducerType.AVRO,
     ):
-        producer = self._avro_producer(dl) \
-            if mode == ProducerType.AVRO else \
-               self._proto_producer(
-                   dl,
-                   topic_name,
-                   ProtobufVersion.PROTO2 if mode == ProducerType.PROTO2 else ProtobufVersion.PROTO3,
-               )
+        producer = (
+            self._avro_producer(dl)
+            if mode == ProducerType.AVRO
+            else self._proto_producer(
+                dl,
+                topic_name,
+                ProtobufVersion.PROTO2
+                if mode == ProducerType.PROTO2
+                else ProtobufVersion.PROTO3,
+            )
+        )
 
         assert producer is not None
 
@@ -188,13 +215,14 @@ class GenericSchema:
 
         producer.flush()
         if should_translate:
-            dl.wait_for_translation(topic_name,
-                                    msg_count=context.total + count)
+            dl.wait_for_translation(topic_name, msg_count=context.total + count)
             context.total = context.total + count
         else:
-            dl.wait_for_translation(topic_name,
-                                    msg_count=context.dlq + count,
-                                    table_override=f"{topic_name}~dlq")
+            dl.wait_for_translation(
+                topic_name,
+                msg_count=context.dlq + count,
+                table_override=f"{topic_name}~dlq",
+            )
             context.dlq = context.dlq + count
 
     def check_table_schema(
@@ -203,8 +231,7 @@ class GenericSchema:
         table_name: str,
         query_engine: QueryEngineType,
     ):
-        qe = dl.spark() if query_engine == QueryEngineType.SPARK else dl.trino(
-        )
+        qe = dl.spark() if query_engine == QueryEngineType.SPARK else dl.trino()
         table = qe.run_query_fetch_all(f"describe {table_name}")
 
         if query_engine == QueryEngineType.SPARK:
@@ -213,8 +240,9 @@ class GenericSchema:
             table = [(t[0], t[1]) for t in table[1:]]
 
         expect_table = self.table(query_engine)
-        assert table == expect_table, \
+        assert table == expect_table, (
             f"Expected table description {expect_table}, got {str(table)}"
+        )
 
 
 class EvolutionTestCase(NamedTuple):
@@ -224,8 +252,7 @@ class EvolutionTestCase(NamedTuple):
 
 
 LEGAL_TEST_CASES = {
-    "add_column":
-    EvolutionTestCase(
+    "add_column": EvolutionTestCase(
         initial_schema=GenericSchema(
             fields=[
                 {
@@ -237,10 +264,10 @@ LEGAL_TEST_CASES = {
                 "verifier_string": f"verify-{x}",
             },
             spark_table=[
-                ('verifier_string', 'string'),
+                ("verifier_string", "string"),
             ],
             trino_table=[
-                ('verifier_string', 'varchar'),
+                ("verifier_string", "varchar"),
             ],
         ),
         next_schema=GenericSchema(
@@ -259,18 +286,17 @@ LEGAL_TEST_CASES = {
                 "ordinal": int(x),
             },
             spark_table=[
-                ('verifier_string', 'string'),
-                ('ordinal', 'int'),
+                ("verifier_string", "string"),
+                ("ordinal", "int"),
             ],
             trino_table=[
-                ('verifier_string', 'varchar'),
-                ('ordinal', 'integer'),
+                ("verifier_string", "varchar"),
+                ("ordinal", "integer"),
             ],
         ),
         partition_spec="(verifier_string)",
     ),
-    "drop_column":
-    EvolutionTestCase(
+    "drop_column": EvolutionTestCase(
         initial_schema=GenericSchema(
             fields=[
                 {
@@ -287,12 +313,12 @@ LEGAL_TEST_CASES = {
                 "ordinal": int(x),
             },
             spark_table=[
-                ('verifier_string', 'string'),
-                ('ordinal', 'int'),
+                ("verifier_string", "string"),
+                ("ordinal", "int"),
             ],
             trino_table=[
-                ('verifier_string', 'varchar'),
-                ('ordinal', 'integer'),
+                ("verifier_string", "varchar"),
+                ("ordinal", "integer"),
             ],
         ),
         next_schema=GenericSchema(
@@ -306,16 +332,15 @@ LEGAL_TEST_CASES = {
                 "verifier_string": f"verify-{x}",
             },
             spark_table=[
-                ('verifier_string', 'string'),
+                ("verifier_string", "string"),
             ],
             trino_table=[
-                ('verifier_string', 'varchar'),
+                ("verifier_string", "varchar"),
             ],
         ),
         partition_spec="(verifier_string)",
     ),
-    "promote_column":
-    EvolutionTestCase(
+    "promote_column": EvolutionTestCase(
         initial_schema=GenericSchema(
             fields=[
                 {
@@ -327,10 +352,10 @@ LEGAL_TEST_CASES = {
                 "ordinal": int(x),
             },
             spark_table=[
-                ('ordinal', 'int'),
+                ("ordinal", "int"),
             ],
             trino_table=[
-                ('ordinal', 'integer'),
+                ("ordinal", "integer"),
             ],
         ),
         next_schema=GenericSchema(
@@ -344,16 +369,15 @@ LEGAL_TEST_CASES = {
                 "ordinal": int(x),
             },
             spark_table=[
-                ('ordinal', 'bigint'),
+                ("ordinal", "bigint"),
             ],
             trino_table=[
-                ('ordinal', 'bigint'),
+                ("ordinal", "bigint"),
             ],
         ),
         partition_spec="(ordinal)",
     ),
-    "reorder_columns":
-    EvolutionTestCase(
+    "reorder_columns": EvolutionTestCase(
         initial_schema=GenericSchema(
             fields=[
                 {
@@ -370,39 +394,43 @@ LEGAL_TEST_CASES = {
                 "second": "second",
             },
             spark_table=[
-                ('first', 'string'),
-                ('second', 'string'),
+                ("first", "string"),
+                ("second", "string"),
             ],
             trino_table=[
-                ('first', 'varchar'),
-                ('second', 'varchar'),
+                ("first", "varchar"),
+                ("second", "varchar"),
             ],
         ),
         next_schema=GenericSchema(
-            fields=[{
-                "name": "second",
-                "type": "string",
-            }, {
-                "name": "first",
-                "type": "string",
-            }, {
-                "name": "third",
-                "type": "string",
-            }],
+            fields=[
+                {
+                    "name": "second",
+                    "type": "string",
+                },
+                {
+                    "name": "first",
+                    "type": "string",
+                },
+                {
+                    "name": "third",
+                    "type": "string",
+                },
+            ],
             generate_record=lambda x: {
                 "second": "second",
                 "first": "first",
                 "third": "third",
             },
             spark_table=[
-                ('second', 'string'),
-                ('first', 'string'),
-                ('third', 'string'),
+                ("second", "string"),
+                ("first", "string"),
+                ("third", "string"),
             ],
             trino_table=[
-                ('second', 'varchar'),
-                ('first', 'varchar'),
-                ('third', 'varchar'),
+                ("second", "varchar"),
+                ("first", "varchar"),
+                ("third", "varchar"),
             ],
         ),
         partition_spec="(first)",
@@ -410,8 +438,7 @@ LEGAL_TEST_CASES = {
 }
 
 ILLEGAL_TEST_CASES = {
-    "illegal promotion int->string":
-    EvolutionTestCase(
+    "illegal promotion int->string": EvolutionTestCase(
         initial_schema=GenericSchema(
             fields=[
                 {
@@ -423,10 +450,10 @@ ILLEGAL_TEST_CASES = {
                 "ordinal": int(x),
             },
             spark_table=[
-                ('ordinal', 'int'),
+                ("ordinal", "int"),
             ],
             trino_table=[
-                ('ordinal', 'integer'),
+                ("ordinal", "integer"),
             ],
         ),
         next_schema=GenericSchema(
@@ -441,8 +468,7 @@ ILLEGAL_TEST_CASES = {
             },
         ),
     ),
-    "drop column that appears in partition spec":
-    EvolutionTestCase(
+    "drop column that appears in partition spec": EvolutionTestCase(
         initial_schema=GenericSchema(
             fields=[
                 {
@@ -459,12 +485,12 @@ ILLEGAL_TEST_CASES = {
                 "ordinal": int(x),
             },
             spark_table=[
-                ('verifier_string', 'string'),
-                ('ordinal', 'int'),
+                ("verifier_string", "string"),
+                ("ordinal", "int"),
             ],
             trino_table=[
-                ('verifier_string', 'varchar'),
-                ('ordinal', 'integer'),
+                ("verifier_string", "varchar"),
+                ("ordinal", "integer"),
             ],
         ),
         next_schema=GenericSchema(
@@ -496,18 +522,19 @@ PRODUCER_MODES = [
 
 class SchemaEvolutionE2ETests(RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):
-        super(SchemaEvolutionE2ETests,
-              self).__init__(test_ctx,
-                             num_brokers=1,
-                             si_settings=SISettings(test_context=test_ctx),
-                             extra_rp_conf={
-                                 "iceberg_enabled": "true",
-                                 "iceberg_catalog_commit_interval_ms": 5000
-                             },
-                             schema_registry_config=SchemaRegistryConfig(),
-                             pandaproxy_config=PandaproxyConfig(),
-                             *args,
-                             **kwargs)
+        super(SchemaEvolutionE2ETests, self).__init__(
+            test_ctx,
+            num_brokers=1,
+            si_settings=SISettings(test_context=test_ctx),
+            extra_rp_conf={
+                "iceberg_enabled": "true",
+                "iceberg_catalog_commit_interval_ms": 5000,
+            },
+            schema_registry_config=SchemaRegistryConfig(),
+            pandaproxy_config=PandaproxyConfig(),
+            *args,
+            **kwargs,
+        )
         self.test_ctx = test_ctx
         self.topic_name = "test"
         self.table_name = f"redpanda.{self.topic_name}"
@@ -516,13 +543,14 @@ class SchemaEvolutionE2ETests(RedpandaTest):
         # redpanda will be started by DatalakeServices
         pass
 
-    def select(self,
-               dl: DatalakeServices,
-               query_engine: QueryEngineType,
-               cols=list[str],
-               sort_by_offset: bool = True):
-        qe = dl.spark() if query_engine == QueryEngineType.SPARK else dl.trino(
-        )
+    def select(
+        self,
+        dl: DatalakeServices,
+        query_engine: QueryEngineType,
+        cols=list[str],
+        sort_by_offset: bool = True,
+    ):
+        qe = dl.spark() if query_engine == QueryEngineType.SPARK else dl.trino()
         query = f"select redpanda.offset, {', '.join(cols)} from {self.table_name}"
         self.redpanda.logger.debug(f"QUERY: '{query}'")
         out = qe.run_query_fetch_all(query)
@@ -531,20 +559,22 @@ class SchemaEvolutionE2ETests(RedpandaTest):
         return out
 
     @contextmanager
-    def setup_services(self,
-                       query_engine: QueryEngineType,
-                       compat_level: str = "NONE",
-                       partition_spec: str = None,
-                       catalog_type: CatalogType = filesystem_catalog_type()):
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              catalog_type=catalog_type,
-                              include_query_engines=[
-                                  query_engine,
-                              ]) as dl:
-            config = {
-                TopicSpec.PROPERTY_ICEBERG_INVALID_RECORD_ACTION: "dlq_table"
-            }
+    def setup_services(
+        self,
+        query_engine: QueryEngineType,
+        compat_level: str = "NONE",
+        partition_spec: str = None,
+        catalog_type: CatalogType = filesystem_catalog_type(),
+    ):
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            catalog_type=catalog_type,
+            include_query_engines=[
+                query_engine,
+            ],
+        ) as dl:
+            config = {TopicSpec.PROPERTY_ICEBERG_INVALID_RECORD_ACTION: "dlq_table"}
             if partition_spec is not None:
                 config["redpanda.iceberg.partition.spec"] = partition_spec
             dl.create_iceberg_enabled_topic(
@@ -552,14 +582,14 @@ class SchemaEvolutionE2ETests(RedpandaTest):
                 iceberg_mode="value_schema_id_prefix",
                 config=config,
             )
-            SchemaRegistryClient({
-                'url':
-                self.redpanda.schema_reg().split(",")[0]
-            }).set_compatibility(subject_name=f"{self.topic_name}-value",
-                                 level=compat_level)
+            SchemaRegistryClient(
+                {"url": self.redpanda.schema_reg().split(",")[0]}
+            ).set_compatibility(
+                subject_name=f"{self.topic_name}-value", level=compat_level
+            )
             yield dl
             # make sure nothing we did trashed our ability to read the whole table
-            self.select(dl, query_engine, cols=['*'])
+            self.select(dl, query_engine, cols=["*"])
 
     @cluster(num_nodes=3)
     @matrix(
@@ -569,38 +599,31 @@ class SchemaEvolutionE2ETests(RedpandaTest):
         produce_mode=PRODUCER_MODES,
         catalog_type=supported_catalog_types(),
     )
-    def test_legal_schema_evolution(self, cloud_storage_type, query_engine,
-                                    test_case, produce_mode, catalog_type):
+    def test_legal_schema_evolution(
+        self, cloud_storage_type, query_engine, test_case, produce_mode, catalog_type
+    ):
         """
         Test that rows written with schema A are still readable after evolving
         the table to schema B.
         """
         tc = LEGAL_TEST_CASES[test_case]
-        with self.setup_services(query_engine,
-                                 partition_spec=tc.partition_spec,
-                                 catalog_type=catalog_type) as dl:
+        with self.setup_services(
+            query_engine, partition_spec=tc.partition_spec, catalog_type=catalog_type
+        ) as dl:
             count = 10
             ctx = TranslationContext()
-            tc.initial_schema.produce(dl,
-                                      self.topic_name,
-                                      count,
-                                      ctx,
-                                      mode=produce_mode)
+            tc.initial_schema.produce(
+                dl, self.topic_name, count, ctx, mode=produce_mode
+            )
 
-            tc.initial_schema.check_table_schema(dl, self.table_name,
-                                                 query_engine)
-            tc.next_schema.produce(dl,
-                                   self.topic_name,
-                                   count,
-                                   ctx,
-                                   mode=produce_mode)
-            tc.next_schema.check_table_schema(dl, self.table_name,
-                                              query_engine)
+            tc.initial_schema.check_table_schema(dl, self.table_name, query_engine)
+            tc.next_schema.produce(dl, self.topic_name, count, ctx, mode=produce_mode)
+            tc.next_schema.check_table_schema(dl, self.table_name, query_engine)
 
-            select_out = self.select(dl, query_engine,
-                                     tc.next_schema.field_names)
-            assert len(select_out) == count * 2, \
-                f"Expected {count*2} rows, got {select_out}"
+            select_out = self.select(dl, query_engine, tc.next_schema.field_names)
+            assert len(select_out) == count * 2, (
+                f"Expected {count * 2} rows, got {select_out}"
+            )
 
     @cluster(num_nodes=3)
     @matrix(
@@ -610,40 +633,38 @@ class SchemaEvolutionE2ETests(RedpandaTest):
         produce_mode=PRODUCER_MODES,
         catalog_type=supported_catalog_types(),
     )
-    def test_illegal_schema_evolution(self, cloud_storage_type, query_engine,
-                                      test_case, produce_mode, catalog_type):
+    def test_illegal_schema_evolution(
+        self, cloud_storage_type, query_engine, test_case, produce_mode, catalog_type
+    ):
         """
         check that records produced with an incompatible schema don't wind up
         in the table.
         """
         tc = ILLEGAL_TEST_CASES[test_case]
-        with self.setup_services(query_engine,
-                                 partition_spec=tc.partition_spec,
-                                 catalog_type=catalog_type) as dl:
+        with self.setup_services(
+            query_engine, partition_spec=tc.partition_spec, catalog_type=catalog_type
+        ) as dl:
             count = 10
             ctx = TranslationContext()
-            tc.initial_schema.produce(dl,
-                                      self.topic_name,
-                                      count,
-                                      ctx,
-                                      mode=produce_mode)
-            tc.initial_schema.check_table_schema(dl, self.table_name,
-                                                 query_engine)
-            tc.next_schema.produce(dl,
-                                   self.topic_name,
-                                   count,
-                                   ctx,
-                                   mode=produce_mode,
-                                   should_translate=False)
-            tc.initial_schema.check_table_schema(dl, self.table_name,
-                                                 query_engine)
+            tc.initial_schema.produce(
+                dl, self.topic_name, count, ctx, mode=produce_mode
+            )
+            tc.initial_schema.check_table_schema(dl, self.table_name, query_engine)
+            tc.next_schema.produce(
+                dl,
+                self.topic_name,
+                count,
+                ctx,
+                mode=produce_mode,
+                should_translate=False,
+            )
+            tc.initial_schema.check_table_schema(dl, self.table_name, query_engine)
 
-            select_out = self.select(dl, query_engine,
-                                     tc.next_schema.field_names)
-            assert len(select_out) == count, \
-                f"Expected {count} rows, got {select_out}"
-            assert ctx.dlq == count, \
+            select_out = self.select(dl, query_engine, tc.next_schema.field_names)
+            assert len(select_out) == count, f"Expected {count} rows, got {select_out}"
+            assert ctx.dlq == count, (
                 f"Expected {count} records were dlq'ed, got {ctx.dlq}"
+            )
 
     @cluster(num_nodes=3)
     @cluster(num_nodes=3)
@@ -653,34 +674,31 @@ class SchemaEvolutionE2ETests(RedpandaTest):
         produce_mode=PRODUCER_MODES,
         catalog_type=supported_catalog_types(),
     )
-    def test_dropped_column_no_collision(self, cloud_storage_type,
-                                         query_engine, produce_mode,
-                                         catalog_type):
+    def test_dropped_column_no_collision(
+        self, cloud_storage_type, query_engine, produce_mode, catalog_type
+    ):
         """
         Translate some records, drop field A, translate some more, reintroduce field A  *by name*
         (this should create a *new* column). Confirm that 'select A' reads only the new column,
         producing nulls for all rows written prior to the final update.
         """
 
-        with self.setup_services(query_engine,
-                                 catalog_type=catalog_type) as dl:
+        with self.setup_services(query_engine, catalog_type=catalog_type) as dl:
             count = 10
             ctx = TranslationContext()
             initial_schema, next_schema, _ = LEGAL_TEST_CASES["drop_column"]
 
             dropped_field_names = list(
-                set(initial_schema.field_names) - set(next_schema.field_names))
+                set(initial_schema.field_names) - set(next_schema.field_names)
+            )
 
             for schema in [initial_schema, next_schema]:
-                schema.produce(dl,
-                               self.topic_name,
-                               count,
-                               ctx,
-                               mode=produce_mode)
+                schema.produce(dl, self.topic_name, count, ctx, mode=produce_mode)
                 schema.check_table_schema(dl, self.table_name, query_engine)
                 select_out = self.select(dl, query_engine, schema.field_names)
-                assert len(select_out) == ctx.total, \
+                assert len(select_out) == ctx.total, (
                     f"Expected {ctx.total} rows, got {select_out}"
+                )
 
             restored_schema = GenericSchema(
                 fields=[
@@ -698,31 +716,29 @@ class SchemaEvolutionE2ETests(RedpandaTest):
                     "ordinal": int(x),
                 },
                 spark_table=[
-                    ('verifier_string', 'string'),
-                    ('ordinal', 'bigint'),
+                    ("verifier_string", "string"),
+                    ("ordinal", "bigint"),
                 ],
                 trino_table=[
-                    ('verifier_string', 'varchar'),
-                    ('ordinal', 'bigint'),
+                    ("verifier_string", "varchar"),
+                    ("ordinal", "bigint"),
                 ],
             )
 
-            restored_schema.produce(dl,
-                                    self.topic_name,
-                                    count,
-                                    ctx,
-                                    mode=produce_mode)
-            restored_schema.check_table_schema(dl, self.table_name,
-                                               query_engine)
+            restored_schema.produce(dl, self.topic_name, count, ctx, mode=produce_mode)
+            restored_schema.check_table_schema(dl, self.table_name, query_engine)
 
             select_out = self.select(dl, query_engine, dropped_field_names)
-            assert len(select_out) == count*3, \
-                f"Expected {count*3} rows, got {select_out}"
+            assert len(select_out) == count * 3, (
+                f"Expected {count * 3} rows, got {select_out}"
+            )
 
-            assert all(r[1] is None for r in select_out[:count * 2]), \
-                f"Expected nulls for reintroduced {dropped_field_names} in first {count*2} rows, got {select_out[:count * 2]}"
-            assert all(r[1] is not None for r in select_out[count * 2:]), \
-                f"Expected non-nulls for {dropped_field_names} in last {count} rows, got {select_out[count * 2:]}"
+            assert all(r[1] is None for r in select_out[: count * 2]), (
+                f"Expected nulls for reintroduced {dropped_field_names} in first {count * 2} rows, got {select_out[: count * 2]}"
+            )
+            assert all(r[1] is not None for r in select_out[count * 2 :]), (
+                f"Expected non-nulls for {dropped_field_names} in last {count} rows, got {select_out[count * 2 :]}"
+            )
 
     @cluster(num_nodes=3)
     @matrix(
@@ -731,40 +747,37 @@ class SchemaEvolutionE2ETests(RedpandaTest):
         produce_mode=PRODUCER_MODES,
         catalog_type=supported_catalog_types(),
     )
-    def test_dropped_column_select_fails(self, cloud_storage_type,
-                                         query_engine, produce_mode,
-                                         catalog_type):
+    def test_dropped_column_select_fails(
+        self, cloud_storage_type, query_engine, produce_mode, catalog_type
+    ):
         """
         Test that selecting a dropped column fails "gracefully" - or at least
         predictably and consistently.
         """
-        with self.setup_services(query_engine,
-                                 catalog_type=catalog_type) as dl:
+        with self.setup_services(query_engine, catalog_type=catalog_type) as dl:
             count = 10
             ctx = TranslationContext()
-            initial_schema, next_schema, _ = LEGAL_TEST_CASES['drop_column']
+            initial_schema, next_schema, _ = LEGAL_TEST_CASES["drop_column"]
             dropped_field_names = list(
-                set(initial_schema.field_names) - set(next_schema.field_names))
+                set(initial_schema.field_names) - set(next_schema.field_names)
+            )
 
             for schema in [initial_schema, next_schema]:
-                schema.produce(dl,
-                               self.topic_name,
-                               count,
-                               ctx,
-                               mode=produce_mode)
+                schema.produce(dl, self.topic_name, count, ctx, mode=produce_mode)
                 schema.check_table_schema(dl, self.table_name, query_engine)
 
             if query_engine == QueryEngineType.SPARK:
                 with expect_exception(
-                        pyhive.exc.OperationalError, lambda e:
-                        'UNRESOLVED_COLUMN' in e.args[0].status.errorMessage):
+                    pyhive.exc.OperationalError,
+                    lambda e: "UNRESOLVED_COLUMN" in e.args[0].status.errorMessage,
+                ):
                     self.select(dl, query_engine, dropped_field_names)
             else:
                 with expect_exception(
-                        pyhive.exc.DatabaseError, lambda e: e.args[0].get(
-                            'errorName') == 'COLUMN_NOT_FOUND'):
-                    select_out = self.select(dl, query_engine,
-                                             dropped_field_names)
+                    pyhive.exc.DatabaseError,
+                    lambda e: e.args[0].get("errorName") == "COLUMN_NOT_FOUND",
+                ):
+                    select_out = self.select(dl, query_engine, dropped_field_names)
 
     @cluster(num_nodes=3)
     @matrix(
@@ -773,32 +786,29 @@ class SchemaEvolutionE2ETests(RedpandaTest):
         produce_mode=PRODUCER_MODES,
         catalog_type=supported_catalog_types(),
     )
-    def test_reorder_columns(self, cloud_storage_type, query_engine,
-                             produce_mode, catalog_type):
+    def test_reorder_columns(
+        self, cloud_storage_type, query_engine, produce_mode, catalog_type
+    ):
         """
         Test that changing the order of columns doesn't change the values
         associated with a column or field name.
         """
-        with self.setup_services(query_engine,
-                                 catalog_type=catalog_type) as dl:
+        with self.setup_services(query_engine, catalog_type=catalog_type) as dl:
             count = 10
             ctx = TranslationContext()
-            initial_schema, next_schema, _ = LEGAL_TEST_CASES[
-                'reorder_columns']
+            initial_schema, next_schema, _ = LEGAL_TEST_CASES["reorder_columns"]
             for schema in [initial_schema, next_schema]:
-                schema.produce(dl,
-                               self.topic_name,
-                               count,
-                               ctx,
-                               mode=produce_mode)
+                schema.produce(dl, self.topic_name, count, ctx, mode=produce_mode)
                 schema.check_table_schema(dl, self.table_name, query_engine)
 
             for field in initial_schema.field_names:
                 select_out = self.select(dl, query_engine, [field])
-                assert len(select_out) == count * 2, \
-                    f"Expected {count*2} rows, got {len(select_out)}"
-                assert all(r[1] == field for r in select_out), \
+                assert len(select_out) == count * 2, (
+                    f"Expected {count * 2} rows, got {len(select_out)}"
+                )
+                assert all(r[1] == field for r in select_out), (
                     f"{field} column mangled: {select_out}"
+                )
 
     @cluster(num_nodes=3)
     @matrix(
@@ -808,37 +818,29 @@ class SchemaEvolutionE2ETests(RedpandaTest):
         produce_mode=PRODUCER_MODES,
         catalog_type=supported_catalog_types(),
     )
-    def test_old_schema_writer(self, cloud_storage_type, query_engine,
-                               test_case, produce_mode, catalog_type):
+    def test_old_schema_writer(
+        self, cloud_storage_type, query_engine, test_case, produce_mode, catalog_type
+    ):
         """
         Tests that, after a backwards compatible update from schema A to schema B, we can keep
         tranlsating records produced with schema A without another schema update by falling back
         to an already extant parquet writer for schema A.
         """
-        with self.setup_services(query_engine,
-                                 catalog_type=catalog_type) as dl:
-
+        with self.setup_services(query_engine, catalog_type=catalog_type) as dl:
             count = 10
             ctx = TranslationContext()
 
             initial_schema, next_schema, _ = LEGAL_TEST_CASES[test_case]
 
             for schema in [initial_schema, next_schema]:
-                schema.produce(dl,
-                               self.topic_name,
-                               count,
-                               ctx,
-                               mode=produce_mode)
+                schema.produce(dl, self.topic_name, count, ctx, mode=produce_mode)
                 schema.check_table_schema(dl, self.table_name, query_engine)
 
-            initial_schema.produce(dl,
-                                   self.topic_name,
-                                   count,
-                                   ctx,
-                                   mode=produce_mode)
+            initial_schema.produce(dl, self.topic_name, count, ctx, mode=produce_mode)
             next_schema.check_table_schema(dl, self.table_name, query_engine)
 
             select_out = self.select(dl, query_engine, next_schema.field_names)
 
-            assert len(select_out) == count * 3, \
-                f"Expected {count*3} rows, got {len(select_out)}"
+            assert len(select_out) == count * 3, (
+                f"Expected {count * 3} rows, got {len(select_out)}"
+            )

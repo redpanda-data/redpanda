@@ -21,7 +21,12 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.producer_swarm import ProducerSwarm
-from rptest.services.redpanda import ResourceSettings, SISettings, CloudStorageType, get_cloud_storage_type
+from rptest.services.redpanda import (
+    ResourceSettings,
+    SISettings,
+    CloudStorageType,
+    get_cloud_storage_type,
+)
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.services.rpk_producer import RpkProducer
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -39,7 +44,8 @@ from rptest.clients.offline_log_viewer import OfflineLogViewer
 
 def topic_name():
     return "test-topic-" + "".join(
-        random.choice(string.ascii_lowercase) for _ in range(16))
+        random.choice(string.ascii_lowercase) for _ in range(16)
+    )
 
 
 class RapidTopicRecreateTest(RedpandaTest):
@@ -47,11 +53,13 @@ class RapidTopicRecreateTest(RedpandaTest):
         super(RapidTopicRecreateTest, self).__init__(
             test_context=test_context,
             num_brokers=3,
-            si_settings=SISettings(test_context=test_context,
-                                   skip_end_of_test_scrubbing=True),
+            si_settings=SISettings(
+                test_context=test_context, skip_end_of_test_scrubbing=True
+            ),
             extra_rp_conf={
                 "iceberg_enabled": True,  # to create relevant STMs
-            })
+            },
+        )
         self.rpk = RpkTool(self.redpanda)
         self.topic_name = topic_name()
 
@@ -60,11 +68,15 @@ class RapidTopicRecreateTest(RedpandaTest):
         replication_factor = random.choice([1, 3])
         self.logger.info(
             "Creating topic with {self._current_partitions} partitions "
-            "and {replication_factor=}")
+            "and {replication_factor=}"
+        )
         self.client().create_topic(
-            TopicSpec(name=self.topic_name,
-                      partition_count=self._current_partitions,
-                      replication_factor=replication_factor))
+            TopicSpec(
+                name=self.topic_name,
+                partition_count=self._current_partitions,
+                replication_factor=replication_factor,
+            )
+        )
 
     def delete(self):
         self.logger.info("Deleting topic")
@@ -72,52 +84,55 @@ class RapidTopicRecreateTest(RedpandaTest):
 
     def add_partitions(self):
         partitions_to_add = random.randint(1, 4)
-        self.logger.info(f"Adding {partitions_to_add} partitions "
-                         f"to {self._current_partitions} existing")
+        self.logger.info(
+            f"Adding {partitions_to_add} partitions "
+            f"to {self._current_partitions} existing"
+        )
         self.rpk.add_partitions(self.topic_name, partitions_to_add)
         self._current_partitions += partitions_to_add
 
     @cluster(num_nodes=3)
     def test_topic_rapid_recreation(self):
-        with Finjector(self.redpanda, self.scale,
-                       max_concurrent_failures=1).finj_thread():
+        with Finjector(
+            self.redpanda, self.scale, max_concurrent_failures=1
+        ).finj_thread():
             for _ in range(100):
                 try:
-                    random.choice(
-                        [self.create, self.delete, self.add_partitions])()
-                    sleep_time = 2**random.uniform(-15, 2)
+                    random.choice([self.create, self.delete, self.add_partitions])()
+                    sleep_time = 2 ** random.uniform(-15, 2)
                     self.logger.info(f"Sleeping for {sleep_time} seconds")
                     time.sleep(sleep_time)
                 except Exception as e:
                     self.logger.debug(f"Error: {e}")
 
 
-class Workload():
-    ACKS_1 = 'ACKS_1'
-    ACKS_ALL = 'ACKS_ALL'
-    IDEMPOTENT = 'IDEMPOTENT'
+class Workload:
+    ACKS_1 = "ACKS_1"
+    ACKS_ALL = "ACKS_ALL"
+    IDEMPOTENT = "IDEMPOTENT"
 
 
 class TopicRecreateTest(RedpandaTest):
     def __init__(self, test_context):
-        super(TopicRecreateTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=5,
-                             resource_settings=ResourceSettings(num_cpus=1),
-                             extra_rp_conf={
-                                 "auto_create_topics_enabled": False,
-                                 "max_compacted_log_segment_size":
-                                 5 * (2 << 20)
-                             })
+        super(TopicRecreateTest, self).__init__(
+            test_context=test_context,
+            num_brokers=5,
+            resource_settings=ResourceSettings(num_cpus=1),
+            extra_rp_conf={
+                "auto_create_topics_enabled": False,
+                "max_compacted_log_segment_size": 5 * (2 << 20),
+            },
+        )
 
     @cluster(num_nodes=6)
     @matrix(
         workload=[Workload.ACKS_1, Workload.ACKS_ALL, Workload.IDEMPOTENT],
-        cleanup_policy=[TopicSpec.CLEANUP_COMPACT, TopicSpec.CLEANUP_DELETE])
+        cleanup_policy=[TopicSpec.CLEANUP_COMPACT, TopicSpec.CLEANUP_DELETE],
+    )
     def test_topic_recreation_while_producing(self, workload, cleanup_policy):
-        '''
+        """
         Test that we are able to recreate topic multiple times
-        '''
+        """
         self._client = DefaultClient(self.redpanda)
 
         # scaling parameters
@@ -131,22 +146,24 @@ class TopicRecreateTest(RedpandaTest):
 
         producer_properties = {}
         if workload == Workload.ACKS_1:
-            producer_properties['acks'] = 1
+            producer_properties["acks"] = 1
         elif workload == Workload.ACKS_ALL:
-            producer_properties['acks'] = -1
+            producer_properties["acks"] = -1
         elif workload == Workload.IDEMPOTENT:
-            producer_properties['acks'] = -1
-            producer_properties['enable.idempotence'] = True
+            producer_properties["acks"] = -1
+            producer_properties["enable.idempotence"] = True
         else:
             assert False
 
-        swarm = ProducerSwarm(self.test_context,
-                              self.redpanda,
-                              spec.name,
-                              producer_count,
-                              10000000000,
-                              log_level="ERROR",
-                              properties=producer_properties)
+        swarm = ProducerSwarm(
+            self.test_context,
+            self.redpanda,
+            spec.name,
+            producer_count,
+            10000000000,
+            log_level="ERROR",
+            properties=producer_properties,
+        )
         swarm.start()
 
         rpk = RpkTool(self.redpanda)
@@ -159,18 +176,14 @@ class TopicRecreateTest(RedpandaTest):
             hw_offsets = [p.high_watermark for p in partitions]
             offsets_present = [hw > 0 for hw in hw_offsets]
             self.logger.debug(f"High watermark offsets: {hw_offsets}")
-            return len(offsets_present) == partition_count and all(
-                offsets_present)
+            return len(offsets_present) == partition_count and all(offsets_present)
 
         for i in range(1, 20):
             rf = 3 if i % 2 == 0 else 1
             self.client().delete_topic(spec.name)
             spec.replication_factor = rf
             self.client().create_topic(spec)
-            wait_until(topic_is_healthy,
-                       30,
-                       2,
-                       err_msg=f"Topic {spec.name} health")
+            wait_until(topic_is_healthy, 30, 2, err_msg=f"Topic {spec.name} health")
             sleep(5)
 
         swarm.stop()
@@ -182,12 +195,14 @@ class TopicAutocreateTest(RedpandaTest):
     Verify that autocreation works, and that the settings of an autocreated
     topic match those for a topic created by hand with rpk.
     """
+
     def __init__(self, test_context):
         super(TopicAutocreateTest, self).__init__(
             test_context=test_context,
             num_brokers=1,
-            extra_rp_conf={'auto_create_topics_enabled': False},
-            si_settings=SISettings(test_context))
+            extra_rp_conf={"auto_create_topics_enabled": False},
+            si_settings=SISettings(test_context),
+        )
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
@@ -195,7 +210,7 @@ class TopicAutocreateTest(RedpandaTest):
 
     @cluster(num_nodes=1)
     def topic_autocreate_test(self):
-        auto_topic = 'autocreated'
+        auto_topic = "autocreated"
         manual_topic = "manuallycreated"
 
         # With autocreation disabled, producing to a nonexistent topic should not work.
@@ -209,7 +224,7 @@ class TopicAutocreateTest(RedpandaTest):
             assert False, "Producing to a nonexistent topic should fail"
 
         # Enable autocreation
-        self.redpanda.set_cluster_config({'auto_create_topics_enabled': True})
+        self.redpanda.set_cluster_config({"auto_create_topics_enabled": True})
 
         # Auto create topic
         assert auto_topic not in self.kafka_tools.list_topics()
@@ -233,19 +248,28 @@ class TopicAutocreateTest(RedpandaTest):
 
         # compare topic configs as retrieved by rpk.
         # describe the topics and convert the resulting dict in a set, to compute the difference
-        auto_topic_rpk_cfg = set(
-            self.rpk.describe_topic_configs(auto_topic).items())
+        auto_topic_rpk_cfg = set(self.rpk.describe_topic_configs(auto_topic).items())
         manual_topic_rpk_cfg = set(
-            self.rpk.describe_topic_configs(manual_topic).items())
+            self.rpk.describe_topic_configs(manual_topic).items()
+        )
 
         # retrieve the cloud storage mode and append it as an extra config, to check it. see issue/13492
-        auto_topic_rpk_cfg.add(('cloud_storage_mode',
-                                self.admin.get_partition_cloud_storage_status(
-                                    auto_topic, 0)['cloud_storage_mode']))
+        auto_topic_rpk_cfg.add(
+            (
+                "cloud_storage_mode",
+                self.admin.get_partition_cloud_storage_status(auto_topic, 0)[
+                    "cloud_storage_mode"
+                ],
+            )
+        )
         manual_topic_rpk_cfg.add(
-            ('cloud_storage_mode',
-             self.admin.get_partition_cloud_storage_status(
-                 manual_topic, 0)['cloud_storage_mode']))
+            (
+                "cloud_storage_mode",
+                self.admin.get_partition_cloud_storage_status(manual_topic, 0)[
+                    "cloud_storage_mode"
+                ],
+            )
+        )
 
         self.logger.debug(f"{auto_topic=} config={auto_topic_rpk_cfg}")
         self.logger.debug(f"{manual_topic=}, config={manual_topic_rpk_cfg}")
@@ -256,36 +280,30 @@ class TopicAutocreateTest(RedpandaTest):
         auto_topic_cfg_unique = auto_topic_rpk_cfg - cfg_intersection
         manual_topic_cfg_unique = manual_topic_rpk_cfg - cfg_intersection
 
-        assert len(auto_topic_cfg_unique) == 0 and \
-            len(manual_topic_cfg_unique) == 0, \
-                  f"topics {auto_topic=} and {manual_topic=} have these different configs (should be empty) {auto_topic_cfg_unique=} {manual_topic_cfg_unique=}"
+        assert len(auto_topic_cfg_unique) == 0 and len(manual_topic_cfg_unique) == 0, (
+            f"topics {auto_topic=} and {manual_topic=} have these different configs (should be empty) {auto_topic_cfg_unique=} {manual_topic_cfg_unique=}"
+        )
 
 
 class CreateTopicsTest(RedpandaTest):
-
-    #TODO: add shadow indexing properties:
+    # TODO: add shadow indexing properties:
     #
     # 'redpanda.remote.write': lambda: random.choice(['true', 'false']),
     # 'redpanda.remote.read':    lambda: random.choice(['true', 'false'])
     _topic_properties = {
-        'compression.type':
-        lambda: random.choice(["producer", "zstd"]),
-        'cleanup.policy':
-        lambda: random.choice(["compact", "delete", "compact,delete"]),
-        'message.timestamp.type':
-        lambda: random.choice(["LogAppendTime", "CreateTime"]),
-        'segment.bytes':
-        lambda: random.randint(1024 * 1024, 1024 * 1024 * 1024),
-        'retention.bytes':
-        lambda: random.randint(1024 * 1024, 1024 * 1024 * 1024),
-        'retention.ms':
-        lambda: random.randint(-1, 10000000),
-        'max.message.bytes':
-        lambda: random.randint(1024 * 1024, 10 * 1024 * 1024),
-        'redpanda.remote.delete':
-        lambda: "true" if random.randint(0, 1) else "false",
-        'segment.ms':
-        lambda: random.choice([-1, random.randint(10000, 10000000)]),
+        "compression.type": lambda: random.choice(["producer", "zstd"]),
+        "cleanup.policy": lambda: random.choice(
+            ["compact", "delete", "compact,delete"]
+        ),
+        "message.timestamp.type": lambda: random.choice(
+            ["LogAppendTime", "CreateTime"]
+        ),
+        "segment.bytes": lambda: random.randint(1024 * 1024, 1024 * 1024 * 1024),
+        "retention.bytes": lambda: random.randint(1024 * 1024, 1024 * 1024 * 1024),
+        "retention.ms": lambda: random.randint(-1, 10000000),
+        "max.message.bytes": lambda: random.randint(1024 * 1024, 10 * 1024 * 1024),
+        "redpanda.remote.delete": lambda: "true" if random.randint(0, 1) else "false",
+        "segment.ms": lambda: random.choice([-1, random.randint(10000, 10000000)]),
     }
 
     def __init__(self, test_context):
@@ -293,11 +311,12 @@ class CreateTopicsTest(RedpandaTest):
             test_context,
             cloud_storage_max_connections=5,
             cloud_storage_segment_max_upload_interval_sec=10,
-            log_segment_size=100 * 1024 * 1024)
+            log_segment_size=100 * 1024 * 1024,
+        )
 
-        super(CreateTopicsTest, self).__init__(test_context=test_context,
-                                               num_brokers=3,
-                                               si_settings=si_settings)
+        super(CreateTopicsTest, self).__init__(
+            test_context=test_context, num_brokers=3, si_settings=si_settings
+        )
 
     @cluster(num_nodes=3)
     def test_create_topic_with_single_configuration_property(self):
@@ -307,14 +326,17 @@ class CreateTopicsTest(RedpandaTest):
             name = topic_name()
             partitions = random.randint(1, 10)
             property_value = generator()
-            rpk.create_topic(topic=name,
-                             partitions=partitions,
-                             replicas=3,
-                             config={p: property_value})
+            rpk.create_topic(
+                topic=name,
+                partitions=partitions,
+                replicas=3,
+                config={p: property_value},
+            )
 
             cfgs = rpk.describe_topic_configs(topic=name)
-            assert str(cfgs[p][0]) == str(
-                property_value), f"{cfgs[p][0]=} != {property_value=}"
+            assert str(cfgs[p][0]) == str(property_value), (
+                f"{cfgs[p][0]=} != {property_value=}"
+            )
 
     @cluster(num_nodes=3)
     def test_no_log_bloat_when_recreating_existing_topics(self):
@@ -337,8 +359,11 @@ class CreateTopicsTest(RedpandaTest):
                 records = log_viewer.read_controller(node=node)
 
                 def is_create_topic_cmd(r):
-                    return "type" in r.keys() and r["type"] == "topic_management_cmd" and\
-                        r["data"]["type"] == 0
+                    return (
+                        "type" in r.keys()
+                        and r["type"] == "topic_management_cmd"
+                        and r["data"]["type"] == 0
+                    )
 
                 create_topic_cmds = list(filter(is_create_topic_cmd, records))
                 self.redpanda.logger.debug(
@@ -351,12 +376,13 @@ class CreateTopicsTest(RedpandaTest):
             create_topic_commands,
             timeout_sec=30,
             backoff_sec=3,
-            err_msg="Timed out waiting for single create_topic command")
+            err_msg="Timed out waiting for single create_topic command",
+        )
 
     @staticmethod
     def _modify_cluster_config(admin, redpanda, upsert):
         patch_result = admin.patch_cluster_config(upsert=upsert)
-        wait_for_version_sync(admin, redpanda, patch_result['config_version'])
+        wait_for_version_sync(admin, redpanda, patch_result["config_version"])
 
     @cluster(num_nodes=3)
     def test_create_with_min_rf(self):
@@ -366,18 +392,22 @@ class CreateTopicsTest(RedpandaTest):
         """
         admin = Admin(self.redpanda)
         # Set default RF to 3
-        self._modify_cluster_config(admin, self.redpanda,
-                                    {'default_topic_replications': 3})
+        self._modify_cluster_config(
+            admin, self.redpanda, {"default_topic_replications": 3}
+        )
         # Now can set minimum RF to 3
-        self._modify_cluster_config(admin, self.redpanda,
-                                    {'minimum_topic_replications': 3})
+        self._modify_cluster_config(
+            admin, self.redpanda, {"minimum_topic_replications": 3}
+        )
         rpk = RpkTool(self.redpanda)
         try:
             rpk.create_topic("should-fail", replicas=1)
             assert False, "Creation should have failed"
         except RpkException as e:
-            assert "Replication factor must be greater than or equal to specified minimum value" in str(
-                e), f'Unexpected return message: "{str(e)}"'
+            assert (
+                "Replication factor must be greater than or equal to specified minimum value"
+                in str(e)
+            ), f'Unexpected return message: "{str(e)}"'
 
         rpk.create_topic("should-succeed", replicas=None)
 
@@ -392,18 +422,19 @@ class CreateTopicsTest(RedpandaTest):
         rpk.create_topic("topic-3", replicas=3)
 
         admin = Admin(self.redpanda)
-        self._modify_cluster_config(admin, self.redpanda,
-                                    {'default_topic_replications': 3})
-        self._modify_cluster_config(admin, self.redpanda,
-                                    {'minimum_topic_replications': 3})
+        self._modify_cluster_config(
+            admin, self.redpanda, {"default_topic_replications": 3}
+        )
+        self._modify_cluster_config(
+            admin, self.redpanda, {"minimum_topic_replications": 3}
+        )
 
         assert self.redpanda.search_log_node(
             self.redpanda.nodes[0],
-            "Topic {kafka/topic-1} has a replication factor less than specified minimum: 1 < 3"
+            "Topic {kafka/topic-1} has a replication factor less than specified minimum: 1 < 3",
         ), "Missing log message for topic-1"
         assert not self.redpanda.search_log_node(
-            self.redpanda.nodes[0],
-            "Topic {kafka-topic3} has a replication factor"
+            self.redpanda.nodes[0], "Topic {kafka-topic3} has a replication factor"
         ), "Invalid log message found for topic-3"
 
         # Restart nodes and verify we see the message at startup
@@ -411,14 +442,18 @@ class CreateTopicsTest(RedpandaTest):
 
         num_found = self.redpanda.count_log_node(
             self.redpanda.nodes[0],
-            "Topic {kafka/topic-1} has a replication factor less than specified minimum: 1 < 3"
+            "Topic {kafka/topic-1} has a replication factor less than specified minimum: 1 < 3",
         )
-        assert num_found == 2, f'Expected to find 2 messages about topic-1, but found {num_found}'
+        assert num_found == 2, (
+            f"Expected to find 2 messages about topic-1, but found {num_found}"
+        )
 
         num_found = self.redpanda.count_log_node(
-            self.redpanda.nodes[0],
-            "Topic {kafka-topic3} has a replication factor")
-        assert num_found == 0, f'Expected to find 0 messages about topic-3, but found {num_found}'
+            self.redpanda.nodes[0], "Topic {kafka-topic3} has a replication factor"
+        )
+        assert num_found == 0, (
+            f"Expected to find 0 messages about topic-3, but found {num_found}"
+        )
 
     @cluster(num_nodes=3)
     def test_invalid_boolean_property(self):
@@ -426,10 +461,10 @@ class CreateTopicsTest(RedpandaTest):
         Validates that an invalid boolean property results in an invalid configuration response.
         """
         rpk = RpkTool(self.redpanda)
-        with expect_exception(RpkException,
-                              lambda e: 'Configuration is invalid' in str(e)):
-            rpk.create_topic('topic-1',
-                             config={'redpanda.remote.read': 'affirmative'})
+        with expect_exception(
+            RpkException, lambda e: "Configuration is invalid" in str(e)
+        ):
+            rpk.create_topic("topic-1", config={"redpanda.remote.read": "affirmative"})
 
     @cluster(num_nodes=3)
     def test_case_insensitive_boolean_property(self):
@@ -437,31 +472,29 @@ class CreateTopicsTest(RedpandaTest):
         Validates that boolean properties are case insensitive.
         """
         rpk = RpkTool(self.redpanda)
-        rpk.create_topic('topic-1',
-                         config={
-                             'redpanda.remote.read': 'tRuE',
-                             'redpanda.remote.write': 'FALSE'
-                         })
-        cfg = rpk.describe_topic_configs('topic-1')
-        assert cfg['redpanda.remote.read'][0] == 'true'
-        assert cfg['redpanda.remote.write'][0] == 'false'
+        rpk.create_topic(
+            "topic-1",
+            config={"redpanda.remote.read": "tRuE", "redpanda.remote.write": "FALSE"},
+        )
+        cfg = rpk.describe_topic_configs("topic-1")
+        assert cfg["redpanda.remote.read"][0] == "true"
+        assert cfg["redpanda.remote.write"][0] == "false"
 
 
 class CreateTopicsResponseTest(RedpandaTest):
     SUCCESS_EC = 0
     TOPIC_EXISTS_EC = 36
 
-    DEFAULT_CLEANUP_POLICY = 'delete'
+    DEFAULT_CLEANUP_POLICY = "delete"
     DEFAULT_CONFIG_SOURCE = 5
 
     CONFIG_SOURCE_MAPPING = {
-        1: 'DYNAMIC_TOPIC_CONFIG',
-        5: 'DEFAULT_CONFIG',
+        1: "DYNAMIC_TOPIC_CONFIG",
+        5: "DEFAULT_CONFIG",
     }
 
     def __init__(self, test_context):
-        super(CreateTopicsResponseTest,
-              self).__init__(test_context=test_context)
+        super(CreateTopicsResponseTest, self).__init__(test_context=test_context)
         self.kcl_client = RawKCL(self.redpanda)
         self.admin = Admin(self.redpanda)
 
@@ -471,41 +504,37 @@ class CreateTopicsResponseTest(RedpandaTest):
     def create_topics(self, p_cnt, r_fac, n=1, validate_only=False):
         topics = []
         for i in range(0, n):
-            topics.append({
-                'name': f"foo-{p_cnt}-{r_fac}-{i}",
-                'partition_count': p_cnt,
-                'replication_factor': r_fac
-            })
+            topics.append(
+                {
+                    "name": f"foo-{p_cnt}-{r_fac}-{i}",
+                    "partition_count": p_cnt,
+                    "replication_factor": r_fac,
+                }
+            )
 
-        return self.kcl_client.create_topics(6,
-                                             topics=topics,
-                                             validate_only=validate_only)
+        return self.kcl_client.create_topics(
+            6, topics=topics, validate_only=validate_only
+        )
 
     def create_topic(self, name):
-        topics = [{
-            'name': f"{name}",
-            'partition_count': 1,
-            'replication_factor': 1
-        }]
-        return self.kcl_client.create_topics(6,
-                                             topics=topics,
-                                             validate_only=False)
+        topics = [{"name": f"{name}", "partition_count": 1, "replication_factor": 1}]
+        return self.kcl_client.create_topics(6, topics=topics, validate_only=False)
 
     def get_np(self, tp):
-        return tp['NumPartitions']
+        return tp["NumPartitions"]
 
     def get_rf(self, tp):
-        return tp['ReplicationFactor']
+        return tp["ReplicationFactor"]
 
     def get_ec(self, tp):
-        return tp['ErrorCode']
+        return tp["ErrorCode"]
 
     def get_configs(self, tp):
-        return tp['Configs']
+        return tp["Configs"]
 
     def get_config_by_name(self, tp, name):
         cfgs = self.get_configs(tp)
-        return next((cfg for cfg in cfgs if cfg['Name'] == name), None)
+        return next((cfg for cfg in cfgs if cfg["Name"] == name), None)
 
     def check_topic_resp(self, topic, expected_np, expected_rf, expected_ec):
         np = self.get_np(topic)
@@ -527,20 +556,22 @@ class CreateTopicsResponseTest(RedpandaTest):
         """
 
         cfg = self.admin.get_cluster_config()
-        expected_np = partition_count if partition_count > 0 else cfg[
-            'default_topic_partitions']
-        expected_rf = replication_factor if replication_factor > 0 else cfg[
-            'default_topic_replications']
+        expected_np = (
+            partition_count if partition_count > 0 else cfg["default_topic_partitions"]
+        )
+        expected_rf = (
+            replication_factor
+            if replication_factor > 0
+            else cfg["default_topic_replications"]
+        )
 
         topics = self.create_topics(partition_count, replication_factor, 3)
         for topic in topics:
-            self.check_topic_resp(topic, expected_np, expected_rf,
-                                  self.SUCCESS_EC)
+            self.check_topic_resp(topic, expected_np, expected_rf, self.SUCCESS_EC)
 
         topics = self.create_topics(partition_count, replication_factor, 3)
         for topic in topics:
-            self.check_topic_resp(topic, expected_np, expected_rf,
-                                  self.TOPIC_EXISTS_EC)
+            self.check_topic_resp(topic, expected_np, expected_rf, self.TOPIC_EXISTS_EC)
 
     @cluster(num_nodes=3)
     def test_create_topic_response_configs(self):
@@ -550,22 +581,26 @@ class CreateTopicsResponseTest(RedpandaTest):
           b. serialized correctly
         """
 
-        topic_name = 'test-create-topic-response'
+        topic_name = "test-create-topic-response"
         create_topics_response = self.create_topic(topic_name)
         topic_response = create_topics_response[0]
 
         res = self.kcl_client.describe_topic(topic_name)
-        describe_configs = [line.split() for line in res.strip().split('\n')]
+        describe_configs = [line.split() for line in res.strip().split("\n")]
 
-        for (key, value, source) in describe_configs:
+        for key, value, source in describe_configs:
             topic_config = self.get_config_by_name(topic_response, key)
 
-            assert topic_config, f"Config '{key}' returned by DescribeConfigs is missing from configs response in CreateTopic"
-            assert topic_config[
-                'Value'] == value, f"config value mismatch for {key} across CreateTopic and DescribeConfigs: {topic_config['Value']} != {value}"
+            assert topic_config, (
+                f"Config '{key}' returned by DescribeConfigs is missing from configs response in CreateTopic"
+            )
+            assert topic_config["Value"] == value, (
+                f"config value mismatch for {key} across CreateTopic and DescribeConfigs: {topic_config['Value']} != {value}"
+            )
 
-            assert self.CONFIG_SOURCE_MAPPING[topic_config[
-                'Source']] == source, f"config source mismatch for {key} across CreateTopic and DescribeConfigs: {self.CONFIG_SOURCE_MAPPING[topic_config['Source']]} != {source}"
+            assert self.CONFIG_SOURCE_MAPPING[topic_config["Source"]] == source, (
+                f"config source mismatch for {key} across CreateTopic and DescribeConfigs: {self.CONFIG_SOURCE_MAPPING[topic_config['Source']]} != {source}"
+            )
 
     @cluster(num_nodes=3)
     def test_create_topic_validate_only(self):
@@ -587,10 +622,11 @@ class CreateTopicsResponseTest(RedpandaTest):
 
 class CreateSITopicsTest(RedpandaTest):
     def __init__(self, test_context):
-        super(CreateSITopicsTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=1,
-                             si_settings=SISettings(test_context))
+        super(CreateSITopicsTest, self).__init__(
+            test_context=test_context,
+            num_brokers=1,
+            si_settings=SISettings(test_context),
+        )
 
     def _to_bool(self, x: str) -> bool:
         return True if x == "true" else False
@@ -608,27 +644,32 @@ class CreateSITopicsTest(RedpandaTest):
         topic_remote_write = [True, False, None]
 
         cases = list(
-            itertools.product(cluster_remote_read, cluster_remote_write,
-                              topic_remote_read, topic_remote_write))
+            itertools.product(
+                cluster_remote_read,
+                cluster_remote_write,
+                topic_remote_read,
+                topic_remote_write,
+            )
+        )
 
         for c_read, c_write, t_read, t_write in cases:
             self.logger.info(
                 f"Test case: cloud_storage_enable_remote_read={c_read}, "
                 f"cloud_storage_enable_remote_write={c_write}, "
                 f"redpanda.remote.read={t_read}, "
-                f"redpanda.remote.write={t_write}")
+                f"redpanda.remote.write={t_write}"
+            )
 
-            expected_read = t_read if t_read is not None \
-                            else c_read
-            expected_write = t_write if t_write is not None \
-                             else c_write
+            expected_read = t_read if t_read is not None else c_read
+            expected_write = t_write if t_write is not None else c_write
 
             self.redpanda.set_cluster_config(
                 {
                     "cloud_storage_enable_remote_read": c_read,
-                    "cloud_storage_enable_remote_write": c_write
+                    "cloud_storage_enable_remote_write": c_write,
                 },
-                expect_restart=True)
+                expect_restart=True,
+            )
 
             config = {}
             if t_read is not None:
@@ -637,10 +678,7 @@ class CreateSITopicsTest(RedpandaTest):
                 config["redpanda.remote.write"] = self._from_bool(t_write)
 
             topic = topic_name()
-            rpk.create_topic(topic=topic,
-                             partitions=1,
-                             replicas=1,
-                             config=config)
+            rpk.create_topic(topic=topic, partitions=1, replicas=1, config=config)
 
             ret = rpk.describe_topic_configs(topic=topic)
 
@@ -655,30 +693,33 @@ class CreateSITopicsTest(RedpandaTest):
         self.redpanda.set_cluster_config(
             {
                 "cloud_storage_enable_remote_read": True,
-                "cloud_storage_enable_remote_write": True
+                "cloud_storage_enable_remote_write": True,
             },
-            expect_restart=True)
+            expect_restart=True,
+        )
 
         default_si_topic = topic_name()
         explicit_si_topic = topic_name()
         rpk.create_topic(topic=default_si_topic, partitions=1, replicas=1)
-        rpk.create_topic(topic=explicit_si_topic,
-                         partitions=1,
-                         replicas=1,
-                         config={"redpanda.remote.write": "false"})
+        rpk.create_topic(
+            topic=explicit_si_topic,
+            partitions=1,
+            replicas=1,
+            config={"redpanda.remote.write": "false"},
+        )
 
         # Changing the defaults after creating a topic should not change
         # the configuration of the already-created topic
         self.redpanda.set_cluster_config(
             {
                 "cloud_storage_enable_remote_read": False,
-                "cloud_storage_enable_remote_write": True
+                "cloud_storage_enable_remote_write": True,
             },
-            expect_restart=True)
+            expect_restart=True,
+        )
 
         default_si_configs = rpk.describe_topic_configs(topic=default_si_topic)
-        explicit_si_configs = rpk.describe_topic_configs(
-            topic=explicit_si_topic)
+        explicit_si_configs = rpk.describe_topic_configs(topic=explicit_si_topic)
 
         # This topic has topic-level properties set from the cluster defaults
         # and the values should _not_ have been changed by the intervening
@@ -686,17 +727,22 @@ class CreateSITopicsTest(RedpandaTest):
         # default will be reported as DEFAULT, even though they are sticky,
         # per issue https://github.com/redpanda-data/redpanda/issues/7451
         assert default_si_configs["redpanda.remote.read"] == (
-            "true", "DYNAMIC_TOPIC_CONFIG")
-        assert default_si_configs["redpanda.remote.write"] == (
-            "true", "DEFAULT_CONFIG")
+            "true",
+            "DYNAMIC_TOPIC_CONFIG",
+        )
+        assert default_si_configs["redpanda.remote.write"] == ("true", "DEFAULT_CONFIG")
 
         # This topic was created with explicit properties that differed
         # from the defaults.  Both properties differ from the present
         # defaults so will be reported as DYNAMIC
         assert explicit_si_configs["redpanda.remote.read"] == (
-            "true", "DYNAMIC_TOPIC_CONFIG")
+            "true",
+            "DYNAMIC_TOPIC_CONFIG",
+        )
         assert explicit_si_configs["redpanda.remote.write"] == (
-            "false", "DYNAMIC_TOPIC_CONFIG")
+            "false",
+            "DYNAMIC_TOPIC_CONFIG",
+        )
 
     @cluster(num_nodes=1)
     @matrix(incremental=[True, False])
@@ -714,13 +760,13 @@ class CreateSITopicsTest(RedpandaTest):
         kcl = KCL(self.redpanda)
 
         examples = {
-            'redpanda.remote.delete': 'true',
-            'redpanda.remote.write': 'true',
-            'redpanda.remote.read': 'true',
-            'retention.local.target.bytes': '123456',
-            'retention.local.target.ms': '123456',
-            'initial.retention.local.target.bytes': '123456',
-            'initial.retention.local.target.ms': '123456'
+            "redpanda.remote.delete": "true",
+            "redpanda.remote.write": "true",
+            "redpanda.remote.read": "true",
+            "retention.local.target.bytes": "123456",
+            "retention.local.target.ms": "123456",
+            "initial.retention.local.target.bytes": "123456",
+            "initial.retention.local.target.ms": "123456",
         }
 
         kcl.alter_topic_config(examples, incremental=incremental, topic=topic)
@@ -728,9 +774,11 @@ class CreateSITopicsTest(RedpandaTest):
         value, src = topic_config["retention.local.target.bytes"]
         assert value == "123456" and src == "DYNAMIC_TOPIC_CONFIG"
 
-        kcl.alter_topic_config({"retention.local.target.bytes": "999999"},
-                               incremental=incremental,
-                               topic=topic)
+        kcl.alter_topic_config(
+            {"retention.local.target.bytes": "999999"},
+            incremental=incremental,
+            topic=topic,
+        )
         topic_config = rpk.describe_topic_configs(topic)
         value, src = topic_config["retention.local.target.bytes"]
         assert value == "999999" and src == "DYNAMIC_TOPIC_CONFIG"
@@ -740,7 +788,9 @@ class CreateSITopicsTest(RedpandaTest):
             if k != "retention.local.target.bytes":
                 # With the old alter configs API (incremental=False), all the other configs should revert to their default
                 # With the new incremental alter configs API, all the other configs should be unchanged
-                expected_src = "DYNAMIC_TOPIC_CONFIG" if incremental else "DEFAULT_CONFIG"
+                expected_src = (
+                    "DYNAMIC_TOPIC_CONFIG" if incremental else "DEFAULT_CONFIG"
+                )
 
                 # The shadow_indexing properties ('redpanda.remote.(read|write|delete)')
                 # are special "sticky" topic properties that are always set as a
@@ -750,22 +800,23 @@ class CreateSITopicsTest(RedpandaTest):
                 #
                 # See: https://github.com/redpanda-data/redpanda/issues/7451
                 hiding_configs = [
-                    'redpanda.remote.delete',
-                    'redpanda.remote.write',
-                    'redpanda.remote.read',
+                    "redpanda.remote.delete",
+                    "redpanda.remote.write",
+                    "redpanda.remote.read",
                 ]
                 if k in hiding_configs:
                     expected_src = "DEFAULT_CONFIG"
 
                 value, src = topic_config[k]
-                assert src == expected_src, \
+                assert src == expected_src, (
                     f"[incremental={incremental}] Unexpected describe result for {k}: value={value}, src={src}"
+                )
 
         # As a control, confirm that if we did pass an invalid property, we would have got an error
         with expect_exception(RuntimeError, lambda e: "invalid" in str(e)):
-            kcl.alter_topic_config({"redpanda.invalid.property": 'true'},
-                                   incremental=False,
-                                   topic=topic)
+            kcl.alter_topic_config(
+                {"redpanda.invalid.property": "true"}, incremental=False, topic=topic
+            )
 
 
 # When quickly recreating topics after deleting them, redpanda's topic
@@ -777,18 +828,18 @@ RECREATE_LOG_ALLOW_LIST = ["mkdir failed: No such file or directory"]
 
 class RecreateTopicMetadataTest(RedpandaTest):
     def __init__(self, test_context):
-
         super(RecreateTopicMetadataTest, self).__init__(
             test_context=test_context,
             num_brokers=5,
             extra_rp_conf={
                 # Test does explicit leadership movements
                 # that the balancer would interfere with.
-                'enable_leader_balancer': False,
+                "enable_leader_balancer": False,
                 # Test does not depend on balancing actions and
                 # requires consistent replica assignment.
-                'partition_autobalancing_mode': "off",
-            })
+                "partition_autobalancing_mode": "off",
+            },
+        )
 
     @cluster(num_nodes=6, log_allow_list=RECREATE_LOG_ALLOW_LIST)
     @parametrize(replication_factor=3)
@@ -798,15 +849,15 @@ class RecreateTopicMetadataTest(RedpandaTest):
         Test recreated topic metadata are valid across all the nodes
         """
 
-        topic = 'tp-test'
+        topic = "tp-test"
         partition_count = 5
         rpk = RpkTool(self.redpanda)
         kcat = KafkaCat(self.redpanda)
         admin = Admin(self.redpanda)
         # create topic with replication factor of 3
-        rpk.create_topic(topic='tp-test',
-                         partitions=partition_count,
-                         replicas=replication_factor)
+        rpk.create_topic(
+            topic="tp-test", partitions=partition_count, replicas=replication_factor
+        )
 
         # produce some data to the topic
 
@@ -820,18 +871,14 @@ class RecreateTopicMetadataTest(RedpandaTest):
                 replicas = set(p.replicas)
                 replicas.remove(p.leader)
                 target = random.choice(list(replicas))
-                admin.partition_transfer_leadership("kafka", topic, p.id,
-                                                    target)
-                wait_until(lambda: wait_for_leader(p.id, target),
-                           timeout_sec=30,
-                           backoff_sec=1)
+                admin.partition_transfer_leadership("kafka", topic, p.id, target)
+                wait_until(
+                    lambda: wait_for_leader(p.id, target), timeout_sec=30, backoff_sec=1
+                )
             msg_cnt = 100
-            producer = RpkProducer(self.test_context,
-                                   self.redpanda,
-                                   topic,
-                                   16384,
-                                   msg_cnt,
-                                   acks=-1)
+            producer = RpkProducer(
+                self.test_context, self.redpanda, topic, 16384, msg_cnt, acks=-1
+            )
 
             producer.start()
             producer.wait()
@@ -843,23 +890,22 @@ class RecreateTopicMetadataTest(RedpandaTest):
 
         # recreate the topic
         rpk.delete_topic(topic)
-        rpk.create_topic(topic='tp-test',
-                         partitions=partition_count,
-                         replicas=replication_factor)
+        rpk.create_topic(
+            topic="tp-test", partitions=partition_count, replicas=replication_factor
+        )
 
         def metadata_consistent():
             # validate leadership information on each node
             for p in range(0, partition_count):
                 leaders = set()
                 for n in self.redpanda.nodes:
-                    admin_partition = admin.get_partitions(topic=topic,
-                                                           partition=p,
-                                                           namespace="kafka",
-                                                           node=n)
+                    admin_partition = admin.get_partitions(
+                        topic=topic, partition=p, namespace="kafka", node=n
+                    )
                     self.logger.info(
                         f"node: {n.account.hostname} partition: {admin_partition}"
                     )
-                    leaders.add(admin_partition['leader_id'])
+                    leaders.add(admin_partition["leader_id"])
 
                 self.logger.info(f"{topic}/{p} leaders: {leaders}")
                 if len(leaders) != 1:
@@ -874,7 +920,8 @@ class CreateTopicReplicaDistributionTest(RedpandaTest):
         super(CreateTopicReplicaDistributionTest, self).__init__(
             test_context=test_context,
             num_brokers=5,
-            extra_rp_conf={'partition_autobalancing_mode': 'off'})
+            extra_rp_conf={"partition_autobalancing_mode": "off"},
+        )
 
     def setUp(self):
         # start the nodes manually
@@ -891,7 +938,8 @@ class CreateTopicReplicaDistributionTest(RedpandaTest):
 
         # Create first topic, replicas should be distributed evenly across 3 first nodes.
         self.client().create_topic(
-            TopicSpec(name="topic1", partition_count=10, replication_factor=3))
+            TopicSpec(name="topic1", partition_count=10, replication_factor=3)
+        )
 
         # Start other 2 nodes, they will be empty until topic2 is created
         self.redpanda.start(nodes=self.redpanda.nodes[3:5])
@@ -899,7 +947,8 @@ class CreateTopicReplicaDistributionTest(RedpandaTest):
 
         # Create second topic
         self.client().create_topic(
-            TopicSpec(name="topic2", partition_count=20, replication_factor=3))
+            TopicSpec(name="topic2", partition_count=20, replication_factor=3)
+        )
 
         # Calculate the replica distribution
         node2total_count = dict()
@@ -907,25 +956,23 @@ class CreateTopicReplicaDistributionTest(RedpandaTest):
         kafkakat = KafkaCat(self.redpanda)
         md = kafkakat.metadata()
         self.logger.debug(f"metadata: {md}")
-        for topic in md['topics']:
-            for p in topic['partitions']:
-                for r in p['replicas']:
-                    node_id = r['id']
-                    node2total_count[node_id] = node2total_count.setdefault(
-                        node_id, 0) + 1
-                    topic_counts = topic2node_counts.setdefault(
-                        topic['topic'], dict())
-                    topic_counts[node_id] = topic_counts.setdefault(
-                        node_id, 0) + 1
-                    topic2node_counts[topic['topic']] = topic_counts
+        for topic in md["topics"]:
+            for p in topic["partitions"]:
+                for r in p["replicas"]:
+                    node_id = r["id"]
+                    node2total_count[node_id] = (
+                        node2total_count.setdefault(node_id, 0) + 1
+                    )
+                    topic_counts = topic2node_counts.setdefault(topic["topic"], dict())
+                    topic_counts[node_id] = topic_counts.setdefault(node_id, 0) + 1
+                    topic2node_counts[topic["topic"]] = topic_counts
 
         self.logger.info(f"node counts: {sorted(node2total_count.items())}")
         for topic, counts in topic2node_counts.items():
-            self.logger.info(
-                f"topic '{topic}' counts: {sorted(counts.items())}")
+            self.logger.info(f"topic '{topic}' counts: {sorted(counts.items())}")
 
         # Check topic2 counts
-        counts = topic2node_counts['topic2']
+        counts = topic2node_counts["topic2"]
         expected_count = int(sum(counts.values()) / 5)
         # allow +/- 1 fluctuations that can arise from unlucky replica allocation order.
         assert all(abs(v - expected_count) <= 1 for v in counts.values())

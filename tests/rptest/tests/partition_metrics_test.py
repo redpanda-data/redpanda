@@ -22,7 +22,8 @@ class PartitionMetricsTest(RedpandaTest):
     """
     Produce and consume some data then confirm partition metrics
     """
-    topics = (TopicSpec(), )
+
+    topics = (TopicSpec(),)
 
     def __init__(self, test_context):
         super(PartitionMetricsTest, self).__init__(test_context=test_context)

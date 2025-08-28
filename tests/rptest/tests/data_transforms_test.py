@@ -25,7 +25,13 @@ from rptest.services.cluster import cluster
 from rptest.services.redpanda import MetricSamples, MetricsEndpoint
 from ducktape.utils.util import wait_until
 from ducktape.errors import TimeoutError
-from rptest.services.transform_verifier_service import TransformVerifierProduceConfig, TransformVerifierProduceStatus, TransformVerifierService, TransformVerifierConsumeConfig, TransformVerifierConsumeStatus
+from rptest.services.transform_verifier_service import (
+    TransformVerifierProduceConfig,
+    TransformVerifierProduceStatus,
+    TransformVerifierService,
+    TransformVerifierConsumeConfig,
+    TransformVerifierConsumeStatus,
+)
 from rptest.services.admin import Admin, CommittedWasmOffset
 from rptest.services.redpanda_installer import RedpandaInstaller
 
@@ -47,25 +53,28 @@ class BaseDataTransformsTest(RedpandaTest):
     """
     A base test class providing helpful data transform related functionality.
     """
+
     def __init__(self, *args, **kwargs):
         extra_rp_conf = {
-            'data_transforms_enabled': True,
-        } | kwargs.pop('extra_rp_conf', {})
-        super(BaseDataTransformsTest,
-              self).__init__(*args, extra_rp_conf=extra_rp_conf, **kwargs)
+            "data_transforms_enabled": True,
+        } | kwargs.pop("extra_rp_conf", {})
+        super(BaseDataTransformsTest, self).__init__(
+            *args, extra_rp_conf=extra_rp_conf, **kwargs
+        )
         self._rpk = RpkTool(self.redpanda)
         self._admin = Admin(self.redpanda)
 
-    def _deploy_wasm(self,
-                     name: str,
-                     input_topic: TopicSpec,
-                     output_topic: TopicSpec | list[TopicSpec],
-                     file="tinygo/identity.wasm",
-                     compression_type: TopicSpec.CompressionTypes
-                     | None = None,
-                     wait_running: bool = True,
-                     retry_on_exc: bool = True,
-                     from_offset: str | None = None):
+    def _deploy_wasm(
+        self,
+        name: str,
+        input_topic: TopicSpec,
+        output_topic: TopicSpec | list[TopicSpec],
+        file="tinygo/identity.wasm",
+        compression_type: TopicSpec.CompressionTypes | None = None,
+        wait_running: bool = True,
+        retry_on_exc: bool = True,
+        from_offset: str | None = None,
+    ):
         """
         Deploy a wasm transform and wait for all processors to be running.
         """
@@ -73,12 +82,14 @@ class BaseDataTransformsTest(RedpandaTest):
             output_topic = [output_topic]
 
         def do_deploy():
-            self._rpk.deploy_wasm(name,
-                                  input_topic.name,
-                                  [o.name for o in output_topic],
-                                  file=file,
-                                  compression_type=compression_type,
-                                  from_offset=from_offset)
+            self._rpk.deploy_wasm(
+                name,
+                input_topic.name,
+                [o.name for o in output_topic],
+                file=file,
+                compression_type=compression_type,
+                from_offset=from_offset,
+            )
             return True
 
         wait_until(
@@ -99,12 +110,12 @@ class BaseDataTransformsTest(RedpandaTest):
                 raise WasmException(f"missing transform {name} from report")
             for partition_id in range(0, input_topic.partition_count):
                 processor = next(
-                    (p
-                     for p in transform.status if p.partition == partition_id),
-                    None)
+                    (p for p in transform.status if p.partition == partition_id), None
+                )
                 if not processor:
                     raise WasmException(
-                        f"missing processor {name}/{partition_id} from report")
+                        f"missing processor {name}/{partition_id} from report"
+                    )
                 if processor.status != "running":
                     raise WasmException(
                         f"processor {name}/{partition_id} is not running: {processor.status}"
@@ -123,6 +134,7 @@ class BaseDataTransformsTest(RedpandaTest):
         """
         Delete a wasm transform and wait for all processors to stop.
         """
+
         def do_delete():
             self._rpk.delete_wasm(name)
             return True
@@ -155,8 +167,7 @@ class BaseDataTransformsTest(RedpandaTest):
 
         def do_list():
             nonlocal response
-            response = self._admin.transforms_list_committed_offsets(
-                show_unknown=True)
+            response = self._admin.transforms_list_committed_offsets(show_unknown=True)
             return True
 
         wait_until(
@@ -183,51 +194,49 @@ class BaseDataTransformsTest(RedpandaTest):
 
     def _modify_cluster_config(self, upsert):
         patch_result = self._admin.patch_cluster_config(upsert=upsert)
-        wait_for_version_sync(self._admin, self.redpanda,
-                              patch_result['config_version'])
+        wait_for_version_sync(
+            self._admin, self.redpanda, patch_result["config_version"]
+        )
 
     def _produce_input_topic(
-            self,
-            topic: TopicSpec,
-            transactional: bool = False) -> TransformVerifierProduceStatus:
+        self, topic: TopicSpec, transactional: bool = False
+    ) -> TransformVerifierProduceStatus:
         status = TransformVerifierService.oneshot(
             context=self.test_context,
             redpanda=self.redpanda,
             config=TransformVerifierProduceConfig(
-                bytes_per_second='256KB',
-                max_batch_size='64KB',
-                max_bytes='1MB',
-                message_size='1KB',
+                bytes_per_second="256KB",
+                max_batch_size="64KB",
+                max_bytes="1MB",
+                message_size="1KB",
                 topic=topic.name,
                 transactional=transactional,
-            ))
+            ),
+        )
         return typing.cast(TransformVerifierProduceStatus, status)
 
     def _consume_output_topic(
-            self,
-            topic: TopicSpec,
-            status: TransformVerifierProduceStatus,
-            timeout_sec=10) -> TransformVerifierConsumeStatus:
+        self, topic: TopicSpec, status: TransformVerifierProduceStatus, timeout_sec=10
+    ) -> TransformVerifierConsumeStatus:
         result = TransformVerifierService.oneshot(
             context=self.test_context,
             redpanda=self.redpanda,
             config=TransformVerifierConsumeConfig(
                 topic=topic.name,
-                bytes_per_second='1MB',
+                bytes_per_second="1MB",
                 validate=status,
             ),
-            timeout_sec=timeout_sec)
+            timeout_sec=timeout_sec,
+        )
         return typing.cast(TransformVerifierConsumeStatus, result)
 
     def _deploy_invalid(self, file: str, expected_msg: str):
         def do_deploy():
             try:
-                self._rpk.deploy_wasm("invalid",
-                                      self.topics[0].name,
-                                      [self.topics[1].name],
-                                      file=file)
-                raise AssertionError(
-                    "Unexpectedly was able to deploy transform")
+                self._rpk.deploy_wasm(
+                    "invalid", self.topics[0].name, [self.topics[1].name], file=file
+                )
+                raise AssertionError("Unexpectedly was able to deploy transform")
             except RpkException as e:
                 if expected_msg in e.stdout or expected_msg in e.stderr:
                     return True
@@ -246,6 +255,7 @@ class DataTransformsTest(BaseDataTransformsTest):
     """
     Tests related to WebAssembly powered data transforms
     """
+
     topics = [TopicSpec(partition_count=9), TopicSpec(partition_count=9)]
 
     @cluster(num_nodes=4)
@@ -256,30 +266,38 @@ class DataTransformsTest(BaseDataTransformsTest):
         """
         input_topic = self.topics[0]
         output_topic = self.topics[1]
-        self._deploy_wasm(name="identity-xform",
-                          input_topic=input_topic,
-                          output_topic=output_topic,
-                          wait_running=wait_running)
+        self._deploy_wasm(
+            name="identity-xform",
+            input_topic=input_topic,
+            output_topic=output_topic,
+            wait_running=wait_running,
+        )
         producer_status = self._produce_input_topic(
-            topic=self.topics[0], transactional=transactional)
-        consumer_status = self._consume_output_topic(topic=self.topics[1],
-                                                     status=producer_status)
+            topic=self.topics[0], transactional=transactional
+        )
+        consumer_status = self._consume_output_topic(
+            topic=self.topics[1], status=producer_status
+        )
         self.logger.info(f"{consumer_status}")
-        assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
+        assert consumer_status.invalid_records == 0, (
+            f"transform verification failed with invalid records: {consumer_status}"
+        )
 
     @cluster(num_nodes=3)
     def test_validation(self):
         """
         Test that invalid wasm binaries are validated at deploy time.
         """
-        self._deploy_invalid(file="validation/garbage.wasm",
-                             expected_msg="invalid WebAssembly module")
-        self._deploy_invalid(file="validation/add_two.wasm",
-                             expected_msg="missing required WASI functions")
+        self._deploy_invalid(
+            file="validation/garbage.wasm", expected_msg="invalid WebAssembly module"
+        )
+        self._deploy_invalid(
+            file="validation/add_two.wasm",
+            expected_msg="missing required WASI functions",
+        )
         self._deploy_invalid(
             file="validation/wasi.wasm",
-            expected_msg=
-            "Check the broker support for the version of the Data Transforms SDK being used."
+            expected_msg="Check the broker support for the version of the Data Transforms SDK being used.",
         )
 
     @cluster(num_nodes=3)
@@ -288,10 +306,12 @@ class DataTransformsTest(BaseDataTransformsTest):
         Test that a Wasm binary can be deployed, reach steady state and then be deleted.
         """
         # We need a fast commit time so that we don't have to wait long for commits before invoking GC
-        self._modify_cluster_config({'data_transforms_commit_interval_ms': 1})
-        self._deploy_wasm(name="identity-xform",
-                          input_topic=self.topics[0],
-                          output_topic=self.topics[1])
+        self._modify_cluster_config({"data_transforms_commit_interval_ms": 1})
+        self._deploy_wasm(
+            name="identity-xform",
+            input_topic=self.topics[0],
+            output_topic=self.topics[1],
+        )
 
         def all_offsets_committed():
             committed = self._list_committed_offsets()
@@ -331,10 +351,12 @@ class DataTransformsTest(BaseDataTransformsTest):
     def test_patch(self, use_rpk):
         input_topic = self.topics[0]
         output_topic = self.topics[1]
-        self._deploy_wasm(name="identity-xform",
-                          input_topic=input_topic,
-                          output_topic=output_topic,
-                          wait_running=True)
+        self._deploy_wasm(
+            name="identity-xform",
+            input_topic=input_topic,
+            output_topic=output_topic,
+            wait_running=True,
+        )
 
         def all_partitions_status(stat: str):
             report = self._rpk.list_wasm()
@@ -347,29 +369,36 @@ class DataTransformsTest(BaseDataTransformsTest):
         if use_rpk:
             self._rpk.pause_wasm("identity-xform")
         else:
-            rsp = self._admin.transforms_patch_meta("identity-xform",
-                                                    pause=True)
-            assert rsp.status_code == 200, f"/meta request failed, status: {rsp.status_code}"
+            rsp = self._admin.transforms_patch_meta("identity-xform", pause=True)
+            assert rsp.status_code == 200, (
+                f"/meta request failed, status: {rsp.status_code}"
+            )
 
-        wait_until(lambda: all_partitions_status("inactive"),
-                   timeout_sec=30,
-                   backoff_sec=1,
-                   err_msg=f"some partitions didn't become inactive",
-                   retry_on_exc=True)
+        wait_until(
+            lambda: all_partitions_status("inactive"),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"some partitions didn't become inactive",
+            retry_on_exc=True,
+        )
 
         with expect_exception(TimeoutError, lambda _: True):
-            wait_until(lambda: all_partitions_status("running"),
-                       timeout_sec=15,
-                       backoff_sec=1,
-                       retry_on_exc=True)
+            wait_until(
+                lambda: all_partitions_status("running"),
+                timeout_sec=15,
+                backoff_sec=1,
+                retry_on_exc=True,
+            )
 
         if use_rpk:
             self._rpk.resume_wasm("identity-xform")
-            wait_until(lambda: all_partitions_status("running"),
-                       timeout_sec=30,
-                       backoff_sec=1,
-                       err_msg=f"some partitions didn't become active",
-                       retry_on_exc=True)
+            wait_until(
+                lambda: all_partitions_status("running"),
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg=f"some partitions didn't become active",
+                retry_on_exc=True,
+            )
         else:  # NOTE: patching ENV is not yet implemented in rpk
             env1 = {
                 "FOO": "bar",
@@ -377,17 +406,20 @@ class DataTransformsTest(BaseDataTransformsTest):
             }
             env2 = {"FOO": "bells"}
 
-            rsp = self._admin.transforms_patch_meta("identity-xform",
-                                                    pause=False,
-                                                    env=env1)
-            assert rsp.status_code == 200, f"/meta request failed, status: {rsp.status_code}"
+            rsp = self._admin.transforms_patch_meta(
+                "identity-xform", pause=False, env=env1
+            )
+            assert rsp.status_code == 200, (
+                f"/meta request failed, status: {rsp.status_code}"
+            )
 
             wait_until(
                 lambda: all_partitions_status("running") and env_is(env1),
                 timeout_sec=30,
                 backoff_sec=1,
                 err_msg=f"some partitions didn't come back",
-                retry_on_exc=True)
+                retry_on_exc=True,
+            )
 
             rsp = self._admin.transforms_patch_meta("identity-xform", env=env2)
 
@@ -396,15 +428,18 @@ class DataTransformsTest(BaseDataTransformsTest):
                 timeout_sec=30,
                 backoff_sec=1,
                 err_msg="some partitions didn't take the env update",
-                retry_on_exc=True)
+                retry_on_exc=True,
+            )
 
             rsp = self._admin.transforms_patch_meta("identity-xform", env={})
 
-            wait_until(lambda: all_partitions_status("running") and env_is({}),
-                       timeout_sec=30,
-                       backoff_sec=1,
-                       err_msg="some partitions did not clear their envs",
-                       retry_on_exc=True)
+            wait_until(
+                lambda: all_partitions_status("running") and env_is({}),
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg="some partitions did not clear their envs",
+                retry_on_exc=True,
+            )
 
     @cluster(num_nodes=4)
     def test_consume_from_end(self):
@@ -415,24 +450,29 @@ class DataTransformsTest(BaseDataTransformsTest):
         input_topic = self.topics[0]
         output_topic = self.topics[1]
         producer_status = self._produce_input_topic(topic=self.topics[0])
-        self._deploy_wasm(name="identity-xform",
-                          input_topic=input_topic,
-                          output_topic=output_topic,
-                          wait_running=True)
+        self._deploy_wasm(
+            name="identity-xform",
+            input_topic=input_topic,
+            output_topic=output_topic,
+            wait_running=True,
+        )
 
         with expect_exception(TimeoutError, lambda _: True):
             consumer_status = self._consume_output_topic(
-                topic=self.topics[1], status=producer_status)
+                topic=self.topics[1], status=producer_status
+            )
 
     @cluster(num_nodes=4)
-    @matrix(compression_type=[
-        TopicSpec.CompressionTypes.GZIP,
-        TopicSpec.CompressionTypes.LZ4,
-        TopicSpec.CompressionTypes.NONE,
-        TopicSpec.CompressionTypes.SNAPPY,
-        TopicSpec.CompressionTypes.ZSTD,
-        TopicSpec.CompressionTypes.PRODUCER,  # broker will reject this
-    ])
+    @matrix(
+        compression_type=[
+            TopicSpec.CompressionTypes.GZIP,
+            TopicSpec.CompressionTypes.LZ4,
+            TopicSpec.CompressionTypes.NONE,
+            TopicSpec.CompressionTypes.SNAPPY,
+            TopicSpec.CompressionTypes.ZSTD,
+            TopicSpec.CompressionTypes.PRODUCER,  # broker will reject this
+        ]
+    )
     def test_compression(self, compression_type: TopicSpec.CompressionTypes):
         INVALID_MODES: list[TopicSpec.CompressionTypes] = [
             TopicSpec.CompressionTypes.PRODUCER,
@@ -444,17 +484,19 @@ class DataTransformsTest(BaseDataTransformsTest):
         valid = compression_type not in INVALID_MODES
 
         def deploy():
-            self._deploy_wasm(name=transform_name,
-                              input_topic=input_topic,
-                              output_topic=output_topic,
-                              compression_type=compression_type,
-                              wait_running=True,
-                              retry_on_exc=valid)
+            self._deploy_wasm(
+                name=transform_name,
+                input_topic=input_topic,
+                output_topic=output_topic,
+                compression_type=compression_type,
+                wait_running=True,
+                retry_on_exc=valid,
+            )
 
         if not valid:
             with expect_exception(
-                    RpkException,
-                    lambda e: "invalid JSON request body" in str(e)):
+                RpkException, lambda e: "invalid JSON request body" in str(e)
+            ):
                 deploy()
             # just go ahead and deploy with no compression and let the test finish
             compression_type = TopicSpec.CompressionTypes.NONE
@@ -466,106 +508,125 @@ class DataTransformsTest(BaseDataTransformsTest):
             report = self._rpk.list_wasm()
             return report[0].compression == compression_type
 
-        wait_until(lambda: compression_set(compression_type),
-                   timeout_sec=30,
-                   backoff_sec=1,
-                   err_msg="compression did not update",
-                   retry_on_exc=False)
+        wait_until(
+            lambda: compression_set(compression_type),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="compression did not update",
+            retry_on_exc=False,
+        )
 
         producer_status = self._produce_input_topic(topic=self.topics[0])
-        consumer_status = self._consume_output_topic(topic=self.topics[1],
-                                                     status=producer_status)
+        consumer_status = self._consume_output_topic(
+            topic=self.topics[1], status=producer_status
+        )
         self.logger.info(f"{consumer_status}")
-        assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
+        assert consumer_status.invalid_records == 0, (
+            f"transform verification failed with invalid records: {consumer_status}"
+        )
 
     @cluster(num_nodes=4)
-    @matrix(offset=[
-        "+0",
-        "-1",
-        "__current_time__",
-        "+9223372036854775807",  # int64_max - should clamp to start at latest
-    ])
+    @matrix(
+        offset=[
+            "+0",
+            "-1",
+            "__current_time__",
+            "+9223372036854775807",  # int64_max - should clamp to start at latest
+        ]
+    )
     def test_consume_from_offset(self, offset):
         if offset == "__current_time__":
             offset = f"@{int(time.time() * 1000)}"
-        '''
+        """
         Verify that offset-delta based and timestamp based consumption works as expected.
         That is, records produced prior to deployment should still be accessible given an
         appropriate offset config.
-        '''
+        """
         input_topic = self.topics[0]
         output_topic = self.topics[1]
         producer_status = self._produce_input_topic(topic=self.topics[0])
-        self._deploy_wasm(name="identity-xform",
-                          input_topic=input_topic,
-                          output_topic=output_topic,
-                          from_offset=offset,
-                          wait_running=True)
-        consumer_status = self._consume_output_topic(topic=self.topics[1],
-                                                     status=producer_status)
+        self._deploy_wasm(
+            name="identity-xform",
+            input_topic=input_topic,
+            output_topic=output_topic,
+            from_offset=offset,
+            wait_running=True,
+        )
+        consumer_status = self._consume_output_topic(
+            topic=self.topics[1], status=producer_status
+        )
 
         self.logger.info(f"{consumer_status}")
-        assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
+        assert consumer_status.invalid_records == 0, (
+            f"transform verification failed with invalid records: {consumer_status}"
+        )
 
     @cluster(num_nodes=4)
-    @matrix(offset=[
-        None,  # No offest -> read from the end of the topic
-        "@33276193569000",  # June 3024
-        "-0",  # '0 from end' should commit 'latest'
-    ])
+    @matrix(
+        offset=[
+            None,  # No offest -> read from the end of the topic
+            "@33276193569000",  # June 3024
+            "-0",  # '0 from end' should commit 'latest'
+        ]
+    )
     def test_consume_off_end(self, offset):
-        '''
+        """
         Verify that consuming off the end of the input topic works as expected.
         That is, confirm that records produced _prior_ to deployment do not reach the transform.
-        '''
+        """
         input_topic = self.topics[0]
         output_topic = self.topics[1]
         producer_status = self._produce_input_topic(topic=self.topics[0])
-        self._deploy_wasm(name="identity-xform",
-                          input_topic=input_topic,
-                          output_topic=output_topic,
-                          from_offset=offset,
-                          wait_running=True)
+        self._deploy_wasm(
+            name="identity-xform",
+            input_topic=input_topic,
+            output_topic=output_topic,
+            from_offset=offset,
+            wait_running=True,
+        )
 
         with expect_exception(TimeoutError, lambda _: True):
-            _ = self._consume_output_topic(topic=self.topics[1],
-                                           status=producer_status)
+            _ = self._consume_output_topic(topic=self.topics[1], status=producer_status)
 
     @cluster(num_nodes=3)
-    @matrix(offset=[
-        "@9223372036854775807",  # int64_max (out of range for millis)
-        "+NaN",  # lexical cast error (literal NaN)
-        "-9223372036854775808",  # lexical cast error (int64 overflow)
-        "__current_time__",
-        "@-10",  # illegal negative value
-        "--10",  # illegal negative value
-        "+-10",  # illegal negative value
-    ])
+    @matrix(
+        offset=[
+            "@9223372036854775807",  # int64_max (out of range for millis)
+            "+NaN",  # lexical cast error (literal NaN)
+            "-9223372036854775808",  # lexical cast error (int64 overflow)
+            "__current_time__",
+            "@-10",  # illegal negative value
+            "--10",  # illegal negative value
+            "+-10",  # illegal negative value
+        ]
+    )
     def test_consume_junk_off(self, offset):
         if offset == "__current_time__":
             offset = f"@{time.time() * 1000}"  # lexical cast error (float value)
-        '''
+        """
         Tests for junk data. Deployment should fail cleanly in the admin API or rpk.
-        '''
+        """
         input_topic = self.topics[0]
         output_topic = self.topics[1]
 
         with expect_exception(
-                RpkException,
-                lambda e: print(e) or "bad offset" in str(e).lower(
-                )):  # rpk returns 'bad offset', RP Admin returns 'Bad offset'.
-            self._deploy_wasm(name="identity-xform",
-                              input_topic=input_topic,
-                              output_topic=output_topic,
-                              from_offset=offset,
-                              wait_running=False,
-                              retry_on_exc=False)
+            RpkException, lambda e: print(e) or "bad offset" in str(e).lower()
+        ):  # rpk returns 'bad offset', RP Admin returns 'Bad offset'.
+            self._deploy_wasm(
+                name="identity-xform",
+                input_topic=input_topic,
+                output_topic=output_topic,
+                from_offset=offset,
+                wait_running=False,
+                retry_on_exc=False,
+            )
 
 
 class DataTransformsChainingTest(BaseDataTransformsTest):
     """
     Tests related to WebAssembly powered data transforms that are chained together, it is possible to create a full DAG.
     """
+
     topics = [
         TopicSpec(partition_count=9),
         TopicSpec(partition_count=9),
@@ -579,21 +640,22 @@ class DataTransformsChainingTest(BaseDataTransformsTest):
         Test that multiple (3) transforms chained together can produce a record from the first to the last topic.
         """
         for n, (i, o) in enumerate(zip(self.topics, self.topics[1:])):
-            self._deploy_wasm(f"identity-xform-{n}",
-                              input_topic=i,
-                              output_topic=o)
+            self._deploy_wasm(f"identity-xform-{n}", input_topic=i, output_topic=o)
         producer_status = self._produce_input_topic(topic=self.topics[0])
-        consumer_status = self._consume_output_topic(topic=self.topics[-1],
-                                                     status=producer_status,
-                                                     timeout_sec=60)
+        consumer_status = self._consume_output_topic(
+            topic=self.topics[-1], status=producer_status, timeout_sec=60
+        )
         self.logger.info(f"{consumer_status}")
-        assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
+        assert consumer_status.invalid_records == 0, (
+            f"transform verification failed with invalid records: {consumer_status}"
+        )
 
 
 class DataTransformsMultipleOutputTopicsTest(BaseDataTransformsTest):
     """
     Tests related to WebAssembly powered data transforms that write to multiple output topics.
     """
+
     topics = [TopicSpec(partition_count=3) for i in range(9)]
 
     @cluster(num_nodes=6)
@@ -601,18 +663,24 @@ class DataTransformsMultipleOutputTopicsTest(BaseDataTransformsTest):
         """
         Test that we write to all output topics (using a tee transform) with each output topic being valid.
         """
-        self._deploy_wasm("tee-xform",
-                          input_topic=self.topics[0],
-                          output_topic=self.topics[1:],
-                          file="tinygo/tee.wasm")
+        self._deploy_wasm(
+            "tee-xform",
+            input_topic=self.topics[0],
+            output_topic=self.topics[1:],
+            file="tinygo/tee.wasm",
+        )
         producer_status = self._produce_input_topic(topic=self.topics[0])
 
-        def validate_output(topic: TopicSpec,
-                            producer_status: TransformVerifierProduceStatus):
+        def validate_output(
+            topic: TopicSpec, producer_status: TransformVerifierProduceStatus
+        ):
             consumer_status = self._consume_output_topic(
-                topic=topic, status=producer_status, timeout_sec=60)
+                topic=topic, status=producer_status, timeout_sec=60
+            )
             self.logger.info(f"{topic.name}={consumer_status}")
-            assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records for topic {topic.name}: {consumer_status}"
+            assert consumer_status.invalid_records == 0, (
+                f"transform verification failed with invalid records for topic {topic.name}: {consumer_status}"
+            )
 
         # Limit concurrency to the number of available nodes that we have to schedule on.
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
@@ -637,21 +705,23 @@ class DataTransformsLeadershipChangingTest(BaseDataTransformsTest):
     On the input topic moves requires shutdown and spinning up processors, and
     for the output topic it requires produce retries.
     """
+
     def __init__(self, *args, **kwargs):
         super(DataTransformsLeadershipChangingTest, self).__init__(
             *args,
             extra_rp_conf={
                 # Disable leader balancer, as this test is doing its own
                 # leadership transfers and the balancer would interfere
-                'enable_leader_balancer': False,
+                "enable_leader_balancer": False,
                 # Lower the delay before we start processing.
                 # In slow debug mode tests the default here is
                 # three seconds, and we have to wait on leadership
                 # transfer this long for commits to be flushed, so
                 # we can more easily timeout with the long wait.
-                'data_transforms_commit_interval_ms': 500,
+                "data_transforms_commit_interval_ms": 500,
             },
-            **kwargs)
+            **kwargs,
+        )
 
     topics = [
         TopicSpec(partition_count=20),
@@ -666,18 +736,19 @@ class DataTransformsLeadershipChangingTest(BaseDataTransformsTest):
             context=self.test_context,
             redpanda=self.redpanda,
             config=TransformVerifierProduceConfig(
-                bytes_per_second='256KB',
-                max_batch_size='64KB',
-                max_bytes='2.5MB',
-                message_size='1KB',
+                bytes_per_second="256KB",
+                max_batch_size="64KB",
+                max_bytes="2.5MB",
+                message_size="1KB",
                 topic=self.topics[0].name,
                 transactional=False,
-            ))
+            ),
+        )
         producer.start()
         return producer
 
     def _wait_for_producer(
-            self, producer: TransformVerifierService
+        self, producer: TransformVerifierService
     ) -> TransformVerifierProduceStatus:
         producer.wait(timeout_sec=10)
         producer_status = producer.get_status()
@@ -691,27 +762,31 @@ class DataTransformsLeadershipChangingTest(BaseDataTransformsTest):
         """
         topic_to_move = random.choice(self.topics)
         partition_id = random.choice(range(0, topic_to_move.partition_count))
-        leader = self._admin.get_partition_leader(namespace="kafka",
-                                                  topic=topic_to_move.name,
-                                                  partition=partition_id)
+        leader = self._admin.get_partition_leader(
+            namespace="kafka", topic=topic_to_move.name, partition=partition_id
+        )
         node_ids = [self.redpanda.node_id(n) for n in self.redpanda.nodes]
-        new_leader_node_id: int = random.choice(
-            [i for i in node_ids if i != leader])
-        return Move(topic=topic_to_move.name,
-                    partition=partition_id,
-                    current_leader=leader,
-                    new_leader=new_leader_node_id)
+        new_leader_node_id: int = random.choice([i for i in node_ids if i != leader])
+        return Move(
+            topic=topic_to_move.name,
+            partition=partition_id,
+            current_leader=leader,
+            new_leader=new_leader_node_id,
+        )
 
     def _perform_move(self, mv: Move):
         """
         Perform a leadership transfer, handling timeouts by retrying the request.
         """
+
         def do_move():
             try:
-                self._admin.transfer_leadership_to(namespace="kafka",
-                                                   topic=mv.topic,
-                                                   partition=mv.partition,
-                                                   target_id=mv.new_leader)
+                self._admin.transfer_leadership_to(
+                    namespace="kafka",
+                    topic=mv.topic,
+                    partition=mv.partition,
+                    target_id=mv.new_leader,
+                )
                 return True
             except RequestException as e:
                 # The broker returns a Gateway Timeout when the underlying request times out in the controller.
@@ -733,9 +808,9 @@ class DataTransformsLeadershipChangingTest(BaseDataTransformsTest):
         """
         Test that transforms can still make progress without dropping records in the face of leadership transfers.
         """
-        self._deploy_wasm("identity-xform",
-                          input_topic=self.topics[0],
-                          output_topic=self.topics[-1])
+        self._deploy_wasm(
+            "identity-xform", input_topic=self.topics[0], output_topic=self.topics[-1]
+        )
 
         producer = self._start_producer()
         # Move a leader every second the test runs
@@ -748,74 +823,81 @@ class DataTransformsLeadershipChangingTest(BaseDataTransformsTest):
             self._perform_move(mv)
 
         producer_status = self._wait_for_producer(producer)
-        consumer_status = self._consume_output_topic(topic=self.topics[-1],
-                                                     status=producer_status,
-                                                     timeout_sec=60)
+        consumer_status = self._consume_output_topic(
+            topic=self.topics[-1], status=producer_status, timeout_sec=60
+        )
         self.logger.info(f"{consumer_status}")
-        assert consumer_status.invalid_records == 0, f"transform verification failed with invalid records: {consumer_status}"
+        assert consumer_status.invalid_records == 0, (
+            f"transform verification failed with invalid records: {consumer_status}"
+        )
 
 
 # TODO(oren): be nice to actually use the OTel protobufs here
 class LogRecord:
     class Attribute:
         def __init__(self, attr: dict):
-            self.key = attr['key']
-            assert len(attr['value']) == 1
-            self.value_type = list(attr['value'].keys())[0]
-            self.value = attr['value'][self.value_type]
+            self.key = attr["key"]
+            assert len(attr["value"]) == 1
+            self.value_type = list(attr["value"].keys())[0]
+            self.value = attr["value"][self.value_type]
 
         # don't really care about the value, just the correct key and value _type_
         def __eq__(self, other):
-            return (self.key == other.key
-                    and self.value_type == other.value_type
-                    and type(self.value) == type(other.value))
+            return (
+                self.key == other.key
+                and self.value_type == other.value_type
+                and type(self.value) == type(other.value)
+            )
 
     EXPECTED_ATTRS = [
-        Attribute({
-            'key': 'transform_name',
-            'value': {
-                'stringValue': 'any'  # don't care for validation
+        Attribute(
+            {
+                "key": "transform_name",
+                "value": {
+                    "stringValue": "any"  # don't care for validation
+                },
             }
-        }),
-        Attribute({
-            'key': 'node',
-            'value': {
-                'intValue': 23  # don't care for validation
+        ),
+        Attribute(
+            {
+                "key": "node",
+                "value": {
+                    "intValue": 23  # don't care for validation
+                },
             }
-        })
+        ),
     ]
 
-    BODY_FIELD = 'body'
-    TS_FIELD = 'timeUnixNano'
-    SEVERITY_FIELD = 'severityNumber'
-    ATTRS_FIELD = 'attributes'
+    BODY_FIELD = "body"
+    TS_FIELD = "timeUnixNano"
+    SEVERITY_FIELD = "severityNumber"
+    ATTRS_FIELD = "attributes"
 
     def __init__(self, raw: str):
         self._record = json.loads(raw)
-        self._record['value'] = json.loads(self._record['value'])
+        self._record["value"] = json.loads(self._record["value"])
 
         # Redpanda bits
-        self.offset: int = self._record['offset']
-        self.key: str = self._record['key']
+        self.offset: int = self._record["offset"]
+        self.key: str = self._record["key"]
 
         # OTel bits
-        self._rep = self._record['value']
+        self._rep = self._record["value"]
         body_object = self._rep.get(self.BODY_FIELD, None)
         if isinstance(body_object, dict):
             self.body: str = body_object.get("stringValue", None)
         self.timestamp_ns = self._rep.get(self.TS_FIELD, None)
         self.severity = self._rep.get(self.SEVERITY_FIELD, None)
         self.attributes = [
-            self.Attribute(attr)
-            for attr in self._rep.get(self.ATTRS_FIELD, [])
+            self.Attribute(attr) for attr in self._rep.get(self.ATTRS_FIELD, [])
         ]
 
     def __str__(self):
         return json.dumps(self._record, indent=1)
 
     def validate(
-            self,
-            offset: typing.Optional[int] = None) -> typing.Optional[list[str]]:
+        self, offset: typing.Optional[int] = None
+    ) -> typing.Optional[list[str]]:
         errors = []
         if offset is not None and offset != self.offset:
             errors.append(f"Expected offset {offset} got {self.offset}")
@@ -846,22 +928,24 @@ class BaseDataTransformsLoggingTest(BaseDataTransformsTest):
     Tests for data transforms logging
     """
 
-    logs_topic = TopicSpec(name='_redpanda.transform_logs', partition_count=4)
+    logs_topic = TopicSpec(name="_redpanda.transform_logs", partition_count=4)
 
     def setup_identity_xform(self, it, ot, name="identity-logging_xform"):
-        self._deploy_wasm(name=name,
-                          input_topic=it,
-                          output_topic=ot,
-                          file="tinygo/identity_logging.wasm")
+        self._deploy_wasm(
+            name=name,
+            input_topic=it,
+            output_topic=ot,
+            file="tinygo/identity_logging.wasm",
+        )
         return [it, ot]
 
     def consume_one_log_record(self, offset=0, timeout=None) -> LogRecord:
         def consume(timeout):
             record = LogRecord(
-                self._rpk.consume(self.logs_topic.name,
-                                  n=1,
-                                  offset=offset,
-                                  timeout=timeout))
+                self._rpk.consume(
+                    self.logs_topic.name, n=1, offset=offset, timeout=timeout
+                )
+            )
             # RPK can reset and return the latest offset if our offset is
             # out of range, so we need to make sure we keep trying until
             # we get a record.
@@ -874,11 +958,11 @@ class BaseDataTransformsLoggingTest(BaseDataTransformsTest):
             lambda: consume(timeout=10),
             timeout_sec=60,
             backoff_sec=1,
-            err_msg=f"never recieved log record at offset {offset}")
+            err_msg=f"never recieved log record at offset {offset}",
+        )
 
 
 class DataTransformsLoggingTest(BaseDataTransformsLoggingTest):
-
     topics = [
         TopicSpec(partition_count=9),
         TopicSpec(partition_count=9),
@@ -887,11 +971,14 @@ class DataTransformsLoggingTest(BaseDataTransformsLoggingTest):
     @cluster(num_nodes=4)
     def test_logs_volume(self):
         input_topic, output_topic = self.setup_identity_xform(
-            self.topics[0], self.topics[1])
-        producer_status = self._produce_input_topic(topic=input_topic,
-                                                    transactional=False)
-        consumer_status = self._consume_output_topic(topic=output_topic,
-                                                     status=producer_status)
+            self.topics[0], self.topics[1]
+        )
+        producer_status = self._produce_input_topic(
+            topic=input_topic, transactional=False
+        )
+        consumer_status = self._consume_output_topic(
+            topic=output_topic, status=producer_status
+        )
         seqnos = consumer_status.latest_seqnos
 
         # NOTE(oren): all logs for a given transform should go to the same
@@ -908,24 +995,23 @@ class DataTransformsLoggingTest(BaseDataTransformsLoggingTest):
         for i in test_offsets:
             log = self.consume_one_log_record(offset=i)
             validation_errs = log.validate(offset=i)
-            assert (
-                validation_errs is None
-            ), f"Validation failed, errors: {json.dumps(validation_errs, indent=1)}"
+            assert validation_errs is None, (
+                f"Validation failed, errors: {json.dumps(validation_errs, indent=1)}"
+            )
 
     @cluster(num_nodes=3)
     def test_logs_otel(self):
         """
         Verify that log events conform to a subset OTel logging spec as laid out in our RFC
         """
-        input_topic, _ = self.setup_identity_xform(self.topics[0],
-                                                   self.topics[1])
+        input_topic, _ = self.setup_identity_xform(self.topics[0], self.topics[1])
 
-        self._rpk.produce(input_topic.name, 'foo', 'bar')
+        self._rpk.produce(input_topic.name, "foo", "bar")
         log = self.consume_one_log_record()
         validation_errors = log.validate()
-        assert (
-            validation_errors is None
-        ), f"Log record validation failed, errors: {json.dumps(validation_errors, indent=1)}"
+        assert validation_errors is None, (
+            f"Log record validation failed, errors: {json.dumps(validation_errors, indent=1)}"
+        )
 
     @cluster(num_nodes=3)
     def test_log_topic_integrity(self):
@@ -934,15 +1020,15 @@ class DataTransformsLoggingTest(BaseDataTransformsLoggingTest):
         self.logger.debug(
             f"{self.logs_topic.name}: delete topic should fail (empty response table)"
         )
-        with expect_exception(RpkException,
-                              lambda e: "expected one row; found 0" in str(e)):
+        with expect_exception(
+            RpkException, lambda e: "expected one row; found 0" in str(e)
+        ):
             self._rpk.delete_topic(self.logs_topic.name)
 
-        self.logger.debug(
-            f"{self.logs_topic.name}: produce should fail (authZ error)")
+        self.logger.debug(f"{self.logs_topic.name}: produce should fail (authZ error)")
         with expect_exception(
-                RpkException,
-                lambda e: "Topic authorization failed" in str(e)):
+            RpkException, lambda e: "Topic authorization failed" in str(e)
+        ):
             self._rpk.produce(self.logs_topic.name, "hardy", "har har")
 
     @cluster(num_nodes=3)
@@ -952,7 +1038,7 @@ class DataTransformsLoggingTest(BaseDataTransformsLoggingTest):
         self.logger.debug(
             "See that we can consume a log message w/in 5s with the default interval"
         )
-        self._rpk.produce(it.name, 'foo', 'bar')
+        self._rpk.produce(it.name, "foo", "bar")
         self.consume_one_log_record(offset=0, timeout=5)
 
         self.logger.debug(
@@ -961,24 +1047,24 @@ class DataTransformsLoggingTest(BaseDataTransformsLoggingTest):
 
         # 1h
         self.redpanda.set_cluster_config(
-            {'data_transforms_logging_flush_interval_ms': 1000 * 60 * 60})
+            {"data_transforms_logging_flush_interval_ms": 1000 * 60 * 60}
+        )
 
-        self._rpk.produce(it.name, 'foo', 'bar')
+        self._rpk.produce(it.name, "foo", "bar")
         with expect_exception(RpkException, lambda e: "timed out" in str(e)):
             self.consume_one_log_record(offset=1, timeout=5)
 
-        self.logger.debug(
-            "Log messages should be truncated to the configured max line")
+        self.logger.debug("Log messages should be truncated to the configured max line")
 
         max_line = 10
-        self.redpanda.set_cluster_config({
-            'data_transforms_logging_flush_interval_ms':
-            500,
-            'data_transforms_logging_line_max_bytes':
-            max_line
-        })
+        self.redpanda.set_cluster_config(
+            {
+                "data_transforms_logging_flush_interval_ms": 500,
+                "data_transforms_logging_line_max_bytes": max_line,
+            }
+        )
 
-        self._rpk.produce(it.name, 'a' * max_line, 'b' * max_line)
+        self._rpk.produce(it.name, "a" * max_line, "b" * max_line)
 
         # It's possible for log lines to be emitted multiple times, so we need to
         # handle any duplicate foo:bar messages from above until we get an a*:b*
@@ -993,14 +1079,13 @@ class DataTransformsLoggingTest(BaseDataTransformsLoggingTest):
             if "foo:bar" in log.body:
                 continue
 
-            assert len(
-                log.body
-            ) == max_line, f"Expected {max_line}B, got {len(log.body)}B ({log.body})"
+            assert len(log.body) == max_line, (
+                f"Expected {max_line}B, got {len(log.body)}B ({log.body})"
+            )
             break
 
 
 class DataTransformsLoggingMetricsTest(BaseDataTransformsLoggingTest):
-
     topics = [
         TopicSpec(partition_count=9),
         TopicSpec(partition_count=9),
@@ -1015,15 +1100,13 @@ class DataTransformsLoggingMetricsTest(BaseDataTransformsLoggingTest):
     LOGGER_METRICS = ["events_total", "events_dropped_total"]
     LOGGER_LABELS = ["function_name", "shard"]
     MANAGER_METRICS = [
-        "log_manager_buffer_usage_ratio", "log_manager_write_errors_total"
+        "log_manager_buffer_usage_ratio",
+        "log_manager_write_errors_total",
     ]
     MANAGER_LABELS = ["shard"]
 
     def get_metrics_from_node(
-        self,
-        node: ClusterNode,
-        patterns: list[str],
-        endpoint=MetricsEndpoint.METRICS
+        self, node: ClusterNode, patterns: list[str], endpoint=MetricsEndpoint.METRICS
     ) -> Optional[dict[str, MetricSamples]]:
         def get_metrics_from_node_sync(patterns: list[str]):
             samples = self.redpanda.metrics_samples(
@@ -1038,37 +1121,39 @@ class DataTransformsLoggingMetricsTest(BaseDataTransformsLoggingTest):
             return wait_until_result(
                 lambda: get_metrics_from_node_sync(patterns),
                 timeout_sec=2,
-                backoff_sec=.1)
+                backoff_sec=0.1,
+            )
         except TimeoutError as e:
             return None
 
     def unpack_samples(self, metric_samples):
         return {
-            k: [{
-                'value': s.value,
-                'labels': s.labels
-            } for s in metric_samples[k].samples]
+            k: [
+                {"value": s.value, "labels": s.labels}
+                for s in metric_samples[k].samples
+            ]
             for k in metric_samples.keys()
         }
 
     def random_ascii_string(self, min_len, max_len) -> str:
-        return ''.join(
-            random.choices(string.ascii_letters + string.digits,
-                           k=random.randint(min_len, max_len)))
+        return "".join(
+            random.choices(
+                string.ascii_letters + string.digits, k=random.randint(min_len, max_len)
+            )
+        )
 
     @cluster(num_nodes=3)
     def test_logger_metrics_present(self):
         it, _ = self.setup_identity_xform(self.topics[0], self.topics[1])
-        self._rpk.produce(it.name, 'foo', 'bar')
+        self._rpk.produce(it.name, "foo", "bar")
         self.consume_one_log_record()
 
         def has_logger_metrics(node, endpoint):
-            metrics_samples = self.get_metrics_from_node(node,
-                                                         self.LOGGER_METRICS,
-                                                         endpoint=endpoint)
+            metrics_samples = self.get_metrics_from_node(
+                node, self.LOGGER_METRICS, endpoint=endpoint
+            )
             assert metrics_samples is not None, "get_metrics timed out"
-            return sorted(metrics_samples.keys()) == sorted(
-                self.LOGGER_METRICS)
+            return sorted(metrics_samples.keys()) == sorted(self.LOGGER_METRICS)
 
         assert any(
             [
@@ -1094,8 +1179,9 @@ class DataTransformsLoggingMetricsTest(BaseDataTransformsLoggingTest):
                 self.setup_identity_xform(
                     self.topics[2 * i],
                     self.topics[2 * i + 1],
-                    name=f"logger{i+1}",
-                )[0])
+                    name=f"logger{i + 1}",
+                )[0]
+            )
         N_PER_TP = 100
         for i in range(0, N_PER_TP):
             for it in its:
@@ -1111,14 +1197,13 @@ class DataTransformsLoggingMetricsTest(BaseDataTransformsLoggingTest):
             for node in self.redpanda.nodes:
                 samples = self.unpack_samples(
                     self.get_metrics_from_node(
-                        node,
-                        self.LOGGER_METRICS,
-                        endpoint=MetricsEndpoint.METRICS))
-                for m in samples['events_total']:
-                    xfm_name = m['labels']['function_name']
-                    totals[xfm_name] = totals.get(xfm_name, 0) + m['value']
-                dropped += sum(
-                    [m['value'] for m in samples["events_dropped_total"]])
+                        node, self.LOGGER_METRICS, endpoint=MetricsEndpoint.METRICS
+                    )
+                )
+                for m in samples["events_total"]:
+                    xfm_name = m["labels"]["function_name"]
+                    totals[xfm_name] = totals.get(xfm_name, 0) + m["value"]
+                dropped += sum([m["value"] for m in samples["events_dropped_total"]])
             self.logger.debug(json.dumps(totals, indent=1))
             return (totals, dropped)
 
@@ -1131,16 +1216,19 @@ class DataTransformsLoggingMetricsTest(BaseDataTransformsLoggingTest):
             return (tot, dropped)
 
         n_events_expected = N_PER_TP * len(its)
-        wait_until(lambda: get_total_events()[0] >= n_events_expected,
-                   timeout_sec=30,
-                   backoff_sec=5,
-                   err_msg=f"never got all the events")
+        wait_until(
+            lambda: get_total_events()[0] >= n_events_expected,
+            timeout_sec=30,
+            backoff_sec=5,
+            err_msg=f"never got all the events",
+        )
 
         totals, dropped = get_total_events_per_xform()
         assert len(totals) == len(its)
         for name in totals:
-            assert totals[
-                name] >= N_PER_TP, f"Expected {N_PER_TP} log events from transform {name}, got{totals[name]}"
+            assert totals[name] >= N_PER_TP, (
+                f"Expected {N_PER_TP} log events from transform {name}, got{totals[name]}"
+            )
         assert dropped == 0, f"Expected no dropped events, got {dropped}"
 
     @cluster(num_nodes=3)
@@ -1148,12 +1236,11 @@ class DataTransformsLoggingMetricsTest(BaseDataTransformsLoggingTest):
         it, _ = self.setup_identity_xform(self.topics[0], self.topics[1])
 
         def has_manager_metrics(node, endpoint):
-            metrics_samples = self.get_metrics_from_node(node,
-                                                         self.MANAGER_METRICS,
-                                                         endpoint=endpoint)
+            metrics_samples = self.get_metrics_from_node(
+                node, self.MANAGER_METRICS, endpoint=endpoint
+            )
             assert metrics_samples is not None, "Get_metrics timed out"
-            return sorted(metrics_samples.keys()) == sorted(
-                self.MANAGER_METRICS)
+            return sorted(metrics_samples.keys()) == sorted(self.MANAGER_METRICS)
 
         assert all(
             [
@@ -1162,28 +1249,30 @@ class DataTransformsLoggingMetricsTest(BaseDataTransformsLoggingTest):
             ]
         ), "Expected all nodes to export manager metrics on the internal endpoint"
 
-        assert not any([
-            has_manager_metrics(n, MetricsEndpoint.PUBLIC_METRICS)
-            for n in self.redpanda.nodes
-        ]), "Expected no node to export manager metrics on the public endpoint"
+        assert not any(
+            [
+                has_manager_metrics(n, MetricsEndpoint.PUBLIC_METRICS)
+                for n in self.redpanda.nodes
+            ]
+        ), "Expected no node to export manager metrics on the public endpoint"
 
     @cluster(num_nodes=3)
     def test_manager_metrics_values(self):
         self.logger.debug("Set flush interval to 1h so buffers fill up")
         self.redpanda.set_cluster_config(
             {
-                'data_transforms_logging_flush_interval_ms': 60 * 60 * 1000,
-                'data_transforms_logging_buffer_capacity_bytes': 100 * 1024
+                "data_transforms_logging_flush_interval_ms": 60 * 60 * 1000,
+                "data_transforms_logging_buffer_capacity_bytes": 100 * 1024,
             },
-            expect_restart=True)
+            expect_restart=True,
+        )
 
         cfg = self._admin.get_cluster_config()
 
-        buf_capacity_B = cfg.get(
-            'data_transforms_logging_buffer_capacity_bytes', 0)
+        buf_capacity_B = cfg.get("data_transforms_logging_buffer_capacity_bytes", 0)
         assert buf_capacity_B > 0, "Expected non-zero log buffer capacity"
 
-        max_log_line_B = cfg.get('data_transforms_logging_line_max_bytes', 0)
+        max_log_line_B = cfg.get("data_transforms_logging_line_max_bytes", 0)
         assert max_log_line_B > 0, "Expected non-zero max log line"
 
         self.logger.warn(
@@ -1191,8 +1280,11 @@ class DataTransformsLoggingMetricsTest(BaseDataTransformsLoggingTest):
         )
 
         input_topic = TopicSpec()
-        self._rpk.create_topic(input_topic.name, input_topic.partition_count,
-                               input_topic.replication_factor)
+        self._rpk.create_topic(
+            input_topic.name,
+            input_topic.partition_count,
+            input_topic.replication_factor,
+        )
 
         it, ot = self.setup_identity_xform(
             input_topic,
@@ -1208,10 +1300,11 @@ class DataTransformsLoggingMetricsTest(BaseDataTransformsLoggingTest):
                         node,
                         ["log_manager_buffer_usage"],
                         endpoint=MetricsEndpoint.METRICS,
-                    ))
+                    )
+                )
 
-                for s in samples['log_manager_buffer_usage']:
-                    all_nodes_usage.append(s['value'])
+                for s in samples["log_manager_buffer_usage"]:
+                    all_nodes_usage.append(s["value"])
             self.logger.debug(f"MAX: {max(all_nodes_usage)}")
             return all_nodes_usage
 
@@ -1231,13 +1324,16 @@ class DataTransformsLoggingMetricsTest(BaseDataTransformsLoggingTest):
         )
 
         with expect_exception(TimeoutError, lambda _: True):
-            wait_until(lambda: any(bu > 1.0 for bu in get_buffer_usage()),
-                       timeout_sec=10,
-                       backoff_sec=1,
-                       err_msg=f"buffers never filled up!")
+            wait_until(
+                lambda: any(bu > 1.0 for bu in get_buffer_usage()),
+                timeout_sec=10,
+                backoff_sec=1,
+                err_msg=f"buffers never filled up!",
+            )
 
         self.logger.debug(
-            f"Final buffer usage: {json.dumps(get_buffer_usage(), indent=1)}")
+            f"Final buffer usage: {json.dumps(get_buffer_usage(), indent=1)}"
+        )
 
 
 class DataTransformsRpcUpgradeTest(BaseDataTransformsTest):
@@ -1254,45 +1350,52 @@ class DataTransformsRpcUpgradeTest(BaseDataTransformsTest):
         """
         installer = self.redpanda._installer
         prev_version = installer.highest_from_prior_feature_version(
-            RedpandaInstaller.HEAD)
+            RedpandaInstaller.HEAD
+        )
         latest_version = installer.head_version()
-        self.logger.info(
-            f"Testing with versions: {prev_version=} {latest_version=}")
+        self.logger.info(f"Testing with versions: {prev_version=} {latest_version=}")
 
         self.logger.info(f"Starting all nodes with version: {prev_version}")
         installer.install(self.redpanda.nodes, prev_version)
-        self.redpanda.start(nodes=self.redpanda.nodes,
-                            omit_seeds_on_idx_one=False)
-        self.redpanda.wait_until(self.redpanda.healthy,
-                                 timeout_sec=60,
-                                 backoff_sec=1,
-                                 err_msg="The cluster hasn't stabilized")
+        self.redpanda.start(nodes=self.redpanda.nodes, omit_seeds_on_idx_one=False)
+        self.redpanda.wait_until(
+            self.redpanda.healthy,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="The cluster hasn't stabilized",
+        )
         self._create_initial_topics()
 
         upgrade = self.redpanda.nodes[0]
         installer.install([upgrade], latest_version)
-        self.redpanda.restart_nodes([upgrade],
-                                    start_timeout=60,
-                                    omit_seeds_on_idx_one=False)
+        self.redpanda.restart_nodes(
+            [upgrade], start_timeout=60, omit_seeds_on_idx_one=False
+        )
 
-        self.redpanda.wait_until(self.redpanda.healthy,
-                                 timeout_sec=60,
-                                 backoff_sec=1,
-                                 err_msg="The cluster hasn't stabilized")
+        self.redpanda.wait_until(
+            self.redpanda.healthy,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="The cluster hasn't stabilized",
+        )
 
         input_topic = self.topics[0]
         output_topic = self.topics[1]
         self.logger.warn(f"{input_topic.name=} -> {output_topic.name=}")
-        self._deploy_wasm(name="identity-xform",
-                          input_topic=input_topic,
-                          output_topic=output_topic,
-                          wait_running=True)
+        self._deploy_wasm(
+            name="identity-xform",
+            input_topic=input_topic,
+            output_topic=output_topic,
+            wait_running=True,
+        )
 
         producer_status = self._produce_input_topic(topic=self.topics[0])
-        consumer_status = self._consume_output_topic(topic=self.topics[1],
-                                                     status=producer_status)
+        consumer_status = self._consume_output_topic(
+            topic=self.topics[1], status=producer_status
+        )
 
         self.logger.info(f"{consumer_status=}")
 
-        assert consumer_status.invalid_records == 0, \
+        assert consumer_status.invalid_records == 0, (
             f"transform verification failed with invalid records: {consumer_status}"
+        )

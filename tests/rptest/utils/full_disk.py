@@ -21,8 +21,8 @@ class FullDiskHelper:
         def match(key: str, val: int) -> bool:
             v = _get(key)
             self.logger.info(
-                f"config wait: want {type(value)} {value}, got {v}" +
-                f" {type(v)}")
+                f"config wait: want {type(value)} {value}, got {v}" + f" {type(v)}"
+            )
             return v == value
 
         wait_until(lambda: match(key, value), timeout_sec=15)
@@ -36,14 +36,12 @@ class FullDiskHelper:
         else:
             new_threshold = 2**30  # smallest supported value
         updates = {self.CONF_MIN_FREE_BYTES: new_threshold}
-        self.logger.debug(f" victim {victim.name}, " +
-                          f"new_thresh {new_threshold}")
+        self.logger.debug(f" victim {victim.name}, " + f"new_thresh {new_threshold}")
         self.redpanda.set_cluster_config(updates)
 
         # self.admin.patch_cluster_config(upsert=updates, remove=[])
         self.logger.debug(f"Confirming new config values..")
-        self._wait_for_node_config_value(self.CONF_MIN_FREE_BYTES,
-                                         new_threshold)
+        self._wait_for_node_config_value(self.CONF_MIN_FREE_BYTES, new_threshold)
 
     def trigger_low_space(self, node=None):
         self._set_low_space(True, node=node)

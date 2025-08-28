@@ -3,7 +3,6 @@ from ducktape.command_line.defaults import ConsoleDefaults as ConsoleDefaults
 from ducktape.tests.loggermaker import LoggerMaker as LoggerMaker
 from typing import Any
 
-
 class SessionContext:
     session_id: Incomplete
     results_dir: Incomplete
@@ -16,31 +15,17 @@ class SessionContext:
     fail_bad_cluster_utilization: Incomplete
     test_runner_timeout: Incomplete
 
-    def __init__(self, **kwargs: Any) -> None:
-        ...
-
+    def __init__(self, **kwargs: Any) -> None: ...
     @property
-    def globals(self) -> dict[str, Any]:
-        ...
-
-    def to_json(self) -> dict[str, Any]:
-        ...
-
+    def globals(self) -> dict[str, Any]: ...
+    def to_json(self) -> dict[str, Any]: ...
 
 class SessionLoggerMaker(LoggerMaker):
     log_dir: Incomplete
     debug: Incomplete
 
-    def __init__(self, session_context) -> None:
-        ...
+    def __init__(self, session_context) -> None: ...
+    def configure_logger(self) -> None: ...
 
-    def configure_logger(self) -> None:
-        ...
-
-
-def generate_session_id(session_id_file):
-    ...
-
-
-def generate_results_dir(results_root, session_id):
-    ...
+def generate_session_id(session_id_file): ...
+def generate_results_dir(results_root, session_id): ...

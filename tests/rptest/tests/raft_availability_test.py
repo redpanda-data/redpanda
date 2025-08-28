@@ -45,7 +45,8 @@ class RaftAvailabilityTest(RedpandaTest):
     Validates key availability properties of the system using a single
     partition.
     """
-    topics = (TopicSpec(partition_count=1, replication_factor=3), )
+
+    topics = (TopicSpec(partition_count=1, replication_factor=3),)
 
     def __init__(self, test_ctx, *args, **kwargs):
         self._ctx = test_ctx
@@ -56,9 +57,10 @@ class RaftAvailabilityTest(RedpandaTest):
                 # Disable leader balancer to enable testing
                 # leadership stability.
                 "enable_leader_balancer": False,
-                "id_allocator_replication": 3
+                "id_allocator_replication": 3,
             },
-            **kwargs)
+            **kwargs,
+        )
 
     def _get_leader(self):
         """
@@ -80,14 +82,14 @@ class RaftAvailabilityTest(RedpandaTest):
             result[0] = self._get_leader()
             return condition(result[0][0])
 
-        wait_until(check,
-                   timeout_sec=timeout,
-                   backoff_sec=0.5,
-                   err_msg=f"No leader emerged!")
+        wait_until(
+            check, timeout_sec=timeout, backoff_sec=0.5, err_msg=f"No leader emerged!"
+        )
 
         duration = time.time() - t1
         self.logger.info(
-            f"New leader {result[0][0]} (of {result[0][1]}) after {duration}s")
+            f"New leader {result[0][0]} (of {result[0][1]}) after {duration}s"
+        )
 
         # FIXME: this way of querying leadership is shaky in tests
         # because it depends on metadata dissemination.  We can read
@@ -98,8 +100,7 @@ class RaftAvailabilityTest(RedpandaTest):
         return result[0]
 
     def ping_pong(self):
-        return PingPong(self.redpanda.brokers_list(), self.topic, 0,
-                        self.logger)
+        return PingPong(self.redpanda.brokers_list(), self.topic, 0, self.logger)
 
     def _is_available(self, timeout_s=5):
         try:
@@ -123,18 +124,16 @@ class RaftAvailabilityTest(RedpandaTest):
         self.ping_pong().ping_pong()
         self.logger.info("Cluster is available as expected")
 
-    def _transfer_leadership(self, admin: Admin, namespace: str, topic: str,
-                             target_id: int) -> None:
-
+    def _transfer_leadership(
+        self, admin: Admin, namespace: str, topic: str, target_id: int
+    ) -> None:
         count = 0
         while True:
             count += 1
             self.logger.info(f"Waiting for a leader")
-            leader_id = admin.await_stable_leader(topic,
-                                                  partition=0,
-                                                  namespace=namespace,
-                                                  timeout_s=30,
-                                                  backoff_s=2)
+            leader_id = admin.await_stable_leader(
+                topic, partition=0, namespace=namespace, timeout_s=30, backoff_s=2
+            )
             self.logger.info(f"Current leader {leader_id}")
 
             if leader_id == target_id:
@@ -143,11 +142,13 @@ class RaftAvailabilityTest(RedpandaTest):
             self.logger.info(f"Starting transfer to {target_id}")
             requests.exceptions.HTTPError
             try:
-                admin.transfer_leadership_to(topic=topic,
-                                             namespace=namespace,
-                                             partition=0,
-                                             target_id=target_id,
-                                             leader_id=leader_id)
+                admin.transfer_leadership_to(
+                    topic=topic,
+                    namespace=namespace,
+                    partition=0,
+                    target_id=target_id,
+                    leader_id=leader_id,
+                )
             except requests.exceptions.HTTPError as e:
                 if count <= 10 and e.response.status_code == 503:
                     self.logger.info(
@@ -158,12 +159,14 @@ class RaftAvailabilityTest(RedpandaTest):
                 raise
             break
 
-        admin.await_stable_leader(topic,
-                                  partition=0,
-                                  namespace=namespace,
-                                  timeout_s=ELECTION_TIMEOUT * 4,
-                                  backoff_s=2,
-                                  check=lambda node_id: node_id != leader_id)
+        admin.await_stable_leader(
+            topic,
+            partition=0,
+            namespace=namespace,
+            timeout_s=ELECTION_TIMEOUT * 4,
+            backoff_s=2,
+            check=lambda node_id: node_id != leader_id,
+        )
 
         self.logger.info(f"Completed transfer to {target_id}")
 
@@ -177,8 +180,9 @@ class RaftAvailabilityTest(RedpandaTest):
         # Find which node is the leader
         admin = Admin(self.redpanda)
         initial_leader_id, replicas = self._wait_for_leader()
-        assert initial_leader_id == replicas[
-            0], f'expected leader id: {replicas[0]}, but found leader {initial_leader_id}'
+        assert initial_leader_id == replicas[0], (
+            f"expected leader id: {replicas[0]}, but found leader {initial_leader_id}"
+        )
 
         self._expect_available()
 
@@ -186,7 +190,8 @@ class RaftAvailabilityTest(RedpandaTest):
             "id_allocator",
             namespace="kafka_internal",
             replication=3,
-            timeout_s=ELECTION_TIMEOUT * 2)
+            timeout_s=ELECTION_TIMEOUT * 2,
+        )
 
         leader_node = self.redpanda.get_node_by_id(initial_leader_id)
         self.logger.info(
@@ -196,11 +201,11 @@ class RaftAvailabilityTest(RedpandaTest):
 
         # Priority mechanism should reliably select next replica in list
         expect_new_leader_id = replicas[1]
-        expect_new_leader_node = self.redpanda.get_node_by_id(
-            expect_new_leader_id)
+        expect_new_leader_node = self.redpanda.get_node_by_id(expect_new_leader_id)
 
-        observer_node_id = (set(replicas) -
-                            {expect_new_leader_id, initial_leader_id}).pop()
+        observer_node_id = (
+            set(replicas) - {expect_new_leader_id, initial_leader_id}
+        ).pop()
         observer_node = self.redpanda.get_node_by_id(observer_node_id)
         self.logger.info(
             f"Tracking stats on observer node {observer_node_id} {observer_node.account.hostname}"
@@ -209,15 +214,21 @@ class RaftAvailabilityTest(RedpandaTest):
             f"Tracking stats on expected new leader node {expect_new_leader_id} {expect_new_leader_node.account.hostname}"
         )
 
-        observer_metrics = MetricCheck(self.logger, self.redpanda,
-                                       observer_node,
-                                       re.compile("vectorized_raft_.*"),
-                                       {'topic': self.topic})
+        observer_metrics = MetricCheck(
+            self.logger,
+            self.redpanda,
+            observer_node,
+            re.compile("vectorized_raft_.*"),
+            {"topic": self.topic},
+        )
 
-        new_leader_metrics = MetricCheck(self.logger, self.redpanda,
-                                         expect_new_leader_node,
-                                         re.compile("vectorized_raft_.*"),
-                                         {'topic': self.topic})
+        new_leader_metrics = MetricCheck(
+            self.logger,
+            self.redpanda,
+            expect_new_leader_node,
+            re.compile("vectorized_raft_.*"),
+            {"topic": self.topic},
+        )
 
         self.logger.info(
             f"Stopping node {initial_leader_id} ({leader_node.account.hostname})"
@@ -226,7 +237,8 @@ class RaftAvailabilityTest(RedpandaTest):
 
         if allocator_info.leader == initial_leader_id:
             hosts = [
-                n.account.hostname for n in self.redpanda.nodes
+                n.account.hostname
+                for n in self.redpanda.nodes
                 if self.redpanda.idx(n) != initial_leader_id
             ]
             admin.await_stable_leader(
@@ -235,10 +247,10 @@ class RaftAvailabilityTest(RedpandaTest):
                 replication=3,
                 timeout_s=ELECTION_TIMEOUT * 2,
                 hosts=hosts,
-                check=lambda node_id: node_id != initial_leader_id)
+                check=lambda node_id: node_id != initial_leader_id,
+            )
 
-        new_leader, _ = self._wait_for_leader(
-            lambda l: l == expect_new_leader_id)
+        new_leader, _ = self._wait_for_leader(lambda l: l == expect_new_leader_id)
         self.logger.info(f"Leadership moved to {new_leader}")
 
         self._expect_available()
@@ -251,19 +263,21 @@ class RaftAvailabilityTest(RedpandaTest):
         # It would be good to impose stricter checks, to detect bugs that manifest as
         # elections taking more iterations than expected, once we have a less contended
         # test environment to execute in.
-        observer_metrics.expect([
-            ("vectorized_raft_leadership_changes_total", lambda a, b: b == a),
-            ("vectorized_raft_leader_for", lambda a, b: int(b) == 0),
-            ("vectorized_raft_received_vote_requests_total",
-             lambda a, b: b > a),
-        ])
+        observer_metrics.expect(
+            [
+                ("vectorized_raft_leadership_changes_total", lambda a, b: b == a),
+                ("vectorized_raft_leader_for", lambda a, b: int(b) == 0),
+                ("vectorized_raft_received_vote_requests_total", lambda a, b: b > a),
+            ]
+        )
 
-        new_leader_metrics.expect([
-            ("vectorized_raft_leadership_changes_total", lambda a, b: b > a),
-            ("vectorized_raft_leader_for", lambda a, b: int(b) == 1),
-            ("vectorized_raft_received_vote_requests_total",
-             lambda a, b: b == a),
-        ])
+        new_leader_metrics.expect(
+            [
+                ("vectorized_raft_leadership_changes_total", lambda a, b: b > a),
+                ("vectorized_raft_leader_for", lambda a, b: int(b) == 1),
+                ("vectorized_raft_received_vote_requests_total", lambda a, b: b == a),
+            ]
+        )
 
     @cluster(num_nodes=3)
     def test_two_nodes_down(self):
@@ -295,28 +309,34 @@ class RaftAvailabilityTest(RedpandaTest):
         self.redpanda.start_node(self.redpanda.get_node_by_id(other_node_id))
 
         hosts = [
-            n.account.hostname for n in self.redpanda.nodes
+            n.account.hostname
+            for n in self.redpanda.nodes
             if self.redpanda.idx(n) != initial_leader_id
         ]
-        admin.wait_stable_configuration("id_allocator",
-                                        namespace="kafka_internal",
-                                        replication=3,
-                                        timeout_s=ELECTION_TIMEOUT * 2,
-                                        hosts=hosts)
+        admin.wait_stable_configuration(
+            "id_allocator",
+            namespace="kafka_internal",
+            replication=3,
+            timeout_s=ELECTION_TIMEOUT * 2,
+            hosts=hosts,
+        )
 
         # This will be a slow election because priorities have to adjust down
         # (our two live nodes are the lower-priority ones of the three)
         # We have to wait for availability rather than leader state, because
         # leader state may already be reported as the expected leader from
         # stale pre-shutdown metadata.
-        wait_until(lambda: self._is_available() is True,
-                   timeout_sec=ELECTION_TIMEOUT * 2,
-                   backoff_sec=0.5,
-                   err_msg=f"Cluster did not become available!")
+        wait_until(
+            lambda: self._is_available() is True,
+            timeout_sec=ELECTION_TIMEOUT * 2,
+            backoff_sec=0.5,
+            err_msg=f"Cluster did not become available!",
+        )
 
         new_leader, _ = self._wait_for_leader(
             lambda l: l is not None and l != initial_leader_id,
-            timeout=ELECTION_TIMEOUT * 2)
+            timeout=ELECTION_TIMEOUT * 2,
+        )
 
         # 1/3 nodes down, cluster should be available
         self._expect_available()
@@ -337,7 +357,8 @@ class RaftAvailabilityTest(RedpandaTest):
         self.redpanda.stop_node(initial_leader_node)
 
         new_leader_id, _ = self._wait_for_leader(
-            lambda l: l is not None and l != initial_leader_id)
+            lambda l: l is not None and l != initial_leader_id
+        )
         self.logger.info(
             f"New leader is {new_leader_id} {self.redpanda.get_node_by_id(new_leader_id).account.hostname}"
         )
@@ -376,23 +397,29 @@ class RaftAvailabilityTest(RedpandaTest):
         metric_checks = {}
         for n in self.redpanda.nodes:
             metric_checks[self.redpanda.node_id(n)] = MetricCheck(
-                self.logger, self.redpanda, n,
+                self.logger,
+                self.redpanda,
+                n,
                 re.compile("vectorized_raft_leadership_changes_total"),
-                {'topic': self.topic})
+                {"topic": self.topic},
+            )
 
         self.logger.info(f"Transferring leadership  of {self.topic}/0")
         admin = Admin(self.redpanda)
-        admin.transfer_leadership_to(topic=self.topic,
-                                     namespace="kafka",
-                                     partition=0,
-                                     target_id=None,
-                                     leader_id=initial_leader_id)
+        admin.transfer_leadership_to(
+            topic=self.topic,
+            namespace="kafka",
+            partition=0,
+            target_id=None,
+            leader_id=initial_leader_id,
+        )
         hosts = [n.account.hostname for n in self.redpanda.nodes]
         new_leader_id = admin.await_stable_leader(
             topic=self.topic,
             partition=0,
             hosts=hosts,
-            check=lambda l: l is not None and l != initial_leader_id)
+            check=lambda l: l is not None and l != initial_leader_id,
+        )
         new_leader_node = self.redpanda.get_node_by_id(new_leader_id)
         assert new_leader_node is not None
         self.logger.info(
@@ -405,22 +432,35 @@ class RaftAvailabilityTest(RedpandaTest):
                 # the metric should be updated only on the node that was elected as a leader
                 if id == new_leader_id:
                     results.append(
-                        metric_check.evaluate([
-                            ("vectorized_raft_leadership_changes_total",
-                             lambda initial, current: current == initial + 1),
-                        ]))
+                        metric_check.evaluate(
+                            [
+                                (
+                                    "vectorized_raft_leadership_changes_total",
+                                    lambda initial, current: current == initial + 1,
+                                ),
+                            ]
+                        )
+                    )
                 else:
                     results.append(
-                        metric_check.evaluate([
-                            ("vectorized_raft_leadership_changes_total",
-                             lambda initial, current: current == initial),
-                        ]))
+                        metric_check.evaluate(
+                            [
+                                (
+                                    "vectorized_raft_leadership_changes_total",
+                                    lambda initial, current: current == initial,
+                                ),
+                            ]
+                        )
+                    )
 
             return all(results)
 
         wait_until(
-            metrics_updated, 30, 1,
-            "Leadership changes metric should be updated only on the leader")
+            metrics_updated,
+            30,
+            1,
+            "Leadership changes metric should be updated only on the leader",
+        )
 
     @cluster(num_nodes=4)
     @parametrize(acks=1)
@@ -441,12 +481,9 @@ class RaftAvailabilityTest(RedpandaTest):
         leader_node_id, replicas = self._wait_for_leader()
 
         if acks == -1:
-            producer = RpkProducer(self._ctx,
-                                   self.redpanda,
-                                   self.topic,
-                                   16384,
-                                   sys.maxsize,
-                                   acks=acks)
+            producer = RpkProducer(
+                self._ctx, self.redpanda, self.topic, 16384, sys.maxsize, acks=acks
+            )
         else:
             # To reproduce acks=1 issue, we need an intermittent producer that
             # waits long enough between messages to let recovery_stm go to sleep
@@ -479,8 +516,7 @@ class RaftAvailabilityTest(RedpandaTest):
             target_idx = (initial_leader_id + n) % len(self.redpanda.nodes)
             target_node_by_id_id = target_idx + 1
 
-            self._transfer_leadership(admin, "kafka", self.topic,
-                                      target_node_by_id_id)
+            self._transfer_leadership(admin, "kafka", self.topic, target_node_by_id_id)
 
             # Wait til we can see producer progressing, to avoid a situation where
             # we do leadership transfers so quickly that we stall the producer
@@ -492,7 +528,8 @@ class RaftAvailabilityTest(RedpandaTest):
                 lambda: producer.output_line_count > output_count,
                 timeout_sec=20,
                 # Fast poll because it's local state
-                backoff_sec=0.1)
+                backoff_sec=0.1,
+            )
 
         self.logger.info(f"Completed {transfer_count} transfers successfully")
 
@@ -524,7 +561,8 @@ class RaftAvailabilityTest(RedpandaTest):
             "id_allocator",
             namespace="kafka_internal",
             replication=3,
-            timeout_s=ELECTION_TIMEOUT * 2)
+            timeout_s=ELECTION_TIMEOUT * 2,
+        )
 
         follower = None
         for node in replicas:
@@ -540,8 +578,10 @@ class RaftAvailabilityTest(RedpandaTest):
         with FailureInjector(self.redpanda) as fi:
             # isolate one of the followers
             fi.inject_failure(
-                FailureSpec(FailureSpec.FAILURE_ISOLATE,
-                            self.redpanda.get_node_by_id(follower)))
+                FailureSpec(
+                    FailureSpec.FAILURE_ISOLATE, self.redpanda.get_node_by_id(follower)
+                )
+            )
 
             # expect messages to be produced and consumed without a timeout
             connection = self.ping_pong()
@@ -558,11 +598,12 @@ class RaftAvailabilityTest(RedpandaTest):
         admin = Admin(self.redpanda)
         self._expect_available()
         # Find which node is the leader for id allocator partition
-        admin.wait_stable_configuration(namespace='kafka_internal',
-                                        topic='id_allocator',
-                                        replication=3)
+        admin.wait_stable_configuration(
+            namespace="kafka_internal", topic="id_allocator", replication=3
+        )
         initial_leader_id = admin.get_partition_leader(
-            namespace='kafka_internal', topic='id_allocator', partition=0)
+            namespace="kafka_internal", topic="id_allocator", partition=0
+        )
         leader_node = self.redpanda.get_node_by_id(initial_leader_id)
         self.logger.info(
             f"kafka_internal/id_allocator/0 leader: {initial_leader_id}, node: {leader_node.account.hostname}"
@@ -573,8 +614,11 @@ class RaftAvailabilityTest(RedpandaTest):
         with FailureInjector(self.redpanda) as fi:
             # isolate id_allocator
             fi.inject_failure(
-                FailureSpec(FailureSpec.FAILURE_ISOLATE,
-                            self.redpanda.get_node_by_id(initial_leader_id)))
+                FailureSpec(
+                    FailureSpec.FAILURE_ISOLATE,
+                    self.redpanda.get_node_by_id(initial_leader_id),
+                )
+            )
 
             # expect messages to be produced and consumed without a timeout
             connection = self.ping_pong()
@@ -613,15 +657,16 @@ class RaftAvailabilityTest(RedpandaTest):
         """
         Isolate controller node, expect cluster to be available
         """
+
         def controller_available():
             return self.redpanda.controller() is not None
 
         admin = Admin(self.redpanda)
 
         # wait for controller
-        wait_until(controller_available,
-                   timeout_sec=ELECTION_TIMEOUT * 2,
-                   backoff_sec=1)
+        wait_until(
+            controller_available, timeout_sec=ELECTION_TIMEOUT * 2, backoff_sec=1
+        )
 
         initial_leader_id, replicas = self._wait_for_leader()
         assert initial_leader_id == replicas[0]
@@ -631,19 +676,22 @@ class RaftAvailabilityTest(RedpandaTest):
             "id_allocator",
             namespace="kafka_internal",
             replication=3,
-            timeout_s=ELECTION_TIMEOUT * 2)
+            timeout_s=ELECTION_TIMEOUT * 2,
+        )
 
         # isolate controller
         with FailureInjector(self.redpanda) as fi:
             controller_id = self.redpanda.idx(
-                self.redpanda.controller().account.hostname)
+                self.redpanda.controller().account.hostname
+            )
             fi.inject_failure(
-                FailureSpec(FailureSpec.FAILURE_ISOLATE,
-                            self.redpanda.controller()))
+                FailureSpec(FailureSpec.FAILURE_ISOLATE, self.redpanda.controller())
+            )
 
             if allocator_info.leader == controller_id:
                 hosts = [
-                    n.account.hostname for n in self.redpanda.nodes
+                    n.account.hostname
+                    for n in self.redpanda.nodes
                     if self.redpanda.idx(n) != controller_id
                 ]
                 admin.await_stable_leader(
@@ -652,7 +700,8 @@ class RaftAvailabilityTest(RedpandaTest):
                     replication=3,
                     timeout_s=ELECTION_TIMEOUT * 2,
                     hosts=hosts,
-                    check=lambda node_id: node_id != controller_id)
+                    check=lambda node_id: node_id != controller_id,
+                )
 
         connection = self.ping_pong()
         connection.ping_pong(timeout_s=10, retries=10)

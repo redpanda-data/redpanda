@@ -17,7 +17,13 @@ from rptest.services.redpanda import SaslCredentials
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.scale_parameters import ScaleParameters
 from rptest.services.kgo_repeater_service import KgoRepeaterService, repeater_traffic
-from rptest.services.redpanda import SaslCredentials, SecurityConfig, MetricsEndpoint, MetricSample, LoggingConfig
+from rptest.services.redpanda import (
+    SaslCredentials,
+    SecurityConfig,
+    MetricsEndpoint,
+    MetricSample,
+    LoggingConfig,
+)
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.util import wait_until_result
 from ducktape.errors import TimeoutError
@@ -29,19 +35,25 @@ class AuditLogTestSecurityConfig(SecurityConfig):
     Hardcoded security parameters for the audit scale tests. SASL will be
     the authentication method of choice
     """
-    sasl_credentials = SaslCredentials('rob', '123rob456', 'SCRAM-SHA-256')
+
+    sasl_credentials = SaslCredentials("rob", "123rob456", "SCRAM-SHA-256")
 
     def __init__(self):
         super(AuditLogTestSecurityConfig, self).__init__()
         self.enable_sasl = True
         self.kafka_enable_authorization = True
-        self.endpoint_authn_method = 'sasl'
+        self.endpoint_authn_method = "sasl"
         self.tls_provider = None
 
 
-class AuditBenchmarkResults():
-    def __init__(self, time_elapsed: float, final_totals: tuple[int, int],
-                 latencies: tuple[float, float, float], message_size: int):
+class AuditBenchmarkResults:
+    def __init__(
+        self,
+        time_elapsed: float,
+        final_totals: tuple[int, int],
+        latencies: tuple[float, float, float],
+        message_size: int,
+    ):
         self.time_elapsed = time_elapsed
         self.messages_produced = final_totals[0]
         self.messages_consumed = final_totals[1]
@@ -65,19 +77,22 @@ class AuditBenchmarkResults():
 
     @property
     def total_mbps(self) -> float:
-        total_bytes_moved = (self.messages_produced +
-                             self.messages_consumed) * self.message_size
+        total_bytes_moved = (
+            self.messages_produced + self.messages_consumed
+        ) * self.message_size
         return self._mbps(total_bytes_moved)
 
     def __repr__(self):
-        return str({
-            'time_elapsed': self.time_elapsed,
-            'total_produced': self.messages_produced,
-            'total_consumed': self.messages_consumed,
-            'p50': self.p50,
-            'p90': self.p90,
-            'p99': self.p99
-        })
+        return str(
+            {
+                "time_elapsed": self.time_elapsed,
+                "total_produced": self.messages_produced,
+                "total_consumed": self.messages_consumed,
+                "p50": self.p50,
+                "p90": self.p90,
+                "p99": self.p99,
+            }
+        )
 
 
 class AuditLogTest(RedpandaTest):
@@ -85,6 +100,7 @@ class AuditLogTest(RedpandaTest):
     Test to ensure that enabling auditing does not create a discernable decrease
     in performance.
     """
+
     topics = ()
 
     def __init__(self, ctx, *args, **kwargs):
@@ -94,87 +110,84 @@ class AuditLogTest(RedpandaTest):
 
         # We will send huge numbers of messages, so tune down the log verbosity
         # as we will be comparing performance to a known good baseline
-        kwargs['log_config'] = LoggingConfig(
-            'info', logger_levels={'auditing': 'debug'})
+        kwargs["log_config"] = LoggingConfig(
+            "info", logger_levels={"auditing": "debug"}
+        )
 
-        kwargs['extra_rp_conf'] = {
+        kwargs["extra_rp_conf"] = {
             # Authentication is mandatory for auditing
-            'enable_sasl':
-            True,
-
+            "enable_sasl": True,
             # No auditing will occur without the global feature flag set to True
-            'audit_enabled':
-            True,
-
+            "audit_enabled": True,
             # The default is 8, but for a scale test its desired to increase the
             # number of partitions to handle the expected load
-            'audit_log_num_partitions':
-            12,
-
+            "audit_log_num_partitions": 12,
             # RF factor for the audit log, the default is 3 however if there is
             # only 1 node, the replication factor is 1 and will increase to this
             # configured value if the number of nodes can support it
-            'audit_log_replication_factor':
-            3,
-
+            "audit_log_replication_factor": 3,
             # Enable auditing for every supported event, there are currently 8
-            'audit_enabled_event_types': [
-                'management', 'produce', 'consume', 'describe', 'heartbeat',
-                'authenticate', 'admin', 'schema_registry'
+            "audit_enabled_event_types": [
+                "management",
+                "produce",
+                "consume",
+                "describe",
+                "heartbeat",
+                "authenticate",
+                "admin",
+                "schema_registry",
             ],
-
             # Adjust this value to give the system a chance to buffer more data
             # at the kafka client size
             # default: 16MiB
-            'audit_client_max_buffer_size':
-            16000000 * 10,
-
+            "audit_client_max_buffer_size": 16000000 * 10,
             # This is the frequency at which queues are drained for data to be
             # buffered to the kafka client. Increase this value to buffer more
             # data which increases the likelihood of compressing duplicate events
             # and reducing the total amount of data sent to the audit topic
             # default: 500ms
-            'audit_queue_drain_interval_ms':
-            2000 * 2,
-
+            "audit_queue_drain_interval_ms": 2000 * 2,
             # How large the per shard audit buffers are. The more unique events
             # and the more time the data spends residing in the buffer, the
             # larger this may have to become. If this queue is exhausted events
             # for which audited is enabled for will fail is the event cannot be
             # enqueued
             # default: 1MiB
-            'audit_queue_max_buffer_size_per_shard':
-            1000000 * 10,
+            "audit_queue_max_buffer_size_per_shard": 1000000 * 10,
         }
 
-        super().__init__(test_context=ctx,
-                         security=self.security,
-                         *args,
-                         **kwargs)
+        super().__init__(test_context=ctx, security=self.security, *args, **kwargs)
 
         self.superuser = self.redpanda.SUPERUSER_CREDENTIALS
         self.user_creds = AuditLogTestSecurityConfig.sasl_credentials
 
         self._ctx = ctx
-        self.admin = Admin(self.redpanda,
-                           auth=(self.superuser.username,
-                                 self.superuser.password))
-        self._super_rpk = RpkTool(self.redpanda,
-                                  username=self.superuser.username,
-                                  password=self.superuser.password,
-                                  sasl_mechanism=self.superuser.algorithm)
-        self._user_rpk = RpkTool(self.redpanda,
-                                 username=self.user_creds.username,
-                                 password=self.user_creds.password,
-                                 sasl_mechanism=self.user_creds.algorithm)
+        self.admin = Admin(
+            self.redpanda, auth=(self.superuser.username, self.superuser.password)
+        )
+        self._super_rpk = RpkTool(
+            self.redpanda,
+            username=self.superuser.username,
+            password=self.superuser.password,
+            sasl_mechanism=self.superuser.algorithm,
+        )
+        self._user_rpk = RpkTool(
+            self.redpanda,
+            username=self.user_creds.username,
+            password=self.user_creds.password,
+            sasl_mechanism=self.user_creds.algorithm,
+        )
 
     def _create_audit_test_sasl_user(self):
-        self._super_rpk.sasl_create_user(self.user_creds.username,
-                                         self.user_creds.password)
+        self._super_rpk.sasl_create_user(
+            self.user_creds.username, self.user_creds.password
+        )
         self._super_rpk.sasl_allow_principal(
-            f'User:{self.user_creds.username}', ['all'], 'topic', '*')
+            f"User:{self.user_creds.username}", ["all"], "topic", "*"
+        )
         self._super_rpk.sasl_allow_principal(
-            f'User:{self.user_creds.username}', ['all'], 'group', '*')
+            f"User:{self.user_creds.username}", ["all"], "group", "*"
+        )
         # Attempt to list topics to check if the above worked
         self._user_rpk.list_topics()
 
@@ -191,26 +204,22 @@ class AuditLogTest(RedpandaTest):
                 "audit_buffer_usage_ratio",
                 "audit_client_buffer_usage_ratio",
             ]
-            samples = self.redpanda.metrics_samples(patterns,
-                                                    self.redpanda.nodes,
-                                                    MetricsEndpoint.METRICS)
-            success = samples is not None and set(
-                samples.keys()) == set(patterns)
+            samples = self.redpanda.metrics_samples(
+                patterns, self.redpanda.nodes, MetricsEndpoint.METRICS
+            )
+            success = samples is not None and set(samples.keys()) == set(patterns)
             return success, samples
 
         try:
-            results = wait_until_result(get_metrics_from_nodes,
-                                        timeout_sec=5,
-                                        backoff_sec=1)
+            results = wait_until_result(
+                get_metrics_from_nodes, timeout_sec=5, backoff_sec=1
+            )
 
             def avg_metric(mss: list[MetricSample]):
                 values = [x.value for x in mss]
                 return sum(values) / len(values) if len(values) > 0 else -1
 
-            return {
-                name: avg_metric(mss.samples)
-                for name, mss in results.items()
-            }
+            return {name: avg_metric(mss.samples) for name, mss in results.items()}
 
         except TimeoutError as _:
             self.redpanda.logger.warn(f"Timed out getting audit metrics")
@@ -219,17 +228,16 @@ class AuditLogTest(RedpandaTest):
 
     def _modify_cluster_config(self, cfg):
         patch_result = self.admin.patch_cluster_config(upsert=cfg)
-        wait_for_version_sync(self.admin, self.redpanda,
-                              patch_result['config_version'])
+        wait_for_version_sync(self.admin, self.redpanda, patch_result["config_version"])
 
     def _enable_auditing(self):
-        self._modify_cluster_config({'audit_enabled': True})
+        self._modify_cluster_config({"audit_enabled": True})
 
     def _disable_auditing(self):
-        self._modify_cluster_config({'audit_enabled': False})
+        self._modify_cluster_config({"audit_enabled": False})
 
     def _run_repeater(self, topics: list[str], scale: ScaleParameters):
-        repeater_kwargs = {'key_count': 2**32}
+        repeater_kwargs = {"key_count": 2**32}
         repeater_msg_size = 16384
         rate_limit_bps = int(scale.expect_bandwidth)
         max_buffered_records = 64
@@ -240,28 +248,31 @@ class AuditLogTest(RedpandaTest):
             final_totals = repeater.total_messages()
             latency = repeater.latency_reports()
             if latency == ():
-                raise RuntimeError(
-                    "Couldn't fetch latency report from kgo-repeater")
-            return AuditBenchmarkResults(total_time_elapsed, final_totals,
-                                         latency, repeater_msg_size)
+                raise RuntimeError("Couldn't fetch latency report from kgo-repeater")
+            return AuditBenchmarkResults(
+                total_time_elapsed, final_totals, latency, repeater_msg_size
+            )
 
         stop_thread = False
 
         def periodically_log_metrics():
             while stop_thread is not True:
                 self.redpanda.logger.info(
-                    f"Aggregated audit metrics: \n{self._get_audit_metrics()}")
+                    f"Aggregated audit metrics: \n{self._get_audit_metrics()}"
+                )
                 time.sleep(3)
 
-        with repeater_traffic(context=self._ctx,
-                              redpanda=self.redpanda,
-                              sasl_options=self.user_creds,
-                              topics=topics,
-                              msg_size=repeater_msg_size,
-                              rate_limit_bps=rate_limit_bps,
-                              workers=self._repeater_worker_count(scale),
-                              max_buffered_records=max_buffered_records,
-                              **repeater_kwargs) as repeater:
+        with repeater_traffic(
+            context=self._ctx,
+            redpanda=self.redpanda,
+            sasl_options=self.user_creds,
+            topics=topics,
+            msg_size=repeater_msg_size,
+            rate_limit_bps=rate_limit_bps,
+            workers=self._repeater_worker_count(scale),
+            max_buffered_records=max_buffered_records,
+            **repeater_kwargs,
+        ) as repeater:
             # soak for 5 minutes
             soak_time_seconds = 60 * 5
             soak_await_bytes = soak_time_seconds * scale.expect_bandwidth
@@ -271,7 +282,8 @@ class AuditLogTest(RedpandaTest):
             t1 = time.time()
             repeater.reset()
             metrics_log_thread = threading.Thread(
-                target=periodically_log_metrics, args=())
+                target=periodically_log_metrics, args=()
+            )
             try:
                 metrics_log_thread.start()
                 repeater.await_progress(soak_await_msgs, soak_timeout)
@@ -281,8 +293,7 @@ class AuditLogTest(RedpandaTest):
                 # If that does not occur the TimeoutError is thrown by repeater.await_progress
 
                 result_set = make_result_set(t1, repeater)
-                expected_produce_mbps = scale.expect_bandwidth / (1024 *
-                                                                  1024.0)
+                expected_produce_mbps = scale.expect_bandwidth / (1024 * 1024.0)
                 raise TimeoutError(
                     f"Expected throughput {expected_produce_mbps:.2f}, got throughput {result_set.produce_mbps:.2f}MB/s"
                 )
@@ -294,7 +305,7 @@ class AuditLogTest(RedpandaTest):
             # to me able to assert on other properties of the test run.
             return make_result_set(t1, repeater)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/16199
+    @ignore  # https://github.com/redpanda-data/redpanda/issues/16199
     @cluster(num_nodes=5)
     def test_audit_log(self):
         """
@@ -337,7 +348,8 @@ class AuditLogTest(RedpandaTest):
         # scale further then that we want to increase the number of topics.
         scale = ScaleParameters(self.redpanda, replication_factor=3)
         partitions_per_topic = self.redpanda.get_node_cpu_count() * len(
-            self.redpanda.nodes)
+            self.redpanda.nodes
+        )
         total_topics = scale.partition_limit // partitions_per_topic
         assert total_topics >= 1
 
@@ -357,15 +369,15 @@ class AuditLogTest(RedpandaTest):
             f"Creating {len(topics)} topics almost all with {partitions_per_topic} partitions with options: segment.bytes {scale.segment_size} topic retention.bytes {scale.retention_bytes}"
         )
         for topic in topics:
-            self._user_rpk.create_topic(topic.name,
-                                        partitions=topic.partition_count,
-                                        replicas=3,
-                                        config={
-                                            "segment.bytes":
-                                            scale.segment_size,
-                                            "retention.bytes":
-                                            scale.retention_bytes
-                                        })
+            self._user_rpk.create_topic(
+                topic.name,
+                partitions=topic.partition_count,
+                replicas=3,
+                config={
+                    "segment.bytes": scale.segment_size,
+                    "retention.bytes": scale.retention_bytes,
+                },
+            )
 
         # Use the kgo-repeater to generate traffic for 2 minutes
         # Then assert that the traffic is within an expected range
@@ -384,18 +396,24 @@ class AuditLogTest(RedpandaTest):
         def pct_chg(new, orig):
             return ((orig - new) / abs(orig)) * 100
 
-        self.redpanda.logger.info(
-            f"audit_disabled_results: {audit_disabled_results}")
-        self.redpanda.logger.info(
-            f"audit_enabled_results: {audit_enabled_results}")
+        self.redpanda.logger.info(f"audit_disabled_results: {audit_disabled_results}")
+        self.redpanda.logger.info(f"audit_enabled_results: {audit_enabled_results}")
 
-        assert pct_chg(
-            audit_enabled_results.produce_mbps,
-            audit_disabled_results.produce_mbps) < allowable_threshold
-        assert pct_chg(
-            audit_enabled_results.consume_mbps,
-            audit_disabled_results.consume_mbps) < allowable_threshold
-        assert pct_chg(audit_enabled_results.p90,
-                       audit_disabled_results.p90) > (allowable_threshold * -1)
-        assert pct_chg(audit_enabled_results.p99,
-                       audit_disabled_results.p99) > (allowable_threshold * -1)
+        assert (
+            pct_chg(
+                audit_enabled_results.produce_mbps, audit_disabled_results.produce_mbps
+            )
+            < allowable_threshold
+        )
+        assert (
+            pct_chg(
+                audit_enabled_results.consume_mbps, audit_disabled_results.consume_mbps
+            )
+            < allowable_threshold
+        )
+        assert pct_chg(audit_enabled_results.p90, audit_disabled_results.p90) > (
+            allowable_threshold * -1
+        )
+        assert pct_chg(audit_enabled_results.p99, audit_disabled_results.p99) > (
+            allowable_threshold * -1
+        )

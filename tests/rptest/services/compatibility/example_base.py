@@ -14,6 +14,7 @@ class ExampleBase(ABC):
     """
     The base class for example
     """
+
     def __init__(self, redpanda):
         # Instance of redpanda
         self._redpanda = redpanda

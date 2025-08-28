@@ -31,9 +31,11 @@ class FlinkBasicTests(RedpandaTest):
         # Prepare FlinkService
         self.topic_name = "flink_workload_topic"
         self.topics = [TopicSpec(name=self.topic_name)]
-        self.flink = FlinkService(test_context,
-                                  self.redpanda.get_node_cpu_count(),
-                                  self.redpanda.get_node_memory_mb())
+        self.flink = FlinkService(
+            test_context,
+            self.redpanda.get_node_cpu_count(),
+            self.redpanda.get_node_memory_mb(),
+        )
         # Prepare client
         self.kafkacli = KafkaCliTools(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
@@ -44,22 +46,25 @@ class FlinkBasicTests(RedpandaTest):
 
     def _run_workloads(self, workloads, config, wait_timeout=900):
         """
-            Run workloads from the list with supplied config
+        Run workloads from the list with supplied config
 
-            Return: list of failed jobs
+        Return: list of failed jobs
         """
         # Run produce job
         for workload in workloads:
             # Add script as a job
             self.logger.info(f"Adding {workload['name']} to flink")
-            _ids = self.flink.run_flink_job(workload['path'], config)
+            _ids = self.flink.run_flink_job(workload["path"], config)
             if _ids is None:
-                raise RuntimeError("Failed to run job on flink for "
-                                   f"workload: {workload['name']}")
+                raise RuntimeError(
+                    f"Failed to run job on flink for workload: {workload['name']}"
+                )
 
-            self.logger.debug(f"Workload '{workload['name']}' "
-                              f"generated {len(_ids)} "
-                              f"jobs: {', '.join(_ids)}")
+            self.logger.debug(
+                f"Workload '{workload['name']}' "
+                f"generated {len(_ids)} "
+                f"jobs: {', '.join(_ids)}"
+            )
 
         # Wait for jobs to finish
         if wait_timeout > 0:
@@ -70,7 +75,7 @@ class FlinkBasicTests(RedpandaTest):
         _all = []
         for _id in _ids:
             _job = self.flink.get_job_by_id(_id)
-            if _job['state'] == self.flink.STATE_FAILED:
+            if _job["state"] == self.flink.STATE_FAILED:
                 self.logger.warning(f"Job '{_id}' has failed")
                 _failed.append(_job)
             _all.append(_job)
@@ -79,24 +84,25 @@ class FlinkBasicTests(RedpandaTest):
 
     def _get_workloads_by_tags(self, tags):
         """
-            Calls to manager to get workloads using supplied list of tags
-            Raises error on nothing found
+        Calls to manager to get workloads using supplied list of tags
+        Raises error on nothing found
 
-            return: list of workloads
+        return: list of workloads
         """
         workloads = self.workload_manager.get_workloads(tags)
         if len(workloads) < 1:
-            raise RuntimeError("No workloads found "
-                               f"with tags: {', '.join(tags)}")
+            raise RuntimeError(f"No workloads found with tags: {', '.join(tags)}")
         return workloads
 
     def _serialize_csv_row(self, csv_row, data_types):
         # Check if data_type list provides correct number of types
         # Assume all lines have same number of columns
         if len(csv_row) != len(data_types):
-            raise RuntimeError("Data types list does not match column "
-                               "quantity in CSV created by Flink "
-                               "transaction workload")
+            raise RuntimeError(
+                "Data types list does not match column "
+                "quantity in CSV created by Flink "
+                "transaction workload"
+            )
         values = []
         # Process data types per item to handle transformations
         for idx in range(len(data_types)):
@@ -110,7 +116,8 @@ class FlinkBasicTests(RedpandaTest):
                 except Exception:
                     self.logger.warning(
                         f"Error processing CSV line '{csv_row}' using data "
-                        f"type list of '{data_types}'")
+                        f"type list of '{data_types}'"
+                    )
             # Save it
             values.append(src)
         # Return row as array of converted values
@@ -119,8 +126,8 @@ class FlinkBasicTests(RedpandaTest):
     @cluster(num_nodes=4)
     def test_basic_workload(self):
         """
-            Test starts produce workload and then consume
-            No checks for message counts, just job success
+        Test starts produce workload and then consume
+        No checks for message counts, just job success
         """
 
         # Start Flink
@@ -136,26 +143,28 @@ class FlinkBasicTests(RedpandaTest):
             "consumer_group": "flink_consume_group",
             "topic_name": self.topic_name,
             "msg_size": 4096,
-            "count": 10
+            "count": 10,
         }
 
         # Run produce basic
-        workloads = self._get_workloads_by_tags(['flink', 'produce', 'basic'])
+        workloads = self._get_workloads_by_tags(["flink", "produce", "basic"])
         # Do not need list of jobs, so just discard them
         _, _failed = self._run_workloads(workloads, _workload_config)
 
         # Assert failed jobs
-        assert len(_failed) == 0, \
+        assert len(_failed) == 0, (
             f"Flink reports failed jobs for basic produce workloads {_failed}"
+        )
 
         # Run consume basic
-        workloads = self._get_workloads_by_tags(['flink', 'consume', 'basic'])
+        workloads = self._get_workloads_by_tags(["flink", "consume", "basic"])
         # Do not need list of jobs, so just discard them
         _, _failed = self._run_workloads(workloads, _workload_config)
 
         # Assert failed jobs
-        assert len(_failed) == 0, \
+        assert len(_failed) == 0, (
             f"Flink reports failed jobs for basic consume workload {_failed}"
+        )
 
         # Stop flink
         self.flink.stop()
@@ -165,28 +174,29 @@ class FlinkBasicTests(RedpandaTest):
     @cluster(num_nodes=4)
     def test_transaction_workload(self):
         """
-            Test uses same workload with different modes to produce
-            and consume/process given number of transactions
+        Test uses same workload with different modes to produce
+        and consume/process given number of transactions
         """
+
         def get_max_data_index(data_path, node):
             # Max index and target column
             index_column = 1
             max_index = 0
             for f in list_files(data_path, node):
                 # Read data into memory
-                csvdata = node.account.ssh_output(
-                    f"cat {os.path.join(data_path, f)}")
+                csvdata = node.account.ssh_output(f"cat {os.path.join(data_path, f)}")
                 # Using StringsIO will eliminate file copy which proved to be unreliable
                 # Also, it will load data into memory only once along with csvreader
                 # processing file with csvreader will give most efficient memory
                 # usage. Only one row will present in memory at all times
                 # newline='' is critical, refer to: https://docs.python.org/3/library/csv.html
-                with io.StringIO(csvdata.decode(), newline='') as csvfile:
-                    c_reader = csv.reader(csvfile, delimiter=',')
+                with io.StringIO(csvdata.decode(), newline="") as csvfile:
+                    c_reader = csv.reader(csvfile, delimiter=",")
                     for row in c_reader:
                         # Second parameter is the quick and dirty value type map
                         values = self._serialize_csv_row(
-                            row, [int, int, int, str, int, str])
+                            row, [int, int, int, str, int, str]
+                        )
                         if max_index < values[index_column]:
                             max_index = values[index_column]
             return max_index
@@ -237,42 +247,43 @@ class FlinkBasicTests(RedpandaTest):
             "mode": "produce",
             "word_size": random_words_dict_size,
             "batch_size": batch_size,
-            "count": total_events
+            "count": total_events,
         }
 
         # Get workload
         workloads = self._get_workloads_by_tags(
-            ['flink', 'table', 'transactions', 'basic'])
+            ["flink", "table", "transactions", "basic"]
+        )
         # Run produce part
         jobs, _failed = self._run_workloads(workloads, _workload_config)
 
         # Assert failed jobs
         _desc = [f"{j['name']} ({j['jid']}): {j['state']}" for j in _failed]
         _desc = "\n".join(_desc)
-        assert len(_failed) == 0, \
-            "Flink reports failed produce job for " \
-            f"transaction workload:\n{_desc}"
+        assert len(_failed) == 0, (
+            f"Flink reports failed produce job for transaction workload:\n{_desc}"
+        )
 
         # Run workload in consume mode
         # Workload will run continuously, we will stop it once file is produced
         # this is why wait_timeout is 0, i.e. do not wait
-        _workload_config['mode'] = 'consume'
-        jobs, _failed = self._run_workloads(workloads,
-                                            _workload_config,
-                                            wait_timeout=0)
+        _workload_config["mode"] = "consume"
+        jobs, _failed = self._run_workloads(workloads, _workload_config, wait_timeout=0)
 
         # Assert failed jobs
-        assert len(_failed) == 0, \
+        assert len(_failed) == 0, (
             f"Flink reports failed consume job for transaction workload {_failed}"
+        )
 
         # Wait for file, timeout 10 min (20 sec * 30 iterations)
         # This will make sure that consumer started working
         self.logger.info("Waiting for consumer to start writing data")
-        wait_until(lambda: len(list_files(data_path, self.flink.node)) > 0,
-                   timeout_sec=600,
-                   backoff_sec=10,
-                   err_msg="Flink transaction workload produced "
-                   "no data files after 5 min")
+        wait_until(
+            lambda: len(list_files(data_path, self.flink.node)) > 0,
+            timeout_sec=600,
+            backoff_sec=10,
+            err_msg="Flink transaction workload produced no data files after 5 min",
+        )
 
         # make sure that there is no active jobs with 20 min timeout.
         # This big value is for safety due to overloads on docker env at
@@ -287,14 +298,16 @@ class FlinkBasicTests(RedpandaTest):
         # desired index is reached. I.e. index in data files
         # has to reach target_index
         target_index = total_events - 1
-        self.logger.info("Waiting for consumer to emit message "
-                         f"with index {target_index}")
-        wait_until(lambda: get_max_data_index(data_path, self.flink.node) ==
-                   target_index,
-                   timeout_sec=300,
-                   backoff_sec=60,
-                   err_msg="Flink transaction workload failed to consume "
-                   f"{total_events} messages after 5 min")
+        self.logger.info(
+            f"Waiting for consumer to emit message with index {target_index}"
+        )
+        wait_until(
+            lambda: get_max_data_index(data_path, self.flink.node) == target_index,
+            timeout_sec=300,
+            backoff_sec=60,
+            err_msg="Flink transaction workload failed to consume "
+            f"{total_events} messages after 5 min",
+        )
 
         max_index = get_max_data_index(data_path, self.flink.node)
         # Stop flink
@@ -303,8 +316,9 @@ class FlinkBasicTests(RedpandaTest):
         # Assert the fail, this is for illustrative purposes and
         # probably will always pass since wait_until will fail
         # if max_index would be wrong
-        assert max_index == target_index, \
-            f"Flink workload consume max offset is incorrect: {max_index} " \
+        assert max_index == target_index, (
+            f"Flink workload consume max offset is incorrect: {max_index} "
             f"(should be: {target_index})"
+        )
 
         return

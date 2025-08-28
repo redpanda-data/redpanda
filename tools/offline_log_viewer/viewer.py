@@ -10,7 +10,10 @@ from consumer_groups import GroupsLog
 from consumer_offsets import ConsumerGroupsSummaryGenerator, OffsetsLog
 
 from crash_report import decode_crash_report
-from topic_manifest import decode_topic_manifest, decode_topic_manifest_to_legacy_v1_json
+from topic_manifest import (
+    decode_topic_manifest,
+    decode_topic_manifest_to_legacy_v1_json,
+)
 from tx_coordinator import TxLog
 
 import itertools
@@ -21,19 +24,23 @@ from collections import namedtuple
 import logging
 import json
 
-logger = logging.getLogger('viewer')
+logger = logging.getLogger("viewer")
 
-Configuration = namedtuple("Configuration", [
-    "path",
-    "type",
-    "topic",
-    "binary_dump",
-    "partition",
-])
+Configuration = namedtuple(
+    "Configuration",
+    [
+        "path",
+        "type",
+        "topic",
+        "binary_dump",
+        "partition",
+    ],
+)
 
 
 class SerializableGenerator(list):
     """Generator that is serializable by JSON"""
+
     def __init__(self, iterable):
         tmp_body = iter(iterable)
         try:
@@ -46,7 +53,7 @@ class SerializableGenerator(list):
         return itertools.chain(self._head, *self[:1])
 
 
-class OfflineLogViewer():
+class OfflineLogViewer:
     def __init__(self, config: Configuration):
         self._config = config
         self.validate_path()
@@ -60,7 +67,8 @@ class OfflineLogViewer():
 
     def stream_json(self, data: Any, wrap_with_gen: bool = True) -> None:
         iter_json = json.JSONEncoder(indent=2).iterencode(
-            SerializableGenerator(data) if wrap_with_gen else data)
+            SerializableGenerator(data) if wrap_with_gen else data
+        )
         for j in iter_json:
             sys.stdout.write(j)
         sys.stdout.flush()
@@ -92,14 +100,15 @@ class OfflineLogViewer():
         store = self.build_store()
         for ntp in store.ntps:
             if ntp.nspace == "redpanda" and ntp.topic == "controller":
-                snap = ControllerSnapshot(ntp,
-                                          bin_dump=self._config.binary_dump)
+                snap = ControllerSnapshot(ntp, bin_dump=self._config.binary_dump)
                 self.stream_json(snap.to_dict().items())
 
     def print_topic_manifest(self, legacy_json=False):
-        res = decode_topic_manifest_to_legacy_v1_json(
-            self._config.path) if legacy_json else decode_topic_manifest(
-                self._config.path)
+        res = (
+            decode_topic_manifest_to_legacy_v1_json(self._config.path)
+            if legacy_json
+            else decode_topic_manifest(self._config.path)
+        )
         self.output_json(res)
 
     def print_kafka(self, headers_only: bool = False):
@@ -110,7 +119,7 @@ class OfflineLogViewer():
                     continue
                 if self._should_skip_partition(ntp.partition):
                     continue
-                logger.info(f'topic: {ntp.topic}, partition: {ntp.partition}')
+                logger.info(f"topic: {ntp.topic}, partition: {ntp.partition}")
                 log = KafkaLog(ntp, headers_only=headers_only)
                 self.stream_json(log)
 
@@ -130,7 +139,8 @@ class OfflineLogViewer():
                 if self._should_skip_partition(ntp.partition):
                     continue
                 logs[str(ntp)] = SerializableGenerator(
-                    OffsetsLog(ntp, decode_all_batches))
+                    OffsetsLog(ntp, decode_all_batches)
+                )
         self.stream_json(logs, wrap_with_gen=False)
 
     def print_consumer_offsets_summary(self):
@@ -141,7 +151,8 @@ class OfflineLogViewer():
                 if self._should_skip_partition(ntp.partition):
                     continue
                 summaries[str(ntp)] = ConsumerGroupsSummaryGenerator(
-                    ntp).build_summary()
+                    ntp
+                ).build_summary()
         self.output_json(summaries)
 
     def print_tx_coordinator(self):
@@ -157,23 +168,21 @@ class OfflineLogViewer():
         Parses either a specific crash report or the all crashes in the crash_reports directory
         """
         if not os.path.exists(self._config.path):
-            logger.error(f'Crash file {self._config.path} does not exist')
+            logger.error(f"Crash file {self._config.path} does not exist")
             sys.exit(1)
 
         if os.path.isdir(self._config.path):
-            crash_reports_dir = os.path.join(self._config.path,
-                                             "crash_reports")
+            crash_reports_dir = os.path.join(self._config.path, "crash_reports")
             if not os.path.isdir(crash_reports_dir):
                 logger.error(
-                    f'Could not find crash_reports directory in {self._config.path}'
+                    f"Could not find crash_reports directory in {self._config.path}"
                 )
                 sys.exit(1)
             crash_files = [
-                f for f in os.listdir(crash_reports_dir)
-                if f.endswith(".crash")
+                f for f in os.listdir(crash_reports_dir) if f.endswith(".crash")
             ]
             if not crash_files:
-                logger.error(f'No crash reports found in {crash_reports_dir}')
+                logger.error(f"No crash reports found in {crash_reports_dir}")
                 sys.exit(1)
             res = {}
             for f in crash_files:
@@ -259,46 +268,53 @@ def main():
     import argparse
 
     def generate_options():
-        parser = argparse.ArgumentParser(description='Redpanda log analyzer')
+        parser = argparse.ArgumentParser(description="Redpanda log analyzer")
         parser.add_argument(
-            '--path',
+            "--path",
             type=str,
-            help='Path to data dir of the node desired to be analyzed')
-        parser.add_argument('--type',
-                            type=str,
-                            choices=[
-                                'controller',
-                                'kvstore',
-                                'kafka',
-                                'consumer_offsets',
-                                'legacy-group',
-                                'kafka_records',
-                                'tx_coordinator',
-                                'topic_manifest',
-                                'topic_manifest_legacy',
-                                'controller_snapshot',
-                                'crash_report',
-                                "consumer_offsets_all",
-                                "consumer_offsets_summary",
-                            ],
-                            required=True,
-                            help='operation to execute')
+            help="Path to data dir of the node desired to be analyzed",
+        )
         parser.add_argument(
-            '--topic',
+            "--type",
+            type=str,
+            choices=[
+                "controller",
+                "kvstore",
+                "kafka",
+                "consumer_offsets",
+                "legacy-group",
+                "kafka_records",
+                "tx_coordinator",
+                "topic_manifest",
+                "topic_manifest_legacy",
+                "controller_snapshot",
+                "crash_report",
+                "consumer_offsets_all",
+                "consumer_offsets_summary",
+            ],
+            required=True,
+            help="operation to execute",
+        )
+        parser.add_argument(
+            "--topic",
             type=str,
             required=False,
-            help='for kafka type, if set, parse only this topic')
-        parser.add_argument('-v', "--verbose", action="store_true")
+            help="for kafka type, if set, parse only this topic",
+        )
+        parser.add_argument("-v", "--verbose", action="store_true")
         parser.add_argument(
-            '--dump',
-            action='store_true',
-            help='output binary dumps of keys and values being parsed')
-        parser.add_argument('--force', action='store_true', help='Deprecated')
-        parser.add_argument('--partition',
-                            type=int,
-                            required=False,
-                            default=None,
-                            help="if set, will parse only this partition")
+            "--dump",
+            action="store_true",
+            help="output binary dumps of keys and values being parsed",
+        )
+        parser.add_argument("--force", action="store_true", help="Deprecated")
+        parser.add_argument(
+            "--partition",
+            type=int,
+            required=False,
+            default=None,
+            help="if set, will parse only this partition",
+        )
         return parser
 
     parser = generate_options()
@@ -313,5 +329,5 @@ def main():
     viewer.run_viewer()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

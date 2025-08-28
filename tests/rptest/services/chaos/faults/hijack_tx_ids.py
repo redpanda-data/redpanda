@@ -47,7 +47,7 @@ class HijackTxIDsFault(OneoffFault):
                 "request.required.acks": -1,
                 "retries": 5,
                 "enable.idempotence": True,
-                "transactional.id": tx_id
+                "transactional.id": tx_id,
             }
 
             attempt = 0

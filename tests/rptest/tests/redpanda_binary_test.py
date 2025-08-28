@@ -19,6 +19,7 @@ class RedpandaBinaryTest(Test):
     Test class for testing the redpanda binary without necessarily running the
     redpanda service.
     """
+
     def __init__(self, test_context):
         super(RedpandaBinaryTest, self).__init__(test_context=test_context)
         self.redpanda = make_redpanda_service(self.test_context, 1)
@@ -26,13 +27,17 @@ class RedpandaBinaryTest(Test):
     @cluster(num_nodes=1, check_allowed_error_logs=False)
     def test_version(self):
         env_preamble = self.redpanda.redpanda_env_preamble()
-        version_cmd = f"{env_preamble} {self.redpanda.find_binary('redpanda')} --version"
+        version_cmd = (
+            f"{env_preamble} {self.redpanda.find_binary('redpanda')} --version"
+        )
         version_lines = [
             l for l in self.redpanda.nodes[0].account.ssh_capture(version_cmd)
         ]
         assert len(version_lines) == 1, version_lines
-        version_regex_str = "v\\d+\\.\\d+\\.\\d+.*"  # E.g. "v22.1.1-rc1-1373-g77f868..."
+        version_regex_str = (
+            "v\\d+\\.\\d+\\.\\d+.*"  # E.g. "v22.1.1-rc1-1373-g77f868..."
+        )
         version_re = re.compile(version_regex_str)
-        assert version_re.search(
-            version_lines[0]
-        ), f"Expected '{version_lines[0]}' to match '{version_regex_str}'"
+        assert version_re.search(version_lines[0]), (
+            f"Expected '{version_lines[0]}' to match '{version_regex_str}'"
+        )

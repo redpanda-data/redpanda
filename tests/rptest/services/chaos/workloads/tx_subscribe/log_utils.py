@@ -41,7 +41,7 @@ cmds = {
     "log": State.LOG,
     "send": State.SEND,
     "read": State.READ,
-    "seen": State.SEEN
+    "seen": State.SEEN,
 }
 
 threads = {
@@ -53,7 +53,7 @@ threads = {
         State.ABORT: [State.OK, State.ERROR],
         State.COMMIT: [State.OK, State.ERROR],
         State.OK: [State.SEND, State.CONSTRUCTING],
-        State.ERROR: [State.CONSTRUCTING]
+        State.ERROR: [State.CONSTRUCTING],
     },
     "streaming": {
         State.STARTED: [State.CONSTRUCTING],
@@ -64,14 +64,14 @@ threads = {
         State.ABORT: [State.OK, State.ERROR],
         State.COMMIT: [State.OK, State.ERROR],
         State.OK: [State.READ, State.CONSTRUCTING],
-        State.ERROR: [State.CONSTRUCTING, State.READ]
+        State.ERROR: [State.CONSTRUCTING, State.READ],
     },
     "consuming": {
         State.STARTED: [State.CONSTRUCTING],
         State.CONSTRUCTING: [State.CONSTRUCTED, State.ERROR],
         State.CONSTRUCTED: [State.CONSTRUCTING, State.SEEN],
-        State.SEEN: [State.SEEN, State.CONSTRUCTING]
-    }
+        State.SEEN: [State.SEEN, State.CONSTRUCTING],
+    },
 }
 
 phantoms = [State.EVENT, State.VIOLATION, State.LOG]

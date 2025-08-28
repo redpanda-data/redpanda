@@ -46,7 +46,6 @@ flink_config = {
     # These parameters are required for Java 17 support.
     # They can be safely removed when using Java 8/11.
     "env.java.opts.all": " ".join(java_opts),
-
     # The external address of the host on which the JobManager runs and can be
     # reached by the TaskManagers and any clients which want to connect. This
     # setting is only used in Standalone mode and may be overwritten
@@ -57,13 +56,10 @@ flink_config = {
     # of automatically. Yarn automatically configure the host name based
     # on the hostname of the node where the JobManager runs.
     "jobmanager.rpc.address": "localhost",
-
     # Python client executable
     "python.client.executable": "python3",
-
     # The RPC port where the JobManager is reachable.
     "jobmanager.rpc.port": 6123,
-
     # The host interface the JobManager will bind to. By default, this is localhost, and will prevent
     # the JobManager from communicating outside the machine/container it is running on.
     # On YARN this setting will be ignored if it is set to 'localhost', defaulting to 0.0.0.0.
@@ -72,11 +68,9 @@ flink_config = {
     # To enable this, set the bind-host address to one that has access to an outside facing network
     # interface, such as 0.0.0.0.
     "jobmanager.bind-host": "localhost",
-
     # The total process memory size for the JobManager.
     # Note this accounts for all memory usage within the JobManager process, including JVM metaspace and other overhead.
     "jobmanager.memory.process.size": "1600m",
-
     # The host interface the TaskManager will bind to. By default, this is localhost, and will prevent
     # the TaskManager from communicating outside the machine/container it is running on.
     # On YARN this setting will be ignored if it is set to 'localhost', defaulting to 0.0.0.0.
@@ -85,7 +79,6 @@ flink_config = {
     # To enable this, set the bind-host address to one that has access to an outside facing network
     # interface, such as 0.0.0.0.
     "taskmanager.bind-host": "localhost",
-
     # The address of the host on which the TaskManager runs and can be reached by the JobManager and
     # other TaskManagers. If not specified, the TaskManager will try different strategies to identify
     # the address.
@@ -96,41 +89,31 @@ flink_config = {
     # Note also that unless all TaskManagers are running on the same machine, this address needs to be
     # configured separately for each TaskManager.
     "taskmanager.host": "localhost",
-
     # The total process memory size for the TaskManager.
     #
     # Note this accounts for all memory usage within the TaskManager process, including JVM metaspace and other overhead.
     "taskmanager.memory.process.size": "1728m",
-
     # To exclude JVM metaspace and overhead, please, use total Flink memory size instead of 'taskmanager.memory.process.size'.
     # It is not recommended to set both 'taskmanager.memory.process.size' and Flink memory.
     #
     "taskmanager.memory.flink.size": "1280m",
-
     # The number of task slots that each TaskManager offers. Each slot runs one parallel pipeline.
     "taskmanager.numberOfTaskSlots": 1,
-
     # The parallelism used for programs that did not specify and other parallelism.
     "parallelism.default": 1,
-
     # Enable detailed metrics for network subsystem
     "taskmanager.network.detailed-metrics": True,
-
     # ==============================================================================
     # Rest & web frontend
     # ==============================================================================
-
     # The port to which the REST client connects to. If rest.bind-port has
     # not been specified, then the server will bind to this port as well.
     #
     "rest.port": 8090,
-
     # The address to which the REST client will connect to
     "rest.address": "localhost",
-
     # Port range for the REST and web server to bind to.
     # rest.bind-port: 8080-8090
-
     # The address that the REST & web server binds to
     # By default, this is localhost, which prevents the REST & web server from
     # being able to communicate outside of the machine/container it is running on.
@@ -138,17 +121,14 @@ flink_config = {
     # To enable this, set the bind address to one that has access to outside-facing
     # network interface, such as 0.0.0.0.
     "rest.bind-address": "0.0.0.0",
-
     # Flag to specify whether job submission is enabled from the web-based
     # runtime monitor. Uncomment to disable.
     "web.submit.enable": False,
-
     # Flag to specify whether job cancellation is enabled from the web-based
     # runtime monitor. Uncomment to disable.
     "web.cancel.enable": False,
-
     # Metrics
-    "metrics.recording.level": "debug"
+    "metrics.recording.level": "debug",
 }
 
 
@@ -157,6 +137,7 @@ class FlinkService(Service):
     Service that runs Job and Task managers on single node
     Jobs are separate python scripts at this point.
     """
+
     FLINK_HOME = "/opt/flink/"
     FLINK_LOGS = FLINK_HOME + "log"
     FLINK_BIN = FLINK_HOME + "bin/"
@@ -168,37 +149,43 @@ class FlinkService(Service):
     FLINK_WORKLOADS_FOLDER = "/workloads"
     FLINK_WORKLOAD_CONFIG_FILENAME = "flink_workload_config.json"
 
-    STATE_INIT = 'INITIALIZING'
-    STATE_RECONCILING = 'RECONCILING'
-    STATE_RUNNING = 'RUNNING'
-    STATE_CANCELING = 'CANCELING'
-    STATE_DEPLOYING = 'DEPLOYING'
-    STATE_RESTARTING = 'RESTARTING'
+    STATE_INIT = "INITIALIZING"
+    STATE_RECONCILING = "RECONCILING"
+    STATE_RUNNING = "RUNNING"
+    STATE_CANCELING = "CANCELING"
+    STATE_DEPLOYING = "DEPLOYING"
+    STATE_RESTARTING = "RESTARTING"
 
-    STATE_CREATED = 'CREATED'
-    STATE_SCHEDULED = 'SCHEDULED'
-    STATE_FAILED = 'FAILED'
-    STATE_FINISHED = 'FINISHED'
-    STATE_CANCELED = 'CANCELED'
+    STATE_CREATED = "CREATED"
+    STATE_SCHEDULED = "SCHEDULED"
+    STATE_FAILED = "FAILED"
+    STATE_FINISHED = "FINISHED"
+    STATE_CANCELED = "CANCELED"
 
     def __init__(self, context, num_cpus, node_ram_mb, *args, **kwargs):
         # No custom node support at this time
         nodes_to_allocate = 1
         # Init service
-        super(FlinkService, self).__init__(context,
-                                           num_nodes=nodes_to_allocate,
-                                           *args,
-                                           **kwargs)
+        super(FlinkService, self).__init__(
+            context, num_nodes=nodes_to_allocate, *args, **kwargs
+        )
 
         self.flink_rest_port = flink_config["rest.port"]
         # Map statuses
         self.job_active_statuses = [
-            self.STATE_INIT, self.STATE_RECONCILING, self.STATE_RUNNING,
-            self.STATE_CANCELING, self.STATE_DEPLOYING, self.STATE_RESTARTING,
-            self.STATE_CREATED, self.STATE_SCHEDULED
+            self.STATE_INIT,
+            self.STATE_RECONCILING,
+            self.STATE_RUNNING,
+            self.STATE_CANCELING,
+            self.STATE_DEPLOYING,
+            self.STATE_RESTARTING,
+            self.STATE_CREATED,
+            self.STATE_SCHEDULED,
         ]
         self.job_inactive_statuses = [
-            self.STATE_FAILED, self.STATE_FINISHED, self.STATE_CANCELED
+            self.STATE_FAILED,
+            self.STATE_FINISHED,
+            self.STATE_CANCELED,
         ]
 
         self.logger.info(f"Using specs: {num_cpus} cpus, {node_ram_mb}MB RAM")
@@ -217,19 +204,18 @@ class FlinkService(Service):
             if tm_ram < 1024:
                 tm_count = 1
                 new_tm_ram = node_ram_mb - jm_ram
-                self.logger.info(f"Using {tm_count} taskmanager with "
-                                 f"{new_tm_ram}MB due to low calculated "
-                                 f"memory size ({tm_ram}MB)")
+                self.logger.info(
+                    f"Using {tm_count} taskmanager with "
+                    f"{new_tm_ram}MB due to low calculated "
+                    f"memory size ({tm_ram}MB)"
+                )
                 tm_ram = new_tm_ram
             # use min memory, default case is 792mb out of 2048mb
-            self.service_config[
-                'jobmanager.memory.process.size'] = f"{jm_ram}m"
+            self.service_config["jobmanager.memory.process.size"] = f"{jm_ram}m"
             # default, ~1280mb out of 2048 if 1 cpu
-            self.service_config[
-                'taskmanager.memory.process.size'] = f"{tm_ram}m"
+            self.service_config["taskmanager.memory.process.size"] = f"{tm_ram}m"
             # 1000mb, total - 792mb for JVM metadata, etc
-            self.service_config[
-                'taskmanager.memory.flink.size'] = f"{tm_ram - 512}m"
+            self.service_config["taskmanager.memory.flink.size"] = f"{tm_ram - 512}m"
         else:
             # Handle service configuration for single node in case of EC2
             # 10% ram - reserved
@@ -242,40 +228,41 @@ class FlinkService(Service):
             jm_ram = int(node_ram_gb * 0.1)
             tm_ram = int(node_ram_gb * 0.8 // num_cpus)
             # default, 1600m
-            self.service_config[
-                'jobmanager.memory.process.size'] = f"{jm_ram}g"
+            self.service_config["jobmanager.memory.process.size"] = f"{jm_ram}g"
             # default, 1728m
-            self.service_config[
-                'taskmanager.memory.process.size'] = f"{tm_ram}g"
+            self.service_config["taskmanager.memory.process.size"] = f"{tm_ram}g"
             # 1280m, total - 1g for JVM metadata, etc
-            self.service_config[
-                'taskmanager.memory.flink.size'] = f"{tm_ram-1}g"
+            self.service_config["taskmanager.memory.flink.size"] = f"{tm_ram - 1}g"
 
         # Task slots is half cpu cores, 1
-        self.service_config['taskmanager.numberOfTaskSlots'] = 1
+        self.service_config["taskmanager.numberOfTaskSlots"] = 1
         # Set default per-task parallelism to number of vcpus
-        self.service_config['pipeline.max-parallelism'] = tm_count
+        self.service_config["pipeline.max-parallelism"] = tm_count
         # Set maximum default paralel tasks to 2xvcpus
         self.service_config[
-            'execution.batch.adaptive.auto-parallelism.max-parallelism'] = \
-            tm_count * 2
+            "execution.batch.adaptive.auto-parallelism.max-parallelism"
+        ] = tm_count * 2
         # Adaptive scheduler that handles parallelism auto configuration
-        self.service_config['jobmanager.scheduler'] = 'Adaptive'
+        self.service_config["jobmanager.scheduler"] = "Adaptive"
         # Task restarts with delay of 30 s if rate per interval exceeded 5
         # Restarts needed due to discunnects or overloads
         # Ref: https://nightlies.apache.org/flink/flink-docs-master/docs/ops/state/task_failure_recovery/#failure-rate-restart-strategy
-        self.service_config['restart-strategy.type'] = 'failure-rate'
+        self.service_config["restart-strategy.type"] = "failure-rate"
         # Delay between restarts
-        self.service_config['restart-strategy.failure-rate.delay'] = '30s'
+        self.service_config["restart-strategy.failure-rate.delay"] = "30s"
         # Rate measuring interval
-        self.service_config[
-            'restart-strategy.failure-rate.failure-rate-interval'] = '10s'
+        self.service_config["restart-strategy.failure-rate.failure-rate-interval"] = (
+            "10s"
+        )
         # Failures per interval
         self.service_config[
-            'restart-strategy.failure-rate.max-failures-per-interval'] = 50
+            "restart-strategy.failure-rate.max-failures-per-interval"
+        ] = 50
 
-        self.logger.info("Flink service configufation is:\n"
-                         f"{json.dumps(self.service_config, indent=2)}")
+        self.logger.info(
+            "Flink service configufation is:\n"
+            f"{json.dumps(self.service_config, indent=2)}"
+        )
         # No need to further tinker with parallelism settings, it is adaptive
 
         # It is better to run multiple task managers. So, there should be
@@ -292,22 +279,23 @@ class FlinkService(Service):
 
     def run_flink_job(self, workload_path, workload_config, detached=True):
         """
-            Runs a job on flink using current redpanda broker address.
-            Not using REST for this to eliminate expensive and
-            complex file upload routine via milti-part MIME
+        Runs a job on flink using current redpanda broker address.
+        Not using REST for this to eliminate expensive and
+        complex file upload routine via milti-part MIME
 
-            workload_path: path to jar or py file
-            detach: detaches after adding the job
+        workload_path: path to jar or py file
+        detach: detaches after adding the job
         """
         # Check that supplied path exists
         if not os.path.exists(workload_path):
-            raise RuntimeError("Workload not found in path "
-                               f"'{workload_path}'")
+            raise RuntimeError(f"Workload not found in path '{workload_path}'")
 
         # Check for the folder and create
         n = self.nodes[0]
-        self.logger.debug("Checking and creating folder on target node "
-                          f"'{self.FLINK_WORKLOADS_FOLDER}'")
+        self.logger.debug(
+            "Checking and creating folder on target node "
+            f"'{self.FLINK_WORKLOADS_FOLDER}'"
+        )
         if not n.account.exists(self.FLINK_WORKLOADS_FOLDER):
             n.account.mkdir(self.FLINK_WORKLOADS_FOLDER)
 
@@ -316,17 +304,16 @@ class FlinkService(Service):
         n.account.copy_to(workload_path, self.FLINK_WORKLOADS_FOLDER)
 
         # Create workload config
-        config_path = os.path.join(self.FLINK_WORKLOADS_FOLDER,
-                                   self.FLINK_WORKLOAD_CONFIG_FILENAME)
+        config_path = os.path.join(
+            self.FLINK_WORKLOADS_FOLDER, self.FLINK_WORKLOAD_CONFIG_FILENAME
+        )
         n.account.create_file(config_path, json.dumps(workload_config))
 
         # Extract the workload script filename
         script = os.path.split(workload_path)[-1]
 
         # Determine active python location
-        python3_path = n.account.ssh_output("which python3") \
-            .decode() \
-            .strip()
+        python3_path = n.account.ssh_output("which python3").decode().strip()
 
         # Start job
         run_path = os.path.join(self.FLINK_WORKLOADS_FOLDER, script)
@@ -356,7 +343,7 @@ class FlinkService(Service):
             # Job has been submitted with JobID 8d29c8ab8e6e6634875a1cd16e879802
             idx = line.find("JobID")
             if idx > 0:
-                id = line[idx + 6:]
+                id = line[idx + 6 :]
                 self.logger.debug(f"Found JobID:\n{id}")
                 generated_ids.append(id)
 
@@ -364,12 +351,11 @@ class FlinkService(Service):
 
     def _get(self, node, rest_handle):
         """
-            Perform a GET to Flink REST API
-            More here:
-            https://nightlies.apache.org/flink/flink-docs-release-1.18/docs/ops/rest_api/
+        Perform a GET to Flink REST API
+        More here:
+        https://nightlies.apache.org/flink/flink-docs-release-1.18/docs/ops/rest_api/
         """
-        self.flink_baseurl = \
-            f"http://{node.account.hostname}:{self.flink_rest_port}"
+        self.flink_baseurl = f"http://{node.account.hostname}:{self.flink_rest_port}"
 
         url = f"{self.flink_baseurl}{rest_handle}"
         try:
@@ -380,14 +366,14 @@ class FlinkService(Service):
 
     def list_jobs(self, node):
         """
-            List all jobs
+        List all jobs
         """
         handle = "/jobs"
         return self._get(node, handle)
 
     def get_job_by_id(self, jobid):
         """
-            Gets job specs
+        Gets job specs
         """
         handle = f"/jobs/{jobid}"
         if self.node is None:
@@ -414,8 +400,9 @@ class FlinkService(Service):
         # Run additional task managers
         self.logger.info("Starting additional task managers")
         while self.num_active_taskmanagers < self.num_taskmanagers:
-            self.logger.info(f"Task manager {self.num_active_taskmanagers+1} "
-                             "is starting")
+            self.logger.info(
+                f"Task manager {self.num_active_taskmanagers + 1} is starting"
+            )
             self._run_cmd(node, self.FLINK_TASKMAN_START)
             self.num_active_taskmanagers += 1
 
@@ -441,53 +428,54 @@ class FlinkService(Service):
 
     def get_active_jobs(self, node):
         """
-            Get all active jobs from flink REST API
+        Get all active jobs from flink REST API
         """
         jobs = self.list_jobs(node)
         active = [
-            job for job in jobs['jobs']
-            if job['status'] in self.job_active_statuses
+            job for job in jobs["jobs"] if job["status"] in self.job_active_statuses
         ]
         return active
 
     def is_job_idle(self, jobid) -> bool:
         """
-            Gets job data and ensures that it is idle for job_idle_threshold_ms
-            Each job vertice should have not less than idle_threshold value
-            as recorded and available in
-              <rest_api>/jobs/<jobid>/vertices/*/metrics/accumulated-idle-time
-            By default, 60 sec min of accumulated idle time since last non-zero 
-            busy time
+        Gets job data and ensures that it is idle for job_idle_threshold_ms
+        Each job vertice should have not less than idle_threshold value
+        as recorded and available in
+          <rest_api>/jobs/<jobid>/vertices/*/metrics/accumulated-idle-time
+        By default, 60 sec min of accumulated idle time since last non-zero
+        busy time
 
-            jobid: as returned by <rest_api>/jobs
+        jobid: as returned by <rest_api>/jobs
         """
         # If flink is not running then the job sure is idle :)
         if self.node is None:
             return True
         # Get job details
         job_details = self._get(self.node, f"/jobs/{jobid}")
-        self.logger.debug(f"Checking if job '{job_details['name']}' "
-                          f"({job_details['jid']}) is idle")
+        self.logger.debug(
+            f"Checking if job '{job_details['name']}' ({job_details['jid']}) is idle"
+        )
         # get metrics for all job vertices
-        vertices = [v for v in job_details['vertices']]
+        vertices = [v for v in job_details["vertices"]]
         # Check each vertice
         idle_vertices = []
         for v in vertices:
-            metric_key = f"{job_details['jid']}_{v['id']}_" \
-                "last_idle_time_when_busy"
+            metric_key = f"{job_details['jid']}_{v['id']}_last_idle_time_when_busy"
             # Shorthands
-            idle_time = v['metrics']['accumulated-idle-time']
-            busy_time = v['metrics']['accumulated-busy-time']
+            idle_time = v["metrics"]["accumulated-idle-time"]
+            busy_time = v["metrics"]["accumulated-busy-time"]
             # save current value for safety if this is the first time
             if metric_key not in self._metric:
                 self._metric[metric_key] = idle_time
             # Prepare debug message
-            log_msg = f"Vertice '{v['id']}': " \
-                      f"'accumulated-idle-time' = {idle_time} ms, " \
-                      f"'accumulated-busy-time' = {busy_time} ms -> "
+            log_msg = (
+                f"Vertice '{v['id']}': "
+                f"'accumulated-idle-time' = {idle_time} ms, "
+                f"'accumulated-busy-time' = {busy_time} ms -> "
+            )
 
             # If job is busy, save idle time
-            if busy_time == 'NaN' or busy_time > 0:
+            if busy_time == "NaN" or busy_time > 0:
                 self._metric[metric_key] = idle_time
                 # vertice is busy
                 idle_vertices.append(False)
@@ -501,8 +489,10 @@ class FlinkService(Service):
                     log_msg += f"is IDLE (idle for {idle_since_busy} ms)"
                 else:
                     idle_vertices.append(False)
-                    log_msg += f"is IDLE (time to threshold " \
+                    log_msg += (
+                        f"is IDLE (time to threshold "
                         f"{self.job_idle_threshold_ms - idle_since_busy} ms)"
+                    )
             # log message
             self.logger.debug(log_msg)
         # All vertices should be idle/True
@@ -510,15 +500,15 @@ class FlinkService(Service):
 
     def _has_active_jobs(self, node, detect_idle_jobs=True):
         """
-            Get active job list, log aggregated status count
-            Return Bool valus if active jobs >0
+        Get active job list, log aggregated status count
+        Return Bool valus if active jobs >0
         """
         # Get jobs in 'RUNNING' status
         jobs = self.get_active_jobs(node)
         # Log job status map
         map = {}
         for j in jobs:
-            s = j['status']
+            s = j["status"]
             if s not in map:
                 map[s] = 1
             else:
@@ -530,12 +520,10 @@ class FlinkService(Service):
             self.logger.debug("Flink has no active jobs")
 
         # Build list of idle jobs
-        active_jobs = [j['id'] for j in jobs]
+        active_jobs = [j["id"] for j in jobs]
         if detect_idle_jobs:
             # generate list of jobs that can be consudered as idle
-            idle_jobs = [
-                job['id'] for job in jobs if self.is_job_idle(job['id'])
-            ]
+            idle_jobs = [job["id"] for job in jobs if self.is_job_idle(job["id"])]
             if len(idle_jobs) > 0:
                 self.logger.info(f"Detected idle jobs: {', '.join(idle_jobs)}")
                 # subtract them from active
@@ -545,14 +533,15 @@ class FlinkService(Service):
 
     def wait_node(self, node, timeout_sec=300, detect_idle_jobs=True):
         """
-            Wait for all jobs to finish, default timeout is half an hour
+        Wait for all jobs to finish, default timeout is half an hour
         """
         # Flush internal metrics
         self._metric = {}
-        wait_until(lambda: not self._has_active_jobs(
-            node, detect_idle_jobs=detect_idle_jobs),
-                   timeout_sec=timeout_sec,
-                   backoff_sec=5)
+        wait_until(
+            lambda: not self._has_active_jobs(node, detect_idle_jobs=detect_idle_jobs),
+            timeout_sec=timeout_sec,
+            backoff_sec=5,
+        )
 
         return True
 
@@ -569,8 +558,7 @@ class FlinkService(Service):
             self._metric = {}
 
             # Clean workloads folder
-            node.account.ssh_output(
-                f"sudo rm -rf {self.FLINK_WORKLOADS_FOLDER}")
+            node.account.ssh_output(f"sudo rm -rf {self.FLINK_WORKLOADS_FOLDER}")
 
         return
 
@@ -582,8 +570,7 @@ class FlinkService(Service):
         # This will be run for all calls to logs property
         # Caching is not used for simplicity
         # Load all logs in folder
-        files = self.nodes[0].account.ssh_output(
-            f"ls -1 {self.FLINK_LOGS}").decode()
+        files = self.nodes[0].account.ssh_output(f"ls -1 {self.FLINK_LOGS}").decode()
         # Filter out only ones from this node
         # Collect only those from this node as the flink service binded to
         # localhost and no requests or other service should be able to
@@ -596,29 +583,28 @@ class FlinkService(Service):
         # Include any workload configuratin jsons
         log_map = {
             "workload_cfg": {
-                "path":
-                os.path.join(self.FLINK_WORKLOADS_FOLDER,
-                             self.FLINK_WORKLOAD_CONFIG_FILENAME),
-                "collect_default":
-                True
+                "path": os.path.join(
+                    self.FLINK_WORKLOADS_FOLDER, self.FLINK_WORKLOAD_CONFIG_FILENAME
+                ),
+                "collect_default": True,
             }
         }
         # all files will look like this:
         # flink-root-<keyword>-<internal_index>-<source-hostname>.<log|out>
         keywords = ["client", "standalonesession", "taskexecutor"]
         for keyword in keywords:
-            targetfiles = [
-                logfile for logfile in logfiles if keyword in logfile
-            ]
+            targetfiles = [logfile for logfile in logfiles if keyword in logfile]
             for idx in range(len(targetfiles)):
                 targetfile = targetfiles[idx]
                 # Extract extension
-                ext = targetfile[targetfile.rindex('.') + 1:]
+                ext = targetfile[targetfile.rindex(".") + 1 :]
                 # Add log item
-                log_map.update({
-                    f"{self.who_am_i().lower()}_{keyword}_{idx}_{ext}": {
-                        "path": f"{self.FLINK_LOGS}/{targetfile}",
-                        "collect_default": True
+                log_map.update(
+                    {
+                        f"{self.who_am_i().lower()}_{keyword}_{idx}_{ext}": {
+                            "path": f"{self.FLINK_LOGS}/{targetfile}",
+                            "collect_default": True,
+                        }
                     }
-                })
+                )
         return log_map

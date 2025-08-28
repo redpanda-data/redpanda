@@ -34,7 +34,7 @@ class RetryableConsumer:
             "api.version.request.timeout.ms": 10000,  # default: 10000
             "api.version.fallback.ms": 0,  # default: 0
             "fetch.wait.max.ms": 500,  # default: 0
-            "isolation.level": "read_committed"
+            "isolation.level": "read_committed",
         }
 
         while True:
@@ -46,8 +46,7 @@ class RetryableConsumer:
                     self.consumer.close()
                 except:
                     pass
-            self.logger.debug(
-                f"Attempting to init a consumer using {self.brokers}")
+            self.logger.debug(f"Attempting to init a consumer using {self.brokers}")
             self.consumer = Consumer(config)
             self.consumer.assign([TopicPartition(topic, 0, OFFSET_BEGINNING)])
             msgs = self.consumer.consume(timeout=timeout)
@@ -57,8 +56,7 @@ class RetryableConsumer:
                 if msg.error():
                     self.logger.debug("Consumer error: {}".format(msg.error()))
                     continue
-                self.logger.debug(
-                    "Consumer is initialized, rewinding to the begining")
+                self.logger.debug("Consumer is initialized, rewinding to the begining")
                 self.consumer.seek(TopicPartition(topic, 0, OFFSET_BEGINNING))
                 return
             time.sleep(timeout)

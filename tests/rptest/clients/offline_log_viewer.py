@@ -17,6 +17,7 @@ class OfflineLogViewer:
     Wrap tools/offline_log_viewer for use in tests: this is for tests that
     want to peek at the structures, but also for validating the tool itself.
     """
+
     def __init__(self, redpanda):
         self._redpanda = redpanda
 
@@ -47,7 +48,8 @@ class OfflineLogViewer:
 
     def has_controller_snapshot(self, node):
         return node.account.exists(
-            f"{self._redpanda.DATA_DIR}/redpanda/controller/0_0/snapshot")
+            f"{self._redpanda.DATA_DIR}/redpanda/controller/0_0/snapshot"
+        )
 
     def read_controller_snapshot(self, node):
         return self._json_cmd(node, "--type controller_snapshot")
@@ -63,18 +65,19 @@ class OfflineLogViewer:
 
     def read_bin_topic_manifest(self, bin_data, return_legacy_format=True):
         """
-        copy bin_data to a local file, invoke the tool with it and 
-        return a dict with the decoded result. 
-        return_legacy_format=True produces an output like the original 
+        copy bin_data to a local file, invoke the tool with it and
+        return a dict with the decoded result.
+        return_legacy_format=True produces an output like the original
         topic_manifest.json
         """
         path = f"/tmp/{str(uuid.uuid4())}.topic_manifest.bin"
         with open(path, "wb") as f:
             f.write(bin_data)
 
-        cmd = f"python3 /opt/scripts/offline_log_viewer/viewer.py --type { 'topic_manifest_legacy' if return_legacy_format else 'topic_manifest' } --path {path}"
-        json_out = subprocess.Popen(cmd, shell=True,
-                                    stdout=subprocess.PIPE).stdout.read()
+        cmd = f"python3 /opt/scripts/offline_log_viewer/viewer.py --type {'topic_manifest_legacy' if return_legacy_format else 'topic_manifest'} --path {path}"
+        json_out = subprocess.Popen(
+            cmd, shell=True, stdout=subprocess.PIPE
+        ).stdout.read()
         try:
             return json.loads(json_out)
         except json.decoder.JSONDecodeError:

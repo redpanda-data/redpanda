@@ -17,9 +17,12 @@ import rptest.infinite_retention.helpers as helpers
 from rptest.infinite_retention.checks import InfiniteRetentionChecks
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.cluster import cluster
-from rptest.services.kgo_verifier_services import KgoVerifierProducer, \
-    KgoVerifierRandomConsumer, KgoVerifierSeqConsumer, \
-    KgoVerifierConsumerGroupConsumer
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierProducer,
+    KgoVerifierRandomConsumer,
+    KgoVerifierSeqConsumer,
+    KgoVerifierConsumerGroupConsumer,
+)
 from rptest.services.redpanda import SISettings
 
 from rptest.clients.types import TopicSpec
@@ -43,6 +46,7 @@ class InfiniteRetentionParameters:
     Class to handle all test parameters and have expression based parameters
     recalculate on the spot.
     """
+
     # Initial parameters
     segment_upload_interval: int = 30
     manifest_upload_interval: int = 10
@@ -141,15 +145,15 @@ class InfiniteRetentionParameters:
     # will not start.
     @property
     def msg_limit_rolling_restart(self) -> int:
-        return self.msg_count - (
-            (self.produce_byte_rate * self.target_stress_delay) //
-            self.msg_size) * 6
+        return (
+            self.msg_count
+            - ((self.produce_byte_rate * self.target_stress_delay) // self.msg_size) * 6
+        )
 
     # Maximum producer duration for timing out
     @property
     def expected_producer_duration(self) -> int:
-        return (self.write_bytes //
-                self.produce_byte_rate) * self.producer_tolerance
+        return (self.write_bytes // self.produce_byte_rate) * self.producer_tolerance
 
     # Max consumer duration is multiplies by number of iterations
     # to accomodate total message count
@@ -157,83 +161,74 @@ class InfiniteRetentionParameters:
     # combined
     @property
     def max_consumer_duration(self) -> int:
-        return self.target_runtime * self.consumer_tolerance * \
-               self.total_iterations
+        return self.target_runtime * self.consumer_tolerance * self.total_iterations
 
     # If we limit consume rate, then set message count
     @property
     def consumer_message_count(self) -> int:
-        return self.msg_count // (
-            self.produce_byte_rate //
-            self.consume_byte_rate) // self.consumer_tolerance
+        return (
+            self.msg_count
+            // (self.produce_byte_rate // self.consume_byte_rate)
+            // self.consumer_tolerance
+        )
 
 
 class InfiniteRetentionTest(PreallocNodesTest):
     DEFAULT_PARAMS = InfiniteRetentionParameters()
-    FINJECT_PARAMS = InfiniteRetentionParameters(segment_upload_interval=45,
-                                                 manifest_upload_interval=20,
-                                                 grace_upload_wait_interval=60,
-                                                 producer_ack_timeout=180)
+    FINJECT_PARAMS = InfiniteRetentionParameters(
+        segment_upload_interval=45,
+        manifest_upload_interval=20,
+        grace_upload_wait_interval=60,
+        producer_ack_timeout=180,
+    )
 
     def __init__(self, test_context, *args, **kwargs):
         self.params = self.DEFAULT_PARAMS
 
-        kwargs['si_settings'] = SISettings(
+        kwargs["si_settings"] = SISettings(
             test_context=test_context,
             log_segment_size=self.params.segment_size,
         )
 
         # Use interval uploads so that at end of test we may do an "everything
         # was uploaded" success condition.
-        kwargs['extra_rp_conf'] = {
+        kwargs["extra_rp_conf"] = {
             # We do not intend to do interval-triggered uploads during produce,
             # but we set this property so that at the end of the test we may
             # do a simple "everything was uploaded" check after the interval.
-            'cloud_storage_segment_max_upload_interval_sec':
-            self.params.segment_upload_interval,
+            "cloud_storage_segment_max_upload_interval_sec": self.params.segment_upload_interval,
             # The test will assert that the number of manifest uploads does
             # not exceed what we would expect based on this interval.
-            'cloud_storage_manifest_max_upload_interval_sec':
-            self.params.manifest_upload_interval,
+            "cloud_storage_manifest_max_upload_interval_sec": self.params.manifest_upload_interval,
             # Default retention is infinite
-            'delete_retention_ms': self.params.retention_ms,
+            "delete_retention_ms": self.params.retention_ms,
             # enable merging to generate more re-uploads
-            'cloud_storage_enable_segment_merging':
-            self.params.cloud_storage_enable_segment_merging,
-
+            "cloud_storage_enable_segment_merging": self.params.cloud_storage_enable_segment_merging,
             # segment merging params
-            'cloud_storage_segment_size_target':
-            self.params.cloud_storage_segment_size_target,
-            'cloud_storage_segment_size_min':
-            self.params.cloud_storage_segment_size_min,
-
+            "cloud_storage_segment_size_target": self.params.cloud_storage_segment_size_target,
+            "cloud_storage_segment_size_min": self.params.cloud_storage_segment_size_min,
             # clean out local data more frequently
-            'cloud_storage_housekeeping_interval_ms':
-            self.params.cloud_storage_housekeeping_interval_ms,
-
+            "cloud_storage_housekeeping_interval_ms": self.params.cloud_storage_housekeeping_interval_ms,
             # rps should not hit the limit set here
-            'cloud_storage_idle_threshold_rps':
-            self.params.cloud_storage_idle_threshold_rps,
-
+            "cloud_storage_idle_threshold_rps": self.params.cloud_storage_idle_threshold_rps,
             # manifest cache reduced
-            'cloud_storage_manifest_cache_size':
-            self.params.cloud_storage_manifest_cache_size,
-
+            "cloud_storage_manifest_cache_size": self.params.cloud_storage_manifest_cache_size,
             # evict it frequently
-            'cloud_storage_materialized_manifest_ttl_ms':
-            self.params.cloud_storage_materialized_manifest_ttl_ms,
-
+            "cloud_storage_materialized_manifest_ttl_ms": self.params.cloud_storage_materialized_manifest_ttl_ms,
             # disable spillover: it will be explicitly set in the tests when needed
-            'cloud_storage_spillover_manifest_size': None,
+            "cloud_storage_spillover_manifest_size": None,
         }
         super().__init__(test_context, node_prealloc_count=1, *args, **kwargs)
 
         self.rpk = RpkTool(self.redpanda)
 
-        self.topics = (TopicSpec(
-            retention_ms=self.params.retention_ms,
-            replication_factor=3,
-            partition_count=self.params.partition_count), )
+        self.topics = (
+            TopicSpec(
+                retention_ms=self.params.retention_ms,
+                replication_factor=3,
+                partition_count=self.params.partition_count,
+            ),
+        )
 
     def tearDown(self):
         # free nodes just in case
@@ -247,10 +242,13 @@ class InfiniteRetentionTest(PreallocNodesTest):
         to provide visibility on the values calculated and used
         in the test
         """
-        attrs = [k for k in dir(self.params) if not k.startswith('__')]
+        attrs = [k for k in dir(self.params) if not k.startswith("__")]
         attrs.sort()
-        self.logger.info("Calculated parameters:\n{}".format(
-            ("\n".join([f"{p} = {getattr(self.params, p)}" for p in attrs]))))
+        self.logger.info(
+            "Calculated parameters:\n{}".format(
+                ("\n".join([f"{p} = {getattr(self.params, p)}" for p in attrs]))
+            )
+        )
 
     def _create_producer(self):
         return KgoVerifierProducer(
@@ -262,18 +260,21 @@ class InfiniteRetentionTest(PreallocNodesTest):
             batch_max_bytes=512 * 1024,
             rate_limit_bps=self.params.produce_byte_rate,
             custom_node=[self.preallocated_nodes[0]],
-            debug_logs=True)
+            debug_logs=True,
+        )
 
     def _create_rnd_consumer(self):
-        return KgoVerifierRandomConsumer(self.test_context,
-                                         self.redpanda,
-                                         self.topic,
-                                         self.params.msg_size,
-                                         self.params.consumer_message_count,
-                                         self.params.parallel_consumers,
-                                         nodes=[self.preallocated_nodes[0]],
-                                         debug_logs=True,
-                                         trace_logs=True)
+        return KgoVerifierRandomConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            self.params.msg_size,
+            self.params.consumer_message_count,
+            self.params.parallel_consumers,
+            nodes=[self.preallocated_nodes[0]],
+            debug_logs=True,
+            trace_logs=True,
+        )
 
     def _create_seq_consumer(self):
         return KgoVerifierSeqConsumer(
@@ -282,11 +283,12 @@ class InfiniteRetentionTest(PreallocNodesTest):
             self.topic,
             msg_size=self.params.msg_size,
             max_msgs=None,  # consume everything
-            max_throughput_mb=self.params.consume_rate_mb *
-            self.params.parallel_consumers,
+            max_throughput_mb=self.params.consume_rate_mb
+            * self.params.parallel_consumers,
             nodes=[self.preallocated_nodes[0]],
             debug_logs=True,
-            trace_logs=True)
+            trace_logs=True,
+        )
 
     def _create_group_consumer(self):
         return KgoVerifierConsumerGroupConsumer(
@@ -296,11 +298,12 @@ class InfiniteRetentionTest(PreallocNodesTest):
             msg_size=self.params.msg_size,
             max_msgs=self.params.msg_count,
             readers=self.params.parallel_consumers,
-            max_throughput_mb=self.params.consume_rate_mb *
-            self.params.parallel_consumers,
+            max_throughput_mb=self.params.consume_rate_mb
+            * self.params.parallel_consumers,
             nodes=[self.preallocated_nodes[0]],
             debug_logs=True,
-            trace_logs=True)
+            trace_logs=True,
+        )
 
     @cluster(num_nodes=4)
     @parametrize(restart_stress=True)
@@ -321,8 +324,9 @@ class InfiniteRetentionTest(PreallocNodesTest):
         self.params.target_runtime = 300
         producer = self._create_producer()
 
-        self.logger.info(f"Producing {self.params.msg_count} msgs "
-                         f"({self.params.write_bytes} bytes)")
+        self.logger.info(
+            f"Producing {self.params.msg_count} msgs ({self.params.write_bytes} bytes)"
+        )
         produce_start = time.time()
         producer.start()
 
@@ -337,14 +341,15 @@ class InfiniteRetentionTest(PreallocNodesTest):
                     self.redpanda.restart_nodes(
                         [node],
                         start_timeout=self.params.node_start_timeout,
-                        stop_timeout=self.params.node_stop_timeout)
+                        stop_timeout=self.params.node_stop_timeout,
+                    )
 
             # Wait for the cluster to recover after final restart,
             # so that subsequent post-stress success conditions
             # can count on their queries succeeding.
-            self.redpanda.wait_until(self.redpanda.healthy,
-                                     timeout_sec=60,
-                                     backoff_sec=5)
+            self.redpanda.wait_until(
+                self.redpanda.healthy, timeout_sec=60, backoff_sec=5
+            )
 
         producer.wait(timeout_sec=self.params.expected_producer_duration)
 
@@ -354,7 +359,7 @@ class InfiniteRetentionTest(PreallocNodesTest):
         # Init the checks class
         chk = InfiniteRetentionChecks(self.params)
         # Calculate actual byte rate
-        actual_byte_rate = (self.params.write_bytes / produce_duration)
+        actual_byte_rate = self.params.write_bytes / produce_duration
         mbps = int(actual_byte_rate / (1024 * 1024))
         self.logger.info(
             f"Produced {self.params.write_bytes} in {produce_duration}s, {mbps}MiB/s"
@@ -369,12 +374,12 @@ class InfiniteRetentionTest(PreallocNodesTest):
 
         # Read the highest timestamp in local storage
         self.logger.info("Calculating stats for all partitions")
-        stats = helpers._calculate_statistic(self.topics, self.rpk,
-                                             self.redpanda)
+        stats = helpers._calculate_statistic(self.topics, self.rpk, self.redpanda)
 
         # Ensure that all messages made it to topic
-        self.logger.info(f"calculated hwm: {stats['hwm']}, "
-                         f"message count: {self.params.msg_count}")
+        self.logger.info(
+            f"calculated hwm: {stats['hwm']}, message count: {self.params.msg_count}"
+        )
         chk.check_expected_message_count(stats["hwm"])
         # Local timestamp for latest message
         self.logger.info(f"Max local ts = {stats['local_ts']}")
@@ -382,49 +387,56 @@ class InfiniteRetentionTest(PreallocNodesTest):
         # Measure how far behind the tiered storage uploads are:
         # success condition should be that they are within some
         # time range of the most recently produced data
-        if not stats['uploaded_ts']:
-            self.logger.warn(
-                "No uploaded segments found! Check test parameters!")
+        if not stats["uploaded_ts"]:
+            self.logger.warn("No uploaded segments found! Check test parameters!")
         else:
             self.logger.info(f"Max uploaded ts = {stats['uploaded_ts']}")
 
-            lag_seconds = (stats['local_ts'] - stats['uploaded_ts']) / 1000.0
-            config_interval = (self.params.manifest_upload_interval +
-                               (self.params.segment_size / actual_byte_rate))
-            self.logger.info(f"Upload lag: {lag_seconds}s, "
-                             f"Upload interval: {config_interval}")
-            chk.check_lag_not_exceed_configured_interval(
-                lag_seconds, config_interval)
+            lag_seconds = (stats["local_ts"] - stats["uploaded_ts"]) / 1000.0
+            config_interval = self.params.manifest_upload_interval + (
+                self.params.segment_size / actual_byte_rate
+            )
+            self.logger.info(
+                f"Upload lag: {lag_seconds}s, Upload interval: {config_interval}"
+            )
+            chk.check_lag_not_exceed_configured_interval(lag_seconds, config_interval)
 
         # Wait for all uploads to complete: this should take roughly
         # segment_max_upload_interval_sec plus manifest_max_upload_interval_sec
-        quiesce_uploads(self.redpanda, [self.topic],
-                        timeout_sec=self.params.manifest_upload_interval +
-                        self.params.segment_upload_interval +
-                        self.params.grace_upload_wait_interval)
+        quiesce_uploads(
+            self.redpanda,
+            [self.topic],
+            timeout_sec=self.params.manifest_upload_interval
+            + self.params.segment_upload_interval
+            + self.params.grace_upload_wait_interval,
+        )
 
         # Check manifest upload metrics:
         #  - we should not have uploaded the manifest more times
         #    then there were manifest upload intervals in the runtime.
         self.logger.info(
             f"Upload counts: {stats['manifest_uploads']} manifests, "
-            f"{stats['segment_uploads']} segments")
-        chk.check_non_zero_value(stats['manifest_uploads'],
-                                 value_label="manifest_uploads")
-        chk.check_non_zero_value(stats['segment_uploads'],
-                                 value_label="segment_uploads")
+            f"{stats['segment_uploads']} segments"
+        )
+        chk.check_non_zero_value(
+            stats["manifest_uploads"], value_label="manifest_uploads"
+        )
+        chk.check_non_zero_value(
+            stats["segment_uploads"], value_label="segment_uploads"
+        )
 
         # +3 because:
         # - 1 empty upload at start
         # - 1 extra upload from runtime % upload interval
         # - 1 extra upload after the final interval_sec driven uploads
         expect_manifest_uploads = (
-            (int(produce_duration) // self.params.manifest_upload_interval) +
-            3)
-        self.logger.info(f"Manifests uploads: {stats['manifest_uploads']}, "
-                         f"Expected not less than: {expect_manifest_uploads}")
-        chk.check_expected_manifest_uploads(stats["manifest_uploads"],
-                                            produce_duration)
+            int(produce_duration) // self.params.manifest_upload_interval
+        ) + 3
+        self.logger.info(
+            f"Manifests uploads: {stats['manifest_uploads']}, "
+            f"Expected not less than: {expect_manifest_uploads}"
+        )
+        chk.check_expected_manifest_uploads(stats["manifest_uploads"], produce_duration)
 
         # Do all required checks with Redpanda active
         chk.conduct_checks()
@@ -447,26 +459,25 @@ class InfiniteRetentionTest(PreallocNodesTest):
 
     # Based on
     # https://github.com/redpanda-data/redpanda/pull/10498/commits
-    @cluster(num_nodes=6,
-             log_allow_list=RESTART_LOG_ALLOW_LIST +
-             FAILURE_INJECTION_LOG_ALLOW_LIST)
+    @cluster(
+        num_nodes=6,
+        log_allow_list=RESTART_LOG_ALLOW_LIST + FAILURE_INJECTION_LOG_ALLOW_LIST,
+    )
     @parametrize(batchtypes=[batchtype_archival_meta])
-    @parametrize(
-        batchtypes=[batchtype_raft_data, batchtype_raft_configuration])
-    def long_retention_with_spillover_and_failure_injection_test(
-            self, batchtypes):
+    @parametrize(batchtypes=[batchtype_raft_data, batchtype_raft_configuration])
+    def long_retention_with_spillover_and_failure_injection_test(self, batchtypes):
         """
         Test with faulire injections that focuses on metadata and raft
         failures
         """
         batch_types_list = [getattr(BatchType, s) for s in batchtypes]
-        self._iterative_retention_flow(failure_injection_enabled=True,
-                                       batchtypes=batch_types_list)
+        self._iterative_retention_flow(
+            failure_injection_enabled=True, batchtypes=batch_types_list
+        )
 
-    def _iterative_retention_flow(self,
-                                  failure_injection_enabled=False,
-                                  batchtypes=None,
-                                  rolling_restarts=False):
+    def _iterative_retention_flow(
+        self, failure_injection_enabled=False, batchtypes=None, rolling_restarts=False
+    ):
         """
         Main infinite retention test function.
         input:
@@ -521,40 +532,50 @@ class InfiniteRetentionTest(PreallocNodesTest):
                 # Set config for spillovers
                 _r = self.rpk.cluster_config_set(
                     "cloud_storage_spillover_manifest_max_segments",
-                    str(self.params.
-                        cloud_storage_spillover_manifest_max_segments))
+                    str(self.params.cloud_storage_spillover_manifest_max_segments),
+                )
                 self.logger.info(_r)
             else:
                 self.rpk.cluster_config_set(
-                    "cloud_storage_spillover_manifest_max_segments", "null")
+                    "cloud_storage_spillover_manifest_max_segments", "null"
+                )
             # Log current value
             _cs_spillover_mmax_seg = self.rpk.cluster_config_get(
-                'cloud_storage_spillover_manifest_max_segments')
+                "cloud_storage_spillover_manifest_max_segments"
+            )
             self.logger.info(
                 "Current value for 'cloud_storage_spillover_manifest_max_segments': "
-                f"{_cs_spillover_mmax_seg}")
+                f"{_cs_spillover_mmax_seg}"
+            )
 
         iteration_count = self.params.total_iterations
         iteration = 1
         # prepare for rolling restarts
         if rolling_restarts:
-            self.logger.info("Message count limit for rolling restarts: "
-                             f"{self.params.msg_limit_rolling_restart}")
+            self.logger.info(
+                "Message count limit for rolling restarts: "
+                f"{self.params.msg_limit_rolling_restart}"
+            )
 
         # Do additional configuration
-        self.rpk.alter_topic_config(self.topic, 'retention.local.target.bytes',
-                                    self.params.local_retention_bytes)
+        self.rpk.alter_topic_config(
+            self.topic,
+            "retention.local.target.bytes",
+            self.params.local_retention_bytes,
+        )
 
         if failure_injection_enabled:
             self.params = self.FINJECT_PARAMS
 
             finject_cfg = helpers._generate_failure_injection_config(
-                self.topic, self.params.partition_count, batchtypes=batchtypes)
+                self.topic, self.params.partition_count, batchtypes=batchtypes
+            )
             self.redpanda.set_up_failure_injection(
                 finject_cfg=finject_cfg,
                 enabled=True,
                 nodes=[self.redpanda.nodes[0]],
-                tolerate_crashes=True)
+                tolerate_crashes=True,
+            )
             RedpandaMonitor(self.test_context, self.redpanda).start()
 
         # Log important parameters
@@ -571,15 +592,16 @@ class InfiniteRetentionTest(PreallocNodesTest):
             "consume": {},
             "checks": {},
             "scrub": {},
-            "restart": {}
+            "restart": {},
         }
 
         # Announce scrub_exception
         scrub_exceptions = []
         # Do iterations of producing messages
         while iteration <= iteration_count:
-            self.logger.info(f"Starting iteration {iteration},"
-                             f"runtime {self.params.target_runtime}s")
+            self.logger.info(
+                f"Starting iteration {iteration},runtime {self.params.target_runtime}s"
+            )
             # Goal of the iteration is to have simultaneous produce and
             # consume. Since producing massages need less time, there
             # should be more consumers and they should be more 'greedy'
@@ -605,7 +627,8 @@ class InfiniteRetentionTest(PreallocNodesTest):
             producer.wait_for_acks(
                 self.params.msg_count_ack_on_start,
                 timeout_sec=self.params.producer_ack_timeout,
-                backoff_sec=10)
+                backoff_sec=10,
+            )
             producer.wait_for_offset_map()
             # start random_consumer
             # do not wait for it or control anything
@@ -617,21 +640,22 @@ class InfiniteRetentionTest(PreallocNodesTest):
                 # of producing. In most critical situation, restarts
                 # might take more than 90s and last messages
                 # will be processed by 2 nodes only
-                while producer.produce_status.acked < \
-                    self.params.msg_limit_rolling_restart:
+                while (
+                    producer.produce_status.acked
+                    < self.params.msg_limit_rolling_restart
+                ):
                     self.redpanda.rolling_restart_nodes(
                         self.redpanda.nodes,
                         start_timeout=self.params.node_start_timeout,
-                        stop_timeout=self.params.node_stop_timeout)
+                        stop_timeout=self.params.node_stop_timeout,
+                    )
                     self.logger.info("End rolling restart cycle")
                     # Have a delay to settle down
                     time.sleep(self.params.target_stress_delay * 2)
 
                 # waiting for cluster to be healthy
                 self.logger.info("Waiting for cluster to become healthy")
-                wait_until(self.redpanda.healthy,
-                           timeout_sec=180,
-                           backoff_sec=1)
+                wait_until(self.redpanda.healthy, timeout_sec=180, backoff_sec=1)
 
             # wait for all desired messages to be produced
             self.logger.info("Waiting for producer to finish")
@@ -672,12 +696,15 @@ class InfiniteRetentionTest(PreallocNodesTest):
 
                 if rolling_restarts:
                     # Do rolling restart
-                    while consumer.consumer_status.validator.total_reads < \
-                        self.params.msg_limit_rolling_restart:
+                    while (
+                        consumer.consumer_status.validator.total_reads
+                        < self.params.msg_limit_rolling_restart
+                    ):
                         self.redpanda.rolling_restart_nodes(
                             self.redpanda.nodes,
                             start_timeout=self.params.node_start_timeout,
-                            stop_timeout=self.params.node_stop_timeout)
+                            stop_timeout=self.params.node_stop_timeout,
+                        )
                         # Have a small delay to settle down
                         time.sleep(self.params.target_stress_delay * 2)
 
@@ -689,8 +716,9 @@ class InfiniteRetentionTest(PreallocNodesTest):
                 consumer.stop()
 
                 iteration_timings["consume"][iteration] = consume_duration
-                iteration_timings["consumed_messages"][iteration] = \
+                iteration_timings["consumed_messages"][iteration] = (
                     consumer.consumer_status.validator.total_reads
+                )
                 # Clean
                 # consumer.clean()
                 del consumer
@@ -700,34 +728,40 @@ class InfiniteRetentionTest(PreallocNodesTest):
             chk = InfiniteRetentionChecks(self.params)
             checks_start = time.time()
             # Calculate actual bitrate
-            actual_byte_rate = (self.params.write_bytes / produce_duration)
+            actual_byte_rate = self.params.write_bytes / produce_duration
             mbps = int(actual_byte_rate / (1024 * 1024))
-            self.logger.info(f"Produced {self.params.write_bytes} "
-                             f"in {produce_duration}s, {mbps}MiB/s")
+            self.logger.info(
+                f"Produced {self.params.write_bytes} "
+                f"in {produce_duration}s, {mbps}MiB/s"
+            )
             # Add it for checking
             chk.check_byte_rate_respected(
-                actual_byte_rate, var_label=f"i{iteration}_actual_byte_rate")
+                actual_byte_rate, var_label=f"i{iteration}_actual_byte_rate"
+            )
 
             # Conduct message checks
             self.logger.info(
-                f"Iteration {iteration}; calculating stats for all partitions")
-            stats = helpers._calculate_statistic(self.topics, self.rpk,
-                                                 self.redpanda)
+                f"Iteration {iteration}; calculating stats for all partitions"
+            )
+            stats = helpers._calculate_statistic(self.topics, self.rpk, self.redpanda)
             # Ensure that all messages made it to topic
-            self.logger.info(f"calculated hwm: {stats['hwm']}, "
-                             f"message count: {self.params.msg_count}")
+            self.logger.info(
+                f"calculated hwm: {stats['hwm']}, "
+                f"message count: {self.params.msg_count}"
+            )
 
             chk.check_iteration_message_count(stats["hwm"], iteration)
 
             self.logger.info(
                 f"Upload counts: {stats['manifest_uploads']} manifests, "
-                f"{stats['segment_uploads']} segments")
+                f"{stats['segment_uploads']} segments"
+            )
             chk.check_non_zero_value(
-                stats['manifest_uploads'],
-                value_label=f"i{iteration}_manifest_uploads")
+                stats["manifest_uploads"], value_label=f"i{iteration}_manifest_uploads"
+            )
             chk.check_non_zero_value(
-                stats['segment_uploads'],
-                value_label=f"i{iteration}_segment_uploads")
+                stats["segment_uploads"], value_label=f"i{iteration}_segment_uploads"
+            )
 
             checks_duration = time.time() - checks_start
             self.logger.info("Done collecting metrics")
@@ -744,15 +778,14 @@ class InfiniteRetentionTest(PreallocNodesTest):
             self.logger.info("Done object storage scrub")
 
             iteration_timings["produce"][iteration] = produce_duration
-            iteration_timings["high_watermark"][iteration] = stats['hwm']
-            iteration_timings["manifest_uploads"][iteration] = stats[
-                'manifest_uploads']
-            iteration_timings["segment_uploads"][iteration] = stats[
-                'segment_uploads']
+            iteration_timings["high_watermark"][iteration] = stats["hwm"]
+            iteration_timings["manifest_uploads"][iteration] = stats["manifest_uploads"]
+            iteration_timings["segment_uploads"][iteration] = stats["segment_uploads"]
             iteration_timings["checks"][iteration] = checks_duration
             iteration_timings["scrub"][iteration] = scrub_duration
             iteration_timings["sp_mn_uploads_total"][iteration] = stats[
-                "spillover_manifest_uploads_total"]
+                "spillover_manifest_uploads_total"
+            ]
 
             # No need to restart on last iteration
             if iteration != iteration_count:
@@ -763,19 +796,23 @@ class InfiniteRetentionTest(PreallocNodesTest):
                 # self.redpanda.remove_local_data(random_node)
 
                 for node in self.redpanda.nodes:
-                    self.redpanda.restart_nodes([node],
-                                                start_timeout=180,
-                                                stop_timeout=180)
+                    self.redpanda.restart_nodes(
+                        [node], start_timeout=180, stop_timeout=180
+                    )
 
-                self.redpanda._admin.await_stable_leader("controller",
-                                                         partition=0,
-                                                         namespace='redpanda',
-                                                         timeout_s=120,
-                                                         backoff_s=10)
+                self.redpanda._admin.await_stable_leader(
+                    "controller",
+                    partition=0,
+                    namespace="redpanda",
+                    timeout_s=120,
+                    backoff_s=10,
+                )
 
-                wait_until(lambda: len(set(self.rpk.list_topics())) == 1,
-                           timeout_sec=120,
-                           backoff_sec=3)
+                wait_until(
+                    lambda: len(set(self.rpk.list_topics())) == 1,
+                    timeout_sec=120,
+                    backoff_sec=3,
+                )
 
                 restart_duration = time.time() - restart_start
                 self.logger.info("Done node restart")
@@ -803,8 +840,7 @@ class InfiniteRetentionTest(PreallocNodesTest):
         if chk.assert_results():
             self.logger.info(chk.get_summary_as_text())
         for exc in scrub_exceptions:
-            self.logger.info(
-                "Exception during running rp-storage-tool detected")
+            self.logger.info("Exception during running rp-storage-tool detected")
             self.logger.error(exc)
         if len(scrub_exceptions) > 0:
             raise Exception("Scrub exeptions happen")

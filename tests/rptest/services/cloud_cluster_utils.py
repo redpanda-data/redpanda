@@ -8,6 +8,7 @@ class FakePanda:
     """A mock for a RedpandaService-like class which we pass in to
     RpkTool which allows access to some methods on RpkTool which do
     not require access to a real redpanda instance."""
+
     def __init__(self, context, log):
         self._context = context
         self.logger = log
@@ -17,10 +18,18 @@ class FakePanda:
 
 
 class CloudClusterUtils:
-    def __init__(self, context: Any, logger: Any, infra_id: str,
-                 infra_secret: str, provider: str, cloud_url_origin: str,
-                 oauth_url_origin: str, oauth_audience: str,
-                 rpk_public_api_url: str) -> None:
+    def __init__(
+        self,
+        context: Any,
+        logger: Any,
+        infra_id: str,
+        infra_secret: str,
+        provider: str,
+        cloud_url_origin: str,
+        oauth_url_origin: str,
+        oauth_audience: str,
+        rpk_public_api_url: str,
+    ) -> None:
         """Initialize CloudClusterUtils.
 
         Args:
@@ -41,41 +50,41 @@ class CloudClusterUtils:
         self.logger = logger
         self.provider = provider.lower()
         self.env = {
-            'RPK_CLOUD_SKIP_VERSION_CHECK': 'True',
-            'RPK_CLOUD_URL': cloud_url_origin,
-            'RPK_CLOUD_AUTH_URL': oauth_url_origin,
-            'RPK_CLOUD_AUTH_AUDIENCE': oauth_audience,
-            'RPK_PUBLIC_API_URL': rpk_public_api_url,
-            'CLOUD_URL': f'{cloud_url_origin}/api/v1'
+            "RPK_CLOUD_SKIP_VERSION_CHECK": "True",
+            "RPK_CLOUD_URL": cloud_url_origin,
+            "RPK_CLOUD_AUTH_URL": oauth_url_origin,
+            "RPK_CLOUD_AUTH_AUDIENCE": oauth_audience,
+            "RPK_PUBLIC_API_URL": rpk_public_api_url,
+            "CLOUD_URL": f"{cloud_url_origin}/api/v1",
         }
-        if self.provider == 'aws':
-            self.env.update({
-                "AWS_ACCESS_KEY_ID": infra_id,
-                "AWS_SECRET_ACCESS_KEY": infra_secret
-            })
-        elif self.provider == 'gcp':
+        if self.provider == "aws":
+            self.env.update(
+                {"AWS_ACCESS_KEY_ID": infra_id, "AWS_SECRET_ACCESS_KEY": infra_secret}
+            )
+        elif self.provider == "gcp":
             self.gcp_project_id = self._get_gcp_project_id(infra_id)
             self.logger.info(f"Using GCP project '{self.gcp_project_id}'")
             self.env.update({"GOOGLE_APPLICATION_CREDENTIALS": infra_id})
-        elif self.provider == 'azure':
-            self.subscription_id = context.globals['azure_subscription_id']
-            self.logger.debug(
-                f"Using Azure subscription ID: {self.subscription_id}")
+        elif self.provider == "azure":
+            self.subscription_id = context.globals["azure_subscription_id"]
+            self.logger.debug(f"Using Azure subscription ID: {self.subscription_id}")
 
     def _get_gcp_project_id(self, keyfilepath):
         project_id = None
         try:
             with open(keyfilepath, "r") as kf:
                 _gcp_keyfile = json.load(kf)
-                project_id = _gcp_keyfile['project_id']
+                project_id = _gcp_keyfile["project_id"]
         except FileNotFoundError:
             # Just catch it and pass
             pass
         # Check if succeded
         if project_id is None:
-            self.logger.warning("# WARNING: GCP keyfile not found at "
-                                f"'{keyfilepath}'. Check keyfile path "
-                                "in globals.json")
+            self.logger.warning(
+                "# WARNING: GCP keyfile not found at "
+                f"'{keyfilepath}'. Check keyfile path "
+                "in globals.json"
+            )
             # Hardcoded project as a last resort
             project_id = "devprod-cicd-infra"
         return project_id
@@ -85,17 +94,17 @@ class CloudClusterUtils:
         Parses 'rpk plugin list' output
         """
         # 'NAME  PATH                                  SHADOWS\nbyoc  /home/ubuntu/.local/bin/.rpk.ac-byoc  \n'
-        _lines = plist.split('\n')
+        _lines = plist.split("\n")
         _headers = []
         _plugins = []
         for _line in _lines:
             # cleanup repeated spaces
-            _l = ' '.join(_line.split())
+            _l = " ".join(_line.split())
             # Get nice list
             _fields = _l.lower().split()
             if not _fields:
                 continue
-            elif _fields[0] == 'name':
+            elif _fields[0] == "name":
                 _headers = _l.lower().split()
             elif not _headers:
                 self.logger.warning(f"Error parsing rpk plugin list: {plist}")
@@ -129,8 +138,11 @@ class CloudClusterUtils:
         self.logger.debug(f"...[{client_id}] Logging in to cloud cluster")
         cmd = self._get_rpk_cloud_cmd()
         cmd += [
-            "login", "--save", f"--client-id={client_id}",
-            f"--client-secret={client_secret}", "--no-profile"
+            "login",
+            "--save",
+            f"--client-id={client_id}",
+            f"--client-secret={client_secret}",
+            "--no-profile",
         ]
         out = self._exec(cmd)
         # TODO: Handle errors
@@ -150,12 +162,13 @@ class CloudClusterUtils:
         cmd = self._get_rpk_cloud_cmd()
         cmd += ["byoc", self.provider, "apply", f"--redpanda-id={cluster_id}"]
         match self.provider:
-            case 'gcp':
+            case "gcp":
                 cmd += [f"--project-id={self.gcp_project_id}"]
-            case 'azure':
+            case "azure":
                 cmd += [
                     f"--subscription-id={self.subscription_id}",
-                    "--identity=cli", "--credential-source=cli"
+                    "--identity=cli",
+                    "--credential-source=cli",
                 ]
         out = self._exec(cmd, timeout=1800)
         # TODO: Handle errors
@@ -166,11 +179,11 @@ class CloudClusterUtils:
         _plist = self.rpk.plugin_list()
         # parse plugin list
         _plist = self._parse_plugin_list(_plist)
-        _installed = [p['name'] == plugin_name for p in _plist]
+        _installed = [p["name"] == plugin_name for p in _plist]
         if any(_installed):
             # uninstall if plugin present. Use sudo just in case
             cmd = [] if not sudo else ["sudo"]
-            cmd += [self.rpk._rpk_binary(), 'plugin', 'uninstall', plugin_name]
+            cmd += [self.rpk._rpk_binary(), "plugin", "uninstall", plugin_name]
             out = self._exec(cmd)
             if out.startswith("unable to remove"):
                 return False
@@ -182,10 +195,8 @@ class CloudClusterUtils:
     def rpk_cloud_agent_delete(self, cluster_id):
         self.logger.debug(f"...[{cluster_id}] destroying cluster agent")
         cmd = self._get_rpk_cloud_cmd()
-        cmd += [
-            "byoc", self.provider, "destroy", f"--redpanda-id={cluster_id}"
-        ]
-        if self.provider == 'gcp':
+        cmd += ["byoc", self.provider, "destroy", f"--redpanda-id={cluster_id}"]
+        if self.provider == "gcp":
             cmd += ["--project-id=" + self.gcp_project_id]
         out = self._exec(cmd, timeout=1800)
         # TODO: Handle errors

@@ -10,7 +10,12 @@
 from abc import abstractmethod
 from typing import Protocol, Optional, ClassVar, Any
 
-from rptest.services.redpanda_installer import RedpandaInstaller, RedpandaVersion, RedpandaVersionLine, RedpandaVersionTriple
+from rptest.services.redpanda_installer import (
+    RedpandaInstaller,
+    RedpandaVersion,
+    RedpandaVersionLine,
+    RedpandaVersionTriple,
+)
 from rptest.tests.redpanda_test import RedpandaTest
 
 
@@ -26,7 +31,8 @@ class PWorkload(Protocol):
         return self.__class__.__name__
 
     def get_earliest_applicable_release(
-            self) -> Optional[RedpandaVersionLine | RedpandaVersionTriple]:
+        self,
+    ) -> Optional[RedpandaVersionLine | RedpandaVersionTriple]:
         """
         returns the earliest release that this Workload can operate on.
         None -> use the oldest available release
@@ -53,10 +59,11 @@ class PWorkload(Protocol):
         return
 
     def on_partial_cluster_upgrade(
-            self, versions: dict[Any, RedpandaVersionTriple]) -> int:
+        self, versions: dict[Any, RedpandaVersionTriple]
+    ) -> int:
         """
         This method is called while upgrading a cluster, in a mixed state where some of the nodes will have the new version and some the old one.
-        versions is a dictionary of redpanda node->version 
+        versions is a dictionary of redpanda node->version
         """
         return PWorkload.DONE
 

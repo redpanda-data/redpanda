@@ -13,13 +13,25 @@ from typing import Any, Callable, Mapping, Sequence, cast
 
 from ducktape.tests.test import Test, TestContext
 from ducktape.utils.util import wait_until
-from rptest.services.redpanda import RedpandaService, RedpandaServiceCloud, SISettings, make_redpanda_mixed_service, make_redpanda_service, CloudStorageType
+from rptest.services.redpanda import (
+    RedpandaService,
+    RedpandaServiceCloud,
+    SISettings,
+    make_redpanda_mixed_service,
+    make_redpanda_service,
+    CloudStorageType,
+)
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.util import Scale
 from rptest.utils import mode_checks
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda_installer import RedpandaInstaller, RedpandaVersion, RedpandaVersionLine, RedpandaVersionTriple
+from rptest.services.redpanda_installer import (
+    RedpandaInstaller,
+    RedpandaVersion,
+    RedpandaVersionLine,
+    RedpandaVersionTriple,
+)
 from rptest.clients.rpk import RpkTool
 
 
@@ -67,7 +79,7 @@ class RedpandaTestBase(ABC, Test):
         Useful for tests that want to dynamically degrade/disable on low-resource
         developer environments (e.g. laptops) but apply stricter checks in CI.
         """
-        return os.environ.get('CI', None) != 'false'
+        return os.environ.get("CI", None) != "false"
 
     def _create_initial_topics(self):
         client = KafkaCliTools(self.__redpanda)
@@ -79,30 +91,35 @@ class RedpandaTestBase(ABC, Test):
     # class generic on the type of service
     @property
     def __redpanda(self) -> RedpandaService | RedpandaServiceCloud:
-        return getattr(self, 'redpanda')
+        return getattr(self, "redpanda")
 
 
 class RedpandaTest(RedpandaTestBase):
     """
     Base class for tests that use the Redpanda service.
     """
-    def __init__(self,
-                 test_context: TestContext,
-                 num_brokers: int | None = None,
-                 extra_rp_conf: dict[str, Any] | None = None,
-                 si_settings: SISettings | None = None,
-                 **kwargs: Any):
+
+    def __init__(
+        self,
+        test_context: TestContext,
+        num_brokers: int | None = None,
+        extra_rp_conf: dict[str, Any] | None = None,
+        si_settings: SISettings | None = None,
+        **kwargs: Any,
+    ):
         """
         Any trailing keyword arguments are passed through to the
         RedpandaService constructor.
         """
         super().__init__(test_context)
 
-        self.redpanda = make_redpanda_service(test_context,
-                                              num_brokers,
-                                              extra_rp_conf=extra_rp_conf,
-                                              si_settings=si_settings,
-                                              **kwargs)
+        self.redpanda = make_redpanda_service(
+            test_context,
+            num_brokers,
+            extra_rp_conf=extra_rp_conf,
+            si_settings=si_settings,
+            **kwargs,
+        )
         self._client = DefaultClient(self.redpanda)
 
     def early_exit_hook(self):
@@ -161,8 +178,7 @@ class RedpandaTest(RedpandaTestBase):
 
             # Protect against infinite loop if something is wrong with our version finding
             if k > 100:
-                raise RuntimeError(
-                    f"Failed to hit expected oldest version, v={v}")
+                raise RuntimeError(f"Failed to hit expected oldest version, v={v}")
 
         return versions
 
@@ -171,8 +187,10 @@ class RedpandaTest(RedpandaTestBase):
         versions_in: Sequence[RedpandaVersion],
         already_running: bool = False,
         auto_assign_node_id: bool = False,
-        mid_upgrade_check: Callable[[Mapping[Any, RedpandaVersion]],
-                                    None] = lambda x: None):
+        mid_upgrade_check: Callable[
+            [Mapping[Any, RedpandaVersion]], None
+        ] = lambda x: None,
+    ):
         """
         Step the cluster through all the versions in `versions`, at each stage
         yielding the version of the cluster.
@@ -180,8 +198,10 @@ class RedpandaTest(RedpandaTestBase):
 
         # replace all the instances of RedpandaInstaller.HEAD with the head_version
         versions: list[RedpandaVersionTriple | RedpandaVersionLine] = [
-            v if v != RedpandaInstaller.HEAD else
-            self.redpanda._installer.head_version() for v in versions_in
+            v
+            if v != RedpandaInstaller.HEAD
+            else self.redpanda._installer.head_version()
+            for v in versions_in
         ]
 
         def install_next():
@@ -198,10 +218,9 @@ class RedpandaTest(RedpandaTestBase):
             for node in self.redpanda.nodes:
                 features = self.redpanda._admin.get_features(node=node)
 
-                if 'node_latest_version' in features:
+                if "node_latest_version" in features:
                     # Only Redpanda >= v23.2 has this field
-                    if features['cluster_version'] != features[
-                            'node_latest_version']:
+                    if features["cluster_version"] != features["node_latest_version"]:
                         # The cluster logical version has not yet updated
                         return False
                     else:
@@ -212,15 +231,14 @@ class RedpandaTest(RedpandaTestBase):
                 else:
                     # Older feature API just tells us the cluster version, we compare
                     # it to the logical version pre-upgrade
-                    if features['cluster_version'] <= old_logical_version:
+                    if features["cluster_version"] <= old_logical_version:
                         return False
                     else:
                         self.logger.debug(
                             f"Accepting node {node.name} active version {features['cluster_version']}, it is > {old_logical_version}"
                         )
 
-                if any(f['state'] == 'preparing'
-                       for f in features['features']):
+                if any(f["state"] == "preparing" for f in features["features"]):
                     # One or more features is still in preparing state.
                     return False
 
@@ -237,13 +255,14 @@ class RedpandaTest(RedpandaTestBase):
                         return False
                 return True
 
-            self.redpanda.wait_until(_consumer_offsets_present,
-                                     timeout_sec=90,
-                                     backoff_sec=3)
+            self.redpanda.wait_until(
+                _consumer_offsets_present, timeout_sec=90, backoff_sec=3
+            )
 
         if already_running:
-            old_logical_version:int =  \
-                self.redpanda._admin.get_features()['cluster_version']
+            old_logical_version: int = self.redpanda._admin.get_features()[
+                "cluster_version"
+            ]
         else:
             old_logical_version = -1
 
@@ -255,8 +274,7 @@ class RedpandaTest(RedpandaTestBase):
             RedpandaTest.setUp(self)
             yield current_version
         else:
-            old_version = self.redpanda.get_version_int_tuple(
-                self.redpanda.nodes[0])
+            old_version = self.redpanda.get_version_int_tuple(self.redpanda.nodes[0])
 
         # Install subsequent versions
         while len(versions) != 0:
@@ -270,29 +288,32 @@ class RedpandaTest(RedpandaTestBase):
 
             # restarts the nodes in two batches, to run mid_upgrade_check with a mixed-version cluster
             rp_nodes: list[Any] = self.redpanda.nodes
-            canary_nodes, rest_nodes = \
-                    rp_nodes[0:len(rp_nodes) //  2], rp_nodes[len(rp_nodes) // 2:]
+            canary_nodes, rest_nodes = (
+                rp_nodes[0 : len(rp_nodes) // 2],
+                rp_nodes[len(rp_nodes) // 2 :],
+            )
             self.redpanda.rolling_restart_nodes(
                 canary_nodes,
                 start_timeout=90,
                 stop_timeout=90,
                 use_maintenance_mode=use_maintenance_mode,
-                auto_assign_node_id=auto_assign_node_id)
-            mid_upgrade_check({n: current_version
-                               for n in canary_nodes}
-                              | {n: old_version
-                                 for n in rest_nodes})
+                auto_assign_node_id=auto_assign_node_id,
+            )
+            mid_upgrade_check(
+                {n: current_version for n in canary_nodes}
+                | {n: old_version for n in rest_nodes}
+            )
             self.redpanda.rolling_restart_nodes(
                 rest_nodes,
                 start_timeout=90,
                 stop_timeout=90,
                 use_maintenance_mode=use_maintenance_mode,
-                auto_assign_node_id=auto_assign_node_id)
+                auto_assign_node_id=auto_assign_node_id,
+            )
 
             if current_version[0:2] == (22, 1):
                 # Special case: the version in which we adopted the __consumer_offsets topic
-                self.logger.info(
-                    "Upgraded to 22.1.x, waiting for consumer_offsets...")
+                self.logger.info("Upgraded to 22.1.x, waiting for consumer_offsets...")
                 await_consumer_offsets()
 
             if current_version[0:2] > old_version[0:2]:
@@ -303,13 +324,13 @@ class RedpandaTest(RedpandaTestBase):
                 self.redpanda.wait_until(
                     lambda: logical_version_stable(old_logical_version),
                     timeout_sec=30,
-                    backoff_sec=1)
+                    backoff_sec=1,
+                )
 
             old_version = current_version
 
             # For use next time around the loop
-            old_logical_version = self.redpanda._admin.get_features(
-            )['cluster_version']
+            old_logical_version = self.redpanda._admin.get_features()["cluster_version"]
 
             # We are fully upgraded, yield to whatever the test wants to do in this version
             yield current_version
@@ -320,10 +341,8 @@ class RedpandaMixedTest(RedpandaTestBase):
     Base class for tests which can run either against vanilla infrastructure or
     against the cloud.
     """
-    def __init__(self,
-                 test_context: TestContext,
-                 *,
-                 min_brokers: int | None = None):
+
+    def __init__(self, test_context: TestContext, *, min_brokers: int | None = None):
         """
         :param min_brokers: the minimum number of brokers the test requires. The
         test must be OK with more brokers than the given number (which will occur
@@ -332,34 +351,37 @@ class RedpandaMixedTest(RedpandaTestBase):
         are created (there will always be at least 1!).
         """
         super().__init__(test_context=test_context)
-        self.redpanda = make_redpanda_mixed_service(test_context,
-                                                    min_brokers=min_brokers)
+        self.redpanda = make_redpanda_mixed_service(
+            test_context, min_brokers=min_brokers
+        )
 
         self._client = DefaultClient(self.redpanda)
 
     def setup(self):
         super().setup()
-        if (cloud := self.as_cloud()):
-            wait_until(lambda: cloud.cluster_healthy(),
-                       timeout_sec=20,
-                       backoff_sec=5,
-                       err_msg='cluster unhealthy before start of test')
+        if cloud := self.as_cloud():
+            wait_until(
+                lambda: cloud.cluster_healthy(),
+                timeout_sec=20,
+                backoff_sec=5,
+                err_msg="cluster unhealthy before start of test",
+            )
 
     def as_cloud(self):
         """A convenience method which returns self.redpanda if it is a RedpandaServiceCloud
         or None otherwise."""
-        return self.redpanda if isinstance(self.redpanda,
-                                           RedpandaServiceCloud) else None
+        return (
+            self.redpanda if isinstance(self.redpanda, RedpandaServiceCloud) else None
+        )
 
     def as_noncloud(self):
         """A convenience method which returns self.redpanda if it is a RedpandaService
         or None otherwise."""
-        return self.redpanda if isinstance(self.redpanda,
-                                           RedpandaService) else None
+        return self.redpanda if isinstance(self.redpanda, RedpandaService) else None
 
     def client(self):
         return self._client
 
     def tearDown(self):
-        if (cloud := self.as_cloud()):
+        if cloud := self.as_cloud():
             cloud.clean_cluster()

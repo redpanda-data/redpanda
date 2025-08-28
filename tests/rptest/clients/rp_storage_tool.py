@@ -18,12 +18,11 @@ class RpStorageTool:
 
     def _decode(self, binary_data, command):
         # Decode to JSON using external tool
-        with tempfile.NamedTemporaryFile(mode='wb') as tmp:
+        with tempfile.NamedTemporaryFile(mode="wb") as tmp:
             tmp.write(binary_data)
             tmp.flush()
             cmd = ["rp-storage-tool", command, f"--path={tmp.name}"]
-            self.logger.debug(
-                f"Decoding {len(binary_data)} byte binary: {cmd}")
+            self.logger.debug(f"Decoding {len(binary_data)} byte binary: {cmd}")
             p = subprocess.run(cmd, capture_output=True)
             if p.returncode != 0:
                 self.logger.error(p.stderr)
@@ -34,8 +33,7 @@ class RpStorageTool:
                 try:
                     return json.loads(json_bytes)
                 except Exception as e:
-                    self.logger.error(
-                        f"Error loading JSON decoded with {command}: {e}")
+                    self.logger.error(f"Error loading JSON decoded with {command}: {e}")
                     self.logger.error(f"Decoded json: {json_bytes}")
                     raise
 
