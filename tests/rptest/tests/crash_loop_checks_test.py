@@ -22,14 +22,14 @@ class CrashLoopChecksTest(RedpandaTest):
 
     CRASH_LOOP_LOG = [
         "Crash loop detected. Too many consecutive crashes.*",
-        ".*Failure during startup: std::runtime_error \(Crash loop detected, aborting startup.\).*"
+        ".*Failure during startup: std::runtime_error \(Crash loop detected, aborting startup.\).*",
     ]
 
     # main - application.cc:348 - Failure during startup: std::__1::system_error (error C-Ares:4, unreachable_host.com: Not found)
     # main - application.cc:363 - Failure during startup: std::__1::system_error (error C-Ares:11, unreachable_host.com: Connection refused)
     HOSTNAME_ERRORS = [
         ".*Failure during startup: std::__1::system_error \(error C-Ares:4, unreachable_host.com: Not found\)",
-        ".*Failure during startup: std::__1::system_error \(error C-Ares:11, unreachable_host.com: Connection refused\)"
+        ".*Failure during startup: std::__1::system_error \(error C-Ares:11, unreachable_host.com: Connection refused\)",
     ]
 
     CRASH_LOOP_TRACKER_FILE = f"{RedpandaService.DATA_DIR}/startup_log"
@@ -40,14 +40,13 @@ class CrashLoopChecksTest(RedpandaTest):
             num_brokers=1,
             extra_node_conf={
                 "crash_loop_limit": CrashLoopChecksTest.CRASH_LOOP_LIMIT,
-                "developer_mode": False
+                "developer_mode": False,
             },
-            log_config=LoggingConfig('info', logger_levels={'main': 'debug'}),
+            log_config=LoggingConfig("info", logger_levels={"main": "debug"}),
         )
 
     def remove_crash_loop_tracker_file(self, broker):
-        broker.account.ssh(
-            f"rm -f {CrashLoopChecksTest.CRASH_LOOP_TRACKER_FILE}")
+        broker.account.ssh(f"rm -f {CrashLoopChecksTest.CRASH_LOOP_TRACKER_FILE}")
 
     def get_broker_to_crash_loop_state(self, broker):
         for _ in range(CrashLoopChecksTest.CRASH_LOOP_LIMIT):
@@ -77,22 +76,19 @@ class CrashLoopChecksTest(RedpandaTest):
         broker = self.redpanda.nodes[0]
         self.redpanda.signal_redpanda(broker)
 
-        invalid_conf = dict(
-            kafka_api=dict(address="unreachable_host.com", port=9092))
+        invalid_conf = dict(kafka_api=dict(address="unreachable_host.com", port=9092))
         for _ in range(CrashLoopChecksTest.CRASH_LOOP_LIMIT + 1):
-            self.redpanda.start_node(broker,
-                                     override_cfg_params=invalid_conf,
-                                     expect_fail=True)
+            self.redpanda.start_node(
+                broker, override_cfg_params=invalid_conf, expect_fail=True
+            )
         # None of the attempts so far should be considered a crash loop.
-        assert not self.redpanda.search_log_node(
-            broker, "Too many consecutive crashes")
+        assert not self.redpanda.search_log_node(broker, "Too many consecutive crashes")
 
         # Start again, crash loop should be detected.
-        self.redpanda.start_node(broker,
-                                 override_cfg_params=invalid_conf,
-                                 expect_fail=True)
-        assert self.redpanda.search_log_node(broker,
-                                             "Too many consecutive crashes")
+        self.redpanda.start_node(
+            broker, override_cfg_params=invalid_conf, expect_fail=True
+        )
+        assert self.redpanda.search_log_node(broker, "Too many consecutive crashes")
 
         # Fix the config and start, crash loop should be reset.
         self.redpanda.start_node(node=broker)
@@ -107,8 +103,7 @@ class CrashLoopChecksTest(RedpandaTest):
         # reset crash tracking explicitly
         admin = self.redpanda._admin
         admin.reset_crash_tracking(node=broker)
-        assert self.redpanda.search_log_node(
-            broker, "Deleted crash loop tracker file")
+        assert self.redpanda.search_log_node(broker, "Deleted crash loop tracker file")
         # stop + restart without recovery mode.
         self.redpanda.stop_node(broker)
         self.redpanda.start_node(broker)
@@ -125,9 +120,9 @@ class CrashLoopChecksTest(RedpandaTest):
             self.redpanda.start_node(broker)
         self.redpanda.signal_redpanda(node=broker)
 
-        # Expect the redpanda process to sleep for crash_loop_sleep_sec
+        # Expect the redpanda process to sleep for crash_loop_sleep_sec
         self.redpanda.start_node(node=broker, expect_fail=True)
-        assert self.redpanda.search_log_node(broker,
-                                             "Too many consecutive crashes")
+        assert self.redpanda.search_log_node(broker, "Too many consecutive crashes")
         assert self.redpanda.search_log_node(
-            broker, "Sleeping for 3 seconds before terminating...")
+            broker, "Sleeping for 3 seconds before terminating..."
+        )

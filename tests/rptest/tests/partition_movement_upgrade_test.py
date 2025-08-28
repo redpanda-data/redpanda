@@ -12,7 +12,10 @@ import threading
 from time import sleep
 import requests
 from rptest.clients.types import TopicSpec
-from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierConsumerGroupConsumer,
+    KgoVerifierProducer,
+)
 
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
@@ -24,10 +27,9 @@ from ducktape.utils.util import wait_until
 
 class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
     def __init__(self, test_context):
-        super(PartitionMovementUpgradeTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=5,
-                             node_prealloc_count=1)
+        super(PartitionMovementUpgradeTest, self).__init__(
+            test_context=test_context, num_brokers=5, node_prealloc_count=1
+        )
         self.installer = self.redpanda._installer
         self._message_size = 128
         self._message_cnt = 30000
@@ -35,9 +37,11 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
 
     def setUp(self):
         self.old_version = self.installer.highest_from_prior_feature_version(
-            RedpandaInstaller.HEAD)
+            RedpandaInstaller.HEAD
+        )
         _, self.old_version_str = self.installer.install(
-            self.redpanda.nodes, self.old_version)
+            self.redpanda.nodes, self.old_version
+        )
         super(PartitionMovementUpgradeTest, self).setUp()
 
     def _start_producer(self, topic_name):
@@ -47,15 +51,17 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
             topic_name,
             self._message_size,
             self._message_cnt,
-            custom_node=self.preallocated_nodes)
+            custom_node=self.preallocated_nodes,
+        )
         self.producer.start(clean=False)
 
-        wait_until(lambda: self.producer.produce_status.acked > 10,
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(
+            lambda: self.producer.produce_status.acked > 10,
+            timeout_sec=30,
+            backoff_sec=1,
+        )
 
     def _start_consumer(self, topic_name):
-
         self.consumer = KgoVerifierConsumerGroupConsumer(
             self.test_context,
             self.redpanda,
@@ -63,7 +69,8 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
             self._message_size,
             readers=5,
             nodes=self.preallocated_nodes,
-            debug_logs=True)
+            debug_logs=True,
+        )
         self.consumer.start(clean=False)
 
     def verify(self):
@@ -74,7 +81,10 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
                 f"verifying, producer acked: {self.producer.produce_status.acked}, "
                 f"consumer valid reads: {self.consumer.consumer_status.validator.valid_reads}"
             )
-            return self.consumer.consumer_status.validator.valid_reads >= self.producer.produce_status.acked
+            return (
+                self.consumer.consumer_status.validator.valid_reads
+                >= self.producer.produce_status.acked
+            )
 
         # wait for consumers to finish
         wait_until(finished_consuming, 90)
@@ -86,16 +96,16 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
             while not self._stop_move.is_set():
                 try:
                     topic, partition = self._random_partition(md)
-                    self.logger.info(
-                        f"selected partition: {topic}/{partition}")
+                    self.logger.info(f"selected partition: {topic}/{partition}")
                     self._do_move_and_verify(topic, partition, 360)
                     # connection errors are expected as we restart nodes for upgrade
                 except requests.exceptions.ConnectionError as e:
                     self.redpanda.logger.info(f"Error moving partition: {e}")
                     sleep(1)
 
-        self.move_worker = threading.Thread(name='partition-move-worker',
-                                            target=move_partitions)
+        self.move_worker = threading.Thread(
+            name="partition-move-worker", target=move_partitions
+        )
         self.move_worker.daemon = True
         self.move_worker.start()
 
@@ -108,11 +118,13 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
     #
     # This log entry may be logged by version up to v22.1.x
     unsupported_api_version_log_entry = re.compile(
-        "Error\[applying protocol\] .*Unsupported version \d+ for .*")
+        "Error\[applying protocol\] .*Unsupported version \d+ for .*"
+    )
 
-    @cluster(num_nodes=6,
-             log_allow_list=RESTART_LOG_ALLOW_LIST +
-             [unsupported_api_version_log_entry])
+    @cluster(
+        num_nodes=6,
+        log_allow_list=RESTART_LOG_ALLOW_LIST + [unsupported_api_version_log_entry],
+    )
     def test_basic_upgrade(self):
         topic = TopicSpec(partition_count=16, replication_factor=3)
         self.client().create_topic(topic)

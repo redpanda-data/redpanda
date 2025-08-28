@@ -32,39 +32,45 @@ class Credentials(abc.ABC):
     """
     Typed credentials for cloud storage.
     """
+
     @staticmethod
-    def from_context(test_context: TestContext) -> 'Credentials':
-        if not test_context.injected_args or ARG_CLOUD_STORAGE_TYPE_KEY not in test_context.injected_args:
+    def from_context(test_context: TestContext) -> "Credentials":
+        if (
+            not test_context.injected_args
+            or ARG_CLOUD_STORAGE_TYPE_KEY not in test_context.injected_args
+        ):
             raise ValueError(
                 f"Test must be parametrized with {ARG_CLOUD_STORAGE_TYPE_KEY} to use this method"
             )
 
         type = test_context.injected_args[ARG_CLOUD_STORAGE_TYPE_KEY]
-        source = test_context.globals.get(GLOBAL_CLOUD_STORAGE_CRED_SOURCE_KEY,
-                                          'config_file')
-        cloud_provider = test_context.globals.get(GLOBAL_CLOUD_PROVIDER, 'aws')
+        source = test_context.globals.get(
+            GLOBAL_CLOUD_STORAGE_CRED_SOURCE_KEY, "config_file"
+        )
+        cloud_provider = test_context.globals.get(GLOBAL_CLOUD_PROVIDER, "aws")
 
         if type == CloudStorageType.S3:
-            if source == 'config_file':
+            if source == "config_file":
                 return Credentials._s3_credentials(
                     cloud_provider=cloud_provider,
                     region=test_context.globals.get(GLOBAL_S3_REGION_KEY),
                     access_key=test_context.globals.get(GLOBAL_S3_ACCESS_KEY),
-                    secret_key=test_context.globals.get(GLOBAL_S3_SECRET_KEY))
-            elif source in ['aws_instance_metadata', 'gcp_instance_metadata']:
+                    secret_key=test_context.globals.get(GLOBAL_S3_SECRET_KEY),
+                )
+            elif source in ["aws_instance_metadata", "gcp_instance_metadata"]:
                 return Credentials._instance_metadata_credentials(
-                    cloud_provider=cloud_provider)
+                    cloud_provider=cloud_provider
+                )
             else:
                 raise ValueError(
                     f"Unsupported credential source: {source} for type: {type}"
                 )
         elif type == CloudStorageType.ABS:
-            if source == 'config_file':
+            if source == "config_file":
                 return Credentials._abs_credentials(
-                    account_name=test_context.globals.get(
-                        GLOBAL_ABS_STORAGE_ACCOUNT),
-                    account_key=test_context.globals.get(
-                        GLOBAL_ABS_SHARED_KEY))
+                    account_name=test_context.globals.get(GLOBAL_ABS_STORAGE_ACCOUNT),
+                    account_key=test_context.globals.get(GLOBAL_ABS_SHARED_KEY),
+                )
             else:
                 raise ValueError(
                     f"Unsupported credential source: {source} for type: {type}"
@@ -73,53 +79,66 @@ class Credentials(abc.ABC):
             raise ValueError(f"Unsupported cloud storage type: {type}")
 
     @staticmethod
-    def _s3_credentials(*, cloud_provider: str, region: Optional[str],
-                        access_key: Optional[str],
-                        secret_key: Optional['str']) -> 'Credentials':
+    def _s3_credentials(
+        *,
+        cloud_provider: str,
+        region: Optional[str],
+        access_key: Optional[str],
+        secret_key: Optional["str"],
+    ) -> "Credentials":
         if access_key or secret_key:
             # If we have at least one explicit credential, assume real
             # credentials are provided.
-            assert access_key and secret_key, "Both access_key and secret_key must be provided"
+            assert access_key and secret_key, (
+                "Both access_key and secret_key must be provided"
+            )
 
             # Adjust endpoint for GCP.
             endpoint = None
-            if cloud_provider == 'gcp':
+            if cloud_provider == "gcp":
                 endpoint = "https://storage.googleapis.com"
 
-            return S3Credentials(endpoint=endpoint,
-                                 region=region,
-                                 access_key=access_key,
-                                 secret_key=secret_key)
+            return S3Credentials(
+                endpoint=endpoint,
+                region=region,
+                access_key=access_key,
+                secret_key=secret_key,
+            )
         else:
             # Fallback to local minio.
-            return S3Credentials(endpoint="http://minio-s3:9000",
-                                 region="panda-region",
-                                 access_key="panda-user",
-                                 secret_key="panda-secret")
+            return S3Credentials(
+                endpoint="http://minio-s3:9000",
+                region="panda-region",
+                access_key="panda-user",
+                secret_key="panda-secret",
+            )
 
     @staticmethod
-    def _instance_metadata_credentials(*,
-                                       cloud_provider: str) -> 'Credentials':
-        if cloud_provider == 'aws':
+    def _instance_metadata_credentials(*, cloud_provider: str) -> "Credentials":
+        if cloud_provider == "aws":
             return AWSInstanceMetadataCredentials()
-        elif cloud_provider == 'gcp':
+        elif cloud_provider == "gcp":
             return GCPInstanceMetadataCredentials()
         else:
             raise ValueError(f"Unsupported cloud provider: {cloud_provider}")
 
     @staticmethod
-    def _abs_credentials(*, account_name: Optional[str],
-                         account_key: Optional[str]) -> 'Credentials':
+    def _abs_credentials(
+        *, account_name: Optional[str], account_key: Optional[str]
+    ) -> "Credentials":
         if account_name or account_key:
             # If we have at least one explicit credential, assume real
             # credentials are provided.
-            assert account_name and account_key, "Both account_name and account_key must be provided"
+            assert account_name and account_key, (
+                "Both account_name and account_key must be provided"
+            )
 
             return ABSSharedKeyCredentials(
                 # Hardcoded dfs (Data Lake Storage Gen2) endpoint.
                 endpoint=f"{account_name}.dfs.core.windows.net",
                 account_name=account_name,
-                account_key=account_key)
+                account_key=account_key,
+            )
         else:
             # Fallback to local azurite.
             # https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=visual-studio%2Cblob-storage#well-known-storage-account-and-key
@@ -131,15 +150,23 @@ class Credentials(abc.ABC):
                 # https://github.com/Azure/Azurite/issues/553
                 endpoint=f"{account_name}.blob.localhost",
                 account_name=account_name,
-                account_key=account_key)
+                account_key=account_key,
+            )
 
 
 class S3Credentials(Credentials):
     """
     Explicitly provided S3 credentials
     """
-    def __init__(self, *, endpoint: Optional[str], region: Optional[str],
-                 access_key: str, secret_key: str):
+
+    def __init__(
+        self,
+        *,
+        endpoint: Optional[str],
+        region: Optional[str],
+        access_key: str,
+        secret_key: str,
+    ):
         self.endpoint = endpoint
         self.region = region
         self.access_key = access_key
@@ -153,6 +180,7 @@ class AWSInstanceMetadataCredentials(Credentials):
     We defer to individual services to self-configure/fetch credentials.
     Usually done by SDKs.
     """
+
     def __init__(self):
         pass
 
@@ -164,6 +192,7 @@ class GCPInstanceMetadataCredentials(Credentials):
     We defer to individual services to self-configure/fetch credentials.
     Usually done by SDKs.
     """
+
     def __init__(self):
         pass
 

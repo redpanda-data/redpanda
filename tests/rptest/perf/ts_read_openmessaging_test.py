@@ -31,11 +31,12 @@ class TSReadOpenmessagingTest(RedpandaTest):
             cloud_storage_spillover_manifest_max_segments=10,
         )
         self._ctx = ctx
-        super(TSReadOpenmessagingTest,
-              self).__init__(test_context=ctx,
-                             num_brokers=3,
-                             si_settings=si_settings,
-                             extra_rp_conf=extra_rp_conf)
+        super(TSReadOpenmessagingTest, self).__init__(
+            test_context=ctx,
+            num_brokers=3,
+            si_settings=si_settings,
+            extra_rp_conf=extra_rp_conf,
+        )
 
     @cluster(num_nodes=6)
     @parametrize(driver_idx="ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT")
@@ -47,8 +48,9 @@ class TSReadOpenmessagingTest(RedpandaTest):
         assert self.redpanda.dedicated_nodes
 
         validator = {
-            OMBSampleConfigurations.AVG_THROUGHPUT_MBPS:
-            [OMBSampleConfigurations.gte(40)]
+            OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
+                OMBSampleConfigurations.gte(40)
+            ]
         }
 
         workload = {
@@ -66,12 +68,12 @@ class TSReadOpenmessagingTest(RedpandaTest):
             "warmup_duration_minutes": 2,
         }
 
-        benchmark = OpenMessagingBenchmark(self._ctx,
-                                           self.redpanda,
-                                           driver=driver_idx,
-                                           workload=(workload, validator))
+        benchmark = OpenMessagingBenchmark(
+            self._ctx, self.redpanda, driver=driver_idx, workload=(workload, validator)
+        )
         benchmark.start()
-        benchmark_time_min = benchmark.benchmark_time(
-        ) + TSReadOpenmessagingTest.BENCHMARK_WAIT_TIME_MIN
+        benchmark_time_min = (
+            benchmark.benchmark_time() + TSReadOpenmessagingTest.BENCHMARK_WAIT_TIME_MIN
+        )
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
         benchmark.check_succeed()

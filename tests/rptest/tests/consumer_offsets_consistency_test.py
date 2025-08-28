@@ -17,7 +17,10 @@ from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
-from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierConsumerGroupConsumer,
+    KgoVerifierProducer,
+)
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.end_to_end import EndToEndTest
@@ -34,12 +37,9 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
     def __init__(self, test_ctx, *args, **kwargs):
         self._ctx = test_ctx
 
-        super(ConsumerOffsetsConsistencyTest,
-              self).__init__(test_ctx,
-                             num_brokers=3,
-                             *args,
-                             node_prealloc_count=1,
-                             **kwargs)
+        super(ConsumerOffsetsConsistencyTest, self).__init__(
+            test_ctx, num_brokers=3, *args, node_prealloc_count=1, **kwargs
+        )
         self.rpk = RpkTool(self.redpanda)
 
     @property
@@ -58,7 +58,8 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
             timeout_sec=self.timeout_sec,
             backoff_sec=0.5,
             err_msg="RPK failed to get consumer group offsets",
-            retry_on_exc=True)
+            retry_on_exc=True,
+        )
 
         for p in gd.partitions:
             if p.current_offset is not None:
@@ -66,10 +67,9 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
         return offsets
 
     def get_group(self):
-
         # The one consumer group in this test comes from KgoVerifierConsumerGroupConsumer
         # for example, kgo-verifier-1691097745-347-0
-        kgo_group_re = re.compile(r'^kgo-verifier-[0-9]+-[0-9]+-0$')
+        kgo_group_re = re.compile(r"^kgo-verifier-[0-9]+-[0-9]+-0$")
 
         def do_list_groups():
             res = self.rpk.group_list_names()
@@ -86,7 +86,8 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
             timeout_sec=self.timeout_sec,
             backoff_sec=0.5,
             err_msg="RPK failed to list consumer groups",
-            retry_on_exc=True)
+            retry_on_exc=True,
+        )
 
         return group_list_res[0]
 
@@ -107,22 +108,25 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
         topic = TopicSpec(partition_count=64, replication_factor=3)
         self.client().create_topic([topic])
         # set new members join timeout to 5 seconds to make the test execution faster
-        self.redpanda.set_cluster_config(
-            {"group_new_member_join_timeout": 5000})
+        self.redpanda.set_cluster_config({"group_new_member_join_timeout": 5000})
 
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       topic.name,
-                                       self.msg_size,
-                                       self.msg_count,
-                                       custom_node=self.preallocated_nodes,
-                                       rate_limit_bps=self.producer_throughput)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            topic.name,
+            self.msg_size,
+            self.msg_count,
+            custom_node=self.preallocated_nodes,
+            rate_limit_bps=self.producer_throughput,
+        )
 
         producer.start(clean=False)
 
-        wait_until(lambda: producer.produce_status.acked > 10,
-                   timeout_sec=self.timeout_sec,
-                   backoff_sec=0.5)
+        wait_until(
+            lambda: producer.produce_status.acked > 10,
+            timeout_sec=self.timeout_sec,
+            backoff_sec=0.5,
+        )
 
         consumer = KgoVerifierConsumerGroupConsumer(
             self.test_context,
@@ -131,7 +135,8 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
             self.msg_size,
             readers=3,
             nodes=self.preallocated_nodes,
-            loop=True)
+            loop=True,
+        )
         consumer.start(clean=False)
 
         group_name = self.get_group()
@@ -149,12 +154,17 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
                 while not stop_ev.is_set():
                     node = random.choice(self.redpanda.started_nodes())
                     f_injector.inject_failure(
-                        FailureSpec(node=node,
-                                    type=random.choice([
-                                        FailureSpec.FAILURE_KILL,
-                                        FailureSpec.FAILURE_TERMINATE
-                                    ]),
-                                    length=0))
+                        FailureSpec(
+                            node=node,
+                            type=random.choice(
+                                [
+                                    FailureSpec.FAILURE_KILL,
+                                    FailureSpec.FAILURE_TERMINATE,
+                                ]
+                            ),
+                            length=0,
+                        )
+                    )
                     successes = 0
                     with lock:
                         successes = self.successes
@@ -168,9 +178,7 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
                         self.failure_cnt += 1
                         last_success = self.successes
 
-        self.thread = threading.Thread(target=lambda: fi_worker(),
-                                       args=(),
-                                       daemon=True)
+        self.thread = threading.Thread(target=lambda: fi_worker(), args=(), daemon=True)
         self.thread.start()
         self.last_success = time.time()
 
@@ -179,16 +187,14 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
                 try:
                     new_offsets = self.get_offsets(group_name)
                 except Exception as e:
-                    self.logger.info(
-                        f"unable to retrieve group description - {e}")
+                    self.logger.info(f"unable to retrieve group description - {e}")
                     continue
 
                 for p, committed_offset in new_offsets.items():
                     if committed_offset is None:
                         continue
                     if p in offsets:
-                        assert offsets[
-                            p] <= committed_offset, "Offsets moved backward"
+                        assert offsets[p] <= committed_offset, "Offsets moved backward"
 
                     offsets[p] = committed_offset
 
@@ -205,7 +211,9 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
                         break
                     timeout = 120
                     if time.time() - self.last_success > timeout:
-                        assert False, f"Unable to retrieve group description for {timeout} seconds"
+                        assert False, (
+                            f"Unable to retrieve group description for {timeout} seconds"
+                        )
         finally:
             self.logger.info("stopping injector")
             stop_ev.set()

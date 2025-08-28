@@ -14,17 +14,17 @@ import sys
 from copy import deepcopy
 from dataclasses import dataclass
 
-from pyflink.common import Types, Configuration, SimpleStringSchema, \
-    WatermarkStrategy
+from pyflink.common import Types, Configuration, SimpleStringSchema, WatermarkStrategy
 from pyflink.datastream import StreamExecutionEnvironment
-from pyflink.datastream.connectors.kafka import KafkaSource, \
-    KafkaOffsetsInitializer
+from pyflink.datastream.connectors.kafka import KafkaSource, KafkaOffsetsInitializer
 
 
 @dataclass(kw_only=True)
 class WorkloadConfig:
     # Default values are set for CDT run inside EC2 instance
-    connector_path: str = "file:///opt/flink/connectors/flink-sql-connector-kafka-3.0.1-1.18.jar"
+    connector_path: str = (
+        "file:///opt/flink/connectors/flink-sql-connector-kafka-3.0.1-1.18.jar"
+    )
     logger_path: str = "/workloads"
     log_level: str = "DEBUG"
     producer_group: str = "flink_group"
@@ -40,8 +40,8 @@ def setup_logger(logfilepath, level):
     # Simple file logger
     handler = logging.FileHandler(logfilepath)
     handler.setFormatter(
-        logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
     level = logging.getLevelName(level.upper())
     handler.setLevel(level)
     logger = logging.getLogger(__name__)
@@ -52,15 +52,16 @@ def setup_logger(logfilepath, level):
 
 class FlinkWorkloadConsume:
     """
-        Simple Consume workload
-        Goal is to consume all messages from target topic
+    Simple Consume workload
+    Goal is to consume all messages from target topic
 
-        This workload requires apache-flink to be available as a python system
-        wide dependency and not properly working without it.
+    This workload requires apache-flink to be available as a python system
+    wide dependency and not properly working without it.
 
-        Also, there is an additional work required to stop Consumer
-        when messages exhausted
+    Also, there is an additional work required to stop Consumer
+    when messages exhausted
     """
+
     def __init__(self, config_override):
         # Serialize config
         self.config = WorkloadConfig(**config_override)
@@ -83,7 +84,7 @@ class FlinkWorkloadConsume:
         self.env.add_jars(self.config.connector_path)
         # Brokers
         self._basic_properties = {
-            'bootstrap.servers': self.config.brokers,
+            "bootstrap.servers": self.config.brokers,
         }
         self.logger.info(f"Brokers set to '{self.config.brokers}'")
         self.type_info = Types.ROW([Types.STRING()])
@@ -92,34 +93,37 @@ class FlinkWorkloadConsume:
 
     def run(self):
         """
-            Example consume task
+        Example consume task
 
-            Steps:
-            - create deserializer and configured properties
-            - create consumer
-            - set offset to earliest
-            - assign source and add callback class
-            - execute
+        Steps:
+        - create deserializer and configured properties
+        - create consumer
+        - set offset to earliest
+        - assign source and add callback class
+        - execute
         """
         # Consumer creation
         properties = deepcopy(self._basic_properties)
-        properties['group.id'] = self.config.consumer_group
+        properties["group.id"] = self.config.consumer_group
 
-        self.logger.info("Creating consumer with target topic of "
-                         f"'{self.config.topic_name}'")
+        self.logger.info(
+            f"Creating consumer with target topic of '{self.config.topic_name}'"
+        )
         # Create my consumer
-        source = KafkaSource \
-            .builder() \
-            .set_bootstrap_servers(self.config.brokers) \
-            .set_group_id(self.config.producer_group) \
-            .set_topics(self.config.topic_name) \
-            .set_value_only_deserializer(SimpleStringSchema()) \
-            .set_starting_offsets(KafkaOffsetsInitializer.earliest()) \
-            .set_bounded(KafkaOffsetsInitializer.latest()) \
+        source = (
+            KafkaSource.builder()
+            .set_bootstrap_servers(self.config.brokers)
+            .set_group_id(self.config.producer_group)
+            .set_topics(self.config.topic_name)
+            .set_value_only_deserializer(SimpleStringSchema())
+            .set_starting_offsets(KafkaOffsetsInitializer.earliest())
+            .set_bounded(KafkaOffsetsInitializer.latest())
             .build()
+        )
 
-        ds = self.env.from_source(source, WatermarkStrategy.no_watermarks(),
-                                  "Kafka Source")
+        ds = self.env.from_source(
+            source, WatermarkStrategy.no_watermarks(), "Kafka Source"
+        )
         # Just print received message
         ds.print()
 
@@ -133,7 +137,7 @@ class FlinkWorkloadConsume:
         pass
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Load config if specified
     if len(sys.argv) > 1:
         # Validate arguments in a quick and dirty way.
@@ -142,15 +146,17 @@ if __name__ == '__main__':
         try:
             [filename] = sys.argv[1:]
         except Exception as e:
-            raise RuntimeError("Wrong number of arguments."
-                               "Should be one with path to "
-                               "flink_workload_conf.json") from e
+            raise RuntimeError(
+                "Wrong number of arguments."
+                "Should be one with path to "
+                "flink_workload_conf.json"
+            ) from e
     else:
         # No config path provided, just use defaults
         filename = "/workloads/flink_workload_config.json"
 
     # Load configuration
-    with open(filename, 'r+t') as f:
+    with open(filename, "r+t") as f:
         input_config = json.load(f)
 
     # All messages past this point is intercepted by task manager

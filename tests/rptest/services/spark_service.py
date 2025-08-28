@@ -41,77 +41,63 @@ class SparkService(Service, QueryEngineBase):
             env["AWS_ACCESS_KEY_ID"] = self.credentials.access_key
             env["AWS_SECRET_ACCESS_KEY"] = self.credentials.secret_key
             env["AWS_REGION"] = self.credentials.region
-        elif isinstance(self.credentials,
-                        cloud_storage.AWSInstanceMetadataCredentials):
+        elif isinstance(self.credentials, cloud_storage.AWSInstanceMetadataCredentials):
             pass
-        elif isinstance(self.credentials,
-                        cloud_storage.GCPInstanceMetadataCredentials):
+        elif isinstance(self.credentials, cloud_storage.GCPInstanceMetadataCredentials):
             pass
-        elif isinstance(self.credentials,
-                        cloud_storage.ABSSharedKeyCredentials):
+        elif isinstance(self.credentials, cloud_storage.ABSSharedKeyCredentials):
             pass
         else:
-            raise ValueError(
-                f"Unsupported cloud storage type {type(self.credentials)}")
+            raise ValueError(f"Unsupported cloud storage type {type(self.credentials)}")
 
         return " ".join([f"{k}={v}" for k, v in env.items()])
 
     def start_cmd(self):
         conf_args: dict[str, Optional[str | bool]] = {
-            "spark.sql.extensions":
-            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
-            "spark.sql.defaultCatalog":
-            "redpanda-iceberg-catalog",
-            "spark.sql.catalog.redpanda-iceberg-catalog":
-            "org.apache.iceberg.spark.SparkCatalog",
-            "spark.sql.catalog.redpanda-iceberg-catalog.type":
-            "rest",
-            "spark.sql.catalog.redpanda-iceberg-catalog.cache-enabled":
-            False,
-            "spark.sql.catalog.redpanda-iceberg-catalog.uri":
-            self.iceberg_catalog_rest_uri,
+            "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+            "spark.sql.defaultCatalog": "redpanda-iceberg-catalog",
+            "spark.sql.catalog.redpanda-iceberg-catalog": "org.apache.iceberg.spark.SparkCatalog",
+            "spark.sql.catalog.redpanda-iceberg-catalog.type": "rest",
+            "spark.sql.catalog.redpanda-iceberg-catalog.cache-enabled": False,
+            "spark.sql.catalog.redpanda-iceberg-catalog.uri": self.iceberg_catalog_rest_uri,
         }
 
         if isinstance(self.credentials, cloud_storage.S3Credentials):
-            conf_args.update({
-                "spark.sql.catalog.redpanda-iceberg-catalog.io-impl":
-                "org.apache.iceberg.aws.s3.S3FileIO",
-                "spark.sql.catalog.redpanda-iceberg-catalog.s3.endpoint":
-                self.credentials.endpoint,
-            })
-        elif isinstance(self.credentials,
-                        cloud_storage.AWSInstanceMetadataCredentials):
-            conf_args.update({
-                "spark.sql.catalog.redpanda-iceberg-catalog.io-impl":
-                "org.apache.iceberg.aws.s3.S3FileIO",
-            })
-        elif isinstance(self.credentials,
-                        cloud_storage.GCPInstanceMetadataCredentials):
-            conf_args.update({
-                "spark.sql.catalog.redpanda-iceberg-catalog.io-impl":
-                "org.apache.iceberg.gcp.gcs.GCSFileIO",
-            })
-        elif isinstance(self.credentials,
-                        cloud_storage.ABSSharedKeyCredentials):
-            conf_args.update({
-                "spark.sql.catalog.redpanda-iceberg-catalog.io-impl":
-                "org.apache.iceberg.azure.adlsv2.ADLSFileIO",
-                "spark.sql.catalog.redpanda-iceberg-catalog.adls.auth.shared-key.account.name":
-                self.credentials.account_name,
-                "spark.sql.catalog.redpanda-iceberg-catalog.adls.auth.shared-key.account.key":
-                self.credentials.account_key,
-            })
+            conf_args.update(
+                {
+                    "spark.sql.catalog.redpanda-iceberg-catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
+                    "spark.sql.catalog.redpanda-iceberg-catalog.s3.endpoint": self.credentials.endpoint,
+                }
+            )
+        elif isinstance(self.credentials, cloud_storage.AWSInstanceMetadataCredentials):
+            conf_args.update(
+                {
+                    "spark.sql.catalog.redpanda-iceberg-catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
+                }
+            )
+        elif isinstance(self.credentials, cloud_storage.GCPInstanceMetadataCredentials):
+            conf_args.update(
+                {
+                    "spark.sql.catalog.redpanda-iceberg-catalog.io-impl": "org.apache.iceberg.gcp.gcs.GCSFileIO",
+                }
+            )
+        elif isinstance(self.credentials, cloud_storage.ABSSharedKeyCredentials):
+            conf_args.update(
+                {
+                    "spark.sql.catalog.redpanda-iceberg-catalog.io-impl": "org.apache.iceberg.azure.adlsv2.ADLSFileIO",
+                    "spark.sql.catalog.redpanda-iceberg-catalog.adls.auth.shared-key.account.name": self.credentials.account_name,
+                    "spark.sql.catalog.redpanda-iceberg-catalog.adls.auth.shared-key.account.key": self.credentials.account_key,
+                }
+            )
         else:
-            raise ValueError(
-                f"Unsupported cloud storage type {type(self.credentials)}")
+            raise ValueError(f"Unsupported cloud storage type {type(self.credentials)}")
 
         env = self.make_env()
         return f"{env} {SparkService.SPARK_SERVER_EXEC} {SparkService.dict_to_conf_args(conf_args)}"
 
     def start_node(self, node, timeout_sec=120, **kwargs):
         start_cmd = self.start_cmd()
-        self.logger.info(
-            f"Starting Spark SQL server with command: {start_cmd}")
+        self.logger.info(f"Starting Spark SQL server with command: {start_cmd}")
         node.account.ssh(start_cmd, allow_fail=False)
         self.spark_host = node.account.hostname
         self.wait(timeout_sec=timeout_sec)
@@ -122,21 +108,23 @@ class SparkService(Service, QueryEngineBase):
                 self.run_query_fetch_all("show databases")
                 return True
             except Exception as e:
-                self.logger.debug(f"Exception querying spark server",
-                                  exc_info=True)
+                self.logger.debug(f"Exception querying spark server", exc_info=True)
             return False
 
-        wait_until(_ready,
-                   timeout_sec=timeout_sec,
-                   backoff_sec=1,
-                   err_msg="Error waiting for Spark SQL server to start",
-                   retry_on_exc=True)
+        wait_until(
+            _ready,
+            timeout_sec=timeout_sec,
+            backoff_sec=1,
+            err_msg="Error waiting for Spark SQL server to start",
+            retry_on_exc=True,
+        )
         return True
 
     def stop_node(self, node, allow_fail=False, **_):
         node.account.ssh(
             f"SPARK_IDENT_STRING=$(id -nu) {SparkService.SPARK_HOME}/sbin/stop-thriftserver.sh",
-            allow_fail=True)
+            allow_fail=True,
+        )
 
     def clean_node(self, node, **_):
         self.stop_node(node, allow_fail=True)
@@ -160,7 +148,10 @@ class SparkService(Service, QueryEngineBase):
                 return str(v).lower()
             return v
 
-        return " ".join([
-            f"--conf {k}={transform_value(v)}" for k, v in conf.items()
-            if v is not None
-        ])
+        return " ".join(
+            [
+                f"--conf {k}={transform_value(v)}"
+                for k, v in conf.items()
+                if v is not None
+            ]
+        )

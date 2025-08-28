@@ -33,31 +33,27 @@ def main():
 
     def generate_options():
         parser = argparse.ArgumentParser(
-            description='Redpanda Granular Leader Transfer Command Generator')
-        parser.add_argument('-f',
-                            '--file',
-                            required=True,
-                            type=str,
-                            help='path to partitions file')
-        parser.add_argument('--source',
-                            required=True,
-                            type=str,
-                            help='a single source node id')
-        parser.add_argument('--targets',
-                            required=True,
-                            type=str,
-                            help='comma separated target node ids')
-        parser.add_argument('-t',
-                            type=str,
-                            help='comma separated user topics (Default: all)')
-        parser.add_argument('-p',
-                            type=str,
-                            help='comma separated partitions (Default: all)')
+            description="Redpanda Granular Leader Transfer Command Generator"
+        )
         parser.add_argument(
-            '-c',
+            "-f", "--file", required=True, type=str, help="path to partitions file"
+        )
+        parser.add_argument(
+            "--source", required=True, type=str, help="a single source node id"
+        )
+        parser.add_argument(
+            "--targets", required=True, type=str, help="comma separated target node ids"
+        )
+        parser.add_argument(
+            "-t", type=str, help="comma separated user topics (Default: all)"
+        )
+        parser.add_argument(
+            "-p", type=str, help="comma separated partitions (Default: all)"
+        )
+        parser.add_argument(
+            "-c",
             type=str,
-            help=
-            'comma separated core ids to where current leader is stuck (Default: all)'
+            help="comma separated core ids to where current leader is stuck (Default: all)",
         )
         return parser
 
@@ -69,24 +65,24 @@ def main():
     with open(options.file) as f:
         all_partitions = json.load(f)
 
-    all_partitions.sort(key=lambda x: x['topic'])
+    all_partitions.sort(key=lambda x: x["topic"])
 
     # Preparation
     if options.t is not None:
-        topics = options.t.split(',')
+        topics = options.t.split(",")
 
     if options.p is not None:
         if options.t is None:
             print("partition id has to be specified along with topic name")
             exit(1)
         else:
-            partitions = [int(i) for i in options.p.split(',')]
+            partitions = [int(i) for i in options.p.split(",")]
 
     if options.c is not None:
-        cores = [int(i) for i in options.c.split(',')]
+        cores = [int(i) for i in options.c.split(",")]
 
     source = int(options.source)
-    targets = [int(i) for i in options.targets.split(',')]
+    targets = [int(i) for i in options.targets.split(",")]
 
     # Parsing all the partitions
 
@@ -94,9 +90,10 @@ def main():
     if topics is None and partitions is None and cores is None:
         print(
             f"transfer leadership for all topics from node {source} to node(s) {targets}",
-            file=sys.stderr)
+            file=sys.stderr,
+        )
         for p, t in zip(all_partitions, itertools.cycle(targets)):
-            if p['leader'] == source:
+            if p["leader"] == source:
                 cmd = f"curl -XPOST http://localhost:9644/v1/partitions/{p['ns']}/{p['topic']}/{p['partition_id']}/transfer_leadership?target={t}"
                 print(cmd)
         exit(0)
@@ -105,9 +102,10 @@ def main():
     if topics is not None and partitions is None and cores is None:
         print(
             f"transfer leadership for topic(s) {topics} from node {source} to node(s) {targets}",
-            file=sys.stderr)
+            file=sys.stderr,
+        )
         for p, t in zip(all_partitions, itertools.cycle(targets)):
-            if p['topic'] in topics and p['leader'] == source:
+            if p["topic"] in topics and p["leader"] == source:
                 cmd = f"curl -XPOST http://localhost:9644/v1/partitions/{p['ns']}/{p['topic']}/{p['partition_id']}/transfer_leadership?target={t}"
                 print(cmd)
         exit(0)
@@ -116,10 +114,14 @@ def main():
     if topics is not None and partitions is not None and cores is None:
         print(
             f"transfer leadership for topic(s) {topics} / partition(s) {partitions} from node {source} to node(s) {targets}",
-            file=sys.stderr)
+            file=sys.stderr,
+        )
         for p, t in zip(all_partitions, itertools.cycle(targets)):
-            if p['topic'] in topics and p['partition_id'] in partitions and p[
-                    'leader'] == source:
+            if (
+                p["topic"] in topics
+                and p["partition_id"] in partitions
+                and p["leader"] == source
+            ):
                 cmd = f"curl -XPOST http://localhost:9644/v1/partitions/{p['ns']}/{p['topic']}/{p['partition_id']}/transfer_leadership?target={t}"
                 print(cmd)
         exit(0)
@@ -128,10 +130,15 @@ def main():
     if topics is not None and partitions is not None and cores is not None:
         print(
             f"transfer leadership for topic(s) {topics} / partition(s) {partitions} on core(s) {cores} from node {source} to node(s) {targets}",
-            file=sys.stderr)
+            file=sys.stderr,
+        )
         for p, t in zip(all_partitions, itertools.cycle(targets)):
-            if p['topic'] in topics and p['partition_id'] in partitions and p[
-                    'core'] in cores and p['leader'] == source:
+            if (
+                p["topic"] in topics
+                and p["partition_id"] in partitions
+                and p["core"] in cores
+                and p["leader"] == source
+            ):
                 cmd = f"curl -XPOST http://localhost:9644/v1/partitions/{p['ns']}/{p['topic']}/{p['partition_id']}/transfer_leadership?target={t}"
                 print(cmd)
         exit(0)
@@ -140,10 +147,10 @@ def main():
     if topics is not None and partitions is None and cores is not None:
         print(
             f"transfer leadership for topic(s) {topics} on core(s) {cores} from node {source} to node(s) {targets}",
-            file=sys.stderr)
+            file=sys.stderr,
+        )
         for p, t in zip(all_partitions, itertools.cycle(targets)):
-            if p['topic'] in topics and p['core'] in cores and p[
-                    'leader'] == source:
+            if p["topic"] in topics and p["core"] in cores and p["leader"] == source:
                 cmd = f"curl -XPOST http://localhost:9644/v1/partitions/{p['ns']}/{p['topic']}/{p['partition_id']}/transfer_leadership?target={t}"
                 print(cmd)
         exit(0)
@@ -152,13 +159,14 @@ def main():
     if topics is None and partitions is None and cores is not None:
         print(
             f"transfer leadership for all partitions on core(s) {cores} from node {source} to node(s) {targets}",
-            file=sys.stderr)
+            file=sys.stderr,
+        )
         for p, t in zip(all_partitions, itertools.cycle(targets)):
-            if p['core'] in cores and p['leader'] == source:
+            if p["core"] in cores and p["leader"] == source:
                 cmd = f"curl -XPOST http://localhost:9644/v1/partitions/{p['ns']}/{p['topic']}/{p['partition_id']}/transfer_leadership?target={t}"
                 print(cmd)
         exit(0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

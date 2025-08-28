@@ -15,16 +15,17 @@ from rptest.services.redpanda import CloudStorageType, get_cloud_provider
 # The credential plumbing (IAM roles, credential providers) probably
 # needs some fixing in GCP environment before enabling it here, otherwise
 # there no fundamental reason it shouldn't work.
-ACCEPTED_VARIANTS = {("docker", CloudStorageType.S3),
-                     ("aws", CloudStorageType.S3),
-                     ("gcp", CloudStorageType.S3),
-                     ("azure", CloudStorageType.ABS)}
+ACCEPTED_VARIANTS = {
+    ("docker", CloudStorageType.S3),
+    ("aws", CloudStorageType.S3),
+    ("gcp", CloudStorageType.S3),
+    ("azure", CloudStorageType.ABS),
+}
 
 
 def supported_storage_types():
     cloud_provider = get_cloud_provider()
-    supported_variants = filter(lambda x: x[0] == cloud_provider,
-                                ACCEPTED_VARIANTS)
+    supported_variants = filter(lambda x: x[0] == cloud_provider, ACCEPTED_VARIANTS)
     supported_storage = map(lambda x: x[1], supported_variants)
     unique = list(set(supported_storage))
     return unique

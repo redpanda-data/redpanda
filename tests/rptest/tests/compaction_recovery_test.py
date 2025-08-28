@@ -46,16 +46,23 @@ class CompactionRecoveryTest(RedpandaTest):
     The solution to this second problem is to choose a upper bound of 1 byte for
     the combined segment size so that segment joining is effectively disabled.
     """
-    topics = (TopicSpec(partition_count=1,
-                        replication_factor=3,
-                        cleanup_policy=TopicSpec.CLEANUP_COMPACT), )
+
+    topics = (
+        TopicSpec(
+            partition_count=1,
+            replication_factor=3,
+            cleanup_policy=TopicSpec.CLEANUP_COMPACT,
+        ),
+    )
 
     def __init__(self, test_context):
-        extra_rp_conf = dict(compacted_log_segment_size=1048576, )
+        extra_rp_conf = dict(
+            compacted_log_segment_size=1048576,
+        )
 
-        super(CompactionRecoveryTest,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf=extra_rp_conf)
+        super(CompactionRecoveryTest, self).__init__(
+            test_context=test_context, extra_rp_conf=extra_rp_conf
+        )
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_index_recovery(self):
@@ -74,21 +81,25 @@ class CompactionRecoveryTest(RedpandaTest):
         for p in partitions:
             p.delete_indices(allow_fail=False)
 
-        extra_rp_conf = dict(compacted_log_segment_size=1048576,
-                             log_compaction_interval_ms=1000,
-                             max_compacted_log_segment_size=1,
-                             compaction_ctrl_min_shares=1000,
-                             compaction_ctrl_max_shares=1000)
+        extra_rp_conf = dict(
+            compacted_log_segment_size=1048576,
+            log_compaction_interval_ms=1000,
+            max_compacted_log_segment_size=1,
+            compaction_ctrl_min_shares=1000,
+            compaction_ctrl_max_shares=1000,
+        )
 
         for node in partition_node_list:
             self.redpanda.start_node(node)
 
         self.redpanda.set_cluster_config(extra_rp_conf, True)
 
-        wait_until(lambda: all(map(lambda p: p.recovered(), partitions)),
-                   timeout_sec=90,
-                   backoff_sec=2,
-                   err_msg="Timeout waiting for partitions to recover.")
+        wait_until(
+            lambda: all(map(lambda p: p.recovered(), partitions)),
+            timeout_sec=90,
+            backoff_sec=2,
+            err_msg="Timeout waiting for partitions to recover.",
+        )
 
     def produce_until_segments(self, count):
         partitions = []
@@ -99,13 +110,15 @@ class CompactionRecoveryTest(RedpandaTest):
             storage = self.redpanda.storage()
             partitions[:] = storage.partitions("kafka", self.topic)
             return partitions and all(
-                map(lambda p: len(p.segments) > count and p.recovered(),
-                    partitions))
+                map(lambda p: len(p.segments) > count and p.recovered(), partitions)
+            )
 
-        wait_until(lambda: check_partitions(),
-                   timeout_sec=90,
-                   backoff_sec=2,
-                   err_msg="Segments not found")
+        wait_until(
+            lambda: check_partitions(),
+            timeout_sec=90,
+            backoff_sec=2,
+            err_msg="Segments not found",
+        )
 
         return partitions
 
@@ -114,19 +127,26 @@ class CompactionRecoveryUpgradeTest(RedpandaTest):
     OLD_VERSION = (22, 2, 8)
     SEGMENT_SIZE = 1048576
 
-    topics = (TopicSpec(partition_count=1,
-                        replication_factor=3,
-                        cleanup_policy=TopicSpec.CLEANUP_COMPACT), )
+    topics = (
+        TopicSpec(
+            partition_count=1,
+            replication_factor=3,
+            cleanup_policy=TopicSpec.CLEANUP_COMPACT,
+        ),
+    )
 
     def __init__(self, *args, **kwargs):
         super(CompactionRecoveryUpgradeTest, self).__init__(
             *args,
-            extra_rp_conf=dict(compacted_log_segment_size=self.SEGMENT_SIZE,
-                               log_compaction_interval_ms=1000,
-                               max_compacted_log_segment_size=1,
-                               compaction_ctrl_min_shares=1000,
-                               compaction_ctrl_max_shares=1000),
-            **kwargs)
+            extra_rp_conf=dict(
+                compacted_log_segment_size=self.SEGMENT_SIZE,
+                log_compaction_interval_ms=1000,
+                max_compacted_log_segment_size=1,
+                compaction_ctrl_min_shares=1000,
+                compaction_ctrl_max_shares=1000,
+            ),
+            **kwargs,
+        )
 
     def setUp(self):
         self.installer = self.redpanda._installer
@@ -149,7 +169,7 @@ class CompactionRecoveryUpgradeTest(RedpandaTest):
 
         def get_storage_partition(node):
             storage = self.redpanda.node_storage(node, sizes=True)
-            partitions = storage.partitions('kafka', self.topic)
+            partitions = storage.partitions("kafka", self.topic)
             assert len(partitions) == 1
             return partitions[0]
 
@@ -157,18 +177,21 @@ class CompactionRecoveryUpgradeTest(RedpandaTest):
             initial_count = len(get_storage_partition(node).segments)
 
             # count + 1 in case we haven't had a segment open
-            produce_until_segments(self.redpanda,
-                                   self.topic,
-                                   partition_idx=0,
-                                   count=initial_count + count + 1,
-                                   record_size=1024,
-                                   batch_size=2048)
+            produce_until_segments(
+                self.redpanda,
+                self.topic,
+                partition_idx=0,
+                count=initial_count + count + 1,
+                record_size=1024,
+                batch_size=2048,
+            )
 
             def no_big_closed_segments():
                 partition = get_storage_partition(node)
                 return not any(
                     seg.base_index and seg.size > (self.SEGMENT_SIZE / 2)
-                    for seg in partition.segments.values())
+                    for seg in partition.segments.values()
+                )
 
             wait_until(no_big_closed_segments, timeout_sec=30, backoff_sec=2)
 
@@ -229,8 +252,9 @@ class CompactionRecoveryUpgradeTest(RedpandaTest):
 
         # Now that we are back at the old version, proceed to upgrade all the way to HEAD
         remaining_versions = self.load_version_range(self.OLD_VERSION)[1:]
-        for version in self.upgrade_through_versions(remaining_versions,
-                                                     already_running=True):
+        for version in self.upgrade_through_versions(
+            remaining_versions, already_running=True
+        ):
             self.logger.info(f"Updated to {version}")
 
         produce_and_wait_for_compaction(self.redpanda.nodes[0], 2)

@@ -28,22 +28,24 @@ class ProducerSwarm(Service):
 
     logs = {"repeater_log": {"path": LOG_PATH, "collect_default": True}}
 
-    def __init__(self,
-                 context: TestContext,
-                 redpanda: AnyRedpandaService,
-                 topic: str,
-                 producers: int,
-                 records_per_producer: int,
-                 log_level="DEBUG",
-                 properties={},
-                 timeout_ms: int = 1000,
-                 compression_type: Optional[str] = None,
-                 compressible_payload: Optional[bool] = None,
-                 min_record_size: Optional[int] = None,
-                 max_record_size: Optional[int] = None,
-                 keys: Optional[int] = None,
-                 unique_topics: Optional[bool] = False,
-                 messages_per_second_per_producer: Optional[int] = None):
+    def __init__(
+        self,
+        context: TestContext,
+        redpanda: AnyRedpandaService,
+        topic: str,
+        producers: int,
+        records_per_producer: int,
+        log_level="DEBUG",
+        properties={},
+        timeout_ms: int = 1000,
+        compression_type: Optional[str] = None,
+        compressible_payload: Optional[bool] = None,
+        min_record_size: Optional[int] = None,
+        max_record_size: Optional[int] = None,
+        keys: Optional[int] = None,
+        unique_topics: Optional[bool] = False,
+        messages_per_second_per_producer: Optional[int] = None,
+    ):
         super(ProducerSwarm, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -63,15 +65,18 @@ class ProducerSwarm(Service):
         self._remote_port = 8080
         self._remote_addr = "0.0.0.0"
 
-        if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
+        if hasattr(redpanda, "GLOBAL_CLOUD_CLUSTER_CONFIG"):
             security_config = redpanda.security_config()
-            properties['security.protocol'] = 'SASL_SSL'
-            properties['sasl.mechanism'] = security_config.get(
-                'sasl_mechanism', 'PLAIN')
-            properties['sasl.username'] = security_config.get(
-                'sasl_plain_username', None)
-            properties['sasl.password'] = security_config.get(
-                'sasl_plain_password', None)
+            properties["security.protocol"] = "SASL_SSL"
+            properties["sasl.mechanism"] = security_config.get(
+                "sasl_mechanism", "PLAIN"
+            )
+            properties["sasl.username"] = security_config.get(
+                "sasl_plain_username", None
+            )
+            properties["sasl.password"] = security_config.get(
+                "sasl_plain_password", None
+            )
 
     def clean_node(self, node):
         self._redpanda.logger.debug(f"{self.__class__.__name__}.clean_node")
@@ -81,7 +86,9 @@ class ProducerSwarm(Service):
             node.account.remove(self.LOG_PATH)
 
     def start_node(self, node, clean=None):
-        assert self._node is None or self._node == node, f'started on more than one node? {self._node} {node}'
+        assert self._node is None or self._node == node, (
+            f"started on more than one node? {self._node} {node}"
+        )
         self._node = node
 
         cmd = f"{self.EXE}"
@@ -120,21 +127,19 @@ class ProducerSwarm(Service):
 
         cmd += f" --client-spawn-wait-ms={self.CLIENT_SPAWN_WAIT_MS}"
 
-        cmd = f"RUST_LOG={self._log_level} bash /opt/remote/control/start.sh {self.EXE} \"{cmd}\""
+        cmd = f'RUST_LOG={self._log_level} bash /opt/remote/control/start.sh {self.EXE} "{cmd}"'
         node.account.ssh(cmd)
         self._redpanda.wait_until(
             self.is_alive,
             timeout_sec=600,
             backoff_sec=1,
-            err_msg=
-            f"producer_swarm service {node.account.hostname} failed to start within {600} sec",
+            err_msg=f"producer_swarm service {node.account.hostname} failed to start within {600} sec",
         )
         self._redpanda.wait_until(
             lambda: self.is_metrics_available(node),
             timeout_sec=30,
             backoff_sec=1,
-            err_msg=
-            f"producer_swarm metrics endpoint at {self._remote_url(node, 'metrics/summary')} failed to answer after {30} sec",
+            err_msg=f"producer_swarm metrics endpoint at {self._remote_url(node, 'metrics/summary')} failed to answer after {30} sec",
         )
 
     def wait_for_all_started(self):
@@ -155,23 +160,24 @@ class ProducerSwarm(Service):
         # the cluster. Since we have often just created the topic, this could be delayed
         # due to leadership transfers which occur in a burst some time between 0 and 5
         # minutes after the topic is created.
-        timeout_s = 30 + 3 * ceil(
-            self._producers * self.CLIENT_SPAWN_WAIT_MS / 1000)
+        timeout_s = 30 + 3 * ceil(self._producers * self.CLIENT_SPAWN_WAIT_MS / 1000)
 
         def started_count():
             started = self.get_metrics_summary().clients_started
-            self.logger.debug(f'{started} producers started so far')
+            self.logger.debug(f"{started} producers started so far")
             return started
 
         self.logger.info(
-            f'Waiting up to {timeout_s}s for all {self._producers} to start')
+            f"Waiting up to {timeout_s}s for all {self._producers} to start"
+        )
 
         self._redpanda.wait_until(
             lambda: started_count() == self._producers,
             timeout_sec=timeout_s,
             backoff_sec=1,
             err_msg=lambda: f"{self} did not start after {timeout_s}: "
-            f"{started_count()} started, expected {self._producers}")
+            f"{started_count()} started, expected {self._producers}",
+        )
 
     def is_metrics_available(self, node):
         path = f"metrics/summary"
@@ -184,15 +190,16 @@ class ProducerSwarm(Service):
 
     def is_alive(self) -> bool:
         result = self._node.account.ssh_output(
-            f"bash /opt/remote/control/alive.sh {self.EXE}")
+            f"bash /opt/remote/control/alive.sh {self.EXE}"
+        )
         result = result.decode("utf-8")
         return "YES" in result
 
     def wait_node(self, node, timeout_sec=600) -> bool:
         try:
-            self._redpanda.wait_until(lambda: not self.is_alive(),
-                                      timeout_sec=timeout_sec,
-                                      backoff_sec=5)
+            self._redpanda.wait_until(
+                lambda: not self.is_alive(), timeout_sec=timeout_sec, backoff_sec=5
+            )
         except TimeoutError:
             return False
         return True
@@ -205,7 +212,7 @@ class ProducerSwarm(Service):
 
     def _get(self, node, rest_handle):
         """
-            Perform a GET to client_swarm's metrics API.
+        Perform a GET to client_swarm's metrics API.
         """
         url = self._remote_url(node, rest_handle)
         try:
@@ -231,6 +238,7 @@ class ProducerSwarm(Service):
         To get the number of _currently_ active clients, use clients_alive."""
         clients_stopped: int
         """The number of clients that have stopped as they reached their target message count."""
+
         @property
         def clients_alive(self):
             """The number of clients running as of this snapshot."""
@@ -241,8 +249,7 @@ class ProducerSwarm(Service):
             """The total number of messages we attempted to send, whether successful or not."""
             return self.total_success + self.total_error
 
-    def get_metrics_summary(self,
-                            seconds: int | None = None) -> MetricsSummary:
+    def get_metrics_summary(self, seconds: int | None = None) -> MetricsSummary:
         path = f"metrics/summary"
         if seconds:
             path = f"{path}?seconds={seconds}"
@@ -255,19 +262,21 @@ class ProducerSwarm(Service):
 
         # response looks like:
         # {'min': 0, 'max': 10, 'median': 0, 'counts_from_start': {'success_count': 1078, 'error_count': 0}, 'clients_started': 10, 'clients_stopped': 0}
-        cfs = res['counts_from_start']
-        return self.MetricsSummary(i("min", type=float), i("median",
-                                                           type=float),
-                                   i("max", type=float),
-                                   i('success_count', cfs),
-                                   i('error_count', cfs), i('clients_started'),
-                                   i('clients_stopped'))
+        cfs = res["counts_from_start"]
+        return self.MetricsSummary(
+            i("min", type=float),
+            i("median", type=float),
+            i("max", type=float),
+            i("success_count", cfs),
+            i("error_count", cfs),
+            i("clients_started"),
+            i("clients_stopped"),
+        )
 
     def await_progress(self, target_msg_rate, timeout_sec, err_msg=None):
         def check():
             return self.get_metrics_summary(seconds=20).p50 >= target_msg_rate
 
-        self._redpanda.wait_until(check,
-                                  timeout_sec=timeout_sec,
-                                  backoff_sec=1,
-                                  err_msg=err_msg)
+        self._redpanda.wait_until(
+            check, timeout_sec=timeout_sec, backoff_sec=1, err_msg=err_msg
+        )

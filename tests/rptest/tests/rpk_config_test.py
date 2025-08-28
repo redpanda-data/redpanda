@@ -27,16 +27,17 @@ class RpkConfigTest(RedpandaTest):
         n = random.randint(1, len(self.redpanda.nodes))
         node = self.redpanda.get_node(n)
         rpk = RpkRemoteTool(self.redpanda, node)
-        key = 'redpanda.admin.port'
-        value = '9641'  # The default is 9644, so we will change it
+        key = "redpanda.admin.port"
+        value = "9641"  # The default is 9644, so we will change it
 
         rpk.config_set(key, value, path=RedpandaService.NODE_CONFIG_FILE)
         actual_config = read_redpanda_cfg(node)
 
         if f"{actual_config['redpanda']['admin'][0]['port']}" != value:
             self.logger.error(
-                "Configs differ\n" + f"Expected: {value}\n" +
-                f"Actual: {yaml.dump(actual_config['redpanda']['admin'][0]['port'])}"
+                "Configs differ\n"
+                + f"Expected: {value}\n"
+                + f"Actual: {yaml.dump(actual_config['redpanda']['admin'][0]['port'])}"
             )
         assert f"{actual_config['redpanda']['admin'][0]['port']}" == value
 
@@ -45,8 +46,8 @@ class RpkConfigTest(RedpandaTest):
         n = random.randint(1, len(self.redpanda.nodes))
         node = self.redpanda.get_node(n)
         rpk = RpkRemoteTool(self.redpanda, node)
-        key = 'redpanda.seed_servers'
-        value = '''                                                      
+        key = "redpanda.seed_servers"
+        value = """                                                      
 - node_id: 1
   host:
     address: 192.168.10.1
@@ -59,9 +60,9 @@ class RpkConfigTest(RedpandaTest):
   host:
     address: 192.168.10.3
     port: 33145
-'''
+"""
 
-        expected = '''                                                      
+        expected = """                                                      
 - host:
     address: 192.168.10.1
     port: 33145
@@ -71,49 +72,51 @@ class RpkConfigTest(RedpandaTest):
 - host:
     address: 192.168.10.3
     port: 33145
-'''
+"""
 
-        rpk.config_set(key, value, format='yaml')
+        rpk.config_set(key, value, format="yaml")
 
         expected_config = yaml.full_load(expected)
         actual_config = read_redpanda_cfg(node)
-        if actual_config['redpanda']['seed_servers'] != expected_config:
+        if actual_config["redpanda"]["seed_servers"] != expected_config:
             self.logger.error(
-                "Configs differ\n" +
-                f"Expected: {yaml.dump(expected_config)}\n" +
-                f"Actual: {yaml.dump(actual_config['redpanda']['seed_servers'])}"
+                "Configs differ\n"
+                + f"Expected: {yaml.dump(expected_config)}\n"
+                + f"Actual: {yaml.dump(actual_config['redpanda']['seed_servers'])}"
             )
-        assert actual_config['redpanda']['seed_servers'] == expected_config
+        assert actual_config["redpanda"]["seed_servers"] == expected_config
 
     @cluster(num_nodes=3)
     def test_config_set_json(self):
         n = random.randint(1, len(self.redpanda.nodes))
         node = self.redpanda.get_node(n)
         rpk = RpkRemoteTool(self.redpanda, node)
-        key = 'rpk'
+        key = "rpk"
         value = '{"tune_aio_events":true,"tune_cpu":true,"tune_disk_irq":true}'
 
-        rpk.config_set(key, value, format='json')
+        rpk.config_set(key, value, format="json")
 
-        expected_config = yaml.full_load('''
+        expected_config = yaml.full_load("""
 tune_aio_events: true
 tune_cpu: true
 tune_disk_irq: true
-''')
+""")
         actual_config = read_redpanda_cfg(node)
 
-        if actual_config['rpk'] != expected_config:
-            self.logger.error("Configs differ\n" +
-                              f"Expected: {yaml.dump(expected_config)}\n" +
-                              f"Actual: {yaml.dump(actual_config['rpk'])}")
-        assert actual_config['rpk'] == expected_config
+        if actual_config["rpk"] != expected_config:
+            self.logger.error(
+                "Configs differ\n"
+                + f"Expected: {yaml.dump(expected_config)}\n"
+                + f"Actual: {yaml.dump(actual_config['rpk'])}"
+            )
+        assert actual_config["rpk"] == expected_config
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_config_change_then_restart_node(self):
         for node in self.redpanda.nodes:
             rpk = RpkRemoteTool(self.redpanda, node)
-            key = 'redpanda.admin.port'
-            value = '9641'  # The default is 9644, so we will change it
+            key = "redpanda.admin.port"
+            value = "9641"  # The default is 9644, so we will change it
 
             rpk.config_set(key, value)
 
@@ -122,13 +125,13 @@ tune_disk_irq: true
     @cluster(num_nodes=1)
     def test_config_change_mode_prod(self):
         """
-        Verify that after running rpk redpanda mode prod, the 
+        Verify that after running rpk redpanda mode prod, the
         configuration values of the tuners change accordingly.
         """
         node = self.redpanda.nodes[0]
         rpk = RpkRemoteTool(self.redpanda, node)
         rpk.mode_set("prod")
-        expected_config = yaml.full_load('''
+        expected_config = yaml.full_load("""
     tune_network: true
     tune_disk_scheduler: true
     tune_disk_nomerges: true
@@ -140,13 +143,15 @@ tune_disk_irq: true
     tune_swappiness: true
     coredump_dir: /var/lib/redpanda/coredump
     tune_ballast_file: true
-''')
+""")
 
         actual_config = read_redpanda_cfg(node)
 
-        if actual_config['rpk'] != expected_config:
-            self.logger.error("Configs differ\n" +
-                              f"Expected: {yaml.dump(expected_config)}\n" +
-                              f"Actual: {yaml.dump(actual_config['rpk'])}")
-        assert actual_config['rpk'] == expected_config
-        assert 'developer_mode' not in actual_config['redpanda']
+        if actual_config["rpk"] != expected_config:
+            self.logger.error(
+                "Configs differ\n"
+                + f"Expected: {yaml.dump(expected_config)}\n"
+                + f"Actual: {yaml.dump(actual_config['rpk'])}"
+            )
+        assert actual_config["rpk"] == expected_config
+        assert "developer_mode" not in actual_config["redpanda"]

@@ -26,15 +26,11 @@ class RedpandaConnectService(Service):
     """
     Redpanda Connect service managed by RPK
     """
+
     PERSISTENT_ROOT = "/var/lib/redpanda_connect/"
     RPK_BIN = "rpk"
     LOG_FILE = os.path.join(PERSISTENT_ROOT, "connect.log")
-    logs = {
-        "redpanda_connect_log": {
-            "path": LOG_FILE,
-            "collect_default": True
-        }
-    }
+    logs = {"redpanda_connect_log": {"path": LOG_FILE, "collect_default": True}}
 
     redpanda: RedpandaService
     _pid: typing.Optional[int]
@@ -57,8 +53,7 @@ logger:
         # NOTE: since this runs on separate nodes from the service, the binary
         # path used by each node may differ from that returned by
         # redpanda.find_binary(), e.g. if using a RedpandaInstaller.
-        rp_install_path_root = self.context.globals.get(
-            "rp_install_path_root", "")
+        rp_install_path_root = self.context.globals.get("rp_install_path_root", "")
         return f"{rp_install_path_root}/bin/rpk"
 
     def clean_node(self, node):
@@ -67,8 +62,7 @@ logger:
 
         if node.account.exists(self.PERSISTENT_ROOT):
             node.account.remove(self.PERSISTENT_ROOT)
-        self.logger.info("Uninstalling redpanda-connect from %s",
-                         node.account.hostname)
+        self.logger.info("Uninstalling redpanda-connect from %s", node.account.hostname)
 
         self._execute_cmd(node, ["uninstall"])
 
@@ -80,8 +74,7 @@ logger:
 
     def start_node(self, node):
         node.account.mkdirs(self.PERSISTENT_ROOT)
-        self.logger.info("Installing redpanda-connect on %s",
-                         node.account.hostname)
+        self.logger.info("Installing redpanda-connect on %s", node.account.hostname)
         self._execute_cmd(node, ["install"])
         cfg_path = os.path.join(self.PERSISTENT_ROOT, "config.yaml")
         node.account.create_file(cfg_path, self.logging_config)
@@ -95,14 +88,16 @@ logger:
             r = requests.get(f"http://{node.account.hostname}:4195/ready")
             return r.status_code == 200
 
-        wait_until(_ready,
-                   timeout_sec=30,
-                   backoff_sec=0.5,
-                   err_msg="Redpanda Connect failed to start",
-                   retry_on_exc=True)
+        wait_until(
+            _ready,
+            timeout_sec=30,
+            backoff_sec=0.5,
+            err_msg="Redpanda Connect failed to start",
+            retry_on_exc=True,
+        )
 
     def start_stream(self, name: str, config: dict):
-        """Starts a stream with the given name and config. 
+        """Starts a stream with the given name and config.
            For more information visit:
 
            https://docs.redpanda.com/redpanda-connect
@@ -111,29 +106,28 @@ logger:
             name (str): stream name
             config (dict): stream configuration
         """
-        self.logger.debug(
-            f"Starting stream {name} with config {json.dumps(config)}")
+        self.logger.debug(f"Starting stream {name} with config {json.dumps(config)}")
         self._request("POST", f"streams/{name}", json=config)
 
     def remove_stream(self, name: str):
         self._request("DELETE", f"streams/{name}")
 
-    def wait_for_stream_to_finish(self,
-                                  name: str,
-                                  timeout_sec=60,
-                                  remove=True):
+    def wait_for_stream_to_finish(self, name: str, timeout_sec=60, remove=True):
         """
         Waits for all streams to finish and then removes the stream
         """
+
         def _finished():
             streams = self._request("GET", f"streams").json()
             return name not in streams or streams[name]["active"] == False
 
-        wait_until(_finished,
-                   timeout_sec=timeout_sec,
-                   backoff_sec=0.5,
-                   err_msg=f"Timeout waiting for {name} stream to finish",
-                   retry_on_exc=True)
+        wait_until(
+            _finished,
+            timeout_sec=timeout_sec,
+            backoff_sec=0.5,
+            err_msg=f"Timeout waiting for {name} stream to finish",
+            retry_on_exc=True,
+        )
 
         if remove:
             self.remove_stream(name)
@@ -150,15 +144,18 @@ logger:
         """
         Waits for all streams to finish
         """
+
         def _all_streams_finished():
             streams = self._request("GET", f"streams").json()
-            return all(s['active'] == False for id, s in streams.items())
+            return all(s["active"] == False for id, s in streams.items())
 
-        wait_until(_all_streams_finished,
-                   timeout_sec=timeout_sec,
-                   backoff_sec=0.5,
-                   err_msg="Redpanda Connect not stopped",
-                   retry_on_exc=True)
+        wait_until(
+            _all_streams_finished,
+            timeout_sec=timeout_sec,
+            backoff_sec=0.5,
+            err_msg="Redpanda Connect not stopped",
+            retry_on_exc=True,
+        )
 
         return True
 

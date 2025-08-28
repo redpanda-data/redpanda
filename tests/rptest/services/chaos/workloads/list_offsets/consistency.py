@@ -79,10 +79,10 @@ class LogPlayer:
                 retries = RETRIES
 
                 offset = msg.offset()
-                value = msg.value().decode('utf-8')
+                value = msg.value().decode("utf-8")
                 parts = value.split("\t")
                 op = int(parts[0])
-                key = msg.key().decode('utf-8')
+                key = msg.key().decode("utf-8")
 
                 if self.cleanup == "compact":
                     final_ko[key] = offset
@@ -161,8 +161,7 @@ class LogPlayer:
                         found = True
                         break
                     if not (found) and not (self.has_violation):
-                        logger.error(
-                            f"read unknown message [{key}]={op}@{offset}")
+                        logger.error(f"read unknown message [{key}]={op}@{offset}")
                         self.has_violation = True
 
                 if offset >= self.last_offset:
@@ -226,8 +225,7 @@ class LogPlayer:
                 self.has_violation = True
             self.ok_writes[offset] = write
         elif self.curr_state[thread_id] in [State.ERROR, State.TIMEOUT]:
-            if thread_id in self.last_write and self.last_write[
-                    thread_id] != None:
+            if thread_id in self.last_write and self.last_write[thread_id] != None:
                 write = self.last_write[thread_id]
                 self.last_write[thread_id] = None
                 write.offset = None
@@ -237,7 +235,7 @@ class LogPlayer:
     def is_violation(self, line):
         if line == None:
             return False
-        parts = line.rstrip().split('\t')
+        parts = line.rstrip().split("\t")
         if len(parts) < 3:
             return False
         if parts[2] not in cmds:
@@ -245,10 +243,10 @@ class LogPlayer:
         return cmds[parts[2]] == State.VIOLATION
 
     def apply(self, line):
-        parts = line.rstrip().split('\t')
+        parts = line.rstrip().split("\t")
 
         if parts[2] not in cmds:
-            raise Exception(f"unknown cmd \"{parts[2]}\"")
+            raise Exception(f'unknown cmd "{parts[2]}"')
 
         if self.ts_us == None:
             self.ts_us = int(parts[1])
@@ -273,7 +271,7 @@ class LogPlayer:
         if self.curr_state[thread_id] == None:
             if new_state != State.STARTED:
                 raise Exception(
-                    f"first logged command of a new thread should be started, got: \"{parts[2]}\""
+                    f'first logged command of a new thread should be started, got: "{parts[2]}"'
                 )
             self.curr_state[thread_id] = new_state
             self.key[thread_id] = parts[3]
@@ -301,8 +299,9 @@ def validate(workload_dir, workload_nodes, brokers_str, topic):
         nodes_with_violations = set()
         for node in workload_nodes:
             player = LogPlayer(brokers_str, topic)
-            with open(os.path.join(workload_dir, node, "workload.log"),
-                      "r") as workload_file:
+            with open(
+                os.path.join(workload_dir, node, "workload.log"), "r"
+            ) as workload_file:
                 last_line = None
                 for line in workload_file:
                     if last_line != None:
@@ -317,8 +316,8 @@ def validate(workload_dir, workload_nodes, brokers_str, topic):
 
         if len(nodes_with_violations) > 0:
             raise ConsistencyCheckError(
-                f"consistency violation on "
-                f"client nodes: {nodes_with_violations}")
+                f"consistency violation on client nodes: {nodes_with_violations}"
+            )
         else:
             logger.info("consistency check: PASSED")
     except:

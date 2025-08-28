@@ -32,10 +32,11 @@ class CompactionGapsTest(RedpandaTest):
                 "iceberg_enabled": "true",
                 "iceberg_catalog_commit_interval_ms": 5000,
                 "datalake_coordinator_snapshot_max_delay_secs": 10,
-                "log_compaction_interval_ms": 2000
+                "log_compaction_interval_ms": 2000,
             },
             *args,
-            **kwargs)
+            **kwargs,
+        )
         self.test_ctx = test_ctx
         self.topic_name = "test"
         self.segment_size = 5 * 1024 * 1024
@@ -60,7 +61,8 @@ class CompactionGapsTest(RedpandaTest):
             lambda: self.partition_segments() == count,
             timeout_sec=30,
             backoff_sec=3,
-            err_msg=f"Timed out waiting for segment count to reach {count}")
+            err_msg=f"Timed out waiting for segment count to reach {count}",
+        )
 
     def produce_until_segment_count(self, count):
         timeout_sec = 30
@@ -70,30 +72,34 @@ class CompactionGapsTest(RedpandaTest):
             if current_segment_count >= count:
                 return
             if time() > deadline:
-                assert False, f"Unable to reach segment count {count} in {timeout_sec}s, current count {current_segment_count}"
-            KgoVerifierProducer.oneshot(self.test_ctx,
-                                        self.redpanda,
-                                        self.topic_name,
-                                        2024,
-                                        10000,
-                                        key_set_cardinality=2)
+                assert False, (
+                    f"Unable to reach segment count {count} in {timeout_sec}s, current count {current_segment_count}"
+                )
+            KgoVerifierProducer.oneshot(
+                self.test_ctx,
+                self.redpanda,
+                self.topic_name,
+                2024,
+                10000,
+                key_set_cardinality=2,
+            )
 
     def ensure_translation(self, dl: DatalakeServices):
-        (_, max_offset) = self.kafka_cat.list_offsets(topic=self.topic_name,
-                                                      partition=0)
-        self.redpanda.logger.debug(
-            f"Ensuring translation until: {max_offset - 1}")
+        (_, max_offset) = self.kafka_cat.list_offsets(
+            topic=self.topic_name, partition=0
+        )
+        self.redpanda.logger.debug(f"Ensuring translation until: {max_offset - 1}")
         dl.wait_for_translation_until_offset(self.topic_name, max_offset - 1)
 
     def do_test_no_gaps(self, dl: DatalakeServices):
-
-        dl.create_iceberg_enabled_topic(self.topic_name,
-                                        iceberg_mode="key_value",
-                                        config={
-                                            "cleanup.policy":
-                                            TopicSpec.CLEANUP_COMPACT,
-                                            "segment.bytes": self.segment_size
-                                        })
+        dl.create_iceberg_enabled_topic(
+            self.topic_name,
+            iceberg_mode="key_value",
+            config={
+                "cleanup.policy": TopicSpec.CLEANUP_COMPACT,
+                "segment.bytes": self.segment_size,
+            },
+        )
 
         for _ in range(5):
             self.produce_until_segment_count(5)
@@ -113,8 +119,9 @@ class CompactionGapsTest(RedpandaTest):
     @skip_debug_mode
     @matrix(cloud_storage_type=supported_storage_types())
     def test_translation_no_gaps(self, cloud_storage_type):
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[QueryEngineType.TRINO
-                                                     ]) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.TRINO],
+        ) as dl:
             self.do_test_no_gaps(dl)

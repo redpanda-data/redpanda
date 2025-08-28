@@ -13,12 +13,9 @@ from ducktape.services.background_thread import BackgroundThreadService
 
 
 class KafConsumer(BackgroundThreadService):
-    def __init__(self,
-                 context,
-                 redpanda,
-                 topic,
-                 num_records=None,
-                 offset_for_read="newest"):
+    def __init__(
+        self, context, redpanda, topic, num_records=None, offset_for_read="newest"
+    ):
         super(KafConsumer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -34,9 +31,13 @@ class KafConsumer(BackgroundThreadService):
         try:
             partition = None
             cmd = "echo $$ ; kaf consume -b %s %s --offset %s %s" % (
-                self._redpanda.brokers(), "--follow" if self._num_records
-                is None else f"--limit-messages {self._num_records}",
-                self._offset_for_read, self._topic)
+                self._redpanda.brokers(),
+                "--follow"
+                if self._num_records is None
+                else f"--limit-messages {self._num_records}",
+                self._offset_for_read,
+                self._topic,
+            )
             for line in node.account.ssh_capture(cmd):
                 if self._pid is None:
                     self._pid = line.strip()

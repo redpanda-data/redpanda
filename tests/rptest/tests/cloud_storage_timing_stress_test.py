@@ -9,7 +9,10 @@
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierProducer,
+    KgoVerifierSeqConsumer,
+)
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import MetricsEndpoint, SISettings
 from rptest.util import firewall_blocked, wait_until_result
@@ -45,8 +48,7 @@ class CloudStorageCheck:
 def assert_cloud_storage_usage(test):
     bucket_view = BucketView(test.redpanda)
     manifest_usage = bucket_view.cloud_log_size_for_ntp(test.topic, 0)
-    test.logger.debug(
-        f"Cloud log usage inferred from manifests: {manifest_usage}")
+    test.logger.debug(f"Cloud log usage inferred from manifests: {manifest_usage}")
 
     reported_usage = test.admin.cloud_storage_usage()
 
@@ -55,8 +57,9 @@ def assert_cloud_storage_usage(test):
     )
     test.logger.info(f"Reported usage: {reported_usage}")
 
-    assert manifest_usage.total() == reported_usage, \
+    assert manifest_usage.total() == reported_usage, (
         f"Expected {manifest_usage.total()} bytes of cloud storage usage based on manifest, but reported {reported_usage}"
+    )
 
 
 class PartitionStatusValidator:
@@ -67,19 +70,22 @@ class PartitionStatusValidator:
         self._validators = [
             PartitionStatusValidator._validate_mode,
             PartitionStatusValidator._validate_cloud_log_size_bytes,
-            PartitionStatusValidator._validate_cloud_log_offsets
+            PartitionStatusValidator._validate_cloud_log_offsets,
         ]
 
     def is_valid(self, status, bucket_view: BucketView, ntpr: NTPR) -> bool:
-        return all(
-            [v(self, status, bucket_view, ntpr) for v in self._validators])
+        return all([v(self, status, bucket_view, ntpr) for v in self._validators])
 
-    def _validate_status_shape(self, status, bucket_view: BucketView,
-                               ntpr: NTPR) -> bool:
+    def _validate_status_shape(
+        self, status, bucket_view: BucketView, ntpr: NTPR
+    ) -> bool:
         expected_keys = [
-            "cloud_storage_mode", "total_log_size_bytes",
-            "cloud_log_size_bytes", "local_log_size_bytes",
-            "cloud_log_segment_count", "local_log_segment_count"
+            "cloud_storage_mode",
+            "total_log_size_bytes",
+            "cloud_log_size_bytes",
+            "local_log_size_bytes",
+            "cloud_log_segment_count",
+            "local_log_segment_count",
         ]
 
         not_present = []
@@ -88,13 +94,11 @@ class PartitionStatusValidator:
                 not_present.append(k)
 
         if len(not_present) > 0:
-            self._logger.info(
-                f"Expected keys missing from status: {not_present}")
+            self._logger.info(f"Expected keys missing from status: {not_present}")
 
         return len(not_present) == 0
 
-    def _validate_mode(self, status, bucket_view: BucketView,
-                       ntpr: NTPR) -> bool:
+    def _validate_mode(self, status, bucket_view: BucketView, ntpr: NTPR) -> bool:
         if status["cloud_storage_mode"] != "full":
             self._logger.info(
                 f"Unexpected for cloud_storage_mode: {status['cloud_storage_mode']}"
@@ -103,11 +107,13 @@ class PartitionStatusValidator:
 
         return True
 
-    def _validate_cloud_log_size_bytes(self, status, bucket_view: BucketView,
-                                       ntpr: NTPR) -> bool:
+    def _validate_cloud_log_size_bytes(
+        self, status, bucket_view: BucketView, ntpr: NTPR
+    ) -> bool:
         # bucket_view.evict_ntp(ntpr.to_ntp)
         cloud_log_size = bucket_view.cloud_log_size_for_ntp(
-            ntpr.topic, ntpr.partition, ntpr.ns)
+            ntpr.topic, ntpr.partition, ntpr.ns
+        )
 
         stm_region = cloud_log_size.stm.accessible
         archive_region = cloud_log_size.archive.total
@@ -128,12 +134,16 @@ class PartitionStatusValidator:
 
         return True
 
-    def _validate_cloud_log_offsets(self, status, bucket_view: BucketView,
-                                    ntpr: NTPR) -> bool:
+    def _validate_cloud_log_offsets(
+        self, status, bucket_view: BucketView, ntpr: NTPR
+    ) -> bool:
         manifest = bucket_view.get_partition_manifest(ntpr)
 
         if not manifest:
-            return "cloud_log_start_offset" not in status and "cloud_log_last_offset" not in status
+            return (
+                "cloud_log_start_offset" not in status
+                and "cloud_log_last_offset" not in status
+            )
 
         cloud_log_start = BucketView.kafka_start_offset(manifest)
         reported_start = status.get("cloud_log_start_offset", None)
@@ -166,14 +176,15 @@ def cloud_storage_status_endpoint_check(test):
             bucket_view.reset()
             bucket_view._do_listing()
 
-            status = test.admin.get_partition_cloud_storage_status(
-                test.topic, 0)
+            status = test.admin.get_partition_cloud_storage_status(test.topic, 0)
             reported_status_sliding_window.append(status)
 
-            ntpr = NTPR(ns="kafka",
-                        topic=test.topic,
-                        partition=0,
-                        revision=test._initial_revision)
+            ntpr = NTPR(
+                ns="kafka",
+                topic=test.topic,
+                partition=0,
+                revision=test._initial_revision,
+            )
             for status in reported_status_sliding_window:
                 if validator.is_valid(status, bucket_view, ntpr):
                     return True
@@ -188,7 +199,8 @@ def cloud_storage_status_endpoint_check(test):
         timeout_sec=test.check_timeout,
         backoff_sec=0.2,
         err_msg="Cloud storage partition status did not match the manifest",
-        retry_on_exc=True)
+        retry_on_exc=True,
+    )
 
 
 class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
@@ -214,10 +226,12 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
     check_timeout = 10  # seconds
     allow_runtime_overshoot_by = 2
 
-    topic_spec = TopicSpec(name="test-topic",
-                           partition_count=1,
-                           replication_factor=3,
-                           retention_bytes=60 * log_segment_size)
+    topic_spec = TopicSpec(
+        name="test-topic",
+        partition_count=1,
+        replication_factor=3,
+        retention_bytes=60 * log_segment_size,
+    )
 
     def __init__(self, test_context):
         extra_rp_conf = dict(
@@ -229,68 +243,76 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             retention_local_target_bytes_default=2 * self.log_segment_size,
             cloud_storage_enable_segment_merging=True,
             cloud_storage_cache_chunk_size=self.chunk_size,
-            cloud_storage_spillover_manifest_size=None)
+            cloud_storage_spillover_manifest_size=None,
+        )
 
         si_settings = SISettings(
             test_context,
             log_segment_size=self.log_segment_size,
             cloud_storage_housekeeping_interval_ms=1000,
             cloud_storage_spillover_manifest_max_segments=10,
-            cloud_storage_segment_max_upload_interval_sec=10)
+            cloud_storage_segment_max_upload_interval_sec=10,
+        )
 
         if "googleapis" in si_settings.cloud_storage_api_endpoint:
             # If the test is running on GCS we shouldn't retry earlier than
             # after 1s. GCS throttles uploads if they happen once per sencond
             # or faster (per object).
-            extra_rp_conf['cloud_storage_initial_backoff_ms'] = 1000
+            extra_rp_conf["cloud_storage_initial_backoff_ms"] = 1000
 
-        super(CloudStorageTimingStressTest,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf=extra_rp_conf,
-                             log_level="trace",
-                             si_settings=si_settings)
+        super(CloudStorageTimingStressTest, self).__init__(
+            test_context=test_context,
+            extra_rp_conf=extra_rp_conf,
+            log_level="trace",
+            si_settings=si_settings,
+        )
 
         self.rpk = RpkTool(self.redpanda)
         self.admin = Admin(self.redpanda)
         self.checks = []
 
-    def _create_producer(self,
-                         cleanup_policy: str = None) -> KgoVerifierProducer:
-        bps = self.produce_byte_rate_per_ntp * self.topics[0].partition_count
-        bytes_count = bps * self.target_runtime
-        msg_count = bytes_count // self.message_size
-
-        self.logger.info(f"Will produce {bytes_count / self.mib}MiB at"
-                         f"{bps / self.mib}MiB/s on topic={self.topic}")
-
-        key_set_cardinality = 10 if 'compact' in cleanup_policy else None
-        return KgoVerifierProducer(self.test_context,
-                                   self.redpanda,
-                                   self.topic,
-                                   msg_size=self.message_size,
-                                   msg_count=msg_count,
-                                   rate_limit_bps=bps,
-                                   debug_logs=True,
-                                   trace_logs=True,
-                                   key_set_cardinality=key_set_cardinality)
-
-    def _create_consumer(
-            self, producer: KgoVerifierProducer) -> KgoVerifierSeqConsumer:
+    def _create_producer(self, cleanup_policy: str = None) -> KgoVerifierProducer:
         bps = self.produce_byte_rate_per_ntp * self.topics[0].partition_count
         bytes_count = bps * self.target_runtime
         msg_count = bytes_count // self.message_size
 
         self.logger.info(
-            f"Will consume at {bps / self.mib}MiB/s from topic={self.topic}")
+            f"Will produce {bytes_count / self.mib}MiB at"
+            f"{bps / self.mib}MiB/s on topic={self.topic}"
+        )
 
-        return KgoVerifierSeqConsumer(self.test_context,
-                                      self.redpanda,
-                                      self.topic,
-                                      msg_size=self.message_size,
-                                      max_throughput_mb=int(bps // self.mib),
-                                      debug_logs=True,
-                                      trace_logs=True,
-                                      producer=producer)
+        key_set_cardinality = 10 if "compact" in cleanup_policy else None
+        return KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=self.message_size,
+            msg_count=msg_count,
+            rate_limit_bps=bps,
+            debug_logs=True,
+            trace_logs=True,
+            key_set_cardinality=key_set_cardinality,
+        )
+
+    def _create_consumer(self, producer: KgoVerifierProducer) -> KgoVerifierSeqConsumer:
+        bps = self.produce_byte_rate_per_ntp * self.topics[0].partition_count
+        bytes_count = bps * self.target_runtime
+        msg_count = bytes_count // self.message_size
+
+        self.logger.info(
+            f"Will consume at {bps / self.mib}MiB/s from topic={self.topic}"
+        )
+
+        return KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=self.message_size,
+            max_throughput_mb=int(bps // self.mib),
+            debug_logs=True,
+            trace_logs=True,
+            producer=producer,
+        )
 
     def _all_uploads_done(self):
         topic_description = self.rpk.describe_topic(self.topic)
@@ -300,18 +322,20 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             manifest = None
             try:
                 bucket = BucketView(self.redpanda)
-                manifest = bucket.manifest_for_ntpr(self.topic, partition.id,
-                                                    self._initial_revision)
+                manifest = bucket.manifest_for_ntpr(
+                    self.topic, partition.id, self._initial_revision
+                )
             except Exception as e:
-                self.logger.info(
-                    f"Exception thrown while retrieving the manifest: {e}")
+                self.logger.info(f"Exception thrown while retrieving the manifest: {e}")
                 return False
 
-            top_segment = max(manifest['segments'].values(),
-                              key=lambda seg: seg['base_offset'])
-            uploaded_raft_offset = top_segment['committed_offset']
-            uploaded_kafka_offset = uploaded_raft_offset - top_segment[
-                'delta_offset_end']
+            top_segment = max(
+                manifest["segments"].values(), key=lambda seg: seg["base_offset"]
+            )
+            uploaded_raft_offset = top_segment["committed_offset"]
+            uploaded_kafka_offset = (
+                uploaded_raft_offset - top_segment["delta_offset_end"]
+            )
             self.logger.info(
                 f"Remote HWM {uploaded_kafka_offset} (raft {uploaded_raft_offset}), local hwm {hwm}"
             )
@@ -331,7 +355,10 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         produced = self.producer.produce_status.acked
         consumer_complete = consumed >= produced
         if not consumer_complete:
-            return False, f"Consumer consumed only {consumed} out of {produced} messages"
+            return (
+                False,
+                f"Consumer consumed only {consumed} out of {produced} messages",
+            )
 
         uploads_done = self._all_uploads_done()
         if not uploads_done:
@@ -348,7 +375,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         max_runtime = self.target_runtime * self.allow_runtime_overshoot_by
         if delta.total_seconds() > max_runtime:
             raise TimeoutError(
-                f"Workload did not complete within {max_runtime}s: {reason}")
+                f"Workload did not complete within {max_runtime}s: {reason}"
+            )
 
         return False
 
@@ -356,8 +384,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         def get_revision():
             leaders_info = self.admin.get_leaders_info()
             for p in leaders_info:
-                if p['topic'] == self.topic:
-                    rev = int(p['partition_revision'])
+                if p["topic"] == self.topic:
+                    rev = int(p["partition_revision"])
                     if rev < 0:
                         return False
 
@@ -370,11 +398,13 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             timeout_sec=5,
             backoff_sec=1,
             err_msg="Initial revision not found before timeout",
-            retry_on_exc=True)
+            retry_on_exc=True,
+        )
 
     def prologue(self, cleanup_policy):
         self.redpanda.set_cluster_config_to_null(
-            "cloud_storage_manifest_max_upload_interval_sec")
+            "cloud_storage_manifest_max_upload_interval_sec"
+        )
 
         self.topic_spec.cleanup_policy = cleanup_policy
         self.topics = [self.topic_spec]
@@ -384,8 +414,9 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         # after the partition moves.
         self._initial_revision = self._get_initial_revision()
 
-        self.register_check("cloud_storage_status_endpoint",
-                            cloud_storage_status_endpoint_check)
+        self.register_check(
+            "cloud_storage_status_endpoint", cloud_storage_status_endpoint_check
+        )
 
         self.producer = self._create_producer(cleanup_policy)
         self.consumer = self._create_consumer(self.producer)
@@ -402,12 +433,20 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         self.producer.wait()
         self.consumer.wait()
 
-        assert self.redpanda.metric_sum(
-            "vectorized_cloud_storage_successful_downloads_total") > 0
+        assert (
+            self.redpanda.metric_sum(
+                "vectorized_cloud_storage_successful_downloads_total"
+            )
+            > 0
+        )
 
-        assert self.redpanda.metric_sum(
-            "redpanda_cloud_storage_spillover_manifest_uploads_total",
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS) > 0
+        assert (
+            self.redpanda.metric_sum(
+                "redpanda_cloud_storage_spillover_manifest_uploads_total",
+                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+            )
+            > 0
+        )
 
         bucket_view = BucketView(self.redpanda)
         bucket_view.assert_segments_deleted(self.topic, partition=0)
@@ -415,13 +454,18 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         if "compact" in cleanup_policy:
             # Assert that compacted segment re-upload operated during the test
             bucket_view.assert_at_least_n_uploaded_segments_compacted(
-                self.topic, partition=0, revision=self._initial_revision, n=1)
+                self.topic, partition=0, revision=self._initial_revision, n=1
+            )
         else:
             # Adjacent segment merging is disabled on compacted topics, so
             # check if it occurred only on non-compacted topics.
-            assert self.redpanda.metric_sum(
-                "redpanda_cloud_storage_jobs_local_segment_reuploads",
-                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS) > 0
+            assert (
+                self.redpanda.metric_sum(
+                    "redpanda_cloud_storage_jobs_local_segment_reuploads",
+                    metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+                )
+                > 0
+            )
 
         assert_cloud_storage_usage(self)
 
@@ -437,8 +481,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
 
             futs = {start_check(check): check for check in self.checks}
 
-            done, not_done = concurrent.futures.wait(
-                futs, timeout=self.check_interval)
+            done, not_done = concurrent.futures.wait(futs, timeout=self.check_interval)
 
             failed = []
             incomplete = []
@@ -446,13 +489,11 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             for f in done:
                 check_name = futs[f].name
                 if ex := f.exception():
-                    self.logger.error(
-                        f"Check {check_name} threw an exception: {ex}")
+                    self.logger.error(f"Check {check_name} threw an exception: {ex}")
                     failure_count += 1
                     failed.append(check_name)
                 else:
-                    self.logger.info(
-                        f"Check {check_name} completed successfuly")
+                    self.logger.info(f"Check {check_name} completed successfuly")
 
             for f in not_done:
                 check_name = futs[f].name
@@ -476,7 +517,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             r"Error in hydraton loop: .*Connection reset by peer",
             r"failed to hydrate chunk.*Connection reset by peer",
             r"failed to hydrate chunk.*NotFound",
-        ])
+        ],
+    )
     @parametrize(cleanup_policy="delete")
     @parametrize(cleanup_policy="compact,delete")
     @skip_debug_mode
@@ -501,7 +543,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             r"failed to hydrate chunk.*Connection reset by peer",
             r"failed to hydrate chunk.*NotFound",
             r"cluster.*Can't add segment",
-        ])
+        ],
+    )
     @parametrize(cleanup_policy="delete")
     @parametrize(cleanup_policy="compact,delete")
     @skip_debug_mode
@@ -518,13 +561,13 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
 
         partitions = []
         for topic in self.topics:
-            partitions.extend([(topic.name, pid)
-                               for pid in range(topic.partition_count)])
+            partitions.extend(
+                [(topic.name, pid) for pid in range(topic.partition_count)]
+            )
 
         while not self.is_complete():
             ntp_to_move = random.choice(partitions)
-            self._dispatch_random_partition_move(ntp_to_move[0],
-                                                 ntp_to_move[1])
+            self._dispatch_random_partition_move(ntp_to_move[0], ntp_to_move[1])
 
             self.do_checks()
             time.sleep(self.check_interval)

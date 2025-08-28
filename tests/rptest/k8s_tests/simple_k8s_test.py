@@ -22,9 +22,9 @@ class SimpleK8sTest(Test):
 
     @cluster(num_nodes=1, check_allowed_error_logs=False)
     def test_k8s(self):
-        '''
+        """
         Validate startup of k8s.
-        '''
+        """
         self.redpanda.start_node(None)
         node_memory = float(self.redpanda.get_node_memory_mb())
         assert node_memory > 1.0

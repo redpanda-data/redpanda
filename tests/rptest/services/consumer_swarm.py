@@ -22,18 +22,20 @@ class ConsumerSwarm(Service):
 
     logs = {"repeater_log": {"path": LOG_PATH, "collect_default": True}}
 
-    def __init__(self,
-                 context: TestContext,
-                 redpanda,
-                 topic: str,
-                 group: str,
-                 consumers: int,
-                 records_per_consumer: int,
-                 log_level="DEBUG",
-                 properties={},
-                 unique_topics: Optional[bool] = False,
-                 static_prefix: Optional[bool] = False,
-                 unique_groups=False):
+    def __init__(
+        self,
+        context: TestContext,
+        redpanda,
+        topic: str,
+        group: str,
+        consumers: int,
+        records_per_consumer: int,
+        log_level="DEBUG",
+        properties={},
+        unique_topics: Optional[bool] = False,
+        static_prefix: Optional[bool] = False,
+        unique_groups=False,
+    ):
         super(ConsumerSwarm, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -49,15 +51,18 @@ class ConsumerSwarm(Service):
         self._remote_port = 8080
         self._remote_addr = "0.0.0.0"
 
-        if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
+        if hasattr(redpanda, "GLOBAL_CLOUD_CLUSTER_CONFIG"):
             security_config = redpanda.security_config()
-            properties['security.protocol'] = 'SASL_SSL'
-            properties['sasl.mechanism'] = security_config.get(
-                'sasl_mechanism', 'PLAIN')
-            properties['sasl.username'] = security_config.get(
-                'sasl_plain_username', None)
-            properties['sasl.password'] = security_config.get(
-                'sasl_plain_password', None)
+            properties["security.protocol"] = "SASL_SSL"
+            properties["sasl.mechanism"] = security_config.get(
+                "sasl_mechanism", "PLAIN"
+            )
+            properties["sasl.username"] = security_config.get(
+                "sasl_plain_username", None
+            )
+            properties["sasl.password"] = security_config.get(
+                "sasl_plain_password", None
+            )
 
     def clean_node(self, node):
         self._redpanda.logger.debug(f"{self.__class__.__name__}.clean_node")
@@ -83,28 +88,28 @@ class ConsumerSwarm(Service):
         if self._unique_groups:
             cmd += " --unique-groups"
 
-        cmd = f"RUST_LOG={self._log_level} bash /opt/remote/control/start.sh {self.EXE} \"{cmd}\""
+        cmd = f'RUST_LOG={self._log_level} bash /opt/remote/control/start.sh {self.EXE} "{cmd}"'
         node.account.ssh(cmd)
         self._redpanda.wait_until(
             lambda: self.is_alive(node),
             timeout_sec=600,
             backoff_sec=1,
-            err_msg=
-            f"producer_swarm service {node.account.hostname} failed to start within {600} sec",
+            err_msg=f"producer_swarm service {node.account.hostname} failed to start within {600} sec",
         )
 
         self._node = node
 
     def is_alive(self, node):
         result = node.account.ssh_output(
-            f"bash /opt/remote/control/alive.sh {self.EXE}")
+            f"bash /opt/remote/control/alive.sh {self.EXE}"
+        )
         result = result.decode("utf-8")
         return "YES" in result
 
     def wait_node(self, node, timeout_sec=600):
-        self._redpanda.wait_until(lambda: not self.is_alive(node),
-                                  timeout_sec=timeout_sec,
-                                  backoff_sec=5)
+        self._redpanda.wait_until(
+            lambda: not self.is_alive(node), timeout_sec=timeout_sec, backoff_sec=5
+        )
         return True
 
     def stop_node(self, node):
@@ -115,7 +120,7 @@ class ConsumerSwarm(Service):
 
     def _get(self, node, rest_handle):
         """
-            Perform a GET to client_swarm's metrics API.
+        Perform a GET to client_swarm's metrics API.
         """
         url = self._remote_url(node, rest_handle)
         try:
@@ -137,14 +142,12 @@ class ConsumerSwarm(Service):
 
         res = self._get(self._node, path)
 
-        return self.MetricsSummary(int(res["min"]), int(res["median"]),
-                                   int(res["max"]))
+        return self.MetricsSummary(int(res["min"]), int(res["median"]), int(res["max"]))
 
     def await_progress(self, target_msg_rate, timeout_sec, err_msg=None):
         def check():
             return self.get_metrics_summary(seconds=20).p50 >= target_msg_rate
 
-        self._redpanda.wait_until(check,
-                                  timeout_sec=timeout_sec,
-                                  backoff_sec=1,
-                                  err_msg=err_msg)
+        self._redpanda.wait_until(
+            check, timeout_sec=timeout_sec, backoff_sec=1, err_msg=err_msg
+        )

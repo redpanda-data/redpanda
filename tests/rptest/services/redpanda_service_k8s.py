@@ -17,19 +17,22 @@ from rptest.services.redpanda_types import SaslCredentials
 
 
 class RedpandaServiceK8s(RedpandaServiceBase):
-    def __init__(self,
-                 context,
-                 num_brokers,
-                 *,
-                 cluster_spec=None,
-                 superuser: Optional[SaslCredentials] = None,
-                 skip_if_no_redpanda_log: Optional[bool] = False):
-        super(RedpandaServiceK8s,
-              self).__init__(context,
-                             num_brokers,
-                             cluster_spec=cluster_spec,
-                             superuser=superuser,
-                             skip_if_no_redpanda_log=skip_if_no_redpanda_log)
+    def __init__(
+        self,
+        context,
+        num_brokers,
+        *,
+        cluster_spec=None,
+        superuser: Optional[SaslCredentials] = None,
+        skip_if_no_redpanda_log: Optional[bool] = False,
+    ):
+        super(RedpandaServiceK8s, self).__init__(
+            context,
+            num_brokers,
+            cluster_spec=cluster_spec,
+            superuser=superuser,
+            skip_if_no_redpanda_log=skip_if_no_redpanda_log,
+        )
         self._trim_logs = False
         self._helm = None
         self.__kubectl = None

@@ -19,6 +19,7 @@ class FranzGoBench(ExampleBase):
     The common items between helper classes
     for the franz-go bench example.
     """
+
     def __init__(self, redpanda, topic, max_records, enable_sasl):
         super(FranzGoBench, self).__init__(redpanda)
 
@@ -50,9 +51,11 @@ class FranzGoBenchProduce(FranzGoBench):
     The helper class for franz-go's bench example
     using the producer endpoint
     """
+
     def __init__(self, redpanda, topic, max_records, enable_sasl):
-        super(FranzGoBenchProduce, self).__init__(redpanda, topic, max_records,
-                                                  enable_sasl)
+        super(FranzGoBenchProduce, self).__init__(
+            redpanda, topic, max_records, enable_sasl
+        )
 
     # Return the command to call in the shell
     def cmd(self):
@@ -61,7 +64,10 @@ class FranzGoBenchProduce(FranzGoBench):
 
         if self._enable_sasl:
             creds = self._redpanda.SUPERUSER_CREDENTIALS
-            cmd = cmd + f" -sasl-user {creds[0]} -sasl-pass {creds[1]} -sasl-method {creds[2]}"
+            cmd = (
+                cmd
+                + f" -sasl-user {creds[0]} -sasl-pass {creds[1]} -sasl-method {creds[2]}"
+            )
 
         return os.path.join(EXAMPLE_DIR, cmd)
 
@@ -71,9 +77,11 @@ class FranzGoBenchConsume(FranzGoBench):
     The helper class for franz-go's bench example
     using the consumer endpoint
     """
+
     def __init__(self, redpanda, topic, max_records, enable_sasl, group=None):
-        super(FranzGoBenchConsume, self).__init__(redpanda, topic, max_records,
-                                                  enable_sasl)
+        super(FranzGoBenchConsume, self).__init__(
+            redpanda, topic, max_records, enable_sasl
+        )
 
         self._group = group
 
@@ -87,6 +95,9 @@ class FranzGoBenchConsume(FranzGoBench):
 
         if self._enable_sasl:
             creds = self._redpanda.SUPERUSER_CREDENTIALS
-            cmd = cmd + f" -sasl-user {creds[0]} -sasl-pass {creds[1]} -sasl-method {creds[2]}"
+            cmd = (
+                cmd
+                + f" -sasl-user {creds[0]} -sasl-pass {creds[1]} -sasl-method {creds[2]}"
+            )
 
         return os.path.join(EXAMPLE_DIR, cmd)

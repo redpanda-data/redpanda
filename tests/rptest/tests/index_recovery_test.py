@@ -18,8 +18,9 @@ from rptest.services.admin import Admin
 
 class IndexRecoveryTest(RedpandaTest):
     def __init__(self, test_context):
-        super(IndexRecoveryTest, self).__init__(test_context=test_context,
-                                                log_level="trace")
+        super(IndexRecoveryTest, self).__init__(
+            test_context=test_context, log_level="trace"
+        )
         self.admin = Admin(self.redpanda)
 
     @cluster(num_nodes=1)
@@ -27,12 +28,13 @@ class IndexRecoveryTest(RedpandaTest):
         single_node = self.redpanda.started_nodes()[0]
         self.redpanda.stop_node(single_node)
         self.redpanda.start_node(single_node)
-        self.admin.wait_stable_configuration("controller",
-                                             namespace="redpanda",
-                                             replication=1)
+        self.admin.wait_stable_configuration(
+            "controller", namespace="redpanda", replication=1
+        )
         path = join(RedpandaService.DATA_DIR, "redpanda", "controller", "0_0")
-        files = single_node.account.ssh_output(f"ls {path}").decode(
-            "utf-8").splitlines()
+        files = (
+            single_node.account.ssh_output(f"ls {path}").decode("utf-8").splitlines()
+        )
         indices = [x for x in files if x.endswith(".base_index")]
         assert len(indices) > 0, "restart should create base_index file"
 
@@ -41,21 +43,23 @@ class IndexRecoveryTest(RedpandaTest):
         single_node = self.redpanda.started_nodes()[0]
         self.redpanda.stop_node(single_node)
         self.redpanda.start_node(single_node)
-        self.admin.wait_stable_configuration("controller",
-                                             namespace="redpanda",
-                                             replication=1)
+        self.admin.wait_stable_configuration(
+            "controller", namespace="redpanda", replication=1
+        )
         self.redpanda.stop_node(single_node)
         path = join(RedpandaService.DATA_DIR, "redpanda", "controller", "0_0")
-        files = single_node.account.ssh_output(f"ls {path}").decode(
-            "utf-8").splitlines()
+        files = (
+            single_node.account.ssh_output(f"ls {path}").decode("utf-8").splitlines()
+        )
         indices = [x for x in files if x.endswith(".base_index")]
         assert len(indices) > 0, "restart should create base_index file"
         last_index = sorted(indices)[-1]
-        path = join(RedpandaService.DATA_DIR, "redpanda", "controller", "0_0",
-                    last_index)
+        path = join(
+            RedpandaService.DATA_DIR, "redpanda", "controller", "0_0", last_index
+        )
         single_node.account.ssh_output(f"rm {path}")
         self.redpanda.start_node(single_node)
-        self.admin.wait_stable_configuration("controller",
-                                             namespace="redpanda",
-                                             replication=1)
+        self.admin.wait_stable_configuration(
+            "controller", namespace="redpanda", replication=1
+        )
         assert single_node.account.exists(path)

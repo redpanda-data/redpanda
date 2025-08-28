@@ -40,25 +40,30 @@ class Segment:
             self.compaction_index = fn
 
     def delete_indices(self, allow_fail=False):
-        paths = map(lambda fn: os.path.join(self.partition.path, fn),
-                    filter(bool, (self.base_index, self.compaction_index)))
+        paths = map(
+            lambda fn: os.path.join(self.partition.path, fn),
+            filter(bool, (self.base_index, self.compaction_index)),
+        )
         for path in paths:
             self.partition.node.account.remove(path, allow_fail)
 
     def recovered(self):
-        files = map(lambda ext: self.name + ext,
-                    (".log", ".base_index", ".compaction_index"))
+        files = map(
+            lambda ext: self.name + ext, (".log", ".base_index", ".compaction_index")
+        )
         paths = map(lambda fn: os.path.join(self.partition.path, fn), files)
-        return all(
-            map(lambda path: self.partition.node.account.isfile(path), paths))
+        return all(map(lambda path: self.partition.node.account.isfile(path), paths))
 
     def set_size(self, s: int):
         self.size = s
 
     def __repr__(self):
-        return "{}:{}{}{}".format(self.name, "D" if self.data_file else "d",
-                                  "B" if self.base_index else "b",
-                                  "C" if self.compaction_index else "c")
+        return "{}:{}{}{}".format(
+            self.name,
+            "D" if self.data_file else "d",
+            "B" if self.base_index else "b",
+            "C" if self.compaction_index else "c",
+        )
 
 
 class Partition:
@@ -83,9 +88,9 @@ class Partition:
 
     def set_segment_size(self, segment_name: str, size: int):
         """Set the data size of a segment: this is not the physical size of
-           all the segment's files, but just the size of the data part, excluding
-           space used by any indices.  This is usually what you care about, because
-           it's how Redpanda itself reasons about size for retention."""
+        all the segment's files, but just the size of the data part, excluding
+        space used by any indices.  This is usually what you care about, because
+        it's how Redpanda itself reasons about size for retention."""
         seg, ext = os.path.splitext(segment_name)
         if not (re.match(r"^\d+\-\d+\-v\d+$", seg) and ext == ".log"):
             return
@@ -102,8 +107,13 @@ class Partition:
             segment.delete_indices(allow_fail)
 
     def recovered(self):
-        n_recovered = sum(1 for s in map(lambda s: s.recovered(), (
-            kv[1] for kv in self.segments.items())) if s is True)
+        n_recovered = sum(
+            1
+            for s in map(
+                lambda s: s.recovered(), (kv[1] for kv in self.segments.items())
+            )
+            if s is True
+        )
 
         # All but one should have index files: the one that doesn't is
         # the currently open segment (segments don't get indices on disk
@@ -113,7 +123,7 @@ class Partition:
     def get_mtime(self, filename):
         path = os.path.join(self.path, filename)
         out = self.node.account.ssh_capture(f"stat --format=%Y {path}")
-        mtime = ''.join(out).strip()
+        mtime = "".join(out).strip()
         return int(mtime)
 
     def __repr__(self):
@@ -188,8 +198,9 @@ class NodeStorage:
                 return [p[1] for p in parts.items()]
         return []
 
-    def segments(self, ns: str, topic: str,
-                 partition_idx: int) -> Optional[list[Segment]]:
+    def segments(
+        self, ns: str, topic: str, partition_idx: int
+    ) -> Optional[list[Segment]]:
         partitions = self.partitions(ns, topic)
         if len(partitions) <= partition_idx:
             # Segments for unkown partition requested
@@ -211,12 +222,11 @@ class ClusterStorage:
         self.nodes.append(node_storage)
 
     def partitions(self, ns, topic):
-        return itertools.chain(
-            *map(lambda n: n.partitions(ns, topic), self.nodes))
+        return itertools.chain(*map(lambda n: n.partitions(ns, topic), self.nodes))
 
-    def segments_by_node(self, ns: str, topic: str,
-                         partition_idx: int) -> dict[str, list[Segment]]:
+    def segments_by_node(
+        self, ns: str, topic: str, partition_idx: int
+    ) -> dict[str, list[Segment]]:
         return {
-            node.name: node.segments(ns, topic, partition_idx)
-            for node in self.nodes
+            node.name: node.segments(ns, topic, partition_idx) for node in self.nodes
         }

@@ -15,8 +15,8 @@ from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.service import Service
 from rptest.util import wait_until, wait_until_result
 
-SERVER_DIR = '/opt/ocsf-server'
-SCHEMA_DIR = '/opt/ocsf-schema'
+SERVER_DIR = "/opt/ocsf-server"
+SCHEMA_DIR = "/opt/ocsf-schema"
 KEY_FILE = os.path.join(SERVER_DIR, "server.key")
 CRT_FILE = os.path.join(SERVER_DIR, "server.crt")
 SCHEMA_SERVER_BIN = os.path.join(SERVER_DIR, "dist/bin/schema_server")
@@ -27,26 +27,29 @@ HTTP_PORT = 8000
 
 
 class OcsfSchemaError(Exception):
-    """Exception used by OCSF services
-    """
+    """Exception used by OCSF services"""
+
     def __init__(self, error):
         super(OcsfSchemaError, self).__init__(error)
 
 
 class OcsfServer(Service):
     """Service used to start and interact with the OCSF server
-    
+
     This service provides the ability to validate OCSF schema
     """
+
     def __init__(self, context):
         super(OcsfServer, self).__init__(context, num_nodes=1)
 
     def _format_cmd(self, cmd: str):
-        return CMD_TMPL.format(key_file=KEY_FILE,
-                               cert_file=CRT_FILE,
-                               schema_dir=SCHEMA_DIR,
-                               bin_file=SCHEMA_SERVER_BIN,
-                               cmd=cmd)
+        return CMD_TMPL.format(
+            key_file=KEY_FILE,
+            cert_file=CRT_FILE,
+            schema_dir=SCHEMA_DIR,
+            bin_file=SCHEMA_SERVER_BIN,
+            cmd=cmd,
+        )
 
     def _start_cmd(self):
         return self._format_cmd("daemon")
@@ -61,20 +64,20 @@ class OcsfServer(Service):
         if node is None:
             node = self.nodes[0]
         hostname = node.account.hostname
-        return f'http://{hostname}:{HTTP_PORT}/api/{path}'
+        return f"http://{hostname}:{HTTP_PORT}/api/{path}"
 
     def get_api_version(self, node=None):
         """Returns current verison of OCSF server
-        
+
         Parameters
         ----------
         node: default=None
-        
+
         Returns
         -------
         Version of the OCSF server
         """
-        uri = self._create_uri(node, 'version')
+        uri = self._create_uri(node, "version")
         self.logger.debug(f'Getting version via "{uri}"')
 
         def _wait_for_api_version():
@@ -83,41 +86,41 @@ class OcsfServer(Service):
                 return (False, None)
             return (True, r)
 
-        r = wait_until_result(_wait_for_api_version,
-                              timeout_sec=5,
-                              backoff_sec=1,
-                              retry_on_exc=True,
-                              err_msg=f'Could not get API version from {uri}')
+        r = wait_until_result(
+            _wait_for_api_version,
+            timeout_sec=5,
+            backoff_sec=1,
+            retry_on_exc=True,
+            err_msg=f"Could not get API version from {uri}",
+        )
 
         r = requests.get(uri)
         if r.status_code != 200:
-            raise Exception(f'Unexepected status code: {r.status_code}')
-        return r.json()['version']
+            raise Exception(f"Unexepected status code: {r.status_code}")
+        return r.json()["version"]
 
     def validate_schema(self, schema, node=None):
         """Validates a provided schema
 
         Will throw an OcsfSchemaError if the schema fails to validate
-        
+
         Parameters
         ----------
         schema : json
             The schema to generate
-            
+
         node : default=None
         """
-        uri = self._create_uri(node, 'validate')
-        self.logger.debug(
-            f'Attempting to validate schema {schema} against {uri}')
-        r = requests.post(uri,
-                          headers={
-                              'content-type': 'application/json',
-                              'accept': 'application/json'
-                          },
-                          json=schema)
+        uri = self._create_uri(node, "validate")
+        self.logger.debug(f"Attempting to validate schema {schema} against {uri}")
+        r = requests.post(
+            uri,
+            headers={"content-type": "application/json", "accept": "application/json"},
+            json=schema,
+        )
         if r.status_code != 200:
-            raise Exception(f'Unexpected status code: {r.status_code}')
-        self.logger.debug(f'Response from server: {r.json()}')
+            raise Exception(f"Unexpected status code: {r.status_code}")
+        self.logger.debug(f"Response from server: {r.json()}")
         resp = r.json()
         if len(resp) != 0:
             raise OcsfSchemaError(json.dumps(resp))
@@ -126,14 +129,12 @@ class OcsfServer(Service):
         pid_cmd = self._pid_cmd()
         self.logger.debug(f'Getting OCSF server pid with cmd "{pid_cmd}"')
         try:
-            line = node.account.ssh_capture(pid_cmd,
-                                            allow_fail=False,
-                                            callback=int)
+            line = node.account.ssh_capture(pid_cmd, allow_fail=False, callback=int)
             p = next(line)
             if node.account.alive(p):
                 return [p]
         except (RemoteCommandError, ValueError):
-            self.logger.warn(f'pid file not found for ocsf server')
+            self.logger.warn(f"pid file not found for ocsf server")
 
         return []
 
@@ -152,10 +153,12 @@ class OcsfServer(Service):
                 pass
             return False
 
-        wait_until(_wait_for_version,
-                   timeout_sec=10,
-                   backoff_sec=1,
-                   err_msg='Failed to get version from server during startup')
+        wait_until(
+            _wait_for_version,
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg="Failed to get version from server during startup",
+        )
 
     def stop_node(self, node):
         cmd = self._stop_cmd()

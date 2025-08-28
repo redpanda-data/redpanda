@@ -31,18 +31,19 @@ from rptest.utils.mode_checks import skip_debug_mode
 
 class DatalakeE2ETests(RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):
-        super(DatalakeE2ETests,
-              self).__init__(test_ctx,
-                             num_brokers=1,
-                             si_settings=SISettings(test_context=test_ctx),
-                             extra_rp_conf={
-                                 "iceberg_enabled": "true",
-                                 "iceberg_catalog_commit_interval_ms": 5000
-                             },
-                             schema_registry_config=SchemaRegistryConfig(),
-                             pandaproxy_config=PandaproxyConfig(),
-                             *args,
-                             **kwargs)
+        super(DatalakeE2ETests, self).__init__(
+            test_ctx,
+            num_brokers=1,
+            si_settings=SISettings(test_context=test_ctx),
+            extra_rp_conf={
+                "iceberg_enabled": "true",
+                "iceberg_catalog_commit_interval_ms": 5000,
+            },
+            schema_registry_config=SchemaRegistryConfig(),
+            pandaproxy_config=PandaproxyConfig(),
+            *args,
+            **kwargs,
+        )
         self.test_ctx = test_ctx
         self.topic_name = "test"
 
@@ -51,104 +52,120 @@ class DatalakeE2ETests(RedpandaTest):
         pass
 
     def _get_serde_client(
-            self,
-            schema_type: SchemaType,
-            client_type: SerdeClientType,
-            topic: str,
-            count: int,
-            skip_known_types: Optional[bool] = None,
-            subject_name_strategy: Optional[str] = None,
-            payload_class: Optional[str] = None,
-            compression_type: Optional[TopicSpec.CompressionTypes] = None):
-        schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
+        self,
+        schema_type: SchemaType,
+        client_type: SerdeClientType,
+        topic: str,
+        count: int,
+        skip_known_types: Optional[bool] = None,
+        subject_name_strategy: Optional[str] = None,
+        payload_class: Optional[str] = None,
+        compression_type: Optional[TopicSpec.CompressionTypes] = None,
+    ):
+        schema_reg = self.redpanda.schema_reg().split(",", 1)[0]
         sec_cfg = self.redpanda.kafka_client_security().to_dict()
 
-        return SerdeClient(self.test_context,
-                           self.redpanda.brokers(),
-                           schema_reg,
-                           schema_type,
-                           client_type,
-                           count,
-                           topic=topic,
-                           security_config=sec_cfg if sec_cfg else None,
-                           skip_known_types=skip_known_types,
-                           subject_name_strategy=subject_name_strategy,
-                           payload_class=payload_class,
-                           compression_type=compression_type)
+        return SerdeClient(
+            self.test_context,
+            self.redpanda.brokers(),
+            schema_reg,
+            schema_type,
+            client_type,
+            count,
+            topic=topic,
+            security_config=sec_cfg if sec_cfg else None,
+            skip_known_types=skip_known_types,
+            subject_name_strategy=subject_name_strategy,
+            payload_class=payload_class,
+            compression_type=compression_type,
+        )
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
-            filesystem_catalog_mode=[False, True])
-    def test_e2e_basic(self, cloud_storage_type, query_engine,
-                       filesystem_catalog_mode):
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
+        filesystem_catalog_mode=[False, True],
+    )
+    def test_e2e_basic(self, cloud_storage_type, query_engine, filesystem_catalog_mode):
         # Create a topic
         # Produce some events
         # Ensure they end up in datalake
         count = 100
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              filesystem_catalog_mode=filesystem_catalog_mode,
-                              include_query_engines=[query_engine]) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            filesystem_catalog_mode=filesystem_catalog_mode,
+            include_query_engines=[query_engine],
+        ) as dl:
             dl.create_iceberg_enabled_topic(self.topic_name, partitions=10)
             dl.produce_to_topic(self.topic_name, 1024, count)
             dl.wait_for_translation(self.topic_name, msg_count=count)
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
-            use_serde_parquet=[False, True])
-    def test_avro_schema(self, cloud_storage_type, query_engine,
-                         use_serde_parquet):
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
+        use_serde_parquet=[False, True],
+    )
+    def test_avro_schema(self, cloud_storage_type, query_engine, use_serde_parquet):
         count = 100
         table_name = f"redpanda.{self.topic_name}"
 
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              filesystem_catalog_mode=True,
-                              include_query_engines=[query_engine]) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            filesystem_catalog_mode=True,
+            include_query_engines=[query_engine],
+        ) as dl:
             dl.create_iceberg_enabled_topic(
-                self.topic_name, iceberg_mode="value_schema_id_prefix")
-            avro_serde_client = self._get_serde_client(SchemaType.AVRO,
-                                                       SerdeClientType.Golang,
-                                                       self.topic_name, count)
+                self.topic_name, iceberg_mode="value_schema_id_prefix"
+            )
+            avro_serde_client = self._get_serde_client(
+                SchemaType.AVRO, SerdeClientType.Golang, self.topic_name, count
+            )
             avro_serde_client.start()
             avro_serde_client.wait()
             dl.wait_for_translation(self.topic_name, msg_count=count)
 
             if query_engine == QueryEngineType.TRINO:
                 trino = dl.trino()
-                trino_expected_out = [(
-                    'redpanda',
-                    'row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)',
-                    '', ''), ('val', 'bigint', '', '')]
-                trino_describe_out = trino.run_query_fetch_all(
-                    f"describe {table_name}")
-                assert trino_describe_out == trino_expected_out, str(
-                    trino_describe_out)
+                trino_expected_out = [
+                    (
+                        "redpanda",
+                        "row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)",
+                        "",
+                        "",
+                    ),
+                    ("val", "bigint", "", ""),
+                ]
+                trino_describe_out = trino.run_query_fetch_all(f"describe {table_name}")
+                assert trino_describe_out == trino_expected_out, str(trino_describe_out)
             else:
                 spark = dl.spark()
-                spark_expected_out = [(
-                    'redpanda',
-                    'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>',
-                    None), ('val', 'bigint', None), ('', '', ''),
-                                      ('# Partitioning', '', ''),
-                                      ('Part 0', 'hours(redpanda.timestamp)',
-                                       '')]
-                spark_describe_out = spark.run_query_fetch_all(
-                    f"describe {table_name}")
-                assert spark_describe_out == spark_expected_out, str(
-                    spark_describe_out)
+                spark_expected_out = [
+                    (
+                        "redpanda",
+                        "struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>",
+                        None,
+                    ),
+                    ("val", "bigint", None),
+                    ("", "", ""),
+                    ("# Partitioning", "", ""),
+                    ("Part 0", "hours(redpanda.timestamp)", ""),
+                ]
+                spark_describe_out = spark.run_query_fetch_all(f"describe {table_name}")
+                assert spark_describe_out == spark_expected_out, str(spark_describe_out)
 
     @cluster(num_nodes=4)
     @matrix(cloud_storage_type=supported_storage_types())
     def test_upload_after_external_update(self, cloud_storage_type):
         table_name = f"redpanda.{self.topic_name}"
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              filesystem_catalog_mode=True,
-                              include_query_engines=[QueryEngineType.SPARK
-                                                     ]) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            filesystem_catalog_mode=True,
+            include_query_engines=[QueryEngineType.SPARK],
+        ) as dl:
             count = 100
             dl.create_iceberg_enabled_topic(self.topic_name, partitions=1)
             dl.produce_to_topic(self.topic_name, 1024, count)
@@ -159,23 +176,25 @@ class DatalakeE2ETests(RedpandaTest):
             assert count_after_del == 0, f"{count_after_del} rows, expected 0"
 
             dl.produce_to_topic(self.topic_name, 1024, count)
-            dl.wait_for_translation_until_offset(self.topic_name,
-                                                 2 * count - 1)
-            count_after_produce = spark.count_table("redpanda",
-                                                    self.topic_name)
-            assert count_after_produce == count, f"{count_after_produce} rows, expected {count}"
+            dl.wait_for_translation_until_offset(self.topic_name, 2 * count - 1)
+            count_after_produce = spark.count_table("redpanda", self.topic_name)
+            assert count_after_produce == count, (
+                f"{count_after_produce} rows, expected {count}"
+            )
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=supported_storage_types(),
-            filesystem_catalog_mode=[True, False])
-    def test_topic_lifecycle(self, cloud_storage_type,
-                             filesystem_catalog_mode):
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        filesystem_catalog_mode=[True, False],
+    )
+    def test_topic_lifecycle(self, cloud_storage_type, filesystem_catalog_mode):
         count = 100
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              filesystem_catalog_mode=filesystem_catalog_mode,
-                              include_query_engines=[QueryEngineType.SPARK
-                                                     ]) as dl:
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            filesystem_catalog_mode=filesystem_catalog_mode,
+            include_query_engines=[QueryEngineType.SPARK],
+        ) as dl:
             rpk = RpkTool(self.redpanda)
 
             # produce some data then delete the topic
@@ -183,8 +202,7 @@ class DatalakeE2ETests(RedpandaTest):
             dl.produce_to_topic(self.topic_name, 1024, count)
             dl.wait_for_translation(self.topic_name, msg_count=count)
 
-            rpk.alter_topic_config(self.topic_name, "redpanda.iceberg.delete",
-                                   "false")
+            rpk.alter_topic_config(self.topic_name, "redpanda.iceberg.delete", "false")
             rpk.delete_topic(self.topic_name)
 
             # table is not deleted, it will contain messages from both topic instances
@@ -198,13 +216,14 @@ class DatalakeE2ETests(RedpandaTest):
             catalog_client = dl.catalog_client()
 
             def table_deleted():
-                return not dl.table_exists(self.topic_name,
-                                           client=catalog_client)
+                return not dl.table_exists(self.topic_name, client=catalog_client)
 
-            wait_until(table_deleted,
-                       timeout_sec=30,
-                       backoff_sec=5,
-                       err_msg="table was not deleted")
+            wait_until(
+                table_deleted,
+                timeout_sec=30,
+                backoff_sec=5,
+                err_msg="table was not deleted",
+            )
 
             # recreate an empty topic a few times
             for _ in range(3):
@@ -218,70 +237,67 @@ class DatalakeE2ETests(RedpandaTest):
 
 
 class DatalakeMetricsTest(RedpandaTest):
-
-    commit_lag = 'vectorized_cluster_partition_iceberg_offsets_pending_commit'
-    translation_lag = 'vectorized_cluster_partition_iceberg_offsets_pending_translation'
+    commit_lag = "vectorized_cluster_partition_iceberg_offsets_pending_commit"
+    translation_lag = "vectorized_cluster_partition_iceberg_offsets_pending_translation"
 
     def __init__(self, test_ctx, *args, **kwargs):
-        super(DatalakeMetricsTest,
-              self).__init__(test_ctx,
-                             num_brokers=3,
-                             si_settings=SISettings(test_context=test_ctx),
-                             extra_rp_conf={
-                                 "iceberg_enabled": "true",
-                                 "iceberg_catalog_commit_interval_ms": "5000",
-                                 "enable_leader_balancer": False
-                             },
-                             schema_registry_config=SchemaRegistryConfig(),
-                             pandaproxy_config=PandaproxyConfig(),
-                             *args,
-                             **kwargs)
+        super(DatalakeMetricsTest, self).__init__(
+            test_ctx,
+            num_brokers=3,
+            si_settings=SISettings(test_context=test_ctx),
+            extra_rp_conf={
+                "iceberg_enabled": "true",
+                "iceberg_catalog_commit_interval_ms": "5000",
+                "enable_leader_balancer": False,
+            },
+            schema_registry_config=SchemaRegistryConfig(),
+            pandaproxy_config=PandaproxyConfig(),
+            *args,
+            **kwargs,
+        )
         self.test_ctx = test_ctx
         self.topic_name = "test"
 
     def setUp(self):
         pass
 
-    def wait_for_lag(self, metric_check: MetricCheck, metric_name: str,
-                     count: int):
+    def wait_for_lag(self, metric_check: MetricCheck, metric_name: str, count: int):
         wait_until(
-            lambda: metric_check.evaluate([(metric_name, lambda _, val: val ==
-                                            count)]),
+            lambda: metric_check.evaluate([(metric_name, lambda _, val: val == count)]),
             timeout_sec=30,
             backoff_sec=5,
-            err_msg=f"Timed out waiting for {metric_name} to reach: {count}")
+            err_msg=f"Timed out waiting for {metric_name} to reach: {count}",
+        )
 
     @cluster(num_nodes=5)
     @matrix(cloud_storage_type=supported_storage_types())
     def test_lag_metrics(self, cloud_storage_type):
-
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              filesystem_catalog_mode=False,
-                              include_query_engines=[]) as dl:
-
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            filesystem_catalog_mode=False,
+            include_query_engines=[],
+        ) as dl:
             # Stop the catalog to halt the translation flow
             dl.catalog_service.stop()
 
-            dl.create_iceberg_enabled_topic(self.topic_name,
-                                            partitions=1,
-                                            replicas=3)
+            dl.create_iceberg_enabled_topic(self.topic_name, partitions=1, replicas=3)
             topic_leader = self.redpanda.partitions(self.topic_name)[0].leader
             count = randint(12, 21)
             dl.produce_to_topic(self.topic_name, 1, msg_count=count)
 
-            m = MetricCheck(self.redpanda.logger,
-                            self.redpanda,
-                            topic_leader, [
-                                DatalakeMetricsTest.commit_lag,
-                                DatalakeMetricsTest.translation_lag
-                            ],
-                            labels={
-                                'namespace': 'kafka',
-                                'topic': self.topic_name,
-                                'partition': '0'
-                            },
-                            reduce=sum)
+            m = MetricCheck(
+                self.redpanda.logger,
+                self.redpanda,
+                topic_leader,
+                [DatalakeMetricsTest.commit_lag, DatalakeMetricsTest.translation_lag],
+                labels={
+                    "namespace": "kafka",
+                    "topic": self.topic_name,
+                    "partition": "0",
+                },
+                reduce=sum,
+            )
 
             # Wait for lag build up
             self.wait_for_lag(m, DatalakeMetricsTest.translation_lag, count)
@@ -303,15 +319,14 @@ class DatalakeDelayedEnablementTest(RedpandaTest):
             extra_rp_conf={
                 "iceberg_catalog_commit_interval_ms": 5000,
                 "log_compaction_interval_ms": 2000,
-                "storage_target_replay_bytes": 5 * 1024 * 1024
+                "storage_target_replay_bytes": 5 * 1024 * 1024,
             },
             schema_registry_config=SchemaRegistryConfig(),
             pandaproxy_config=PandaproxyConfig(),
-            environment={
-                "__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"
-            },
+            environment={"__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"},
             *args,
-            **kwargs)
+            **kwargs,
+        )
         self.test_ctx = test_ctx
 
     def setUp(self):
@@ -322,17 +337,17 @@ class DatalakeDelayedEnablementTest(RedpandaTest):
         partitions = admin.get_partitions(topic=topic_name)
 
         for p in partitions:
-            p_id = p['partition_id']
-            status = admin.get_partition_state("kafka",
-                                               topic=topic_name,
-                                               partition=p['partition_id'])
-            for replica in status['replicas']:
-                c_index = replica['raft_state']['commit_index']
-                for stm in replica['raft_state']['stms']:
+            p_id = p["partition_id"]
+            status = admin.get_partition_state(
+                "kafka", topic=topic_name, partition=p["partition_id"]
+            )
+            for replica in status["replicas"]:
+                c_index = replica["raft_state"]["commit_index"]
+                for stm in replica["raft_state"]["stms"]:
                     self.logger.debug(
                         f"{topic_name}/{p_id} state machine: {stm['name']} on: {replica['raft_state']['node_id']} last_applied_offset: {stm['last_applied_offset']}"
                     )
-                    if stm['last_applied_offset'] < c_index:
+                    if stm["last_applied_offset"] < c_index:
                         return False
 
         return True
@@ -342,17 +357,19 @@ class DatalakeDelayedEnablementTest(RedpandaTest):
     @skip_debug_mode
     def test_enabling_iceberg_in_existing_cluster(self, cloud_storage_type):
         count = 100
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              include_query_engines=[QueryEngineType.SPARK
-                                                     ]) as dl:
-
-            topic = TopicSpec(name="delayed-iceberg-topic",
-                              partition_count=3,
-                              replication_factor=3,
-                              segment_bytes=1024 * 1024,
-                              redpanda_remote_read=False,
-                              redpanda_remote_write=False)
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.SPARK],
+        ) as dl:
+            topic = TopicSpec(
+                name="delayed-iceberg-topic",
+                partition_count=3,
+                replication_factor=3,
+                segment_bytes=1024 * 1024,
+                redpanda_remote_read=False,
+                redpanda_remote_write=False,
+            )
 
             DefaultClient(dl.redpanda).create_topic(topic)
 
@@ -363,18 +380,21 @@ class DatalakeDelayedEnablementTest(RedpandaTest):
             dl.redpanda.restart_nodes(dl.redpanda.nodes)
 
             def wait_for_topic(topic_name: str):
-                wait_until(lambda: self.is_topic_fully_caught_up(topic_name),
-                           timeout_sec=30,
-                           backoff_sec=1,
-                           err_msg=f"Error waiting for topic {topic_name} \
-                        state machines to catch up")
+                wait_until(
+                    lambda: self.is_topic_fully_caught_up(topic_name),
+                    timeout_sec=30,
+                    backoff_sec=1,
+                    err_msg=f"Error waiting for topic {topic_name} \
+                        state machines to catch up",
+                )
 
             wait_for_topic(topic.name)
             bytes_read_before = self.redpanda.estimate_total_disk_bytes_read()
 
             # enable iceberg, this will restart the cluster
-            dl.redpanda.set_cluster_config({"iceberg_enabled": True},
-                                           expect_restart=True)
+            dl.redpanda.set_cluster_config(
+                {"iceberg_enabled": True}, expect_restart=True
+            )
 
             wait_for_topic(topic.name)
             bytes_read_after = self.redpanda.estimate_total_disk_bytes_read()
@@ -384,5 +404,6 @@ class DatalakeDelayedEnablementTest(RedpandaTest):
             )
             # we introduce a small tolerance here, since the read bytes may
             # increase slightly due to term changes and leader elections.
-            assert bytes_read_after <= bytes_read_before * 1.01,\
-            f"Enabling Iceberg in the cluster should not cause a major read increase"
+            assert bytes_read_after <= bytes_read_before * 1.01, (
+                f"Enabling Iceberg in the cluster should not cause a major read increase"
+            )

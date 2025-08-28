@@ -6,10 +6,10 @@ from ducktape.mark import ignore
 
 def allocate_and_free(cluster, logger):
     num_nodes = cluster.num_available_nodes()
-    logger.debug(f'skip_debug_mode:: allocating {num_nodes} nodes')
+    logger.debug(f"skip_debug_mode:: allocating {num_nodes} nodes")
     spec = ClusterSpec.simple_linux(num_nodes)
     nodes = cluster.alloc(spec)
-    logger.debug(f'skip_debug_mode:: freeing up {num_nodes} nodes')
+    logger.debug(f"skip_debug_mode:: freeing up {num_nodes} nodes")
     cluster.free(nodes)
 
 
@@ -22,20 +22,20 @@ def cleanup_on_early_exit(caller):
     then it is called instead of the default action.
     """
     name = type(caller).__name__
-    if hook := getattr(caller, 'early_exit_hook', None):
-        assert callable(
-            hook
-        ), f'{name.early_exit_hook} should be a method which can be called to set up early exit from test'
+    if hook := getattr(caller, "early_exit_hook", None):
+        assert callable(hook), (
+            f"{name.early_exit_hook} should be a method which can be called to set up early exit from test"
+        )
         hook()
 
-    caller.logger.debug(f'Cleaning up unused nodes.')
+    caller.logger.debug(f"Cleaning up unused nodes.")
 
-    if test_context := getattr(caller, 'test_context', None):
+    if test_context := getattr(caller, "test_context", None):
         allocate_and_free(test_context.cluster, caller.logger)
 
 
 def is_debug_mode():
-    return os.environ.get('BUILD_TYPE', None) == 'debug'
+    return os.environ.get("BUILD_TYPE", None) == "debug"
 
 
 def skip_debug_mode(*args, **kwargs):
@@ -75,9 +75,9 @@ def in_fips_environment() -> bool:
     """
     fips_file = "/proc/sys/crypto/fips_enabled"
     if os.path.exists(fips_file) and os.path.isfile(fips_file):
-        with open(fips_file, 'r') as f:
+        with open(fips_file, "r") as f:
             contents = f.read().strip()
-            return contents == '1'
+            return contents == "1"
 
     return False
 

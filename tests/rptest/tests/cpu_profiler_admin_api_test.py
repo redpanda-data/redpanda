@@ -19,59 +19,66 @@ import requests
 
 
 class CPUProfilerAdminAPITest(RedpandaTest):
-    topics = (TopicSpec(partition_count=30, replication_factor=3), )
+    topics = (TopicSpec(partition_count=30, replication_factor=3),)
 
     def __init__(self, test_context):
         super(CPUProfilerAdminAPITest, self).__init__(
             test_context=test_context,
             num_brokers=3,
-            log_config=LoggingConfig('info',
-                                     logger_levels={'resources': 'trace'}),
+            log_config=LoggingConfig("info", logger_levels={"resources": "trace"}),
             extra_rp_conf={
                 "cpu_profiler_enabled": False,
                 "cpu_profiler_sample_period_ms": 50,
-            })
+            },
+        )
 
         self.admin = Admin(self.redpanda)
 
     @cluster(num_nodes=4)
     def test_get_cpu_profile(self):
-        self.redpanda.set_cluster_config({
-            "cpu_profiler_enabled": True,
-        })
+        self.redpanda.set_cluster_config(
+            {
+                "cpu_profiler_enabled": True,
+            }
+        )
 
         # Provide traffic so there is something to sample.
-        with repeater_traffic(context=self.test_context,
-                              redpanda=self.redpanda,
-                              topics=[self.topic],
-                              msg_size=4096,
-                              workers=1) as repeater:
+        with repeater_traffic(
+            context=self.test_context,
+            redpanda=self.redpanda,
+            topics=[self.topic],
+            msg_size=4096,
+            workers=1,
+        ) as repeater:
             repeater.await_group_ready()
-            repeater.await_progress(2 * 1024,
-                                    timeout_sec=150 if self.debug_mode else 75)
+            repeater.await_progress(
+                2 * 1024, timeout_sec=150 if self.debug_mode else 75
+            )
 
             profile = self.admin.get_cpu_profile()
 
             assert len(profile) > 0, "At least one shard should exist"
-            assert len(
-                profile[0]["samples"]
-            ) > 0, "At least one cpu profile should've been collected."
+            assert len(profile[0]["samples"]) > 0, (
+                "At least one cpu profile should've been collected."
+            )
 
     @cluster(num_nodes=4)
     def test_get_cpu_profile_with_override(self):
         # Provide traffic so there is something to sample.
-        with repeater_traffic(context=self.test_context,
-                              redpanda=self.redpanda,
-                              topics=[self.topic],
-                              msg_size=4096,
-                              workers=1) as repeater:
+        with repeater_traffic(
+            context=self.test_context,
+            redpanda=self.redpanda,
+            topics=[self.topic],
+            msg_size=4096,
+            workers=1,
+        ) as repeater:
             repeater.await_group_ready()
             profile = self.admin.get_cpu_profile(wait_ms=30 * 1_000)
 
             assert len(profile) > 0, "At least one shard should exist"
-            assert any(
-                len(p["samples"]) > 0 for p in
-                profile), "At least one cpu profile should've been collected."
+            assert any(len(p["samples"]) > 0 for p in profile), (
+                "At least one cpu profile should've been collected."
+            )
 
     @cluster(num_nodes=3)
     def test_get_cpu_profile_with_override_limits(self):

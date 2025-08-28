@@ -41,12 +41,19 @@ class RpkGroupCommandsTest(RedpandaTest):
         self.topic_spec = TopicSpec(partition_count=p_cnt, name=topic_name)
         self.client().create_topic(specs=self.topic_spec)
         # produce some messages to the topic
-        self.producer = RpkProducer(self._ctx, self.redpanda,
-                                    self.topic_spec.name, 128, 500)
+        self.producer = RpkProducer(
+            self._ctx, self.redpanda, self.topic_spec.name, 128, 500
+        )
         self.producer.start()
 
-    def validate_partition(self, partition, exp_current_offset,
-                           exp_log_start_offset, exp_log_end_offset, exp_lag):
+    def validate_partition(
+        self,
+        partition,
+        exp_current_offset,
+        exp_log_start_offset,
+        exp_log_end_offset,
+        exp_lag,
+    ):
         assert partition.current_offset == exp_current_offset
         assert partition.log_start_offset == exp_log_start_offset
         assert partition.log_end_offset == exp_log_end_offset
@@ -103,9 +110,11 @@ class RpkGroupCommandsTest(RedpandaTest):
 
         rpk = RpkTool(self.redpanda)
 
-        wait_until(lambda: rpk.group_describe(group_1).state == "Stable",
-                   timeout_sec=30,
-                   backoff_sec=1)
+        wait_until(
+            lambda: rpk.group_describe(group_1).state == "Stable",
+            timeout_sec=30,
+            backoff_sec=1,
+        )
 
         self.producer.stop()
         consumer.stop()
@@ -194,7 +203,7 @@ class RpkGroupCommandsTest(RedpandaTest):
 {topic_2} 0 0"""
 
         with tempfile.NamedTemporaryFile() as tf:
-            tf.write(bytes(file, 'UTF-8'))
+            tf.write(bytes(file, "UTF-8"))
             tf.seek(0)
 
             self.rpk.group_seek_to_file(group_1, tf.name)

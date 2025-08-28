@@ -9,15 +9,20 @@
 
 from rptest.services.redpanda import MetricsEndpoint
 from rptest.services.redpanda import FAILURE_INJECTION_LOG_ALLOW_LIST
-from rptest.services.storage_failure_injection import FailureInjectionConfig, \
-    NTPFailureInjectionConfig, FailureConfig, NTP, Operation, BatchType
+from rptest.services.storage_failure_injection import (
+    FailureInjectionConfig,
+    NTPFailureInjectionConfig,
+    FailureConfig,
+    NTP,
+    Operation,
+    BatchType,
+)
 from rptest.utils.si_utils import BucketView
 
 
 def _generate_failure_injection_config(
-        topic_names,
-        partitions_per_topic,
-        batchtypes=None) -> FailureInjectionConfig:
+    topic_names, partitions_per_topic, batchtypes=None
+) -> FailureInjectionConfig:
     """
     Prepare all needed configuration for the failures
     """
@@ -36,12 +41,14 @@ def _generate_failure_injection_config(
     for batchtype in batchtypes:
         # add configured failure types for all operations
         failure_configs += [
-            FailureConfig(operation=op,
-                          batch_type=batchtype,
-                          delay_probability=delay_probability,
-                          min_delay_ms=min_delay_ms,
-                          max_delay_ms=max_delay_ms,
-                          failure_probability=failure_probability)
+            FailureConfig(
+                operation=op,
+                batch_type=batchtype,
+                delay_probability=delay_probability,
+                min_delay_ms=min_delay_ms,
+                max_delay_ms=max_delay_ms,
+                failure_probability=failure_probability,
+            )
             for op in Operation
         ]
 
@@ -56,17 +63,14 @@ def _generate_failure_injection_config(
         ntps.append(NTP(namespace="redpanda", topic="kvstore", partition=0))
 
     for topic in topic_names:
-        ntps += [
-            NTP(topic=topic, partition=p) for p in range(partitions_per_topic)
-        ]
+        ntps += [NTP(topic=topic, partition=p) for p in range(partitions_per_topic)]
 
     ntp_failure_configs = [
         NTPFailureInjectionConfig(ntp=ntp, failure_configs=failure_configs)
         for ntp in ntps
     ]
 
-    return FailureInjectionConfig(seed=0,
-                                  ntp_failure_configs=ntp_failure_configs)
+    return FailureInjectionConfig(seed=0, ntp_failure_configs=ntp_failure_configs)
 
 
 def _calculate_statistic(topics, rpk, redpanda):
@@ -103,26 +107,31 @@ def _calculate_statistic(topics, rpk, redpanda):
             # get next max timestamp fot current partition
             _lts_list += [
                 int(
-                    rpk.consume(topic=topic.name,
-                                n=1,
-                                partition=partition.id,
-                                offset=partition.high_watermark - 1,
-                                format="%d\\n").strip())
+                    rpk.consume(
+                        topic=topic.name,
+                        n=1,
+                        partition=partition.id,
+                        offset=partition.high_watermark - 1,
+                        format="%d\\n",
+                    ).strip()
+                )
             ]
 
             # get manifest from bucket
             _m = bucket.manifest_for_ntp(topic.name, partition.id)
 
             # get latest timestamp from segments in current partiton
-            if _m['segments']:
-                _uts_list += [
-                    max(s['max_timestamp'] for s in _m['segments'].values())
-                ]
-                _top_segment = list(_m['segments'].values())[-1]
-                _stats['partition_deltas'].append([
-                    _m['partition'], _top_segment['delta_offset_end'],
-                    len(_m['segments']), _top_segment['segment_term']
-                ])
+            if _m["segments"]:
+                _uts_list += [max(s["max_timestamp"] for s in _m["segments"].values())]
+                _top_segment = list(_m["segments"].values())[-1]
+                _stats["partition_deltas"].append(
+                    [
+                        _m["partition"],
+                        _top_segment["delta_offset_end"],
+                        len(_m["segments"]),
+                        _top_segment["segment_term"],
+                    ]
+                )
 
         # get latest timestamps
         _check_and_set_max(_lts_list, "local_ts")
@@ -134,13 +143,16 @@ def _calculate_statistic(topics, rpk, redpanda):
     #    then there were manifest upload intervals in the runtime.
     _stats["manifest_uploads"] = redpanda.metric_sum(
         metric_name="redpanda_cloud_storage_partition_manifest_uploads_total",
-        metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+        metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+    )
     _stats["segment_uploads"] = redpanda.metric_sum(
         metric_name="redpanda_cloud_storage_segment_uploads_total",
-        metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+        metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+    )
     _stats["spillover_manifest_uploads_total"] = redpanda.metric_sum(
         metric_name="redpanda_cloud_storage_spillover_manifest_uploads_total",
-        metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+        metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+    )
 
     return _stats
 
@@ -177,14 +189,14 @@ def _get_timings_table(timings):
             _val = v[idx] if idx in v else "n/a"
             # print use special fmt for seconds
             if k in [
-                    # hardcoded for infinite retention tests
-                    # TODO: move to separate class with
-                    # value units set: s - seconds, etc
-                    "high_watermark",
-                    "manifest_uploads",
-                    "segment_uploads",
-                    "consumed_messages",
-                    "sp_mn_uploads_total"
+                # hardcoded for infinite retention tests
+                # TODO: move to separate class with
+                # value units set: s - seconds, etc
+                "high_watermark",
+                "manifest_uploads",
+                "segment_uploads",
+                "consumed_messages",
+                "sp_mn_uploads_total",
             ] or isinstance(_val, str):
                 _t = f"{_val}"
             else:

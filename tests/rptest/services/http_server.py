@@ -25,10 +25,7 @@ class HttpServer(BackgroundThreadService):
     STDOUT_CAPTURE = os.path.join(LOG_DIR, "simple_http_server.stdout")
 
     logs = {
-        "verifiable_consumer_stdout": {
-            "path": STDOUT_CAPTURE,
-            "collect_default": True
-        },
+        "verifiable_consumer_stdout": {"path": STDOUT_CAPTURE, "collect_default": True},
     }
 
     def __init__(self, context, port=8080, stop_timeout_sec=2):
@@ -43,8 +40,7 @@ class HttpServer(BackgroundThreadService):
     def _worker(self, idx, node):
         node.account.ssh(f"mkdir -p {HttpServer.LOG_DIR}", allow_fail=False)
 
-        self.remote_script_path = inject_remote_script(
-            node, "simple_http_server.py")
+        self.remote_script_path = inject_remote_script(node, "simple_http_server.py")
         cmd = f"python3 {self.remote_script_path} --port {self.port}"
         cmd += f" | tee -a {HttpServer.STDOUT_CAPTURE} &"
 
@@ -59,8 +55,8 @@ class HttpServer(BackgroundThreadService):
         try:
             cmd = "ps ax | grep simple_http_server.py | grep -v grep | awk '{print $1}'"
             pid_arr = [
-                pid for pid in node.account.ssh_capture(
-                    cmd, allow_fail=True, callback=int)
+                pid
+                for pid in node.account.ssh_capture(cmd, allow_fail=True, callback=int)
             ]
             return pid_arr
         except (RemoteCommandError, ValueError):
@@ -71,7 +67,8 @@ class HttpServer(BackgroundThreadService):
             return json.loads(string)
         except ValueError:
             self.logger.debug(
-                f"{str(node.account)}: Could not parse as json: {str(string)}")
+                f"{str(node.account)}: Could not parse as json: {str(string)}"
+            )
             return None
 
     def stop_all(self):
@@ -89,7 +86,9 @@ class HttpServer(BackgroundThreadService):
         self.kill_node(node, clean_shutdown=clean_shutdown)
 
         stopped = self.wait_node(node, timeout_sec=self.stop_timeout_sec)
-        assert stopped, f"Node {str(node.account)}: did not stop within the specified timeout of {self.stop_timeout_sec} seconds"
+        assert stopped, (
+            f"Node {str(node.account)}: did not stop within the specified timeout of {self.stop_timeout_sec} seconds"
+        )
 
     def clean_node(self, node):
         self.kill_node(node, clean_shutdown=False)

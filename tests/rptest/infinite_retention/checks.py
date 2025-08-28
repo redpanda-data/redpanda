@@ -24,6 +24,7 @@ class NamesToConstants(NodeTransformer):
         value1 <= value2
         True: 23 <= 56
     """
+
     _args = {}
 
     def __init__(self, args):
@@ -46,8 +47,8 @@ class RedpandaChecksBase(object):
     """
     Base class to hold all checks related to specific test.
     Improves readability and code cleanines.
-    Example use: 
-    def check_non_zero_segment_upload(): 
+    Example use:
+    def check_non_zero_segment_upload():
         ...
         return
 
@@ -60,7 +61,7 @@ class RedpandaChecksBase(object):
         "expr": "check_formula",
         "expr_text": "",
         "result": None,
-        "show": True
+        "show": True,
     }
     _calculated = False
 
@@ -95,17 +96,17 @@ class RedpandaChecksBase(object):
             for idx in range(len(self.checks)):
                 # get expression for this check
                 _item = self.checks[idx]
-                _expr = _item['expr']
+                _expr = _item["expr"]
                 # Do the magic:
                 # - 'precompile/parse' it
                 # - visit each argument/node and update to values
                 # - unparse it back to text
                 _parsed = parse(_expr)
                 names2const.visit(_parsed)
-                _item['expr_text'] = unparse(_parsed).strip()
+                _item["expr_text"] = unparse(_parsed).strip()
                 # evaluate text version of expression
                 # using locally stored arguments
-                _item['result'] = eval(_item['expr_text'], {}, self.args)
+                _item["result"] = eval(_item["expr_text"], {}, self.args)
             # Mark that we calculated all expressions
             self._calculated = True
 
@@ -130,28 +131,28 @@ class RedpandaChecksBase(object):
             -> True: 11815 > 0
 
             segment_uploads > 0
-            -> True: 9815 > 0        
+            -> True: 9815 > 0
         """
+
         def format_items(iterator):
             _fmt = "\n{0}\n-> {1}: {2}\n"
             _str = ""
             for item in iterator:
                 # Show in summary only if result is false or show is true
-                if item["show"] or not item['result']:
-                    _str += _fmt.format(item['expr'], item['result'],
-                                        item['expr_text'])
+                if item["show"] or not item["result"]:
+                    _str += _fmt.format(item["expr"], item["result"], item["expr_text"])
             return _str
 
         if not self.summary:
             _summary = "\n# Summary:"
 
-            _failed = filter(lambda x: not x['result'], self.checks)
+            _failed = filter(lambda x: not x["result"], self.checks)
             _failed_summary = format_items(_failed)
             if len(_failed_summary) > 0:
                 _summary += "\n## Failed checks:"
                 _summary += _failed_summary
 
-            _passed = filter(lambda x: x['result'], self.checks)
+            _passed = filter(lambda x: x["result"], self.checks)
             _passed_summary = format_items(_passed)
             if len(_passed_summary) > 0:
                 _summary += "\n## Passed checks:"
@@ -163,10 +164,11 @@ class RedpandaChecksBase(object):
     # Assert calculated results and generate AssertionError
     # if any fails occured
     def assert_results(self):
-        _r = filter(lambda x: not x['result'], self.checks)
+        _r = filter(lambda x: not x["result"], self.checks)
         if len(list(_r)) > 0:
-            raise AssertionError("At least one check failed.\n" +
-                                 self.get_summary_as_text())
+            raise AssertionError(
+                "At least one check failed.\n" + self.get_summary_as_text()
+            )
         else:
             return True
 
@@ -189,6 +191,7 @@ class InfiniteRetentionChecks(RedpandaChecksBase):
     """
     Class with checks that used accross multiple tests in infinite retention
     """
+
     def __init__(self, params) -> None:
         self.params = params
 
@@ -242,8 +245,7 @@ class InfiniteRetentionChecks(RedpandaChecksBase):
 
     def check_iteration_message_count(self, actual, iteration):
         self.add_arg(f"i{iteration}_sum_high_watermarks", actual)
-        self.add_arg(f"i{iteration}_msg_count",
-                     self.params.msg_count * iteration)
+        self.add_arg(f"i{iteration}_msg_count", self.params.msg_count * iteration)
         self.add_check(
             "Ensure that all messages made it to topic",
             f"i{iteration}_sum_high_watermarks >= i{iteration}_msg_count",
@@ -268,10 +270,8 @@ class InfiniteRetentionChecks(RedpandaChecksBase):
         """
         self.add_arg("manifest_uploads", int(upload_count))
         self.add_arg("produce_duration", int(produce_duration))
-        self.add_arg("manifest_upload_interval",
-                     self.params.manifest_upload_interval)
+        self.add_arg("manifest_upload_interval", self.params.manifest_upload_interval)
         self.add_check(
-            "For spillover active tests manifest uploads should be "
-            "significant",
+            "For spillover active tests manifest uploads should be significant",
             "manifest_uploads > produce_duration // manifest_upload_interval + 3",
         )

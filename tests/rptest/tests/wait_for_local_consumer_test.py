@@ -21,13 +21,13 @@ class WaitForLocalConsumerTest(RedpandaTest):
     Start a kaf-based producer and consumer, then wait until the consumer has
     observed a certain number of produced records.
     """
+
     NUM_RECORDS = 2000
 
-    topics = (TopicSpec(partition_count=1, replication_factor=1), )
+    topics = (TopicSpec(partition_count=1, replication_factor=1),)
 
     def __init__(self, ctx):
-        super(WaitForLocalConsumerTest, self).__init__(test_context=ctx,
-                                                       num_brokers=1)
+        super(WaitForLocalConsumerTest, self).__init__(test_context=ctx, num_brokers=1)
 
         self._producer = KafProducer(ctx, self.redpanda, self.topic)
         self._consumer = KafConsumer(ctx, self.redpanda, self.topic)
@@ -47,8 +47,7 @@ class WaitForLocalConsumerTest(RedpandaTest):
             curr = self._consumer.offset
             consumed = [curr[p] - o for p, o in start.items()]
             self.logger.debug(f"Consumer progress: {consumed}")
-            return all(c > WaitForLocalConsumerTest.NUM_RECORDS
-                       for c in consumed)
+            return all(c > WaitForLocalConsumerTest.NUM_RECORDS for c in consumed)
 
         wait_until(consumed, timeout_sec=180, backoff_sec=3)
 

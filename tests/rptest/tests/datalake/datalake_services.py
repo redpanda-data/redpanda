@@ -20,16 +20,20 @@ from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.query_engine_factory import get_query_engine_by_type
 
 
-class DatalakeServices():
+class DatalakeServices:
     """Utility class for implementing datalake tests. Includes the
     boiler plate to manage dependent services."""
-    def __init__(self,
-                 test_ctx,
-                 redpanda: RedpandaService,
-                 filesystem_catalog_mode=True,
-                 include_query_engines: list[QueryEngineType] = [
-                     QueryEngineType.SPARK, QueryEngineType.TRINO
-                 ]):
+
+    def __init__(
+        self,
+        test_ctx,
+        redpanda: RedpandaService,
+        filesystem_catalog_mode=True,
+        include_query_engines: list[QueryEngineType] = [
+            QueryEngineType.SPARK,
+            QueryEngineType.TRINO,
+        ],
+    ):
         self.test_ctx = test_ctx
         self.redpanda = redpanda
         si_settings = self.redpanda.si_settings
@@ -37,15 +41,17 @@ class DatalakeServices():
         self.catalog_service = IcebergRESTCatalog(
             test_ctx,
             cloud_storage_bucket=si_settings.cloud_storage_bucket,
-            filesystem_wrapper_mode=filesystem_catalog_mode)
+            filesystem_wrapper_mode=filesystem_catalog_mode,
+        )
         self.included_query_engines = include_query_engines
         # To be populated later once we have the URI of the catalog
         # available
         self.query_engines: list[Service] = []
 
     def setUp(self):
-        assert len(self.redpanda.started_nodes()) == 0, \
+        assert len(self.redpanda.started_nodes()) == 0, (
             "DatalakeServices expects to start redpanda itself"
+        )
 
         # create bucket first, or the catalog won't start
         self.redpanda.start_si()
@@ -54,16 +60,14 @@ class DatalakeServices():
 
         if not self.catalog_service.filesystem_wrapper_mode:
             # REST catalog mode
-            self.redpanda.add_extra_rp_conf({
-                "iceberg_catalog_type":
-                "rest",
-                "iceberg_rest_catalog_endpoint":
-                self.catalog_service.catalog_url,
-                "iceberg_rest_catalog_client_id":
-                "panda-user",
-                "iceberg_rest_catalog_client_secret":
-                "panda-secret",
-            })
+            self.redpanda.add_extra_rp_conf(
+                {
+                    "iceberg_catalog_type": "rest",
+                    "iceberg_rest_catalog_endpoint": self.catalog_service.catalog_url,
+                    "iceberg_rest_catalog_client_id": "panda-user",
+                    "iceberg_rest_catalog_client_secret": "panda-secret",
+                }
+            )
         self.redpanda.start(start_si=False)
 
         for engine in self.included_query_engines:
@@ -100,18 +104,19 @@ class DatalakeServices():
                 return e
         return None
 
-    def create_iceberg_enabled_topic(self,
-                                     name,
-                                     partitions=1,
-                                     replicas=1,
-                                     iceberg_mode="key_value",
-                                     config: dict[str, Any] = dict()):
+    def create_iceberg_enabled_topic(
+        self,
+        name,
+        partitions=1,
+        replicas=1,
+        iceberg_mode="key_value",
+        config: dict[str, Any] = dict(),
+    ):
         config[TopicSpec.PROPERTY_ICEBERG_MODE] = iceberg_mode
         rpk = RpkTool(self.redpanda)
-        rpk.create_topic(topic=name,
-                         partitions=partitions,
-                         replicas=replicas,
-                         config=config)
+        rpk.create_topic(
+            topic=name, partitions=partitions, replicas=replicas, config=config
+        )
 
     def set_iceberg_mode_on_topic(self, topic: str, mode: str):
         rpk = RpkTool(self.redpanda)
@@ -126,8 +131,9 @@ class DatalakeServices():
 
         namespaces = client.list_namespaces()
         self.redpanda.logger.debug(f"namespaces: {namespaces}")
-        return (namespace, ) in namespaces and (
-            namespace, table) in client.list_tables(namespace)
+        return (namespace,) in namespaces and (namespace, table) in client.list_tables(
+            namespace
+        )
 
     def wait_for_iceberg_table(self, namespace, table, timeout, backoff_sec):
         client = self.catalog_client()
@@ -139,52 +145,49 @@ class DatalakeServices():
             table_created,
             timeout_sec=timeout,
             backoff_sec=backoff_sec,
-            err_msg=
-            f"Timed out waiting {namespace}.{table} to be created in the catalog"
+            err_msg=f"Timed out waiting {namespace}.{table} to be created in the catalog",
         )
 
-    def wait_for_translation_until_offset(self,
-                                          topic,
-                                          offset,
-                                          partition=0,
-                                          timeout=30,
-                                          backoff_sec=5):
+    def wait_for_translation_until_offset(
+        self, topic, offset, partition=0, timeout=30, backoff_sec=5
+    ):
         self.wait_for_iceberg_table("redpanda", topic, timeout, backoff_sec)
 
         def translation_done():
             offsets = dict(
                 map(
-                    lambda e: (e.engine_name(
-                    ), e.max_translated_offset("redpanda", topic, partition)),
-                    self.query_engines))
-            self.redpanda.logger.debug(
-                f"Current translated offsets: {offsets}")
-            return all([
-                max_offset is not None and offset <= max_offset
-                for _, max_offset in offsets.items()
-            ])
+                    lambda e: (
+                        e.engine_name(),
+                        e.max_translated_offset("redpanda", topic, partition),
+                    ),
+                    self.query_engines,
+                )
+            )
+            self.redpanda.logger.debug(f"Current translated offsets: {offsets}")
+            return all(
+                [
+                    max_offset is not None and offset <= max_offset
+                    for _, max_offset in offsets.items()
+                ]
+            )
 
         wait_until(
             translation_done,
             timeout_sec=timeout,
             backoff_sec=backoff_sec,
-            err_msg=
-            f"Timed out waiting for iceberg translation until offset: {offset}"
+            err_msg=f"Timed out waiting for iceberg translation until offset: {offset}",
         )
 
-    def wait_for_translation(self,
-                             topic,
-                             msg_count,
-                             timeout=30,
-                             backoff_sec=5):
+    def wait_for_translation(self, topic, msg_count, timeout=30, backoff_sec=5):
         self.wait_for_iceberg_table("redpanda", topic, timeout, backoff_sec)
 
         def translation_done():
             counts = dict(
                 map(
-                    lambda e:
-                    (e.engine_name(), e.count_table("redpanda", topic)),
-                    self.query_engines))
+                    lambda e: (e.engine_name(), e.count_table("redpanda", topic)),
+                    self.query_engines,
+                )
+            )
             self.redpanda.logger.debug(f"Current counts: {counts}")
             return all([c == msg_count for _, c in counts.items()])
 
@@ -192,16 +195,15 @@ class DatalakeServices():
             translation_done,
             timeout_sec=timeout,
             backoff_sec=backoff_sec,
-            err_msg=f"Timed out waiting for events to appear in datalake")
+            err_msg=f"Timed out waiting for events to appear in datalake",
+        )
 
-    def produce_to_topic(self,
-                         topic,
-                         msg_size,
-                         msg_count,
-                         rate_limit_bps=None):
-        KgoVerifierProducer.oneshot(self.test_ctx,
-                                    self.redpanda,
-                                    topic,
-                                    msg_size=msg_size,
-                                    msg_count=msg_count,
-                                    rate_limit_bps=rate_limit_bps)
+    def produce_to_topic(self, topic, msg_size, msg_count, rate_limit_bps=None):
+        KgoVerifierProducer.oneshot(
+            self.test_ctx,
+            self.redpanda,
+            topic,
+            msg_size=msg_size,
+            msg_count=msg_count,
+            rate_limit_bps=rate_limit_bps,
+        )

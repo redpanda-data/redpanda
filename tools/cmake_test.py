@@ -22,8 +22,8 @@ import re
 from string import Template
 
 sys.path.append(os.path.dirname(__file__))
-logger = logging.getLogger('rp')
-fmt_string = '%(levelname)s:%(asctime)s %(filename)s:%(lineno)d] %(message)s'
+logger = logging.getLogger("rp")
+fmt_string = "%(levelname)s:%(asctime)s %(filename)s:%(lineno)d] %(message)s"
 logging.basicConfig(format=fmt_string)
 formatter = logging.Formatter(fmt_string)
 for h in logging.getLogger().handlers:
@@ -44,11 +44,9 @@ def find_vbuild_path_from_binary(binary_path, num_subdirs=1):
     """
     path_parts = binary_path.split("/")
     try:
-        vbuild = "/".join(path_parts[0:path_parts.index("vbuild") +
-                                     num_subdirs])
+        vbuild = "/".join(path_parts[0 : path_parts.index("vbuild") + num_subdirs])
     except (ValueError, IndexError):
-        sys.stderr.write(
-            f"Could not find vbuild in binary path {binary_path}\n")
+        sys.stderr.write(f"Could not find vbuild in binary path {binary_path}\n")
         return
     return vbuild
 
@@ -108,8 +106,7 @@ class BacktraceCapture(threading.Thread):
             line = self.process.stderr.readline()
             if line:
                 sys.stderr.write(line)
-                if accumulator is not None and self.BACKTRACE_BODY.search(
-                        line):
+                if accumulator is not None and self.BACKTRACE_BODY.search(line):
                     # Mid-backtrace
                     accumulator.append(line)
                 elif accumulator is not None:
@@ -156,12 +153,11 @@ class BacktraceCapture(threading.Thread):
         if vbuild:
             location = os.path.join(
                 vbuild,
-                "v_deps_build/seastar-prefix/src/seastar/scripts/seastar-addr2line"
+                "v_deps_build/seastar-prefix/src/seastar/scripts/seastar-addr2line",
             )
 
             if not os.path.exists(location):
-                sys.stderr.write(
-                    f"seastar-addr2line not found at {location}\n")
+                sys.stderr.write(f"seastar-addr2line not found at {location}\n")
                 return
             else:
                 return location
@@ -175,13 +171,16 @@ class BacktraceCapture(threading.Thread):
         addr2lines_path = self._find_addr2lines()
         if addr2lines_path is None:
             sys.stderr.write(
-                f"Could not decode backtrace, seastar-addr2lines not found\n")
+                f"Could not decode backtrace, seastar-addr2lines not found\n"
+            )
             return
 
-        ran = subprocess.run([addr2lines_path, "-e", self.binary],
-                             input="\n".join(backtrace),
-                             encoding='utf-8',
-                             capture_output=True)
+        ran = subprocess.run(
+            [addr2lines_path, "-e", self.binary],
+            input="\n".join(backtrace),
+            encoding="utf-8",
+            capture_output=True,
+        )
 
         sys.stderr.write(f"Decoded a Seastar backtrace:\n")
         sys.stderr.write(ran.stderr)
@@ -190,9 +189,18 @@ class BacktraceCapture(threading.Thread):
         ran.check_returncode()
 
 
-class TestRunner():
-    def __init__(self, root, prepare_command, post_command, binary, repeat,
-                 copy_files, gtest, *args):
+class TestRunner:
+    def __init__(
+        self,
+        root,
+        prepare_command,
+        post_command,
+        binary,
+        repeat,
+        copy_files,
+        gtest,
+        *args,
+    ):
         self.prepare_command = prepare_command
         self.post_command = post_command
         self.binary = binary
@@ -211,7 +219,7 @@ class TestRunner():
         # If in CI, run with trace because we need the evidence if something
         # fails.  Locally, use INFO to improve runtime: the developer can
         # selectively re-run failing tests with more logging if needed.
-        log_level = 'trace' if self.ci else 'info'
+        log_level = "trace" if self.ci else "info"
 
         def has_flag(flag, *synonyms):
             """Check if the args list already contains a particularly CLI flag,
@@ -221,9 +229,10 @@ class TestRunner():
 
         if "rpunit" in binary or "rpfixture" in binary:
             unit_args = [
-                "--unsafe-bypass-fsync 1", f"--default-log-level={log_level}",
+                "--unsafe-bypass-fsync 1",
+                f"--default-log-level={log_level}",
                 "--logger-log-level='io=debug'",
-                "--logger-log-level='exception=debug'"
+                "--logger-log-level='exception=debug'",
             ] + COMMON_TEST_ARGS
 
             if self.ci:
@@ -255,7 +264,7 @@ class TestRunner():
             if vbuild:
                 json_output = [
                     "--json-output",
-                    os.path.join(vbuild, f"microbench/{bench_name}.json")
+                    os.path.join(vbuild, f"microbench/{bench_name}.json"),
                 ]
 
             args = args + COMMON_TEST_ARGS + json_output
@@ -263,15 +272,16 @@ class TestRunner():
         self.test_args = " ".join(args)
 
     def _gen_alphanum(self, x=16):
-        return ''.join(random.choice(string.ascii_letters) for _ in range(x))
+        return "".join(random.choice(string.ascii_letters) for _ in range(x))
 
     def _gen_testdir(self):
-        return tempfile.mkdtemp(suffix=self._gen_alphanum(),
-                                prefix="%s/test." % self.root)
+        return tempfile.mkdtemp(
+            suffix=self._gen_alphanum(), prefix="%s/test." % self.root
+        )
 
     @property
     def ci(self):
-        return 'CI' in os.environ
+        return "CI" in os.environ
 
     def run(self):
         # Execute the requested number of times, terminate on the first failure.
@@ -312,25 +322,29 @@ class TestRunner():
             shutil.copy(src, "%s/%s" % (test_dir, os.path.basename(dst)))
 
         cmd = Template(
-            "(cd $test_dir; $prepare_command; BOOST_TEST_LOG_LEVEL=\"test_suite\""
-            " BOOST_LOGGER=\"HRF,test_suite\" $binary $args; $post_command e=$$?; "
-            "rm -rf $test_dir; echo \"Test Exit code $$e\"; exit $$e)"
-        ).substitute(test_dir=test_dir,
-                     prepare_command=" && ".join(self.prepare_command)
-                     or "true",
-                     post_command=" && ".join(self.post_command) +
-                     ";" if self.post_command else "",
-                     binary=self.binary,
-                     args=self.test_args)
+            '(cd $test_dir; $prepare_command; BOOST_TEST_LOG_LEVEL="test_suite"'
+            ' BOOST_LOGGER="HRF,test_suite" $binary $args; $post_command e=$$?; '
+            'rm -rf $test_dir; echo "Test Exit code $$e"; exit $$e)'
+        ).substitute(
+            test_dir=test_dir,
+            prepare_command=" && ".join(self.prepare_command) or "true",
+            post_command=" && ".join(self.post_command) + ";"
+            if self.post_command
+            else "",
+            binary=self.binary,
+            args=self.test_args,
+        )
         logger.info(cmd)
 
         # setup llvm symbolizer. first look for location in ci, then in redpanda
         # vbuild directory. if none, then asan will look in PATH
-        llvm_symbolizer = shutil.which("llvm-symbolizer",
-                                       path="/vectorized/llvm/bin")
+        llvm_symbolizer = shutil.which("llvm-symbolizer", path="/vectorized/llvm/bin")
         if llvm_symbolizer is None:
-            path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "..", "vbuild/llvm/install/bin")
+            path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "..",
+                "vbuild/llvm/install/bin",
+            )
             path = os.path.abspath(path)  # remove ".."
             llvm_symbolizer = shutil.which("llvm-symbolizer", path=path)
         if llvm_symbolizer is not None:
@@ -338,26 +352,23 @@ class TestRunner():
         logger.info(f"Using llvm-symbolizer: {llvm_symbolizer}")
 
         # setup lsan suppressions
-        src_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                               "..")
+        src_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..")
         lsan_suppressions = os.path.join(src_dir, "lsan_suppressions.txt")
         ubsan_suppressions = os.path.join(src_dir, "ubsan_suppressions.txt")
-        assert os.path.isfile(
-            lsan_suppressions
-        ), f"cannot find lsan suppressions at {lsan_suppressions}"
-        assert os.path.isfile(
-            ubsan_suppressions
-        ), f"cannot find ubsan suppressions at {ubsan_suppressions}"
+        assert os.path.isfile(lsan_suppressions), (
+            f"cannot find lsan suppressions at {lsan_suppressions}"
+        )
+        assert os.path.isfile(ubsan_suppressions), (
+            f"cannot find ubsan suppressions at {ubsan_suppressions}"
+        )
         env["LSAN_OPTIONS"] = f"suppressions={lsan_suppressions}"
         env["UBSAN_OPTIONS"] += f":suppressions={ubsan_suppressions}"
 
         # We only capture stderr because that's where backtraces go
         # FIXME: avoid usage of the unsafe shell=True if possible, or sanitized the cmd input
-        p = subprocess.Popen(cmd,
-                             env=env,
-                             shell=True,
-                             stderr=subprocess.PIPE,
-                             encoding='utf-8')
+        p = subprocess.Popen(
+            cmd, env=env, shell=True, stderr=subprocess.PIPE, encoding="utf-8"
+        )
 
         def on_signal(signal, _frame):
             logger.warning(f"Passing signal {signal} to unit test binary")
@@ -366,8 +377,7 @@ class TestRunner():
             try:
                 p.wait(5)
             except subprocess.TimeoutExpired:
-                logger.warning(
-                    f"Child process didn't terminate on signal {signal}")
+                logger.warning(f"Child process didn't terminate on signal {signal}")
                 p.kill()
 
         t = BacktraceCapture(self.binary, p)
@@ -383,36 +393,33 @@ class TestRunner():
 
 def main():
     def generate_options():
-        parser = argparse.ArgumentParser(description='test helper for cmake')
-        parser.add_argument('--binary', type=str, help='binary program to run')
-        parser.add_argument('--pre',
-                            nargs='*',
-                            default=[],
-                            type=str,
-                            help='commands to run before test')
-        parser.add_argument('--post',
-                            nargs='*',
-                            default=[],
-                            type=str,
-                            help='commands to run after test')
+        parser = argparse.ArgumentParser(description="test helper for cmake")
+        parser.add_argument("--binary", type=str, help="binary program to run")
         parser.add_argument(
-            '--log',
+            "--pre", nargs="*", default=[], type=str, help="commands to run before test"
+        )
+        parser.add_argument(
+            "--post", nargs="*", default=[], type=str, help="commands to run after test"
+        )
+        parser.add_argument(
+            "--log",
             type=str,
-            default='DEBUG',
-            help='info,debug, type log levels. i.e: --log=debug')
-        parser.add_argument('--repeat',
-                            type=int,
-                            default=1,
-                            help='how many times to repeat test')
-        parser.add_argument('--copy_file',
-                            type=str,
-                            action="append",
-                            help='copy file to test execution directory')
-        parser.add_argument('--gtest', action='store_true')
-        parser.add_argument('--root',
-                            type=str,
-                            default=None,
-                            help="Working directory (default = cwd)")
+            default="DEBUG",
+            help="info,debug, type log levels. i.e: --log=debug",
+        )
+        parser.add_argument(
+            "--repeat", type=int, default=1, help="how many times to repeat test"
+        )
+        parser.add_argument(
+            "--copy_file",
+            type=str,
+            action="append",
+            help="copy file to test execution directory",
+        )
+        parser.add_argument("--gtest", action="store_true")
+        parser.add_argument(
+            "--root", type=str, default=None, help="Working directory (default = cwd)"
+        )
         return parser
 
     parser = generate_options()
@@ -430,12 +437,19 @@ def main():
     logger.setLevel(getattr(logging, options.log.upper()))
     logger.info("%s *args=%s" % (options, program_options))
 
-    runner = TestRunner(options.root, options.pre, options.post,
-                        options.binary, options.repeat, options.copy_file,
-                        options.gtest, *program_options)
+    runner = TestRunner(
+        options.root,
+        options.pre,
+        options.post,
+        options.binary,
+        options.repeat,
+        options.copy_file,
+        options.gtest,
+        *program_options,
+    )
     runner.run()
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
