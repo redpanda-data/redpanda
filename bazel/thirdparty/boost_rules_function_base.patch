@@ -1,0 +1,13 @@
+diff --git boost.BUILD boost.BUILD
+index 0e98704..389ad71 100644
+--- boost.BUILD
++++ boost.BUILD
+@@ -648,7 +648,7 @@ boost_library(
+ 
+ boost_library(
+     name = "container_hash",
+-    defines = ["BOOST_NO_CXX98_FUNCTION_BASE"],
++    defines = ["BOOST_NO_CXX98_FUNCTION_BASE="],
+     deps = [
+         ":assert",
+         ":config",

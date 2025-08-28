@@ -7,6 +7,9 @@ bazel_dep(name = "rules_boost", repo_name = "com_github_nelhage_rules_boost")
 archive_override(
     module_name = "rules_boost",
     integrity = "sha256-ICuTlyfxD3u1tr12YyeT5qPcA/ZkEUvtMDA2ZRzz1zc=",
+    patches = [
+        "//bazel/thirdparty:boost_rules_function_base.patch",
+    ],
     strip_prefix = "rules_boost-e23cc59f87d5049618472d6ce0ca0ed5ef0c23dc",
     urls = ["https://github.com/nelhage/rules_boost/archive/e23cc59f87d5049618472d6ce0ca0ed5ef0c23dc.tar.gz"],
 )
