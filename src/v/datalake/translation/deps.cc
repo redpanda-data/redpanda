@@ -360,14 +360,20 @@ public:
 
     ss::future<std::optional<model::record_batch_reader>>
     make_log_reader(kafka::offset begin_offset, ss::abort_source& as) final {
+        // Bump the reader start offset up to the log start. Untranslated data
+        // should typically be pinned, so the input offset should be above the
+        // log start in normal circumstances, but it's possible that e.g. data
+        // was removed when Iceberg was disabled.
+        auto reader_start_offset = std::max(
+          begin_offset, model::offset_cast(_partition_proxy->start_offset()));
         auto max_translatable_offset = max_offset_for_translation();
         if (
           !max_translatable_offset
-          || max_translatable_offset.value() < begin_offset) {
+          || max_translatable_offset.value() < reader_start_offset) {
             co_return std::nullopt;
         }
         auto log_reader = co_await _partition_proxy->make_reader(
-          {kafka::offset_cast(begin_offset),
+          {kafka::offset_cast(reader_start_offset),
            kafka::offset_cast(max_translatable_offset.value()),
            0,
            std::numeric_limits<size_t>::max(),
