@@ -8,15 +8,10 @@ class AzureClient:
     Azure Client class.
     Should implement function similar to AWS EC2 client
     """
-    def __init__(self,
-                 region,
-                 key,
-                 secret,
-                 tenant,
-                 logger,
-                 endpoint=None,
-                 disable_ssl=True):
 
+    def __init__(
+        self, region, key, secret, tenant, logger, endpoint=None, disable_ssl=True
+    ):
         self._region = region
         self._access_key = key
         self._secret_key = secret
@@ -70,7 +65,7 @@ class AzureClient:
         """
         return f"{region}-az2"  # HACK, hardcoded
 
-    def get_instance_meta(self, target='localhost'):
+    def get_instance_meta(self, target="localhost"):
         """
         Query meta from local node.
         Source: https://cloud.google.com/compute/docs/metadata/querying-metadata
@@ -78,7 +73,7 @@ class AzureClient:
         # prepare request data
         _prefix = "http://"
         _suffix = "/computeMetadata/v1/instance/"
-        _target = "169.254.169.254" if target == 'localhost' else target
+        _target = "169.254.169.254" if target == "localhost" else target
         uri = f"{_prefix}{_target}{_suffix}"
 
         return query_instance_meta(uri, headers=headers)

@@ -50,10 +50,7 @@ class CheckProgressDuringFaultConfig:
 
 
 class SingleFaultTestBase(RedpandaTest):
-    def __init__(self,
-                 *args,
-                 extra_rp_conf: dict[str, Any] | None = None,
-                 **kwargs):
+    def __init__(self, *args, extra_rp_conf: dict[str, Any] | None = None, **kwargs):
         full_extra_rp_conf = {
             # We are going to disrupt consumer group partitions and tx coordinator
             # partitions in these tests. It is easier to have just 1 partition than trying
@@ -69,12 +66,13 @@ class SingleFaultTestBase(RedpandaTest):
 
         super().__init__(*args, extra_rp_conf=full_extra_rp_conf, **kwargs)
 
-    def run(self,
-            workload: workloads.WorkloadServiceBase,
-            fault: faults.FaultBase | None,
-            timings: TimingConfig = TimingConfig(),
-            check_progress_during_fault: CheckProgressDuringFaultConfig
-            | None = None):
+    def run(
+        self,
+        workload: workloads.WorkloadServiceBase,
+        fault: faults.FaultBase | None,
+        timings: TimingConfig = TimingConfig(),
+        check_progress_during_fault: CheckProgressDuringFaultConfig | None = None,
+    ):
         try:
             self._do_run(workload, fault, timings, check_progress_during_fault)
         finally:
@@ -85,14 +83,16 @@ class SingleFaultTestBase(RedpandaTest):
                 # if it failed, the check will be performed automatically
                 self.redpanda.raise_on_crash()
 
-    def _transfer_leadership(self,
-                             topic,
-                             target_id,
-                             partition=0,
-                             namespace="kafka",
-                             current_leader_id=None,
-                             admin=None,
-                             timeout_s=10):
+    def _transfer_leadership(
+        self,
+        topic,
+        target_id,
+        partition=0,
+        namespace="kafka",
+        current_leader_id=None,
+        admin=None,
+        timeout_s=10,
+    ):
         self.logger.info(
             f"transferring {namespace}/{topic}/{partition} leader to {target_id}"
         )
@@ -104,62 +104,66 @@ class SingleFaultTestBase(RedpandaTest):
             nonlocal current_leader_id
             if current_leader_id is None:
                 current_leader_id = admin.await_stable_leader(
-                    namespace=namespace, topic=topic, partition=partition)
+                    namespace=namespace, topic=topic, partition=partition
+                )
             if current_leader_id == target_id:
                 return True
 
-            admin.transfer_leadership_to(namespace=namespace,
-                                         topic=topic,
-                                         partition=partition,
-                                         leader_id=current_leader_id,
-                                         target_id=target_id)
+            admin.transfer_leadership_to(
+                namespace=namespace,
+                topic=topic,
+                partition=partition,
+                leader_id=current_leader_id,
+                target_id=target_id,
+            )
             current_leader_id = None
 
-        wait_until(transfer_successful,
-                   timeout_sec=timeout_s,
-                   backoff_sec=1,
-                   err_msg="failed to transfer leadership",
-                   retry_on_exc=True)
+        wait_until(
+            transfer_successful,
+            timeout_sec=timeout_s,
+            backoff_sec=1,
+            err_msg="failed to transfer leadership",
+            retry_on_exc=True,
+        )
 
-    def _reconfigure(self,
-                     topic,
-                     partition,
-                     replica_ids,
-                     namespace="kafka",
-                     timeout_s=20):
+    def _reconfigure(
+        self, topic, partition, replica_ids, namespace="kafka", timeout_s=20
+    ):
         self.logger.info(
-            f"reconfiguring {namespace}/{topic}/{partition} to {replica_ids}")
+            f"reconfiguring {namespace}/{topic}/{partition} to {replica_ids}"
+        )
         assignment = [{"node_id": rid, "core": 0} for rid in replica_ids]
-        admin = Admin(self.redpanda,
-                      retry_codes=[404, 503, 504],
-                      retries_amount=10)
-        admin.set_partition_replicas(namespace=namespace,
-                                     topic=topic,
-                                     partition=partition,
-                                     replicas=assignment)
+        admin = Admin(self.redpanda, retry_codes=[404, 503, 504], retries_amount=10)
+        admin.set_partition_replicas(
+            namespace=namespace, topic=topic, partition=partition, replicas=assignment
+        )
 
         def converged():
             results = []
             for n in self.redpanda._started:
-                info = admin.get_partitions(namespace=namespace,
-                                            topic=topic,
-                                            partition=partition,
-                                            node=n)
+                info = admin.get_partitions(
+                    namespace=namespace, topic=topic, partition=partition, node=n
+                )
                 info_replicas = set(r["node_id"] for r in info["replicas"])
                 self.logger.debug(
                     f"replicas reported by node {n.name}: {info_replicas}, "
-                    f"partition status: {info['status']}")
+                    f"partition status: {info['status']}"
+                )
                 results.append(
-                    set(replica_ids) == info_replicas
-                    and info["status"] == "done")
+                    set(replica_ids) == info_replicas and info["status"] == "done"
+                )
 
             return all(results)
 
         wait_until(converged, timeout_sec=timeout_s, backoff_sec=2)
 
-    def _do_run(self, workload: workloads.WorkloadServiceBase,
-                fault: faults.FaultBase | None, timings: TimingConfig,
-                check_progress_during_fault: CheckProgressDuringFaultConfig):
+    def _do_run(
+        self,
+        workload: workloads.WorkloadServiceBase,
+        fault: faults.FaultBase | None,
+        timings: TimingConfig,
+        check_progress_during_fault: CheckProgressDuringFaultConfig,
+    ):
         if timings.warmup_s > 0:
             self.logger.info(f"warming up for {timings.warmup_s}s")
             sleep(timings.warmup_s)
@@ -172,13 +176,15 @@ class SingleFaultTestBase(RedpandaTest):
             if timings.no_fault_steady_s > 0:
                 self.logger.info(
                     f"wait for {timings.no_fault_steady_s} seconds "
-                    f"to record steady state")
+                    f"to record steady state"
+                )
                 sleep(timings.no_fault_steady_s)
         elif isinstance(fault, faults.RecoverableFault):
             if timings.recoverable_fault_steady_s > 0:
                 self.logger.info(
                     f"wait for {timings.recoverable_fault_steady_s} seconds "
-                    f" to record steady state")
+                    f" to record steady state"
+                )
                 sleep(timings.recoverable_fault_steady_s)
 
             for node in workload.nodes:
@@ -198,11 +204,12 @@ class SingleFaultTestBase(RedpandaTest):
                 if timings.recoverable_fault_impact_s > 0:
                     self.logger.info(
                         f"wait for {timings.recoverable_fault_impact_s} seconds "
-                        "to record impacted state")
+                        "to record impacted state"
+                    )
                     sleep(timings.recoverable_fault_impact_s)
                 self.logger.info(
-                    f"done waiting for "
-                    f"{timings.recoverable_fault_impact_s} seconds")
+                    f"done waiting for {timings.recoverable_fault_impact_s} seconds"
+                )
 
                 before_heal_info = {}
                 for node in workload.nodes:
@@ -211,13 +218,15 @@ class SingleFaultTestBase(RedpandaTest):
                 if check_progress_during_fault is not None:
                     results = []
                     for node_name in before_heal_info.keys():
-                        delta = (before_heal_info[node_name].succeeded_ops -
-                                 after_fault_info[node_name].succeeded_ops)
+                        delta = (
+                            before_heal_info[node_name].succeeded_ops
+                            - after_fault_info[node_name].succeeded_ops
+                        )
                         self.logger.debug(
                             f"progress during fault for client node "
-                            f"{node_name}: {delta}")
-                        results.append(
-                            delta >= check_progress_during_fault.min_delta)
+                            f"{node_name}: {delta}"
+                        )
+                        results.append(delta >= check_progress_during_fault.min_delta)
                     selector = check_progress_during_fault.selector
                     if selector not in ("all", "any"):
                         raise Exception(f"unknown selector: {selector}")
@@ -238,13 +247,15 @@ class SingleFaultTestBase(RedpandaTest):
             if timings.recoverable_fault_recovery_s > 0:
                 self.logger.info(
                     f"wait for {timings.recoverable_fault_recovery_s} seconds "
-                    f"to record recovering state")
+                    f"to record recovering state"
+                )
                 sleep(timings.recoverable_fault_recovery_s)
         elif isinstance(fault, faults.OneoffFault):
             if timings.oneoff_fault_steady_s > 0:
                 self.logger.info(
                     f"wait for {timings.oneoff_fault_steady_s} seconds "
-                    f"to record steady state")
+                    f"to record steady state"
+                )
                 sleep(timings.oneoff_fault_steady_s)
 
             for node in workload.nodes:
@@ -258,7 +269,8 @@ class SingleFaultTestBase(RedpandaTest):
             if timings.oneoff_fault_recovery_s > 0:
                 self.logger.info(
                     f"wait for {timings.oneoff_fault_recovery_s} seconds "
-                    f"to record recovering / impacted state")
+                    f"to record recovering / impacted state"
+                )
                 sleep(timings.oneoff_fault_recovery_s)
         else:
             raise Exception(f"Unknown fault type {type(fault)}")
@@ -271,19 +283,15 @@ class SingleFaultTestBase(RedpandaTest):
 class SingleTopicTest(SingleFaultTestBase):
     @dataclasses.dataclass
     class ListOffsetsCase:
-        make_fault: Callable[[SingleFaultTestBase],
-                             faults.FaultBase] | None = None
+        make_fault: Callable[[SingleFaultTestBase], faults.FaultBase] | None = None
         check_progress_during_fault: CheckProgressDuringFaultConfig | None = None
 
     LIST_OFFSETS_CASES = {
-        "baseline":
-        ListOffsetsCase(),
-        "isolate_leader":
-        ListOffsetsCase(
-            lambda test: faults.IsolateLeaderFault(test.redpanda,
-                                                   topic=test.topic),
+        "baseline": ListOffsetsCase(),
+        "isolate_leader": ListOffsetsCase(
+            lambda test: faults.IsolateLeaderFault(test.redpanda, topic=test.topic),
             CheckProgressDuringFaultConfig(),
-        )
+        ),
     }
 
     def __init__(self, *args, **kwargs):
@@ -297,10 +305,10 @@ class SingleTopicTest(SingleFaultTestBase):
         # Remove after the bug is fixed.
         for n in self.redpanda.nodes:
             self.redpanda.set_extra_node_conf(
-                n, {"memory_allocation_warning_threshold": 2**20 + 1})
+                n, {"memory_allocation_warning_threshold": 2**20 + 1}
+            )
 
-    def prepare(self, workload: workloads.WorkloadServiceBase,
-                timings: TimingConfig):
+    def prepare(self, workload: workloads.WorkloadServiceBase, timings: TimingConfig):
         admin = Admin(self.redpanda)
 
         # wait for the topic to come online
@@ -312,20 +320,24 @@ class SingleTopicTest(SingleFaultTestBase):
         topic_leader_id = admin.await_stable_leader(self.topic)
         self.logger.debug(f"leader id of '{self.topic}': {topic_leader_id}")
 
-        controller_leader_id = admin.await_stable_leader("controller",
-                                                         namespace="redpanda")
+        controller_leader_id = admin.await_stable_leader(
+            "controller", namespace="redpanda"
+        )
         self.logger.debug(f"controller leader id: {controller_leader_id}")
 
         if topic_leader_id == controller_leader_id:
             other_ids = [
-                self.redpanda.node_id(n) for n in self.redpanda.nodes
+                self.redpanda.node_id(n)
+                for n in self.redpanda.nodes
                 if self.redpanda.node_id(n) != controller_leader_id
             ]
-            self._transfer_leadership(namespace="redpanda",
-                                      topic="controller",
-                                      partition=0,
-                                      current_leader_id=controller_leader_id,
-                                      target_id=random.choice(other_ids))
+            self._transfer_leadership(
+                namespace="redpanda",
+                topic="controller",
+                partition=0,
+                current_leader_id=controller_leader_id,
+                target_id=random.choice(other_ids),
+            )
 
         self.logger.info(f"waiting for progress")
 
@@ -336,9 +348,9 @@ class SingleTopicTest(SingleFaultTestBase):
     @skip_debug_mode
     def test_list_offsets(self, case_id):
         case = self.LIST_OFFSETS_CASES[case_id]
-        workload = workloads.ListOffsetsWorkload(self.test_context,
-                                                 self.redpanda.brokers(),
-                                                 self.topic)
+        workload = workloads.ListOffsetsWorkload(
+            self.test_context, self.redpanda.brokers(), self.topic
+        )
         fault = None
         if case.make_fault:
             fault = case.make_fault(self)
@@ -349,23 +361,19 @@ class SingleTopicTest(SingleFaultTestBase):
 
 
 class TxSubscribeTest(SingleFaultTestBase):
-    WORKLOAD_SETUP = workloads.TxSubscribeWorkload.Setup(source="source1",
-                                                         source_partitions=3,
-                                                         target="target1",
-                                                         group_id="group1")
+    WORKLOAD_SETUP = workloads.TxSubscribeWorkload.Setup(
+        source="source1", source_partitions=3, target="target1", group_id="group1"
+    )
 
     @dataclasses.dataclass
     class Case:
-        make_fault: Callable[[SingleFaultTestBase],
-                             faults.FaultBase] | None = None
+        make_fault: Callable[[SingleFaultTestBase], faults.FaultBase] | None = None
         check_progress_during_fault: CheckProgressDuringFaultConfig | None = None
         fail_consistency_on_interruption: bool = False
 
     CASES = {
-        "baseline":
-        Case(fail_consistency_on_interruption=True),
-        "isolate_source_leader":
-        Case(
+        "baseline": Case(fail_consistency_on_interruption=True),
+        "isolate_source_leader": Case(
             lambda test: faults.IsolateLeaderFault(
                 test.redpanda,
                 topic=test.WORKLOAD_SETUP.source,
@@ -374,8 +382,7 @@ class TxSubscribeTest(SingleFaultTestBase):
             ),
             CheckProgressDuringFaultConfig(selector="any"),
         ),
-        "isolate_target_leader":
-        Case(
+        "isolate_target_leader": Case(
             lambda test: faults.IsolateLeaderFault(
                 test.redpanda,
                 topic=test.WORKLOAD_SETUP.target,
@@ -383,8 +390,7 @@ class TxSubscribeTest(SingleFaultTestBase):
             ),
             CheckProgressDuringFaultConfig(selector="any"),
         ),
-        "isolate_group_leader":
-        Case(
+        "isolate_group_leader": Case(
             lambda test: faults.IsolateLeaderFault(
                 test.redpanda,
                 topic="__consumer_offsets",
@@ -393,8 +399,7 @@ class TxSubscribeTest(SingleFaultTestBase):
             ),
             CheckProgressDuringFaultConfig(selector="any"),
         ),
-        "isolate_tx_leader":
-        Case(
+        "isolate_tx_leader": Case(
             lambda test: faults.IsolateLeaderFault(
                 test.redpanda,
                 namespace="kafka_internal",
@@ -404,89 +409,109 @@ class TxSubscribeTest(SingleFaultTestBase):
             ),
             CheckProgressDuringFaultConfig(selector="any"),
         ),
-        "hijack_tx_ids":
-        Case(lambda test: faults.HijackTxIDsFault(
-            test.redpanda, ["tx-consume-0"], test.logger)),
+        "hijack_tx_ids": Case(
+            lambda test: faults.HijackTxIDsFault(
+                test.redpanda, ["tx-consume-0"], test.logger
+            )
+        ),
     }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=6, **kwargs)
         self.topics = [
-            TopicSpec(name=self.WORKLOAD_SETUP.source,
-                      replication_factor=3,
-                      partition_count=self.WORKLOAD_SETUP.source_partitions),
-            TopicSpec(name=self.WORKLOAD_SETUP.target,
-                      replication_factor=3,
-                      partition_count=1),
+            TopicSpec(
+                name=self.WORKLOAD_SETUP.source,
+                replication_factor=3,
+                partition_count=self.WORKLOAD_SETUP.source_partitions,
+            ),
+            TopicSpec(
+                name=self.WORKLOAD_SETUP.target, replication_factor=3, partition_count=1
+            ),
         ]
 
-    def prepare(self, workload: workloads.WorkloadServiceBase,
-                timings: TimingConfig):
+    def prepare(self, workload: workloads.WorkloadServiceBase, timings: TimingConfig):
         workload.start()
         workload.start_workload()
 
         workload.wait_progress(timeout_sec=timings.wait_progress_timeout_s)
 
-        internal_node_ids = [
-            self.redpanda.node_id(n) for n in self.redpanda.nodes[0:3]
-        ]
-        data_node_ids = [
-            self.redpanda.node_id(n) for n in self.redpanda.nodes[3:6]
-        ]
+        internal_node_ids = [self.redpanda.node_id(n) for n in self.redpanda.nodes[0:3]]
+        data_node_ids = [self.redpanda.node_id(n) for n in self.redpanda.nodes[3:6]]
 
-        self._reconfigure(namespace="kafka_internal",
-                          topic="tx",
-                          partition=0,
-                          replica_ids=internal_node_ids)
-        self._reconfigure(namespace="kafka_internal",
-                          topic="id_allocator",
-                          partition=0,
-                          replica_ids=internal_node_ids)
-        self._reconfigure(namespace="kafka",
-                          topic="__consumer_offsets",
-                          partition=0,
-                          replica_ids=internal_node_ids)
+        self._reconfigure(
+            namespace="kafka_internal",
+            topic="tx",
+            partition=0,
+            replica_ids=internal_node_ids,
+        )
+        self._reconfigure(
+            namespace="kafka_internal",
+            topic="id_allocator",
+            partition=0,
+            replica_ids=internal_node_ids,
+        )
+        self._reconfigure(
+            namespace="kafka",
+            topic="__consumer_offsets",
+            partition=0,
+            replica_ids=internal_node_ids,
+        )
 
         for partition in range(0, self.WORKLOAD_SETUP.source_partitions):
-            self._reconfigure(namespace="kafka",
-                              topic=self.WORKLOAD_SETUP.source,
-                              partition=partition,
-                              replica_ids=data_node_ids)
-        self._reconfigure(namespace="kafka",
-                          topic=self.WORKLOAD_SETUP.target,
-                          partition=0,
-                          replica_ids=data_node_ids)
+            self._reconfigure(
+                namespace="kafka",
+                topic=self.WORKLOAD_SETUP.source,
+                partition=partition,
+                replica_ids=data_node_ids,
+            )
+        self._reconfigure(
+            namespace="kafka",
+            topic=self.WORKLOAD_SETUP.target,
+            partition=0,
+            replica_ids=data_node_ids,
+        )
 
         self.logger.info(f"waiting for post-reconfigure progress")
         workload.wait_progress(timeout_sec=timings.wait_progress_timeout_s)
 
-        self._transfer_leadership(namespace="redpanda",
-                                  topic="controller",
-                                  partition=0,
-                                  target_id=internal_node_ids[0])
-        self._transfer_leadership(namespace="kafka_internal",
-                                  topic="id_allocator",
-                                  partition=0,
-                                  target_id=internal_node_ids[1])
-        self._transfer_leadership(namespace="kafka",
-                                  topic="__consumer_offsets",
-                                  partition=0,
-                                  target_id=internal_node_ids[1])
-        self._transfer_leadership(namespace="kafka_internal",
-                                  topic="tx",
-                                  partition=0,
-                                  target_id=internal_node_ids[2])
+        self._transfer_leadership(
+            namespace="redpanda",
+            topic="controller",
+            partition=0,
+            target_id=internal_node_ids[0],
+        )
+        self._transfer_leadership(
+            namespace="kafka_internal",
+            topic="id_allocator",
+            partition=0,
+            target_id=internal_node_ids[1],
+        )
+        self._transfer_leadership(
+            namespace="kafka",
+            topic="__consumer_offsets",
+            partition=0,
+            target_id=internal_node_ids[1],
+        )
+        self._transfer_leadership(
+            namespace="kafka_internal",
+            topic="tx",
+            partition=0,
+            target_id=internal_node_ids[2],
+        )
 
-        self._transfer_leadership(namespace="kafka",
-                                  topic=self.WORKLOAD_SETUP.target,
-                                  partition=0,
-                                  target_id=data_node_ids[0])
+        self._transfer_leadership(
+            namespace="kafka",
+            topic=self.WORKLOAD_SETUP.target,
+            partition=0,
+            target_id=data_node_ids[0],
+        )
         for partition in range(0, self.WORKLOAD_SETUP.source_partitions):
             self._transfer_leadership(
                 namespace="kafka",
                 topic=self.WORKLOAD_SETUP.source,
                 partition=partition,
-                target_id=data_node_ids[partition % len(data_node_ids)])
+                target_id=data_node_ids[partition % len(data_node_ids)],
+            )
 
         self.logger.info(f"waiting for post-transfer progress")
         workload.wait_progress(timeout_sec=timings.wait_progress_timeout_s)
@@ -500,8 +525,7 @@ class TxSubscribeTest(SingleFaultTestBase):
             self.test_context,
             self.redpanda.brokers(),
             setup=self.WORKLOAD_SETUP,
-            fail_consistency_on_interruption=case.
-            fail_consistency_on_interruption,
+            fail_consistency_on_interruption=case.fail_consistency_on_interruption,
         )
 
         fault = None
@@ -511,7 +535,6 @@ class TxSubscribeTest(SingleFaultTestBase):
         timings = TimingConfig()
 
         # Avoid partition rebalancing during the test
-        self.redpanda.set_cluster_config(
-            {'partition_autobalancing_mode': 'off'})
+        self.redpanda.set_cluster_config({"partition_autobalancing_mode": "off"})
         self.prepare(workload, timings)
         self.run(workload, fault, timings, case.check_progress_during_fault)

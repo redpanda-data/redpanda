@@ -17,14 +17,16 @@ NON_DEFAULT_QUOTA_CONFIGS = {"target_fetch_quota_byte_rate": 10240}
 
 def _has_config_nag(redpanda: RedpandaService):
     return redpanda.search_log_any(
-        "You have configured client quotas using cluster configs.*")
+        "You have configured client quotas using cluster configs.*"
+    )
 
 
 class ClientQuotaDeprecatedConfigs_ConfigUpdateTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_config_update(self):
-        assert not _has_config_nag(self.redpanda), \
+        assert not _has_config_nag(self.redpanda), (
             f"We should not see the nag with the default configs"
+        )
 
         self.redpanda.set_cluster_config(NON_DEFAULT_QUOTA_CONFIGS)
 
@@ -32,14 +34,13 @@ class ClientQuotaDeprecatedConfigs_ConfigUpdateTest(RedpandaTest):
             lambda: _has_config_nag(self.redpanda),
             timeout_sec=30,
             backoff_sec=1,
-            err_msg="Timeout waiting for config nag to show up in the logs")
+            err_msg="Timeout waiting for config nag to show up in the logs",
+        )
 
 
 class ClientQuotaDeprecatedConfigs_StartupTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
-        super().__init__(extra_rp_conf=NON_DEFAULT_QUOTA_CONFIGS,
-                         *args,
-                         **kwargs)
+        super().__init__(extra_rp_conf=NON_DEFAULT_QUOTA_CONFIGS, *args, **kwargs)
 
     @cluster(num_nodes=3)
     def test_startup(self):
@@ -47,4 +48,5 @@ class ClientQuotaDeprecatedConfigs_StartupTest(RedpandaTest):
             lambda: _has_config_nag(self.redpanda),
             timeout_sec=30,
             backoff_sec=1,
-            err_msg="Timeout waiting for config nag to show up in the logs")
+            err_msg="Timeout waiting for config nag to show up in the logs",
+        )

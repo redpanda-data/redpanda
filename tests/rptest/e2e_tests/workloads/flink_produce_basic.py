@@ -25,7 +25,9 @@ from pyflink.datastream.formats.json import JsonRowSerializationSchema
 @dataclass(kw_only=True)
 class WorkloadConfig:
     # Default values are set for CDT run inside EC2 instance
-    connector_path: str = "file:///opt/flink/connectors/flink-sql-connector-kafka-3.0.1-1.18.jar"
+    connector_path: str = (
+        "file:///opt/flink/connectors/flink-sql-connector-kafka-3.0.1-1.18.jar"
+    )
     logger_path: str = "/workloads"
     log_level: str = "DEBUG"
     producer_group: str = "flink_group"
@@ -41,8 +43,8 @@ def setup_logger(logfilepath, level):
     # Simple file logger
     handler = logging.FileHandler(logfilepath)
     handler.setFormatter(
-        logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
     level = logging.getLevelName(level.upper())
     handler.setLevel(level)
     logger = logging.getLogger(__name__)
@@ -73,7 +75,7 @@ class FlinkWorkloadProduce:
         self.env.add_jars(self.config.connector_path)
         # Set the broker addresses
         self._basic_properties = {
-            'bootstrap.servers': self.config.brokers,
+            "bootstrap.servers": self.config.brokers,
         }
         self.logger.info(f"Brokers set to '{self.config.brokers}'")
         # Announce message holder array
@@ -81,43 +83,44 @@ class FlinkWorkloadProduce:
         self.messages = []
 
     def _generate_message(self):
-        return ''.join(
-            random.choices(string.ascii_letters + string.digits,
-                           k=self.config.msg_size))
+        return "".join(
+            random.choices(string.ascii_letters + string.digits, k=self.config.msg_size)
+        )
 
     def run(self):
         """
-            Example of a produce task
+        Example of a produce task
 
-            Steps:
-            - generate messages using configured size and random.choices() func
-            - create simple serializer
-            - create Producer with topic name and group
-            - execute producer
+        Steps:
+        - generate messages using configured size and random.choices() func
+        - create simple serializer
+        - create Producer with topic name and group
+        - execute producer
         """
         # Prepare data to be sent
         self.logger.info(f"Generating {self.config.count} messages")
-        _messages = [(self._generate_message(), )
-                     for i in range(self.config.count)]
+        _messages = [(self._generate_message(),) for i in range(self.config.count)]
 
         type_info = Types.ROW([Types.STRING()])
         ds = self.env.from_collection(_messages, type_info=type_info)
 
         # Serializer
-        serialization_schema = JsonRowSerializationSchema.Builder() \
-            .with_type_info(type_info) \
-            .build()
+        serialization_schema = (
+            JsonRowSerializationSchema.Builder().with_type_info(type_info).build()
+        )
 
         # Producer creation
         _properties = deepcopy(self._basic_properties)
-        _properties['group.id'] = self.config.producer_group
+        _properties["group.id"] = self.config.producer_group
 
-        self.logger.info("Creating producer with target topic of "
-                         f"'{self.config.topic_name}'")
+        self.logger.info(
+            f"Creating producer with target topic of '{self.config.topic_name}'"
+        )
         kafka_producer = FlinkKafkaProducer(
             topic=self.config.topic_name,
             serialization_schema=serialization_schema,
-            producer_config=_properties)
+            producer_config=_properties,
+        )
 
         # Output type of ds must be RowTypeInfo
         ds.add_sink(kafka_producer)
@@ -127,12 +130,12 @@ class FlinkWorkloadProduce:
 
     def cleanup(self):
         """
-            Cleanup placeholder
+        Cleanup placeholder
         """
         pass
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Load config if specified
     if len(sys.argv) > 1:
         # Validate arguments in a quick and dirty way.
@@ -141,15 +144,17 @@ if __name__ == '__main__':
         try:
             [filename] = sys.argv[1:]
         except Exception as e:
-            raise RuntimeError("Wrong number of arguments."
-                               "Should be one with path to "
-                               "flink_workload_conf.json") from e
+            raise RuntimeError(
+                "Wrong number of arguments."
+                "Should be one with path to "
+                "flink_workload_conf.json"
+            ) from e
     else:
         # No config path provided, just use defaults
         filename = "/workloads/flink_workload_config.json"
 
     # Load configuration
-    with open(filename, 'r+t') as f:
+    with open(filename, "r+t") as f:
         input_config = json.load(f)
 
     # All messages past this point is intercepted by task manager

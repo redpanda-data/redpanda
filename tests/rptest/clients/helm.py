@@ -15,11 +15,14 @@ class HelmTool:
     """
     Wrapper around helm.
     """
-    def __init__(self,
-                 redpanda,
-                 release='redpanda',
-                 chart='redpanda/redpanda',
-                 namespace='redpanda'):
+
+    def __init__(
+        self,
+        redpanda,
+        release="redpanda",
+        chart="redpanda/redpanda",
+        namespace="redpanda",
+    ):
         self._redpanda = redpanda
         self._release = release
         self._chart = chart
@@ -27,30 +30,43 @@ class HelmTool:
 
     def install(self):
         cmd = [
-            'helm', 'install', self._release, self._chart, '--namespace',
-            self._namespace, '--create-namespace', '--set',
-            'external.domain=customredpandadomain.local', '--set',
-            'statefulset.initContainers.setDataDirOwnership.enabled=true',
-            '--wait'
+            "helm",
+            "install",
+            self._release,
+            self._chart,
+            "--namespace",
+            self._namespace,
+            "--create-namespace",
+            "--set",
+            "external.domain=customredpandadomain.local",
+            "--set",
+            "statefulset.initContainers.setDataDirOwnership.enabled=true",
+            "--wait",
         ]
         try:
             subprocess.check_output(cmd)
         except subprocess.CalledProcessError as e:
             # log but ignore for now
-            self._redpanda.logger.info("helm error {}: {}".format(
-                e.returncode, e.output))
+            self._redpanda.logger.info(
+                "helm error {}: {}".format(e.returncode, e.output)
+            )
 
     def uninstall(self):
         cmd = [
-            'helm', 'uninstall', self._release, '--namespace', self._namespace,
-            '--wait'
+            "helm",
+            "uninstall",
+            self._release,
+            "--namespace",
+            self._namespace,
+            "--wait",
         ]
         try:
             subprocess.check_output(cmd)
         except subprocess.CalledProcessError as e:
             # log but ignore for now
-            self._redpanda.logger.info("helm error {}: {}".format(
-                e.returncode, e.output))
+            self._redpanda.logger.info(
+                "helm error {}: {}".format(e.returncode, e.output)
+            )
 
     def upgrade_config_cluster(self, values: dict = {}, timeout: int = 300):
         """
@@ -59,14 +75,23 @@ class HelmTool:
         """
 
         cmd = [
-            'helm', 'upgrade', self._release, self._chart, '--namespace',
-            self._namespace, '--wait', '--reuse-values', '--timeout',
-            '{}s'.format(timeout), '--set-json',
-            'config.cluster={}'.format(json.dumps(values))
+            "helm",
+            "upgrade",
+            self._release,
+            self._chart,
+            "--namespace",
+            self._namespace,
+            "--wait",
+            "--reuse-values",
+            "--timeout",
+            "{}s".format(timeout),
+            "--set-json",
+            "config.cluster={}".format(json.dumps(values)),
         ]
         try:
             subprocess.check_output(cmd)
         except subprocess.CalledProcessError as e:
             # log but ignore for now
-            self._redpanda.logger.info("helm error {}: {}".format(
-                e.returncode, e.output))
+            self._redpanda.logger.info(
+                "helm error {}: {}".format(e.returncode, e.output)
+            )

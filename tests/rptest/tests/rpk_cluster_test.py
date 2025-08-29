@@ -15,8 +15,16 @@ import zipfile
 import json
 
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, MetricSamples, MetricsEndpoint
-from rptest.util import expect_exception, get_cluster_license, get_second_cluster_license
+from rptest.services.redpanda import (
+    RESTART_LOG_ALLOW_LIST,
+    MetricSamples,
+    MetricsEndpoint,
+)
+from rptest.util import (
+    expect_exception,
+    get_cluster_license,
+    get_second_cluster_license,
+)
 from ducktape.utils.util import wait_until
 from rptest.util import wait_until_result
 
@@ -42,15 +50,16 @@ class RpkClusterTest(RedpandaTest):
 
             ok = True
             for b in brokers:
-                ok = ok and \
-                    b.address in advertised_addrs
+                ok = ok and b.address in advertised_addrs
 
             return ok
 
-        wait_until(condition,
-                   timeout_sec=10,
-                   backoff_sec=1,
-                   err_msg="No brokers found or output doesn't match")
+        wait_until(
+            condition,
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg="No brokers found or output doesn't match",
+        )
 
     @cluster(num_nodes=3)
     def test_get_config(self):
@@ -62,7 +71,7 @@ class RpkClusterTest(RedpandaTest):
         parsed = json.loads("".join(config_output))
 
         # Check the output contains at least one known config property
-        assert 'enable_transactions' in parsed
+        assert "enable_transactions" in parsed
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_node_down(self):
@@ -79,8 +88,7 @@ class RpkClusterTest(RedpandaTest):
         # Try with each node offline, in case RPK's behaviour isn't shuffling
         # properly and prefers one node over others.
         for i, node in enumerate(self.redpanda.nodes):
-            self.logger.info(
-                f"Stopping node {node.name}/{self.redpanda.idx(node)} ")
+            self.logger.info(f"Stopping node {node.name}/{self.redpanda.idx(node)} ")
             self.redpanda.stop_node(node)
 
             # A vanilla sendAny command
@@ -92,14 +100,14 @@ class RpkClusterTest(RedpandaTest):
             # discovering who the leader is, then should also be retrying
             # enough in the request to the leader to wait for election (we
             # just bounced a node so leader may not be elected yet)
-            self.logger.info(
-                f"Trying write request with node {node.name} down")
+            self.logger.info(f"Trying write request with node {node.name} down")
             self._rpk.sasl_create_user(
-                f"testuser_{i}", "password",
-                self.redpanda.SUPERUSER_CREDENTIALS.algorithm)
+                f"testuser_{i}",
+                "password",
+                self.redpanda.SUPERUSER_CREDENTIALS.algorithm,
+            )
 
-            self.logger.info(
-                f"Starting node {node.name}/{self.redpanda.idx(node)} ")
+            self.logger.info(f"Starting node {node.name}/{self.redpanda.idx(node)} ")
             self.redpanda.start_node(node)
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -124,8 +132,10 @@ class RpkClusterTest(RedpandaTest):
         try:
             # A sendToLeader command
             r = self._rpk.sasl_create_user(
-                "expect_fail", "expect_fail",
-                self.redpanda.SUPERUSER_CREDENTIALS.algorithm)
+                "expect_fail",
+                "expect_fail",
+                self.redpanda.SUPERUSER_CREDENTIALS.algorithm,
+            )
         except RpkException as e:
             self.logger.info(f"Got expected exception: {e}")
             pass
@@ -137,13 +147,16 @@ class RpkClusterTest(RedpandaTest):
 
         def get_metrics_value(metrics_endpoint: MetricsEndpoint) -> int:
             metrics = self.redpanda.metrics_sample(
-                sample_pattern=METRICS_NAME, metrics_endpoint=metrics_endpoint)
-            assert isinstance(metrics, MetricSamples), \
-                    f'Failed to get metrics for {METRICS_NAME}'
+                sample_pattern=METRICS_NAME, metrics_endpoint=metrics_endpoint
+            )
+            assert isinstance(metrics, MetricSamples), (
+                f"Failed to get metrics for {METRICS_NAME}"
+            )
 
             samples = [sample for sample in metrics.samples]
-            assert len(samples) == len(self.redpanda.nodes), \
-                f'Invalid number of samples: {len(samples)}'
+            assert len(samples) == len(self.redpanda.nodes), (
+                f"Invalid number of samples: {len(samples)}"
+            )
             return int(samples[0].value)
 
         internal_val = get_metrics_value(MetricsEndpoint.METRICS)
@@ -151,9 +164,9 @@ class RpkClusterTest(RedpandaTest):
         # generous slop. only a very large difference here would suggest a
         # logic error on the backend (e.g. approaching a calendar day).
         threshold_s = 30
-        assert abs(
-            internal_val - public_val
-        ) <= threshold_s, f"Mismatch: abs({internal_val} - {public_val}) > {threshold_s}"
+        assert abs(internal_val - public_val) <= threshold_s, (
+            f"Mismatch: abs({internal_val} - {public_val}) > {threshold_s}"
+        )
         return internal_val
 
     @cluster(num_nodes=3)
@@ -164,8 +177,7 @@ class RpkClusterTest(RedpandaTest):
         """
         license = get_cluster_license()
         if license is None:
-            self.logger.info(
-                "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
+            self.logger.info("Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
             return
 
         evaluation_period = 2592000  # 30 days
@@ -174,12 +186,11 @@ class RpkClusterTest(RedpandaTest):
             timeout_sec=10,
             backoff_sec=1,
             retry_on_exc=True,
-            err_msg=
-            "Without a license we should observe the built in evaluation period trial license"
+            err_msg="Without a license we should observe the built in evaluation period trial license",
         )
 
         with tempfile.NamedTemporaryFile() as tf:
-            tf.write(bytes(license, 'UTF-8'))
+            tf.write(bytes(license, "UTF-8"))
             tf.seek(0)
             output = self._rpk.license_set(tf.name)
             assert "Successfully uploaded license" in output
@@ -189,20 +200,19 @@ class RpkClusterTest(RedpandaTest):
             timeout_sec=10,
             backoff_sec=1,
             retry_on_exc=True,
-            err_msg="The expiry metric should be positive with a valid license"
+            err_msg="The expiry metric should be positive with a valid license",
         )
 
         expected_license = {
-            'expires': "Jul 11 2122",
-            'organization': 'redpanda-testing',
-            'type': 'enterprise',
-            'checksum_sha256':
-            '2730125070a934ca1067ed073d7159acc9975dc61015892308aae186f7455daf',
-            'expires_unix': 4813252273,
-            'license_expired': False,
-            'license_status': 'valid',
-            'license_violation': False,
-            'enterprise_features_in_use': [],
+            "expires": "Jul 11 2122",
+            "organization": "redpanda-testing",
+            "type": "enterprise",
+            "checksum_sha256": "2730125070a934ca1067ed073d7159acc9975dc61015892308aae186f7455daf",
+            "expires_unix": 4813252273,
+            "license_expired": False,
+            "license_status": "valid",
+            "license_violation": False,
+            "enterprise_features_in_use": [],
         }
 
         def compare_license():
@@ -216,7 +226,8 @@ class RpkClusterTest(RedpandaTest):
             timeout_sec=10,
             backoff_sec=1,
             retry_on_exc=True,
-            err_msg="unable to retrieve and compare license information")
+            err_msg="unable to retrieve and compare license information",
+        )
 
         # Assert that a second put takes license
         license = get_second_cluster_license()
@@ -228,13 +239,15 @@ class RpkClusterTest(RedpandaTest):
             if lic is None or lic == "{}":
                 return False
             result = json.loads(lic)
-            return result['organization'] == 'redpanda-testing-2'
+            return result["organization"] == "redpanda-testing-2"
 
-        wait_until(obtain_new_license,
-                   timeout_sec=10,
-                   backoff_sec=1,
-                   retry_on_exc=True,
-                   err_msg="unable to retrieve new license information")
+        wait_until(
+            obtain_new_license,
+            timeout_sec=10,
+            backoff_sec=1,
+            retry_on_exc=True,
+            err_msg="unable to retrieve new license information",
+        )
 
     @cluster(num_nodes=3)
     def test_upload_cluster_license_rpk(self):
@@ -244,8 +257,7 @@ class RpkClusterTest(RedpandaTest):
         """
         license = get_cluster_license()
         if license is None:
-            self.logger.info(
-                "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
+            self.logger.info("Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
             return
 
         output = self._rpk.license_set("", license)
@@ -255,14 +267,12 @@ class RpkClusterTest(RedpandaTest):
     def test_upload_cluster_license_error(self):
         license = get_cluster_license()
         if license is None:
-            self.logger.info(
-                "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
+            self.logger.info("Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
             return
 
-        with expect_exception(RpkException,
-                              lambda e: "License is malformed" in str(e)):
+        with expect_exception(RpkException, lambda e: "License is malformed" in str(e)):
             with tempfile.NamedTemporaryFile() as tf:
-                tf.write(bytes(license + 'r', 'UTF-8'))
+                tf.write(bytes(license + "r", "UTF-8"))
                 tf.seek(0)
 
                 self._rpk.license_set(tf.name)
@@ -274,26 +284,29 @@ class RpkClusterTest(RedpandaTest):
         """
         self.logger.debug("Ensure the eval period license is expired")
         self.redpanda.set_environment(
-            dict(__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE='1'))
-        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
-                                            use_maintenance_mode=False)
+            dict(__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE="1")
+        )
+        self.redpanda.rolling_restart_nodes(
+            self.redpanda.nodes, use_maintenance_mode=False
+        )
         self.redpanda.wait_until(
             self.redpanda.healthy,
             timeout_sec=15,
             backoff_sec=1,
-            err_msg="The cluster failed to stabilize after restart")
+            err_msg="The cluster failed to stabilize after restart",
+        )
 
         wait_until(
             lambda: self._get_license_expiry() == -1,
             timeout_sec=10,
             backoff_sec=1,
             retry_on_exc=True,
-            err_msg=
-            "After the trial period expired, the license metric should show no license (-1)"
+            err_msg="After the trial period expired, the license metric should show no license (-1)",
         )
 
         resp = self._rpk.license_info()
         self.logger.debug(f"Response: {resp}")
         resp_json = json.loads(resp)
-        assert resp_json['license_status'] == 'not_present', \
-                f"Expected: not_present. Got: {resp_json['license_status']}"
+        assert resp_json["license_status"] == "not_present", (
+            f"Expected: not_present. Got: {resp_json['license_status']}"
+        )

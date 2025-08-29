@@ -20,11 +20,12 @@ from rptest.utils.mode_checks import skip_debug_mode
 
 class TestEnablingTieredStorage(PreallocNodesTest):
     def __init__(self, test_context):
-        super().__init__(test_context,
-                         num_brokers=3,
-                         node_prealloc_count=1,
-                         si_settings=SISettings(test_context=test_context,
-                                                fast_uploads=True))
+        super().__init__(
+            test_context,
+            num_brokers=3,
+            node_prealloc_count=1,
+            si_settings=SISettings(test_context=test_context, fast_uploads=True),
+        )
 
     @property
     def producer_throughput(self):
@@ -49,22 +50,27 @@ class TestEnablingTieredStorage(PreallocNodesTest):
             self.msg_size,
             self.msg_count,
             custom_node=self.preallocated_nodes,
-            rate_limit_bps=self.producer_throughput)
+            rate_limit_bps=self.producer_throughput,
+        )
 
         self.producer.start(clean=False)
         self.producer.wait_for_acks(
-            5 * (self.producer_throughput / self.msg_size), 120, 1)
+            5 * (self.producer_throughput / self.msg_size), 120, 1
+        )
 
     @cluster(num_nodes=4)
     @skip_debug_mode
     def test_enabling_tiered_storage_on_old_topic(self):
         # disable cloud storage and restart cluster
-        self.redpanda.set_cluster_config({"cloud_storage_enabled": False},
-                                         expect_restart=True)
+        self.redpanda.set_cluster_config(
+            {"cloud_storage_enabled": False}, expect_restart=True
+        )
         # create topic without tiered storage enabled
-        topic = TopicSpec(partition_count=3,
-                          segment_bytes=1024 * 1024,
-                          retention_bytes=5 * 1024 * 1024)
+        topic = TopicSpec(
+            partition_count=3,
+            segment_bytes=1024 * 1024,
+            retention_bytes=5 * 1024 * 1024,
+        )
 
         self.client().create_topic(topic)
         self._topic = topic.name
@@ -79,11 +85,12 @@ class TestEnablingTieredStorage(PreallocNodesTest):
             _start_offset_updated,
             timeout_sec=60,
             backoff_sec=1,
-            err_msg=
-            "timed out waiting for local retention to clean up some some data")
+            err_msg="timed out waiting for local retention to clean up some some data",
+        )
 
         # enable cloud storage
-        self.redpanda.set_cluster_config({"cloud_storage_enabled": True},
-                                         expect_restart=True)
+        self.redpanda.set_cluster_config(
+            {"cloud_storage_enabled": True}, expect_restart=True
+        )
 
         self.redpanda.wait_for_manifest_uploads()

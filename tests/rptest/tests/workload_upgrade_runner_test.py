@@ -13,8 +13,16 @@ from typing import Any, Optional
 from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
-from rptest.services.redpanda import SISettings, CloudStorageType, get_cloud_storage_type
-from rptest.services.redpanda_installer import RedpandaInstaller, RedpandaVersion, RedpandaVersionTriple
+from rptest.services.redpanda import (
+    SISettings,
+    CloudStorageType,
+    get_cloud_storage_type,
+)
+from rptest.services.redpanda_installer import (
+    RedpandaInstaller,
+    RedpandaVersion,
+    RedpandaVersionTriple,
+)
 from rptest.services.workload_protocol import PWorkload
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.workload_producer_consumer import ProducerConsumerWorkload
@@ -27,12 +35,11 @@ from ducktape.mark import matrix
 
 
 def expand_version(
-        installer: RedpandaInstaller,
-        version: Optional[RedpandaVersion]) -> RedpandaVersionTriple:
+    installer: RedpandaInstaller, version: Optional[RedpandaVersion]
+) -> RedpandaVersionTriple:
     if version is None:
         # return latest unsupported version
-        return installer.latest_for_line(
-            installer.latest_unsupported_line())[0]
+        return installer.latest_for_line(installer.latest_unsupported_line())[0]
 
     if version == RedpandaInstaller.HEAD:
         return installer.head_version()
@@ -48,13 +55,15 @@ class WorkloadAdapter(PWorkload):
     """
     WorkloadAdapter is a wrapper around a PWorkload that keeps track of the state and save the error if one occurs.
     """
+
     NOT_STARTED = "not_started"
     STARTED = "started"
     STOPPED = "stopped"
     STOPPED_WITH_ERROR = "stopped_with_error"
 
-    def __init__(self, workload: PWorkload, ctx: RedpandaTest,
-                 installer: RedpandaInstaller) -> None:
+    def __init__(
+        self, workload: PWorkload, ctx: RedpandaTest, installer: RedpandaInstaller
+    ) -> None:
         self.workload = workload
         self.ctx = ctx
         self.installer = installer
@@ -67,15 +76,16 @@ class WorkloadAdapter(PWorkload):
     def get_earliest_applicable_release(self) -> tuple[int, int, int]:
         if self.earliest_v is None:
             self.earliest_v = expand_version(
-                self.installer,
-                self.workload.get_earliest_applicable_release())
+                self.installer, self.workload.get_earliest_applicable_release()
+            )
 
         return self.earliest_v
 
     def get_latest_applicable_release(self) -> tuple[int, int, int]:
         if self.latest_v is None:
             self.latest_v = expand_version(
-                self.installer, self.workload.get_latest_applicable_release())
+                self.installer, self.workload.get_latest_applicable_release()
+            )
         return self.latest_v
 
     def _exec_workload_method(self, final_state: str, method_name: str, *args):
@@ -87,8 +97,10 @@ class WorkloadAdapter(PWorkload):
         if self.state == WorkloadAdapter.STOPPED_WITH_ERROR:
             return None
 
-        if method_name in self.last_method_execution and (
-                self.last_method_execution[method_name] + 1) > time.time():
+        if (
+            method_name in self.last_method_execution
+            and (self.last_method_execution[method_name] + 1) > time.time()
+        ):
             # throttle execution: do not execute more than once per second
             return PWorkload.NOT_DONE
 
@@ -120,18 +132,15 @@ class WorkloadAdapter(PWorkload):
             return None
 
     def begin(self):
-        self._exec_workload_method(WorkloadAdapter.STARTED,
-                                   PWorkload.begin.__name__)
+        self._exec_workload_method(WorkloadAdapter.STARTED, PWorkload.begin.__name__)
 
     def end(self):
-        self._exec_workload_method(WorkloadAdapter.STOPPED,
-                                   PWorkload.end.__name__)
+        self._exec_workload_method(WorkloadAdapter.STOPPED, PWorkload.end.__name__)
 
-    def on_partial_cluster_upgrade(self,
-                                   versions: dict[Any, RedpandaVersionTriple]):
+    def on_partial_cluster_upgrade(self, versions: dict[Any, RedpandaVersionTriple]):
         res = self._exec_workload_method(
-            self.state, PWorkload.on_partial_cluster_upgrade.__name__,
-            versions)
+            self.state, PWorkload.on_partial_cluster_upgrade.__name__, versions
+        )
         return res if res is not None else PWorkload.DONE
 
     def get_workload_name(self):
@@ -139,25 +148,30 @@ class WorkloadAdapter(PWorkload):
 
     def on_cluster_upgraded(self, version: RedpandaVersionTriple):
         res = self._exec_workload_method(
-            self.state, PWorkload.on_cluster_upgraded.__name__, version)
+            self.state, PWorkload.on_cluster_upgraded.__name__, version
+        )
         return res if res is not None else PWorkload.DONE
 
 
 class RedpandaUpgradeTest(PreallocNodesTest):
     def __init__(self, test_context):
         # si_settings are needed for LicenseWorkload
-        super().__init__(test_context=test_context,
-                         num_brokers=3,
-                         si_settings=SISettings(test_context),
-                         node_prealloc_count=1,
-                         node_ready_timeout_s=60)
+        super().__init__(
+            test_context=test_context,
+            num_brokers=3,
+            si_settings=SISettings(test_context),
+            node_prealloc_count=1,
+            node_ready_timeout_s=60,
+        )
         # it is expected that older versions of redpanda will generate this kind of errors, at least while we keep testing from v23.x
-        self.redpanda.si_settings.set_expected_damage({
-            'ntr_no_topic_manifest',
-            'ntpr_no_manifest',
-            'unknown_keys',
-            'missing_segments',
-        })
+        self.redpanda.si_settings.set_expected_damage(
+            {
+                "ntr_no_topic_manifest",
+                "ntpr_no_manifest",
+                "unknown_keys",
+                "missing_segments",
+            }
+        )
 
         self.installer = self.redpanda._installer
 
@@ -196,7 +210,8 @@ class RedpandaUpgradeTest(PreallocNodesTest):
         latest_unsupported_line = self.installer.latest_unsupported_line()
         # keeping only releases older than latest EOL.
         forward_upgrade_steps = [
-            v for v in sorted(set(sum(workloads_steps, start=[])))
+            v
+            for v in sorted(set(sum(workloads_steps, start=[])))
             if v >= latest_unsupported_line
         ]
 
@@ -214,33 +229,39 @@ class RedpandaUpgradeTest(PreallocNodesTest):
 
         self.logger.info(f"going through these versions: {self.upgrade_steps}")
 
-    def _check_workload_list(self,
-                             to_check_list: list[WorkloadAdapter],
-                             version_param: RedpandaVersionTriple
-                             | dict[Any, RedpandaVersionTriple],
-                             partial_update: bool = False):
+    def _check_workload_list(
+        self,
+        to_check_list: list[WorkloadAdapter],
+        version_param: RedpandaVersionTriple | dict[Any, RedpandaVersionTriple],
+        partial_update: bool = False,
+    ):
         # run checks on all the workloads in the to_check_list
         # each check could take multiple runs, so loop on a list of it until exhaustion
 
-        str_update_kind = "progress check done" if not partial_update else "partial progress check done"
-        progress_lambda = lambda w, v_param: w.on_cluster_upgraded(v_param) if not partial_update \
-                                                            else w.on_partial_cluster_upgrade(v_param)
+        str_update_kind = (
+            "progress check done"
+            if not partial_update
+            else "partial progress check done"
+        )
+        progress_lambda = (
+            lambda w, v_param: w.on_cluster_upgraded(v_param)
+            if not partial_update
+            else w.on_partial_cluster_upgrade(v_param)
+        )
 
         while len(to_check_list) > 0:
             start_time = time.time()
             self.logger.info(
-                f"checking { str_update_kind }progress for {[w.get_workload_name() for w in to_check_list]}"
+                f"checking {str_update_kind}progress for {[w.get_workload_name() for w in to_check_list]}"
             )
             # check progress of each workload in the to_check_list
             # and if a workload is done, remove it from the list
             status_progress = {
-                w: progress_lambda(w, version_param)
-                for w in to_check_list
+                w: progress_lambda(w, version_param) for w in to_check_list
             }
             for w, state in status_progress.items():
                 if state == PWorkload.DONE:
-                    self.logger.info(
-                        f"{w.get_workload_name()} {str_update_kind}")
+                    self.logger.info(f"{w.get_workload_name()} {str_update_kind}")
                     to_check_list.remove(w)
 
             if delay := 1 - (time.time() - start_time) > 0:
@@ -248,7 +269,7 @@ class RedpandaUpgradeTest(PreallocNodesTest):
                 time.sleep(delay)
 
     def cluster_version(self) -> int:
-        return Admin(self.redpanda).get_features()['cluster_version']
+        return Admin(self.redpanda).get_features()["cluster_version"]
 
     # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
     @skip_fips_mode
@@ -256,58 +277,77 @@ class RedpandaUpgradeTest(PreallocNodesTest):
     @cluster(num_nodes=4)
     # TODO(vlad): Allow this test on ABS once we have at least two versions
     # of Redpanda that support Azure Hierarchical Namespaces.
-    @matrix(cloud_storage_type=get_cloud_storage_type(
-        applies_only_on=[CloudStorageType.S3]))
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
     def test_workloads_through_releases(self, cloud_storage_type):
         # this callback will be called between each upgrade, in a mixed version state
         def mid_upgrade_check(raw_versions: dict[Any, RedpandaVersion]):
             rp_versions = {
-                k: expand_version(self.installer, v)
-                for k, v in raw_versions.items()
+                k: expand_version(self.installer, v) for k, v in raw_versions.items()
             }
             next_version = max(rp_versions.values())
             # check only workload that are active and that can operate with next_version
             to_check_workloads = [
-                w for w in self.adapted_workloads
+                w
+                for w in self.adapted_workloads
                 if w.state == WorkloadAdapter.STARTED
                 and next_version <= w.get_latest_applicable_release()
             ]
-            self._check_workload_list(to_check_list=to_check_workloads,
-                                      version_param=rp_versions,
-                                      partial_update=True)
+            self._check_workload_list(
+                to_check_list=to_check_workloads,
+                version_param=rp_versions,
+                partial_update=True,
+            )
 
         # upgrade loop: for each version
         for current_version in self.upgrade_through_versions(
-                self.upgrade_steps,
-                already_running=False,
-                mid_upgrade_check=mid_upgrade_check):
+            self.upgrade_steps,
+            already_running=False,
+            mid_upgrade_check=mid_upgrade_check,
+        ):
             current_version = expand_version(self.installer, current_version)
             # setup workload that could start at current_version
             for w in self.adapted_workloads:
-                if w.state == WorkloadAdapter.NOT_STARTED and current_version >= w.get_earliest_applicable_release(
+                if (
+                    w.state == WorkloadAdapter.NOT_STARTED
+                    and current_version >= w.get_earliest_applicable_release()
                 ):
                     self.logger.info(f"setup {w.get_workload_name()}")
                     w.begin()  # this will set in a STARTED state
 
             # run checks on all the started workload.
             # each check could take multiple runs, so loop on a list of it until exhaustion
-            self._check_workload_list(to_check_list= \
-                                      [w for w in self.adapted_workloads if w.state == WorkloadAdapter.STARTED],
-                                      version_param=current_version)
+            self._check_workload_list(
+                to_check_list=[
+                    w
+                    for w in self.adapted_workloads
+                    if w.state == WorkloadAdapter.STARTED
+                ],
+                version_param=current_version,
+            )
 
             # stop workload that can't operate with next_version
             for w in self.adapted_workloads:
-                if w.state == WorkloadAdapter.STARTED and current_version == w.get_latest_applicable_release(
+                if (
+                    w.state == WorkloadAdapter.STARTED
+                    and current_version == w.get_latest_applicable_release()
                 ):
                     self.logger.info(f"teardown of {w.get_workload_name()}")
                     w.end()
 
             # quick exit: terminate loop if no workload is active
-            if len([
-                    w for w in self.adapted_workloads
-                    if w.state == WorkloadAdapter.STARTED
-                    or w.state == WorkloadAdapter.NOT_STARTED
-            ]) == 0:
+            if (
+                len(
+                    [
+                        w
+                        for w in self.adapted_workloads
+                        if w.state == WorkloadAdapter.STARTED
+                        or w.state == WorkloadAdapter.NOT_STARTED
+                    ]
+                )
+                == 0
+            ):
                 self.logger.info(
                     f"terminating upgrade loop at version {current_version}, no workload is active"
                 )

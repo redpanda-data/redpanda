@@ -22,7 +22,7 @@ ACTIVE_METRIC = "vectorized_kafka_rpc_active_connections"
 
 
 class ConnectionLimitsTest(RedpandaTest):
-    topics = (TopicSpec(partition_count=1, replication_factor=1), )
+    topics = (TopicSpec(partition_count=1, replication_factor=1),)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=1, **kwargs)
@@ -32,8 +32,8 @@ class ConnectionLimitsTest(RedpandaTest):
         self.redpanda.set_cluster_config({"kafka_connections_max": 6})
 
         metrics = [
-            MetricCheck(self.logger, self.redpanda, n, REJECTED_METRIC, {},
-                        sum) for n in self.redpanda.nodes
+            MetricCheck(self.logger, self.redpanda, n, REJECTED_METRIC, {}, sum)
+            for n in self.redpanda.nodes
         ]
 
         # I happen to know that an `rpk topic consume` occupies three
@@ -54,15 +54,20 @@ class ConnectionLimitsTest(RedpandaTest):
         # producer, since otherwise the consumers and the producer race and the producer
         # may win in which case it would be one of the consumers that fail to connect
         self.redpanda.wait_until(
-            lambda: connection_count() >= 6, 60, 1,
-            f"Did not get 6 connections, last count was {connection_count()}")
+            lambda: connection_count() >= 6,
+            60,
+            1,
+            f"Did not get 6 connections, last count was {connection_count()}",
+        )
 
-        producer = RpkProducer(self.test_context,
-                               self.redpanda,
-                               self.topic,
-                               msg_size=16384,
-                               msg_count=1,
-                               produce_timeout=5)
+        producer = RpkProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=16384,
+            msg_count=1,
+            produce_timeout=5,
+        )
         producer.start()
         try:
             producer.wait()
@@ -77,10 +82,9 @@ class ConnectionLimitsTest(RedpandaTest):
             c.stop()
             c.wait()
 
-        assert any([
-            m.evaluate([(REJECTED_METRIC, lambda a, b: b > a)])
-            for m in metrics
-        ])
+        assert any(
+            [m.evaluate([(REJECTED_METRIC, lambda a, b: b > a)]) for m in metrics]
+        )
 
     @cluster(num_nodes=2)
     def test_null(self):
@@ -91,25 +95,26 @@ class ConnectionLimitsTest(RedpandaTest):
         self.redpanda.set_cluster_config({"kafka_connections_max": 6})
 
         metrics = [
-            MetricCheck(self.logger, self.redpanda, n, REJECTED_METRIC, {},
-                        sum) for n in self.redpanda.nodes
+            MetricCheck(self.logger, self.redpanda, n, REJECTED_METRIC, {}, sum)
+            for n in self.redpanda.nodes
         ]
 
-        producer = RpkProducer(self.test_context,
-                               self.redpanda,
-                               self.topic,
-                               msg_size=16384,
-                               msg_count=1,
-                               quiet=True,
-                               produce_timeout=5)
+        producer = RpkProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=16384,
+            msg_count=1,
+            quiet=True,
+            produce_timeout=5,
+        )
         for n in range(0, 100):
             producer.start()
             producer.wait()
 
-        assert all([
-            m.evaluate([(REJECTED_METRIC, lambda a, b: b == a)])
-            for m in metrics
-        ])
+        assert all(
+            [m.evaluate([(REJECTED_METRIC, lambda a, b: b == a)]) for m in metrics]
+        )
 
     @cluster(num_nodes=3)
     def test_overrides(self):
@@ -118,47 +123,53 @@ class ConnectionLimitsTest(RedpandaTest):
         detailed tests are in the unit test: this is a smoke test
         that some overrides work end to end.
         """
+
         def setup_producers():
-            producer_a = RpkProducer(self.test_context,
-                                     self.redpanda,
-                                     self.topic,
-                                     msg_size=16384,
-                                     msg_count=1,
-                                     quiet=True,
-                                     produce_timeout=5)
+            producer_a = RpkProducer(
+                self.test_context,
+                self.redpanda,
+                self.topic,
+                msg_size=16384,
+                msg_count=1,
+                quiet=True,
+                produce_timeout=5,
+            )
             producer_a_addr = socket.gethostbyname(producer_a.nodes[0].name)
 
-            producer_b = RpkProducer(self.test_context,
-                                     self.redpanda,
-                                     self.topic,
-                                     msg_size=16384,
-                                     msg_count=1,
-                                     quiet=True,
-                                     produce_timeout=5)
+            producer_b = RpkProducer(
+                self.test_context,
+                self.redpanda,
+                self.topic,
+                msg_size=16384,
+                msg_count=1,
+                quiet=True,
+                produce_timeout=5,
+            )
             producer_b_addr = socket.gethostbyname(producer_b.nodes[0].name)
 
             return producer_a, producer_a_addr, producer_b, producer_b_addr
 
-        producer_a, producer_a_addr, producer_b, producer_b_addr = setup_producers(
-        )
+        producer_a, producer_a_addr, producer_b, producer_b_addr = setup_producers()
 
         self.logger.info(
-            f"producer_a: {producer_a_addr}, producer_b: {producer_b_addr}")
+            f"producer_a: {producer_a_addr}, producer_b: {producer_b_addr}"
+        )
 
         self.redpanda.set_cluster_config(
-            {"kafka_connections_max_overrides": [
-                f"{producer_a_addr}:0",
-            ]})
+            {
+                "kafka_connections_max_overrides": [
+                    f"{producer_a_addr}:0",
+                ]
+            }
+        )
 
         self.logger.info(f"Trying producer_a, should be blocked")
-        with expect_exception(Exception,
-                              lambda e: 'timeout' in str(e).lower()):
+        with expect_exception(Exception, lambda e: "timeout" in str(e).lower()):
             producer_a.start()
             producer_a.wait()
 
         self.logger.info(f"Tearing down producer_a")
-        with expect_exception(Exception,
-                              lambda e: 'timeout' in str(e).lower()):
+        with expect_exception(Exception, lambda e: "timeout" in str(e).lower()):
             producer_a.stop()
         producer_a.free()
 
@@ -167,11 +178,9 @@ class ConnectionLimitsTest(RedpandaTest):
         producer_b.wait()
         producer_b.free()
 
-        self.redpanda.set_cluster_config(
-            {"kafka_connections_max_overrides": []})
+        self.redpanda.set_cluster_config({"kafka_connections_max_overrides": []})
 
-        producer_a, producer_a_addr, producer_b, producer_b_addr = setup_producers(
-        )
+        producer_a, producer_a_addr, producer_b, producer_b_addr = setup_producers()
 
         # Both producers should work now
         producer_a.start()

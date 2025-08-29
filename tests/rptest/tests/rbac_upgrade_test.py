@@ -27,12 +27,12 @@ class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
 
     def __init__(self, test_ctx, **kwargs):
         super().__init__(test_ctx, **kwargs)
-        self.redpanda.set_environment({
-            '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
-            f'{self.LICENSE_CHECK_INTERVAL_SEC}',
-            '__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE':
-            True
-        })
+        self.redpanda.set_environment(
+            {
+                "__REDPANDA_LICENSE_CHECK_INTERVAL_SEC": f"{self.LICENSE_CHECK_INTERVAL_SEC}",
+                "__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE": True,
+            }
+        )
         self.installer = self.redpanda._installer
         self.admin = Admin(self.redpanda)
 
@@ -49,8 +49,7 @@ class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
         self.admin.create_user("bob")
 
         # Update all nodes to newest version
-        self.installer.install(self.redpanda.nodes,
-                               self.installer.head_version())
+        self.installer.install(self.redpanda.nodes, self.installer.head_version())
         self.redpanda.restart_nodes(self.redpanda.nodes)
         _ = wait_for_num_versions(self.redpanda, 1)
 
@@ -65,8 +64,9 @@ class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
             ]
 
             for member in expected_users:
-                assert member in role.members,\
+                assert member in role.members, (
                     f"'{member}' missing from role members: {role.members}"
+                )
             return True
 
         wait_until_result(
@@ -74,7 +74,8 @@ class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
             timeout_sec=30,
             backoff_sec=1,
             retry_on_exc=True,
-            err_msg="Timeout waiting for default role to be created")
+            err_msg="Timeout waiting for default role to be created",
+        )
 
         # Verify that we don't get a license nag for the default role
         # NOTE: This assertion will FAIL if running in FIPS mode because

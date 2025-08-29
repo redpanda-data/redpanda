@@ -26,9 +26,9 @@ from ..types import NoProgressError
 
 
 class NodeState(str, Enum):
-    INITIALIZED = 'initialized'
-    STARTED = 'started'
-    STOPPED = 'stopped'
+    INITIALIZED = "initialized"
+    STARTED = "started"
+    STOPPED = "stopped"
 
 
 @dataclasses.dataclass
@@ -76,7 +76,7 @@ class WorkloadServiceBase(ABC, Service):
             "workload": {
                 "path": self.WORKLOAD_LOG_PATH,
                 "collect_default": True,
-            }
+            },
         }
 
     def _remote_url(self, node, path):
@@ -111,8 +111,7 @@ class WorkloadServiceBase(ABC, Service):
         except Exception as e:
             # Broad exception handling for any lower level connection errors etc
             # that might not be properly classed as `requests` exception.
-            self.logger.debug(
-                f"Status endpoint {self.who_am_i()} not ready: {e}")
+            self.logger.debug(f"Status endpoint {self.who_am_i()} not ready: {e}")
             return False
         else:
             return r.status_code == 200
@@ -120,8 +119,7 @@ class WorkloadServiceBase(ABC, Service):
     ### Service overrides
 
     def start_node(self, node, timeout_sec=10):
-        self.logger.info(
-            f"{self.who_am_i()}: starting worker on node {node.name}")
+        self.logger.info(f"{self.who_am_i()}: starting worker on node {node.name}")
         assert not self._is_alive(node)
 
         node.account.mkdirs(self.PERSISTENT_ROOT)
@@ -139,9 +137,9 @@ class WorkloadServiceBase(ABC, Service):
             lambda: self._is_ready(node),
             timeout_sec=timeout_sec,
             backoff_sec=1,
-            err_msg=
-            f"{self.who_am_i()}: worker failed to become ready within {timeout_sec} sec",
-            retry_on_exc=False)
+            err_msg=f"{self.who_am_i()}: worker failed to become ready within {timeout_sec} sec",
+            retry_on_exc=False,
+        )
 
         # load the workload config
         workload_config = {
@@ -150,45 +148,48 @@ class WorkloadServiceBase(ABC, Service):
             "brokers": self._brokers_str,
         }
         workload_config |= self.extra_config(node)
-        r = self._request("post",
-                          node,
-                          "init",
-                          json=workload_config,
-                          timeout_sec=timeout_sec)
+        r = self._request(
+            "post", node, "init", json=workload_config, timeout_sec=timeout_sec
+        )
 
         self._node_states[node.name] = NodeState.INITIALIZED
 
     def _kill(self, node, clean_shutdown):
-        node.account.kill_java_processes(f"{self.java_module_name}\.App",
-                                         clean_shutdown=clean_shutdown,
-                                         allow_fail=True)
+        node.account.kill_java_processes(
+            f"{self.java_module_name}\.App",
+            clean_shutdown=clean_shutdown,
+            allow_fail=True,
+        )
 
     def stop_node(self, node, timeout_sec=10):
-        self.logger.info(
-            f"{self.who_am_i()}: stopping worker on node {node.name}")
+        self.logger.info(f"{self.who_am_i()}: stopping worker on node {node.name}")
 
         try:
             self.stop_workload(nodes=[node])
         except Exception as e:
             self.logger.warn(
-                f"{self.who_am_i()}: failed to stop workload on {node.name}")
+                f"{self.who_am_i()}: failed to stop workload on {node.name}"
+            )
 
         self.logger.debug(f"terminating worker on {node.name}")
         self._kill(node, clean_shutdown=True)
 
         try:
-            wait_until(lambda: not self._is_alive(node),
-                       timeout_sec=timeout_sec,
-                       backoff_sec=1,
-                       retry_on_exc=False)
+            wait_until(
+                lambda: not self._is_alive(node),
+                timeout_sec=timeout_sec,
+                backoff_sec=1,
+                retry_on_exc=False,
+            )
         except TimeoutError:
-            self.logger.warn(f"{self.who_am_i()}: process on {node.name} "
-                             f"failed to stop within {timeout_sec} sec")
+            self.logger.warn(
+                f"{self.who_am_i()}: process on {node.name} "
+                f"failed to stop within {timeout_sec} sec"
+            )
             self._kill(node, clean_shutdown=False)
 
     def clean_node(self, node):
-        self.logger.info(
-            f"{self.who_am_i()}: cleaning worker node {node.name}")
+        self.logger.info(f"{self.who_am_i()}: cleaning worker node {node.name}")
         self._kill(node, clean_shutdown=False)
         node.account.remove(self.PERSISTENT_ROOT, allow_fail=True)
 
@@ -215,10 +216,9 @@ class WorkloadServiceBase(ABC, Service):
 
     def info(self, node, timeout_sec=10):
         r = self._request("get", node, "info", timeout_sec=timeout_sec)
-        return WorkloadInfo(**{
-            f.name: r.json()[f.name]
-            for f in dataclasses.fields(WorkloadInfo)
-        })
+        return WorkloadInfo(
+            **{f.name: r.json()[f.name] for f in dataclasses.fields(WorkloadInfo)}
+        )
 
     def wait_progress(self, timeout_sec=10):
         started = {node.name: self.info(node) for node in self.nodes}
@@ -228,8 +228,7 @@ class WorkloadServiceBase(ABC, Service):
             for node in self.nodes:
                 if node in progressed:
                     continue
-                self.logger.debug(
-                    f"checking if node {node.name} made progress")
+                self.logger.debug(f"checking if node {node.name} made progress")
                 info = self.info(node)
                 if info.succeeded_ops > started[node.name].succeeded_ops:
                     progressed.add(node.name)
@@ -239,7 +238,8 @@ class WorkloadServiceBase(ABC, Service):
             wait_until(made_progress, timeout_sec=timeout_sec, backoff_sec=1)
         except TimeoutError:
             raise NoProgressError(
-                f"workload failed to progress within {timeout_sec} sec")
+                f"workload failed to progress within {timeout_sec} sec"
+            )
 
     def emit_event(self, node, name):
         self._request("post", node, "event/" + name)
@@ -249,7 +249,8 @@ class WorkloadServiceBase(ABC, Service):
     def _results_dir(self):
         return os.path.join(
             TestContext.results_dir(self.context, self.context.test_index),
-            self.service_id)
+            self.service_id,
+        )
 
     def _node_results_dir(self, node):
         return os.path.join(self._results_dir(), node.account.hostname)
@@ -273,8 +274,8 @@ class WorkloadServiceBase(ABC, Service):
             stats = self.collect_stats()
         except:
             self.logger.warn(
-                f"{self.who_am_i()}: failed to collect workload stats",
-                exc_info=True)
+                f"{self.who_am_i()}: failed to collect workload stats", exc_info=True
+            )
         else:
             self.logger.info(f"{self.who_am_i()} workload stats: {stats}")
 

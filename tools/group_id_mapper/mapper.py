@@ -8,16 +8,14 @@ def main():
     import argparse
 
     def generate_options():
-        parser = argparse.ArgumentParser(
-            description='Redpanda Consumer Group Mapper')
-        parser.add_argument('group_id',
-                            type=str,
-                            help='Id of the group to map')
+        parser = argparse.ArgumentParser(description="Redpanda Consumer Group Mapper")
+        parser.add_argument("group_id", type=str, help="Id of the group to map")
         parser.add_argument(
-            '--partition_count',
+            "--partition_count",
             type=int,
-            help='Number of __consumer_offsets topic partitions',
-            required=True)
+            help="Number of __consumer_offsets topic partitions",
+            required=True,
+        )
 
         return parser
 
@@ -31,5 +29,5 @@ def main():
     print(f"kafka/__consumer_offsets/{partition_id}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

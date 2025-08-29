@@ -33,21 +33,22 @@ class PartitionInfo:
     end_offset: int
 
 
-class MpxMockClient():
-    '''
+class MpxMockClient:
+    """
     Client hacking Kafka Python client internals to mimic the MPX behavior
-    '''
+    """
+
     def __init__(self, redpanda):
         self.redpanda = redpanda
         self.initial_client_id = "__redpanda_mpx"
-        self.client = KafkaClient(bootstrap_servers=self.redpanda.brokers(),
-                                  client_id=self.initial_client_id)
+        self.client = KafkaClient(
+            bootstrap_servers=self.redpanda.brokers(), client_id=self.initial_client_id
+        )
 
     def _all_connections_ready(self):
-        ready = all([
-            self.client.ready(self.redpanda.node_id(n))
-            for n in self.redpanda.nodes
-        ])
+        ready = all(
+            [self.client.ready(self.redpanda.node_id(n)) for n in self.redpanda.nodes]
+        )
         if not ready:
             self.client.poll()
         return ready
@@ -58,10 +59,7 @@ class MpxMockClient():
     def _create_record_batch(self):
         # we do not need any special type of batch, using single record batch without compression
         b = MemoryRecordsBuilder(magic=2, compression_type=0, batch_size=1)
-        b.append(timestamp=None,
-                 key=b"test-key",
-                 value=b"test-value",
-                 headers=[])
+        b.append(timestamp=None, key=b"test-key", value=b"test-value", headers=[])
         b.close()
         return b.buffer()
 
@@ -71,7 +69,8 @@ class MpxMockClient():
             lambda: self._all_connections_ready(),
             timeout_sec=10,
             backoff_sec=0.5,
-            err_msg="Timeout waiting for all brokers connection to be ready")
+            err_msg="Timeout waiting for all brokers connection to be ready",
+        )
         # send api versions request to each broker to initialize connection, we expect
         # that the first request sent in the connection will have a special
         # client_id set indicating that MPX is connected to Redpanda
@@ -95,11 +94,11 @@ class MpxMockClient():
 
     def create_produce_request(self, topic: str, partition: int):
         # basic produce request with one partition only
-        return ProduceRequest[7](required_acks=-1,
-                                 timeout=10,
-                                 topics=[(topic, [
-                                     (partition, self._create_record_batch())
-                                 ])])
+        return ProduceRequest[7](
+            required_acks=-1,
+            timeout=10,
+            topics=[(topic, [(partition, self._create_record_batch())])],
+        )
 
     def send(self, node_id: int, request):
         self.redpanda.logger.info(f"sending request: {request} to {node_id}")
@@ -108,19 +107,19 @@ class MpxMockClient():
     def poll(self, future):
         return self.client.poll(future=future)
 
-    def create_fetch_request(self, topic: str, partition: int,
-                             fetch_offset: int):
+    def create_fetch_request(self, topic: str, partition: int, fetch_offset: int):
         # a fetch request with wait time set to wait for the data before returning broker response
-        return FetchRequest[7](replica_id=-1,
-                               max_wait_time=10000,
-                               min_bytes=10,
-                               max_bytes=10 * 1024,
-                               isolation_level=0,
-                               session_id=-1,
-                               session_epoch=-1,
-                               topics=[(topic, [(partition, fetch_offset, 0,
-                                                 10 * 1024)])],
-                               forgotten_topics_data=[])
+        return FetchRequest[7](
+            replica_id=-1,
+            max_wait_time=10000,
+            min_bytes=10,
+            max_bytes=10 * 1024,
+            isolation_level=0,
+            session_id=-1,
+            session_epoch=-1,
+            topics=[(topic, [(partition, fetch_offset, 0, 10 * 1024)])],
+            forgotten_topics_data=[],
+        )
 
     def close(self):
         self.client.close()
@@ -135,8 +134,9 @@ def no_validation_process_response(self, read_buffer):
 
     if not self.in_flight_requests:
         raise Errors.CorrelationIdError(
-            'No in-flight-request found for server response'
-            ' with correlation ID %d' % (recv_correlation_id, ))
+            "No in-flight-request found for server response"
+            " with correlation ID %d" % (recv_correlation_id,)
+        )
 
     found_req = None
     idx = 0
@@ -156,7 +156,7 @@ def no_validation_process_response(self, read_buffer):
     try:
         response = found_req.RESPONSE_TYPE.decode(read_buffer)
     except ValueError:
-        raise Errors.KafkaProtocolError('Unable to decode response')
+        raise Errors.KafkaProtocolError("Unable to decode response")
 
     return (recv_correlation_id, response)
 
@@ -171,35 +171,40 @@ class TestVirtualConnections(RedpandaTest):
             test_context=test_context,
             num_brokers=3,
             # disable leader balancer so that we do not have to retry requests sent during the test
-            extra_rp_conf={"enable_leader_balancer": False})
+            extra_rp_conf={"enable_leader_balancer": False},
+        )
 
-    def _fetch_and_produce(self, client: MpxMockClient, topic: str,
-                           partition: int, fetch_client_id: str,
-                           produce_client_id: str):
+    def _fetch_and_produce(
+        self,
+        client: MpxMockClient,
+        topic: str,
+        partition: int,
+        fetch_client_id: str,
+        produce_client_id: str,
+    ):
         partition_info = client.get_partition_info(topic, partition)
         self.logger.info(
             f"partition {topic}/{partition} end offset: {partition_info.end_offset}, leader: {partition_info.leader_id}"
         )
         client.set_client_id(fetch_client_id)
-        fetch_fut = client.send(node_id=partition_info.leader_id,
-                                request=client.create_fetch_request(
-                                    topic=topic,
-                                    partition=partition,
-                                    fetch_offset=partition_info.end_offset))
+        fetch_fut = client.send(
+            node_id=partition_info.leader_id,
+            request=client.create_fetch_request(
+                topic=topic, partition=partition, fetch_offset=partition_info.end_offset
+            ),
+        )
 
         client.set_client_id(produce_client_id)
-        produce_fut = client.send(node_id=partition_info.leader_id,
-                                  request=client.create_produce_request(
-                                      topic=topic, partition=partition))
+        produce_fut = client.send(
+            node_id=partition_info.leader_id,
+            request=client.create_produce_request(topic=topic, partition=partition),
+        )
 
         return (fetch_fut, produce_fut)
 
     @cluster(num_nodes=3)
-    @matrix(different_clusters=[True, False],
-            different_connections=[True, False])
-    def test_no_head_of_line_blocking(self, different_clusters,
-                                      different_connections):
-
+    @matrix(different_clusters=[True, False], different_connections=[True, False])
+    def test_no_head_of_line_blocking(self, different_clusters, different_connections):
         # create topic with single partition
         spec = TopicSpec(partition_count=1, replication_factor=3)
         self.client().create_topic(spec)
@@ -212,14 +217,17 @@ class TestVirtualConnections(RedpandaTest):
         fetch_client = create_client_id(v_cluster_1, 0, "client-fetch")
         produce_client = create_client_id(
             v_cluster_1 if not different_clusters else v_cluster_2,
-            0 if not different_connections else 1, "client-produce")
+            0 if not different_connections else 1,
+            "client-produce",
+        )
         # validate that fetch request is blocking produce request first as mpx extensions are disabled
         (fetch_fut, produce_fut) = self._fetch_and_produce(
             client=mpx_client,
             topic=spec.name,
             partition=0,
             fetch_client_id=fetch_client,
-            produce_client_id=produce_client)
+            produce_client_id=produce_client,
+        )
 
         mpx_client.poll(produce_fut)
         assert produce_fut.is_done and produce_fut.succeeded
@@ -230,8 +238,9 @@ class TestVirtualConnections(RedpandaTest):
         # fetch response contains only one topic and partition,
         # check if response is empty, produce was executed after the fetch returned.
 
-        assert f_resp.topics[0][1][0][
-            6] == b'', "Fetch should be executed before the produce finishes"
+        assert f_resp.topics[0][1][0][6] == b"", (
+            "Fetch should be executed before the produce finishes"
+        )
 
         mpx_client.close()
 
@@ -249,42 +258,43 @@ class TestVirtualConnections(RedpandaTest):
             topic=spec.name,
             partition=0,
             fetch_client_id=fetch_client,
-            produce_client_id=produce_client)
+            produce_client_id=produce_client,
+        )
 
         for connection in mpx_client.client._conns.values():
             if len(connection._protocol.in_flight_requests) == 2:
                 # replace process response method of the protocol
                 connection._protocol._process_response = MethodType(
-                    no_validation_process_response, connection._protocol)
+                    no_validation_process_response, connection._protocol
+                )
 
         # wait for fetch as it will be released after produce finishes
         should_interleave_requests = different_clusters or different_connections
 
         def _produce_is_ready():
-            mpx_client.poll(
-                fetch_fut if should_interleave_requests else produce_fut)
+            mpx_client.poll(fetch_fut if should_interleave_requests else produce_fut)
             return produce_fut.is_done
 
         wait_until(
             _produce_is_ready,
             timeout_sec=10,
             backoff_sec=0.5,
-            err_msg=
-            "Produce should allow fetch to finish so at this point it should be ready"
+            err_msg="Produce should allow fetch to finish so at this point it should be ready",
         )
 
-        fetch_fut.add_callback(
-            lambda e: self.logger.info(f"fetch success: {e}"))
+        fetch_fut.add_callback(lambda e: self.logger.info(f"fetch success: {e}"))
         fetch_fut.add_errback(lambda e: self.logger.info(f"fetch error: {e}"))
 
         f_resp = fetch_fut.value
 
         if should_interleave_requests:
-            assert f_resp.topics[0][1][0][
-                6] != b'', "Fetch should be unblocked by produce from another virtual connection"
+            assert f_resp.topics[0][1][0][6] != b"", (
+                "Fetch should be unblocked by produce from another virtual connection"
+            )
         else:
-            assert f_resp.topics[0][1][0][
-                6] == b'', "Fetch should be executed before the produce finishes"
+            assert f_resp.topics[0][1][0][6] == b"", (
+                "Fetch should be executed before the produce finishes"
+            )
         mpx_client.close()
 
     @cluster(num_nodes=3)
@@ -302,8 +312,8 @@ class TestVirtualConnections(RedpandaTest):
             mpx_client.set_client_id(client_id)
             produce_fut = mpx_client.send(
                 node_id=partition_info.leader_id,
-                request=mpx_client.create_produce_request(topic=topic,
-                                                          partition=0))
+                request=mpx_client.create_produce_request(topic=topic, partition=0),
+            )
 
             mpx_client.poll(produce_fut)
             assert produce_fut.is_done and produce_fut.succeeded
@@ -317,20 +327,25 @@ class TestVirtualConnections(RedpandaTest):
 
         assert p_info.end_offset > 0, "Produce request should be successful"
         starting_end_offset = p_info.end_offset
-        invalid_xid_id = create_client_id("zzzzzzzzzzzzzzzzzzzz", 0,
-                                          "client-fetch")
+        invalid_xid_id = create_client_id("zzzzzzzzzzzzzzzzzzzz", 0, "client-fetch")
 
         p_info = produce_with_client(invalid_xid_id)
 
-        assert starting_end_offset == p_info.end_offset, "Produce request with invalid client id should fail"
+        assert starting_end_offset == p_info.end_offset, (
+            "Produce request with invalid client id should fail"
+        )
 
         invalid_connection_id = f"{v_cluster}00blob00client"
 
         p_info = produce_with_client(invalid_connection_id)
 
-        assert starting_end_offset == p_info.end_offset, "Produce request with invalid client id should fail"
+        assert starting_end_offset == p_info.end_offset, (
+            "Produce request with invalid client id should fail"
+        )
 
         valid_client_id_empty = create_client_id(v_cluster, 0, "")
         p_info = produce_with_client(valid_client_id_empty)
 
-        assert starting_end_offset < p_info.end_offset, "Produce request with valid client id should succeed "
+        assert starting_end_offset < p_info.end_offset, (
+            "Produce request with valid client id should succeed "
+        )

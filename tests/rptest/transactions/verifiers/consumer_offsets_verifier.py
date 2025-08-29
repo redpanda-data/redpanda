@@ -20,26 +20,28 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 
 
-class ConsumerOffsetsVerifier():
+class ConsumerOffsetsVerifier:
     """
-    Populates consumer offsets topic with various transactional offset commits 
+    Populates consumer offsets topic with various transactional offset commits
     over multiple groups and verifies the final offset positions.
     Assumes that there is only one consumer offset partition for simplicity since
     the intention of this test is correctness.
 
     The verifier does not use a real topic and consumer to generate offset commits,
     instead dummy offsets are generated randomly to mimic consumption. A real consumer
-    only adds noise to the test and is not needed to validate correctness here. 
+    only adds noise to the test and is not needed to validate correctness here.
     """
-    def __init__(self,
-                 redpanda,
-                 client,
-                 produce_topic: str = "topic_produce",
-                 source_topic: str = "topic_consume",
-                 num_producers: int = 10,
-                 num_src_partitions: int = 5,
-                 max_commits: int = 5000):
 
+    def __init__(
+        self,
+        redpanda,
+        client,
+        produce_topic: str = "topic_produce",
+        source_topic: str = "topic_consume",
+        num_producers: int = 10,
+        num_src_partitions: int = 5,
+        max_commits: int = 5000,
+    ):
         self._redpanda = redpanda
         self._topic = produce_topic
         self._source_topic = source_topic
@@ -49,13 +51,13 @@ class ConsumerOffsetsVerifier():
         self._num_producers = num_producers
         self._num_src_partitions = num_src_partitions
 
-        produce_topic_spec = TopicSpec(name=produce_topic,
-                                       replication_factor=3,
-                                       partition_count=1)
+        produce_topic_spec = TopicSpec(
+            name=produce_topic, replication_factor=3, partition_count=1
+        )
 
-        consume_topic_spec = TopicSpec(name=source_topic,
-                                       replication_factor=3,
-                                       partition_count=5)
+        consume_topic_spec = TopicSpec(
+            name=source_topic, replication_factor=3, partition_count=5
+        )
         client.create_topic(produce_topic_spec)
         client.create_topic(consume_topic_spec)
 
@@ -80,31 +82,33 @@ class ConsumerOffsetsVerifier():
         with ThreadPoolExecutor(max_workers=self._num_producers) as executor:
             for producer in range(self._num_producers):
                 self._tasks.append(
-                    executor.submit(lambda: self._start_one_producer(
-                        group_id=f"group-{producer}", tx_id=f"txid-{producer}")
-                                    ))
+                    executor.submit(
+                        lambda: self._start_one_producer(
+                            group_id=f"group-{producer}", tx_id=f"txid-{producer}"
+                        )
+                    )
+                )
 
     def _stop_all(self, timeout_sec: int = 30):
         if self._stop_ev.isSet():
             return
         self._stop_ev.set()
-        futures.wait(self._tasks,
-                     timeout=timeout_sec,
-                     return_when=futures.ALL_COMPLETED)
+        futures.wait(
+            self._tasks, timeout=timeout_sec, return_when=futures.ALL_COMPLETED
+        )
 
     def _current_committed_offsets(self, group_id: str, partitions: list[int]):
         with self._lock:
             return [
-                tp for tp in self._committed_offsets[group_id]
+                tp
+                for tp in self._committed_offsets[group_id]
                 if tp.partition in partitions
             ]
 
-    def _update_committed_offsets(self, group_id: str,
-                                  positions: list[TopicPartition]):
+    def _update_committed_offsets(self, group_id: str, positions: list[TopicPartition]):
         with self._lock:
             for position in positions:
-                self._committed_offsets[group_id][
-                    position.partition] = position
+                self._committed_offsets[group_id][position.partition] = position
             self._total_commits_so_far += 1
             if self._total_commits_so_far >= self._max_commits:
                 self._commits_done.set()
@@ -114,13 +118,14 @@ class ConsumerOffsetsVerifier():
         return gr.members == 1 and gr.state == "Stable"
 
     def _start_one_producer(self, group_id: str, tx_id: str):
-
-        consumer = ck.Consumer({
-            'bootstrap.servers': self._redpanda.brokers(),
-            'group.id': group_id,
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
-        })
+        consumer = ck.Consumer(
+            {
+                "bootstrap.servers": self._redpanda.brokers(),
+                "group.id": group_id,
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": False,
+            }
+        )
 
         consumer.subscribe([self._source_topic])
 
@@ -128,20 +133,24 @@ class ConsumerOffsetsVerifier():
             lambda: self._group_is_ready(group=group_id),
             timeout_sec=30,
             backoff_sec=1,
-            err_msg=f"Timed out waiting for group {group_id} to be stable")
+            err_msg=f"Timed out waiting for group {group_id} to be stable",
+        )
 
-        producer = ck.Producer({
-            'bootstrap.servers': self._redpanda.brokers(),
-            'transactional.id': tx_id,
-            'transaction.timeout.ms': 10000
-        })
+        producer = ck.Producer(
+            {
+                "bootstrap.servers": self._redpanda.brokers(),
+                "transactional.id": tx_id,
+                "transaction.timeout.ms": 10000,
+            }
+        )
         producer.init_transactions()
 
         def generate_dummy_positions():
             # pick a random list of partitions to update
             partitions = random.sample(range(0, self._num_src_partitions), 3)
             current_offsets = self._current_committed_offsets(
-                group_id=group_id, partitions=partitions)
+                group_id=group_id, partitions=partitions
+            )
             # update positions
             for tp in current_offsets:
                 tp.offset = tp.offset + random.randint(1, 5)
@@ -151,11 +160,13 @@ class ConsumerOffsetsVerifier():
         while not self._stop_ev.isSet():
             new_positions = generate_dummy_positions()
             self._logger.debug(
-                f"[{tx_id}] attempting to update positions to {new_positions}")
+                f"[{tx_id}] attempting to update positions to {new_positions}"
+            )
             producer.begin_transaction()
             producer.produce(self._topic, f"{tx_id}_{i}", f"{tx_id}_id")
             producer.send_offsets_to_transaction(
-                new_positions, consumer.consumer_group_metadata())
+                new_positions, consumer.consumer_group_metadata()
+            )
             producer.flush()
 
             commit = random.choice([True, False])
@@ -179,23 +190,19 @@ class ConsumerOffsetsVerifier():
 
         self._logger.debug("Verifying offsets for all groups")
 
-        admin = KafkaAdminClient(
-            **{'bootstrap_servers': self._redpanda.brokers()})
+        admin = KafkaAdminClient(**{"bootstrap_servers": self._redpanda.brokers()})
 
         def list_offsets(group_id: str):
             offsets = admin.list_consumer_group_offsets(group_id)
             result = []
             for tp, md in offsets.items():
-                result.append(TopicPartition(tp.topic, tp.partition,
-                                             md.offset))
+                result.append(TopicPartition(tp.topic, tp.partition, md.offset))
             return sorted(result, key=lambda tp: tp.partition)
 
         def offsets_are_consistent():
             try:
                 group_results = []
-                for group in [
-                        f"group-{p}" for p in range(self._num_producers)
-                ]:
+                for group in [f"group-{p}" for p in range(self._num_producers)]:
                     offsets = list_offsets(group)
                     expected = self._committed_offsets[group]
                     self._logger.debug(
@@ -211,4 +218,5 @@ class ConsumerOffsetsVerifier():
             offsets_are_consistent,
             timeout_sec=30,
             backoff_sec=1,
-            err_msg=f"Timed out waiting group offsets to be consistent.")
+            err_msg=f"Timed out waiting group offsets to be consistent.",
+        )

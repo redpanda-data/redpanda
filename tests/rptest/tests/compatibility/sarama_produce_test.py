@@ -20,7 +20,9 @@ import subprocess
 # idempotency clients.
 TX_ERROR_LOGS = []
 
-NOT_LEADER_FOR_PARTITION = "Tried to send a message to a replica that is not the leader for some partition"
+NOT_LEADER_FOR_PARTITION = (
+    "Tried to send a message to a replica that is not the leader for some partition"
+)
 
 
 class SaramaProduceTest(RedpandaTest):
@@ -34,8 +36,9 @@ class SaramaProduceTest(RedpandaTest):
             "partition_autobalancing_mode": "off",
         }
 
-        super(SaramaProduceTest, self).__init__(test_context=test_context,
-                                                extra_rp_conf=extra_rp_conf)
+        super(SaramaProduceTest, self).__init__(
+            test_context=test_context, extra_rp_conf=extra_rp_conf
+        )
 
     @cluster(num_nodes=3, log_allow_list=TX_ERROR_LOGS)
     def test_produce(self):
@@ -51,15 +54,16 @@ class SaramaProduceTest(RedpandaTest):
         for i in range(0, retries):
             try:
                 cmd = "{verifier_bin} --brokers {brokers}".format(
-                    verifier_bin=verifier_bin, brokers=self.redpanda.brokers())
-                subprocess.check_output(["/bin/sh", "-c", cmd],
-                                        stderr=subprocess.STDOUT)
+                    verifier_bin=verifier_bin, brokers=self.redpanda.brokers()
+                )
+                subprocess.check_output(
+                    ["/bin/sh", "-c", cmd], stderr=subprocess.STDOUT
+                )
                 self.redpanda.logger.info("sarama produce test passed")
                 break
             except subprocess.CalledProcessError as e:
                 error = str(e.output)
-                self.redpanda.logger.info("sarama produce failed with " +
-                                          error)
+                self.redpanda.logger.info("sarama produce failed with " + error)
                 if i + 1 != retries and NOT_LEADER_FOR_PARTITION in error:
                     sleep(5)
                     continue

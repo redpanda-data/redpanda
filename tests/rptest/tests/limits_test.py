@@ -31,18 +31,20 @@ def _message_to_large(e: RpkException):
 
 class LimitsTest(RedpandaTest):
     def _rand_string(sz):
-        return ''.join(
-            random.choice(string.ascii_letters + string.digits)
-            for _ in range(sz))
+        return "".join(
+            random.choice(string.ascii_letters + string.digits) for _ in range(sz)
+        )
 
     def assert_produce_result(self, topic, size, failure_predicate=None):
         rpk = RpkTool(self.redpanda)
 
         def expected_result():
             try:
-                rpk.produce(topic=topic,
-                            key=LimitsTest._rand_string(64),
-                            msg=LimitsTest._rand_string(size))
+                rpk.produce(
+                    topic=topic,
+                    key=LimitsTest._rand_string(64),
+                    msg=LimitsTest._rand_string(size),
+                )
             except RpkException as e:
                 return failure_predicate and failure_predicate(e)
 
@@ -62,9 +64,7 @@ class LimitsTest(RedpandaTest):
         rpk = RpkTool(self.redpanda)
         rpk.cluster_config_set("kafka_request_max_bytes", str(new_limit))
 
-        self.assert_produce_result(topic.name,
-                                   512 * 1024,
-                                   failure_predicate=_timed_out)
+        self.assert_produce_result(topic.name, 512 * 1024, failure_predicate=_timed_out)
 
     @cluster(num_nodes=3)
     def test_batch_max_size(self):
@@ -78,20 +78,20 @@ class LimitsTest(RedpandaTest):
         rpk = RpkTool(self.redpanda)
         new_limit = 50 * 1024
         rpk = RpkTool(self.redpanda)
-        rpk.cluster_config_set('kafka_batch_max_bytes', str(50 * 1024))
+        rpk.cluster_config_set("kafka_batch_max_bytes", str(50 * 1024))
 
         # validate if all topics have a default value set
         for t in topics:
             cfg = rpk.describe_topic_configs(t.name)
-            v, src = cfg['max.message.bytes']
+            v, src = cfg["max.message.bytes"]
             assert v == str(new_limit)
             assert src == "DEFAULT_CONFIG"
 
         # it should not be possible to produce to any topic as the message is to large
         for t in topics:
-            self.assert_produce_result(t.name,
-                                       128 * 1024,
-                                       failure_predicate=_message_to_large)
+            self.assert_produce_result(
+                t.name, 128 * 1024, failure_predicate=_message_to_large
+            )
 
         # change setting for single topic, we should be able to produce to that topic
         changed = topics[0]
@@ -100,7 +100,7 @@ class LimitsTest(RedpandaTest):
 
         # validate topic configuration
         cfg = rpk.describe_topic_configs(changed.name)
-        v, src = cfg['max.message.bytes']
+        v, src = cfg["max.message.bytes"]
         assert v == str(tp_limit)
         assert src == "DYNAMIC_TOPIC_CONFIG"
         # produce

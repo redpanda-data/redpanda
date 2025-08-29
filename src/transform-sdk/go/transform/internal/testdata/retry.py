@@ -5,12 +5,12 @@ import subprocess
 import sys
 
 parser = argparse.ArgumentParser(
-    description="retry a command a number of times until it succeeds")
-parser.add_argument('--retries',
-                    type=int,
-                    default=3,
-                    help='number of times to retry the command')
-parser.add_argument('cmd', nargs='+', help='the command to execute')
+    description="retry a command a number of times until it succeeds"
+)
+parser.add_argument(
+    "--retries", type=int, default=3, help="number of times to retry the command"
+)
+parser.add_argument("cmd", nargs="+", help="the command to execute")
 args = parser.parse_args()
 
 exitcode = 0

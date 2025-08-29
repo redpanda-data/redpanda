@@ -46,14 +46,14 @@ class Metric:
 
 
 @dataclass
-class Partition():
+class Partition:
     topic: str
     part_id: int
     shard_id: int
 
 
 @dataclass
-class GroupOffset():
+class GroupOffset:
     group: str
     topic: str
     part_id: int
@@ -69,19 +69,19 @@ class Context:
     # labels are part of the context since they can change
     # depending on the endpoint
     def prefix(self, name: str):
-        return 'redpanda_' + name if self.ep == Endpoint.PUBLIC else name
+        return "redpanda_" + name if self.ep == Endpoint.PUBLIC else name
 
 
 class PLabel(Label):
     """Automatically prefixed label"""
+
     def __init__(self, context: Context, name: str, value: str):
         super().__init__(context.prefix(name), value)
 
 
 class LGen(ABC):
     @abstractmethod
-    def gen(self, context: Context) -> list[list[Label]]:
-        ...
+    def gen(self, context: Context) -> list[list[Label]]: ...
 
 
 class TopicGen(LGen):
@@ -97,12 +97,12 @@ class TopicGen(LGen):
             if not self.has_partition and p.topic in seen_topics:
                 continue
             seen_topics.add(p.topic)
-            labels.append(PLabel(context, 'topic', p.topic))
-            labels.append(PLabel(context, 'namespace', "kafka"))
+            labels.append(PLabel(context, "topic", p.topic))
+            labels.append(PLabel(context, "namespace", "kafka"))
             if self.has_shard:
                 labels.append(Label("shard", str(p.shard_id)))
             if self.has_partition:
-                labels.append(PLabel(context, 'partition', str(p.part_id)))
+                labels.append(PLabel(context, "partition", str(p.part_id)))
             all_labels.append(labels)
         return all_labels
 
@@ -117,11 +117,11 @@ class GroupOffsetGen(LGen):
         all_labels: list[list[Label]] = []
         for g in context.groups:
             labels: list[Label] = []
-            labels.append(PLabel(context, 'group', g.group))
-            labels.append(PLabel(context, 'partition', str(g.part_id)))
-            labels.append(PLabel(context, 'topic', g.topic))
+            labels.append(PLabel(context, "group", g.group))
+            labels.append(PLabel(context, "partition", str(g.part_id)))
+            labels.append(PLabel(context, "topic", g.topic))
             # shard is basically random, 0 is as good as any
-            labels.append(Label('shard', '0'))
+            labels.append(Label("shard", "0"))
             all_labels.append(labels)
         return all_labels
 
@@ -131,11 +131,12 @@ def to_string(name: str, labels_nested: Iterable[list[Label]]):
     for llist in labels_nested:
         for label in llist:
             labels.append(label)
-    return name + '{' + ','.join(sorted(map(str, labels))) + '} '
+    return name + "{" + ",".join(sorted(map(str, labels))) + "} "
 
 
-def expand_label_lists(context: Context,
-                       labels: list[LGen]) -> list[tuple[list[Label]]]:
+def expand_label_lists(
+    context: Context, labels: list[LGen]
+) -> list[tuple[list[Label]]]:
     expanded = [l.gen(context) for l in labels]
     all: Any = itertools.product(*expanded)
     return list(all)
@@ -151,13 +152,13 @@ class MetricDef:
     @property
     def header(self) -> str:
         name = self.name
-        if self.typ == 'histogram':
-            if name.endswith('_sum'):
-                name = name.removesuffix('_sum')
+        if self.typ == "histogram":
+            if name.endswith("_sum"):
+                name = name.removesuffix("_sum")
             else:
                 # only output help on the first metric (_sum) as the rest don't get help
-                return ''
-        return f'# HELP {name} {self.help}\n# TYPE {name} {self.typ}\n'
+                return ""
+        return f"# HELP {name} {self.help}\n# TYPE {name} {self.typ}\n"
 
     def expand(self, context: Context):
         expanded = expand_label_lists(context, self.label_gens)
@@ -168,20 +169,24 @@ class MetricDef:
 
 class ShardGen(LGen):
     """Generate a shard="n" label for all N shards"""
+
     def gen(self, context: Context) -> list[list[Label]]:
         return [[Label("shard", str(id))] for id in range(context.shard_count)]
 
 
 class IOShardGen(LGen):
     """Generate a [shard="n", ioshard="n"] label set for all N shards"""
+
     def gen(self, context: Context) -> list[list[Label]]:
-        return [[Label("shard", str(id)),
-                 Label("ioshard", str(id))]
-                for id in range(context.shard_count)]
+        return [
+            [Label("shard", str(id)), Label("ioshard", str(id))]
+            for id in range(context.shard_count)
+        ]
 
 
 class ListGen(LGen):
     """Generate labels from an explicit list passed at construction"""
+
     def __init__(self, name: str, values: list[str]):
         self.name = name
         self.values = values
@@ -192,7 +197,6 @@ class ListGen(LGen):
 
 class MetricsEmulator:
     def __init__(self, args: Any, metric_defs: list[MetricDef], ep: Endpoint):
-
         shards = cast(int, args.shards)
         partitions = cast(int, args.partitions)
         topics = cast(int, args.topics)
@@ -205,10 +209,10 @@ class MetricsEmulator:
         # rf for __consumer_offsets
         co_rf = 3 if nodes >= 3 else 1
 
-        assert node_id < nodes, f'node-id {node_id} out of range [0, {nodes-1}]'
+        assert node_id < nodes, f"node-id {node_id} out of range [0, {nodes - 1}]"
         assert rf > 0
         assert topics > 0 or partitions == 0
-        assert name_len >= 12, 'name should be 11 chars or more'
+        assert name_len >= 12, "name should be 11 chars or more"
 
         # Now we "generate" every ntp in the cluster and figure out which
         # are assigned to this node, which is used by partition/topic-based
@@ -226,18 +230,16 @@ class MetricsEmulator:
         total_partitions = 0
         current_group = 0
         for topic_id in range(topics):
-            prefix = f'topic-{topic_id:05}-'
+            prefix = f"topic-{topic_id:05}-"
             rem = name_len - len(prefix)
             assert rem >= 0
-            name = prefix + ''.join(random.choices(string.ascii_letters,
-                                                   k=rem))
+            name = prefix + "".join(random.choices(string.ascii_letters, k=rem))
             # calculate how many partitions this topic should have based on the total
             # partition target for all topics so far (first term) minus assigned
             # partitions from previous term: this song and dance is to fix the "rounding"
             # problem if you specify say 50 partitions and 40 topics, you need some
             # partitions to have 1 partition and some to have 2: this accomplishes that
-            part_count = ceil((topic_id + 1) / topics * partitions -
-                              total_partitions)
+            part_count = ceil((topic_id + 1) / topics * partitions - total_partitions)
             total_partitions += part_count
 
             # handle groups, the * rf comes from the replicas for __consumer_groups
@@ -245,28 +247,25 @@ class MetricsEmulator:
             # a replica on 3 nodes, so 3 nodes will report all offsets for that group
             for _ in range(groups_per_topic * co_rf):
                 if current_group % nodes == node_id:
-                    group_name = f'group-{current_group}-{name}'
+                    group_name = f"group-{current_group}-{name}"
                     for part_id in range(part_count):
-                        group_list.append(
-                            GroupOffset(group_name, name, part_id))
+                        group_list.append(GroupOffset(group_name, name, part_id))
                 current_group += 1
 
             for part_id in [p for p in range(part_count) for _ in range(rf)]:
                 if assigned_node == node_id:
-                    partition_list.append(
-                        Partition(name, part_id, assigned_shard))
+                    partition_list.append(Partition(name, part_id, assigned_shard))
                     assigned_shard = (assigned_shard + 1) % shards
-                assigned_node = (assigned_node +
-                                 1) % nodes  # round robin around the nodes
+                assigned_node = (
+                    assigned_node + 1
+                ) % nodes  # round robin around the nodes
 
-        context = Context(shard_count=shards,
-                          partitions=partition_list,
-                          groups=group_list,
-                          ep=ep)
+        context = Context(
+            shard_count=shards, partitions=partition_list, groups=group_list, ep=ep
+        )
 
         self.prefixes = [
-            one_prefix.encode() for m in metric_defs
-            for one_prefix in m.expand(context)
+            one_prefix.encode() for m in metric_defs for one_prefix in m.expand(context)
         ]
 
     def print(self, file: Any = sys.stdout):
@@ -275,135 +274,147 @@ class MetricsEmulator:
     def print_binary(self, file: BinaryIO):
         for p in self.prefixes:
             buf = bytearray(p)
-            v = str(random.randrange(15000)) + '\n'
+            v = str(random.randrange(15000)) + "\n"
             buf.extend(v.encode())
             file.write(buf)
 
 
 class MetricsHandler(BaseHTTPRequestHandler):
-
     print_once = True
 
     wbufsize = 128 * 1024
 
-    def __init__(self, cmd_args: Any, im: MetricsEmulator, pm: MetricsEmulator,
-                 *args: Any, **kwargs: Any):
+    def __init__(
+        self,
+        cmd_args: Any,
+        im: MetricsEmulator,
+        pm: MetricsEmulator,
+        *args: Any,
+        **kwargs: Any,
+    ):
         self.im = im
         self.pm = pm
         if MetricsHandler.print_once:
             print(
-                f'Mock metrics server up on port {cmd_args.port}\n'
-                f'Internal metrics: {len(self.im.prefixes)}\n'
-                f'Public metrics  : {len(self.pm.prefixes)}\n',
-                file=sys.stderr)
+                f"Mock metrics server up on port {cmd_args.port}\n"
+                f"Internal metrics: {len(self.im.prefixes)}\n"
+                f"Public metrics  : {len(self.pm.prefixes)}\n",
+                file=sys.stderr,
+            )
             MetricsHandler.print_once = False
         super().__init__(*args, **kwargs)
 
     def do_HEAD(self):
         self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
+        self.send_header("Content-type", "text/plain")
         self.end_headers()
 
     def do_GET(self):
-        if self.path == '/metrics':
+        if self.path == "/metrics":
             self.do_HEAD()
             self.im.print_binary(self.wfile)
-        elif self.path == '/public_metrics':
+        elif self.path == "/public_metrics":
             self.do_HEAD()
             self.pm.print_binary(self.wfile)
         else:
-            self.send_error(404, explain=f'bad path: {self.path}')
+            self.send_error(404, explain=f"bad path: {self.path}")
 
 
 def main(internal_metrics: list[MetricDef], public_metrics: list[MetricDef]):
-
     # deterministic output
     random.seed(12345)
 
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        'command',
-        help='The number of shards per node',
+        "command",
+        help="The number of shards per node",
         type=str,
-        metavar='COMMAND: print print-public host',
-        choices=['print', 'print-public', 'host', 'time-print'])
+        metavar="COMMAND: print print-public host",
+        choices=["print", "print-public", "host", "time-print"],
+    )
 
-    parser.add_argument('--shards',
-                        help='The number of shards per node',
-                        type=int,
-                        default=1)
+    parser.add_argument(
+        "--shards", help="The number of shards per node", type=int, default=1
+    )
 
-    parser.add_argument('--partitions',
-                        help='The total number of rf=3 partitions',
-                        type=int,
-                        default=1000)
+    parser.add_argument(
+        "--partitions",
+        help="The total number of rf=3 partitions",
+        type=int,
+        default=1000,
+    )
 
-    parser.add_argument('--rf',
-                        help='The replication factor for the topics',
-                        type=int,
-                        default=3)
+    parser.add_argument(
+        "--rf", help="The replication factor for the topics", type=int, default=3
+    )
 
-    parser.add_argument('--topics',
-                        help='The number of topics to spread the partitions '
-                        ' across (partitions are assigned evenly to topics +/-'
-                        ' 1 partition due to rounding)',
-                        type=int,
-                        default=10)
+    parser.add_argument(
+        "--topics",
+        help="The number of topics to spread the partitions "
+        " across (partitions are assigned evenly to topics +/-"
+        " 1 partition due to rounding)",
+        type=int,
+        default=10,
+    )
 
-    parser.add_argument('--groups-per-topic',
-                        help='The number of consumer groups associated'
-                        ' with each topic.'
-                        ' The assumption is each group consumes only'
-                        ' from 1 topic, and '
-                        'the number is set with this argument.'
-                        '0 is valid.',
-                        type=int,
-                        default=2)
+    parser.add_argument(
+        "--groups-per-topic",
+        help="The number of consumer groups associated"
+        " with each topic."
+        " The assumption is each group consumes only"
+        " from 1 topic, and "
+        "the number is set with this argument."
+        "0 is valid.",
+        type=int,
+        default=2,
+    )
 
-    parser.add_argument('--nodes',
-                        help='The total number of nodes in the cluster',
-                        type=int,
-                        default=3)
+    parser.add_argument(
+        "--nodes", help="The total number of nodes in the cluster", type=int, default=3
+    )
 
-    parser.add_argument('--node-id',
-                        help='The node this mock should pretend to be',
-                        type=int,
-                        default=0)
+    parser.add_argument(
+        "--node-id", help="The node this mock should pretend to be", type=int, default=0
+    )
 
-    parser.add_argument('--name-length',
-                        help='The number of characters in the topic name',
-                        type=int,
-                        default=100)
+    parser.add_argument(
+        "--name-length",
+        help="The number of characters in the topic name",
+        type=int,
+        default=100,
+    )
 
-    parser.add_argument('--port',
-                        help='The listening port for the metrics server',
-                        type=int,
-                        default=9644)
+    parser.add_argument(
+        "--port",
+        help="The listening port for the metrics server",
+        type=int,
+        default=9644,
+    )
 
     args = parser.parse_args()
 
     def make_mi(ep: Endpoint):
         return MetricsEmulator(
-            args,
-            internal_metrics if ep == Endpoint.PRIVATE else public_metrics,
-            ep=ep)
+            args, internal_metrics if ep == Endpoint.PRIVATE else public_metrics, ep=ep
+        )
 
-    if args.command == 'print':
+    if args.command == "print":
         make_mi(Endpoint.PRIVATE).print()
-    elif args.command == 'print-public':
+    elif args.command == "print-public":
         make_mi(Endpoint.PUBLIC).print()
-    elif args.command == 'host':
-        server_address = ('', args.port)
-        handler = partial(MetricsHandler, args, make_mi(Endpoint.PRIVATE),
-                          make_mi(Endpoint.PUBLIC))
+    elif args.command == "host":
+        server_address = ("", args.port)
+        handler = partial(
+            MetricsHandler, args, make_mi(Endpoint.PRIVATE), make_mi(Endpoint.PUBLIC)
+        )
         HTTPServer(server_address, handler).serve_forever()
-    elif args.command == 'time-print':
+    elif args.command == "time-print":
         em = make_mi(Endpoint.PRIVATE)
         print(
-            f'Time to generate {len(em.prefixes)} metrics in seconds:',
-            timeit(lambda: em.print(file=open(os.devnull, "wt")), number=10) /
-            10)
+            f"Time to generate {len(em.prefixes)} metrics in seconds:",
+            timeit(lambda: em.print(file=open(os.devnull, "wt")), number=10) / 10,
+        )
     else:
         assert False
 

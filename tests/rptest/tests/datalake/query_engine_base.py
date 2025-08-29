@@ -13,12 +13,13 @@ from enum import Enum
 
 
 class QueryEngineType(str, Enum):
-    SPARK = 'spark'
-    TRINO = 'trino'
+    SPARK = "spark"
+    TRINO = "trino"
 
 
 class QueryEngineBase(ABC):
     """Captures all the common operations across registered query engines"""
+
     @staticmethod
     @abstractmethod
     def engine_name() -> QueryEngineType:

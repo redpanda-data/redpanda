@@ -34,8 +34,7 @@ class CreatePartitionsTest(RedpandaMixedTest):
             lambda: self._partition_count(topic.name) == topic.partition_count,
             timeout_sec=20,
             backoff_sec=2,
-            err_msg=
-            f"Initial topic doesn't have expected {topic.partition_count} partitions, found {self._partition_count(topic.name)}"
+            err_msg=f"Initial topic doesn't have expected {topic.partition_count} partitions, found {self._partition_count(topic.name)}",
         )
 
         self.client().alter_topic_partition_count(topic.name, new_parts)
@@ -45,8 +44,7 @@ class CreatePartitionsTest(RedpandaMixedTest):
             lambda: self._partition_count(topic.name) == expected_parts,
             timeout_sec=20,
             backoff_sec=2,
-            err_msg=
-            f"Error waiting for partitions to be created, expected {expected_parts} partitions, found {self._partition_count(topic.name)}"
+            err_msg=f"Error waiting for partitions to be created, expected {expected_parts} partitions, found {self._partition_count(topic.name)}",
         )
 
     @cluster(num_nodes=3)
@@ -57,7 +55,9 @@ class CreatePartitionsTest(RedpandaMixedTest):
         for _ in range(iterations):
             partition_count = random.randint(1, 10)
             new_partition_count = random.randint(partition_count + 1, 20)
-            topic = TopicSpec(partition_count=partition_count,
-                              replication_factor=random.choice((1, 3)))
+            topic = TopicSpec(
+                partition_count=partition_count,
+                replication_factor=random.choice((1, 3)),
+            )
             self._create_add_verify(topic, new_partition_count)
             self.client().delete_topic(topic.name)

@@ -19,20 +19,22 @@ import json
 
 
 class TxKafkaApiTest(RedpandaTest):
-    topics = (TopicSpec(partition_count=3, replication_factor=3),
-              TopicSpec(partition_count=3, replication_factor=3))
+    topics = (
+        TopicSpec(partition_count=3, replication_factor=3),
+        TopicSpec(partition_count=3, replication_factor=3),
+    )
 
     def __init__(self, test_context):
-        super(TxKafkaApiTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=3,
-                             extra_rp_conf={
-                                 "tx_timeout_delay_ms": 10000000,
-                                 "abort_timed_out_transactions_interval_ms":
-                                 10000000,
-                                 "enable_leader_balancer": False,
-                                 "transaction_coordinator_partitions": 4
-                             })
+        super(TxKafkaApiTest, self).__init__(
+            test_context=test_context,
+            num_brokers=3,
+            extra_rp_conf={
+                "tx_timeout_delay_ms": 10000000,
+                "abort_timed_out_transactions_interval_ms": 10000000,
+                "enable_leader_balancer": False,
+                "transaction_coordinator_partitions": 4,
+            },
+        )
 
         self.kafka_cli = KafkaCliTools(self.redpanda, "3.0.0")
 
@@ -41,14 +43,18 @@ class TxKafkaApiTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_describe_producers(self):
-        producer1 = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '0',
-        })
-        producer2 = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '1',
-        })
+        producer1 = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "0",
+            }
+        )
+        producer2 = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "1",
+            }
+        )
         producer1.init_transactions()
         producer2.init_transactions()
         producer1.begin_transaction()
@@ -56,8 +62,8 @@ class TxKafkaApiTest(RedpandaTest):
 
         for topic in self.topics:
             for partition in range(topic.partition_count):
-                producer1.produce(topic.name, '0', '0', partition)
-                producer2.produce(topic.name, '0', '1', partition)
+                producer1.produce(topic.name, "0", "0", partition)
+                producer2.produce(topic.name, "0", "1", partition)
 
         producer1.flush()
         producer2.flush()
@@ -66,61 +72,59 @@ class TxKafkaApiTest(RedpandaTest):
 
         for topic in self.topics:
             for partition in range(topic.partition_count):
-
-                txs_info = self.kafka_cli.describe_producers(
-                    topic.name, partition)
+                txs_info = self.kafka_cli.describe_producers(topic.name, partition)
 
                 if expected_producers == None:
-                    expected_producers = set(
-                        map(self.extract_producer, txs_info))
-                    assert (len(txs_info) == 2)
+                    expected_producers = set(map(self.extract_producer, txs_info))
+                    assert len(txs_info) == 2
 
-                assert (len(expected_producers) == len(txs_info))
+                assert len(expected_producers) == len(txs_info)
                 for producer in txs_info:
-                    assert (self.extract_producer(producer)
-                            in expected_producers)
+                    assert self.extract_producer(producer) in expected_producers
 
     @cluster(num_nodes=3)
     def test_last_timestamp_of_describe_producers(self):
-        producer1 = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '0',
-        })
+        producer1 = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "0",
+            }
+        )
         producer1.init_transactions()
         producer1.begin_transaction()
 
         for _ in range(2):
             for topic in self.topics:
                 for partition in range(topic.partition_count):
-                    producer1.produce(topic.name, '0', '0', partition)
+                    producer1.produce(topic.name, "0", "0", partition)
             producer1.flush()
 
         now_ms = int(time.time() * 1000)
 
         for topic in self.topics:
             for partition in range(topic.partition_count):
-                producers = self.kafka_cli.describe_producers(
-                    topic.name, partition)
+                producers = self.kafka_cli.describe_producers(topic.name, partition)
                 self.redpanda.logger.debug(json.dumps(producers))
                 for producer in producers:
                     assert int(producer["LastSequence"]) > 0
                     # checking that the producer's info was recently updated
-                    assert abs(now_ms -
-                               int(producer["LastTimestamp"])) < 120 * 1000
+                    assert abs(now_ms - int(producer["LastTimestamp"])) < 120 * 1000
 
     @cluster(num_nodes=3)
     def test_describe_transactions(self):
         tx_id = "0"
-        producer = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': tx_id,
-        })
+        producer = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": tx_id,
+            }
+        )
         producer.init_transactions()
         producer.begin_transaction()
 
         for topic in self.topics:
             for partition in range(topic.partition_count):
-                producer.produce(topic.name, '0', '0', partition)
+                producer.produce(topic.name, "0", "0", partition)
 
         producer.flush()
 
@@ -144,14 +148,18 @@ class TxKafkaApiTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_list_transactions(self):
-        producer1 = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '0',
-        })
-        producer2 = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '1',
-        })
+        producer1 = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "0",
+            }
+        )
+        producer2 = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "1",
+            }
+        )
         producer1.init_transactions()
         producer2.init_transactions()
         producer1.begin_transaction()
@@ -159,8 +167,8 @@ class TxKafkaApiTest(RedpandaTest):
 
         for topic in self.topics:
             for partition in range(topic.partition_count):
-                producer1.produce(topic.name, '0', '0', partition)
-                producer2.produce(topic.name, '0', '1', partition)
+                producer1.produce(topic.name, "0", "0", partition)
+                producer2.produce(topic.name, "0", "1", partition)
 
         producer1.flush()
         producer2.flush()
@@ -169,7 +177,8 @@ class TxKafkaApiTest(RedpandaTest):
         assert len(txs_info) > 0
         for tx_from_list in txs_info:
             tx_from_describe = self.kafka_cli.describe_transaction(
-                tx_from_list["TransactionalId"])
+                tx_from_list["TransactionalId"]
+            )
 
             for f in ["TransactionalId", "TransactionState", "ProducerId"]:
                 assert tx_from_describe[f] == tx_from_list[f]

@@ -25,8 +25,9 @@ def get_vcluster_id(topic_properties: dict):
 
 class VirtualClusterTopicPropertyTest(RedpandaTest):
     def __init__(self, test_context):
-        super(VirtualClusterTopicPropertyTest,
-              self).__init__(test_context=test_context, num_brokers=3)
+        super(VirtualClusterTopicPropertyTest, self).__init__(
+            test_context=test_context, num_brokers=3
+        )
 
     @cluster(num_nodes=3)
     def test_basic_virtual_cluster_property(self):
@@ -38,15 +39,20 @@ class VirtualClusterTopicPropertyTest(RedpandaTest):
             topic=topic.name,
             partitions=1,
             replicas=3,
-            config={TopicSpec.PROPERTY_VIRTUAL_CLUSTER_ID: vcluster_id})
+            config={TopicSpec.PROPERTY_VIRTUAL_CLUSTER_ID: vcluster_id},
+        )
 
         configs = rpk.describe_topic_configs(topic.name)
-        assert TopicSpec.PROPERTY_VIRTUAL_CLUSTER_ID not in configs, \
+        assert TopicSpec.PROPERTY_VIRTUAL_CLUSTER_ID not in configs, (
             "When MPX extensions are disabled there should be no virtual cluster property reported"
+        )
         try:
             configs = rpk.alter_topic_config(
-                topic.name, TopicSpec.PROPERTY_VIRTUAL_CLUSTER_ID, vcluster_id)
-            assert False, "Altering topic virtual cluster property should not be supported"
+                topic.name, TopicSpec.PROPERTY_VIRTUAL_CLUSTER_ID, vcluster_id
+            )
+            assert False, (
+                "Altering topic virtual cluster property should not be supported"
+            )
         except RpkException as e:
             assert "INVALID_CONFIG" in e.msg
         rpk.delete_topic(topic.name)
@@ -57,17 +63,21 @@ class VirtualClusterTopicPropertyTest(RedpandaTest):
             topic=topic.name,
             partitions=1,
             replicas=3,
-            config={TopicSpec.PROPERTY_VIRTUAL_CLUSTER_ID: vcluster_id})
+            config={TopicSpec.PROPERTY_VIRTUAL_CLUSTER_ID: vcluster_id},
+        )
 
         configs = rpk.describe_topic_configs(topic.name)
 
-        assert get_vcluster_id(configs) == vcluster_id, \
+        assert get_vcluster_id(configs) == vcluster_id, (
             f"current virtual cluster id {get_vcluster_id(configs)} and expected cluster id {vcluster_id} doesn't match"
+        )
 
         try:
-            rpk.alter_topic_config(topic.name,
-                                   TopicSpec.PROPERTY_VIRTUAL_CLUSTER_ID,
-                                   random_xid_string())
-            assert False, "Altering topic virtual cluster property should not be supported"
+            rpk.alter_topic_config(
+                topic.name, TopicSpec.PROPERTY_VIRTUAL_CLUSTER_ID, random_xid_string()
+            )
+            assert False, (
+                "Altering topic virtual cluster property should not be supported"
+            )
         except RpkException as e:
             assert "INVALID_CONFIG" in e.msg

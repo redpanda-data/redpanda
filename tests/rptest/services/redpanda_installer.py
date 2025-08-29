@@ -38,8 +38,7 @@ REDPANDA_INSTALLER_HEAD_TAG = "head"
 
 RedpandaVersionTriple = tuple[int, int, int]
 RedpandaVersionLine = tuple[int, int]
-RedpandaVersion = typing.Literal[
-    'head'] | RedpandaVersionLine | RedpandaVersionTriple
+RedpandaVersion = typing.Literal["head"] | RedpandaVersionLine | RedpandaVersionTriple
 
 
 def wait_for_num_versions(redpanda, num_versions):
@@ -49,8 +48,7 @@ def wait_for_num_versions(redpanda, num_versions):
 
     def get_unique_versions():
         try:
-            brokers_list = \
-                json.dumps(redpanda._admin.get_brokers(node=node))
+            brokers_list = json.dumps(redpanda._admin.get_brokers(node=node))
         except Exception as e:
             redpanda.logger.debug(f"Failed to list brokers: {e}")
             raise e
@@ -60,9 +58,11 @@ def wait_for_num_versions(redpanda, num_versions):
 
     # NOTE: allow retries, as the version may not be available immediately
     # following a restart.
-    wait_until(lambda: len(get_unique_versions()) == num_versions,
-               timeout_sec=30,
-               retry_on_exc=True)
+    wait_until(
+        lambda: len(get_unique_versions()) == num_versions,
+        timeout_sec=30,
+        retry_on_exc=True,
+    )
     unique_versions = get_unique_versions()
     assert len(unique_versions) == num_versions, unique_versions
     return unique_versions
@@ -96,10 +96,8 @@ class InstallOptions:
     """
     Options with which to configure the installation of Redpanda in a cluster.
     """
-    def __init__(self,
-                 install_previous_version=False,
-                 version=None,
-                 num_to_upgrade=0):
+
+    def __init__(self, install_previous_version=False, version=None, num_to_upgrade=0):
         # If true, install the highest version of the prior feature version
         # before HEAD.
         self.install_previous_version = install_previous_version
@@ -125,6 +123,7 @@ class RedpandaInstaller:
     This only provides methods for installation; restarting nodes is left up to
     callers.
     """
+
     # Represents the binaries installed at the time of the call to start(). It
     # is expected that this is identical across all nodes initially.
     HEAD = REDPANDA_INSTALLER_HEAD_TAG
@@ -178,7 +177,8 @@ class RedpandaInstaller:
         # directory, we'll need to be mindful not to mess with the original
         # binaries.
         rp_install_path_root = self._redpanda._context.globals.get(
-            "rp_install_path_root", None)
+            "rp_install_path_root", None
+        )
         self._head_backed_up = rp_install_path_root == "/opt/redpanda"
 
         # Whether the nodes are expected to share a single mounted volume for
@@ -192,16 +192,15 @@ class RedpandaInstaller:
         # (i.e. root_for_version(), etc).
         self._install_lock_fd = None
 
-        self._installed_versions = {
-            node: self.HEAD
-            for node in self._redpanda.nodes
-        }
+        self._installed_versions = {node: self.HEAD for node in self._redpanda.nodes}
 
         # memoize result of self.arch()
         self._arch = None
 
     def installed_version(self, node) -> RedpandaVersion:
-        assert node in self._installed_versions, f'Node {node} not in installed versions dictionary {self._installed_versions}'
+        assert node in self._installed_versions, (
+            f"Node {node} not in installed versions dictionary {self._installed_versions}"
+        )
         return self._installed_versions[node]
 
     def _acquire_install_lock(self, timeout_sec=600):
@@ -212,16 +211,17 @@ class RedpandaInstaller:
         Serves to prevent concurrent operations to the same local mountpoint.
         """
         if not self._nodes_share_installs:
-            self._redpanda.logger.debug(
-                "Nodes don't share installs; no locking needed")
+            self._redpanda.logger.debug("Nodes don't share installs; no locking needed")
             return
 
         def _lock():
             try:
                 self._redpanda.logger.debug(
-                    f"Acquiring install lock {self.INSTALLER_LOCK_PATH}")
-                fd = os.open(self.INSTALLER_LOCK_PATH,
-                             os.O_CREAT | os.O_EXCL | os.O_RDWR)
+                    f"Acquiring install lock {self.INSTALLER_LOCK_PATH}"
+                )
+                fd = os.open(
+                    self.INSTALLER_LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_RDWR
+                )
                 self._install_lock_fd = fd
             except OSError as e:
                 if e.errno != errno.EEXIST:
@@ -231,8 +231,7 @@ class RedpandaInstaller:
             return True
 
         wait_until(lambda: _lock(), timeout_sec=timeout_sec)
-        self._redpanda.logger.debug(
-            f"Acquired install lock {self.INSTALLER_LOCK_PATH}")
+        self._redpanda.logger.debug(f"Acquired install lock {self.INSTALLER_LOCK_PATH}")
 
     def _release_install_lock(self):
         """
@@ -240,8 +239,7 @@ class RedpandaInstaller:
         locally to perform downloads.
         """
         if not self._nodes_share_installs:
-            self._redpanda.logger.debug(
-                "Nodes don't share installs; no locking needed")
+            self._redpanda.logger.debug("Nodes don't share installs; no locking needed")
             return
 
         if not self._install_lock_fd:
@@ -259,10 +257,10 @@ class RedpandaInstaller:
         Expects that the install lock has been acquired before calling.
         """
         nodes = self._redpanda.nodes
-        head_root_path = RedpandaInstaller.root_for_version(
-            RedpandaInstaller.HEAD)
+        head_root_path = RedpandaInstaller.root_for_version(RedpandaInstaller.HEAD)
         rp_install_path_root = self._redpanda._context.globals.get(
-            "rp_install_path_root", None)
+            "rp_install_path_root", None
+        )
         for node in nodes:
             # Always end up with binaries at 'head_root_path', so we can
             # continue to use root_for_version() to reference the head root.
@@ -294,8 +292,9 @@ class RedpandaInstaller:
             vers = self._redpanda.get_version(node)
             if initial_version == None:
                 initial_version = vers
-            assert initial_version == vers, \
+            assert initial_version == vers, (
                 f"Mismatch version {node.account.hostname} has {vers}, {nodes[0].account.hostname} has {initial_version}"
+            )
             node.account.ssh_output(f"mkdir -p {self.INSTALLER_ROOT}")
 
         assert initial_version
@@ -313,8 +312,9 @@ class RedpandaInstaller:
             if not node.account.exists("/opt/redpanda"):
                 cmd = f"ln -s {head_root_path} /opt/redpanda"
                 ssh_setup_head_per_node[node] = node.account.ssh_capture(cmd)
-        self.wait_for_async_ssh(self._redpanda.logger, ssh_setup_head_per_node,
-                                "Setting up /opt/redpanda")
+        self.wait_for_async_ssh(
+            self._redpanda.logger, ssh_setup_head_per_node, "Setting up /opt/redpanda"
+        )
 
         # Keep track of the logical version of the head installation so we can
         # use it to get older versions relative to the head version.
@@ -330,12 +330,10 @@ class RedpandaInstaller:
                 os.makedirs(RELEASES_CACHE_FILE_PARENT, exist_ok=True)
                 st = os.stat(RELEASES_CACHE_FILE)
                 mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc)
-                if datetime.now(
-                        timezone.utc) - mtime < RELEASES_CACHE_FILE_TTL:
+                if datetime.now(timezone.utc) - mtime < RELEASES_CACHE_FILE_TTL:
                     try:
-                        self._redpanda.logger.info(
-                            "Using cached release metadata")
-                        return json.load(open(RELEASES_CACHE_FILE, 'rb'))
+                        self._redpanda.logger.info("Using cached release metadata")
+                        return json.load(open(RELEASES_CACHE_FILE, "rb"))
                     except json.JSONDecodeError:
                         # Malformed file
                         return None
@@ -361,8 +359,7 @@ class RedpandaInstaller:
             per_page = 30
             while True:
                 url = f"https://api.github.com/repos/redpanda-data/redpanda/releases?per_page={per_page}&page={page}"
-                self._redpanda.logger.debug(
-                    f"Fetching releases page {page}: {url}")
+                self._redpanda.logger.debug(f"Fetching releases page {page}: {url}")
                 releases_resp = requests.get(url)
                 releases_resp.raise_for_status()
                 try:
@@ -376,7 +373,8 @@ class RedpandaInstaller:
 
                 if len(releases_json) < per_page:
                     self._redpanda.logger.debug(
-                        f"Last page ({len(releases_json)} entries)")
+                        f"Last page ({len(releases_json)} entries)"
+                    )
                     break
                 else:
                     page += 1
@@ -385,7 +383,7 @@ class RedpandaInstaller:
             assert releases, "no releases found, github issue?"
 
             self._redpanda.logger.debug(f"fetched releases: {releases}")
-            open(RELEASES_CACHE_FILE, 'w').write(json.dumps(releases))
+            open(RELEASES_CACHE_FILE, "w").write(json.dumps(releases))
 
         finally:
             self._release_install_lock()
@@ -452,7 +450,8 @@ class RedpandaInstaller:
 
         if r.status_code == 403:
             self._redpanda.logger.warn(
-                f"request failed with {r.status_code=}: {r.reason=}")
+                f"request failed with {r.status_code=}: {r.reason=}"
+            )
 
         return r.status_code == 200
 
@@ -476,8 +475,10 @@ class RedpandaInstaller:
         """
         head_line = self.head_version()[0:2]
         oldest_supported_line = (head_line[0] - 1, head_line[1])
-        latest_unsupported_line = (oldest_supported_line[0],
-                                   oldest_supported_line[1] - 1)
+        latest_unsupported_line = (
+            oldest_supported_line[0],
+            oldest_supported_line[1] - 1,
+        )
         if latest_unsupported_line[1] == 0:
             # if going back, version vX.0 is v(X-1).3
             latest_unsupported_line = (latest_unsupported_line[0] - 1, 3)
@@ -485,7 +486,8 @@ class RedpandaInstaller:
 
     @lru_cache
     def highest_from_prior_feature_version(
-            self, version: RedpandaVersion) -> RedpandaVersionTriple:
+        self, version: RedpandaVersion
+    ) -> RedpandaVersionTriple:
         """
         Returns the highest version that is of a lower feature version than the
         given version, or None if one does not exist.
@@ -504,15 +506,14 @@ class RedpandaInstaller:
         # NOTE: the released versions are sorted highest first.
         result = None
         for v in self.released_versions:
-            if (v[0] == version[0] and v[1] < version[1]) or (v[0]
-                                                              < version[0]):
-
+            if (v[0] == version[0] and v[1] < version[1]) or (v[0] < version[0]):
                 # Before selecting version, validate that it is really downloadable: this avoids
                 # tests being upset by ongoing releases which might exist in github but not yet
                 # have all their artifacts.
                 if not self._avail_for_download(v) and skip_versions > 0:
                     self._redpanda.logger.warn(
-                        f"Skipping version {v}, no download available")
+                        f"Skipping version {v}, no download available"
+                    )
                     skip_versions -= 1
                     continue
 
@@ -545,32 +546,34 @@ class RedpandaInstaller:
         # if requesting current (or future) release line, return _head_version
         if release_line >= self._head_version[0:2]:
             self._redpanda.logger.info(
-                f"selecting HEAD={self._head_version} for {release_line=}")
+                f"selecting HEAD={self._head_version} for {release_line=}"
+            )
             return (self._head_version, True)
 
-        versions_in_line = [
-            v for v in self.released_versions if release_line == v[0:2]
-        ]
-        assert len(versions_in_line) > 0,\
+        versions_in_line = [v for v in self.released_versions if release_line == v[0:2]]
+        assert len(versions_in_line) > 0, (
             f"could not find a line for {release_line=} in {self.released_versions=}"
+        )
 
         # Only checks these many version before giving up. one missing version is fine in a transient state,
         # but more would indicate a systemic issues in package download
         for v in versions_in_line[0:2]:
             # check actual availability
             if self._avail_for_download(v):
-                self._redpanda.logger.info(
-                    f"selecting {v=} for {release_line=}")
+                self._redpanda.logger.info(f"selecting {v=} for {release_line=}")
                 return (v, False)
             else:
                 self._redpanda.logger.warn(
                     f"skipping {v=} for {release_line=} because it's not available for downloading"
                 )
 
-        assert False, f"no downloadable versions in {versions_in_line[0:2]} for {release_line=}"
+        assert False, (
+            f"no downloadable versions in {versions_in_line[0:2]} for {release_line=}"
+        )
 
-    def install(self, nodes: list[typing.Any],
-                version: RedpandaVersion) -> tuple[RedpandaVersionTriple, str]:
+    def install(
+        self, nodes: list[typing.Any], version: RedpandaVersion
+    ) -> tuple[RedpandaVersionTriple, str]:
         """
         Installs the release on the given nodes such that the next time the
         nodes are restarted, they will use the newly installed bits.
@@ -603,8 +606,7 @@ class RedpandaInstaller:
         if install_target == self._head_version:
             install_target = RedpandaInstaller.HEAD
 
-        self._redpanda.logger.info(
-            f"got {version=} will install {actual_version=}")
+        self._redpanda.logger.info(f"got {version=} will install {actual_version=}")
 
         try:
             self._acquire_install_lock()
@@ -614,7 +616,10 @@ class RedpandaInstaller:
         finally:
             self._release_install_lock()
 
-        return actual_version, f"v{actual_version[0]}.{actual_version[1]}.{actual_version[2]}"
+        return (
+            actual_version,
+            f"v{actual_version[0]}.{actual_version[1]}.{actual_version[2]}",
+        )
 
     def _install_unlocked(self, nodes, version):
         """
@@ -631,15 +636,18 @@ class RedpandaInstaller:
         ssh_download_per_node = dict()
         for node in nodes_to_download:
             if not version == RedpandaInstaller.HEAD and not node.account.exists(
-                    version_root):
-                ssh_download_per_node[
-                    node] = self._async_download_on_node_unlocked(
-                        node, version)
+                version_root
+            ):
+                ssh_download_per_node[node] = self._async_download_on_node_unlocked(
+                    node, version
+                )
 
         try:
-            self.wait_for_async_ssh(self._redpanda.logger,
-                                    ssh_download_per_node,
-                                    "Finished downloading binaries")
+            self.wait_for_async_ssh(
+                self._redpanda.logger,
+                ssh_download_per_node,
+                "Finished downloading binaries",
+            )
         except Exception as e:
             self._redpanda.logger.error(
                 f"Exception while downloading to {version_root}, cleaning up: {str(e)}"
@@ -667,7 +675,8 @@ class RedpandaInstaller:
 
     def _version_package_url(self, version: tuple):
         return self.TGZ_URL_TEMPLATE.format(
-            arch=self.arch, version=f"{version[0]}.{version[1]}.{version[2]}")
+            arch=self.arch, version=f"{version[0]}.{version[1]}.{version[2]}"
+        )
 
     @property
     def arch(self):
@@ -678,7 +687,8 @@ class RedpandaInstaller:
             if "aarch" in uname or "arm" in uname:
                 self._arch = "arm64"
             self._redpanda.logger.debug(
-                f"{node.account.hostname} uname output: {uname}")
+                f"{node.account.hostname} uname output: {uname}"
+            )
         return self._arch
 
     def _async_download_on_node_unlocked(self, node, version):
@@ -721,15 +731,17 @@ class RedpandaInstaller:
                 opt_redpanda_exists = node.account.exists("/opt/redpanda")
                 if opt_redpanda_exists:
                     if not node.account.islink("/opt/redpanda"):
-                        assert not head_root_path_exists, \
+                        assert not head_root_path_exists, (
                             f"{host}: {head_root_path} exists and /opt/redpanda exists but is not a link; unclear which to use"
+                        )
                         continue
-                    node.account.ssh_output("unlink /opt/redpanda",
-                                            allow_fail=True)
+                    node.account.ssh_output("unlink /opt/redpanda", allow_fail=True)
 
-                assert head_root_path_exists, f"{host}: neither {head_root_path} nor /opt/redpanda exists"
-                node.account.ssh_output(f"mv {head_root_path} /opt/redpanda",
-                                        allow_fail=True)
+                assert head_root_path_exists, (
+                    f"{host}: neither {head_root_path} nor /opt/redpanda exists"
+                )
+                node.account.ssh_output(
+                    f"mv {head_root_path} /opt/redpanda", allow_fail=True
+                )
             else:
-                node.account.ssh_output("unlink /opt/redpanda",
-                                        allow_fail=True)
+                node.account.ssh_output("unlink /opt/redpanda", allow_fail=True)

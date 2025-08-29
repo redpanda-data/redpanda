@@ -55,23 +55,21 @@ class TransactionsMixin:
             find_tx_coordinator,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=f"Can't find a coordinator for tx.id={txid}")
+            err_msg=f"Can't find a coordinator for tx.id={txid}",
+        )
 
     def on_delivery(self, err, _):
         assert err is None, err
 
     def generate_data(self, topic, num_records, extra_cfg={}):
         producer_cfg = {
-            'bootstrap.servers': self.redpanda.brokers(),
+            "bootstrap.servers": self.redpanda.brokers(),
         }
         producer_cfg.update(extra_cfg)
         producer = ck.Producer(producer_cfg)
 
         for i in range(num_records):
-            producer.produce(topic.name,
-                             str(i),
-                             str(i),
-                             on_delivery=self.on_delivery)
+            producer.produce(topic.name, str(i), str(i), on_delivery=self.on_delivery)
 
         producer.flush()
 
@@ -84,15 +82,19 @@ class TransactionsMixin:
             else:
                 return False, records
 
-        return wait_until_result(consume_records,
-                                 timeout_sec=30,
-                                 backoff_sec=2,
-                                 err_msg="Can not consume data")
+        return wait_until_result(
+            consume_records,
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg="Can not consume data",
+        )
 
 
 class TransactionsTest(RedpandaTest, TransactionsMixin):
-    topics = (TopicSpec(partition_count=1, replication_factor=3),
-              TopicSpec(partition_count=1, replication_factor=3))
+    topics = (
+        TopicSpec(partition_count=1, replication_factor=3),
+        TopicSpec(partition_count=1, replication_factor=3),
+    )
 
     def __init__(self, test_context):
         extra_rp_conf = {
@@ -100,9 +102,9 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             "partition_autobalancing_mode": "off",
         }
 
-        super(TransactionsTest, self).__init__(test_context=test_context,
-                                               extra_rp_conf=extra_rp_conf,
-                                               log_level="trace")
+        super(TransactionsTest, self).__init__(
+            test_context=test_context, extra_rp_conf=extra_rp_conf, log_level="trace"
+        )
 
         self.input_t = self.topics[0]
         self.output_t = self.topics[1]
@@ -113,7 +115,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
     def wait_for_eviction(self, max_concurrent_producer_ids, num_to_evict):
         samples = [
             "idempotency_pid_cache_size",
-            "producer_state_manager_evicted_producers"
+            "producer_state_manager_evicted_producers",
         ]
         brokers = self.redpanda.started_nodes()
         metrics = self.redpanda.metrics_samples(samples, brokers)
@@ -130,16 +132,17 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         self.redpanda.logger.debug(f"active producers: {producers_per_node}")
         self.redpanda.logger.debug(f"evicted producers: {evicted_per_node}")
 
-        remaining_match = all([
-            num == max_concurrent_producer_ids
-            for num in producers_per_node.values()
-        ])
+        remaining_match = all(
+            [num == max_concurrent_producer_ids for num in producers_per_node.values()]
+        )
 
-        evicted_match = all(
-            [val == num_to_evict for val in evicted_per_node.values()])
+        evicted_match = all([val == num_to_evict for val in evicted_per_node.values()])
 
-        return len(producers_per_node) == len(
-            brokers) and remaining_match and evicted_match
+        return (
+            len(producers_per_node) == len(brokers)
+            and remaining_match
+            and evicted_match
+        )
 
     def no_running_transactions(self):
         tx_list = self.admin.get_all_transactions()
@@ -147,8 +150,9 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         # Note: killed (timedout) transactions are weirdly reported
         # as 'aborting' for some reason.
         tx_list = [
-            tx for tx in tx_list
-            if tx['status'] in ['ready', 'ongoing', 'preparing', 'prepared']
+            tx
+            for tx in tx_list
+            if tx["status"] in ["ready", "ongoing", "preparing", "prepared"]
         ]
         return len(tx_list) == 0
 
@@ -156,16 +160,14 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
     def find_coordinator_creates_tx_topics_test(self):
         for node in self.redpanda.started_nodes():
             for tx_topic in ["tx"]:
-                path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                            tx_topic)
+                path = join(RedpandaService.DATA_DIR, "kafka_internal", tx_topic)
                 assert not node.account.exists(path)
 
         self.find_coordinator("tx0")
 
         for node in self.redpanda.started_nodes():
             for tx_topic in ["tx"]:
-                path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                            tx_topic)
+                path = join(RedpandaService.DATA_DIR, "kafka_internal", tx_topic)
                 assert node.account.exists(path)
                 assert node.account.isdir(path)
 
@@ -173,46 +175,50 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
     def init_transactions_creates_eos_topics_test(self):
         for node in self.redpanda.started_nodes():
             for tx_topic in ["id_allocator", "tx"]:
-                path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                            tx_topic)
+                path = join(RedpandaService.DATA_DIR, "kafka_internal", tx_topic)
                 assert not node.account.exists(path)
 
-        producer = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '0',
-        })
+        producer = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "0",
+            }
+        )
 
         producer.init_transactions()
 
         for node in self.redpanda.started_nodes():
             for tx_topic in ["id_allocator", "tx"]:
-                path = join(RedpandaService.DATA_DIR, "kafka_internal",
-                            tx_topic)
+                path = join(RedpandaService.DATA_DIR, "kafka_internal", tx_topic)
                 assert node.account.exists(path)
                 assert node.account.isdir(path)
 
     @cluster(num_nodes=3)
     def test_max_timeout(self):
         rpk = RpkTool(self.redpanda)
-        max_timeout_ms = int(
-            rpk.cluster_config_get("transaction_max_timeout_ms"))
+        max_timeout_ms = int(rpk.cluster_config_get("transaction_max_timeout_ms"))
         test_timeout_ms = max_timeout_ms + 100
 
         def init_producer(timeout_ms: int):
-            producer = ck.Producer({
-                'bootstrap.servers': self.redpanda.brokers(),
-                'transactional.id': '0',
-                'transaction.timeout.ms': test_timeout_ms,
-            })
+            producer = ck.Producer(
+                {
+                    "bootstrap.servers": self.redpanda.brokers(),
+                    "transactional.id": "0",
+                    "transaction.timeout.ms": test_timeout_ms,
+                }
+            )
             producer.init_transactions()
 
         try:
             init_producer(test_timeout_ms)
-            assert False, "producer session established with a timeout larger than allowed limit"
+            assert False, (
+                "producer session established with a timeout larger than allowed limit"
+            )
         except ck.cimpl.KafkaException as e:
             kafka_error = e.args[0]
-            assert kafka_error.code(
-            ) == ck.KafkaError.INVALID_TRANSACTION_TIMEOUT, f"Unexpected error {kafka_error.code()}"
+            assert kafka_error.code() == ck.KafkaError.INVALID_TRANSACTION_TIMEOUT, (
+                f"Unexpected error {kafka_error.code()}"
+            )
 
         # Bump timeout and check again.
         rpk.cluster_config_set("transaction_max_timeout_ms", test_timeout_ms)
@@ -222,17 +228,21 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
     def simple_test(self):
         self.generate_data(self.input_t, self.max_records)
 
-        producer = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '0',
-        })
+        producer = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "0",
+            }
+        )
 
-        consumer1 = ck.Consumer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': "test",
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
-        })
+        consumer1 = ck.Consumer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "group.id": "test",
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": False,
+            }
+        )
 
         producer.init_transactions()
 
@@ -249,16 +259,19 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             producer.begin_transaction()
 
             for record in records:
-                assert (record.error() == None)
+                assert record.error() == None
                 consumed_from_input_topic.append(record)
-                producer.produce(self.output_t.name,
-                                 record.value(),
-                                 record.key(),
-                                 on_delivery=self.on_delivery)
+                producer.produce(
+                    self.output_t.name,
+                    record.value(),
+                    record.key(),
+                    on_delivery=self.on_delivery,
+                )
 
             producer.send_offsets_to_transaction(
                 consumer1.position(consumer1.assignment()),
-                consumer1.consumer_group_metadata())
+                consumer1.consumer_group_metadata(),
+            )
 
             producer.commit_transaction()
 
@@ -268,11 +281,13 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         consumer1.close()
         assert len(consumed_from_input_topic) == self.max_records
 
-        consumer2 = ck.Consumer({
-            'group.id': "testtest",
-            'bootstrap.servers': self.redpanda.brokers(),
-            'auto.offset.reset': 'earliest',
-        })
+        consumer2 = ck.Consumer(
+            {
+                "group.id": "testtest",
+                "bootstrap.servers": self.redpanda.brokers(),
+                "auto.offset.reset": "earliest",
+            }
+        )
         consumer2.subscribe([self.output_t])
 
         index_from_input = 0
@@ -281,79 +296,93 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             records = self.consume(consumer2)
 
             for record in records:
-                assert record.key(
-                ) == consumed_from_input_topic[index_from_input].key(
-                ), f'Records key does not match from input {consumed_from_input_topic[index_from_input].key()}, from output {record.key()}'
-                assert record.value(
-                ) == consumed_from_input_topic[index_from_input].value(
-                ), f'Records value does not match from input {consumed_from_input_topic[index_from_input].value()}, from output {record.value()}'
+                assert (
+                    record.key() == consumed_from_input_topic[index_from_input].key()
+                ), (
+                    f"Records key does not match from input {consumed_from_input_topic[index_from_input].key()}, from output {record.key()}"
+                )
+                assert (
+                    record.value()
+                    == consumed_from_input_topic[index_from_input].value()
+                ), (
+                    f"Records value does not match from input {consumed_from_input_topic[index_from_input].value()}, from output {record.value()}"
+                )
                 index_from_input += 1
 
         log_viewer = OfflineLogViewer(self.redpanda)
         for node in self.redpanda.started_nodes():
-            records = log_viewer.read_kafka_records(node=node,
-                                                    topic=self.input_t.name)
+            records = log_viewer.read_kafka_records(node=node, topic=self.input_t.name)
             self.logger.info(f"Read {len(records)} from node {node.name}")
 
     @cluster(num_nodes=3)
     def group_deletion_with_ongoing_transaction_test(self):
-        self.redpanda.set_cluster_config(
-            {"group_new_member_join_timeout": 5000})
+        self.redpanda.set_cluster_config({"group_new_member_join_timeout": 5000})
         self.generate_data(self.input_t, self.max_records)
 
         group_name = "test_group"
 
-        producer = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': 'group_deletion_test_id',
-        })
+        producer = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "group_deletion_test_id",
+            }
+        )
 
         group_name = "test"
-        consumer = ck.Consumer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': group_name,
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
-        })
+        consumer = ck.Consumer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "group.id": group_name,
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": False,
+            }
+        )
 
         consumer.subscribe([self.input_t])
         _ = self.consume(consumer)
         producer.init_transactions()
         producer.begin_transaction()
         producer.send_offsets_to_transaction(
-            consumer.position(consumer.assignment()),
-            consumer.consumer_group_metadata())
+            consumer.position(consumer.assignment()), consumer.consumer_group_metadata()
+        )
         producer.flush()
         # leave the consumer group
         consumer.close()
         # Attempt to delete the group, should fail
         rpk = RpkTool(self.redpanda)
         out = rpk.group_delete(group=group_name)
-        assert "NON_EMPTY_GROUP" in out, f"Group deletion should fail with inprogress transaction: {out}"
+        assert "NON_EMPTY_GROUP" in out, (
+            f"Group deletion should fail with inprogress transaction: {out}"
+        )
         producer.commit_transaction()
         out = rpk.group_delete(group=group_name)
-        assert "OK" in out, f"Group deletion expected to succeed after committing transaction: {out}"
+        assert "OK" in out, (
+            f"Group deletion expected to succeed after committing transaction: {out}"
+        )
 
     @cluster(num_nodes=3)
     def rejoin_member_test(self):
-        self.redpanda.set_cluster_config(
-            {"group_new_member_join_timeout": 5000})
+        self.redpanda.set_cluster_config({"group_new_member_join_timeout": 5000})
         self.generate_data(self.input_t, self.max_records)
 
-        producer = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '0',
-        })
+        producer = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "0",
+            }
+        )
 
         group_name = "test"
-        consumer1 = ck.Consumer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': group_name,
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
-            'max.poll.interval.ms': 10000,
-            'session.timeout.ms': 8000
-        })
+        consumer1 = ck.Consumer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "group.id": group_name,
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": False,
+                "max.poll.interval.ms": 10000,
+                "session.timeout.ms": 8000,
+            }
+        )
 
         producer.init_transactions()
 
@@ -363,20 +392,22 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer.begin_transaction()
 
         for record in records:
-            assert (record.error() == None)
+            assert record.error() == None
             producer.produce(self.output_t.name, record.value(), record.key())
 
         offsets = consumer1.position(consumer1.assignment())
         metadata = consumer1.consumer_group_metadata()
 
-        consumer2 = ck.Consumer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': group_name,
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
-            'max.poll.interval.ms': 10000,
-            'session.timeout.ms': 8000
-        })
+        consumer2 = ck.Consumer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "group.id": group_name,
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": False,
+                "max.poll.interval.ms": 10000,
+                "session.timeout.ms": 8000,
+            }
+        )
 
         consumer2.subscribe([self.input_t])
         # Rejoin can take some time, so we should pass big timeout
@@ -401,20 +432,24 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
     def change_static_member_test(self):
         self.generate_data(self.input_t, self.max_records)
 
-        producer = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '0',
-        })
+        producer = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "0",
+            }
+        )
 
         group_name = "test"
         static_group_id = "123"
-        consumer1 = ck.Consumer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': group_name,
-            'group.instance.id': static_group_id,
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
-        })
+        consumer1 = ck.Consumer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "group.id": group_name,
+                "group.instance.id": static_group_id,
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": False,
+            }
+        )
 
         producer.init_transactions()
 
@@ -424,19 +459,21 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer.begin_transaction()
 
         for record in records:
-            assert (record.error() == None)
+            assert record.error() == None
             producer.produce(self.output_t.name, record.value(), record.key())
 
         offsets = consumer1.position(consumer1.assignment())
         metadata = consumer1.consumer_group_metadata()
 
-        consumer2 = ck.Consumer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': group_name,
-            'group.instance.id': static_group_id,
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
-        })
+        consumer2 = ck.Consumer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "group.id": group_name,
+                "group.instance.id": static_group_id,
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": False,
+            }
+        )
 
         consumer2.subscribe([self.input_t])
         self.consume(consumer2)
@@ -455,11 +492,13 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         admin = Admin(self.redpanda)
         rpk = RpkTool(self.redpanda)
         # Create an open transaction.
-        producer = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '0',
-            'transaction.timeout.ms': 900000,  # to avoid timing out
-        })
+        producer = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "0",
+                "transaction.timeout.ms": 900000,  # to avoid timing out
+            }
+        )
         producer.init_transactions()
         producer.begin_transaction()
         producer.produce(self.output_t.name, "x", "y")
@@ -469,27 +508,32 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         # should be hung.
         wait_timeout_s = 20
         try:
-            wait_until(self.no_running_transactions,
-                       timeout_sec=wait_timeout_s,
-                       backoff_sec=2,
-                       err_msg="Transactions still running")
+            wait_until(
+                self.no_running_transactions,
+                timeout_sec=wait_timeout_s,
+                backoff_sec=2,
+                err_msg="Transactions still running",
+            )
             assert False, "No running transactions found."
         except TimeoutError as e:
             assert "Transactions still running" in str(e)
 
         # transaction should be aborted.
         rpk.cluster_config_set("transactional_id_expiration_ms", 5000)
-        wait_until(self.no_running_transactions,
-                   timeout_sec=wait_timeout_s,
-                   backoff_sec=2,
-                   err_msg="Transactions still running")
+        wait_until(
+            self.no_running_transactions,
+            timeout_sec=wait_timeout_s,
+            backoff_sec=2,
+            err_msg="Transactions still running",
+        )
 
         try:
             producer.commit_transaction()
             assert False, "transaction should have been aborted by now."
         except ck.KafkaException as e:
-            assert e.args[0].code(
-            ) == ck.KafkaError.INVALID_PRODUCER_ID_MAPPING, f"Invalid error thrown on expiration {e}"
+            assert e.args[0].code() == ck.KafkaError.INVALID_PRODUCER_ID_MAPPING, (
+                f"Invalid error thrown on expiration {e}"
+            )
 
     @cluster(num_nodes=3)
     def expired_tx_test(self):
@@ -505,36 +549,37 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         timeout_s = 30
         begin = time()
         while True:
-            assert time(
-            ) - begin <= timeout_s, f"Can't init transactions within {timeout_s} sec"
+            assert time() - begin <= timeout_s, (
+                f"Can't init transactions within {timeout_s} sec"
+            )
             try:
-                producer = ck.Producer({
-                    'bootstrap.servers':
-                    self.redpanda.brokers(),
-                    'transactional.id':
-                    '0',
-                    'transaction.timeout.ms':
-                    5000,
-                })
+                producer = ck.Producer(
+                    {
+                        "bootstrap.servers": self.redpanda.brokers(),
+                        "transactional.id": "0",
+                        "transaction.timeout.ms": 5000,
+                    }
+                )
                 producer.init_transactions()
                 break
             except ck.cimpl.KafkaException as e:
-                self.redpanda.logger.debug(f"error on init_transactions",
-                                           exc_info=True)
+                self.redpanda.logger.debug(f"error on init_transactions", exc_info=True)
                 kafka_error = e.args[0]
                 assert kafka_error.code() in [
                     ck.cimpl.KafkaError.NOT_COORDINATOR,
-                    ck.cimpl.KafkaError._TIMED_OUT
+                    ck.cimpl.KafkaError._TIMED_OUT,
                 ]
 
         producer.begin_transaction()
 
         for i in range(0, 10):
-            producer.produce(self.input_t.name,
-                             str(i),
-                             str(i),
-                             partition=0,
-                             on_delivery=self.on_delivery)
+            producer.produce(
+                self.input_t.name,
+                str(i),
+                str(i),
+                partition=0,
+                on_delivery=self.on_delivery,
+            )
         producer.flush()
 
         # Wait for transactions to hit expiration timeout.
@@ -542,14 +587,17 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             self.no_running_transactions,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg="Transactions are still running, expected to be expired.")
+            err_msg="Transactions are still running, expected to be expired.",
+        )
 
         try:
-            producer.produce(self.input_t.name,
-                             'test-post-expire',
-                             'test-post-expire',
-                             partition=0,
-                             on_delivery=self.on_delivery)
+            producer.produce(
+                self.input_t.name,
+                "test-post-expire",
+                "test-post-expire",
+                partition=0,
+                on_delivery=self.on_delivery,
+            )
             producer.flush()
             assert False, "tx is expected to be expired"
         except ck.cimpl.KafkaException as e:
@@ -565,12 +613,13 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
 
     @cluster(num_nodes=3)
     def graceful_leadership_transfer_test(self):
-
-        producer = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '0',
-            'transaction.timeout.ms': 60000,
-        })
+        producer = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "0",
+                "transaction.timeout.ms": 60000,
+            }
+        )
 
         producer.init_transactions()
         producer.begin_transaction()
@@ -583,36 +632,40 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             nonlocal count
             nonlocal partition
             for i in range(count, count + records_per_add):
-                producer.produce(self.input_t.name,
-                                 str(i),
-                                 str(i),
-                                 partition=partition,
-                                 on_delivery=self.on_delivery)
+                producer.produce(
+                    self.input_t.name,
+                    str(i),
+                    str(i),
+                    partition=partition,
+                    on_delivery=self.on_delivery,
+                )
             producer.flush()
             count = count + records_per_add
 
         def graceful_transfer():
             # Issue a graceful leadership transfer.
             old_leader = self.admin.get_partition_leader(
+                namespace="kafka", topic=self.input_t.name, partition=partition
+            )
+            self.admin.transfer_leadership_to(
                 namespace="kafka",
                 topic=self.input_t.name,
-                partition=partition)
-            self.admin.transfer_leadership_to(namespace="kafka",
-                                              topic=self.input_t.name,
-                                              partition=partition,
-                                              target_id=None)
+                partition=partition,
+                target_id=None,
+            )
 
             def leader_is_changed():
                 new_leader = self.admin.get_partition_leader(
-                    namespace="kafka",
-                    topic=self.input_t.name,
-                    partition=partition)
+                    namespace="kafka", topic=self.input_t.name, partition=partition
+                )
                 return (new_leader != -1) and (new_leader != old_leader)
 
-            wait_until(leader_is_changed,
-                       timeout_sec=30,
-                       backoff_sec=2,
-                       err_msg="Failed to establish current leader")
+            wait_until(
+                leader_is_changed,
+                timeout_sec=30,
+                backoff_sec=2,
+                err_msg="Failed to establish current leader",
+            )
 
         # Add some records
         add_records()
@@ -625,37 +678,37 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         # Issue a commit
         producer.commit_transaction()
 
-        consumer = ck.Consumer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': "test",
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
-        })
+        consumer = ck.Consumer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "group.id": "test",
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": False,
+            }
+        )
         try:
             consumer.subscribe([self.input_t])
             records = []
             while len(records) != count:
-                records.extend(
-                    self.consume(consumer, max_records=count, timeout_s=10))
-            assert len(
-                records
-            ) == count, f"Not all records consumed, expected {count}"
+                records.extend(self.consume(consumer, max_records=count, timeout_s=10))
+            assert len(records) == count, f"Not all records consumed, expected {count}"
             keys = set([int(r.key()) for r in records])
-            assert all(i in keys
-                       for i in range(0, count)), f"Missing records {keys}"
+            assert all(i in keys for i in range(0, count)), f"Missing records {keys}"
         finally:
             consumer.close()
 
     @cluster(num_nodes=3)
     def graceful_leadership_transfer_tx_coordinator_test(self):
-
         p_count = 10
         producers = [
-            ck.Producer({
-                'bootstrap.servers': self.redpanda.brokers(),
-                'transactional.id': str(i),
-                'transaction.timeout.ms': 900000,
-            }) for i in range(0, p_count)
+            ck.Producer(
+                {
+                    "bootstrap.servers": self.redpanda.brokers(),
+                    "transactional.id": str(i),
+                    "transaction.timeout.ms": 900000,
+                }
+            )
+            for i in range(0, p_count)
         ]
 
         # Initiate the transactions, should hit the existing tx coordinator.
@@ -672,33 +725,37 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             nonlocal partition
             for p in producers:
                 for i in range(count, count + records_per_add):
-                    p.produce(self.input_t.name,
-                              str(i),
-                              str(i),
-                              partition=partition,
-                              on_delivery=self.on_delivery)
+                    p.produce(
+                        self.input_t.name,
+                        str(i),
+                        str(i),
+                        partition=partition,
+                        on_delivery=self.on_delivery,
+                    )
                 p.flush()
                 count = count + records_per_add
 
         def graceful_transfer():
             # Issue a graceful leadership transfer of tx coordinator
             old_leader = self.admin.get_partition_leader(
-                namespace="kafka_internal", topic="tx",
-                partition="0")  # Fix this when we partition tx coordinator.
-            self.admin.transfer_leadership_to(namespace="kafka_internal",
-                                              topic="tx",
-                                              partition="0",
-                                              target_id=None)
+                namespace="kafka_internal", topic="tx", partition="0"
+            )  # Fix this when we partition tx coordinator.
+            self.admin.transfer_leadership_to(
+                namespace="kafka_internal", topic="tx", partition="0", target_id=None
+            )
 
             def leader_is_changed():
                 new_leader = self.admin.get_partition_leader(
-                    namespace="kafka_internal", topic="tx", partition="0")
+                    namespace="kafka_internal", topic="tx", partition="0"
+                )
                 return (new_leader != -1) and (new_leader != old_leader)
 
-            wait_until(leader_is_changed,
-                       timeout_sec=30,
-                       backoff_sec=2,
-                       err_msg="Failed to establish current leader")
+            wait_until(
+                leader_is_changed,
+                timeout_sec=30,
+                backoff_sec=2,
+                err_msg="Failed to establish current leader",
+            )
 
         # Issue a leadership transfer
         graceful_transfer()
@@ -719,64 +776,65 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             producers[p].commit_transaction()
 
         # Verify that all the records are ingested correctly.
-        consumer = ck.Consumer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': "test",
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
-        })
+        consumer = ck.Consumer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "group.id": "test",
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": False,
+            }
+        )
         try:
             consumer.subscribe([self.input_t])
             records = []
             while len(records) != count:
-                records.extend(
-                    self.consume(consumer, max_records=count, timeout_s=10))
-            assert len(
-                records
-            ) == count, f"Not all records consumed, expected {count}"
+                records.extend(self.consume(consumer, max_records=count, timeout_s=10))
+            assert len(records) == count, f"Not all records consumed, expected {count}"
             keys = set([int(r.key()) for r in records])
-            assert all(i in keys
-                       for i in range(0, count)), f"Missing records {keys}"
+            assert all(i in keys for i in range(0, count)), f"Missing records {keys}"
         finally:
             consumer.close()
 
     @cluster(num_nodes=3)
     def delete_topic_with_active_txns_test(self):
-
         rpk = RpkTool(self.redpanda)
         rpk.create_topic("t1")
         rpk.create_topic("t2")
 
-        producer = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '0',
-        })
+        producer = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "0",
+            }
+        )
 
         # Non transactional
-        producer_nt = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-        })
+        producer_nt = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+            }
+        )
 
-        consumer = ck.Consumer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
-            'group.id': 'test1',
-            'isolation.level': 'read_committed',
-        })
+        consumer = ck.Consumer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": False,
+                "group.id": "test1",
+                "isolation.level": "read_committed",
+            }
+        )
 
-        consumer.subscribe([TopicSpec(name='t2')])
+        consumer.subscribe([TopicSpec(name="t2")])
 
         producer.init_transactions()
         producer.begin_transaction()
 
         def add_records(topic, producer):
             for i in range(0, 100):
-                producer.produce(topic,
-                                 str(i),
-                                 str(i),
-                                 partition=0,
-                                 on_delivery=self.on_delivery)
+                producer.produce(
+                    topic, str(i), str(i), partition=0, on_delivery=self.on_delivery
+                )
             producer.flush()
 
         add_records("t1", producer)
@@ -810,45 +868,46 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
 
         message_size = 128
         segments_per_producer = 5
-        message_count = int(segments_per_producer * segment_size /
-                            message_size)
+        message_count = int(segments_per_producer * segment_size / message_size)
         msg_body = random.randbytes(message_size)
 
         producers = []
         self.logger.info(f"producing {message_count} messages per producer")
         for i in range(producers_count):
-            p = ck.Producer({
-                'bootstrap.servers': self.redpanda.brokers(),
-                'enable.idempotence': True,
-            })
+            p = ck.Producer(
+                {
+                    "bootstrap.servers": self.redpanda.brokers(),
+                    "enable.idempotence": True,
+                }
+            )
             producers.append(p)
             for m in range(message_count):
-                p.produce(topic,
-                          str(f"p-{i}-{m}"),
-                          msg_body,
-                          partition=0,
-                          on_delivery=self.on_delivery)
+                p.produce(
+                    topic,
+                    str(f"p-{i}-{m}"),
+                    msg_body,
+                    partition=0,
+                    on_delivery=self.on_delivery,
+                )
             p.flush()
 
         # Capture the proudcer info before evicting the segments
-        producers_before = self.kafka_cli.describe_producers(topic=topic,
-                                                             partition=0)
-        assert len(
-            producers_before) == producers_count, "Producer metadata mismatch"
+        producers_before = self.kafka_cli.describe_producers(topic=topic, partition=0)
+        assert len(producers_before) == producers_count, "Producer metadata mismatch"
 
         self.client().alter_topic_config(
-            topic=topic, key=TopicSpec.PROPERTY_RETENTION_BYTES, value=128)
+            topic=topic, key=TopicSpec.PROPERTY_RETENTION_BYTES, value=128
+        )
         self.client().alter_topic_config(
-            topic=topic,
-            key=TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
-            value=128)
+            topic=topic, key=TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES, value=128
+        )
 
         def segments_removed():
             removed_per_node = defaultdict(int)
             metric_sample = self.redpanda.metrics_sample(
-                "log_segments_removed", self.redpanda.started_nodes())
-            metric = metric_sample.label_filter(
-                dict(namespace="kafka", topic=topic))
+                "log_segments_removed", self.redpanda.started_nodes()
+            )
+            metric = metric_sample.label_filter(dict(namespace="kafka", topic=topic))
             for m in metric.samples:
                 removed_per_node[m.node] += m.value
             return all([v > 0 for v in removed_per_node.values()])
@@ -858,42 +917,45 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         #
         # TODO: change this when we will implement cleanup on current,
         # not the next eviction
-        last_producer = ck.Producer({
-            'bootstrap.servers':
-            self.redpanda.brokers(),
-            'enable.idempotence':
-            True,
-        })
+        last_producer = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "enable.idempotence": True,
+            }
+        )
 
-        message_count_to_roll_segment = int(
-            message_count / segments_per_producer) + 100
+        message_count_to_roll_segment = int(message_count / segments_per_producer) + 100
         # produce enough data to roll the single segment
         for m in range(message_count_to_roll_segment):
-            last_producer.produce(topic,
-                                  str(f"last-mile-{m}"),
-                                  msg_body,
-                                  partition=0,
-                                  on_delivery=self.on_delivery)
+            last_producer.produce(
+                topic,
+                str(f"last-mile-{m}"),
+                msg_body,
+                partition=0,
+                on_delivery=self.on_delivery,
+            )
             last_producer.flush()
         # restart redpanda to make sure rm_stm recovers state from snapshot,
         # which should be now cleaned and do not contain expired producer ids
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
-        producers_after = self.kafka_cli.describe_producers(topic=topic,
-                                                            partition=0)
-        assert len(producers_after) < len(
-            producers_before
-        ), f"Incorrect number of producers restored from snapshot {len(producers_after)}"
+        producers_after = self.kafka_cli.describe_producers(topic=topic, partition=0)
+        assert len(producers_after) < len(producers_before), (
+            f"Incorrect number of producers restored from snapshot {len(producers_after)}"
+        )
 
     @cluster(num_nodes=3)
     def check_progress_with_fencing_and_eviction_test(self):
         """Ensures a fenced producer can make progress with eviction running in the background."""
+
         def one_tx(tx_id: str, keep_open: bool = False):
-            producer = ck.Producer({
-                'bootstrap.servers': self.redpanda.brokers(),
-                'transactional.id': tx_id,
-                'transaction.timeout.ms': 15 * 60 * 1000,
-            })
+            producer = ck.Producer(
+                {
+                    "bootstrap.servers": self.redpanda.brokers(),
+                    "transactional.id": tx_id,
+                    "transaction.timeout.ms": 15 * 60 * 1000,
+                }
+            )
             producer.init_transactions()
             producer.begin_transaction()
             producer.produce(self.input_t.name, "test", "test")
@@ -905,19 +967,19 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         metric = "vectorized_cluster_producer_state_manager_producer_manager_total_active_producers"
         rpk = RpkTool(self.redpanda)
         topic_leader = self.redpanda.partitions(self.input_t.name)[0].leader
-        active_producers_metric = MetricCheck(self.redpanda.logger,
-                                              self.redpanda,
-                                              topic_leader, [metric],
-                                              reduce=sum)
+        active_producers_metric = MetricCheck(
+            self.redpanda.logger, self.redpanda, topic_leader, [metric], reduce=sum
+        )
 
         def wait_for_active_producers(count: int):
             wait_until(
-                lambda: active_producers_metric.evaluate([(
-                    metric, lambda _, val: val == count)]),
+                lambda: active_producers_metric.evaluate(
+                    [(metric, lambda _, val: val == count)]
+                ),
                 timeout_sec=30,
                 backoff_sec=5,
-                err_msg=
-                f"Timed out waiting for active producers to reach: {count}")
+                err_msg=f"Timed out waiting for active producers to reach: {count}",
+            )
 
         def evict_all_producers():
             rpk.cluster_config_set("max_concurrent_producer_ids", 1)
@@ -943,11 +1005,13 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
     def check_progress_after_fencing_test(self):
         """Checks that a fencing producer makes progress after fenced producers are evicted."""
 
-        producer = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': 'test',
-            'transaction.timeout.ms': 100000,
-        })
+        producer = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "test",
+                "transaction.timeout.ms": 100000,
+            }
+        )
 
         topic_name = self.topics[0].name
 
@@ -958,19 +1022,20 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer.flush()
 
         # fence the above pid with another producer
-        producer0 = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': 'test',
-            'transaction.timeout.ms': 100000,
-        })
+        producer0 = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "test",
+                "transaction.timeout.ms": 100000,
+            }
+        )
         producer0.init_transactions()
         producer0.begin_transaction()
         producer0.produce(topic_name, "0", "0", 0, self.on_delivery)
 
         max_concurrent_pids = 1
         rpk = RpkTool(self.redpanda)
-        rpk.cluster_config_set("max_concurrent_producer_ids",
-                               str(max_concurrent_pids))
+        rpk.cluster_config_set("max_concurrent_producer_ids", str(max_concurrent_pids))
 
         self.wait_for_eviction(max_concurrent_pids, 1)
 
@@ -980,37 +1045,43 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
     def check_pids_overflow_test(self):
         rpk = RpkTool(self.redpanda)
         max_concurrent_producer_ids = 10
-        ans = rpk.cluster_config_set("max_concurrent_producer_ids",
-                                     str(max_concurrent_producer_ids))
+        ans = rpk.cluster_config_set(
+            "max_concurrent_producer_ids", str(max_concurrent_producer_ids)
+        )
 
         topic = self.topics[0].name
 
         def _produce_one(producer, idx):
             self.logger.debug(f"producing using {idx} producer")
-            producer.produce(topic,
-                             f"record-key-producer-{idx}",
-                             f"record-value-producer-{idx}",
-                             partition=0,
-                             on_delivery=self.on_delivery)
+            producer.produce(
+                topic,
+                f"record-key-producer-{idx}",
+                f"record-value-producer-{idx}",
+                partition=0,
+                on_delivery=self.on_delivery,
+            )
             producer.flush()
 
         max_producers = 50
         producers = []
         for i in range(max_producers):
-            p = ck.Producer({
-                'bootstrap.servers': self.redpanda.brokers(),
-                'enable.idempotence': True,
-            })
+            p = ck.Producer(
+                {
+                    "bootstrap.servers": self.redpanda.brokers(),
+                    "enable.idempotence": True,
+                }
+            )
             _produce_one(p, i)
             producers.append(p)
 
         evicted_count = max_producers - max_concurrent_producer_ids
 
-        wait_until(lambda: self.wait_for_eviction(max_concurrent_producer_ids,
-                                                  evicted_count),
-                   timeout_sec=30,
-                   backoff_sec=2,
-                   err_msg="Producers not evicted in time")
+        wait_until(
+            lambda: self.wait_for_eviction(max_concurrent_producer_ids, evicted_count),
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg="Producers not evicted in time",
+        )
 
         # validate that the producers are evicted with LRU policy,
         # starting from this producer there should be no sequence
@@ -1019,21 +1090,25 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         for i in range(last_not_evicted_producer_idx, len(producers)):
             _produce_one(producers[i], i)
 
-        expected_records = len(
-            producers) - last_not_evicted_producer_idx + max_producers
+        expected_records = (
+            len(producers) - last_not_evicted_producer_idx + max_producers
+        )
         num_consumed = 0
 
-        consumer = ck.Consumer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': "123",
-            'auto.offset.reset': 'earliest',
-        })
+        consumer = ck.Consumer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "group.id": "123",
+                "auto.offset.reset": "earliest",
+            }
+        )
 
         consumer.subscribe([topic])
 
         while num_consumed < expected_records:
             self.redpanda.logger.debug(
-                f"Consumed {num_consumed} of of {expected_records}")
+                f"Consumed {num_consumed} of of {expected_records}"
+            )
             records = self.consume(consumer)
             num_consumed += len(records)
 
@@ -1042,19 +1117,18 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
     @cluster(num_nodes=3)
     def unsafe_abort_group_transaction_test(self):
         def random_group_name():
-            return ''.join(
-                random.choice(string.ascii_uppercase) for _ in range(16))
+            return "".join(random.choice(string.ascii_uppercase) for _ in range(16))
 
         def wait_for_active_producers(count: int):
             def describe_active_producers():
                 active_producers = []
                 for partition in range(0, 16):
                     desc = self.kafka_cli.describe_producers(
-                        "__consumer_offsets", partition)
+                        "__consumer_offsets", partition
+                    )
                     for producer in desc:
-                        tx_start_offset = producer[
-                            'CurrentTransactionStartOffset']
-                        if 'None' in tx_start_offset:
+                        tx_start_offset = producer["CurrentTransactionStartOffset"]
+                        if "None" in tx_start_offset:
                             continue
                         if int(tx_start_offset) >= 0:
                             active_producers.append(producer)
@@ -1064,7 +1138,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
                 lambda: len(describe_active_producers()) == count,
                 timeout_sec=30,
                 backoff_sec=1,
-                err_msg=f"Timed out waiting for producer count to reach {count}"
+                err_msg=f"Timed out waiting for producer count to reach {count}",
             )
 
         group_name = random_group_name()
@@ -1080,17 +1154,17 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         # Setup a consumer to consume from ^^ topic and
         # produce to a target topic.
         producer_conf = {
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': 'test-repro',
+            "bootstrap.servers": self.redpanda.brokers(),
+            "transactional.id": "test-repro",
             # Large-ish timeout
-            'transaction.timeout.ms': 300000,
+            "transaction.timeout.ms": 300000,
         }
         producer = ck.Producer(producer_conf)
         consumer_conf = {
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': group_name,
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
+            "bootstrap.servers": self.redpanda.brokers(),
+            "group.id": group_name,
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,
         }
         consumer = ck.Consumer(consumer_conf)
         consumer.subscribe([self.input_t])
@@ -1101,21 +1175,22 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         # Start a transaction and flush some offsets
         producer.begin_transaction()
         producer.send_offsets_to_transaction(
-            consumer.position(consumer.assignment()),
-            consumer.consumer_group_metadata())
+            consumer.position(consumer.assignment()), consumer.consumer_group_metadata()
+        )
         producer.flush()
 
-        wait_until(lambda: len(self.admin.get_all_transactions()) == 1,
-                   timeout_sec=30,
-                   backoff_sec=1,
-                   err_msg="Timed out waiting for transaction to appear")
+        wait_until(
+            lambda: len(self.admin.get_all_transactions()) == 1,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Timed out waiting for transaction to appear",
+        )
 
         wait_for_active_producers(1)
 
-        self.admin.unsafe_abort_group_transaction(group_id=group_name,
-                                                  pid=1,
-                                                  epoch=0,
-                                                  sequence=0)
+        self.admin.unsafe_abort_group_transaction(
+            group_id=group_name, pid=1, epoch=0, sequence=0
+        )
         wait_for_active_producers(0)
         producer.commit_transaction()
 
@@ -1123,25 +1198,28 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             lambda: self.no_running_transactions(),
             timeout_sec=30,
             backoff_sec=1,
-            err_msg="Timed out waiting for running transactions to wind down.")
+            err_msg="Timed out waiting for running transactions to wind down.",
+        )
 
 
 class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):
-    topics = (TopicSpec(partition_count=1, replication_factor=3),
-              TopicSpec(partition_count=1, replication_factor=3))
+    topics = (
+        TopicSpec(partition_count=1, replication_factor=3),
+        TopicSpec(partition_count=1, replication_factor=3),
+    )
 
     def __init__(self, test_context):
         extra_rp_conf = {
-            'unsafe_enable_consumer_offsets_delete_retention': True,
-            'group_topic_partitions': 1,  # to reduce log noise
-            'log_segment_size_min': 99,
+            "unsafe_enable_consumer_offsets_delete_retention": True,
+            "group_topic_partitions": 1,  # to reduce log noise
+            "log_segment_size_min": 99,
             # to be able to make changes to CO
-            'kafka_nodelete_topics': [],
-            'kafka_noproduce_topics': [],
+            "kafka_nodelete_topics": [],
+            "kafka_noproduce_topics": [],
         }
-        super(TransactionsStreamsTest,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf=extra_rp_conf)
+        super(TransactionsStreamsTest, self).__init__(
+            test_context=test_context, extra_rp_conf=extra_rp_conf
+        )
         self.input_t = self.topics[0]
         self.output_t = self.topics[1]
 
@@ -1150,8 +1228,9 @@ class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):
         rpk.consume(topic=self.input_t.name, n=1, group="test-group")
         topic = "__consumer_offsets"
         # Aggressive roll settings to clear multiple small segments
-        rpk.alter_topic_config(topic, TopicSpec.PROPERTY_CLEANUP_POLICY,
-                               TopicSpec.CLEANUP_DELETE)
+        rpk.alter_topic_config(
+            topic, TopicSpec.PROPERTY_CLEANUP_POLICY, TopicSpec.CLEANUP_DELETE
+        )
         rpk.alter_topic_config(topic, TopicSpec.PROPERTY_SEGMENT_SIZE, 100)
 
     @cluster(num_nodes=3)
@@ -1163,15 +1242,15 @@ class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):
         self.setup_consumer_offsets(rpk)
         # Populate consumer offsets with transactional offset commits/aborts
         producer_conf = {
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': 'streams',
+            "bootstrap.servers": self.redpanda.brokers(),
+            "transactional.id": "streams",
         }
         producer = ck.Producer(producer_conf)
         consumer_conf = {
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': "test",
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
+            "bootstrap.servers": self.redpanda.brokers(),
+            "group.id": "test",
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,
         }
         consumer = ck.Consumer(consumer_conf)
         consumer.subscribe([self.input_t])
@@ -1182,14 +1261,17 @@ class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):
             records = self.consume(consumer)
             producer.begin_transaction()
             for record in records:
-                producer.produce(self.output_t.name,
-                                 record.value(),
-                                 record.key(),
-                                 on_delivery=self.on_delivery)
+                producer.produce(
+                    self.output_t.name,
+                    record.value(),
+                    record.key(),
+                    on_delivery=self.on_delivery,
+                )
 
             producer.send_offsets_to_transaction(
                 consumer.position(consumer.assignment()),
-                consumer.consumer_group_metadata())
+                consumer.consumer_group_metadata(),
+            )
 
             producer.flush()
 
@@ -1223,9 +1305,7 @@ class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):
                 break
             rpk.trim_prefix(co_topic, truncate_offset, partitions=[0])
             admin.partition_transfer_leadership("kafka", co_topic, partition=0)
-            admin.await_stable_leader(topic=co_topic,
-                                      replication=3,
-                                      timeout_s=30)
+            admin.await_stable_leader(topic=co_topic, replication=3, timeout_s=30)
             truncate_offset += 200
             attempts = attempts - 1
 
@@ -1243,10 +1323,12 @@ def expect_kafka_error(err: Optional[ck.KafkaError] = None):
 
 
 @contextmanager
-def try_transaction(producer: ck.Producer,
-                    consumer: ck.Consumer,
-                    send_offset_err: Optional[ck.KafkaError] = None,
-                    commit_err: Optional[ck.KafkaError] = None):
+def try_transaction(
+    producer: ck.Producer,
+    consumer: ck.Consumer,
+    send_offset_err: Optional[ck.KafkaError] = None,
+    commit_err: Optional[ck.KafkaError] = None,
+):
     producer.begin_transaction()
 
     yield
@@ -1255,8 +1337,8 @@ def try_transaction(producer: ck.Producer,
 
     with expect_kafka_error(send_offset_err):
         producer.send_offsets_to_transaction(
-            consumer.position(consumer.assignment()),
-            consumer.consumer_group_metadata())
+            consumer.position(consumer.assignment()), consumer.consumer_group_metadata()
+        )
 
     with expect_kafka_error(commit_err):
         producer.commit_transaction()
@@ -1266,8 +1348,10 @@ def try_transaction(producer: ck.Producer,
 
 
 class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
-    topics = (TopicSpec(partition_count=1, replication_factor=3),
-              TopicSpec(partition_count=1, replication_factor=3))
+    topics = (
+        TopicSpec(partition_count=1, replication_factor=3),
+        TopicSpec(partition_count=1, replication_factor=3),
+    )
 
     USER_1 = SaslCredentials("user-1", "password", "SCRAM-SHA-256")
     USER_2 = SaslCredentials("user-2", "password", "SCRAM-SHA-256")
@@ -1278,15 +1362,15 @@ class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
             "partition_autobalancing_mode": "off",
         }
 
-        super().__init__(test_context=test_context,
-                         extra_rp_conf=extra_rp_conf,
-                         log_level="trace")
+        super().__init__(
+            test_context=test_context, extra_rp_conf=extra_rp_conf, log_level="trace"
+        )
 
         self.security = SecurityConfig()
         self.security.kafka_enable_authorization = True
         self.security.enable_sasl = True
         self.security.require_client_auth = True
-        self.security.endpoint_authn_method = 'sasl'
+        self.security.endpoint_authn_method = "sasl"
 
         self.redpanda.set_security_settings(self.security)
 
@@ -1297,24 +1381,28 @@ class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
         self.max_records = 100
         self.admin = Admin(self.redpanda)
 
-        self.rpk = RpkTool(self.redpanda,
-                           username=self.superuser.username,
-                           password=self.superuser.password,
-                           sasl_mechanism=self.superuser.algorithm)
+        self.rpk = RpkTool(
+            self.redpanda,
+            username=self.superuser.username,
+            password=self.superuser.password,
+            sasl_mechanism=self.superuser.algorithm,
+        )
 
     def setUp(self):
         super().setUp()
-        self.admin.create_user(self.USER_1.username, self.USER_1.password,
-                               self.USER_1.algorithm)
-        self.admin.create_user(self.USER_2.username, self.USER_2.password,
-                               self.USER_2.algorithm)
+        self.admin.create_user(
+            self.USER_1.username, self.USER_1.password, self.USER_1.algorithm
+        )
+        self.admin.create_user(
+            self.USER_2.username, self.USER_2.password, self.USER_2.algorithm
+        )
 
     def sasl_cfg(self, user):
         return {
-            'sasl.username': user.username,
-            'sasl.password': user.password,
-            'sasl.mechanism': user.algorithm,
-            'security.protocol': 'sasl_plaintext',
+            "sasl.username": user.username,
+            "sasl.password": user.password,
+            "sasl.mechanism": user.algorithm,
+            "security.protocol": "sasl_plaintext",
         }
 
     def sasl_txn_producer(self, user, cfg={}):
@@ -1327,11 +1415,8 @@ class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
         cfg.update(self.sasl_cfg(user))
         return ck.Consumer(cfg)
 
-    def allow_principal_sync(self, principal, operations, resource,
-                             resource_name):
-
-        self.rpk.sasl_allow_principal(principal, operations, resource,
-                                      resource_name)
+    def allow_principal_sync(self, principal, operations, resource, resource_name):
+        self.rpk.sasl_allow_principal(principal, operations, resource, resource_name)
 
         def acl_ready():
             lst = AclList.parse_raw(self.rpk.acl_list())
@@ -1340,27 +1425,27 @@ class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
                 for op in operations
             ]
 
-        wait_until(lambda: acl_ready(),
-                   timeout_sec=5,
-                   backoff_sec=1,
-                   err_msg="ACL not updated in time")
+        wait_until(
+            lambda: acl_ready(),
+            timeout_sec=5,
+            backoff_sec=1,
+            err_msg="ACL not updated in time",
+        )
 
     @cluster(num_nodes=3)
     def init_transactions_authz_test(self):
         producer_cfg = {
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '0',
+            "bootstrap.servers": self.redpanda.brokers(),
+            "transactional.id": "0",
         }
 
         user = self.USER_1
 
         self.redpanda.logger.debug("init_transactions should fail without ACL")
-        with expect_kafka_error(
-                ck.KafkaError.TRANSACTIONAL_ID_AUTHORIZATION_FAILED):
+        with expect_kafka_error(ck.KafkaError.TRANSACTIONAL_ID_AUTHORIZATION_FAILED):
             producer = self.sasl_txn_producer(user, cfg=producer_cfg)
 
-        self.allow_principal_sync(user.username, ['write'], 'transactional-id',
-                                  '0')
+        self.allow_principal_sync(user.username, ["write"], "transactional-id", "0")
 
         producer = self.sasl_txn_producer(user, cfg=producer_cfg)
 
@@ -1369,32 +1454,35 @@ class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
         consume_user = self.USER_1
         produce_user = self.USER_2
 
-        self.allow_principal_sync(produce_user.username, ['all'], 'topic',
-                                  self.input_t.name)
-        self.generate_data(self.input_t,
-                           self.max_records,
-                           extra_cfg=self.sasl_cfg(produce_user))
+        self.allow_principal_sync(
+            produce_user.username, ["all"], "topic", self.input_t.name
+        )
+        self.generate_data(
+            self.input_t, self.max_records, extra_cfg=self.sasl_cfg(produce_user)
+        )
 
         producer_cfg = {
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '0',
+            "bootstrap.servers": self.redpanda.brokers(),
+            "transactional.id": "0",
         }
         consumer_cfg = {
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': "test",
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
+            "bootstrap.servers": self.redpanda.brokers(),
+            "group.id": "test",
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,
         }
 
-        self.allow_principal_sync(consume_user.username, ['read'], 'topic',
-                                  self.input_t.name)
-        self.allow_principal_sync(consume_user.username, ['read'], 'group',
-                                  'test')
-        self.allow_principal_sync(produce_user.username, ['write'],
-                                  'transactional-id', '0')
+        self.allow_principal_sync(
+            consume_user.username, ["read"], "topic", self.input_t.name
+        )
+        self.allow_principal_sync(consume_user.username, ["read"], "group", "test")
+        self.allow_principal_sync(
+            produce_user.username, ["write"], "transactional-id", "0"
+        )
         # TODO(oren): what's this one for?
-        self.allow_principal_sync(produce_user.username, ['read'], 'topic',
-                                  self.output_t.name)
+        self.allow_principal_sync(
+            produce_user.username, ["read"], "topic", self.output_t.name
+        )
 
         consumer = self.sasl_consumer(consume_user, cfg=consumer_cfg)
         consumer.subscribe([self.input_t])
@@ -1408,33 +1496,34 @@ class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
 
         def process_records(producer, records, on_delivery, history=[]):
             for record in records:
-                assert record.error(
-                ) is None, f"Consume error: {record.error()}"
+                assert record.error() is None, f"Consume error: {record.error()}"
                 history.append(record)
-                producer.produce(self.output_t.name,
-                                 record.value(),
-                                 record.key(),
-                                 on_delivery=on_delivery)
+                producer.produce(
+                    self.output_t.name,
+                    record.value(),
+                    record.key(),
+                    on_delivery=on_delivery,
+                )
 
         with try_transaction(
-                producer,
-                consumer,
-                send_offset_err=ck.KafkaError.GROUP_AUTHORIZATION_FAILED,
-                commit_err=ck.KafkaError.GROUP_AUTHORIZATION_FAILED):
+            producer,
+            consumer,
+            send_offset_err=ck.KafkaError.GROUP_AUTHORIZATION_FAILED,
+            commit_err=ck.KafkaError.GROUP_AUTHORIZATION_FAILED,
+        ):
             process_records(producer, records, on_delivery_purged)
 
-        self.allow_principal_sync(produce_user.username, ['read'], 'group',
-                                  'test')
+        self.allow_principal_sync(produce_user.username, ["read"], "group", "test")
 
         producer = self.sasl_txn_producer(produce_user, cfg=producer_cfg)
         with try_transaction(
-                producer,
-                consumer,
-                commit_err=ck.KafkaError.TOPIC_AUTHORIZATION_FAILED):
+            producer, consumer, commit_err=ck.KafkaError.TOPIC_AUTHORIZATION_FAILED
+        ):
             process_records(producer, records, on_delivery_purged)
 
-        self.allow_principal_sync(produce_user.username, ['write'], 'topic',
-                                  self.output_t.name)
+        self.allow_principal_sync(
+            produce_user.username, ["write"], "topic", self.output_t.name
+        )
 
         # Now we have all the requisite permissions set up, and we should be able to
         # make progress
@@ -1447,8 +1536,9 @@ class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
         # Process the records we have sitting in memory
 
         with try_transaction(producer, consumer):
-            process_records(producer, records, self.on_delivery,
-                            consumed_from_input_topic)
+            process_records(
+                producer, records, self.on_delivery, consumed_from_input_topic
+            )
             num_consumed_records += len(records)
 
         # then consume the rest, transactionwise
@@ -1461,25 +1551,26 @@ class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
             assert records is not None
 
             with try_transaction(producer, consumer):
-                process_records(producer, records, self.on_delivery,
-                                consumed_from_input_topic)
+                process_records(
+                    producer, records, self.on_delivery, consumed_from_input_topic
+                )
 
             num_consumed_records += len(records)
 
         consumer.close()
         assert len(consumed_from_input_topic) == self.max_records
 
-        self.allow_principal_sync(consume_user.username, ['read'], 'topic',
-                                  self.output_t.name)
-        self.allow_principal_sync(consume_user.username, ['read'], 'group',
-                                  'testtest')
+        self.allow_principal_sync(
+            consume_user.username, ["read"], "topic", self.output_t.name
+        )
+        self.allow_principal_sync(consume_user.username, ["read"], "group", "testtest")
 
         consumer = self.sasl_consumer(
             consume_user,
             cfg={
-                'group.id': 'testtest',
-                'bootstrap.servers': self.redpanda.brokers(),
-                'auto.offset.reset': 'earliest',
+                "group.id": "testtest",
+                "bootstrap.servers": self.redpanda.brokers(),
+                "auto.offset.reset": "earliest",
             },
         )
         consumer.subscribe([self.output_t])
@@ -1489,21 +1580,25 @@ class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
         while index_from_input < self.max_records:
             records = self.consume(consumer)
             for record in records:
-                assert record.error(
-                ) is None, f"Consume error: {record.error()}"
-                assert record.key(
-                ) == consumed_from_input_topic[index_from_input].key(
-                ), f'Records key does not match from input {consumed_from_input_topic[index_from_input].key()}, from output {record.key()}'
-                assert record.value(
-                ) == consumed_from_input_topic[index_from_input].value(
-                ), f'Records value does not match from input {consumed_from_input_topic[index_from_input].value()}, from output {record.value()}'
+                assert record.error() is None, f"Consume error: {record.error()}"
+                assert (
+                    record.key() == consumed_from_input_topic[index_from_input].key()
+                ), (
+                    f"Records key does not match from input {consumed_from_input_topic[index_from_input].key()}, from output {record.key()}"
+                )
+                assert (
+                    record.value()
+                    == consumed_from_input_topic[index_from_input].value()
+                ), (
+                    f"Records value does not match from input {consumed_from_input_topic[index_from_input].value()}, from output {record.value()}"
+                )
                 index_from_input += 1
 
         assert consumer.poll(timeout=3) is None
 
 
 class GATransaction_v22_1_UpgradeTest(RedpandaTest):
-    topics = (TopicSpec(partition_count=1, replication_factor=3), )
+    topics = (TopicSpec(partition_count=1, replication_factor=3),)
 
     def __init__(self, test_context):
         extra_rp_conf = {
@@ -1514,10 +1609,9 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
             "enable_leader_balancer": False,
         }
 
-        super(GATransaction_v22_1_UpgradeTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=3,
-                             extra_rp_conf=extra_rp_conf)
+        super(GATransaction_v22_1_UpgradeTest, self).__init__(
+            test_context=test_context, num_brokers=3, extra_rp_conf=extra_rp_conf
+        )
 
         self.installer = self.redpanda._installer
 
@@ -1527,15 +1621,17 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
     def check_consume(self, max_records):
         topic_name = self.topics[0].name
 
-        consumer = ck.Consumer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': f"consumer-{uuid.uuid4()}",
-            'auto.offset.reset': 'earliest',
-        })
+        consumer = ck.Consumer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "group.id": f"consumer-{uuid.uuid4()}",
+                "auto.offset.reset": "earliest",
+            }
+        )
 
         consumer.subscribe([topic_name])
         num_consumed = 0
-        prev_rec = bytes("0", 'UTF-8')
+        prev_rec = bytes("0", "UTF-8")
 
         while num_consumed != max_records:
             max_consume_records = 10
@@ -1544,7 +1640,7 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
 
             for record in records:
                 assert prev_rec == record.key(), f"{prev_rec}, {record.key()}"
-                prev_rec = bytes(str(int(prev_rec) + 1), 'UTF-8')
+                prev_rec = bytes(str(int(prev_rec) + 1), "UTF-8")
 
             num_consumed += len(records)
 
@@ -1552,7 +1648,8 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
 
     def setUp(self):
         self.old_version, self.old_version_str = self.installer.install(
-            self.redpanda.nodes, (22, 1))
+            self.redpanda.nodes, (22, 1)
+        )
         super(GATransaction_v22_1_UpgradeTest, self).setUp()
 
     def do_upgrade_with_tx(self, selector):
@@ -1560,10 +1657,12 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
         unique_versions = wait_for_num_versions(self.redpanda, 1)
         assert self.old_version_str in unique_versions, unique_versions
 
-        producer = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '0',
-        })
+        producer = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "0",
+            }
+        )
 
         producer.init_transactions()
         producer.begin_transaction()
@@ -1582,10 +1681,12 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
         assert self.old_version_str in unique_versions, unique_versions
 
         # Init dispatch by using old node. Transaction should work
-        producer = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '0',
-        })
+        producer = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "0",
+            }
+        )
 
         producer.init_transactions()
         producer.begin_transaction()
@@ -1606,9 +1707,9 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
     def upgrade_coordinator_test(self):
         def get_tx_coordinator():
             admin = Admin(self.redpanda)
-            leader_id = admin.get_partition_leader(namespace="kafka_internal",
-                                                   topic="tx",
-                                                   partition=0)
+            leader_id = admin.get_partition_leader(
+                namespace="kafka_internal", topic="tx", partition=0
+            )
             return self.redpanda.get_node(leader_id)
 
         self.do_upgrade_with_tx(get_tx_coordinator)
@@ -1619,28 +1720,30 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
 
         def get_topic_leader():
             admin = Admin(self.redpanda)
-            leader_id = admin.get_partition_leader(namespace="kafka",
-                                                   topic=topic_name,
-                                                   partition=0)
+            leader_id = admin.get_partition_leader(
+                namespace="kafka", topic=topic_name, partition=0
+            )
             return self.redpanda.get_node(leader_id)
 
         self.do_upgrade_with_tx(get_topic_leader)
 
 
 def remote_path_exists(node, path):
-    wait_until(lambda: node.account.exists(path),
-               timeout_sec=20,
-               backoff_sec=2,
-               err_msg=f"Can't find \"{path}\" on {node.account.hostname}")
+    wait_until(
+        lambda: node.account.exists(path),
+        timeout_sec=20,
+        backoff_sec=2,
+        err_msg=f'Can\'t find "{path}" on {node.account.hostname}',
+    )
 
 
 class TxUpgradeTest(RedpandaTest):
     """
     Basic test verifying if mapping between transaction coordinator and transaction_id is preserved across the upgrades
     """
+
     def __init__(self, test_context):
-        super(TxUpgradeTest, self).__init__(test_context=test_context,
-                                            num_brokers=3)
+        super(TxUpgradeTest, self).__init__(test_context=test_context, num_brokers=3)
         self.installer = self.redpanda._installer
         self.partition_count = 10
         self.msg_sent = 0
@@ -1648,9 +1751,12 @@ class TxUpgradeTest(RedpandaTest):
 
     def setUp(self):
         self.old_version = self.installer.highest_from_prior_feature_version(
-            RedpandaInstaller.HEAD)
+            RedpandaInstaller.HEAD
+        )
 
-        self.old_version_str = f"v{self.old_version[0]}.{self.old_version[1]}.{self.old_version[2]}"
+        self.old_version_str = (
+            f"v{self.old_version[0]}.{self.old_version[1]}.{self.old_version[2]}"
+        )
         self.installer.install(self.redpanda.nodes, self.old_version)
         super(TxUpgradeTest, self).setUp()
 
@@ -1663,18 +1769,22 @@ class TxUpgradeTest(RedpandaTest):
                 assert False, "failed to deliver message: %s" % err
 
         for i in range(self.producers_count):
-            producer = ck.Producer({
-                'bootstrap.servers': self.redpanda.brokers(),
-                'transactional.id': self._tx_id(i),
-            })
+            producer = ck.Producer(
+                {
+                    "bootstrap.servers": self.redpanda.brokers(),
+                    "transactional.id": self._tx_id(i),
+                }
+            )
             producer.init_transactions()
             producer.begin_transaction()
             for m in range(random.randint(1, 50)):
-                producer.produce(topic,
-                                 f"p-{i}-key-{m}",
-                                 f"p-{i}-value-{m}",
-                                 random.randint(0, self.partition_count - 1),
-                                 callback=delivery_callback)
+                producer.produce(
+                    topic,
+                    f"p-{i}-key-{m}",
+                    f"p-{i}-value-{m}",
+                    random.randint(0, self.partition_count - 1),
+                    callback=delivery_callback,
+                )
             producer.commit_transaction()
             producer.flush()
 
@@ -1683,8 +1793,7 @@ class TxUpgradeTest(RedpandaTest):
         admin = Admin(self.redpanda)
         for idx in range(self.producers_count):
             c = admin.find_tx_coordinator(self._tx_id(idx))
-            mapping[self._tx_id(
-                idx)] = f"{c['ntp']['topic']}/{c['ntp']['partition']}"
+            mapping[self._tx_id(idx)] = f"{c['ntp']['topic']}/{c['ntp']['partition']}"
 
         return mapping
 
@@ -1707,8 +1816,9 @@ class TxUpgradeTest(RedpandaTest):
         self.redpanda.restart_nodes([first_node])
         unique_versions = wait_for_num_versions(self.redpanda, 2)
         assert self.old_version_str in unique_versions, unique_versions
-        assert self._get_tx_id_mapping(
-        ) == initial_mapping, "Mapping changed after upgrading one of the nodes"
+        assert self._get_tx_id_mapping() == initial_mapping, (
+            "Mapping changed after upgrading one of the nodes"
+        )
 
         # verify if txs are handled correctly with mixed versions
         self._populate_tx_coordinator(topic.name)
@@ -1718,17 +1828,25 @@ class TxUpgradeTest(RedpandaTest):
         self.redpanda.restart_nodes(self.redpanda.nodes)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
         assert self.old_version_str not in unique_versions, unique_versions
-        assert self._get_tx_id_mapping(
-        ) == initial_mapping, "Mapping changed after full upgrade"
+        assert self._get_tx_id_mapping() == initial_mapping, (
+            "Mapping changed after full upgrade"
+        )
 
 
 class TxUpgradeRevertTest(RedpandaTest):
     """Tests that the local snapshot is compatible after the upgrade is reverted"""
-    class TxStateGenerator():
+
+    class TxStateGenerator:
         """A traffic generating utility for transactions. Traffic can be paused and resumed as needed to see a consistent snapshot
         of the transactions and tally the state as seen by clients vs the brokers."""
-        def __init__(self, num_producers: int, topic_name: str,
-                     num_partitions: int, redpanda: RedpandaService) -> None:
+
+        def __init__(
+            self,
+            num_producers: int,
+            topic_name: str,
+            num_partitions: int,
+            redpanda: RedpandaService,
+        ) -> None:
             self.num_producers = num_producers
             self.topic_name = topic_name
             self.tx_id_counter = 0
@@ -1754,20 +1872,22 @@ class TxUpgradeRevertTest(RedpandaTest):
             self.resume()
             self.stop()
             self.thread.join(timeout=30)
-            assert not self.failed, "A subset of transactional producers failed, check test log output"
+            assert not self.failed, (
+                "A subset of transactional producers failed, check test log output"
+            )
             self.redpanda.logger.debug(
-                json.dumps(self.tx_states, sort_keys=True, indent=4))
+                json.dumps(self.tx_states, sort_keys=True, indent=4)
+            )
 
         class TxState(str, Enum):
-            INIT = 'init',
-            BEGIN = 'begin',
-            PRODUCED = 'produced',
-            COMMITTED = 'committed',
-            ABORTED = 'aborted',
+            INIT = ("init",)
+            BEGIN = ("begin",)
+            PRODUCED = ("produced",)
+            COMMITTED = ("committed",)
+            ABORTED = ("aborted",)
 
         def random_string(self):
-            return ''.join(
-                random.choice(string.ascii_letters) for _ in range(5))
+            return "".join(random.choice(string.ascii_letters) for _ in range(5))
 
         def pause(self):
             self.workload_paused = True
@@ -1790,15 +1910,16 @@ class TxUpgradeRevertTest(RedpandaTest):
                 return id
 
         def do_transaction(self, producer: ck.Producer, partitions: list[int]):
-
             producer.begin_transaction()
             yield self.TxState.BEGIN
 
             for partition in partitions:
-                producer.produce(topic=self.topic_name,
-                                 value=self.random_string(),
-                                 key=self.random_string(),
-                                 partition=partition)
+                producer.produce(
+                    topic=self.topic_name,
+                    value=self.random_string(),
+                    key=self.random_string(),
+                    partition=partition,
+                )
             producer.flush()
             yield self.TxState.PRODUCED
 
@@ -1809,38 +1930,41 @@ class TxUpgradeRevertTest(RedpandaTest):
                 producer.abort_transaction()
                 yield self.TxState.ABORTED
 
-        def update_tx_state(self, producer_id, state, partitions: list[int],
-                            sequence: int):
+        def update_tx_state(
+            self, producer_id, state, partitions: list[int], sequence: int
+        ):
             with self.lock:
                 for p in partitions:
-                    self.tx_states[p][producer_id] = dict(state=state,
-                                                          sequence=sequence)
+                    self.tx_states[p][producer_id] = dict(
+                        state=state, sequence=sequence
+                    )
 
         def dump_debug_transaction_state(self):
             self.redpanda.logger.debug("---- test producer state state ----")
             self.redpanda.logger.debug(
-                json.dumps(self.tx_states, sort_keys=True, indent=4))
+                json.dumps(self.tx_states, sort_keys=True, indent=4)
+            )
             self.redpanda.logger.debug("----- broker partition state ----")
             for partition in range(0, self.num_partitions):
                 partition_txes = self.admin.get_transactions(
-                    topic=self.topic_name,
-                    partition=partition,
-                    namespace="kafka")
+                    topic=self.topic_name, partition=partition, namespace="kafka"
+                )
                 self.redpanda.logger.debug(partition_txes)
 
         def random_transaction(self):
             id = self.tx_id()
-            producer = ck.Producer({
-                'bootstrap.servers': self.redpanda.brokers(),
-                'transactional.id': id,
-                'transaction.timeout.ms': 1000000
-            })
+            producer = ck.Producer(
+                {
+                    "bootstrap.servers": self.redpanda.brokers(),
+                    "transactional.id": id,
+                    "transaction.timeout.ms": 1000000,
+                }
+            )
 
             producer.init_transactions()
-            self.update_tx_state(producer_id=id,
-                                 state=self.TxState.INIT,
-                                 partitions=[],
-                                 sequence=-1)
+            self.update_tx_state(
+                producer_id=id, state=self.TxState.INIT, partitions=[], sequence=-1
+            )
 
             sequence = 0
             try:
@@ -1850,21 +1974,21 @@ class TxUpgradeRevertTest(RedpandaTest):
                         continue
                     with self.semaphore:
                         partitions = random.sample(
-                            range(0, self.num_partitions),
-                            random.randint(0, 5))
+                            range(0, self.num_partitions), random.randint(0, 5)
+                        )
                         for state in self.do_transaction(
-                                producer=producer, partitions=partitions):
-                            self.update_tx_state(id,
-                                                 state,
-                                                 partitions,
-                                                 sequence=sequence)
+                            producer=producer, partitions=partitions
+                        ):
+                            self.update_tx_state(
+                                id, state, partitions, sequence=sequence
+                            )
                         sequence += 1
             except Exception as e:
                 self.failed = True
                 self.dump_debug_transaction_state()
                 self.redpanda.logger.error(
-                    f"Exception running transactions with producer {id}",
-                    exc_info=True)
+                    f"Exception running transactions with producer {id}", exc_info=True
+                )
 
         def start_workload(self):
             producers = []
@@ -1883,11 +2007,12 @@ class TxUpgradeRevertTest(RedpandaTest):
                         f"Validating partition tx state for {self.topic_name}/{p}"
                     )
                     rp_tx_state = self.admin.get_transactions(
-                        topic=self.topic_name, partition=p,
-                        namespace="kafka").get("active_transactions", [])
+                        topic=self.topic_name, partition=p, namespace="kafka"
+                    ).get("active_transactions", [])
                     local_tx_state = self.tx_states[p]
                     local_active_pids = [
-                        int(pid) for pid, tx_state in local_tx_state.items()
+                        int(pid)
+                        for pid, tx_state in local_tx_state.items()
                         if tx_state["state"] in ["begin", "produced"]
                     ]
                     local_active_pids.sort()
@@ -1905,15 +2030,16 @@ class TxUpgradeRevertTest(RedpandaTest):
                     do_check,
                     timeout_sec=20,
                     backoff_sec=2,
-                    err_msg=
-                    "Invalid active transaction state, check log for details")
+                    err_msg="Invalid active transaction state, check log for details",
+                )
             except TimeoutError as e:
                 self.dump_debug_transaction_state()
                 raise e
 
     def __init__(self, test_context):
-        super(TxUpgradeRevertTest, self).__init__(test_context=test_context,
-                                                  num_brokers=3)
+        super(TxUpgradeRevertTest, self).__init__(
+            test_context=test_context, num_brokers=3
+        )
         self.installer = self.redpanda._installer
         self.partition_count = 10
         self.msg_sent = 0
@@ -1921,9 +2047,12 @@ class TxUpgradeRevertTest(RedpandaTest):
 
     def setUp(self):
         self.old_version = self.installer.highest_from_prior_feature_version(
-            RedpandaInstaller.HEAD)
+            RedpandaInstaller.HEAD
+        )
 
-        self.old_version_str = f"v{self.old_version[0]}.{self.old_version[1]}.{self.old_version[2]}"
+        self.old_version_str = (
+            f"v{self.old_version[0]}.{self.old_version[1]}.{self.old_version[2]}"
+        )
         # Install and upgrade from an older version.
         self.installer.install(self.redpanda.nodes, self.old_version)
         self.admin = Admin(self.redpanda)
@@ -1941,9 +2070,7 @@ class TxUpgradeRevertTest(RedpandaTest):
         self.redpanda.restart_nodes([node])
         # Disable maintenance mode
         self.rpk.cluster_maintenance_disable(node=node_idx)
-        self.admin.await_stable_leader(topic=topic,
-                                       replication=3,
-                                       timeout_s=30)
+        self.admin.await_stable_leader(topic=topic, replication=3, timeout_s=30)
 
     @skip_debug_mode
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -1953,10 +2080,12 @@ class TxUpgradeRevertTest(RedpandaTest):
         partition_count = 50
         topic = TopicSpec(partition_count=50)
         self.client().create_topic(topic)
-        with self.TxStateGenerator(num_producers=20,
-                                   topic_name=topic.name,
-                                   num_partitions=50,
-                                   redpanda=self.redpanda) as traffic:
+        with self.TxStateGenerator(
+            num_producers=20,
+            topic_name=topic.name,
+            num_partitions=50,
+            redpanda=self.redpanda,
+        ) as traffic:
             # Populate some transactions state.
             sleep(30)
             # Pause the workload and upgrade one of the nodes
@@ -1965,8 +2094,7 @@ class TxUpgradeRevertTest(RedpandaTest):
             first_node = self.redpanda.nodes[0]
             wait_for_num_versions(self.redpanda, 1)
             # do the upgrade
-            self.install_one_node(first_node, RedpandaInstaller.HEAD,
-                                  topic.name)
+            self.install_one_node(first_node, RedpandaInstaller.HEAD, topic.name)
             wait_for_num_versions(self.redpanda, 2)
             traffic.validate_active_tx_states()
             # Ensure things can progress from where they were paused.

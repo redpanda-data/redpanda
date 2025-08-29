@@ -51,54 +51,48 @@ iceberg.rest-catalog.uri={{ catalog_rest_uri }}
 
         extra_conf = ""
         if isinstance(self.credentials, cloud_storage.S3Credentials):
-            extra_conf = self.dict_to_conf({
-                "fs.native-s3.enabled":
-                True,
-                "s3.region":
-                self.credentials.region,
-                "s3.path-style-access":
-                True,
-                "s3.endpoint":
-                self.credentials.endpoint,
-                "s3.aws-access-key":
-                self.credentials.access_key,
-                "s3.aws-secret-key":
-                self.credentials.secret_key
-            })
-        elif isinstance(self.credentials,
-                        cloud_storage.AWSInstanceMetadataCredentials):
+            extra_conf = self.dict_to_conf(
+                {
+                    "fs.native-s3.enabled": True,
+                    "s3.region": self.credentials.region,
+                    "s3.path-style-access": True,
+                    "s3.endpoint": self.credentials.endpoint,
+                    "s3.aws-access-key": self.credentials.access_key,
+                    "s3.aws-secret-key": self.credentials.secret_key,
+                }
+            )
+        elif isinstance(self.credentials, cloud_storage.AWSInstanceMetadataCredentials):
             extra_conf = self.dict_to_conf({"fs.native-s3.enabled": True})
-        elif isinstance(self.credentials,
-                        cloud_storage.GCPInstanceMetadataCredentials):
+        elif isinstance(self.credentials, cloud_storage.GCPInstanceMetadataCredentials):
             extra_conf = self.dict_to_conf({"fs.native-gcs.enabled": True})
-        elif isinstance(self.credentials,
-                        cloud_storage.ABSSharedKeyCredentials):
-            extra_conf = self.dict_to_conf({
-                "fs.native-azure.enabled":
-                True,
-                "azure.auth-type":
-                "ACCESS_KEY",
-                "azure.access-key":
-                self.credentials.account_key,
-            })
+        elif isinstance(self.credentials, cloud_storage.ABSSharedKeyCredentials):
+            extra_conf = self.dict_to_conf(
+                {
+                    "fs.native-azure.enabled": True,
+                    "azure.auth-type": "ACCESS_KEY",
+                    "azure.access-key": self.credentials.account_key,
+                }
+            )
         else:
             raise NotImplementedError(
-                f"Unsupported cloud storage credentials: {self.credentials}")
+                f"Unsupported cloud storage credentials: {self.credentials}"
+            )
 
-        connector_config = dict(catalog_rest_uri=self.iceberg_catalog_rest_uri,
-                                extra_conf=extra_conf)
-        config_str = TrinoService.REDPANDA_CATALOG_CONF.render(
-            connector_config)
+        connector_config = dict(
+            catalog_rest_uri=self.iceberg_catalog_rest_uri, extra_conf=extra_conf
+        )
+        config_str = TrinoService.REDPANDA_CATALOG_CONF.render(connector_config)
         self.logger.debug(f"Using connector config: {config_str}")
-        node.account.create_file(TrinoService.REDPANDA_CATALOG_PATH,
-                                 config_str)
+        node.account.create_file(TrinoService.REDPANDA_CATALOG_PATH, config_str)
         # Create logger configuration
         node.account.ssh(f"rm -f {TrinoService.TRINO_LOGGING_CONF_FILE}")
-        node.account.create_file(TrinoService.TRINO_LOGGING_CONF_FILE,
-                                 TrinoService.TRINO_LOGGING_CONF)
+        node.account.create_file(
+            TrinoService.TRINO_LOGGING_CONF_FILE, TrinoService.TRINO_LOGGING_CONF
+        )
         node.account.ssh(
             f"nohup /opt/trino/bin/trino-launcher run 1> {TrinoService.LOG_FILE} 2>&1 &",
-            allow_fail=False)
+            allow_fail=False,
+        )
         self.trino_host = node.account.hostname
         self.wait(timeout_sec=timeout_sec)
 
@@ -111,16 +105,17 @@ iceberg.rest-catalog.uri={{ catalog_rest_uri }}
                 self.logger.debug(f"Exception querying catalog", exc_info=True)
             return False
 
-        wait_until(_ready,
-                   timeout_sec=timeout_sec,
-                   backoff_sec=1,
-                   err_msg="Error waiting for Trino server to start",
-                   retry_on_exc=True)
+        wait_until(
+            _ready,
+            timeout_sec=timeout_sec,
+            backoff_sec=1,
+            err_msg="Error waiting for Trino server to start",
+            retry_on_exc=True,
+        )
         return True
 
     def stop_node(self, node, allow_fail=False, **_):
-        node.account.ssh("/opt/trino/bin/trino-launcher stop",
-                         allow_fail=allow_fail)
+        node.account.ssh("/opt/trino/bin/trino-launcher stop", allow_fail=allow_fail)
 
     def clean_node(self, node, **_):
         self.stop_node(node, allow_fail=True)
@@ -132,9 +127,9 @@ iceberg.rest-catalog.uri={{ catalog_rest_uri }}
 
     def make_client(self):
         assert self.trino_host
-        return trino.connect(host=self.trino_host,
-                             port=self.trino_port,
-                             catalog="redpanda")
+        return trino.connect(
+            host=self.trino_host, port=self.trino_port, catalog="redpanda"
+        )
 
     def escape_identifier(self, table: str) -> str:
         return f'"{table}"'
@@ -144,10 +139,10 @@ iceberg.rest-catalog.uri={{ catalog_rest_uri }}
         """
         Convert a dictionary to trino conf.
         """
+
         def transform_value(v: str | bool):
             if isinstance(v, bool):
                 return str(v).lower()
             return v
 
-        return "\n".join(
-            [f"{k}={transform_value(v)}" for k, v in d.items() if v])
+        return "\n".join([f"{k}={transform_value(v)}" for k, v in d.items() if v])

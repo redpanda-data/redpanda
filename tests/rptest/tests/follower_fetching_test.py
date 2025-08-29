@@ -45,11 +45,12 @@ class FollowerFetchingTest(PreallocNodesTest):
             num_brokers=3,
             node_prealloc_count=1,
             extra_rp_conf={
-                'enable_rack_awareness': True,
+                "enable_rack_awareness": True,
                 # disable leader balancer to prevent leaders from moving and causing additional client retries
-                'enable_leader_balancer': False
+                "enable_leader_balancer": False,
             },
-            si_settings=si_settings)
+            si_settings=si_settings,
+        )
 
     def setUp(self):
         # Delay startup, so that the test case can configure redpanda
@@ -59,46 +60,51 @@ class FollowerFetchingTest(PreallocNodesTest):
     def produce(self, topic, bytes=10 * 1024 * 1024):
         msg_size = 512
         msg_cnt = int(bytes / msg_size)
-        producer = KgoVerifierProducer(self.test_context, self.redpanda, topic,
-                                       msg_size, msg_cnt,
-                                       self.preallocated_nodes)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            topic,
+            msg_size,
+            msg_cnt,
+            self.preallocated_nodes,
+        )
         producer.start()
         producer.wait()
         producer.free()
 
     def get_node_metric(self, node, topic, metric):
-        return self.redpanda.metric_sum(namespace="kafka",
-                                        nodes=[node],
-                                        topic=topic,
-                                        metric_name=metric)
+        return self.redpanda.metric_sum(
+            namespace="kafka", nodes=[node], topic=topic, metric_name=metric
+        )
 
     def get_fetch_bytes(self, node, topic):
         return self.get_node_metric(
-            node, topic, "vectorized_cluster_partition_bytes_fetched_total")
+            node, topic, "vectorized_cluster_partition_bytes_fetched_total"
+        )
 
     def get_follower_fetched_bytes(self, node, topic):
         return self.get_node_metric(
-            node, topic,
-            "vectorized_cluster_partition_bytes_fetched_from_follower_total")
+            node,
+            topic,
+            "vectorized_cluster_partition_bytes_fetched_from_follower_total",
+        )
 
     def create_consumer(self, topic, rack=None):
-
         properties = {}
         if rack:
-            properties['client.rack'] = rack
+            properties["client.rack"] = rack
         return KafkaCliConsumer(
             self.test_context,
             self.redpanda,
             topic=topic,
-            group=
-            f'test-gr-{"".join(random.choice(string.ascii_lowercase) for _ in range(8))}',
+            group=f"test-gr-{''.join(random.choice(string.ascii_lowercase) for _ in range(8))}",
             from_beginning=True,
             consumer_properties=properties,
             formatter_properties={
-                'print.value': 'false',
-                'print.key': 'false',
-                'print.partition': 'true',
-                'print.offset': 'true',
+                "print.value": "false",
+                "print.key": "false",
+                "print.partition": "true",
+                "print.offset": "true",
             },
         )
 
@@ -113,12 +119,13 @@ class FollowerFetchingTest(PreallocNodesTest):
 
     def _bytes_fetched_per_node(self, topic):
         return self._metrics_per_node(
-            topic, "vectorized_cluster_partition_bytes_fetched_total")
+            topic, "vectorized_cluster_partition_bytes_fetched_total"
+        )
 
     def _follower_bytes_fetched_per_node(self, topic):
         return self._metrics_per_node(
-            topic,
-            "vectorized_cluster_partition_bytes_fetched_from_follower_total")
+            topic, "vectorized_cluster_partition_bytes_fetched_from_follower_total"
+        )
 
     @cluster(num_nodes=5)
     @matrix(read_from_object_store=[True, False])
@@ -131,9 +138,9 @@ class FollowerFetchingTest(PreallocNodesTest):
                 # We're introducing two racks, small and large.
                 # The small rack has only one node and the
                 # large one has four nodes.
-                'rack': rack_layout[ix],
+                "rack": rack_layout[ix],
                 # This parameter enables rack awareness
-                'enable_rack_awareness': True,
+                "enable_rack_awareness": True,
             }
             self.redpanda.set_extra_node_conf(node, extra_node_conf)
 
@@ -150,19 +157,18 @@ class FollowerFetchingTest(PreallocNodesTest):
                 TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
                 self.local_retention,
             )
-            wait_for_local_storage_truncate(self.redpanda,
-                                            topic.name,
-                                            target_bytes=self.local_retention)
+            wait_for_local_storage_truncate(
+                self.redpanda, topic.name, target_bytes=self.local_retention
+            )
         number_of_samples = 10
         for n in range(0, number_of_samples):
             node_idx = random.randint(0, 2)
             consumer_rack = rack_layout_str[node_idx]
             self.logger.info(
-                f"Using consumer with {consumer_rack} in {n+1}/{number_of_samples} sample"
+                f"Using consumer with {consumer_rack} in {n + 1}/{number_of_samples} sample"
             )
             fetched_per_node_before = self._bytes_fetched_per_node(topic.name)
-            f_fetched_before = self._follower_bytes_fetched_per_node(
-                topic.name)
+            f_fetched_before = self._follower_bytes_fetched_per_node(topic.name)
             consumer = self.create_consumer(topic.name, rack=consumer_rack)
             consumer.start()
             consumer.wait_for_messages(1000)
@@ -179,8 +185,7 @@ class FollowerFetchingTest(PreallocNodesTest):
             )
 
             for n, new_fetched_bytes in fetched_per_node_after.items():
-                current_bytes_fetched = new_fetched_bytes - fetched_per_node_before[
-                    n]
+                current_bytes_fetched = new_fetched_bytes - fetched_per_node_before[n]
                 if n == preferred_replica:
                     assert current_bytes_fetched > 0
                 else:
@@ -203,15 +208,13 @@ class FollowerFetchingTest(PreallocNodesTest):
         rack_layout = [str(i) for i in "ABC"]
         for ix, node in enumerate(self.redpanda.nodes):
             extra_node_conf = {
-                'rack': rack_layout[ix],
-                'enable_rack_awareness': True,
+                "rack": rack_layout[ix],
+                "enable_rack_awareness": True,
             }
             self.redpanda.set_extra_node_conf(node, extra_node_conf)
         self.redpanda.start()
 
-        topic = TopicSpec(name="mytopic",
-                          partition_count=1,
-                          replication_factor=3)
+        topic = TopicSpec(name="mytopic", partition_count=1, replication_factor=3)
         self.client().create_topic(topic)
 
         producer = KgoVerifierProducer(
@@ -221,7 +224,8 @@ class FollowerFetchingTest(PreallocNodesTest):
             msg_size=512,
             # some large number to get produce load till the end of test
             msg_count=2**30,
-            rate_limit_bps=2**20)
+            rate_limit_bps=2**20,
+        )
         producer.start()
 
         # consume from the same rack as node 0
@@ -232,9 +236,7 @@ class FollowerFetchingTest(PreallocNodesTest):
         prev_consumed = 0
         for _ in range(10):
             # do a random leadership transfer
-            admin.partition_transfer_leadership("kafka",
-                                                topic.name,
-                                                partition=0)
+            admin.partition_transfer_leadership("kafka", topic.name, partition=0)
 
             # ensure continuous consumer progress
             consumer.wait_for_messages(prev_consumed + 1000)
@@ -253,14 +255,15 @@ class FollowerFetchingTest(PreallocNodesTest):
             else:
                 return False
 
-        hwm = wait_until_result(get_hwm,
-                                timeout_sec=30,
-                                backoff_sec=1,
-                                err_msg="couldn't get high watermark")
+        hwm = wait_until_result(
+            get_hwm,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="couldn't get high watermark",
+        )
 
         # check that there were no consumer group resets caused by offset_out_of_range error
-        self.logger.info(
-            f"produced {hwm}, consumed {consumer.message_cnt()} msgs")
+        self.logger.info(f"produced {hwm}, consumed {consumer.message_cnt()} msgs")
         assert consumer.message_cnt() <= hwm
 
     @cluster(num_nodes=5)
@@ -273,9 +276,9 @@ class FollowerFetchingTest(PreallocNodesTest):
                 # We're introducing two racks, small and large.
                 # The small rack has only one node and the
                 # large one has four nodes.
-                'rack': rack_layout[ix],
+                "rack": rack_layout[ix],
                 # This parameter enables rack awareness
-                'enable_rack_awareness': True,
+                "enable_rack_awareness": True,
             }
             self.redpanda.set_extra_node_conf(node, extra_node_conf)
 
@@ -294,7 +297,7 @@ class FollowerFetchingTest(PreallocNodesTest):
             node_idx = random.randint(0, 2)
             consumer_rack = rack_layout_str[node_idx]
             self.logger.info(
-                f"Using consumer with {consumer_rack} in {n+1}/{number_of_samples} sample"
+                f"Using consumer with {consumer_rack} in {n + 1}/{number_of_samples} sample"
             )
             preferred_replica = self.redpanda.nodes[node_idx]
             self.logger.info(
@@ -302,7 +305,8 @@ class FollowerFetchingTest(PreallocNodesTest):
             )
             if enable_maintenance_mode:
                 rpk.cluster_maintenance_enable(
-                    self.redpanda.node_id(preferred_replica), wait=True)
+                    self.redpanda.node_id(preferred_replica), wait=True
+                )
 
             fetched_per_node_before = self._bytes_fetched_per_node(topic.name)
             consumer = self.create_consumer(topic.name, rack=consumer_rack)
@@ -316,8 +320,7 @@ class FollowerFetchingTest(PreallocNodesTest):
             fetched_per_node_after = self._bytes_fetched_per_node(topic.name)
 
             for n, new_fetched_bytes in fetched_per_node_after.items():
-                current_bytes_fetched = new_fetched_bytes - fetched_per_node_before[
-                    n]
+                current_bytes_fetched = new_fetched_bytes - fetched_per_node_before[n]
 
                 if enable_maintenance_mode:
                     if n == preferred_replica:
@@ -329,20 +332,22 @@ class FollowerFetchingTest(PreallocNodesTest):
                         assert current_bytes_fetched == 0
             if enable_maintenance_mode:
                 rpk.cluster_maintenance_disable(
-                    self.redpanda.node_id(preferred_replica))
+                    self.redpanda.node_id(preferred_replica)
+                )
 
             enable_maintenance_mode = not enable_maintenance_mode
 
 
 class IncrementalFollowerFetchingTest(PreallocNodesTest):
     def __init__(self, test_context):
-        super(IncrementalFollowerFetchingTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=3,
-                             node_prealloc_count=1,
-                             extra_rp_conf={
-                                 'enable_rack_awareness': True,
-                             })
+        super(IncrementalFollowerFetchingTest, self).__init__(
+            test_context=test_context,
+            num_brokers=3,
+            node_prealloc_count=1,
+            extra_rp_conf={
+                "enable_rack_awareness": True,
+            },
+        )
 
     @skip_debug_mode
     @cluster(num_nodes=5)
@@ -353,8 +358,8 @@ class IncrementalFollowerFetchingTest(PreallocNodesTest):
 
         for ix, node in enumerate(self.redpanda.nodes):
             extra_node_conf = {
-                'rack': rack_layout[ix],
-                'enable_rack_awareness': True,
+                "rack": rack_layout[ix],
+                "enable_rack_awareness": True,
             }
             self.redpanda.set_extra_node_conf(node, extra_node_conf)
 
@@ -364,27 +369,28 @@ class IncrementalFollowerFetchingTest(PreallocNodesTest):
         self.client().create_topic(topic)
         msg_size = 512
 
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       topic,
-                                       msg_size,
-                                       1000000,
-                                       self.preallocated_nodes,
-                                       rate_limit_bps=256 * 1024)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            topic,
+            msg_size,
+            1000000,
+            self.preallocated_nodes,
+            rate_limit_bps=256 * 1024,
+        )
 
         producer.start()
         consumer_group = "kafka-cli-group"
         rack = "A"
 
         # We are using kafka cli consumer to control metadata age and client rack id consumer properties
-        cli_consumer = KafkaCliConsumer(self.test_context,
-                                        self.redpanda,
-                                        topic.name,
-                                        group="kafka-cli-group",
-                                        consumer_properties={
-                                            "client.rack": rack,
-                                            "metadata.max.age.ms": 10000
-                                        })
+        cli_consumer = KafkaCliConsumer(
+            self.test_context,
+            self.redpanda,
+            topic.name,
+            group="kafka-cli-group",
+            consumer_properties={"client.rack": rack, "metadata.max.age.ms": 10000},
+        )
         cli_consumer.start()
         cli_consumer.wait_for_messages(100)
         if follower_offline:
@@ -409,8 +415,7 @@ class IncrementalFollowerFetchingTest(PreallocNodesTest):
             no_lag,
             60,
             backoff_sec=3,
-            err_msg=
-            "Consumer did not finish consuming topic. Lag exists on some of the partitions"
+            err_msg="Consumer did not finish consuming topic. Lag exists on some of the partitions",
         )
 
         cli_consumer.stop()

@@ -35,17 +35,21 @@ class ReadChecker:
         self.records = dict()
         self.next_offset = dict()
 
-    def seen(self, seen_by, offset, transformed_by, produced_by,
-             produced_partition, produced_oid):
+    def seen(
+        self,
+        seen_by,
+        offset,
+        transformed_by,
+        produced_by,
+        produced_partition,
+        produced_oid,
+    ):
         if seen_by not in self.read_front:
-            raise Exception(
-                f"read data fron an unknown workload node: {seen_by}")
+            raise Exception(f"read data fron an unknown workload node: {seen_by}")
         if transformed_by not in self.read_front:
-            raise Exception(
-                f"unknown workload node: transformed_by:{transformed_by}")
+            raise Exception(f"unknown workload node: transformed_by:{transformed_by}")
         if produced_by not in self.read_front:
-            raise Exception(
-                f"unknown workload node: produced_by:{produced_by}")
+            raise Exception(f"unknown workload node: produced_by:{produced_by}")
         if offset <= self.read_front[seen_by]:
             raise Exception(
                 f"workload node {seen_by} observed {offset} after {self.read_front[seen_by]}"
@@ -116,8 +120,14 @@ class LogPlayer:
     def consuming_apply(self, thread_id, parts):
         if self.curr_state[thread_id] == State.SEEN:
             try:
-                self.read_checker.seen(self.node, int(parts[3]), parts[4],
-                                       parts[5], int(parts[6]), int(parts[7]))
+                self.read_checker.seen(
+                    self.node,
+                    int(parts[3]),
+                    parts[4],
+                    parts[5],
+                    int(parts[6]),
+                    int(parts[7]),
+                )
             except:
                 self.has_violation = True
                 e, v = sys.exc_info()[:2]
@@ -128,7 +138,7 @@ class LogPlayer:
     def is_violation(self, line):
         if line == None:
             return False
-        parts = line.rstrip().split('\t')
+        parts = line.rstrip().split("\t")
         if len(parts) < 3:
             return False
         if parts[2] not in cmds:
@@ -138,10 +148,10 @@ class LogPlayer:
     def apply(self, line):
         if self.has_violation:
             return
-        parts = line.rstrip().split('\t')
+        parts = line.rstrip().split("\t")
 
         if parts[2] not in cmds:
-            raise Exception(f"unknown cmd \"{parts[2]}\"")
+            raise Exception(f'unknown cmd "{parts[2]}"')
 
         if self.ts_us == None:
             self.ts_us = int(parts[1])
@@ -177,12 +187,14 @@ class LogPlayer:
         if self.curr_state[thread_id] == None:
             if new_state != State.STARTED:
                 raise Exception(
-                    f"first logged command of a new thread should be started, got: \"{parts[2]}\""
+                    f'first logged command of a new thread should be started, got: "{parts[2]}"'
                 )
             self.curr_state[thread_id] = new_state
         else:
-            if new_state not in threads[self.thread_type[thread_id]][
-                    self.curr_state[thread_id]]:
+            if (
+                new_state
+                not in threads[self.thread_type[thread_id]][self.curr_state[thread_id]]
+            ):
                 raise Exception(
                     f"unknown transition {self.curr_state[thread_id]} -> {new_state}"
                 )
@@ -205,8 +217,9 @@ def validate(workload_dir, workload_nodes, fail_on_interruption=False):
         checker = ReadChecker(workload_nodes)
         for node in workload_nodes:
             player = LogPlayer(node, checker)
-            with open(os.path.join(workload_dir, node, "workload.log"),
-                      "r") as workload_file:
+            with open(
+                os.path.join(workload_dir, node, "workload.log"), "r"
+            ) as workload_file:
                 last_line = None
                 for line in workload_file:
                     if last_line != None:
@@ -222,11 +235,12 @@ def validate(workload_dir, workload_nodes, fail_on_interruption=False):
 
         if len(nodes_with_violations) > 0:
             raise ConsistencyCheckError(
-                f"consistency violation on "
-                f"client nodes: {nodes_with_violations}")
+                f"consistency violation on client nodes: {nodes_with_violations}"
+            )
         elif fail_on_interruption and len(nodes_with_interruptions) > 0:
             raise ConsistencyCheckError(
-                f"client interrupted on nodes: {nodes_with_interruptions}")
+                f"client interrupted on nodes: {nodes_with_interruptions}"
+            )
         else:
             logger.info("consistency check: PASSED")
     except:

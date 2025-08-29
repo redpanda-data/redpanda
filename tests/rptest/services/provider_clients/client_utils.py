@@ -19,12 +19,10 @@ def _build_instance_meta_tree(uri, path="", headers=None):
         # iterate through values
         _items = _r.text.split()
         for item in _items:
-            if item[-1] == '/':
+            if item[-1] == "/":
                 # this is a subpath, call it
                 _path = f"{path}{item}"
-                _l += _build_instance_meta_tree(uri,
-                                                path=_path,
-                                                headers=headers)
+                _l += _build_instance_meta_tree(uri, path=_path, headers=headers)
             else:
                 _l.append(f"{path}{item}")
         return _l
@@ -57,7 +55,7 @@ def query_instance_meta(baseurl, headers=None):
     for r in pool.map(partial(_rget, **_kw), _uris):
         # create keyname
         _u = r.url.replace(baseurl, "")
-        _p = "-".join(_u.split('/'))
+        _p = "-".join(_u.split("/"))
         # Store value
         _meta[_p] = r.text
     # Kill the threads
@@ -84,7 +82,7 @@ if __name__ == "__main__":
     else:
         provider = sys.argv[1].upper()
     # get metadata according to provider
-    if provider == 'AWS':
+    if provider == "AWS":
         _prefix = "http://"
         _suffix = "/latest/meta-data/"
         _target = "169.254.169.254"
@@ -103,14 +101,14 @@ if __name__ == "__main__":
             else:
                 # current mac
                 _tail = k.replace(_head, "")
-                _mac = _tail[:_tail.index('-')] if '-' in _tail else ""
-                _tail = _tail[_tail.index('-'):] if '-' in _tail else _tail
+                _mac = _tail[: _tail.index("-")] if "-" in _tail else ""
+                _tail = _tail[_tail.index("-") :] if "-" in _tail else _tail
                 # if this is not interface key just copy
                 # get id and create new key
                 _id = _meta[_head + _mac + "-device-number"]
                 _new_meta[_head + _id + _tail] = v
         _meta = _new_meta
-    elif provider == 'GCP':
+    elif provider == "GCP":
         _prefix = "http://"
         _suffix = "/computeMetadata/v1/instance/"
         _target = "169.254.169.254"
