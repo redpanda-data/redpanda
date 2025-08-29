@@ -26,6 +26,12 @@ TEST(SnapshotJsonSerde, TestSnapshot) {
             "timestamp-ms": 1515100955770,
             "summary": {
                 "operation": "append",
+                "added-data-files": "100",
+                "total-data-files": "101",
+                "added-records": "102",
+                "total-records": "103",
+                "added-files-size": "104",
+                "total-files-size": "105",
                 "foo": "bar"
             },
             "manifest-list": "s3://b/wh/.../s1.avro",
@@ -41,6 +47,12 @@ TEST(SnapshotJsonSerde, TestSnapshot) {
     ASSERT_EQ(10, snap.sequence_number());
     ASSERT_EQ(1515100955770, snap.timestamp_ms.value());
     ASSERT_EQ(snapshot_operation::append, snap.summary.operation);
+    ASSERT_EQ(snap.summary.added_data_files, 100);
+    ASSERT_EQ(snap.summary.total_data_files, 101);
+    ASSERT_EQ(snap.summary.added_records, 102);
+    ASSERT_EQ(snap.summary.total_records, 103);
+    ASSERT_EQ(snap.summary.added_files_size, 104);
+    ASSERT_EQ(snap.summary.total_files_size, 105);
     ASSERT_EQ(1, snap.summary.other.size());
     ASSERT_EQ("bar", snap.summary.other.at("foo"));
     ASSERT_STREQ("s3://b/wh/.../s1.avro", snap.manifest_list_path().c_str());
