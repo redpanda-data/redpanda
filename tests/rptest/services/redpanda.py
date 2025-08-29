@@ -3577,15 +3577,30 @@ class RedpandaService(RedpandaServiceBase):
                     err_msg=f"Redpanda processes did not terminate on {node.name} during startup as expected in {timeout} sec",
                 )
             elif not skip_readiness_check:
-                wait_until(
-                    lambda: self.is_node_ready(node),
-                    timeout_sec=timeout,
-                    backoff_sec=self._startup_poll_interval(first_start),
-                    err_msg=f"Redpanda service {node.account.hostname} failed to start within {timeout} sec",
-                    retry_on_exc=True,
-                )
+                last_check_exc = None
 
-        self.logger.debug(f"Node status prior to redpanda startup:")
+                def check_redpanda_ready():
+                    nonlocal last_check_exc
+                    if self.redpanda_pid(node) is None:
+                        raise RuntimeError(
+                            f"Redpanda died on {node.name} during startup"
+                        )
+                    try:
+                        return self.is_node_ready(node)
+                    except Exception as e:
+                        last_check_exc = e
+                        return False
+
+                try:
+                    wait_until(
+                        check_redpanda_ready,
+                        timeout_sec=timeout,
+                        backoff_sec=self._startup_poll_interval(first_start),
+                        err_msg=f"Redpanda service {node.account.hostname} failed to start within {timeout} sec",
+                    )
+                except TimeoutError as e:
+                    raise e from last_check_exc
+
         self.start_service(node, start_rp)
         if not expect_fail:
             self._started.add(node)
