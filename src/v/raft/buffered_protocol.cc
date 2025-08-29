@@ -211,7 +211,6 @@ void buffered_protocol::garbage_collect_unused_queues() {
     for (auto it = _append_entries_queues.begin(),
               last = _append_entries_queues.end();
          it != last;) {
-        it->second->log_status();
         if (it->second->is_idle()) {
             std::unique_ptr<internal::append_entries_queue> queue;
             queue.swap(it->second);
@@ -355,15 +354,6 @@ ss::future<> append_entries_queue::stop() {
     _internal_metrics.clear();
     return _gate.close().finally(
       [this] { vlog(_logger.debug, "stopped queue"); });
-}
-
-void append_entries_queue::log_status() const {
-    vlog(
-      _logger.info,
-      "inflight requests: {}, buffered requests: {}, buffered_bytes: {}",
-      inflight_requests(),
-      _requests.size(),
-      _buffered_bytes);
 }
 
 void append_entries_queue::setup_internal_metrics() {

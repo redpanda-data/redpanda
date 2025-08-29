@@ -53,8 +53,8 @@ public:
         return _current_max_inflight_requests
                - _inflight_requests_sem.available_units();
     };
+
     bool is_idle() const;
-    void log_status() const;
 
 private:
     ss::future<> dispatch_loop();
