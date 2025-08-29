@@ -142,6 +142,10 @@ ss::future<errc> frontend::update_mirror_topic_properties(
     co_return co_await do_mutation(std::move(c), timeout);
 }
 
+bool frontend::cluster_link_active() const {
+    return _table->cluster_link_active();
+}
+
 bool frontend::cluster_linking_enabled() const {
     return config::shard_local_cfg().development_enable_cluster_link();
 }

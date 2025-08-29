@@ -247,6 +247,11 @@ table::notification_id table::register_for_updates(notification_callback cb) {
 
 void table::unregister_for_updates(notification_id id) { _callbacks.erase(id); }
 
+bool table::cluster_link_active() const {
+    // TODO: Update when we have proper states for cluster links
+    return !_link_metadata.empty();
+}
+
 void table::run_callbacks(id_t id) {
     for (const auto& [_, cb] : _callbacks) {
         cb(id);

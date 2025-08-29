@@ -72,6 +72,10 @@ public:
     notification_id register_for_updates(notification_callback);
     void unregister_for_updates(notification_id);
 
+    /// Returns whether or not there is at least one cluster link present and
+    /// active
+    bool cluster_link_active() const;
+
 private:
     /// Snapshot copy of all the cluster links
     map_t all_links() const;
