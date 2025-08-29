@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/create_topics.h"
 
+#include "cluster/cluster_link/frontend.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
@@ -104,6 +105,11 @@ bool is_supported(std::string_view name) {
     }
 
     return false;
+}
+
+bool is_shadow_link_active(request_context& ctx) {
+    const auto& clfe = ctx.server().local().cluster_link_frontend();
+    return clfe.cluster_linking_enabled() && clfe.cluster_link_active();
 }
 } // namespace
 
@@ -287,6 +293,27 @@ ss::future<response_ptr> create_topics_handler::handle(
         }
 
         co_return co_await ctx.respond(std::move(err_resp));
+    }
+
+    // Check if there is a cluster link active
+    if (is_shadow_link_active(ctx)) {
+        auto not_permitted_shadow_link = std::partition(
+          begin, valid_range_end, [&](const creatable_topic& t) {
+              return std::ranges::contains(
+                config::shard_local_cfg().shadow_link_permitted_topics(),
+                t.name());
+          });
+        std::transform(
+          not_permitted_shadow_link,
+          valid_range_end,
+          std::back_inserter(response.data.topics),
+          [](const creatable_topic& t) {
+              return generate_error(
+                t,
+                error_code::invalid_topic_exception,
+                "Unable to create topic while shadow linking is active");
+          });
+        valid_range_end = not_permitted_shadow_link;
     }
 
     // fill in defaults if necessary
