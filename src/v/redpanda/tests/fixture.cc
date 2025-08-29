@@ -170,6 +170,7 @@ redpanda_thread_fixture::redpanda_thread_fixture(
         std::ref(app.controller->get_api()),
         std::ref(app.tx_gateway_frontend),
         std::ref(app.datalake_throttle_manager),
+        std::ref(app.controller->get_cluster_link_frontend()),
         std::nullopt,
         std::ref(*app.thread_worker),
         std::ref(app.schema_registry()))

@@ -2518,6 +2518,7 @@ void application::wire_up_redpanda_services(
         std::ref(controller->get_api()),
         std::ref(tx_gateway_frontend),
         std::ref(datalake_throttle_manager),
+        std::ref(controller->get_cluster_link_frontend()),
         qdc_config,
         std::ref(*thread_worker),
         std::ref(_schema_registry))
