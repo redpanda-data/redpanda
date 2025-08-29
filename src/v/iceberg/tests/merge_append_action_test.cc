@@ -885,3 +885,100 @@ TEST_F(MergeAppendActionTest, TestWriteMetadataPathProperty) {
     const auto& manifest_path = mlist_res.value().files[0].manifest_path;
     ASSERT_TRUE(manifest_path().starts_with(custom_path));
 }
+
+TEST_F(MergeAppendActionTest, TestSnapshotSummaryFirstSnapshot) {
+    transaction tx(create_table());
+    const size_t files_count = 3;
+    const size_t records_count = 150;
+
+    auto files = create_data_files(
+      tx.table(), "test", files_count, records_count);
+    auto res = tx.merge_append(io, std::move(files)).get();
+    ASSERT_FALSE(res.has_error()) << res.error();
+
+    const auto& table = tx.table();
+    ASSERT_TRUE(table.snapshots.has_value());
+    const auto& summary = table.snapshots->back().summary;
+
+    // First snapshot: totals should equal added values
+    const size_t file_size = 1_KiB * files_count;
+    ASSERT_EQ(summary.operation, snapshot_operation::append);
+    ASSERT_EQ(summary.added_data_files, files_count);
+    ASSERT_EQ(summary.added_records, records_count);
+    ASSERT_EQ(summary.added_files_size, file_size);
+    ASSERT_EQ(summary.total_data_files, files_count);
+    ASSERT_EQ(summary.total_records, records_count);
+    ASSERT_EQ(summary.total_files_size, file_size);
+}
+
+TEST_F(MergeAppendActionTest, TestSnapshotSummaryAdds) {
+    transaction tx(create_table());
+
+    // First append.
+    const size_t first_files = 2;
+    const size_t first_records = 100;
+    auto files1 = create_data_files(
+      tx.table(), "test1", first_files, first_records);
+    auto res1 = tx.merge_append(io, std::move(files1)).get();
+    ASSERT_FALSE(res1.has_error());
+
+    // Second append.
+    const size_t second_files = 3;
+    const size_t second_records = 200;
+    auto files2 = create_data_files(
+      tx.table(), "test2", second_files, second_records);
+    auto res2 = tx.merge_append(io, std::move(files2)).get();
+    ASSERT_FALSE(res2.has_error());
+
+    const auto& table = tx.table();
+    const auto& latest_summary = table.snapshots->back().summary;
+
+    // The second snapshot should add onto existing totals.
+    ASSERT_EQ(latest_summary.added_data_files, second_files);
+    ASSERT_EQ(latest_summary.added_records, second_records);
+    ASSERT_EQ(latest_summary.total_data_files, first_files + second_files);
+    ASSERT_EQ(latest_summary.total_records, first_records + second_records);
+    ASSERT_EQ(
+      latest_summary.total_files_size, 1_KiB * (first_files + second_files));
+}
+
+TEST_F(MergeAppendActionTest, TestSnapshotSummaryMissingMetrics) {
+    auto table = create_table();
+    auto initial_mlist_path = uri(
+      fmt::format("s3://{}/manifest1.avro", bucket_name()));
+    snapshot initial_snap{
+        .id = snapshot_id{1},
+        .sequence_number = sequence_number{1},
+        .timestamp_ms = model::timestamp::now(),
+        .summary = snapshot_summary{
+            .operation = snapshot_operation::append,
+            // Only set total_records, leave others unset.
+            .total_records = 100,
+        },
+        .manifest_list_path = initial_mlist_path,
+        .schema_id = table.current_schema_id,
+    };
+    manifest_list initial_mlist;
+    auto up_res
+      = io.upload_manifest_list(initial_mlist_path, initial_mlist).get();
+    ASSERT_TRUE(up_res.has_value());
+
+    table.snapshots = chunked_vector<snapshot>{};
+    table.snapshots->emplace_back(std::move(initial_snap));
+    table.current_snapshot_id = snapshot_id{1};
+    table.last_sequence_number = sequence_number{1};
+
+    transaction tx(std::move(table));
+    auto files = create_data_files(tx.table(), "test", 1, 50);
+    auto res = tx.merge_append(io, std::move(files)).get();
+    ASSERT_FALSE(res.has_error()) << res.error();
+
+    const auto& updated_table = tx.table();
+    const auto& latest_summary = updated_table.snapshots->back().summary;
+
+    // We should only update the total_records metric, since the others were
+    // missing.
+    ASSERT_EQ(latest_summary.total_records, 150);
+    ASSERT_FALSE(latest_summary.total_data_files.has_value());
+    ASSERT_FALSE(latest_summary.total_files_size.has_value());
+}

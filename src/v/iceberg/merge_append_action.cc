@@ -173,6 +173,8 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
       new_data_files_.size());
 
     // Validate our input files that their partition keys look sane.
+    size_t added_records{0};
+    size_t added_files_size{0};
     for (const auto& f : new_data_files_) {
         if (f.file.partition.val == nullptr) {
             vlog(
@@ -200,11 +202,15 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
               pspec->fields.size());
             co_return action::errc::unexpected_state;
         }
+        added_records += f.file.record_count;
+        added_files_size += f.file.file_size_bytes;
     }
+    auto added_data_files = new_data_files_.size();
 
     // Get the manifest list for the current snapshot, if any.
     manifest_list mlist;
     std::optional<snapshot_id> old_snap_id;
+    std::optional<snapshot_summary> old_summary;
     if (table_.snapshots.has_value() && !table_.snapshots->empty()) {
         if (!table_.current_snapshot_id.has_value()) {
             // We have snapshots, but it's unclear which one to base our update
@@ -237,6 +243,7 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
         }
         mlist = std::move(mlist_res).value();
         old_snap_id = table_cur_snap_id;
+        old_summary = snap_it->summary;
     } else if (
       table_.current_snapshot_id.has_value()
       && table_.current_snapshot_id.value() != invalid_snapshot_id) {
@@ -281,16 +288,44 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
         co_return to_action_errc(mlist_up_res.error());
     }
 
+    snapshot_summary new_summary = {
+      .operation = snapshot_operation::append,
+      .added_data_files = added_data_files,
+      .added_records = added_records,
+      .added_files_size = added_files_size,
+      // TODO: serialize other fields.
+      .other = {},
+    };
+    if (old_summary) {
+        // Only update existing total metrics; otherwise we wouldn't have an
+        // accurate starting point.
+        if (old_summary->total_data_files.has_value()) {
+            new_summary.total_data_files = added_data_files
+                                           + *old_summary->total_data_files;
+        }
+        if (old_summary->total_records.has_value()) {
+            new_summary.total_records = added_records
+                                        + *old_summary->total_records;
+        }
+        if (old_summary->total_files_size.has_value()) {
+            new_summary.total_files_size = added_files_size
+                                           + *old_summary->total_files_size;
+        }
+    } else {
+        // This is the first summary. The totals are just what we're adding in
+        // (presumably) this first snapshot.
+        new_summary.total_data_files = added_data_files;
+        new_summary.total_records = added_records;
+        new_summary.total_files_size = added_files_size;
+    }
+
     // Return the snapshot metadata.
     snapshot s{
       .id = new_snap_id,
       .parent_snapshot_id = old_snap_id,
       .sequence_number = new_seq_num,
       .timestamp_ms = model::timestamp::now(),
-      .summary = {
-          .operation = snapshot_operation::append,
-          .other = {},
-      },
+      .summary = std::move(new_summary),
       .manifest_list_path = new_mlist_path,
       .schema_id = table_.current_schema_id,
     };
