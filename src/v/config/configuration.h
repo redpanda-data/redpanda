@@ -787,6 +787,8 @@ struct configuration final : public config_store {
     bounded_property<size_t> datalake_scheduler_disk_reservation_block_size;
     property<bool> consumer_offsets_topic_batch_cache_enabled;
 
+    property<std::vector<ss::sstring>> shadow_link_permitted_topics;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);

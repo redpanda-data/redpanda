@@ -4358,6 +4358,12 @@ configuration::configuration()
       "may affect performance. The change is applied only after the restart.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
       false)
+  , shadow_link_permitted_topics(
+      *this,
+      "shadow_link_permitted_topics",
+      "The names of topics that will be permitted to be created on the cluster "
+      "while shadow linking is active",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable})
   , development_enable_cloud_topics(
       *this,
       "development_enable_cloud_topics",
