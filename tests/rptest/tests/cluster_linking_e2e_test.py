@@ -9,11 +9,7 @@
 
 from connectrpc.errors import ConnectError, ConnectErrorCode
 
-from rptest.clients.admin.v2 import Admin as AdminV2
-from rptest.clients.admin.proto.redpanda.core.admin.v2 import (
-    shadow_link_pb2,
-    shadow_link_pb2_connect,
-)
+from rptest.clients.rpk import RpkException
 from rptest.services.cluster import cluster
 from rptest.services.multi_cluster_services import (
     Cluster,
@@ -180,3 +176,30 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
             assert e.code == ConnectErrorCode.RESOURCE_EXHAUSTED, (
                 f"Expected {ConnectErrorCode.RESOURCE_EXHAUSTED}, got {e.code}"
             )
+
+    @cluster(num_nodes=6)
+    def test_cannot_create_topics(self):
+        self.create_link("test-link")
+
+        topic_name = "test-topic"
+
+        def create_topic(name: str, expect_failure: bool):
+            try:
+                self.services.create_topic(
+                    self.target_cluster, topic_name, partitions=3, replicas=3
+                )
+                assert not expect_failure, (
+                    "Should not have been able to create the topic"
+                )
+            except RpkException as e:
+                self.logger.info(f"Got RpkException: {e}")
+                assert expect_failure, f"Should not have failed created topic {name}"
+
+        create_topic(topic_name, True)
+
+        self.target_cluster_service.set_cluster_config(
+            values={"shadow_link_permitted_topics": [topic_name]}
+        )
+
+        create_topic(topic_name, False)
+        create_topic("other-topic", True)
