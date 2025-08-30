@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+uv tool run --with 'ruff==0.12.10' ruff "$@"
