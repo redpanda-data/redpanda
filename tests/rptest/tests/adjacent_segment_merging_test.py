@@ -32,11 +32,10 @@ CONNECTION_ERROR_LOGS = [
 ]
 
 
-class AdjacentSegmentMergingTest(RedpandaTest):
+class AdjacentSegmentMergingTestBase(RedpandaTest):
     s3_topic_name = "panda-topic"
-    topics = (TopicSpec(name=s3_topic_name, partition_count=1, replication_factor=3),)
 
-    def __init__(self, test_context):
+    def __init__(self, test_context, extra_rp_conf: dict[str, str] = {}, **kwargs):
         si_settings = SISettings(
             test_context,
             cloud_storage_max_connections=10,
@@ -54,8 +53,11 @@ class AdjacentSegmentMergingTest(RedpandaTest):
 
         self.bucket_name = si_settings.cloud_storage_bucket
 
-        super(AdjacentSegmentMergingTest, self).__init__(
-            test_context=test_context, extra_rp_conf=xtra_conf, si_settings=si_settings
+        super().__init__(
+            test_context=test_context,
+            extra_rp_conf={**xtra_conf, **extra_rp_conf},
+            si_settings=si_settings,
+            **kwargs,
         )
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
@@ -63,6 +65,19 @@ class AdjacentSegmentMergingTest(RedpandaTest):
 
     def setUp(self):
         super().setUp()  # topic is created here
+
+
+class AdjacentSegmentMergingTest(AdjacentSegmentMergingTestBase):
+    topics = (
+        TopicSpec(
+            name=AdjacentSegmentMergingTestBase.s3_topic_name,
+            partition_count=1,
+            replication_factor=3,
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     @cluster(num_nodes=3)
     @matrix(acks=[-1, 1], cloud_storage_type=get_cloud_storage_type())
