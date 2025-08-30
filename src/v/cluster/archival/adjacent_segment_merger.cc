@@ -89,7 +89,7 @@ std::optional<adjacent_segment_run> adjacent_segment_merger::scan_manifest(
         so = std::max(
           manifest.get_start_offset().value_or(local_start_offset),
           local_start_offset);
-    } else {
+    } else if (!_is_local) {
         // Remote lookup, start from start offset in the manifest (or 0)
         so = _archiver.manifest().get_start_offset().value_or(model::offset{0});
     }
