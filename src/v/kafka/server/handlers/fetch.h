@@ -142,9 +142,6 @@ struct op_context {
      */
     size_t fetch_partition_count() const;
 
-    template<typename Func>
-    void for_each_fetch_partition(Func&& f) const;
-
     request_context rctx;
     ss::smp_service_group ssg;
     fetch_request request;
@@ -205,10 +202,10 @@ struct fetch_config {
 };
 
 struct ntp_fetch_config {
-    ntp_fetch_config(model::ktp ktp, fetch_config cfg)
+    ntp_fetch_config(model::ktp_with_hash&& ktp, fetch_config&& cfg)
       : _ktp(std::move(ktp))
-      , cfg(cfg) {}
-    model::ktp _ktp;
+      , cfg(std::move(cfg)) {}
+    model::ktp_with_hash _ktp;
     fetch_config cfg;
 
     const model::ktp& ktp() const { return _ktp; }
@@ -351,10 +348,13 @@ struct shard_fetch {
       , start_time{start_time} {}
 
     void push_back(
-      ntp_fetch_config config, op_context::response_placeholder_ptr r_ph) {
-        requests.push_back(std::move(config));
+      model::ktp_with_hash ktp,
+      kafka::fetch_config&& config,
+      op_context::response_placeholder_ptr r_ph) {
+        requests.emplace_back(std::move(ktp), std::move(config));
         responses.push_back(r_ph);
     }
+
     bool empty() const;
 
     void reserve(size_t n) {

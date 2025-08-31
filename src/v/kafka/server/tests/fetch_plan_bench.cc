@@ -48,11 +48,6 @@ struct fixture {
 };
 
 static constexpr size_t topic_name_length = 30;
-#ifdef SEASTAR_DEFAULT_ALLOCATOR
-static constexpr size_t max_partition_count = 100;
-#else
-static constexpr size_t max_partition_count = 1000;
-#endif
 
 struct test_args {
     size_t topic_count;
@@ -272,10 +267,3 @@ PERF_TEST_F(fetch_plan, t1p100_no_auth) { return run_bench(1, 100, false); }
 PERF_TEST_F(fetch_plan, t1p100_yes_auth) { return run_bench(1, 100, true); }
 PERF_TEST_F(fetch_plan, t100p1_no_auth) { return run_bench(100, 1, false); }
 PERF_TEST_F(fetch_plan, t100p1_yes_auth) { return run_bench(100, 1, true); }
-
-PERF_TEST_F(fetch_plan, max_no_auth) {
-    return run_bench(1, max_partition_count, false);
-}
-PERF_TEST_F(fetch_plan, max_yes_auth) {
-    return run_bench(1, max_partition_count, true);
-}

@@ -56,14 +56,14 @@ public:
     }
 
     void insert_or_assign(
-      model::ktp ktp,
+      model::ktp_with_hash ktp,
       model::offset start_offset,
       model::offset hw,
       model::offset lso) {
         _cache.insert_or_assign(std::move(ktp), entry(start_offset, hw, lso));
     }
 
-    std::optional<partition_metadata> get(const model::ktp& ktp) {
+    std::optional<partition_metadata> get(const model::ktp_with_hash& ktp) {
         auto it = _cache.find(ktp);
         return it != _cache.end()
                  ? std::make_optional<partition_metadata>(it->second.md)
@@ -98,7 +98,7 @@ private:
 
     constexpr static std::chrono::seconds eviction_timeout{60};
     bool _stopped = false;
-    absl::node_hash_map<model::ktp, entry> _cache;
+    absl::node_hash_map<model::ktp_with_hash, entry> _cache;
     ss::timer<> _eviction_timer;
 };
 } // namespace kafka
