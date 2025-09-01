@@ -110,7 +110,7 @@ class DirectConsumerVerifierTest(RedpandaTest):
         )
         producer.start()
 
-        verifier = DirectConsumerVerifier(self.test_context, log_level="DEBUG")
+        verifier = DirectConsumerVerifier(self.test_context, log_level="TRACE")
         verifier.start()
 
         troublemaker = self.create_troublemaker_thread(topic_spec=topic_spec)
