@@ -45,6 +45,11 @@ std::ostream& operator<<(std::ostream& os, const broker_authn_endpoint& ep) {
     return os;
 }
 
+bool kafka_authz_enabled() {
+    return config::shard_local_cfg().kafka_enable_authorization().value_or(
+      config::shard_local_cfg().enable_sasl());
+}
+
 broker_authn_method get_authn_method(std::string_view connection_name) {
     // If authn_method is set on the endpoint
     //    Use it

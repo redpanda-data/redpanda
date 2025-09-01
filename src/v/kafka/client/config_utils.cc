@@ -45,13 +45,11 @@ std::optional<sasl_configuration> create_sasl_configuration_from_client_cfg(
 ss::future<std::optional<kafka::client::sasl_configuration>>
 create_client_credentials(
   cluster::controller& controller,
-  const config::configuration& cluster_cfg,
   const kafka::client::configuration& client_cfg,
   security::acl_principal principal) {
     auto sasl_cfg = create_sasl_configuration_from_client_cfg(client_cfg);
     // If AuthZ is not enabled, don't create credentials.
-    if (!cluster_cfg.kafka_enable_authorization().value_or(
-          cluster_cfg.enable_sasl())) {
+    if (!config::kafka_authz_enabled()) {
         co_return sasl_cfg;
     }
 

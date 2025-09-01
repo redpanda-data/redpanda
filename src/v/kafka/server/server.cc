@@ -309,9 +309,7 @@ ss::future<security::tls::mtls_state> get_mtls_principal_state(
 }
 
 ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
-    const bool authz_enabled
-      = config::shard_local_cfg().kafka_enable_authorization().value_or(
-        config::shard_local_cfg().enable_sasl());
+    const bool authz_enabled = config::kafka_authz_enabled();
     const auto authn_method = config::get_authn_method(conn->name());
 
     const auto sasl_max_reauth
