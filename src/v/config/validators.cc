@@ -101,7 +101,20 @@ validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms) {
         return ssx::sformat(
           "{} mechanism must be enabled if {} is enabled", scram, plain);
     }
+    return std::nullopt;
+}
 
+std::optional<ss::sstring> validate_sasl_mechanisms_overrides(
+  const std::vector<config::sasl_mechanisms_override>& overrides) {
+    for (const auto& overide : overrides) {
+        const auto error = validate_sasl_mechanisms(overide.sasl_mechanisms);
+        if (error.has_value()) {
+            return ssx::sformat(
+              "Invalid sasl mechanisms override for listener '{}'. Error: {}",
+              overide.listener,
+              error.value());
+        }
+    }
     return std::nullopt;
 }
 

@@ -1633,15 +1633,31 @@ configuration::configuration()
       *this,
       is_enterprise_sasl_mechanism,
       "sasl_mechanisms",
-      "A list of supported SASL mechanisms. Accepted values: `SCRAM`, "
-      "`GSSAPI`, `OAUTHBEARER`, `PLAIN`.  Note that in order to enable PLAIN, "
-      "you must also enable SCRAM.",
+      "A list of supported SASL mechanisms, if no override is defined in "
+      "`sasl_mechanisms_overrides` for each kafka listener. Accepted values: "
+      "`SCRAM`, `GSSAPI`, `OAUTHBEARER`, `PLAIN`.  Note that in order to "
+      "enable PLAIN, you must also enable SCRAM.",
       meta{
         .needs_restart = needs_restart::no,
         .visibility = visibility::user,
       },
       std::vector<ss::sstring>{ss::sstring{scram}},
       validate_sasl_mechanisms)
+  , sasl_mechanisms_overrides(
+      *this,
+      is_enterprise_sasl_mechanisms_override,
+      "sasl_mechanisms_overrides",
+      "A list of overrides for SASL mechanisms, defined by listener. SASL "
+      "mechanisms defined here will replace the ones set in `sasl_mechanisms`. "
+      "The same limitations apply as for `sasl_mechanisms`.",
+      meta{
+        .needs_restart = needs_restart::no,
+        .example
+        = "[{'listener':'kafka_listener', 'sasl_mechanisms':['SCRAM']}]",
+        .visibility = visibility::user,
+      },
+      std::vector<sasl_mechanisms_override>{},
+      validate_sasl_mechanisms_overrides)
   , sasl_kerberos_config(
       *this,
       "sasl_kerberos_config",

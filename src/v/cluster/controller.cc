@@ -185,6 +185,10 @@ ss::future<> controller::wire_up() {
             ss::sharded_parameter(
               [] { return config::shard_local_cfg().sasl_mechanisms.bind(); }),
             ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .sasl_mechanisms_overrides.bind();
+            }),
+            ss::sharded_parameter([] {
                 return config::shard_local_cfg().http_authentication.bind();
             }),
             ss::sharded_parameter([] {

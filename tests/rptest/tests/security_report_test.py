@@ -436,6 +436,10 @@ class KafkaSecurityReportTest(RedpandaTest):
         if enable_sasl:
             # Set to SASL/PLAIN to test alert for PLAIN
             self.security.sasl_mechanisms = ["SCRAM", "PLAIN"]
+            # Set one listener to different values to verify override behavior
+            self.security.sasl_mechanisms_overrides = [
+                {"listener": "dnslistener", "sasl_mechanisms": ["SCRAM"]}
+            ]
         if enable_tls:
             self.security.tls_provider = SaslPlainTLSProvider(tls=self.tls)
             if authn == "mTLS":
@@ -453,21 +457,29 @@ class KafkaSecurityReportTest(RedpandaTest):
         self._start_cluster(enable_tls, authn)
 
         authz_enabled = authn == "SASL"
-        sasl_mechs = sasl_plain_mechs if authz_enabled else None
+        maybe_sasl_plain_mechs = sasl_plain_mechs if authz_enabled else None
+        maybe_sasl_default_mechs = sasl_default_mechs if authz_enabled else None
 
-        maybe_tls_interface = KafkaInterface(
+        dns_interface = KafkaInterface(
             tls_enabled=enable_tls,
             mutual_tls_enabled=enable_tls,
             authorization_enabled=authz_enabled,
             authentication_method=authn,
-            supported_sasl_mechanisms=sasl_mechs,
+            supported_sasl_mechanisms=maybe_sasl_default_mechs,
         )
-        no_tls_interface = KafkaInterface(
+        ip_interface = KafkaInterface(
+            tls_enabled=enable_tls,
+            mutual_tls_enabled=enable_tls,
+            authorization_enabled=authz_enabled,
+            authentication_method=authn,
+            supported_sasl_mechanisms=maybe_sasl_plain_mechs,
+        )
+        krb_interface = KafkaInterface(
             tls_enabled=False,
             mutual_tls_enabled=False,
             authorization_enabled=authz_enabled,
             authentication_method=authn if authz_enabled else "None",
-            supported_sasl_mechanisms=sasl_mechs,
+            supported_sasl_mechanisms=maybe_sasl_plain_mechs,
         )
 
         audit_log_interface = KafkaClientInterface(
@@ -480,13 +492,6 @@ class KafkaSecurityReportTest(RedpandaTest):
         if authz_enabled:
             expected_alerts.extend(
                 [
-                    SecurityAlert(
-                        affected_interface="kafka",
-                        listener_name="dnslistener",
-                        issue="SASL_PLAIN",
-                        description='"kafka" interface "dnslistener" is using SASL/PLAIN.'
-                        " This is insecure and not recommended.",
-                    ),
                     SecurityAlert(
                         affected_interface="kafka",
                         listener_name="iplistener",
@@ -508,9 +513,9 @@ class KafkaSecurityReportTest(RedpandaTest):
         validate_report(
             report,
             kafka_expected={
-                "dnslistener": maybe_tls_interface,
-                "iplistener": maybe_tls_interface,
-                "kerberoslistener": no_tls_interface,
+                "dnslistener": dns_interface,
+                "iplistener": ip_interface,
+                "kerberoslistener": krb_interface,
             },
             audit_log_expected=audit_log_interface,
             expected_alerts=expected_alerts,

@@ -450,9 +450,40 @@ class SaslPlainTest(BaseScramTest):
             extra_node_conf={"developer_mode": True},
         )
 
-    def _enable_plain_authn(self):
-        self.logger.debug("Enabling SASL PLAIN")
-        self.redpanda.set_cluster_config({"sasl_mechanisms": ["PLAIN", "SCRAM"]})
+    class SaslPlainConfig(IntEnum):
+        ON = 1
+        OFF = 2
+        OVERRIDE_ON = 3
+        OVERRIDE_OFF = 4
+
+    def _config_plain_authn(self, sasl_plain_config):
+        scram_plain = ["PLAIN", "SCRAM"]
+        match sasl_plain_config:
+            case self.SaslPlainConfig.OFF:
+                pass
+            case self.SaslPlainConfig.ON:
+                self.logger.debug("Enabling SASL PLAIN")
+                self.redpanda.set_cluster_config({"sasl_mechanisms": scram_plain})
+            case self.SaslPlainConfig.OVERRIDE_ON:
+                self.logger.debug("Enabling SASL PLAIN through override")
+                self.redpanda.set_cluster_config(
+                    {
+                        "sasl_mechanisms_overrides": [
+                            {"listener": "dnslistener", "sasl_mechanisms": scram_plain},
+                        ]
+                    }
+                )
+            case self.SaslPlainConfig.OVERRIDE_OFF:
+                self.logger.debug("Enabling SASL PLAIN by default")
+                self.redpanda.set_cluster_config({"sasl_mechanisms": scram_plain})
+                self.logger.debug("Disabling SASL PLAIN through override")
+                self.redpanda.set_cluster_config(
+                    {
+                        "sasl_mechanisms_overrides": [
+                            {"listener": "dnslistener", "sasl_mechanisms": []},
+                        ]
+                    }
+                )
 
     def _make_client(
         self,
@@ -559,9 +590,9 @@ class SaslPlainTest(BaseScramTest):
     @matrix(
         client_type=list(ClientType),
         scram_type=list(ScramType),
-        sasl_plain_enabled=[True, False],
+        sasl_plain_config=list(SaslPlainConfig),
     )
-    def test_plain_authn(self, client_type, scram_type, sasl_plain_enabled):
+    def test_plain_authn(self, client_type, scram_type, sasl_plain_config):
         """
         This test validates that SASL/PLAIN works with common kafka client
         libraries:
@@ -587,8 +618,7 @@ class SaslPlainTest(BaseScramTest):
             username=username, algorithm=str(scram_type), password=password
         )
 
-        if sasl_plain_enabled:
-            self._enable_plain_authn()
+        self._config_plain_authn(sasl_plain_config)
 
         client = self._make_client(
             client_type,
@@ -596,6 +626,10 @@ class SaslPlainTest(BaseScramTest):
             password_override=password,
             algorithm_override="PLAIN",
         )
+        sasl_plain_enabled = sasl_plain_config in [
+            self.SaslPlainConfig.ON,
+            self.SaslPlainConfig.OVERRIDE_ON,
+        ]
         self._make_topic(client, sasl_plain_enabled)
 
 

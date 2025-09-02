@@ -12,6 +12,7 @@
 #include "cluster/controller.h"
 #include "cluster/security_frontend.h"
 #include "config/broker_authn_endpoint.h"
+#include "config/sasl_mechanisms.h"
 #include "features/enterprise_feature_messages.h"
 #include "json/document.h"
 #include "json/json.h"
@@ -1179,8 +1180,8 @@ generate_kafka_interface_report(
         }
 
         if (authn_method == config::broker_authn_method::sasl) {
-            std::vector<ss::sstring> sasl_mechs{
-              config::shard_local_cfg().sasl_mechanisms()};
+            std::vector<ss::sstring> sasl_mechs = config::get_sasl_mechanisms(
+              kface.name);
 
             if (std::ranges::contains(sasl_mechs, "PLAIN")) {
                 alerts.push_back(make_interface_alert(
