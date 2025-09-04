@@ -15,6 +15,7 @@
 #include "cloud_topics/level_zero/pipeline/pipeline_stage.h"
 #include "cloud_topics/level_zero/pipeline/write_request.h"
 #include "cloud_topics/logger.h"
+#include "resource_mgmt/memory_groups.h"
 #include "utils/human.h"
 
 #include <seastar/core/abort_source.hh>
@@ -29,10 +30,30 @@
 
 namespace cloud_topics::l0 {
 
+// The max value is used in unit-tests only. Normally, the memory_groups
+// function is used to set up the limit. If the cloud_topics are disabled
+// but the pipeline is still created (which is something we do in tests)
+// then this constant will be used.
+static constexpr size_t max_memory_when_disabled = 100 * 1024 * 1024;
+
+namespace {
+size_t get_cloud_topics_l0_write_path_memory() {
+    return memory_groups().cloud_topics_memory() > 0
+             // Split memory in half between read and write path.
+             // TODO: take L1 into account.
+             ? memory_groups().cloud_topics_memory() / 2
+             : max_memory_when_disabled;
+}
+} // namespace
+
 template<class Clock>
 write_pipeline<Clock>::write_pipeline()
-  // TODO: use configuration parameter and binding
-  : _mem_budget(10_MiB, "write-pipeline") {}
+  : _mem_budget(get_cloud_topics_l0_write_path_memory(), "write-pipeline") {
+    vlog(
+      cd_log.trace,
+      "write_pipeline created, memory budget: {}",
+      _mem_budget.current());
+}
 
 template<class Clock>
 write_pipeline<Clock>::~write_pipeline() = default;

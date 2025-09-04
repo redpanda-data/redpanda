@@ -148,6 +148,7 @@ redpanda_cc_library(
     implementation_deps = [
         ":serializer",
         "//src/v/cloud_topics:logger",
+        "//src/v/resource_mgmt:memory_groups",
         "//src/v/ssx:sformat",
         "//src/v/utils:human",
     ],
@@ -183,6 +184,7 @@ redpanda_cc_library(
     implementation_deps = [
         ":serializer",
         "//src/v/cloud_topics:logger",
+        "//src/v/resource_mgmt:memory_groups",
         "//src/v/ssx:sformat",
         "//src/v/utils:human",
     ],
