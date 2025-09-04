@@ -4374,6 +4374,27 @@ configuration::configuration()
       "Enable cloud topics.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , cloud_topics_l0_data_threshold(
+      *this,
+      "cloud_topics_l0_data_threshold",
+      "The size limit for the Level 0 object size in cloud topics. When the "
+      "amount of data on a shard reaches this limit, an upload is triggered.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      4_MiB)
+  , cloud_topics_l0_upload_interval(
+      *this,
+      "cloud_topics_l0_upload_interval",
+      "Time interval after which the L0 upload is triggered.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      250ms)
+  , cloud_topics_l0_cardinality_threshold(
+      *this,
+      "cloud_topics_l0_cardinality_threshold",
+      "Threshold for the L0 object cardinality in cloud topics. When the "
+      "number of partitions in Level 0 object reach this limit, an upload is "
+      "triggered.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      1000)
   , development_enable_cluster_link(
       *this,
       "development_enable_cluster_link",
