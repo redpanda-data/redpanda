@@ -11,12 +11,22 @@ import (
 
 	fz "io/fs"
 
+	controlplanev1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1"
+	dataplanev1alpha3 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1alpha3"
+	"connectrpc.com/connect"
+	"github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	controlplanev1mcp "github.com/redpanda-data/common-go/proto/gen/go/redpanda/api/controlplane/v1/controlplanev1mcp"
+	"github.com/redpanda-data/common-go/proto/gen/go/redpanda/api/dataplane/v1/dataplanev1mcp"
+	"github.com/redpanda-data/common-go/proto/gen/go/redpanda/api/dataplane/v1alpha3/dataplanev1alpha3mcp"
+	"github.com/redpanda-data/protoc-gen-go-mcp/pkg/runtime"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
+	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
@@ -33,6 +43,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd.AddCommand(
 		newStdioCommand(fs, p),
 		newInstall(fs, p),
+		newProxyCommand(fs, p),
 	)
 	return cmd
 }
@@ -45,72 +56,32 @@ func newInstall(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Install Redpanda Cloud MCP server",
 		Long: `Install Redpanda Cloud MCP server.
 		
-Only Claude Desktop is supported at this time.
-Writes an mcpServer entry with name "redpandaCloud" into claude_desktop_config.json in Claude Desktop's config directory.`,
+Supports Claude Desktop and Claude Code.
+Writes an mcpServer entry with name "redpandaCloud" into the appropriate config file.`,
 		Args: cobra.NoArgs,
 		Run: func(_ *cobra.Command, _ []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "Failed to load rpk config: %w", err)
 
-			if mcpClient != "claude" {
-				out.Die("Unsupported client: %s", mcpClient)
-			}
-
-			configDir, err := os.UserConfigDir()
-			out.MaybeDie(err, "failed to get user configuration directory: %w", err)
-			file := filepath.Join(configDir, "Claude", "claude_desktop_config.json")
-
-			fileMode := fz.FileMode(0o600)
-			jsonStr := `{}`
-			f, err := os.OpenFile(file, os.O_RDONLY, 0o600)
-			if err != nil && !os.IsNotExist(err) {
-				out.MaybeDie(err, "failed to open Claude Desktop config file: %v", err)
-			}
-			defer f.Close()
-
-			if err == nil {
-				stat, err := f.Stat()
-				out.MaybeDie(err, "failed to stat Claude Desktop config file: %v", err)
-				fileMode = stat.Mode()
-
-				bytez, err := io.ReadAll(f)
-				out.MaybeDie(err, "failed to read content of Claude Desktop config file: %v", err)
-				jsonStr = string(bytez)
-			}
-
-			jsonStr, err = sjson.Set(jsonStr, "mcpServers.redpandaCloud.command", "rpk")
-			out.MaybeDie(err, "failed to patch Claude Desktop config: %v", err)
-			var mcpArgs []string
-
-			if cfg.VirtualProfile().CloudEnvironment != "" {
-				mcpArgs = append(mcpArgs, "-X")
-				mcpArgs = append(mcpArgs, fmt.Sprintf("cloud_environment=%s", cfg.VirtualProfile().CloudEnvironment))
-			}
-			mcpArgs = append(mcpArgs, []string{
-				"--config", filepath.Join(configDir, "rpk", "rpk.yaml"), "cloud", "mcp", "stdio",
-			}...)
+			args := []string{"cloud", "mcp", "stdio"}
 			if allowDelete {
-				mcpArgs = append(mcpArgs, "--allow-delete")
+				args = append(args, "--allow-delete")
 			}
-			jsonStr, err = sjson.Set(jsonStr, "mcpServers.redpandaCloud.args", mcpArgs)
-			out.MaybeDie(err, "failed to patch Claude Desktop config: %v", err)
-
-			tmpFile := file + ".bak"
-			err = os.WriteFile(tmpFile, []byte(jsonStr), fileMode)
-			out.MaybeDie(err, "failed to write file: %v", err)
-			err = os.Rename(file+".bak", file)
-			out.MaybeDie(err, "failed to rename: %v", err)
+			configFile, err := installMCPConfig(cfg, mcpClient, "redpandaCloud", args)
+			out.MaybeDie(err, "Failed to install MCP configuration: %v", err)
+			fmt.Printf("Successfully installed Redpanda Cloud MCP server to %s.\n", makePathPretty(configFile))
 		},
 	}
 	cmd.Flags().BoolVarP(&allowDelete, "allow-delete", "", false, "Allow delete RPCs")
 	cmd.Flags().StringVar(&mcpClient, "client", "claude", "Name of the MCP client to configure")
 	cmd.MarkFlagRequired("client")
 	cmd.RegisterFlagCompletionFunc("client", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-		return []string{"claude"}, cobra.ShellCompDirectiveDefault
+		return []string{"claude", "claude-code"}, cobra.ShellCompDirectiveDefault
 	})
 	return cmd
 }
 
+// newStdioCommand will be called by an MCP client, and its responses are returned to the LLM, that synthesizes the response message.
 func newStdioCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var allowDelete bool
 	cmd := &cobra.Command{
@@ -123,6 +94,10 @@ func newStdioCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 			// Start out with empty token, and use the maybeReloadToken function to update.
 			cl := publicapi.NewCloudClientSet(cfg.DevOverrides().PublicAPIURL, "")
+
+			// Create dataplane client set with dynamic transport for MCP
+			dataplaneClientSet, err := publicapi.NewDataPlaneClientSet("", "")
+			out.MaybeDie(err, "Failed to create dataplane client set: %v", err)
 			var m sync.RWMutex
 			var tokenOK bool
 
@@ -132,49 +107,41 @@ func newStdioCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 					return err
 				}
 
-				var authVir *config.RpkCloudAuth
-				yVir := cfg.VirtualRpkYaml()
-				pVir := yVir.Profile(yVir.CurrentProfile)
-				authVir = pVir.VirtualAuth()
-				if authVir == nil {
-					authVir = yVir.CurrentAuth() // must be non-nil; we always have a default virtual auth
-				}
-
-				extra := ""
+				var extra string
 				if e := cfg.VirtualProfile().CloudEnvironment; e != "" {
 					extra = fmt.Sprintf(" -X cloud_environment=%s", e)
 				}
-				authToken := authVir.AuthToken
+				authToken := cfg.VirtualProfile().CurrentAuth().AuthToken
 				acl := auth0.NewClient(cfg.DevOverrides())
-				expired, err := oauth.ValidateToken(authToken, acl.Audience(), authVir.ClientID)
+				expired, err := oauth.ValidateToken(authToken, acl.Audience(), cfg.VirtualProfile().CurrentAuth().ClientID)
 				if err != nil {
 					m.Lock()
 					tokenOK = false
 					m.Unlock()
-					return fmt.Errorf("failed to validate Cloud token. This may happen, if they never logged in to Redpand Cloud. However, their token is not just expired, we'd not see this error then. Instruct the user to run `rpk%s cloud login` to login to Redpanda Cloud. After running the command, they can ask to retry", extra)
+					return fmt.Errorf("failed to validate Cloud token. This may happen, if they never logged in to Redpand Cloud. However, their token is not just expired, we'd not see this error then. Instruct the user to run `rpk%s cloud login --no-profile` to login to Redpanda Cloud. After running the command, they can ask to retry", extra)
 				}
 				if expired {
 					m.Lock()
 					tokenOK = false
 					m.Unlock()
-					return fmt.Errorf("the Redpanda Cloud token is expired. Instruct the user to run `rpk%s cloud login` to obtain a fresh one. Afterwards, they can ask to retry", extra)
+					return fmt.Errorf("the Redpanda Cloud token is expired. Instruct the user to run `rpk%s cloud login --no-profile` to obtain a fresh one. Afterwards, they can ask to retry", extra)
 				}
 				m.RLock()
 				ok := tokenOK
 				m.RUnlock()
 				if !ok {
 					cl.UpdateAuthToken(authToken)
+					dataplaneClientSet.UpdateAuthToken(authToken)
 					m.Lock()
 					tokenOK = true
 					m.Unlock()
-					fmt.Fprintf(os.Stderr, "Loaded new token\n")
 				}
 				return nil
 			}
 
 			s := server.NewMCPServer(
 				"Redpanda Cloud MCP",
-				"beta",
+				version.Pretty(),
 				server.WithToolHandlerMiddleware(func(thf server.ToolHandlerFunc) server.ToolHandlerFunc {
 					return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 						if !allowDelete && strings.Contains(strings.ToLower(request.Params.Name), "delete") {
@@ -200,6 +167,26 @@ func newStdioCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			controlplanev1mcp.ForwardToConnectServerlessRegionServiceClient(s, cl.ServerlessRegion)
 			controlplanev1mcp.ForwardToConnectServerlessRegionServiceClient(s, cl.ServerlessRegion)
 
+			// Dataplane
+			urlOpt := runtime.WithExtraProperties(runtime.ExtraProperty{
+				Name:        "dataplane_api_url",
+				Description: "URL to connect to this dataplane. This URL can be found by calling GetCluster or GetServerlessCluster.",
+				Required:    true,
+				ContextKey:  publicapi.DataplaneAPIURLContextKey{},
+			})
+
+			dataplanev1mcp.ForwardToConnectTopicServiceClient(s, dataplaneClientSet.Topic, urlOpt)
+			dataplanev1mcp.ForwardToConnectPipelineServiceClient(s, dataplaneClientSet.Pipeline, urlOpt)
+			dataplanev1mcp.ForwardToConnectACLServiceClient(s, dataplaneClientSet.ACL, urlOpt)
+			dataplanev1mcp.ForwardToConnectCloudStorageServiceClient(s, dataplaneClientSet.CloudStorage, urlOpt)
+			dataplanev1mcp.ForwardToConnectQuotaServiceClient(s, dataplaneClientSet.Quota, urlOpt)
+			dataplanev1mcp.ForwardToConnectSecretServiceClient(s, dataplaneClientSet.Secret, urlOpt)
+			dataplanev1mcp.ForwardToConnectSecurityServiceClient(s, dataplaneClientSet.Security, urlOpt)
+			dataplanev1mcp.ForwardToConnectTransformServiceClient(s, dataplaneClientSet.Transform, urlOpt)
+			dataplanev1mcp.ForwardToConnectUserServiceClient(s, dataplaneClientSet.User, urlOpt)
+			dataplanev1alpha3mcp.ForwardToConnectKnowledgeBaseServiceClient(s, dataplaneClientSet.KnowledgeBase, urlOpt)
+			dataplanev1alpha3mcp.ForwardToConnectMCPServerServiceClient(s, dataplaneClientSet.MCPServer, urlOpt)
+
 			if err := server.ServeStdio(s); err != nil {
 				fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 			}
@@ -208,4 +195,308 @@ func newStdioCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 	cmd.Flags().BoolVarP(&allowDelete, "allow-delete", "", false, "Allow delete RPCs. Off by default")
 	return cmd
+}
+
+// newProxyCommand will be called by an MCP client, and its responses are returned to the LLM, that synthesizes the response message.
+func newProxyCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var (
+		clusterID   string
+		mcpServerID string
+		install     bool
+		mcpClient   string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "proxy",
+		Short: "Proxy requests to a remote Redpanda Cloud MCP server",
+		Long: `Proxy MCP requests to a remote Redpanda Cloud MCP server.
+
+This command connects to a specific cluster and MCP server running in that cluster,
+then proxies MCP requests from stdio to the remote MCP server over HTTP.
+
+Use --install to configure the MCP client instead of serving stdio.`,
+		Args: cobra.NoArgs,
+		PreRunE: func(_ *cobra.Command, _ []string) error {
+			if install && mcpClient == "" {
+				return fmt.Errorf("--client flag is required when using --install")
+			}
+			return nil
+		},
+		Run: func(cmd *cobra.Command, _ []string) {
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "Failed to load config: %w", err)
+
+			authToken := cfg.VirtualProfile().CurrentAuth().AuthToken
+
+			// Start out with empty token, and use the maybeReloadToken function to update.
+			cl := publicapi.NewCloudClientSet(cfg.DevOverrides().PublicAPIURL, authToken)
+
+			// Get cluster information
+			cluster, err := cl.Cluster.GetCluster(cmd.Context(), connect.NewRequest(&controlplanev1.GetClusterRequest{
+				Id: clusterID,
+			}))
+			out.MaybeDie(err, "Failed to get cluster: %v", err)
+
+			dataplaneURL := cluster.Msg.GetCluster().GetDataplaneApi().GetUrl()
+			if dataplaneURL == "" {
+				out.Die("Cluster %s does not have a dataplane API URL", clusterID)
+			}
+
+			// Create a dataplane client set for this specific dataplane
+			dataplaneClient, err := publicapi.NewDataPlaneClientSet(dataplaneURL, authToken)
+			out.MaybeDie(err, "Failed to create dataplane client: %v", err)
+
+			var m sync.RWMutex
+			var tokenOK bool
+
+			maybeReloadToken := func() error {
+				cfg, err := p.Load(fs)
+				if err != nil {
+					return err
+				}
+
+				extra := ""
+				if e := cfg.VirtualProfile().CloudEnvironment; e != "" {
+					extra = fmt.Sprintf(" -X cloud_environment=%s", e)
+				}
+
+				acl := auth0.NewClient(cfg.DevOverrides())
+				expired, err := oauth.ValidateToken(authToken, acl.Audience(), cfg.VirtualProfile().CurrentAuth().ClientID)
+				if err != nil {
+					m.Lock()
+					tokenOK = false
+					m.Unlock()
+					return fmt.Errorf("failed to validate Cloud token. This may happen, if they never logged in to Redpand Cloud. However, their token is not just expired, we'd not see this error then. Instruct the user to run `rpk%s cloud login --no-profile` to login to Redpanda Cloud. After running the command, they can ask to retry", extra)
+				}
+				if expired {
+					m.Lock()
+					tokenOK = false
+					m.Unlock()
+					return fmt.Errorf("the Redpanda Cloud token is expired. Instruct the user to run `rpk%s cloud login --no-profile` to obtain a fresh one. Afterwards, they can ask to retry", extra)
+				}
+				m.RLock()
+				ok := tokenOK
+				m.RUnlock()
+				if !ok {
+					m.Lock()
+					authToken = cfg.VirtualProfile().CurrentAuth().AuthToken
+					tokenOK = true
+					m.Unlock()
+				}
+				return nil
+			}
+
+			// Get MCP server information
+			mcpServer, err := dataplaneClient.MCPServer.GetMCPServer(cmd.Context(), connect.NewRequest(&dataplanev1alpha3.GetMCPServerRequest{
+				Id: mcpServerID,
+			}))
+			out.MaybeDie(err, "Failed to get MCP server: %v", err)
+
+			mcpServerURL := mcpServer.Msg.GetMcpServer().GetUrl()
+			if mcpServerURL == "" {
+				out.Die("MCP server %s does not have a URL", mcpServerID)
+			}
+
+			// Get MCP server display name for configuration
+			mcpServerName := mcpServer.Msg.GetMcpServer().GetDisplayName()
+			if mcpServerName == "" {
+				mcpServerName = mcpServerID // fallback to ID if no display name
+			}
+
+			// Handle install mode
+			if install {
+				args := []string{
+					"cloud", "mcp", "proxy",
+					"--cluster-id", clusterID,
+					"--mcp-server-id", mcpServerID,
+				}
+				configFile, err := installMCPConfig(cfg, mcpClient, mcpServerName, args)
+				out.MaybeDie(err, "Failed to install MCP configuration: %v", err)
+				fmt.Printf("Successfully installed MCP server for '%s' (cluster: %s, server: %s) to %s.\n", mcpServerName, clusterID, mcpServerID, makePathPretty(configFile))
+				return
+			}
+
+			fmt.Fprintf(os.Stderr, "Proxying to MCP server %s at %s\n", mcpServerID, mcpServerURL)
+
+			// Create streamable HTTP client connected to remote server with authentication
+			remoteClient, err := client.NewStreamableHttpClient(mcpServerURL,
+				transport.WithHTTPHeaderFunc(func(context.Context) map[string]string {
+					m.Lock()
+					defer m.Unlock()
+					return map[string]string{
+						"Authorization": fmt.Sprintf("Bearer %s", authToken),
+					}
+				}),
+			)
+			out.MaybeDie(err, "Failed to create remote MCP client: %v", err)
+			defer remoteClient.Close()
+
+			// Initialize the remote client
+			fmt.Fprintf(os.Stderr, "Starting remote MCP client\n")
+			if err := remoteClient.Start(cmd.Context()); err != nil {
+				out.MaybeDie(err, "Failed to start remote MCP client: %v", err)
+			}
+
+			initRequest := mcp.InitializeRequest{}
+			initRequest.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
+			initRequest.Params.ClientInfo = mcp.Implementation{
+				Name:    "rpk",
+				Version: version.Pretty(),
+			}
+			initRequest.Params.Capabilities = mcp.ClientCapabilities{}
+
+			fmt.Fprintf(os.Stderr, "Initializing remote MCP client\n")
+			_, err = remoteClient.Initialize(cmd.Context(), initRequest)
+			out.MaybeDie(err, "Failed to initialize remote MCP client: %v", err)
+
+			// Create local MCP server that will proxy to the remote client
+			localServer := server.NewMCPServer(
+				fmt.Sprintf("Redpanda Cloud MCP Proxy (cluster: %s, server: %s)", clusterID, mcpServerID),
+				version.Pretty(),
+				server.WithToolHandlerMiddleware(func(thf server.ToolHandlerFunc) server.ToolHandlerFunc {
+					return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+						if err := maybeReloadToken(); err != nil {
+							return nil, err
+						}
+						return thf(ctx, request)
+					}
+				}),
+			)
+
+			// Add all tools from remote server to local server
+			// Currently this is static and will not add/remove tools at runtime.
+			if err := addRemoteToolsToServer(cmd.Context(), remoteClient, localServer); err != nil {
+				out.MaybeDie(err, "Failed to register remote tools: %v", err)
+			}
+
+			fmt.Fprintf(os.Stderr, "Proxy server ready, starting stdio server\n")
+
+			if err := server.ServeStdio(localServer); err != nil {
+				fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
+			}
+		},
+	}
+
+	cmd.Flags().StringVar(&clusterID, "cluster-id", "", "Cluster ID to connect to")
+	cmd.Flags().StringVar(&mcpServerID, "mcp-server-id", "", "MCP Server ID to proxy to")
+	cmd.Flags().BoolVar(&install, "install", false, "Install MCP proxy configuration instead of serving stdio")
+	cmd.Flags().StringVar(&mcpClient, "client", "", "Name of the MCP client to configure (required with --install)")
+	cmd.MarkFlagRequired("cluster-id")
+	cmd.MarkFlagRequired("mcp-server-id")
+	cmd.RegisterFlagCompletionFunc("client", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{"claude", "claude-code"}, cobra.ShellCompDirectiveDefault
+	})
+	return cmd
+}
+
+// makePathPretty replaces home directory with ~/.
+func makePathPretty(path string) string {
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		if strings.HasPrefix(path, homeDir) {
+			return "~" + strings.TrimPrefix(path, homeDir)
+		}
+	}
+	return path
+}
+
+// installMCPConfig installs MCP configuration for the specified client.
+func installMCPConfig(cfg *config.Config, mcpClient, serverName string, args []string) (string, error) {
+	var file string
+	switch mcpClient {
+	case "claude":
+		configDir, err := os.UserConfigDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get user configuration directory: %w", err)
+		}
+		file = filepath.Join(configDir, "Claude", "claude_desktop_config.json")
+	case "claude-code":
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get user home directory: %w", err)
+		}
+		file = filepath.Join(homeDir, ".claude.json")
+	default:
+		return "", fmt.Errorf("unsupported client: %s", mcpClient)
+	}
+
+	fileMode := fz.FileMode(0o600)
+	jsonStr := `{}`
+	f, err := os.OpenFile(file, os.O_RDONLY, 0o600)
+	if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("failed to open config file: %v", err)
+	}
+	defer f.Close()
+
+	if err == nil {
+		stat, err := f.Stat()
+		if err != nil {
+			return "", fmt.Errorf("failed to stat config file: %v", err)
+		}
+		fileMode = stat.Mode()
+
+		bytez, err := io.ReadAll(f)
+		if err != nil {
+			return "", fmt.Errorf("failed to read content of config file: %v", err)
+		}
+		jsonStr = string(bytez)
+	}
+
+	// Set command
+	serverKey := fmt.Sprintf("mcpServers.%s.command", serverName)
+	jsonStr, err = sjson.Set(jsonStr, serverKey, "rpk")
+	if err != nil {
+		return "", fmt.Errorf("failed to patch config: %v", err)
+	}
+
+	// Build base args with cloud environment if needed
+	var mcpArgs []string
+	if cfg.VirtualProfile().CloudEnvironment != "" {
+		mcpArgs = append(mcpArgs, "-X")
+		mcpArgs = append(mcpArgs, fmt.Sprintf("cloud_environment=%s", cfg.VirtualProfile().CloudEnvironment))
+	}
+
+	rpkConfigPath, err := config.DefaultRpkYamlPath()
+	if err != nil {
+		return "", fmt.Errorf("failed to get rpk config path: %w", err)
+	}
+	mcpArgs = append(mcpArgs, "--config", rpkConfigPath)
+	mcpArgs = append(mcpArgs, args...)
+
+	// Set args
+	argsKey := fmt.Sprintf("mcpServers.%s.args", serverName)
+	jsonStr, err = sjson.Set(jsonStr, argsKey, mcpArgs)
+	if err != nil {
+		return "", fmt.Errorf("failed to patch config: %v", err)
+	}
+
+	err = rpkos.ReplaceFile(afero.NewOsFs(), file, []byte(jsonStr), fileMode)
+	if err != nil {
+		return "", fmt.Errorf("failed to write file: %v", err)
+	}
+
+	return file, nil
+}
+
+// addRemoteToolsToServer registers all tools from remote MCP server to local server.
+func addRemoteToolsToServer(ctx context.Context, remoteClient *client.Client, localServer *server.MCPServer) error {
+	toolsRequest := mcp.ListToolsRequest{}
+	for {
+		tools, err := remoteClient.ListTools(ctx, toolsRequest)
+		if err != nil {
+			return err
+		}
+		if len(tools.Tools) == 0 {
+			break
+		}
+		fmt.Fprintf(os.Stderr, "Registering %d tools from remote server\n", len(tools.Tools))
+		for _, tool := range tools.Tools {
+			fmt.Fprintf(os.Stderr, "Registering tool: %s\n", tool.Name)
+			localServer.AddTool(tool, remoteClient.CallTool)
+		}
+		if tools.NextCursor == "" {
+			break
+		}
+		toolsRequest.Params.Cursor = tools.NextCursor
+	}
+	return nil
 }

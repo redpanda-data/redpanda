@@ -40,7 +40,7 @@ type DeployTransformRequest struct {
 	WasmBinary io.Reader
 }
 
-func newTransformServiceClient(httpClient *http.Client, host, authToken string, opts ...connect.ClientOption) transformServiceClient {
+func newTransformServiceClient(httpClient *http.Client, host, authToken string, opts ...connect.ClientOption) *transformServiceClient {
 	httpOpts := []httpapi.Opt{
 		httpapi.Host(host),
 		httpapi.BearerAuth(authToken),
@@ -49,7 +49,7 @@ func newTransformServiceClient(httpClient *http.Client, host, authToken string, 
 			return &ConnectError{StatusCode: code}
 		}),
 	}
-	return transformServiceClient{
+	return &transformServiceClient{
 		tCl:    dataplanev1connect.NewTransformServiceClient(httpClient, host, opts...),
 		httpCl: httpapi.NewClient(httpOpts...),
 	}
