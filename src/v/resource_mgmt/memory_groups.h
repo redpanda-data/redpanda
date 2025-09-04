@@ -57,6 +57,7 @@ public:
       compaction_memory_reservation compaction,
       bool wasm_enabled,
       bool datalake_enabled,
+      bool cloud_topics_enabled,
       partitions_memory_reservation partitions);
 
     size_t kafka_total_memory() const;
@@ -92,6 +93,8 @@ public:
 
     size_t datalake_max_memory() const;
 
+    size_t cloud_topics_memory() const;
+
     // Absolute memory in bytes reserved for partitions
     size_t partitions_max_memory() const;
 
@@ -118,6 +121,7 @@ private:
     size_t _total_system_memory;
     bool _wasm_enabled;
     bool _datalake_enabled;
+    bool _cloud_topics_enabled;
 
     friend class testing::system_memory_groups_accessor;
 };

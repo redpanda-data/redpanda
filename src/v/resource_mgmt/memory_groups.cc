@@ -32,6 +32,10 @@ bool datalake_enabled() {
     return config::shard_local_cfg().iceberg_enabled.value();
 }
 
+bool cloud_topics_enabled() {
+    return config::shard_local_cfg().development_enable_cloud_topics();
+}
+
 struct memory_shares {
     constexpr static size_t chunk_cache = 15;
     constexpr static size_t kafka = 30;
@@ -40,14 +44,19 @@ struct memory_shares {
     constexpr static size_t tiered_storage = 10;
     constexpr static size_t data_transforms = 10;
     constexpr static size_t datalake = 10;
+    constexpr static size_t cloud_topics = 10;
 
-    static size_t total_shares(bool with_wasm, bool with_datalake) {
+    static size_t
+    total_shares(bool with_wasm, bool with_datalake, bool with_cloud_topics) {
         size_t total = chunk_cache + kafka + rpc + recovery + tiered_storage;
         if (with_wasm) {
             total += data_transforms;
         }
         if (with_datalake) {
             total += datalake;
+        }
+        if (with_cloud_topics) {
+            total += cloud_topics;
         }
         return total;
     }
@@ -71,6 +80,7 @@ system_memory_groups::system_memory_groups(
   compaction_memory_reservation compaction,
   bool wasm_enabled,
   bool datalake_enabled,
+  bool cloud_topics_enabled,
   partitions_memory_reservation partitions)
   : _compaction_reserved_memory(
       compaction.reserved_bytes(total_available_memory))
@@ -80,7 +90,8 @@ system_memory_groups::system_memory_groups(
       total_available_memory - _compaction_reserved_memory
       - _partitions_reserved_memory)
   , _wasm_enabled(wasm_enabled)
-  , _datalake_enabled(datalake_enabled) {}
+  , _datalake_enabled(datalake_enabled)
+  , _cloud_topics_enabled(cloud_topics_enabled) {}
 
 size_t system_memory_groups::chunk_cache_min_memory() const {
     return chunk_cache_max_memory() / 3;
@@ -120,6 +131,13 @@ size_t system_memory_groups::datalake_max_memory() const {
     return subsystem_memory<memory_shares::datalake>();
 }
 
+size_t system_memory_groups::cloud_topics_memory() const {
+    if (!_cloud_topics_enabled) {
+        return 0;
+    }
+    return subsystem_memory<memory_shares::cloud_topics>();
+}
+
 size_t system_memory_groups::partitions_max_memory() const {
     return _partitions_reserved_memory;
 }
@@ -133,7 +151,9 @@ template<size_t shares>
 size_t system_memory_groups::subsystem_memory() const {
     size_t per_share_amount = total_memory()
                               / memory_shares::total_shares(
-                                _wasm_enabled, _datalake_enabled);
+                                _wasm_enabled,
+                                _datalake_enabled,
+                                _cloud_topics_enabled);
     return per_share_amount * shares;
 }
 
@@ -187,6 +207,12 @@ system_memory_groups& memory_groups() {
     }
     partitions_memory_reservation partitions{
       .max_limit_pct = cfg.topic_partitions_memory_allocation_percent()};
-    groups.emplace(total, compaction, wasm, datalake_enabled(), partitions);
+    groups.emplace(
+      total,
+      compaction,
+      wasm,
+      datalake_enabled(),
+      cloud_topics_enabled(),
+      partitions);
     return *groups;
 }
