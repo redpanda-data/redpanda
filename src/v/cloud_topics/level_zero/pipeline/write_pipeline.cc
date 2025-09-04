@@ -132,7 +132,7 @@ write_pipeline<Clock>::stage::stage(write_pipeline<Clock>* p, pipeline_stage s)
 template<class Clock>
 typename write_pipeline<Clock>::write_requests_list
 write_pipeline<Clock>::get_write_requests(
-  size_t max_bytes, pipeline_stage stage) {
+  size_t max_bytes, pipeline_stage stage, size_t max_requests) {
     // First remove timed out write request to avoid returning them
     this->remove_timed_out_requests();
 
@@ -144,6 +144,7 @@ write_pipeline<Clock>::get_write_requests(
     write_requests_list result(this, stage, {});
 
     size_t acc_size = 0;
+    size_t acc_req = 0;
 
     // The elements in the list are in the insertion order.
     auto it = pending.begin();
@@ -153,7 +154,8 @@ write_pipeline<Clock>::get_write_requests(
         }
         auto sz = it->data_chunk.payload.size_bytes();
         acc_size += sz;
-        if (acc_size >= max_bytes) {
+        acc_req++;
+        if (acc_size >= max_bytes || acc_req >= max_requests) {
             // Include last element
             it++;
             break;
@@ -204,8 +206,9 @@ void write_pipeline<Clock>::stage::push_next_stage(write_request<Clock>& req) {
 
 template<class Clock>
 write_pipeline<Clock>::write_requests_list
-write_pipeline<Clock>::stage::pull_write_requests(size_t max_bytes) {
-    return _parent->get_write_requests(max_bytes, _ps);
+write_pipeline<Clock>::stage::pull_write_requests(
+  size_t max_bytes, size_t max_requests) {
+    return _parent->get_write_requests(max_bytes, _ps, max_requests);
 }
 
 template<class Clock>

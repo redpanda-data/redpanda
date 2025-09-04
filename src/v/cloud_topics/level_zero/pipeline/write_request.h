@@ -21,6 +21,7 @@
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/weak_ptr.hh>
 
 namespace cloud_topics::l0 {
