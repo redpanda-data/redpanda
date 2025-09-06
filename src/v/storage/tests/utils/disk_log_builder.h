@@ -337,6 +337,10 @@ public:
     segment& get_segment(size_t index);
     segment_index& get_seg_index_ptr(size_t index);
 
+    // for the segment at the given index, mark as a compacted segment
+    // and set all flags & timestamps
+    void set_compaction_complete(size_t index);
+
     // Create segments
     ss::future<>
     add_segment(model::offset offset, model::term_id term = model::term_id(0));

@@ -216,6 +216,14 @@ segment_index& disk_log_builder::get_seg_index_ptr(size_t index) {
     return get_segment(index).index();
 }
 
+void disk_log_builder::set_compaction_complete(size_t index) {
+    auto& s = get_segment(index);
+    s.mark_as_compacted_segment();
+    s.index().maybe_set_self_compact_timestamp(model::timestamp::now());
+    s.index().maybe_set_clean_compact_timestamp(model::timestamp::now());
+    s.mark_as_finished_windowed_compaction();
+}
+
 // Create segments
 ss::future<>
 disk_log_builder::add_segment(model::offset offset, model::term_id term) {
@@ -264,9 +272,7 @@ void populate_log(storage::disk_log_builder& b, const log_spec& spec) {
       | storage::add_random_batch(*first, spec.last_segment_num_records);
 
     for (auto i : spec.compacted_segment_indices) {
-        b.get_segment(i).index().maybe_set_self_compact_timestamp(
-          model::timestamp::now());
-        b.get_segment(i).mark_as_finished_windowed_compaction();
+        b.set_compaction_complete(i);
     }
 }
 
