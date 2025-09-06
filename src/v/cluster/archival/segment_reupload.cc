@@ -40,11 +40,10 @@
 
 namespace archival {
 
-bool eligible_for_compacted_reupload(const storage::segment& s) {
-    if (config::shard_local_cfg().log_compaction_use_sliding_window) {
-        return s.finished_windowed_compaction();
-    }
-    return s.has_self_compact_timestamp();
+bool eligible_for_compacted_reupload(
+  const storage::log& l, const storage::segment& s) {
+    return l.eligible_for_compacted_reupload(
+      s.offsets().get_base_offset(), s.offsets().get_stable_offset());
 }
 
 ss::log_level log_level_for_error(const candidate_creation_error& error) {
@@ -612,7 +611,7 @@ segment_collector::lookup_result segment_collector::find_next_segment(
         return {};
     }
 
-    auto segment_is_compacted = eligible_for_compacted_reupload(*segment);
+    auto segment_is_compacted = eligible_for_compacted_reupload(_log, *segment);
     auto compacted_segment_expected
       = mode == segment_collector_mode::compacted_reupload;
     auto compacted_segment_allowed
@@ -902,8 +901,7 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
     // log. We need to pass a valid offset range to 'async_data_uploader', so we
     // shouldn't perform the start_offset adjustment in this case.
     // See 4253766df74ca8ee53e17702655976c30298ebea for more detail
-    auto is_compacted = first->is_compacted_segment()
-                        && eligible_for_compacted_reupload(*first);
+    auto is_compacted = eligible_for_compacted_reupload(_log, *first);
     if (starting_offset != _begin_inclusive && is_compacted) {
         vlog(
           archival_log.debug,
@@ -1004,8 +1002,7 @@ segment_collector::make_upload_candidate_stream(
     stream.min_timestamp = cand.base_timestamp;
     stream.max_timestamp = cand.max_timestamp;
     stream.size = cand.content_length;
-    stream.is_compacted = front->is_compacted_segment()
-                          && eligible_for_compacted_reupload(*front);
+    stream.is_compacted = eligible_for_compacted_reupload(_log, *front);
     stream.term = cand.term;
     stream.create_input_stream =
       [segments = cand.sources,

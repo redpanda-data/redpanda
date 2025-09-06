@@ -726,6 +726,7 @@ TEST(SegmentReuploadUnit, test_segment_name_adjustment) {
       max_upload_size};
 
     collector.collect_segments();
+    ASSERT_FALSE(collector.segments().empty());
     auto name = collector.adjust_segment_name();
     ASSERT_EQ(name, cloud_storage::segment_name{"10-0-v1.log"});
 }
@@ -759,7 +760,7 @@ TEST(SegmentReuploadUnit, test_segment_name_no_adjustment) {
       max_upload_size};
 
     collector.collect_segments();
-
+    ASSERT_FALSE(collector.segments().empty());
     auto name = collector.adjust_segment_name();
     ASSERT_EQ(name, cloud_storage::segment_name{"10-0-v1.log"});
 }
@@ -946,9 +947,7 @@ TEST(SegmentReuploadUnit, test_upload_candidate_generation) {
       | storage::add_random_batch(*first, spec.last_segment_num_records);
 
     for (auto i : spec.compacted_segment_indices) {
-        b.get_segment(i).index().maybe_set_self_compact_timestamp(
-          model::timestamp::now());
-        b.get_segment(i).mark_as_finished_windowed_compaction();
+        b.set_compaction_complete(i);
     }
 
     size_t max_size = b.get_segment(0).size_bytes()
@@ -1114,9 +1113,7 @@ TEST(SegmentReuploadUnit, test_same_size_reupload_skipped) {
     // Mark self compaction as complete on the segment and collect
     // segments for re-upload. The upload candidate should be a noop
     // since the selected reupload has the same size as the existing segment.
-    b.get_segment(0).index().maybe_set_self_compact_timestamp(
-      model::timestamp::now());
-    b.get_segment(0).mark_as_finished_windowed_compaction();
+    b.set_compaction_complete(0);
 
     {
         archival::segment_collector collector{
@@ -1157,9 +1154,7 @@ TEST(SegmentReuploadUnit, test_same_size_reupload_skipped) {
     // and collect segments for re-upload again. Again, the upload candidate
     // should be a no-op since the reupload of the two local segments
     // results in a segment of the same size as the one that should be replaced.
-    b.get_segment(1).index().maybe_set_self_compact_timestamp(
-      model::timestamp::now());
-    b.get_segment(1).mark_as_finished_windowed_compaction();
+    b.set_compaction_complete(1);
 
     {
         archival::segment_collector collector{
@@ -1228,9 +1223,7 @@ TEST(SegmentReuploadUnit, test_do_not_reupload_self_concatenated) {
         .delta_offset_end = model::offset_delta(0)});
 
     b.update_start_offset(model::offset{3000}).get();
-    b.get_segment(0).index().maybe_set_self_compact_timestamp(
-      model::timestamp::now());
-    b.get_segment(0).mark_as_finished_windowed_compaction();
+    b.set_compaction_complete(0);
 
     {
         archival::segment_collector collector{
@@ -1306,10 +1299,7 @@ TEST(SegmentReuploadUnit, test_do_not_reupload_prefix_truncated) {
 
     // Mark our local segments compacted, making them eligible for reupload.
     for (int i = 0; i < 3; i++) {
-        b.get_segment(i).mark_as_compacted_segment();
-        b.get_segment(i).index().maybe_set_self_compact_timestamp(
-          model::timestamp::now());
-        b.get_segment(i).mark_as_finished_windowed_compaction();
+        b.set_compaction_complete(i);
     }
 
     // Prefix truncate without aligning to a segment boundary, a la
@@ -1393,10 +1383,7 @@ TEST(SegmentReuploadUnit, test_bump_start_when_not_aligned) {
 
     // Mark our local segments compacted, making them eligible for reupload.
     for (int i = 0; i < 3; i++) {
-        b.get_segment(i).mark_as_compacted_segment();
-        b.get_segment(i).index().maybe_set_self_compact_timestamp(
-          model::timestamp::now());
-        b.get_segment(i).mark_as_finished_windowed_compaction();
+        b.set_compaction_complete(i);
     }
 
     // Try collecting from the middle of a local segment that hapens to align

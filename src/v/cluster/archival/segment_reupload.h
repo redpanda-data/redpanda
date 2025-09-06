@@ -129,7 +129,8 @@ using segment_collector_stream_result = std::variant<
   skip_offset_range,
   candidate_creation_error>;
 
-bool eligible_for_compacted_reupload(const storage::segment&);
+bool eligible_for_compacted_reupload(
+  const storage::log&, const storage::segment&);
 
 class segment_collector {
 public:
