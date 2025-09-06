@@ -3499,7 +3499,8 @@ ntp_archiver::find_reupload_candidate(
                   vlog(
                     _rtclog.debug,
                     "Failed to make reupload candidate due to size mismatch, "
-                    "skip this range: expected size: {}, actual size: {}",
+                    "skip this range: expected size in bytes: {}, actual size "
+                    "in bytes: {}",
                     human::bytes(run->meta.size_bytes),
                     human::bytes(collector_stream.size));
                   return {.skip_to = collector_stream.end_offset};
