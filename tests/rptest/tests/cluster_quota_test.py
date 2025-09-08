@@ -170,12 +170,13 @@ class ClusterRateQuotaTest(RedpandaTest):
             *args,
             extra_rp_conf=additional_options,
             log_config=LoggingConfig(
-                "info",
+                "trace",
                 logger_levels={
                     "kafka": "trace",
                     "kafka_quotas": "trace",
                     "cluster": "trace",
                     "raft": "trace",
+                    "io": "debug",
                 },
             ),
             resource_settings=ResourceSettings(num_cpus=1),
