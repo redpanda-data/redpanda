@@ -103,6 +103,19 @@ get_counts_map(std::optional<value> v, std::string_view name) {
     return ret;
 }
 
+value make_counts_map_value(
+  const chunked_hash_map<nested_field::id_t, size_t>& map) {
+    auto map_val = std::make_unique<map_value>();
+    for (const auto& [k, v] : map) {
+        map_val->kvs.emplace_back(
+          kv_value{
+            .key = int_value(k),
+            .val = long_value(v),
+          });
+    }
+    return value{std::move(map_val)};
+}
+
 template<typename ValueT, typename T>
 std::optional<value> to_optional_value(std::optional<T> v) {
     if (!v.has_value()) {
@@ -196,13 +209,13 @@ std::unique_ptr<struct_value> data_file_to_value(const data_file& file) {
 
     // TODO: serialize the rest of the optional fields.
     // column_sizes
-    ret->fields.emplace_back(std::nullopt);
+    ret->fields.emplace_back(make_counts_map_value(file.column_sizes));
     // value_counts
-    ret->fields.emplace_back(std::nullopt);
+    ret->fields.emplace_back(make_counts_map_value(file.value_counts));
     // null_value_counts
-    ret->fields.emplace_back(std::nullopt);
+    ret->fields.emplace_back(make_counts_map_value(file.null_value_counts));
     // nan_value_counts
-    ret->fields.emplace_back(std::nullopt);
+    ret->fields.emplace_back(make_counts_map_value(file.nan_value_counts));
     // lower_bounds
     ret->fields.emplace_back(std::nullopt);
     // upper_bounds
