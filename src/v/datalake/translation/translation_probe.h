@@ -30,6 +30,8 @@ public:
         /// Failed to ensure the table schema matches the inferred Iceberg
         /// schema.
         failed_iceberg_schema_resolution,
+        /// Successfully parsed the batch header but the record is corrupted.
+        corrupted_record,
     };
 
 public:
@@ -62,6 +64,8 @@ public:
             return _num_failed_data_translation;
         case invalid_record_cause::failed_iceberg_schema_resolution:
             return _num_failed_iceberg_schema_resolution;
+        case invalid_record_cause::corrupted_record:
+            return _num_corrupted_records;
         }
     }
 
@@ -83,6 +87,7 @@ private:
     size_t _num_failed_kafka_schema_resolution = 0;
     size_t _num_failed_data_translation = 0;
     size_t _num_failed_iceberg_schema_resolution = 0;
+    size_t _num_corrupted_records = 0;
 
     // NOTE: the accounting for bytes here is not strictly accurate and should
     // only be used to get a rough sense for translation throughput.

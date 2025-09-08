@@ -129,6 +129,12 @@ private:
       chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>,
       ss::abort_source&);
 
+    ss::future<result<void, writer_error>> handle_corrupted_batch(
+      const model::record_batch& batch,
+      kafka::offset start_offset,
+      int32_t record_index,
+      ss::abort_source& as);
+
     prefix_logger _log;
     const model::ntp& _ntp;
     model::revision_id _topic_revision;

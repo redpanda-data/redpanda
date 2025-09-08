@@ -183,6 +183,8 @@ operator<<(std::ostream& os, translation_probe::invalid_record_cause cause) {
         return os << "failed_data_translation";
     case failed_iceberg_schema_resolution:
         return os << "failed_iceberg_schema_resolution";
+    case corrupted_record:
+        return os << "corrupted_record";
     }
 }
 }; // namespace datalake
