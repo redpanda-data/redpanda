@@ -77,10 +77,10 @@ get_required_struct(std::optional<value> v, std::string_view name) {
     return ret;
 }
 
-chunked_hash_map<nested_field::id_t, size_t>
+std::optional<chunked_hash_map<nested_field::id_t, size_t>>
 get_counts_map(std::optional<value> v, std::string_view name) {
     if (!v.has_value()) {
-        return {};
+        return std::nullopt;
     }
     if (!holds_alternative<std::unique_ptr<map_value>>(*v)) {
         throw std::invalid_argument(
@@ -103,10 +103,13 @@ get_counts_map(std::optional<value> v, std::string_view name) {
     return ret;
 }
 
-value make_counts_map_value(
-  const chunked_hash_map<nested_field::id_t, size_t>& map) {
+std::optional<value> make_counts_map_value(
+  const std::optional<chunked_hash_map<nested_field::id_t, size_t>>& map) {
+    if (!map.has_value()) {
+        return std::nullopt;
+    }
     auto map_val = std::make_unique<map_value>();
-    for (const auto& [k, v] : map) {
+    for (const auto& [k, v] : *map) {
         map_val->kvs.emplace_back(
           kv_value{
             .key = int_value(k),
@@ -114,6 +117,82 @@ value make_counts_map_value(
           });
     }
     return value{std::move(map_val)};
+}
+
+std::optional<chunked_hash_map<nested_field::id_t, iobuf>>
+get_bounds_map(std::optional<value> v, std::string_view name) {
+    if (!v.has_value()) {
+        return std::nullopt;
+    }
+    if (!holds_alternative<std::unique_ptr<map_value>>(*v)) {
+        throw std::invalid_argument("Value is not a map");
+    }
+    auto& as_map = std::get<std::unique_ptr<map_value>>(*v);
+    chunked_hash_map<nested_field::id_t, iobuf> ret;
+    try {
+        for (auto& kv : as_map->kvs) {
+            auto k = get_required_primitive<int_value>(
+              std::move(kv.key), "key");
+            auto v = get_required_primitive<binary_value>(
+              std::move(kv.val), "val");
+            ret.emplace(nested_field::id_t{k}, std::move(v));
+        }
+    } catch (const std::exception& e) {
+        throw std::runtime_error(fmt::format("Error: {} {}", name, e.what()));
+    }
+    return ret;
+}
+
+std::optional<value> make_bounds_map_value(
+  const std::optional<chunked_hash_map<nested_field::id_t, iobuf>>& map) {
+    if (!map.has_value()) {
+        return std::nullopt;
+    }
+    auto map_val = std::make_unique<map_value>();
+    for (const auto& [k, v] : *map) {
+        map_val->kvs.emplace_back(
+          kv_value{
+            .key = int_value(k),
+            .val = binary_value{.val = v.copy()},
+          });
+    }
+    return value{std::move(map_val)};
+}
+
+template<typename T, typename PrimitiveV>
+std::optional<chunked_vector<T>>
+get_primitive_list(std::optional<value> v, std::string_view name) {
+    if (!v.has_value()) {
+        return std::nullopt;
+    }
+    if (!holds_alternative<std::unique_ptr<list_value>>(*v)) {
+        throw std::invalid_argument("Value is not a list");
+    }
+    auto& as_list = std::get<std::unique_ptr<list_value>>(*v);
+    chunked_vector<T> ret;
+    try {
+        for (auto& e : as_list->elements) {
+            auto e_val = get_required_primitive<PrimitiveV>(
+              std::move(e), "element");
+            ret.emplace_back(e_val);
+        }
+    } catch (const std::exception& e) {
+        throw std::runtime_error(fmt::format("Error: {} {}", name, e.what()));
+    }
+    return ret;
+}
+
+template<typename T, typename PrimitiveV>
+std::optional<value>
+make_primitive_list_value(const std::optional<chunked_vector<T>>& vec) {
+    if (!vec.has_value()) {
+        return std::nullopt;
+    }
+    auto list_val = std::make_unique<list_value>();
+    for (const auto& e : *vec) {
+        list_val->elements.emplace_back(PrimitiveV(e));
+    }
+    return value{std::move(list_val)};
 }
 
 template<typename ValueT, typename T>
@@ -206,35 +285,31 @@ std::unique_ptr<struct_value> data_file_to_value(const data_file& file) {
       long_value(static_cast<int64_t>(file.record_count)));
     ret->fields.emplace_back(
       long_value(static_cast<int64_t>(file.file_size_bytes)));
-
-    // TODO: serialize the rest of the optional fields.
-    // column_sizes
     ret->fields.emplace_back(make_counts_map_value(file.column_sizes));
-    // value_counts
     ret->fields.emplace_back(make_counts_map_value(file.value_counts));
-    // null_value_counts
     ret->fields.emplace_back(make_counts_map_value(file.null_value_counts));
-    // nan_value_counts
     ret->fields.emplace_back(make_counts_map_value(file.nan_value_counts));
-    // lower_bounds
-    ret->fields.emplace_back(std::nullopt);
-    // upper_bounds
-    ret->fields.emplace_back(std::nullopt);
-    // key_metadata
-    ret->fields.emplace_back(std::nullopt);
-    // split_offsets
-    ret->fields.emplace_back(std::nullopt);
-    // equality_ids
-    ret->fields.emplace_back(std::nullopt);
-    // sort_order_id
-    ret->fields.emplace_back(std::nullopt);
+    ret->fields.emplace_back(make_bounds_map_value(file.lower_bounds));
+    ret->fields.emplace_back(make_bounds_map_value(file.upper_bounds));
+    ret->fields.emplace_back(
+      file.key_metadata
+        ? std::make_optional<binary_value>(file.key_metadata->copy())
+        : std::nullopt);
+    ret->fields.emplace_back(
+      make_primitive_list_value<int64_t, long_value>(file.split_offsets));
+    ret->fields.emplace_back(
+      make_primitive_list_value<nested_field::id_t, int_value>(
+        file.equality_ids));
+    ret->fields.emplace_back(
+      file.sort_order_id ? std::make_optional<int_value>(*file.sort_order_id)
+                         : std::nullopt);
     return ret;
 }
 
 data_file data_file_from_value(struct_value v) {
     data_file file;
     auto& fs = v.fields;
-    if (fs.size() < 10) {
+    if (fs.size() < 16) {
         throw std::invalid_argument("Expected more values");
     }
     file.content_type = content_from_int(
@@ -254,6 +329,16 @@ data_file data_file_from_value(struct_value v) {
       std::move(fs[8]), "null_value_counts");
     file.nan_value_counts = get_counts_map(
       std::move(fs[9]), "nan_value_counts");
+    file.lower_bounds = get_bounds_map(std::move(fs[10]), "lower_bounds");
+    file.upper_bounds = get_bounds_map(std::move(fs[11]), "upper_bounds");
+    file.key_metadata = {get_optional_primitive<iobuf, binary_value>(
+      std::move(fs[12]), "key_metadata")};
+    file.split_offsets = get_primitive_list<int64_t, long_value>(
+      std::move(fs[13]), "split_offsets");
+    file.equality_ids = get_primitive_list<nested_field::id_t, int_value>(
+      std::move(fs[14]), "equality_ids");
+    file.sort_order_id = {get_optional_primitive<int32_t, int_value>(
+      std::move(fs[15]), "sort_order_id")};
     return file;
 }
 
