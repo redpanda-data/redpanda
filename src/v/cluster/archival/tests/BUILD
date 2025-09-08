@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "service_fixture",
@@ -246,8 +246,6 @@ redpanda_test_cc_library(
         "//src/v/random:generators",
         "//src/v/redpanda/tests:fixture",
         "//src/v/storage",
-        "//src/v/test_utils:fixture",
-        "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",
         "@seastar//:testing",
@@ -360,5 +358,25 @@ redpanda_cc_btest(
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
         "@seastar",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "segment_collector_rpbench",
+    srcs = [
+        "segment_collector_bench.cc",
+    ],
+    memory = "4GiB",
+    deps = [
+        ":async_data_uploader_fixture",
+        "//src/v/cloud_storage",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/random:generators",
+        "//src/v/redpanda/tests:fixture",
+        "//src/v/storage",
+        "//src/v/storage:record_batch_utils",
+        "@seastar",
+        "@seastar//:benchmark",
     ],
 )
