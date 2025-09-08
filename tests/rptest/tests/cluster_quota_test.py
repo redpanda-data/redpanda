@@ -8,29 +8,29 @@
 # by the Apache License, Version 2.0
 import datetime
 import json
-import time
 import random
 import string
+import time
 from typing import NamedTuple, Optional
 
 from ducktape.utils.util import wait_until
-from rptest.clients.rpk import RpkTool
-from rptest.services.redpanda import (
-    MetricSample,
-    MetricSamples,
-    MetricsEndpoint,
-    ResourceSettings,
-    LoggingConfig,
-)
-from kafka import KafkaProducer, KafkaConsumer, TopicPartition
+from kafka import KafkaConsumer, KafkaProducer
+
 from rptest.clients.kcl import (
-    RawKCL,
-    KclCreateTopicsRequestTopic,
     KclCreatePartitionsRequestTopic,
+    KclCreateTopicsRequestTopic,
+    RawKCL,
 )
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import (
+    LoggingConfig,
+    MetricSample,
+    MetricsEndpoint,
+    ResourceSettings,
+)
+from rptest.tests.redpanda_test import RedpandaTest
 
 GB = 1_000_000_000
 
@@ -559,7 +559,7 @@ class ClusterRateQuotaTest(RedpandaTest):
         self.check_producer_throttled(producer1, ignore_max_throttle=True)
 
         assert not self._throttling_enforced_broker_side(), (
-            f"On the first request, the throttling delay should not be enforced"
+            "On the first request, the throttling delay should not be enforced"
         )
 
         # Now check that another producer is throttled through throttle_ms but
@@ -568,7 +568,7 @@ class ClusterRateQuotaTest(RedpandaTest):
         self.check_producer_throttled(producer2, ignore_max_throttle=True)
 
         assert not self._throttling_enforced_broker_side(), (
-            f"On the first request, the throttling delay should not be enforced"
+            "On the first request, the throttling delay should not be enforced"
         )
 
         # Also check that non-produce requests are not throttled either
@@ -576,13 +576,13 @@ class ClusterRateQuotaTest(RedpandaTest):
         self.check_consumer_not_throttled(consumer)
 
         assert not self._throttling_enforced_broker_side(), (
-            f"Non-produce requests should not be throttled either"
+            "Non-produce requests should not be throttled either"
         )
 
         # Wait for logs to propagate
         time.sleep(5)
         assert not self._throttling_enforced_broker_side(), (
-            f"No broker-side throttling should happen up until this point"
+            "No broker-side throttling should happen up until this point"
         )
 
         # Because the python client doesn't seem to enforce the quota
