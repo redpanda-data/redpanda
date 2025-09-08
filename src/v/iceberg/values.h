@@ -21,62 +21,76 @@
 namespace iceberg {
 
 struct boolean_value {
+    static std::string_view name() { return "boolean"; }
     bool val;
 };
 
 struct int_value {
+    static std::string_view name() { return "int"; }
     int32_t val;
 };
 
 struct long_value {
+    static std::string_view name() { return "long"; }
     int64_t val;
 };
 
 struct float_value {
+    static std::string_view name() { return "float"; }
     float val;
 };
 
 struct double_value {
+    static std::string_view name() { return "double"; }
     double val;
 };
 
 struct date_value {
+    static std::string_view name() { return "date"; }
     // Days since 1970-01-01.
     int32_t val;
 };
 
 struct time_value {
+    static std::string_view name() { return "time"; }
     // Microseconds since midnight.
     int64_t val;
 };
 
 struct timestamp_value {
+    static std::string_view name() { return "timestamp"; }
     // Microseconds since 1970-01-01 00:00:00.
     int64_t val;
 };
 
 struct timestamptz_value {
+    static std::string_view name() { return "timestamptz"; }
     // Microseconds since 1970-01-01 00:00:00 UTC.
     int64_t val;
 };
 
 struct string_value {
+    static std::string_view name() { return "string"; }
     iobuf val;
 };
 
 struct uuid_value {
+    static std::string_view name() { return "uuid"; }
     uuid_t val;
 };
 
 struct fixed_value {
+    static std::string_view name() { return "fixed"; }
     iobuf val;
 };
 
 struct binary_value {
+    static std::string_view name() { return "binary"; }
     iobuf val;
 };
 
 struct decimal_value {
+    static std::string_view name() { return "decimal"; }
     absl::int128 val;
 };
 
