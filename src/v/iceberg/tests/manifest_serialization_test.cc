@@ -21,6 +21,7 @@
 #include "iceberg/partition_key_type.h"
 #include "iceberg/schema_json.h"
 #include "iceberg/tests/test_schemas.h"
+#include "random/generators.h"
 #include "test_utils/runfiles.h"
 #include "utils/file_io.h"
 
@@ -49,6 +50,120 @@ bool trivial_fields_eq(
            && lhs.data_file.record_count == rhs.data_file.record_count
            && lhs.data_file.file_size_in_bytes
                 == rhs.data_file.file_size_in_bytes;
+}
+
+data_file make_random_data_file(int file_num) {
+    data_file df{
+      .content_type = data_file_content_type::data,
+      .file_path = uri(fmt::format("s3://bucket/path/to/file-{}", file_num)),
+      .file_format = data_file_format::parquet,
+      .partition = partition_key{std::make_unique<struct_value>()},
+      .record_count = random_generators::get_int<size_t>(0, 10000),
+      .file_size_bytes = random_generators::get_int<size_t>(0, 10000),
+    };
+
+    if (random_generators::get_int(0, 1)) {
+        df.column_sizes = chunked_hash_map<nested_field::id_t, size_t>{};
+        int map_size = random_generators::get_int(1, 5);
+        for (int i = 0; i < map_size; ++i) {
+            auto field_id = nested_field::id_t{
+              random_generators::get_int<int32_t>(1, 100)};
+            auto size_val = random_generators::get_int<size_t>(0, 10000);
+            df.column_sizes->emplace(field_id, size_val);
+        }
+    }
+
+    if (random_generators::get_int(0, 1)) {
+        df.value_counts = chunked_hash_map<nested_field::id_t, size_t>{};
+        int map_size = random_generators::get_int(1, 5);
+        for (int i = 0; i < map_size; ++i) {
+            auto field_id = nested_field::id_t{
+              random_generators::get_int<int32_t>(1, 100)};
+            auto count_val = random_generators::get_int<size_t>(0, 10000);
+            df.value_counts->emplace(field_id, count_val);
+        }
+    }
+
+    if (random_generators::get_int(0, 1)) {
+        df.null_value_counts = chunked_hash_map<nested_field::id_t, size_t>{};
+        int map_size = random_generators::get_int(1, 5);
+        for (int i = 0; i < map_size; ++i) {
+            auto field_id = nested_field::id_t{
+              random_generators::get_int<int32_t>(1, 100)};
+            auto null_count = random_generators::get_int<size_t>(0, 10000);
+            df.null_value_counts->emplace(field_id, null_count);
+        }
+    }
+
+    if (random_generators::get_int(0, 1)) {
+        df.nan_value_counts = chunked_hash_map<nested_field::id_t, size_t>{};
+        int map_size = random_generators::get_int(1, 5);
+        for (int i = 0; i < map_size; ++i) {
+            auto field_id = nested_field::id_t{
+              random_generators::get_int<int32_t>(1, 100)};
+            auto nan_count = random_generators::get_int<size_t>(0, 10000);
+            df.nan_value_counts->emplace(field_id, nan_count);
+        }
+    }
+
+    if (random_generators::get_int(0, 1)) {
+        df.lower_bounds = chunked_hash_map<nested_field::id_t, iobuf>{};
+        int map_size = random_generators::get_int(1, 5);
+        for (int i = 0; i < map_size; ++i) {
+            auto field_id = nested_field::id_t{
+              random_generators::get_int<int32_t>(1, 100)};
+            auto bound_str = random_generators::gen_alphanum_string(
+              random_generators::get_int(1, 10));
+            iobuf bound_buf;
+            bound_buf.append(bound_str.data(), bound_str.size());
+            df.lower_bounds->emplace(field_id, std::move(bound_buf));
+        }
+    }
+
+    if (random_generators::get_int(0, 1)) {
+        df.upper_bounds = chunked_hash_map<nested_field::id_t, iobuf>{};
+        int map_size = random_generators::get_int(1, 5);
+        for (int i = 0; i < map_size; ++i) {
+            auto field_id = nested_field::id_t{
+              random_generators::get_int<int32_t>(1, 100)};
+            auto bound_str = random_generators::gen_alphanum_string(
+              random_generators::get_int(1, 10));
+            iobuf bound_buf;
+            bound_buf.append(bound_str.data(), bound_str.size());
+            df.upper_bounds->emplace(field_id, std::move(bound_buf));
+        }
+    }
+
+    if (random_generators::get_int(0, 1)) {
+        auto key_str = random_generators::gen_alphanum_string(
+          random_generators::get_int(1, 10));
+        iobuf key_buf;
+        key_buf.append(key_str.data(), key_str.size());
+        df.key_metadata = std::move(key_buf);
+    }
+
+    if (random_generators::get_int(0, 1)) {
+        df.split_offsets = chunked_vector<int64_t>{};
+        int vec_size = random_generators::get_int(1, 5);
+        for (int i = 0; i < vec_size; ++i) {
+            df.split_offsets->emplace_back(
+              random_generators::get_int<int64_t>(0, 10000));
+        }
+    }
+
+    if (random_generators::get_int(0, 1)) {
+        df.equality_ids = chunked_vector<nested_field::id_t>{};
+        int vec_size = random_generators::get_int(1, 5);
+        for (int i = 0; i < vec_size; ++i) {
+            df.equality_ids->emplace_back(
+              nested_field::id_t{random_generators::get_int<int32_t>(1, 100)});
+        }
+    }
+
+    if (random_generators::get_int(0, 1)) {
+        df.sort_order_id = random_generators::get_int<int32_t>(0, 1000);
+    }
+    return df;
 }
 
 } // anonymous namespace
@@ -307,6 +422,43 @@ TEST(ManifestSerializationTest, TestMetadataWithPartitionSpec) {
     }
 }
 
+TEST(ManifestSerializationTest, TestSerializeWithRandomDataFiles) {
+    schema s{
+      .schema_struct = std::get<struct_type>(test_nested_schema_type()),
+      .schema_id = schema::id_t{12},
+      .identifier_field_ids = {nested_field::id_t{1}},
+    };
+    manifest_metadata meta{
+      .schema = std::move(s),
+      .partition_spec = {},
+      .format_version = format_version::v1,
+      .manifest_content_type = manifest_content_type::data,
+    };
+    manifest m{
+      .metadata = std::move(meta),
+      .entries = {},
+    };
+
+    for (int i = 0; i < 10; ++i) {
+        m.entries.emplace_back(
+          manifest_entry{
+            .status = manifest_entry_status::added,
+            .snapshot_id = snapshot_id{random_generators::get_int(0, 1000)},
+            .sequence_number = sequence_number{random_generators::get_int(
+              0, 1000)},
+            .file_sequence_number
+            = file_sequence_number{random_generators::get_int(0, 1000)},
+            .data_file = make_random_data_file(i),
+          });
+    }
+
+    auto serialized_buf = serialize_avro(m);
+    auto m_roundtrip = parse_manifest(std::move(serialized_buf));
+    ASSERT_EQ(m.metadata, m_roundtrip.metadata);
+    ASSERT_EQ(m.entries.size(), m_roundtrip.entries.size());
+    ASSERT_EQ(m, m_roundtrip);
+}
+
 TEST(ManifestSerializationTest, TestSerializeManifestData) {
     // File may not be on mount that supports O_DIRECT.
     ss::engine().set_strict_dma(false);
@@ -322,6 +474,17 @@ TEST(ManifestSerializationTest, TestSerializeManifestData) {
     ASSERT_EQ(
       m.metadata.schema.schema_struct,
       std::get<struct_type>(test_nested_schema_type()));
+    const auto& first_entry = m.entries[0];
+    ASSERT_EQ(first_entry.status, manifest_entry_status::existing);
+    ASSERT_EQ(first_entry.snapshot_id, snapshot_id{0});
+    ASSERT_EQ(first_entry.sequence_number, sequence_number{0});
+    ASSERT_EQ(first_entry.file_sequence_number, file_sequence_number{0});
+    ASSERT_EQ(first_entry.data_file.file_path, "data/path/file-0.parquet");
+    ASSERT_EQ(first_entry.data_file.file_format, data_file_format::parquet);
+    ASSERT_EQ(first_entry.data_file.column_sizes.size(), 0);
+    ASSERT_EQ(first_entry.data_file.value_counts.size(), 0);
+    ASSERT_EQ(first_entry.data_file.null_value_counts.size(), 0);
+    ASSERT_EQ(first_entry.data_file.nan_value_counts.size(), 0);
 
     auto serialized_buf = serialize_avro(m);
     for (int i = 0; i < 10; i++) {

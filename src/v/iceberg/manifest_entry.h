@@ -40,21 +40,20 @@ struct data_file {
 
     size_t record_count;
     size_t file_size_bytes;
-    chunked_hash_map<nested_field::id_t, size_t> column_sizes;
-    chunked_hash_map<nested_field::id_t, size_t> value_counts;
-    chunked_hash_map<nested_field::id_t, size_t> null_value_counts;
-    chunked_hash_map<nested_field::id_t, size_t> distinct_counts;
-    chunked_hash_map<nested_field::id_t, size_t> nan_value_counts;
+    std::optional<chunked_hash_map<nested_field::id_t, size_t>> column_sizes;
+    std::optional<chunked_hash_map<nested_field::id_t, size_t>> value_counts;
+    std::optional<chunked_hash_map<nested_field::id_t, size_t>>
+      null_value_counts;
+    std::optional<chunked_hash_map<nested_field::id_t, size_t>>
+      nan_value_counts;
+    std::optional<chunked_hash_map<nested_field::id_t, iobuf>> lower_bounds;
+    std::optional<chunked_hash_map<nested_field::id_t, iobuf>> upper_bounds;
+    std::optional<iobuf> key_metadata;
+    std::optional<chunked_vector<int64_t>> split_offsets;
+    std::optional<chunked_vector<nested_field::id_t>> equality_ids;
+    // TODO: use sort_order::id_t
+    std::optional<int32_t> sort_order_id;
 
-    // TODO: The following fields are not supported, and are serialized as
-    // empty options.
-    // - distinct_counts
-    // - lower_bounds
-    // - upper_bounds
-    // - key_metadata
-    // - split_offsets
-    // - equality_ids
-    // - sort_order_ids
     friend bool operator==(const data_file&, const data_file&) = default;
     data_file copy() const;
 };

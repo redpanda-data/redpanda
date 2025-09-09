@@ -13,12 +13,43 @@
 namespace iceberg {
 namespace {
 
-chunked_hash_map<nested_field::id_t, size_t>
-copy_map(const chunked_hash_map<nested_field::id_t, size_t>& m) {
-    chunked_hash_map<nested_field::id_t, size_t> ret;
-    ret.reserve(m.size());
-    for (auto& [k, v] : m) {
+template<typename KeyT, typename ValT>
+std::optional<chunked_hash_map<KeyT, ValT>>
+copy_primitive_map(const std::optional<chunked_hash_map<KeyT, ValT>>& m) {
+    if (!m.has_value()) {
+        return std::nullopt;
+    }
+    chunked_hash_map<KeyT, ValT> ret;
+    ret.reserve(m->size());
+    for (auto& [k, v] : *m) {
         ret.emplace(k, v);
+    }
+    return ret;
+}
+
+template<typename ElementT>
+std::optional<chunked_vector<ElementT>>
+copy_primitive_list(const std::optional<chunked_vector<ElementT>>& m) {
+    if (!m.has_value()) {
+        return std::nullopt;
+    }
+    chunked_vector<ElementT> ret;
+    ret.reserve(m->size());
+    for (auto& [k, v] : *m) {
+        ret.emplace(k, v);
+    }
+    return ret;
+}
+
+std::optional<chunked_hash_map<nested_field::id_t, iobuf>> copy_bounds_map(
+  const std::optional<chunked_hash_map<nested_field::id_t, iobuf>>& m) {
+    if (!m.has_value()) {
+        return std::nullopt;
+    }
+    chunked_hash_map<nested_field::id_t, iobuf> ret;
+    ret.reserve(m->size());
+    for (auto& [k, v] : *m) {
+        ret.emplace(k, v.copy());
     }
     return ret;
 }
@@ -31,11 +62,19 @@ data_file data_file::copy() const {
       .partition = partition.copy(),
       .record_count = record_count,
       .file_size_bytes = file_size_bytes,
-      .column_sizes = copy_map(column_sizes),
-      .value_counts = copy_map(value_counts),
-      .null_value_counts = copy_map(null_value_counts),
-      .distinct_counts = copy_map(distinct_counts),
-      .nan_value_counts = copy_map(nan_value_counts),
+      .column_sizes = copy_primitive_map(column_sizes),
+      .value_counts = copy_primitive_map(value_counts),
+      .null_value_counts = copy_primitive_map(null_value_counts),
+      .nan_value_counts = copy_primitive_map(nan_value_counts),
+      .lower_bounds = copy_bounds_map(lower_bounds),
+      .upper_bounds = copy_bounds_map(upper_bounds),
+      .key_metadata = key_metadata ? std::make_optional(key_metadata->copy())
+                                   : std::nullopt,
+      .split_offsets = split_offsets ? std::make_optional(split_offsets->copy())
+                                     : std::nullopt,
+      .equality_ids = equality_ids ? std::make_optional(equality_ids->copy())
+                                   : std::nullopt,
+      .sort_order_id = sort_order_id,
     };
 }
 

@@ -185,6 +185,7 @@ redpanda_cc_gtest(
     deps = [
         ":test_schemas",
         "//src/v/base",
+        "//src/v/random:generators",
         "//src/v/bytes:iobuf",
         "//src/v/container:chunked_vector",
         "//src/v/iceberg:avro_utils",
