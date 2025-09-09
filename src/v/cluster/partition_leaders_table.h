@@ -55,7 +55,8 @@ public:
         ss::sstring _msg;
     };
 
-    explicit partition_leaders_table(ss::sharded<topic_table>&);
+    explicit partition_leaders_table(
+      ss::sharded<topic_table>&, ss::sharded<ss::abort_source>&);
 
     ss::future<> stop();
 
@@ -235,7 +236,7 @@ private:
     version _version{0};
     version _topic_map_version{0};
     ss::gate _gate;
-    ss::abort_source _as;
+    ss::abort_source& _as;
 };
 
 } // namespace cluster
