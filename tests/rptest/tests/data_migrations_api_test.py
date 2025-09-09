@@ -1536,3 +1536,4 @@ class DataMigrationsMultiClusterTest(RedpandaTest, DataMigrationTestMixin):
         total_acked += self.stop_producer()
 
         self.consume(alias_name, redpanda=cluster2, msg_count=total_acked)
+# dummy
