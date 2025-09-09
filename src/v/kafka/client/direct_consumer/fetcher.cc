@@ -146,7 +146,8 @@ ss::future<fetcher::partitions_with_epoch> fetcher::collect_partitions() {
         co_await ssx::async_for_each_counter(
           cnt,
           partitions,
-          [&to_process, &ret, inc = _session_state.incremental()](auto& p_fs) {
+          [this, &to_process, &ret, inc = _session_state.incremental()](
+            auto& p_fs) {
               partition_fetch_state& fetch_state = p_fs.second;
               ret.assignment_epochs[to_process.topic][fetch_state.partition_id]
                 = fetch_state.assignment_epoch;
@@ -168,6 +169,17 @@ ss::future<fetcher::partitions_with_epoch> fetcher::collect_partitions() {
                   // partition from the request
                   return;
               }
+              vlog(
+                logger().trace,
+                "[broker: {}] Including {}/{} in fetch request, fetch_offset: "
+                "{}, high_watermark: {}, epoch: {}, inc: {}",
+                _id,
+                to_process.topic,
+                fetch_state.partition_id,
+                fetch_state.fetch_offset,
+                fetch_state.high_watermark,
+                fetch_state.assignment_epoch,
+                inc);
               to_process.to_include_in_fetch.push_back(fetch_state);
           });
 
@@ -315,6 +327,18 @@ bool fetcher::maybe_update_fetch_offset(
           response_epoch,
           p_it->second.assignment_epoch);
         return false;
+    }
+
+    if (last_received <= p_it->second.fetch_offset) {
+        vlog(
+          logger().trace,
+          "[broker: {}] Reply for {}/{} - fetch offset not advanced, "
+          "last received: {}, current fetch offset: {}",
+          _id,
+          topic,
+          partition_id,
+          last_received,
+          p_it->second.fetch_offset);
     }
 
     vlog(
@@ -530,13 +554,16 @@ fetcher::process_fetch_response(
                   = part_response.current_leader.leader_epoch;
                 part_data.aborted_transactions = std::move(
                   part_response.aborted_transactions);
-
+                auto maybe_response_epoch = find_assignment_epoch(
+                  topic_data.topic, part_data.partition_id, epochs);
                 vlog(
                   logger().trace,
-                  "[broker: {}] topic: {}, partition fetch response: {}",
+                  "[broker: {}] topic: {}, partition fetch response: {}, "
+                  "epoch: {}",
                   _id,
                   topic_data.topic,
-                  part_response);
+                  part_response,
+                  maybe_response_epoch);
 
                 if (
                   !part_response.records.has_value()
@@ -546,9 +573,6 @@ fetcher::process_fetch_response(
                 topic_data.total_bytes += part_response.records->size_bytes();
                 part_data.data = co_await reader_to_chunked_vector(
                   std::move(part_response.records.value()));
-
-                auto maybe_response_epoch = find_assignment_epoch(
-                  topic_data.topic, part_data.partition_id, epochs);
 
                 bool updated_offset = maybe_update_fetch_offset(
                   topic_data.topic,

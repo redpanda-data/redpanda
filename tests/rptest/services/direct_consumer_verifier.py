@@ -202,7 +202,7 @@ class DirectConsumerVerifier(Service):
         cmd = f"{self._root_path()}/bin/{self.EXE}"
         cmd += f" --hostname {self._listener_host}"
         cmd += f" --port {self._listener_port}"
-        cmd += f" --default-log-level {self._log_level.lower()}"
+        cmd += f" --default-log-level {self._log_level.lower()} --logger-log-level=exception=info --logger-log-level=io=info"
         cmd += f" -c {self._cores}"
         cmd += f" -m {self._memory_limit}"
 
