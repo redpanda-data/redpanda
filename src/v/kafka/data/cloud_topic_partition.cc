@@ -39,8 +39,6 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/coroutine/as_future.hh>
 
-#include <chrono>
-#include <iterator>
 #include <optional>
 #include <system_error>
 
@@ -48,23 +46,37 @@ namespace {
 
 cloud_topics::cloud_topic_log_reader_config
 kafka_to_cloud_topic_log_reader_config(kafka::log_reader_config cfg) {
-    return cloud_topics::cloud_topic_log_reader_config(
-      /*start_offset=*/cfg.start_offset,
-      /*max_offset=*/cfg.max_offset,
-      /*min_bytes=*/cfg.min_bytes,
-      /*max_bytes=*/cfg.max_bytes,
-      /*type_filter=*/std::nullopt,
-      /*first_timestamp=*/cfg.first_timestamp,
-      /*abort_source=*/cfg.abort_source,
-      /*client_address=*/cfg.client_address,
-      /*strict_max_bytes=*/cfg.strict_max_bytes);
+    return {/*start_offset=*/cfg.start_offset,
+            /*max_offset=*/cfg.max_offset,
+            /*min_bytes=*/cfg.min_bytes,
+            /*max_bytes=*/cfg.max_bytes,
+            /*type_filter=*/std::nullopt,
+            /*time=*/cfg.first_timestamp,
+            /*as=*/cfg.abort_source,
+            /*client_addr=*/cfg.client_address,
+            /*strict_max_bytes=*/cfg.strict_max_bytes};
+}
+
+using frontend_errc = cloud_topics::frontend_errc;
+
+kafka::error_code map_errc(frontend_errc errc) {
+    switch (errc) {
+    case frontend_errc::offset_not_available:
+        return kafka::error_code::offset_not_available;
+    case frontend_errc::invalid_topic_exception:
+        return kafka::error_code::invalid_topic_exception;
+    case frontend_errc::not_leader_for_partition:
+        return kafka::error_code::not_leader_for_partition;
+    case frontend_errc::offset_out_of_range:
+        return kafka::error_code::offset_out_of_range;
+    default:
+        return kafka::error_code::unknown_server_error;
+    }
 }
 
 } // namespace
 
 namespace kafka {
-
-using frontend_errc = cloud_topics::frontend_errc;
 
 cloud_topic_partition::cloud_topic_partition(
   ss::lw_shared_ptr<cluster::partition> p,
@@ -86,18 +98,7 @@ ss::future<result<model::offset, error_code>>
 cloud_topic_partition::sync_effective_start(model::timeout_clock::duration d) {
     auto res = co_await _fe->sync_effective_start(d);
     if (!res.has_value()) {
-        switch (res.error()) {
-        case frontend_errc::offset_not_available:
-            co_return error_code::offset_not_available;
-        case frontend_errc::invalid_topic_exception:
-            co_return error_code::invalid_topic_exception;
-        case frontend_errc::not_leader_for_partition:
-            co_return error_code::not_leader_for_partition;
-        case frontend_errc::offset_out_of_range:
-            co_return error_code::offset_out_of_range;
-        default:
-            co_return error_code::unknown_server_error;
-        }
+        co_return map_errc(res.error());
     }
     co_return kafka::offset_cast(res.value());
 }
@@ -110,12 +111,7 @@ checked<model::offset, error_code>
 cloud_topic_partition::last_stable_offset() const {
     auto res = _fe->last_stable_offset();
     if (!res.has_value()) {
-        switch (res.error()) {
-        case frontend_errc::offset_not_available:
-            return error_code::offset_not_available;
-        default:
-            return error_code::unknown_server_error;
-        };
+        return map_errc(res.error());
     }
     return kafka::offset_cast(res.value());
 }
@@ -203,18 +199,7 @@ ss::future<error_code> cloud_topic_partition::validate_fetch_offset(
     auto res = co_await _fe->validate_fetch_offset(
       model::offset_cast(fetch_offset), reading_from_follower, deadline);
     if (!res.has_value()) {
-        switch (res.error()) {
-        case frontend_errc::offset_not_available:
-            co_return error_code::offset_not_available;
-        case frontend_errc::invalid_topic_exception:
-            co_return error_code::invalid_topic_exception;
-        case frontend_errc::not_leader_for_partition:
-            co_return error_code::not_leader_for_partition;
-        case frontend_errc::offset_out_of_range:
-            co_return error_code::offset_out_of_range;
-        default:
-            co_return error_code::unknown_server_error;
-        }
+        co_return map_errc(res.error());
     }
     co_return error_code::none;
 }
@@ -222,18 +207,7 @@ ss::future<error_code> cloud_topic_partition::validate_fetch_offset(
 result<partition_info> cloud_topic_partition::get_partition_info() const {
     auto res = _fe->get_partition_info();
     if (!res.has_value()) {
-        switch (res.error()) {
-        case frontend_errc::offset_not_available:
-            return error_code::offset_not_available;
-        case frontend_errc::invalid_topic_exception:
-            return error_code::invalid_topic_exception;
-        case frontend_errc::not_leader_for_partition:
-            return error_code::not_leader_for_partition;
-        case frontend_errc::offset_out_of_range:
-            return error_code::offset_out_of_range;
-        default:
-            return error_code::unknown_server_error;
-        }
+        return map_errc(res.error());
     }
     const auto& ct_info = res.value();
     partition_info info;
@@ -244,7 +218,7 @@ result<partition_info> cloud_topic_partition::get_partition_info() const {
         replica.high_watermark = kafka::offset_cast(ct_replica.high_watermark);
         replica.log_end_offset = kafka::offset_cast(ct_replica.log_end_offset);
         replica.is_alive = ct_replica.is_alive;
-        info.replicas.push_back(std::move(replica));
+        info.replicas.push_back(replica);
     }
     info.leader = ct_info.leader;
     return info;
