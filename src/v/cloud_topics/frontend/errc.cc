@@ -26,5 +26,11 @@ auto fmt::formatter<cloud_topics::frontend_errc>::format(
     case offset_out_of_range:
         return fmt::format_to(
           ctx.out(), "cloud_topics::frontend_errc::offset_out_of_range");
+    case cloud_topics::frontend_errc::timeout:
+        return fmt::format_to(
+          ctx.out(), "cloud_topics::frontend_errc::timeout");
+    case cloud_topics::frontend_errc::unknown_server_error:
+        return fmt::format_to(
+          ctx.out(), "cloud_topics::frontend_errc::unknown_server_error");
     }
 }

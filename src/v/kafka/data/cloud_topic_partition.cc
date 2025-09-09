@@ -187,9 +187,13 @@ cloud_topic_partition::get_leader_epoch_last_offset(
 }
 
 ss::future<error_code> cloud_topic_partition::prefix_truncate(
-  model::offset, ss::lowres_clock::time_point) {
-    /// DeleteRecords API is not supported in cloud topics yet.
-    co_return error_code::invalid_topic_exception;
+  model::offset offset, ss::lowres_clock::time_point deadline) {
+    auto result = co_await _fe->prefix_truncate(
+      model::offset_cast(offset), deadline);
+    if (!result.has_value()) {
+        co_return map_errc(result.error());
+    }
+    co_return error_code::none;
 }
 
 ss::future<error_code> cloud_topic_partition::validate_fetch_offset(

@@ -17,6 +17,7 @@
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "cloud_topics/level_zero/stm/placeholder.h"
 #include "cloud_topics/logger.h"
+#include "cluster/log_eviction_stm.h"
 #include "cluster/partition.h"
 #include "cluster/rm_stm_types.h"
 #include "cluster/types.h"
@@ -38,6 +39,7 @@
 #include <seastar/util/defer.hh>
 
 #include <chrono>
+#include <expected>
 #include <iterator>
 #include <optional>
 #include <stdexcept>
@@ -182,18 +184,102 @@ static ss::lw_shared_ptr<cloud_topics::ctp_stm_api> make_ctp_stm_api(
     return ss::make_lw_shared<cloud_topics::ctp_stm_api>(rtc, stm);
 }
 
-} // namespace
+std::expected<void, frontend_errc> map_errc(cluster::errc errc) {
+    switch (errc) {
+    case cluster::errc::success:
+        return {};
+    case cluster::errc::topic_invalid_config:
+    case cluster::errc::topic_invalid_partitions:
+    case cluster::errc::topic_invalid_partitions_core_limit:
+    case cluster::errc::topic_invalid_partitions_memory_limit:
+    case cluster::errc::topic_invalid_partitions_fd_limit:
+    case cluster::errc::topic_invalid_partitions_decreased:
+    case cluster::errc::topic_invalid_replication_factor:
+        return std::unexpected(frontend_errc::invalid_topic_exception);
+    case cluster::errc::timeout:
+    case cluster::errc::shutting_down:
+    case cluster::errc::notification_wait_timeout:
+        return std::unexpected(frontend_errc::timeout);
+    case cluster::errc::not_leader:
+        return std::unexpected(frontend_errc::not_leader_for_partition);
+    case cluster::errc::partition_not_exists:
+    case cluster::errc::not_leader_controller:
+    case cluster::errc::no_leader_controller:
+    case cluster::errc::topic_already_exists:
+    case cluster::errc::replication_error:
+    case cluster::errc::join_request_dispatch_error:
+    case cluster::errc::seed_servers_exhausted:
+    case cluster::errc::auto_create_topics_exception:
+    case cluster::errc::topic_not_exists:
+    case cluster::errc::invalid_topic_name:
+    case cluster::errc::partition_already_exists:
+    case cluster::errc::waiting_for_recovery:
+    case cluster::errc::waiting_for_reconfiguration_finish:
+    case cluster::errc::update_in_progress:
+    case cluster::errc::user_exists:
+    case cluster::errc::user_does_not_exist:
+    case cluster::errc::invalid_producer_epoch:
+    case cluster::errc::sequence_out_of_order:
+    case cluster::errc::generic_tx_error:
+    case cluster::errc::node_does_not_exists:
+    case cluster::errc::invalid_node_operation:
+    case cluster::errc::invalid_configuration_update:
+    case cluster::errc::topic_operation_error:
+    case cluster::errc::no_eligible_allocation_nodes:
+    case cluster::errc::allocation_error:
+    case cluster::errc::partition_configuration_revision_not_updated:
+    case cluster::errc::partition_configuration_in_joint_mode:
+    case cluster::errc::partition_configuration_leader_config_not_committed:
+    case cluster::errc::partition_configuration_differs:
+    case cluster::errc::data_policy_already_exists:
+    case cluster::errc::data_policy_not_exists:
+    case cluster::errc::source_topic_not_exists:
+    case cluster::errc::source_topic_still_in_use:
+    case cluster::errc::waiting_for_partition_shutdown:
+    case cluster::errc::error_collecting_health_report:
+    case cluster::errc::leadership_changed:
+    case cluster::errc::feature_disabled:
+    case cluster::errc::invalid_request:
+    case cluster::errc::no_update_in_progress:
+    case cluster::errc::unknown_update_interruption_error:
+    case cluster::errc::throttling_quota_exceeded:
+    case cluster::errc::cluster_already_exists:
+    case cluster::errc::no_partition_assignments:
+    case cluster::errc::failed_to_create_partition:
+    case cluster::errc::partition_operation_failed:
+    case cluster::errc::transform_does_not_exist:
+    case cluster::errc::transform_invalid_update:
+    case cluster::errc::transform_invalid_create:
+    case cluster::errc::transform_invalid_source:
+    case cluster::errc::transform_invalid_environment:
+    case cluster::errc::trackable_keys_limit_exceeded:
+    case cluster::errc::topic_disabled:
+    case cluster::errc::partition_disabled:
+    case cluster::errc::invalid_partition_operation:
+    case cluster::errc::concurrent_modification_error:
+    case cluster::errc::transform_count_limit_exceeded:
+    case cluster::errc::role_exists:
+    case cluster::errc::role_does_not_exist:
+    case cluster::errc::waiting_for_shard_placement_update:
+    case cluster::errc::producer_ids_vcluster_limit_exceeded:
+    case cluster::errc::validation_of_recovery_topic_failed:
+    case cluster::errc::replica_does_not_exist:
+    case cluster::errc::invalid_data_migration_state:
+    case cluster::errc::data_migration_not_exists:
+    case cluster::errc::data_migration_already_exists:
+    case cluster::errc::data_migration_invalid_resources:
+    case cluster::errc::data_migration_invalid_definition:
+    case cluster::errc::data_migrations_disabled:
+    case cluster::errc::resource_is_being_migrated:
+    case cluster::errc::invalid_target_node_id:
+    case cluster::errc::topic_id_already_exists:
+        break;
+    }
+    vlog(cd_log.error, "Unhandled cluster error encountered: {}", errc);
+    return std::unexpected(frontend_errc::unknown_server_error);
+}
 
-frontend::frontend(
-  ss::lw_shared_ptr<cluster::partition> p, data_plane_api* app) noexcept
-  : _rtc(_as)
-  , _partition(std::move(p))
-  , _data_plane(app)
-  , _ctp_stm_api(make_ctp_stm_api(_rtc, _partition)) {}
-
-const model::ntp& frontend::ntp() const { return _partition->ntp(); }
-
-static kafka::offset get_log_end_offset(cluster::partition& p) {
+kafka::offset get_log_end_offset(cluster::partition& p) {
     auto ot_state = p.get_offset_translator_state();
     // Local log is empty
     if (p.dirty_offset() < p.raft_start_offset()) {
@@ -205,8 +291,7 @@ static kafka::offset get_log_end_offset(cluster::partition& p) {
       ot_state->from_log_offset(model::next_offset(p.dirty_offset())));
 }
 
-static ss::future<std::vector<cluster::tx::tx_range>>
-get_aborted_transactions_local(
+ss::future<std::vector<cluster::tx::tx_range>> get_aborted_transactions_local(
   cluster::partition& p, cloud_storage::offset_range offsets) {
     // The reconciled data should have aborted transactions removed.
     // This means that we should only read aborted transactions for
@@ -228,6 +313,17 @@ get_aborted_transactions_local(
     co_return target;
 }
 
+} // namespace
+
+frontend::frontend(
+  ss::lw_shared_ptr<cluster::partition> p, data_plane_api* app) noexcept
+  : _rtc(_as)
+  , _partition(std::move(p))
+  , _data_plane(app)
+  , _ctp_stm_api(make_ctp_stm_api(_rtc, _partition)) {}
+
+const model::ntp& frontend::ntp() const { return _partition->ntp(); }
+
 kafka::offset frontend::local_start_offset() const {
     // NOTE: the "local" start offset is only used by the datalake subsystem.
     // The method defines the boundary starting from which the translation
@@ -239,15 +335,18 @@ kafka::offset frontend::local_start_offset() const {
 
 kafka::offset frontend::start_offset() const {
     // Ask partition for its start offset
-    // TODO: query metadata layer to get the actual start offset.
-    // the 'partition::sync_kafka_start_offset_override' is not invoked here
-    // because it's tied to both archival_metadata_stm and log_eviction_stm.
-    // For cloud topics we will do log eviction differently and the
-    // DeleteRecords API is not implemented yet. So the code is just
-    // using the start_offset of the Raft log at the moment which is incorrect.
+    auto eviction_stm
+      = _partition->raft()->stm_manager()->get<cluster::log_eviction_stm>();
+    auto override = eviction_stm->kafka_start_offset_override();
+    if (override != kafka::offset{}) {
+        return override;
+    }
     auto so = _partition->raft_start_offset();
     auto kso = _partition->get_offset_translator_state()->from_log_offset(so);
-    return model::offset_cast(kso);
+    auto l0_start = model::offset_cast(kso);
+    // TODO(cloud_topics): We need to also ask L1 and then do
+    // `std::min(l1_start, l0_start);`
+    return l0_start;
 }
 
 ss::future<std::expected<kafka::offset, frontend_errc>>
@@ -620,10 +719,51 @@ frontend::get_leader_epoch_last_offset(model::term_id term) const {
     co_return start_offset();
 }
 
-ss::future<std::expected<void, frontend_errc>>
-frontend::prefix_truncate(kafka::offset, ss::lowres_clock::time_point) {
-    /// DeleteRecords API is not supported in cloud topics yet.
-    co_return std::unexpected(frontend_errc::invalid_topic_exception);
+ss::future<std::expected<void, frontend_errc>> frontend::prefix_truncate(
+  kafka::offset kafka_truncation_offset,
+  ss::lowres_clock::time_point deadline) {
+    // truncation_offset < 0 cases have already been checked in
+    // `kafka::prefix_truncate()` handler.
+    if (kafka_truncation_offset <= start_offset()) {
+        // No-op, return early.
+        co_return std::expected<void, frontend_errc>{};
+    }
+    if (kafka_truncation_offset > high_watermark()) {
+        co_return std::unexpected(frontend_errc::offset_out_of_range);
+    }
+    auto ot_state = _partition->get_offset_translator_state();
+    model::offset rp_truncate_offset{};
+    auto local_kafka_start_offset = model::offset_cast(
+      ot_state->from_log_offset(_partition->raft_start_offset()));
+    if (kafka_truncation_offset > local_kafka_start_offset) {
+        rp_truncate_offset = ot_state->to_log_offset(
+          kafka::offset_cast(kafka_truncation_offset));
+    }
+    auto errc = co_await _partition->prefix_truncate(
+      rp_truncate_offset, kafka_truncation_offset, deadline);
+    if (errc.category() == raft::error_category()) {
+        switch (raft::errc(errc.value())) {
+        case raft::errc::success:
+            co_return std::expected<void, frontend_errc>{};
+        case raft::errc::not_leader:
+            co_return std::unexpected(frontend_errc::not_leader_for_partition);
+        case raft::errc::shutting_down:
+            co_return std::unexpected(frontend_errc::timeout);
+        default:
+            vlog(
+              cd_log.error,
+              "Unhandled raft error encountered: {}",
+              errc.value());
+            co_return std::unexpected(frontend_errc::unknown_server_error);
+        }
+    } else if (errc.category() != cluster::error_category()) {
+        vlog(
+          cd_log.error,
+          "Unhandled error_category encountered: {}",
+          errc.category().name());
+        co_return std::unexpected(frontend_errc::unknown_server_error);
+    }
+    co_return map_errc(cluster::errc(errc.value()));
 }
 
 ss::future<std::expected<std::monostate, frontend_errc>>

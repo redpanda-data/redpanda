@@ -18,6 +18,8 @@ enum class frontend_errc {
     invalid_topic_exception,
     not_leader_for_partition,
     offset_out_of_range,
+    timeout,
+    unknown_server_error,
 };
 } // namespace cloud_topics
 template<>
