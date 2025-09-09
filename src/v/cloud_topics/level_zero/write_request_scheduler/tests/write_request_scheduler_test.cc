@@ -106,7 +106,7 @@ struct pipeline_sink {
 };
 
 namespace l0 {
-struct resource_balancer_accessor {
+struct write_request_balancer_accessor {
     static void disable_data_threshold_uploads(write_request_scheduler* s) {
         s->_test_only_disable_data_threshold = true;
     }
@@ -133,17 +133,18 @@ public:
             return pipeline.local().register_write_pipeline_stage();
         }));
 
-        co_await scheduler.invoke_on_all([disable_data_threshold,
-                                          disable_time_based_fallback](
-                                           l0::write_request_scheduler& s) {
-            if (disable_data_threshold) {
-                l0::resource_balancer_accessor::disable_data_threshold_uploads(
-                  &s);
-            }
-            if (disable_time_based_fallback) {
-                l0::resource_balancer_accessor::disable_time_based_fallback(&s);
-            }
-        });
+        co_await scheduler.invoke_on_all(
+          [disable_data_threshold,
+           disable_time_based_fallback](l0::write_request_scheduler& s) {
+              if (disable_data_threshold) {
+                  l0::write_request_balancer_accessor::
+                    disable_data_threshold_uploads(&s);
+              }
+              if (disable_time_based_fallback) {
+                  l0::write_request_balancer_accessor::
+                    disable_time_based_fallback(&s);
+              }
+          });
 
         vlog(test_log.info, "Starting scheduler");
         co_await scheduler.invoke_on_all(
@@ -255,7 +256,7 @@ TEST_F_CORO(write_request_balancer_fixture, test_core_affinity) {
     ASSERT_TRUE_CORO(ss::smp::count > 1);
 
     co_await scheduler.invoke_on_all([](l0::write_request_scheduler& s) {
-        l0::resource_balancer_accessor::disable_data_threshold_uploads(&s);
+        l0::write_request_balancer_accessor::disable_data_threshold_uploads(&s);
     });
 
     co_await start(
