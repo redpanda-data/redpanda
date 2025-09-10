@@ -34,7 +34,6 @@ data_file data_file::copy() const {
       .column_sizes = copy_map(column_sizes),
       .value_counts = copy_map(value_counts),
       .null_value_counts = copy_map(null_value_counts),
-      .distinct_counts = copy_map(distinct_counts),
       .nan_value_counts = copy_map(nan_value_counts),
     };
 }

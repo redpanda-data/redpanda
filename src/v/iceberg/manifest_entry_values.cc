@@ -30,12 +30,11 @@ auto get_required_primitive(value v, std::string_view name) {
     }
     auto& as_primitive = std::get<primitive_value>(v);
     if (!holds_alternative<PrimitiveV>(as_primitive)) {
-        throw std::invalid_argument(
-          fmt::format(
-            "Value of '{}' is not the expected type {}: actual {}",
-            name,
-            PrimitiveV::name(),
-            as_primitive));
+        throw std::invalid_argument(fmt::format(
+          "Value of '{}' is not the expected type {}: actual {}",
+          name,
+          PrimitiveV::name(),
+          as_primitive));
     }
     // NOTE: values that contain iobufs must be moved.
     auto& as_t = std::get<PrimitiveV>(as_primitive);
@@ -239,9 +238,8 @@ data_file data_file_from_value(struct_value v) {
     file.value_counts = get_counts_map(std::move(fs[7]), "value_counts");
     file.null_value_counts = get_counts_map(
       std::move(fs[8]), "null_value_counts");
-    file.distinct_counts = get_counts_map(std::move(fs[9]), "distinct_counts");
     file.nan_value_counts = get_counts_map(
-      std::move(fs[10]), "nan_value_counts");
+      std::move(fs[9]), "nan_value_counts");
     return file;
 }
 
