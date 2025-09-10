@@ -1,4 +1,8 @@
 target-version = "py310"
 [format]
 exclude = ["*_pb2.pyi", "*_pb2.py", "*_pb2_connect.py"]
-
+[lint.isort]
+case-sensitive = true
+[lint]
+ignore = ["E741"]
+exclude = ["*_pb2.pyi", "*_pb2.py", "*_pb2_connect.py"]
