@@ -5,9 +5,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/download-utils" # import download-utils
 
 mkdir /opt/spark
 
-SPARK_VERSION=3.5.4
+SPARK_VERSION=3.5.6
 SPARK_FILE=spark-$SPARK_VERSION-bin-hadoop3.tgz
-SPARK_URL=https://archive.apache.org/dist/spark/spark-$SPARK_VERSION/spark-$SPARK_VERSION-bin-hadoop3.tgz
+SPARK_URL=https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/spark-$SPARK_VERSION-bin-hadoop3.tgz
 
 DL_STRIP=1 download_extract ${SPARK_URL} /opt/spark
 
