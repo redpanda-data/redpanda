@@ -7,9 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from enum import Enum
-import string
 import random
+import string
+from enum import Enum
 
 
 class ProducerType(str, Enum):
@@ -32,15 +32,15 @@ class GenericDataType:
 
     @staticmethod
     def name() -> str:
-        raise NotImplementedError(f"Not implemented in GenericDataType base class")
+        raise NotImplementedError("Not implemented in GenericDataType base class")
 
     @staticmethod
     def to_avro() -> str:
-        raise NotImplementedError(f"Not implemented in GenericDataType base class")
+        raise NotImplementedError("Not implemented in GenericDataType base class")
 
     @staticmethod
     def to_proto() -> str:
-        raise NotImplementedError(f"Not implemented in GenericDataType base class")
+        raise NotImplementedError("Not implemented in GenericDataType base class")
 
 
 class GenericRecord(GenericDataType):

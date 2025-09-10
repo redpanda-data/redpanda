@@ -7,11 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import requests
 import json
-from rptest.services.cluster import cluster
+
+import requests
 from ducktape.utils.util import wait_until
+
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import make_redpanda_service
 from rptest.tests.end_to_end import EndToEndTest
 
@@ -63,7 +65,7 @@ class ClusterViewTest(EndToEndTest):
                         return False
                     if len(view["brokers"]) != 3:
                         return False
-                    if last == None:
+                    if last is None:
                         last = view
                         ids = set(
                             map(lambda broker: broker["node_id"], view["brokers"])

@@ -1,14 +1,14 @@
+import datetime
+import time
+from itertools import islice
+from logging import Logger
+from typing import Iterator, Optional, cast
+
+from azure.storage.blob import BlobClient, BlobServiceClient, BlobType, ContainerClient
+
 from rptest.archival.s3_client import ObjectMetadata
 from rptest.archival.shared_client_utils import key_to_topic
 from rptest.utils.type_utils import rcast
-
-from azure.storage.blob import BlobClient, BlobServiceClient, BlobType, ContainerClient
-from itertools import islice
-
-import time
-import datetime
-from logging import Logger
-from typing import Iterator, Optional, cast
 
 
 def build_connection_string(
@@ -158,7 +158,7 @@ class ABSClient:
         )
         props = blob_client.get_blob_properties()
 
-        assert props.deleted == False
+        assert props.deleted is False
 
         # Note that we return the hexified md5 hash computed by Azure
         # as the 'etag'. This is done in order to mimic the S3 behaviour

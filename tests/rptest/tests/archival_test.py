@@ -6,14 +6,13 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
-import json
 import os
 import re
 import sys
 import time
 import traceback
-from collections import namedtuple, defaultdict
-from typing import DefaultDict, List, Optional
+from collections import defaultdict, namedtuple
+from typing import DefaultDict, Optional
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
@@ -22,25 +21,26 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
     RedpandaService,
     SISettings,
-    CloudStorageTypeAndUrlStyle,
     get_cloud_storage_type,
-    get_cloud_storage_type_and_url_style,
 )
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
-    segments_count,
-    produce_until_segments,
-    wait_for_local_storage_truncate,
     firewall_blocked,
+    produce_until_segments,
+    segments_count,
+    wait_for_local_storage_truncate,
 )
-from rptest.utils.mode_checks import skip_fips_mode
-from rptest.utils.si_utils import BucketView, NTPR
-from rptest.utils.si_utils import gen_segment_name_from_meta, gen_local_path_from_remote
-from rptest.services.admin import Admin
+from rptest.utils.si_utils import (
+    NTPR,
+    BucketView,
+    gen_local_path_from_remote,
+    gen_segment_name_from_meta,
+)
 
 # First capture group is the log name. The last (optional) group is the archiver term to be removed.
 LOG_EXPRESSION = re.compile(r"(.*\.log)(\.\d+)?$")
@@ -287,7 +287,7 @@ class ArchivalTest(RedpandaTest):
 
             # All objects must belong to the topic we created (make sure we aren't searching on the wrong topic)
             if bucket_content.ignored_objects > 0:
-                raise RuntimeError(f"Unexpected objects in bucket")
+                raise RuntimeError("Unexpected objects in bucket")
 
         # Firewall is unblocked, segment uploads should proceed
         def data_uploaded():
@@ -295,7 +295,7 @@ class ArchivalTest(RedpandaTest):
             has_segments = bucket_content.segment_objects > 0
 
             if not has_segments:
-                self.logger.info(f"No segments yet")
+                self.logger.info("No segments yet")
                 return False
 
             has_segments_in_manifest = any(
@@ -627,8 +627,8 @@ class ArchivalTest(RedpandaTest):
         self.admin.set_log_level(name="cluster", level="trace")
 
         # Verify assumptions
-        assert self.topics[0].cleanup_policy == None, (
-            f"The compaction setting is assumed to be `delete` by default"
+        assert self.topics[0].cleanup_policy is None, (
+            "The compaction setting is assumed to be `delete` by default"
         )
         assert not self._archiver_restart_msg_seen(), (
             "There should be no archival restart message initially"
@@ -655,8 +655,8 @@ class ArchivalTest(RedpandaTest):
         self.admin.set_log_level(name="cluster", level="trace")
 
         # Verify assumptions
-        assert self.topics[0].cleanup_policy == None, (
-            f"The compaction setting is assumed to be `delete` by default"
+        assert self.topics[0].cleanup_policy is None, (
+            "The compaction setting is assumed to be `delete` by default"
         )
         assert not self._archiver_restart_msg_seen(), (
             "There should be no archival restart message initially"
@@ -671,7 +671,7 @@ class ArchivalTest(RedpandaTest):
         )
         time.sleep(10)
         assert not self._archiver_restart_msg_seen(), (
-            f"Unexpected archival restart when compacted config not changed"
+            "Unexpected archival restart when compacted config not changed"
         )
 
         self.redpanda.logger.debug(

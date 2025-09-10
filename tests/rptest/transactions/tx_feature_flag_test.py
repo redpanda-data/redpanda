@@ -7,11 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.clients.kafka_cat import KafkaCat
-
-from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 
 
@@ -69,4 +68,4 @@ class TxFeatureFlagTest(EndToEndTest):
 
         # make sure that all redpanda nodes are up and running
         for n in self.redpanda.nodes:
-            assert self.redpanda.redpanda_pid(n) != None
+            assert self.redpanda.redpanda_pid(n) is not None

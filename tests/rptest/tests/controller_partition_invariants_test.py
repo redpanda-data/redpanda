@@ -8,15 +8,15 @@
 # by the Apache License, Version 2.0
 
 import re
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.cluster import cluster
-from rptest.services.admin import Admin
-from rptest.clients.rpk import RpkTool
+import time
 
 from ducktape.mark import matrix
-from rptest.services.metrics_check import MetricCheck
 
-import time
+from rptest.clients.rpk import RpkTool
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.metrics_check import MetricCheck
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class ControllerLogInvariantsTest(RedpandaTest):

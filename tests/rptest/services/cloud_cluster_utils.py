@@ -1,7 +1,8 @@
 import json
+from typing import Any
+
 from rptest.clients.rpk import RpkTool
 from rptest.services.redpanda_types import KafkaClientSecurity
-from typing import Any
 
 
 class FakePanda:
@@ -125,7 +126,7 @@ class CloudClusterUtils:
 
     # rpk_cloud_logout clears credentials
     def rpk_cloud_logout(self):
-        self.logger.debug(f"Clearing rpk login")
+        self.logger.debug("Clearing rpk login")
         cmd = self._get_rpk_cloud_cmd()
         cmd += ["logout", "--clear-credentials"]
         return self._exec(cmd)

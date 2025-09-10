@@ -8,19 +8,17 @@
 # by the Apache License, Version 2.0
 
 import json
-
 import os
 import typing
 
+import requests
+from ducktape.cluster.cluster import ClusterNode
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
-
-import requests
-from rptest.services.redpanda import RedpandaService
 from ducktape.utils.util import wait_until
 from prometheus_client.parser import text_string_to_metric_families
 
-from ducktape.cluster.cluster import ClusterNode
+from rptest.services.redpanda import RedpandaService
 
 
 class RedpandaConnectService(Service):
@@ -137,10 +135,10 @@ logger:
         """
 
         def _finished():
-            streams = self._request("GET", f"streams").json()
-            return name not in streams or streams[name]["active"] == False
+            streams = self._request("GET", "streams").json()
+            return name not in streams or streams[name]["active"] is False
 
-        if should_finish == False:
+        if should_finish is False:
             assert not _finished()
         if should_finish:
             wait_until(
@@ -167,8 +165,8 @@ logger:
         """
 
         def _all_streams_finished():
-            streams = self._request("GET", f"streams").json()
-            return all(s["active"] == False for id, s in streams.items())
+            streams = self._request("GET", "streams").json()
+            return all(s["active"] is False for id, s in streams.items())
 
         wait_until(
             _all_streams_finished,

@@ -9,7 +9,6 @@
 
 import dataclasses
 import functools
-from re import Pattern
 import time
 from typing import Any, Protocol
 
@@ -19,8 +18,8 @@ from ducktape.mark.resource import ClusterUseMetadata
 from ducktape.tests.test import TestContext
 
 from rptest.services.redpanda import (
-    RedpandaServiceBase,
     RedpandaService,
+    RedpandaServiceBase,
     RedpandaServiceCloud,
 )
 from rptest.services.redpanda_types import LogAllowList
@@ -116,7 +115,7 @@ def cluster(
             try:
                 r = f(self, *args, **kwargs)
                 test_results = {"result": r}
-            except:
+            except Exception:
                 if self.redpanda is None:
                     # We failed so early there isn't even a RedpandaService instantiated
                     raise
@@ -221,7 +220,7 @@ def cluster(
                                 )
                             else:
                                 redpanda.raise_on_bad_logs(allow_list=log_allow_list)
-                        except:
+                        except Exception:
                             # Perform diagnostics only for Local run
                             if isinstance(redpanda, RedpandaServiceBase):
                                 redpanda.cloud_storage_diagnostics()
@@ -235,7 +234,7 @@ def cluster(
                     if check_for_storage_usage_inconsistencies:
                         try:
                             redpanda.raise_on_storage_usage_inconsistency()
-                        except:
+                        except Exception:
                             redpanda.cloud_storage_diagnostics()
                             raise
 
@@ -249,7 +248,7 @@ def cluster(
                         self.redpanda.maybe_do_internal_scrub()
                         usage = self.redpanda.stop_and_scrub_object_storage()
                         test_results["object_storage_usage"] = dataclasses.asdict(usage)
-                    except:
+                    except Exception:
                         self.redpanda.cloud_storage_diagnostics()
                         raise
                 else:

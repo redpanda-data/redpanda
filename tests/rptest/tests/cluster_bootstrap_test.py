@@ -9,16 +9,17 @@
 
 import concurrent.futures
 import threading
+
 import ducktape.errors
 from ducktape.mark import matrix
-from ducktape.utils.util import wait_until
 from requests.exceptions import ConnectionError
+
 from rptest.clients.rpk import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RpkTool
-from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
-from rptest.util import expect_exception
+from rptest.services.redpanda import RpkTool
+from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import expect_exception
 
 
 def set_seeds_for_cluster(redpanda, num_seeds):
@@ -65,7 +66,7 @@ class ClusterBootstrapNew(RedpandaTest):
             pass
 
         for node in self.redpanda.nodes:
-            idx = self.redpanda.idx(node)
+            self.redpanda.idx(node)
 
             # None of the nodes was configured in a way that could get past attempting
             # to join a cluster: node 1 has no seed servers, and nodes 2,3 are not in
@@ -155,7 +156,7 @@ class ClusterBootstrapFiveNodes(RedpandaTest):
                     topic = TopicSpec(partition_count=1, replication_factor=3)
                     rpk.create_topic(topic.name, partitions=1, replicas=3)
                     rpk.group_describe("test_group")
-                except:
+                except Exception:
                     pass
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:

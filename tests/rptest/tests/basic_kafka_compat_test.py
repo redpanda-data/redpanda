@@ -8,27 +8,23 @@
 # by the Apache License, Version 2.0
 
 import time
-from collections.abc import Callable
 from typing import Protocol, TypeVar
 
-import kafkatest.version
-from rptest.clients.default import DefaultClient
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
 import confluent_kafka as ck
-from rptest.services.kafka import KafkaServiceAdapter
-from rptest.services.redpanda import RedpandaService
-from rptest.tests.end_to_end import EndToEndTest
-
+import kafkatest
+import kafkatest.version
+from ducktape.mark import parametrize
 from kafkatest.services.kafka import KafkaService
 
-from kafkatest.services.zookeeper import ZookeeperService
-import kafkatest
-from ducktape.mark import parametrize
+from rptest.clients.default import DefaultClient
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.kafka import KafkaServiceAdapter
+from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda_types import RedpandaServiceForClients
+from rptest.tests.end_to_end import EndToEndTest
 
 KAFKA_VERSION = kafkatest.version.KafkaVersion("3.7.0")
-from rptest.services.redpanda_types import RedpandaServiceForClients
-
 T = TypeVar("T")
 
 

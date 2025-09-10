@@ -1,6 +1,6 @@
-import pandas as pd
-
 from dataclasses import dataclass
+
+import pandas as pd
 
 
 @dataclass(kw_only=True)

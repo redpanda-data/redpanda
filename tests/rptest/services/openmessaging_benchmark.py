@@ -7,28 +7,26 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import os
-import json
 import collections
+import json
+import os
 import shutil
 from pathlib import Path
-from typing import Optional, Any
+from typing import Any, Optional
 
+from ducktape.cluster.cluster import ClusterNode
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
-from ducktape.cluster.cluster import ClusterNode
-from ducktape.cluster.node_container import NodeContainer
 
-from rptest.services.redpanda import (
-    RedpandaService,
-    RedpandaServiceBase,
-    RedpandaServiceCloud,
-)
-from rptest.services.utils import BadLogLines
 from rptest.services.openmessaging_benchmark_configs import (
     OMBSampleConfigurations,
     ValidatorDict,
 )
+from rptest.services.redpanda import (
+    RedpandaService,
+    RedpandaServiceCloud,
+)
+from rptest.services.utils import BadLogLines
 
 LOG_ALLOW_LIST = ["No such file or directory", "cannot be started once stopped"]
 

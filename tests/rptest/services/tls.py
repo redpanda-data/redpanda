@@ -1,12 +1,11 @@
+import collections
+import os
+import pathlib
+import random
+import string
+import subprocess
 import tempfile
 import typing
-import collections
-import pathlib
-import subprocess
-import os
-import string
-import random
-
 from enum import Enum, IntEnum
 
 _ca_config_tmpl = """

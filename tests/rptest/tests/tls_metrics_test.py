@@ -11,23 +11,24 @@ import json
 import socket
 import time
 from datetime import datetime, timedelta
-from typing import Optional, Callable
-import crc32c
+from typing import Optional
 
+import crc32c
 from ducktape.cluster.cluster import ClusterNode
 
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services import tls
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
+    MetricSamples,
+    MetricsEndpoint,
+    PandaproxyConfig,
+    RedpandaService,
+    SchemaRegistryConfig,
     SecurityConfig,
     TLSProvider,
-    SchemaRegistryConfig,
-    PandaproxyConfig,
 )
-from rptest.services.cluster import cluster
-from rptest.services.admin import Admin
-from rptest.services.redpanda import MetricSamples, MetricsEndpoint, RedpandaService
-from rptest.services import tls
-from rptest.tests.pandaproxy_test import User, PandaProxyTLSProvider
+from rptest.tests.pandaproxy_test import User
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
 
 # Basic configs to enable TLS for internal RPC and Admin API
@@ -161,7 +162,7 @@ class TLSMetricsTestBase(RedpandaTest):
                 timeout_sec=2,
                 backoff_sec=0.1,
             )
-        except TimeoutError as e:
+        except TimeoutError:
             return None
 
     def _unpack_samples(self, metric_samples):
@@ -345,7 +346,7 @@ class TLSMetricsTest(TLSMetricsTestBase):
 
         reloaded = check_crc()
 
-        assert original != reloaded, f"Checksums unexpectedly equal"
+        assert original != reloaded, "Checksums unexpectedly equal"
 
 
 class TLSMetricsTestChain(TLSMetricsTestBase):

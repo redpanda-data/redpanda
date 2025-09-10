@@ -11,9 +11,10 @@ import copy
 import random
 
 import requests
+from ducktape.utils.util import wait_until
+
 from rptest.services.admin import Admin
 from rptest.util import wait_until_result
-from ducktape.utils.util import wait_until
 
 
 class PartitionMovementMixin:
@@ -34,7 +35,10 @@ class PartitionMovementMixin:
         limitation in redpanda raft implementation.
         """
         replication_factor = len(assignments)
-        node_ids = lambda x: set([a["node_id"] for a in x])
+
+        def node_ids(x):
+            return set([a["node_id"] for a in x])
+
         orig_node_ids = node_ids(assignments)
 
         assert replication_factor >= 1

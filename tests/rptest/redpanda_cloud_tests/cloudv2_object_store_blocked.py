@@ -1,5 +1,9 @@
-from rptest.services.redpanda_cloud import CLOUD_TYPE_BYOC, CLOUD_TYPE_FMC
-from rptest.services.redpanda_cloud import PROVIDER_AWS, PROVIDER_GCP
+from rptest.services.redpanda_cloud import (
+    CLOUD_TYPE_BYOC,
+    CLOUD_TYPE_FMC,
+    PROVIDER_AWS,
+    PROVIDER_GCP,
+)
 
 
 class cloudv2_object_store_blocked:
@@ -62,7 +66,6 @@ class cloudv2_object_store_blocked_gcp:
     def __init__(self, rp, logger):
         self.logger = logger
         self._cluster_id = rp._cloud_cluster.cluster_id
-        network_id = rp._cloud_cluster.current.network_id
         self._cloud_provider_client = rp._cloud_cluster.provider_cli
         self._bucket_name = f"redpanda-cloud-storage-{self._cluster_id}"
 

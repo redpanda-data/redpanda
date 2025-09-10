@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import requests
-
 from ducktape.utils.util import wait_until
 
 
@@ -71,7 +70,7 @@ class RollingRestarter:
         # multiple nodes at a time.
         self.redpanda.logger.info(f"Rolling restart of nodes {[n.name for n in nodes]}")
         for node in nodes:
-            self.redpanda.logger.info(f"Waiting for cluster healthy")
+            self.redpanda.logger.info("Waiting for cluster healthy")
             controller_leader = wait_until_cluster_healthy(stop_timeout)
 
             # NOTE: callers may not want to use maintenance mode if the

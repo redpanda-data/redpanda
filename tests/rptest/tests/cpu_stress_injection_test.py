@@ -6,11 +6,12 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+from ducktape.cluster.cluster import ClusterNode
+from ducktape.utils.util import wait_until
+
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from ducktape.cluster.cluster import ClusterNode
-from ducktape.utils.util import wait_until
 
 
 def stop_stress(admin: Admin, node: ClusterNode):
@@ -20,7 +21,7 @@ def stop_stress(admin: Admin, node: ClusterNode):
     """
     try:
         admin.stress_fiber_stop(node)
-    except:
+    except Exception:
         return False
     return True
 
@@ -50,7 +51,7 @@ class CpuStressInjectionTest(RedpandaTest):
                 min_ms_per_scheduling_point=30,
                 max_ms_per_scheduling_point=300,
             )
-        except:
+        except Exception:
             # Ignore errors, since the HTTP endpoint may be stalled behind a
             # fiber.
             pass
@@ -75,7 +76,7 @@ class CpuStressInjectionTest(RedpandaTest):
                 min_spins_per_scheduling_point=1000,
                 max_spins_per_scheduling_point=100000,
             )
-        except:
+        except Exception:
             # Ignore errors, since the HTTP endpoint may be stalled behind a
             # fiber.
             pass
@@ -103,7 +104,7 @@ class CpuStressInjectionTest(RedpandaTest):
                 max_ms_per_scheduling_point=10,
             )
             assert False, "Expected failure: require ms min < max"
-        except:
+        except Exception:
             pass
 
         try:
@@ -114,7 +115,7 @@ class CpuStressInjectionTest(RedpandaTest):
                 max_spins_per_scheduling_point=10,
             )
             assert False, "Expected failure: require spins min < max"
-        except:
+        except Exception:
             pass
 
         try:
@@ -125,7 +126,7 @@ class CpuStressInjectionTest(RedpandaTest):
                 max_ms_per_scheduling_point=1000,
             )
             assert False, "Expected failure: require both ms min/max be set"
-        except:
+        except Exception:
             pass
 
         try:
@@ -136,7 +137,7 @@ class CpuStressInjectionTest(RedpandaTest):
                 max_spins_per_scheduling_point=1000,
             )
             assert False, "Expected failure: require both spins min/max be set"
-        except:
+        except Exception:
             pass
 
         try:
@@ -149,6 +150,6 @@ class CpuStressInjectionTest(RedpandaTest):
                 max_spins_per_scheduling_point=1000,
             )
             assert False, "Expected failure: require either spins or ms set"
-        except:
+        except Exception:
             pass
         assert not self.has_started_stress()

@@ -67,7 +67,10 @@ class ExpectRate:
 
     def expect_rate(self, target: RateTarget) -> None:
         sample_interval_ms = 1000
-        ts = lambda x: x.timestamp
+
+        def ts(x):
+            return x.timestamp
+
         total_msec = 0
         interval_start = -1
         samples: list[CounterMeasurement] = []

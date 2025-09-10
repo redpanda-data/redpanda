@@ -7,10 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import sys
-import traceback
 import logging
 import os
+import sys
+import traceback
 
 from ...types import ConsistencyCheckError
 from .log_utils import State, cmds, threads
@@ -128,7 +128,7 @@ class LogPlayer:
                     int(parts[6]),
                     int(parts[7]),
                 )
-            except:
+            except Exception:
                 self.has_violation = True
                 e, v = sys.exc_info()[:2]
                 trace = traceback.format_exc()
@@ -136,7 +136,7 @@ class LogPlayer:
                 logger.error(trace)
 
     def is_violation(self, line):
-        if line == None:
+        if line is None:
             return False
         parts = line.rstrip().split("\t")
         if len(parts) < 3:
@@ -153,7 +153,7 @@ class LogPlayer:
         if parts[2] not in cmds:
             raise Exception(f'unknown cmd "{parts[2]}"')
 
-        if self.ts_us == None:
+        if self.ts_us is None:
             self.ts_us = int(parts[1])
         else:
             delta_us = int(parts[1])
@@ -184,7 +184,7 @@ class LogPlayer:
             self.curr_state[thread_id] = None
             if self.thread_type[thread_id] not in threads:
                 raise Exception(f"unknown thread type: {parts[4]}")
-        if self.curr_state[thread_id] == None:
+        if self.curr_state[thread_id] is None:
             if new_state != State.STARTED:
                 raise Exception(
                     f'first logged command of a new thread should be started, got: "{parts[2]}"'
@@ -222,7 +222,7 @@ def validate(workload_dir, workload_nodes, fail_on_interruption=False):
             ) as workload_file:
                 last_line = None
                 for line in workload_file:
-                    if last_line != None:
+                    if last_line is not None:
                         player.apply(last_line)
                     last_line = line
                 if player.is_violation(last_line):
@@ -243,7 +243,7 @@ def validate(workload_dir, workload_nodes, fail_on_interruption=False):
             )
         else:
             logger.info("consistency check: PASSED")
-    except:
+    except Exception:
         e, v = sys.exc_info()[:2]
         trace = traceback.format_exc()
         logger.warn(v)

@@ -7,6 +7,7 @@ from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import message as _message
 from google.protobuf import reflection as _reflection
 from google.protobuf import symbol_database as _symbol_database
+
 # @@protoc_insertion_point(imports)
 
 _sym_db = _symbol_database.Default()
@@ -59,7 +60,7 @@ Linear80 = _reflection.GeneratedProtocolMessageType(
     })
 _sym_db.RegisterMessage(Linear80)
 
-if _descriptor._USE_C_DESCRIPTORS == False:
+if _descriptor._USE_C_DESCRIPTORS is False:
 
     DESCRIPTOR._options = None
     _LINEAR1._serialized_start = 16

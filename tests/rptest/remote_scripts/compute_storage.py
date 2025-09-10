@@ -4,17 +4,16 @@ A script that computes all the files (and optionally their sizes) in the data di
 Useful in tests if you want to know what files exist on a node or if they are a specific size.
 """
 
-import time
-from pathlib import Path
-import sys
-import json
-import io
-import struct
 import collections
 import hashlib
-import subprocess
+import io
+import json
 import os
-
+import struct
+import subprocess
+import sys
+import time
+from pathlib import Path
 from typing import Iterator
 
 
@@ -258,7 +257,7 @@ def read_compaction_footer(file_path):
         )
         res["crc"] = unpacked_footer[3]
         res["version"] = unpacked_footer[4]
-    except:
+    except Exception:
         footer_v2 = footer[:]
         unpacked_footer = struct.unpack(FOOTER_V2, footer_v2)
         res["size"] = unpacked_footer[0]

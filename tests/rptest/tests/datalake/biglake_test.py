@@ -15,8 +15,8 @@ from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
     PandaproxyConfig,
-    SchemaRegistryConfig,
     SISettings,
+    SchemaRegistryConfig,
 )
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.utils import supported_storage_types

@@ -8,36 +8,33 @@
 # by the Apache License, Version 2.0
 
 import json
-from requests.exceptions import HTTPError
 import random
 import time
-from typing import Optional
 from collections.abc import Callable
-
-from ducktape.utils.util import wait_until
+from typing import Optional
 
 import ducktape.errors
+from ducktape.mark import matrix, parametrize
 from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize, matrix
-from rptest.clients.rpk import RpkTool, RpkException
+from requests.exceptions import HTTPError
+
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.admin import (
     Admin,
-    RedpandaNode,
-    RoleMemberList,
-    RoleUpdate,
-    RoleErrorCode,
-    RoleError,
-    RolesList,
-    RoleDescription,
-    RoleMemberUpdateResponse,
-    RoleMember,
     Role,
+    RoleDescription,
+    RoleError,
+    RoleErrorCode,
+    RoleMember,
+    RoleMemberList,
+    RoleMemberUpdateResponse,
+    RolesList,
 )
-from rptest.services.redpanda import SaslCredentials, SecurityConfig
 from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.redpanda import SaslCredentials, SecurityConfig
 from rptest.tests.admin_api_auth_test import create_user_and_wait
 from rptest.tests.metrics_reporter_test import MetricsReporterServer
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, expect_http_error, wait_until_result
 from rptest.utils.log_utils import wait_until_nag_is_set
 from rptest.utils.mode_checks import skip_fips_mode
@@ -219,7 +216,7 @@ class RBACTest(RBACTestBase):
                     filter=filter, principal=principal, principal_type=principal_type
                 ),
                 timeout_sec=10,
-                err_msg=f"Mismatch on filter result",
+                err_msg="Mismatch on filter result",
             )
 
         self.logger.debug(
@@ -355,7 +352,7 @@ class RBACTest(RBACTestBase):
             backoff_sec=1,
             retry_on_exc=True,
         )
-        assert res is not None, f"Failed to get members for newly created role"
+        assert res is not None, "Failed to get members for newly created role"
 
         assert res.status_code == 200, "Expected 200 (OK)"
         members = RoleMemberList.from_response(res)
@@ -464,7 +461,7 @@ class RBACTest(RBACTestBase):
     @cluster(num_nodes=3)
     def test_members_endpoint_errors(self):
         alice = RoleMember.User("alice")
-        bob = RoleMember.User("bob")
+        RoleMember.User("bob")
 
         with expect_role_error(RoleErrorCode.ROLE_NOT_FOUND):
             self.superuser_admin.list_role_members(role=self.role_name0)

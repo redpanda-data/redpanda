@@ -7,15 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.redpanda import get_cloud_provider
-from rptest.clients.installpack import InstallPackClient
-
-from rptest.clients.rpk import RpkTool, TopicSpec, RpkException
 import time
 
-from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
+from google.api_core.exceptions import BadRequest, Conflict
 from google.cloud import bigquery
-from google.api_core.exceptions import Conflict, BadRequest
+
+from rptest.clients.installpack import InstallPackClient
+from rptest.clients.rpk import RpkTool, TopicSpec
+from rptest.services.redpanda import get_cloud_provider
+from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 
 
 class CloudIcebergBigquery(RedpandaCloudTest):

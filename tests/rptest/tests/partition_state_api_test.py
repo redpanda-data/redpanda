@@ -7,16 +7,17 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.admin import Admin
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.cluster import cluster
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.types import TopicSpec
+import random
+import time
+from collections import Counter
+
 from requests.exceptions import HTTPError
 
-from collections import Counter
-import time
-import random
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class PartitionStateAPItest(RedpandaTest):
@@ -123,7 +124,7 @@ class PartitionStateAPItest(RedpandaTest):
 
         for s in controller_state:
             assert len(s["replicas"]) == 5
-            self.logger.debug(f"validating controller_state")
+            self.logger.debug("validating controller_state")
             leaders = list(
                 filter(lambda r: r["raft_state"]["is_elected_leader"], s["replicas"])
             )
@@ -225,8 +226,8 @@ class PartitionStateAPItest(RedpandaTest):
                 return self.redpanda._admin.get_offset_for_leader_epoch(
                     topic.name, 0, 1
                 )["current_leader_epoch"]
-            except:
-                self.logger.debug(f"Failed to get current leader epoch", exc_info=True)
+            except Exception:
+                self.logger.debug("Failed to get current leader epoch", exc_info=True)
                 return -1
 
         def do_validate_offset_for_leader_epoch(epoch: int, expected_offset: int):
@@ -240,7 +241,7 @@ class PartitionStateAPItest(RedpandaTest):
                         output["end_offset"] == expected_offset
                         and output["current_leader_epoch"] == epoch
                     )
-                except:
+                except Exception:
                     self.logger.debug(
                         f"Failed to get offset for leader epoch for node {node}",
                         exc_info=True,

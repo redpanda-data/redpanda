@@ -7,15 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
+from confluent_kafka.admin import NewTopic
+from confluent_kafka.error import KafkaError, KafkaException
 from ducktape.utils.util import wait_until
+
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.rpk import RpkTool
+from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from confluent_kafka.admin import NewTopic
-from confluent_kafka.error import KafkaException, KafkaError
-
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
 class CustomTopicAssignmentTest(RedpandaTest):

@@ -9,11 +9,10 @@
 
 import os
 
-from rptest.services.cluster import cluster
-
-from rptest.utils.rpk_config import read_rpk_cfg
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk_remote import RpkRemoteTool
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.utils.rpk_config import read_rpk_cfg
 
 
 def get_ci_env_var(env_var):

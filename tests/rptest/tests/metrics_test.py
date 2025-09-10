@@ -7,12 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
 from ducktape.mark import matrix
-from rptest.services.redpanda import make_redpanda_service
 from ducktape.tests.test import Test
+
 from rptest.clients.default import DefaultClient
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import make_redpanda_service
 
 BOOTSTRAP_CONFIG = {
     "disable_metrics": False,
@@ -44,7 +45,7 @@ class MetricsTest(Test):
         # We ignore those because:
         #  - seastar metrics so not affected by aggregate_metrics anyway
         #  - compaction io_queue class metrics can pop up after a delay so might make this flaky
-        return list(metric for metric in metrics if not "io_queue" in metric)
+        return list(metric for metric in metrics if "io_queue" not in metric)
 
     @cluster(num_nodes=3)
     @matrix(aggregate_metrics=[True, False])

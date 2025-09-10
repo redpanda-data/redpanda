@@ -7,18 +7,17 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import requests
-import sys
-import os
-from enum import Enum
-from abc import ABC, abstractmethod
 import dataclasses
+import os
+import sys
+from abc import ABC, abstractmethod
+from enum import Enum
 
+import requests
+from ducktape.errors import TimeoutError
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
-from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.local_filesystem_utils import mkdir_p
-from ducktape.errors import TimeoutError
 
 from rptest.util import wait_until
 
@@ -148,7 +147,7 @@ class WorkloadServiceBase(ABC, Service):
             "brokers": self._brokers_str,
         }
         workload_config |= self.extra_config(node)
-        r = self._request(
+        self._request(
             "post", node, "init", json=workload_config, timeout_sec=timeout_sec
         )
 
@@ -166,7 +165,7 @@ class WorkloadServiceBase(ABC, Service):
 
         try:
             self.stop_workload(nodes=[node])
-        except Exception as e:
+        except Exception:
             self.logger.warn(
                 f"{self.who_am_i()}: failed to stop workload on {node.name}"
             )
@@ -272,7 +271,7 @@ class WorkloadServiceBase(ABC, Service):
 
         try:
             stats = self.collect_stats()
-        except:
+        except Exception:
             self.logger.warn(
                 f"{self.who_am_i()}: failed to collect workload stats", exc_info=True
             )

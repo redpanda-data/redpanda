@@ -8,15 +8,14 @@
 # by the Apache License, Version 2.0
 
 import signal
-from rptest.clients.offline_log_viewer import OfflineLogViewer
-from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import RedpandaService, ResourceSettings
-from rptest.util import expect_exception
-from rptest.services.redpanda import LoggingConfig
-from ducktape.errors import TimeoutError
+
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
+
+from rptest.clients.offline_log_viewer import OfflineLogViewer
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import LoggingConfig, RedpandaService, ResourceSettings
+from rptest.tests.redpanda_test import RedpandaTest
 
 CRASH_LOOP_LOG = [
     "Crash loop detected. Too many consecutive crashes.*",
@@ -96,7 +95,7 @@ class CrashLoopChecksTest(RedpandaTest):
         Wait for the redpanda process to terminate (e.g. after sending a crash signal)
         """
         wait_until(
-            lambda: self.redpanda.redpanda_pid(broker) == None,
+            lambda: self.redpanda.redpanda_pid(broker) is None,
             timeout_sec=timeout,
             backoff_sec=0.2,
             err_msg=f"Redpanda processes did not terminate on {broker.name} in {timeout} sec",

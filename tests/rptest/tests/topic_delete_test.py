@@ -8,36 +8,35 @@
 # by the Apache License, Version 2.0
 
 import datetime
-import time
 import json
+import time
 from typing import Optional
 
-from ducktape.utils.util import wait_until
-
 from ducktape.mark import matrix, parametrize
+from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
 
-from rptest.utils.mode_checks import skip_debug_mode
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from rptest.clients.offline_log_viewer import OfflineLogViewer
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.services.rpk_producer import RpkProducer
+from rptest.clients.offline_log_viewer import OfflineLogViewer
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import (
     CloudStorageType,
     SISettings,
     get_cloud_storage_type,
 )
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.util import wait_for_local_storage_truncate, firewall_blocked
-from rptest.services.admin import Admin
+from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import firewall_blocked, wait_for_local_storage_truncate
+from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.si_utils import (
-    BucketView,
-    NTP,
     NT,
+    NTP,
+    BucketView,
     LifecycleMarkerStatus,
     quiesce_uploads,
 )
@@ -211,7 +210,7 @@ class TopicDeleteTest(RedpandaTest):
                 err_msg="Topic storage was not removed",
             )
 
-        except:
+        except Exception:
             self.dump_storage_listing()
             raise
 
@@ -265,7 +264,7 @@ class TopicDeleteTest(RedpandaTest):
                     backoff_sec=2,
                     err_msg="Topic storage was not removed from running nodes or removed from down node",
                 )
-            except:
+            except Exception:
                 self.dump_storage_listing()
                 raise
 
@@ -284,7 +283,7 @@ class TopicDeleteTest(RedpandaTest):
                 backoff_sec=2,
                 err_msg="Topic storage was not removed",
             )
-        except:
+        except Exception:
             self.dump_storage_listing()
             raise
 
@@ -848,7 +847,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         view = BucketView(self.redpanda)
         try:
             marker = view.get_lifecycle_marker(NT("kafka", topic_name))
-        except:
+        except Exception:
             # FIXME: very broad exception catching because cloud storage clients
             # may use diverse exceptions for missing objects
             pass
@@ -1061,7 +1060,7 @@ class TopicDeleteStressTest(RedpandaTest):
 
             try:
                 producer.stop()
-            except:
+            except Exception:
                 # Should ignore exception form rpk
                 pass
             producer.free()
@@ -1074,7 +1073,7 @@ class TopicDeleteStressTest(RedpandaTest):
                     err_msg="Topic storage was not removed",
                 )
 
-            except:
+            except Exception:
                 # On errors, dump listing of the storage location
                 for node in self.redpanda.nodes:
                     self.logger.error(f"Storage listing on {node.name}:")

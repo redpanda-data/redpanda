@@ -7,7 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.redpanda import ResourceSettings, SISettings, RedpandaService
+from rptest.services.redpanda import RedpandaService, ResourceSettings, SISettings
 
 
 class ScaleParameters:

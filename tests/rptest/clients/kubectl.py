@@ -8,10 +8,10 @@
 # by the Apache License, Version 2.0
 
 import json
-from logging import Logger
 import os
 import subprocess
-from typing import Any, Union, Generator
+from logging import Logger
+from typing import Any, Generator, Union
 
 SUPPORTED_PROVIDERS = ["aws", "gcp", "azure"]
 
@@ -450,7 +450,7 @@ class KubectlTool:
 
         try:
             self._local_cmd(cmd)
-        except subprocess.CalledProcessError as e:
+        except subprocess.CalledProcessError:
             self._redpanda.logger.debug(f"Contents of {self.TELEPORT_DATA_DIR}:")
             subprocess.call(["ls", "-la", self.TELEPORT_DATA_DIR])
             self._redpanda.logger.debug(f"Contents of {self.TELEPORT_DEST_DIR}:")
@@ -500,7 +500,7 @@ class KubeNodeShell:
         # It is bad, but it works
         self.logger = self.kubectl._redpanda.logger
         self.namespace = namespace
-        self.current_context = self.kubectl.cmd(f"config current-context").strip()
+        self.current_context = self.kubectl.cmd("config current-context").strip()
         # Make sure that name is not longer that 63 chars
         # The Pod "gke-redpanda-co9uuq78jo-redpanda-6a66-fcfacc41-65mz-priviledged-shell" is invalid: metadata.labels:
         # Invalid value: "gke-redpanda-co9uuq78jo-redpanda-6a66-fcfacc41-65mz-priviledged-shell": must be no more than 63 characters
@@ -518,7 +518,7 @@ class KubeNodeShell:
         try:
             _out = self.kubectl.cmd(f"get pods -A | grep {self.pod_name}")
             return len(_out) > 0
-        except:
+        except Exception:
             # Above command fails only when pod is not found
             return False
 

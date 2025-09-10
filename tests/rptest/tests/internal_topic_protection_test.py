@@ -10,20 +10,20 @@
 import subprocess
 import time
 
+from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
+
+from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SchemaRegistryConfig
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool, RpkException
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.kafka_cat import KafkaCat
 from rptest.tests.cluster_config_test import wait_for_version_sync
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, wait_until_result
 from rptest.utils.schema_registry_utils import get_subjects
-
-from ducktape.mark import parametrize
-from ducktape.utils.util import wait_until
 
 
 class InternalTopicProtectionTest(RedpandaTest):
@@ -109,13 +109,17 @@ class InternalTopicProtectionTest(RedpandaTest):
             return partition[0].high_watermark
 
         if client_type == "rpk":
-            produce_fn = lambda topic, msg: self.rpk.produce(
-                topic, "key", msg, timeout=30
-            )
+
+            def produce_fn(topic, msg):
+                return self.rpk.produce(topic, "key", msg, timeout=30)
+
             failure_exception_type = RpkException
 
         elif client_type == "kafka_tools":
-            produce_fn = lambda topic, msg: self.kafka_cat.produce_one(topic, msg)
+
+            def produce_fn(topic, msg):
+                return self.kafka_cat.produce_one(topic, msg)
+
             failure_exception_type = subprocess.CalledProcessError
 
         else:
@@ -180,7 +184,7 @@ class InternalTopicProtectionTest(RedpandaTest):
             assert False, "Call to delete topic must fail"
         except Exception:
             self.redpanda.logger.info(
-                f"we were expecting delete_topic to fail", exc_info=True
+                "we were expecting delete_topic to fail", exc_info=True
             )
             pass
 

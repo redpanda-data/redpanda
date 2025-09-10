@@ -6,20 +6,18 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import re
+from typing import Callable, Optional
 
-from typing import Optional, Callable
-from rptest.util import wait_until_result
 from ducktape.cluster.cluster import ClusterNode
-from ducktape.utils.util import wait_until, TimeoutError
+from ducktape.utils.util import TimeoutError, wait_until
 
 from rptest.clients.rpk import RpkTool
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import MetricSamples, MetricsEndpoint
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until_result
 
 
 class ClusterMetricsTest(RedpandaTest):
@@ -114,7 +112,7 @@ class ClusterMetricsTest(RedpandaTest):
                 timeout_sec=5,
                 backoff_sec=1,
             )
-        except TimeoutError as e:
+        except TimeoutError:
             # Timing out is the desirable outcome here as it means
             # that the value remained constant.
             return
@@ -137,7 +135,7 @@ class ClusterMetricsTest(RedpandaTest):
                 timeout_sec=2,
                 backoff_sec=0.1,
             )
-        except TimeoutError as e:
+        except TimeoutError:
             return None
 
     def _assert_cluster_metrics(self, node: ClusterNode, expect_metrics: bool):
@@ -277,7 +275,7 @@ class ClusterMetricsTest(RedpandaTest):
                 controller, "cluster_partitions", value=40
             )
         except Exception as e:
-            topics_info = RpkTool(self.redpanda).list_topics()
+            RpkTool(self.redpanda).list_topics()
             raise e
 
     @cluster(num_nodes=3)

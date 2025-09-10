@@ -7,14 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from enum import Enum
 import json
 import re
-import threading, time
+import threading
+from enum import Enum
 from typing import Any, Callable, Optional
-from ducktape.services.background_thread import BackgroundThreadService
-from ducktape.cluster.remoteaccount import RemoteCommandError, SSHOutputIter
+
 import paramiko.channel
+from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.services.background_thread import BackgroundThreadService
 
 
 class KcatConsumer(BackgroundThreadService):
@@ -223,7 +224,7 @@ class KcatConsumer(BackgroundThreadService):
                 finally:
                     stderr_reader.join()
 
-        except:
+        except Exception:
             if self._stopping.is_set():
                 # Expect a non-zero exit code when killing during teardown
                 pass
@@ -249,7 +250,7 @@ class KcatConsumer(BackgroundThreadService):
                 self._consumed_count.setdefault(partition, 0)
                 self._consumed_count[partition] += 1
                 self._on_message(self, j)
-            except:
+            except Exception:
                 self._redpanda.logger.error(
                     f"{self._caption}Exception while processing kcat output line: {line.strip()}"
                 )
@@ -271,7 +272,7 @@ class KcatConsumer(BackgroundThreadService):
                     partition = int(m.group("partition"))
                     if m.group("topic") != self._topic:
                         self._redpanda.logger.warning(
-                            "{}Topic reported by kcat ({}}) is different from the requested ({}). Line: {}".format(
+                            "{}Topic reported by kcat ({}) is different from the requested ({}). Line: {}".format(
                                 self._caption,
                                 m.group("topic"),
                                 self._topic,

@@ -7,24 +7,24 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import signal
-import time
-import requests
 import json
 import operator
-from functools import reduce, partial
-from typing import Optional, Callable
-from contextlib import contextmanager
+import signal
+import time
 from collections import defaultdict
+from contextlib import contextmanager
+from functools import partial, reduce
+from typing import Callable, Optional
 
-from ducktape.services.service import Service
+import requests
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
-from rptest.services.redpanda import RedpandaService, SaslCredentials
 from rptest.clients.rpk import RpkTool
+from rptest.services.redpanda import RedpandaService, SaslCredentials
 
 REMOTE_PORT_BASE = 8080
 
@@ -153,7 +153,7 @@ class KgoRepeaterService(Service):
             cmd += f" -rate-limit-bps={self.rate_limit_bps_per_node}"
 
         if self.use_transactions:
-            cmd += f" -use-transactions"
+            cmd += " -use-transactions"
 
             if self.transaction_abort_rate is not None:
                 cmd += f" -transaction-abort-rate={self.transaction_abort_rate}"
@@ -224,7 +224,7 @@ class KgoRepeaterService(Service):
                     r = requests.get(self._remote_url(node, "status"), timeout=10)
                     self.logger.debug(f"kgo-repeater status on node {node.name}:")
                     self.logger.debug(json.dumps(r.json(), indent=2))
-                except:
+                except Exception:
                     self.logger.exception(
                         f"Error getting pre-stop status on {node.name}"
                     )
@@ -331,7 +331,7 @@ class KgoRepeaterService(Service):
             self.redpanda.wait_until(
                 group_ready, timeout_sec=120, backoff_sec=10, err_msg=what
             )
-        except:
+        except Exception:
             # On failure, dump stacks on all workers in case there is an apparent client bug to investigate
             for node in self.nodes:
                 try:
@@ -465,7 +465,7 @@ def repeater_traffic(
 
     try:
         yield svc
-    except:
+    except Exception:
         # Helpful to log the exception so that it appears before
         # all the logs from our teardown and developer can jump
         # straight to the point the error occurred.

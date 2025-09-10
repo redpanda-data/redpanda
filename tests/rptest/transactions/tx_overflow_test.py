@@ -7,13 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-
-from rptest.tests.redpanda_test import RedpandaTest
-from confluent_kafka.cimpl import KafkaException, KafkaError
 from confluent_kafka import Producer
+from confluent_kafka.cimpl import KafkaError, KafkaException
+
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class TxOverflowTest(RedpandaTest):

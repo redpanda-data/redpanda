@@ -1,11 +1,10 @@
 import collections
 import re
 import time
-
 from abc import ABC, abstractmethod
-from typing import Any, Generator, Optional
+from typing import Any, Generator
 
-from rptest.clients.kubectl import KubectlTool, KubeNodeShell
+from rptest.clients.kubectl import KubectlTool
 
 
 def assert_int(v: Any) -> int:
@@ -267,7 +266,7 @@ class LogSearchCloud(LogSearch):
             tz = tz[0] if len(tz) > 0 else "+00:00"
             # Find all log files for target pod
             # Return type without capture is always str, so ignore type
-            logfiles = pod.nodeshell(f"find /var/log/pods -type f")  # type: ignore
+            logfiles = pod.nodeshell("find /var/log/pods -type f")  # type: ignore
             for logfile in logfiles:
                 if pod.name in logfile and "redpanda-configurator" not in logfile:  # type: ignore
                     self.logger.info(f"Inspecting '{logfile}'")

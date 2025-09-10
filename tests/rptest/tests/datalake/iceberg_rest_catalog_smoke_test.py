@@ -1,22 +1,22 @@
-from rptest.services.cluster import cluster
-
 from ducktape.mark import matrix
-from rptest.tests.datalake.iceberg_rest_catalog_test import IcebergRESTCatalogTest
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.types import (
-    TimestampType,
-    FloatType,
-    DoubleType,
-    IntegerType,
-    LongType,
-    StringType,
-    BinaryType,
-    ListType,
-    NestedField,
-    StructType,
-)
-from pyiceberg.partitioning import PartitionSpec, PartitionField
 from pyiceberg.transforms import DayTransform
+from pyiceberg.types import (
+    BinaryType,
+    DoubleType,
+    FloatType,
+    IntegerType,
+    ListType,
+    LongType,
+    NestedField,
+    StringType,
+    StructType,
+    TimestampType,
+)
+
+from rptest.services.cluster import cluster
+from rptest.tests.datalake.iceberg_rest_catalog_test import IcebergRESTCatalogTest
 from rptest.tests.datalake.utils import supported_storage_types
 
 
@@ -39,7 +39,6 @@ class IcebergRESTCatalogSmokeTest(IcebergRESTCatalogTest):
         self.catalog_service.set_filesystem_wrapper_mode(filesystem_catalog_mode)
         super().setUp()
 
-        warehouse = self.catalog_service.cloud_storage_warehouse
         catalog = self.catalog_service.client()
         namespace = "test_ns"
         catalog.create_namespace(namespace)
@@ -84,7 +83,6 @@ class IcebergRESTCatalogSmokeTest(IcebergRESTCatalogTest):
         self.catalog_service.set_filesystem_wrapper_mode(filesystem_catalog_mode)
         super().setUp()
 
-        warehouse = self.catalog_service.cloud_storage_warehouse
         catalog = self.catalog_service.client()
         namespace = "test_ns"
         catalog.create_namespace(namespace)

@@ -7,29 +7,25 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import re
 import sys
 import time
-import re
-import random
-import ducktape.errors
-from typing import Optional
-import requests
 
+import requests
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cat import KafkaCat
-from rptest.clients.rpk import RpkTool, RpkException
-from rptest.clients.types import TopicSpec
 from rptest.clients.ping_pong import PingPong
-from rptest.services.failure_injector import FailureInjector, FailureSpec
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.rpk_producer import RpkProducer
-from rptest.services.kaf_producer import KafProducer
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.failure_injector import FailureInjector, FailureSpec
+from rptest.services.kaf_producer import KafProducer
 from rptest.services.metrics_check import MetricCheck
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.rpk_producer import RpkProducer
+from rptest.tests.redpanda_test import RedpandaTest
 
 ELECTION_TIMEOUT = 10
 
@@ -76,14 +72,16 @@ class RaftAvailabilityTest(RedpandaTest):
         result = {}
 
         if condition is None:
-            condition = lambda x: x is not None
+
+            def condition(x):
+                return x is not None
 
         def check():
             result[0] = self._get_leader()
             return condition(result[0][0])
 
         wait_until(
-            check, timeout_sec=timeout, backoff_sec=0.5, err_msg=f"No leader emerged!"
+            check, timeout_sec=timeout, backoff_sec=0.5, err_msg="No leader emerged!"
         )
 
         duration = time.time() - t1
@@ -106,7 +104,7 @@ class RaftAvailabilityTest(RedpandaTest):
         try:
             # Should fail
             self.ping_pong().ping_pong(timeout_s)
-        except:
+        except Exception:
             return False
         else:
             return True
@@ -115,7 +113,7 @@ class RaftAvailabilityTest(RedpandaTest):
         try:
             # Should fail
             self.ping_pong().ping_pong()
-        except:
+        except Exception:
             self.logger.exception("Cluster is unavailable as expected")
         else:
             assert False, "ping_pong should not have worked "
@@ -130,7 +128,7 @@ class RaftAvailabilityTest(RedpandaTest):
         count = 0
         while True:
             count += 1
-            self.logger.info(f"Waiting for a leader")
+            self.logger.info("Waiting for a leader")
             leader_id = admin.await_stable_leader(
                 topic, partition=0, namespace=namespace, timeout_s=30, backoff_s=2
             )
@@ -330,7 +328,7 @@ class RaftAvailabilityTest(RedpandaTest):
             lambda: self._is_available() is True,
             timeout_sec=ELECTION_TIMEOUT * 2,
             backoff_sec=0.5,
-            err_msg=f"Cluster did not become available!",
+            err_msg="Cluster did not become available!",
         )
 
         new_leader, _ = self._wait_for_leader(
@@ -392,7 +390,7 @@ class RaftAvailabilityTest(RedpandaTest):
         continue serving requests.
         """
         initial_leader_id, replicas = self._wait_for_leader()
-        initial_leader_node = self.redpanda.get_node_by_id(initial_leader_id)
+        self.redpanda.get_node_by_id(initial_leader_id)
 
         metric_checks = {}
         for n in self.redpanda.nodes:
@@ -573,7 +571,7 @@ class RaftAvailabilityTest(RedpandaTest):
             follower = node
             break
 
-        assert follower != None
+        assert follower is not None
 
         with FailureInjector(self.redpanda) as fi:
             # isolate one of the followers

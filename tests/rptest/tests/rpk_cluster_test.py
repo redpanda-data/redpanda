@@ -7,30 +7,25 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import os
-import re
-import datetime
-import tempfile
-import zipfile
 import json
+import tempfile
 
+from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
     RESTART_LOG_ALLOW_LIST,
     MetricSamples,
     MetricsEndpoint,
 )
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
     expect_exception,
     get_cluster_license,
     get_second_cluster_license,
 )
-from ducktape.utils.util import wait_until
-from rptest.util import wait_until_result
 from rptest.utils.mode_checks import in_fips_environment
-
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool, RpkException
 
 
 class RpkClusterTest(RedpandaTest):

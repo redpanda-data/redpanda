@@ -21,8 +21,7 @@ from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkException
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.action_injector import random_process_kills
 from rptest.services.admin import Admin
@@ -30,26 +29,25 @@ from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
-    KgoVerifierRandomConsumer,
     KgoVerifierSeqConsumer,
 )
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import (
+    CHAOS_LOG_ALLOW_LIST,
+    MetricsEndpoint,
     SISettings,
     get_cloud_storage_type,
     make_redpanda_service,
-    CHAOS_LOG_ALLOW_LIST,
-    MetricsEndpoint,
 )
-from rptest.services.utils import LogSearchLocal
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import Scale, wait_until_segments
 from rptest.util import (
+    Scale,
     produce_until_segments,
-    wait_for_removal_of_n_segments,
     wait_for_local_storage_truncate,
+    wait_for_removal_of_n_segments,
+    wait_until_segments,
 )
 from rptest.utils.cluster_topology import (
     ClusterTopology,
@@ -58,9 +56,9 @@ from rptest.utils.cluster_topology import (
 )
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.si_utils import (
-    nodes_report_cloud_segments,
-    BucketView,
     NTP,
+    BucketView,
+    nodes_report_cloud_segments,
     quiesce_uploads,
 )
 
@@ -188,7 +186,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
     @cluster(num_nodes=4)
     @matrix(cloud_storage_type=get_cloud_storage_type()[0:1])
     def test_reset(self, cloud_storage_type):
-        brokers = self.redpanda.started_nodes()
+        self.redpanda.started_nodes()
 
         msg_count_before_reset = 50 * (self.segment_size // 2056)
         producer = KgoVerifierProducer(
@@ -206,7 +204,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         producer.free()
 
         wait_until(
-            lambda: self._all_uploads_done() == True, timeout_sec=60, backoff_sec=5
+            lambda: self._all_uploads_done() is True, timeout_sec=60, backoff_sec=5
         )
 
         s3_snapshot = BucketView(self.redpanda, topics=self.topics)
@@ -249,7 +247,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         producer.free()
 
         wait_until(
-            lambda: self._all_uploads_done() == True, timeout_sec=60, backoff_sec=5
+            lambda: self._all_uploads_done() is True, timeout_sec=60, backoff_sec=5
         )
 
         # Enable aggresive local retention to test the cloud storage read path.
@@ -1646,7 +1644,7 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
             s3_service_dest = ":443"
             try:
                 s3_service_dest = socket.gethostbyname(s3_service_ep)
-            except:
+            except Exception:
                 pass
 
             self.rp_qdisc = NodeQdisc(
@@ -1678,7 +1676,7 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
             custom_node=self.preallocated_nodes,
         )
 
-        with self.EnableTrafficShaping(self.redpanda) as ts:
+        with self.EnableTrafficShaping(self.redpanda):
             self.redpanda.start()
             self.kafka_tools.create_topic(self.topics[0])
             rpk = RpkTool(self.redpanda)

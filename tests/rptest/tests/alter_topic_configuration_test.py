@@ -8,26 +8,27 @@
 # by the Apache License, Version 2.0
 import random
 import string
-import time
 import subprocess
-from rptest.services.admin import Admin
-from rptest.clients.kcl import KCL, RawKCL
-from rptest.utils.si_utils import BucketView, NT
+
+from ducktape.mark import matrix, parametrize
 from ducktape.utils.util import wait_until
-from rptest.util import wait_until_result
 
-from rptest.services.cluster import cluster
-from ducktape.mark import parametrize, matrix
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.kcl import KCL, RawKCL
 from rptest.clients.rpk import RpkTool
-from rptest.utils.mode_checks import skip_fips_mode
-
-from rptest.services.redpanda_installer import RedpandaVersionTriple
 from rptest.clients.types import TopicSpec
-from rptest.tests.end_to_end import EndToEndTest
-from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings
+from rptest.services.redpanda_installer import (
+    InstallOptions,
+    RedpandaVersionTriple,
+)
+from rptest.tests.end_to_end import EndToEndTest
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until_result
+from rptest.utils.mode_checks import skip_fips_mode
+from rptest.utils.si_utils import NT, BucketView
 
 
 class AlterTopicConfiguration(RedpandaTest):
@@ -423,8 +424,8 @@ class ShadowIndexingGlobalConfig(RedpandaTest):
         # Assert cluster values are both True
         admin = Admin(self.redpanda)
         cluster_conf = admin.get_cluster_config()
-        assert cluster_conf["cloud_storage_enable_remote_read"] == True
-        assert cluster_conf["cloud_storage_enable_remote_write"] == True
+        assert cluster_conf["cloud_storage_enable_remote_read"] is True
+        assert cluster_conf["cloud_storage_enable_remote_write"] is True
 
         # delete topic configs (value from cluster configuration should be used)
         self.client().delete_topic_config(topic, "redpanda.remote.read")
@@ -443,8 +444,8 @@ class ShadowIndexingGlobalConfig(RedpandaTest):
             }
         )
         cluster_conf = admin.get_cluster_config()
-        assert cluster_conf["cloud_storage_enable_remote_read"] == False
-        assert cluster_conf["cloud_storage_enable_remote_write"] == False
+        assert cluster_conf["cloud_storage_enable_remote_read"] is False
+        assert cluster_conf["cloud_storage_enable_remote_write"] is False
 
         # delete topic configs (value from cluster configuration should be used)
         self.client().delete_topic_config(topic, "redpanda.remote.read")
@@ -457,7 +458,7 @@ class ShadowIndexingGlobalConfig(RedpandaTest):
     @cluster(num_nodes=3)
     def test_topic_manifest_reupload(self):
         bucket_view = BucketView(self.redpanda)
-        initial = wait_until_result(
+        wait_until_result(
             lambda: bucket_view.get_topic_manifest(NT(ns="kafka", topic=self.topic)),
             timeout_sec=10,
             backoff_sec=1,
@@ -555,7 +556,7 @@ class AlterConfigMixedNodeTest(EndToEndTest):
             for props in props_list:
                 kcl.alter_topic_config(props, incremental_update, topic)
                 wait_until(
-                    lambda: func(props) == True,
+                    lambda: func(props) is True,
                     timeout_sec=10,
                     backoff_sec=1,
                     err_msg=f"Failed check {func.__name__}",
@@ -574,7 +575,7 @@ class AlterConfigMixedNodeTest(EndToEndTest):
 
             for node in self.redpanda.nodes:
                 wait_until(
-                    lambda: wait_for_controller_id(node) == True,
+                    lambda: wait_for_controller_id(node) is True,
                     timeout_sec=15,
                     backoff_sec=1,
                     err_msg="Controller leadership did not stabilize.",

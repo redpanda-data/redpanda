@@ -7,20 +7,20 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
-from enum import Enum
 import random
 import re
 import threading
 import time
-import requests
+from collections import defaultdict
+from enum import Enum
 
+import requests
 from ducktape.utils.util import wait_until
+
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.redpanda import RedpandaService
-from rptest.services.redpanda_installer import VERSION_RE, int_tuple
 from rptest.util import wait_until_result
 
 
@@ -145,7 +145,7 @@ class NodeDecommissionWaiter:
         self.last_partitions_bytes_left = None
         self.progress_timeout = progress_timeout
         self.decommissioned_node_ids = (
-            [node_id] if decommissioned_node_ids == None else decommissioned_node_ids
+            [node_id] if decommissioned_node_ids is None else decommissioned_node_ids
         )
 
     def _dump_partition_move_available_bandwidth(self):
@@ -161,7 +161,7 @@ class NodeDecommissionWaiter:
                     {m.labels["shard"]: m.value} for m in next(family).samples
                 ]
                 return shard_to_bandwidth
-            except:
+            except Exception:
                 self.logger.debug(f"error querying metrics for {node}", exc_info=True)
                 return None
 
@@ -187,7 +187,7 @@ class NodeDecommissionWaiter:
         node_to_query = self._not_decommissioned_node()
         try:
             brokers = self.admin.get_brokers(node=node_to_query)
-        except:
+        except Exception:
             # Failure injection is not coordinated, some nodes may
             # not be reachable, ignore and retry.
             self.logger.debug(f"Unable to query {node_to_query}", exc_info=True)
@@ -219,14 +219,14 @@ class NodeDecommissionWaiter:
                 partition_balancer_status = self.admin.get_partition_balancer_status(
                     self._not_decommissioned_node()
                 )
-            except requests.exceptions.HTTPError as e:
+            except requests.exceptions.HTTPError:
                 self.logger.info(
-                    f"unable to get decommission status, HTTP error", exc_info=True
+                    "unable to get decommission status, HTTP error", exc_info=True
                 )
                 time.sleep(1)
                 continue
-            except Exception as e:
-                self.logger.warn(f"unable to get decommission status", exc_info=True)
+            except Exception:
+                self.logger.warn("unable to get decommission status", exc_info=True)
                 time.sleep(1)
                 continue
 
@@ -259,7 +259,7 @@ class NodeDecommissionWaiter:
             self.last_replicas_left = replicas_left
             self.last_partitions_bytes_left = partitions_bytes_left
 
-            if decommission_status["finished"] == True:
+            if decommission_status["finished"] is True:
                 break
             self._dump_partition_move_available_bandwidth()
             time.sleep(1)
@@ -350,7 +350,7 @@ class NodeOpsExecutor:
                 f"broker statuses from {self.redpanda.node_id(node_to_query)}: {brokers}"
             )
             ids = map(lambda broker: broker["id"], brokers)
-            return not node_id in ids
+            return node_id not in ids
         except Exception as e:
             self.logger.info(f"error querying broker statuses - {e}")
             return False
@@ -415,7 +415,7 @@ class NodeOpsExecutor:
                 if all(statuses):
                     return True
 
-                r = admin.recommission_broker(id=node_id)
+                admin.recommission_broker(id=node_id)
             except requests.exceptions.RetryError:
                 return False
             except requests.exceptions.ConnectionError:

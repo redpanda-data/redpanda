@@ -9,11 +9,12 @@
 
 import json
 import os
-import requests
 
+import requests
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.service import Service
-from rptest.util import wait_until, wait_until_result
+
+from rptest.util import wait_until_result
 
 SERVER_DIR = "/opt/ocsf-server"
 SCHEMA_DIR = "/opt/ocsf-schema"
@@ -128,7 +129,7 @@ class OcsfServer(Service):
             if node.account.alive(p):
                 return [p]
         except (RemoteCommandError, ValueError):
-            self.logger.warn(f"pid file not found for ocsf server")
+            self.logger.warn("pid file not found for ocsf server")
 
         return []
 

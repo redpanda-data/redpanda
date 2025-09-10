@@ -1,31 +1,24 @@
-import time
 import json
 from enum import IntEnum
-import requests
 
-from rptest.utils.rpenv import sample_license
+import requests
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import (
     Admin,
     EnterpriseLicenseStatus,
     RolesList,
-    RoleDescription,
 )
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
-    RESTART_LOG_ALLOW_LIST,
-    SecurityConfig,
     SchemaRegistryConfig,
+    SecurityConfig,
 )
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.cluster import cluster
-from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.util import expect_exception
 from rptest.utils.mode_checks import skip_fips_mode
-
-from ducktape.errors import TimeoutError as DucktapeTimeoutError
-from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize, matrix
-from rptest.util import wait_until_result, expect_exception
 
 
 class EnterpriseFeaturesTestBase(RedpandaTest):

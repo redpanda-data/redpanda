@@ -7,14 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from time import sleep
-from math import ceil
 
+from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool
-from ducktape.utils.util import wait_until
-import requests
 
 
 class MaintenanceTestBase(RedpandaTest):
@@ -101,7 +99,7 @@ class MaintenanceTestBase(RedpandaTest):
         # get status for this node via admin interface
         admin_status = self.admin.maintenance_status(node)
         self.logger.debug(
-            f"maintenance status from admin for {{node.name}}: {{admin_status}}"
+            "maintenance status from admin for {node.name}: {admin_status}"
         )
 
         # ensure that both agree on expected outcome

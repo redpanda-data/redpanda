@@ -7,17 +7,17 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 from collections import defaultdict
-from rptest.clients.default import DefaultClient
+
+import confluent_kafka as ck
+
 from rptest.clients.rpk import RpkTool
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.transactions.verifiers.idempotency_load_generator import (
     PausableIdempotentProducer,
 )
-from time import sleep
 from rptest.util import wait_until
-import confluent_kafka as ck
 
 
 class IdempotentProducerRecoveryTest(RedpandaTest):
@@ -80,7 +80,7 @@ class IdempotentProducerRecoveryTest(RedpandaTest):
             do_wait,
             timeout_sec=20,
             backoff_sec=1,
-            err_msg=f"Not all producers were evicted in 20secs.",
+            err_msg="Not all producers were evicted in 20secs.",
             retry_on_exc=False,
         )
 

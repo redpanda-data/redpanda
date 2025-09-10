@@ -8,15 +8,16 @@
 # by the Apache License, Version 2.0
 
 import json
-import requests
 import signal
 import typing
 
+import requests
+from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
-from ducktape.cluster.remoteaccount import RemoteCommandError
-from rptest.services.redpanda import RedpandaService
 from ducktape.utils.util import wait_until
+
+from rptest.services.redpanda import RedpandaService
 
 
 class TransformVerifierProduceStatus(typing.NamedTuple):
@@ -192,7 +193,7 @@ class TransformVerifierService(Service):
             service.stop()
             service.free()
             return final_status
-        except:
+        except Exception:
             service.stop()
             raise
 
@@ -274,7 +275,7 @@ class TransformVerifierService(Service):
         # Attempt a graceful stop
         try:
             self._execute_cmd(node, "stop")
-        except Exception as e:
+        except Exception:
             self.logger.warn("unable to request /stop {self.who_am_i()}: {e}")
 
         try:
@@ -285,7 +286,7 @@ class TransformVerifierService(Service):
             )
             self._pid = None
             return
-        except TimeoutError as e:
+        except TimeoutError:
             self.logger.warn("gracefully stopping {self.who_am_i()} failed: {e}")
 
         # Gracefully stop did not work, try a hard kill

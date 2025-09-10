@@ -8,18 +8,16 @@
 # by the Apache License, Version 2.0
 
 import json
-import logging
-
 from typing import Optional
+from uuid import uuid4
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.tests.test import TestContext
-from rptest.clients.types import TopicSpec
-from rptest.clients.serde_client_utils import SchemaType, SerdeClientType
-from rptest.util import inject_remote_script
 
-from uuid import uuid4
+from rptest.clients.serde_client_utils import SchemaType, SerdeClientType
+from rptest.clients.types import TopicSpec
+from rptest.util import inject_remote_script
 
 PYTHON_EXEC = "python3"
 JAVA_EXEC = "java -cp"
@@ -95,7 +93,7 @@ class SerdeClient(BackgroundThreadService):
             self._cmd_args += f" --compression-type {compression_type}"
 
         if self._serde_client_type == SerdeClientType.Golang:
-            self._cmd_args += f" --debug"
+            self._cmd_args += " --debug"
 
         if security_config is not None:
             security_string = json.dumps(security_config)

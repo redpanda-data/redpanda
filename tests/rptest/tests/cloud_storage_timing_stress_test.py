@@ -6,29 +6,30 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
-from rptest.clients.rpk import RpkTool
-from rptest.services.admin import Admin
-from rptest.services.cluster import cluster
-from rptest.services.kgo_verifier_services import (
-    KgoVerifierProducer,
-    KgoVerifierSeqConsumer,
-)
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import MetricsEndpoint, SISettings
-from rptest.util import firewall_blocked, wait_until_result
-from rptest.utils.si_utils import BucketView, NTPR
-from rptest.clients.types import TopicSpec
-from rptest.tests.partition_movement import PartitionMovementMixin
-from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize
-from rptest.utils.mode_checks import skip_debug_mode
-
 import concurrent.futures
 import random
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+
+from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierProducer,
+    KgoVerifierSeqConsumer,
+)
+from rptest.services.redpanda import MetricsEndpoint, SISettings
+from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until_result
+from rptest.utils.mode_checks import skip_debug_mode
+from rptest.utils.si_utils import NTPR, BucketView
 
 
 class CloudStorageCheck:
@@ -297,7 +298,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
     def _create_consumer(self, producer: KgoVerifierProducer) -> KgoVerifierSeqConsumer:
         bps = self.produce_byte_rate_per_ntp * self.topics[0].partition_count
         bytes_count = bps * self.target_runtime
-        msg_count = bytes_count // self.message_size
+        bytes_count // self.message_size
 
         self.logger.info(
             f"Will consume at {bps / self.mib}MiB/s from topic={self.topic}"
@@ -507,7 +508,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
                     f"Failed checks: {failure_count} ({failed}); Incomplete checks: {len(not_done)} ({incomplete})"
                 )
 
-            self.logger.info(f"All checks completed successfuly")
+            self.logger.info("All checks completed successfuly")
 
     @cluster(
         num_nodes=5,

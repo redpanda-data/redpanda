@@ -1,9 +1,10 @@
-from logging import Logger
 import random
+from logging import Logger
 
 from ducktape.utils.util import wait_until
-from rptest.services.redpanda import RedpandaService
+
 from rptest.services.admin import Admin
+from rptest.services.redpanda import RedpandaService
 
 
 class FullDiskHelper:
@@ -16,7 +17,8 @@ class FullDiskHelper:
 
     # TODO factor out similar code in cluster_config_test.py
     def _wait_for_node_config_value(self, key: str, value: int) -> None:
-        _get = lambda k: self.admin.get_cluster_config()[k]
+        def _get(k):
+            return self.admin.get_cluster_config()[k]
 
         def match(key: str, val: int) -> bool:
             v = _get(key)
@@ -40,7 +42,7 @@ class FullDiskHelper:
         self.redpanda.set_cluster_config(updates)
 
         # self.admin.patch_cluster_config(upsert=updates, remove=[])
-        self.logger.debug(f"Confirming new config values..")
+        self.logger.debug("Confirming new config values..")
         self._wait_for_node_config_value(self.CONF_MIN_FREE_BYTES, new_threshold)
 
     def trigger_low_space(self, node=None):

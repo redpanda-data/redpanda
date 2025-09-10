@@ -9,10 +9,12 @@
 
 import random
 import signal
-import time
 import threading
-from ducktape.utils.util import wait_until
+import time
+
 from ducktape.errors import TimeoutError
+from ducktape.utils.util import wait_until
+
 from rptest.clients.kubectl import KubectlTool
 from rptest.services import tc_netem
 from rptest.services.redpanda import RedpandaServiceCloud
@@ -114,7 +116,7 @@ class FailureInjectorBase:
                             # The stop timers may outlive the test, handle case
                             # where they run after we already had a heal_all call.
                             self.redpanda.logger.warn(
-                                f"Skipping failure stop action, already cleaned up?"
+                                "Skipping failure stop action, already cleaned up?"
                             )
                         else:
                             self._stop_func(spec.type)(spec.node)
@@ -230,7 +232,7 @@ class FailureInjector(FailureInjectorBase):
         self.redpanda.signal_redpanda(node, signal=signal.SIGKILL, idempotent=True)
         timeout_sec = 10
         wait_until(
-            lambda: self.redpanda.redpanda_pid(node) == None,
+            lambda: self.redpanda.redpanda_pid(node) is None,
             timeout_sec=timeout_sec,
             err_msg="Redpanda failed to kill in %d seconds" % timeout_sec,
         )
@@ -265,7 +267,7 @@ class FailureInjector(FailureInjectorBase):
         tc_netem.tc_netem_delete(node)
 
     def _heal_all(self):
-        self.redpanda.logger.info(f"healing all network failures")
+        self.redpanda.logger.info("healing all network failures")
 
         actions = [
             lambda n: n.account.ssh("iptables -P INPUT ACCEPT"),
@@ -293,7 +295,7 @@ class FailureInjector(FailureInjectorBase):
         self.redpanda.logger.debug(f"after _heal_all _in_flight={self._in_flight}")
 
     def _continue_all(self):
-        self.redpanda.logger.info(f"continuing execution on all nodes")
+        self.redpanda.logger.info("continuing execution on all nodes")
         for n in self.redpanda.nodes:
             if self.redpanda.check_node(n):
                 self._continue(n)
@@ -306,7 +308,7 @@ class FailureInjector(FailureInjectorBase):
         self.redpanda.logger.debug(f"after _continue_all _in_flight={self._in_flight}")
 
     def _undo_all(self):
-        self.redpanda.logger.info(f"running scheduled undos earlier")
+        self.redpanda.logger.info("running scheduled undos earlier")
         self.redpanda.logger.debug(f"before _undo_all _in_flight={self._in_flight}")
         while self._in_flight:
             try:
@@ -329,7 +331,7 @@ class FailureInjector(FailureInjectorBase):
         self.redpanda.signal_redpanda(node, signal=signal.SIGTERM)
         timeout_sec = 30
         wait_until(
-            lambda: self.redpanda.redpanda_pid(node) == None,
+            lambda: self.redpanda.redpanda_pid(node) is None,
             timeout_sec=timeout_sec,
             err_msg="Redpanda failed to terminate in %d seconds" % timeout_sec,
         )
@@ -341,7 +343,7 @@ class FailureInjector(FailureInjectorBase):
     def _start(self, node):
         # make this idempotent
         pid = self.redpanda.redpanda_pid(node)
-        if pid == None:
+        if pid is None:
             self.redpanda.logger.info(f"starting redpanda on {node.account.hostname}")
             self.redpanda.start_redpanda(node)
         else:
@@ -393,7 +395,7 @@ class FailureInjectorCloud(FailureInjectorBase):
         )
 
     def _isolate(self, node):
-        self.redpanda.logger.info(f"isolating node with privilaged pod")
+        self.redpanda.logger.info("isolating node with privilaged pod")
         cmd = "apt update;apt install -y iptables;iptables -A OUTPUT -p tcp --destination-port 33145 -j DROP"
         self._kubectl.exec_privileged(cmd)
         cmd = "apt update;apt install -y iptables;iptables -A INPUT -p tcp --destination-port 33145 -j DROP"

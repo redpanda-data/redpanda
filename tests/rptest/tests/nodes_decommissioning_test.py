@@ -12,33 +12,30 @@ import random
 import time
 
 import requests
-from rptest.clients.kafka_cat import KafkaCat
-from time import sleep
+from ducktape.mark import matrix, parametrize
+from ducktape.utils.util import wait_until
+
 from rptest.clients.default import DefaultClient
+from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
 )
-from rptest.services.redpanda_installer import RedpandaInstaller
-from rptest.tests.prealloc_nodes import PreallocNodesTest
-
-from rptest.utils.mode_checks import skip_debug_mode
-from rptest.util import wait_for_recovery_throttle_rate
-from rptest.clients.rpk import RpkTool
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.cluster import cluster
-from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize
-from ducktape.mark import matrix
-from rptest.clients.types import TopicSpec
-from rptest.tests.end_to_end import EndToEndTest
-from rptest.services.admin import Admin
 from rptest.services.redpanda import (
     CHAOS_LOG_ALLOW_LIST,
     RESTART_LOG_ALLOW_LIST,
     RedpandaService,
     SISettings,
 )
+from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_for_recovery_throttle_rate
+from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.node_operations import NodeDecommissionWaiter
 
 
@@ -1041,7 +1038,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
         self.redpanda.set_cluster_config({"controller_snapshot_max_age_sec": 20000})
 
         spec = TopicSpec(
-            name=f"migration-test-workload", partition_count=32, replication_factor=3
+            name="migration-test-workload", partition_count=32, replication_factor=3
         )
 
         self.client().create_topic(spec)
@@ -1235,7 +1232,7 @@ class NodeDecommissionFailureReportingTest(RedpandaTest):
                 check_all_nodes,
                 timeout_sec=60,
                 backoff_sec=1,
-                err_msg=f"Timed out waiting for all nodes to report allocation failures",
+                err_msg="Timed out waiting for all nodes to report allocation failures",
             )
 
         wait_for_allocation_failures(failed_partitions=partitions)
@@ -1358,7 +1355,9 @@ class NodeDecommissionSpaceManagementTest(RedpandaTest):
 
         # helper: bytes to MBs / human readable
         def hmb(bs):
-            convert = lambda b: round(b / (1024 * 1024), 1)
+            def convert(b):
+                return round(b / (1024 * 1024), 1)
+
             if isinstance(bs, int):
                 return convert(bs)
             return [convert(b) for b in bs]

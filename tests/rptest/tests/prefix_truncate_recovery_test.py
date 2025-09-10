@@ -7,18 +7,17 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
+from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.upgrade_with_workload import MixedVersionWorkloadRunner
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.kafka_cat import KafkaCat
-from rptest.services.admin import Admin
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 
 LOG_ALLOW_LIST = RESTART_LOG_ALLOW_LIST + [
     # raft - [follower: {id: {1}, revision: {9}}] [group_id:1, {kafka/topic-xyeyqcbyxi/0}] - recovery_stm.cc:422 - recovery append entries error: rpc::errc::exponential_backoff

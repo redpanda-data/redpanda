@@ -7,6 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from .service_base import WorkloadServiceBase
-from .list_offsets.service import ListOffsetsWorkload
-from .tx_subscribe.service import TxSubscribeWorkload
+from .list_offsets.service import ListOffsetsWorkload  # noqa: F401
+from .service_base import WorkloadServiceBase  # noqa: F401
+from .tx_subscribe.service import TxSubscribeWorkload  # noqa: F401

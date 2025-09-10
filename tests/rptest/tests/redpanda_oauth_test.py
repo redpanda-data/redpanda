@@ -7,14 +7,27 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import json
+import socket
 import threading
+import time
+from urllib.parse import urlparse
+
+import requests
+from ducktape.mark import parametrize
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize
+from keycloak import KeycloakOpenID
 
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.clients.kafka_cli_tools import AuthorizationError, KafkaCliTools
 from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.clients.kafka_cli_tools import KafkaCliTools, AuthorizationError
+from rptest.clients.rpk import RpkTool
+from rptest.services.cluster import cluster
+from rptest.services.keycloak import (
+    DEFAULT_AT_LIFESPAN_S,
+    DEFAULT_REALM,
+    KeycloakService,
+)
 from rptest.services.redpanda import (
     LoggingConfig,
     MetricsEndpoint,
@@ -23,29 +36,16 @@ from rptest.services.redpanda import (
     SecurityConfig,
     make_redpanda_service,
 )
-from rptest.services.keycloak import (
-    DEFAULT_REALM,
-    DEFAULT_AT_LIFESPAN_S,
-    KeycloakService,
-)
-from rptest.services.cluster import cluster
 from rptest.services.tls import TLSCertManager
 from rptest.tests.sasl_reauth_test import (
-    get_sasl_metrics,
-    REAUTH_METRIC,
     EXPIRATION_METRIC,
+    REAUTH_METRIC,
+    get_sasl_metrics,
 )
 from rptest.tests.tls_metrics_test import FaketimeTLSProvider
 from rptest.util import expect_exception
 from rptest.utils.log_utils import wait_until_nag_is_set
 from rptest.utils.mode_checks import skip_fips_mode
-
-import requests
-import time
-from keycloak import KeycloakOpenID
-from urllib.parse import urlparse
-import json
-import socket
 
 CLIENT_ID = "myapp"
 TOKEN_AUDIENCE = "account"
@@ -198,7 +198,7 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
         service_user_id = self.create_service_user()
 
         self.rpk.create_topic(EXAMPLE_TOPIC)
-        result = self.rpk.sasl_allow_principal(
+        self.rpk.sasl_allow_principal(
             f"User:{service_user_id}",
             ["all"],
             "topic",
@@ -486,7 +486,7 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
         consumer.subscribe([EXAMPLE_TOPIC])
         self.redpanda.logger.debug("consumer.subscribed")
         rec = consumer.poll(1.0)
-        assert rec == None
+        assert rec is None
 
         wait_until(has_group, timeout_sec=30, backoff_sec=1)
 

@@ -1,5 +1,8 @@
-from _typeshed import Incomplete
 from collections.abc import Generator
+from typing import Iterator
+
+from _typeshed import Incomplete
+from ducktape.cluster.cluster import ClusterNode
 
 class NodeNotPresentError(Exception): ...
 class InsufficientResourcesError(Exception): ...

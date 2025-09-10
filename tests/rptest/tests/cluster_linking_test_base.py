@@ -7,11 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.clients.admin.v2 import Admin as AdminV2
+import google.protobuf.duration_pb2
+
 from rptest.clients.admin.proto.redpanda.core.admin.v2 import (
     shadow_link_pb2,
     shadow_link_pb2_connect,
 )
+from rptest.clients.admin.v2 import Admin as AdminV2
 from rptest.clients.default import DefaultClient
 from rptest.services.multi_cluster_services import (
     Cluster,
@@ -22,7 +24,6 @@ from rptest.services.multi_cluster_services import (
 )
 from rptest.services.redpanda import LoggingConfig
 from rptest.tests.redpanda_test import RedpandaTest
-import google.protobuf.duration_pb2
 
 
 class ShadowLinkTestBase(RedpandaTest):

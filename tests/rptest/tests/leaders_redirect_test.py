@@ -7,16 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from urllib.parse import urlparse
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlparse
 
-from rptest.services.cluster import cluster
+from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
+
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-
-from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize
 
 
 class LeadersRedirectTest(RedpandaTest):
@@ -101,7 +100,7 @@ class LeadersRedirectTest(RedpandaTest):
 
         Also verifies that original exact matching still works.
         """
-        path = f"security/users/cc-baxter"
+        path = "security/users/cc-baxter"
 
         def make_new_address(node, port, sub=""):
             return dict(address=f"{sub}{node.name}", port=port)

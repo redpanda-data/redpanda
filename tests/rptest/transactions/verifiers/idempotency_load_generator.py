@@ -7,10 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from ducktape.services.service import Service
-from rptest.util import wait_until
-import requests
 import sys
+
+import requests
+from ducktape.services.service import Service
+
+from rptest.util import wait_until
 
 OUTPUT_LOG = "/opt/remote/var/pausable_idempotent_producer.log"
 
@@ -53,7 +55,7 @@ class PausableIdempotentProducer(Service):
 
     def start_node(self, node, timeout_sec=10):
         node.account.ssh(
-            f'bash /opt/remote/control/start.sh pausable_idempotent_producer "java -cp /opt/verifiers/verifiers.jar io.vectorized.idempotency.App"'
+            'bash /opt/remote/control/start.sh pausable_idempotent_producer "java -cp /opt/verifiers/verifiers.jar io.vectorized.idempotency.App"'
         )
         wait_until(
             lambda: self.is_alive(node),

@@ -7,8 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from confluent_kafka import Consumer, TopicPartition, OFFSET_BEGINNING
 import time
+
+from confluent_kafka import OFFSET_BEGINNING, Consumer, TopicPartition
 
 
 class RetryableConsumer:
@@ -41,10 +42,10 @@ class RetryableConsumer:
             if retries == 0:
                 raise Exception("Can't connect to the redpanda cluster")
             retries -= 1
-            if self.consumer != None:
+            if self.consumer is not None:
                 try:
                     self.consumer.close()
-                except:
+                except Exception:
                     pass
             self.logger.debug(f"Attempting to init a consumer using {self.brokers}")
             self.consumer = Consumer(config)

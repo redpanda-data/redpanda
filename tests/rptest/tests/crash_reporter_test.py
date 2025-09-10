@@ -9,13 +9,13 @@
 
 import json
 
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from ducktape.utils.util import wait_until
 
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.tests.metrics_reporter_test import MetricsReporterServer
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.tests.crash_loop_checks_test import HOSTNAME_ERRORS
+from rptest.tests.metrics_reporter_test import MetricsReporterServer
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class CrashReporterServer(MetricsReporterServer):

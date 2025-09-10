@@ -1,4 +1,5 @@
 from ducktape.utils.util import wait_until
+
 from rptest.services.redpanda_types import (
     PLAINTEXT_SECURITY,
     KafkaClientSecurity,
@@ -22,9 +23,6 @@ class KafkaServiceAdapter(RedpandaServiceForClients):
 
     def brokers(self):
         return self._kafka_service.bootstrap_servers()
-
-    def start(self):
-        return self._kafka_service.start()
 
     def start(self, add_principals=""):
         return self._kafka_service.start(add_principals)

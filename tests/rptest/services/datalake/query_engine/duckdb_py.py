@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import duckdb
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
+
 from rptest.context import cloud_storage
 from rptest.services.catalog_service import CatalogType
 from rptest.tests.datalake.query_engine_base import QueryEngineBase, QueryEngineType

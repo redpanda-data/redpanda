@@ -7,23 +7,22 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from confluent_kafka import KafkaException, Producer
+from ducktape.utils.util import wait_until
+
 from rptest.clients.default import DefaultClient
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.action_injector import ActionConfig, random_process_kills
-from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from ducktape.utils.util import wait_until
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
 )
 from rptest.services.redpanda import SISettings
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.utils.node_operations import FailureInjectorBackgroundThread
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool
-
-from confluent_kafka import Producer, KafkaException
+from rptest.utils.node_operations import FailureInjectorBackgroundThread
 
 
 def on_delivery(err, msg):
@@ -122,7 +121,7 @@ class IdempotencySnapshotDelivery(PreallocNodesTest):
             min_time_between_actions_sec=10,
             max_time_between_actions_sec=20,
         )
-        with random_process_kills(self.redpanda, pkill_config) as ctx:
+        with random_process_kills(self.redpanda, pkill_config):
             wait_until(lambda: producer.produce_status.acked >= msg_cnt, 240, 1)
             producer.stop()
 

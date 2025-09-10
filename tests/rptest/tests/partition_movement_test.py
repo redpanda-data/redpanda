@@ -9,34 +9,33 @@
 
 import copy
 import random
-import time
 import signal
+import time
+
 import requests
-
-from rptest.services.cluster import cluster
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
-from rptest.clients.kafka_cat import KafkaCat
-from ducktape.mark import ignore, matrix
 
-from rptest.utils.mode_checks import skip_debug_mode, skip_fips_mode
-from rptest.clients.types import TopicSpec
+from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool
-from rptest.tests.end_to_end import EndToEndTest
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
-from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
-from rptest.tests.partition_movement import PartitionMovementMixin
-from rptest.util import wait_until_result
+from rptest.services.cluster import cluster
 from rptest.services.honey_badger import HoneyBadger
-from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kaf_producer import KafProducer
-from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.redpanda import (
-    RESTART_LOG_ALLOW_LIST,
     PREV_VERSION_LOG_ALLOW_LIST,
-    CloudStorageType,
+    RESTART_LOG_ALLOW_LIST,
     SISettings,
     get_cloud_storage_type,
 )
+from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
+from rptest.services.rpk_consumer import RpkConsumer
+from rptest.services.rpk_producer import RpkProducer
+from rptest.tests.end_to_end import EndToEndTest
+from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.util import wait_until_result
+from rptest.utils.mode_checks import skip_debug_mode, skip_fips_mode
 
 # Errors we should tolerate when moving partitions around
 PARTITION_MOVEMENT_LOG_ERRORS = [
@@ -184,7 +183,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         """
         Move partitions with data, but no active producers or consumers.
         """
-        self.logger.info(f"Starting redpanda...")
+        self.logger.info("Starting redpanda...")
         test_mixed_versions = num_to_upgrade > 0
         install_opts = InstallOptions(
             install_previous_version=test_mixed_versions, num_to_upgrade=num_to_upgrade
@@ -202,7 +201,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                 )
                 topics.append(spec)
 
-        self.logger.info(f"Creating topics...")
+        self.logger.info("Creating topics...")
         for spec in topics:
             self.client().create_topic(spec)
 
@@ -220,7 +219,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             self.logger.info(f"Finished producing to {spec}, waiting for producer...")
             producer.wait()
             producer.free()
-            self.logger.info(f"Producer stop complete.")
+            self.logger.info("Producer stop complete.")
 
         if test_mixed_versions:
             self.redpanda.set_feature_active("node_local_core_assignment", active=True)
@@ -260,11 +259,11 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                         self.logger.info(f"message: {m}")
                     consumed = set([(m["key"], m["value"]) for m in consumer.messages])
 
-            self.logger.info(f"Stopping consumer...")
+            self.logger.info("Stopping consumer...")
             consumer.stop()
-            self.logger.info(f"Awaiting consumer...")
+            self.logger.info("Awaiting consumer...")
             consumer.wait()
-            self.logger.info(f"Freeing consumer...")
+            self.logger.info("Freeing consumer...")
             consumer.free()
 
             self.logger.info(f"Finished verifying records in {spec}")
@@ -521,7 +520,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         # Create topic with enough data that inter-node movement
         # will take a while.
-        name = f"movetest"
+        name = "movetest"
         spec = TopicSpec(name=name, partition_count=1, replication_factor=3)
         self.client().create_topic(spec)
 
@@ -636,7 +635,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.logger.info(f"Finished producing to {topic}, waiting for producer...")
         producer.wait()
         producer.free()
-        self.logger.info(f"Producer stop complete.")
+        self.logger.info("Producer stop complete.")
 
         admin = Admin(self.redpanda)
         # get current assignments

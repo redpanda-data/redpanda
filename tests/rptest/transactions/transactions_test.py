@@ -7,29 +7,26 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
-import string
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from time import time
-from os.path import join
-
 import random
+import string
+from collections import defaultdict
+from os.path import join
+from time import time
 
-from ducktape.utils.util import wait_until
-from ducktape.errors import TimeoutError
-
-from rptest.clients.offline_log_viewer import OfflineLogViewer
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.admin import Admin
-from rptest.transactions.util import TransactionsMixin
-from rptest.services.redpanda import RedpandaService
 import confluent_kafka as ck
+from ducktape.errors import TimeoutError
+from ducktape.utils.util import wait_until
 
-from rptest.services.admin import Admin
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.metrics_check import MetricCheck
+from rptest.services.redpanda import RedpandaService
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.transactions.util import TransactionsMixin
 
 
 class TransactionsTest(RedpandaTest, TransactionsMixin):
@@ -203,7 +200,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             producer.begin_transaction()
 
             for record in records:
-                assert record.error() == None
+                assert record.error() is None
                 consumed_from_input_topic.append(record)
                 producer.produce(
                     self.output_t.name,
@@ -336,7 +333,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer.begin_transaction()
 
         for record in records:
-            assert record.error() == None
+            assert record.error() is None
             producer.produce(self.output_t.name, record.value(), record.key())
 
         offsets = consumer1.position(consumer1.assignment())
@@ -403,7 +400,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer.begin_transaction()
 
         for record in records:
-            assert record.error() == None
+            assert record.error() is None
             producer.produce(self.output_t.name, record.value(), record.key())
 
         offsets = consumer1.position(consumer1.assignment())
@@ -433,7 +430,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
 
     @cluster(num_nodes=3)
     def transaction_id_expiration_test(self):
-        admin = Admin(self.redpanda)
+        Admin(self.redpanda)
         rpk = RpkTool(self.redpanda)
         # Create an open transaction.
         producer = ck.Producer(
@@ -507,7 +504,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
                 producer.init_transactions()
                 break
             except ck.cimpl.KafkaException as e:
-                self.redpanda.logger.debug(f"error on init_transactions", exc_info=True)
+                self.redpanda.logger.debug("error on init_transactions", exc_info=True)
                 kafka_error = e.args[0]
                 assert kafka_error.code() in [
                     ck.cimpl.KafkaError.NOT_COORDINATOR,
@@ -989,7 +986,7 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
     def check_pids_overflow_test(self):
         rpk = RpkTool(self.redpanda)
         max_concurrent_producer_ids = 10
-        ans = rpk.cluster_config_set(
+        rpk.cluster_config_set(
             "max_concurrent_producer_ids", str(max_concurrent_producer_ids)
         )
 

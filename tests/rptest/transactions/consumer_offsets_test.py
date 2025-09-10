@@ -7,14 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.transactions.verifiers.consumer_offsets_verifier import (
-    ConsumerOffsetsVerifier,
-)
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
 from rptest.services.cluster import cluster
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.redpanda_test import RedpandaTest
-from ducktape.utils.util import wait_until
-from ducktape.mark import matrix
+from rptest.transactions.verifiers.consumer_offsets_verifier import (
+    ConsumerOffsetsVerifier,
+)
 
 
 class VerifyConsumerOffsets(RedpandaTest):
@@ -84,7 +85,7 @@ class VerifyConsumerOffsetsThruUpgrades(RedpandaTest):
             consumer_offsets_is_compactible,
             timeout_sec=30,
             backoff_sec=1,
-            err_msg=f"Timed out waiting for consumer offsets partition to be compactible",
+            err_msg="Timed out waiting for consumer offsets partition to be compactible",
         )
 
     @cluster(num_nodes=3)

@@ -7,24 +7,21 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaInstaller
-from rptest.services.redpanda_installer import (
-    ver_triple,
-    RedpandaVersionTriple,
-    RedpandaVersionLine,
-)
-from rptest.services.cluster import cluster
-from rptest.services.admin import Admin
-from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
-from rptest.clients.rpk import RpkTool
-from rptest.util import wait_until_result
+import random
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
-import random
-import time
+from rptest.clients.rpk import RpkTool
+from rptest.services.admin import Admin
+from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaInstaller
+from rptest.services.redpanda_installer import (
+    RedpandaVersionTriple,
+    ver_triple,
+)
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class ControllerSnapshotPolicyTest(RedpandaTest):
@@ -282,7 +279,7 @@ class ControllerSnapshotTest(RedpandaTest):
 
         check_and_save_node_ids(seed_nodes)
 
-        self.logger.info(f"seed nodes restarted successfully")
+        self.logger.info("seed nodes restarted successfully")
 
         self.redpanda.start(
             nodes=[joiner_node],

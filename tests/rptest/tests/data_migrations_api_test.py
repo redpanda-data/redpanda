@@ -642,10 +642,13 @@ class DataMigrationsApiTest(RedpandaTest, DataMigrationTestMixin):
             in_migr_id = self.admin.mount_topics([in_topic]).json()["id"]
             self.wait_partitions_appear([topic])
             self.wait_migration_disappear(in_migr_id)
-            expected_msg_predicate = lambda msg: {
-                "key": msg.key(),
-                "value": msg.value(),
-            } == make_msg(i)
+
+            def expected_msg_predicate(msg):
+                return {
+                    "key": msg.key(),
+                    "value": msg.value(),
+                } == make_msg(i)
+
             self.assure_exactly_one_message(topic.name, expected_msg_predicate)
             self.client().delete_topic(topic.name)
 

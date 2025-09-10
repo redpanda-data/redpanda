@@ -11,17 +11,16 @@ import os
 import pprint
 import threading
 from contextlib import contextmanager
-from typing import Callable, Optional, Any, ContextManager
 from logging import Logger
+from typing import Any, Callable, ContextManager, Optional
 
+from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.errors import TimeoutError
 from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.storage import Segment
-
-from ducktape.cluster.remoteaccount import RemoteCommandError
-from ducktape.errors import TimeoutError
 
 
 class Scale:
@@ -521,7 +520,7 @@ def wait_for_recovery_throttle_rate(redpanda, new_rate: int):
                     current_rate >= min_expected_rate
                     and current_rate <= max_expected_rate
                 )
-            except:
+            except Exception:
                 redpanda.logger.debug(
                     f"Error getting throttle rate for {node}", exc_info=True
                 )

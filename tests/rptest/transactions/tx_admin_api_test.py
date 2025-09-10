@@ -8,16 +8,18 @@
 # by the Apache License, Version 2.0
 
 import random
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from rptest.services.admin import Admin
-import confluent_kafka as ck
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool
-from rptest.services.redpanda import DEFAULT_LOG_ALLOW_LIST
 import re
+
+import confluent_kafka as ck
 import requests
 from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import DEFAULT_LOG_ALLOW_LIST
+from rptest.tests.redpanda_test import RedpandaTest
 
 TIMEOUT_ALLOW_LIST = [re.compile(r".*Unexpected tx_error error: {tx::errc::timeout}.*")]
 
@@ -78,7 +80,7 @@ class TxAdminTest(RedpandaTest):
             for partition in range(topic.partition_count):
                 txs_info = self.admin.get_transactions(topic.name, partition, "kafka")
                 assert "expired_transactions" not in txs_info
-                if expected_pids == None:
+                if expected_pids is None:
                     expected_pids = list(
                         map(self.extract_pid, txs_info["active_transactions"])
                     )

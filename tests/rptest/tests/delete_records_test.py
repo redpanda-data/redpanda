@@ -7,39 +7,39 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import time
 import random
 import signal
 import string
 import threading
-import confluent_kafka as ck
-import ducktape
+import time
 from typing import Callable, NamedTuple
 
-from ducktape.mark import parametrize, matrix
-from rptest.services.admin import Admin
-from rptest.tests.partition_movement import PartitionMovementMixin
+import confluent_kafka as ck
+import ducktape
+from ducktape.mark import matrix, parametrize
+from ducktape.mark.resource import cluster as ducktape_cluster
+from ducktape.tests.test import Test
+from ducktape.utils.util import wait_until
+from kafkatest.services.kafka import KafkaService
+from kafkatest.services.zookeeper import ZookeeperService
+from kafkatest.version import V_3_0_0
+
 from rptest.clients.default import DefaultClient
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
+from rptest.services.kafka import KafkaServiceAdapter
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
 )
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.kafka import KafkaServiceAdapter
-from rptest.clients.kafka_cat import KafkaCat
-from kafkatest.services.kafka import KafkaService
-from kafkatest.services.zookeeper import ZookeeperService
-from kafkatest.version import V_3_0_0
-from rptest.clients.kafka_cli_tools import KafkaCliTools, KafkaDeleteOffsetsResponse
-from rptest.clients.rpk import RpkTool, RpkException
-from ducktape.utils.util import wait_until
-from rptest.clients.types import TopicSpec
-from rptest.util import produce_until_segments, wait_until_result, expect_exception
 from rptest.services.redpanda import SISettings
-from rptest.utils.si_utils import BucketView, NTP
-from ducktape.mark.resource import cluster as ducktape_cluster
-from ducktape.tests.test import Test
+from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import expect_exception, produce_until_segments, wait_until_result
+from rptest.utils.si_utils import NTP, BucketView
 
 TEST_TOPIC_NAME = "test-topic-1"
 TEST_COMPACTED_TOPIC_NAME = "test-topic-2-compact"
@@ -260,7 +260,7 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
         def check_bound_end_fails(offset):
             return check_bound_end(offset, value_on_read=False)
 
-        assert truncate_offset <= high_watermark, f"Test malformed"
+        assert truncate_offset <= high_watermark, "Test malformed"
 
         if truncate_offset == high_watermark:
             # Assert no data at all can be read
@@ -470,9 +470,9 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
                 backoff_sec=5,
                 err_msg=f"Failed while waiting on all segments below lwm: {low_watermark} to be removed",
             )
-        except ducktape.errors.TimeoutError as e:
+        except ducktape.errors.TimeoutError:
             self.redpanda.logger.info(
-                f"Timed out waiting for segments, ensure no orphaned segments exist nodes that didn't crash"
+                "Timed out waiting for segments, ensure no orphaned segments exist nodes that didn't crash"
             )
             snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
                 "kafka", TEST_TOPIC_NAME, 0

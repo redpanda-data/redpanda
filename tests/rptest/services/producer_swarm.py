@@ -7,12 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from dataclasses import dataclass
 from math import ceil
-from ducktape.tests.test import TestContext
 from typing import Optional
-from rptest.services.client_swarm_base import ClientSwarmBase
 
+from ducktape.tests.test import TestContext
+
+from rptest.services.client_swarm_base import ClientSwarmBase
 from rptest.services.redpanda import AnyRedpandaService
 from rptest.services.utils import assert_int, assert_int_or_none
 
@@ -61,13 +61,13 @@ class ProducerSwarm(ClientSwarmBase):
 
     def _additional_args(self) -> str:
         cmd = ""
-        cmd += f" producers "
+        cmd += " producers "
         cmd += f" --count {self._producers}"
         cmd += f" --messages {self._records_per_producer}"
         cmd += f" --timeout-ms {self._timeout_ms}"
 
         if self._compressible_payload:
-            cmd += f" --compressible-payload"
+            cmd += " --compressible-payload"
 
         if self._compression_type is not None:
             cmd += f" --compression-type={self._compression_type}"

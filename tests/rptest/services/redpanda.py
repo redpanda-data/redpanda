@@ -6,93 +6,96 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import dataclasses
-import subprocess
-from abc import ABC, abstractmethod
+import collections
 import concurrent.futures
 import copy
-from functools import cached_property
-from logging import Logger
-
-import time
-import os
-import socket
-import signal
-import tempfile
-import shutil
-import requests
+import dataclasses
+import enum
 import json
+import os
+import pathlib
 import random
-import threading
-import collections
 import re
+import shlex
+import shutil
+import signal
+import socket
+import subprocess
+import tempfile
+import threading
+import time
 import uuid
 import zipfile
-import pathlib
-import shlex
-from enum import Enum, IntEnum
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import Enum
+from functools import cached_property
+from logging import Logger
 from typing import (
+    Any,
     Callable,
-    List,
     Generator,
+    List,
     Literal,
     Mapping,
     Optional,
     Protocol,
     Set,
     Tuple,
-    Any,
     Type,
     cast,
 )
-from urllib3.exceptions import MaxRetryError
 
+import requests
 import yaml
+from ducktape.cluster.cluster import ClusterNode
+from ducktape.cluster.remoteaccount import RemoteAccount, RemoteCommandError
+from ducktape.errors import TimeoutError
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
-from requests.exceptions import HTTPError
-from rptest.archival.s3_client import S3Client, S3AddressingStyle
-from rptest.archival.abs_client import ABSClient
-from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.local_filesystem_utils import mkdir_p
 from ducktape.utils.util import wait_until
-from ducktape.cluster.remoteaccount import RemoteAccount
-from ducktape.cluster.cluster import ClusterNode
-from prometheus_client.parser import text_string_to_metric_families
 from prometheus_client.metrics_core import Metric
-from ducktape.errors import TimeoutError
-from ducktape.tests.test import TestContext
-from rptest.context.gcp import GCPContext
-from rptest.services.rpk_consumer import RpkConsumer
+from prometheus_client.parser import text_string_to_metric_families
+from requests.exceptions import HTTPError
+from urllib3.exceptions import MaxRetryError
 
-from rptest.clients.helm import HelmTool
+from rptest.archival.abs_client import ABSClient
+from rptest.archival.s3_client import S3AddressingStyle, S3Client
+from rptest.clients.installpack import InstallPackClient
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kubectl import KubectlTool, is_redpanda_pod
+from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.clients.rpk import RpkTool
 from rptest.clients.rpk_remote import RpkRemoteTool
-from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.clients.installpack import InstallPackClient
-from rptest.clients.rp_storage_tool import RpStorageTool
-from rptest.context.cloud_storage import CloudStorageType  # noqa: F401 # Re-exported for backwards compatibility.
+from rptest.context.cloud_storage import (
+    CloudStorageType,  # noqa: F401 # Re-exported for backwards compatibility.
+)
+from rptest.context.gcp import GCPContext
 from rptest.services import redpanda_types, tls
+from rptest.services.admin import Admin
+from rptest.services.cloud_broker import CloudBroker
+from rptest.services.redpanda_cloud import CloudCluster, get_config_profile_name
+from rptest.services.redpanda_installer import (
+    VERSION_RE as RI_VERSION_RE,
+)
+from rptest.services.redpanda_installer import (
+    RedpandaInstaller,
+    RedpandaVersionTriple,
+)
+from rptest.services.redpanda_installer import (
+    int_tuple as ri_int_tuple,
+)
 from rptest.services.redpanda_types import (
     KafkaClientSecurity,
     LogAllowList,
     LogAllowListElem,
 )
-from rptest.services.admin import Admin
-from rptest.services.redpanda_installer import (
-    RedpandaInstaller,
-    VERSION_RE as RI_VERSION_RE,
-    RedpandaVersionTriple,
-    int_tuple as ri_int_tuple,
-)
-from rptest.services.redpanda_cloud import CloudCluster, get_config_profile_name
-from rptest.services.cloud_broker import CloudBroker
 from rptest.services.rolling_restarter import RollingRestarter
-from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
+from rptest.services.storage import ClusterStorage, NodeCacheStorage, NodeStorage
 from rptest.services.storage_failure_injection import FailureInjectionConfig
-from rptest.services.utils import NodeCrash, LogSearchLocal, LogSearchCloud, Stopwatch
+from rptest.services.utils import LogSearchCloud, LogSearchLocal, NodeCrash, Stopwatch
 from rptest.util import (
     inject_remote_script,
     ssh_output_stderr,
@@ -100,11 +103,8 @@ from rptest.util import (
     wait_until_with_progress_check,
 )
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
-from rptest.utils.expiring_value import ExpiringValue
 from rptest.utils.mode_checks import in_fips_environment
 from rptest.utils.rpenv import sample_license
-import enum
-from dataclasses import dataclass
 
 Partition = collections.namedtuple(
     "Partition", ["topic", "index", "leader", "replicas"]
@@ -1759,7 +1759,7 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         for node in self.nodes:
             try:
                 metrics = self.metrics(node)
-            except:
+            except Exception:
                 return False
             idx = self.idx(node)
             for family in metrics:
@@ -1847,7 +1847,7 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         def _try_get_node_id():
             try:
                 node_cfg = self._admin.get_node_config(node)
-            except:
+            except Exception:
                 return (False, -1)
             return (True, node_cfg["node_id"])
 
@@ -2952,13 +2952,13 @@ class RedpandaService(RedpandaServiceBase):
 
     def get_node_memory_mb(self):
         if self._resource_settings.memory_mb is not None:
-            self.logger.info(f"get_node_memory_mb: got from ResourceSettings")
+            self.logger.info("get_node_memory_mb: got from ResourceSettings")
             return self._resource_settings.memory_mb
         elif self._dedicated_nodes is False:
-            self.logger.info(f"get_node_memory_mb: using ResourceSettings default")
+            self.logger.info("get_node_memory_mb: using ResourceSettings default")
             return self._resource_settings.DEFAULT_MEMORY_MB
         else:
-            self.logger.info(f"get_node_memory_mb: fetching from node")
+            self.logger.info("get_node_memory_mb: fetching from node")
             # Assume nodes are symmetric, so we can just ask one
             # how much memory it has.
             node = self.nodes[0]
@@ -2971,13 +2971,13 @@ class RedpandaService(RedpandaServiceBase):
 
     def get_node_cpu_count(self) -> int:
         if self._resource_settings.num_cpus is not None:
-            self.logger.info(f"get_node_cpu_count: got from ResourceSettings")
+            self.logger.info("get_node_cpu_count: got from ResourceSettings")
             return self._resource_settings.num_cpus
         elif self._dedicated_nodes is False:
-            self.logger.info(f"get_node_cpu_count: using ResourceSettings default")
+            self.logger.info("get_node_cpu_count: using ResourceSettings default")
             return self._resource_settings.DEFAULT_NUM_CPUS
         else:
-            self.logger.info(f"get_node_cpu_count: fetching from node")
+            self.logger.info("get_node_cpu_count: fetching from node")
 
             # Assume nodes are symmetric, so we can just ask one
             node = self.nodes[0]
@@ -3073,9 +3073,9 @@ class RedpandaService(RedpandaServiceBase):
 
         def setup_node_dns(node):
             tmpfile = f"/tmp/{node.name}_hosts"
-            node.account.copy_from(f"/etc/hosts", tmpfile)
+            node.account.copy_from("/etc/hosts", tmpfile)
             update_hosts_file(node.name, tmpfile)
-            node.account.copy_to(tmpfile, f"/etc/hosts")
+            node.account.copy_to(tmpfile, "/etc/hosts")
 
         # Edit /etc/hosts on Redpanda nodes
         self.for_nodes(self.nodes, setup_node_dns)
@@ -3294,7 +3294,7 @@ class RedpandaService(RedpandaServiceBase):
 
             node.account.copy_to(ca.crt, RedpandaService.SYSTEM_TLS_CA_CRT_FILE)
             node.account.ssh(f"chmod 755 {RedpandaService.SYSTEM_TLS_CA_CRT_FILE}")
-            node.account.ssh(f"update-ca-certificates")
+            node.account.ssh("update-ca-certificates")
 
             if self._pandaproxy_config is not None:
                 self._pandaproxy_config.maybe_write_client_certs(
@@ -3357,7 +3357,7 @@ class RedpandaService(RedpandaServiceBase):
         cur_ver: Optional[RedpandaVersionTriple] = None
         try:
             cur_ver = self.get_version_int_tuple(node)
-        except:  # noqa
+        except Exception:  # noqa
             pass
 
         cmd = (
@@ -3505,7 +3505,7 @@ class RedpandaService(RedpandaServiceBase):
         except requests.exceptions.ConnectionError:
             self.logger.debug(f"node {node.name} not yet accepting connections")
             return False
-        except:
+        except Exception:
             self.logger.exception(
                 f"error on getting status from {node.account.hostname}"
             )
@@ -3571,7 +3571,7 @@ class RedpandaService(RedpandaServiceBase):
 
             if expect_fail:
                 wait_until(
-                    lambda: self.redpanda_pid(node) == None,
+                    lambda: self.redpanda_pid(node) is None,
                     timeout_sec=timeout,
                     backoff_sec=0.2,
                     err_msg=f"Redpanda processes did not terminate on {node.name} during startup as expected in {timeout} sec",
@@ -3585,7 +3585,7 @@ class RedpandaService(RedpandaServiceBase):
                     retry_on_exc=True,
                 )
 
-        self.logger.debug(f"Node status prior to redpanda startup:")
+        self.logger.debug("Node status prior to redpanda startup:")
         self.start_service(node, start_rp)
         if not expect_fail:
             self._started.add(node)
@@ -3631,7 +3631,7 @@ class RedpandaService(RedpandaServiceBase):
                 retry_on_exc=True,
             )
 
-        self.logger.debug(f"Node status prior to redpanda startup:")
+        self.logger.debug("Node status prior to redpanda startup:")
         self.start_service(node, start_rp)
         self._started.add(node)
 
@@ -3704,7 +3704,7 @@ class RedpandaService(RedpandaServiceBase):
 
         try:
             start()
-        except:
+        except Exception:
             # In case our failure to start is something like an "address in use", we
             # would like to know what else is going on on this node.
             self.logger.warn(
@@ -3923,7 +3923,7 @@ class RedpandaService(RedpandaServiceBase):
         The key must be equal to the current broker time expressed as unix epoch
         in seconds, and be within 1 hour.
         """
-        key = int(time.time()) if key == None else key
+        key = int(time.time()) if key is None else key
         self.set_cluster_config(
             dict(
                 enable_developmental_unrecoverable_data_corrupting_features=key,
@@ -4129,7 +4129,7 @@ class RedpandaService(RedpandaServiceBase):
 
         try:
             self._cloud_storage_diagnostics()
-        except:
+        except Exception:
             # We are running during test teardown, so do log the exception
             # instead of propagating: this was a best effort thing
             self.logger.exception("Failed to gather cloud storage diagnostics")
@@ -4261,7 +4261,7 @@ class RedpandaService(RedpandaServiceBase):
                     observed,
                     observed_total,
                 )
-            except:
+            except Exception:
                 return 0.0, 0.0, None, None, None, None
 
         # inspect the node and check that we fall below a 5% + reclaimabled_by_retention%
@@ -4324,7 +4324,7 @@ class RedpandaService(RedpandaServiceBase):
 
             self.logger.info(f"Decoding backtraces on {node.account.hostname}.")
             cmd = "/opt/scripts/seastar-addr2line"
-            cmd += f" -a /opt/llvm/llvm-addr2line"
+            cmd += " -a /opt/llvm/llvm-addr2line"
             cmd += f" -e {self.find_raw_binary('redpanda')}"
             cmd += f" -f {RedpandaService.STDOUT_STDERR_CAPTURE}"
             cmd += f" > {RedpandaService.BACKTRACE_CAPTURE} 2>&1"
@@ -4334,7 +4334,7 @@ class RedpandaService(RedpandaServiceBase):
 
             try:
                 node.account.ssh(cmd)
-            except:
+            except Exception:
                 # We run during teardown on failures, so if something
                 # goes wrong we must not raise, or we would usurp
                 # the original exception that caused the failure.
@@ -4507,7 +4507,7 @@ class RedpandaService(RedpandaServiceBase):
 
         try:
             wait_until(
-                lambda: self.redpanda_pid(node) == None,
+                lambda: self.redpanda_pid(node) is None,
                 timeout_sec=timeout,
                 err_msg=f"Redpanda node {node.account.hostname} failed to stop in {timeout} seconds",
             )
@@ -4584,7 +4584,7 @@ class RedpandaService(RedpandaServiceBase):
 
         if node.account.exists(RedpandaService.SYSTEM_TLS_CA_CRT_FILE):
             node.account.remove(RedpandaService.SYSTEM_TLS_CA_CRT_FILE)
-            node.account.ssh(f"update-ca-certificates")
+            node.account.ssh("update-ca-certificates")
 
         if node.account.exists(RedpandaService.TEMP_OSSL_CONFIG_FILE):
             node.account.remove(RedpandaService.TEMP_OSSL_CONFIG_FILE)
@@ -4707,7 +4707,7 @@ class RedpandaService(RedpandaServiceBase):
 
         include_seed_servers = True
         if node_id_override:
-            assert auto_assign_node_id == False, (
+            assert auto_assign_node_id is False, (
                 "Can not use node id override when auto assigning node ids"
             )
             node_id = node_id_override
@@ -4729,9 +4729,9 @@ class RedpandaService(RedpandaServiceBase):
         fqdn = self.get_node_fqdn(node)
 
         try:
-            cur_ver = self.get_version_int_tuple(node)
-        except:
-            cur_ver = None
+            self.get_version_int_tuple(node)
+        except Exception:
+            pass
 
         if self._security.tls_provider and self._rpk_node_config is not None:
             self._rpk_node_config.ca_file = RedpandaService.TLS_CA_CRT_FILE
@@ -5592,7 +5592,7 @@ class RedpandaService(RedpandaServiceBase):
         )
 
         if not any_anomalies:
-            self.logger.info(f"No anomalies in object storage scrub")
+            self.logger.info("No anomalies in object storage scrub")
         elif not fatal_anomalies:
             self.logger.info(
                 f"Non-fatal anomalies in remote storage: {json.dumps(report, indent=2)}"
@@ -5629,7 +5629,7 @@ class RedpandaService(RedpandaServiceBase):
                 f"Internal object storage scrub detected fatal anomalies: {results}"
             )
         else:
-            self.logger.info(f"No anomalies in internal object storage scrub")
+            self.logger.info("No anomalies in internal object storage scrub")
 
     def wait_for_manifest_uploads(self) -> set[Partition]:
         cloud_storage_partitions: set[Partition] = set()

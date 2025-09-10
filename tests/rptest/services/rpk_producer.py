@@ -1,7 +1,8 @@
-from ducktape.services.background_thread import BackgroundThreadService
-from ducktape.cluster.remoteaccount import RemoteCommandError
 from threading import Event
 from typing import Optional
+
+from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.services.background_thread import BackgroundThreadService
 
 
 class RpkProducer(BackgroundThreadService):

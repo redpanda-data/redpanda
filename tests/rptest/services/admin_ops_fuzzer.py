@@ -6,28 +6,26 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-from abc import ABC, abstractmethod
-from enum import Enum, auto, unique
 import json
 import random
-import re
 import string
-import requests
-from threading import Event, Condition
 import threading
 import time
-from requests.exceptions import HTTPError
-from ducktape.utils.util import wait_until
-from rptest.clients.kcl import KCL
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.types import TopicSpec
+from abc import ABC, abstractmethod
+from enum import Enum, auto, unique
+from threading import Condition, Event
 from time import sleep
-from confluent_kafka import Producer
-from typing import Dict
 
+import requests
+from confluent_kafka import Producer
+from ducktape.utils.util import wait_until
+from requests.exceptions import HTTPError
+
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
-from rptest.services.redpanda_installer import VERSION_RE, int_tuple
 
 
 # Operation context (used to save state between invocation of operations)
@@ -170,7 +168,7 @@ class DeleteTopicOperation(Operation):
 
         try:
             brokers = ctx.admin().get_brokers()
-        except:
+        except Exception:
             return False
         # since metadata in Redpanda and Kafka are eventually consistent
         # we must check all the nodes before proceeding
@@ -252,7 +250,7 @@ class AddPartitionsOperation(Operation):
         per_node_count = set()
         try:
             brokers = ctx.admin().get_brokers()
-        except:
+        except Exception:
             return None
         for b in brokers:
             n = ctx.redpanda.get_node_by_id(b["node_id"])
@@ -670,7 +668,7 @@ class AdminOperationsFuzzer:
     def pause(self):
         with self._pause_cond:
             self.redpanda.logger.info("pausing admin ops fuzzer...")
-            assert self._pause_requested == False
+            assert self._pause_requested is False
             self._pause_requested = True
             while not self._pause_reached:
                 self._pause_cond.wait()
@@ -693,7 +691,7 @@ class AdminOperationsFuzzer:
         def validate_result():
             try:
                 return op.validate(self.operation_ctx)
-            except Exception as e:
+            except Exception:
                 self.redpanda.logger.debug(
                     f"Error validating operation {op_type}", exc_info=True
                 )
@@ -810,8 +808,8 @@ class AdminOperationsFuzzer:
                 return True
             elif self._stopping.is_set():
                 # We cannot ever reach the count, error out
-                self.redpanda.logger.error(f"wait: terminating for stop")
-                raise RuntimeError(f"Stopped without observing progress")
+                self.redpanda.logger.error("wait: terminating for stop")
+                raise RuntimeError("Stopped without observing progress")
             return False
 
         # we use 2*self.operation_timeout to give time (self.operation_timeout) for
@@ -830,7 +828,7 @@ class AdminOperationsFuzzer:
                 return True
             elif self._stopping.is_set():
                 # We cannot ever reach the count, error out
-                self.redpanda.logger.error(f"wait: terminating for stop")
+                self.redpanda.logger.error("wait: terminating for stop")
                 raise RuntimeError(
                     f"Stopped without reaching target ({self.executed}/{count})"
                 )

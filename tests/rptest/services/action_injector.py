@@ -1,7 +1,7 @@
 import dataclasses
 import random
 import time
-from threading import Thread, Event
+from threading import Event, Thread
 from typing import Optional
 
 from ducktape.cluster.cluster import ClusterNode
@@ -149,7 +149,7 @@ class ProcessKill(DisruptiveAction):
             self.redpanda.remove_from_started_nodes(node)
             return node
         else:
-            self.redpanda.logger.warn(f"no usable node")
+            self.redpanda.logger.warn("no usable node")
             return None
 
     def do_reverse_action(self):

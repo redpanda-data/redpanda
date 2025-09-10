@@ -7,20 +7,20 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from math import fabs
-from rptest.services.cluster import cluster
+
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
+
 from rptest.clients.kcl import KCL
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings, MetricsEndpoint
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, MetricsEndpoint, SISettings
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
     produce_until_segments,
     wait_for_local_storage_truncate,
-    KafkaCliTools,
 )
 
 
@@ -76,7 +76,7 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
                     cfgs[TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES][0]
                 )
                 return retention == OffsetForLeaderEpochArchivalTest.local_retention
-            except:
+            except Exception:
                 return False
 
         wait_until(alter_and_verify, 15, 0.5)
@@ -217,7 +217,7 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
                     topic.name, "retention.local.target.bytes", 0x1000
                 )
                 return True
-            except:
+            except Exception:
                 return False
 
         wait_until(

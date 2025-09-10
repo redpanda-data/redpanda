@@ -7,14 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from ducktape.services.service import Service
-from rptest.util import wait_until_result
-import requests
-from time import sleep
-import sys
 import json
-from rptest.util import wait_until
+import sys
 from enum import Enum
+
+import requests
+from ducktape.services.service import Service
+
+from rptest.util import wait_until, wait_until_result
 
 
 class CrushedException(Exception):
@@ -112,7 +112,7 @@ class CompactedVerifier(Service):
 
     def start_node(self, node, timeout_sec=10):
         node.account.ssh(
-            f'bash /opt/remote/control/start.sh rw "java -cp /opt/verifiers/verifiers.jar io.vectorized.compaction.App"'
+            'bash /opt/remote/control/start.sh rw "java -cp /opt/verifiers/verifiers.jar io.vectorized.compaction.App"'
         )
         wait_until(
             lambda: self.is_alive(node),
@@ -258,7 +258,7 @@ class CompactedVerifier(Service):
                 raise
             except ConsistencyViolationException:
                 raise
-            except:
+            except Exception:
                 self._redpanda.logger.debug(
                     "Got error on fetching info, retrying?!", exc_info=True
                 )

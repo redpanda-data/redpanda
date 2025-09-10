@@ -1,7 +1,7 @@
 import http.server
-import socketserver
 import json
 import signal
+import socketserver
 
 
 class PrintingHandler(http.server.BaseHTTPRequestHandler):

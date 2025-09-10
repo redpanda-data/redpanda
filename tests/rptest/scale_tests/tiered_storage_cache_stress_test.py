@@ -7,24 +7,25 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import sys
+import time
 from dataclasses import dataclass
+from enum import Enum
+from typing import Optional
 
-from rptest.services.metrics_check import MetricCheck
-from rptest.tests.redpanda_test import RedpandaTest
+from ducktape.mark import matrix
+
+from rptest.clients.rpk import RpkTool
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
-    KgoVerifierSeqConsumer,
     KgoVerifierRandomConsumer,
+    KgoVerifierSeqConsumer,
 )
-from rptest.services.redpanda import SISettings, MetricsEndpoint, ResourceSettings
-from rptest.services.admin import Admin
-from rptest.clients.rpk import RpkTool
+from rptest.services.metrics_check import MetricCheck
+from rptest.services.redpanda import MetricsEndpoint, ResourceSettings, SISettings
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.si_utils import quiesce_uploads
-from typing import Optional
-from ducktape.mark import matrix
-import time
-from enum import Enum
 
 S3_ERROR_LOGS = ['unexpected REST API error "Internal Server Error" detected']
 

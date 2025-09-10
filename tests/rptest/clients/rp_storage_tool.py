@@ -7,9 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import tempfile
-import subprocess
 import json
+import subprocess
+import tempfile
 
 
 class RpStorageTool:

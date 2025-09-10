@@ -7,33 +7,31 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from concurrent.futures import ThreadPoolExecutor
 import random
 import re
-import json
+from concurrent.futures import ThreadPoolExecutor
+from enum import Enum
 
+import ducktape.errors
 import requests
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
 from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
 )
-from rptest.tests.prealloc_nodes import PreallocNodesTest
-
-from rptest.clients.rpk import RpkTool
-from rptest.services.cluster import cluster
-from ducktape.utils.util import wait_until
-from ducktape.mark import matrix
-from rptest.clients.types import TopicSpec
-from rptest.services.admin import Admin
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
+from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
 from rptest.utils.mode_checks import cleanup_on_early_exit
 from rptest.utils.node_operations import NodeDecommissionWaiter
-from rptest.utils.mode_checks import skip_debug_mode
-from rptest.tests.redpanda_test import RedpandaTest
-from enum import Enum
-import ducktape.errors
 
 TS_LOG_ALLOW_LIST = [
     re.compile("archival_metadata_stm.*Replication wait for archival STM timed out"),
@@ -87,7 +85,7 @@ class NodePoolMigrationTestBase(PreallocNodesTest):
 
     def _create_workload_topic(self, cleanup_policy):
         spec = TopicSpec(
-            name=f"migration-test-workload",
+            name="migration-test-workload",
             partition_count=8,
             replication_factor=3,
             cleanup_policy=cleanup_policy,
@@ -407,7 +405,7 @@ class NodePoolMigrationTest(NodePoolMigrationTestBase):
 
             return all([min_expected <= v <= max_expected for v in r_per_node.values()])
 
-        wait_until(_all_nodes_balanced, 60, 1, f"Partitions are not balanced correctly")
+        wait_until(_all_nodes_balanced, 60, 1, "Partitions are not balanced correctly")
 
         def _quiescent_state():
             pb_status = self.admin.get_partition_balancer_status(
@@ -426,7 +424,7 @@ class NodePoolMigrationTest(NodePoolMigrationTestBase):
             _quiescent_state,
             120,
             1,
-            f"Cluster reached quiescent state (no partition movement)",
+            "Cluster reached quiescent state (no partition movement)",
             retry_on_exc=True,
         )
 
@@ -513,7 +511,7 @@ class DisableTieredStorageTest(NodePoolMigrationTestBase):
         self.admin.patch_cluster_config(upsert=cfg)
 
         spec = TopicSpec(
-            name=f"migration-test",
+            name="migration-test",
             partition_count=1,
             replication_factor=1,
             cleanup_policy="compact",
@@ -563,7 +561,6 @@ class DisableTieredStorageTest(NodePoolMigrationTestBase):
         self.producer.wait(timeout_sec=60)
 
         info = describe_topic()
-        second_start_offset = info.start_offset
         second_hwm = info.high_watermark
 
         assert pm_last_offset() == last_uploaded, (

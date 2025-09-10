@@ -7,32 +7,30 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import confluent_kafka as ck
-from functools import partial, reduce
-from enum import Enum
-import time
-import threading
 import json
-import random
 import re
-import requests
 import socket
+import threading
 import time
-import random
+from enum import Enum
+from functools import partial, reduce
 from typing import Any, Optional, Sequence, Union
+from urllib.parse import urlparse
 
+import confluent_kafka as ck
+import requests
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.errors import TimeoutError
-from ducktape.mark import matrix, ignore
+from ducktape.mark import ignore, matrix
 from keycloak import KeycloakOpenID
+
 from rptest.clients.default import DefaultClient
 from rptest.clients.kcl import KCL
 from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.clients.rpk import RpkTool, RpkException
-from rptest.services import tls
+from rptest.clients.rpk import RpkException, RpkTool
+from rptest.services import redpanda, tls
 from rptest.services.admin import Admin, RoleMember
 from rptest.services.cluster import cluster
-from rptest.services import redpanda
 from rptest.services.keycloak import DEFAULT_REALM, KeycloakService
 from rptest.services.ocsf_server import OcsfServer
 from rptest.services.redpanda import (
@@ -40,7 +38,6 @@ from rptest.services.redpanda import (
     LoggingConfig,
     MetricSamples,
     MetricsEndpoint,
-    PandaproxyConfig,
     RedpandaServiceBase,
     SchemaRegistryConfig,
     SecurityConfig,
@@ -51,39 +48,38 @@ from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.schema_registry_test import (
-    SchemaRegistryRedpandaClient,
     ACLTestEndpoint,
-    schema1_def,
-    schema2_def,
-    GetConfigEndpoint,
-    PutConfigEndpoint,
-    GetConfigSubjectEndpoint,
-    PutConfigSubjectEndpoint,
+    CompatibilitySubjectVersion,
     DeleteConfigSubject,
-    GetMode,
-    PutMode,
-    GetModeSubject,
-    PutModeSubject,
     DeleteModeSubject,
-    PostSubjectVersions,
-    GetSchemasIdsIdVersions,
-    GetSchemasIdsIdSubjects,
-    GetSubjectVersions,
-    PostSubject,
-    GetSubjectVersionsVersion,
-    GetSubjectVersionsVersionSchema,
-    GetSubjectVersionsVersionReferencedBy,
     DeleteSubject,
     DeleteSubjectVersion,
-    CompatibilitySubjectVersion,
+    GetConfigEndpoint,
+    GetConfigSubjectEndpoint,
+    GetMode,
+    GetModeSubject,
+    GetSchemasIdsIdSubjects,
+    GetSchemasIdsIdVersions,
     GetSchemasTypes,
     GetStatusReady,
+    GetSubjectVersions,
+    GetSubjectVersionsVersion,
+    GetSubjectVersionsVersionReferencedBy,
+    GetSubjectVersionsVersionSchema,
+    PostSubject,
+    PostSubjectVersions,
+    PutConfigEndpoint,
+    PutConfigSubjectEndpoint,
+    PutMode,
+    PutModeSubject,
+    SchemaRegistryRedpandaClient,
+    schema1_def,
+    schema2_def,
 )
 from rptest.util import expect_exception, wait_until, wait_until_result
 from rptest.utils.mode_checks import skip_fips_mode
 from rptest.utils.rpk_config import read_redpanda_cfg
 from rptest.utils.schema_registry_utils import Mode, get_subjects, put_mode
-from urllib.parse import urlparse
 
 
 class AuthorizationMatch(str, Enum):
@@ -687,7 +683,7 @@ class AuditLogTestBase(RedpandaTest):
                 self.next_offset_ingest = len(records)
                 new_records = [json.loads(msg["value"]) for msg in new_records]
                 self.logger.info(f"Ingested: {len(new_records)} records")
-                self.logger.debug(f"Ingested records:")
+                self.logger.debug("Ingested records:")
                 for rec in new_records:
                     self.logger.debug(f"{rec}")
                     self.ocsf_server.validate_schema(rec)
@@ -744,7 +740,10 @@ class AuditLogTestBase(RedpandaTest):
 
         Matched records
         """
-        stop_cond = lambda records: valid_check_fn(self.aggregate_count(records))
+
+        def stop_cond(records):
+            return valid_check_fn(self.aggregate_count(records))
+
         return self.read_all_from_audit_log(filter_fn=filter_fn, stop_cond=stop_cond)
 
 
@@ -942,7 +941,9 @@ class AuditLogTestAdminApi(AuditLogTestBase):
         def number_of_records_matching(filter_by, n_expected):
             filter_fn = partial(is_api_match, filter_by)
 
-            stop_cond = lambda records: self.aggregate_count(records) >= n_expected
+            def stop_cond(records):
+                return self.aggregate_count(records) >= n_expected
+
             records = self.read_all_from_audit_log(filter_fn, stop_cond)
             assert self.aggregate_count(records) == n_expected, (
                 f"Expected: {n_expected}, Actual: {self.aggregate_count(records)}"
@@ -958,7 +959,10 @@ class AuditLogTestAdminApi(AuditLogTestBase):
             "cluster/health_overview": self.admin.get_cluster_health_overview,
         }
         api_keys = api_calls.keys()
-        call_apis = lambda: [fn() for fn in api_calls.values()]
+
+        def call_apis():
+            return [fn() for fn in api_calls.values()]
+
         self.logger.debug("Starting 500 api calls with management enabled")
         for _ in range(0, 500):
             call_apis()
@@ -1001,7 +1005,7 @@ class AuditLogTestAdminApi(AuditLogTestBase):
                     timeout_sec=2,
                     backoff_sec=0.1,
                 )
-            except TimeoutError as e:
+            except TimeoutError:
                 return None
 
         public_metrics = [
@@ -1252,7 +1256,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                 1,
             ),
             RangeTestItem(
-                f"Attempt group offset delete",
+                "Attempt group offset delete",
                 lambda: self.execute_command_ignore_error(
                     partial(self.super_rpk.offset_delete, "fake", {topic_name: [0]})
                 ),
@@ -1291,7 +1295,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                 1,
             ),
             AbsoluteTestItem(
-                f"Create ACL",
+                "Create ACL",
                 lambda: self.super_rpk.sasl_allow_principal(
                     principal="test",
                     operations=["all"],
@@ -1322,7 +1326,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                 1,
             ),
             AbsoluteTestItem(
-                f"Delete ACL",
+                "Delete ACL",
                 lambda: self.super_rpk.delete_principal(
                     principal="test",
                     operations=["all"],
@@ -1348,7 +1352,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                 1,
             ),
             AbsoluteTestItem(
-                f"Delete group test",
+                "Delete group test",
                 lambda: self.execute_command_ignore_error(
                     partial(self.super_rpk.group_delete, "test")
                 ),
@@ -1361,7 +1365,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                 1,
             ),
             AbsoluteTestItem(
-                f"Alter Partition Reassignments",
+                "Alter Partition Reassignments",
                 lambda: self.execute_command_ignore_error(
                     partial(
                         alter_partition_reassignments_with_kcl,
@@ -1378,7 +1382,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                 1,
             ),
             AbsoluteTestItem(
-                f"Alter Config (not-incremental)",
+                "Alter Config (not-incremental)",
                 lambda: self.execute_command_ignore_error(
                     partial(
                         alter_config_with_kcl,
@@ -1391,7 +1395,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                 1,
             ),
             AbsoluteTestItem(
-                f"Incremental Alter Config",
+                "Incremental Alter Config",
                 lambda: self.execute_command_ignore_error(
                     partial(
                         alter_config_with_kcl,
@@ -1408,7 +1412,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                 1,
             ),
             AbsoluteTestItem(
-                f"List ACLs (no item)",
+                "List ACLs (no item)",
                 lambda: self.super_rpk.acl_list(),
                 partial(self.api_match, "list_acls", self.kafka_rpc_service_name),
                 0,
@@ -2015,7 +2019,7 @@ class AuditLogTestInvalidConfigMTLS(AuditLogTestInvalidConfigBase):
         try:
             self.get_rpk().create_topic("test")
             assert False, "Should not have created a topic"
-        except RpkException as e:
+        except RpkException:
             pass
 
         assert self.redpanda.search_log_any(

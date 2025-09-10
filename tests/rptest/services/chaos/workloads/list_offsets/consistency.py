@@ -7,14 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import sys
-import traceback
 import logging
 import os
+import sys
+import traceback
 
 from ...types import ConsistencyCheckError
 from ..retryable_consumer import RetryableConsumer
-from .log_utils import State, cmds, transitions, phantoms
+from .log_utils import State, cmds, transitions
 
 logger = logging.getLogger("consistency")
 
@@ -142,7 +142,7 @@ class LogPlayer:
                     found = False
                     for thread_id in self.last_write.keys():
                         write = self.last_write[thread_id]
-                        if write == None:
+                        if write is None:
                             continue
                         if write.key != key:
                             continue
@@ -225,7 +225,7 @@ class LogPlayer:
                 self.has_violation = True
             self.ok_writes[offset] = write
         elif self.curr_state[thread_id] in [State.ERROR, State.TIMEOUT]:
-            if thread_id in self.last_write and self.last_write[thread_id] != None:
+            if thread_id in self.last_write and self.last_write[thread_id] is not None:
                 write = self.last_write[thread_id]
                 self.last_write[thread_id] = None
                 write.offset = None
@@ -233,7 +233,7 @@ class LogPlayer:
                 self.err_writes[write.op] = write
 
     def is_violation(self, line):
-        if line == None:
+        if line is None:
             return False
         parts = line.rstrip().split("\t")
         if len(parts) < 3:
@@ -248,7 +248,7 @@ class LogPlayer:
         if parts[2] not in cmds:
             raise Exception(f'unknown cmd "{parts[2]}"')
 
-        if self.ts_us == None:
+        if self.ts_us is None:
             self.ts_us = int(parts[1])
         else:
             delta_us = int(parts[1])
@@ -268,7 +268,7 @@ class LogPlayer:
         thread_id = int(parts[0])
         if thread_id not in self.curr_state:
             self.curr_state[thread_id] = None
-        if self.curr_state[thread_id] == None:
+        if self.curr_state[thread_id] is None:
             if new_state != State.STARTED:
                 raise Exception(
                     f'first logged command of a new thread should be started, got: "{parts[2]}"'
@@ -304,7 +304,7 @@ def validate(workload_dir, workload_nodes, brokers_str, topic):
             ) as workload_file:
                 last_line = None
                 for line in workload_file:
-                    if last_line != None:
+                    if last_line is not None:
                         player.apply(last_line)
                     last_line = line
                 if player.is_violation(last_line):
@@ -320,7 +320,7 @@ def validate(workload_dir, workload_nodes, brokers_str, topic):
             )
         else:
             logger.info("consistency check: PASSED")
-    except:
+    except Exception:
         e, v = sys.exc_info()[:2]
         trace = traceback.format_exc()
         logger.warn(v)

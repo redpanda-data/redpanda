@@ -7,25 +7,23 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from concurrent.futures import ThreadPoolExecutor
 import json
-import time
-import requests
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-
 import random
-from rptest.services.failure_injector import FailureInjector, FailureSpec
-from rptest.services.redpanda_installer import RedpandaInstaller
+import time
+from concurrent.futures import ThreadPoolExecutor
 
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.admin import Admin
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 import confluent_kafka as ck
-from rptest.services.admin import Admin
-
-from rptest.utils.mode_checks import skip_debug_mode
+import requests
 from ducktape.mark import matrix
+
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.failure_injector import FailureInjector, FailureSpec
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class TxCoordinatorMigrationTest(RedpandaTest):
@@ -112,8 +110,8 @@ class TxCoordinatorMigrationTest(RedpandaTest):
             try:
                 status = json.loads(admin.get_tx_manager_recovery_status(migrator).text)
                 self.logger.info(f"Migration status: {status}")
-                return status["required"] == False and status["in_progress"] == False
-            except Exception as e:
+                return status["required"] is False and status["in_progress"] is False
+            except Exception:
                 return False
 
         admin = Admin(self.redpanda, retries_amount=0)
@@ -260,7 +258,7 @@ class TxCoordinatorMigrationTest(RedpandaTest):
             used_partitions.add(p)
 
         assert len(new_mapping) == len(initial_mapping), (
-            f"All tx ids should be present after repartitioning"
+            "All tx ids should be present after repartitioning"
         )
 
         assert len(used_partitions) > self.initial_tx_manager_partitions

@@ -6,6 +6,8 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+from ducktape.mark import matrix
+
 from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings, SchemaRegistryConfig
@@ -13,12 +15,10 @@ from rptest.services.redpanda_connect import RedpandaConnectService
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
 from rptest.tests.datalake.query_engine_base import QueryEngineType
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.datalake.utils import supported_storage_types
-from rptest.utils.rpcn_utils import counter_stream_config
-from ducktape.mark import matrix
-
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.data_migrations import DataMigrationTestMixin
+from rptest.utils.rpcn_utils import counter_stream_config
 
 
 class RedpandaConnectIcebergTest(RedpandaTest, DataMigrationTestMixin):

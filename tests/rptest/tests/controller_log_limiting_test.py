@@ -7,31 +7,30 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import time
 import json
+import time
 from subprocess import CalledProcessError
 
-from rptest.tests.redpanda_test import RedpandaTest
+from ducktape.utils.util import wait_until
+from requests.exceptions import HTTPError
+
+from rptest.clients.default import DefaultClient
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.kcl import KclCreateTopicsRequestTopic, RawKCL
+from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.mirror_maker2 import MirrorMaker2
+from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, MetricsEndpoint
 from rptest.tests.end_to_end import EndToEndTest
-from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.mirror_maker_test import MirrorMakerService
 from rptest.tests.partition_balancer_test import (
-    PartitionBalancerService,
     CONSUMER_TIMEOUT,
+    PartitionBalancerService,
 )
-
-from rptest.clients.types import TopicSpec
-from rptest.clients.default import DefaultClient
-from rptest.clients.rpk import RpkTool, RpkException
-from rptest.clients.kcl import RawKCL, KclCreateTopicsRequestTopic
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.services.admin import Admin
-from rptest.services.redpanda import MetricsEndpoint, CHAOS_LOG_ALLOW_LIST
-from rptest.services.mirror_maker2 import MirrorMaker2
-from rptest.services.cluster import cluster
-from requests.exceptions import HTTPError
-from ducktape.utils.util import wait_until
-
+from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
 
 OPERATIONS_LIMIT = 2  # assumes that we can issue requests faster than 2 per second

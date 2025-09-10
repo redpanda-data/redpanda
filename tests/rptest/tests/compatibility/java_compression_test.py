@@ -8,21 +8,20 @@
 # by the Apache License, Version 2.0
 
 from time import time
-from rptest.services.cluster import cluster
-from rptest.tests.end_to_end import EndToEndTest
-from kafka import TopicPartition, KafkaConsumer
-from rptest.services.verifiable_producer import VerifiableProducer
+
 from ducktape.mark import matrix
-from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
+from kafka import KafkaConsumer
+
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import MetricsEndpoint
 from rptest.services.redpanda_installer import (
-    RedpandaVersionTriple,
     InstallOptions,
-    RedpandaInstaller,
+    RedpandaVersionTriple,
 )
-from rptest.util import expect_exception
+from rptest.services.verifiable_producer import VerifiableProducer
+from rptest.tests.end_to_end import EndToEndTest
 
 
 class JavaCompressionTest(EndToEndTest):
@@ -85,7 +84,7 @@ class JavaCompressionTest(EndToEndTest):
             if cur_messages_amount >= num_messages:
                 return
             if time() > deadline:
-                assert False, f"Failed to consume messages"
+                assert False, "Failed to consume messages"
 
     def get_compacted_segments(self):
         num_compacted_segments = self.redpanda.metric_sum(
@@ -220,12 +219,12 @@ class JavaCompressionTest(EndToEndTest):
             try:
                 self.consume()
                 return True
-            except:
+            except Exception:
                 return False
 
         wait_until(
             consumer_succeeds,
             timeout_sec=360,
             backoff_sec=5,
-            err_msg=f"Timed out waiting for consuming to succeed.",
+            err_msg="Timed out waiting for consuming to succeed.",
         )

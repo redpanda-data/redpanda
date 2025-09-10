@@ -28,7 +28,7 @@ def cleanup_on_early_exit(caller):
         )
         hook()
 
-    caller.logger.debug(f"Cleaning up unused nodes.")
+    caller.logger.debug("Cleaning up unused nodes.")
 
     if test_context := getattr(caller, "test_context", None):
         allocate_and_free(test_context.cluster, caller.logger)

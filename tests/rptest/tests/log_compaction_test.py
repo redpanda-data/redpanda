@@ -6,24 +6,24 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import time
 import threading
+import time
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
-    KgoVerifierConsumerGroupConsumer,
     KgoVerifierSeqConsumer,
 )
 from rptest.services.redpanda import MetricsEndpoint
 from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
-from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.clients.rpk import RpkTool
 
 
 class LogCompactionTestBase:
@@ -373,11 +373,8 @@ class LogCompactionTest(
                 reporter.exc = e
 
         def issue_partition_move():
-            try:
-                self._dispatch_random_partition_move(self.topic_spec.name, 0)
-                self._wait_for_move_in_progress(self.topic_spec.name, 0, timeout=5)
-            except Exception as e:
-                reporter.exc = e
+            self._dispatch_random_partition_move(self.topic_spec.name, 0)
+            self._wait_for_move_in_progress(self.topic_spec.name, 0, timeout=5)
 
         partition_move_thread = threading.Thread(
             target=background_test_loop,
@@ -541,7 +538,7 @@ class LogCompactionSchedulingTest(LogCompactionTestBase, PreallocNodesTest):
             no_dirty_bytes,
             timeout_sec=120,
             backoff_sec=1,
-            err_msg=f"Did not see dirty_segment_bytes == 0 and closed_segment_bytes > 0 across all brokers.",
+            err_msg="Did not see dirty_segment_bytes == 0 and closed_segment_bytes > 0 across all brokers.",
         )
 
         # Perform validation with KgoVerifierSeqConsumer
@@ -622,7 +619,7 @@ class LogCompactionEnableSlidingWindow(RedpandaTest):
                 seen_compacted_segments,
                 timeout_sec=60,
                 backoff_sec=1,
-                err_msg=f"Did not see any compacted segments.",
+                err_msg="Did not see any compacted segments.",
             )
 
             producer.free()

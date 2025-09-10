@@ -8,18 +8,19 @@
 # by the Apache License, Version 2.0
 
 import random
-from math import ceil
 from collections import Counter
+from math import ceil
+
+import requests
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
 
 from rptest.clients.default import DefaultClient
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.clients.rpk import RpkException
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.tests.maintenance import MaintenanceTestBase
-from ducktape.utils.util import wait_until
-from ducktape.mark import matrix, ignore
-import requests
 
 
 class MaintenanceTest(MaintenanceTestBase):
@@ -81,7 +82,7 @@ class MaintenanceTest(MaintenanceTestBase):
             ):
                 return
             raise
-        except:
+        except Exception:
             raise
         else:
             raise Exception("Expected maintenance enable to fail")
@@ -133,7 +134,7 @@ class MaintenanceTest(MaintenanceTestBase):
 
             return all(
                 [
-                    b["is_alive"] == False
+                    b["is_alive"] is False
                     for b in all_brokers
                     if b["node_id"] == target_id
                 ]

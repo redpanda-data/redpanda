@@ -8,22 +8,22 @@
 # by the Apache License, Version 2.0
 
 from dataclasses import dataclass
-import random
 from types import MethodType
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from kafka.protocol.fetch import FetchRequest
-from ducktape.mark import matrix
 
+import kafka.errors as Errors
+from ducktape.mark import matrix
+from kafka import KafkaClient, KafkaConsumer
+from kafka.protocol.admin import ApiVersionRequest
+from kafka.protocol.fetch import FetchRequest
+from kafka.protocol.produce import ProduceRequest
+from kafka.protocol.types import Int32
+from kafka.record.memory_records import MemoryRecordsBuilder
+from kafka.structs import TopicPartition
+
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until
-from kafka.protocol.admin import ApiVersionRequest
-from kafka.structs import TopicPartition
-from kafka.record.memory_records import MemoryRecordsBuilder
-
-from kafka import KafkaClient, KafkaConsumer
-from kafka.protocol.produce import ProduceRequest
-
 from rptest.utils.xid_utils import random_xid_string
 
 
@@ -123,10 +123,6 @@ class MpxMockClient:
 
     def close(self):
         self.client.close()
-
-
-import kafka.errors as Errors
-from kafka.protocol.types import Int32
 
 
 def no_validation_process_response(self, read_buffer):
@@ -250,7 +246,7 @@ class TestVirtualConnections(RedpandaTest):
         # reinitialize the client
         mpx_client = MpxMockClient(self.redpanda)
         mpx_client.start()
-        partition_info = mpx_client.get_partition_info(spec.name, 0)
+        mpx_client.get_partition_info(spec.name, 0)
 
         # execute fetch and produce once again, now the fetch should not block the produce request as it will be processed in a virtual connection
         (fetch_fut, produce_fut) = self._fetch_and_produce(

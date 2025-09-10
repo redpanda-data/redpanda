@@ -6,52 +6,47 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-from enum import IntEnum
-from typing import List
 import json
 import random
+import re
 import socket
 import string
-import requests
-from requests.exceptions import HTTPError
-import socket
 import time
 import urllib.parse
-import re
+from enum import IntEnum
+from typing import List
 
-from confluent_kafka import KafkaException, KafkaError
-
+import requests
+from confluent_kafka import KafkaError, KafkaException
 from ducktape.cluster.cluster import ClusterNode
-from ducktape.mark import parametrize, matrix
-from ducktape.utils.util import wait_until
 from ducktape.errors import TimeoutError
+from ducktape.mark import matrix, parametrize
 from ducktape.services.service import Service
+from ducktape.utils.util import wait_until
+from requests.exceptions import HTTPError
 
-from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.kcl import RawKCL
 from rptest.clients.kafka_cli_tools import KafkaCliTools, KafkaCliToolsError
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.clients.kcl import RawKCL
 from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
-    SecurityConfig,
     SaslCredentials,
     SecurityConfig,
     TLSProvider,
 )
 from rptest.services.tls import Certificate, CertificateAuthority, TLSCertManager
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.sasl_reauth_test import (
-    get_sasl_metrics,
-    REAUTH_METRIC,
     EXPIRATION_METRIC,
+    REAUTH_METRIC,
+    get_sasl_metrics,
 )
 from rptest.util import expect_http_error
 from rptest.utils.log_utils import wait_until_nag_is_set
 from rptest.utils.utf8 import (
-    CONTROL_CHARS,
-    CONTROL_CHARS_MAP,
     generate_string_with_control_character,
 )
 
@@ -656,7 +651,7 @@ class SaslPlainConfigTest(BaseScramTest):
         This test verifies that when enabling PLAIN you must also enable SCRAM
         """
         self._start_cluster(enable_tls=False)
-        admin = Admin(self.redpanda)
+        Admin(self.redpanda)
 
         def validate_sasl_plain_mech(mechs: List[str]):
             try:
@@ -883,7 +878,7 @@ class InvalidNewUserStrings(BaseScramTest):
             username=username,
             algorithm="SCRAM-SHA-256",
             expected_status_code=400,
-            err_msg=f"Parameter 'username' contained invalid control characters",
+            err_msg="Parameter 'username' contained invalid control characters",
         )
 
         # Two ordinals (corresponding to ',' and '=') are explicitly excluded from SASL usernames
@@ -907,7 +902,7 @@ class InvalidNewUserStrings(BaseScramTest):
             username="test",
             algorithm=algorithm,
             expected_status_code=400,
-            err_msg=f"Parameter 'algorithm' contained invalid control characters",
+            err_msg="Parameter 'algorithm' contained invalid control characters",
         )
 
     @cluster(num_nodes=3)

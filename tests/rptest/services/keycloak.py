@@ -1,12 +1,10 @@
 import json
 import os
-import requests
 import tempfile
-from typing import Optional
 
+import requests
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
-
 from keycloak import KeycloakAdmin
 
 KC_INSTALL_DIR = os.path.join("/", "opt", "keycloak")
@@ -73,7 +71,7 @@ class KeycloakConfigWriter:
     def write(self, node):
         try:
             node.account.mkdirs(self._dest_dir)
-        except:
+        except Exception:
             pass
         dest_f = os.path.join(self._dest_dir, KC_CFG)
         with tempfile.NamedTemporaryFile(mode="w") as f:
@@ -355,7 +353,7 @@ class KeycloakService(Service):
             self.stop_node(node)
 
         node.account.ssh(f"rm -rf {KC_LOG_FILE}")
-        node.account.ssh(f"rm -rf /opt/keycloak/data/*", allow_fail=False)
+        node.account.ssh("rm -rf /opt/keycloak/data/*", allow_fail=False)
         if self._remote_config_file is not None:
             node.account.ssh(f"rm {self._remote_config_file}")
 

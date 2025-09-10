@@ -1,8 +1,14 @@
-from confluent_kafka import Producer, Consumer, KafkaException, KafkaError
-from confluent_kafka import TopicPartition, OFFSET_BEGINNING
 import random
-
 import time
+
+from confluent_kafka import (
+    OFFSET_BEGINNING,
+    Consumer,
+    KafkaError,
+    KafkaException,
+    Producer,
+    TopicPartition,
+)
 
 
 class SyncProducer:
@@ -37,11 +43,11 @@ class SyncProducer:
         )
         self.producer.flush(timeout_s)
         msg = self.last_msg
-        if msg == None:
+        if msg is None:
             raise KafkaException(KafkaError(KafkaError._MSG_TIMED_OUT))
-        if msg.error() != None:
+        if msg.error() is not None:
             raise KafkaException(msg.error())
-        assert msg.offset() != None
+        assert msg.offset() is not None
         return msg.offset()
 
 

@@ -8,18 +8,18 @@
 # by the Apache License, Version 2.0
 
 import requests
+from connectrpc.errors import ConnectErrorCode
+from ducktape.utils.util import wait_until
 
-from rptest.services.admin import Admin
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.tests.schema_registry_test import SchemaRegistryEndpoints
+from rptest.clients.admin.v2 import Admin as AdminV2
+from rptest.clients.admin.v2 import broker_pb, debug_pb
 from rptest.clients.rpk import RpkTool
-from rptest.clients.admin.v2 import Admin as AdminV2, broker_pb, debug_pb
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SaslCredentials, SecurityConfig
-from rptest.util import expect_exception, expect_http_error
-from connectrpc.errors import ConnectError, ConnectErrorCode
-
-from ducktape.utils.util import wait_until
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.schema_registry_test import SchemaRegistryEndpoints
+from rptest.util import expect_http_error
 
 
 def create_user_and_wait(redpanda, admin: Admin, creds: SaslCredentials):
@@ -132,7 +132,7 @@ class AdminApiAuthTest(RedpandaTest):
 
         unauthed = AdminV2(self.redpanda)
         resp = unauthed.broker().call_list_brokers(broker_pb.ListBrokersRequest())
-        assert resp.error() != None, f"expected an error response, got {resp}"
+        assert resp.error() is not None, f"expected an error response, got {resp}"
         assert resp.error().code == ConnectErrorCode.PERMISSION_DENIED, (
             f"Expected unauthenticated admin v2 request to be denied, got: {resp.error()}"
         )
@@ -187,7 +187,7 @@ class AdminApiAuthTest(RedpandaTest):
                     metadata={"detail": "something"},
                 )
             )
-            assert resp.error() != None, "Expected an error in this RPC"
+            assert resp.error() is not None, "Expected an error in this RPC"
             err = resp.error()
             assert err.code == ConnectErrorCode.UNKNOWN, (
                 f"Expected UNKNOWN error code, got: {err}"

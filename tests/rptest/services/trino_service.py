@@ -16,10 +16,10 @@ from ducktape.utils.util import wait_until
 from pyhive import trino
 
 from rptest.context import cloud_storage
-from rptest.services.spark_service import QueryEngineBase
-from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.services.catalog_service import CatalogType, catalog_type_to_config_string
 from rptest.services.nessie_catalog import NessieCatalog
+from rptest.services.spark_service import QueryEngineBase
+from rptest.tests.datalake.query_engine_base import QueryEngineType
 
 
 class TrinoService(Service, QueryEngineBase):
@@ -97,8 +97,8 @@ iceberg.{{ catalog_type }}-catalog.uri={{ catalog_uri }}
             # https://trino.io/docs/current/object-storage/metastores.html#nessie-catalog
             extra_connector_conf = self.dict_to_conf(
                 {
-                    f"iceberg.nessie-catalog.default-warehouse-dir": self.default_warehouse_dir,
-                    f"iceberg.nessie-catalog.client-api-version": NessieCatalog.NESSIE_API_VERSION,
+                    "iceberg.nessie-catalog.default-warehouse-dir": self.default_warehouse_dir,
+                    "iceberg.nessie-catalog.client-api-version": NessieCatalog.NESSIE_API_VERSION,
                 }
             )
 
@@ -129,7 +129,7 @@ iceberg.{{ catalog_type }}-catalog.uri={{ catalog_uri }}
                 self.run_query_fetch_all("show catalogs")
                 return True
             except Exception:
-                self.logger.debug(f"Exception querying catalog", exc_info=True)
+                self.logger.debug("Exception querying catalog", exc_info=True)
             return False
 
         wait_until(

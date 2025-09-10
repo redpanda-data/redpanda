@@ -7,33 +7,32 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from enum import Enum, auto, unique
 import http.client
 import json
-from typing import Literal, NamedTuple, Optional, Dict, Callable, Any
-import uuid
-import re
-import urllib.parse
-import requests
-import time
 import random
+import re
 import socket
+import time
+import urllib.parse
+import uuid
+from enum import Enum
+from typing import NamedTuple, Optional
 
+import requests
 from confluent_kafka.schema_registry import (
+    Schema,
+    SchemaReference,
     SchemaRegistryClient,
-    topic_subject_name_strategy,
+    SchemaRegistryError,
     record_subject_name_strategy,
     topic_record_subject_name_strategy,
-    Schema,
-    SchemaRegistryError,
-    SchemaReference,
+    topic_subject_name_strategy,
 )
 from confluent_kafka.serialization import MessageField, SerializationContext
-from ducktape.mark import parametrize, matrix
+from ducktape.mark import matrix, parametrize
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.utils.util import wait_until
 
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.serde_client_utils import SchemaType, SerdeClientType
 from rptest.clients.types import TopicSpec
@@ -42,18 +41,17 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
     DEFAULT_LOG_ALLOW_LIST,
-    MetricsEndpoint,
-    ResourceSettings,
-    SecurityConfig,
     LoggingConfig,
+    MetricsEndpoint,
     PandaproxyConfig,
-    SchemaRegistryConfig,
     RedpandaService,
+    ResourceSettings,
+    SchemaRegistryConfig,
+    SecurityConfig,
 )
 from rptest.services.redpanda_types import SaslCredentials
 from rptest.services.serde_client import SerdeClient
-from rptest.tests.cluster_config_test import wait_for_version_status_sync
-from rptest.tests.pandaproxy_test import User, PandaProxyTLSProvider
+from rptest.tests.pandaproxy_test import PandaProxyTLSProvider, User
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, inject_remote_script, search_logs_with_timeout
 from rptest.utils.log_utils import wait_until_nag_is_set
@@ -903,7 +901,7 @@ class SchemaRegistryRedpandaClient:
         return self.request("GET", "config", headers=headers, **kwargs)
 
     def set_config(self, data, headers=HTTP_POST_HEADERS, **kwargs):
-        return self.request("PUT", f"config", headers=headers, data=data, **kwargs)
+        return self.request("PUT", "config", headers=headers, data=data, **kwargs)
 
     def get_config_subject(
         self, subject, fallback=False, headers=HTTP_GET_HEADERS, **kwargs
@@ -963,7 +961,7 @@ class SchemaRegistryRedpandaClient:
         self, headers=HTTP_GET_HEADERS, tls_enabled: bool = False, **kwargs
     ):
         return self.request(
-            "GET", f"schemas/types", headers=headers, tls_enabled=tls_enabled, **kwargs
+            "GET", "schemas/types", headers=headers, tls_enabled=tls_enabled, **kwargs
         )
 
     def get_schemas_ids_id(self, id, format=None, headers=HTTP_GET_HEADERS, **kwargs):
@@ -1140,7 +1138,7 @@ class SchemaRegistryRedpandaClient:
         self, headers=HTTP_GET_HEADERS, tls_enabled: bool = False, **kwargs
     ):
         return self.request(
-            "GET", f"status/ready", headers=headers, tls_enabled=tls_enabled, **kwargs
+            "GET", "status/ready", headers=headers, tls_enabled=tls_enabled, **kwargs
         )
 
     def get_security_acls(self, **kwargs):
@@ -1340,11 +1338,11 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         """
         Verify the schema registry returns the supported types
         """
-        self.logger.debug(f"Request schema types with no accept header")
+        self.logger.debug("Request schema types with no accept header")
         result_raw = self.sr_client.get_schemas_types(headers={})
         assert result_raw.status_code == requests.codes.ok
 
-        self.logger.debug(f"Request schema types with defautl accept header")
+        self.logger.debug("Request schema types with defautl accept header")
         result_raw = self.sr_client.get_schemas_types()
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
@@ -1437,7 +1435,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             if result_raw.status_code != requests.codes.ok:
                 return False
             res_subjects = result_raw.json()
-            if type(res_subjects) != type([]):
+            if type(res_subjects) is not type([]):
                 return False
             subjects.sort()
             return res_subjects == subjects and res_subjects == sorted(res_subjects)
@@ -1506,7 +1504,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
 
         topic = create_topic_names(1)[0]
 
-        self.logger.debug(f"Register a schema against a subject")
+        self.logger.debug("Register a schema against a subject")
         schema_1_data = json.dumps({"schema": schema1_def})
 
         self.logger.debug("Get empty subjects")
@@ -1589,7 +1587,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         assert result_raw.status_code == requests.codes.not_found
         result = result_raw.json()
         assert result["error_code"] == 40402
-        assert result["message"] == f"Version 2 not found."
+        assert result["message"] == "Version 2 not found."
 
         self.logger.debug("Get schema version 1 for subject key")
         result_raw = self.sr_client.get_subjects_subject_versions_version(
@@ -1764,7 +1762,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         assert result_raw.status_code == requests.codes.not_found
         result = result_raw.json()
         assert result["error_code"] == 40403
-        assert result["message"] == f"Schema not found"
+        assert result["message"] == "Schema not found"
 
         self.logger.info("Soft deleting the schema")
         result_raw = self.sr_client.delete_subject_version(
@@ -1815,7 +1813,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         assert result_raw.status_code == requests.codes.not_found
         result = result_raw.json()
         assert result["error_code"] == 40403
-        assert result["message"] == f"Schema not found"
+        assert result["message"] == "Schema not found"
 
     @cluster(num_nodes=3)
     def test_config(self):
@@ -1843,7 +1841,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         assert result_raw.json()["error_code"] == 40408
         assert (
             result_raw.json()["message"]
-            == f"Subject 'invalid_subject' does not have subject-level compatibility configured"
+            == "Subject 'invalid_subject' does not have subject-level compatibility configured"
         )
 
         schema_1_data = json.dumps({"schema": schema1_def})
@@ -1937,14 +1935,14 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         )
 
         self.logger.debug("DELETE on non-existant subject should 404")
-        result_raw = self.sr_client.delete_config_subject(subject=f"foo-key")
+        result_raw = self.sr_client.delete_config_subject(subject="foo-key")
         assert result_raw.status_code == requests.codes.not_found, (
             result_raw.status_code
         )
         assert result_raw.json()["error_code"] == 40401, (
             f"Wrong err code: {result_raw.json()}"
         )
-        assert result_raw.json()["message"] == f"Subject 'foo-key' not found.", (
+        assert result_raw.json()["message"] == "Subject 'foo-key' not found.", (
             f"{json.dumps(result_raw.json(), indent=1)}"
         )
 
@@ -1963,7 +1961,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             {"schema": dataset.schema_base, "schemaType": str(dataset.type)}
         )
 
-        self.logger.debug(f"Register a schema against a subject - not normalized")
+        self.logger.debug("Register a schema against a subject - not normalized")
         result_raw = self.sr_client.post_subjects_subject_versions(
             subject=f"{canonical_topic}-key", data=base_schema, normalize=False
         )
@@ -1974,7 +1972,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         )
         v1_id = result_raw.json()["id"]
 
-        self.logger.debug(f"Checking that the returned schema is canonical")
+        self.logger.debug("Checking that the returned schema is canonical")
         result_raw = self.sr_client.get_schemas_ids_id(id=v1_id)
         self.logger.debug(result_raw)
         self.logger.debug(result_raw.content)
@@ -1985,7 +1983,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             f"expected:\n{dataset.schema_canonical}\ngot:\n{result_raw.json()['schema']}"
         )
 
-        self.logger.debug(f"Register a schema against a subject - normalized")
+        self.logger.debug("Register a schema against a subject - normalized")
         result_raw = self.sr_client.post_subjects_subject_versions(
             subject=f"{normalize_topic}-key", data=base_schema, normalize=True
         )
@@ -1996,7 +1994,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         )
         v1_id = result_raw.json()["id"]
 
-        self.logger.debug(f"Checking that the returned schema is normalized")
+        self.logger.debug("Checking that the returned schema is normalized")
         result_raw = self.sr_client.get_schemas_ids_id(id=v1_id)
         self.logger.debug(result_raw)
         self.logger.debug(result_raw.content)
@@ -2019,7 +2017,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
 
         topic = create_topic_names(1)[0]
 
-        self.logger.debug(f"Register a schema against a subject")
+        self.logger.debug("Register a schema against a subject")
         schema_1_data = json.dumps(
             {"schema": dataset.schema_base, "schemaType": str(dataset.type)}
         )
@@ -2055,8 +2053,8 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             subject=f"{topic}-key", version=1, data=schema_2_data
         )
         assert result_raw.status_code == requests.codes.ok
-        assert result_raw.json()["is_compatible"] == True
-        assert result_raw.json().get("messages", None) == None
+        assert result_raw.json()["is_compatible"] is True
+        assert result_raw.json().get("messages", None) is None
 
         self.logger.debug("Set subject config - BACKWARD")
         result_raw = self.sr_client.set_config_subject(
@@ -2069,23 +2067,23 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             subject=f"{topic}-key", version=1, data=schema_2_data
         )
         assert result_raw.status_code == requests.codes.ok
-        assert result_raw.json()["is_compatible"] == True
-        assert result_raw.json().get("messages", None) == None
+        assert result_raw.json()["is_compatible"] is True
+        assert result_raw.json().get("messages", None) is None
 
         self.logger.debug("Check compatibility backward, no default, verbose")
         result_raw = self.sr_client.post_compatibility_subject_version(
             subject=f"{topic}-key", version=1, data=schema_3_data, verbose=True
         )
         assert result_raw.status_code == requests.codes.ok
-        assert result_raw.json()["is_compatible"] == False
+        assert result_raw.json()["is_compatible"] is False
 
         self.logger.debug("Check compatibility backward, no default, not verbose")
         result_raw = self.sr_client.post_compatibility_subject_version(
             subject=f"{topic}-key", version=1, data=schema_3_data, verbose=False
         )
         assert result_raw.status_code == requests.codes.ok
-        assert result_raw.json()["is_compatible"] == False
-        assert result_raw.json().get("messages", None) == None, (
+        assert result_raw.json()["is_compatible"] is False
+        assert result_raw.json().get("messages", None) is None, (
             f"Expected no messages, got {result_raw.json()['messages']}"
         )
 
@@ -2179,14 +2177,14 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         )
         self.logger.debug(result_raw, result_raw.json())
         assert result_raw.status_code == requests.codes.ok
-        assert result_raw.json()["is_compatible"] == False
+        assert result_raw.json()["is_compatible"] is False
 
         messages = result_raw.json().get("messages", [])
         assert not any(schema1_def in m for m in messages), (
-            f"Expected schema 3 to be compared against schema 2 only (not schema 1)"
+            "Expected schema 3 to be compared against schema 2 only (not schema 1)"
         )
         assert any(schema2_def in m for m in messages), (
-            f"Expected schema 3 to be compared against schema 2 only (not schema 1)"
+            "Expected schema 3 to be compared against schema 2 only (not schema 1)"
         )
 
     @cluster(num_nodes=3)
@@ -2201,7 +2199,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
 
         topic = create_topic_names(1)[0]
 
-        self.logger.debug(f"Register a schema against a subject")
+        self.logger.debug("Register a schema against a subject")
         schema_data = json.dumps(
             {
                 "schema": validation_schemas[schemas[0]],
@@ -2223,7 +2221,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         )
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
-        v1_id = result_raw.json()["id"]
+        result_raw.json()["id"]
 
         self.logger.debug("Set subject config - BACKWARD")
         result_raw = self.sr_client.set_config_subject(
@@ -2237,7 +2235,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         )
 
         assert result_raw.status_code == requests.codes.ok
-        assert result_raw.json()["is_compatible"] == False
+        assert result_raw.json()["is_compatible"] is False
         msgs = result_raw.json()["messages"]
         for message in ["oldSchemaVersion", "oldSchema", "compatibility"]:
             assert any(message in m for m in msgs), (
@@ -2266,7 +2264,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
 
         topic = create_topic_names(1)[0]
 
-        self.logger.debug(f"Register a schema against a subject")
+        self.logger.debug("Register a schema against a subject")
         schema_1_data = json.dumps({"schema": schema1_def})
         schema_2_data = json.dumps({"schema": schema2_def})
         schema_3_data = json.dumps({"schema": schema3_def})
@@ -2348,7 +2346,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
 
         topic = create_topic_names(1)[0]
 
-        self.logger.debug(f"Register a schema against a subject")
+        self.logger.debug("Register a schema against a subject")
         schema_1_data = json.dumps({"schema": schema1_def})
         schema_2_data = json.dumps({"schema": schema2_def})
         schema_3_data = json.dumps({"schema": schema3_def})
@@ -2606,14 +2604,14 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         assert result_raw.json()["id"] == 2
 
         result_raw = self.sr_client.request(
-            "GET", f"subjects/simple/versions/1/schema", headers=HTTP_GET_HEADERS
+            "GET", "subjects/simple/versions/1/schema", headers=HTTP_GET_HEADERS
         )
         self.logger.info(result_raw)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.text.strip() == simple_proto_def.strip()
 
         result_raw = self.sr_client.request(
-            "GET", f"schemas/ids/1", headers=HTTP_GET_HEADERS
+            "GET", "schemas/ids/1", headers=HTTP_GET_HEADERS
         )
         self.logger.info(result_raw)
         assert result_raw.status_code == requests.codes.ok
@@ -2661,14 +2659,14 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         assert result_raw.json()["id"] == 1
 
         result_raw = self.sr_client.request(
-            "GET", f"subjects/simple/versions/1/schema", headers=HTTP_GET_HEADERS
+            "GET", "subjects/simple/versions/1/schema", headers=HTTP_GET_HEADERS
         )
         self.logger.info(result_raw)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.text.strip() == json_number_schema_def.strip()
 
         result_raw = self.sr_client.request(
-            "GET", f"schemas/ids/1", headers=HTTP_GET_HEADERS
+            "GET", "schemas/ids/1", headers=HTTP_GET_HEADERS
         )
         self.logger.info(result_raw)
         assert result_raw.status_code == requests.codes.ok
@@ -3032,7 +3030,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             assert result_raw.status_code == requests.codes.ok
             res_subjects = result_raw.json()
             self.logger.debug(res_subjects)
-            assert type(res_subjects) == type([])
+            assert type(res_subjects) is type([])
             res_subjects.sort()
             subjects.sort()
             assert res_subjects == subjects
@@ -3044,7 +3042,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             assert result_raw.status_code == requests.codes.ok
             res_versions = result_raw.json()
             self.logger.debug(res_versions)
-            assert type(res_versions) == type([])
+            assert type(res_versions) is type([])
             assert res_versions == subject_versions
 
         # Given the subject, list of schemas, list of versions, and list of ids,
@@ -3066,7 +3064,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 assert result_raw.status_code == requests.codes.ok
                 res = result_raw.json()
                 self.logger.debug(res)
-                assert type(res) == type({})
+                assert type(res) is type({})
                 assert "subject" in res
                 assert "version" in res
                 assert "id" in res
@@ -3791,7 +3789,7 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
             result_raw = self.sr_client.post_subjects_subject(subject=sub, data=schema2)
             assert result_raw.status_code == 404
             assert result_raw.json()["error_code"] == 40403
-            assert result_raw.json()["message"] == f"Schema not found"
+            assert result_raw.json()["message"] == "Schema not found"
 
         self.logger.info("Posting schema 2 as ro_subject key")
         result_raw = self.sr_client.post_subjects_subject_versions(
@@ -3977,7 +3975,7 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
             self.assert_equal(result_raw.status_code, 200)
             self.assert_equal(result_raw.json()["mode"], "IMPORT")
         else:
-            self.logger.debug(f"Enable IMPORT mode globally")
+            self.logger.debug("Enable IMPORT mode globally")
             result_raw = self.sr_client.set_mode(data=json.dumps({"mode": "IMPORT"}))
             self.assert_equal(result_raw.status_code, 200)
             self.assert_equal(result_raw.json()["mode"], "IMPORT")
@@ -4065,7 +4063,7 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
     def test_schema_id_smaller_than_one(self):
         sub = "test-subject-1"
 
-        self.logger.debug(f"Enable IMPORT mode to allow posting with specific ids")
+        self.logger.debug("Enable IMPORT mode to allow posting with specific ids")
         result_raw = self.sr_client.set_mode(data=json.dumps({"mode": "IMPORT"}))
         self.assert_equal(result_raw.status_code, 200)
         self.assert_equal(result_raw.json()["mode"], "IMPORT")
@@ -4102,7 +4100,7 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
     def test_schema_id_exhausted(self):
         sub = "test-subject-1"
 
-        self.logger.debug(f"Enable IMPORT mode to allow posting specific versions")
+        self.logger.debug("Enable IMPORT mode to allow posting specific versions")
         result_raw = self.sr_client.set_mode(data=json.dumps({"mode": "IMPORT"}))
         self.assert_equal(result_raw.status_code, 200)
         self.assert_equal(result_raw.json()["mode"], "IMPORT")
@@ -4244,9 +4242,7 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
             test_schemas_ids_id_subjects(id, expected_successful=True)
 
         # Test /subjects
-        result_raw = self.sr_client.request(
-            "GET", f"subjects", headers=HTTP_GET_HEADERS
-        )
+        result_raw = self.sr_client.request("GET", "subjects", headers=HTTP_GET_HEADERS)
         assert_request_code(result_raw, requests.codes.ok, "GET subjects")
 
         # All subjects should be present, regardless if their schemas are valid or not
@@ -4720,7 +4716,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         result_raw = self.sr_client.get_schemas_types(auth=self.public_auth)
         assert result_raw.json()["error_code"] == 40101
 
-        self.logger.debug(f"Request schema types with default accept header")
+        self.logger.debug("Request schema types with default accept header")
         result_raw = self.sr_client.get_schemas_types(auth=self.super_auth)
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
@@ -5070,7 +5066,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
 
         topic = create_topic_names(1)[0]
 
-        self.logger.debug(f"Register a schema against a subject")
+        self.logger.debug("Register a schema against a subject")
         schema_1_data = json.dumps({"schema": schema1_def})
 
         self.logger.debug("Posting schema 1 as a subject key")
@@ -5098,7 +5094,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
             subject=f"{topic}-key", version=1, data=schema_1_data, auth=self.super_auth
         )
         assert result_raw.status_code == requests.codes.ok
-        assert result_raw.json()["is_compatible"] == True
+        assert result_raw.json()["is_compatible"] is True
 
     @cluster(num_nodes=3)
     def test_delete_subject(self):
@@ -5109,7 +5105,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
 
         topic = create_topic_names(1)[0]
 
-        self.logger.debug(f"Register a schema against a subject")
+        self.logger.debug("Register a schema against a subject")
         schema_1_data = json.dumps({"schema": schema1_def})
 
         self.logger.debug("Posting schema 1 as a subject key")
@@ -5152,7 +5148,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
 
         topic = create_topic_names(1)[0]
 
-        self.logger.debug(f"Register a schema against a subject")
+        self.logger.debug("Register a schema against a subject")
         schema_1_data = json.dumps({"schema": schema1_def})
 
         self.logger.debug("Posting schema 1 as a subject key")
@@ -5243,7 +5239,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
 
         result_raw = self.sr_client.request(
             "GET",
-            f"subjects/simple/versions/1/schema",
+            "subjects/simple/versions/1/schema",
             headers=HTTP_GET_HEADERS,
             auth=self.super_auth,
         )
@@ -5252,7 +5248,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         assert result_raw.text.strip() == simple_proto_def.strip()
 
         result_raw = self.sr_client.request(
-            "GET", f"schemas/ids/1", headers=HTTP_GET_HEADERS, auth=self.super_auth
+            "GET", "schemas/ids/1", headers=HTTP_GET_HEADERS, auth=self.super_auth
         )
         self.logger.info(result_raw)
         assert result_raw.status_code == requests.codes.ok
@@ -5276,7 +5272,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     @cluster(num_nodes=3)
     def test_delete_subject_bug(self):
         topic = "foo"
-        self.logger.debug(f"Register a schema against a subject")
+        self.logger.debug("Register a schema against a subject")
         schema_1_data = json.dumps({"schema": schema1_def})
 
         self.logger.debug("Posting schema 1 as a subject key")
@@ -5286,7 +5282,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
 
-        self.logger.debug(f"Register a schema against a subject")
+        self.logger.debug("Register a schema against a subject")
         schema_2_data = json.dumps({"schema": schema2_def})
 
         self.logger.debug("Posting schema 2 as a subject key")
@@ -5360,7 +5356,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         )
         assert result_raw.status_code == requests.codes.ok
 
-        self.logger.debug(f"Register a schema against a subject")
+        self.logger.debug("Register a schema against a subject")
         schema_1_data = json.dumps({"schema": schema1_def})
         schema_3_data = json.dumps({"schema": schema3_def})
 
@@ -6094,10 +6090,10 @@ class SchemaRegistryConfluentClient(SchemaRegistryEndpoints):
         assert result == 1, f"Result: {result}"
 
         result = self.sr_client.test_compatibility(test_subject, schema2)
-        assert result == True, f"Result: {result}"
+        assert result is True, f"Result: {result}"
 
         result = self.sr_client.test_compatibility(test_subject, schema3)
-        assert result == False, f"Result: {result}"
+        assert result is False, f"Result: {result}"
 
     @cluster(num_nodes=3)
     def test_references(self):
@@ -7350,7 +7346,7 @@ class GetSchemasTypes(ACLTestEndpoint):
 
     @property
     def path(self) -> str:
-        return f"schemas/types"
+        return "schemas/types"
 
     def setup(self) -> None:
         pass
@@ -7370,7 +7366,7 @@ class GetStatusReady(ACLTestEndpoint):
 
     @property
     def path(self) -> str:
-        return f"status/ready"
+        return "status/ready"
 
     def setup(self) -> None:
         pass

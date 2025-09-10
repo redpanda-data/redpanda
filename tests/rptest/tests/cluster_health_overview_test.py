@@ -8,15 +8,15 @@
 # by the Apache License, Version 2.0
 
 import random
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from rptest.services.admin import Admin
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 
 from ducktape.utils.util import wait_until
 
-from rptest.util import wait_until_result, repeat_check
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import repeat_check, wait_until_result
 
 
 class ClusterHealthOverviewTest(RedpandaTest):
@@ -76,7 +76,7 @@ class ClusterHealthOverviewTest(RedpandaTest):
     def wait_until_healthy(self):
         def is_healthy():
             res = self.get_health()
-            return res["is_healthy"] == True and len(res["all_nodes"]) == 5
+            return res["is_healthy"] is True and len(res["all_nodes"]) == 5
 
         wait_until(is_healthy, 30, 2)
 
@@ -117,7 +117,7 @@ class ClusterHealthOverviewTest(RedpandaTest):
                 return True, hov
             return False, None
 
-        hov = wait_until_result(one_node_down, 30, 2)
+        wait_until_result(one_node_down, 30, 2)
 
         # stop another node, cluster should start reporting leaderless
         # partitions with two out of five nodes down

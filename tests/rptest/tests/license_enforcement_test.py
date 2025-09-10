@@ -11,12 +11,12 @@ import re
 
 from ducktape.mark import matrix
 
-from rptest.services.cluster import cluster
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import LoggingConfig, SISettings
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_fips_mode
 from rptest.utils.rpenv import sample_license
 
@@ -68,7 +68,7 @@ class LicenseEnforcementTest(RedpandaTest):
             err_msg="The cluster hasn't stabilized",
         )
 
-        self.logger.info(f"Enabling an enterprise feature")
+        self.logger.info("Enabling an enterprise feature")
         self.redpanda.set_cluster_config({"partition_autobalancing_mode": "continuous"})
 
         self.logger.info(
@@ -142,7 +142,7 @@ class LicenseEnforcementTest(RedpandaTest):
             err_msg="The cluster hasn't stabilized",
         )
 
-        self.logger.info(f"Enabling an enterprise feature")
+        self.logger.info("Enabling an enterprise feature")
         self.redpanda.set_cluster_config({"partition_autobalancing_mode": "continuous"})
 
         self.logger.info(
@@ -236,7 +236,7 @@ class LicenseEnforcementTest(RedpandaTest):
         try:
             self.rpk.cluster_config_set("iceberg_enabled", "true")
             assert False, "Enabling iceberg must fail without the license"
-        except RpkException as e:
+        except RpkException:
             pass
 
 
@@ -314,7 +314,7 @@ class LicenseEnforcementPermittedTopicParams(RedpandaTest):
             assert False, (
                 "Should have failed to create topic with iceberg enabled set and cloud_storage_enabled set to True"
             )
-        except RpkException as e:
+        except RpkException:
             pass
 
     @cluster(num_nodes=3)

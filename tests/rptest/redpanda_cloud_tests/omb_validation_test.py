@@ -11,19 +11,20 @@ import math
 from time import time
 from typing import Any, TypeVar
 
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import get_cloud_provider
-from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
-from ducktape.tests.test import TestContext
 from ducktape.mark import matrix
-from rptest.services.producer_swarm import ProducerSwarm
+from ducktape.tests.test import TestContext
+
 from rptest.clients.rpk import RpkTool
-from rptest.services.redpanda_cloud import ThroughputTierInfo
+from rptest.services.cluster import cluster
+from rptest.services.machinetype import get_machine_info
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
-from rptest.services.machinetype import get_machine_info
-from rptest.utils.type_utils import rcast
+from rptest.services.producer_swarm import ProducerSwarm
+from rptest.services.redpanda import get_cloud_provider
+from rptest.services.redpanda_cloud import ThroughputTierInfo
+from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 from rptest.tests.write_caching_test import WriteCachingMode
+from rptest.utils.type_utils import rcast
 
 # pyright: strict
 
@@ -44,7 +45,7 @@ ACTIVE_METRIC = "vectorized_kafka_rpc_active_connections"
 
 def not_none(value: T | None) -> T:
     if value is None:
-        raise ValueError(f"value was unexpectedly None")
+        raise ValueError("value was unexpectedly None")
     return value
 
 
@@ -395,7 +396,7 @@ class OMBValidationTest(RedpandaCloudTest):
         swarm_topic_name = "swarm_topic"
         try:
             self.rpk.delete_topic(swarm_topic_name)
-        except:
+        except Exception:
             # Ignore the exception that is thrown if the topic doesn't exist.
             pass
 
@@ -517,7 +518,7 @@ class OMBValidationTest(RedpandaCloudTest):
             assert metrics.clients_alive == producer_per_swarm_node, (
                 f"On {sname} bad clients_alive: {metrics.clients_alive} != {producer_per_swarm_node}"
             )
-            assert metrics.clients_stopped == 0, f"clients unexpectedly stopped"
+            assert metrics.clients_stopped == 0, "clients unexpectedly stopped"
 
             def in_range(name: str, value: float, nominal: float, max_range: float):
                 lb = nominal * (1 - max_range)

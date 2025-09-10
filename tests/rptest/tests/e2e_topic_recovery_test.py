@@ -7,28 +7,28 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from ducktape.mark import matrix
+import re
+import time
+
 from ducktape.cluster.cluster_spec import ClusterSpec
-from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import (
-    CloudStorageType,
-    RedpandaService,
-    SISettings,
-    get_cloud_storage_type,
-)
-from rptest.util import Scale, segments_count, wait_for_local_storage_truncate
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
     KgoVerifierSeqConsumer,
 )
+from rptest.services.redpanda import (
+    SISettings,
+    get_cloud_storage_type,
+)
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import Scale, wait_for_local_storage_truncate
 from rptest.utils.mode_checks import skip_debug_mode
-from ducktape.utils.util import wait_until
-from rptest.utils.si_utils import BucketView, NTP
-import time
-import re
+from rptest.utils.si_utils import NTP, BucketView
 
 ALLOWED_ERROR_LOG_LINES = [re.compile("Can't prepare pid.* - unknown session")]
 
@@ -101,7 +101,7 @@ class EndToEndTopicRecovery(RedpandaTest):
         """Stop all redpanda nodes"""
         for node in self.redpanda.nodes:
             self.logger.info(f"Node {node.account.hostname} will be stopped")
-            if not node is self._verifier_node:
+            if node is not self._verifier_node:
                 self.redpanda.stop_node(node)
         time.sleep(10)
 
@@ -109,7 +109,7 @@ class EndToEndTopicRecovery(RedpandaTest):
         """Start all redpanda nodes"""
         for node in self.redpanda.nodes:
             self.logger.info(f"Starting node {node.account.hostname}")
-            if not node is self._verifier_node:
+            if node is not self._verifier_node:
                 self.redpanda.start_node(node)
         time.sleep(10)
 
@@ -215,7 +215,7 @@ class EndToEndTopicRecovery(RedpandaTest):
             lambda: self._s3_has_all_data(num_messages),
             timeout_sec=600,
             backoff_sec=5,
-            err_msg=f"Not all data is uploaded to S3 bucket",
+            err_msg="Not all data is uploaded to S3 bucket",
         )
 
         # Wipe out the state on the nodes
@@ -307,7 +307,7 @@ class EndToEndTopicRecovery(RedpandaTest):
             lambda: self._s3_has_all_data(hwm),
             timeout_sec=600,
             backoff_sec=5,
-            err_msg=f"Not all data is uploaded to S3 bucket",
+            err_msg="Not all data is uploaded to S3 bucket",
         )
 
         # Keep services alive, so that log-capturing gets their logs at the end

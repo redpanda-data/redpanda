@@ -9,12 +9,12 @@
 
 import socket
 
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.cluster import cluster
-from rptest.services.rpk_producer import RpkProducer
-from rptest.services.rpk_consumer import RpkConsumer
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.metrics_check import MetricCheck
+from rptest.services.rpk_consumer import RpkConsumer
+from rptest.services.rpk_producer import RpkProducer
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
 
 REJECTED_METRIC = "vectorized_kafka_rpc_connections_rejected_total"
@@ -163,17 +163,17 @@ class ConnectionLimitsTest(RedpandaTest):
             }
         )
 
-        self.logger.info(f"Trying producer_a, should be blocked")
+        self.logger.info("Trying producer_a, should be blocked")
         with expect_exception(Exception, lambda e: "timeout" in str(e).lower()):
             producer_a.start()
             producer_a.wait()
 
-        self.logger.info(f"Tearing down producer_a")
+        self.logger.info("Tearing down producer_a")
         with expect_exception(Exception, lambda e: "timeout" in str(e).lower()):
             producer_a.stop()
         producer_a.free()
 
-        self.logger.info(f"Trying producer_b, should be OK")
+        self.logger.info("Trying producer_b, should be OK")
         producer_b.start()
         producer_b.wait()
         producer_b.free()

@@ -7,13 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import re
 import threading
 import time
+
 from ducktape.services.background_thread import BackgroundThreadService
+from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from ducktape.utils.util import wait_until
 
 
 class KafkaCliConsumer(BackgroundThreadService):
@@ -92,7 +92,7 @@ class KafkaCliConsumer(BackgroundThreadService):
                     with self._lock:
                         self._message_cnt += 1
                         self._last_consumed = time.time()
-        except:
+        except Exception:
             if self._stopping.is_set():
                 # Expect a non-zero exit code when killing during teardown
                 pass
@@ -126,14 +126,14 @@ class KafkaCliConsumer(BackgroundThreadService):
             self._progress_reporter.join()
 
         try:
-            wait_until(lambda: self._done is None or self._done == True, timeout_sec=10)
-        except:
+            wait_until(lambda: self._done is None or self._done is True, timeout_sec=10)
+        except Exception:
             self.logger.warn(
                 f"{self._instance_name} running on {node.name} failed to stop gracefully"
             )
             node.account.kill_process("java", clean_shutdown=False)
             wait_until(
-                lambda: self._done is None or self._done == True,
+                lambda: self._done is None or self._done is True,
                 timeout_sec=5,
                 err_msg=f"{self._instance_name} running on {node.name} failed to stop after SIGKILL",
             )

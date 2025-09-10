@@ -18,6 +18,6 @@ SUPPORTED_QUERY_ENGINES = [SparkService, TrinoService, DatabricksSQL, DuckDBPy]
 
 def get_query_engine_by_type(type: QueryEngineType):
     for svc in SUPPORTED_QUERY_ENGINES:
-        if svc.engine_name() == type:
+        if svc.engine_name() is type:
             return svc
     raise NotImplementedError(f"No query engine of type {type}")

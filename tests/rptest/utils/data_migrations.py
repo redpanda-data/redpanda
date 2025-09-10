@@ -7,23 +7,22 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import time
+
+import requests
 from ducktape.utils.util import wait_until
-
-from rptest.clients.types import TopicSpec
-from rptest.clients.default import DefaultClient
-
-from rptest.services.admin import (
-    OutboundDataMigration,
-    InboundDataMigration,
-    NamespacedTopic,
-    InboundTopic,
-    MigrationAction,
-)
-from rptest.services.redpanda import RedpandaService
 from requests.exceptions import ConnectionError
 
-import time
-import requests
+from rptest.clients.default import DefaultClient
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import (
+    InboundDataMigration,
+    InboundTopic,
+    MigrationAction,
+    NamespacedTopic,
+    OutboundDataMigration,
+)
+from rptest.services.redpanda import RedpandaService
 
 
 def now():
@@ -74,7 +73,7 @@ class DataMigrationTestMixin:
             lambda: all(client.describe_topic(t).partitions == [] for t in topics),
             timeout_sec=90,
             backoff_sec=1,
-            err_msg=f"Failed waiting for partitions to disappear",
+            err_msg="Failed waiting for partitions to disappear",
         )
 
     def get_migration(self, id, node=None, redpanda: RedpandaService | None = None):
@@ -277,19 +276,19 @@ class DataMigrationTestMixin:
             out_migration_id, MigrationAction.prepare
         )
         self.wait_for_migration_states(out_migration_id, ["prepared"], redpanda=source)
-        self.logger.info(f"prepared on source")
+        self.logger.info("prepared on source")
 
         source._admin.execute_data_migration_action(
             out_migration_id, MigrationAction.execute
         )
         self.wait_for_migration_states(out_migration_id, ["executed"], redpanda=source)
-        self.logger.info(f"executed on source")
+        self.logger.info("executed on source")
 
         source._admin.execute_data_migration_action(
             out_migration_id, MigrationAction.finish
         )
         self.wait_for_migration_states(out_migration_id, ["finished"], redpanda=source)
-        self.logger.info(f"finished on source")
+        self.logger.info("finished on source")
 
         # TODO: currently migrations need to be executed sequentially (on source
         # then on destination). Ideally the implementation should allow for concurrent
@@ -300,16 +299,16 @@ class DataMigrationTestMixin:
             in_migration_id, MigrationAction.prepare
         )
         self.wait_for_migration_states(in_migration_id, ["prepared"], redpanda=dest)
-        self.logger.info(f"prepared on dest")
+        self.logger.info("prepared on dest")
 
         dest._admin.execute_data_migration_action(
             in_migration_id, MigrationAction.execute
         )
         self.wait_for_migration_states(in_migration_id, ["executed"], redpanda=dest)
-        self.logger.info(f"executed on dest")
+        self.logger.info("executed on dest")
 
         dest._admin.execute_data_migration_action(
             in_migration_id, MigrationAction.finish
         )
         self.wait_for_migration_states(in_migration_id, ["finished"], redpanda=dest)
-        self.logger.info(f"finished on dest")
+        self.logger.info("finished on dest")

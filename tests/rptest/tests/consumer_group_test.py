@@ -8,48 +8,51 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from dataclasses import dataclass
-import pytest
 import random
 import threading
 import time
+from collections import namedtuple
+from dataclasses import dataclass
 from typing import Dict, List
 
-from rptest.clients.default import DefaultClient
-from rptest.clients.offline_log_viewer import OfflineLogViewer
-from rptest.services.redpanda import LoggingConfig
-from rptest.services.admin import Admin
-from rptest.services.cluster import cluster
+import kafka.protocol.types as types
+import pytest
+from confluent_kafka import (
+    Consumer,
+    ConsumerGroupState,
+    ConsumerGroupTopicPartitions,
+    Producer,
+    TopicPartition,
+)
+from confluent_kafka.admin import AdminClient
+from ducktape.mark import ignore, parametrize
+from ducktape.utils.util import wait_until
+from kafka import KafkaConsumer
+from kafka import errors as kerr
+from kafka.admin import KafkaAdminClient
+from kafka.protocol.api import Request, Response
+from kafka.protocol.commit import OffsetFetchRequest_v3
 
+from rptest.clients.default import DefaultClient
 from rptest.clients.kcl import RawKCL
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import (
     RESTART_LOG_ALLOW_LIST,
-    RedpandaService,
+    LoggingConfig,
     MetricsEndpoint,
+    RedpandaService,
 )
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import expect_exception, wait_until_result
+from rptest.util import wait_until_result
 from rptest.utils.mode_checks import skip_debug_mode
-
-from ducktape.utils.util import wait_until
-from ducktape.mark import ignore, parametrize
-
-from kafka import KafkaConsumer, errors as kerr
-from kafka.admin import KafkaAdminClient
-from kafka.protocol.commit import OffsetFetchRequest_v3
-from kafka.protocol.api import Request, Response
-import kafka.protocol.types as types
-from confluent_kafka.admin import AdminClient
-from confluent_kafka import ConsumerGroupState, ConsumerGroupTopicPartitions
-from confluent_kafka import Consumer, Producer
-from confluent_kafka import TopicPartition
-from collections import namedtuple
 
 
 class ConsumerGroupTest(RedpandaTest):
@@ -387,7 +390,7 @@ class ConsumerGroupTest(RedpandaTest):
         self.start_producer()
         # wait for some messages
         wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50), 30, 2)
-        rpk = RpkTool(self.redpanda)
+        RpkTool(self.redpanda)
         # at this point we have 2 consumers in stable group
         self.validate_group_state(
             group, expected_state="Stable", static_members=static_members
@@ -535,7 +538,7 @@ class ConsumerGroupTest(RedpandaTest):
             try:
                 rpk_group = rpk.group_describe(group)
                 return rpk_group.members == 0 and rpk_group.state == "Dead"
-            except RpkException as e:
+            except RpkException:
                 # allow RPK to throw an exception as redpanda nodes were
                 # restarted and the request may require a retry
                 return False
@@ -1273,88 +1276,6 @@ class OffsetFetchRequest_v5(Request):
     API_VERSION = 5
     RESPONSE_TYPE = OffsetFetchResponse_v5
     SCHEMA = OffsetFetchRequest_v3.SCHEMA
-
-
-class TestConsumer:
-    def __init__(self, bootstrap_servers, group, topic, id, logger):
-        self.bootstrap_servers = bootstrap_servers
-        self.id = id
-        self.group = group
-        self.topic = topic
-        self.consumer_thread = threading.Thread(
-            name=f"consumer-{id}", target=lambda this: this.loop(), args=[self]
-        )
-        self.stopped = threading.Event()
-        self.restart = threading.Event()
-        self.logger = logger
-        self.consumer_thread.daemon = True
-        self.consumer_thread.start()
-        self.last_consumed = None
-        self.lock = threading.Lock()
-        self.restarted = threading.Event()
-
-    def stop(self):
-        self.logger.info(f"stopping consumer with id: {self.id}")
-        self.stopped.set()
-        self.consumer_thread.join()
-
-    def loop(self):
-        self.consumer = Consumer(
-            {
-                "group.id": self.group,
-                "group.instance.id": f"consumer-{self.id}",
-                "bootstrap.servers": self.bootstrap_servers,
-                "session.timeout.ms": 10000,
-                "auto.offset.reset": "earliest",
-                "enable.auto.offset.store": False,
-            }
-        )
-        self.consumer.subscribe([self.topic])
-        self.logger.info(f"starting consumer with id: {self.id}")
-        while not self.stopped.is_set():
-            if self.restart.is_set():
-                self.logger.info(f"restarting consumer with id: {self.id}")
-                self.consumer.close()
-                self.consumer = Consumer(
-                    {
-                        "group.id": self.group,
-                        "group.instance.id": f"consumer-{self.id}",
-                        "bootstrap.servers": self.bootstrap_servers,
-                        "session.timeout.ms": 10000,
-                        "auto.offset.reset": "earliest",
-                        "enable.auto.offset.store": False,
-                    }
-                )
-                self.consumer.subscribe([self.topic])
-                self.consumer.poll(0.5)
-                self.restart.clear()
-                self.restarted.set()
-
-            try:
-                msg = self.consumer.poll(timeout=1.0)
-                if msg is None:
-                    continue
-                if msg.error():
-                    self.logger.error(f"consumer {self.id} error - {msg.error()}")
-                    continue
-
-                self.consumer.store_offsets(msg)
-                with self.lock:
-                    self.last_consumed = msg.offset()
-
-            except Exception as e:
-                self.logger.error(f"consumer {self.id} error - {e}")
-
-        self.consumer.close()
-
-    def get_last_consumed(self):
-        with self.lock:
-            return self.last_consumed
-
-    def restart_consumer(self):
-        self.restart.set()
-        self.restarted.wait()
-        self.restarted.clear()
 
 
 class TestConsumer:

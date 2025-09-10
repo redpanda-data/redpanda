@@ -11,15 +11,15 @@ import hashlib
 import json
 import random
 
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.utils.rpenv import sample_license
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.cluster import cluster
 from rptest.services.http_server import HttpServer
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.utils.rpenv import sample_license
 
 
 class MetricsReporterServer:
@@ -160,7 +160,7 @@ class MetricsReporterTest(RedpandaTest):
         # the source of the value is sound, so assert on presence instead.
         assert "has_enterprise_features" in last
         assert "enterprise_features" in last
-        assert type(last["enterprise_features"]) == list
+        assert type(last["enterprise_features"]) is list
         assert "hostname" in last
         assert "domainname" in last
         assert "fqdns" in last
@@ -198,8 +198,8 @@ class MetricsReporterTest(RedpandaTest):
 
         # Check config values
         assert last["config"]["retention_bytes"] == "[value]"
-        assert last["config"]["enable_metrics_reporter"] == True
-        assert last["config"]["auto_create_topics_enabled"] == False
+        assert last["config"]["enable_metrics_reporter"] is True
+        assert last["config"]["auto_create_topics_enabled"] is False
         assert "metrics_reporter_tick_interval" not in last["config"]
         assert last["config"]["log_message_timestamp_type"] == "CreateTime"
         assert last["redpanda_environment"] == "test"

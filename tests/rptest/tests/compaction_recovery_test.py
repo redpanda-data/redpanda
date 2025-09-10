@@ -7,18 +7,17 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.services.redpanda_installer import RedpandaInstaller
-from ducktape.utils.util import wait_until
-
-from rptest.clients.types import TopicSpec
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.util import produce_until_segments
-
 import os.path
 from collections import namedtuple
+
+from ducktape.utils.util import wait_until
+
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import produce_until_segments
 
 
 class CompactionRecoveryTest(RedpandaTest):

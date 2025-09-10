@@ -7,26 +7,26 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import collections
-import json
 import io
+import json
 import pprint
 import struct
 import time
-from dataclasses import dataclass
 from collections import defaultdict, namedtuple
+from dataclasses import dataclass
 from enum import Enum
-from typing import Literal, Sequence, Optional, NewType, NamedTuple, Iterator
+from typing import Iterator, Literal, NamedTuple, NewType, Optional, Sequence
 
-from rptest.clients.offline_log_viewer import OfflineLogViewer
 import xxhash
-
 from botocore.exceptions import ClientError
-from rptest.archival.s3_client import ObjectMetadata, S3Client
+
 from rptest.archival.abs_client import ABSClient
+from rptest.archival.s3_client import ObjectMetadata, S3Client
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import MetricsEndpoint, RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, MetricsEndpoint
 
 EMPTY_SEGMENT_SIZE = 4096
 
@@ -568,7 +568,7 @@ def get_on_disk_size_per_ntp(chk):
             size = summary[1]
             tmp_size[ntp] += size
         for ntp, size in tmp_size.items():
-            if not ntp in size_bytes_per_ntp or size_bytes_per_ntp[ntp] < size:
+            if ntp not in size_bytes_per_ntp or size_bytes_per_ntp[ntp] < size:
                 size_bytes_per_ntp[ntp] = size
     return size_bytes_per_ntp
 
@@ -601,7 +601,7 @@ def get_expected_ntp_restored_size(
             tmp_partition_size[ntp] += size
             tmp_segments_sizes[ntp][segment.base_offset] = size
         for ntp, size in tmp_partition_size.items():
-            if not ntp in size_bytes_per_ntp or size_bytes_per_ntp[ntp] < size:
+            if ntp not in size_bytes_per_ntp or size_bytes_per_ntp[ntp] < size:
                 size_bytes_per_ntp[ntp] = size
                 segments_sizes_per_ntp[ntp] = tmp_segments_sizes[ntp]
         expected_restored_sizes = {}
@@ -1717,7 +1717,7 @@ class BucketView:
     def assert_segments_replaced(self, topic: str, partition: int):
         manifest_data = self.manifest_for_ntp(topic, partition)
         assert len(manifest_data.get("replaced", [])) > 0, (
-            f"No replaced segments after compacted segments uploaded"
+            "No replaced segments after compacted segments uploaded"
         )
 
     def assert_segments_deleted(self, topic: str, partition: int):

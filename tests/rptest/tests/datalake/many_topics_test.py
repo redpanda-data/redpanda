@@ -6,27 +6,26 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
-import concurrent.futures
 import itertools
 import random
 import time
 from uuid import uuid4
 
+import pyhive
 from confluent_kafka import SerializingProducer
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroSerializer
 from confluent_kafka.serialization import StringSerializer
 from ducktape.mark import matrix
-import pyhive
 
 from rptest.clients.rpk import RpkTool
+from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings, SchemaRegistryConfig
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.catalog_service import CatalogType
 from rptest.utils.parallel import execute_in_parallel
 
 
@@ -109,7 +108,7 @@ class DatalakeManyTopicsTest(RedpandaTest):
             all_topics = self.create_topics(
                 1000 if self.redpanda.dedicated_nodes else 20
             )
-            self.logger.info(f"creating topics finished")
+            self.logger.info("creating topics finished")
 
             schema1 = """
 {
@@ -132,12 +131,12 @@ class DatalakeManyTopicsTest(RedpandaTest):
             self.produce_messages(
                 schema1, create_record1, topics=all_topics, msg_per_topic=100
             )
-            self.logger.info(f"producing finished")
+            self.logger.info("producing finished")
 
             def tables_created():
                 try:
                     return len(
-                        spark.run_query_fetch_all(f"show tables in redpanda")
+                        spark.run_query_fetch_all("show tables in redpanda")
                     ) >= len(all_topics)
                 except pyhive.exc.OperationalError:
                     # thrown if the namespace hasn't been created yet
@@ -145,7 +144,7 @@ class DatalakeManyTopicsTest(RedpandaTest):
 
             spark = dl.spark()
             self.redpanda.wait_until(tables_created, timeout_sec=180, backoff_sec=5)
-            self.logger.info(f"table creation finished")
+            self.logger.info("table creation finished")
 
             def all_translated(msg_per_topic):
                 for topic in random.sample(all_topics, 10):
@@ -162,7 +161,7 @@ class DatalakeManyTopicsTest(RedpandaTest):
                 backoff_sec=5,
                 err_msg="timed out waiting for first translation",
             )
-            self.logger.info(f"translation finished")
+            self.logger.info("translation finished")
 
             schema2 = """
 {
@@ -187,7 +186,7 @@ class DatalakeManyTopicsTest(RedpandaTest):
             self.produce_messages(
                 schema2, create_record2, topics=all_topics, msg_per_topic=100
             )
-            self.logger.info(f"producing with new schema finished")
+            self.logger.info("producing with new schema finished")
 
             self.redpanda.wait_until(
                 lambda: all_translated(200),
@@ -195,7 +194,7 @@ class DatalakeManyTopicsTest(RedpandaTest):
                 backoff_sec=5,
                 err_msg="timed out waiting for translation after schema change",
             )
-            self.logger.info(f"translation finished")
+            self.logger.info("translation finished")
 
             def all_updated_schema():
                 for topic in random.sample(all_topics, 10):
@@ -220,12 +219,12 @@ class DatalakeManyTopicsTest(RedpandaTest):
                     )
 
             execute_in_parallel(all_topics, set_property_for_batch)
-            self.logger.info(f"partition spec property changed")
+            self.logger.info("partition spec property changed")
 
             self.produce_messages(
                 schema2, create_record2, topics=all_topics, msg_per_topic=100
             )
-            self.logger.info(f"producing with new partition spec finished")
+            self.logger.info("producing with new partition spec finished")
 
             self.redpanda.wait_until(
                 lambda: all_translated(300),
@@ -233,7 +232,7 @@ class DatalakeManyTopicsTest(RedpandaTest):
                 backoff_sec=5,
                 err_msg="timed out waiting for translation after spec update",
             )
-            self.logger.info(f"translation finished")
+            self.logger.info("translation finished")
 
             def all_updated_spec():
                 for topic in random.sample(all_topics, 10):

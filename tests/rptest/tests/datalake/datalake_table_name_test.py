@@ -7,18 +7,19 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import SISettings, CloudStorageType
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.redpanda import SISettings
+from rptest.tests.datalake.catalog_service_factory import filesystem_catalog_type
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
-from rptest.tests.datalake.catalog_service_factory import filesystem_catalog_type
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_http_error
-from ducktape.mark import matrix
-from ducktape.utils.util import wait_until
 
 
 class DatalakeTableNameTest(RedpandaTest):

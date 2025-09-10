@@ -7,19 +7,19 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import random
+import time
+
+import ducktape.errors
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.cluster import cluster
-import ducktape.errors
-
 from rptest.services.producer_swarm import ProducerSwarm
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.rpk_consumer import RpkConsumer
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
-
-import time
-import random
 
 
 class RpkToolTest(RedpandaTest):
@@ -47,7 +47,7 @@ class RpkToolTest(RedpandaTest):
     @parametrize(config_type="cleanup.policy")
     def test_create_topic_with_invalid_config(self, config_type):
         with expect_exception(RpkException, lambda e: "INVALID_CONFIG" in str(e)):
-            out = self._rpk.create_topic(
+            self._rpk.create_topic(
                 "rp_dt_test_create_topic_with_invalid_config",
                 config={config_type: "foo"},
             )
@@ -57,7 +57,7 @@ class RpkToolTest(RedpandaTest):
         topic = "rp_dt_test_add_unfeasible_number_of_partitions"
         with expect_exception(RpkException, lambda e: "INVALID_REQUEST" in str(e)):
             self._rpk.create_topic(topic)
-            out = self._rpk.add_partitions(topic, 2000000000000)
+            self._rpk.add_partitions(topic, 2000000000000)
 
     @cluster(num_nodes=4)
     def test_produce(self):

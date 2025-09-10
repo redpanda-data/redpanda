@@ -6,24 +6,22 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
-from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import (
-    CloudStorageType,
-    SISettings,
-    get_cloud_storage_type,
-)
-
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.util import wait_until, expect_timeout
-from rptest.utils.si_utils import BucketView
+import time
 
 from ducktape.mark import matrix
 
-import time
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from rptest.services.redpanda import (
+    SISettings,
+    get_cloud_storage_type,
+)
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import expect_timeout, wait_until
+from rptest.utils.si_utils import BucketView
 
 # Log errors expected when connectivity between redpanda and the S3
 # backend is disrupted

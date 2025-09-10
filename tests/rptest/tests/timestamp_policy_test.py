@@ -7,18 +7,16 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import time
 import datetime
+import time
 from dataclasses import dataclass
 from typing import Callable
 
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from confluent_kafka import Producer
+
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import expect_exception
-
-from confluent_kafka import Producer
 
 
 def expect_failure_callback(err, msg):

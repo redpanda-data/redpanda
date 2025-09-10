@@ -7,18 +7,18 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import namedtuple
+import itertools
 import json
 import random
 import re
 import string
 import subprocess
 import time
-import itertools
-from typing import Optional
+from collections import namedtuple
 from functools import cache
+from typing import Optional
+
 from ducktape.utils.util import wait_until
-from rptest.utils.functional import flat_map
 
 KclPartitionOffset = namedtuple(
     "KclPartitionOffset",
@@ -462,7 +462,7 @@ class RawKCL(KCL):
             return json.loads(
                 self.raw_create_topics(version, tps, validate_only=validate_only)
             )["Topics"]
-        except:
+        except Exception:
             return []
 
     def raw_create_topics(self, version, topics, validate_only=False):

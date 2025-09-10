@@ -10,12 +10,12 @@
 import random
 
 from rptest.clients.default import DefaultClient
-from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.failure_injector import FailureSpec
-from rptest.services.redpanda import make_redpanda_service, CHAOS_LOG_ALLOW_LIST
-from rptest.tests.end_to_end import EndToEndTest
+from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, make_redpanda_service
 from rptest.tests.e2e_finjector import Finjector
+from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import Scale
 
 

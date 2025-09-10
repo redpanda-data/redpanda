@@ -8,17 +8,17 @@
 # by the Apache License, Version 2.0
 
 import time
+
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import ResourceSettings
-from rptest.services.admin import Admin
 import rptest.services.kgo_verifier_services as kgo
 from rptest.clients.rpk import RpkTool
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import ResourceSettings
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.util import wait_until_result
-from ducktape.mark import matrix
 
 
 class ShardPlacementTest(PreallocNodesTest):
@@ -321,7 +321,7 @@ class ShardPlacementTest(PreallocNodesTest):
         rpk.create_topic("quux", partitions=n_partitions, replicas=3)
 
         # check that shard counts are balanced
-        self.logger.info(f"added 2 nodes and a topic, checking shard map...")
+        self.logger.info("added 2 nodes and a topic, checking shard map...")
         map_after_join = self.wait_shard_map_stationary(joiner_nodes, admin)
         self.print_shard_stats(map_after_join)
         for joiner in joiner_nodes:

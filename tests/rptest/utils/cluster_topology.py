@@ -8,9 +8,10 @@
 # by the Apache License, Version 2.0
 
 from collections import defaultdict
-from rptest.services.redpanda import RedpandaService
 
 import psutil
+
+from rptest.services.redpanda import RedpandaService
 
 
 class NetemSpec:
@@ -78,7 +79,7 @@ class NodeQdisc:
                 "22",
                 "0xffff",
                 "flowid",
-                f"1:1",
+                "1:1",
             ]
         )
 
@@ -101,7 +102,7 @@ class NodeQdisc:
                 "22",
                 "0xffff",
                 "flowid",
-                f"1:1",
+                "1:1",
             ]
         )
 
@@ -274,12 +275,6 @@ class ClusterTopology:
         assert region not in self.regions, f"region {region} already exists in cluster"
         self.regions[region.name] = region
 
-    def add_rack(self, rack: Rack):
-        if ClusterTopology.UNASSIGNED_REGION not in self.regions:
-            self.add_region(Region(ClusterTopology.UNASSIGNED_REGION))
-
-        self.regions[ClusterTopology.UNASSIGNED_REGION].add_rack(rack)
-
     def add_rack(self, region_name, rack: Rack):
         assert region_name in self.regions, (
             f"can not add rack to region {region_name} that does not exists"
@@ -313,7 +308,7 @@ class ClusterTopology:
         return []
 
     def _ip_address(self, node):
-        res = node.account.ssh_output(f"hostname -i")
+        res = node.account.ssh_output("hostname -i")
         return res.strip().decode("utf-8")
 
     def add_connection_spec(self, spec: TopologyConnectionSpec):

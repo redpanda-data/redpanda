@@ -7,19 +7,18 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from rptest.services.admin import Admin
-from ducktape.utils.util import wait_until
-from rptest.clients.types import TopicSpec
-from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.util import firewall_blocked
-from rptest.clients.rpk import RpkTool
-from confluent_kafka import admin, Producer, KafkaException, Consumer
-from ducktape.mark import parametrize
-
 import time
 import uuid
-import time
+
+from confluent_kafka import Consumer, KafkaException, Producer, admin, cimpl
+from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
+
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.util import firewall_blocked
 
 
 def on_delivery(err, msg):
@@ -93,7 +92,7 @@ class IsolatedDecommissionedNodeTest(PreallocNodesTest):
     @cluster(num_nodes=3)
     def create_topic_on_isolated_node_test(self):
         # Idea of this test it to pass only isolated broker to client and expect that client will get another brokers list and will communicate with them
-        topic = self.topics[0]
+        self.topics[0]
         self.isolated_node = self.redpanda.nodes[0]
         with firewall_blocked([self.isolated_node], self.internal_port, True):
             wait_until(self.is_node_isolated, timeout_sec=90, backoff_sec=1)
@@ -129,7 +128,7 @@ class IsolatedDecommissionedNodeTest(PreallocNodesTest):
                     namespace="kafka", topic=str(topic), partition=0
                 )
                 return True
-            except:
+            except Exception:
                 return False
 
         wait_until(
@@ -176,11 +175,11 @@ class IsolatedDecommissionedNodeTest(PreallocNodesTest):
                 )
             try:
                 producer.flush(10.0)
-            except ck.cimpl.KafkaException as e:
+            except cimpl.KafkaException as e:
                 # We can get timeout only with switched off handler for isolation node
-                assert isolation_handler_mode == False
+                assert isolation_handler_mode is False
                 kafka_error = e.args[0]
-                assert kafka_error.code() == ck.cimpl.KafkaError._MSG_TIMED_OUT
+                assert kafka_error.code() == cimpl.KafkaError._MSG_TIMED_OUT
 
         if isolation_handler_mode:
             self.check_consume(isolation_handler_mode)

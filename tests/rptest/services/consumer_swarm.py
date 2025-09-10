@@ -7,8 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from ducktape.tests.test import TestContext
 from typing import Optional
+
+from ducktape.tests.test import TestContext
+
 from rptest.services.client_swarm_base import ClientSwarmBase
 
 
@@ -40,7 +42,7 @@ class ConsumerSwarm(ClientSwarmBase):
 
     def _additional_args(self):
         cmd = ""
-        cmd += f" consumers"
+        cmd += " consumers"
         cmd += f" --group {self._group}"
         cmd += f" --count {self._consumers}"
         cmd += f" --messages {self._records_per_consumer}"
@@ -72,14 +74,14 @@ class ConsumerSwarm(ClientSwarmBase):
                     )
                     self.check_passed = ms.total_success > 0
                     return self.check_passed
-                except RuntimeError as rt:
+                except RuntimeError:
                     # a common thing is that the swarm joins and then consumers immediately the
                     # requested number of messages between one poll and another, after which it
                     # stops, we don't treat this as a failure since though we do return False from
                     # this method to indicate the behavior
                     if self.checks_made > 0 and not self.swarm.is_alive():
                         self.swarm.logger.info(
-                            f"ConsumerSwarm await_first stopping wait after swarm stopped"
+                            "ConsumerSwarm await_first stopping wait after swarm stopped"
                         )
                         return True
                     raise

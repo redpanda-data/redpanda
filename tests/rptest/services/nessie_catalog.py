@@ -128,8 +128,8 @@ class NessieCatalog(CatalogService):
         elif isinstance(self.credentials, cloud_storage.GCPInstanceMetadataCredentials):
             d_flags += "-Dnessie.catalog.service.gcs.default-options.auth-type=APPLICATION_DEFAULT"
         elif isinstance(self.credentials, cloud_storage.ABSSharedKeyCredentials):
-            d_flags += f"-Dnessie.catalog.service.adls.default-options.auth-type=STORAGE_SHARED_KEY "
-            d_flags += f"-Dnessie.catalog.service.adls.default-options.account=urn:nessie-secret:quarkus:my-secrets-default "
+            d_flags += "-Dnessie.catalog.service.adls.default-options.auth-type=STORAGE_SHARED_KEY "
+            d_flags += "-Dnessie.catalog.service.adls.default-options.account=urn:nessie-secret:quarkus:my-secrets-default "
             d_flags += f"-Dmy-secrets-default.name={self.credentials.account_name} "
             d_flags += f"-Dmy-secrets-default.secret={self.credentials.account_key} "
             d_flags += f"-Dnessie.catalog.service.adls.default-options.endpoint=https://{self.credentials.endpoint}/{self.cloud_storage_bucket}"

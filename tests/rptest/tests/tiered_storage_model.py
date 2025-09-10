@@ -7,20 +7,16 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections.abc import Callable
-from typing import Any, List, Optional, Dict
-from functools import reduce
-from collections import defaultdict
-import z3
-from threading import Lock
-from abc import ABC, abstractclassmethod
-import os
-import sys
 import random
-
+from abc import ABC, abstractclassmethod
+from collections import defaultdict
 from enum import Enum
+from functools import reduce
 from logging import Logger
-import logging
+from threading import Lock
+from typing import Any, Dict, List, Optional
+
+import z3
 
 TestRunStage = Enum(
     "TestRunStage", ["Startup", "Produce", "Intermediate", "Consume", "Shutdown"]
@@ -133,7 +129,7 @@ class Model:
                         # The validators can only check that something is present. The
                         # input modifiers can only enable something which is disabled by
                         # default. This simplifies the model a lot.
-                        if m[d] == True:
+                        if m[d] is True:
                             results.append(self.__table[str(d)])
             else:
                 raise ValueError("Unsatisfiable")
@@ -301,12 +297,12 @@ class Expression:
           model.add(se)
         """
         # Invariant: the s_expression should be boolean
-        s_expr = z3.And([z3.Implies(self.__expr == True, se) for se in s_expr_list])
+        s_expr = z3.And([z3.Implies(self.__expr is True, se) for se in s_expr_list])
         return s_expr
 
     def inv_requires(self, *s_expr_list):
         """Similar to 'requires' but current condition is flipped"""
-        s_expr = z3.And([z3.Implies(self.__expr == False, se) for se in s_expr_list])
+        s_expr = z3.And([z3.Implies(self.__expr is False, se) for se in s_expr_list])
         return s_expr
 
     def __str__(self):
@@ -450,7 +446,7 @@ class LogUniquenessValidator(EffectValidator):
     def start(self, test: TieredStorageEndToEndTest):
         """Set initial state using the test instance"""
         with LogUniquenessValidator.lock:
-            assert self.__subscribed == False, f"start() called twice for {self.__name}"
+            assert self.__subscribed is False, f"start() called twice for {self.__name}"
             self.__logger = test.get_logger()
             test.get_logger().info(
                 f"starting validator {self.__name}, pattern {self.__pattern}, threshold {self.__confidence_threshold}"
@@ -603,7 +599,7 @@ class BucketBasedValidator(EffectValidator):
         return False
 
     def run(self, test: TieredStorageEndToEndTest):
-        if self.__result == True:
+        if self.__result is True:
             return
         bucket_view = test.get_bucket_view()
         if bucket_view is None:
@@ -944,7 +940,7 @@ class CompactedReupload(Expression):
             num_compacted = 0
             manifest = bucket_view.partition_manifests[ntp]
             for _, sm in manifest["segments"].items():
-                if sm["is_compacted"] == True:
+                if sm["is_compacted"] is True:
                     num_compacted += 1
             return num_compacted > 0
 
@@ -1746,43 +1742,43 @@ def get_tiered_storage_test_cases(fast_run=False):
     segment_rolled_by_timeout = SegmentRolledByTimeout()
     enable_segment_ms = EnableSegmentMs()
 
-    model.add(ts_write.requires(segment_roll() == True))
+    model.add(ts_write.requires(segment_roll() is True))
     model.add(
         ts_write.requires(
-            z3.Or(topic_remote_write() == True, global_remote_write() == True)
+            z3.Or(topic_remote_write() is True, global_remote_write() is True)
         )
     )
     model.add(
         ts_read.requires(
-            z3.Or(topic_remote_read() == True, global_remote_read() == True)
+            z3.Or(topic_remote_read() is True, global_remote_read() is True)
         )
     )
     model.add(ts_manifest_uploaded() == ts_write())
-    model.add(ts_read.requires(ts_write() == True))
-    model.add(ts_read.requires(segments_removed() == True))
+    model.add(ts_read.requires(ts_write() is True))
+    model.add(ts_read.requires(segments_removed() is True))
     model.add(
         segments_removed.requires(
-            z3.And(short_local_retention() == True, local_housekeeping() == True)
+            z3.And(short_local_retention() is True, local_housekeeping() is True)
         )
     )
-    model.add(ts_chunked_read.requires(ts_read() == True))
-    model.add(ts_chunked_read.requires(enable_chunked_reads() == True))
-    model.add(spillover_manifest_uploaded.requires(spillover_enabled() == True))
-    model.add(spillover_manifest_uploaded.requires(ts_write() == True))
-    model.add(ts_apply_spillover.requires(ts_housekeeping() == True))
-    model.add(spillover_manifest_uploaded.requires(ts_apply_spillover() == True))
+    model.add(ts_chunked_read.requires(ts_read() is True))
+    model.add(ts_chunked_read.requires(enable_chunked_reads() is True))
+    model.add(spillover_manifest_uploaded.requires(spillover_enabled() is True))
+    model.add(spillover_manifest_uploaded.requires(ts_write() is True))
+    model.add(ts_apply_spillover.requires(ts_housekeeping() is True))
+    model.add(spillover_manifest_uploaded.requires(ts_apply_spillover() is True))
     model.add(
         adjacent_segment_merger_reupload.requires(
-            adjacent_segment_merging_enabled() == True
+            adjacent_segment_merging_enabled() is True
         )
     )
-    model.add(segment_self_compaction.requires(local_housekeeping() == True))
+    model.add(segment_self_compaction.requires(local_housekeeping() is True))
     model.add(
         compacted_segment_reupload.requires(
             z3.And(
-                segment_self_compaction() == True,
-                topic_is_compacted() == True,
-                enable_compacted_reupload() == True,
+                segment_self_compaction() is True,
+                topic_is_compacted() is True,
+                enable_compacted_reupload() is True,
             )
         )
     )
@@ -1790,7 +1786,7 @@ def get_tiered_storage_test_cases(fast_run=False):
     # config is set and segments are self compacted
     model.add(
         adjacent_segment_compaction.requires(
-            z3.And(topic_is_compacted() == True, segment_self_compaction() == True)
+            z3.And(topic_is_compacted() is True, segment_self_compaction() is True)
         )
     )
 
@@ -1798,81 +1794,81 @@ def get_tiered_storage_test_cases(fast_run=False):
     # We also need uploads to happen (this is not precise definition but its
     # good enough for this test, the upload can be started even if the segment
     # is not rolled)
-    model.add(upload_interval_triggered.requires(enable_upload_interval() == True))
-    model.add(upload_interval_triggered.requires(ts_write() == True))
+    model.add(upload_interval_triggered.requires(enable_upload_interval() is True))
+    model.add(upload_interval_triggered.requires(ts_write() is True))
 
     # Aborted transactions
-    model.add(ts_txrange_materialized.requires(transactions_aborted() == True))
-    model.add(ts_txrange_materialized.requires(ts_read() == True))
+    model.add(ts_txrange_materialized.requires(transactions_aborted() is True))
+    model.add(ts_txrange_materialized.requires(ts_read() is True))
 
     # Retention in the STM region
-    model.add(ts_stm_delete_by_gc.requires(ts_stm_garbage_collect() == True))
+    model.add(ts_stm_delete_by_gc.requires(ts_stm_garbage_collect() is True))
     model.add(
-        ts_stm_garbage_collect.requires(ts_stm_size_based_retention_applied() == True)
+        ts_stm_garbage_collect.requires(ts_stm_size_based_retention_applied() is True)
     )
-    model.add(ts_stm_size_based_retention_applied.requires(ts_housekeeping() == True))
-    model.add(ts_stm_size_based_retention_applied.requires(ts_write() == True))
+    model.add(ts_stm_size_based_retention_applied.requires(ts_housekeeping() is True))
+    model.add(ts_stm_size_based_retention_applied.requires(ts_write() is True))
     # Retention in the spillover region
     model.add(
-        ts_spillover_delete_by_gc.requires(ts_spillover_garbage_collect() == True)
+        ts_spillover_delete_by_gc.requires(ts_spillover_garbage_collect() is True)
     )
     model.add(
         ts_spillover_garbage_collect.requires(
-            ts_spillover_size_based_retention_applied() == True
+            ts_spillover_size_based_retention_applied() is True
         )
     )
     model.add(
-        ts_spillover_size_based_retention_applied.requires(ts_housekeeping() == True)
+        ts_spillover_size_based_retention_applied.requires(ts_housekeeping() is True)
     )
     model.add(
         ts_delete.requires(
-            z3.Or(ts_stm_delete_by_gc() == True, ts_spillover_delete_by_gc() == True)
+            z3.Or(ts_stm_delete_by_gc() is True, ts_spillover_delete_by_gc() is True)
         )
     )
     model.add(
-        ts_spillover_manifest_deleted.requires(ts_spillover_delete_by_gc() == True)
+        ts_spillover_manifest_deleted.requires(ts_spillover_delete_by_gc() is True)
     )
     model.add(
         ts_spillover_size_based_retention_applied.requires(
-            spillover_manifest_uploaded() == True
+            spillover_manifest_uploaded() is True
         )
     )
     # Set retention
     model.add(
         ts_stm_size_based_retention_applied.requires(
-            ts_small_size_based_retention_topic_config() == True
+            ts_small_size_based_retention_topic_config() is True
         )
     )
     model.add(
         ts_spillover_size_based_retention_applied.requires(
-            ts_small_size_based_retention_topic_config() == True
+            ts_small_size_based_retention_topic_config() is True
         )
     )
     # segment.ms
-    model.add(segment_rolled_by_timeout.requires(enable_segment_ms() == True))
+    model.add(segment_rolled_by_timeout.requires(enable_segment_ms() is True))
 
     tc_list = []
 
     solutions = []
     if fast_run:
         solutions.append(
-            model.solve_for(ts_read() == True, segment_rolled_by_timeout() == True)
+            model.solve_for(ts_read() is True, segment_rolled_by_timeout() is True)
         )
-        solutions.append(model.solve_for(ts_read() == True, ts_chunked_read() == True))
-        solutions.append(model.solve_for(ts_read() == True, ts_timequery() == True))
+        solutions.append(model.solve_for(ts_read() is True, ts_chunked_read() is True))
+        solutions.append(model.solve_for(ts_read() is True, ts_timequery() is True))
         solutions.append(
-            model.solve_for(ts_read() == True, spillover_manifest_uploaded() == True)
+            model.solve_for(ts_read() is True, spillover_manifest_uploaded() is True)
         )
         # solutions.append(
         #     model.solve_for(ts_read() == True,
         #                     spillover_manifest_uploaded() == True,
         #                     segment_rolled_by_timeout() == True))
         solutions.append(
-            model.solve_for(ts_read() == True, ts_txrange_materialized() == True)
+            model.solve_for(ts_read() is True, ts_txrange_materialized() is True)
         )
         solutions.append(
             model.solve_for(
-                ts_read() == True, adjacent_segment_merger_reupload() == True
+                ts_read() is True, adjacent_segment_merger_reupload() is True
             )
         )
         # solutions.append(
@@ -1881,9 +1877,9 @@ def get_tiered_storage_test_cases(fast_run=False):
         #                     segment_rolled_by_timeout() == True))
         solutions.append(
             model.solve_for(
-                ts_read() == True,
-                ts_timequery() == True,
-                spillover_manifest_uploaded() == True,
+                ts_read() is True,
+                ts_timequery() is True,
+                spillover_manifest_uploaded() is True,
             )
         )
         # solutions.append(
@@ -1892,23 +1888,23 @@ def get_tiered_storage_test_cases(fast_run=False):
         #                     adjacent_segment_compaction() == True))
         solutions.append(
             model.solve_for(
-                ts_read() == True,
-                ts_txrange_materialized() == True,
-                spillover_manifest_uploaded() == True,
+                ts_read() is True,
+                ts_txrange_materialized() is True,
+                spillover_manifest_uploaded() is True,
             )
         )
         solutions.append(
             model.solve_for(
-                ts_read() == True,
-                adjacent_segment_merger_reupload() == True,
-                spillover_manifest_uploaded() == True,
+                ts_read() is True,
+                adjacent_segment_merger_reupload() is True,
+                spillover_manifest_uploaded() is True,
             )
         )
         solutions.append(
             model.solve_for(
-                ts_delete() == True,
-                spillover_manifest_uploaded() == True,
-                ts_spillover_manifest_deleted() == True,
+                ts_delete() is True,
+                spillover_manifest_uploaded() is True,
+                ts_spillover_manifest_deleted() is True,
             )
         )
         # solutions.append(
@@ -1920,15 +1916,15 @@ def get_tiered_storage_test_cases(fast_run=False):
         solutions += model.find_all_solutions(
             [
                 [
-                    ts_read() == True,
+                    ts_read() is True,
                 ],
                 [
-                    topic_remote_read() == True,
-                    global_remote_read() == True,
+                    topic_remote_read() is True,
+                    global_remote_read() is True,
                 ],
                 [
-                    topic_remote_write() == True,
-                    global_remote_write() == True,
+                    topic_remote_write() is True,
+                    global_remote_write() is True,
                 ],
             ]
         )
@@ -1938,32 +1934,32 @@ def get_tiered_storage_test_cases(fast_run=False):
         solutions += model.find_all_solutions(
             [
                 [
-                    ts_read() == True,
-                    ts_delete() == True,
+                    ts_read() is True,
+                    ts_delete() is True,
                 ],
                 [
-                    compacted_segment_reupload() == True,
-                    compacted_segment_reupload() == False,
+                    compacted_segment_reupload() is True,
+                    compacted_segment_reupload() is False,
                 ],
                 [
-                    ts_txrange_materialized() == True,
-                    ts_txrange_materialized() == False,
+                    ts_txrange_materialized() is True,
+                    ts_txrange_materialized() is False,
                 ],
                 [
-                    ts_chunked_read() == True,
-                    ts_chunked_read() == False,
+                    ts_chunked_read() is True,
+                    ts_chunked_read() is False,
                 ],
                 [
-                    upload_interval_triggered() == True,
-                    upload_interval_triggered() == False,
+                    upload_interval_triggered() is True,
+                    upload_interval_triggered() is False,
                 ],
                 [
-                    spillover_manifest_uploaded() == True,
-                    spillover_manifest_uploaded() == False,
+                    spillover_manifest_uploaded() is True,
+                    spillover_manifest_uploaded() is False,
                 ],
                 [
-                    segment_rolled_by_timeout() == True,
-                    segment_rolled_by_timeout() == False,
+                    segment_rolled_by_timeout() is True,
+                    segment_rolled_by_timeout() is False,
                 ],
             ]
         )
@@ -1973,30 +1969,30 @@ def get_tiered_storage_test_cases(fast_run=False):
         solutions += model.find_all_solutions(
             [
                 [
-                    ts_read() == True,
+                    ts_read() is True,
                 ],
                 [
-                    ts_timequery() == True,
+                    ts_timequery() is True,
                 ],
                 [
-                    adjacent_segment_merger_reupload() == True,
-                    adjacent_segment_merger_reupload() == False,
+                    adjacent_segment_merger_reupload() is True,
+                    adjacent_segment_merger_reupload() is False,
                 ],
                 [
-                    ts_chunked_read() == True,
-                    ts_chunked_read() == False,
+                    ts_chunked_read() is True,
+                    ts_chunked_read() is False,
                 ],
                 [
-                    upload_interval_triggered() == True,
-                    upload_interval_triggered() == False,
+                    upload_interval_triggered() is True,
+                    upload_interval_triggered() is False,
                 ],
                 [
-                    spillover_manifest_uploaded() == True,
-                    spillover_manifest_uploaded() == False,
+                    spillover_manifest_uploaded() is True,
+                    spillover_manifest_uploaded() is False,
                 ],
                 [
-                    segment_rolled_by_timeout() == True,
-                    segment_rolled_by_timeout() == False,
+                    segment_rolled_by_timeout() is True,
+                    segment_rolled_by_timeout() is False,
                 ],
             ]
         )

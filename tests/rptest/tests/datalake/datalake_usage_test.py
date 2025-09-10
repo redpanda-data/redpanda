@@ -6,27 +6,25 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import os
-import time
-import random
 import json
+import random
+from collections import namedtuple
+from typing import Optional
+
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
-from rptest.services.redpanda import RedpandaService
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SISettings
+
+from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
-from rptest.tests.datalake.datalake_services import DatalakeServices
-from rptest.tests.datalake.utils import supported_storage_types
-from rptest.tests.datalake.query_engine_base import QueryEngineType
+from rptest.services.redpanda import SISettings
 from rptest.tests.datalake.catalog_service_factory import (
-    supported_catalog_types,
     filesystem_catalog_type,
 )
+from rptest.tests.datalake.datalake_services import DatalakeServices
+from rptest.tests.datalake.query_engine_base import QueryEngineType
+from rptest.tests.datalake.utils import supported_storage_types
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.functional import flat_map
-from typing import Optional, Dict
-from collections import namedtuple
-from rptest.clients.rpk import RpkTool
 
 TopicUsage = namedtuple(
     "TopicUsage",
@@ -80,7 +78,7 @@ class IcebergUsageTest(RedpandaTest):
             )
             for window in reported_usages:
                 dl_usage = window["datalake_usage"]
-                ts = window["begin_timestamp"]
+                window["begin_timestamp"]
                 if (
                     "missing_reason" in dl_usage
                     and dl_usage["missing_reason"] != "not_controller_leader"
@@ -143,7 +141,7 @@ class IcebergUsageTest(RedpandaTest):
                 do_check,
                 timeout_sec=30,
                 backoff_sec=2,
-                err_msg=f"Timed out waiting for all usages to be empty",
+                err_msg="Timed out waiting for all usages to be empty",
             )
 
         def check_all_usages_atleast(

@@ -8,23 +8,23 @@
 # by the Apache License, Version 2.0
 
 import dataclasses
+import random
 import sys
 from time import sleep
-import random
 from typing import Any, Callable
 
 from ducktape.mark import matrix
 
-from rptest.util import wait_until
-from rptest.clients.types import TopicSpec
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.admin import Admin
-from rptest.services.failure_injector import FailureInjector
-from rptest.services.cluster import cluster
-from rptest.services.chaos.types import NoProgressError
-from rptest.utils.mode_checks import skip_debug_mode
-import rptest.services.chaos.workloads.all as workloads
 import rptest.services.chaos.faults.all as faults
+import rptest.services.chaos.workloads.all as workloads
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.chaos.types import NoProgressError
+from rptest.services.cluster import cluster
+from rptest.services.failure_injector import FailureInjector
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 @dataclasses.dataclass
@@ -168,11 +168,11 @@ class SingleFaultTestBase(RedpandaTest):
             self.logger.info(f"warming up for {timings.warmup_s}s")
             sleep(timings.warmup_s)
 
-        self.logger.info(f"start measuring")
+        self.logger.info("start measuring")
         for node in workload.nodes:
             workload.emit_event(node, "measure")
 
-        if fault == None:
+        if fault is None:
             if timings.no_fault_steady_s > 0:
                 self.logger.info(
                     f"wait for {timings.no_fault_steady_s} seconds "
@@ -339,7 +339,7 @@ class SingleTopicTest(SingleFaultTestBase):
                 target_id=random.choice(other_ids),
             )
 
-        self.logger.info(f"waiting for progress")
+        self.logger.info("waiting for progress")
 
         workload.wait_progress(timeout_sec=timings.wait_progress_timeout_s)
 
@@ -471,7 +471,7 @@ class TxSubscribeTest(SingleFaultTestBase):
             replica_ids=data_node_ids,
         )
 
-        self.logger.info(f"waiting for post-reconfigure progress")
+        self.logger.info("waiting for post-reconfigure progress")
         workload.wait_progress(timeout_sec=timings.wait_progress_timeout_s)
 
         self._transfer_leadership(
@@ -513,7 +513,7 @@ class TxSubscribeTest(SingleFaultTestBase):
                 target_id=data_node_ids[partition % len(data_node_ids)],
             )
 
-        self.logger.info(f"waiting for post-transfer progress")
+        self.logger.info("waiting for post-transfer progress")
         workload.wait_progress(timeout_sec=timings.wait_progress_timeout_s)
 
     @cluster(num_nodes=8)

@@ -7,15 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from contextlib import contextmanager
 import random
 import sys
-import time
 import threading
+import time
+from contextlib import contextmanager
 
-from rptest.services.failure_injector import make_failure_injector, FailureSpec
-from rptest.tests.end_to_end import EndToEndTest
-from rptest.util import Scale
+from rptest.services.failure_injector import FailureSpec, make_failure_injector
 
 
 def scale_dependent_length(scale):

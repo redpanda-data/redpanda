@@ -11,8 +11,8 @@ import time
 from collections import defaultdict
 from dataclasses import astuple, dataclass
 
-from ducktape.utils.util import wait_until
 from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -24,8 +24,7 @@ from rptest.services.kgo_verifier_services import (
 from rptest.services.redpanda import SISettings
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import wait_until_result
-from rptest.utils.si_utils import BucketView
-from rptest.utils.si_utils import quiesce_uploads
+from rptest.utils.si_utils import BucketView, quiesce_uploads
 
 
 @dataclass(frozen=True)
@@ -209,7 +208,7 @@ class ConsumerOffsetsRecoveryTest(PreallocNodesTest):
     def run_workload_after_restore(self, groups, partition_count, topic):
         rpk = RpkTool(self.redpanda)
         group = next((k for k in groups.keys() if k.startswith("kgo-")), None)
-        assert group is not None, f"Missing kgo group in group description"
+        assert group is not None, "Missing kgo group in group description"
 
         tp_offsets = groups[group]
         for t, part, _ in tp_offsets:

@@ -114,7 +114,9 @@ class OMBSampleConfigurations:
         assert len(validator) > 0, "At least one metric should be validated"
 
         results: list[str] = []
-        kv_str = lambda k, v: f"Metric {k}, value {v}, "
+
+        def kv_str(k, v):
+            return f"Metric {k}, value {v}, "
 
         for key in validator.keys():
             assert key in metrics, f"Missing requested validator key {key} in metrics"

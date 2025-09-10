@@ -1,26 +1,23 @@
 import base64
-import collections
-from functools import cache
+import ipaddress
 import json
 import os
-import requests
 import time
 import uuid
-import yaml
-import ipaddress
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional, Dict
-from prometheus_client.parser import text_string_to_metric_families
+from functools import cache
+from typing import Any, Dict
+from urllib.parse import urlparse
 
 from ducktape.utils.util import wait_until
+from prometheus_client.parser import text_string_to_metric_families
+
 from rptest.services.cloud_cluster_utils import CloudClusterUtils
 from rptest.services.provider_clients import make_provider_client
 from rptest.services.provider_clients.ec2_client import RTBS_LABEL
 from rptest.services.provider_clients.rpcloud_client import RpCloudApiClient
-from urllib.parse import urlparse
-
 from rptest.services.redpanda_types import SaslCredentials
 
 ns_name_prefix = "rp-ducktape-ns-"
@@ -313,7 +310,7 @@ class CloudCluster:
             # Raise exception if client is not implemented yet
             if self.provider_cli is None and self.config.network != "public":
                 self._logger.error(
-                    f"Current provider does not yet support private networking"
+                    "Current provider does not yet support private networking"
                 )
                 raise RuntimeError(
                     "Private networking is not implemented "
@@ -623,7 +620,7 @@ class CloudCluster:
         token = b64.decode("utf-8")
         headers = {"Authorization": f"Basic {token}"}
         return self.rpcloud._http_get(
-            endpoint=f"/api/cloud/prometheus/public_metrics",
+            endpoint="/api/cloud/prometheus/public_metrics",
             base_url=base_url,
             override_headers=headers,
             text_response=True,
@@ -684,7 +681,7 @@ class CloudCluster:
     ) -> str:
         self._logger.debug(f"polling /v1beta2/operations/{netop_id}")
         wait_until(
-            lambda: self._netop_complete(netop_id, target) == True,
+            lambda: self._netop_complete(netop_id, target) is True,
             timeout_sec=timeout,
             backoff_sec=10,
             err_msg=f"Failed to get proper id of cloud cluster {self.current.name}",
@@ -841,7 +838,7 @@ class CloudCluster:
         try:
             self._logger.info("Getting cluster specs")
             cluster = self._get_cluster(self.current.cluster_id)
-        except Exception as e:
+        except Exception:
             return warn_and_return(
                 f"# Failed to get info for cluster with Id: '{self.current.cluster_id}'"
             )
@@ -852,7 +849,7 @@ class CloudCluster:
         )
 
         # Check if panda-proxy is available
-        if not "url" in cluster["http_proxy"]:
+        if "url" not in cluster["http_proxy"]:
             return warn_and_return("Panda-Proxy listener is not available")
         else:
             _u = self.panda_proxy_url()
@@ -1675,7 +1672,7 @@ class CloudCluster:
             scopes = ["SCOPE_REDPANDA_CLUSTER"]
         response = self.public_api._http_post(
             base_url=dataplane_url,
-            endpoint=f"/v1/secrets",
+            endpoint="/v1/secrets",
             json={
                 "id": secret_id,
                 "scopes": scopes,
@@ -1701,7 +1698,7 @@ class CloudCluster:
 
         Returns True if completed successfully, False otherwise.
         """
-        start_time = datetime.utcnow().isoformat()
+        datetime.utcnow().isoformat()
         start_ts = time.time()
         poll_interval = 30
 

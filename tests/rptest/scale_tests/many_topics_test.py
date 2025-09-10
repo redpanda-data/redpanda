@@ -7,28 +7,32 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from ast import main
-import threading
+import concurrent.futures
 import json
-from typing import Any, Optional
-import requests
-import time
 import random
 import subprocess
 import sys
-import concurrent.futures
+import threading
+import time
+from typing import Any, Optional
+
 import numpy
-
-from ducktape.utils.util import wait_until
-from ducktape.cluster.cluster_spec import ClusterSpec
-
+import requests
 from confluent_kafka import KafkaError, KafkaException
+from ducktape.cluster.cluster_spec import ClusterSpec
+from ducktape.utils.util import wait_until
 
-from rptest.services.redpanda import SISettings
-from rptest.services.cluster import cluster
-from rptest.services.admin import Admin
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.rpk import RpkTool
+from rptest.scale_tests.topic_scale_profiles import (
+    TopicScaleProfileManager,
+    TopicScaleTestProfile,
+)
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.consumer_swarm import ConsumerSwarm
+from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.redpanda import (
     RESTART_LOG_ALLOW_LIST,
     LoggingConfig,
@@ -37,16 +41,9 @@ from rptest.services.redpanda import (
     SchemaRegistryConfig,
 )
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.utils.scale_parameters import ScaleParameters
+from rptest.util import firewall_blocked, inject_remote_script
 from rptest.utils.node_operations import NodeOpsExecutor
-from rptest.util import inject_remote_script, firewall_blocked
-from rptest.services.producer_swarm import ProducerSwarm
-from rptest.services.consumer_swarm import ConsumerSwarm
-from rptest.scale_tests.topic_scale_profiles import (
-    TopicScaleProfileManager,
-    TopicScaleTestProfile,
-)
-from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.utils.scale_parameters import ScaleParameters
 
 HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
 
@@ -1507,7 +1504,7 @@ class ManyTopicsTest(RedpandaTest):
             try:
                 self.redpanda.validate_controller_log()
                 return True
-            except:
+            except Exception:
                 return False
 
         # If the test exits right after this the controll log size  on disk

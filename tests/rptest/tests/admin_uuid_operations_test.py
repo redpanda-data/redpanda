@@ -8,23 +8,19 @@
 # by the Apache License, Version 2.0
 
 import json
-import random
-import requests
 from enum import IntEnum
 
-import numpy as np
-
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.admin import Admin
-from rptest.clients.rpk import RpkTool
-from rptest.services.cluster import cluster
-from rptest.util import expect_exception
+import requests
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.errors import TimeoutError
-from ducktape.mark import parametrize, matrix
+from ducktape.mark import matrix
 
+from rptest.clients.rpk import RpkTool
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.utils import LogSearchLocal
-from rptest.util import wait_until_result, wait_until
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import expect_exception, wait_until, wait_until_result
 
 
 class TestMode(IntEnum):
@@ -47,7 +43,7 @@ class AdminUUIDOperationsTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_getting_node_id_to_uuid_map(self):
-        admin = Admin(self.redpanda)
+        Admin(self.redpanda)
         uuids = self.admin.get_broker_uuids()
         assert len(uuids) == 3, "UUID map should contain 3 brokers"
         all_ids = set()
@@ -311,7 +307,7 @@ class AdminUUIDOperationsTest(RedpandaTest):
         self.logger.debug(f"Decommission ghost node [{ghost_node_id}]...")
         self._decommission(ghost_node_id)
 
-        self.logger.debug(f"...and wait for the cluster to become healthy.")
+        self.logger.debug("...and wait for the cluster to become healthy.")
         self.wait_until_cluster_healthy(timeout_sec=30)
 
         self.logger.debug("Check that all this state sticks across a rolling restart")
@@ -549,7 +545,7 @@ class AdminUUIDOperationsTest(RedpandaTest):
             )
 
         self.logger.debug(
-            f"Restart w/ the same config and confirm that current UUID mismatch prevents changes from taking effect"
+            "Restart w/ the same config and confirm that current UUID mismatch prevents changes from taking effect"
         )
         if mode == TestMode.CFG_OVERRIDE:
             self._restart_node(

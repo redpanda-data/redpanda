@@ -10,6 +10,7 @@
 from typing import Any, Callable, Dict
 
 from pyiceberg.catalog.rest.auth import AuthManager
+
 from rptest.context.gcp import GCPContext
 from rptest.services.catalog_service import CatalogService, CatalogType
 

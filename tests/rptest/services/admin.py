@@ -7,26 +7,27 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from dataclasses import dataclass
-from enum import Enum
-from logging import Logger
-import random
 import json
-import copy
+import random
 import time
 import urllib.parse
-from typing import Any, Optional, Callable, NamedTuple, Protocol, cast
+from dataclasses import dataclass
+from enum import Enum
 from json.decoder import JSONDecodeError
+from logging import Logger
+from typing import Any, Callable, NamedTuple, Optional, Protocol, cast
 from uuid import UUID
+
+import requests
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.utils.util import wait_until
-import requests
 from requests import Response
 from requests.adapters import HTTPAdapter
 from requests.exceptions import HTTPError, RequestException
 from urllib3.util.retry import Retry
-from rptest.util import wait_until_result
+
 from rptest.services.redpanda_types import SaslCredentials
+from rptest.util import wait_until_result
 from rptest.utils.mode_checks import is_debug_mode
 
 DEFAULT_TIMEOUT = 30
@@ -121,7 +122,6 @@ class RoleError:
 
     @classmethod
     def from_http_error(cls, e: HTTPError):
-        data = e.response.json()
         return cls.from_json(e.response.json()["message"])
 
 
@@ -575,15 +575,15 @@ class Admin:
                 f'requesting "{namespace}/{topic}/{partition}" details from {host})'
             )
             meta = self._get_configuration(host, namespace, topic, partition)
-            if meta == None:
+            if meta is None:
                 return None
             if "replicas" not in meta:
-                self.redpanda.logger.debug(f"replicas are missing")
+                self.redpanda.logger.debug("replicas are missing")
                 return None
             if "status" not in meta:
-                self.redpanda.logger.debug(f"status is missing")
+                self.redpanda.logger.debug("status is missing")
                 return None
-            if status == None:
+            if status is None:
                 status = meta["status"]
                 self.redpanda.logger.debug(f"get status:{status}")
             if status != meta["status"]:
@@ -600,14 +600,14 @@ class Admin:
                     f"get conflicting replicas:{read_replicas} from {host}"
                 )
                 return None
-            if replication != None:
+            if replication is not None:
                 if len(meta["replicas"]) != replication:
                     self.redpanda.logger.debug(
                         f"expected replication:{replication} got:{len(meta['replicas'])}"
                     )
                     return None
             if meta["leader_id"] < 0:
-                self.redpanda.logger.debug(f"doesn't have leader")
+                self.redpanda.logger.debug("doesn't have leader")
                 return None
             if last_leader < 0:
                 last_leader = int(meta["leader_id"])
@@ -644,7 +644,7 @@ class Admin:
 
         When the timeout is exhaust it throws TimeoutException
         """
-        if hosts == None:
+        if hosts is None:
             hosts = [n.account.hostname for n in self.redpanda.started_nodes()]
         hosts = list(hosts)
 
@@ -662,7 +662,7 @@ class Admin:
                     namespace=namespace,
                     replication=replication,
                 )
-                if info == None:
+                if info is None:
                     return False
                 return True, info
             except RequestException:
@@ -1072,7 +1072,7 @@ class Admin:
         """
         Trigger on demand partitions rebalancing
         """
-        path = f"partitions/rebalance"
+        path = "partitions/rebalance"
 
         return self._request("post", path, node=node)
 
@@ -1080,7 +1080,7 @@ class Admin:
         """
         Trigger core placement rebalancing for partitions in this node.
         """
-        path = f"partitions/rebalance_cores"
+        path = "partitions/rebalance_cores"
 
         return self._request("post", path, node=node)
 
@@ -1088,7 +1088,7 @@ class Admin:
         """
         List pending reconfigurations
         """
-        path = f"partitions/reconfigurations"
+        path = "partitions/reconfigurations"
 
         return self._request("get", path, node=node).json()
 
@@ -1261,7 +1261,7 @@ class Admin:
     ):
         self.redpanda.logger.debug(f"Creating user {username}:{password}:{algorithm}")
 
-        path = f"security/users"
+        path = "security/users"
 
         self._request(
             "POST",
@@ -1320,7 +1320,7 @@ class Admin:
         params = {}
         if filter is not None:
             params["filter"] = filter
-        return self._request("get", f"security/users/roles", params=params)
+        return self._request("get", "security/users/roles", params=params)
 
     def create_role(self, role: str):
         return self._request("post", "security/roles", json=dict(role=role))
@@ -1409,7 +1409,7 @@ class Admin:
 
         #  check which node is current leader
 
-        if leader_id == None:
+        if leader_id is None:
             leader_id = self.await_stable_leader(
                 topic,
                 partition=partition,
@@ -1476,7 +1476,7 @@ class Admin:
             id = self.redpanda.node_id(node)
             self.redpanda.logger.info(f"Get leaders info on {node.name}/{id}")
         else:
-            self.redpanda.logger.info(f"Get leaders info on any node")
+            self.redpanda.logger.info("Get leaders info on any node")
 
         url = "debug/partition_leaders_table"
         return self._request("get", url, node=node).json()
@@ -1497,7 +1497,7 @@ class Admin:
         return self._request("GET", f"debug/peer_status/{peer_id}", node=node).json()
 
     def get_controller_status(self, node):
-        return self._request("GET", f"debug/controller_status", node=node).json()
+        return self._request("GET", "debug/controller_status", node=node).json()
 
     def get_cluster_uuid(self, node=None):
         try:
@@ -1648,7 +1648,7 @@ class Admin:
         return self._request("GET", path, node=node).json()
 
     def get_partitions_local_summary(self, node: ClusterNode):
-        path = f"partitions/local_summary"
+        path = "partitions/local_summary"
         return self._request("GET", path, node=node).json()
 
     def get_producers_state(self, namespace, topic, partition, node=None):
@@ -1782,7 +1782,7 @@ class Admin:
             req = f"cluster/partitions/{ns}/{topic}"
         else:
             assert ns is None
-            req = f"cluster/partitions"
+            req = "cluster/partitions"
 
         if disabled is not None:
             req += f"?disabled={disabled}"

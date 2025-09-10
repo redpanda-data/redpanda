@@ -10,17 +10,17 @@
 from __future__ import annotations
 
 import os
-import time
 import signal
 import threading
-import requests
+import time
 from typing import Any, Dict, Optional
-from requests.adapters import HTTPAdapter
 
+import requests
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
-from ducktape.cluster.remoteaccount import RemoteCommandError
+from requests.adapters import HTTPAdapter
 from urllib3 import Retry
 
 from rptest.services.redpanda import RedpandaService
@@ -287,7 +287,7 @@ class KgoVerifierService(Service):
 
         try:
             return self._do_wait_node(node, timeout_sec)
-        except:
+        except Exception:
             try:
                 self._remote(node, "print_stack")
             except Exception as e:
@@ -674,7 +674,7 @@ class KgoVerifierProducer(KgoVerifierService):
                 backoff_sec=self._status_thread.INTERVAL,
                 err_msg=what,
             )
-        except:
+        except Exception:
             self.stop_node(node)
             raise
 
@@ -757,7 +757,7 @@ class KgoVerifierProducer(KgoVerifierService):
             cmd = cmd + f" --password {self._password}"
 
         if self._enable_tls:
-            cmd = cmd + f" --enable-tls"
+            cmd = cmd + " --enable-tls"
 
         if self._batch_max_bytes is not None:
             cmd = cmd + f" --batch_max_bytes {self._batch_max_bytes}"
@@ -769,7 +769,7 @@ class KgoVerifierProducer(KgoVerifierService):
             cmd = cmd + f" --fake-timestamp-step-ms {self._fake_timestamp_step_ms}"
 
         if self._use_transactions:
-            cmd = cmd + f" --use-transactions"
+            cmd = cmd + " --use-transactions"
 
             if self._msgs_per_transaction is not None:
                 cmd = cmd + f" --msgs-per-transaction {self._msgs_per_transaction}"
@@ -884,7 +884,7 @@ class KgoVerifierSeqConsumer(AbstractConsumer):
         if self._password is not None:
             cmd = cmd + f" --password {self._password}"
         if self._enable_tls:
-            cmd = cmd + f" --enable-tls"
+            cmd = cmd + " --enable-tls"
         if self._max_msgs is not None:
             cmd += f" --seq_read_msgs {self._max_msgs}"
         if self._max_throughput_mb is not None:
@@ -978,7 +978,7 @@ class KgoVerifierRandomConsumer(AbstractConsumer):
         if self._password is not None:
             cmd = cmd + f" --password {self._password}"
         if self._enable_tls:
-            cmd = cmd + f" --enable-tls"
+            cmd = cmd + " --enable-tls"
         if self._use_transactions:
             cmd += " --use-transactions"
 
@@ -1049,7 +1049,7 @@ class KgoVerifierConsumerGroupConsumer(AbstractConsumer):
         if self._password is not None:
             cmd = cmd + f" --password {self._password}"
         if self._enable_tls:
-            cmd = cmd + f" --enable-tls"
+            cmd = cmd + " --enable-tls"
         if self._loop:
             cmd += " --loop"
         if self._max_msgs is not None:

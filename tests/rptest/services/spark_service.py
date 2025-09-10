@@ -14,9 +14,9 @@ from ducktape.utils.util import wait_until
 from pyhive import hive
 
 from rptest.context import cloud_storage
-from rptest.tests.datalake.query_engine_base import QueryEngineBase, QueryEngineType
 from rptest.services.catalog_service import CatalogType
 from rptest.services.nessie_catalog import NessieCatalog
+from rptest.tests.datalake.query_engine_base import QueryEngineBase, QueryEngineType
 
 
 class SparkService(Service, QueryEngineBase):
@@ -140,8 +140,8 @@ class SparkService(Service, QueryEngineBase):
             try:
                 self.run_query_fetch_all("show databases")
                 return True
-            except Exception as e:
-                self.logger.debug(f"Exception querying spark server", exc_info=True)
+            except Exception:
+                self.logger.debug("Exception querying spark server", exc_info=True)
             return False
 
         wait_until(

@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import re
+
 from rptest.clients.rpk import RpkException
 
 
@@ -199,7 +200,7 @@ class RpkRemoteTool:
         ):
             try:
                 offset, ts = line.split()
-            except:
+            except Exception:
                 self._redpanda.logger.error(f"Bad line: '{line}'")
                 raise
 

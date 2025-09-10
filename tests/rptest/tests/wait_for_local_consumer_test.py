@@ -7,13 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.kaf_producer import KafProducer
+from rptest.services.cluster import cluster
 from rptest.services.kaf_consumer import KafConsumer
+from rptest.services.kaf_producer import KafProducer
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class WaitForLocalConsumerTest(RedpandaTest):

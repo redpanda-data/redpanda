@@ -7,16 +7,17 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from ducktape.services.service import Service
-import requests
 import sys
-from rptest.util import wait_until
+
+import requests
+from ducktape.services.service import Service
 
 from rptest.remote_scripts.stream_verifier_txn import (
-    COMMAND_PRODUCE,
-    COMMAND_CONSUME,
     COMMAND_ATOMIC,
+    COMMAND_CONSUME,
+    COMMAND_PRODUCE,
 )
+from rptest.util import wait_until
 
 title = "StreamVerifier"
 filename = "stream_verifier_txn.py"

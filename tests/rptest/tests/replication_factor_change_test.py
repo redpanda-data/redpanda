@@ -7,14 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
-from rptest.clients.types import TopicSpec
-from rptest.util import expect_exception
 
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import expect_exception
 
 
 class ReplicationFactorChangeTest(RedpandaTest):

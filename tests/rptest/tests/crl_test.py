@@ -7,28 +7,27 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import json
 import re
 import socket
 import tempfile
-import json
+
 import requests
-
-from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.utils.util import wait_until
 
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.cluster import cluster
-
+from rptest.clients.rpk import RpkException, RpkTool
+from rptest.services import tls
 from rptest.services.admin import Admin
-from rptest.services.redpanda import RedpandaService
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
+    PandaproxyConfig,
+    RedpandaService,
+    SchemaRegistryConfig,
     SecurityConfig,
     TLSProvider,
-    SchemaRegistryConfig,
-    PandaproxyConfig,
 )
-from rptest.services import tls
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
 
 
@@ -304,7 +303,7 @@ class CertificateRevocationTest(RedpandaTest):
     # kafka - server.cc:159 - Error[applying protocol] remote address: 172.31.37.188:59640 - seastar::timed_out_error (timedout)
     @cluster(num_nodes=3, log_allow_list=[re.compile(".*")])
     def test_noncogent(self):
-        node = self.redpanda.nodes[0]
+        self.redpanda.nodes[0]
         self.rpk.list_schemas()
 
         other_tls = tls.TLSCertManager(self.logger)
@@ -320,5 +319,5 @@ class CertificateRevocationTest(RedpandaTest):
         )
         try:
             self.rpk.list_schemas()
-        except:
+        except Exception:
             pass

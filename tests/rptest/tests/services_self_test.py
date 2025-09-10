@@ -7,48 +7,48 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import signal
 from subprocess import CalledProcessError
+
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.mark import matrix
 from ducktape.mark.resource import cluster as dt_cluster
 from ducktape.tests.test import Test
 
-from rptest.tests.redpanda_test import RedpandaMixedTest, RedpandaTest
-from rptest.services.cluster import cluster
-from rptest.clients.kubectl import is_redpanda_pod, SUPPORTED_PROVIDERS
+from rptest.clients.kubectl import is_redpanda_pod
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import CrashType
+from rptest.services.cluster import cluster
 from rptest.services.failure_injector import FailureSpec, make_failure_injector
-from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.kgo_repeater_service import repeater_traffic
 from rptest.services.kgo_verifier_services import (
-    KgoVerifierRandomConsumer,
-    KgoVerifierSeqConsumer,
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
+    KgoVerifierRandomConsumer,
+    KgoVerifierSeqConsumer,
 )
+from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
+from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.redpanda import (
+    CloudStorageType,
     LogSearchLocal,
     RedpandaService,
     RedpandaServiceCloud,
     SISettings,
-    CloudStorageType,
     get_cloud_storage_type,
-    make_redpanda_service,
     make_redpanda_mixed_service,
+    make_redpanda_service,
 )
-from rptest.services.admin import CrashType
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.utils.si_utils import BucketView
+from rptest.tests.redpanda_test import RedpandaMixedTest, RedpandaTest
 from rptest.util import expect_exception
 from rptest.utils.mode_checks import (
     ignore_if_not_asan,
     ignore_if_not_ubsan,
     skip_debug_mode,
 )
-from rptest.services.producer_swarm import ProducerSwarm
+from rptest.utils.si_utils import BucketView
 
 
 class OpenBenchmarkSelfTest(RedpandaTest):
@@ -308,7 +308,7 @@ class BucketScrubSelfTest(RedpandaTest):
         )
 
         # Initially a bucket scrub should pass
-        self.logger.info(f"Running baseline scrub")
+        self.logger.info("Running baseline scrub")
         self.redpanda.stop_and_scrub_object_storage()
         self.redpanda.for_nodes(
             self.redpanda.nodes,
@@ -337,7 +337,7 @@ class BucketScrubSelfTest(RedpandaTest):
             validate=True,
         )
 
-        self.logger.info(f"Running scrub that should discover issue")
+        self.logger.info("Running scrub that should discover issue")
         with expect_exception(RuntimeError, lambda e: "fatal" in str(e)):
             self.redpanda.stop_and_scrub_object_storage()
 

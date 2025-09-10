@@ -7,30 +7,30 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from time import sleep
 import time
+from time import sleep
+
 from ducktape.errors import TimeoutError
-from ducktape.mark import matrix, parametrize
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import (
-    CloudStorageType,
-    SISettings,
     MetricsEndpoint,
+    SISettings,
     get_cloud_storage_type,
 )
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
-    produce_until_segments,
-    produce_total_bytes,
-    wait_for_local_storage_truncate,
-    segments_count,
     expect_exception,
+    produce_total_bytes,
+    produce_until_segments,
+    segments_count,
+    wait_for_local_storage_truncate,
 )
 from rptest.utils.si_utils import BucketView, quiesce_uploads
 
@@ -207,7 +207,7 @@ class RetentionPolicyToggleTest(RedpandaTest):
             redpanda=self.redpanda, topic=self.topic, target_bytes=local_retention
         )
 
-        self.logger.debug(f"Toggling back to cleanup.policy=compact")
+        self.logger.debug("Toggling back to cleanup.policy=compact")
         self.client().alter_topic_configs(
             self.topic,
             {
@@ -318,7 +318,7 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
                 lambda: self.segments_removed(self.default_retention_segments + 1),
                 timeout_sec=15,
                 backoff_sec=1,
-                err_msg=f"Segments were not removed",
+                err_msg="Segments were not removed",
             )
         else:
             with expect_exception(TimeoutError, lambda e: True):
@@ -363,7 +363,7 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
             lambda: self.segments_removed(self.retention_segments + 1),
             timeout_sec=15,
             backoff_sec=1,
-            err_msg=f"Segments were not removed",
+            err_msg="Segments were not removed",
         )
 
     @cluster(num_nodes=1)
@@ -410,7 +410,7 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
             lambda: self.segments_removed(num_segs - 1),
             timeout_sec=60,
             backoff_sec=2,
-            err_msg=f"Initial segments were not removed",
+            err_msg="Initial segments were not removed",
         )
 
         # the expectation of retention is to remove up to the active segment.
@@ -424,7 +424,7 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
                 lambda: self.segments_removed(num_segs - 1),
                 timeout_sec=30,
                 backoff_sec=5,
-                err_msg=f"Segments were not removed",
+                err_msg="Segments were not removed",
             )
             tmp = len(self.query_segments())
             assert tmp < num_segs
@@ -506,7 +506,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             lambda: 9 <= deleted_segments_count() <= 10,
             timeout_sec=30,
             backoff_sec=1,
-            err_msg=f"Segments were not removed from the cloud",
+            err_msg="Segments were not removed from the cloud",
         )
 
     @cluster(num_nodes=3)
@@ -561,7 +561,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             lambda: cloud_log_size().total() >= total_bytes,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=f"Segments not uploaded",
+            err_msg="Segments not uploaded",
         )
 
         # Alter the topic's retention.bytes config to trigger removal of
@@ -576,7 +576,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             lambda: cloud_log_size().total() <= retention_bytes,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=f"Too many bytes in the cloud",
+            err_msg="Too many bytes in the cloud",
         )
 
     @cluster(num_nodes=3)
@@ -641,7 +641,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             lambda: cloud_log_segment_count() >= local_seg_count - 1,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=f"Segments not uploaded",
+            err_msg="Segments not uploaded",
         )
 
         # Alter the topic's retention.ms config to trigger removal of
@@ -655,7 +655,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             lambda: cloud_log_segment_count() == 0,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=f"Not all segments were removed from the cloud",
+            err_msg="Not all segments were removed from the cloud",
         )
 
     @cluster(num_nodes=1)
@@ -739,7 +739,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             lambda: cloud_log_size().total() >= total_bytes,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=f"Segments not uploaded",
+            err_msg="Segments not uploaded",
         )
 
         # Modify retention settings
@@ -753,7 +753,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             lambda: cloud_log_size().total() <= retention_bytes,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=f"Too many bytes in the cloud",
+            err_msg="Too many bytes in the cloud",
         )
 
     @cluster(num_nodes=1)

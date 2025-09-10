@@ -7,41 +7,41 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from concurrent.futures import ThreadPoolExecutor
+import base64
 import http.client
 import json
-import uuid
-import requests
 import socket
-import urllib.request
 import ssl
 import threading
 import urllib.parse
-import base64
-from rptest.services.cluster import cluster
-from ducktape.mark import matrix, parametrize
+import urllib.request
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, List, Optional, Union
+
+import requests
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
-from rptest.clients.rpk import RpkTool
-from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services import tls
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import (
+    LoggingConfig,
+    PandaproxyConfig,
+    ResourceSettings,
+    SecurityConfig,
+    TLSProvider,
+)
 from rptest.tests.group_membership_test import GroupCoordinatorTransferUtils
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import search_logs_with_timeout
-from rptest.services.redpanda import (
-    SecurityConfig,
-    LoggingConfig,
-    ResourceSettings,
-    PandaproxyConfig,
-    TLSProvider,
-)
-from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
-from rptest.services.admin import Admin
-from rptest.services import tls
-from rptest.utils.utf8 import CONTROL_CHARS_MAP
-from typing import Optional, List, Dict, Union
 from rptest.utils.mode_checks import skip_debug_mode
+from rptest.utils.utf8 import CONTROL_CHARS_MAP
 
 
 def create_topic_names(count):
@@ -403,7 +403,7 @@ class PandaProxyEndpoints(RedpandaTest):
                 co_res_raw = c0.set_offsets(data=json.dumps(sco_req), auth=auth_tuple)
                 assert co_res_raw.status_code == requests.codes.no_content
 
-            self.logger.debug(f"Check consumer offsets")
+            self.logger.debug("Check consumer offsets")
             co_req = dict(
                 partitions=[dict(topic=topic_name, partition=p) for p in parts]
             )
@@ -509,12 +509,12 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
         * Accept: "", "*.*", "application/vnd.kafka.v2+json"
 
         """
-        self.logger.debug(f"List topics with no accept header")
+        self.logger.debug("List topics with no accept header")
         result_raw = self._get_topics({"Content-Type": "application/vnd.kafka.v2+json"})
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.headers["Content-Type"] == "application/vnd.kafka.v2+json"
 
-        self.logger.debug(f"List topics with no content-type header")
+        self.logger.debug("List topics with no content-type header")
         result_raw = self._get_topics(
             {
                 "Accept": "application/vnd.kafka.v2+json",
@@ -523,17 +523,17 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.headers["Content-Type"] == "application/vnd.kafka.v2+json"
 
-        self.logger.debug(f"List topics with generic accept header")
+        self.logger.debug("List topics with generic accept header")
         result_raw = self._get_topics({"Accept": "*/*"})
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.headers["Content-Type"] == "application/vnd.kafka.v2+json"
 
-        self.logger.debug(f"List topics with generic content-type header")
+        self.logger.debug("List topics with generic content-type header")
         result_raw = self._get_topics({"Content-Type": "*/*"})
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.headers["Content-Type"] == "application/vnd.kafka.v2+json"
 
-        self.logger.debug(f"List topics with invalid accept header")
+        self.logger.debug("List topics with invalid accept header")
         result_raw = self._get_topics({"Accept": "application/json"})
         assert result_raw.status_code == requests.codes.not_acceptable
         assert result_raw.headers["Content-Type"] == "application/json"
@@ -573,7 +573,7 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
             ]
         }"""
 
-        self.logger.info(f"Producing with no accept header")
+        self.logger.info("Producing with no accept header")
         produce_result_raw = self._produce_topic(
             name, data, headers={"Content-Type": "application/vnd.kafka.binary.v2+json"}
         )
@@ -581,7 +581,7 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
         produce_result = produce_result_raw.json()
         assert produce_result["offsets"][0]["error_code"] == 3  # topic not found
 
-        self.logger.info(f"Producing with unsupported accept header")
+        self.logger.info("Producing with unsupported accept header")
         produce_result_raw = self._produce_topic(
             name,
             data,
@@ -594,7 +594,7 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
         produce_result = produce_result_raw.json()
         assert produce_result["error_code"] == requests.codes.not_acceptable
 
-        self.logger.info(f"Producing with no content-type header")
+        self.logger.info("Producing with no content-type header")
         produce_result_raw = self._produce_topic(
             name, data, headers={"Accept": "application/vnd.kafka.v2+json"}
         )
@@ -602,7 +602,7 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
         produce_result = produce_result_raw.json()
         assert produce_result["error_code"] == requests.codes.unsupported_media_type
 
-        self.logger.info(f"Producing with unsupported content-type header")
+        self.logger.info("Producing with unsupported content-type header")
         produce_result_raw = self._produce_topic(
             name,
             data,
@@ -692,13 +692,13 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
           * timeout
           * max_bytes
         """
-        self.logger.info(f"Consuming with empty topic param")
+        self.logger.info("Consuming with empty topic param")
         fetch_raw_result = self._fetch_topic("", 0)
         assert fetch_raw_result.status_code == requests.codes.bad_request
 
         name = create_topic_names(1)[0]
 
-        self.logger.info(f"Consuming with empty offset param")
+        self.logger.info("Consuming with empty offset param")
         fetch_raw_result = self._fetch_topic(name, 0, "")
         assert fetch_raw_result.status_code == requests.codes.bad_request
 
@@ -708,7 +708,7 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
         fetch_result = fetch_raw_result.json()
         assert fetch_result["error_code"] == 40402
 
-        self.logger.info(f"Consuming with no content-type header")
+        self.logger.info("Consuming with no content-type header")
         fetch_raw_result = self._fetch_topic(
             name, 0, headers={"Accept": "application/vnd.kafka.binary.v2+json"}
         )
@@ -716,7 +716,7 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
         fetch_result = fetch_raw_result.json()
         assert fetch_result["error_code"] == 40402
 
-        self.logger.info(f"Consuming with no accept header")
+        self.logger.info("Consuming with no accept header")
         fetch_raw_result = self._fetch_topic(
             name, 0, headers={"Content-Type": "application/vnd.kafka.v2+json"}
         )
@@ -724,7 +724,7 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
         fetch_result = fetch_raw_result.json()
         assert fetch_result["error_code"] == requests.codes.not_acceptable
 
-        self.logger.info(f"Consuming with unsupported accept header")
+        self.logger.info("Consuming with unsupported accept header")
         fetch_raw_result = self._fetch_topic(
             name,
             0,
@@ -912,7 +912,7 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
         group_id = f"pandaproxy-group-{uuid.uuid4()}"
 
         self.logger.info("Create 3 topics")
-        topics = self._create_topics(create_topic_names(3), 3, 3)
+        self._create_topics(create_topic_names(3), 3, 3)
 
         self.logger.info("Create a consumer group")
         cc_res = self._create_consumer(group_id)
@@ -999,7 +999,7 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
         co_req = dict(
             partitions=[dict(topic=t, partition=p) for t in topics for p in [0, 1, 2]]
         )
-        self.logger.info(f"Get consumer offsets")
+        self.logger.info("Get consumer offsets")
         co_res_raw = c0.get_offsets(data=json.dumps(co_req))
         assert co_res_raw.status_code == requests.codes.ok
         co_res = co_res_raw.json()
@@ -1008,11 +1008,11 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
             assert co_res["offsets"][i]["offset"] == -1
 
         # Fetch from a consumer
-        self.logger.info(f"Consumer fetch")
+        self.logger.info("Consumer fetch")
         # 3 topics * 3 msg
         c0.fetch_n(3 * 3)
 
-        self.logger.info(f"Get consumer offsets")
+        self.logger.info("Get consumer offsets")
         co_res_raw = c0.get_offsets(data=json.dumps(co_req))
         assert co_res_raw.status_code == requests.codes.ok
         co_res = co_res_raw.json()
@@ -1026,11 +1026,11 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
                 dict(topic=t, partition=p, offset=0) for t in topics for p in [0, 1, 2]
             ]
         )
-        self.logger.info(f"Set consumer offsets")
+        self.logger.info("Set consumer offsets")
         co_res_raw = c0.set_offsets(data=json.dumps(sco_req))
         assert co_res_raw.status_code == requests.codes.no_content
 
-        self.logger.info(f"Get consumer offsets")
+        self.logger.info("Get consumer offsets")
         co_res_raw = c0.get_offsets(data=json.dumps(co_req))
         assert co_res_raw.status_code == requests.codes.ok
         co_res = co_res_raw.json()
@@ -1083,7 +1083,7 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
         assert sc_res.status_code == requests.codes.no_content
 
         # Fetch from a consumer
-        self.logger.info(f"Consumer fetch")
+        self.logger.info("Consumer fetch")
         # 3 topics * 3 msg
         c0.fetch_n(3 * 3)
 
@@ -1617,7 +1617,7 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
             ]
         }
 
-        if offset_value is not None and type(offset_value) == int:
+        if offset_value is not None and type(offset_value) is int:
             for p in offset_data["partitions"]:
                 p["offset"] = offset_value
 
@@ -1684,7 +1684,7 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
         assert sc_res.status_code == requests.codes.no_content
 
         # Fetch from a consumer
-        self.logger.info(f"Consumer fetch")
+        self.logger.info("Consumer fetch")
         cf_res = c0.fetch(auth=(self.username, self.password)).json()
         assert cf_res["error_code"] == 40101
 
@@ -1983,7 +1983,7 @@ class BasicAuthScaleTest(PandaProxyEndpoints):
             if task.result_raw.status_code != requests.codes.ok:
                 # Retry gate closed exceptions that bubble up to the user.
                 if res["error_code"] == 50003 and res["message"] == "gate closed":
-                    self.logger.debug(f"Gate closed exception, retrying ")
+                    self.logger.debug("Gate closed exception, retrying ")
                     retry_count += 1
                     print(f"Retry count {retry_count}")
                     result_raw = self._get_topics(
@@ -2219,7 +2219,7 @@ class PandaProxyConsumerGroupTest(PandaProxyEndpoints):
         assert sc_res.status_code == requests.codes.no_content
 
         # Attempt to read from topic
-        self.logger.info(f"Consumer fetch")
+        self.logger.info("Consumer fetch")
         cf_res = c0.fetch(headers=HTTP_CONSUMER_FETCH_JSON_V2_HEADERS)
         assert cf_res.status_code == requests.codes.ok, f"Status: {cf_res.status_code}"
         fetch_result = cf_res.json()
@@ -2334,7 +2334,7 @@ class PandaProxyCompressedBatchesTest(PandaProxyEndpoints):
         )
 
         # Confirm pandaproxy fetch
-        self.logger.info(f"Fetching compressed message via PandaProxy")
+        self.logger.info("Fetching compressed message via PandaProxy")
         fetch_result_raw = self._fetch_topic(self.topic, partition=target_partition)
         assert fetch_result_raw.status_code == requests.codes.ok, (
             f"Status: {fetch_result_raw.status_code}"
@@ -2373,7 +2373,7 @@ class PandaProxyCompressedBatchesTest(PandaProxyEndpoints):
 
         # Confirm pandaproxy consumer group fetch
         self.logger.info("Create a consumer group")
-        group_id = f"test-group"
+        group_id = "test-group"
         cc_res = self._create_consumer(group_id)
         assert cc_res.status_code == requests.codes.ok, f"Status: {cc_res.status_code}"
 
@@ -2387,7 +2387,7 @@ class PandaProxyCompressedBatchesTest(PandaProxyEndpoints):
         )
 
         # Attempt to read from topic
-        self.logger.info(f"Consumer fetch compressed record")
+        self.logger.info("Consumer fetch compressed record")
         cf_res = c0.fetch()
         assert cf_res.status_code == requests.codes.ok, f"Status: {cf_res.status_code}"
         result = cf_res.json()
@@ -2395,7 +2395,7 @@ class PandaProxyCompressedBatchesTest(PandaProxyEndpoints):
         assert len(result) == 1, "Unexpected output from Pandaproxy consumer fetch"
         item = result[0]
         assert item["topic"] == self.topic, (
-            f"Pandaproxy consumer fetch consumed the wrong topic"
+            "Pandaproxy consumer fetch consumed the wrong topic"
         )
         # Remove the b64 and bytes encodings
         value = base64.b64decode(item["value"]).decode()

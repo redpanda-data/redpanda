@@ -7,19 +7,19 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 import random
 import threading
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from time import sleep
 from typing import List, Optional
+
+from confluent_kafka import Consumer, TopicPartition
+
 from rptest.clients.rpk import RpkPartition, RpkTool
 from rptest.services.redpanda import RedpandaService
 from rptest.tests.datalake.query_engine_base import QueryEngineBase
 from rptest.util import wait_until
-
-from confluent_kafka import Consumer
-from confluent_kafka import TopicPartition
 
 
 class DatalakeVerifier:
@@ -154,10 +154,10 @@ class DatalakeVerifier:
     # to be called no more than once
     def go_offline(self, timeout=60):
         assert not self._offline_mode_requested.is_set()
-        self.logger.debug(f"offline mode requested")
+        self.logger.debug("offline mode requested")
         self._offline_mode_requested.set()
         assert self._consumer_stopped.wait(timeout)
-        self.logger.debug(f"consistent state reached")
+        self.logger.debug("consistent state reached")
         self._consumer_positions = self.update_and_get_fetch_positions()
         self.logger.debug(f"remembered {self._consumer_positions=}")
         self._partition_hwms = self.partition_hwms()
@@ -166,7 +166,7 @@ class DatalakeVerifier:
         with self._consumer_lock:
             self._consumer.close()
             self._consumer = None
-            self.logger.debug(f"offline mode established")
+            self.logger.debug("offline mode established")
             self._offline_mode_established = True
 
     def _consumed_till_hwm(self, update: bool):
@@ -370,7 +370,7 @@ class DatalakeVerifier:
                 assert len(self._errors) == 0, (
                     f"Topic {self.topic} validation errors: {self._errors}"
                 )
-            self.logger.debug(f"No errors around waiting")
+            self.logger.debug("No errors around waiting")
         except Exception as e:
             self.logger.error(f"Error around waiting: {e}")
             raise
@@ -395,7 +395,7 @@ class DatalakeVerifier:
             )
 
             assert len(self._expected_compacted_keys) == 0, (
-                f"Some keys which were compacted away were not seen later in the consumer's log"
+                "Some keys which were compacted away were not seen later in the consumer's log"
             )
         finally:
             if self._consumer:

@@ -6,25 +6,23 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import random
 import json
 import re
 import subprocess
+from typing import Optional
 
-from ducktape.mark import ignore
 from ducktape.tests.test import TestLoggerMaker
 from ducktape.utils.util import wait_until
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import LoggingConfig, RedpandaService, SecurityConfig
-from rptest.services.verifiable_producer import VerifiableProducer
-from rptest.services.admin import Admin
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool, RpkException
 
-from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kcl import KCL
-from typing import Optional
+from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import LoggingConfig, SecurityConfig
+from rptest.services.verifiable_producer import VerifiableProducer
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 def get_topics_and_partitions(reassignments: dict):
@@ -74,7 +72,7 @@ def check_execute_reassign_partitions(
 
     # Then a json structure
     current_assignment = json.loads(lines.pop().strip())
-    assert type(current_assignment) == type({}), "Expected JSON object"
+    assert type(current_assignment) is type({}), "Expected JSON object"
 
     # Then another exact string
     assert len(lines.pop()) == 0
@@ -389,7 +387,7 @@ class PartitionReassignmentsTest(RedpandaTest):
         all_node_idx_set = set(all_node_idx)
         for res in responses:
             assert res.topic in all_topic_names
-            assert type(res.partition) == int
+            assert type(res.partition) is int
             assert res.partition in all_partition_idx
             assert set(res.replicas).issubset(all_node_idx_set)
             assert set(res.adding_replicas).issubset(all_node_idx_set)
@@ -405,7 +403,7 @@ class PartitionReassignmentsTest(RedpandaTest):
 
             for res in responses:
                 assert res.topic in all_topic_names
-                assert type(res.partition) == int
+                assert type(res.partition) is int
                 assert res.partition in all_partition_idx
                 assert set(res.replicas).issubset(all_node_idx_set)
 
@@ -618,7 +616,7 @@ class PartitionReassignmentsTest(RedpandaTest):
                 re.search(r".*topic-[a-z]+\s+OK\s*$", try_add_partitions(topic, count))
                 is not None
             ), (
-                f"Expected successful add-partitions: topic {topic}, partition count {count}, output {out}"
+                f"Expected successful add-partitions: topic {topic}, partition count {count}"
             )
 
         add_partition_when_no_inprogress_reassignment(

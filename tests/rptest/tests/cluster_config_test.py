@@ -6,7 +6,6 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-from collections import namedtuple
 import json
 import logging
 import pprint
@@ -14,36 +13,36 @@ import random
 import re
 import tempfile
 import time
-from typing import Any, List, NamedTuple, Protocol
+from collections import namedtuple
+from typing import Any, NamedTuple, Protocol
 
 import requests
 import yaml
-from ducktape.mark import parametrize, matrix
+from ducktape.mark import matrix, parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
+from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import (
-    CloudStorageType,
-    SISettings,
-    RESTART_LOG_ALLOW_LIST,
     IAM_ROLES_API_CALL_ALLOW_LIST,
     OIDC_ALLOW_LIST,
-    get_cloud_storage_type,
+    RESTART_LOG_ALLOW_LIST,
+    CloudStorageType,
     RedpandaService,
+    SISettings,
+    get_cloud_storage_type,
 )
 from rptest.services.redpanda_installer import (
     RedpandaInstaller,
     RedpandaVersion,
-    RedpandaVersionTriple,
 )
-from rptest.services.metrics_check import MetricCheck
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import expect_http_error, expect_exception, produce_until_segments
+from rptest.util import expect_exception, expect_http_error
 from rptest.utils.si_utils import BucketView
 
 BOOTSTRAP_CONFIG = {
@@ -78,10 +77,10 @@ def check_restart_clears(admin, redpanda, nodes=None):
     other_nodes = nodes[1:]
     redpanda.restart_nodes(first_node)
     wait_until(
-        lambda: admin.get_cluster_config_status()[0]["restart"] == False,
+        lambda: admin.get_cluster_config_status()[0]["restart"] is False,
         timeout_sec=10,
         backoff_sec=0.5,
-        err_msg=f"Restart flag did not clear after restart",
+        err_msg="Restart flag did not clear after restart",
     )
 
     redpanda.restart_nodes(other_nodes)
@@ -90,7 +89,7 @@ def check_restart_clears(admin, redpanda, nodes=None):
         == {False},
         timeout_sec=10,
         backoff_sec=0.5,
-        err_msg=f"Not all nodes cleared restart flag",
+        err_msg="Not all nodes cleared restart flag",
     )
 
 
@@ -174,7 +173,7 @@ class ClusterConfigUpgradeTest(RedpandaTest):
         # On first startup, redpanda should notice the value in
         # redpanda.yaml and import it into central config store
         assert admin.get_cluster_config()["log_retention_ms"] == 9876, (
-            f"trouble with the value for log_retention_ms at first start"
+            "trouble with the value for log_retention_ms at first start"
         )
 
         # On second startup, central config is already initialized,
@@ -185,9 +184,9 @@ class ClusterConfigUpgradeTest(RedpandaTest):
         )
 
         assert admin.get_cluster_config()["log_retention_ms"] == 9876, (
-            f"trouble with the value for log_retention_ms after restart"
+            "trouble with the value for log_retention_ms after restart"
         )
-        assert self.redpanda.search_log_any(f"Ignoring value for 'log_retention_ms'")
+        assert self.redpanda.search_log_any("Ignoring value for 'log_retention_ms'")
 
 
 class HasRedpandaAndAdmin(Protocol):
@@ -501,7 +500,7 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 raise
             assert set(e.response.json().keys()) == {"log_message_timestamp_type"}
         else:
-            raise RuntimeError(f"Expected 400 but got success")
+            raise RuntimeError("Expected 400 but got success")
 
         # A valid PUT
         self.admin.patch_cluster_config(
@@ -2690,7 +2689,7 @@ class DevelopmentFeatureTest(RedpandaTest):
                     raise
                 errors = e.response.json()
                 assert (
-                    f"Development feature flag cannot be changed once enabled."
+                    "Development feature flag cannot be changed once enabled."
                     in errors[
                         "enable_developmental_unrecoverable_data_corrupting_features"
                     ]
@@ -2710,7 +2709,7 @@ class DevelopmentFeatureTest(RedpandaTest):
             ),
             timeout_sec=10,
             backoff_sec=1.0,
-            err_msg=f"Expected to see experimental feature nag",
+            err_msg="Expected to see experimental feature nag",
         )
 
     @cluster(num_nodes=3)
@@ -2744,7 +2743,7 @@ class DevelopmentFeatureTest(RedpandaTest):
                 raise
             errors = e.response.json()
             assert (
-                f"Development feature support is not enabled."
+                "Development feature support is not enabled."
                 in errors[self._property_name]
             ), f"{errors}"
         else:

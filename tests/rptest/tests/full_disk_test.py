@@ -91,8 +91,6 @@ class WriteRejectTest(RedpandaTest):
     def _send_all_topics(self, msg: str, expect_blocked=False):
         """Send `msg` to all topics, retrying a fixed number of times for
         expected success or failure."""
-        futures = []
-        num_topics = self.NUM_MESSAGES
         pause: float = self.PAUSE_S
         was_blocked = False
         success = False
@@ -306,7 +304,10 @@ class FullDiskReclaimTest(RedpandaTest):
         4. Trigger a low disk space alert
         5. Observe that data is reclaimed from disk
         """
-        nbytes = lambda mb: mb * 2**20
+
+        def nbytes(mb):
+            return mb * 2**20
+
         node = self.redpanda.nodes[0]
 
         produce_size = 3 * self.partition_count * self.log_segment_size

@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import uuid
+
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.workload_protocol import PWorkload
@@ -19,11 +20,11 @@ class DummyWorkload(PWorkload):
         self.ctx = ctx
 
     def get_earliest_applicable_release(self):
-        self.ctx.logger.info(f"returning None")
+        self.ctx.logger.info("returning None")
         return super().get_earliest_applicable_release()
 
     def get_latest_applicable_release(self):
-        self.ctx.logger.info(f"returning HEAD")
+        self.ctx.logger.info("returning HEAD")
         return super().get_latest_applicable_release()
 
     def begin(self):

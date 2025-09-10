@@ -7,19 +7,18 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from concurrent.futures import ThreadPoolExecutor
 import errno
-from functools import lru_cache
 import json
 import os
 import re
-import typing
 import threading
-from datetime import datetime, timezone, timedelta
+import typing
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from time import sleep
 
 import requests
-
 from ducktape.utils.util import wait_until
 
 from rptest.utils.bookend_collection import BookendCollection
@@ -180,7 +179,7 @@ class RedpandaInstaller:
             try:
                 for line in ssh_out_per_node[node]:
                     captured_output.append(line)
-            except:
+            except Exception:
                 logger.error(f"Command failed: {captured_output}")
                 raise
 
@@ -310,7 +309,7 @@ class RedpandaInstaller:
         # Verify that the installations on each node match.
         for node in nodes:
             vers = self._redpanda.get_version(node)
-            if initial_version == None:
+            if initial_version is None:
                 initial_version = vers
             assert initial_version == vers, (
                 f"Mismatch version {node.account.hostname} has {vers}, {nodes[0].account.hostname} has {initial_version}"
@@ -384,7 +383,7 @@ class RedpandaInstaller:
                 releases_resp.raise_for_status()
                 try:
                     releases_json = releases_resp.json()
-                except:
+                except Exception:
                     self._redpanda.logger.error(releases_resp.text)
                     raise
 

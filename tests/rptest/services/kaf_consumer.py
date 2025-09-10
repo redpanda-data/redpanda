@@ -9,6 +9,7 @@
 
 import re
 import threading
+
 from ducktape.services.background_thread import BackgroundThreadService
 
 
@@ -57,7 +58,7 @@ class KafConsumer(BackgroundThreadService):
                     offset = int(m.group("offset"))
                     self.offset[partition] = offset
                     partition = None
-        except:
+        except Exception:
             if self._stopping.is_set():
                 # Expect a non-zero exit code when killing during teardown
                 pass
