@@ -11,6 +11,8 @@
 
 #include "redpanda/admin/services/shadow_link/shadow_link.h"
 
+#include "cluster/data_migration_frontend.h"
+#include "cluster/data_migration_types.h"
 #include "cluster/metadata_cache.h"
 #include "cluster_link/service.h"
 #include "redpanda/admin/services/shadow_link/converter.h"
@@ -83,10 +85,12 @@ bool is_path_disallowed(
 shadow_link_service_impl::shadow_link_service_impl(
   admin::proxy::client proxy_client,
   ss::sharded<cluster_link::service>* service,
-  ss::sharded<cluster::metadata_cache>* md_cache)
+  ss::sharded<cluster::metadata_cache>* md_cache,
+  ss::sharded<cluster::data_migrations::frontend>* data_migrations_fe)
   : _proxy_client(std::move(proxy_client))
   , _service(service)
-  , _md_cache(md_cache) {}
+  , _md_cache(md_cache)
+  , _data_migrations_frontend(data_migrations_fe) {}
 
 ss::future<proto::admin::create_shadow_link_response>
 shadow_link_service_impl::create_shadow_link(
@@ -250,5 +254,86 @@ shadow_link_service_impl::redirect_to(const model::ntp& ntp) {
         return std::nullopt;
     }
     return *leader_node;
+}
+
+ss::future<proto::admin::truncate_and_restore_response>
+shadow_link_service_impl::truncate_and_restore(
+  serde::pb::rpc::context, proto::admin::truncate_and_restore_request req) {
+    auto& tps = req.get_topics();
+
+    cluster::data_migrations::data_migration migration;
+    switch (req.get_action()) {
+        using enum proto::admin::restore_action;
+    case unspecified:
+        throw serde::pb::rpc::invalid_argument_exception(
+          "Must specify a RestoreAction");
+    case unmount_topic:
+        migration = cluster::data_migrations::outbound_migration{};
+        break;
+    case mount_and_truncate_topic:
+        migration = cluster::data_migrations::inbound_migration{};
+        break;
+    }
+
+    ss::visit(
+      migration,
+      [&tps](cluster::data_migrations::outbound_migration& migration) {
+          migration.auto_advance = true;
+          migration.topics.reserve(tps.size());
+          std::ranges::transform(
+            tps,
+            std::back_inserter(migration.topics),
+            [](const proto::admin::restore_topic& t) {
+                return model::topic_namespace{
+                  model::kafka_namespace, model::topic{t.get_name()}};
+            });
+      },
+      [&tps](cluster::data_migrations::inbound_migration& migration) {
+          migration.auto_advance = true;
+          migration.topics.reserve(tps.size());
+          std::ranges::transform(
+            tps,
+            std::back_inserter(migration.topics),
+            [](const proto::admin::restore_topic& t) {
+                cluster::data_migrations::inbound_topic res;
+                res.source_topic_name = model::topic_namespace{
+                  model::kafka_namespace, model::topic{t.get_name()}};
+                std::ranges::for_each(
+                  t.get_partitions(),
+                  [&restore_to = res.restore_to](
+                    const proto::admin::restore_topic_partition_info& p_info) {
+                      model::partition_id pid{p_info.get_partition_id()};
+                      kafka::offset offset
+                        = p_info.has_last_offset()
+                            ? kafka::offset{p_info.get_last_offset()}
+                            : kafka::offset::max();
+                      auto [_, added] = restore_to.emplace(pid, offset);
+                      if (!added) {
+                          // ill formed partition list, partition appears more
+                          // than once
+                          throw serde::pb::rpc::invalid_argument_exception(
+                            fmt::format("Repeaded pid {}", pid));
+                      }
+                  });
+                return res;
+            });
+      });
+
+    auto result = co_await _data_migrations_frontend->local().create_migration(
+      std::move(migration));
+
+    if (result.has_error()) {
+        vlog(
+          sllog.warn,
+          "unable to create data migration for topic restore - error: {}",
+          result.error());
+        throw serde::pb::rpc::internal_exception(
+          fmt::format(
+            "error creating data migration - error: {}", result.error()));
+    }
+
+    proto::admin::truncate_and_restore_response tar_resp;
+    tar_resp.set_migration_id(result.value());
+    co_return tar_resp;
 }
 } // namespace admin

@@ -124,6 +124,21 @@ class ShadowLinkServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
+    def call_truncate_and_restore(self, req: proto.redpanda.core.admin.v2.shadow_link_pb2.TruncateAndRestoreRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.v2.shadow_link_pb2.TruncateAndRestoreResponse]:
+        """Low-level method to call TruncateAndRestore, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.v2.ShadowLinkService/TruncateAndRestore'
+        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.v2.shadow_link_pb2.TruncateAndRestoreResponse, extra_headers, timeout_seconds)
+
+    def truncate_and_restore(self, req: proto.redpanda.core.admin.v2.shadow_link_pb2.TruncateAndRestoreRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.v2.shadow_link_pb2.TruncateAndRestoreResponse:
+        response = self.call_truncate_and_restore(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
 class AsyncShadowLinkServiceClient:
 
     def __init__(self, base_url: str, http_client: aiohttp.ClientSession, protocol: ConnectProtocol=ConnectProtocol.CONNECT_PROTOBUF):
@@ -220,6 +235,21 @@ class AsyncShadowLinkServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
+    async def call_truncate_and_restore(self, req: proto.redpanda.core.admin.v2.shadow_link_pb2.TruncateAndRestoreRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.v2.shadow_link_pb2.TruncateAndRestoreResponse]:
+        """Low-level method to call TruncateAndRestore, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.v2.ShadowLinkService/TruncateAndRestore'
+        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.v2.shadow_link_pb2.TruncateAndRestoreResponse, extra_headers, timeout_seconds)
+
+    async def truncate_and_restore(self, req: proto.redpanda.core.admin.v2.shadow_link_pb2.TruncateAndRestoreRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.v2.shadow_link_pb2.TruncateAndRestoreResponse:
+        response = await self.call_truncate_and_restore(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
 @typing.runtime_checkable
 class ShadowLinkServiceProtocol(typing.Protocol):
 
@@ -240,6 +270,9 @@ class ShadowLinkServiceProtocol(typing.Protocol):
 
     def fail_over(self, req: ClientRequest[proto.redpanda.core.admin.v2.shadow_link_pb2.FailOverRequest]) -> ServerResponse[proto.redpanda.core.admin.v2.shadow_link_pb2.FailOverResponse]:
         ...
+
+    def truncate_and_restore(self, req: ClientRequest[proto.redpanda.core.admin.v2.shadow_link_pb2.TruncateAndRestoreRequest]) -> ServerResponse[proto.redpanda.core.admin.v2.shadow_link_pb2.TruncateAndRestoreResponse]:
+        ...
 SHADOW_LINK_SERVICE_PATH_PREFIX = '/redpanda.core.admin.v2.ShadowLinkService'
 
 def wsgi_shadow_link_service(implementation: ShadowLinkServiceProtocol) -> WSGIApplication:
@@ -250,4 +283,5 @@ def wsgi_shadow_link_service(implementation: ShadowLinkServiceProtocol) -> WSGIA
     app.register_unary_rpc('/redpanda.core.admin.v2.ShadowLinkService/ListShadowLinks', implementation.list_shadow_links, proto.redpanda.core.admin.v2.shadow_link_pb2.ListShadowLinksRequest)
     app.register_unary_rpc('/redpanda.core.admin.v2.ShadowLinkService/UpdateShadowLink', implementation.update_shadow_link, proto.redpanda.core.admin.v2.shadow_link_pb2.UpdateShadowLinkRequest)
     app.register_unary_rpc('/redpanda.core.admin.v2.ShadowLinkService/FailOver', implementation.fail_over, proto.redpanda.core.admin.v2.shadow_link_pb2.FailOverRequest)
+    app.register_unary_rpc('/redpanda.core.admin.v2.ShadowLinkService/TruncateAndRestore', implementation.truncate_and_restore, proto.redpanda.core.admin.v2.shadow_link_pb2.TruncateAndRestoreRequest)
     return app
