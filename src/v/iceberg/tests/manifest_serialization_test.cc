@@ -322,6 +322,17 @@ TEST(ManifestSerializationTest, TestSerializeManifestData) {
     ASSERT_EQ(
       m.metadata.schema.schema_struct,
       std::get<struct_type>(test_nested_schema_type()));
+    const auto& first_entry = m.entries[0];
+    ASSERT_EQ(first_entry.status, manifest_entry_status::existing);
+    ASSERT_EQ(first_entry.snapshot_id, snapshot_id{0});
+    ASSERT_EQ(first_entry.sequence_number, sequence_number{0});
+    ASSERT_EQ(first_entry.file_sequence_number, file_sequence_number{0});
+    ASSERT_EQ(first_entry.data_file.file_path, "data/path/file-0.parquet");
+    ASSERT_EQ(first_entry.data_file.file_format, data_file_format::parquet);
+    ASSERT_EQ(first_entry.data_file.column_sizes.size(), 0);
+    ASSERT_EQ(first_entry.data_file.value_counts.size(), 0);
+    ASSERT_EQ(first_entry.data_file.null_value_counts.size(), 0);
+    ASSERT_EQ(first_entry.data_file.nan_value_counts.size(), 0);
 
     auto serialized_buf = serialize_avro(m);
     for (int i = 0; i < 10; i++) {
