@@ -33,11 +33,7 @@ level_zero_log_reader_impl::level_zero_log_reader_impl(
   data_plane_api* ct_api)
   : _config(cfg)
   , _underlying(std::move(underlying))
-  , _ct_api(ct_api) {
-    if (_config.max_bytes == 0) {
-        _current = state::end_of_stream_state;
-    }
-}
+  , _ct_api(ct_api) {}
 
 ss::future<model::record_batch_reader::storage_t>
 level_zero_log_reader_impl::do_load_slice(
@@ -84,9 +80,6 @@ level_zero_log_reader_impl::do_load_slice(
 
 std::optional<chunked_circular_buffer<model::record_batch>>
 level_zero_log_reader_impl::maybe_load_slices_from_cache() {
-    if (_config.skip_cache) {
-        return std::nullopt;
-    }
     chunked_circular_buffer<model::record_batch> ret;
     size_t materialized_bytes = 0;
     auto current = _config.start_offset;
@@ -105,7 +98,8 @@ level_zero_log_reader_impl::maybe_load_slices_from_cache() {
         }
         vlog(
           cd_log.trace,
-          "Loaded batch from cache: {}",
+          "Loaded batch from cache for {}: {} @ term {}",
+          current,
           batch.value().base_offset(),
           batch.value().term());
         vassert(
