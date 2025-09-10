@@ -52,6 +52,13 @@ public:
       uint16_t max_concurrency,
       std::optional<filter_type> collect_filter = std::nullopt);
 
+    // like walk(), but accesses subdirectories and files in random order, and
+    // stops when it finds the first regular file.
+    ss::future<std::optional<file_list_item>> find_random_file(
+      ss::sstring start_path,
+      const access_time_tracker& tracker,
+      std::optional<filter_type> collect_filter = std::nullopt);
+
 private:
     ss::gate _gate;
 };

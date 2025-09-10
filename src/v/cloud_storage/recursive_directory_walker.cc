@@ -15,9 +15,11 @@
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/logger.h"
 #include "ssx/watchdog.h"
+#include "storage/segment_appender_chunk.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/file.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/sleep.hh>
@@ -26,6 +28,7 @@
 #include <algorithm>
 #include <chrono>
 #include <deque>
+#include <random>
 #include <string_view>
 #include <vector>
 
@@ -211,4 +214,85 @@ ss::future<> recursive_directory_walker::stop() {
     return _gate.close();
 }
 
+struct absolute_dirent {
+    ss::sstring absolute_path;
+    ss::directory_entry dirent;
+};
+
+ss::future<fragmented_vector<absolute_dirent>>
+get_dirents_randomized(const ss::sstring& path, std::mt19937 gen) {
+    ss::file dir = co_await open_directory(path);
+    fragmented_vector<absolute_dirent> result;
+    co_await dir
+      .list_directory([&result, &path](ss::directory_entry entry) {
+          auto entry_path = fmt::format("{}/{}", path, entry.name);
+          result.push_back({.absolute_path = entry_path, .dirent = entry});
+          return ss::make_ready_future();
+      })
+      .done()
+      .finally([dir]() mutable { return dir.close(); });
+    std::shuffle(result.begin(), result.end(), gen);
+    co_return result;
+}
+
+// This is not parallel. It returns the first file it finds, so in the typical
+// case without empty directories, parallelization will not help.
+ss::future<std::optional<file_list_item>>
+recursive_directory_walker::find_random_file(
+  ss::sstring start_path,
+  const access_time_tracker& tracker,
+  std::optional<filter_type> collect_filter) {
+    std::random_device random_device;
+    std::mt19937 random_generator(random_device());
+
+    fragmented_vector<absolute_dirent> search_stack;
+
+    // Initialize search stack with the contents of the root of the search.
+    // No try...catch around this. We expect the start path to exist.
+    search_stack = co_await get_dirents_randomized(
+      start_path, random_generator);
+
+    while (!search_stack.empty()) {
+        auto target_entry = search_stack.back();
+        search_stack.pop_back();
+
+        if (
+          target_entry.dirent.type
+          && target_entry.dirent.type == ss::directory_entry_type::regular) {
+            // If the path is a file, return it
+            file_list_item ret;
+            ret.path = target_entry.absolute_path;
+            if (const auto tracker_entry = tracker.get(ret.path);
+                tracker_entry.has_value()) {
+                ret.size = tracker_entry->size;
+                ret.access_time = tracker_entry->time_point();
+            } else {
+                auto file_stats = co_await ss::file_stat(ret.path);
+                ret.size = file_stats.size;
+                ret.access_time = file_stats.time_accessed;
+            }
+            co_return ret;
+        } else if (
+          target_entry.dirent.type
+          && target_entry.dirent.type == ss::directory_entry_type::directory) {
+            // If it's a directory, add the contents to the search path
+            try {
+                fragmented_vector<absolute_dirent> new_entries
+                  = co_await get_dirents_randomized(
+                    target_entry.absolute_path, random_generator);
+                // No insert for fragmented vector
+                for (auto& dirent : new_entries) {
+                    search_stack.push_back(std::move(dirent));
+                }
+            } catch (std::filesystem::filesystem_error& e) {
+                if (e.code() == std::errc::no_such_file_or_directory) {
+                    // skip this directory, move to the next one
+                } else {
+                    throw;
+                }
+            }
+        }
+    }
+    co_return std::nullopt;
+}
 } // namespace cloud_storage
