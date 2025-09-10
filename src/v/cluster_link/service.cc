@@ -291,7 +291,8 @@ void service::register_notifications() {
                 // TODO: once we have partition properties
                 break;
             }
-        });
+        },
+        cluster::partition_change_notifier::notify_current_state::yes);
     _notification_cleanups.emplace_back([this, partition_notifications_id] {
         _notifications->unregister_partition_notifications(
           partition_notifications_id);

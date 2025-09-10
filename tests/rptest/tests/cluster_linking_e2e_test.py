@@ -244,3 +244,45 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
         assert target_cluster_group.state == "Empty", (
             "Group test_group state expected to be empty on target cluster"
         )
+
+    @cluster(num_nodes=6)
+    def test_topic_creation_in_target_cluster(self):
+        topics = []
+        for i in range(10):
+            cleanup_policy = "delete" if i % 2 == 0 else "compact"
+            topic = TopicSpec(
+                name=f"source-topic-{i}",
+                partition_count=i + 3,
+                replication_factor=3,
+                cleanup_policy=cleanup_policy,
+            )
+            self.source_default_client().create_topic(topic)
+            topics.append(topic)
+
+        self.create_link("test-link")
+
+        def _topics_are_present_in_target_cluster():
+            target_rpk = RpkTool(self.target_cluster.service)
+            topics_in_target = {t for t in target_rpk.list_topics()}
+            self.logger.info(f"Topics in target cluster: {topics_in_target}")
+            if len(topics_in_target) < len(topics):
+                return False
+            for t in topics:
+                if t.name not in topics_in_target:
+                    return False
+
+            return True
+
+        wait_until(
+            lambda: _topics_are_present_in_target_cluster(),
+            timeout_sec=20,
+            err_msg="Failed to find topics in the target cluster",
+        )
+        target_rpk = RpkTool(self.target_cluster.service)
+        for t in topics:
+            target_configs = target_rpk.describe_topic_configs(t.name)
+            self.logger.info(f"Target topic {t.name} configs: {target_configs}")
+            assert target_configs["cleanup.policy"][0] == t.cleanup_policy, (
+                f"Expected cleanup policy {t.cleanup_policy} for topic {t.name}, "
+                f"got {target_configs['cleanup.policy']}"
+            )
