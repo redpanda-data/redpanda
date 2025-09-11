@@ -157,15 +157,15 @@ func newStdioCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			)
 
 			// Controlplane
-			controlplanev1mcp.ForwardToConnectRegionServiceClient(s, cl.Region)
-			controlplanev1mcp.ForwardToConnectResourceGroupServiceClient(s, cl.ResourceGroup)
-			controlplanev1mcp.ForwardToConnectClusterServiceClient(s, cl.Cluster)
-			controlplanev1mcp.ForwardToConnectNetworkServiceClient(s, cl.Network)
-			controlplanev1mcp.ForwardToConnectServerlessClusterServiceClient(s, cl.Serverless)
-			controlplanev1mcp.ForwardToConnectServerlessRegionServiceClient(s, cl.ServerlessRegion)
-			controlplanev1mcp.ForwardToConnectOperationServiceClient(s, cl.Operations)
-			controlplanev1mcp.ForwardToConnectServerlessRegionServiceClient(s, cl.ServerlessRegion)
-			controlplanev1mcp.ForwardToConnectServerlessRegionServiceClient(s, cl.ServerlessRegion)
+			controlplanev1mcp.ForwardToConnectRegionServiceClientOpenAI(s, cl.Region)
+			controlplanev1mcp.ForwardToConnectResourceGroupServiceClientOpenAI(s, cl.ResourceGroup)
+			controlplanev1mcp.ForwardToConnectClusterServiceClientOpenAI(s, cl.Cluster)
+			controlplanev1mcp.ForwardToConnectNetworkServiceClientOpenAI(s, cl.Network)
+			controlplanev1mcp.ForwardToConnectServerlessClusterServiceClientOpenAI(s, cl.Serverless)
+			controlplanev1mcp.ForwardToConnectServerlessRegionServiceClientOpenAI(s, cl.ServerlessRegion)
+			controlplanev1mcp.ForwardToConnectOperationServiceClientOpenAI(s, cl.Operations)
+			controlplanev1mcp.ForwardToConnectServerlessRegionServiceClientOpenAI(s, cl.ServerlessRegion)
+			controlplanev1mcp.ForwardToConnectServerlessRegionServiceClientOpenAI(s, cl.ServerlessRegion)
 
 			// Dataplane
 			urlOpt := runtime.WithExtraProperties(runtime.ExtraProperty{
@@ -175,17 +175,17 @@ func newStdioCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				ContextKey:  publicapi.DataplaneAPIURLContextKey{},
 			})
 
-			dataplanev1mcp.ForwardToConnectTopicServiceClient(s, dataplaneClientSet.Topic, urlOpt)
-			dataplanev1mcp.ForwardToConnectPipelineServiceClient(s, dataplaneClientSet.Pipeline, urlOpt)
-			dataplanev1mcp.ForwardToConnectACLServiceClient(s, dataplaneClientSet.ACL, urlOpt)
-			dataplanev1mcp.ForwardToConnectCloudStorageServiceClient(s, dataplaneClientSet.CloudStorage, urlOpt)
-			dataplanev1mcp.ForwardToConnectQuotaServiceClient(s, dataplaneClientSet.Quota, urlOpt)
-			dataplanev1mcp.ForwardToConnectSecretServiceClient(s, dataplaneClientSet.Secret, urlOpt)
-			dataplanev1mcp.ForwardToConnectSecurityServiceClient(s, dataplaneClientSet.Security, urlOpt)
-			dataplanev1mcp.ForwardToConnectTransformServiceClient(s, dataplaneClientSet.Transform, urlOpt)
-			dataplanev1mcp.ForwardToConnectUserServiceClient(s, dataplaneClientSet.User, urlOpt)
-			dataplanev1alpha3mcp.ForwardToConnectKnowledgeBaseServiceClient(s, dataplaneClientSet.KnowledgeBase, urlOpt)
-			dataplanev1alpha3mcp.ForwardToConnectMCPServerServiceClient(s, dataplaneClientSet.MCPServer, urlOpt)
+			dataplanev1mcp.ForwardToConnectTopicServiceClientOpenAI(s, dataplaneClientSet.Topic, urlOpt)
+			dataplanev1mcp.ForwardToConnectPipelineServiceClientOpenAI(s, dataplaneClientSet.Pipeline, urlOpt)
+			dataplanev1mcp.ForwardToConnectACLServiceClientOpenAI(s, dataplaneClientSet.ACL, urlOpt)
+			dataplanev1mcp.ForwardToConnectCloudStorageServiceClientOpenAI(s, dataplaneClientSet.CloudStorage, urlOpt)
+			dataplanev1mcp.ForwardToConnectQuotaServiceClientOpenAI(s, dataplaneClientSet.Quota, urlOpt)
+			dataplanev1mcp.ForwardToConnectSecretServiceClientOpenAI(s, dataplaneClientSet.Secret, urlOpt)
+			dataplanev1mcp.ForwardToConnectSecurityServiceClientOpenAI(s, dataplaneClientSet.Security, urlOpt)
+			dataplanev1mcp.ForwardToConnectTransformServiceClientOpenAI(s, dataplaneClientSet.Transform, urlOpt)
+			dataplanev1mcp.ForwardToConnectUserServiceClientOpenAI(s, dataplaneClientSet.User, urlOpt)
+			dataplanev1alpha3mcp.ForwardToConnectKnowledgeBaseServiceClientOpenAI(s, dataplaneClientSet.KnowledgeBase, urlOpt)
+			dataplanev1alpha3mcp.ForwardToConnectMCPServerServiceClientOpenAI(s, dataplaneClientSet.MCPServer, urlOpt)
 
 			if err := server.ServeStdio(s); err != nil {
 				fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
