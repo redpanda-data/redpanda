@@ -67,7 +67,7 @@ RUN /java-verifiers && \
 
 FROM base AS kafka-tools
 
-ENV KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
+ENV KAFKA_MIRROR="https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies"
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/kafka-tools /
 RUN /kafka-tools && \
     rm /kafka-tools
