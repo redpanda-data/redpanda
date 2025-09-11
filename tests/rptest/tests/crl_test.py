@@ -13,6 +13,8 @@ import tempfile
 import json
 import requests
 
+from typing import Optional
+
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
 
@@ -53,6 +55,11 @@ class CachingTLSProvider(TLSProvider):
             self.tls.create_cert(socket.gethostname(), name=name, common_name=name)
         )
         return self.service_client_certs[-1]
+
+    def find_broker_cert(self, node: ClusterNode) -> Optional[tls.Certificate]:
+        return next(
+            (c for c in self.broker_certs if node.account.hostname in c.crt),
+            None)
 
 
 class CertificateRevocationTest(RedpandaTest):
@@ -271,7 +278,8 @@ class CertificateRevocationTest(RedpandaTest):
             f"Now revoke the broker cert and push to {node.account.hostname}"
         )
 
-        broker_cert = self.provider.broker_certs[0]
+        broker_cert = self.provider.find_broker_cert(node)
+        assert broker_cert is not None, f"Failed to find certificate for node {node}"
 
         assert node.account.hostname in broker_cert.crt, (
             f"Cert order mismatch: {broker_cert.crt}"
