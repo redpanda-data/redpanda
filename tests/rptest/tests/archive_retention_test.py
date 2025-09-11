@@ -121,9 +121,9 @@ class CloudArchiveRetentionTest(RedpandaTest):
         def produce_until_spillover():
             initial_uploaded = self.num_manifests_uploaded()
 
-            def new_manifest_spilled(get_num_spilled):
+            def new_manifest_spilled():
                 self.produce(topic, 300)
-                num_spilled = get_num_spilled()
+                num_spilled = self.num_manifests_uploaded()
                 return num_spilled > initial_uploaded + 10
 
             wait_until_with_progress_check(

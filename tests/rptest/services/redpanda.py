@@ -93,7 +93,12 @@ from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
 from rptest.services.storage_failure_injection import FailureInjectionConfig
 from rptest.services.utils import NodeCrash, LogSearchLocal, LogSearchCloud, Stopwatch
-from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
+from rptest.util import (
+    inject_remote_script,
+    ssh_output_stderr,
+    wait_until_result,
+    wait_until_with_progress_check,
+)
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 from rptest.utils.expiring_value import ExpiringValue
 from rptest.utils.mode_checks import in_fips_environment
@@ -1271,6 +1276,49 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
 
         wait_until(
             wrapped, timeout_sec=timeout_sec, backoff_sec=backoff_sec, err_msg=err_msg
+        )
+
+    def wait_until_with_progress_check(
+        self,
+        check: Callable[[], Any],
+        condition: Callable[[], Any],
+        timeout_sec: int,
+        progress_sec: int,
+        backoff_sec: int,
+        err_msg: str | None = None,
+        logger: Logger | None = None,
+    ):
+        """
+        Cluster-aware variant of wait_until_with_progress_check, which will
+        fail out early if a node dies.
+
+        This is useful for long waits, which would otherwise not notice
+        a test failure until the end of the timeout, even if redpanda
+        already crashed.
+        """
+        t_initial = time.time()
+        # How long to delay doing redpanda liveness checks, to make short waits more efficient
+        grace_period = 15
+
+        def wrapped():
+            r = condition()
+            if not r and time.time() > t_initial + grace_period:
+                # Check the cluster is up before waiting + retrying
+                assert (
+                    self.all_up()
+                    or getattr(self, "_tolerate_crashes", False)
+                    or getattr(self, "tolerate_not_running", 0) > 0
+                )
+            return r
+
+        wait_until_with_progress_check(
+            check,
+            wrapped,
+            timeout_sec,
+            progress_sec,
+            backoff_sec,
+            err_msg=err_msg,
+            logger=logger,
         )
 
     def _check_attr(self, name: str, t: Type):

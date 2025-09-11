@@ -4,5 +4,5 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 root_dir=$(git -C ${script_dir} rev-parse --show-toplevel)
 
 pushd ${root_dir}
-uv tool run --with 'ruff==0.12.10' ruff format
+${script_dir}/ruff format
 popd

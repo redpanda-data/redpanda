@@ -696,12 +696,28 @@ class KgoVerifierProducer(KgoVerifierService):
 
         return super().wait_node(node, timeout_sec=timeout_sec)
 
-    def wait_for_acks(self, count, timeout_sec, backoff_sec):
-        self._redpanda.wait_until(
-            lambda: self._status_thread.errored or self._status.acked >= count,
-            timeout_sec=timeout_sec,
-            backoff_sec=backoff_sec,
-        )
+    def wait_for_acks(self, count, timeout_sec, backoff_sec, progress_sec=None):
+        def acks():
+            return self._status.acked
+
+        def acks_at_count():
+            return self._status_thread.errored or acks() >= count
+
+        if progress_sec is not None:
+            self._redpanda.wait_until_with_progress_check(
+                acks,
+                acks_at_count,
+                timeout_sec,
+                progress_sec,
+                backoff_sec,
+                logger=self._redpanda.logger,
+            )
+        else:
+            self._redpanda.wait_until(
+                acks_at_count,
+                timeout_sec=timeout_sec,
+                backoff_sec=backoff_sec,
+            )
         self._status_thread.raise_on_error()
 
     def _wait_for_file_on_nodes(self, file_name):
