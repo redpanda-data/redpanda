@@ -30,12 +30,11 @@ auto get_required_primitive(value v, std::string_view name) {
     }
     auto& as_primitive = std::get<primitive_value>(v);
     if (!holds_alternative<PrimitiveV>(as_primitive)) {
-        throw std::invalid_argument(
-          fmt::format(
-            "Value of '{}' is not the expected type {}: actual {}",
-            name,
-            PrimitiveV::name(),
-            as_primitive));
+        throw std::invalid_argument(fmt::format(
+          "Value of '{}' is not the expected type {}: actual {}",
+          name,
+          PrimitiveV::name(),
+          as_primitive));
     }
     // NOTE: values that contain iobufs must be moved.
     auto& as_t = std::get<PrimitiveV>(as_primitive);
