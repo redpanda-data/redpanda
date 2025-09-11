@@ -74,8 +74,9 @@ struct handler_template {
       const request_header& header, const typename api::request_type& request) {
         vlog(
           klog.trace,
-          "[client_id: {}] handling {} v{} request {}",
+          "[client_id: {}, correlation: {}] handling {} v{} request {}",
           header.client_id,
+          header.correlation,
           api::name,
           header.version(),
           request);

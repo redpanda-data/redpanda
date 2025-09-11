@@ -220,9 +220,10 @@ public:
         if (r.data.errored()) {
             vlog(
               kwire.debug,
-              "[{}:{}] sending {}:{} for {}, response {}",
+              "[{}:{}, cor: {}] sending {}:{} for {}, response {}",
               _conn->client_host(),
               _conn->client_port(),
+              _header.correlation,
               ResponseType::api_type::key,
               ResponseType::api_type::name,
               _header.client_id,
@@ -230,9 +231,10 @@ public:
         } else {
             vlog(
               kwire.trace,
-              "[{}:{}] sending {}:{} for {}, response {}",
+              "[{}:{}, cor: {}] sending {}:{} for {}, response {}",
               _conn->client_host(),
               _conn->client_port(),
+              _header.correlation,
               ResponseType::api_type::key,
               ResponseType::api_type::name,
               _header.client_id,
