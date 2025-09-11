@@ -23,6 +23,7 @@
 
 #include <seastar/core/abort_source.hh>
 
+#include <exception>
 #include <stdexcept>
 
 namespace cloud_topics {
@@ -155,6 +156,72 @@ ss::future<std::optional<cluster_epoch>> ctp_stm::get_inactive_epoch() {
     }
 }
 
+ss::future<std::optional<cluster_epoch>>
+ctp_stm::get_offset_epoch(kafka::offset target) {
+    // Consume the first epoch from the partition starting from
+    // start offset if nothing was reconciled yet or from the last
+    // reconciled offset + 1 otherwise.
+    auto so = _raft->start_offset();
+    auto co = _raft->committed_offset();
+
+    model::offset key;
+    try {
+        key = _raft->log()->to_log_offset(kafka::offset_cast(target));
+    } catch (const std::runtime_error&) {
+        vlog(
+          _log.warn, "Offset translation error: {}", std::current_exception());
+        // Most likely reason: offset outside the translation range
+        co_return std::nullopt;
+    }
+
+    if (key < so || key > co) {
+        // ot_state can return any offset if the state is empty
+        vlog(
+          _log.warn,
+          "Offset {} (log {}) is outside the range [{}, {}]",
+          target,
+          key,
+          so,
+          co);
+        co_return std::nullopt;
+    }
+
+    storage::local_log_reader_config cfg(
+      key,
+      co,
+      0,
+      4_MiB,
+      std::make_optional(model::record_batch_type::dl_placeholder),
+      std::nullopt,
+      std::nullopt);
+
+    auto reader = co_await _raft->make_reader(cfg);
+    auto result = co_await std::move(reader).consume(
+      ctp_stm_consumer{}, model::no_timeout);
+
+    if (result.has_value()) {
+        auto epoch = result.value();
+        vlog(
+          _log.debug,
+          "Minimum epoch referenced by the {} is {}",
+          _raft->ntp(),
+          epoch);
+        // If the first epoch is the epoch zero then we can't really use
+        // the inactive epoch here because cluster_epoch::min() doesn't exists
+        // (no object could be created with such epoch).
+        co_return epoch;
+    } else {
+        // This could naturally happen if the partition is empty because
+        // everything was reconciled.
+        vlog(
+          _log.debug,
+          "No epochs found in partition {}, max epoch {}, returning nullopt",
+          _raft->ntp(),
+          _state.get_max_epoch());
+        co_return std::nullopt;
+    }
+}
+
 ss::future<> ctp_stm::do_apply(const model::record_batch& batch) {
     if (
       batch.header().type != model::record_batch_type::dl_placeholder
@@ -182,7 +249,8 @@ ss::future<> ctp_stm::do_apply(const model::record_batch& batch) {
       batch.header().type == model::record_batch_type::ctp_stm_command) {
         // Decode the command and apply it to the state.
         kafka::offset lro;
-        batch.for_each_record([&lro](model::record&& r) {
+        std::optional<cluster_epoch> lro_epoch;
+        batch.for_each_record([&lro, &lro_epoch](model::record&& r) {
             auto key = serde::from_iobuf<uint8_t>(r.release_key());
             auto cmd_key = static_cast<ctp_stm_key>(key);
             switch (cmd_key) {
@@ -190,6 +258,7 @@ ss::future<> ctp_stm::do_apply(const model::record_batch& batch) {
                 auto cmd = serde::from_iobuf<advance_reconciled_offset_cmd>(
                   r.release_value());
                 lro = cmd.last_reconciled_offset;
+                lro_epoch = cmd.last_reconciled_epoch;
                 break;
             }
             default:
@@ -200,7 +269,11 @@ ss::future<> ctp_stm::do_apply(const model::record_batch& batch) {
             }
             return ss::stop_iteration::no;
         });
-        vlog(_log.debug, "New LRO value is {}", lro);
+        vlog(
+          _log.debug,
+          "New LRO value is {}, last_reconciled_epoch is {}",
+          lro,
+          lro_epoch);
         // LRO is expected to be within the translation range
         auto lro_log = _raft->log()->to_log_offset(kafka::offset_cast(lro));
         _state.advance_last_reconciled_offset(lro, lro_log);

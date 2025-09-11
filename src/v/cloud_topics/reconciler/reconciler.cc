@@ -15,6 +15,7 @@
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/frontend/frontend.h"
 #include "cloud_topics/level_one/common/object_utils.h"
+#include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "cloud_topics/level_zero/stm/ctp_stm_api.h"
 #include "cloud_topics/object_utils.h"
 #include "cloud_topics/types.h"
@@ -22,6 +23,7 @@
 #include "kafka/utils/txn_reader.h"
 #include "model/namespace.h"
 #include "random/generators.h"
+#include "utils/retry_chain_node.h"
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/util/log.hh>
@@ -254,6 +256,40 @@ ss::future<> reconciler::commit_object(
     const auto& part = range.partition->partition;
 
     range.partition->lro = range.info.last_offset + kafka::offset(1);
+
+    auto stm
+      = range.partition->partition->raft()->stm_manager()->get<ctp_stm>();
+    vassert(stm, "ctp_stm must be present on cloud topic partitions");
+
+    retry_chain_node rtc(_as);
+    ctp_stm_api api(rtc, stm);
+
+    // This will make a log reader and read one record. The expectation here is
+    // that the record will be in the record batch cache right after
+    // reconciliation unless we're under high memory pressure.
+    auto epoch = co_await api.get_offset_epoch(range.partition->lro);
+
+    if (!epoch.has_value()) {
+        vlog(
+          lg.info,
+          "Failed to get epoch for offset {}: {}",
+          range.partition->lro,
+          epoch.error());
+        co_return;
+    }
+
+    if (epoch.value().has_value()) {
+        auto ret = co_await api.advance_reconciled_offset(
+          range.partition->lro, epoch.value());
+        if (!ret.has_value()) {
+            vlog(
+              lg.info,
+              "Failed to advance LRO to {}: {}",
+              range.partition->lro,
+              ret.error());
+            co_return;
+        }
+    }
 
     vlog(
       lg.info,

@@ -52,8 +52,20 @@ public:
     /// Get the last reconciled offset from the ctp_stm state.
     kafka::offset get_last_reconciled_offset() const;
 
+    /// Advance the last reconciled offset.
+    ///
+    /// \param last_reconciled_offset New last reconciled offset.
+    /// \param last_reconciled_epoch The epoch of the last reconciled offset.
+    /// \note the last_reconciled_epoch is an epoch in which the batch that
+    /// contains LRO was replicated. It's used to cache the epoch to so the
+    /// inactive epoch could be computed without reading the log.
     ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
-    advance_reconciled_offset(kafka::offset last_reconciled_offset);
+    advance_reconciled_offset(
+      kafka::offset last_reconciled_offset,
+      std::optional<cluster_epoch> last_reconciled_epoch = std::nullopt);
+
+    ss::future<std::expected<std::optional<cluster_epoch>, ctp_stm_api_errc>>
+    get_offset_epoch(kafka::offset target);
 
     /// Return the smallest epoch referenced by this ctp_stm.
     ss::future<std::expected<std::optional<cluster_epoch>, ctp_stm_api_errc>>

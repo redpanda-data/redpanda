@@ -71,7 +71,8 @@ ctp_stm_api::replicated_apply(model::record_batch&& batch) {
 }
 
 ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
-ctp_stm_api::advance_reconciled_offset(kafka::offset last_reconciled_offset) {
+ctp_stm_api::advance_reconciled_offset(
+  kafka::offset last_reconciled_offset, cluster_epoch epoch) {
     vlog(_rtclog.debug, "Replicating ctp_stm_cmd::advance_reconciled_offset");
 
     storage::record_batch_builder builder(
@@ -93,6 +94,25 @@ ctp_stm_api::advance_reconciled_offset(kafka::offset last_reconciled_offset) {
 
 kafka::offset ctp_stm_api::get_last_reconciled_offset() const {
     return _stm->state().get_last_reconciled_offset().value_or(kafka::offset());
+}
+
+ss::future<std::expected<std::optional<cluster_epoch>, ctp_stm_api_errc>>
+ctp_stm_api::get_offset_epoch(kafka::offset target) {
+    auto res = co_await ss::coroutine::as_future(
+      _stm->get_offset_epoch(target));
+    if (res.failed()) {
+        auto e = res.get_exception();
+        if (ssx::is_shutdown_exception(e)) {
+            co_return std::unexpected(ctp_stm_api_errc::shutdown);
+        }
+        vlog(
+          _rtclog.error,
+          "Failed to get epoch for offset {} from ctp_stm: {}",
+          target,
+          e);
+        co_return std::unexpected(ctp_stm_api_errc::failure);
+    }
+    co_return res.get();
 }
 
 ss::future<std::expected<std::optional<cluster_epoch>, ctp_stm_api_errc>>

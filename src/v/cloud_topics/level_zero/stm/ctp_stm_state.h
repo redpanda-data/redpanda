@@ -75,6 +75,12 @@ public:
     std::optional<model::offset>
     get_last_reconciled_log_offset() const noexcept;
 
+    /// Advance last reconciled epoch.
+    void advance_last_reconciled_epoch(cluster_epoch epoch) noexcept;
+
+    /// Get cached last reconciled epoch value
+    std::optional<cluster_epoch> get_last_reconciled_epoch() const noexcept;
+
     auto serde_fields() {
         return std::tie(
           _max_applied_epoch,
@@ -118,6 +124,16 @@ private:
     /// This is used to lookup the epoch that was last reconciled for
     /// L0 GC.
     std::optional<model::offset> _last_reconciled_log_offset;
+
+    /// The epoch in which LRO was replicated.
+    ///
+    /// This is used to cache the inactive epoch value.
+    /// Normally, the STM reads the epoch from the log. If this value is
+    /// not nullopt it can use it to compute the inactive epoch instead.
+    /// It is guaranteed that _last_reconciled_epoch is always less or
+    /// equal to the epoch that we can read from the log if we start from
+    /// _last_reconciled_log_offset + 1.
+    std::optional<cluster_epoch> _last_reconciled_epoch;
 };
 
 }; // namespace cloud_topics

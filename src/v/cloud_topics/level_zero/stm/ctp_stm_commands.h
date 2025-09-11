@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_topics/level_zero/stm/types.h"
+#include "cloud_topics/types.h"
 #include "model/fundamental.h"
 #include "serde/envelope.h"
 
@@ -25,10 +26,12 @@ using cmd_key = named_type<uint8_t, struct cmd_key_tag>;
 /// notify the ctp_stm about the new LRO. This is needed to ensure that
 /// the max_collectible_offset could be advanced and the local retention
 /// could be applied. It's also used in computation of the min epoch.
+///
+/// It can also contain the cluster epoch which matches the LRO.
 struct advance_reconciled_offset_cmd
   : public serde::envelope<
       advance_reconciled_offset_cmd,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     static constexpr cmd_key key = cmd_key(
       std::to_underlying(ctp_stm_key::advance_reconciled_offset));
@@ -41,6 +44,7 @@ struct advance_reconciled_offset_cmd
     auto serde_fields() { return std::tie(last_reconciled_offset); }
 
     kafka::offset last_reconciled_offset;
+    std::optional<cluster_epoch> last_reconciled_epoch;
 };
 
 } // namespace cloud_topics

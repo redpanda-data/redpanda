@@ -40,6 +40,17 @@ void ctp_stm_state::advance_epoch(cluster_epoch epoch) {
       epoch, _max_applied_epoch.value_or(cluster_epoch{}));
 }
 
+void ctp_stm_state::advance_last_reconciled_epoch(
+  cluster_epoch epoch) noexcept {
+    _last_reconciled_epoch = std::max(
+      _last_reconciled_epoch.value_or(epoch), epoch);
+}
+
+std::optional<cluster_epoch>
+ctp_stm_state::get_last_reconciled_epoch() const noexcept {
+    return _last_reconciled_epoch;
+}
+
 void ctp_stm_state::advance_last_reconciled_offset(
   kafka::offset new_last_reconciled_offset,
   model::offset new_last_reconciled_log_offset) noexcept {

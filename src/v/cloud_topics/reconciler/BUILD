@@ -42,6 +42,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/level_one/common:object_utils",
         "//src/v/cloud_topics/level_zero/stm:ctp_stm_api",
+        "//src/v/cloud_topics/level_zero/stm:ctp_stm",
         "//src/v/cluster",
         "//src/v/cluster:notification",
         "//src/v/container:chunked_vector",

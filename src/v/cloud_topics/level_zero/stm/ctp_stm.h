@@ -67,6 +67,15 @@ public:
     /// alone can't cause data loss.
     ss::future<std::optional<cluster_epoch>> get_inactive_epoch();
 
+    /// Return the epoch at which the given offset was produced.
+    ///
+    /// \param o Offset to query.
+    /// \return The epoch at which the given offset was produced or nullopt.
+    /// \note The method creates a log reader and scans the log to find the
+    ///       corresponding L0 metadata batch. If the batch can't be found
+    ///       the method returns nullopt.
+    ss::future<std::optional<cluster_epoch>> get_offset_epoch(kafka::offset o);
+
     /// Sync with the STM
     ///
     /// \brief The method is syncing the STM  to minimize races.
