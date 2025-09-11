@@ -217,6 +217,34 @@ struct ntp_fetch_config {
     }
 };
 
+/***
+ * Holds semaphore units from memory semaphores. Can be passed across
+ * shards, semaphore units will be released in the shard where the instance
+ * of this class has been created.
+ */
+struct fetch_memory_units {
+    ssx::semaphore_units kafka;
+    ssx::semaphore_units fetch;
+    ss::shard_id shard = ss::this_shard_id();
+
+    ~fetch_memory_units() noexcept;
+    fetch_memory_units() noexcept = default;
+    fetch_memory_units(fetch_memory_units&&) noexcept = default;
+    fetch_memory_units& operator=(fetch_memory_units&&) noexcept = default;
+    fetch_memory_units(const fetch_memory_units&) = delete;
+    fetch_memory_units& operator=(const fetch_memory_units&) = delete;
+    fetch_memory_units(
+      ssx::semaphore& memory_sem, ssx::semaphore& memory_fetch_sem) noexcept;
+
+    /*
+     * Adopts another fetch_memory_units. This requires that both
+     * fetch_memory_units are from the same shard.
+     */
+    void adopt(fetch_memory_units&& o);
+
+    bool has_units() const { return fetch.count() > 0 || kafka.count() > 0; }
+};
+
 /**
  * Simple type aggregating either data or an error
  */
@@ -224,35 +252,6 @@ struct read_result {
     using foreign_data_t = ss::foreign_ptr<std::unique_ptr<iobuf>>;
     using data_t = std::unique_ptr<iobuf>;
     using variant_t = std::variant<data_t, foreign_data_t>;
-
-    /// Holds semaphore units from memory semaphores. Can be passed across
-    /// shards, semaphore units will be released in the shard where the instance
-    /// of this class has been created.
-    struct memory_units_t {
-        ssx::semaphore_units kafka;
-        ssx::semaphore_units fetch;
-        ss::shard_id shard = ss::this_shard_id();
-
-        ~memory_units_t() noexcept;
-        memory_units_t() noexcept = default;
-        memory_units_t(memory_units_t&&) noexcept = default;
-        memory_units_t& operator=(memory_units_t&&) noexcept = default;
-        memory_units_t(const memory_units_t&) = delete;
-        memory_units_t& operator=(const memory_units_t&) = delete;
-        memory_units_t(
-          ssx::semaphore& memory_sem,
-          ssx::semaphore& memory_fetch_sem) noexcept;
-
-        /*
-         * Adopts another memory_units_t. This requires that both
-         * memory_units_t are from the same shard.
-         */
-        void adopt(memory_units_t&& o);
-
-        bool has_units() const {
-            return fetch.count() > 0 || kafka.count() > 0;
-        }
-    };
 
     explicit read_result(error_code e)
       : start_offset(-1)
@@ -345,7 +344,7 @@ struct read_result {
     error_code error;
     model::partition_id partition;
     std::vector<cluster::tx::tx_range> aborted_transactions;
-    memory_units_t memory_units;
+    fetch_memory_units memory_units;
 };
 // struct aggregating fetch requests and corresponding response iterators for
 // the same shard
@@ -445,7 +444,7 @@ ss::future<read_result> read_from_ntp(
  */
 kafka::fetch_plan make_simple_fetch_plan(op_context& octx);
 
-read_result::memory_units_t reserve_memory_units(
+fetch_memory_units reserve_memory_units(
   ssx::semaphore& memory_sem,
   ssx::semaphore& memory_fetch_sem,
   const size_t max_bytes,
