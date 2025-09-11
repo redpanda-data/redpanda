@@ -343,7 +343,10 @@ tls_configuration::build_credentials() const {
                 truststore_str, ss::tls::x509_crt_format::PEM);
               return ss::now();
           });
+    } else {
+        co_await builder.set_system_trust();
     }
+
     if (k_store) {
         co_await ss::visit(
           *k_store,
