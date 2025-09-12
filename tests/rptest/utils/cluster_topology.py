@@ -8,9 +8,10 @@
 # by the Apache License, Version 2.0
 
 from collections import defaultdict
-from rptest.services.redpanda import RedpandaService
 
 import psutil
+
+from rptest.services.redpanda import RedpandaService
 
 
 class NetemSpec:

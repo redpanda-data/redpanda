@@ -10,14 +10,14 @@
 import random
 import time
 
-from rptest.services.cluster import cluster
-from rptest.services.admin import Admin
 from rptest.clients.rpk import RpkTool
-from rptest.tests.prealloc_nodes import RedpandaTest
-from rptest.utils.mode_checks import skip_debug_mode
-from rptest.services.redpanda import SISettings, LoggingConfig
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
+from rptest.services.redpanda import LoggingConfig, SISettings
+from rptest.tests.prealloc_nodes import RedpandaTest
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class ShardPlacementScaleTest(RedpandaTest):

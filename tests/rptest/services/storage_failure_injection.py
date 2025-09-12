@@ -8,12 +8,11 @@
 # by the Apache License, Version 2.0
 
 import json
-
 from collections import ChainMap
-from enum import Enum
 from dataclasses import dataclass
-from typing import Optional
+from enum import Enum
 from functools import reduce
+from typing import Optional
 
 
 class BatchType(str, Enum):

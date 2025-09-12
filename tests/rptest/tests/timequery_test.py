@@ -11,37 +11,35 @@ import concurrent.futures
 import datetime
 import re
 import threading
-from logging import Logger
 import time
+from logging import Logger
 from typing import Callable
 
-from rptest.services.admin import Admin
-from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import RedpandaService, SISettings, make_redpanda_service
-from rptest.services.metrics_check import MetricCheck
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool
-from rptest.clients.kafka_cat import KafkaCat
-from rptest.util import (
-    segments_count,
-    wait_until,
-    wait_for_local_storage_truncate,
-    wait_until_result,
-)
-
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.utils.si_utils import BucketView, NTP
-
 from ducktape.mark import parametrize
-
-from rptest.services.kafka import KafkaServiceAdapter
+from ducktape.mark.resource import cluster as ducktape_cluster
+from ducktape.tests.test import Test
 from kafkatest.services.kafka import KafkaService
 from kafkatest.services.zookeeper import ZookeeperService
-from ducktape.mark.resource import cluster as ducktape_cluster
 from kafkatest.version import V_3_0_0
-from ducktape.tests.test import Test
+
 from rptest.clients.default import DefaultClient
+from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.kafka import KafkaServiceAdapter
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from rptest.services.metrics_check import MetricCheck
+from rptest.services.redpanda import RedpandaService, SISettings, make_redpanda_service
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import (
+    segments_count,
+    wait_for_local_storage_truncate,
+    wait_until,
+    wait_until_result,
+)
+from rptest.utils.si_utils import NTP, BucketView
 
 
 class BaseTimeQuery:

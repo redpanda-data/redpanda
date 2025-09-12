@@ -9,16 +9,18 @@
 
 import concurrent.futures
 import threading
+
 import ducktape.errors
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from requests.exceptions import ConnectionError
+
 from rptest.clients.rpk import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RpkTool
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
-from rptest.util import expect_exception
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import expect_exception
 
 
 def set_seeds_for_cluster(redpanda, num_seeds):

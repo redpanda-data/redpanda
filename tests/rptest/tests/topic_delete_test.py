@@ -8,36 +8,35 @@
 # by the Apache License, Version 2.0
 
 import datetime
-import time
 import json
+import time
 from typing import Optional
 
-from ducktape.utils.util import wait_until
-
 from ducktape.mark import matrix, parametrize
+from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
 
-from rptest.utils.mode_checks import skip_debug_mode
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from rptest.clients.offline_log_viewer import OfflineLogViewer
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.services.rpk_producer import RpkProducer
+from rptest.clients.offline_log_viewer import OfflineLogViewer
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import (
     CloudStorageType,
     SISettings,
     get_cloud_storage_type,
 )
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.util import wait_for_local_storage_truncate, firewall_blocked
-from rptest.services.admin import Admin
+from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import firewall_blocked, wait_for_local_storage_truncate
+from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.si_utils import (
-    BucketView,
-    NTP,
     NT,
+    NTP,
+    BucketView,
     LifecycleMarkerStatus,
     quiesce_uploads,
 )

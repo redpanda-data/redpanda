@@ -8,32 +8,31 @@
 # by the Apache License, Version 2.0
 
 import time
-
 from dataclasses import dataclass
-from ducktape.utils.util import wait_until
+
 from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
 
 import rptest.infinite_retention.helpers as helpers
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.infinite_retention.checks import InfiniteRetentionChecks
-from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
+    KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
     KgoVerifierRandomConsumer,
     KgoVerifierSeqConsumer,
-    KgoVerifierConsumerGroupConsumer,
 )
-from rptest.services.redpanda import SISettings
-
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool
-from rptest.utils.si_utils import quiesce_uploads
-
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import (
+    FAILURE_INJECTION_LOG_ALLOW_LIST,
+    RESTART_LOG_ALLOW_LIST,
+    SISettings,
+)
 from rptest.services.redpanda_monitor import RedpandaMonitor
-
-from rptest.services.redpanda import FAILURE_INJECTION_LOG_ALLOW_LIST
 from rptest.services.storage_failure_injection import BatchType
+from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.utils.si_utils import quiesce_uploads
 
 batchtype_archival_meta = "archival_metadata"
 batchtype_raft_configuration = "raft_configuration"

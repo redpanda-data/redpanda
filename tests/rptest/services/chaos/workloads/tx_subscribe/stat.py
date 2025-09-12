@@ -7,12 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import jinja2
+import logging
+import os
+import subprocess
 import sys
 import traceback
-import os
-import logging
-import subprocess
+
+import jinja2
 
 from ...types import Result
 from .log_utils import State, cmds, threads

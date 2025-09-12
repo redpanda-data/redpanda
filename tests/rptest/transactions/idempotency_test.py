@@ -7,17 +7,19 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 from collections import defaultdict
+from time import sleep
+
+import confluent_kafka as ck
+
 from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkTool
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.transactions.verifiers.idempotency_load_generator import (
     PausableIdempotentProducer,
 )
-from time import sleep
 from rptest.util import wait_until
-import confluent_kafka as ck
 
 
 class IdempotentProducerRecoveryTest(RedpandaTest):

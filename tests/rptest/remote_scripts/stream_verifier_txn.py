@@ -8,23 +8,23 @@
 # by the Apache License, Version 2.0
 
 import argparse
-import confluent_kafka as ck
-import falcon
 import json
 import logging
-import numpy as np
 import signal
 import string
 import sys
 import threading
-
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
 from time import sleep
-from typing import Generator, IO, Tuple, Callable, Any, List
+from typing import IO, Any, Callable, Generator, List, Tuple
 from wsgiref.simple_server import make_server
+
+import confluent_kafka as ck
+import falcon
+import numpy as np
 
 global title
 app_name = "StreamVerifierTx"

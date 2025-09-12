@@ -7,10 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from ducktape.services.service import Service
-from rptest.util import wait_until
-import requests
 import sys
+
+import requests
+from ducktape.services.service import Service
+
+from rptest.util import wait_until
 
 OUTPUT_LOG = "/opt/remote/var/pausable_idempotent_producer.log"
 

@@ -1,8 +1,7 @@
 from collections import defaultdict
 
-from rptest.services.cluster import cluster
-
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.mock_iam_roles_server import MockIamRolesServer
 from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
 from rptest.tests.e2e_shadow_indexing_test import EndToEndShadowIndexingBase

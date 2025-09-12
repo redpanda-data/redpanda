@@ -8,12 +8,12 @@
 # by the Apache License, Version 2.0
 
 import random
+from random import randbytes
+
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from random import randbytes
-
 from rptest.utils.xid_utils import random_xid_string
 
 

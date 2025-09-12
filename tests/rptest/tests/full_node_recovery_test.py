@@ -8,16 +8,17 @@
 # by the Apache License, Version 2.0
 
 import random
-from rptest.services.cluster import cluster
+
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
-from rptest.clients.types import TopicSpec
-from rptest.tests.end_to_end import EndToEndTest
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.default import DefaultClient
+from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
+from rptest.tests.end_to_end import EndToEndTest
 
 
 class FullNodeRecoveryTest(EndToEndTest):

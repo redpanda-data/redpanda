@@ -6,30 +6,28 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-from rptest.tests.datalake.catalog_service_factory import filesystem_catalog_type
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.cluster import cluster
-from rptest.tests.datalake.datalake_services import DatalakeServices
-from rptest.tests.datalake.utils import supported_storage_types
-from rptest.tests.datalake.query_engine_base import QueryEngineType
-from rptest.services.redpanda import PandaproxyConfig, SchemaRegistryConfig, SISettings
-from rptest.services.openmessaging_benchmark import (
-    OpenMessagingBenchmark,
-    LocalPayloadDirectory,
-)
-from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
+import operator
+import random
+import string
 
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.protobuf import ProtobufSerializer
-from confluent_kafka.serialization import SerializationContext, MessageField
-
+from confluent_kafka.serialization import MessageField, SerializationContext
 from ducktape.mark import matrix
 
 import rptest.tests.datalake.schemas.linear_pb2 as linear_pb2
-
-import operator
-import string
-import random
+from rptest.services.cluster import cluster
+from rptest.services.openmessaging_benchmark import (
+    LocalPayloadDirectory,
+    OpenMessagingBenchmark,
+)
+from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
+from rptest.services.redpanda import PandaproxyConfig, SISettings, SchemaRegistryConfig
+from rptest.tests.datalake.catalog_service_factory import filesystem_catalog_type
+from rptest.tests.datalake.datalake_services import DatalakeServices
+from rptest.tests.datalake.query_engine_base import QueryEngineType
+from rptest.tests.datalake.utils import supported_storage_types
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class DatalakeOMBTest(RedpandaTest):

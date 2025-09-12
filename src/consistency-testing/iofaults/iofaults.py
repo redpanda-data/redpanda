@@ -8,12 +8,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import errno
 import os
 import sys
-import errno
-from flask import Flask, json
-import time
 import threading
+import time
+
+from flask import Flask, json
 from fuse import FUSE, FuseOSError, Operations
 
 

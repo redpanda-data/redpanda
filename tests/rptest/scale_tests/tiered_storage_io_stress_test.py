@@ -13,15 +13,15 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
-    KgoVerifierProducer,
-    KgoVerifierSeqConsumer,
-    KgoVerifierRandomConsumer,
     KgoVerifierConsumerGroupConsumer,
+    KgoVerifierProducer,
+    KgoVerifierRandomConsumer,
+    KgoVerifierSeqConsumer,
 )
 from rptest.services.redpanda import (
+    RESTART_LOG_ALLOW_LIST,
     CloudStorageType,
     SISettings,
-    RESTART_LOG_ALLOW_LIST,
     get_cloud_storage_type,
 )
 from rptest.tests.prealloc_nodes import PreallocNodesTest

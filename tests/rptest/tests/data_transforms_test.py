@@ -7,37 +7,36 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import typing
-import time
+import concurrent.futures
+import json
 import math
 import random
 import string
-import json
+import time
+import typing
 from typing import Optional
-import concurrent.futures
-
-from requests.exceptions import RequestException
 
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.errors import TimeoutError
 from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+from requests.exceptions import RequestException
+
 from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin, CommittedWasmOffset
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import MetricSamples, MetricsEndpoint
-from ducktape.utils.util import wait_until
-from ducktape.errors import TimeoutError
+from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.services.transform_verifier_service import (
+    TransformVerifierConsumeConfig,
+    TransformVerifierConsumeStatus,
     TransformVerifierProduceConfig,
     TransformVerifierProduceStatus,
     TransformVerifierService,
-    TransformVerifierConsumeConfig,
-    TransformVerifierConsumeStatus,
 )
-from rptest.services.admin import Admin, CommittedWasmOffset
-from rptest.services.redpanda_installer import RedpandaInstaller
-
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.types import TopicSpec
 from rptest.tests.cluster_config_test import wait_for_version_sync
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, wait_until_result
 
 

@@ -9,10 +9,11 @@
 
 from dataclasses import dataclass
 from math import ceil
-from ducktape.tests.test import TestContext
 from typing import Optional
-from rptest.services.client_swarm_base import ClientSwarmBase
 
+from ducktape.tests.test import TestContext
+
+from rptest.services.client_swarm_base import ClientSwarmBase
 from rptest.services.redpanda import AnyRedpandaService
 from rptest.services.utils import assert_int, assert_int_or_none
 

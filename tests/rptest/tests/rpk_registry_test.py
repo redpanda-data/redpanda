@@ -7,18 +7,19 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import tempfile
-import socket
 import json
+import socket
+import tempfile
 
 from ducktape.utils.util import wait_until
-from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SchemaRegistryConfig, SecurityConfig
-from rptest.clients.rpk import RpkTool, RpkException
-from rptest.services.admin import Admin
+
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services import tls
-from rptest.tests.pandaproxy_test import User, PandaProxyTLSProvider
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import SchemaRegistryConfig, SecurityConfig
+from rptest.tests.pandaproxy_test import PandaProxyTLSProvider, User
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
 
 schema1_avro_def = (

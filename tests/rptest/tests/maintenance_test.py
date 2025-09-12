@@ -8,18 +8,19 @@
 # by the Apache License, Version 2.0
 
 import random
-from math import ceil
 from collections import Counter
+from math import ceil
+
+import requests
+from ducktape.mark import ignore, matrix
+from ducktape.utils.util import wait_until
 
 from rptest.clients.default import DefaultClient
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.clients.rpk import RpkException
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.tests.maintenance import MaintenanceTestBase
-from ducktape.utils.util import wait_until
-from ducktape.mark import matrix, ignore
-import requests
 
 
 class MaintenanceTest(MaintenanceTestBase):

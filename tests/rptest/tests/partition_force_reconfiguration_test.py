@@ -7,21 +7,23 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import random
+import time
+from random import shuffle
+from threading import Condition, Thread
+
 import requests
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.tests.end_to_end import EndToEndTest
-from rptest.clients.rpk import RpkTool
 from ducktape.mark import ignore, matrix
 from ducktape.utils.util import wait_until
-from random import shuffle
-import time
-from rptest.tests.partition_movement import PartitionMovementMixin
-from rptest.services.admin import Admin, Replica
+
 from rptest.clients.kcl import KCL
-from threading import Thread, Condition
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin, Replica
+from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import RedpandaService, SISettings
+from rptest.tests.end_to_end import EndToEndTest
+from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
 from rptest.utils.node_operations import NodeDecommissionWaiter

@@ -12,7 +12,7 @@ import re
 import sys
 import time
 import traceback
-from collections import namedtuple, defaultdict
+from collections import defaultdict, namedtuple
 from typing import DefaultDict, List, Optional
 
 from ducktape.mark import matrix
@@ -22,25 +22,29 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
+    CloudStorageTypeAndUrlStyle,
     RedpandaService,
     SISettings,
-    CloudStorageTypeAndUrlStyle,
     get_cloud_storage_type,
     get_cloud_storage_type_and_url_style,
 )
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
-    segments_count,
-    produce_until_segments,
-    wait_for_local_storage_truncate,
     firewall_blocked,
+    produce_until_segments,
+    segments_count,
+    wait_for_local_storage_truncate,
 )
 from rptest.utils.mode_checks import skip_fips_mode
-from rptest.utils.si_utils import BucketView, NTPR
-from rptest.utils.si_utils import gen_segment_name_from_meta, gen_local_path_from_remote
-from rptest.services.admin import Admin
+from rptest.utils.si_utils import (
+    NTPR,
+    BucketView,
+    gen_local_path_from_remote,
+    gen_segment_name_from_meta,
+)
 
 # First capture group is the log name. The last (optional) group is the archiver term to be removed.
 LOG_EXPRESSION = re.compile(r"(.*\.log)(\.\d+)?$")

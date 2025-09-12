@@ -8,10 +8,12 @@
 # by the Apache License, Version 2.0
 
 import random
-from rptest.services.cluster import cluster
-from ducktape.utils.util import wait_until
+
 from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool
+from rptest.services.cluster import cluster
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.tests.redpanda_test import RedpandaTest

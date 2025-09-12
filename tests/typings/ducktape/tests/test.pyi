@@ -1,22 +1,28 @@
-from _typeshed import Incomplete
 from collections.abc import Generator
+from logging import Logger
 from typing import Any
-from ducktape.cluster.cluster_spec import ClusterSpec as ClusterSpec
+
+from _typeshed import Incomplete
 from ducktape.cluster.cluster import Cluster
+from ducktape.cluster.cluster_spec import ClusterSpec as ClusterSpec
 from ducktape.command_line.defaults import ConsoleDefaults as ConsoleDefaults
 from ducktape.mark.resource import (
     CLUSTER_SIZE_KEYWORD as CLUSTER_SIZE_KEYWORD,
+)
+from ducktape.mark.resource import (
     CLUSTER_SPEC_KEYWORD as CLUSTER_SPEC_KEYWORD,
 )
 from ducktape.services.service_registry import ServiceRegistry as ServiceRegistry
 from ducktape.template import TemplateRenderer as TemplateRenderer
 from ducktape.tests.loggermaker import (
     LoggerMaker as LoggerMaker,
+)
+from ducktape.tests.loggermaker import (
     close_logger as close_logger,
 )
-from ducktape.tests.status import FAIL as FAIL, OFAIL as OFAIL
+from ducktape.tests.status import FAIL as FAIL
+from ducktape.tests.status import OFAIL as OFAIL
 from ducktape.utils.local_filesystem_utils import mkdir_p as mkdir_p
-from logging import Logger
 
 class Test(TemplateRenderer):
     test_context: TestContext

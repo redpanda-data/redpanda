@@ -15,12 +15,14 @@ import socket
 import time
 import zipfile
 from typing import Optional
-from uuid import uuid4, UUID
+from uuid import UUID, uuid4
+
 import requests
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import matrix
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import (
     Admin,

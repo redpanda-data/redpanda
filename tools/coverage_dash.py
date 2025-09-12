@@ -1,17 +1,18 @@
-import sys
-import csv
-import json
-import os
-import subprocess
-import io
-import re
 import argparse
-import tempfile
-import gen_coverage as rpcov
+import csv
+import io
 import itertools
-from concurrent.futures import ThreadPoolExecutor
-import multiprocessing
+import json
 import logging
+import multiprocessing
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
+
+import gen_coverage as rpcov
 
 KCLIENTS = ["FranzGo", "KafkaStreams", "Sarama"]
 

@@ -7,17 +7,17 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from ducktape.utils.util import wait_until
-
 import time
 
+from ducktape.utils.util import wait_until
+
 from rptest.clients.types import TopicSpec
-from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.services.redpanda import ResourceSettings
+from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.metrics_check import MetricCheck
+from rptest.services.redpanda import ResourceSettings
+from rptest.services.rpk_consumer import RpkConsumer
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.mode_checks import skip_debug_mode
 
 RATE_METRIC = "vectorized_kafka_rpc_active_connections"

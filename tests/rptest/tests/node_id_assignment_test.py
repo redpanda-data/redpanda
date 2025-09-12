@@ -9,9 +9,10 @@
 
 from ducktape.errors import TimeoutError
 from ducktape.utils.util import wait_until
-from rptest.tests.redpanda_test import RedpandaTest
+
 from rptest.services.cluster import cluster
 from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 def wipe_and_restart(redpanda, node):

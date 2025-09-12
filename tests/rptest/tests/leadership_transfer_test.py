@@ -8,19 +8,20 @@
 # by the Apache License, Version 2.0
 
 import collections
+import math
 import random
 import time
-import math
 
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from ducktape.utils.util import wait_until
+
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool
-from rptest.util import wait_until_result
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until_result
 
 
 class LeadershipTransferTest(RedpandaTest):

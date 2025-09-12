@@ -8,17 +8,18 @@
 # by the Apache License, Version 2.0
 
 import time
+
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import ResourceSettings
-from rptest.services.admin import Admin
 import rptest.services.kgo_verifier_services as kgo
 from rptest.clients.rpk import RpkTool
-from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import ResourceSettings
 from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import wait_until_result
-from ducktape.mark import matrix
 
 
 class ShardPlacementTest(PreallocNodesTest):

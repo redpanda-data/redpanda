@@ -18,6 +18,10 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierProducer,
+    KgoVerifierSeqConsumer,
+)
 from rptest.services.redpanda import (
     SISettings,
     get_cloud_storage_type,
@@ -25,10 +29,6 @@ from rptest.services.redpanda import (
 )
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import Scale
-from rptest.services.kgo_verifier_services import (
-    KgoVerifierProducer,
-    KgoVerifierSeqConsumer,
-)
 
 
 class EndToEndCloudTopicsBase(EndToEndTest):

@@ -1,4 +1,5 @@
 from ducktape.utils.util import wait_until
+
 from rptest.services.redpanda_types import (
     PLAINTEXT_SECURITY,
     KafkaClientSecurity,

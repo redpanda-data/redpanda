@@ -10,17 +10,17 @@
 from __future__ import annotations
 
 import os
-import time
 import signal
 import threading
-import requests
+import time
 from typing import Any, Dict, Optional
-from requests.adapters import HTTPAdapter
 
+import requests
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
-from ducktape.cluster.remoteaccount import RemoteCommandError
+from requests.adapters import HTTPAdapter
 from urllib3 import Retry
 
 from rptest.services.redpanda import RedpandaService

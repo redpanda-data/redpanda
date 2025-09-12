@@ -1,9 +1,10 @@
+from ducktape.mark import matrix
+
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.tests.redpanda_test import RedpandaTest
-from ducktape.mark import matrix
 
 
 class UsageStatsReportingTest(RedpandaTest):

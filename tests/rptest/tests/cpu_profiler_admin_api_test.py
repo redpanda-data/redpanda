@@ -9,14 +9,15 @@
 
 import re
 from typing import Any
-from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.admin import Admin
-from rptest.services.redpanda import LoggingConfig, ResourceSettings
-from rptest.clients.types import TopicSpec
-from rptest.services.kgo_repeater_service import repeater_traffic
 
 import requests
+
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.kgo_repeater_service import repeater_traffic
+from rptest.services.redpanda import LoggingConfig, ResourceSettings
+from rptest.tests.redpanda_test import RedpandaTest
 
 VERSION_REGEX = re.compile(r".+ - .+")
 

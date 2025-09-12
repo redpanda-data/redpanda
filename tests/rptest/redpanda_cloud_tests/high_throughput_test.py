@@ -7,14 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from dataclasses import dataclass
-import random
 import itertools
+import json
 import math
+import random
 import re
 import time
-import json
-
+from contextlib import contextmanager
+from dataclasses import dataclass
 from threading import Thread
 from typing import Any, cast
 
@@ -22,16 +22,20 @@ from ducktape.errors import TimeoutError as TimeoutException
 from ducktape.mark import ignore, parametrize
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.redpanda_cloud_tests.cloudv2_object_store_blocked import (
+    cloudv2_object_store_blocked,
+)
 from rptest.services.cluster import cluster
-from contextlib import contextmanager
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
     KgoVerifierRandomConsumer,
 )
+from rptest.services.machinetype import get_machine_info
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import (
@@ -39,29 +43,25 @@ from rptest.services.openmessaging_benchmark_configs import (
     ValidatorDict,
 )
 from rptest.services.producer_swarm import ProducerSwarm
-from rptest.services.redpanda_cloud import CLOUD_TYPE_FMC
-from rptest.services.redpanda_cloud import (
-    CloudTierName,
-    get_config_profile_name,
-    PROVIDER_AWS,
-)
 from rptest.services.redpanda import (
     RESTART_LOG_ALLOW_LIST,
     MetricsEndpoint,
     RedpandaService,
-    SISettings,
     RedpandaServiceCloud,
+    SISettings,
+)
+from rptest.services.redpanda_cloud import (
+    CLOUD_TYPE_FMC,
+    PROVIDER_AWS,
+    CloudTierName,
+    get_config_profile_name,
 )
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 from rptest.util import firewall_blocked
 from rptest.utils.si_utils import nodes_report_cloud_segments
-from rptest.redpanda_cloud_tests.cloudv2_object_store_blocked import (
-    cloudv2_object_store_blocked,
-)
 from rptest.utils.test_mixins import PreallocNodesMixin
-from rptest.services.machinetype import get_machine_info
 
 KiB = 1024
 MiB = KiB * KiB

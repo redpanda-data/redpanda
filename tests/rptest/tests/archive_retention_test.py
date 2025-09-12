@@ -7,33 +7,34 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from time import sleep
 import time
+from time import sleep
+
 from ducktape.errors import TimeoutError
 from ducktape.mark import matrix, parametrize
 from ducktape.utils.util import wait_until
 
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import (
     CloudStorageType,
-    SISettings,
     MetricsEndpoint,
+    SISettings,
     get_cloud_storage_type,
 )
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
-    produce_until_segments,
-    produce_total_bytes,
-    wait_for_local_storage_truncate,
-    segments_count,
     expect_exception,
+    produce_total_bytes,
+    produce_until_segments,
+    segments_count,
+    wait_for_local_storage_truncate,
     wait_until_with_progress_check,
 )
-from rptest.utils.si_utils import BucketView, NTP, quiesce_uploads
+from rptest.utils.si_utils import NTP, BucketView, quiesce_uploads
 
 
 class CloudArchiveRetentionTest(RedpandaTest):

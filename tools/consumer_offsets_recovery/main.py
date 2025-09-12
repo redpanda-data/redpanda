@@ -1,14 +1,11 @@
+import logging
 import os
+import subprocess
 from pathlib import Path
 
-import subprocess
-from kafka import KafkaAdminClient
-from kafka import KafkaConsumer
-from kafka.admin.new_topic import NewTopic
-from kafka import TopicPartition
-from kafka import OffsetAndMetadata
 from jproperties import Properties
-import logging
+from kafka import KafkaAdminClient, KafkaConsumer, OffsetAndMetadata, TopicPartition
+from kafka.admin.new_topic import NewTopic
 
 logger = logging.getLogger("cg-recovery-tool")
 

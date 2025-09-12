@@ -1,6 +1,6 @@
+from rptest.services.provider_clients.azure_client import AzureClient
 from rptest.services.provider_clients.ec2_client import EC2Client
 from rptest.services.provider_clients.gcp_client import GCPClient
-from rptest.services.provider_clients.azure_client import AzureClient
 
 
 def make_provider_client(provider, logger, region, key, secret, tenant=None):

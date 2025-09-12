@@ -1,11 +1,11 @@
 import base64
+import datetime
 from collections import namedtuple
 from io import BytesIO
+
 from model import *
 from reader import Endianness, Reader
-from storage import Segment
-from storage import BatchType
-import datetime
+from storage import BatchType, Segment
 
 
 class TxRecordParser:

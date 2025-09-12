@@ -7,15 +7,17 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from ducktape.utils.util import wait_until
+import json
+import time
+
 import confluent_kafka as ck
-from rptest.tests.redpanda_test import RedpandaTest
+from ducktape.utils.util import wait_until
+
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
-import time
-import json
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class TxKafkaApiTest(RedpandaTest):

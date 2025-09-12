@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 from abc import abstractmethod
-from typing import Protocol, Optional, ClassVar, Any
+from typing import Any, ClassVar, Optional, Protocol
 
 from rptest.services.redpanda_installer import (
     RedpandaInstaller,

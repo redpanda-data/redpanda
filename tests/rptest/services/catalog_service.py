@@ -7,14 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from typing import Dict, Optional
-from ducktape.services.service import Service
-from rptest.context import cloud_storage
-
 import abc
 from enum import Enum
+from typing import Dict, Optional
 
+from ducktape.services.service import Service
 from pyiceberg.catalog import load_catalog
+
+from rptest.context import cloud_storage
 
 
 class CatalogType(str, Enum):

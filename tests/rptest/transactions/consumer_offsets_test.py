@@ -7,14 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.transactions.verifiers.consumer_offsets_verifier import (
-    ConsumerOffsetsVerifier,
-)
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
 from rptest.services.cluster import cluster
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.redpanda_test import RedpandaTest
-from ducktape.utils.util import wait_until
-from ducktape.mark import matrix
+from rptest.transactions.verifiers.consumer_offsets_verifier import (
+    ConsumerOffsetsVerifier,
+)
 
 
 class VerifyConsumerOffsets(RedpandaTest):

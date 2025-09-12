@@ -11,17 +11,16 @@ import os
 import pprint
 import threading
 from contextlib import contextmanager
-from typing import Callable, Optional, Any, ContextManager
 from logging import Logger
+from typing import Any, Callable, ContextManager, Optional
 
+from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.errors import TimeoutError
 from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.storage import Segment
-
-from ducktape.cluster.remoteaccount import RemoteCommandError
-from ducktape.errors import TimeoutError
 
 
 class Scale:

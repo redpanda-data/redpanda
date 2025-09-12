@@ -1,25 +1,26 @@
 import pprint
+import random
+import time
+
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkPartition, RpkTool
-from rptest.services.admin import Admin
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import (
     CloudStorageType,
-    SISettings,
-    make_redpanda_service,
     LoggingConfig,
-    get_cloud_storage_type,
     MetricsEndpoint,
+    SISettings,
+    get_cloud_storage_type,
+    make_redpanda_service,
 )
 from rptest.tests.end_to_end import EndToEndTest
-from rptest.util import wait_until_segments, wait_for_removal_of_n_segments
+from rptest.util import wait_for_removal_of_n_segments, wait_until_segments
 from rptest.utils.si_utils import BucketView
-from ducktape.utils.util import wait_until
-from ducktape.mark import matrix
-import random
-import time
 
 
 class ShadowIndexingCompactedTopicTest(EndToEndTest):

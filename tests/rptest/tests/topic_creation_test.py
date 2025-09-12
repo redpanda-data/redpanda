@@ -8,38 +8,37 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import itertools
 import random
 import string
-import itertools
 import time
 from time import sleep
+
+from ducktape.mark import matrix, parametrize
+from ducktape.utils.util import wait_until
+
 from rptest.clients.default import DefaultClient
+from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.kcl import KCL, KclCreateTopicsRequestTopic, RawKCL
+from rptest.clients.offline_log_viewer import OfflineLogViewer
+from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.clients.kcl import RawKCL, KclCreateTopicsRequestTopic
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkException, RpkTool
-from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.redpanda import (
+    CloudStorageType,
     ResourceSettings,
     SISettings,
-    CloudStorageType,
     get_cloud_storage_type,
 )
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.services.rpk_producer import RpkProducer
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.util import wait_for_local_storage_truncate, expect_exception
-from rptest.clients.kcl import KCL
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.e2e_finjector import Finjector
-
-from ducktape.utils.util import wait_until
-from ducktape.mark import matrix, parametrize
-
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.offline_log_viewer import OfflineLogViewer
+from rptest.util import expect_exception, wait_for_local_storage_truncate
 
 
 def topic_name():

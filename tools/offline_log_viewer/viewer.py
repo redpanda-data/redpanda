@@ -1,28 +1,26 @@
 #!/usr/bin/env python3
-from collections.abc import Iterable
+import itertools
+import json
+import logging
 import os
 import sys
+from collections import namedtuple
+from collections.abc import Iterable
 from os.path import join
 from typing import Any
 
-from controller import ControllerLog, ControllerSnapshot
 from consumer_groups import GroupsLog
 from consumer_offsets import ConsumerGroupsSummaryGenerator, OffsetsLog
-
+from controller import ControllerLog, ControllerSnapshot
 from crash_report import decode_crash_report
+from kafka import KafkaLog
+from kvstore import KvStore
+from storage import Store
 from topic_manifest import (
     decode_topic_manifest,
     decode_topic_manifest_to_legacy_v1_json,
 )
 from tx_coordinator import TxLog
-
-import itertools
-from storage import Store
-from kvstore import KvStore
-from kafka import KafkaLog
-from collections import namedtuple
-import logging
-import json
 
 logger = logging.getLogger("viewer")
 

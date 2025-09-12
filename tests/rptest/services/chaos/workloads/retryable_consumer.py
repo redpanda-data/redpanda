@@ -7,8 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from confluent_kafka import Consumer, TopicPartition, OFFSET_BEGINNING
 import time
+
+from confluent_kafka import OFFSET_BEGINNING, Consumer, TopicPartition
 
 
 class RetryableConsumer:

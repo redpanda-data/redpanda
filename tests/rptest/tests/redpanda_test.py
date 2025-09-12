@@ -7,32 +7,33 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from abc import ABC, abstractmethod
 import os
+from abc import ABC, abstractmethod
 from typing import Any, Callable, Mapping, Sequence, cast
 
 from ducktape.tests.test import Test, TestContext
 from ducktape.utils.util import wait_until
+
+from rptest.clients.default import DefaultClient
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import (
+    CloudStorageType,
     RedpandaService,
     RedpandaServiceCloud,
     SISettings,
     make_redpanda_mixed_service,
     make_redpanda_service,
-    CloudStorageType,
 )
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.default import DefaultClient
-from rptest.util import Scale
-from rptest.utils import mode_checks
-from rptest.clients.types import TopicSpec
 from rptest.services.redpanda_installer import (
     RedpandaInstaller,
     RedpandaVersion,
     RedpandaVersionLine,
     RedpandaVersionTriple,
 )
-from rptest.clients.rpk import RpkTool
+from rptest.util import Scale
+from rptest.utils import mode_checks
 
 
 class RedpandaTestBase(ABC, Test):

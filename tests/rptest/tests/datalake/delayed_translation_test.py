@@ -10,19 +10,19 @@ from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings, SchemaRegistryConfig
 from rptest.services.redpanda_connect import RedpandaConnectService
+from rptest.tests.datalake.catalog_service_factory import supported_catalog_types
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.query_engine_base import QueryEngineBase, QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.tests.datalake.catalog_service_factory import supported_catalog_types
 from rptest.util import wait_until_result
-from rptest.utils.rpcn_utils import counter_stream_config
 from rptest.utils.parallel import execute_in_parallel
-from rptest.services.admin import Admin
-from rptest.clients.types import TopicSpec
+from rptest.utils.rpcn_utils import counter_stream_config
 
 
 class DatalakeDelayedTranslationTest(RedpandaTest):

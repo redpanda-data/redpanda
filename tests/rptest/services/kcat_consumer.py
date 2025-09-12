@@ -7,14 +7,16 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from enum import Enum
 import json
 import re
-import threading, time
+import threading
+import time
+from enum import Enum
 from typing import Any, Callable, Optional
-from ducktape.services.background_thread import BackgroundThreadService
-from ducktape.cluster.remoteaccount import RemoteCommandError, SSHOutputIter
+
 import paramiko.channel
+from ducktape.cluster.remoteaccount import RemoteCommandError, SSHOutputIter
+from ducktape.services.background_thread import BackgroundThreadService
 
 
 class KcatConsumer(BackgroundThreadService):

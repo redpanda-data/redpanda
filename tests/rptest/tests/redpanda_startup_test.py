@@ -10,12 +10,13 @@
 import os
 from time import sleep
 
-from ducktape.mark import ignore
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
+
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import MetricsEndpoint, MetricSamples, RedpandaServiceBase
+from rptest.services.redpanda import MetricSamples, MetricsEndpoint, RedpandaServiceBase
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.log_utils import wait_until_nag_is_set
 from rptest.utils.mode_checks import in_fips_environment

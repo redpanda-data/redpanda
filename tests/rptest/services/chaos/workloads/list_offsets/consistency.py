@@ -7,14 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import sys
-import traceback
 import logging
 import os
+import sys
+import traceback
 
 from ...types import ConsistencyCheckError
 from ..retryable_consumer import RetryableConsumer
-from .log_utils import State, cmds, transitions, phantoms
+from .log_utils import State, cmds, phantoms, transitions
 
 logger = logging.getLogger("consistency")
 

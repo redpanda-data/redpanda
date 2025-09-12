@@ -7,26 +7,26 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import collections
-import json
 import io
+import json
 import pprint
 import struct
 import time
-from dataclasses import dataclass
 from collections import defaultdict, namedtuple
+from dataclasses import dataclass
 from enum import Enum
-from typing import Literal, Sequence, Optional, NewType, NamedTuple, Iterator
+from typing import Iterator, Literal, NamedTuple, NewType, Optional, Sequence
 
-from rptest.clients.offline_log_viewer import OfflineLogViewer
 import xxhash
-
 from botocore.exceptions import ClientError
-from rptest.archival.s3_client import ObjectMetadata, S3Client
+
 from rptest.archival.abs_client import ABSClient
+from rptest.archival.s3_client import ObjectMetadata, S3Client
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import MetricsEndpoint, RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, MetricsEndpoint
 
 EMPTY_SEGMENT_SIZE = 4096
 

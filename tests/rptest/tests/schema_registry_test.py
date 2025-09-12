@@ -7,29 +7,29 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from enum import Enum, auto, unique
 import http.client
 import json
-from typing import Literal, NamedTuple, Optional, Dict, Callable, Any
-import uuid
-import re
-import urllib.parse
-import requests
-import time
 import random
+import re
 import socket
+import time
+import urllib.parse
+import uuid
+from enum import Enum, auto, unique
+from typing import Any, Callable, Dict, Literal, NamedTuple, Optional
 
+import requests
 from confluent_kafka.schema_registry import (
+    Schema,
+    SchemaReference,
     SchemaRegistryClient,
-    topic_subject_name_strategy,
+    SchemaRegistryError,
     record_subject_name_strategy,
     topic_record_subject_name_strategy,
-    Schema,
-    SchemaRegistryError,
-    SchemaReference,
+    topic_subject_name_strategy,
 )
 from confluent_kafka.serialization import MessageField, SerializationContext
-from ducktape.mark import parametrize, matrix
+from ducktape.mark import matrix, parametrize
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.utils.util import wait_until
 
@@ -42,18 +42,18 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
     DEFAULT_LOG_ALLOW_LIST,
-    MetricsEndpoint,
-    ResourceSettings,
-    SecurityConfig,
     LoggingConfig,
+    MetricsEndpoint,
     PandaproxyConfig,
-    SchemaRegistryConfig,
     RedpandaService,
+    ResourceSettings,
+    SchemaRegistryConfig,
+    SecurityConfig,
 )
 from rptest.services.redpanda_types import SaslCredentials
 from rptest.services.serde_client import SerdeClient
 from rptest.tests.cluster_config_test import wait_for_version_status_sync
-from rptest.tests.pandaproxy_test import User, PandaProxyTLSProvider
+from rptest.tests.pandaproxy_test import PandaProxyTLSProvider, User
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, inject_remote_script, search_logs_with_timeout
 from rptest.utils.log_utils import wait_until_nag_is_set

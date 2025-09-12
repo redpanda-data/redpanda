@@ -8,11 +8,13 @@
 # by the Apache License, Version 2.0
 
 from typing import Any
+
 from ducktape.tests.test import TestContext
+
 from rptest.clients.rpk import RpkTool
-from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RedpandaServiceCloud
+from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 
 
 class RedpandaCloudSelfTest(RedpandaCloudTest):

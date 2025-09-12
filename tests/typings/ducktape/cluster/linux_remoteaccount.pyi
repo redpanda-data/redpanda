@@ -2,6 +2,8 @@ from _typeshed import Incomplete
 from ducktape.cluster.cluster_spec import LINUX as LINUX
 from ducktape.cluster.remoteaccount import (
     RemoteAccount as RemoteAccount,
+)
+from ducktape.cluster.remoteaccount import (
     RemoteAccountError as RemoteAccountError,
 )
 

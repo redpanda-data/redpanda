@@ -9,17 +9,16 @@
 
 import json
 import logging
-
 from typing import Optional
+from uuid import uuid4
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.tests.test import TestContext
-from rptest.clients.types import TopicSpec
-from rptest.clients.serde_client_utils import SchemaType, SerdeClientType
-from rptest.util import inject_remote_script
 
-from uuid import uuid4
+from rptest.clients.serde_client_utils import SchemaType, SerdeClientType
+from rptest.clients.types import TopicSpec
+from rptest.util import inject_remote_script
 
 PYTHON_EXEC = "python3"
 JAVA_EXEC = "java -cp"

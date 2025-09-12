@@ -1,25 +1,24 @@
-from copyreg import dispatch_table
 import os
 import random
 import signal
+from copyreg import dispatch_table
 from time import sleep
 from urllib.error import HTTPError
-from numpy import partition
 
 import requests
-from rptest.services.cluster import cluster
-
-from ducktape.utils.util import wait_until
 from ducktape.mark import matrix, parametrize
-from rptest.util import wait_for_recovery_throttle_rate
+from ducktape.utils.util import wait_until
+from numpy import partition
 
-from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, MetricsEndpoint, SISettings
 from rptest.services.verifiable_producer import TopicPartition
 from rptest.tests.end_to_end import EndToEndTest
-from rptest.services.admin import Admin
 from rptest.tests.partition_movement import PartitionMovementMixin
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings, MetricsEndpoint
+from rptest.util import wait_for_recovery_throttle_rate
 from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode
 
 NO_RECOVERY = "no_recovery"

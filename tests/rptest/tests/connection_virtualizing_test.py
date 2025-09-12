@@ -7,23 +7,22 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from dataclasses import dataclass
 import random
+from dataclasses import dataclass
 from types import MethodType
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from kafka.protocol.fetch import FetchRequest
-from ducktape.mark import matrix
 
+from ducktape.mark import matrix
+from kafka import KafkaClient, KafkaConsumer
+from kafka.protocol.admin import ApiVersionRequest
+from kafka.protocol.fetch import FetchRequest
+from kafka.protocol.produce import ProduceRequest
+from kafka.record.memory_records import MemoryRecordsBuilder
+from kafka.structs import TopicPartition
+
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until
-from kafka.protocol.admin import ApiVersionRequest
-from kafka.structs import TopicPartition
-from kafka.record.memory_records import MemoryRecordsBuilder
-
-from kafka import KafkaClient, KafkaConsumer
-from kafka.protocol.produce import ProduceRequest
-
 from rptest.utils.xid_utils import random_xid_string
 
 
