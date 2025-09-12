@@ -10,6 +10,7 @@
 #include "kafka/server/handlers/produce.h"
 
 #include "base/likely.h"
+#include "cluster/cluster_link/frontend.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
@@ -256,6 +257,23 @@ partition_produce_stages produce_topic_partition(
             .partition_index = ntp.tp.partition,
             .error_code = validate_batch_res->err,
             .error_message = std::move(validate_batch_res->msg)});
+        return partition_produce_stages{
+          .dispatched = std::move(dispatch_f), .produced = std::move(f)};
+    }
+
+    // Producing directly to an active shadow topic is not allowed
+    auto& cl_frontend
+      = octx.rctx.connection()->server().cluster_link_frontend();
+    const auto is_shadow_topic = cl_frontend.has_active_mirror_topic(
+      ntp.tp.topic);
+    if (unlikely(is_shadow_topic)) {
+        auto dispatch_f = ss::now();
+        auto f = ss::make_ready_future<produce_response::partition>(
+          produce_response::partition{
+            .partition_index = ntp.tp.partition,
+            .error_code = error_code::policy_violation,
+            .error_message
+            = "Producing to an active shadow topic is not allowed"});
         return partition_produce_stages{
           .dispatched = std::move(dispatch_f), .produced = std::move(f)};
     }

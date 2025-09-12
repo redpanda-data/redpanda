@@ -15,6 +15,7 @@ import re
 from contextlib import nullcontext
 
 
+from confluent_kafka import KafkaException, Producer
 from connectrpc.errors import ConnectError, ConnectErrorCode
 from ducktape.mark import matrix
 from ducktape.mark import ignore
@@ -580,6 +581,26 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
         ):
             self.start_producer_consumer(topic=topic.name, msg_size=128, msg_cnt=100000)
             self.verify()
+
+        # Verify that producing to an active shadow topic is not allowed
+        target_producer = Producer(
+            {"bootstrap.servers": self.target_cluster.service.brokers()}
+        )
+
+        def on_delivery(err, _):
+            if err is not None:
+                raise KafkaException(err)
+
+        with expect_exception(
+            KafkaException, lambda err: "POLICY_VIOLATION" in str(err)
+        ):
+            target_producer.produce(
+                topic.name,
+                key="key1".encode("utf-8"),
+                value="value1".encode("utf-8"),
+                callback=on_delivery,
+            )
+            target_producer.flush()
 
     @cluster(
         num_nodes=7,
