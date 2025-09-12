@@ -232,6 +232,8 @@ struct configuration final : public config_store {
       log_message_timestamp_alert_before_ms;
     bounded_property<std::chrono::milliseconds>
       log_message_timestamp_alert_after_ms;
+    enum_property<model::kafka_batch_validation_mode>
+      kafka_produce_batch_validation;
     enum_property<model::compression> log_compression_type;
     property<size_t> fetch_max_bytes;
     property<bool> use_fetch_scheduler_group;

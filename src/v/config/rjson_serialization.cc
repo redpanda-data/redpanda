@@ -289,4 +289,10 @@ void rjson_serialize(
     stringize(w, policy);
 }
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const model::kafka_batch_validation_mode& m) {
+    stringize(w, m);
+}
+
 } // namespace json
