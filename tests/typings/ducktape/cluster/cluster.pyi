@@ -1,4 +1,3 @@
-from _typeshed import Incomplete
 from ducktape.cluster.cluster_spec import ClusterSpec
 from ducktape.cluster.node_container import NodeContainer
 from ducktape.cluster.remoteaccount import RemoteAccount

@@ -8,8 +8,6 @@
 # by the Apache License, Version 2.0
 
 import random
-import string
-from collections import defaultdict
 
 from rptest.tests.datalake.schemas.data_types import (
     ALL_PRIMITIVE_DATA_TYPES,
@@ -18,7 +16,6 @@ from rptest.tests.datalake.schemas.data_types import (
     GenericEnum,
     GenericMap,
     GenericOptional,
-    GenericPrimitive,
     GenericRecord,
     GenericUnion,
 )

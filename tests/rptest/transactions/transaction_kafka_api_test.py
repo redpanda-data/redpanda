@@ -11,10 +11,8 @@ import json
 import time
 
 import confluent_kafka as ck
-from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest

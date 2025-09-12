@@ -7,22 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import json
-import logging
 import time
-from typing import Any
 
-import requests
-from ducktape.mark import matrix
 
 from rptest.clients.installpack import InstallPackClient
-from rptest.clients.rpk import RpkException, RpkTool, TopicSpec
+from rptest.clients.rpk import RpkTool, TopicSpec
 from rptest.context.databricks import DatabricksContext, OauthCredentials
-from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
 from rptest.services.databricks_workspace import DatabricksWorkspace
 from rptest.services.provider_clients.rpcloud_client import RpCloudApiClient
-from rptest.services.redpanda import RedpandaServiceCloud, get_cloud_provider
 from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 
 # from rptest.tests.datalake.datalake_services import DatalakeServices

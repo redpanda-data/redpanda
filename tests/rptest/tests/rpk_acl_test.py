@@ -13,7 +13,6 @@ from rptest.clients.rpk import RPKACLInput, RpkException, RpkTool
 from rptest.services.cluster import cluster
 from rptest.services.failure_injector import FailureSpec, make_failure_injector
 from rptest.services.redpanda import SchemaRegistryConfig, SecurityConfig
-from rptest.tests.admin_api_auth_test import create_user_and_wait
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
 

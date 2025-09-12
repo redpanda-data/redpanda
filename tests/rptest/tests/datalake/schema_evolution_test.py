@@ -18,21 +18,18 @@ import pyhive
 from confluent_kafka import avro
 from confluent_kafka.avro import AvroProducer
 from confluent_kafka.schema_registry import SchemaRegistryClient
-from ducktape.errors import TimeoutError
 from ducktape.mark import matrix
 
-from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import PandaproxyConfig, SISettings, SchemaRegistryConfig
-from rptest.services.redpanda_connect import RedpandaConnectService
 from rptest.tests.datalake.catalog_service_factory import (
     filesystem_catalog_type,
     supported_catalog_types,
 )
 from rptest.tests.datalake.datalake_services import DatalakeServices
-from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
 from rptest.tests.redpanda_test import RedpandaTest

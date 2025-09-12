@@ -7,20 +7,16 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import random
 import re
 import sys
 import time
-from typing import Optional
 
-import ducktape.errors
 import requests
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.ping_pong import PingPong
-from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster

@@ -30,7 +30,6 @@ from rptest.services.workload_protocol import PWorkload
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.workload_dummy import DummyWorkload, MinimalWorkload
-from rptest.tests.workload_license import LicenseWorkload
 from rptest.tests.workload_producer_consumer import ProducerConsumerWorkload
 from rptest.tests.workload_upgrade_config_defaults import SetLogSegmentMsMinConfig
 from rptest.utils.mode_checks import skip_debug_mode, skip_fips_mode

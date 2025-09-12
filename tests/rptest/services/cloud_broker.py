@@ -3,7 +3,7 @@ import os
 import subprocess
 from dataclasses import dataclass
 
-from rptest.services.utils import KubeNodeShell
+from rptest.clients.kubectl import KubeNodeShell
 
 
 @dataclass

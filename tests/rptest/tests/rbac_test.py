@@ -21,7 +21,6 @@ from requests.exceptions import HTTPError
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.admin import (
     Admin,
-    RedpandaNode,
     Role,
     RoleDescription,
     RoleError,
@@ -29,7 +28,6 @@ from rptest.services.admin import (
     RoleMember,
     RoleMemberList,
     RoleMemberUpdateResponse,
-    RoleUpdate,
     RolesList,
 )
 from rptest.services.cluster import cluster

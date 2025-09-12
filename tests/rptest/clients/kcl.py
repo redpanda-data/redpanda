@@ -20,7 +20,6 @@ from typing import Optional
 
 from ducktape.utils.util import wait_until
 
-from rptest.utils.functional import flat_map
 
 KclPartitionOffset = namedtuple(
     "KclPartitionOffset",

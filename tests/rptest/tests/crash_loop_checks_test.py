@@ -9,7 +9,6 @@
 
 import signal
 
-from ducktape.errors import TimeoutError
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
@@ -17,7 +16,6 @@ from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import LoggingConfig, RedpandaService, ResourceSettings
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import expect_exception
 
 CRASH_LOOP_LOG = [
     "Crash loop detected. Too many consecutive crashes.*",

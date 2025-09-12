@@ -7,7 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.redpanda import FAILURE_INJECTION_LOG_ALLOW_LIST, MetricsEndpoint
+from rptest.services.redpanda import MetricsEndpoint
 from rptest.services.storage_failure_injection import (
     NTP,
     BatchType,

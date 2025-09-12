@@ -1,7 +1,6 @@
 import json
 import os
 import tempfile
-from typing import Optional
 
 import requests
 from ducktape.services.service import Service

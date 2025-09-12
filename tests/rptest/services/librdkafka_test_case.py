@@ -8,8 +8,6 @@
 # by the Apache License, Version 2.0
 
 import os
-import sys
-from threading import Event
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.background_thread import BackgroundThreadService

@@ -11,7 +11,6 @@ import re
 import time
 from collections import defaultdict
 
-from ducktape.errors import TimeoutError
 from ducktape.mark import matrix, parametrize
 from ducktape.utils.util import wait_until
 from packaging.version import Version
@@ -43,10 +42,7 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
-    produce_until_segments,
-    segments_count,
     wait_for_local_storage_truncate,
-    wait_until_segments,
 )
 from rptest.utils.mode_checks import skip_debug_mode, skip_fips_mode
 from rptest.utils.si_utils import BucketView

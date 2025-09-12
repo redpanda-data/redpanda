@@ -13,7 +13,7 @@ from google.api_core.exceptions import BadRequest, Conflict
 from google.cloud import bigquery
 
 from rptest.clients.installpack import InstallPackClient
-from rptest.clients.rpk import RpkException, RpkTool, TopicSpec
+from rptest.clients.rpk import RpkTool, TopicSpec
 from rptest.services.redpanda import get_cloud_provider
 from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 

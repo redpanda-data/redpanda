@@ -10,8 +10,6 @@ import io
 import json
 import os
 import pprint
-import random
-import re
 import time
 from collections import defaultdict, deque
 from queue import Queue
@@ -28,7 +26,6 @@ from ducktape.utils.util import wait_until
 
 from rptest.archival.abs_client import ABSClient
 from rptest.archival.s3_client import S3Client
-from rptest.clients.default import DefaultClient
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.clients.rpk import RpkException, RpkTool
@@ -55,7 +52,6 @@ from rptest.utils.si_utils import (
     PathMatcher,
     SegmentReader,
     default_log_segment_size,
-    gen_local_path_from_remote,
     get_expected_ntp_restored_size,
     get_on_disk_size_per_ntp,
     is_close_size,

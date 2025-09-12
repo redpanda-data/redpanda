@@ -1,6 +1,5 @@
 import base64
 import datetime
-from collections import namedtuple
 from io import BytesIO
 
 from model import *

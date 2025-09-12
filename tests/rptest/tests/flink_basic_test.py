@@ -11,7 +11,6 @@ import io
 import os
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
-from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools

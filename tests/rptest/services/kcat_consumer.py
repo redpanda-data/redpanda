@@ -10,12 +10,11 @@
 import json
 import re
 import threading
-import time
 from enum import Enum
 from typing import Any, Callable, Optional
 
 import paramiko.channel
-from ducktape.cluster.remoteaccount import RemoteCommandError, SSHOutputIter
+from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.background_thread import BackgroundThreadService
 
 

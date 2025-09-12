@@ -13,7 +13,7 @@ import time
 from enum import Enum
 
 import numpy
-from ducktape.mark import ignore, matrix, parametrize
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool

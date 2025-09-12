@@ -11,7 +11,6 @@ import random
 import signal
 import threading
 import time
-from collections import defaultdict
 
 import numpy
 from confluent_kafka import Producer

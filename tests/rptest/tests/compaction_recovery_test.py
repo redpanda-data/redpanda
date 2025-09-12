@@ -16,7 +16,6 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import produce_until_segments
 

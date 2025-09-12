@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Union
 
 import requests
-from ducktape.mark import matrix, parametrize
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cat import KafkaCat
@@ -37,7 +37,6 @@ from rptest.services.redpanda import (
     SecurityConfig,
     TLSProvider,
 )
-from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.tests.group_membership_test import GroupCoordinatorTransferUtils
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import search_logs_with_timeout

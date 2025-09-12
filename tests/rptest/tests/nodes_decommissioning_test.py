@@ -10,7 +10,6 @@
 import concurrent
 import random
 import time
-from time import sleep
 
 import requests
 from ducktape.mark import matrix, parametrize
@@ -33,7 +32,6 @@ from rptest.services.redpanda import (
     SISettings,
 )
 from rptest.services.redpanda_installer import RedpandaInstaller
-from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_for_recovery_throttle_rate

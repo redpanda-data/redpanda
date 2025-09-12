@@ -7,7 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import signal
 from subprocess import CalledProcessError
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
@@ -15,7 +14,7 @@ from ducktape.mark import matrix
 from ducktape.mark.resource import cluster as dt_cluster
 from ducktape.tests.test import Test
 
-from rptest.clients.kubectl import SUPPORTED_PROVIDERS, is_redpanda_pod
+from rptest.clients.kubectl import is_redpanda_pod
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster

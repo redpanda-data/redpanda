@@ -6,7 +6,6 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
-import os
 import random
 import time
 from math import ceil

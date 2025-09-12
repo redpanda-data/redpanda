@@ -11,7 +11,6 @@ from typing import Any
 
 from ducktape.tests.test import TestContext
 
-from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RedpandaServiceCloud
 from rptest.tests.redpanda_cloud_test import RedpandaCloudTest

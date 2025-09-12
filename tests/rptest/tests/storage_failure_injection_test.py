@@ -13,7 +13,7 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import FAILURE_INJECTION_LOG_ALLOW_LIST, RedpandaService
+from rptest.services.redpanda import FAILURE_INJECTION_LOG_ALLOW_LIST
 from rptest.services.redpanda_monitor import RedpandaMonitor
 from rptest.services.storage_failure_injection import (
     NTP,
@@ -24,7 +24,6 @@ from rptest.services.storage_failure_injection import (
     Operation,
 )
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import expect_exception
 
 
 class StorageFailureInjectionTest(RedpandaTest):

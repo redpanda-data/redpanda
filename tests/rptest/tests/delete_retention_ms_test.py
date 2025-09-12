@@ -6,16 +6,12 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-from collections import namedtuple
 
-from ducktape.mark import defaults, matrix
-from ducktape.utils.util import wait_until
 
-from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import expect_exception
 
 
 class DeleteRetentionMsTest(RedpandaTest):

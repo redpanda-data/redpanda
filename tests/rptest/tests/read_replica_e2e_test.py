@@ -6,7 +6,6 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-from re import T
 from typing import List, NamedTuple, Optional
 
 from ducktape.mark import matrix
@@ -25,7 +24,6 @@ from rptest.services.redpanda import (
     SISettings,
     get_cloud_storage_type,
     get_cloud_storage_type_and_url_style,
-    get_cloud_storage_url_style,
     make_redpanda_service,
 )
 from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller

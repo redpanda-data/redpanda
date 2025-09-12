@@ -11,13 +11,12 @@ import json
 import socket
 import time
 from datetime import datetime, timedelta
-from typing import Callable, Optional
+from typing import Optional
 
 import crc32c
 from ducktape.cluster.cluster import ClusterNode
 
 from rptest.services import tls
-from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
     MetricSamples,
@@ -28,7 +27,7 @@ from rptest.services.redpanda import (
     SecurityConfig,
     TLSProvider,
 )
-from rptest.tests.pandaproxy_test import PandaProxyTLSProvider, User
+from rptest.tests.pandaproxy_test import User
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
 

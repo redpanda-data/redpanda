@@ -2,9 +2,9 @@ import collections
 import re
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Generator, Optional
+from typing import Any, Generator
 
-from rptest.clients.kubectl import KubeNodeShell, KubectlTool
+from rptest.clients.kubectl import KubectlTool
 
 
 def assert_int(v: Any) -> int:

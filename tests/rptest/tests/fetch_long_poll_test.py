@@ -7,13 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
 from time import sleep
 
-from ducktape.mark import parametrize
 
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster

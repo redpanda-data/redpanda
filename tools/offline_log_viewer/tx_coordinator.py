@@ -1,4 +1,3 @@
-import struct
 from enum import Enum
 from io import BytesIO
 

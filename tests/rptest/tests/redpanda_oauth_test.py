@@ -21,7 +21,7 @@ from keycloak import KeycloakOpenID
 
 from rptest.clients.kafka_cli_tools import AuthorizationError, KafkaCliTools
 from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
 from rptest.services.keycloak import (
     DEFAULT_AT_LIFESPAN_S,

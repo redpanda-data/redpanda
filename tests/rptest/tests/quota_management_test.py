@@ -12,7 +12,7 @@ from enum import Enum
 from functools import total_ordering
 from typing import NamedTuple
 
-from ducktape.mark import ignore, parametrize
+from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools, KafkaCliToolsError

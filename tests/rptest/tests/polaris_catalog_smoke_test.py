@@ -8,9 +8,7 @@
 # by the Apache License, Version 2.0
 
 import os
-import time
 
-import polaris.catalog
 from ducktape.mark import matrix
 from polaris.management.api.polaris_default_api import PolarisDefaultApi
 from polaris.management.models.add_grant_request import AddGrantRequest
@@ -46,7 +44,6 @@ from rptest.services.redpanda import RedpandaService
 from rptest.services.tls import TLSCertManager
 from rptest.tests.crl_test import RedpandaTest
 from rptest.tests.datalake.utils import supported_storage_types
-from rptest.tests.polaris_catalog_test import PolarisCatalogTest
 from rptest.tests.redpanda_test import SISettings
 
 

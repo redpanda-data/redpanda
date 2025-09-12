@@ -17,7 +17,6 @@ from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import ResourceSettings
-from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import wait_until_result
 

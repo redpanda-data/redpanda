@@ -19,7 +19,6 @@ from kafka import KafkaAdminClient
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.services.cluster import cluster
 
 
 class ConsumerOffsetsVerifier:

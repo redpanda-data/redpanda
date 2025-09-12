@@ -4,7 +4,6 @@ from typing import Any
 from _typeshed import Incomplete
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.cluster.cluster_spec import ClusterSpec as ClusterSpec
-from ducktape.cluster.node_container import NodeContainer
 from ducktape.command_line.defaults import ConsoleDefaults as ConsoleDefaults
 from ducktape.errors import TimeoutError as TimeoutError
 from ducktape.template import TemplateRenderer as TemplateRenderer

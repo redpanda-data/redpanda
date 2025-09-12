@@ -20,7 +20,7 @@ from ducktape.utils.util import wait_until
 from rptest.clients.default import DefaultClient
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.kcl import KCL, KclCreateTopicsRequestTopic, RawKCL
+from rptest.clients.kcl import KCL, RawKCL
 from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
@@ -28,17 +28,14 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.redpanda import (
-    CloudStorageType,
     ResourceSettings,
     SISettings,
-    get_cloud_storage_type,
 )
-from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.e2e_finjector import Finjector
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import expect_exception, wait_for_local_storage_truncate
+from rptest.util import expect_exception
 
 
 def topic_name():

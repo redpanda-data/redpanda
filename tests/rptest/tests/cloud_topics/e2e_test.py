@@ -6,12 +6,8 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import json
-import random
-import re
 import time
 
-from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -24,7 +20,6 @@ from rptest.services.kgo_verifier_services import (
 )
 from rptest.services.redpanda import (
     SISettings,
-    get_cloud_storage_type,
     make_redpanda_service,
 )
 from rptest.tests.end_to_end import EndToEndTest

@@ -7,7 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import uuid
 
 from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
 from rptest.services.redpanda import SISettings

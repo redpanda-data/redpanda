@@ -14,7 +14,7 @@ import traceback
 
 from ...types import ConsistencyCheckError
 from ..retryable_consumer import RetryableConsumer
-from .log_utils import State, cmds, phantoms, transitions
+from .log_utils import State, cmds, transitions
 
 logger = logging.getLogger("consistency")
 

@@ -14,7 +14,6 @@ from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.action_injector import ActionConfig, random_process_kills
-from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,

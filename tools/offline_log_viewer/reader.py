@@ -2,7 +2,7 @@ import collections
 import logging
 import struct
 from enum import Enum
-from io import BufferedReader, BytesIO
+from io import BufferedReader
 
 SERDE_ENVELOPE_FORMAT = "<BBI"
 SERDE_CHECKSUM_ENVELOPE_FORMAT = "<BBIi"

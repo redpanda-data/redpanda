@@ -16,7 +16,6 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
-    KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
     KgoVerifierSeqConsumer,
 )

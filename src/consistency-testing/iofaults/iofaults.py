@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 
-from flask import Flask, json
+from flask import Flask
 from fuse import FUSE, FuseOSError, Operations
 
 

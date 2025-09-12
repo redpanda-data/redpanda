@@ -18,16 +18,14 @@
 # - Replaced dependency on Kafka with Redpanda
 # - Imported annotate_missing_msgs helper from kafka test suite
 
-import os
 from collections import defaultdict, namedtuple
 from typing import Optional
 
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 
-from rptest.archival.s3_client import S3Client
 from rptest.clients.default import DefaultClient
-from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.rpk import RpkTool
 from rptest.services.redpanda import RedpandaService, make_redpanda_service
 from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
 from rptest.services.verifiable_consumer import VerifiableConsumer

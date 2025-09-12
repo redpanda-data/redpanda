@@ -9,7 +9,7 @@
 
 import os
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Mapping, Sequence, cast
+from typing import Any, Callable, Mapping, Sequence
 
 from ducktape.tests.test import Test, TestContext
 from ducktape.utils.util import wait_until

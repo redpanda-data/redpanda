@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 import json
 import random
-import re
 import string
 import threading
 import time
@@ -16,7 +15,6 @@ from abc import ABC, abstractmethod
 from enum import Enum, auto, unique
 from threading import Condition, Event
 from time import sleep
-from typing import Dict
 
 import requests
 from confluent_kafka import Producer
@@ -28,7 +26,6 @@ from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
-from rptest.services.redpanda_installer import VERSION_RE, int_tuple
 
 
 # Operation context (used to save state between invocation of operations)

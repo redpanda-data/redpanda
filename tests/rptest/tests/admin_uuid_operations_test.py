@@ -8,14 +8,12 @@
 # by the Apache License, Version 2.0
 
 import json
-import random
 from enum import IntEnum
 
-import numpy as np
 import requests
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.errors import TimeoutError
-from ducktape.mark import matrix, parametrize
+from ducktape.mark import matrix
 
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin

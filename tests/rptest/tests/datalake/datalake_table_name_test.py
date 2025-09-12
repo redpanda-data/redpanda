@@ -13,7 +13,7 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, SISettings
+from rptest.services.redpanda import SISettings
 from rptest.tests.datalake.catalog_service_factory import filesystem_catalog_type
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.query_engine_base import QueryEngineType

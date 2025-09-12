@@ -7,9 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import os
-import re
-import time
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
@@ -23,7 +20,7 @@ from rptest.services.redpanda import (
     SISettings,
     get_cloud_storage_type,
 )
-from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
+from rptest.services.redpanda_installer import wait_for_num_versions
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
 from rptest.utils.rpenv import sample_license, sample_license_v1

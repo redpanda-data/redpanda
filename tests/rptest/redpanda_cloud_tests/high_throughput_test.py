@@ -16,7 +16,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from threading import Thread
-from typing import Any, cast
+from typing import Any
 
 from ducktape.errors import TimeoutError as TimeoutException
 from ducktape.mark import ignore, parametrize
@@ -46,20 +46,14 @@ from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.redpanda import (
     RESTART_LOG_ALLOW_LIST,
     MetricsEndpoint,
-    RedpandaService,
     RedpandaServiceCloud,
-    SISettings,
 )
 from rptest.services.redpanda_cloud import (
     CLOUD_TYPE_FMC,
     PROVIDER_AWS,
-    CloudTierName,
-    get_config_profile_name,
 )
 from rptest.services.rpk_consumer import RpkConsumer
-from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
-from rptest.util import firewall_blocked
 from rptest.utils.si_utils import nodes_report_cloud_segments
 from rptest.utils.test_mixins import PreallocNodesMixin
 

@@ -28,7 +28,7 @@ import uuid
 import zipfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from enum import Enum, IntEnum
+from enum import Enum
 from functools import cached_property
 from logging import Logger
 from typing import (
@@ -63,7 +63,6 @@ from urllib3.exceptions import MaxRetryError
 
 from rptest.archival.abs_client import ABSClient
 from rptest.archival.s3_client import S3AddressingStyle, S3Client
-from rptest.clients.helm import HelmTool
 from rptest.clients.installpack import InstallPackClient
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kubectl import KubectlTool, is_redpanda_pod
@@ -94,7 +93,6 @@ from rptest.services.redpanda_types import (
     LogAllowListElem,
 )
 from rptest.services.rolling_restarter import RollingRestarter
-from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.storage import ClusterStorage, NodeCacheStorage, NodeStorage
 from rptest.services.storage_failure_injection import FailureInjectionConfig
 from rptest.services.utils import LogSearchCloud, LogSearchLocal, NodeCrash, Stopwatch

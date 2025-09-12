@@ -9,7 +9,6 @@
 import random
 import string
 import subprocess
-import time
 
 from ducktape.mark import matrix, parametrize
 from ducktape.utils.util import wait_until
@@ -23,7 +22,6 @@ from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings
 from rptest.services.redpanda_installer import (
     InstallOptions,
-    RedpandaInstaller,
     RedpandaVersionTriple,
 )
 from rptest.tests.end_to_end import EndToEndTest

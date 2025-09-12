@@ -11,7 +11,6 @@ import random
 import time
 
 from ducktape.mark import matrix
-from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec

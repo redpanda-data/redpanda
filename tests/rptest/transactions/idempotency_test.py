@@ -7,11 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 from collections import defaultdict
-from time import sleep
 
 import confluent_kafka as ck
 
-from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster

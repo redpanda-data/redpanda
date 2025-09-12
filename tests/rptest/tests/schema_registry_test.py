@@ -15,8 +15,8 @@ import socket
 import time
 import urllib.parse
 import uuid
-from enum import Enum, auto, unique
-from typing import Any, Callable, Dict, Literal, NamedTuple, Optional
+from enum import Enum
+from typing import NamedTuple, Optional
 
 import requests
 from confluent_kafka.schema_registry import (
@@ -33,7 +33,6 @@ from ducktape.mark import matrix, parametrize
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.utils.util import wait_until
 
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.serde_client_utils import SchemaType, SerdeClientType
 from rptest.clients.types import TopicSpec
@@ -52,7 +51,6 @@ from rptest.services.redpanda import (
 )
 from rptest.services.redpanda_types import SaslCredentials
 from rptest.services.serde_client import SerdeClient
-from rptest.tests.cluster_config_test import wait_for_version_status_sync
 from rptest.tests.pandaproxy_test import PandaProxyTLSProvider, User
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, inject_remote_script, search_logs_with_timeout

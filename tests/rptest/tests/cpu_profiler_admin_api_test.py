@@ -16,7 +16,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_repeater_service import repeater_traffic
-from rptest.services.redpanda import LoggingConfig, ResourceSettings
+from rptest.services.redpanda import LoggingConfig
 from rptest.tests.redpanda_test import RedpandaTest
 
 VERSION_REGEX = re.compile(r".+ - .+")

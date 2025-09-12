@@ -1,21 +1,12 @@
-import os
 import random
-import signal
-from copyreg import dispatch_table
-from time import sleep
-from urllib.error import HTTPError
 
-import requests
-from ducktape.mark import matrix, parametrize
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
-from numpy import partition
 
-from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, MetricsEndpoint, SISettings
-from rptest.services.verifiable_producer import TopicPartition
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, MetricsEndpoint
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.util import wait_for_recovery_throttle_rate

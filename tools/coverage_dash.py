@@ -1,6 +1,4 @@
 import argparse
-import csv
-import io
 import itertools
 import json
 import logging
@@ -8,7 +6,6 @@ import multiprocessing
 import os
 import re
 import subprocess
-import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 

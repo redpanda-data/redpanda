@@ -12,7 +12,7 @@ from collections import Counter
 from math import ceil
 
 import requests
-from ducktape.mark import ignore, matrix
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.default import DefaultClient

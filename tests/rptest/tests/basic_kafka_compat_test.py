@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import time
-from collections.abc import Callable
 from typing import Protocol, TypeVar
 
 import confluent_kafka as ck
@@ -16,7 +15,6 @@ import kafkatest
 import kafkatest.version
 from ducktape.mark import parametrize
 from kafkatest.services.kafka import KafkaService
-from kafkatest.services.zookeeper import ZookeeperService
 
 from rptest.clients.default import DefaultClient
 from rptest.clients.types import TopicSpec

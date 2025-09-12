@@ -11,7 +11,6 @@ import random
 import time
 
 from rptest.services.cluster import cluster
-from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.tests.e2e_finjector import Finjector
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 

@@ -5,7 +5,6 @@ import logging
 import os
 import sys
 from collections import namedtuple
-from collections.abc import Iterable
 from os.path import join
 from typing import Any
 

@@ -14,8 +14,6 @@ import time
 from contextlib import contextmanager
 
 from rptest.services.failure_injector import FailureSpec, make_failure_injector
-from rptest.tests.end_to_end import EndToEndTest
-from rptest.util import Scale
 
 
 def scale_dependent_length(scale):

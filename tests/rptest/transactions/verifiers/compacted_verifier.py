@@ -10,7 +10,6 @@
 import json
 import sys
 from enum import Enum
-from time import sleep
 
 import requests
 from ducktape.services.service import Service

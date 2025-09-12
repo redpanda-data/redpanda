@@ -7,12 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import json
-import random
 import re
 import subprocess
 from typing import Optional
 
-from ducktape.mark import ignore
 from ducktape.tests.test import TestLoggerMaker
 from ducktape.utils.util import wait_until
 
@@ -22,7 +20,7 @@ from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import LoggingConfig, RedpandaService, SecurityConfig
+from rptest.services.redpanda import LoggingConfig, SecurityConfig
 from rptest.services.verifiable_producer import VerifiableProducer
 from rptest.tests.redpanda_test import RedpandaTest
 

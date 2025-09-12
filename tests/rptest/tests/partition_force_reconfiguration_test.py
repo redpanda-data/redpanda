@@ -12,7 +12,7 @@ from random import shuffle
 from threading import Condition, Thread
 
 import requests
-from ducktape.mark import ignore, matrix
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kcl import KCL

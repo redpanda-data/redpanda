@@ -12,16 +12,12 @@ import time
 from collections import defaultdict
 from math import comb
 
-from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
-from rptest.clients.rpk import RpkTool
-from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
 from rptest.services.redpanda_installer import InstallOptions, RedpandaVersionLine
 from rptest.tests.end_to_end import EndToEndTest
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
 from rptest.utils.functional import flat_map
 
