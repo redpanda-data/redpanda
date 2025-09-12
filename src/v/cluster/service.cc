@@ -505,6 +505,7 @@ cluster::errc map_health_monitor_error_code(std::error_code e) {
 
 ss::future<get_node_health_reply> service::collect_node_health_report(
   get_node_health_request req, rpc::streaming_context&) {
+    vlog(clusterlog.debug, "service::collect_node_health_report");
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req = std::move(req)]() mutable {
           return do_collect_node_health_report(std::move(req));

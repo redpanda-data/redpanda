@@ -466,6 +466,13 @@ ss::future<errc> health_monitor_backend::walk_local_and_remote_reports(
                     *fs);
                   local_leader_handler(*fs, nt, partition_status.id);
               } else {
+                  vlog(
+                    clusterlog.trace,
+                    "follower found locally ntp={}/{}/{} looking to find a "
+                    "leader",
+                    nt.ns,
+                    nt.tp,
+                    partition_status.id);
                   unclaimed_partitions[nt].insert(partition_status.id);
               }
           });
@@ -525,6 +532,12 @@ ss::future<errc> health_monitor_backend::walk_local_and_remote_reports(
           counter,
           partitions,
           [&nt, &unclaimed_partition_handler](const model::partition_id pid) {
+              vlog(
+                clusterlog.trace,
+                "leader not found for ntp={}/{}/{}",
+                nt.ns,
+                nt.tp,
+                pid);
               unclaimed_partition_handler(nt, pid);
           });
     }
@@ -872,6 +885,14 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
     absl::erase_if(_status, not_in_members_table);
 
     _reports = std::move(new_reports);
+    for (const auto& [node_id, report] : *_reports) {
+        vlog(
+          clusterlog.debug,
+          "updating node {} health report to {}",
+          node_id,
+          *report);
+    }
+
     _restart_risks_collected = node_restart_risks_available;
     _last_refresh = ss::lowres_clock::now();
     co_return errc::success;

@@ -31,7 +31,7 @@ namespace cluster {
 
 /// Partition leaders contains information about currently elected partition
 /// leaders. It allows user to wait for ntp leader to be elected. Partition
-/// leaders are instanciated on each core i.e. each core contains copy op
+/// leaders are instantiated on each core i.e. each core contains a copy of
 /// partition leaders. Partition leaders are updated through notification
 /// received by cluster::metadata_dissemination_service.
 class partition_leaders_table {
