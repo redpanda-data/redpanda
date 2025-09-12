@@ -24,10 +24,10 @@ Arguments:
     sig (int): The signal number to send to the thread.
 """
 
-import sys
 import ctypes
 import os
 import platform
+import sys
 
 
 def get_tgkill_syscall_number():

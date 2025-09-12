@@ -7,18 +7,18 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import signal
-import sys
-import os
-import logging
 import argparse
-import tempfile
+import logging
+import os
 import random
-import string
-import shutil
-import subprocess
-import threading
 import re
+import shutil
+import signal
+import string
+import subprocess
+import sys
+import tempfile
+import threading
 from string import Template
 
 sys.path.append(os.path.dirname(__file__))

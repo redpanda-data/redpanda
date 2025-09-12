@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import re
+
 from rptest.clients.rpk import RpkException
 
 

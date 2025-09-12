@@ -13,8 +13,9 @@
 # segment path:        924dec9f/kafka/test-si3/0_105/0-1-v1.log.*
 #
 
-import xxhash
 import sys
+
+import xxhash
 
 
 def main():

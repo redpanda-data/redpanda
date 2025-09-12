@@ -1,23 +1,20 @@
-import threading
-import logging
-
-from rptest.archival.shared_client_utils import key_to_topic
-
-import boto3
-
-from botocore import UNSIGNED
-from botocore.config import Config
-from botocore.exceptions import ClientError
-from google.cloud import storage as gcs
-
-from concurrent.futures import ThreadPoolExecutor
 import datetime
+import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from functools import wraps
 from itertools import islice
 from time import sleep
-from typing import Callable, Iterator, NamedTuple, Union, Optional
+from typing import Callable, Iterator, NamedTuple, Optional, Union
+
+import boto3
+from botocore import UNSIGNED
+from botocore.config import Config
+from botocore.exceptions import ClientError
 from ducktape.utils.util import wait_until
+from google.cloud import storage as gcs
+from rptest.archival.shared_client_utils import key_to_topic
 
 
 class SlowDown(Exception):

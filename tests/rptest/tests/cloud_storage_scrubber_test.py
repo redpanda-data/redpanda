@@ -25,17 +25,17 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.services.redpanda import SISettings, get_cloud_storage_type, MetricsEndpoint
+from rptest.services.redpanda import MetricsEndpoint, SISettings, get_cloud_storage_type
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 from rptest.utils.si_utils import (
-    parse_s3_segment_path,
-    quiesce_uploads,
-    BucketView,
     NTP,
     NTPR,
+    BucketView,
     SpillMeta,
+    parse_s3_segment_path,
+    quiesce_uploads,
 )
 
 SCRUBBER_LOG_ALLOW_LIST = [

@@ -7,13 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
 from os.path import join
 
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import RedpandaService, make_redpanda_service
-from rptest.services.admin import Admin
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class IndexRecoveryTest(RedpandaTest):

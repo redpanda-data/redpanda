@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import uuid
+
 from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
 from rptest.services.redpanda import SISettings
 from rptest.tests.redpanda_test import RedpandaTest

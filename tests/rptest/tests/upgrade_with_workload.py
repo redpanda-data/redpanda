@@ -7,7 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.redpanda import RedpandaService, RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaService
 from rptest.services.redpanda_installer import RedpandaInstaller
 
 

@@ -8,13 +8,17 @@
 # by the Apache License, Version 2.0
 
 import random
+import re
 import threading
 import time
-from rptest.clients.consumer_offsets_recovery import ConsumerOffsetsRecovery
-from rptest.services.cluster import cluster
 
+from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
+
+from rptest.clients.consumer_offsets_recovery import ConsumerOffsetsRecovery
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
 from rptest.services.kgo_verifier_services import (
@@ -27,10 +31,6 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
-from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize
-
-import re
 
 
 class ConsumerOffsetsConsistencyTest(PreallocNodesTest):

@@ -9,13 +9,15 @@
 
 import random
 import threading
+
 from ducktape.utils.util import wait_until
-from rptest.services.cluster import cluster
+
 from rptest.clients.types import TopicSpec
-from rptest.tests.end_to_end import EndToEndTest
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, make_redpanda_service
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.failure_injector import FailureInjector, FailureSpec
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, make_redpanda_service
+from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import wait_until_result
 
 

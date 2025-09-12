@@ -6,7 +6,6 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-from collections import namedtuple
 import json
 import logging
 import pprint
@@ -14,36 +13,37 @@ import random
 import re
 import tempfile
 import time
+from collections import namedtuple
 from typing import Any, List, NamedTuple, Protocol
 
 import requests
 import yaml
-from ducktape.mark import parametrize, matrix
+from ducktape.mark import matrix, parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
+from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import (
-    CloudStorageType,
-    SISettings,
-    RESTART_LOG_ALLOW_LIST,
     IAM_ROLES_API_CALL_ALLOW_LIST,
     OIDC_ALLOW_LIST,
-    get_cloud_storage_type,
+    RESTART_LOG_ALLOW_LIST,
+    CloudStorageType,
     RedpandaService,
+    SISettings,
+    get_cloud_storage_type,
 )
 from rptest.services.redpanda_installer import (
     RedpandaInstaller,
     RedpandaVersion,
     RedpandaVersionTriple,
 )
-from rptest.services.metrics_check import MetricCheck
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import expect_http_error, expect_exception, produce_until_segments
+from rptest.util import expect_exception, expect_http_error, produce_until_segments
 from rptest.utils.si_utils import BucketView
 
 BOOTSTRAP_CONFIG = {

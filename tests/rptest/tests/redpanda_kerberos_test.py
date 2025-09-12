@@ -11,29 +11,30 @@ import json
 import os
 import time
 
-from ducktape.cluster.remoteaccount import RemoteCommandError, RemoteAccountSSHConfig
+from ducktape.cluster.remoteaccount import RemoteAccountSSHConfig, RemoteCommandError
 from ducktape.cluster.windows_remoteaccount import WindowsRemoteAccount
 from ducktape.errors import TimeoutError
 from ducktape.mark import env, ignore, parametrize
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
-from rptest.clients.rpk import RpkTool, RpkException
+
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kerberos import (
-    KrbKdc,
-    KrbClient,
-    RedpandaKerberosNode,
-    AuthenticationError,
     KRB5_CONF_PATH,
-    render_krb5_config,
     ActiveDirectoryKdc,
+    AuthenticationError,
+    KrbClient,
+    KrbKdc,
+    RedpandaKerberosNode,
+    render_krb5_config,
 )
 from rptest.services.redpanda import LoggingConfig, RedpandaService, SecurityConfig
 from rptest.tests.sasl_reauth_test import (
-    get_sasl_metrics,
-    REAUTH_METRIC,
     EXPIRATION_METRIC,
+    REAUTH_METRIC,
+    get_sasl_metrics,
 )
 from rptest.utils.log_utils import wait_until_nag_is_set
 from rptest.utils.mode_checks import skip_fips_mode

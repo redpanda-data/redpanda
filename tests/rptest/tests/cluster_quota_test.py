@@ -8,29 +8,30 @@
 # by the Apache License, Version 2.0
 import datetime
 import json
-import time
 import random
 import string
+import time
 from typing import NamedTuple, Optional
 
 from ducktape.utils.util import wait_until
+from kafka import KafkaConsumer, KafkaProducer, TopicPartition
+
+from rptest.clients.kcl import (
+    KclCreatePartitionsRequestTopic,
+    KclCreateTopicsRequestTopic,
+    RawKCL,
+)
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
+    LoggingConfig,
     MetricSample,
     MetricSamples,
     MetricsEndpoint,
     ResourceSettings,
-    LoggingConfig,
-)
-from kafka import KafkaProducer, KafkaConsumer, TopicPartition
-from rptest.clients.kcl import (
-    RawKCL,
-    KclCreateTopicsRequestTopic,
-    KclCreatePartitionsRequestTopic,
 )
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.types import TopicSpec
-from rptest.services.cluster import cluster
 
 GB = 1_000_000_000
 

@@ -9,11 +9,12 @@
 
 import statistics
 
-from rptest.tests.redpanda_test import RedpandaTest
+from ducktape.mark import parametrize
+
 from rptest.services.cluster import cluster
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
-from ducktape.mark import parametrize
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):

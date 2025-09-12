@@ -7,24 +7,26 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from dataclasses import dataclass
-from enum import Enum
-from logging import Logger
-import random
 import json
+import random
 import time
 import urllib.parse
-from typing import Any, Optional, Callable, NamedTuple, Protocol, cast
+from dataclasses import dataclass
+from enum import Enum
 from json.decoder import JSONDecodeError
+from logging import Logger
+from typing import Any, Callable, NamedTuple, Optional, Protocol, cast
 from uuid import UUID
-from ducktape.cluster.cluster import ClusterNode
+
 import requests
+from ducktape.cluster.cluster import ClusterNode
 from requests import Response
 from requests.adapters import HTTPAdapter
 from requests.exceptions import HTTPError, RequestException
 from urllib3.util.retry import Retry
-from rptest.util import wait_until_result
+
 from rptest.services.redpanda_types import SaslCredentials
+from rptest.util import wait_until_result
 
 DEFAULT_TIMEOUT = 30
 

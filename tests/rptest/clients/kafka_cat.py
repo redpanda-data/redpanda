@@ -7,9 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import json
 import subprocess
 import time
-import json
 from typing import Any, cast
 
 from rptest.services.redpanda_types import RedpandaServiceForClients

@@ -7,13 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import SecurityConfig
 from kafka import KafkaAdminClient
 from kafka.admin import NewTopic
+
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import SecurityConfig
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class ScramPythonLibTest(RedpandaTest):

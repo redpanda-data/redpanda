@@ -9,20 +9,21 @@
 
 import time
 
+from ducktape.mark import matrix
+
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
     CloudStorageType,
-    make_redpanda_service,
     MetricsEndpoint,
     SISettings,
     get_cloud_storage_type,
+    make_redpanda_service,
 )
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import wait_until
-from ducktape.mark import matrix
 
 LOCAL_CONFIGURATION = {
     "partition_amount": 3,

@@ -8,16 +8,15 @@
 # by the Apache License, Version 2.0
 
 import requests
+from ducktape.utils.util import wait_until
 
-from rptest.services.admin import Admin
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.tests.pandaproxy_test import PandaProxyEndpoints
 from rptest.clients.rpk import RpkTool
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SaslCredentials, SecurityConfig
+from rptest.tests.pandaproxy_test import PandaProxyEndpoints
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, expect_http_error
-
-from ducktape.utils.util import wait_until
 
 
 def create_user_and_wait(redpanda, admin: Admin, creds: SaslCredentials):

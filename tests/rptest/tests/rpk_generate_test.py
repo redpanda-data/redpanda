@@ -9,10 +9,9 @@
 
 import json
 
-from rptest.services.cluster import cluster
-
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class RpkGenerateTest(RedpandaTest):

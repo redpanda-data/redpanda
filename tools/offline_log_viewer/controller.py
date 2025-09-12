@@ -1,12 +1,12 @@
+import datetime
+import json
 import logging
 from io import BytesIO
 from pathlib import Path
+
 from model import *
 from reader import Reader
-from storage import Segment
-from storage import BatchType
-import datetime
-import json
+from storage import BatchType, Segment
 
 logger = logging.getLogger("controller")
 

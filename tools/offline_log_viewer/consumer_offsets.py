@@ -1,9 +1,10 @@
 import base64
+import datetime
 from io import BytesIO
+
 from model import *
 from reader import Endianness, Reader
 from storage import Segment
-import datetime
 
 
 class TxRecordParser:

@@ -7,29 +7,26 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
-import string
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from time import time
-from os.path import join
-
 import random
+import string
+from collections import defaultdict
+from os.path import join
+from time import time
 
-from ducktape.utils.util import wait_until
-from ducktape.errors import TimeoutError
-
-from rptest.clients.offline_log_viewer import OfflineLogViewer
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.admin import Admin
-from rptest.transactions.util import TransactionsMixin
-from rptest.services.redpanda import RedpandaService
 import confluent_kafka as ck
+from ducktape.errors import TimeoutError
+from ducktape.utils.util import wait_until
 
-from rptest.services.admin import Admin
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.metrics_check import MetricCheck
+from rptest.services.redpanda import RedpandaService
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.transactions.util import TransactionsMixin
 
 
 class TransactionsTest(RedpandaTest, TransactionsMixin):

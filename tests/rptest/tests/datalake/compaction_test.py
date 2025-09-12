@@ -8,24 +8,25 @@
 # by the Apache License, Version 2.0
 
 from time import time
+
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
     KgoVerifierSeqConsumer,
 )
-from rptest.tests.datalake.datalake_services import DatalakeServices
-from rptest.tests.datalake.query_engine_base import QueryEngineType
-from rptest.services.redpanda import MetricsEndpoint
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SISettings
-from rptest.tests.datalake.utils import supported_storage_types
-from ducktape.mark import matrix
-from ducktape.utils.util import wait_until
-from rptest.services.cluster import cluster
-from rptest.utils.mode_checks import skip_debug_mode
-from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
+from rptest.services.redpanda import MetricsEndpoint, SISettings
 from rptest.tests.datalake.catalog_service_factory import supported_catalog_types
+from rptest.tests.datalake.datalake_services import DatalakeServices
+from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
+from rptest.tests.datalake.query_engine_base import QueryEngineType
+from rptest.tests.datalake.utils import supported_storage_types
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class CompactionGapsTest(RedpandaTest):

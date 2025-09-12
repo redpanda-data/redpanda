@@ -11,22 +11,20 @@ import json
 import random
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, Future
-from threading import Condition
 from collections import defaultdict
+from concurrent.futures import Future, ThreadPoolExecutor
+from threading import Condition
 from typing import List
 
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.action_injector import random_process_kills
-from rptest.services.redpanda import RedpandaService
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
@@ -36,24 +34,26 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierSeqConsumer,
 )
 from rptest.services.redpanda import (
-    SISettings,
+    CHAOS_LOG_ALLOW_LIST,
     CloudStorageTypeAndUrlStyle,
+    MetricsEndpoint,
+    RedpandaService,
+    SISettings,
     get_cloud_storage_type,
     get_cloud_storage_type_and_url_style,
     make_redpanda_service,
-    CHAOS_LOG_ALLOW_LIST,
-    MetricsEndpoint,
+)
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.tiered_storage_model import (
+    CONFIDENCE_THRESHOLD,
+    TestCase,
+    TestRunStage,
+    TieredStorageEndToEndTest,
+    get_test_case_from_name,
+    get_tiered_storage_test_cases,
 )
 from rptest.utils.mode_checks import skip_fips_mode
-from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView, NTP
-from rptest.tests.tiered_storage_model import (
-    TestCase,
-    TieredStorageEndToEndTest,
-    get_tiered_storage_test_cases,
-    TestRunStage,
-    CONFIDENCE_THRESHOLD,
-    get_test_case_from_name,
-)
+from rptest.utils.si_utils import NTP, BucketView, nodes_report_cloud_segments
 
 MAX_RETRIES = 20
 

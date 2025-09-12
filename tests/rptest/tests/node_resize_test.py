@@ -12,9 +12,9 @@ import re
 from ducktape.cluster.cluster import ClusterNode
 
 from rptest.clients.types import TopicSpec
-from rptest.services.rpk_producer import RpkProducer
-from rptest.services.redpanda import ResourceSettings, RESTART_LOG_ALLOW_LIST
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, ResourceSettings
+from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
 
 RESIZE_LOG_ALLOW_LIST = RESTART_LOG_ALLOW_LIST + [

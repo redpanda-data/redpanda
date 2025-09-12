@@ -7,27 +7,26 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import subprocess
 import os
-
-from rptest.services.cluster import cluster
-from ducktape.mark import ignore, matrix
-
-from rptest.services.librdkafka_test_case import LibrdkafkaTestcase
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import expect_exception
-from rptest.utils.mode_checks import skip_debug_mode
-from rptest.clients.python_librdkafka import PythonLibrdkafka
+import subprocess
 
 from confluent_kafka.admin import (
     AclBinding,
     AclBindingFilter,
-    ResourceType,
-    ResourcePatternType,
     AclOperation,
     AclPermissionType,
+    ResourcePatternType,
+    ResourceType,
 )
 from confluent_kafka.cimpl import KafkaException
+from ducktape.mark import ignore, matrix
+
+from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.services.cluster import cluster
+from rptest.services.librdkafka_test_case import LibrdkafkaTestcase
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import expect_exception
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 def tests_to_run():

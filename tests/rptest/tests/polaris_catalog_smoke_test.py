@@ -9,47 +9,44 @@
 
 import os
 import time
+
+import polaris.catalog
+from ducktape.mark import matrix
+from polaris.management.api.polaris_default_api import PolarisDefaultApi
+from polaris.management.models.add_grant_request import AddGrantRequest
+from polaris.management.models.catalog import Catalog
+from polaris.management.models.catalog_grant import CatalogGrant
+from polaris.management.models.catalog_privilege import CatalogPrivilege
+from polaris.management.models.catalog_properties import CatalogProperties
+from polaris.management.models.catalog_role import CatalogRole
+from polaris.management.models.create_catalog_request import CreateCatalogRequest
+from polaris.management.models.create_catalog_role_request import (
+    CreateCatalogRoleRequest,
+)
+from polaris.management.models.create_principal_request import CreatePrincipalRequest
+from polaris.management.models.create_principal_role_request import (
+    CreatePrincipalRoleRequest,
+)
+from polaris.management.models.file_storage_config_info import FileStorageConfigInfo
+from polaris.management.models.grant_catalog_role_request import GrantCatalogRoleRequest
+from polaris.management.models.grant_principal_role_request import (
+    GrantPrincipalRoleRequest,
+)
+from polaris.management.models.principal import Principal
+from polaris.management.models.principal_role import PrincipalRole
+from pyiceberg.catalog import load_catalog
+from pyiceberg.catalog.rest import CLIENT_ID, CLIENT_SECRET
+
 from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkTool, TopicSpec
 from rptest.context import cloud_storage
 from rptest.services.cluster import cluster
-
 from rptest.services.polaris_catalog import PolarisCatalog, wait_until
 from rptest.services.redpanda import RedpandaService
 from rptest.services.tls import TLSCertManager
 from rptest.tests.crl_test import RedpandaTest
-from rptest.tests.polaris_catalog_test import PolarisCatalogTest
-import polaris.catalog
-
-from polaris.management.api.polaris_default_api import PolarisDefaultApi
-from polaris.management.models.create_catalog_request import CreateCatalogRequest
-from polaris.management.models.catalog_properties import CatalogProperties
-from polaris.management.models.create_principal_request import CreatePrincipalRequest
-from polaris.management.models.catalog import Catalog
-
-from polaris.management.models.file_storage_config_info import FileStorageConfigInfo
-from polaris.management.models.grant_principal_role_request import (
-    GrantPrincipalRoleRequest,
-)
-from polaris.management.models.create_principal_role_request import (
-    CreatePrincipalRoleRequest,
-)
-from polaris.management.models.create_catalog_role_request import (
-    CreateCatalogRoleRequest,
-)
-from polaris.management.models.grant_catalog_role_request import GrantCatalogRoleRequest
-from polaris.management.models.catalog_role import CatalogRole
-from polaris.management.models.catalog_grant import CatalogGrant
-from polaris.management.models.add_grant_request import AddGrantRequest
-from polaris.management.models.principal_role import PrincipalRole
-from polaris.management.models.catalog_privilege import CatalogPrivilege
-from polaris.management.models.principal import Principal
-from pyiceberg.catalog import load_catalog
 from rptest.tests.datalake.utils import supported_storage_types
-from ducktape.mark import matrix
-from pyiceberg.catalog.rest import CLIENT_SECRET
-from pyiceberg.catalog.rest import CLIENT_ID
-
+from rptest.tests.polaris_catalog_test import PolarisCatalogTest
 from rptest.tests.redpanda_test import SISettings
 
 

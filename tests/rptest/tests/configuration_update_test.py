@@ -9,10 +9,10 @@
 
 import re
 
-from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
-from rptest.services.redpanda import RedpandaService, PandaproxyConfig
 
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import PandaproxyConfig, RedpandaService
 from rptest.tests.redpanda_test import RedpandaTest
 
 # Choose ports _below_ the default 33145, because test environment

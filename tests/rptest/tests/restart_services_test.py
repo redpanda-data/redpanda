@@ -8,17 +8,17 @@
 # by the Apache License, Version 2.0
 
 import requests
+from ducktape.utils.util import wait_until
 
-from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
+    LoggingConfig,
     RedpandaService,
     ResourceSettings,
-    LoggingConfig,
     SchemaRegistryConfig,
 )
-from ducktape.utils.util import wait_until
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import search_logs_with_timeout
 
 log_config = LoggingConfig(

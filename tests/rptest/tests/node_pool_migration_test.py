@@ -7,33 +7,32 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from concurrent.futures import ThreadPoolExecutor
+import json
 import random
 import re
-import json
+from concurrent.futures import ThreadPoolExecutor
+from enum import Enum
 
+import ducktape.errors
 import requests
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
 from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
 )
-from rptest.tests.prealloc_nodes import PreallocNodesTest
-
-from rptest.clients.rpk import RpkTool
-from rptest.services.cluster import cluster
-from ducktape.utils.util import wait_until
-from ducktape.mark import matrix
-from rptest.clients.types import TopicSpec
-from rptest.services.admin import Admin
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
-from rptest.util import expect_exception
-from rptest.utils.mode_checks import cleanup_on_early_exit
-from rptest.utils.node_operations import NodeDecommissionWaiter
-from rptest.utils.mode_checks import skip_debug_mode
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
-from enum import Enum
-import ducktape.errors
+from rptest.util import expect_exception
+from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode
+from rptest.utils.node_operations import NodeDecommissionWaiter
 
 TS_LOG_ALLOW_LIST = [
     re.compile("archival_metadata_stm.*Replication wait for archival STM timed out"),

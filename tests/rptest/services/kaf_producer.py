@@ -8,9 +8,10 @@
 # by the Apache License, Version 2.0
 
 import sys
-from ducktape.services.background_thread import BackgroundThreadService
-from ducktape.cluster.remoteaccount import RemoteCommandError
 from threading import Event
+
+from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.services.background_thread import BackgroundThreadService
 
 
 class KafProducer(BackgroundThreadService):

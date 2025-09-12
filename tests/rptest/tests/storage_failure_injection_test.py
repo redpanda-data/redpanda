@@ -8,22 +8,23 @@
 # by the Apache License, Version 2.0
 import time
 
-from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
+from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.admin import Admin
-from rptest.services.redpanda import RedpandaService, FAILURE_INJECTION_LOG_ALLOW_LIST
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import FAILURE_INJECTION_LOG_ALLOW_LIST, RedpandaService
 from rptest.services.redpanda_monitor import RedpandaMonitor
 from rptest.services.storage_failure_injection import (
+    NTP,
+    BatchType,
+    FailureConfig,
     FailureInjectionConfig,
     NTPFailureInjectionConfig,
-    FailureConfig,
-    NTP,
     Operation,
-    BatchType,
 )
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
-from ducktape.utils.util import wait_until
 
 
 class StorageFailureInjectionTest(RedpandaTest):

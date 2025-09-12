@@ -9,20 +9,21 @@
 
 import uuid
 
-from rptest.utils.mode_checks import skip_debug_mode
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
+from rptest.clients.default import DefaultClient
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
+    CHAOS_LOG_ALLOW_LIST,
     CloudStorageType,
     SISettings,
     get_cloud_storage_type,
 )
-from ducktape.mark import matrix
-from ducktape.utils.util import wait_until
-from rptest.clients.types import TopicSpec
-from rptest.clients.default import DefaultClient
-from rptest.clients.rpk import RpkTool
 from rptest.tests.end_to_end import EndToEndTest
-from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class MultiRestartTest(EndToEndTest):

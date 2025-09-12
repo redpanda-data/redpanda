@@ -2,13 +2,13 @@
 
 # probably not useful: utility to injest metrics in prometheus format and
 
+import argparse
+import re
+import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-import re
-import argparse
-import sys
 
 # HELP vectorized_alien_receive_batch_queue_length Current receive batch queue length
 help_regex = re.compile(r"# HELP (?P<name>[^ ]+) (?P<value>.*)")

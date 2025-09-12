@@ -10,13 +10,15 @@
 import random
 import threading
 import time
-from rptest.services.failure_injector import FailureInjector, FailureSpec
-from rptest.services.cluster import cluster
+
+from ducktape.mark import parametrize
+
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.redpanda import SISettings
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.mode_checks import skip_debug_mode
-from ducktape.mark import parametrize
 
 
 class SimpleEndToEndTest(EndToEndTest):

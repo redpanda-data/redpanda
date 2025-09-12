@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import uuid
+
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.kgo_verifier_services import (

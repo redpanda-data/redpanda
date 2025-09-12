@@ -8,20 +8,22 @@
 # by the Apache License, Version 2.0
 
 import concurrent.futures
-from rptest.tests.redpanda_test import RedpandaTest
+import time
+from typing import Optional
+
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkTool
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
     KgoVerifierSeqConsumer,
 )
-from rptest.services.redpanda import SISettings, MetricsEndpoint, ResourceSettings
-from rptest.services.admin import Admin
-from rptest.clients.rpk import RpkTool
+from rptest.services.redpanda import MetricsEndpoint, ResourceSettings, SISettings
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.si_utils import quiesce_uploads
-from ducktape.utils.util import wait_until
-from typing import Optional
-from ducktape.mark import matrix
-import time
 
 
 class LogStorageTargetSizeTest(RedpandaTest):

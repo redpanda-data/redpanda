@@ -7,15 +7,16 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import json
+import os
 import re
 import subprocess
 import tempfile
-from rptest.clients.types import TopicSpec
-import json
-from ducktape.utils.util import wait_until
-from typing import Any, Optional, Sequence, cast, NamedTuple
-import os
+from typing import Any, NamedTuple, Optional, Sequence, cast
 
+from ducktape.utils.util import wait_until
+
+from rptest.clients.types import TopicSpec
 from rptest.services.keycloak import OAuthConfig
 from rptest.services.redpanda_types import (
     RedpandaServiceForClients,

@@ -32,8 +32,8 @@
 #
 
 import json
-from pprint import pprint
 import re
+from pprint import pprint
 
 
 def main():

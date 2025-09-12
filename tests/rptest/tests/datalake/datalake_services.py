@@ -8,21 +8,23 @@
 # by the Apache License, Version 2.0
 
 import operator
-from typing import Any, Tuple, Optional
+from typing import Any, Optional, Tuple
+
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool, TopicSpec
 from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
+from rptest.services.catalog_service import CatalogService, CatalogType
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from rptest.services.nessie_catalog import NessieCatalog
 from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda_connect import RedpandaConnectService
 from rptest.services.spark_service import SparkService
 from rptest.services.trino_service import TrinoService
-from rptest.tests.datalake.query_engine_base import QueryEngineBase, QueryEngineType
-from rptest.services.redpanda_connect import RedpandaConnectService
-from rptest.tests.datalake.query_engine_factory import get_query_engine_by_type
-from rptest.services.catalog_service import CatalogType, CatalogService
-from rptest.services.nessie_catalog import NessieCatalog
 from rptest.tests.datalake.catalog_service_factory import make_catalog_service_for_type
+from rptest.tests.datalake.query_engine_base import QueryEngineBase, QueryEngineType
+from rptest.tests.datalake.query_engine_factory import get_query_engine_by_type
 
 
 class DatalakeServices:

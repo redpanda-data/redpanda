@@ -15,16 +15,17 @@
 #
 #   [jerry@winterland]$ dev_cluster.py -e vbuild/debug/clang/bin/redpanda
 #
-import asyncio
-from typing import Optional
-import psutil
-import pathlib
-import yaml
-import dataclasses
 import argparse
-import signal
+import asyncio
+import dataclasses
 import os
+import pathlib
 import shutil
+import signal
+from typing import Optional
+
+import psutil
+import yaml
 
 try:
     from rich import print

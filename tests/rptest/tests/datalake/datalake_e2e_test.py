@@ -7,39 +7,40 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import datetime
+import json
+import random
 import re
 import time
-import random
+from random import randint
+
+from confluent_kafka import Producer, avro
+from confluent_kafka.avro import AvroProducer
+from ducktape.mark import ignore, matrix
+from ducktape.utils.util import wait_until
+from google import protobuf
+from google.protobuf import json_format as pb_json_format
+from google.protobuf import text_format as pb_text_format
+
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
+from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
-from random import randint
-import json
-
-from confluent_kafka import avro, Producer
-from confluent_kafka.avro import AvroProducer
+from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import (
-    PandaproxyConfig,
-    SchemaRegistryConfig,
-    SISettings,
+    CloudStorageType,
     MetricsEndpoint,
+    PandaproxyConfig,
+    SISettings,
+    SchemaRegistryConfig,
 )
-from rptest.services.redpanda import CloudStorageType, SISettings
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.datalake.catalog_service_factory import (
+    filesystem_catalog_type,
+    supported_catalog_types,
+)
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
-from rptest.tests.datalake.catalog_service_factory import (
-    supported_catalog_types,
-    filesystem_catalog_type,
-)
-from ducktape.mark import matrix, ignore
-from ducktape.utils.util import wait_until
-from rptest.services.metrics_check import MetricCheck
-from rptest.services.catalog_service import CatalogType
-from google import protobuf
-from google.protobuf import text_format as pb_text_format, json_format as pb_json_format
-
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
 
 

@@ -8,8 +8,7 @@
 
 import random
 import time
-from collections import defaultdict
-from collections import deque
+from collections import defaultdict, deque
 
 from ducktape.utils.util import wait_until
 
@@ -22,7 +21,7 @@ from rptest.services.redpanda import MetricsEndpoint, SISettings
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
-from rptest.utils.si_utils import BucketView, NTP, quiesce_uploads
+from rptest.utils.si_utils import NTP, BucketView, quiesce_uploads
 
 
 class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):

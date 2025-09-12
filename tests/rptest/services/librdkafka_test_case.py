@@ -9,9 +9,10 @@
 
 import os
 import sys
-from ducktape.services.background_thread import BackgroundThreadService
-from ducktape.cluster.remoteaccount import RemoteCommandError
 from threading import Event
+
+from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.services.background_thread import BackgroundThreadService
 
 
 class LibrdkafkaTestcase(BackgroundThreadService):

@@ -8,20 +8,19 @@
 # by the Apache License, Version 2.0
 
 import re
-
-from rptest.clients.types import TopicSpec
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
-from rptest.services.redpanda import RedpandaService
-from ducktape.utils.util import wait_until
-from typing import Any, Optional
-from ducktape.tests.test import TestContext
-
-from confluent_kafka import Producer, KafkaException, Message
 from random import choice
 from string import ascii_uppercase
+from typing import Any, Optional
+
+from confluent_kafka import KafkaException, Message, Producer
+from ducktape.tests.test import TestContext
+from ducktape.utils.util import wait_until
+
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaService
+from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 def on_delivery(err: Optional[Any], msg: Message) -> None:

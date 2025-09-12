@@ -17,7 +17,7 @@ from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 
 from rptest.context import cloud_storage
-from rptest.services.catalog_service import CatalogType, CatalogService
+from rptest.services.catalog_service import CatalogService, CatalogType
 
 
 class IcebergRESTCatalog(CatalogService):

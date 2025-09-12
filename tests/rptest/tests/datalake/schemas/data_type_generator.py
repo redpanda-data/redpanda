@@ -7,21 +7,20 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import string
 import random
-
+import string
 from collections import defaultdict
 
 from rptest.tests.datalake.schemas.data_types import (
-    GenericDataType,
-    GenericRecord,
+    ALL_PRIMITIVE_DATA_TYPES,
     GenericArray,
-    GenericMap,
+    GenericDataType,
     GenericEnum,
-    GenericUnion,
+    GenericMap,
     GenericOptional,
     GenericPrimitive,
-    ALL_PRIMITIVE_DATA_TYPES,
+    GenericRecord,
+    GenericUnion,
 )
 
 

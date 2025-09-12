@@ -8,11 +8,12 @@
 # by the Apache License, Version 2.0
 import random
 
-from rptest.services.cluster import cluster
-from ducktape.utils.util import wait_until
-from rptest.tests.redpanda_test import RedpandaMixedTest
 from ducktape.tests.test import TestContext
+from ducktape.utils.util import wait_until
+
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaMixedTest
 
 
 class CreatePartitionsTest(RedpandaMixedTest):

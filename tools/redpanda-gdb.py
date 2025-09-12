@@ -22,27 +22,26 @@
 # (gdb) source redpanda-gdb.py
 # (gdb) redpanda memory
 #
+import argparse
+import bisect
+import collections
 import io
+import os
+import random
+import re
+import socket
+import struct
+import subprocess
+import sys
+import time
+import uuid
+from collections import Counter, defaultdict
+from enum import Enum
+from io import BufferedReader, BytesIO
+from operator import attrgetter
+
 import gdb
 import gdb.printing
-import uuid
-import argparse
-import re
-from operator import attrgetter
-from collections import defaultdict, Counter
-import sys
-import struct
-import random
-import bisect
-import os
-import subprocess
-import time
-import socket
-
-from enum import Enum
-import struct
-import collections
-from io import BufferedReader, BytesIO
 
 SERDE_ENVELOPE_FORMAT = "<BBI"
 SERDE_ENVELOPE_SIZE = struct.calcsize(SERDE_ENVELOPE_FORMAT)

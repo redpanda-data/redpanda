@@ -9,9 +9,9 @@
 
 import os
 
+from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk_remote import RpkRemoteTool
 
 
 class RpkTunerTest(RedpandaTest):

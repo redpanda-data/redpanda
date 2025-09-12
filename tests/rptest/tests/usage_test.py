@@ -7,28 +7,27 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import operator
+import random
 import re
 import time
-import random
-import operator
-from rptest.services.redpanda import MetricsEndpoint, RedpandaService
-from rptest.clients.rpk import RpkTool
-from requests.exceptions import HTTPError
-from rptest.services.cluster import cluster
-from rptest.utils.si_utils import BucketView
-from rptest.services.redpanda import SISettings
-from ducktape.utils.util import wait_until
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.services.rpk_consumer import RpkConsumer
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
-
 from datetime import datetime
 from functools import reduce
 
-from rptest.services.admin import Admin
-from rptest.tests.redpanda_test import RedpandaTest
+from ducktape.utils.util import wait_until
+from requests.exceptions import HTTPError
+
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from rptest.services.redpanda import MetricsEndpoint, RedpandaService, SISettings
+from rptest.services.rpk_consumer import RpkConsumer
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.functional import flat_map, flatten
+from rptest.utils.si_utils import BucketView
 
 
 class UsageWindow:

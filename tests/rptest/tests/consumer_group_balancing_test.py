@@ -9,13 +9,14 @@
 
 from collections import defaultdict
 from math import floor
+
+from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-
 from rptest.tests.redpanda_test import RedpandaTest
-from ducktape.utils.util import wait_until
 
 consumer_group_topic_partitions = 64
 

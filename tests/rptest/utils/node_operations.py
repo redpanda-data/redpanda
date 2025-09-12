@@ -7,15 +7,16 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
-from enum import Enum
 import random
 import re
 import threading
 import time
-import requests
+from collections import defaultdict
+from enum import Enum
 
+import requests
 from ducktape.utils.util import wait_until
+
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector, FailureSpec

@@ -7,18 +7,20 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.tests.redpanda_test import RedpandaTest
+import time
+
+from ducktape.mark import parametrize
+
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
     KgoVerifierSeqConsumer,
 )
-from rptest.services.redpanda import SISettings, MetricsEndpoint
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool
-from rptest.utils.si_utils import BucketView, quiesce_uploads, NTP
-from ducktape.mark import parametrize
-import time
+from rptest.services.redpanda import MetricsEndpoint, SISettings
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.utils.si_utils import NTP, BucketView, quiesce_uploads
 
 
 class TieredStorageSinglePartitionTest(RedpandaTest):

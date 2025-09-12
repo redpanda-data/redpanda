@@ -7,14 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from ducktape.errors import DucktapeError
+import subprocess
 from time import sleep
 
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool
+from ducktape.errors import DucktapeError
 
-import subprocess
+from rptest.clients.rpk import RpkTool
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
 
 # Expected log errors in tests that test misbehaving
 # idempotency clients.

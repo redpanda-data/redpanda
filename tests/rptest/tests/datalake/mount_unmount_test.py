@@ -7,29 +7,29 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import time
+
+from ducktape.mark import matrix
+
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import (
+    Admin,
+    InboundTopic,
+    MigrationAction,
+    NamespacedTopic,
+    OutboundDataMigration,
+)
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings, SchemaRegistryConfig
 from rptest.services.redpanda_connect import RedpandaConnectService
-from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
-from rptest.utils.rpcn_utils import counter_stream_config
-from ducktape.mark import matrix
-
-from rptest.services.admin import (
-    Admin,
-    NamespacedTopic,
-    InboundTopic,
-    OutboundDataMigration,
-    MigrationAction,
-)
-from rptest.clients.types import TopicSpec
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.data_migrations import DataMigrationTestMixin
 from rptest.utils.mode_checks import skip_debug_mode
+from rptest.utils.rpcn_utils import counter_stream_config
 
 
 class MountUnmountIcebergTest(RedpandaTest, DataMigrationTestMixin):

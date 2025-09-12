@@ -9,7 +9,6 @@
 
 import socket
 import subprocess
-
 from enum import IntEnum
 
 from ducktape.cluster.cluster import ClusterNode
@@ -18,7 +17,7 @@ from ducktape.services.service import Service
 
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import TLSProvider, SecurityConfig
+from rptest.services.redpanda import SecurityConfig, TLSProvider
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.services.tls import (
     Certificate,

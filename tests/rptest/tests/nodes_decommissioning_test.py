@@ -10,35 +10,34 @@
 import concurrent
 import random
 import time
+from time import sleep
 
 import requests
-from rptest.clients.kafka_cat import KafkaCat
-from time import sleep
+from ducktape.mark import matrix, parametrize
+from ducktape.utils.util import wait_until
+
 from rptest.clients.default import DefaultClient
+from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
 )
-from rptest.services.redpanda_installer import RedpandaInstaller
-from rptest.tests.prealloc_nodes import PreallocNodesTest
-
-from rptest.utils.mode_checks import skip_debug_mode
-from rptest.util import wait_for_recovery_throttle_rate
-from rptest.clients.rpk import RpkTool
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.cluster import cluster
-from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize
-from ducktape.mark import matrix
-from rptest.clients.types import TopicSpec
-from rptest.tests.end_to_end import EndToEndTest
-from rptest.services.admin import Admin
 from rptest.services.redpanda import (
     CHAOS_LOG_ALLOW_LIST,
     RESTART_LOG_ALLOW_LIST,
     RedpandaService,
     SISettings,
 )
+from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.tests.end_to_end import EndToEndTest
+from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_for_recovery_throttle_rate
+from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.node_operations import NodeDecommissionWaiter
 
 

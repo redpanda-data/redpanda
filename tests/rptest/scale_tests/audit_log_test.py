@@ -7,27 +7,28 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import time
 import threading
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool
-from rptest.services.admin import Admin
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import SaslCredentials
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.utils.scale_parameters import ScaleParameters
-from rptest.services.kgo_repeater_service import KgoRepeaterService, repeater_traffic
-from rptest.services.redpanda import (
-    SaslCredentials,
-    SecurityConfig,
-    MetricsEndpoint,
-    MetricSample,
-    LoggingConfig,
-)
-from rptest.tests.cluster_config_test import wait_for_version_sync
-from rptest.util import wait_until_result
+import time
+
 from ducktape.errors import TimeoutError
 from ducktape.mark import ignore
+
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.kgo_repeater_service import KgoRepeaterService, repeater_traffic
+from rptest.services.redpanda import (
+    LoggingConfig,
+    MetricSample,
+    MetricsEndpoint,
+    SaslCredentials,
+    SecurityConfig,
+)
+from rptest.tests.cluster_config_test import wait_for_version_sync
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until_result
+from rptest.utils.scale_parameters import ScaleParameters
 
 
 class AuditLogTestSecurityConfig(SecurityConfig):

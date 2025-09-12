@@ -12,7 +12,7 @@ import re
 import sys
 import time
 import traceback
-from collections import namedtuple, defaultdict
+from collections import defaultdict, namedtuple
 from typing import DefaultDict, List, Optional
 
 from ducktape.mark import matrix
@@ -24,9 +24,9 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
+    CloudStorageTypeAndUrlStyle,
     RedpandaService,
     SISettings,
-    CloudStorageTypeAndUrlStyle,
     get_cloud_storage_type,
     get_cloud_storage_type_and_url_style,
 )

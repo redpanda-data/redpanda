@@ -6,18 +6,20 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import random
 import threading
+from concurrent import futures
+from concurrent.futures import ThreadPoolExecutor
+from time import sleep
+
 import confluent_kafka as ck
 from confluent_kafka import TopicPartition
+from ducktape.utils.util import wait_until
+from kafka import KafkaAdminClient
+
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from concurrent import futures
-from kafka import KafkaAdminClient
-import random
-from time import sleep
-from concurrent.futures import ThreadPoolExecutor
-from ducktape.utils.util import wait_until
-from rptest.clients.rpk import RpkTool
 
 
 class ConsumerOffsetsVerifier:

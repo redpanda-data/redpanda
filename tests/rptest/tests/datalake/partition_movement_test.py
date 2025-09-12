@@ -7,16 +7,17 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import PandaproxyConfig, SISettings, SchemaRegistryConfig
 from rptest.services.spark_service import QueryEngineType
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
+from rptest.tests.datalake.utils import supported_storage_types
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import PandaproxyConfig, SchemaRegistryConfig, SISettings
-from ducktape.mark import matrix
-from ducktape.utils.util import wait_until
-from rptest.services.cluster import cluster
-from rptest.tests.datalake.utils import supported_storage_types
 
 
 class PartitionMovementTest(PartitionMovementMixin, RedpandaTest):

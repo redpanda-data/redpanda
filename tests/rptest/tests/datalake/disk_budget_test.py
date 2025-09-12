@@ -6,25 +6,25 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
-import time
 import threading
+import time
+
+import ducktape.errors
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.services.redpanda import SISettings
-from rptest.services.redpanda import ResourceSettings
+from rptest.services.redpanda import ResourceSettings, SISettings
+from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
-from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
-from rptest.clients.rpk import RpkTool
-from rptest.clients.types import TopicSpec
-from ducktape.utils.util import wait_until
-import ducktape.errors
-
-from ducktape.mark import matrix
 
 
 class DatalakeDiskUsageTest(RedpandaTest):

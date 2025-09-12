@@ -21,8 +21,7 @@ from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkException
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.action_injector import random_process_kills
 from rptest.services.admin import Admin
@@ -35,21 +34,22 @@ from rptest.services.kgo_verifier_services import (
 )
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import (
+    CHAOS_LOG_ALLOW_LIST,
+    MetricsEndpoint,
     SISettings,
     get_cloud_storage_type,
     make_redpanda_service,
-    CHAOS_LOG_ALLOW_LIST,
-    MetricsEndpoint,
 )
 from rptest.services.utils import LogSearchLocal
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import Scale, wait_until_segments
 from rptest.util import (
+    Scale,
     produce_until_segments,
-    wait_for_removal_of_n_segments,
     wait_for_local_storage_truncate,
+    wait_for_removal_of_n_segments,
+    wait_until_segments,
 )
 from rptest.utils.cluster_topology import (
     ClusterTopology,
@@ -58,9 +58,9 @@ from rptest.utils.cluster_topology import (
 )
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.si_utils import (
-    nodes_report_cloud_segments,
-    BucketView,
     NTP,
+    BucketView,
+    nodes_report_cloud_segments,
     quiesce_uploads,
 )
 

@@ -7,10 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.clients.rpk import RpkTool, RpkException
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import ResourceSettings
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import ResourceSettings
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
 
 

@@ -1,9 +1,9 @@
 import json
 import os
 import subprocess
-from rptest.services.utils import KubeNodeShell
-
 from dataclasses import dataclass
+
+from rptest.services.utils import KubeNodeShell
 
 
 @dataclass

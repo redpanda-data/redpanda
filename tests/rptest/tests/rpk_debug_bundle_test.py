@@ -8,17 +8,18 @@
 # by the Apache License, Version 2.0
 
 import os
-import re
-import zipfile
-import tempfile
 import random
+import re
 import string
+import tempfile
+import zipfile
 
 from ducktape.utils.util import wait_until
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool, RpkException
-from rptest.services.cluster import cluster
+
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.rpk_remote import RpkRemoteTool
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class RpkDebugBundleTest(RedpandaTest):

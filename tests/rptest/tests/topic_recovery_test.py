@@ -47,11 +47,13 @@ from rptest.utils.si_utils import (
     EMPTY_SEGMENT_SIZE,
     MISSING_DATA_ERRORS,
     NTP,
+    NTPR,
     TRANSIENT_ERRORS,
-    PathMatcher,
     BucketView,
+    PathMatcher,
     SegmentReader,
     default_log_segment_size,
+    gen_local_path_from_remote,
     get_expected_ntp_restored_size,
     get_on_disk_size_per_ntp,
     is_close_size,
@@ -59,8 +61,6 @@ from rptest.utils.si_utils import (
     parse_s3_segment_path,
     quiesce_uploads,
     verify_file_layout,
-    NTPR,
-    gen_local_path_from_remote,
 )
 
 CLOUD_STORAGE_SEGMENT_MAX_UPLOAD_INTERVAL_SEC = 10

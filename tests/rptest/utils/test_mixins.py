@@ -1,8 +1,9 @@
 from logging import Logger
 from typing import Any, Callable, cast
+
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.cluster.cluster_spec import ClusterSpec
-from ducktape.tests.test import TestContext, Test
+from ducktape.tests.test import Test, TestContext
 from ducktape.utils.util import wait_until
 
 from rptest.services.redpanda import RedpandaService, RedpandaServiceCloud
