@@ -1009,19 +1009,21 @@ FIXTURE_TEST(
 
     // Metadata with inconsistencies (gap)
     std::vector<cloud_storage::segment_meta> m;
-    m.push_back(segment_meta{
-      .size_bytes = 100,
-      .base_offset = model::offset(0),
-      .committed_offset = model::offset(990),
-      .delta_offset = model::offset_delta(0),
-      .archiver_term = model::term_id(1),
-      .segment_term = model::term_id(1)});
-    m.push_back(segment_meta{
-      .size_bytes = 200,
-      .base_offset = model::offset(1000),
-      .committed_offset = model::offset(1999),
-      .archiver_term = model::term_id(1),
-      .segment_term = model::term_id(1)});
+    m.push_back(
+      segment_meta{
+        .size_bytes = 100,
+        .base_offset = model::offset(0),
+        .committed_offset = model::offset(990),
+        .delta_offset = model::offset_delta(0),
+        .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1)});
+    m.push_back(
+      segment_meta{
+        .size_bytes = 200,
+        .base_offset = model::offset(1000),
+        .committed_offset = model::offset(1999),
+        .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1)});
 
     auto batcher = archival_stm->batch_start(
       ss::lowres_clock::now() + 10s, never_abort);
@@ -1087,8 +1089,10 @@ FIXTURE_TEST(
     // loss of the first command.
     auto misaligned_spillover = archival_stm->batch_start(
       ss::lowres_clock::now() + 10s, never_abort);
-    misaligned_spillover.spillover(cloud_storage::segment_meta{
-      .base_offset = model::offset(0), .committed_offset = model::offset(990)});
+    misaligned_spillover.spillover(
+      cloud_storage::segment_meta{
+        .base_offset = model::offset(0),
+        .committed_offset = model::offset(990)});
     misaligned_spillover.truncate_archive_init(
       model::offset(100), model::offset_delta(0));
     misaligned_spillover.cleanup_archive(model::offset(100), 0);
