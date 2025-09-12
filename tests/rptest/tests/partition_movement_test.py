@@ -13,7 +13,7 @@ import signal
 import time
 
 import requests
-from ducktape.mark import ignore, matrix
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cat import KafkaCat
@@ -26,7 +26,6 @@ from rptest.services.kaf_producer import KafProducer
 from rptest.services.redpanda import (
     PREV_VERSION_LOG_ALLOW_LIST,
     RESTART_LOG_ALLOW_LIST,
-    CloudStorageType,
     SISettings,
     get_cloud_storage_type,
 )

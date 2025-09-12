@@ -47,8 +47,6 @@ from rptest.tests.sasl_reauth_test import (
 from rptest.util import expect_http_error
 from rptest.utils.log_utils import wait_until_nag_is_set
 from rptest.utils.utf8 import (
-    CONTROL_CHARS,
-    CONTROL_CHARS_MAP,
     generate_string_with_control_character,
 )
 

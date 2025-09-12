@@ -6,32 +6,22 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import datetime
-import re
 import time
-from random import randint
 
-from confluent_kafka import avro
-from confluent_kafka.avro import AvroProducer
-from ducktape.mark import ignore, matrix
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkTool, TopicSpec
 from rptest.services.admin import Admin
-from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import (
-    CloudStorageType,
-    MetricsEndpoint,
     PandaproxyConfig,
     SISettings,
     SchemaRegistryConfig,
 )
 from rptest.tests.datalake.catalog_service_factory import (
-    filesystem_catalog_type,
     supported_catalog_types,
 )
 from rptest.tests.datalake.datalake_services import DatalakeServices

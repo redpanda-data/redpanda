@@ -10,18 +10,15 @@
 import random
 import time
 
-from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
-from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import (
     RESTART_LOG_ALLOW_LIST,
-    MetricsEndpoint,
     SISettings,
     make_redpanda_service,
 )

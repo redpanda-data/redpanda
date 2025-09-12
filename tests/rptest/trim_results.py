@@ -10,7 +10,6 @@
 # by the Apache License, Version 2.0
 
 import concurrent.futures
-import hashlib
 import json
 import logging
 import os
@@ -18,7 +17,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections import defaultdict
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)

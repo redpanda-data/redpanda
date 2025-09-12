@@ -21,7 +21,6 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.failure_injector import FailureSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.node_operations import FailureInjectorBackgroundThread
 

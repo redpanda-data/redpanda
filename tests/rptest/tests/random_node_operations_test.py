@@ -12,7 +12,7 @@ import random
 import re
 import threading
 
-from ducktape.mark import ignore, matrix
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.default import DefaultClient
@@ -30,9 +30,7 @@ from rptest.services.kgo_verifier_services import (
 from rptest.services.redpanda import (
     CHAOS_LOG_ALLOW_LIST,
     PREV_VERSION_LOG_ALLOW_LIST,
-    CloudStorageType,
     LoggingConfig,
-    MetricsEndpoint,
     PandaproxyConfig,
     SISettings,
     SchemaRegistryConfig,

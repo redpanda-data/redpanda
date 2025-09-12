@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import json
-import logging
 from typing import Optional
 from uuid import uuid4
 

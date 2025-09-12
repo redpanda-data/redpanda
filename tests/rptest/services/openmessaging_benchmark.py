@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ducktape.cluster.cluster import ClusterNode
-from ducktape.cluster.node_container import NodeContainer
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 
@@ -25,7 +24,6 @@ from rptest.services.openmessaging_benchmark_configs import (
 )
 from rptest.services.redpanda import (
     RedpandaService,
-    RedpandaServiceBase,
     RedpandaServiceCloud,
 )
 from rptest.services.utils import BadLogLines

@@ -7,12 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import datetime
 import json
-import os
-import re
 import tempfile
-import zipfile
 
 from ducktape.utils.util import wait_until
 
@@ -28,7 +24,6 @@ from rptest.util import (
     expect_exception,
     get_cluster_license,
     get_second_cluster_license,
-    wait_until_result,
 )
 from rptest.utils.mode_checks import in_fips_environment
 

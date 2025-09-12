@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+# ruff: noqa: F401
+
 from .list_offsets.service import ListOffsetsWorkload
 from .service_base import WorkloadServiceBase
 from .tx_subscribe.service import TxSubscribeWorkload

@@ -10,7 +10,6 @@
 from collections import defaultdict
 from math import floor
 
-from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec

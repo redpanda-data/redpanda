@@ -16,7 +16,7 @@ from rptest.services.cluster import cluster
 from rptest.services.redpanda import SaslCredentials, SecurityConfig
 from rptest.tests.pandaproxy_test import PandaProxyEndpoints
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import expect_exception, expect_http_error
+from rptest.util import expect_http_error
 
 
 def create_user_and_wait(redpanda, admin: Admin, creds: SaslCredentials):

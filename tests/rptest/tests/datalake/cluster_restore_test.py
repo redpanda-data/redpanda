@@ -13,10 +13,8 @@ from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
-from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
-    CloudStorageType,
     PandaproxyConfig,
     SISettings,
     SchemaRegistryConfig,

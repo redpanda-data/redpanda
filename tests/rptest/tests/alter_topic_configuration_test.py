@@ -9,7 +9,6 @@
 import random
 import string
 import subprocess
-import time
 
 from ducktape.mark import matrix, parametrize
 from ducktape.utils.util import wait_until

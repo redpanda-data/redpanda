@@ -37,7 +37,7 @@ from rptest.services.redpanda import (
     SecurityConfig,
     TLSProvider,
 )
-from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
+from rptest.services.redpanda_installer import wait_for_num_versions
 from rptest.tests.group_membership_test import GroupCoordinatorTransferUtils
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import search_logs_with_timeout

@@ -7,21 +7,18 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import json
-import os
 import random
-import time
 from collections import namedtuple
-from typing import Dict, Optional
+from typing import Optional
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaService, SISettings
+from rptest.services.redpanda import SISettings
 from rptest.tests.datalake.catalog_service_factory import (
     filesystem_catalog_type,
-    supported_catalog_types,
 )
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.query_engine_base import QueryEngineType

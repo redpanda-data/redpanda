@@ -12,7 +12,6 @@ from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.redpanda_test import RedpandaTest
 

@@ -7,10 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from math import ceil
-from time import sleep
 
-import requests
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool

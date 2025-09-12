@@ -7,10 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import confluent_kafka as ck
 from ducktape.mark import matrix
 
-from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import PandaproxyConfig, SISettings, SchemaRegistryConfig

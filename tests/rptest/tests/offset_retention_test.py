@@ -19,7 +19,6 @@ from rptest.services.cluster import cluster
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import (
-    RedpandaInstaller,
     ver_string,
     wait_for_num_versions,
 )

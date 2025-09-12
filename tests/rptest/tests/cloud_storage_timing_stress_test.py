@@ -27,7 +27,7 @@ from rptest.services.kgo_verifier_services import (
 from rptest.services.redpanda import MetricsEndpoint, SISettings
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import firewall_blocked, wait_until_result
+from rptest.util import wait_until_result
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.si_utils import NTPR, BucketView
 

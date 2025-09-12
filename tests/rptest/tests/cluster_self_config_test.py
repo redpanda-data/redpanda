@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 import re
 
-from ducktape.mark import matrix, parametrize
+from ducktape.mark import matrix
 
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster

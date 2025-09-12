@@ -25,8 +25,7 @@ from kafkatest.services.zookeeper import ZookeeperService
 from kafkatest.version import V_3_0_0
 
 from rptest.clients.default import DefaultClient
-from rptest.clients.kafka_cat import KafkaCat
-from rptest.clients.kafka_cli_tools import KafkaCliTools, KafkaDeleteOffsetsResponse
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin

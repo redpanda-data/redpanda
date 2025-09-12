@@ -34,7 +34,6 @@ from rptest.services.redpanda import (
     SchemaRegistryConfig,
 )
 from rptest.tests.datalake.catalog_service_factory import (
-    filesystem_catalog_type,
     supported_catalog_types,
 )
 from rptest.tests.datalake.datalake_services import DatalakeServices

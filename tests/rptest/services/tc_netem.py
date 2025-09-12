@@ -1,6 +1,5 @@
 import typing
 from enum import Enum
-from statistics import correlation
 
 # for more information about netem options visit `tc-netem` man7 page
 

@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import json
-from collections import ChainMap
 from dataclasses import dataclass
 from enum import Enum
 from functools import reduce

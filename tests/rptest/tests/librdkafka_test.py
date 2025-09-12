@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import os
-import subprocess
 
 from confluent_kafka.admin import (
     AclBinding,

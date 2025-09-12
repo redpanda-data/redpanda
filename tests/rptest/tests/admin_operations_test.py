@@ -7,36 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import random
-import threading
 import uuid
 
-from ducktape.mark import matrix
-from ducktape.utils.util import wait_until
 
-from rptest.clients.default import DefaultClient
-from rptest.clients.offline_log_viewer import OfflineLogViewer
-from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.admin_ops_fuzzer import (
     AdminOperationsFuzzer,
-    RedpandaAdminOperation,
 )
 from rptest.services.cluster import cluster
-from rptest.services.kgo_verifier_services import (
-    KgoVerifierConsumerGroupConsumer,
-    KgoVerifierProducer,
-)
-from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST
-from rptest.services.redpanda_installer import RedpandaInstaller
-from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode
-from rptest.utils.node_operations import (
-    FailureInjectorBackgroundThread,
-    NodeOpsExecutor,
-    generate_random_workload,
-)
 
 
 class AdminOperationsTest(RedpandaTest):

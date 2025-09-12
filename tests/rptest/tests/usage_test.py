@@ -8,10 +8,8 @@
 # by the Apache License, Version 2.0
 
 import operator
-import random
 import re
 import time
-from datetime import datetime
 from functools import reduce
 
 from ducktape.utils.util import wait_until

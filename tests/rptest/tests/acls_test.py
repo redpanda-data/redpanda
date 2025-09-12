@@ -7,7 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import socket
-import time
 from enum import Enum
 from typing import Optional
 
@@ -21,7 +20,7 @@ from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import LoggingConfig, SecurityConfig, TLSProvider
-from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
+from rptest.services.redpanda_installer import wait_for_num_versions
 from rptest.tests.redpanda_test import RedpandaTest
 
 

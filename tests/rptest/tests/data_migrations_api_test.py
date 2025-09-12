@@ -8,11 +8,9 @@
 # by the Apache License, Version 2.0
 
 import random
-import re
 import time
 import typing
 from contextlib import contextmanager, nullcontext
-from enum import Enum
 from typing import Callable, List, Literal, TypedDict, get_type_hints
 
 import confluent_kafka as ck
@@ -21,7 +19,7 @@ from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
-from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import (
     Admin,
@@ -36,7 +34,7 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
 )
-from rptest.services.redpanda import RedpandaService, RedpandaServiceBase, SISettings
+from rptest.services.redpanda import RedpandaServiceBase, SISettings
 from rptest.tests.e2e_finjector import Finjector
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import bg_thread_cm

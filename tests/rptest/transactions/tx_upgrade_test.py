@@ -10,7 +10,6 @@
 import json
 import random
 import string
-import uuid
 from enum import Enum
 from threading import Lock, Semaphore, Thread
 from time import sleep

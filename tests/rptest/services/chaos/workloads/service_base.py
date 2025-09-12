@@ -14,7 +14,6 @@ from abc import ABC, abstractmethod
 from enum import Enum
 
 import requests
-from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.errors import TimeoutError
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext

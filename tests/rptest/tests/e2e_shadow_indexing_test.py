@@ -29,7 +29,6 @@ from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
-    KgoVerifierRandomConsumer,
     KgoVerifierSeqConsumer,
 )
 from rptest.services.metrics_check import MetricCheck
@@ -40,7 +39,6 @@ from rptest.services.redpanda import (
     get_cloud_storage_type,
     make_redpanda_service,
 )
-from rptest.services.utils import LogSearchLocal
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest

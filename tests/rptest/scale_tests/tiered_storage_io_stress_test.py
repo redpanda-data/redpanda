@@ -20,7 +20,6 @@ from rptest.services.kgo_verifier_services import (
 )
 from rptest.services.redpanda import (
     RESTART_LOG_ALLOW_LIST,
-    CloudStorageType,
     SISettings,
     get_cloud_storage_type,
 )

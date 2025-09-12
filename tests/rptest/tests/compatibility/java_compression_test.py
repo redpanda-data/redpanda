@@ -10,9 +10,8 @@
 from time import time
 
 from ducktape.mark import matrix
-from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
-from kafka import KafkaConsumer, TopicPartition
+from kafka import KafkaConsumer
 
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
@@ -24,7 +23,6 @@ from rptest.services.redpanda_installer import (
 )
 from rptest.services.verifiable_producer import VerifiableProducer
 from rptest.tests.end_to_end import EndToEndTest
-from rptest.util import expect_exception
 
 
 class JavaCompressionTest(EndToEndTest):

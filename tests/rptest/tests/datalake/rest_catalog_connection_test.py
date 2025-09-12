@@ -1,13 +1,9 @@
-import time
-
 from ducktape.mark import matrix
 
-from rptest.archival.s3_client import S3Client
 from rptest.clients.default import TopicSpec
 from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
-    KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
 )
 from rptest.services.redpanda import SISettings

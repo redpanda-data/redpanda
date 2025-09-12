@@ -14,11 +14,8 @@
 import json
 import subprocess
 
-from ducktape.tests.test import Test
 
 from rptest.clients.installpack import InstallPackClient
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import make_redpanda_service
 from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 
 

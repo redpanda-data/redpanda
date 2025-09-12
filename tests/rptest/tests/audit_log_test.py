@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import json
-import random
 import re
 import socket
 import threading
@@ -39,7 +38,6 @@ from rptest.services.redpanda import (
     LoggingConfig,
     MetricSamples,
     MetricsEndpoint,
-    PandaproxyConfig,
     RedpandaServiceBase,
     SchemaRegistryConfig,
     SecurityConfig,

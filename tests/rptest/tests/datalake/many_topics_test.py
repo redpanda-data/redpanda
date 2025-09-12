@@ -6,7 +6,6 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
-import concurrent.futures
 import itertools
 import random
 import time

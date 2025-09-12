@@ -1,5 +1,5 @@
 from logging import Logger
-from typing import Any, Callable, cast
+from typing import Any, cast
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.cluster.cluster_spec import ClusterSpec

@@ -9,7 +9,6 @@
 
 import functools
 import time
-from re import Pattern
 from typing import Any, Protocol
 
 import psutil

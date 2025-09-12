@@ -25,8 +25,6 @@ from rptest.services.kgo_verifier_services import (
 )
 from rptest.services.mirror_maker2 import MirrorMaker2
 from rptest.services.redpanda import make_redpanda_service
-from rptest.services.rpk_consumer import RpkConsumer
-from rptest.services.rpk_producer import RpkProducer
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
 from rptest.tests.end_to_end import EndToEndTest

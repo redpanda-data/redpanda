@@ -1,5 +1,4 @@
 import base64
-import collections
 import ipaddress
 import json
 import os
@@ -8,11 +7,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from functools import cache
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 
-import requests
-import yaml
 from ducktape.utils.util import wait_until
 from prometheus_client.parser import text_string_to_metric_families
 

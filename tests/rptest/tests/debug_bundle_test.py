@@ -41,7 +41,6 @@ from rptest.services.redpanda import (
 )
 from rptest.services.redpanda_types import SaslCredentials
 from rptest.services.tls import Certificate, CertificateAuthority, TLSCertManager
-from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
 

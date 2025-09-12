@@ -7,7 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import uuid
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
@@ -18,7 +17,6 @@ from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
     CHAOS_LOG_ALLOW_LIST,
-    CloudStorageType,
     SISettings,
     get_cloud_storage_type,
 )

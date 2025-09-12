@@ -14,13 +14,12 @@ from confluent_kafka import avro
 from confluent_kafka.avro import AvroProducer
 from ducktape.mark import matrix
 
-from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import PandaproxyConfig, SISettings, SchemaRegistryConfig
 from rptest.tests.datalake.catalog_service_factory import supported_catalog_types
 from rptest.tests.datalake.datalake_services import DatalakeServices
-from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.schemas.data_types import (
     ALL_PRIMITIVE_DATA_TYPES,

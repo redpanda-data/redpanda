@@ -18,13 +18,11 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierSeqConsumer,
 )
 from rptest.services.redpanda import (
-    CloudStorageType,
     SISettings,
     get_cloud_storage_type,
 )
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
-    segments_count,
     wait_for_local_storage_truncate,
 )
 from rptest.utils.mode_checks import skip_debug_mode

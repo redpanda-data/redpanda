@@ -7,14 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import random
-import re
-import time
 
 from confluent_kafka import Consumer, TopicPartition
-from ducktape.utils.util import wait_until
 
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.kcl import KCL
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import DefaultClient, RedpandaTest

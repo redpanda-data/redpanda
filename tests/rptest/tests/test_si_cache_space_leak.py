@@ -7,14 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import os
-import time
 
 from ducktape.cluster.cluster_spec import ClusterSpec
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
-from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (

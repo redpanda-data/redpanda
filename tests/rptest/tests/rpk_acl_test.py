@@ -12,8 +12,7 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.cluster import cluster
 from rptest.services.failure_injector import FailureSpec, make_failure_injector
-from rptest.services.redpanda import SaslCredentials, SecurityConfig
-from rptest.tests.admin_api_auth_test import create_user_and_wait
+from rptest.services.redpanda import SecurityConfig
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
 

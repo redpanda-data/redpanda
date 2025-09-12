@@ -14,7 +14,7 @@ import re
 import tempfile
 import time
 from collections import namedtuple
-from typing import Any, List, NamedTuple, Protocol
+from typing import Any, NamedTuple, Protocol
 
 import requests
 import yaml
@@ -40,10 +40,9 @@ from rptest.services.redpanda import (
 from rptest.services.redpanda_installer import (
     RedpandaInstaller,
     RedpandaVersion,
-    RedpandaVersionTriple,
 )
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import expect_exception, expect_http_error, produce_until_segments
+from rptest.util import expect_exception, expect_http_error
 from rptest.utils.si_utils import BucketView
 
 BOOTSTRAP_CONFIG = {

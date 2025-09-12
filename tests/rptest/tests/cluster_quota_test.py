@@ -14,7 +14,7 @@ import time
 from typing import NamedTuple, Optional
 
 from ducktape.utils.util import wait_until
-from kafka import KafkaConsumer, KafkaProducer, TopicPartition
+from kafka import KafkaConsumer, KafkaProducer
 
 from rptest.clients.kcl import (
     KclCreatePartitionsRequestTopic,
@@ -27,7 +27,6 @@ from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
     LoggingConfig,
     MetricSample,
-    MetricSamples,
     MetricsEndpoint,
     ResourceSettings,
 )

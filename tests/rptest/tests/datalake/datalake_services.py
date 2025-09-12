@@ -8,13 +8,12 @@
 # by the Apache License, Version 2.0
 
 import operator
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool, TopicSpec
-from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
 from rptest.services.catalog_service import CatalogService, CatalogType
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.nessie_catalog import NessieCatalog

@@ -8,7 +8,6 @@ docker run -v `pwd`/..:/src -w /src/js ghcr.io/webassembly/wasi-sdk \
   /bin/bash -c 'apt update && apt install -y git && cmake --preset release-static && cmake --build --preset release-static -- redpanda_js_transform'
 """
 
-import shutil
 import subprocess
 import tarfile
 import tempfile

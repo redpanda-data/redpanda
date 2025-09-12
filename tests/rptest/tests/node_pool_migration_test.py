@@ -7,7 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import json
 import random
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -31,7 +30,7 @@ from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
-from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode
+from rptest.utils.mode_checks import cleanup_on_early_exit
 from rptest.utils.node_operations import NodeDecommissionWaiter
 
 TS_LOG_ALLOW_LIST = [

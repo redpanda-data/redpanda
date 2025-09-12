@@ -12,8 +12,6 @@ import tempfile
 from typing import Optional
 
 import jinja2
-from ducktape.cluster.cluster import ClusterNode
-from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 
 from rptest.context import cloud_storage

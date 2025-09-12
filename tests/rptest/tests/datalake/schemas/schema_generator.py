@@ -17,7 +17,6 @@ from rptest.tests.datalake.schemas.data_types import (
     ALL_COMPLEX_DATA_TYPES,
     ALL_PRIMITIVE_DATA_TYPES,
     ALL_PRIMITIVE_DATA_TYPES_AND_ENUM,
-    GenericBool,
     GenericDataType,
     GenericDouble,
     GenericEnum,

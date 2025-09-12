@@ -11,9 +11,7 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import (
-    CloudStorageType,
     LoggingConfig,
-    MetricsEndpoint,
     SISettings,
     get_cloud_storage_type,
     make_redpanda_service,

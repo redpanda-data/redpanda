@@ -15,7 +15,6 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
-    CloudStorageType,
     SISettings,
     get_cloud_storage_type,
 )
