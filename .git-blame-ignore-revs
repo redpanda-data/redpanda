@@ -13,3 +13,9 @@ fc822009898f760092ba69ceac439de88d2ade90
 
 # Switched from yapf to ruff
 c60d83aaab19896b972f58d12c7cafaa59e39fb9
+
+# ruff check . --select I --fix
+5ed9985302bd0e91e2e88d4b506ab5839010b23c
+
+# ruff check . --select F401 --fix
+97bbaf1ed9d1123491112d469e3a4c6a7b24db54
