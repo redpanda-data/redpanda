@@ -1360,6 +1360,9 @@ class Admin:
             json=dict(add=to_add, remove=to_remove),
         )
 
+    def security_report(self):
+        return self._request("get", "security/report")
+
     def list_role_members(self, role: str):
         return self._request("get", f"security/roles/{role}/members")
 

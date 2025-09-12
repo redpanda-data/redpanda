@@ -49,6 +49,11 @@ public:
     ss::future<> stop();
     ss::future<> restart();
 
+    const configuration& get_config() const;
+    const kafka::client::configuration& get_client_config() const;
+
+    bool has_ephemeral_credentials() const;
+
 private:
     friend class schema_id_validator;
     friend class schema::registry;

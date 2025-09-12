@@ -61,6 +61,9 @@ consteval std::string_view property_type_name<broker_authn_endpoint>() {
 
 } // namespace detail
 
+bool kafka_authz_enabled();
+broker_authn_method get_authn_method(std::string_view connection_name);
+
 } // namespace config
 
 namespace YAML {
