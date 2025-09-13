@@ -125,6 +125,7 @@ struct session_resources {
     std::unique_ptr<handler_probe::hist_t::measurement> handler_latency;
     std::unique_ptr<request_tracker> tracker;
     request_data request_data;
+    ss::deleter response_resource_deleter;
 };
 using vcluster_connection_id
   = named_type<uint32_t, struct vcluster_connection_id_tag>;

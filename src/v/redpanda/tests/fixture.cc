@@ -834,9 +834,14 @@ kafka::request_context redpanda_thread_fixture::make_request_context_erased(
     iobuf buf;
     kafka::protocol::encoder writer(buf);
     encoder(writer);
+    auto sres = ss::make_lw_shared<kafka::session_resources>();
 
     return kafka::request_context(
-      conn, std::move(header), std::move(buf), std::chrono::milliseconds(0));
+      conn,
+      std::move(sres),
+      std::move(header),
+      std::move(buf),
+      std::chrono::milliseconds(0));
 }
 
 kafka::request_context redpanda_thread_fixture::make_fetch_request_context() {
