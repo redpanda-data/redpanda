@@ -711,6 +711,7 @@ redpanda_cc_btest(
         "//src/v/random:generators",
         "//src/v/redpanda/tests:fixture",
         "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:scoped_config",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
         "@seastar",

@@ -187,20 +187,6 @@ iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
     auto new_batch = model::record_batch(
       header, std::move(records), model::record_batch::tag_ctor_ng{});
 
-    /**
-     * Perform some type of validation on the uncompressed input. In this case
-     * we make sure that the records can be materialized but we avoid
-     * re-encoding them using the lazy-record optimization.
-     */
-    if (!new_batch.compressed()) {
-        try {
-            new_batch.for_each_record([](model::record r) { (void)r; });
-        } catch (const std::exception& e) {
-            vlog(klog.error, "Parsing uncompressed records: {}", e.what());
-            return remainder;
-        }
-    }
-
     batch = std::move(new_batch);
     return remainder;
 }
