@@ -69,6 +69,14 @@ struct op_context {
         }
         intrusive_list_hook _hook;
 
+        // Returns the number of bytes currently written to the ntp response
+        // this placeholder corresponds to.
+        size_t response_size() const {
+            return _it->partition_response->records
+              .transform(&kafka::batch_reader::size_bytes)
+              .value_or(0);
+        }
+
     private:
         fetch_response::iterator _it;
         op_context* _ctx;
