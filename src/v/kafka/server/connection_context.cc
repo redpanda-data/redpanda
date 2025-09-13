@@ -533,17 +533,18 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
 
     sasl_authenticate_response response;
     {
+        auto rres = ss::make_lw_shared<request_resources>();
         auto ctx = request_context(
           shared_from_this(),
+          rres,
           request_header{
             .key = sasl_authenticate_api::key,
             .version = version,
           },
           std::move(request_buf),
           0s);
-        auto rres = request_resources{};
         auto resp = co_await kafka::process_request(
-                      std::move(ctx), _server.smp_group(), rres)
+                      std::move(ctx), _server.smp_group(), *rres)
                       .response;
         auto data = std::move(*resp).release();
         response.decode(std::move(data), version);
@@ -778,7 +779,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
     }
     auto self = shared_from_this();
     auto rctx = request_context(
-      self, std::move(hdr), std::move(buf), rres->backpressure_delay);
+      self, rres, std::move(hdr), std::move(buf), rres->backpressure_delay);
 
     /**
      * Not virtualized connection, simply forward to protocol state for request

@@ -86,10 +86,12 @@ class request_context {
 public:
     request_context(
       ss::lw_shared_ptr<connection_context> conn,
+      ss::lw_shared_ptr<request_resources> rres,
       request_header&& header,
       iobuf&& request,
       ss::lowres_clock::duration throttle_delay) noexcept
       : _conn(std::move(conn))
+      , _request_resources(std::move(rres))
       , _request_size(request.size_bytes())
       , _header(std::move(header))
       , _reader(std::move(request))
@@ -418,6 +420,12 @@ public:
         return _conn->server().container().local().is_cluster_link_active();
     }
 
+    void add_response_resource_deleter(ss::deleter&& res) {
+        _request_resources->response_resource_deleter = ss::make_object_deleter(
+          std::move(_request_resources->response_resource_deleter),
+          std::move(res));
+    }
+
 private:
     template<typename T>
     security::auth_result do_authorized(
@@ -502,6 +510,7 @@ private:
 
 private:
     ss::lw_shared_ptr<connection_context> _conn;
+    ss::lw_shared_ptr<request_resources> _request_resources;
     size_t _request_size;
     request_header _header;
     protocol::decoder _reader;
