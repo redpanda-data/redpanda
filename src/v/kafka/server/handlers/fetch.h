@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "cluster/rm_stm.h"
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "container/intrusive_list_helpers.h"
 #include "kafka/protocol/fetch.h"
@@ -36,6 +37,29 @@ using fetch_handler = single_stage_handler<
   13,
   default_estimate_adaptor,
   fetch_scheduling_group_provider>;
+
+struct fetch_memory_units;
+class memory_units_by_ktp {
+public:
+    /// Adds memory units for the provided ktp. Note that any existing memory
+    /// units for the ktp are returned.
+    [[nodiscard]]
+    std::optional<fetch_memory_units>
+    add_units(const model::ktp_with_hash&, fetch_memory_units&&);
+
+    /// Removes and returns all units for the provided ktp.
+    [[nodiscard]]
+    std::optional<fetch_memory_units> remove_units(const model::ktp_with_hash&);
+
+    /// Moves `response_memory_units` into a `ss::deleter`.
+    ss::deleter into_deleter() &&;
+
+    /// Returns the total number of units held by this class.
+    size_t unit_count();
+
+private:
+    chunked_hash_map<model::ktp_with_hash, fetch_memory_units> _memory_units;
+};
 
 /*
  * Fetch operation context
@@ -171,6 +195,12 @@ struct op_context {
     // for fetches that have preferred replica set we skip read, therefore we
     // need other indicator of finished fetch request.
     bool contains_preferred_replica = false;
+
+    // For tracking memory used by each ktp in the response. It is tracked
+    // per-ktp as the fetch path can re-read a ktp and have to release the
+    // current units for that ktp in order to fill the response with the newly
+    // read result.
+    memory_units_by_ktp response_memory_units;
 };
 
 struct fetch_config {

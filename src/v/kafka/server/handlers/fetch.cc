@@ -236,6 +236,73 @@ void fetch_memory_units::adopt(fetch_memory_units&& o) {
 }
 
 /**
+ * Used to aggregate memory units by their originating shard.
+ * This allows for any amount of memory units to be released with at most 1
+ * cross-shard call per shard.
+ */
+class memory_units_by_shard {
+public:
+    void add_units(fetch_memory_units&& units) {
+        auto map_it = _memory_units.find(units.shard);
+        if (map_it == _memory_units.end()) {
+            // Move the first set of semaphore_units to get a copy of
+            // the semaphore pointer and the shard results originates
+            // from.
+            _memory_units.insert_or_assign(units.shard, std::move(units));
+        } else {
+            map_it->second.adopt(std::move(units));
+        }
+    }
+
+    void add_units(std::optional<fetch_memory_units> units) {
+        if (units) {
+            add_units(std::move(units.value()));
+        }
+    }
+
+private:
+    chunked_hash_map<ss::shard_id, fetch_memory_units> _memory_units;
+};
+
+std::optional<fetch_memory_units> memory_units_by_ktp::add_units(
+  const model::ktp_with_hash& ktp, fetch_memory_units&& units) {
+    auto map_it = _memory_units.find(ktp);
+    if (map_it == _memory_units.end()) {
+        _memory_units.insert_or_assign(ktp, std::move(units));
+        return {};
+    } else {
+        auto old_units = std::move(map_it->second);
+        map_it->second = std::move(units);
+        return old_units;
+    }
+}
+
+std::optional<fetch_memory_units>
+memory_units_by_ktp::remove_units(const model::ktp_with_hash& ktp) {
+    return _memory_units.extract(ktp).transform(
+      [](auto v) { return std::get<1>(std::move(v)); });
+}
+
+ss::deleter memory_units_by_ktp::into_deleter() && {
+    return ss::make_deleter([memory_units = std::move(_memory_units)] mutable {
+        // Aggregate units to ensure only one cross shard call to each shard at
+        // most.
+        memory_units_by_shard units_per_shard;
+        for (auto& [_, units] : memory_units) {
+            units_per_shard.add_units(std::move(units));
+        }
+    });
+}
+
+size_t memory_units_by_ktp::unit_count() {
+    size_t total_units = 0;
+    for (const auto& [_, units] : _memory_units) {
+        total_units += units.fetch.count();
+    }
+    return total_units;
+}
+
+/**
  * Consume proper amounts of units from memory semaphores and return them as
  * semaphore_units. Fetch semaphore units returned are the indication of
  * available resources: if none, there is no memory for the operation;
@@ -1631,6 +1698,9 @@ fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
           }
           octx.response.data.error_code = error_code::none;
           return do_fetch(octx).then([&octx] {
+              auto resp_units_deleter
+                = std::move(octx.response_memory_units).into_deleter();
+
               // NOTE: Audit call doesn't happen until _after_ the fetch
               // is done. This was done for the sake of simplicity and
               // because fetch doesn't alter the state of the broker
@@ -1638,6 +1708,9 @@ fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
                   return std::move(octx).send_error_response(
                     error_code::broker_not_available);
               }
+
+              octx.rctx.add_response_resource_deleter(
+                std::move(resp_units_deleter));
               return std::move(octx).send_response();
           });
       });
