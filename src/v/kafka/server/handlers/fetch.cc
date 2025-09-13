@@ -1396,6 +1396,8 @@ fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
           }
           octx.response.data.error_code = error_code::none;
           return do_fetch(octx).then([&octx] {
+              auto resp_units_deleter = octx.response_memory_units_deleter();
+
               // NOTE: Audit call doesn't happen until _after_ the fetch
               // is done. This was done for the sake of simplicity and
               // because fetch doesn't alter the state of the broker
@@ -1403,6 +1405,9 @@ fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
                   return std::move(octx).send_error_response(
                     error_code::broker_not_available);
               }
+
+              octx.rctx.add_response_resource_deleter(
+                std::move(resp_units_deleter));
               return std::move(octx).send_response();
           });
       });
@@ -1629,6 +1634,24 @@ ss::future<response_ptr> op_context::send_error_response(error_code ec) && {
     }
 
     return rctx.respond(std::move(resp));
+}
+
+ss::deleter op_context::response_memory_units_deleter() {
+    chunked_vector<fetch_memory_units> mu;
+    for (auto& r : iteration_order) {
+        if (r.has_memory_units()) {
+            mu.push_back(r.release_memory_units());
+        }
+    }
+    return ss::make_object_deleter(std::move(mu));
+}
+
+size_t op_context::total_response_memory_units() const {
+    size_t res = 0;
+    for (const auto& r : iteration_order) {
+        res += r.num_memory_units();
+    }
+    return res;
 }
 
 op_context::response_placeholder::response_placeholder(

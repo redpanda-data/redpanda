@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "cluster/rm_stm.h"
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "container/intrusive_list_helpers.h"
 #include "kafka/protocol/fetch.h"
@@ -77,10 +78,32 @@ struct op_context {
               .value_or(0);
         }
 
+        // Returns whether there are memory units held for this ntp.
+        bool has_memory_units() const {
+            return _response_memory_units.has_units();
+        }
+
+        // Returns the number of memory units held for this ntp.
+        size_t num_memory_units() const {
+            return _response_memory_units.num_units();
+        }
+
+        // Adds/replaces the memory units that are held for this ntp.
+        void replace_or_add_memory_units(fetch_memory_units&& units) {
+            _response_memory_units = std::move(units);
+        }
+
+        // Releases/returns the memory units that are held for this ntp.
+        fetch_memory_units release_memory_units() {
+            return std::move(_response_memory_units);
+        }
+
     private:
         fetch_response::iterator _it;
         op_context* _ctx;
         const model::ktp_with_hash _ktp;
+        // Tracks memory used by response data in `_it`.
+        fetch_memory_units _response_memory_units;
     };
 
     using iteration_order_t
@@ -153,6 +176,16 @@ struct op_context {
      * and currently returns 0 for sessionless fetches.
      */
     size_t fetch_partition_count() const;
+
+    /**
+     * @brief Moves all memory units for response data into a `ss::deleter`.
+     */
+    ss::deleter response_memory_units_deleter();
+
+    /**
+     * @brief Returns the total number of units held by the response.
+     */
+    size_t total_response_memory_units() const;
 
     request_context rctx;
     ss::smp_service_group ssg;
