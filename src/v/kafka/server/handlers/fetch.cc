@@ -1869,7 +1869,8 @@ ss::future<response_ptr> op_context::send_error_response(error_code ec) && {
 op_context::response_placeholder::response_placeholder(
   fetch_response::iterator it, op_context* ctx)
   : _it(it)
-  , _ctx(ctx) {}
+  , _ctx(ctx)
+  , _ktp(_it->partition->topic, _it->partition_response->partition_index) {}
 
 void op_context::response_placeholder::set(
   fetch_response::partition_response&& response) {

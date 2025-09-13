@@ -55,6 +55,8 @@ struct op_context {
             return _it->partition_response->partition_index;
         }
 
+        const model::ktp_with_hash& ktp() { return _ktp; }
+
         bool empty() { return _it->partition_response->records->empty(); }
         bool has_error() {
             return _it->partition_response->error_code != error_code::none;
@@ -69,6 +71,7 @@ struct op_context {
     private:
         fetch_response::iterator _it;
         op_context* _ctx;
+        const model::ktp_with_hash _ktp;
     };
 
     using iteration_order_t
