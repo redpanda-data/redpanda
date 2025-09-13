@@ -21,10 +21,10 @@ import json
 import os
 import signal
 from collections import namedtuple
+from datetime import datetime
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.background_thread import BackgroundThreadService
-from datetime import datetime
 
 TopicPartition = namedtuple("TopicPartition", ["topic", "partition"])
 

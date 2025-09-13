@@ -11,17 +11,18 @@ import math
 import random
 import re
 import threading
-from rptest.clients.rpk import RpkTool
-from rptest.services.admin import Admin
-from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
-from rptest.tests.prealloc_nodes import PreallocNodesTest
 
-from ducktape.mark import matrix, ignore
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
-from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
+
 from rptest.clients.default import DefaultClient
+from rptest.clients.offline_log_viewer import OfflineLogViewer
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
+from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
+from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
@@ -29,7 +30,6 @@ from rptest.services.kgo_verifier_services import (
 from rptest.services.redpanda import (
     CHAOS_LOG_ALLOW_LIST,
     PREV_VERSION_LOG_ALLOW_LIST,
-    CloudStorageType,
     LoggingConfig,
     PandaproxyConfig,
     SISettings,
@@ -37,6 +37,8 @@ from rptest.services.redpanda import (
     get_cloud_storage_type,
 )
 from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.tests.datalake.utils import supported_storage_types
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.mode_checks import (
     cleanup_on_early_exit,
     skip_debug_mode,
@@ -48,10 +50,6 @@ from rptest.utils.node_operations import (
     generate_random_workload,
     verify_offset_translator_state_consistent,
 )
-from rptest.services.redpanda import MetricsEndpoint
-
-from rptest.clients.offline_log_viewer import OfflineLogViewer
-from rptest.tests.datalake.utils import supported_storage_types
 
 TS_LOG_ALLOW_LIST = [
     re.compile(".*archival_metadata_stm.*Replication wait for archival STM timed out"),

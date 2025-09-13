@@ -1,8 +1,8 @@
-import logging
-from enum import Enum
-import struct
 import collections
-from io import BufferedReader, BytesIO
+import logging
+import struct
+from enum import Enum
+from io import BufferedReader
 
 SERDE_ENVELOPE_FORMAT = "<BBI"
 SERDE_CHECKSUM_ENVELOPE_FORMAT = "<BBIi"

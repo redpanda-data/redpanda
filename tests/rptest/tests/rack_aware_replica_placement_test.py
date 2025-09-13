@@ -7,15 +7,17 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import random
 import os
+import random
 from collections import defaultdict
-from ducktape.utils.util import wait_until
+
 from ducktape.mark import matrix
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool
-from rptest.services.admin import Admin
+from ducktape.utils.util import wait_until
+
 from rptest.clients.default import DefaultClient
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import cleanup_on_early_exit

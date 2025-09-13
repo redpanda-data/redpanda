@@ -9,11 +9,10 @@
 
 from subprocess import CalledProcessError
 
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-
-from rptest.clients.types import TopicSpec
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.util import expect_exception
 
 

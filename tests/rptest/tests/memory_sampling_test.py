@@ -7,11 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from requests.exceptions import HTTPError
+
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
-from requests.exceptions import HTTPError
 
 BOOTSTRAP_CONFIG = {
     "memory_enable_memory_sampling": True,

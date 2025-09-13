@@ -8,11 +8,13 @@
 # by the Apache License, Version 2.0
 
 from typing import Any
-from rptest.tests.redpanda_test import RedpandaTest
-from ducktape.cluster.cluster_spec import ClusterSpec
+
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.cluster.cluster_spec import ClusterSpec
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
+
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class PreallocNodesTest(RedpandaTest):

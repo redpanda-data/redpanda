@@ -11,12 +11,12 @@ import re
 
 from ducktape.mark import matrix
 
-from rptest.services.cluster import cluster
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import LoggingConfig, SISettings
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_fips_mode
 from rptest.utils.rpenv import sample_license
 

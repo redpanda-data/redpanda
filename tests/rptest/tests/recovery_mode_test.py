@@ -7,18 +7,18 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import tempfile
 import dataclasses
+import tempfile
 
 from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
 
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SISettings
-from rptest.services.cluster import cluster
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import SISettings
 from rptest.services.rpk_producer import RpkProducer
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
 
 

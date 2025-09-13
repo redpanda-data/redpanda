@@ -7,19 +7,20 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool, RpkException
-from ducktape.utils.util import wait_until
-from ducktape.cluster.cluster import ClusterNode
-from rptest.clients.rpk_remote import RpkRemoteTool
-from rptest.services.redpanda import RedpandaService
-from rptest.services import tls
-
 import json
 import os
-import yaml
 import tempfile
+
+import yaml
+from ducktape.cluster.cluster import ClusterNode
+from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.rpk_remote import RpkRemoteTool
+from rptest.services import tls
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RedpandaService
+from rptest.tests.redpanda_test import RedpandaTest
 
 DEFAULT_RPK_ARGS_T = "--rpc-addr={hn} --kafka-addr=dnslistener://{hn}"
 

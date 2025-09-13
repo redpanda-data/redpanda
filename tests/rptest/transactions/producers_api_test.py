@@ -8,12 +8,12 @@
 # by the Apache License, Version 2.0
 import threading
 from time import sleep
+
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.transactions.verifiers.consumer_offsets_verifier import (
     ConsumerOffsetsVerifier,
 )
-from rptest.services.admin import Admin
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.cluster import cluster
 
 
 class ProducersAdminAPITest(RedpandaTest):

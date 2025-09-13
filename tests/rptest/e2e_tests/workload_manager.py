@@ -1,5 +1,4 @@
 import os
-import sys
 from copy import deepcopy
 
 # Init path to workloads subfolder

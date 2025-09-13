@@ -9,18 +9,19 @@
 
 import time
 
-from rptest.util import wait_until, wait_until_result
-from rptest.utils.mode_checks import skip_debug_mode
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.admin import Admin
-from rptest.services.cluster import cluster
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import matrix
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until, wait_until_result
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 def _high_watermarks(rpk: RpkTool, topic: str):

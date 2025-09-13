@@ -8,20 +8,17 @@
 # by the Apache License, Version 2.0
 import json
 import time
-
 from concurrent.futures import ThreadPoolExecutor
 
 from ducktape.mark import parametrize
-
-from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.e2e_tests.workload_manager import WorkloadManager
 from rptest.services.cluster import cluster
 from rptest.services.flink import FlinkService
-from rptest.services.redpanda import MetricsEndpoint, MetricSamples
+from rptest.services.redpanda import MetricSamples, MetricsEndpoint
 from rptest.tests.redpanda_test import RedpandaTest
-
 from rptest.utils.mode_checks import skip_debug_mode
 
 

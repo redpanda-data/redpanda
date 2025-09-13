@@ -8,19 +8,18 @@
 # by the Apache License, Version 2.0
 
 import random
-import string
 import time
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from ducktape.utils.util import wait_until
+
 import confluent_kafka as ck
-from rptest.tests.redpanda_test import RedpandaTest
+from confluent_kafka import TopicPartition
+from ducktape.mark import matrix
+
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
-from rptest.clients.rpk import parse_rpk_table
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
-from ducktape.mark import matrix
-from confluent_kafka import TopicPartition
 
 
 class DescribeProducersTest(RedpandaTest):

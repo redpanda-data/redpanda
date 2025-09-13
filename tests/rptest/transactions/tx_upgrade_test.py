@@ -7,30 +7,24 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from enum import Enum
-import string
-from threading import Lock, Semaphore, Thread
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from time import sleep
 import json
-
-import uuid
 import random
+import string
+from enum import Enum
+from threading import Lock, Semaphore, Thread
+from time import sleep
 
-from ducktape.utils.util import wait_until
-from ducktape.errors import TimeoutError
-
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.admin import Admin
-from rptest.services.redpanda import RedpandaService
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 import confluent_kafka as ck
+from ducktape.errors import TimeoutError
+from ducktape.utils.util import wait_until
 
-from rptest.services.admin import Admin
-from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.clients.rpk import RpkTool
-
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaService
+from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
 
 

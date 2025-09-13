@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from ducktape.tests.test import Test
+
 from rptest.services.cluster import cluster
 from rptest.services.redpanda_service_k8s import RedpandaServiceK8s
 

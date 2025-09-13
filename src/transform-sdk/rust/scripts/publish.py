@@ -7,8 +7,9 @@ versions for crates.io
 """
 
 import argparse
-from pathlib import Path
 import subprocess
+from pathlib import Path
+
 import tomlkit
 
 CARGO_WORKSPACE_DIR = Path(__file__).resolve().parent.parent

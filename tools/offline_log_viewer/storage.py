@@ -1,15 +1,14 @@
 import collections
-from enum import Enum
+import glob
+import logging
 import os
 import re
+import struct
+from enum import Enum
+from io import BytesIO
 from os.path import join
 
-import struct
 import crc32c
-import glob
-import re
-import logging
-from io import BytesIO
 from reader import Reader
 
 logger = logging.getLogger("rp")

@@ -6,94 +6,95 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import subprocess
-from abc import ABC, abstractmethod
+import collections
 import concurrent.futures
 import copy
-from functools import cached_property
-from logging import Logger
-
-import time
-import os
-import socket
-import signal
-import tempfile
-import shutil
-import requests
+import enum
 import json
+import os
+import pathlib
 import random
-import threading
-import collections
 import re
+import shlex
+import shutil
+import signal
+import socket
+import subprocess
+import tempfile
+import threading
+import time
 import uuid
 import zipfile
-import pathlib
-import shlex
-from enum import Enum, IntEnum
+from abc import ABC, abstractmethod
+from enum import Enum
+from functools import cached_property
+from logging import Logger
 from typing import (
+    Any,
     Callable,
-    List,
     Generator,
+    List,
     Literal,
     Mapping,
     Optional,
     Protocol,
     Set,
     Tuple,
-    Any,
     Type,
     cast,
 )
-from urllib3.exceptions import MaxRetryError
 
+import requests
 import yaml
+from ducktape.cluster.cluster import ClusterNode
+from ducktape.cluster.remoteaccount import RemoteAccount, RemoteCommandError
+from ducktape.errors import TimeoutError
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
-from requests.adapters import HTTPAdapter
-from requests.exceptions import HTTPError
-from rptest.archival.s3_client import S3Client, S3AddressingStyle
-from rptest.archival.abs_client import ABSClient
-from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.local_filesystem_utils import mkdir_p
 from ducktape.utils.util import wait_until
-from ducktape.cluster.remoteaccount import RemoteAccount
-from ducktape.cluster.cluster import ClusterNode
-from prometheus_client.parser import text_string_to_metric_families
 from prometheus_client.metrics_core import Metric
-from ducktape.errors import TimeoutError
-from ducktape.tests.test import TestContext
-from rptest.services.rpk_consumer import RpkConsumer
+from prometheus_client.parser import text_string_to_metric_families
+from requests.adapters import HTTPAdapter
+from requests.exceptions import HTTPError
+from urllib3.exceptions import MaxRetryError
 
-from rptest.clients.helm import HelmTool
+from rptest.archival.abs_client import ABSClient
+from rptest.archival.s3_client import S3AddressingStyle, S3Client
+from rptest.clients.installpack import InstallPackClient
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kubectl import KubectlTool, is_redpanda_pod
+from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.clients.rpk import RpkTool
 from rptest.clients.rpk_remote import RpkRemoteTool
-from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.clients.installpack import InstallPackClient
-from rptest.clients.rp_storage_tool import RpStorageTool
-from rptest.context.cloud_storage import CloudStorageType  # noqa: F401 # Re-exported for backwards compatibility.
+from rptest.context.cloud_storage import (
+    CloudStorageType,  # noqa: F401 # Re-exported for backwards compatibility.
+)
 from rptest.services import redpanda_types, tls
-from rptest.services.redpanda_types import KafkaClientSecurity, LogAllowListElem
 from rptest.services.admin import Admin
+from rptest.services.cloud_broker import CloudBroker
+from rptest.services.redpanda_cloud import CloudCluster, get_config_profile_name
+from rptest.services.redpanda_installer import (
+    VERSION_RE as RI_VERSION_RE,
+)
 from rptest.services.redpanda_installer import (
     RedpandaInstaller,
-    VERSION_RE as RI_VERSION_RE,
     RedpandaVersionTriple,
+)
+from rptest.services.redpanda_installer import (
     int_tuple as ri_int_tuple,
 )
-from rptest.services.redpanda_cloud import CloudCluster, get_config_profile_name
-from rptest.services.cloud_broker import CloudBroker
+from rptest.services.redpanda_types import KafkaClientSecurity, LogAllowListElem
 from rptest.services.rolling_restarter import RollingRestarter
-from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
+from rptest.services.storage import ClusterStorage, NodeCacheStorage, NodeStorage
 from rptest.services.storage_failure_injection import FailureInjectionConfig
-from rptest.services.utils import NodeCrash, LogSearchLocal, LogSearchCloud, Stopwatch
+from rptest.services.utils import LogSearchCloud, LogSearchLocal, NodeCrash, Stopwatch
 from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 from rptest.utils.expiring_value import ExpiringValue
 from rptest.utils.mode_checks import in_fips_environment
 from rptest.utils.rpenv import sample_license
-import enum
 
 Partition = collections.namedtuple(
     "Partition", ["topic", "index", "leader", "replicas"]

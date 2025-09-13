@@ -8,14 +8,13 @@
 # by the Apache License, Version 2.0
 
 from math import ceil
-import random
-from rptest.services.admin import Admin
-from rptest.services.cluster import cluster
+
+from ducktape.mark import matrix
+from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 
-from ducktape.tests.test import Test
-from ducktape.mark import matrix
-
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import make_redpanda_service
 from rptest.utils.mode_checks import cleanup_on_early_exit
 

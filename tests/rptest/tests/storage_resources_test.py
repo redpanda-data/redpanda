@@ -9,15 +9,16 @@
 
 import signal
 
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.rpk_producer import RpkProducer
-from rptest.services.rpk_consumer import RpkConsumer
-from rptest.clients.rpk import RpkTool
-from ducktape.utils.util import wait_until
-from ducktape.mark import matrix
 from ducktape.cluster.cluster_spec import ClusterSpec
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.rpk_consumer import RpkConsumer
+from rptest.services.rpk_producer import RpkProducer
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class StorageResourceTest(RedpandaTest):

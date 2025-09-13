@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import requests
-
 from ducktape.utils.util import wait_until
 
 

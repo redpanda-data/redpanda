@@ -9,13 +9,13 @@
 
 import json
 import os
-import time
 import threading
-
+import time
 from typing import Optional
 
-from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.services.background_thread import BackgroundThreadService
+
 from rptest.services import tls
 
 # What we use as an output marker when not recording messages

@@ -9,11 +9,11 @@
 import time
 
 from rptest.services.admin import Admin, Role, RoleMember
-from rptest.util import wait_until_result
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import wait_for_num_versions
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until_result
 from rptest.utils.mode_checks import skip_fips_mode
 
 

@@ -10,13 +10,12 @@ import json
 import logging
 import os
 import sys
-
 from copy import deepcopy
 from dataclasses import dataclass
 
-from pyflink.common import Types, Configuration, SimpleStringSchema, WatermarkStrategy
+from pyflink.common import Configuration, SimpleStringSchema, Types, WatermarkStrategy
 from pyflink.datastream import StreamExecutionEnvironment
-from pyflink.datastream.connectors.kafka import KafkaSource, KafkaOffsetsInitializer
+from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaSource
 
 
 @dataclass(kw_only=True)

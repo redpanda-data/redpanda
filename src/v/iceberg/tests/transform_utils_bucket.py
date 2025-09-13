@@ -5,11 +5,12 @@ transform_utils_test.cc
 """
 
 import codecs
-from decimal import Decimal
-import mmh3
 import struct
-from typing import Optional, Union
 import uuid
+from decimal import Decimal
+from typing import Optional, Union
+
+import mmh3
 
 
 def bucket_transform(hash_func, num_buckets, v):

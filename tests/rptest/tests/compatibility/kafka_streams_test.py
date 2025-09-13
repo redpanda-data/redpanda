@@ -7,16 +7,16 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 
-from rptest.services.compatibility.example_runner import ExampleRunner
 import rptest.services.compatibility.kafka_streams_examples as KafkaStreamExamples
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.compatibility.example_runner import ExampleRunner
 from rptest.services.kaf_producer import KafProducer
+from rptest.services.redpanda import PandaproxyConfig, SchemaRegistryConfig
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import PandaproxyConfig, SchemaRegistryConfig
 
 
 class KafkaStreamsTest(RedpandaTest):

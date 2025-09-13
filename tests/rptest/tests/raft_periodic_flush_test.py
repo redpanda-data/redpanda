@@ -8,9 +8,9 @@
 # by the Apache License, Version 2.0
 
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import wait_until
 

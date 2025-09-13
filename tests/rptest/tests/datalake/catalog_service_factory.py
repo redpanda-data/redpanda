@@ -7,11 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.catalog_service import CatalogType, CatalogService
-from rptest.services.nessie_catalog import NessieCatalog
-from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
-
 from typing import List
+
+from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
+from rptest.services.catalog_service import CatalogService, CatalogType
+from rptest.services.nessie_catalog import NessieCatalog
 
 SUPPORTED_CATALOG_TYPES = [
     CatalogType.REST_JDBC,

@@ -1,7 +1,7 @@
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.cluster import cluster
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
-from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class SmallBatchesTest(RedpandaTest):

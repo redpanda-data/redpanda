@@ -20,8 +20,8 @@
 
 import json
 import os
-import time
 import signal
+import time
 from collections import namedtuple
 
 from ducktape.cluster.remoteaccount import RemoteCommandError

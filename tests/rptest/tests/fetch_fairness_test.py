@@ -9,12 +9,12 @@
 
 from collections import defaultdict
 
-from rptest.services.cluster import cluster
 from ducktape.mark import parametrize
 
 from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 
 

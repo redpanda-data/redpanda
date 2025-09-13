@@ -8,25 +8,24 @@
 # by the Apache License, Version 2.0
 
 from ducktape.mark import matrix
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import (
-    CloudStorageType,
-    SISettings,
-    get_cloud_storage_type,
-)
+
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.utils.mode_checks import skip_debug_mode
-from rptest.util import (
-    segments_count,
-    wait_for_local_storage_truncate,
-)
+from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
     KgoVerifierSeqConsumer,
 )
+from rptest.services.redpanda import (
+    SISettings,
+    get_cloud_storage_type,
+)
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import (
+    wait_for_local_storage_truncate,
+)
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class ShadowIndexingTxTest(RedpandaTest):

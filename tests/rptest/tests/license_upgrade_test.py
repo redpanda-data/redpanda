@@ -7,25 +7,21 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import os
-import re
-import time
 
-from ducktape.utils.util import wait_until
 from ducktape.mark import matrix
-from rptest.utils.rpenv import sample_license
-from rptest.services.admin import Admin
 from ducktape.utils.util import wait_until
-from rptest.tests.redpanda_test import RedpandaTest
+
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
-    SISettings,
+    RESTART_LOG_ALLOW_LIST,
     CloudStorageType,
+    SISettings,
     get_cloud_storage_type,
 )
-from rptest.services.cluster import cluster
-from requests.exceptions import HTTPError
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
+from rptest.services.redpanda_installer import wait_for_num_versions
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.utils.rpenv import sample_license
 
 
 class UpgradeMigratingLicenseVersion(RedpandaTest):

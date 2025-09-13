@@ -1,6 +1,6 @@
-from typing import Any, Literal, overload
+from typing import Any, Literal, Union, overload
+
 import requests
-from typing import Union
 
 
 class RpCloudApiClient(object):

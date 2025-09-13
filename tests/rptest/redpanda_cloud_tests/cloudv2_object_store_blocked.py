@@ -1,5 +1,9 @@
-from rptest.services.redpanda_cloud import CLOUD_TYPE_BYOC, CLOUD_TYPE_FMC
-from rptest.services.redpanda_cloud import PROVIDER_AWS, PROVIDER_GCP
+from rptest.services.redpanda_cloud import (
+    CLOUD_TYPE_BYOC,
+    CLOUD_TYPE_FMC,
+    PROVIDER_AWS,
+    PROVIDER_GCP,
+)
 
 
 class cloudv2_object_store_blocked:

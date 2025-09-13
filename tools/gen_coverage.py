@@ -11,12 +11,12 @@
 # which is used to generate coverage reports in HTML format.
 # Find the original python script at https://github.com/llvm/llvm-project/blob/e356027016c6365b3d8924f54c33e2c63d931492/llvm/utils/prepare-code-coverage-artifact.py
 
-import sys
+import argparse
 import csv
 import json
 import os
 import subprocess
-import argparse
+import sys
 import tempfile
 
 

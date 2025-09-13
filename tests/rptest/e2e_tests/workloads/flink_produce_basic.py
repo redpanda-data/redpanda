@@ -12,11 +12,10 @@ import os
 import random
 import string
 import sys
-
 from copy import deepcopy
 from dataclasses import dataclass
 
-from pyflink.common import Types, Configuration
+from pyflink.common import Configuration, Types
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.datastream.connectors.kafka import FlinkKafkaProducer
 from pyflink.datastream.formats.json import JsonRowSerializationSchema

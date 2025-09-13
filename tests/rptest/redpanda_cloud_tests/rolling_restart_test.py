@@ -9,9 +9,11 @@
 
 import random
 from typing import Any
+
 from ducktape.tests.test import TestContext
-from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
+
 from rptest.services.cluster import cluster
+from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 
 
 class RollingRestartTest(RedpandaCloudTest):

@@ -10,8 +10,8 @@ import json
 
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.transactions.verifiers.stream_verifier import StreamVerifier
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.transactions.verifiers.stream_verifier import StreamVerifier
 
 
 class StreamVerifierTest(RedpandaTest):

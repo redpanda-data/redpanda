@@ -11,6 +11,7 @@ import tempfile
 import time
 
 from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster

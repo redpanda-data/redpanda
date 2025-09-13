@@ -7,15 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.utils.rpk_config import read_rpk_cfg, read_redpanda_cfg
-from rptest.util import expect_exception
-from rptest.services.cluster import cluster
-
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk_remote import RpkRemoteTool
-from rptest.clients.rpk import RpkTool
 from ducktape.cluster.remoteaccount import RemoteCommandError
+
+from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk_remote import RpkRemoteTool
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import RedpandaService
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import expect_exception
+from rptest.utils.rpk_config import read_redpanda_cfg, read_rpk_cfg
 
 
 class RpkProfileTest(RedpandaTest):

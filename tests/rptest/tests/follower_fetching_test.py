@@ -10,20 +10,19 @@
 import random
 import string
 import time
+
 from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import SISettings
-from rptest.services.admin import Admin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import wait_for_local_storage_truncate, wait_until_result
-
-from ducktape.utils.util import wait_until
-
 from rptest.utils.mode_checks import skip_debug_mode
 
 

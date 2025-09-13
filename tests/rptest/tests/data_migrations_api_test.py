@@ -9,39 +9,36 @@
 
 import random
 import time
-from enum import Enum
-from typing import Callable, Literal, List, TypedDict, get_type_hints
 import typing
 from contextlib import contextmanager, nullcontext
-
-from rptest.services.admin import Admin, MigrationAction
-from rptest.services.admin import (
-    OutboundDataMigration,
-    InboundDataMigration,
-    NamespacedTopic,
-    InboundTopic,
-)
+from typing import Callable, List, Literal, TypedDict, get_type_hints
 
 import confluent_kafka as ck
-
+import requests
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import (
+    Admin,
+    InboundDataMigration,
+    InboundTopic,
+    MigrationAction,
+    NamespacedTopic,
+    OutboundDataMigration,
+)
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaService, RedpandaServiceBase, SISettings
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
 )
-from rptest.services.redpanda import SISettings
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.types import TopicSpec
+from rptest.services.redpanda import RedpandaServiceBase, SISettings
 from rptest.tests.e2e_finjector import Finjector
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import bg_thread_cm
 from rptest.utils.data_migrations import DataMigrationTestMixin
-import requests
-import re
 
 MIGRATION_LOG_ALLOW_LIST = [
     "Error during log recovery: cloud_storage::missing_partition_exception",

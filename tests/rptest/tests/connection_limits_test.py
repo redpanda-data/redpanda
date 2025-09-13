@@ -9,12 +9,12 @@
 
 import socket
 
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.cluster import cluster
-from rptest.services.rpk_producer import RpkProducer
-from rptest.services.rpk_consumer import RpkConsumer
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.metrics_check import MetricCheck
+from rptest.services.rpk_consumer import RpkConsumer
+from rptest.services.rpk_producer import RpkProducer
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
 
 REJECTED_METRIC = "vectorized_kafka_rpc_connections_rejected_total"

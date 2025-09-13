@@ -1,8 +1,8 @@
-from storage import Segment
 from enum import Enum
 from io import BytesIO
+
 from reader import Reader
-import struct
+from storage import Segment
 
 
 class TxStatus(Enum):

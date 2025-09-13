@@ -7,19 +7,18 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from concurrent.futures import ThreadPoolExecutor
 import errno
-from functools import lru_cache
 import json
 import os
 import re
-import typing
 import threading
-from datetime import datetime, timezone, timedelta
+import typing
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from time import sleep
 
 import requests
-
 from ducktape.utils.util import wait_until
 
 from rptest.utils.bookend_collection import BookendCollection

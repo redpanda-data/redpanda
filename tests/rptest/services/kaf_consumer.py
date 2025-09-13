@@ -9,6 +9,7 @@
 
 import re
 import threading
+
 from ducktape.services.background_thread import BackgroundThreadService
 
 
