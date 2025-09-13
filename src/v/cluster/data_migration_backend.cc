@@ -1507,12 +1507,16 @@ inbound_topic_work_info backend::get_topic_work_info(
       .source = inbound_topic.alias
                   ? std::make_optional(inbound_topic.source_topic_name)
                   : std::nullopt,
-      .cloud_storage_location = inbound_topic.cloud_storage_location};
+      .cloud_storage_location = inbound_topic.cloud_storage_location,
+      .restore_to = inbound_topic.restore_to,
+    };
 }
 
 outbound_topic_work_info backend::get_topic_work_info(
   const model::topic_namespace&, const outbound_migration& om, id) const {
-    return {om.copy_to};
+    return {
+      .copy_to = om.copy_to,
+    };
 }
 
 topic_work_info backend::get_topic_work_info(

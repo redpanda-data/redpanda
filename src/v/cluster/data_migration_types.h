@@ -12,12 +12,14 @@
 
 #include "absl/container/flat_hash_set.h"
 #include "cluster/errc.h"
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "kafka/protocol/types.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "serde/rw/enum.h"
 #include "serde/rw/envelope.h"
+#include "serde/rw/map.h"
 #include "serde/rw/named_type.h"
 #include "serde/rw/optional.h"
 #include "serde/rw/sstring.h"
@@ -154,7 +156,7 @@ struct cloud_storage_location
  */
 struct inbound_topic
   : serde::
-      envelope<inbound_topic, serde::version<0>, serde::compat_version<0>> {
+      envelope<inbound_topic, serde::version<1>, serde::compat_version<0>> {
     // name of the source topic to acquire ownership in the migration process.
     model::topic_namespace source_topic_name;
 
@@ -166,6 +168,10 @@ struct inbound_topic
     // cluster UUID and ntp of the source topic.
     std::optional<cloud_storage_location> cloud_storage_location;
 
+    using restore_to_t = std::unordered_map<model::partition_id, kafka::offset>;
+
+    restore_to_t restore_to;
+
     const model::topic_namespace& effective_topic_name() const {
         if (alias.has_value()) {
             return *alias;
@@ -174,7 +180,8 @@ struct inbound_topic
     }
 
     auto serde_fields() {
-        return std::tie(source_topic_name, alias, cloud_storage_location);
+        return std::tie(
+          source_topic_name, alias, cloud_storage_location, restore_to);
     }
 
     friend bool operator==(const inbound_topic&, const inbound_topic&)
@@ -328,6 +335,7 @@ struct partition_work {
 struct inbound_topic_work_info {
     std::optional<model::topic_namespace> source;
     std::optional<cloud_storage_location> cloud_storage_location;
+    inbound_topic::restore_to_t restore_to;
 };
 struct outbound_topic_work_info {
     std::optional<copy_target> copy_to;
