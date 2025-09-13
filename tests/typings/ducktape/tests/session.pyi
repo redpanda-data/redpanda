@@ -1,7 +1,8 @@
+from typing import Any
+
 from _typeshed import Incomplete
 from ducktape.command_line.defaults import ConsoleDefaults as ConsoleDefaults
 from ducktape.tests.loggermaker import LoggerMaker as LoggerMaker
-from typing import Any
 
 class SessionContext:
     session_id: Incomplete

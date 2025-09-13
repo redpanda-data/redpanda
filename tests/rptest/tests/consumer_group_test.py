@@ -8,48 +8,51 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from dataclasses import dataclass
-import pytest
 import random
 import threading
 import time
+from collections import namedtuple
+from dataclasses import dataclass
 from typing import Dict, List
 
-from rptest.clients.default import DefaultClient
-from rptest.clients.offline_log_viewer import OfflineLogViewer
-from rptest.services.redpanda import LoggingConfig
-from rptest.services.admin import Admin
-from rptest.services.cluster import cluster
+import kafka.protocol.types as types
+import pytest
+from confluent_kafka import (
+    Consumer,
+    ConsumerGroupState,
+    ConsumerGroupTopicPartitions,
+    Producer,
+    TopicPartition,
+)
+from confluent_kafka.admin import AdminClient
+from ducktape.mark import ignore, parametrize
+from ducktape.utils.util import wait_until
+from kafka import KafkaConsumer
+from kafka import errors as kerr
+from kafka.admin import KafkaAdminClient
+from kafka.protocol.api import Request, Response
+from kafka.protocol.commit import OffsetFetchRequest_v3
 
+from rptest.clients.default import DefaultClient
 from rptest.clients.kcl import RawKCL
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import (
     RESTART_LOG_ALLOW_LIST,
-    RedpandaService,
+    LoggingConfig,
     MetricsEndpoint,
+    RedpandaService,
 )
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import expect_exception, wait_until_result
+from rptest.util import wait_until_result
 from rptest.utils.mode_checks import skip_debug_mode
-
-from ducktape.utils.util import wait_until
-from ducktape.mark import ignore, parametrize
-
-from kafka import KafkaConsumer, errors as kerr
-from kafka.admin import KafkaAdminClient
-from kafka.protocol.commit import OffsetFetchRequest_v3
-from kafka.protocol.api import Request, Response
-import kafka.protocol.types as types
-from confluent_kafka.admin import AdminClient
-from confluent_kafka import ConsumerGroupState, ConsumerGroupTopicPartitions
-from confluent_kafka import Consumer, Producer
-from confluent_kafka import TopicPartition
-from collections import namedtuple
 
 
 class ConsumerGroupTest(RedpandaTest):

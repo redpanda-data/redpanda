@@ -8,15 +8,15 @@
 # by the Apache License, Version 2.0
 
 import random
-import requests
 from enum import IntEnum
 
 import numpy as np
+import requests
+from ducktape.cluster.cluster import ClusterNode
 
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from ducktape.cluster.cluster import ClusterNode
+from rptest.tests.redpanda_test import RedpandaTest
 
 NODE_STATUS_INTERVAL = 100  # milliseconds
 JITTER = 25

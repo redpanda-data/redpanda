@@ -7,23 +7,22 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import time
+
+import requests
 from ducktape.utils.util import wait_until
-
-from rptest.clients.types import TopicSpec
-from rptest.clients.default import DefaultClient
-
-from rptest.services.admin import (
-    OutboundDataMigration,
-    InboundDataMigration,
-    NamespacedTopic,
-    InboundTopic,
-    MigrationAction,
-)
-from rptest.services.redpanda import RedpandaService
 from requests.exceptions import ConnectionError
 
-import time
-import requests
+from rptest.clients.default import DefaultClient
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import (
+    InboundDataMigration,
+    InboundTopic,
+    MigrationAction,
+    NamespacedTopic,
+    OutboundDataMigration,
+)
+from rptest.services.redpanda import RedpandaService
 
 
 def now():

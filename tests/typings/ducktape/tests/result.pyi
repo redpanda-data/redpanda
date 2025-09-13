@@ -3,10 +3,20 @@ from ducktape.json_serializable import DucktapeJSONEncoder as DucktapeJSONEncode
 from ducktape.tests.reporter import SingleResultFileReporter as SingleResultFileReporter
 from ducktape.tests.status import (
     FAIL as FAIL,
+)
+from ducktape.tests.status import (
     FLAKY as FLAKY,
+)
+from ducktape.tests.status import (
     IGNORE as IGNORE,
+)
+from ducktape.tests.status import (
     OFAIL as OFAIL,
+)
+from ducktape.tests.status import (
     OPASS as OPASS,
+)
+from ducktape.tests.status import (
     PASS as PASS,
 )
 from ducktape.tests.test import TestContext as TestContext

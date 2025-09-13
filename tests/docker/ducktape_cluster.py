@@ -1,6 +1,7 @@
-import jinja2
-import sys
 import os
+import sys
+
+import jinja2
 
 # A script to render ducktape_cluster.json from
 # a jinja2 template and a CLI parameter specifying the number

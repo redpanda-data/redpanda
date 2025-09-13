@@ -8,13 +8,14 @@
 # by the Apache License, Version 2.0
 
 from typing import Any, List, cast
-from rptest.services.cluster import cluster
+
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.types import TopicSpec
 
 
 class BytesSentTest(RedpandaTest):

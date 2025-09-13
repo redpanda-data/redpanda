@@ -10,8 +10,9 @@
 import re
 
 from ducktape.utils.util import wait_until
-from rptest.clients.types import TopicSpec
+
 from rptest.clients.default import DefaultClient
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.admin_ops_fuzzer import (
     AdminOperationsFuzzer,

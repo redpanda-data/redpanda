@@ -9,34 +9,33 @@
 
 import copy
 import random
-import time
 import signal
+import time
+
 import requests
-
-from rptest.services.cluster import cluster
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
-from rptest.clients.kafka_cat import KafkaCat
-from ducktape.mark import ignore, matrix
 
-from rptest.utils.mode_checks import skip_debug_mode, skip_fips_mode
-from rptest.clients.types import TopicSpec
+from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool
-from rptest.tests.end_to_end import EndToEndTest
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
-from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
-from rptest.tests.partition_movement import PartitionMovementMixin
-from rptest.util import wait_until_result
+from rptest.services.cluster import cluster
 from rptest.services.honey_badger import HoneyBadger
-from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kaf_producer import KafProducer
-from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.redpanda import (
-    RESTART_LOG_ALLOW_LIST,
     PREV_VERSION_LOG_ALLOW_LIST,
-    CloudStorageType,
+    RESTART_LOG_ALLOW_LIST,
     SISettings,
     get_cloud_storage_type,
 )
+from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
+from rptest.services.rpk_consumer import RpkConsumer
+from rptest.services.rpk_producer import RpkProducer
+from rptest.tests.end_to_end import EndToEndTest
+from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.util import wait_until_result
+from rptest.utils.mode_checks import skip_debug_mode, skip_fips_mode
 
 # Errors we should tolerate when moving partitions around
 PARTITION_MOVEMENT_LOG_ERRORS = [

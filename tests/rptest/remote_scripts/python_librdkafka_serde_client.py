@@ -11,31 +11,30 @@
 
 import argparse
 import json
-import sys
 import logging
+import sys
 from collections import OrderedDict
 from datetime import datetime
 from enum import IntEnum
 from typing import Optional
 from uuid import uuid4
 
+import payload_pb2
 from confluent_kafka import DeserializingConsumer, SerializingProducer
 from confluent_kafka.cimpl import KafkaError
-from confluent_kafka.serialization import StringDeserializer, StringSerializer
 from confluent_kafka.schema_registry import (
     SchemaRegistryClient,
-    topic_subject_name_strategy,
     record_subject_name_strategy,
     topic_record_subject_name_strategy,
+    topic_subject_name_strategy,
 )
 from confluent_kafka.schema_registry.avro import AvroDeserializer, AvroSerializer
+from confluent_kafka.schema_registry.json_schema import JSONDeserializer, JSONSerializer
 from confluent_kafka.schema_registry.protobuf import (
     ProtobufDeserializer,
     ProtobufSerializer,
 )
-from confluent_kafka.schema_registry.json_schema import JSONSerializer, JSONDeserializer
-
-import payload_pb2
+from confluent_kafka.serialization import StringDeserializer, StringSerializer
 
 
 class SchemaType(IntEnum):

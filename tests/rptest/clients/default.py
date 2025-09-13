@@ -8,11 +8,12 @@
 # by the Apache License, Version 2.0
 import typing
 from collections.abc import Sequence
-from rptest.clients.types import TopicSpec
-from rptest.clients.python_librdkafka import PythonLibrdkafka
+
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kcl import KCL
+from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.redpanda_types import RedpandaServiceForClients
 
 # pyright: strict

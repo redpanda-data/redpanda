@@ -14,9 +14,10 @@
 #
 
 import abc
-from typing import Optional
-import xxhash
 import sys
+from typing import Optional
+
+import xxhash
 
 
 def main():

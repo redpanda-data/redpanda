@@ -7,29 +7,25 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import re
 import sys
 import time
-import re
-import random
-import ducktape.errors
-from typing import Optional
-import requests
 
+import requests
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cat import KafkaCat
-from rptest.clients.rpk import RpkTool, RpkException
-from rptest.clients.types import TopicSpec
 from rptest.clients.ping_pong import PingPong
-from rptest.services.failure_injector import FailureInjector, FailureSpec
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.rpk_producer import RpkProducer
-from rptest.services.kaf_producer import KafProducer
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.failure_injector import FailureInjector, FailureSpec
+from rptest.services.kaf_producer import KafProducer
 from rptest.services.metrics_check import MetricCheck
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.rpk_producer import RpkProducer
+from rptest.tests.redpanda_test import RedpandaTest
 
 ELECTION_TIMEOUT = 10
 

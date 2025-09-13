@@ -10,6 +10,7 @@
 from enum import Enum
 
 from ducktape.mark import ignore, parametrize
+
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.kaf_consumer import KafConsumer
@@ -18,7 +19,6 @@ from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.utils.mode_checks import skip_debug_mode
 
 
 class Consumers(Enum):

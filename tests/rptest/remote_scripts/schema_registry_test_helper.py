@@ -1,12 +1,13 @@
 # This is not a test.  It is a remote script for use by schema_registry_test.py
 
-import threading
-import requests
-import sys
+import json
 import logging
 import random
+import sys
+import threading
 import time
-import json
+
+import requests
 
 log = logging.getLogger("helper")
 log.setLevel(logging.DEBUG)

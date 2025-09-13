@@ -1,6 +1,8 @@
 from _typeshed import Incomplete
 from ducktape.services.service import (
     MultiRunServiceIdFactory as MultiRunServiceIdFactory,
+)
+from ducktape.services.service import (
     service_id_factory as service_id_factory,
 )
 from ducktape.services.service_registry import ServiceRegistry as ServiceRegistry
@@ -8,15 +10,26 @@ from ducktape.tests.event import ClientEventFactory as ClientEventFactory
 from ducktape.tests.loader import TestLoader as TestLoader
 from ducktape.tests.result import (
     FAIL as FAIL,
+)
+from ducktape.tests.result import (
     IGNORE as IGNORE,
+)
+from ducktape.tests.result import (
     OFAIL as OFAIL,
+)
+from ducktape.tests.result import (
     OPASS as OPASS,
+)
+from ducktape.tests.result import (
     PASS as PASS,
+)
+from ducktape.tests.result import (
     TestResult as TestResult,
 )
 from ducktape.tests.serde import SerDe as SerDe
 from ducktape.tests.status import FLAKY as FLAKY
-from ducktape.tests.test import TestContext as TestContext, test_logger as test_logger
+from ducktape.tests.test import TestContext as TestContext
+from ducktape.tests.test import test_logger as test_logger
 from ducktape.utils.local_filesystem_utils import mkdir_p as mkdir_p
 
 def run_client(*args, **kwargs) -> None: ...

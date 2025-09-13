@@ -9,22 +9,22 @@
 
 from dataclasses import dataclass, fields
 
-from ducktape.mark import parametrize, matrix
+from ducktape.mark import matrix, parametrize
 
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.tests.scram_test import SaslPlainTLSProvider
-from rptest.tests.pandaproxy_test import PandaProxyMTLSBase
-from rptest.tests.schema_registry_test import SchemaRegistryMTLSBase
 from rptest.services.redpanda import (
-    SecurityConfig,
+    PandaproxyConfig,
     RedpandaService,
     SaslCredentials,
-    PandaproxyConfig,
     SchemaRegistryConfig,
+    SecurityConfig,
 )
 from rptest.services.tls import TLSCertManager
+from rptest.tests.pandaproxy_test import PandaProxyMTLSBase
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.schema_registry_test import SchemaRegistryMTLSBase
+from rptest.tests.scram_test import SaslPlainTLSProvider
 
 
 def make_from_dict(class_name, values):

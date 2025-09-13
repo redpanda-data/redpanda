@@ -6,13 +6,14 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import requests
-import time
 import functools
+import time
+from typing import Any, Optional, cast
 
+import requests
 from confluent_kafka import Consumer, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
-from typing import Any, Optional, cast
+
 from rptest.services import tls
 from rptest.services.keycloak import OAuthConfig
 from rptest.services.redpanda_types import KafkaClientSecurity

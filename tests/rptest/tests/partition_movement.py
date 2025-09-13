@@ -11,9 +11,10 @@ import copy
 import random
 
 import requests
+from ducktape.utils.util import wait_until
+
 from rptest.services.admin import Admin
 from rptest.util import wait_until_result
-from ducktape.utils.util import wait_until
 
 
 class PartitionMovementMixin:

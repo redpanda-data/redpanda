@@ -7,13 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import re
 import threading
 import time
+
 from ducktape.services.background_thread import BackgroundThreadService
+from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from ducktape.utils.util import wait_until
 
 
 class KafkaCliConsumer(BackgroundThreadService):

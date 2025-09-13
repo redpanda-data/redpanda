@@ -7,11 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import requests
-import os
-import yaml
 import json
+import os
 
+import requests
+import yaml
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until

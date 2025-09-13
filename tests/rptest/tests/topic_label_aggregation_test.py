@@ -7,12 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from ducktape.utils.util import wait_until
+
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import MetricsEndpoint
-
-from ducktape.utils.util import wait_until
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class TopicLabelAggregationTest(RedpandaTest):

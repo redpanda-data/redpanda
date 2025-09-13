@@ -6,20 +6,18 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import re
+from typing import Callable, Optional
 
-from typing import Optional, Callable
-from rptest.util import wait_until_result
 from ducktape.cluster.cluster import ClusterNode
-from ducktape.utils.util import wait_until, TimeoutError
+from ducktape.utils.util import TimeoutError, wait_until
 
 from rptest.clients.rpk import RpkTool
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import MetricSamples, MetricsEndpoint
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until_result
 
 
 class ClusterMetricsTest(RedpandaTest):

@@ -7,15 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-
-from rptest.clients.types import TopicSpec
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool
-from rptest.services.redpanda import SecurityConfig
 from time import sleep
 
-from confluent_kafka import Producer, KafkaException
+from confluent_kafka import KafkaException, Producer
+
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import SecurityConfig
+from rptest.tests.redpanda_test import RedpandaTest
 
 TOPIC_AUTHORIZATION_FAILED = 29
 CLUSTER_AUTHORIZATION_FAILED = 31

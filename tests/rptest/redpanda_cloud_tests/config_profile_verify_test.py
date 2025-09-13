@@ -11,15 +11,11 @@
 
 # from rptest.services.redpanda import make_redpanda_service
 
-from ducktape.tests.test import Test
-
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import make_redpanda_service
-from rptest.clients.installpack import InstallPackClient
-
-import subprocess
 import json
+import subprocess
 
+
+from rptest.clients.installpack import InstallPackClient
 from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 
 

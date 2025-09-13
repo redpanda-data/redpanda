@@ -7,14 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from ducktape.utils.util import wait_until
-from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
-
-import subprocess
 import random
 import string
+import subprocess
 import sys
+
+from ducktape.utils.util import wait_until
+
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
 
 BOOTSTRAP_CONFIG = {
     "kafka_tcp_keepalive_timeout": 1,

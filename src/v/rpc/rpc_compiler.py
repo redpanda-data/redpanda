@@ -9,15 +9,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import sys
-import os
-import logging
 import json
+import logging
+import os
+import sys
+import zlib
 from typing import Any
 
 # 3rd party
 from jinja2 import Template
-import zlib
 
 sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger("rp")

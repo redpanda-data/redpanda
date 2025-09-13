@@ -7,14 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.failure_injector import make_failure_injector, FailureSpec
-from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.tests.admin_api_auth_test import create_user_and_wait
-from rptest.clients.rpk import RpkTool, RpkException, RPKACLInput
-from rptest.services.redpanda import SecurityConfig, SchemaRegistryConfig
-from rptest.util import expect_exception
 from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RPKACLInput, RpkException, RpkTool
+from rptest.services.cluster import cluster
+from rptest.services.failure_injector import FailureSpec, make_failure_injector
+from rptest.services.redpanda import SchemaRegistryConfig, SecurityConfig
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import expect_exception
 
 
 class RpkACLTest(RedpandaTest):

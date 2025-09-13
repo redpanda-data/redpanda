@@ -8,21 +8,22 @@
 # by the Apache License, Version 2.0
 import time
 from functools import partial
-from rptest.services.cluster import cluster
-from rptest.clients.rpk import RpkTool, RpkException
-from rptest.services.kafka_cli_consumer import KafkaCliConsumer
+
 from ducktape.mark import parametrize
-from rptest.services.admin import Admin
-from rptest.util import expect_exception
 from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.kafka_cli_consumer import KafkaCliConsumer
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import (
-    RedpandaInstaller,
-    wait_for_num_versions,
     ver_string,
+    wait_for_num_versions,
 )
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import expect_exception
 
 
 class OffsetRetentionDisabledAfterUpgrade(RedpandaTest):

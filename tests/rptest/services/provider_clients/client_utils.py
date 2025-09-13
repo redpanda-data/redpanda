@@ -1,6 +1,7 @@
-import requests
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+
+import requests
 
 
 def _rget(uri, headers=None):
@@ -70,8 +71,8 @@ def query_instance_meta(baseurl, headers=None):
 # within the host and not externally
 # TODO: Consolidate code in one place and refactor its use in HTT tests
 if __name__ == "__main__":
-    import sys
     import json
+    import sys
 
     # get provider from command line
     provider = None

@@ -11,19 +11,20 @@ import math
 from time import time
 from typing import Any, TypeVar
 
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import get_cloud_provider
-from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
-from ducktape.tests.test import TestContext
 from ducktape.mark import matrix
-from rptest.services.producer_swarm import ProducerSwarm
+from ducktape.tests.test import TestContext
+
 from rptest.clients.rpk import RpkTool
-from rptest.services.redpanda_cloud import ThroughputTierInfo
+from rptest.services.cluster import cluster
+from rptest.services.machinetype import get_machine_info
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
-from rptest.services.machinetype import get_machine_info
-from rptest.utils.type_utils import rcast
+from rptest.services.producer_swarm import ProducerSwarm
+from rptest.services.redpanda import get_cloud_provider
+from rptest.services.redpanda_cloud import ThroughputTierInfo
+from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 from rptest.tests.write_caching_test import WriteCachingMode
+from rptest.utils.type_utils import rcast
 
 # pyright: strict
 

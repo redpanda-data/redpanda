@@ -7,19 +7,18 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from rptest.services.admin import Admin
-from ducktape.utils.util import wait_until
-from rptest.clients.types import TopicSpec
-from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.util import firewall_blocked
-from rptest.clients.rpk import RpkTool
-from confluent_kafka import admin, Producer, KafkaException, Consumer
-from ducktape.mark import parametrize
-
 import time
 import uuid
-import time
+
+from confluent_kafka import Consumer, KafkaException, Producer, admin
+from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
+
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.util import firewall_blocked
 
 
 def on_delivery(err, msg):

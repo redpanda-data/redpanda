@@ -1,6 +1,5 @@
+from google.cloud import compute_v1, storage
 from google.oauth2.service_account import Credentials
-from google.cloud import compute_v1
-from google.cloud import storage
 
 from rptest.services.provider_clients.client_utils import query_instance_meta
 

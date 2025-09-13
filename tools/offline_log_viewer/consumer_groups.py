@@ -1,8 +1,9 @@
+import datetime
 from io import BytesIO
+
 from model import *
 from reader import Reader
 from storage import Segment
-import datetime
 
 
 def decode_key_type(kt):

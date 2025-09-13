@@ -7,12 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.services.redpanda_installer import RedpandaInstaller
-from rptest.services.cluster import cluster
 from rptest.clients.rpk import RpkTool
-from rptest.services.redpanda import SecurityConfig
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SecurityConfig
+from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until
 
 

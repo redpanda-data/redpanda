@@ -1,25 +1,22 @@
 import base64
-import collections
-from functools import cache
+import ipaddress
 import json
 import os
-import requests
 import uuid
-import yaml
-import ipaddress
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional, Dict
-from prometheus_client.parser import text_string_to_metric_families
+from functools import cache
+from typing import Any, Dict
+from urllib.parse import urlparse
 
 from ducktape.utils.util import wait_until
+from prometheus_client.parser import text_string_to_metric_families
+
 from rptest.services.cloud_cluster_utils import CloudClusterUtils
 from rptest.services.provider_clients import make_provider_client
 from rptest.services.provider_clients.ec2_client import RTBS_LABEL
 from rptest.services.provider_clients.rpcloud_client import RpCloudApiClient
-from urllib.parse import urlparse
-
 from rptest.services.redpanda_types import SaslCredentials
 
 ns_name_prefix = "rp-ducktape-ns-"

@@ -7,20 +7,19 @@
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
 from ducktape.mark import matrix
+
+from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import (
-    CloudStorageType,
     SISettings,
     get_cloud_storage_type,
 )
-
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
+    firewall_blocked,
     produce_until_segments,
     wait_for_local_storage_truncate,
-    firewall_blocked,
 )
 
 # Log errors expected when connectivity between redpanda and the S3

@@ -7,27 +7,30 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import math
+import random
+import time
 from collections import defaultdict
-import random, math, time
+
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
+from rptest.clients.default import DefaultClient
+from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from ducktape.utils.util import wait_until
-from ducktape.mark import matrix
-from rptest.clients.kafka_cat import KafkaCat
-from rptest.clients.types import TopicSpec
-from rptest.clients.default import DefaultClient
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
-    KgoVerifierSeqConsumer,
     KgoVerifierProducer,
+    KgoVerifierSeqConsumer,
 )
 from rptest.services.redpanda import SISettings
-from rptest.utils.node_operations import verify_offset_translator_state_consistent
-
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import KafkaCliTools
 from rptest.utils.mode_checks import skip_debug_mode
+from rptest.utils.node_operations import verify_offset_translator_state_consistent
 
 
 class ScalingUpTest(PreallocNodesTest):

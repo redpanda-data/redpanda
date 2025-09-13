@@ -9,10 +9,12 @@
 
 import random
 import signal
-import time
 import threading
-from ducktape.utils.util import wait_until
+import time
+
 from ducktape.errors import TimeoutError
+from ducktape.utils.util import wait_until
+
 from rptest.clients.kubectl import KubectlTool
 from rptest.services import tc_netem
 from rptest.services.redpanda import RedpandaServiceCloud

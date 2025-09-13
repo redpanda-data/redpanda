@@ -3,21 +3,20 @@
 # generate life-like redpanda metrics to stdout or on a mock /metrics endpoint
 # over http
 
-from abc import ABC, abstractmethod
-from enum import Enum, auto
-from functools import partial
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import argparse
+import itertools
 import os
 import random
 import string
 import sys
-from timeit import timeit
-from typing import Any, BinaryIO, cast
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-import itertools
-import argparse
+from enum import Enum, auto
+from functools import partial
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from math import ceil
-from typing import Iterable
+from timeit import timeit
+from typing import Any, BinaryIO, Iterable, cast
 
 
 class Endpoint(Enum):

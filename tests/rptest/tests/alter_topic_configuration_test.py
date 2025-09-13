@@ -8,26 +8,27 @@
 # by the Apache License, Version 2.0
 import random
 import string
-import time
 import subprocess
-from rptest.services.admin import Admin
-from rptest.clients.kcl import KCL, RawKCL
-from rptest.utils.si_utils import BucketView, NT
+
+from ducktape.mark import matrix, parametrize
 from ducktape.utils.util import wait_until
-from rptest.util import wait_until_result
 
-from rptest.services.cluster import cluster
-from ducktape.mark import parametrize, matrix
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.kcl import KCL, RawKCL
 from rptest.clients.rpk import RpkTool
-from rptest.utils.mode_checks import skip_fips_mode
-
-from rptest.services.redpanda_installer import RedpandaVersionTriple
 from rptest.clients.types import TopicSpec
-from rptest.tests.end_to_end import EndToEndTest
-from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings
+from rptest.services.redpanda_installer import (
+    InstallOptions,
+    RedpandaVersionTriple,
+)
+from rptest.tests.end_to_end import EndToEndTest
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until_result
+from rptest.utils.mode_checks import skip_fips_mode
+from rptest.utils.si_utils import NT, BucketView
 
 
 class AlterTopicConfiguration(RedpandaTest):

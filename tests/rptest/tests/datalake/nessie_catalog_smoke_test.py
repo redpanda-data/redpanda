@@ -7,31 +7,30 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from ducktape.mark import matrix
+from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.schema import Schema
+from pyiceberg.transforms import DayTransform
+from pyiceberg.types import (
+    BinaryType,
+    DoubleType,
+    FloatType,
+    IntegerType,
+    ListType,
+    LongType,
+    NestedField,
+    StringType,
+    StructType,
+    TimestampType,
+)
+
 from rptest.services.cluster import cluster
 from rptest.services.nessie_catalog import NessieCatalog
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import SISettings
-from rptest.services.trino_service import TrinoService
 from rptest.services.spark_service import SparkService
+from rptest.services.trino_service import TrinoService
 from rptest.tests.datalake.utils import supported_storage_types
-
-from ducktape.mark import matrix
-
-from pyiceberg.schema import Schema
-from pyiceberg.types import (
-    TimestampType,
-    FloatType,
-    DoubleType,
-    IntegerType,
-    LongType,
-    StringType,
-    BinaryType,
-    ListType,
-    NestedField,
-    StructType,
-)
-from pyiceberg.partitioning import PartitionSpec, PartitionField
-from pyiceberg.transforms import DayTransform
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class NessieCatalogSmokeTest(RedpandaTest):

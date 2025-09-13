@@ -1,9 +1,10 @@
+import re
 from copy import copy
 from dataclasses import astuple, dataclass
 from enum import Enum, auto
 from logging import Logger
-import re
 from typing import Iterator, Protocol, Sequence
+
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 
 # pyright: strict

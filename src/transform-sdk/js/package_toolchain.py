@@ -9,10 +9,9 @@ docker run -v `pwd`/..:/src -w /src/js ghcr.io/webassembly/wasi-sdk \
 """
 
 import subprocess
+import tarfile
 import tempfile
 from pathlib import Path
-import tarfile
-import shutil
 
 
 def download_via_curl(url, file):

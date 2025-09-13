@@ -8,18 +8,20 @@
 # by the Apache License, Version 2.0
 
 import random
+
+from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
+
+from rptest.clients.types import TopicSpec
 from rptest.services import redpanda
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from ducktape.utils.util import wait_until
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
 )
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.clients.types import TopicSpec
-from ducktape.mark import parametrize
 from rptest.utils.node_operations import NodeDecommissionWaiter
 
 

@@ -10,25 +10,22 @@ import io
 import json
 import os
 import pprint
-import random
-import re
 import time
 from collections import defaultdict, deque
 from queue import Queue
 from threading import Thread
 from typing import Callable, NamedTuple, Optional, Sequence
 
+import ducktape
+import ducktape.errors
 import requests
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
-import ducktape
-import ducktape.errors
 
 from rptest.archival.abs_client import ABSClient
 from rptest.archival.s3_client import S3Client
-from rptest.clients.default import DefaultClient
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.clients.rpk import RpkException, RpkTool
@@ -49,9 +46,10 @@ from rptest.utils.si_utils import (
     EMPTY_SEGMENT_SIZE,
     MISSING_DATA_ERRORS,
     NTP,
+    NTPR,
     TRANSIENT_ERRORS,
-    PathMatcher,
     BucketView,
+    PathMatcher,
     SegmentReader,
     default_log_segment_size,
     get_expected_ntp_restored_size,
@@ -61,8 +59,6 @@ from rptest.utils.si_utils import (
     parse_s3_segment_path,
     quiesce_uploads,
     verify_file_layout,
-    NTPR,
-    gen_local_path_from_remote,
 )
 
 CLOUD_STORAGE_SEGMENT_MAX_UPLOAD_INTERVAL_SEC = 10

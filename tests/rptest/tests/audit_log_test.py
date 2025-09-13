@@ -7,32 +7,30 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import confluent_kafka as ck
-from functools import partial, reduce
-from enum import Enum
-import time
-import threading
 import json
-import random
 import re
-import requests
 import socket
+import threading
 import time
-import random
+from enum import Enum
+from functools import partial, reduce
 from typing import Any, Optional, Sequence, Union
+from urllib.parse import urlparse
 
+import confluent_kafka as ck
+import requests
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.errors import TimeoutError
-from ducktape.mark import matrix, ignore
+from ducktape.mark import ignore, matrix
 from keycloak import KeycloakOpenID
+
 from rptest.clients.default import DefaultClient
 from rptest.clients.kcl import KCL
 from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.clients.rpk import RpkTool, RpkException
-from rptest.services import tls
+from rptest.clients.rpk import RpkException, RpkTool
+from rptest.services import redpanda, tls
 from rptest.services.admin import Admin, RoleMember
 from rptest.services.cluster import cluster
-from rptest.services import redpanda
 from rptest.services.keycloak import DEFAULT_REALM, KeycloakService
 from rptest.services.ocsf_server import OcsfServer
 from rptest.services.redpanda import (
@@ -40,7 +38,6 @@ from rptest.services.redpanda import (
     LoggingConfig,
     MetricSamples,
     MetricsEndpoint,
-    PandaproxyConfig,
     RedpandaServiceBase,
     SchemaRegistryConfig,
     SecurityConfig,
@@ -51,39 +48,38 @@ from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.schema_registry_test import (
-    SchemaRegistryRedpandaClient,
     ACLTestEndpoint,
-    schema1_def,
-    schema2_def,
-    GetConfigEndpoint,
-    PutConfigEndpoint,
-    GetConfigSubjectEndpoint,
-    PutConfigSubjectEndpoint,
+    CompatibilitySubjectVersion,
     DeleteConfigSubject,
-    GetMode,
-    PutMode,
-    GetModeSubject,
-    PutModeSubject,
     DeleteModeSubject,
-    PostSubjectVersions,
-    GetSchemasIdsIdVersions,
-    GetSchemasIdsIdSubjects,
-    GetSubjectVersions,
-    PostSubject,
-    GetSubjectVersionsVersion,
-    GetSubjectVersionsVersionSchema,
-    GetSubjectVersionsVersionReferencedBy,
     DeleteSubject,
     DeleteSubjectVersion,
-    CompatibilitySubjectVersion,
+    GetConfigEndpoint,
+    GetConfigSubjectEndpoint,
+    GetMode,
+    GetModeSubject,
+    GetSchemasIdsIdSubjects,
+    GetSchemasIdsIdVersions,
     GetSchemasTypes,
     GetStatusReady,
+    GetSubjectVersions,
+    GetSubjectVersionsVersion,
+    GetSubjectVersionsVersionReferencedBy,
+    GetSubjectVersionsVersionSchema,
+    PostSubject,
+    PostSubjectVersions,
+    PutConfigEndpoint,
+    PutConfigSubjectEndpoint,
+    PutMode,
+    PutModeSubject,
+    SchemaRegistryRedpandaClient,
+    schema1_def,
+    schema2_def,
 )
 from rptest.util import expect_exception, wait_until, wait_until_result
 from rptest.utils.mode_checks import skip_fips_mode
 from rptest.utils.rpk_config import read_redpanda_cfg
 from rptest.utils.schema_registry_utils import Mode, get_subjects, put_mode
-from urllib.parse import urlparse
 
 
 class AuthorizationMatch(str, Enum):

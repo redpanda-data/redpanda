@@ -10,18 +10,17 @@
 import argparse
 import json
 import logging
-import numpy
 import random
 import string
 import sys
 import time
-
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 
+import numpy
 from kafka import KafkaAdminClient
-from kafka.errors import NoBrokersAvailable, BrokerNotAvailableError
 from kafka.admin import NewTopic
+from kafka.errors import BrokerNotAvailableError, NoBrokersAvailable
 
 AVOIDED_SEQUENCES = ["SEGV"]
 

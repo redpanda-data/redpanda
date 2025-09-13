@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import functools
-from re import Pattern
 import time
 from typing import Any, Protocol
 
@@ -18,8 +17,8 @@ from ducktape.mark.resource import ClusterUseMetadata
 from ducktape.tests.test import TestContext
 
 from rptest.services.redpanda import (
-    RedpandaServiceBase,
     RedpandaService,
+    RedpandaServiceBase,
     RedpandaServiceCloud,
 )
 from rptest.services.redpanda_types import LogAllowList

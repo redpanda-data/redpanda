@@ -8,17 +8,19 @@
 # by the Apache License, Version 2.0
 
 import concurrent.futures
-from enum import Enum
 import math
-import numpy
 import time
+from enum import Enum
 
-from ducktape.mark import ignore, parametrize
+import numpy
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
-from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.consumer_swarm import ConsumerSwarm
+from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.redpanda import (
     RESTART_LOG_ALLOW_LIST,
     LoggingConfig,
@@ -26,11 +28,8 @@ from rptest.services.redpanda import (
     PandaproxyConfig,
     SchemaRegistryConfig,
 )
-from rptest.services.producer_swarm import ProducerSwarm
-from rptest.services.consumer_swarm import ConsumerSwarm
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.scale_parameters import ScaleParameters
-from ducktape.mark import matrix
 
 
 class Mode(str, Enum):

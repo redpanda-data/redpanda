@@ -12,13 +12,13 @@ import random
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
-from rptest.services.cluster import cluster
-from rptest.services.rpk_producer import RpkProducer
-from rptest.services.compatibility.example_runner import ExampleRunner
 import rptest.services.compatibility.sarama_examples as SaramaExamples
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SecurityConfig
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.compatibility.example_runner import ExampleRunner
+from rptest.services.redpanda import SecurityConfig
+from rptest.services.rpk_producer import RpkProducer
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class SaramaTest(RedpandaTest):

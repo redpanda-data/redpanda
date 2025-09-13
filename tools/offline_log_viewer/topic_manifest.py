@@ -1,6 +1,7 @@
 from typing import Any
-from reader import Reader
+
 from controller import read_topic_config
+from reader import Reader
 
 
 def to_compression_str(value: int) -> str:

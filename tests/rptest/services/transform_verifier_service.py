@@ -8,15 +8,16 @@
 # by the Apache License, Version 2.0
 
 import json
-import requests
 import signal
 import typing
 
+import requests
+from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
-from ducktape.cluster.remoteaccount import RemoteCommandError
-from rptest.services.redpanda import RedpandaService
 from ducktape.utils.util import wait_until
+
+from rptest.services.redpanda import RedpandaService
 
 
 class TransformVerifierProduceStatus(typing.NamedTuple):

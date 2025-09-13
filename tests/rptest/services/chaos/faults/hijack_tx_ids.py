@@ -9,8 +9,7 @@
 
 from time import sleep
 
-from confluent_kafka import Producer
-from confluent_kafka import KafkaException
+from confluent_kafka import KafkaException, Producer
 
 from .fault import OneoffFault
 

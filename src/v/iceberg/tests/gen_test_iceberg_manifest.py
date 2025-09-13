@@ -10,19 +10,20 @@
 # by the Apache License, Version 2.0
 
 import argparse
+
 from pyiceberg.io.fsspec import FsspecFileIO
-from pyiceberg.manifest import write_manifest, DataFile, DataFileContent, ManifestEntry
+from pyiceberg.manifest import DataFile, DataFileContent, ManifestEntry, write_manifest
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
-    StringType,
-    ListType,
-    IntegerType,
-    StructType,
     BooleanType,
-    NestedField,
-    MapType,
     FloatType,
+    IntegerType,
+    ListType,
+    MapType,
+    NestedField,
+    StringType,
+    StructType,
 )
 
 # TODO: support some other schemas.

@@ -6,36 +6,32 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-from re import T
-from typing import NamedTuple, Optional, List
-from rptest.services.cluster import cluster
-
-from rptest.clients.default import DefaultClient
-from rptest.services.admin import Admin
-from rptest.services.redpanda import SISettings
-from rptest.clients.rpk import RpkTool, RpkException
-from rptest.clients.types import TopicSpec
-from rptest.util import expect_exception
+from typing import List, NamedTuple, Optional
 
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 
+from rptest.clients.default import DefaultClient
+from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
     CloudStorageType,
     CloudStorageTypeAndUrlStyle,
     MetricsEndpoint,
     RedpandaService,
+    SISettings,
     get_cloud_storage_type,
-    get_cloud_storage_url_style,
     get_cloud_storage_type_and_url_style,
     make_redpanda_service,
 )
 from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
-from rptest.tests.end_to_end import EndToEndTest
-from rptest.utils.expect_rate import ExpectRate, RateTarget
-from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
 from rptest.services.verifiable_consumer import VerifiableConsumer
-from rptest.util import wait_until, wait_until_result
+from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
+from rptest.tests.end_to_end import EndToEndTest
+from rptest.util import expect_exception, wait_until, wait_until_result
+from rptest.utils.expect_rate import ExpectRate, RateTarget
 from rptest.utils.mode_checks import skip_fips_mode
 
 

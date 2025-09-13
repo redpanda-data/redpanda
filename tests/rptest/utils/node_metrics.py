@@ -1,7 +1,8 @@
 from math import floor
 
 from ducktape.utils.util import wait_until
-from rptest.services.redpanda import RedpandaService, MetricsEndpoint
+
+from rptest.services.redpanda import MetricsEndpoint, RedpandaService
 
 
 def all_greater_than_zero(l1: list[float]):

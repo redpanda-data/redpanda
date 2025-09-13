@@ -6,32 +6,31 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
-from collections import defaultdict
 import itertools
-import re
-import time
 import random
 import re
+import time
+from collections import defaultdict
 from uuid import uuid4
 
-from requests.exceptions import HTTPError
 from confluent_kafka import SerializingProducer
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroSerializer
 from confluent_kafka.serialization import StringSerializer
 from ducktape.mark import matrix
+from requests.exceptions import HTTPError
 
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.catalog_service import CatalogType
-from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import SISettings, SchemaRegistryConfig, MetricsEndpoint
+from rptest.services.redpanda import MetricsEndpoint, SISettings, SchemaRegistryConfig
 from rptest.services.redpanda_connect import RedpandaConnectService
+from rptest.tests.datalake.catalog_service_factory import supported_catalog_types
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.tests.datalake.catalog_service_factory import supported_catalog_types
 from rptest.utils.rpcn_utils import counter_stream_config
 
 OOM_ALLOW_LIST = [

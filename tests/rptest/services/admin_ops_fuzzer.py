@@ -6,28 +6,26 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-from abc import ABC, abstractmethod
-from enum import Enum, auto, unique
 import json
 import random
-import re
 import string
-import requests
-from threading import Event, Condition
 import threading
 import time
-from requests.exceptions import HTTPError
-from ducktape.utils.util import wait_until
-from rptest.clients.kcl import KCL
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.types import TopicSpec
+from abc import ABC, abstractmethod
+from enum import Enum, auto, unique
+from threading import Condition, Event
 from time import sleep
-from confluent_kafka import Producer
-from typing import Dict
 
+import requests
+from confluent_kafka import Producer
+from ducktape.utils.util import wait_until
+from requests.exceptions import HTTPError
+
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
-from rptest.services.redpanda_installer import VERSION_RE, int_tuple
 
 
 # Operation context (used to save state between invocation of operations)
