@@ -7,21 +7,21 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
+import json
 import random
 import threading
 import time
-import json
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from time import sleep
 from typing import List, Optional
+
+from confluent_kafka import Consumer, TopicPartition
+
 from rptest.clients.rpk import RpkPartition, RpkTool
 from rptest.services.redpanda import RedpandaService
 from rptest.tests.datalake.query_engine_base import QueryEngineBase
 from rptest.util import wait_until
-
-from confluent_kafka import Consumer
-from confluent_kafka import TopicPartition
 
 
 class DatalakeVerifier:
@@ -119,13 +119,14 @@ class DatalakeVerifier:
                 "auto.offset.reset": "earliest",
             }
         # Inject SASL credentials if needed (same logic as oneshot_cloud)
-        if 'security.protocol' in config and config['security.protocol'] in [
-                'SASL_SSL', 'SASL_PLAINTEXT'
+        if "security.protocol" in config and config["security.protocol"] in [
+            "SASL_SSL",
+            "SASL_PLAINTEXT",
         ]:
-            if 'sasl.username' not in config:
-                config['sasl.username'] = 'admin'
-            if 'sasl.password' not in config:
-                config['sasl.password'] = 'admin'
+            if "sasl.username" not in config:
+                config["sasl.username"] = "admin"
+            if "sasl.password" not in config:
+                config["sasl.password"] = "admin"
         try:
             c = Consumer(config)
             c.subscribe([self.topic])
@@ -156,7 +157,8 @@ class DatalakeVerifier:
                         )
                     else:
                         self.logger.debug(
-                            f"next position for {p.partition} is {p.offset}")
+                            f"next position for {p.partition} is {p.offset}"
+                        )
                         self._next_positions[p.partition] = p.offset
                 return self._next_positions.copy()
 
@@ -177,8 +179,7 @@ class DatalakeVerifier:
         self.logger.debug(f"remembered {self._consumer_positions=}")
         self._partition_hwms = self.partition_hwms()
         for p in self._partition_hwms:
-            self.logger.debug(
-                f"remembered partition {p.id=} hwm={p.high_watermark}, ")
+            self.logger.debug(f"remembered partition {p.id=} hwm={p.high_watermark}, ")
         with self._consumer_lock:
             self._consumer.close()
             self._consumer = None
@@ -204,8 +205,9 @@ class DatalakeVerifier:
         try:
             self.logger.info("Starting consumer thread")
             while not self._stop.is_set() and not (
-                    self._offline_mode_requested.is_set()
-                    and self._consumed_till_hwm(update=True)):
+                self._offline_mode_requested.is_set()
+                and self._consumed_till_hwm(update=True)
+            ):
                 self._msg_semaphore.acquire()
                 if self._stop.is_set():
                     break
@@ -227,7 +229,8 @@ class DatalakeVerifier:
                         msg.offset(),
                     )
                     self.logger.debug(
-                        f"Max consumed offsets: {self._max_consumed_offsets}")
+                        f"Max consumed offsets: {self._max_consumed_offsets}"
+                    )
                     if len(self._errors) > 0:
                         return
         finally:
@@ -246,7 +249,7 @@ class DatalakeVerifier:
         # 1. A struct column `redpanda` containing partition, offset, timestamp, headers, key
         # 2. A `value` column containing the message payload (hex encoded)
         # Note: For Databricks, we need the full catalog.namespace.table format
-        if hasattr(self._query, '_catalog_name'):
+        if hasattr(self._query, "_catalog_name"):
             # For Databricks Unity Catalog, use full qualified name
             table_name = f"`{self._query._catalog_name}`.`redpanda`.{self._query.escape_identifier(self.table)}"
         else:
@@ -312,22 +315,24 @@ class DatalakeVerifier:
             try:
                 with self._msgs_batched:
                     # Wait for enough data to be batched or a timeout.
-                    self._msgs_batched.wait(
-                        timeout=self._query_batch_wait_timeout_s)
+                    self._msgs_batched.wait(timeout=self._query_batch_wait_timeout_s)
                 partitions = self.update_and_get_fetch_positions()
 
                 for partition, next_consume_offset in partitions.items():
                     last_queried_offset = (
                         self._max_queried_offsets[partition]
-                        if partition in self._max_queried_offsets else -1)
+                        if partition in self._max_queried_offsets
+                        else -1
+                    )
 
                     max_consumed = next_consume_offset - 1
                     # no new messages consumed, skip query
                     if max_consumed <= last_queried_offset:
                         continue
 
-                    query = self._get_query(partition, last_queried_offset,
-                                            max_consumed)
+                    query = self._get_query(
+                        partition, last_queried_offset, max_consumed
+                    )
                     self.logger.debug(f"Executing query: {query}")
 
                     with self._query.run_query(query) as cursor:
@@ -375,8 +380,8 @@ class DatalakeVerifier:
                     return False
                 # Ensure all the consumed messages are drained.
                 return all(
-                    len(messages) == 0
-                    for messages in self._consumed_messages.values())
+                    len(messages) == 0 for messages in self._consumed_messages.values()
+                )
 
         return True
 
@@ -403,8 +408,7 @@ class DatalakeVerifier:
                     )
 
             self._last_checkpoint = self._max_queried_offsets.copy()
-            self.logger.debug(
-                f"Updated last checkpoint: {self._last_checkpoint}")
+            self.logger.debug(f"Updated last checkpoint: {self._last_checkpoint}")
         return progress
 
     def wait(self, progress_timeout_sec=30):
@@ -417,12 +421,12 @@ class DatalakeVerifier:
                     lambda: self._made_progress(),
                     progress_timeout_sec,
                     backoff_sec=3,
-                    err_msg=
-                    f"Error waiting for the query to make progress for topic {self.topic}",
+                    err_msg=f"Error waiting for the query to make progress for topic {self.topic}",
                 )
                 self.logger.debug(f"_made_progress() returned True")
                 assert len(self._errors) == 0, (
-                    f"Topic {self.topic} validation errors: {self._errors}")
+                    f"Topic {self.topic} validation errors: {self._errors}"
+                )
             self.logger.debug(f"No errors around waiting")
         except Exception as e:
             self.logger.error(f"Error around waiting: {e}")
@@ -437,14 +441,15 @@ class DatalakeVerifier:
             self._msg_semaphore.release()
             self._executor.shutdown(wait=False)
             assert len(self._errors) == 0, (
-                f"Topic {self.topic} validation errors: {self._errors}")
+                f"Topic {self.topic} validation errors: {self._errors}"
+            )
 
-            self.logger.debug(
-                f"consumed offsets: {self._max_consumed_offsets}")
+            self.logger.debug(f"consumed offsets: {self._max_consumed_offsets}")
             self.logger.debug(f"queried offsets: {self._max_queried_offsets}")
 
             assert self._max_queried_offsets == self._max_consumed_offsets, (
-                "Mismatch between maximum offsets in topic vs iceberg table")
+                "Mismatch between maximum offsets in topic vs iceberg table"
+            )
 
             assert len(self._expected_compacted_keys) == 0, (
                 f"Some keys which were compacted away were not seen later in the consumer's log"
@@ -471,7 +476,7 @@ class DatalakeVerifier:
 
         # First, let's show a sample of what's in the table
         # Note: For Databricks, we need the full catalog.namespace.table format
-        if hasattr(self._query, '_catalog_name'):
+        if hasattr(self._query, "_catalog_name"):
             # For Databricks Unity Catalog, use full qualified name
             table_name = f"`{self._query._catalog_name}`.`redpanda`.{self._query.escape_identifier(self.table)}"
         else:
@@ -489,8 +494,7 @@ class DatalakeVerifier:
         try:
             with self._query.run_query(sample_query) as cursor:
                 sample_rows = list(cursor)
-                self.logger.info(
-                    f"Sample of first {len(sample_rows)} rows in table:")
+                self.logger.info(f"Sample of first {len(sample_rows)} rows in table:")
                 for i, row in enumerate(sample_rows):
                     self.logger.debug(f"Row {i} has {len(row)} columns")
                     if len(row) < 3:
@@ -506,8 +510,7 @@ class DatalakeVerifier:
                     key = self.safe_decode(row[0])
                     value = self.safe_decode(row[1])
                     headers = row[2]
-                    value_preview = value[:50] + "..." if len(
-                        value) > 50 else value
+                    value_preview = value[:50] + "..." if len(value) > 50 else value
                     self.logger.info(
                         f"  Row {i} DECODED: key='{key}', value='{value_preview}', headers={headers}"
                     )
@@ -516,18 +519,15 @@ class DatalakeVerifier:
 
         with self._query.run_query(query) as cursor:
             rows = list(cursor)
-            self.logger.info(
-                f"Query returned {len(rows)} rows from the Iceberg table.")
+            self.logger.info(f"Query returned {len(rows)} rows from the Iceberg table.")
 
             # Log the structure of the first row to debug issues
             if rows:
-                self.logger.debug(
-                    f"First row structure: {len(rows[0])} columns")
+                self.logger.debug(f"First row structure: {len(rows[0])} columns")
                 self.logger.debug(f"First row content: {rows[0]}")
 
             try:
-                success, errors = self.verify_rows(rows, expected_records,
-                                                   self.logger)
+                success, errors = self.verify_rows(rows, expected_records, self.logger)
                 return success, errors
             except IndexError as e:
                 self.logger.error(f"IndexError in verify_rows: {e}")
@@ -536,7 +536,8 @@ class DatalakeVerifier:
                 )
                 if rows:
                     self.logger.error(
-                        f"First row had {len(rows[0])} columns: {rows[0]}")
+                        f"First row had {len(rows[0])} columns: {rows[0]}"
+                    )
                 raise
             except Exception as e:
                 self.logger.error(f"Unexpected error in verify_rows: {e}")
@@ -550,9 +551,12 @@ class DatalakeVerifier:
         if isinstance(val, memoryview):
             return val.tobytes().decode("utf-8", errors="replace")
         # Check if it's a hex string (from Databricks)
-        if isinstance(val, str) and len(val) > 0 and all(
-                c in '0123456789abcdefABCDEF'
-                for c in val) and len(val) % 2 == 0:
+        if (
+            isinstance(val, str)
+            and len(val) > 0
+            and all(c in "0123456789abcdefABCDEF" for c in val)
+            and len(val) % 2 == 0
+        ):
             try:
                 # Try to decode hex string to bytes then to utf-8
                 decoded = bytes.fromhex(val).decode("utf-8", errors="replace")
@@ -576,8 +580,7 @@ class DatalakeVerifier:
         # Build lookup map of expected records for efficient comparison
         expected_lookup = {}
         for key, value, headers in expected_records:
-            lookup_key = (key, self._json_dumps(value),
-                          frozenset(headers.items()))
+            lookup_key = (key, self._json_dumps(value), frozenset(headers.items()))
             expected_lookup[lookup_key] = (key, value, headers)
             logger.debug(
                 f"Expected record: key='{key}', value='{self._json_dumps(value)}', headers={headers}"
@@ -591,9 +594,9 @@ class DatalakeVerifier:
             # Defensive check for row structure
             if len(row) < 3:
                 logger.error(
-                    f"Skipping malformed row #{i+1}: expected 3 columns, but got {len(row)}. Row: {row}"
+                    f"Skipping malformed row #{i + 1}: expected 3 columns, but got {len(row)}. Row: {row}"
                 )
-                errors.append(f"Malformed row found at index {i+1}")
+                errors.append(f"Malformed row found at index {i + 1}")
                 continue
 
             # row format from query: key, value, headers
@@ -611,8 +614,7 @@ class DatalakeVerifier:
                 # Handle numpy array or regular list
                 try:
                     # Convert to list if it's a numpy array
-                    header_list = list(headers) if hasattr(
-                        headers, '__iter__') else []
+                    header_list = list(headers) if hasattr(headers, "__iter__") else []
                     for h in header_list:
                         if isinstance(h, dict):
                             header_key = self.safe_decode(h.get("key"))
@@ -631,13 +633,16 @@ class DatalakeVerifier:
                 parsed_json = None
 
             actual_val = self._json_dumps(
-                parsed_json if parsed_json is not None else value_str)
+                parsed_json if parsed_json is not None else value_str
+            )
             key_tuple = (key_str, actual_val, frozenset(header_dict.items()))
 
-            logger.debug(f"Row {i} checking:\n"
-                         f"  Key     : '{key_str}'\n"
-                         f"  Value   : '{actual_val}'\n"
-                         f"  Headers : {header_dict}")
+            logger.debug(
+                f"Row {i} checking:\n"
+                f"  Key     : '{key_str}'\n"
+                f"  Value   : '{actual_val}'\n"
+                f"  Headers : {header_dict}"
+            )
 
             if key_tuple in expected_lookup:
                 logger.info(f"✓ Match found for row {i} with key='{key_str}'")
@@ -659,7 +664,8 @@ class DatalakeVerifier:
                 f"Missing record:\n"
                 f"  Expected Key     : {original[0]}\n"
                 f"  Expected Value   : {json.dumps(original[1], indent=2) if isinstance(original[1], dict) else original[1]}\n"
-                f"  Expected Headers : {original[2]}")
+                f"  Expected Headers : {original[2]}"
+            )
             logger.error(msg)
             errors.append(msg)
 
@@ -684,6 +690,5 @@ class DatalakeVerifier:
             logger.error(f"=========================\n")
             return False, errors
 
-        logger.info(
-            "Verification successful. All expected records found and matched.")
+        logger.info("Verification successful. All expected records found and matched.")
         return True, []
