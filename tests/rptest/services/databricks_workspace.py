@@ -16,6 +16,7 @@ import databricks.sdk
 import databricks.sdk.errors
 import databricks.sql
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.errors import DatabricksError
 from databricks.sdk.service.catalog import (
     CatalogInfo,
     CatalogType,
@@ -45,8 +46,7 @@ class DatabricksWorkspace(Service):
         self._databricks_context = DatabricksContext.from_context(context)
 
         self._client = WorkspaceClient(
-            config=self._databricks_context.databricks_config,
-        )
+            config=self._databricks_context.databricks_config, )
 
         # Fail fast if credentials are invalid.
         self._verify_credentials()
@@ -64,12 +64,23 @@ class DatabricksWorkspace(Service):
 
         self._location_names.add(bucket)
 
+        cloud_provider = self._databricks_context.cloud_provider
+        self.logger.info(f"Using cloud provider: {cloud_provider}")
+
+        url: str
+        if cloud_provider == 'gcp':
+            url = f"gs://{bucket}"
+        elif cloud_provider == 'azure':
+            url = f"abfss://{bucket}@{bucket}.blob.core.windows.net/"
+        else:
+            url = f"s3://{bucket}"
+
         try:
             location: ExternalLocationInfo = self._client.external_locations.create(
                 name=bucket,
-                # TODO: Add support for gcs, azure
-                url=f"s3://{bucket}",
-                credential_name=self._databricks_context.ext_loc_credential_name,
+                url=url,
+                credential_name=self._databricks_context.
+                ext_loc_credential_name,
             )
             self.logger.debug(f"Created external location: {location}")
         except databricks.sdk.errors.DatabricksError as e:
@@ -85,9 +96,8 @@ class DatabricksWorkspace(Service):
         )
         self.logger.debug(f"Created catalog: {catalog_info}")
 
-        assert catalog_info.catalog_type == CatalogType.MANAGED_CATALOG, (
+        assert catalog_info.catalog_type == CatalogType.MANAGED_CATALOG, \
             "We expect to only managed catalogs."
-        )
         assert catalog_info.name, "Catalog name must not be empty"
 
         try:
@@ -95,7 +105,8 @@ class DatabricksWorkspace(Service):
                 server_hostname=self._databricks_context.server_hostname,
                 http_path=self._databricks_context.sql_warehouse_path,
                 catalog=catalog_info.name,
-                credentials_provider=self._databricks_context.credentials_provider,
+                credentials_provider=self._databricks_context.
+                credentials_provider,
             )
             self.logger.debug("SQL connection established successfully.")
         except Exception as e:
@@ -116,19 +127,22 @@ class DatabricksWorkspace(Service):
             assert principal_row, "Failed to get current user"
             principal = principal_row[0]
 
-            # TODO: Identify Minimal Privileges (Least access principle)
-            self.logger.debug(
-                f"GRANT ALL PRIVILEGES ON CATALOG `{catalog_info.name}` TO `{principal}`"
-            )
-            sql = f"GRANT ALL PRIVILEGES ON CATALOG `{catalog_info.name}` TO `{principal}`"
-            cursor.execute(sql)
-            self.logger.debug("Granted PRIVILEGES successfully")
+            # Creating a list of principals in case we need to use multiple accounts
+            principals = [principal]
 
-            self.logger.debug(f"Creating grants for: {principal=}")
+            for p in principals:
+                # TODO: Identify Minimal Privileges (Least access principle)
+                self.logger.debug(
+                    f"GRANT ALL PRIVILEGES ON CATALOG `{catalog_info.name}` TO `{p}`"
+                )
+                sql = f"GRANT ALL PRIVILEGES ON CATALOG `{catalog_info.name}` TO `{p}`"
+                cursor.execute(sql)
+                self.logger.debug("Granted PRIVILEGES successfully")
 
-            cursor.execute(
-                f"GRANT EXTERNAL USE SCHEMA ON SCHEMA `redpanda` TO `{principal}`"
-            )
+                self.logger.debug(f"Creating grants for: {p}")
+
+                cursor.execute(
+                    f"GRANT EXTERNAL USE SCHEMA ON SCHEMA `redpanda` TO `{p}`")
 
             self.logger.debug("Grants created successfully")
 
@@ -149,14 +163,16 @@ class DatabricksWorkspace(Service):
             try:
                 self._client.catalogs.get(catalog_name)
             except databricks.sdk.errors.platform.NotFound:
-                self.logger.warning(f"Catalog {catalog_name} not found for deletion")
+                self.logger.warning(
+                    f"Catalog {catalog_name} not found for deletion")
                 continue
 
             sql_connection = databricks.sql.connect(
                 server_hostname=self._databricks_context.server_hostname,
                 http_path=self._databricks_context.sql_warehouse_path,
                 catalog=catalog_name,
-                credentials_provider=self._databricks_context.credentials_provider,
+                credentials_provider=self._databricks_context.
+                credentials_provider,
             )
 
             with sql_connection.cursor() as cursor:
@@ -171,14 +187,14 @@ class DatabricksWorkspace(Service):
                     self.logger.debug(f"Cleaning up schema {schema_row[0]}")
 
                     tables_rows = cursor.execute(
-                        f"SHOW TABLES IN `{schema_row[0]}`"
-                    ).fetchall()
+                        f"SHOW TABLES IN `{schema_row[0]}`").fetchall()
 
                     for schema_name, table_name, _ in tables_rows:
                         self.logger.debug(
                             f"Cleaning up table {table_name} in schema {schema_name}"
                         )
-                        cursor.execute(f"DROP TABLE `{schema_name}`.`{table_name}`")
+                        cursor.execute(
+                            f"DROP TABLE `{schema_name}`.`{table_name}`")
 
                     cursor.execute(f"DROP SCHEMA `{schema_row[0]}` CASCADE")
 
@@ -192,9 +208,11 @@ class DatabricksWorkspace(Service):
             self.logger.debug(f"Cleaning up location {location_name}")
 
             try:
-                self._client.external_locations.delete(location_name)
+                self._client.external_locations.delete(location_name,
+                                                       force=True)
             except databricks.sdk.errors.platform.NotFound:
-                self.logger.warning(f"Location {location_name} not found for deletion")
+                self.logger.warning(
+                    f"Location {location_name} not found for deletion")
                 continue
 
             self.logger.debug(f"Deleted location {location_name}")

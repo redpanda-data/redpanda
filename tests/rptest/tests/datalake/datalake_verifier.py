@@ -11,6 +11,8 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 import random
 import threading
+import time
+import json
 from time import sleep
 from typing import List, Optional
 from rptest.clients.rpk import RpkPartition, RpkTool
@@ -109,17 +111,31 @@ class DatalakeVerifier:
         # it would imply an anomaly between the Iceberg table and the log).
         self._expected_compacted_keys = set()
 
-    def create_consumer(self):
-        c = Consumer(
-            {
+    def create_consumer(self, config=None):
+        if config is None:
+            config = {
                 "bootstrap.servers": self.redpanda.brokers(),
                 "group.id": self._cg,
                 "auto.offset.reset": "earliest",
             }
-        )
-        c.subscribe([self.topic])
-
-        return c
+        # Inject SASL credentials if needed (same logic as oneshot_cloud)
+        if 'security.protocol' in config and config['security.protocol'] in [
+                'SASL_SSL', 'SASL_PLAINTEXT'
+        ]:
+            if 'sasl.username' not in config:
+                config['sasl.username'] = 'admin'
+            if 'sasl.password' not in config:
+                config['sasl.password'] = 'admin'
+        try:
+            c = Consumer(config)
+            c.subscribe([self.topic])
+            self.logger.info(
+                f"Consumer created and subscribed to topic {self.topic} with config: {config}"
+            )
+            return c
+        except Exception as e:
+            self.logger.error(f"Error creating consumer: {e}")
+            raise
 
     def update_and_get_fetch_positions(self):
         with self._consumer_lock:
@@ -140,8 +156,7 @@ class DatalakeVerifier:
                         )
                     else:
                         self.logger.debug(
-                            f"next position for {p.partition} is {p.offset}"
-                        )
+                            f"next position for {p.partition} is {p.offset}")
                         self._next_positions[p.partition] = p.offset
                 return self._next_positions.copy()
 
@@ -162,7 +177,8 @@ class DatalakeVerifier:
         self.logger.debug(f"remembered {self._consumer_positions=}")
         self._partition_hwms = self.partition_hwms()
         for p in self._partition_hwms:
-            self.logger.debug(f"remembered partition {p.id=} hwm={p.high_watermark}, ")
+            self.logger.debug(
+                f"remembered partition {p.id=} hwm={p.high_watermark}, ")
         with self._consumer_lock:
             self._consumer.close()
             self._consumer = None
@@ -188,9 +204,8 @@ class DatalakeVerifier:
         try:
             self.logger.info("Starting consumer thread")
             while not self._stop.is_set() and not (
-                self._offline_mode_requested.is_set()
-                and self._consumed_till_hwm(update=True)
-            ):
+                    self._offline_mode_requested.is_set()
+                    and self._consumed_till_hwm(update=True)):
                 self._msg_semaphore.acquire()
                 if self._stop.is_set():
                     break
@@ -212,8 +227,7 @@ class DatalakeVerifier:
                         msg.offset(),
                     )
                     self.logger.debug(
-                        f"Max consumed offsets: {self._max_consumed_offsets}"
-                    )
+                        f"Max consumed offsets: {self._max_consumed_offsets}")
                     if len(self._errors) > 0:
                         return
         finally:
@@ -226,6 +240,25 @@ class DatalakeVerifier:
         AND redpanda.offset>{last_queried_offset} \
         AND redpanda.offset<={max_consumed_offset} \
         ORDER BY redpanda.offset"
+
+    def _get_query_data(self):
+        # The table schema in Databricks Unity Catalog:
+        # 1. A struct column `redpanda` containing partition, offset, timestamp, headers, key
+        # 2. A `value` column containing the message payload (hex encoded)
+        # Note: For Databricks, we need the full catalog.namespace.table format
+        if hasattr(self._query, '_catalog_name'):
+            # For Databricks Unity Catalog, use full qualified name
+            table_name = f"`{self._query._catalog_name}`.`redpanda`.{self._query.escape_identifier(self.table)}"
+        else:
+            # For other catalogs, use the default format
+            table_name = f"redpanda.{self._query.escape_identifier(self.table)}"
+
+        return f"""SELECT
+                        redpanda.key,
+                        value,
+                        redpanda.headers
+                    FROM {table_name}
+                    ORDER BY redpanda.offset"""
 
     def _verify_next_message(self, partition, iceberg_offset, iceberg_key):
         if partition not in self._consumed_messages:
@@ -279,24 +312,22 @@ class DatalakeVerifier:
             try:
                 with self._msgs_batched:
                     # Wait for enough data to be batched or a timeout.
-                    self._msgs_batched.wait(timeout=self._query_batch_wait_timeout_s)
+                    self._msgs_batched.wait(
+                        timeout=self._query_batch_wait_timeout_s)
                 partitions = self.update_and_get_fetch_positions()
 
                 for partition, next_consume_offset in partitions.items():
                     last_queried_offset = (
                         self._max_queried_offsets[partition]
-                        if partition in self._max_queried_offsets
-                        else -1
-                    )
+                        if partition in self._max_queried_offsets else -1)
 
                     max_consumed = next_consume_offset - 1
                     # no new messages consumed, skip query
                     if max_consumed <= last_queried_offset:
                         continue
 
-                    query = self._get_query(
-                        partition, last_queried_offset, max_consumed
-                    )
+                    query = self._get_query(partition, last_queried_offset,
+                                            max_consumed)
                     self.logger.debug(f"Executing query: {query}")
 
                     with self._query.run_query(query) as cursor:
@@ -322,10 +353,14 @@ class DatalakeVerifier:
                 sleep(2)
 
     def start(self, wait_first_iceberg_msg=False):
+        self.logger.debug("Submitting consumer thread to executor")
         self._executor.submit(self._consumer_thread)
+        self.logger.debug("Submitting query thread to executor")
         self._executor.submit(self._query_thread)
         if wait_first_iceberg_msg:
+            self.logger.debug("Waiting for first iceberg message")
             self._received_first_iceberg_message.wait()
+            self.logger.debug("Received first iceberg message")
 
     def _all_offsets_translated(self):
         partition_hwms = self.partition_hwms()
@@ -340,36 +375,54 @@ class DatalakeVerifier:
                     return False
                 # Ensure all the consumed messages are drained.
                 return all(
-                    len(messages) == 0 for messages in self._consumed_messages.values()
-                )
+                    len(messages) == 0
+                    for messages in self._consumed_messages.values())
 
         return True
 
     def _made_progress(self):
         progress = False
         with self._lock:
-            self.logger.debug(f"{self._max_queried_offsets=}")
-            self.logger.debug(f"{self._last_checkpoint=}")
+            self.logger.debug(
+                f"DatalakeVerifier._made_progress: Max queried offsets = {self._max_queried_offsets}"
+            )
+            self.logger.debug(
+                f"DatalakeVerifier._made_progress: Last checkpoint = {self._last_checkpoint}"
+            )
+
             for partition, offset in self._max_queried_offsets.items():
                 if offset > self._last_checkpoint.get(partition, -1):
                     progress = True
+                    self.logger.debug(
+                        f"Partition {partition} has made progress: current offset {offset} > last checkpoint {self._last_checkpoint.get(partition, -1)}"
+                    )
                     break
+                else:
+                    self.logger.debug(
+                        f"Partition {partition} has not made progress: current offset {offset} <= last checkpoint {self._last_checkpoint.get(partition, -1)}"
+                    )
 
             self._last_checkpoint = self._max_queried_offsets.copy()
+            self.logger.debug(
+                f"Updated last checkpoint: {self._last_checkpoint}")
         return progress
 
     def wait(self, progress_timeout_sec=30):
         try:
             while not self._all_offsets_translated():
+                self.logger.debug(
+                    f"Waiting for all offsets to be translated. Current state: _all_offsets_translated() is False"
+                )
                 wait_until(
                     lambda: self._made_progress(),
                     progress_timeout_sec,
                     backoff_sec=3,
-                    err_msg=f"Error waiting for the query to make progress for topic {self.topic}",
+                    err_msg=
+                    f"Error waiting for the query to make progress for topic {self.topic}",
                 )
+                self.logger.debug(f"_made_progress() returned True")
                 assert len(self._errors) == 0, (
-                    f"Topic {self.topic} validation errors: {self._errors}"
-                )
+                    f"Topic {self.topic} validation errors: {self._errors}")
             self.logger.debug(f"No errors around waiting")
         except Exception as e:
             self.logger.error(f"Error around waiting: {e}")
@@ -384,15 +437,14 @@ class DatalakeVerifier:
             self._msg_semaphore.release()
             self._executor.shutdown(wait=False)
             assert len(self._errors) == 0, (
-                f"Topic {self.topic} validation errors: {self._errors}"
-            )
+                f"Topic {self.topic} validation errors: {self._errors}")
 
-            self.logger.debug(f"consumed offsets: {self._max_consumed_offsets}")
+            self.logger.debug(
+                f"consumed offsets: {self._max_consumed_offsets}")
             self.logger.debug(f"queried offsets: {self._max_queried_offsets}")
 
             assert self._max_queried_offsets == self._max_consumed_offsets, (
-                "Mismatch between maximum offsets in topic vs iceberg table"
-            )
+                "Mismatch between maximum offsets in topic vs iceberg table")
 
             assert len(self._expected_compacted_keys) == 0, (
                 f"Some keys which were compacted away were not seen later in the consumer's log"
@@ -411,3 +463,227 @@ class DatalakeVerifier:
         verifier = DatalakeVerifier(redpanda, topic, query_engine)
         verifier.start()
         verifier.wait(progress_timeout_sec=progress_timeout_sec)
+
+    def verify_data(self, expected_records):
+        """Verify data against expected records."""
+        self.logger.info("Verifying data against expected records")
+        query = self._get_query_data()
+
+        # First, let's show a sample of what's in the table
+        # Note: For Databricks, we need the full catalog.namespace.table format
+        if hasattr(self._query, '_catalog_name'):
+            # For Databricks Unity Catalog, use full qualified name
+            table_name = f"`{self._query._catalog_name}`.`redpanda`.{self._query.escape_identifier(self.table)}"
+        else:
+            # For other catalogs, use the default format
+            table_name = f"redpanda.{self._query.escape_identifier(self.table)}"
+
+        sample_query = f"""SELECT
+                            redpanda.key,
+                            value,
+                            redpanda.headers
+                        FROM {table_name}
+                        ORDER BY redpanda.offset
+                        LIMIT 5"""
+
+        try:
+            with self._query.run_query(sample_query) as cursor:
+                sample_rows = list(cursor)
+                self.logger.info(
+                    f"Sample of first {len(sample_rows)} rows in table:")
+                for i, row in enumerate(sample_rows):
+                    self.logger.debug(f"Row {i} has {len(row)} columns")
+                    if len(row) < 3:
+                        self.logger.warning(
+                            f"  Row {i}: Malformed row with only {len(row)} columns"
+                        )
+                        continue
+                    # Show raw hex values
+                    self.logger.info(
+                        f"  Row {i} RAW: key={row[0]}, value={row[1][:50]}..., headers={row[2]}"
+                    )
+                    # Show decoded values
+                    key = self.safe_decode(row[0])
+                    value = self.safe_decode(row[1])
+                    headers = row[2]
+                    value_preview = value[:50] + "..." if len(
+                        value) > 50 else value
+                    self.logger.info(
+                        f"  Row {i} DECODED: key='{key}', value='{value_preview}', headers={headers}"
+                    )
+        except Exception as e:
+            self.logger.warning(f"Could not fetch sample data: {e}")
+
+        with self._query.run_query(query) as cursor:
+            rows = list(cursor)
+            self.logger.info(
+                f"Query returned {len(rows)} rows from the Iceberg table.")
+
+            # Log the structure of the first row to debug issues
+            if rows:
+                self.logger.debug(
+                    f"First row structure: {len(rows[0])} columns")
+                self.logger.debug(f"First row content: {rows[0]}")
+
+            try:
+                success, errors = self.verify_rows(rows, expected_records,
+                                                   self.logger)
+                return success, errors
+            except IndexError as e:
+                self.logger.error(f"IndexError in verify_rows: {e}")
+                self.logger.error(
+                    f"This usually means the query returned fewer columns than expected"
+                )
+                if rows:
+                    self.logger.error(
+                        f"First row had {len(rows[0])} columns: {rows[0]}")
+                raise
+            except Exception as e:
+                self.logger.error(f"Unexpected error in verify_rows: {e}")
+                raise
+
+    def safe_decode(self, val):
+        if val is None:
+            return ""
+        if isinstance(val, bytes):
+            return val.decode("utf-8", errors="replace")
+        if isinstance(val, memoryview):
+            return val.tobytes().decode("utf-8", errors="replace")
+        # Check if it's a hex string (from Databricks)
+        if isinstance(val, str) and len(val) > 0 and all(
+                c in '0123456789abcdefABCDEF'
+                for c in val) and len(val) % 2 == 0:
+            try:
+                # Try to decode hex string to bytes then to utf-8
+                decoded = bytes.fromhex(val).decode("utf-8", errors="replace")
+                self.logger.debug(f"Decoded hex '{val}' to '{decoded}'")
+                return decoded
+            except Exception as e:
+                self.logger.debug(f"Failed to decode hex '{val}': {e}")
+                # If hex decode fails, return as is
+                return val
+        return str(val)
+
+    @staticmethod
+    def _json_dumps(val):
+        if isinstance(val, (dict, list)):
+            return json.dumps(val, sort_keys=True, indent=2)
+        return str(val) if val is not None else ""
+
+    def verify_rows(self, rows, expected_records, logger):
+        logger.debug("Starting verify_rows")
+
+        # Build lookup map of expected records for efficient comparison
+        expected_lookup = {}
+        for key, value, headers in expected_records:
+            lookup_key = (key, self._json_dumps(value),
+                          frozenset(headers.items()))
+            expected_lookup[lookup_key] = (key, value, headers)
+            logger.debug(
+                f"Expected record: key='{key}', value='{self._json_dumps(value)}', headers={headers}"
+            )
+
+        found_keys = set()
+        errors = []
+        unmatched_rows = []
+
+        for i, row in enumerate(rows):
+            # Defensive check for row structure
+            if len(row) < 3:
+                logger.error(
+                    f"Skipping malformed row #{i+1}: expected 3 columns, but got {len(row)}. Row: {row}"
+                )
+                errors.append(f"Malformed row found at index {i+1}")
+                continue
+
+            # row format from query: key, value, headers
+            # Log raw values first
+            logger.debug(
+                f"Row {i} raw data: key={row[0]}, value={row[1]}, headers={row[2]}"
+            )
+
+            key_str = self.safe_decode(row[0])
+            value_str = self.safe_decode(row[1])
+            headers = row[2]
+
+            header_dict = {}
+            if headers is not None:
+                # Handle numpy array or regular list
+                try:
+                    # Convert to list if it's a numpy array
+                    header_list = list(headers) if hasattr(
+                        headers, '__iter__') else []
+                    for h in header_list:
+                        if isinstance(h, dict):
+                            header_key = self.safe_decode(h.get("key"))
+                            header_value = self.safe_decode(h.get("value"))
+                            header_dict[header_key] = header_value
+                except Exception as e:
+                    logger.debug(f"Error processing headers: {e}")
+
+            logger.debug(
+                f"Row {i} decoded: key='{key_str}', value='{value_str}', headers={header_dict}"
+            )
+
+            try:
+                parsed_json = json.loads(value_str)
+            except json.JSONDecodeError:
+                parsed_json = None
+
+            actual_val = self._json_dumps(
+                parsed_json if parsed_json is not None else value_str)
+            key_tuple = (key_str, actual_val, frozenset(header_dict.items()))
+
+            logger.debug(f"Row {i} checking:\n"
+                         f"  Key     : '{key_str}'\n"
+                         f"  Value   : '{actual_val}'\n"
+                         f"  Headers : {header_dict}")
+
+            if key_tuple in expected_lookup:
+                logger.info(f"✓ Match found for row {i} with key='{key_str}'")
+                found_keys.add(key_tuple)
+            else:
+                logger.warning(
+                    f"✗ No match for row {i}: key='{key_str}', value='{value_str}'"
+                )
+                unmatched_rows.append(
+                    f"  - Row {i}: Key='{key_str}', Value='{value_str}', Headers={header_dict}"
+                )
+
+        # Identify and log missing records
+        missing = set(expected_lookup.keys()) - found_keys
+        for key in missing:
+            key_str, val_str, headers = key
+            original = expected_lookup[key]
+            msg = (
+                f"Missing record:\n"
+                f"  Expected Key     : {original[0]}\n"
+                f"  Expected Value   : {json.dumps(original[1], indent=2) if isinstance(original[1], dict) else original[1]}\n"
+                f"  Expected Headers : {original[2]}")
+            logger.error(msg)
+            errors.append(msg)
+
+        if unmatched_rows:
+            logger.error(
+                f"Found {len(unmatched_rows)} unexpected or mismatched rows in the table:"
+            )
+            for row_info in unmatched_rows:
+                logger.error(row_info)
+            errors.append(
+                f"{len(unmatched_rows)} unexpected rows found in table but not in expected records."
+            )
+
+        if errors:
+            # Provide summary
+            logger.error(f"\n=== VERIFICATION SUMMARY ===")
+            logger.error(f"Total expected records: {len(expected_records)}")
+            logger.error(f"Total found records: {len(rows)}")
+            logger.error(f"Matched records: {len(found_keys)}")
+            logger.error(f"Missing records: {len(missing)}")
+            logger.error(f"Unexpected records: {len(unmatched_rows)}")
+            logger.error(f"=========================\n")
+            return False, errors
+
+        logger.info(
+            "Verification successful. All expected records found and matched.")
+        return True, []
