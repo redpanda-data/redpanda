@@ -8,19 +8,17 @@
 # by the Apache License, Version 2.0
 
 import json
-
 import os
 import typing
 
+import requests
+from ducktape.cluster.cluster import ClusterNode
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
-
-import requests
-from rptest.services.redpanda import RedpandaService
 from ducktape.utils.util import wait_until
 from prometheus_client.parser import text_string_to_metric_families
 
-from ducktape.cluster.cluster import ClusterNode
+from rptest.services.redpanda import RedpandaService
 
 
 class RedpandaConnectService(Service):

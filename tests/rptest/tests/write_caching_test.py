@@ -7,14 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from enum import Enum
+from random import randint
+
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.rpk_producer import RpkProducer
-from enum import Enum
-from random import randint
 from rptest.services.metrics_check import MetricCheck
+from rptest.services.rpk_producer import RpkProducer
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, wait_until_result
 
 

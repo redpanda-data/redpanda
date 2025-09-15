@@ -7,29 +7,26 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from avro.schema import parse
-
 import json
 import random
-import jinja2
 
+import jinja2
+from avro.schema import parse
+from rptest.tests.datalake.schemas.data_type_generator import DataTypeGenerator
 from rptest.tests.datalake.schemas.data_types import (
-    ProducerType,
-    GenericDataType,
-    GenericPrimitive,
-    GenericBool,
-    GenericInt,
-    GenericLong,
-    GenericFloat,
-    GenericDouble,
-    GenericString,
-    GenericEnum,
     ALL_COMPLEX_DATA_TYPES,
     ALL_PRIMITIVE_DATA_TYPES,
     ALL_PRIMITIVE_DATA_TYPES_AND_ENUM,
+    GenericDataType,
+    GenericDouble,
+    GenericEnum,
+    GenericFloat,
+    GenericInt,
+    GenericLong,
+    GenericPrimitive,
+    GenericString,
+    ProducerType,
 )
-
-from rptest.tests.datalake.schemas.data_type_generator import DataTypeGenerator
 
 
 class SchemaGenerator:

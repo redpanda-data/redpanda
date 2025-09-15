@@ -62,6 +62,7 @@ consumer_groups_mirroring_config::copy() const {
 link_configuration link_configuration::copy() const {
     link_configuration copy;
     copy.topic_metadata_mirroring_cfg = topic_metadata_mirroring_cfg.copy();
+    copy.consumer_groups_mirroring_cfg = consumer_groups_mirroring_cfg.copy();
     return copy;
 }
 
@@ -274,6 +275,18 @@ auto fmt::formatter<cluster_link::model::topic_metadata_mirroring_config>::
       m.topic_properties_to_mirror);
 }
 
+auto fmt::formatter<cluster_link::model::consumer_groups_mirroring_config>::
+  format(
+    const cluster_link::model::consumer_groups_mirroring_config& m,
+    format_context& ctx) const -> decltype(ctx.out()) {
+    return fmt::format_to(
+      ctx.out(),
+      "{{is_enabled: {}, task_interval: {}, filters: {}}}",
+      m.is_enabled,
+      m.task_interval,
+      m.filters);
+}
+
 auto fmt::formatter<cluster_link::model::link_state>::format(
   const cluster_link::model::link_state& s, format_context& ctx) const
   -> decltype(ctx.out()) {
@@ -385,6 +398,7 @@ auto fmt::formatter<cluster_link::model::link_configuration>::format(
   -> decltype(ctx.out()) {
     return fmt::format_to(
       ctx.out(),
-      "{{topic_metadata_mirroring_cfg: {}}}",
-      cfg.topic_metadata_mirroring_cfg);
+      "{{topic_metadata_mirroring_cfg: {}, consumer_groups_mirroring_cfg: {}}}",
+      cfg.topic_metadata_mirroring_cfg,
+      cfg.consumer_groups_mirroring_cfg);
 }

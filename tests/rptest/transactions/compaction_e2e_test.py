@@ -8,23 +8,22 @@
 # by the Apache License, Version 2.0
 
 import re
-
-from ducktape.mark import matrix
-from ducktape.utils.util import wait_until
-from rptest.clients.rpk import RpkTool
-from rptest.clients.types import TopicSpec
+from time import sleep
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.default import DefaultClient
-from rptest.services.cluster import cluster
-from rptest.utils.mode_checks import skip_debug_mode
-from time import sleep
-from rptest.services.redpanda import RedpandaService
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
 
-from rptest.transactions.verifiers.compacted_verifier import CompactedVerifier, Workload
-from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.clients.default import DefaultClient
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.metrics_check import MetricCheck
+from rptest.services.redpanda import RedpandaService
+from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.transactions.verifiers.compacted_verifier import CompactedVerifier, Workload
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class CompactionE2EIdempotencyTest(RedpandaTest):

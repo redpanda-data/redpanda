@@ -1,12 +1,10 @@
 import json
 import os
-import requests
 import tempfile
-from typing import Optional
 
+import requests
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
-
 from keycloak import KeycloakAdmin
 
 KC_INSTALL_DIR = os.path.join("/", "opt", "keycloak")

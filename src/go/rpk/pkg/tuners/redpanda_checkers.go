@@ -220,9 +220,12 @@ func RedpandaCheckers(
 	if len(y.Redpanda.KafkaAPI) == 0 {
 		return nil, errors.New("'redpanda.kafka_api' is empty")
 	}
+	addrs := []string{y.Redpanda.RPCServer.Address}
+	for _, address := range y.Redpanda.KafkaAPI {
+		addrs = append(addrs, address.Address)
+	}
 	interfaces, err := net.GetInterfacesByIps(
-		y.Redpanda.KafkaAPI[0].Address,
-		y.Redpanda.RPCServer.Address,
+		addrs...,
 	)
 	if err != nil {
 		return nil, err

@@ -7,32 +7,30 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import confluent_kafka as ck
-from functools import partial, reduce
-from enum import Enum
-import time
-import threading
 import json
-import random
 import re
-import requests
 import socket
+import threading
 import time
-import random
+from enum import Enum
+from functools import partial, reduce
 from typing import Any, Optional, Sequence, Union
+from urllib.parse import urlparse
 
+import confluent_kafka as ck
+import requests
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.errors import TimeoutError
-from ducktape.mark import matrix, ignore
+from ducktape.mark import matrix
 from keycloak import KeycloakOpenID
+
 from rptest.clients.default import DefaultClient
 from rptest.clients.kcl import KCL
 from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.clients.rpk import RpkTool, RpkException
-from rptest.services import tls
+from rptest.clients.rpk import RpkException, RpkTool
+from rptest.services import redpanda, tls
 from rptest.services.admin import Admin, RoleMember
 from rptest.services.cluster import cluster
-from rptest.services import redpanda
 from rptest.services.keycloak import DEFAULT_REALM, KeycloakService
 from rptest.services.ocsf_server import OcsfServer
 from rptest.services.redpanda import (
@@ -40,8 +38,7 @@ from rptest.services.redpanda import (
     LoggingConfig,
     MetricSamples,
     MetricsEndpoint,
-    PandaproxyConfig,
-    RedpandaServiceBase,
+    RedpandaService,
     SchemaRegistryConfig,
     SecurityConfig,
     TLSProvider,
@@ -51,39 +48,47 @@ from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.schema_registry_test import (
-    SchemaRegistryRedpandaClient,
     ACLTestEndpoint,
-    schema1_def,
-    schema2_def,
-    GetConfigEndpoint,
-    PutConfigEndpoint,
-    GetConfigSubjectEndpoint,
-    PutConfigSubjectEndpoint,
+    CompatibilitySubjectVersion,
     DeleteConfigSubject,
-    GetMode,
-    PutMode,
-    GetModeSubject,
-    PutModeSubject,
     DeleteModeSubject,
-    PostSubjectVersions,
-    GetSchemasIdsIdVersions,
-    GetSchemasIdsIdSubjects,
-    GetSubjectVersions,
-    PostSubject,
-    GetSubjectVersionsVersion,
-    GetSubjectVersionsVersionSchema,
-    GetSubjectVersionsVersionReferencedBy,
     DeleteSubject,
     DeleteSubjectVersion,
-    CompatibilitySubjectVersion,
+    GetConfigEndpoint,
+    GetConfigSubjectEndpoint,
+    GetMode,
+    GetModeSubject,
+    GetSchemasIdsIdSubjects,
+    GetSchemasIdsIdVersions,
     GetSchemasTypes,
     GetStatusReady,
+    GetSubjectVersions,
+    GetSubjectVersionsVersion,
+    GetSubjectVersionsVersionReferencedBy,
+    GetSubjectVersionsVersionSchema,
+    PostSubject,
+    PostSubjectVersions,
+    PutConfigEndpoint,
+    PutConfigSubjectEndpoint,
+    PutMode,
+    PutModeSubject,
+    SchemaRegistryRedpandaClient,
+    schema1_def,
+    schema2_def,
 )
 from rptest.util import expect_exception, wait_until, wait_until_result
 from rptest.utils.mode_checks import skip_fips_mode
 from rptest.utils.rpk_config import read_redpanda_cfg
 from rptest.utils.schema_registry_utils import Mode, get_subjects, put_mode
-from urllib.parse import urlparse
+
+
+class AuditLogMode(str, Enum):
+    KCLIENT = "kclient"
+    RPC = "rpc"
+
+
+def get_audit_modes() -> list[AuditLogMode]:
+    return [AuditLogMode.KCLIENT, AuditLogMode.RPC]
 
 
 class AuthorizationMatch(str, Enum):
@@ -303,6 +308,7 @@ class AuditLogConfig:
         self.num_partitions = num_partitions
         self.event_types = event_types
         self.failure_policy = failure_policy
+        self.use_rpc = False
 
     def to_conf(self) -> {str, str}:
         """Converts conf to dict
@@ -317,6 +323,7 @@ class AuditLogConfig:
             "audit_log_num_partitions": self.num_partitions,
             "audit_enabled_event_types": self.event_types,
             "audit_failure_policy": self.failure_policy.value,
+            "audit_use_rpc": self.use_rpc,
         }
 
 
@@ -381,6 +388,7 @@ class AuditLogTestBase(RedpandaTest):
     kafka_rpc_service_name = "kafka rpc protocol"
     admin_audit_svc_name = "Redpanda Admin HTTP Server"
     sr_audit_svc_name = "Redpanda Schema Registry Service"
+    ARG_AUDIT_TRANSPORT_MODE = "audit_transport_mode"
 
     def __init__(
         self,
@@ -399,6 +407,14 @@ class AuditLogTestBase(RedpandaTest):
             "No auth enabled, test harness misconfigured"
         )
         self.audit_log_config = audit_log_config
+
+        if test_context.injected_args:
+            self.audit_log_config.use_rpc = (
+                test_context.injected_args.get(
+                    self.ARG_AUDIT_TRANSPORT_MODE, AuditLogMode.KCLIENT
+                )
+                == AuditLogMode.RPC
+            )
 
         self.extra_rp_conf = self.audit_log_config.to_conf()
         if extra_rp_conf is not None:
@@ -783,7 +799,8 @@ class AuditLogTestsAppLifecycle(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_app_lifecycle(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_app_lifecycle(self, audit_transport_mode):
         _ = self.find_matching_record(
             partial(AuditLogTestsAppLifecycle.is_lifecycle_match, "Audit System", True),
             lambda record_count: record_count == 3,
@@ -796,10 +813,10 @@ class AuditLogTestsAppLifecycle(AuditLogTestBase):
             "Single redpanda start event per node",
         )
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/16198
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_drain_on_audit_disabled(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_drain_on_audit_disabled(self, audit_transport_mode):
         """
         Test the drain on disabling of audit is working properly by setting audit_enabled
         to False and asserting that the stop application_lifecycle event is observed"""
@@ -830,7 +847,8 @@ class AuditLogTestsAppLifecycle(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_recovery_mode(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_recovery_mode(self, audit_transport_mode):
         """
         Tests that audit logging does not start when in recovery mode
         """
@@ -915,7 +933,8 @@ class AuditLogTestAdminApi(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_audit_log_functioning(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_audit_log_functioning(self, audit_transport_mode):
         """
         Ensures that the audit log can be produced to when the audit_enabled()
         configuration option is set, and that the same actions do nothing
@@ -980,7 +999,8 @@ class AuditLogTestAdminApi(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=4)
-    def test_audit_log_metrics(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_audit_log_metrics(self, audit_transport_mode):
         """
         Confirm that audit log metrics are present
         """
@@ -1070,7 +1090,8 @@ class AuditLogTestAdminAuthApi(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_excluded_principal(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_excluded_principal(self, audit_transport_mode):
         self.setup_cluster()
         self.modify_audit_excluded_principals([self.ignored_user])
 
@@ -1215,7 +1236,8 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_management(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_management(self, audit_transport_mode):
         """Validates management messages"""
 
         topic_name = "test_mgmt_audit"
@@ -1288,7 +1310,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                     {"name": f"{topic_name}", "type": "topic"},
                     self.kafka_rpc_service_name,
                 ),
-                1,
+                2,  # expect two, describe and delete
             ),
             AbsoluteTestItem(
                 f"Create ACL",
@@ -1428,7 +1450,8 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_produce(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_produce(self, audit_transport_mode):
         """Validates produce audit messages"""
 
         topic_name = "test_produce_audit"
@@ -1486,7 +1509,8 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=4, log_allow_list=AUDIT_LOG_ALLOW_LIST)
-    def test_no_auth_enabled(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_no_auth_enabled(self, audit_transport_mode):
         """The expected behavior of the system when working with no auth
         enabled is to omit warning logs and prevent any messages from being
         enqueued, thus blocking all requests for which auditing is enabled for
@@ -1530,8 +1554,7 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
         )
 
         # Observe that auditing is issuing warnings about misconfiguration
-        exc = None
-        try:
+        def wait_for_misconfig_log():
             audit_misconfig_warn = (
                 ".*Audit message rejected due to misconfigured authorization"
             )
@@ -1539,7 +1562,18 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
                 lambda: self.redpanda.search_log_any(audit_misconfig_warn),
                 timeout_sec=30,
                 backoff_sec=2,
+                err_msg="Didn't find misconfigured authZ message",
             )
+
+        exc = None
+        try:
+            if audit_transport_mode is AuditLogMode.KCLIENT:
+                wait_for_misconfig_log()
+            else:
+                with expect_exception(
+                    TimeoutError, lambda e: "Didn't find misconfigured authZ" in str(e)
+                ):
+                    wait_for_misconfig_log()
         except Exception as e:
             exc = e
         finally:
@@ -1562,7 +1596,8 @@ class AuditLogTestKafkaApi(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_consume(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_consume(self, audit_transport_mode):
         """
         Validates audit messages on consume
         """
@@ -1697,7 +1732,8 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_excluded_principal(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_excluded_principal(self, audit_transport_mode):
         """
         Verifies that principals excluded will not generate audit messages
         """
@@ -1764,7 +1800,8 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_authn_messages(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_authn_messages(self, audit_transport_mode):
         """Verifies that authentication messages are audited"""
         self.setup_cluster()
 
@@ -1821,7 +1858,8 @@ class AuditLogTestKafkaAuthnApi(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_authn_failure_messages(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_authn_failure_messages(self, audit_transport_mode):
         """Validates that failed authentication messages are audited"""
         self.setup_cluster()
 
@@ -1931,14 +1969,24 @@ class AuditLogTestInvalidConfigBase(AuditLogTestBase):
         self.modify_audit_excluded_principals(["admin"])
         self.modify_audit_event_types(["authenticate"])
         self.modify_audit_enabled(True)
+
         # Waits for all audit clients to enter the same state where any attempt
         # to enqueue an event will be rejected because the client is misconfigured
-        wait_until(
-            lambda: self.redpanda.search_log_all("error_code: illegal_sasl_state"),
-            timeout_sec=30,
-            backoff_sec=2,
-            err_msg="Did not see illegal_sasl_state error message",
-        )
+        def wait_for_sasl_err_log():
+            wait_until(
+                lambda: self.redpanda.search_log_all("error_code: illegal_sasl_state"),
+                timeout_sec=30,
+                backoff_sec=2,
+                err_msg="Did not see illegal_sasl_state error message",
+            )
+
+        if self.audit_log_config.use_rpc:
+            with expect_exception(
+                TimeoutError, lambda e: "Did not see illegal_sasl_state" in str(e)
+            ):
+                wait_for_sasl_err_log()
+        else:
+            wait_for_sasl_err_log()
 
 
 class AuditLogTestInvalidConfig(AuditLogTestInvalidConfigBase):
@@ -1958,14 +2006,17 @@ class AuditLogTestInvalidConfig(AuditLogTestInvalidConfigBase):
             r"Failed to audit.*",
         ],
     )
-    def test_invalid_config(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_invalid_config(self, audit_transport_mode):
         """
         Test validates that the topic is failed to get created if audit
         system is not configured correctly.
         """
         try:
             self.get_rpk().create_topic("test")
-            assert False, "Should not have created a topic"
+            assert audit_transport_mode is AuditLogMode.RPC, (
+                f"Should not have created a topic in {audit_transport_mode=}"
+            )
         except RpkException as e:
             assert "Broker not available - audit system failure" in str(e), (
                 f'{str(e)} does not contain "Broker not available - audit system failure"'
@@ -1985,7 +2036,7 @@ class AuditLogTestInvalidConfigMTLS(AuditLogTestInvalidConfigBase):
         )
         self.admin_user_cert = self.tls.create_cert(
             socket.gethostname(),
-            common_name=RedpandaServiceBase.SUPERUSER_CREDENTIALS[0],
+            common_name=RedpandaService.SUPERUSER_CREDENTIALS[0],
             name="admin_client",
         )
         self._security_config = AuditLogTestSecurityConfig(
@@ -2007,20 +2058,29 @@ class AuditLogTestInvalidConfigMTLS(AuditLogTestInvalidConfigBase):
             r"Failed to enqueue mTLS authentication event - audit log system error",
         ],
     )
-    def test_invalid_config_mtls(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_invalid_config_mtls(self, audit_transport_mode):
         """
         Validates that mTLS authn is rejected when audit client is misconfigured.
         Also ensures there is no segfault: https://redpandadata.atlassian.net/browse/CORE-7245
         """
         try:
             self.get_rpk().create_topic("test")
-            assert False, "Should not have created a topic"
+            assert audit_transport_mode is AuditLogMode.RPC, (
+                f"Should not have created a topic in {audit_transport_mode=}"
+            )
         except RpkException as e:
             pass
 
-        assert self.redpanda.search_log_any(
-            "Failed to enqueue mTLS authentication event - audit log system error"
-        )
+        # Error log should only appear in kclient mode
+        if audit_transport_mode is AuditLogMode.KCLIENT:
+            assert self.redpanda.search_log_any(
+                "Failed to enqueue mTLS authentication event - audit log system error"
+            ), f"{audit_transport_mode=}: Expected failed mTLS authn event"
+        else:
+            assert not self.redpanda.search_log_any(
+                "Failed to enqueue mTLS authentication event - audit log system error"
+            ), f"{audit_transport_mode=}: Unexpected audit system error"
 
 
 class AuditLogTestKafkaTlsApi(AuditLogTestBase):
@@ -2041,7 +2101,7 @@ class AuditLogTestKafkaTlsApi(AuditLogTestBase):
         )
         self.admin_user_cert = self.tls.create_cert(
             socket.gethostname(),
-            common_name=RedpandaServiceBase.SUPERUSER_CREDENTIALS[0],
+            common_name=RedpandaService.SUPERUSER_CREDENTIALS[0],
             name="admin_client",
         )
 
@@ -2099,7 +2159,8 @@ class AuditLogTestKafkaTlsApi(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_mtls(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_mtls(self, audit_transport_mode):
         """
         Verify that mTLS authn users generate correct audit log entries
         """
@@ -2135,7 +2196,7 @@ class AuditLogTestOauth(AuditLogTestBase):
 
     def __init__(self, test_context):
         security = AuditLogTestSecurityConfig(
-            user_creds=RedpandaServiceBase.SUPERUSER_CREDENTIALS
+            user_creds=RedpandaService.SUPERUSER_CREDENTIALS
         )
         security.enable_sasl = True
         security.sasl_mechanisms = ["SCRAM"]
@@ -2228,8 +2289,11 @@ class AuditLogTestOauth(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=6)
-    @matrix(authz_match=[AuthorizationMatch.ACL, AuthorizationMatch.RBAC])
-    def test_kafka_oauth(self, authz_match):
+    @matrix(
+        authz_match=[AuthorizationMatch.ACL, AuthorizationMatch.RBAC],
+        audit_transport_mode=get_audit_modes(),
+    )
+    def test_kafka_oauth(self, authz_match, audit_transport_mode):
         """
         Validate that authentication events using OAUTH in Kafka
         generate valid audit messages
@@ -2301,7 +2365,7 @@ class AuditLogTestOauth(AuditLogTestBase):
         [ip_set.add(r["dst_endpoint"]["ip"]) for r in records]
 
         assert len(records) == len(ip_set), (
-            f"Expected one record but received {len(records)}"
+            f"Expected {len(ip_set)} record but received {len(records)}"
         )
 
         records = self.read_all_from_audit_log(
@@ -2315,11 +2379,15 @@ class AuditLogTestOauth(AuditLogTestBase):
             lambda records: self.aggregate_count(records) >= 1,
         )
 
-        assert 1 == len(records), f"Expected one record but received {len(records)}"
+        # The kafka client may have sent the metadata request to >1 node, so we may see >1 metadata record
+        assert len(records) >= 1, (
+            f"Expected at least one record but received {len(records)}"
+        )
 
     @skip_fips_mode
     @cluster(num_nodes=6)
-    def test_admin_oauth(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_admin_oauth(self, audit_transport_mode):
         """
         Validate that authentication events using OAUTH in the Admin API
         generate valid audit messages
@@ -2454,7 +2522,8 @@ class AuditLogTestSchemaRegistry(AuditLogTestSchemaRegistryBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_sr_audit(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_sr_audit(self, audit_transport_mode):
         self.setup_cluster()
 
         r = get_subjects(
@@ -2480,7 +2549,8 @@ class AuditLogTestSchemaRegistry(AuditLogTestSchemaRegistryBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_sr_audit_bad_authn(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_sr_audit_bad_authn(self, audit_transport_mode):
         # Not calling self.setup_cluster() here so the user does not exist
         r = get_subjects(
             self.redpanda.nodes, self.logger, auth=(self.username, self.password)
@@ -2509,7 +2579,8 @@ class AuditLogTestSchemaRegistry(AuditLogTestSchemaRegistryBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_sr_audit_bad_authz(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_sr_audit_bad_authz(self, audit_transport_mode):
         self.setup_cluster()
 
         r = put_mode(
@@ -2751,8 +2822,11 @@ class AuditLogTestSchemaRegistryACLs(AuditLogTestSchemaRegistryBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    @matrix(endpoint_name=[e.name for e in ENDPOINTS])
-    def test_sr_audit_authz(self, endpoint_name):
+    @matrix(
+        endpoint_name=[e.name for e in ENDPOINTS],
+        audit_transport_mode=get_audit_modes(),
+    )
+    def test_sr_audit_authz(self, endpoint_name, audit_transport_mode):
         self.setup_cluster()
 
         endpoint = self._get_endpoint_by_name(endpoint_name)
@@ -2797,7 +2871,8 @@ class AuditLogTestSchemaRegistryACLs(AuditLogTestSchemaRegistryBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_sr_audit_authz_get_schemas_ids_id(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_sr_audit_authz_get_schemas_ids_id(self, audit_transport_mode):
         self.setup_cluster()
 
         endpoint = self.sr_client.get_schemas_ids_id
@@ -2850,7 +2925,8 @@ class AuditLogTestSchemaRegistryACLs(AuditLogTestSchemaRegistryBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_sr_audit_authz_get_subjects(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_sr_audit_authz_get_subjects(self, audit_transport_mode):
         self.setup_cluster()
 
         endpoint = self.sr_client.get_subjects
@@ -2904,8 +2980,11 @@ class AuditLogTestSchemaRegistryACLs(AuditLogTestSchemaRegistryBase):
         )
 
     @cluster(num_nodes=5)
-    @matrix(endpoint_name=[e.name for e in PUBLIC_ENDPOINTS])
-    def test_sr_audit_public(self, endpoint_name):
+    @matrix(
+        endpoint_name=[e.name for e in PUBLIC_ENDPOINTS],
+        audit_transport_mode=get_audit_modes(),
+    )
+    def test_sr_audit_public(self, endpoint_name, audit_transport_mode):
         """
         Test schema registry public endpoints
         """
@@ -2946,7 +3025,8 @@ class AuditLogTestSanctionMode(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_sanctioning_mode(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_sanctioning_mode(self, audit_transport_mode):
         self.redpanda.logger.debug(
             "Verify that auditing continues to work in sanctioning mode"
         )
@@ -3016,7 +3096,8 @@ class AuditLogTestReproducer(AuditLogTestBase):
 
     @skip_fips_mode
     @cluster(num_nodes=5)
-    def test_sanctioning_mode(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_sanctioning_mode(self, audit_transport_mode):
         self.redpanda.logger.debug("Triggering an audit log event")
         created_topic = "created_topic"
         self.super_rpk.create_topic(topic=created_topic)
@@ -3040,9 +3121,18 @@ class AuditLogTestReproducer(AuditLogTestBase):
 
 class AuditLogTestEscapeHatch(RedpandaTest):
     def __init__(self, test_context, **kwargs):
+        use_rpc = (
+            test_context.injected_args.get(
+                AuditLogTestBase.ARG_AUDIT_TRANSPORT_MODE, AuditLogMode.KCLIENT
+            )
+            == AuditLogMode.RPC
+        )
         super(AuditLogTestEscapeHatch, self).__init__(
             test_context,
-            extra_rp_conf={"audit_enabled": False},
+            extra_rp_conf={
+                "audit_enabled": False,
+                "audit_use_rpc": use_rpc,
+            },
             log_config=LoggingConfig(
                 "info",
                 logger_levels={
@@ -3061,7 +3151,8 @@ class AuditLogTestEscapeHatch(RedpandaTest):
             r".*Request to authorize user to modify or view cluster configuration was not audited due to audit queues being full",
         ],
     )
-    def test_escape_hatch(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_escape_hatch(self, audit_transport_mode):
         rpk = RpkTool(self.redpanda)
         admin = Admin(self.redpanda, default_node=self.redpanda.nodes[0])
 
@@ -3076,10 +3167,14 @@ class AuditLogTestEscapeHatch(RedpandaTest):
         audit_enabled = admin.get_cluster_config(key="audit_enabled")
         assert audit_enabled, "Expected audit_enabled to be True"
 
-        with expect_exception(
-            RpkException,
-            lambda e: "Broker not available - audit system failure" in str(e),
-        ):
+        if audit_transport_mode is AuditLogMode.KCLIENT:
+            with expect_exception(
+                RpkException,
+                lambda e: "Broker not available - audit system failure" in str(e),
+            ):
+                rpk.add_partitions(test_topic, 1)
+        elif audit_transport_mode is AuditLogMode.RPC:
+            # Authentication is rot required in RPC mode
             rpk.add_partitions(test_topic, 1)
 
         # Verify that we can disable the audit logging
@@ -3143,7 +3238,8 @@ class AuditLogTestBypassBase(AuditLogTestBase):
             "Failed to produce application lifecycle event: Semaphore timed out: audit_log_producer_semaphore"
         ],
     )
-    def test_bypass(self):
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_bypass(self, audit_transport_mode):
         """
         Validates that the Redpanda cluster is able to operate even with a misconfigured
         audit log client

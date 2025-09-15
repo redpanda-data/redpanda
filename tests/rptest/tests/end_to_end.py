@@ -20,19 +20,16 @@
 
 from collections import defaultdict, namedtuple
 from typing import Optional
-import os
-from typing import Optional
+
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
-from rptest.services.redpanda import RedpandaService, make_redpanda_service
-from rptest.services.redpanda_installer import InstallOptions
-from rptest.services.redpanda_installer import RedpandaInstaller
+
 from rptest.clients.default import DefaultClient
+from rptest.clients.rpk import RpkTool
+from rptest.services.redpanda import RedpandaService, make_redpanda_service
+from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
-from rptest.archival.s3_client import S3Client
-from rptest.clients.rpk import RpkTool
-from rptest.clients.rpk import RpkException
 from rptest.utils.mode_checks import is_debug_mode
 
 TopicPartition = namedtuple("TopicPartition", ["topic", "partition"])

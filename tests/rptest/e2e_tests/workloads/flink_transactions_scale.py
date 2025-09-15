@@ -10,23 +10,20 @@ import json
 import logging
 import os
 import sys
-
 from dataclasses import dataclass
 
-from pyflink.common import WatermarkStrategy, Types, SimpleStringSchema
-from pyflink.datastream.checkpointing_mode import CheckpointingMode
+from pyflink.common import Configuration, SimpleStringSchema, Types, WatermarkStrategy
+from pyflink.datastream import RuntimeExecutionMode, StreamExecutionEnvironment
 from pyflink.datastream.checkpoint_config import ExternalizedCheckpointCleanup
-
-from pyflink.common import Configuration
-from pyflink.datastream import StreamExecutionEnvironment, RuntimeExecutionMode
-from pyflink.datastream.connectors.kafka import (
-    KafkaSink,
-    DeliveryGuarantee,
-    KafkaRecordSerializationSchema,
-    KafkaSource,
-    KafkaOffsetsInitializer,
-)
+from pyflink.datastream.checkpointing_mode import CheckpointingMode
 from pyflink.datastream.connectors import NumberSequenceSource
+from pyflink.datastream.connectors.kafka import (
+    DeliveryGuarantee,
+    KafkaOffsetsInitializer,
+    KafkaRecordSerializationSchema,
+    KafkaSink,
+    KafkaSource,
+)
 
 MODE_PRODUCE = "produce"
 MODE_CONSUME = "consume"

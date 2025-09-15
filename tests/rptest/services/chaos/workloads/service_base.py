@@ -7,18 +7,17 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import requests
-import sys
-import os
-from enum import Enum
-from abc import ABC, abstractmethod
 import dataclasses
+import os
+import sys
+from abc import ABC, abstractmethod
+from enum import Enum
 
+import requests
+from ducktape.errors import TimeoutError
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
-from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.local_filesystem_utils import mkdir_p
-from ducktape.errors import TimeoutError
 
 from rptest.util import wait_until
 

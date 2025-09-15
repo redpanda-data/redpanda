@@ -7,10 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from enum import Enum
 import random
-import requests
 import time
+from enum import Enum
+
+import requests
 
 HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
 

@@ -171,12 +171,11 @@ ss::future<> footer::serde_async_read(iobuf_parser& p, serde::header h) {
     using serde::read_nested;
     auto size = read_nested<size_t>(p, h._bytes_left_limit);
     for (size_t i = 0; i < size; ++i) {
-        auto ntp = co_await read_async_nested<model::ntp>(
+        auto tidp = co_await read_async_nested<model::topic_id_partition>(
           p, h._bytes_left_limit);
         auto partition = co_await read_async_nested<footer::partition>(
           p, h._bytes_left_limit);
-        partitions.emplace_hint(
-          partitions.end(), std::move(ntp), std::move(partition));
+        partitions.emplace_hint(partitions.end(), tidp, std::move(partition));
     }
 }
 
@@ -184,15 +183,15 @@ ss::future<> footer::serde_async_write(iobuf& buf) const {
     using serde::write;
     using serde::write_async;
     write(buf, partitions.size());
-    for (const auto& [ntp, p] : partitions) {
-        co_await write_async(buf, ntp);
+    for (const auto& [tidp, p] : partitions) {
+        co_await write_async(buf, tidp);
         co_await write_async(buf, p.copy());
     }
 }
 
-size_t footer::file_position_before_kafka_offset(
-  const model::ntp& ntp, kafka::offset target) {
-    auto [it, end] = partitions.equal_range(ntp);
+footer::seek_result footer::file_position_before_kafka_offset(
+  const model::topic_id_partition& tidp, kafka::offset target) {
+    auto [it, end] = partitions.equal_range(tidp);
     auto min_partition_after_target = end;
     for (; it != end; ++it) {
         const auto& partition = it->second;
@@ -214,19 +213,30 @@ size_t footer::file_position_before_kafka_offset(
               return entry.kafka_offset;
           });
         if (index_it == rev.end()) {
-            return partition.file_position;
+            return {
+              .file_position = partition.file_position,
+              .length = partition.length,
+            };
         }
-        return index_it->file_position;
+        auto delta = index_it->file_position - partition.file_position;
+        return {
+          .file_position = index_it->file_position,
+          .length = partition.length - delta,
+        };
     }
     if (min_partition_after_target != end) {
-        return min_partition_after_target->second.file_position;
+        const auto& partition = min_partition_after_target->second;
+        return {
+          .file_position = partition.file_position,
+          .length = partition.length,
+        };
     }
     return npos;
 }
 
-size_t footer::file_position_before_max_timestamp(
-  const model::ntp& ntp, model::timestamp target) {
-    auto [begin, end] = partitions.equal_range(ntp);
+footer::seek_result footer::file_position_before_max_timestamp(
+  const model::topic_id_partition& tidp, model::timestamp target) {
+    auto [begin, end] = partitions.equal_range(tidp);
     auto filtered = std::views::filter(
       std::ranges::subrange{begin, end}, [&target](const auto& entry) {
           return target <= entry.second.max_timestamp;
@@ -238,7 +248,8 @@ size_t footer::file_position_before_max_timestamp(
     if (min_it == filtered.end()) {
         return npos;
     }
-    const auto& index = min_it->second.indexes;
+    const auto& partition = min_it->second;
+    const auto& index = partition.indexes;
     auto it = std::ranges::lower_bound(
       index, target, std::less<>{}, [](const auto& entry) {
           return entry.max_timestamp;
@@ -247,20 +258,27 @@ size_t footer::file_position_before_max_timestamp(
     // bounds, the best we can do is start at the last well known offset (the
     // last index entry).
     if (it == index.end()) {
-        return min_it->second.indexes.back().file_position;
+        --it;
     }
     // If at the first entry, we must start at the file beginning, because the
     // the max is inclusive of those entries.
     if (it == index.begin()) {
-        return min_it->second.file_position;
+        return {
+          .file_position = partition.file_position,
+          .length = partition.length,
+        };
     }
-    return it->file_position;
+    auto delta = it->file_position - partition.file_position;
+    return {
+      .file_position = it->file_position,
+      .length = partition.length - delta,
+    };
 }
 
 footer footer::copy() const {
     footer copy;
-    for (const auto& [ntp, p] : partitions) {
-        copy.partitions.emplace_hint(copy.partitions.end(), ntp, p.copy());
+    for (const auto& [tidp, p] : partitions) {
+        copy.partitions.emplace_hint(copy.partitions.end(), tidp, p.copy());
     }
     return copy;
 }
@@ -307,10 +325,10 @@ public:
       : _output(std::move(output))
       , _opts(opts) {}
 
-    ss::future<> start_partition(model::ntp ntp) final {
+    ss::future<> start_partition(model::topic_id_partition tidp) final {
         end_partition();
-        co_await serde_write_to_stream(data_type::partition_marker, ntp);
-        _current_ntp = ntp;
+        co_await serde_write_to_stream(data_type::partition_marker, tidp);
+        _current_tidp = tidp;
         _current_partition = {
           .file_position = _offset,
           .length = 0, // will be set when the partition is finished
@@ -327,7 +345,7 @@ public:
           "expected raft_data batches, got: {}",
           batch.header().type);
         dassert(
-          _current_ntp != model::ntp{},
+          _current_tidp != model::topic_id_partition{},
           "wrote a data batch without starting a partition");
         dassert(
           _current_partition.last_offset
@@ -371,19 +389,22 @@ public:
           = std::bit_cast<std::array<char, sizeof(uint32_t)>, uint32_t>(
             _offset - footer_start);
         co_await _output.write(footer_size.data(), footer_size.size());
+        _offset += footer_size.size();
         co_return info;
     }
 
     ss::future<> close() final { return _output.close(); }
 
+    size_t file_size() const final { return _offset; }
+
 private:
     void end_partition() {
-        if (_current_ntp == model::ntp{}) {
+        if (_current_tidp == model::topic_id_partition{}) {
             return;
         }
         _current_partition.length = _offset - _current_partition.file_position;
         _index.partitions.emplace(
-          std::exchange(_current_ntp, {}),
+          std::exchange(_current_tidp, {}),
           std::exchange(_current_partition, {}));
     }
 
@@ -412,7 +433,7 @@ private:
     size_t _offset = 0;
     ss::output_stream<char> _output;
     footer _index;
-    model::ntp _current_ntp;
+    model::topic_id_partition _current_tidp{};
     footer::partition _current_partition;
     options _opts;
 };
@@ -454,7 +475,7 @@ public:
         case data_type::kafka_batch:
             co_return co_await read_next_batch();
         case data_type::partition_marker:
-            co_return co_await read_next_serde<model::ntp>();
+            co_return co_await read_next_serde<model::topic_id_partition>();
         case data_type::footer:
             _saw_footer = true;
             co_return co_await read_next_serde<footer>();
@@ -527,6 +548,43 @@ object_reader::create(std::filesystem::path p, size_t offset, size_t length) {
 std::unique_ptr<object_reader>
 object_reader::create(ss::file f, size_t offset, size_t length) {
     return create(ss::make_file_input_stream(std::move(f), offset, length));
+}
+
+fmt::iterator
+footer::partition::index_entry::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{file_position: {}, kafka_offset: {}, max_timestamp: {}}}",
+      file_position,
+      kafka_offset,
+      max_timestamp);
+}
+
+fmt::iterator footer::partition::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{file_position: {}, length: {}, first_offset: {}, last_offset: {}, "
+      "max_timestamp: {}, indexes: [{}]}}",
+      file_position,
+      length,
+      first_offset,
+      last_offset,
+      max_timestamp,
+      fmt::join(indexes, ", "));
+}
+
+fmt::iterator footer::format_to(fmt::iterator it) const {
+    auto out = fmt::format_to(it, "{{partitions: [");
+    for (const auto& [tidp, partition] : partitions) {
+        out = fmt::format_to(
+          out, "{{tidp: {}, partition: {}}}, ", tidp, partition);
+    }
+    return fmt::format_to(out, "]}}");
+}
+
+fmt::iterator footer::seek_result::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{file_position:{},length:{}}}", file_position, length);
 }
 
 } // namespace cloud_topics::l1

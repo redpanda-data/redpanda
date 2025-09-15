@@ -1,8 +1,10 @@
-from .cluster import Cluster as Cluster, ClusterNode as ClusterNode
-from .linux_remoteaccount import LinuxRemoteAccount as LinuxRemoteAccount
-from .remoteaccount import RemoteAccountSSHConfig as RemoteAccountSSHConfig
 from ducktape.cluster.cluster_spec import ClusterSpec as ClusterSpec
 from ducktape.cluster.node_container import NodeContainer as NodeContainer
+
+from .cluster import Cluster as Cluster
+from .cluster import ClusterNode as ClusterNode
+from .linux_remoteaccount import LinuxRemoteAccount as LinuxRemoteAccount
+from .remoteaccount import RemoteAccountSSHConfig as RemoteAccountSSHConfig
 
 class LocalhostCluster(Cluster):
     def __init__(self, *args, **kwargs) -> None: ...

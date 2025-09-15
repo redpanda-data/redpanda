@@ -101,6 +101,11 @@ struct table_metadata {
         return it != schemas.end() ? &*it : nullptr;
     }
 
+    // Search for a schema that matches the provided type. Start from the end of
+    // the list to short circuit on the common case (desired type is current,
+    // latest schema)
+    const schema* get_equivalent_schema(const struct_type& type) const;
+
     // TODO: consider making this a lazy data member if it gets used by many
     // callers for the same metadata.
     chunked_hash_map<snapshot_id, snapshot> get_snapshots_by_id() const {

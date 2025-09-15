@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_topics/level_one/common/file_io.h"
 #include "cloud_topics/level_one/domain/domain_supervisor.h"
 #include "cloud_topics/level_one/metastore/frontend.h"
 #include "cloud_topics/reconciler/reconciler.h"
@@ -72,10 +73,11 @@ private:
     ss::sstring _logger_name;
     std::unique_ptr<data_plane_api> data_plane;
     ss::sharded<state_accessors> state;
+    ss::sharded<l1::file_io> l1_io;
     ss::sharded<reconciler::reconciler> reconciler;
     ss::sharded<l1::domain_supervisor> domain_supervisor;
     ss::sharded<l1::frontend> l1_metastore_fe;
-    std::unique_ptr<cloud_topics_manager> manager;
+    ss::sharded<cloud_topics_manager> manager;
 };
 
 } // namespace cloud_topics

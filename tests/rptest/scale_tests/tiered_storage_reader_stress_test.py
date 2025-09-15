@@ -11,10 +11,10 @@ import concurrent.futures
 import threading
 import time
 
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.services.redpanda import SISettings, MetricsEndpoint, ResourceSettings
+from rptest.services.redpanda import MetricsEndpoint, ResourceSettings, SISettings
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.si_utils import quiesce_uploads
 

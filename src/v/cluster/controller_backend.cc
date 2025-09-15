@@ -276,6 +276,7 @@ controller_backend::controller_backend(
   config::binding<std::optional<size_t>> retention_local_target_bytes_default,
   config::binding<std::chrono::milliseconds> retention_local_target_ms_default,
   config::binding<bool> retention_local_strict,
+  config::binding<uint32_t> controller_backend_reconciliation_concurrency,
   ss::scheduling_group scheduling_group,
   ss::sharded<ss::abort_source>& as)
   : _topics(tp_state)
@@ -299,6 +300,8 @@ controller_backend::controller_backend(
   , _retention_local_target_ms_default(
       std::move(retention_local_target_ms_default))
   , _retention_local_strict(std::move(retention_local_strict))
+  , _controller_backend_reconciliation_concurrency(
+      std::move(controller_backend_reconciliation_concurrency))
   , _scheduling_group(scheduling_group)
   , _as(as) {
     _housekeeping_interval.watch([this] {
@@ -415,8 +418,14 @@ ss::future<> controller_backend::start() {
             }
 
             // unblock reconciliation fibers
-            constexpr size_t max_reconciliation_concurrency = 1024;
-            _reconciliation_sem.signal(max_reconciliation_concurrency);
+            _reconciliation_sem.set_capacity(
+              _controller_backend_reconciliation_concurrency());
+
+            // register for any future updates
+            _controller_backend_reconciliation_concurrency.watch([this]() {
+                _reconciliation_sem.set_capacity(
+                  _controller_backend_reconciliation_concurrency());
+            });
 
             ssx::background = stuck_ntp_watchdog_fiber();
         });
@@ -881,7 +890,7 @@ ss::future<> controller_backend::reconcile_ntp_fiber(
         }
 
         try {
-            auto sem_units = co_await ss::get_units(_reconciliation_sem, 1);
+            auto sem_units = co_await _reconciliation_sem.get_units(1);
             rs->last_retried_at = ss::lowres_clock::now();
             co_await try_reconcile_ntp(ntp, *rs);
             if (rs->is_reconciled()) {

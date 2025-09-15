@@ -27,11 +27,13 @@ topic_reconciler::topic_reconciler(
   kafka::data::rpc::topic_creator* topic_creator,
   kafka::data::rpc::topic_metadata_cache* topic_metadata_cache,
   link_registry* link_registry,
-  ss::lowres_clock::duration run_interval)
+  ss::lowres_clock::duration run_interval,
+  config::binding<int16_t> default_topic_replication)
   : _topic_creator(topic_creator)
   , _topic_metadata_cache(topic_metadata_cache)
   , _link_registry(link_registry)
-  , _run_interval(run_interval) {}
+  , _run_interval(run_interval)
+  , _default_topic_replication(std::move(default_topic_replication)) {}
 
 ss::future<> topic_reconciler::start() {
     vlog(cllog.info, "Starting topic reconciler");
@@ -246,7 +248,8 @@ ss::future<> topic_reconciler::maybe_create_mirror_topic(
       ::model::kafka_namespace,
       topic,
       mirror_topic_config.partition_count,
-      mirror_topic_config.replication_factor,
+      mirror_topic_config.replication_factor.value_or(
+        _default_topic_replication()),
       topic_configs);
 
     auto res = co_await _topic_creator->create_topic(
@@ -272,8 +275,9 @@ topic_reconciler::maybe_create_update_mirror_topic(
       {::model::kafka_namespace, topic_name});
 
     if (
-      mirror_topic_config.replication_factor
-      != local_topic_config.replication_factor) {
+      mirror_topic_config.replication_factor.has_value()
+      && *mirror_topic_config.replication_factor
+           != local_topic_config.replication_factor) {
         vlog(
           cllog.debug,
           "Updating replication factor for topic {} from {} to {}",
@@ -283,7 +287,8 @@ topic_reconciler::maybe_create_update_mirror_topic(
         update.custom_properties.replication_factor.op
           = cluster::incremental_update_operation::set;
         update.custom_properties.replication_factor.value
-          = cluster::replication_factor(mirror_topic_config.replication_factor);
+          = cluster::replication_factor(
+            mirror_topic_config.replication_factor.value());
         config_updated = true;
     }
 

@@ -7,13 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.clients.rpk import RpkTool
-from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import SISettings
-
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.mode_checks import skip_debug_mode
 

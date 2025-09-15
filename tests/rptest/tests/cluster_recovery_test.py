@@ -9,13 +9,15 @@
 import random
 import string
 import time
+
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
-from rptest.clients.types import TopicSpec
+
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import SISettings
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from rptest.services.redpanda import SISettings
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.si_utils import quiesce_uploads
 

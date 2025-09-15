@@ -7,28 +7,32 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from ast import main
-import threading
+import concurrent.futures
 import json
-from typing import Any, Optional
-import requests
-import time
 import random
 import subprocess
 import sys
-import concurrent.futures
+import threading
+import time
+from typing import Any, Optional
+
 import numpy
-
-from ducktape.utils.util import wait_until
-from ducktape.cluster.cluster_spec import ClusterSpec
-
+import requests
 from confluent_kafka import KafkaError, KafkaException
+from ducktape.cluster.cluster_spec import ClusterSpec
+from ducktape.utils.util import wait_until
 
-from rptest.services.redpanda import SISettings
-from rptest.services.cluster import cluster
-from rptest.services.admin import Admin
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.rpk import RpkTool
+from rptest.scale_tests.topic_scale_profiles import (
+    TopicScaleProfileManager,
+    TopicScaleTestProfile,
+)
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.consumer_swarm import ConsumerSwarm
+from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.redpanda import (
     RESTART_LOG_ALLOW_LIST,
     LoggingConfig,
@@ -37,16 +41,9 @@ from rptest.services.redpanda import (
     SchemaRegistryConfig,
 )
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.utils.scale_parameters import ScaleParameters
+from rptest.util import firewall_blocked, inject_remote_script
 from rptest.utils.node_operations import NodeOpsExecutor
-from rptest.util import inject_remote_script, firewall_blocked
-from rptest.services.producer_swarm import ProducerSwarm
-from rptest.services.consumer_swarm import ConsumerSwarm
-from rptest.scale_tests.topic_scale_profiles import (
-    TopicScaleProfileManager,
-    TopicScaleTestProfile,
-)
-from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.utils.scale_parameters import ScaleParameters
 
 HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
 
@@ -1454,11 +1451,26 @@ class ManyTopicsTest(RedpandaTest):
 
         # Topic hwm getter
         def _get_hwm(topic):
-            _hwm = 0
-            for partition in self.rpk.describe_topic(topic):
-                # Add currect high watermark for topic
-                _hwm += partition.high_watermark
-            return _hwm
+            max_retries = 3
+            delay = 5
+            for attempt in range(1, max_retries + 1):
+                try:
+                    _hwm = 0
+                    for partition in self.rpk.describe_topic(topic):
+                        # Add currect high watermark for topic
+                        _hwm += partition.high_watermark
+                    return _hwm
+                except Exception as e:
+                    self.logger.debug(
+                        f"describe_topic failed for {topic} on attempt {attempt}: {e}"
+                    )
+                    if attempt < max_retries:
+                        time.sleep(delay)
+                    else:
+                        self.logger.error(
+                            f"Giving up on topic {topic} after {max_retries} attempts due to: {e}"
+                        )
+                        return 0
 
         # Validate high watermark
         target_messages_per_node = profile.message_count * pnode_client_count

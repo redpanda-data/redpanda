@@ -1150,7 +1150,6 @@ redpanda_cc_btest(
         "//src/v/cluster",
         "//src/v/cluster/tests:randoms",
         "//src/v/cluster/tests:topic_properties_generator",
-        "//src/v/compat",
         "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/model/tests:random",

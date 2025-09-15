@@ -22,10 +22,11 @@
 
 namespace kafka::client {
 
+bool is_scram_configured(const configuration& client_cfg);
+
 ss::future<std::optional<kafka::client::sasl_configuration>>
 create_client_credentials(
   ::cluster::controller& controller,
-  const config::configuration& cluster_cfg,
   const kafka::client::configuration& client_cfg,
   security::acl_principal principal);
 

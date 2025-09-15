@@ -7,21 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import os
 import json
-import collections
+import os
 import re
-import time
-from typing import Optional, Any
 
+from ducktape.cluster.cluster import ClusterNode
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
-from ducktape.cluster.cluster import ClusterNode
-
 from polaris.management.api_client import ApiClient
 from polaris.management.configuration import Configuration
-from polaris.management.api.polaris_default_api import PolarisDefaultApi
-import requests
 
 from rptest.services.tls import TLSCertManager
 

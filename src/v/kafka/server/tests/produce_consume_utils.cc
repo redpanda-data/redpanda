@@ -13,7 +13,6 @@
 #include "bytes/iobuf.h"
 #include "container/chunked_vector.h"
 #include "kafka/client/transport.h"
-#include "kafka/protocol/fetch.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/schemata/produce_request.h"
 #include "storage/record_batch_builder.h"
@@ -132,14 +131,60 @@ kafka_produce_transport::produce_partition_requests(
     return ret;
 }
 
-ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
+ss::future<kafka::offset> kafka_produce_transport::produce_to_partition(
+  model::topic topic_name, model::partition_id pid, model::record_batch batch) {
+    chunked_vector<kafka::partition_produce_data> partition_data;
+    kafka::produce_request::partition partition;
+    auto num_records = batch.record_count();
+    partition.partition_index = pid;
+    partition.records.emplace(std::move(batch));
+    partition_data.emplace_back(std::move(partition));
+
+    kafka::produce_request::topic tp;
+    tp.name = topic_name;
+    tp.partitions = std::move(partition_data);
+    chunked_vector<kafka::produce_request::topic> topics;
+    topics.push_back(std::move(tp));
+    kafka::produce_request req(std::nullopt, -1, std::move(topics));
+    req.data.timeout_ms = std::chrono::seconds(10);
+    req.has_idempotent = false;
+    req.has_transactional = false;
+    auto resp = co_await _transport.dispatch(
+      std::move(req), kafka::api_version(7));
+
+    for (auto& data_resp : resp.data.responses) {
+        if (data_resp.name != topic_name) {
+            continue;
+        }
+        for (auto& prt_resp : data_resp.partitions) {
+            if (prt_resp.partition_index != pid) {
+                continue;
+            }
+            if (prt_resp.error_code != kafka::error_code::none) {
+                throw std::runtime_error(
+                  fmt::format(
+                    "produce error: {}, message:{}",
+                    prt_resp.error_code,
+                    prt_resp.error_message));
+            }
+            co_return model::offset_cast(
+              prt_resp.base_offset + model::offset_delta(num_records - 1));
+        }
+    }
+    // unreachable
+    throw std::runtime_error(
+      fmt::format("missing produce result {}/{}", topic_name(), pid()));
+}
+
+ss::future<kafka::fetch_response> kafka_consume_transport::raw_consume(
   model::topic topic_name,
   std::vector<model::partition_id> pids,
-  model::offset offset_inclusive) {
+  std::vector<model::offset> kafka_offsets_inclusive) {
     kafka::fetch_request::topic topic;
     topic.topic = topic_name;
     topic.partitions.reserve(pids.size());
-    for (const auto& pid : pids) {
+    for (const auto& [pid, offset_inclusive] :
+         std::ranges::zip_view(pids, kafka_offsets_inclusive)) {
         kafka::fetch_request::partition partition;
         partition.fetch_offset = offset_inclusive;
         partition.partition = pid;
@@ -147,7 +192,6 @@ ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
         partition.partition_max_bytes = 1_MiB;
         topic.partitions.emplace_back(std::move(partition));
     }
-
     kafka::fetch_request req;
     req.data.min_bytes = 1;
     req.data.max_bytes = 10_MiB;
@@ -160,6 +204,16 @@ ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
           fmt::format("fetch error: {}", fetch_resp.data.error_code));
     }
     vlog(test_log.debug, "Received response from the kafka api");
+    co_return fetch_resp;
+}
+
+ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
+  model::topic topic_name,
+  std::vector<model::partition_id> pids,
+  model::offset offset_inclusive) {
+    std::vector<model::offset> offsets(pids.size(), offset_inclusive);
+    auto fetch_resp = co_await raw_consume(
+      topic_name, pids, std::move(offsets));
     pid_to_kvs_map_t ret;
     for (const auto& pid : pids) {
         ret.emplace(pid, std::vector<kv_t>{});
@@ -241,6 +295,62 @@ ss::future<std::vector<kv_t>> kafka_consume_transport::consume_from_partition(
             "fetch result missing partition {}/{}", topic_name(), pid()));
     }
     co_return it->second;
+}
+
+ss::future<chunked_vector<model::record>>
+kafka_consume_transport::raw_consume_from_partition(
+  model::topic topic_name,
+  model::partition_id pid,
+  model::offset kafka_offset_inclusive) {
+    std::vector<model::offset> offsets(1, kafka_offset_inclusive);
+    auto fetch_resp = co_await raw_consume(
+      topic_name, {pid}, std::move(offsets));
+    if (fetch_resp.data.error_code != kafka::error_code::none) {
+        throw std::runtime_error(
+          fmt::format("fetch error: {}", fetch_resp.data.error_code));
+    }
+    vassert(
+      fetch_resp.data.responses.size() == 1,
+      "fetch response not populated correctly");
+    auto& topic = fetch_resp.data.responses[0];
+    vassert(
+      topic.topic == topic_name,
+      "fetch response topic mismatch, expected: {}, got: {}",
+      topic_name,
+      topic.topic);
+    vassert(
+      topic.partitions.size() == 1, "fetch response not populated correctly");
+    auto& partition = topic.partitions[0];
+    vassert(
+      partition.partition_index == pid,
+      "fetch response partition mismatch, expected: {}, got: {}",
+      pid,
+      partition.partition_index);
+
+    chunked_vector<model::record> records;
+    if (!partition.records.has_value()) {
+        vlog(
+          test_log.trace,
+          "No data in ntp {}/{}",
+          topic.topic,
+          partition.partition_index);
+        co_return records;
+    }
+    while (!partition.records->is_end_of_stream()) {
+        auto batch_adapter = partition.records.value().consume_batch();
+        if (!batch_adapter.batch.has_value()) {
+            vlog(
+              test_log.trace,
+              "EOS ntp {}/{}",
+              topic.topic,
+              partition.partition_index);
+            break;
+        }
+        for (auto& record : batch_adapter.batch->copy_records()) {
+            records.push_back(std::move(record));
+        }
+    }
+    co_return records;
 }
 
 } // namespace tests

@@ -72,15 +72,15 @@ public:
     // example, the local storage source may need to collect the set of
     // `segment`s eligible for compaction, and perform self compaction on them
     // before proceeding to the sliding window algorithm.
-    // 2. `backward_pass_iteration()`: This is the pass that reads from the
-    // data source from head to tail, and indexes the latest key-offset pair in
-    // the contained map within the provided `compaction_config` object.This
-    // should ideally be a light-weight read over a portion of the log that
-    // avoids de-compression or e.g. uncached reads from cloud storage.
-    // 3. `forward_pass_iteration(sink)`: This is the pass that reads from
-    // the data source from tail to head, and provides the data to be written
-    // (determined by the contents of the key-offset map and other configured
-    // parameters within `cfg`) for this round of compaction to the sink object.
+    // 2. `map_building_iteration()`: This is the pass that reads from the
+    // data source and indexes the latest key-offset pair in the contained map
+    // within the provided `compaction_config` object. This should ideally be a
+    // light-weight read over a portion of the log that avoids de-compression or
+    // e.g. uncached reads from cloud storage.
+    // 3. `deduplication_iteration(sink)`: This is the pass that reads from
+    // the data source and provides the data to be written (determined by the
+    // contents of the key-offset map and other configured parameters within
+    // `cfg`) for this round of compaction to the sink object.
     class source {
     public:
         source() noexcept = default;
@@ -92,9 +92,9 @@ public:
 
     public:
         virtual ss::future<> initialize() = 0;
-        virtual ss::future<ss::stop_iteration> backward_pass_iteration() = 0;
+        virtual ss::future<ss::stop_iteration> map_building_iteration() = 0;
         virtual ss::future<ss::stop_iteration>
-        forward_pass_iteration(sink&) = 0;
+        deduplication_iteration(sink&) = 0;
     };
 
 public:

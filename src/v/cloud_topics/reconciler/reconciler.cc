@@ -11,13 +11,12 @@
 #include "cloud_topics/reconciler/reconciler.h"
 
 #include "base/vlog.h"
-#include "cloud_storage/configuration.h"
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/frontend/frontend.h"
-#include "cloud_topics/level_one/common/object_utils.h"
-#include "cloud_topics/level_zero/stm/ctp_stm_api.h"
-#include "cloud_topics/object_utils.h"
-#include "cloud_topics/types.h"
+#include "cloud_topics/level_one/common/abstract_io.h"
+#include "cloud_topics/level_one/common/object.h"
+#include "cloud_topics/reconciler/reconciliation_consumer.h"
+#include "cluster/metadata_cache.h"
 #include "cluster/partition.h"
 #include "kafka/utils/txn_reader.h"
 #include "model/namespace.h"
@@ -29,10 +28,6 @@
 namespace {
 ss::logger lg("reconciler");
 
-/*
- * Temporary hack for identifying cloud partitions (topic has "_ct" suffix).
- * This can be removed once we teach Redpanda about this new type of topic.
- */
 bool is_cloud_partition(
   const ss::lw_shared_ptr<cluster::partition>& partition) {
     return partition->get_ntp_config().cloud_topic_enabled();
@@ -63,31 +58,33 @@ private:
 namespace cloud_topics::reconciler {
 
 reconciler::reconciler(
-  ss::sharded<cluster::partition_manager>* pm,
-  ss::sharded<cloud_io::remote>* cloud_io,
+  cluster::partition_manager* pm,
   data_plane_api* data_plane,
-  std::optional<cloud_storage_clients::bucket_name> bucket)
+  l1::io* l1_io,
+  cluster::metadata_cache* metadata_cache)
   : _partition_manager(pm)
-  , _cloud_io(cloud_io)
-  , _data_plane(data_plane) {
-    if (bucket.has_value()) {
-        _bucket = std::move(bucket.value());
-    } else {
-        _bucket = cloud_storage_clients::bucket_name(
-          cloud_storage::configuration::get_bucket_config().value().value());
+  , _data_plane(data_plane)
+  , _l1_io(l1_io)
+  , _metadata_cache(metadata_cache) {}
+
+std::optional<model::topic_id_partition>
+reconciler::ntp_to_topic_id_partition(const model::ntp& ntp) const {
+    model::topic_namespace_view topic_ns_view(ntp);
+    auto topic_cfg = _metadata_cache->get_topic_cfg(topic_ns_view);
+    if (!topic_cfg.has_value() || !topic_cfg->tp_id.has_value()) {
+        return std::nullopt;
     }
+    return model::topic_id_partition{*topic_cfg->tp_id, ntp.tp.partition};
 }
 
 ss::future<> reconciler::start() {
-    _manage_notify_handle
-      = _partition_manager->local().register_manage_notification(
-        model::kafka_namespace,
-        [this](ss::lw_shared_ptr<cluster::partition> p) {
-            attach_partition(std::move(p));
-        });
+    _manage_notify_handle = _partition_manager->register_manage_notification(
+      model::kafka_namespace, [this](ss::lw_shared_ptr<cluster::partition> p) {
+          attach_partition(std::move(p));
+      });
 
     _unmanage_notify_handle
-      = _partition_manager->local().register_unmanage_notification(
+      = _partition_manager->register_unmanage_notification(
         model::kafka_namespace, [this](model::topic_partition_view tp_p) {
             detach_partition(
               model::ntp(model::kafka_namespace, tp_p.topic, tp_p.partition));
@@ -99,10 +96,9 @@ ss::future<> reconciler::start() {
 }
 
 ss::future<> reconciler::stop() {
-    _partition_manager->local().unregister_manage_notification(
-      _manage_notify_handle);
+    _partition_manager->unregister_manage_notification(_manage_notify_handle);
 
-    _partition_manager->local().unregister_unmanage_notification(
+    _partition_manager->unregister_unmanage_notification(
       _unmanage_notify_handle);
 
     _as.request_abort();
@@ -117,7 +113,7 @@ void reconciler::attach_partition(
         return;
     }
     const auto& ntp = partition->ntp();
-    vlog(lg.info, "Reconciler is attaching cloud partition {}", ntp);
+    vlog(lg.debug, "Attaching partition {}", ntp);
     auto attached = ss::make_lw_shared<attached_partition_info>(partition);
     auto res = _partitions.try_emplace(ntp, std::move(attached));
     vassert(res.second, "Double registration of ntp {}", ntp);
@@ -125,7 +121,7 @@ void reconciler::attach_partition(
 
 void reconciler::detach_partition(const model::ntp& ntp) {
     if (auto it = _partitions.find(ntp); it != _partitions.end()) {
-        vlog(lg.info, "Reconciler is detaching partition {}", ntp);
+        vlog(lg.debug, "Detaching partition {}", ntp);
         /*
          * This upcall doesn't synchronize with the rest of the reconciler,
          * which means that once a reference to an attached partition is held,
@@ -136,21 +132,12 @@ void reconciler::detach_partition(const model::ntp& ntp) {
     }
 }
 
-void reconciler::object::add(range range, const attached_partition& partition) {
-    vassert(!range.data.empty(), "cannot add an empty range to object");
-    const auto physical_offset_start = data.size_bytes();
-    data.append(std::move(range.data));
-    const auto physical_offset_end = data.size_bytes();
-
-    ranges.emplace_back(
-      partition, physical_offset_start, physical_offset_end, range.info);
-}
-
 ss::future<> reconciler::reconciliation_loop() {
     /*
-     * polling is not particularly efficient, and in practice, we'll probably
+     * Polling is not particularly efficient, and in practice, we'll probably
      * want to look into receiving upcalls from partitions announcing that new
      * data is available.
+     * TODO: Investigate performance of polling and alternatives to polling.
      */
     constexpr std::chrono::seconds poll_frequency(10);
 
@@ -159,8 +146,13 @@ ss::future<> reconciler::reconciliation_loop() {
             co_await _control_sem.wait(
               poll_frequency, std::max(_control_sem.current(), size_t(1)));
         } catch (const ss::semaphore_timed_out&) {
-            // time to do some work
+            // Time to do some work.
         }
+
+        vlog(
+          lg.debug,
+          "Reconciliation loop tick with {} attached partitions",
+          _partitions.size());
 
         try {
             co_await reconcile();
@@ -177,25 +169,80 @@ ss::future<> reconciler::reconciliation_loop() {
 }
 
 ss::future<> reconciler::reconcile() {
-    auto object = co_await build_object();
-    if (!object.has_value()) {
-        co_return;
+    auto staging_file_fut = co_await ss::coroutine::as_future(
+      _l1_io->create_tmp_file());
+    if (staging_file_fut.failed()) {
+        auto ex = staging_file_fut.get_exception();
+        vlog(lg.error, "Exception creating staging file: {}", ex);
     }
-    auto path = l1::object_path_factory::level_one_path(l1::create_object_id());
-    auto result = co_await upload_object(path, std::move(object->data));
-    if (result != cloud_io::upload_result::success) {
-        vlog(lg.info, "Failed to upload L1 object: {}", result);
+    auto staging_file_result = staging_file_fut.get();
+    if (!staging_file_result.has_value()) {
+        vlog(
+          lg.warn,
+          "Failed to create staging file: {}",
+          static_cast<int>(staging_file_result.error()));
         co_return;
     }
 
-    // commit for each partition represented in the uploaded object
-    for (const auto& range : object->ranges) {
-        co_await commit_object(path, range);
+    auto staging_file = std::move(staging_file_result.value());
+    auto output_stream = co_await staging_file->output_stream();
+
+    auto builder = l1::object_builder::create(
+      std::move(output_stream), l1::object_builder::options{});
+
+    auto object_fut = co_await ss::coroutine::as_future(
+      build_object(builder.get(), staging_file.get()));
+    co_await builder->close(); // Always.
+    if (object_fut.failed()) {
+        auto ex = object_fut.get_exception();
+        vlog(lg.error, "Exception building object: {}", ex);
+        co_await staging_file->remove();
+        co_return;
+    }
+    auto object = object_fut.get();
+    if (!object.has_value()) {
+        vlog(lg.debug, "No object to upload, skipping");
+        co_return;
+    }
+
+    vlog(
+      lg.debug,
+      "Built L1 object from {} partitions",
+      object->partitions.size());
+
+    // Upload object.
+    // TODO: The metastore provides the object id once it's
+    // used to commit changes to L1.
+    auto object_id = l1::create_object_id();
+    auto upload_fut = co_await ss::coroutine::as_future(
+      _l1_io->put_object(object_id, staging_file.get(), &_as));
+    co_await staging_file->remove(); // Always.
+    if (upload_fut.failed()) {
+        auto ex = upload_fut.get_exception();
+        vlog(lg.error, "Exception uploading L1 object {}: {}", object_id, ex);
+        co_return;
+    }
+    auto upload_result = upload_fut.get();
+    if (!upload_result.has_value()) {
+        vlog(
+          lg.warn,
+          "Failed to upload L1 object: {}",
+          static_cast<int>(upload_result.error()));
+        co_return;
+    }
+    vlog(lg.debug, "Successfully uploaded L1 object {}", object_id);
+
+    // Commit object.
+    // TODO: This looks very different with the metastore.
+    for (const auto& partition_info : object->partitions) {
+        co_await commit_object(object_id, partition_info);
     }
 }
 
-ss::future<std::optional<reconciler::object>> reconciler::build_object() {
-    // light-weight copy for stable iteration
+ss::future<std::optional<reconciler::built_object>> reconciler::build_object(
+  l1::object_builder* builder, l1::staging_file* staging_file) {
+    // Copy the leader partition information in case of
+    // mid-reconciliation unregistration.
     std::vector<attached_partition> partitions;
     for (const auto& p : _partitions) {
         if (p.second->partition->is_leader()) {
@@ -203,68 +250,90 @@ ss::future<std::optional<reconciler::object>> reconciler::build_object() {
         }
     }
 
-    // avoid starving partitions
-    std::shuffle(
-      partitions.begin(), partitions.end(), random_generators::internal::gen);
-
-    object object;
-    auto size_budget = max_object_size;
-    for (const auto& partition : partitions) {
-        frontend fe(partition->partition, _data_plane);
-        auto reader = co_await make_reader(&fe, partition->lro, size_budget);
-        auto range = co_await std::move(reader).consume(
-          range_batch_consumer{}, model::no_timeout);
-        if (range.has_value()) {
-            object.add(std::move(*range), partition);
-            size_budget -= std::min(object.data.size_bytes(), size_budget);
-        }
-    }
-
-    if (object.data.empty()) {
+    if (partitions.empty()) {
+        vlog(lg.debug, "No leader partitions to reconcile");
         co_return std::nullopt;
     }
 
-    co_return object;
-}
+    // Shuffle to avoid starving partitions.
+    // TODO: Investigate how to divide work between partitions with
+    // different throughput.
+    std::shuffle(
+      partitions.begin(), partitions.end(), random_generators::internal::gen);
 
-ss::future<cloud_io::upload_result> reconciler::upload_object(
-  cloud_storage_clients::object_key key, iobuf payload) {
-    retry_chain_node rtc(
-      _as,
-      ss::lowres_clock::now() + std::chrono::seconds(20),
-      std::chrono::seconds(1));
+    built_object result;
+    auto size_budget = max_object_size;
+    for (const auto& partition : partitions) {
+        vlog(
+          lg.debug,
+          "Processing partition {} with LRO {}",
+          partition->partition->ntp(),
+          partition->lro);
 
-    co_return co_await _cloud_io->local().upload_object({
-      .transfer_details = {
-        .bucket = _bucket,
-        .key = key,
-        .parent_rtc = rtc,
-      },
-      .display_str = "l1_object",
-      .payload = std::move(payload),
-    });
+        frontend fe(partition->partition, _data_plane);
+        auto reader = co_await make_reader(&fe, partition->lro, size_budget);
+        auto tidp = ntp_to_topic_id_partition(partition->partition->ntp());
+        if (!tidp.has_value()) {
+            vlog(
+              lg.error,
+              "Failed to get topic_id for cloud topic partition {}, skipping",
+              partition->partition->ntp());
+            continue;
+        }
+        reconciliation_consumer consumer(builder, *tidp);
+        auto metadata = co_await std::move(reader).consume(
+          std::move(consumer), model::no_timeout);
+
+        if (!metadata.has_value()) {
+            vlog(
+              lg.debug,
+              "No batches found for partition {}",
+              partition->partition->ntp());
+            continue;
+        }
+
+        vlog(
+          lg.debug,
+          "Adding partition {} to L1 object with offsets {}-{}",
+          partition->partition->ntp(),
+          metadata->base_offset,
+          metadata->last_offset);
+        result.partitions.emplace_back(partition, std::move(metadata.value()));
+
+        auto current_size = co_await staging_file->size();
+        if (current_size >= max_object_size) {
+            break;
+        }
+        size_budget = max_object_size - current_size;
+    }
+
+    if (result.partitions.empty()) {
+        co_return std::nullopt;
+    }
+
+    result.object_info = co_await builder->finish();
+    co_return result;
 }
 
 ss::future<> reconciler::commit_object(
-  const cloud_storage_clients::object_key& key,
-  const object_range_info& range) {
+  const l1::object_id& object_id, const partition_commit_info& partition_info) {
     /*
-     * TODO register the L1 object with L1 metastore.
+     * TODO register the L1 object with L1 metastore using object_id and
+     * partition_info.
      */
-    const auto& part = range.partition->partition;
+    const auto& part = partition_info.partition->partition;
+    const auto& metadata = partition_info.metadata;
 
-    range.partition->lro = range.info.last_offset + kafka::offset(1);
+    partition_info.partition->lro = metadata.last_offset + kafka::offset(1);
 
     vlog(
-      lg.info,
-      "Committed overlay to {} for {} phy {}~{} log {}~{}. New LRO {}",
-      key,
+      lg.debug,
+      "Committed overlay to object {} for {} log {}~{}. New LRO {}",
+      object_id,
       part->ntp(),
-      range.physical_offset_start,
-      range.physical_offset_end,
-      range.info.base_offset,
-      range.info.last_offset,
-      range.partition->lro);
+      metadata.base_offset,
+      metadata.last_offset,
+      partition_info.partition->lro);
 
     co_return;
 }
@@ -274,7 +343,7 @@ ss::future<model::record_batch_reader> reconciler::make_reader(
     auto effective_start = co_await fe->sync_effective_start(5s);
     if (!effective_start.has_value()) {
         vlog(
-          lg.info,
+          lg.warn,
           "Error querying partition start offset ({}): {}",
           fe->ntp(),
           effective_start.error());
@@ -286,7 +355,7 @@ ss::future<model::record_batch_reader> reconciler::make_reader(
     auto maybe_lso = fe->last_stable_offset();
     if (!maybe_lso.has_value()) {
         vlog(
-          lg.info,
+          lg.warn,
           "Error querying partition LSO ({}): {}",
           fe->ntp(),
           maybe_lso.error());

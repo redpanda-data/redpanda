@@ -94,4 +94,13 @@ ss::future<> api::restart() {
     co_await start();
 }
 
+const configuration& api::get_config() const { return _cfg; }
+
+const kafka::client::configuration& api::get_client_config() const {
+    return _client_cfg;
+}
+
+bool api::has_ephemeral_credentials() const {
+    return _service.local().has_ephemeral_credentials();
+}
 } // namespace pandaproxy::schema_registry

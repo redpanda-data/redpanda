@@ -530,6 +530,7 @@ public:
                 _topic_revision,
                 make_writer_factory(),
                 _cloud_io,
+                &_features,
                 _schema_mgr,
                 *_type_resolver,
                 *_record_translator,

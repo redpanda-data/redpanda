@@ -117,3 +117,37 @@ TEST(OffsetIntervalSetTest, TestTruncate) {
     s.truncate_with_new_start_offset(o{6});
     EXPECT_THAT(s.to_vec(), testing::ElementsAre());
 }
+
+TEST(OffsetIntervalSetTest, TestCovers) {
+    offset_interval_set s;
+    ASSERT_TRUE(s.empty());
+
+    ASSERT_TRUE(s.insert(o{1}, o{5}));
+    ASSERT_TRUE(s.covers(o{1}, o{5}));
+    ASSERT_FALSE(s.covers(o{0}, o{5}));
+    ASSERT_FALSE(s.covers(o{1}, o{6}));
+    ASSERT_FALSE(s.covers(o{6}, o{10}));
+
+    ASSERT_TRUE(s.insert(o{0}, o{10}));
+    ASSERT_TRUE(s.covers(o{0}, o{5}));
+    ASSERT_TRUE(s.covers(o{1}, o{6}));
+    ASSERT_TRUE(s.covers(o{0}, o{10}));
+    ASSERT_FALSE(s.covers(o{0}, o{11}));
+    ASSERT_FALSE(s.covers(o{11}, o{100}));
+}
+
+TEST(OffsetIntervalSetTest, TestCoversDisjointIntervals) {
+    offset_interval_set s;
+    ASSERT_TRUE(s.empty());
+
+    ASSERT_TRUE(s.insert(o{0}, o{5}));
+    ASSERT_TRUE(s.insert(o{10}, o{20}));
+
+    ASSERT_TRUE(s.covers(o{0}, o{5}));
+    ASSERT_FALSE(s.covers(o{4}, o{10}));
+    ASSERT_FALSE(s.covers(o{5}, o{10}));
+    ASSERT_FALSE(s.covers(o{4}, o{11}));
+    ASSERT_TRUE(s.covers(o{10}, o{20}));
+
+    ASSERT_FALSE(s.covers(o{0}, o{20}));
+}

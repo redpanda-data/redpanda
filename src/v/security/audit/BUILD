@@ -17,6 +17,8 @@ redpanda_cc_library(
     name = "audit",
     srcs = [
         "audit_log_manager.cc",
+        "client.cc",
+        "client.h",  # Maybe split client into its own target
         "logger.cc",
         "probes.cc",
         "schemas/hashing_utils.cc",
@@ -25,6 +27,7 @@ redpanda_cc_library(
     hdrs = [
         "audit_log_manager.h",
         "client_probe.h",
+        "fwd.h",
         "logger.h",
         "probe.h",
         "schemas/application_activity.h",
@@ -44,11 +47,13 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/config",
+        "//src/v/container:chunked_vector",
         "//src/v/hashing:combine",
         "//src/v/json",
         "//src/v/kafka/client",
         "//src/v/kafka/client:config_utils",
         "//src/v/kafka/client:types",
+        "//src/v/kafka/data/rpc",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:produce",
         "//src/v/kafka/protocol/schemata:add_offsets_to_txn_request",
@@ -102,6 +107,7 @@ redpanda_cc_library(
         "//src/v/ssx:semaphore",
         "//src/v/strings:string_switch",
         "//src/v/utils:functional",
+        "//src/v/utils:mutex",
         "//src/v/utils:retry",
         "//src/v/utils:unresolved_address",
         "//src/v/version",

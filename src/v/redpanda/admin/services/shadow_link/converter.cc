@@ -106,6 +106,20 @@ create_topic_metadata_mirroring_config(
     return config;
 }
 
+cluster_link::model::consumer_groups_mirroring_config
+create_consumer_groups_mirroring_config(
+  const proto::admin::consumer_offset_sync_options& options) {
+    cluster_link::model::consumer_groups_mirroring_config config;
+
+    if (options.get_interval() > absl::ZeroDuration()) {
+        config.task_interval = absl::ToChronoNanoseconds(
+          options.get_interval());
+    }
+
+    config.filters = to_filter_patterns(options.get_group_filters());
+
+    return config;
+}
 cluster_link::model::link_configuration
 create_link_configuration(const create_shadow_link_request& req) {
     cluster_link::model::link_configuration config;
@@ -114,6 +128,12 @@ create_link_configuration(const create_shadow_link_request& req) {
         req.get_shadow_link()
           .get_configurations()
           .get_topic_metadata_sync_options());
+
+    config.consumer_groups_mirroring_cfg
+      = create_consumer_groups_mirroring_config(
+        req.get_shadow_link()
+          .get_configurations()
+          .get_consumer_offset_sync_options());
 
     return config;
 }

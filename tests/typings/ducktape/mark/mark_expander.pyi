@@ -1,6 +1,8 @@
-from ._mark import Parametrize as Parametrize, parametrized as parametrized
 from _typeshed import Incomplete
 from ducktape.tests.test import TestContext as TestContext
+
+from ._mark import Parametrize as Parametrize
+from ._mark import parametrized as parametrized
 
 class MarkedFunctionExpander:
     seed_context: Incomplete

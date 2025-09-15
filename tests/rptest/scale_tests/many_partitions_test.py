@@ -7,30 +7,30 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import concurrent.futures
 import math
 import time
-import concurrent.futures
 from collections import Counter
 
-from ducktape.mark import parametrize
-from ducktape.utils.util import wait_until, TimeoutError
 import numpy
+from ducktape.mark import parametrize
+from ducktape.utils.util import TimeoutError, wait_until
 
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.cluster import cluster
-from rptest.clients.rpk import RpkTool, RpkException
-from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.utils.si_utils import nodes_report_cloud_segments
-from rptest.services.rpk_consumer import RpkConsumer
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, LoggingConfig
+from rptest.services.kgo_repeater_service import repeater_traffic
 from rptest.services.kgo_verifier_services import (
-    KgoVerifierProducer,
     KgoVerifierConsumerGroupConsumer,
+    KgoVerifierProducer,
     KgoVerifierRandomConsumer,
 )
-from rptest.services.kgo_repeater_service import repeater_traffic
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, LoggingConfig
+from rptest.services.rpk_consumer import RpkConsumer
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.scale_parameters import ScaleParameters
+from rptest.utils.si_utils import nodes_report_cloud_segments
 
 # An unreasonably large fetch request: we submit requests like this in the
 # expectation that the server will properly clamp the amount of data it

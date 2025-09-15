@@ -17,12 +17,12 @@ ss::future<> compaction::sliding_window_reducer::run() && {
     // Step 0: Initialize source
     co_await _src->initialize();
 
-    // Step 1: Perform backward pass
-    co_await ss::repeat([this]() { return _src->backward_pass_iteration(); });
+    // Step 1: Perform map building pass.
+    co_await ss::repeat([this]() { return _src->map_building_iteration(); });
 
-    // Step 2: Perform forward pass.
+    // Step 2: Perform de-duplication pass.
     co_await ss::repeat(
-      [this]() { return _src->forward_pass_iteration(*_sink); });
+      [this]() { return _src->deduplication_iteration(*_sink); });
 
     // Done!
     co_await _sink->finalize();

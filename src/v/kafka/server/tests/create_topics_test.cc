@@ -677,7 +677,7 @@ FIXTURE_TEST(create_topic_assigns_topic_id, create_topic_fixture) {
     auto resp = client
                   .dispatch(
                     make_req({topic}, /*validate_only = */ false),
-                    kafka::api_version(5))
+                    kafka::api_version(7))
                   .get();
     BOOST_REQUIRE_EQUAL(
       resp.data.topics[0].error_code, kafka::error_code::none);
@@ -687,5 +687,7 @@ FIXTURE_TEST(create_topic_assigns_topic_id, create_topic_fixture) {
     auto md = app.controller->get_topics_state().local().get_topic_metadata(
       tpn);
     BOOST_REQUIRE(md.has_value());
-    BOOST_REQUIRE(md->get_configuration().tp_id.has_value());
+    auto tp_id = md->get_configuration().tp_id;
+    BOOST_REQUIRE(tp_id.has_value());
+    BOOST_REQUIRE_EQUAL(resp.data.topics[0].topic_id, *tp_id);
 }

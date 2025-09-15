@@ -1,19 +1,31 @@
+from typing import NamedTuple
+
 from _typeshed import Incomplete
 from ducktape.cluster.finite_subcluster import FiniteSubcluster as FiniteSubcluster
 from ducktape.command_line.defaults import ConsoleDefaults as ConsoleDefaults
 from ducktape.errors import TimeoutError as TimeoutError
 from ducktape.tests.event import (
     ClientEventFactory as ClientEventFactory,
+)
+from ducktape.tests.event import (
     EventResponseFactory as EventResponseFactory,
 )
 from ducktape.tests.reporter import (
     HTMLSummaryReporter as HTMLSummaryReporter,
+)
+from ducktape.tests.reporter import (
     JSONReporter as JSONReporter,
+)
+from ducktape.tests.reporter import (
     SimpleFileSummaryReporter as SimpleFileSummaryReporter,
 )
 from ducktape.tests.result import (
     FAIL as FAIL,
+)
+from ducktape.tests.result import (
     TestResult as TestResult,
+)
+from ducktape.tests.result import (
     TestResults as TestResults,
 )
 from ducktape.tests.runner_client import run_client as run_client
@@ -22,7 +34,6 @@ from ducktape.tests.serde import SerDe as SerDe
 from ducktape.tests.test import TestContext as TestContext
 from ducktape.utils import persistence as persistence
 from ducktape.utils.terminal_size import get_terminal_size as get_terminal_size
-from typing import NamedTuple
 
 class Receiver:
     port: Incomplete

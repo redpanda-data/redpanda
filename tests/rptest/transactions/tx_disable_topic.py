@@ -7,19 +7,18 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from rptest.services.admin import Admin
+import re
+
 import confluent_kafka as ck
 from confluent_kafka import KafkaException
 from confluent_kafka.serialization import StringDeserializer
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import DEFAULT_LOG_ALLOW_LIST
-import re
 from ducktape.utils.util import wait_until
 
-from time import sleep
-import operator
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import DEFAULT_LOG_ALLOW_LIST
+from rptest.tests.redpanda_test import RedpandaTest
 
 TIMEOUT_ALLOW_LIST = [re.compile(r".*Unexpected tx_error error: {tx::errc::timeout}.*")]
 

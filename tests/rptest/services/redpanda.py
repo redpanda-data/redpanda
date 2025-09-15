@@ -6,93 +6,96 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import dataclasses
-import subprocess
-from abc import ABC, abstractmethod
+import collections
 import concurrent.futures
 import copy
-from functools import cached_property
-from logging import Logger
-
-import time
-import os
-import socket
-import signal
-import tempfile
-import shutil
-import requests
+import dataclasses
+import enum
 import json
+import os
+import pathlib
 import random
-import threading
-import collections
 import re
+import shlex
+import shutil
+import signal
+import socket
+import subprocess
+import tempfile
+import threading
+import time
 import uuid
 import zipfile
-import pathlib
-import shlex
-from enum import Enum, IntEnum
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import Enum
+from functools import cached_property
+from logging import Logger
 from typing import (
+    Any,
     Callable,
-    List,
     Generator,
+    List,
     Literal,
     Mapping,
     Optional,
     Protocol,
     Set,
     Tuple,
-    Any,
     Type,
     cast,
 )
-from urllib3.exceptions import MaxRetryError
 
+import requests
 import yaml
+from ducktape.cluster.cluster import ClusterNode
+from ducktape.cluster.remoteaccount import RemoteAccount, RemoteCommandError
+from ducktape.errors import TimeoutError
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
-from requests.exceptions import HTTPError
-from rptest.archival.s3_client import S3Client, S3AddressingStyle
-from rptest.archival.abs_client import ABSClient
-from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.local_filesystem_utils import mkdir_p
 from ducktape.utils.util import wait_until
-from ducktape.cluster.remoteaccount import RemoteAccount
-from ducktape.cluster.cluster import ClusterNode
-from prometheus_client.parser import text_string_to_metric_families
 from prometheus_client.metrics_core import Metric
-from ducktape.errors import TimeoutError
-from ducktape.tests.test import TestContext
-from rptest.context.gcp import GCPContext
-from rptest.services.rpk_consumer import RpkConsumer
+from prometheus_client.parser import text_string_to_metric_families
+from requests.exceptions import HTTPError
+from urllib3.exceptions import MaxRetryError
 
-from rptest.clients.helm import HelmTool
+from rptest.archival.abs_client import ABSClient
+from rptest.archival.s3_client import S3AddressingStyle, S3Client
+from rptest.clients.installpack import InstallPackClient
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kubectl import KubectlTool, is_redpanda_pod
+from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.clients.rpk import RpkTool
 from rptest.clients.rpk_remote import RpkRemoteTool
-from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.clients.installpack import InstallPackClient
-from rptest.clients.rp_storage_tool import RpStorageTool
-from rptest.context.cloud_storage import CloudStorageType  # noqa: F401 # Re-exported for backwards compatibility.
+from rptest.context.cloud_storage import (
+    CloudStorageType,  # noqa: F401 # Re-exported for backwards compatibility.
+)
+from rptest.context.gcp import GCPContext
 from rptest.services import redpanda_types, tls
+from rptest.services.admin import Admin
+from rptest.services.cloud_broker import CloudBroker
+from rptest.services.redpanda_cloud import CloudCluster, get_config_profile_name
+from rptest.services.redpanda_installer import (
+    VERSION_RE as RI_VERSION_RE,
+)
+from rptest.services.redpanda_installer import (
+    RedpandaInstaller,
+    RedpandaVersionTriple,
+)
+from rptest.services.redpanda_installer import (
+    int_tuple as ri_int_tuple,
+)
 from rptest.services.redpanda_types import (
     KafkaClientSecurity,
     LogAllowList,
     LogAllowListElem,
 )
-from rptest.services.admin import Admin
-from rptest.services.redpanda_installer import (
-    RedpandaInstaller,
-    VERSION_RE as RI_VERSION_RE,
-    RedpandaVersionTriple,
-    int_tuple as ri_int_tuple,
-)
-from rptest.services.redpanda_cloud import CloudCluster, get_config_profile_name
-from rptest.services.cloud_broker import CloudBroker
 from rptest.services.rolling_restarter import RollingRestarter
-from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
+from rptest.services.storage import ClusterStorage, NodeCacheStorage, NodeStorage
 from rptest.services.storage_failure_injection import FailureInjectionConfig
-from rptest.services.utils import NodeCrash, LogSearchLocal, LogSearchCloud, Stopwatch
+from rptest.services.utils import LogSearchCloud, LogSearchLocal, NodeCrash, Stopwatch
 from rptest.util import (
     inject_remote_script,
     ssh_output_stderr,
@@ -100,11 +103,8 @@ from rptest.util import (
     wait_until_with_progress_check,
 )
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
-from rptest.utils.expiring_value import ExpiringValue
 from rptest.utils.mode_checks import in_fips_environment
 from rptest.utils.rpenv import sample_license
-import enum
-from dataclasses import dataclass
 
 Partition = collections.namedtuple(
     "Partition", ["topic", "index", "leader", "replicas"]
@@ -149,14 +149,14 @@ SaslCredentials = redpanda_types.SaslCredentials
 FileToChecksumSize = dict[str, Tuple[str, int]]
 
 # Map of node -> (path -> (arbitrary dictionary))
-NodeConfigOverridesT = dict[ClusterNode, dict]
+NodeConfigOverridesT = dict[ClusterNode, dict[str, Any]]
 
 # The endpoint info for the azurite (Azure ABS emulator )container that
 # is used when running tests in a docker environment.
 AZURITE_HOSTNAME = "azurite"
 AZURITE_PORT = 10000
 
-DEFAULT_LOG_ALLOW_LIST = [
+DEFAULT_LOG_ALLOW_LIST: list[LogAllowListElem] = [
     # Tests may be run on workstations that do not have XFS filesystem volumes
     # for containers.
     # Pre-23.2 version of the message
@@ -216,7 +216,7 @@ CHAOS_LOG_ALLOW_LIST = [
     re.compile("cluster - .*Directory not empty"),
     re.compile("r/heartbeat - .*cannot find consensus group"),
     re.compile(
-        "cluster - .*exception while executing partition operation:.*std::exception \(std::exception\)"
+        r"cluster - .*exception while executing partition operation:.*std::exception \(std::exception\)"
     ),
     # Failure to handle an internal RPC because the RPC server already handles connections but doesn't yet handle this method. This can happen while the node is still starting up/restarting.
     # e.g. "admin_api_server - server.cc:655 - [_anonymous] exception intercepted - url: [http://ip-172-31-9-208:9644/v1/brokers/7/decommission] http_return_status[500] reason - seastar::httpd::server_error_exception (Unexpected error: rpc::errc::method_not_found)"
@@ -291,7 +291,7 @@ class MetricSamples:
         self.samples = samples
 
     def label_filter(self, labels: Mapping[str, str]):
-        def f(sample):
+        def f(sample: MetricSample):
             for key, value in labels.items():
                 assert key in sample.labels
                 return sample.labels[key] == value
@@ -307,21 +307,17 @@ class MetricsEndpoint(Enum):
 CloudStorageTypeAndUrlStyle = Tuple[CloudStorageType, Literal["virtual_host", "path"]]
 
 
-def prepare_allow_list(allow_list):
-    if allow_list is None:
-        allow_list = DEFAULT_LOG_ALLOW_LIST
-    else:
-        combined_allow_list = DEFAULT_LOG_ALLOW_LIST.copy()
-        # Accept either compiled or string regexes
-        for a in allow_list:
-            if should_compile(a):
-                a = re.compile(a)
-            combined_allow_list.append(a)
-        allow_list = combined_allow_list
-    return allow_list
+def prepare_allow_list(allow_list: LogAllowList) -> LogAllowList:
+    def maybe_compile(a: LogAllowListElem) -> LogAllowListElem:
+        if should_compile(a):
+            assert isinstance(a, str)
+            return re.compile(a)
+        return a
+
+    return DEFAULT_LOG_ALLOW_LIST + list(map(maybe_compile, allow_list))
 
 
-def one_or_many(value):
+def one_or_many(value: Any) -> Any:
     """
     Helper for reading `one_or_many_property` configs when
     we only care about getting one value out
@@ -340,8 +336,9 @@ def get_cloud_provider() -> str:
 
 
 def get_cloud_storage_type(
-    applies_only_on: list[CloudStorageType] | None = None, docker_use_arbitrary=False
-):
+    applies_only_on: list[CloudStorageType] | None = None,
+    docker_use_arbitrary: bool = False,
+) -> list[CloudStorageType]:
     """
     Returns a list[CloudStorageType] based on the "CLOUD_PROVIDER"
     environment variable. For example:
@@ -400,10 +397,14 @@ def get_cloud_storage_type_and_url_style() -> List[CloudStorageTypeAndUrlStyle]:
                   [CloudStorageType.S3, 'path'],
                   [CloudStorageType.ABS, 'virtual_host']]
     """
+
+    def get_style(t: CloudStorageType) -> List[CloudStorageTypeAndUrlStyle]:
+        return [(t, us) for us in get_cloud_storage_url_style(t)]
+
     return [
         tus
         for tus_list in map(
-            lambda t: [[t, us] for us in get_cloud_storage_url_style(t)],
+            get_style,
             get_cloud_storage_type(),
         )
         for tus in tus_list
@@ -551,7 +552,7 @@ class SISettings:
 
     def __init__(
         self,
-        test_context,
+        test_context: TestContext,
         *,
         log_segment_size: int = 16 * 1000000,
         cloud_storage_cache_chunk_size: Optional[int] = None,
@@ -575,8 +576,8 @@ class SISettings:
         use_bucket_cleanup_policy: bool = True,
         cloud_storage_housekeeping_interval_ms: Optional[int] = None,
         cloud_storage_spillover_manifest_max_segments: Optional[int] = None,
-        fast_uploads=False,
-        retention_local_strict=True,
+        fast_uploads: bool = False,
+        retention_local_strict: bool = True,
         cloud_storage_max_throughput_per_shard: Optional[int] = None,
         cloud_storage_signature_version: str = "s3v4",
         before_call_headers: Optional[Callable[[], dict[str, str]]] = None,
@@ -713,7 +714,7 @@ class SISettings:
             # segment upload or download quickly so we can try again
             self.cloud_storage_segment_upload_timeout_ms = 15000
 
-        self._expected_damage_types = set()
+        self._expected_damage_types: set[str] = set()
 
     def get_use_fips_s3_endpoint(self) -> bool:
         use_fips_option = self._context.globals.get(
@@ -742,13 +743,13 @@ class SISettings:
             and (self.get_use_fips_s3_endpoint() or in_fips_environment())
         )
 
-    def load_context(self, logger, test_context):
+    def load_context(self, logger: Logger, test_context: TestContext):
         if self.cloud_storage_type == CloudStorageType.S3:
             self._load_s3_context(logger, test_context)
         elif self.cloud_storage_type == CloudStorageType.ABS:
             self._load_abs_context(logger, test_context)
 
-    def _load_abs_context(self, logger, test_context):
+    def _load_abs_context(self, logger: Logger, test_context: TestContext):
         storage_account = test_context.globals.get(
             self.GLOBAL_ABS_STORAGE_ACCOUNT, None
         )
@@ -768,7 +769,7 @@ class SISettings:
                 "Using Azurite defualt credentials."
             )
 
-    def _load_s3_context(self, logger, test_context):
+    def _load_s3_context(self, logger: Logger, test_context: TestContext):
         """
         Update based on the test context, to e.g. consume AWS access keys in
         the globals dictionary.
@@ -858,7 +859,7 @@ class SISettings:
             self._cloud_storage_azure_container = new_bucket_name
 
     # Call this to update the extra_rp_conf
-    def update_rp_conf(self, conf) -> dict[str, Any]:
+    def update_rp_conf(self, conf: dict[str, Any]) -> dict[str, Any]:
         if self.cloud_storage_type == CloudStorageType.S3:
             conf["cloud_storage_credentials_source"] = (
                 self.cloud_storage_credentials_source
@@ -1223,11 +1224,17 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
         return self._usage_stats
 
     @property
-    def usage_stats_dict(self) -> dict:
+    def usage_stats_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self._usage_stats)
 
     @abstractmethod
     def all_up(self):
+        pass
+
+    @abstractmethod
+    def raise_on_bad_logs(
+        self, allow_list: LogAllowList = (), test_start_time: float | None = None
+    ):
         pass
 
     @abstractmethod
@@ -1497,431 +1504,6 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
         return count
 
 
-class RedpandaServiceBase(RedpandaServiceABC, Service):
-    PERSISTENT_ROOT = "/var/lib/redpanda"
-    TRIM_LOGS_KEY = "trim_logs"
-    DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
-    NODE_CONFIG_FILE = "/etc/redpanda/redpanda.yaml"
-    RPK_CONFIG_FILE = "/root/.config/rpk/rpk.yaml"
-    CLUSTER_BOOTSTRAP_CONFIG_FILE = "/etc/redpanda/.bootstrap.yaml"
-    TLS_SERVER_KEY_FILE = "/etc/redpanda/server.key"
-    TLS_SERVER_CRT_FILE = "/etc/redpanda/server.crt"
-    TLS_SERVER_P12_FILE = "/etc/redpanda/server.p12"
-    TLS_CA_CRT_FILE = "/etc/redpanda/ca.crt"
-    TLS_CA_CRL_FILE = "/etc/redpanda/ca.crl"
-    SYSTEM_TLS_CA_CRT_FILE = "/usr/local/share/ca-certificates/ca.crt"
-    STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.log")
-    BACKTRACE_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda_backtrace.log")
-    COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.profraw")
-    TEMP_OSSL_CONFIG_FILE = "/etc/openssl.cnf"
-    DEFAULT_NODE_READY_TIMEOUT_SEC = 40
-    NODE_READY_TIMEOUT_MIN_SEC_KEY = "node_ready_timeout_min_sec"
-    DEFAULT_CLOUD_STORAGE_SCRUB_TIMEOUT_SEC = 60
-    DEDICATED_NODE_KEY = "dedicated_nodes"
-    RAISE_ON_ERRORS_KEY = "raise_on_error"
-    LOG_LEVEL_KEY = "redpanda_log_level"
-    DEFAULT_LOG_LEVEL = "info"
-    COV_KEY = "enable_cov"
-    DEFAULT_COV_OPT = "OFF"
-
-    # Where we put a compressed binary if saving it after failure
-    EXECUTABLE_SAVE_PATH = "/tmp/redpanda.gz"
-
-    FAILURE_INJECTION_CONFIG_PATH = "/etc/redpanda/failure_injection_config.json"
-
-    OPENSSL_CONFIG_FILE_BASE = "openssl/openssl.cnf"
-    OPENSSL_MODULES_PATH_BASE = "lib/ossl-modules/"
-
-    # When configuring multiple listeners for testing, a secondary port to use
-    # instead of the default.
-    KAFKA_ALTERNATE_PORT = 9093
-    KAFKA_KERBEROS_PORT = 9094
-    ADMIN_ALTERNATE_PORT = 9647
-
-    GLOBAL_USE_STRESS_FIBER = "enable_stress_fiber"
-    GLOBAL_NUM_STRESS_FIBERS = "num_stress_fibers"
-    GLOBAL_STRESS_FIBER_MIN_MS = "stress_fiber_min_ms"
-    GLOBAL_STRESS_FIBER_MAX_MS = "stress_fiber_max_ms"
-    DEFAULT_USE_STRESS_FIBER = "OFF"
-    DEFAULT_NUM_STRESS_FIBERS = 1
-    DEFAULT_STRESS_FIBER_MIN_MS = 100
-    DEFAULT_STRESS_FIBER_MAX_MS = 200
-
-    CLUSTER_CONFIG_DEFAULTS = {
-        "join_retry_timeout_ms": 200,
-        "default_topic_partitions": 4,
-        "enable_metrics_reporter": False,
-        "superusers": [RedpandaServiceConstants.SUPERUSER_CREDENTIALS[0]],
-        # Disable segment size jitter to make tests more deterministic if they rely on
-        # inspecting storage internals (e.g. number of segments after writing a certain
-        # amount of data).
-        "log_segment_size_jitter_percent": 0,
-        # This is high enough not to interfere with the logic in any tests, while also
-        # providing some background coverage of the connection limit code (i.e. that it
-        # doesn't crash, it doesn't limit when it shouldn't)
-        "kafka_connections_max": 2048,
-        "kafka_connections_max_per_ip": 1024,
-        "kafka_connections_max_overrides": ["1.2.3.4:5"],
-        # configure shutdown watchdog timeout to 20 seconds to give it a chance
-        # to fire before Redpanda node that doesn't stopped is killed
-        "partition_manager_shutdown_watchdog_timeout": 20000,
-    }
-
-    logs = {
-        "redpanda_start_stdout_stderr": {
-            "path": STDOUT_STDERR_CAPTURE,
-            "collect_default": True,
-        },
-        "code_coverage_profraw_file": {
-            "path": COVERAGE_PROFRAW_CAPTURE,
-            "collect_default": True,
-        },
-        "executable": {"path": EXECUTABLE_SAVE_PATH, "collect_default": False},
-        "backtraces": {"path": BACKTRACE_CAPTURE, "collect_default": True},
-    }
-
-    # Thread name of shards to be used with redpanda_tid()
-    SHARD_0_THREAD_NAME = "redpanda"
-    SHARD_1_THREAD_NAME = "reactor-1"
-
-    class FIPSMode(Enum):
-        disabled = 0
-        permissive = 1
-        enabled = 2
-
-    def __init__(
-        self,
-        context: TestContext,
-        num_brokers: int,
-        *,
-        cluster_spec=None,
-        extra_rp_conf=None,
-        resource_settings: Optional[ResourceSettings] = None,
-        si_settings: Optional[SISettings] = None,
-        superuser: Optional[SaslCredentials] = None,
-        skip_if_no_redpanda_log: Optional[bool] = False,
-        disable_cloud_storage_diagnostics=True,
-    ):
-        super(RedpandaServiceBase, self).__init__(
-            context, num_nodes=num_brokers, cluster_spec=cluster_spec
-        )
-        self._context = context
-        self._extra_rp_conf = extra_rp_conf or dict()
-
-        if si_settings is not None:
-            self.set_si_settings(si_settings)
-        else:
-            self._si_settings = None
-
-        if superuser is None:
-            superuser = self.SUPERUSER_CREDENTIALS
-            self._skip_create_superuser = False
-        else:
-            # When we are passed explicit superuser credentials, presume that the caller
-            # is taking care of user creation themselves (e.g. when testing credential bootstrap)
-            self._skip_create_superuser = True
-
-        self._superuser = superuser
-
-        self._admin = Admin(
-            self, auth=(self._superuser.username, self._superuser.password)
-        )
-
-        if resource_settings is None:
-            resource_settings = ResourceSettings()
-        self._resource_settings = resource_settings
-
-        # Disable saving cloud storage diagnostics. This may be useful for
-        # tests that generate millions of objecst, as collecting diagnostics
-        # may take a significant amount of time.
-        self._disable_cloud_storage_diagnostics = disable_cloud_storage_diagnostics
-
-        self._trim_logs = self._context.globals.get(self.TRIM_LOGS_KEY, True)
-
-        self._node_id_by_idx = {}
-        self._security_config: dict[str, str | int] = {}
-
-        self._skip_if_no_redpanda_log = skip_if_no_redpanda_log
-
-        self._dedicated_nodes: bool = self._context.globals.get(
-            self.DEDICATED_NODE_KEY, False
-        )
-
-        self.logger.info(f"ResourceSettings: dedicated_nodes={self._dedicated_nodes}")
-
-    def restart_nodes(
-        self,
-        nodes,
-        override_cfg_params=None,
-        start_timeout=None,
-        stop_timeout=None,
-        auto_assign_node_id=False,
-        omit_seeds_on_idx_one=True,
-        extra_cli: list[str] = [],
-    ):
-        nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(nodes)) as executor:
-            # The list() wrapper is to cause futures to be evaluated here+now
-            # (including throwing any exceptions) and not just spawned in background.
-            list(executor.map(lambda n: self.stop_node(n, timeout=stop_timeout), nodes))
-            list(
-                executor.map(
-                    lambda n: self.start_node(
-                        n,
-                        override_cfg_params=override_cfg_params,
-                        timeout=start_timeout,
-                        auto_assign_node_id=auto_assign_node_id,
-                        omit_seeds_on_idx_one=omit_seeds_on_idx_one,
-                        extra_cli=extra_cli,
-                    ),
-                    nodes,
-                )
-            )
-
-    def set_extra_rp_conf(self, conf):
-        self._extra_rp_conf = conf
-        if self._si_settings is not None:
-            self._extra_rp_conf = self._si_settings.update_rp_conf(self._extra_rp_conf)
-
-    def set_si_settings(self, si_settings: SISettings):
-        si_settings.load_context(self.logger, self._context)
-        self._si_settings = si_settings
-        self._extra_rp_conf = self._si_settings.update_rp_conf(self._extra_rp_conf)
-
-    def use_stress_fiber(self) -> bool:
-        """Return true if the test should run with the stress fiber."""
-        use_stress_fiber = self._context.globals.get(
-            self.GLOBAL_USE_STRESS_FIBER, self.DEFAULT_USE_STRESS_FIBER
-        )
-        if use_stress_fiber == "ON":
-            return True
-        elif use_stress_fiber == "OFF":
-            return False
-
-        self.logger.warn(f"{self.GLOBAL_USE_STRESS_FIBER} should be 'ON', or 'OFF'")
-        return False
-
-    def get_stress_fiber_params(self) -> Tuple[int, int, int]:
-        fibers = int(
-            self._context.globals.get(
-                self.GLOBAL_NUM_STRESS_FIBERS, self.DEFAULT_NUM_STRESS_FIBERS
-            )
-        )
-        min_ms = int(
-            self._context.globals.get(
-                self.GLOBAL_STRESS_FIBER_MIN_MS, self.DEFAULT_STRESS_FIBER_MIN_MS
-            )
-        )
-        max_ms = int(
-            self._context.globals.get(
-                self.GLOBAL_STRESS_FIBER_MAX_MS, self.DEFAULT_STRESS_FIBER_MAX_MS
-            )
-        )
-        return (fibers, min_ms, max_ms)
-
-    def add_extra_rp_conf(self, conf):
-        self._extra_rp_conf = {**self._extra_rp_conf, **conf}
-
-    def metric_sum(
-        self,
-        metric_name: str,
-        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
-        namespace: str | None = None,
-        topic: str | None = None,
-        nodes: Any = None,
-        expect_metric: bool = False,
-    ):
-        """
-        Pings the 'metrics_endpoint' of each node and returns the summed values
-        of the given metric, optionally filtering by namespace and topic.
-        """
-
-        if nodes is None:
-            nodes = self.nodes
-
-        return self._metric_sum(
-            metric_name,
-            nodes,
-            metrics_endpoint,
-            namespace,
-            topic,
-            expect_metric=expect_metric,
-        )
-
-    def healthy(self):
-        """
-        A primitive health check on all the nodes which returns True when all
-        nodes report that no under replicated partitions exist. This should
-        later be replaced by a proper / official start-up probe type check on
-        the health of a node after a restart.
-        """
-        counts: dict[int, int | None] = {self.idx(node): None for node in self.nodes}
-        for node in self.nodes:
-            try:
-                metrics = self.metrics(node)
-            except:
-                return False
-            idx = self.idx(node)
-            for family in metrics:
-                for sample in family.samples:
-                    if (
-                        sample.name
-                        == "vectorized_cluster_partition_under_replicated_replicas"
-                    ):
-                        counts[idx] = int(sample.value) + (counts[idx] or 0)
-        return all(map(lambda count: count == 0, counts.values()))
-
-    def rolling_restart_nodes(
-        self,
-        nodes,
-        override_cfg_params=None,
-        start_timeout=None,
-        stop_timeout=None,
-        use_maintenance_mode=True,
-        omit_seeds_on_idx_one=True,
-        auto_assign_node_id=False,
-    ):
-        nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
-        restarter = RollingRestarter(self)
-        restarter.restart_nodes(
-            nodes,
-            override_cfg_params=override_cfg_params,
-            start_timeout=start_timeout,
-            stop_timeout=stop_timeout,
-            use_maintenance_mode=use_maintenance_mode,
-            omit_seeds_on_idx_one=omit_seeds_on_idx_one,
-            auto_assign_node_id=auto_assign_node_id,
-        )
-
-    def set_resource_settings(self, rs):
-        self._resource_settings = rs
-
-    @property
-    def si_settings(self) -> SISettings:
-        """Return the SISettings object associated with this redpanda service,
-        containing the cloud storage associated settings. Throws if si settings
-        were not configured for this service."""
-        assert self._si_settings, (
-            "si_settings were None, probably because they were not specified during redpanda service creation"
-        )
-        return self._si_settings
-
-    def for_nodes(self, nodes, cb: Callable) -> list:
-        n_workers = len(nodes)
-        if n_workers > 0:
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=n_workers
-            ) as executor:
-                # The list() wrapper is to cause futures to be evaluated here+now
-                # (including throwing any exceptions) and not just spawned in background.
-                return list(executor.map(cb, nodes))
-        else:
-            return []
-
-    def trim_logs(self):
-        if not self._trim_logs:
-            return
-
-        # Excessive logging may cause disks to fill up quickly.
-        # Call this method to removes TRACE and DEBUG log lines from redpanda logs
-        # Ensure this is only done on tests that have passed
-        def prune(node):
-            node.account.ssh(
-                f"sed -i -E -e '/TRACE|DEBUG/d' {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
-            )
-
-        self.for_nodes(self.nodes, prune)
-
-    def node_id(self, node, force_refresh=False, timeout_sec=30):
-        """
-        Returns the node ID of a given node. Uses a cached value unless
-        'force_refresh' is set to True.
-
-        NOTE: this is not thread-safe.
-        """
-        idx = self.idx(node)
-        if not force_refresh:
-            if idx in self._node_id_by_idx:
-                return self._node_id_by_idx[idx]
-
-        def _try_get_node_id():
-            try:
-                node_cfg = self._admin.get_node_config(node)
-            except:
-                return (False, -1)
-            return (True, node_cfg["node_id"])
-
-        node_id = wait_until_result(
-            _try_get_node_id,
-            timeout_sec=timeout_sec,
-            err_msg=f"couldn't reach admin endpoint for {node.account.hostname}",
-        )
-        self.logger.info(f"Got node ID for {node.account.hostname}: {node_id}")
-        self._node_id_by_idx[idx] = node_id
-        return node_id
-
-    def kafka_client_security(self):
-        if self._security_config:
-
-            def get_str(key: str):
-                v = self._security_config[key]
-                assert isinstance(v, str)
-                return v
-
-            creds = SaslCredentials(
-                username=get_str("sasl_plain_username"),
-                password=get_str("sasl_plain_password"),
-                algorithm=get_str("sasl_mechanism"),
-            )
-        else:
-            creds = None
-
-        return KafkaClientSecurity(creds, tls_enabled=False)
-
-    def set_skip_if_no_redpanda_log(self, v: bool):
-        self._skip_if_no_redpanda_log = v
-
-    def raise_on_bad_logs(self, allow_list=None):
-        """
-        Raise a BadLogLines exception if any nodes' logs contain errors
-        not permitted by `allow_list`
-
-        :param allow_list: list of compiled regexes, or None for default
-        :return: None
-        """
-        allow_list = prepare_allow_list(allow_list)
-
-        _searchable_nodes = []
-        for node in self.nodes:
-            if self._skip_if_no_redpanda_log and not node.account.exists(
-                RedpandaServiceBase.STDOUT_STDERR_CAPTURE
-            ):
-                self.logger.info(
-                    f"{RedpandaServiceBase.STDOUT_STDERR_CAPTURE} not found on {node.account.hostname}. Skipping log scan."
-                )
-                continue
-            _searchable_nodes.append((self.get_version_if_not_head(node), node))
-
-        lsearcher = LogSearchLocal(
-            self._context,
-            allow_list,
-            self.logger,
-            RedpandaServiceBase.STDOUT_STDERR_CAPTURE,
-        )
-        lsearcher.search_logs(_searchable_nodes)
-
-    @property
-    def dedicated_nodes(self):
-        """
-        If true, the nodes are dedicated linux servers, e.g. EC2 instances.
-
-        If false, the nodes are containers that share CPUs and memory with
-        one another.
-        :return:
-        """
-        return self._dedicated_nodes
-
-
 class KubeServiceMixin:
     kubectl: KubectlTool
 
@@ -1937,11 +1519,11 @@ class KubeServiceMixin:
         return int(core_count_str.strip())
 
     def get_node_disk_free(self):
-        if self.kubectl.exists(RedpandaServiceBase.PERSISTENT_ROOT):
-            df_path = RedpandaServiceBase.PERSISTENT_ROOT
+        if self.kubectl.exists(RedpandaService.PERSISTENT_ROOT):
+            df_path = RedpandaService.PERSISTENT_ROOT
         else:
             # If dir doesn't exist yet, use the parent.
-            df_path = os.path.dirname(RedpandaServiceBase.PERSISTENT_ROOT)
+            df_path = os.path.dirname(RedpandaService.PERSISTENT_ROOT)
         df_out = self.kubectl.exec(f"df --output=avail {df_path}")
         avail_kb = int(df_out.strip().split("\n")[1].strip())
         return avail_kb * 1024
@@ -1993,7 +1575,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
         self.config_profile_name = config_profile_name
         self._min_brokers = min_brokers
-        self._superuser = RedpandaServiceBase.SUPERUSER_CREDENTIALS
+        self._superuser = RedpandaService.SUPERUSER_CREDENTIALS
 
         self._trim_logs = False
 
@@ -2043,8 +1625,18 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             "ResourceSettings: setting dedicated_nodes=True because serving from redpanda cloud"
         )
 
-        cluster_id = self._cloud_cluster.create(superuser=self._superuser)
+        self._is_serverless_cluster = False
+        if self._cc_config["type"] == "serverless":
+            self._is_serverless_cluster = True
+        cluster_id = self._cloud_cluster.create(
+            superuser=self._superuser, is_serverless_cluster=self._is_serverless_cluster
+        )
         remote_uri = f"redpanda@{cluster_id}-agent"
+        if self._is_serverless_cluster:
+            # if cluster is a serverless cluster it will be treated as a black box, there will be no kubectl or
+            # checking of pods
+            return
+
         self.__kubectl = KubectlTool(
             self,
             remote_uri=remote_uri,
@@ -2377,7 +1969,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             f"{consume_count} messages."
         )
 
-    def stop(self, **kwargs):
+    def stop(self, **kwargs: Any) -> None:
         if self._cloud_cluster.config.delete_cluster:
             self._cloud_cluster.delete()
         else:
@@ -2386,9 +1978,14 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             )
 
     def brokers(self) -> str:
+        if self._is_serverless_cluster:
+            return self._cloud_cluster.get_serverless_broker_address()
         return self._cloud_cluster.get_broker_address()
 
     def install_pack_version(self) -> str:
+        if self._is_serverless_cluster:
+            # if serverless cluster we do not have an install pack version
+            return "unknown_version"
         return self._cloud_cluster.get_install_pack_version()
 
     def sockets_clear(self, node: RemoteClusterNode):
@@ -2571,7 +2168,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             f"were only {broker_count} brokers: {brokers}"
         )
 
-    def raise_on_crash(self, log_allow_list: Any = None):
+    def raise_on_crash(self, log_allow_list: LogAllowList = ()) -> None:
         """Function checks if active RP pods has restart counter changed since last check"""
 
         # Can't remove log_allow_list as it is present in the metadataaddeer call
@@ -2590,6 +2187,10 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         def _get_restart_count(p):
             # Shortcut to getting restart counter
             return p["containerStatuses"][0]["restartCount"]
+
+        if self._is_serverless_cluster:
+            # if serverless cluster test treats it like a black box, no checking of pods
+            return
 
         # Not checking active count vs expected nodes
         active, _, _ = self.get_redpanda_pods_presorted()
@@ -2655,7 +2256,9 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
     def cluster_healthy(self) -> bool:
         return self.cluster_unhealthy_reason is not None
 
-    def raise_on_bad_logs(self, allow_list=None, test_start_time=None):
+    def raise_on_bad_logs(
+        self, allow_list: LogAllowList = (), test_start_time: float | None = None
+    ) -> None:
         """
         Raise a BadLogLines exception if any nodes' logs contain errors
         not permitted by `allow_list`
@@ -2663,6 +2266,10 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         :param allow_list: list of compiled regexes, or None for default
         :return: None
         """
+        if self._is_serverless_cluster:
+            # if serverless cluster test treats it as a black box, no checking of logs
+            return
+
         allow_list = prepare_allow_list(allow_list)
 
         lsearcher = LogSearchCloud(
@@ -2721,6 +2328,10 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                 self.logger.warning(f"Error getting logs for {pod.name}: {e}")
             return pod.name
 
+        if self._is_serverless_cluster:
+            # if serverless cluster test treats it as a black box, no checking of pods
+            return {}
+
         # Safeguard if CloudService not created
         if self.pods is None or self._cloud_cluster is None:
             return {}
@@ -2752,8 +2363,99 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         return {}
 
 
-class RedpandaService(RedpandaServiceBase):
+class RedpandaService(RedpandaServiceABC, Service):
+    PERSISTENT_ROOT = "/var/lib/redpanda"
+    TRIM_LOGS_KEY = "trim_logs"
+    DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
+    NODE_CONFIG_FILE = "/etc/redpanda/redpanda.yaml"
+    RPK_CONFIG_FILE = "/root/.config/rpk/rpk.yaml"
+    CLUSTER_BOOTSTRAP_CONFIG_FILE = "/etc/redpanda/.bootstrap.yaml"
+    TLS_SERVER_KEY_FILE = "/etc/redpanda/server.key"
+    TLS_SERVER_CRT_FILE = "/etc/redpanda/server.crt"
+    TLS_SERVER_P12_FILE = "/etc/redpanda/server.p12"
+    TLS_CA_CRT_FILE = "/etc/redpanda/ca.crt"
+    TLS_CA_CRL_FILE = "/etc/redpanda/ca.crl"
+    SYSTEM_TLS_CA_CRT_FILE = "/usr/local/share/ca-certificates/ca.crt"
+    STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.log")
+    BACKTRACE_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda_backtrace.log")
+    COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.profraw")
+    TEMP_OSSL_CONFIG_FILE = "/etc/openssl.cnf"
+    DEFAULT_NODE_READY_TIMEOUT_SEC = 40
+    NODE_READY_TIMEOUT_MIN_SEC_KEY = "node_ready_timeout_min_sec"
+    DEFAULT_CLOUD_STORAGE_SCRUB_TIMEOUT_SEC = 60
+    DEDICATED_NODE_KEY = "dedicated_nodes"
+    RAISE_ON_ERRORS_KEY = "raise_on_error"
+    LOG_LEVEL_KEY = "redpanda_log_level"
+    DEFAULT_LOG_LEVEL = "info"
+    COV_KEY = "enable_cov"
+    DEFAULT_COV_OPT = "OFF"
+
     ENTERPRISE_LICENSE_NAG = "A Redpanda Enterprise Edition license is required"
+
+    # Where we put a compressed binary if saving it after failure
+    EXECUTABLE_SAVE_PATH = "/tmp/redpanda.gz"
+
+    FAILURE_INJECTION_CONFIG_PATH = "/etc/redpanda/failure_injection_config.json"
+
+    OPENSSL_CONFIG_FILE_BASE = "openssl/openssl.cnf"
+    OPENSSL_MODULES_PATH_BASE = "lib/ossl-modules/"
+
+    # When configuring multiple listeners for testing, a secondary port to use
+    # instead of the default.
+    KAFKA_ALTERNATE_PORT = 9093
+    KAFKA_KERBEROS_PORT = 9094
+    ADMIN_ALTERNATE_PORT = 9647
+
+    GLOBAL_USE_STRESS_FIBER = "enable_stress_fiber"
+    GLOBAL_NUM_STRESS_FIBERS = "num_stress_fibers"
+    GLOBAL_STRESS_FIBER_MIN_MS = "stress_fiber_min_ms"
+    GLOBAL_STRESS_FIBER_MAX_MS = "stress_fiber_max_ms"
+    DEFAULT_USE_STRESS_FIBER = "OFF"
+    DEFAULT_NUM_STRESS_FIBERS = 1
+    DEFAULT_STRESS_FIBER_MIN_MS = 100
+    DEFAULT_STRESS_FIBER_MAX_MS = 200
+
+    CLUSTER_CONFIG_DEFAULTS: dict[str, Any] = {
+        "join_retry_timeout_ms": 200,
+        "default_topic_partitions": 4,
+        "enable_metrics_reporter": False,
+        "superusers": [RedpandaServiceConstants.SUPERUSER_CREDENTIALS[0]],
+        # Disable segment size jitter to make tests more deterministic if they rely on
+        # inspecting storage internals (e.g. number of segments after writing a certain
+        # amount of data).
+        "log_segment_size_jitter_percent": 0,
+        # This is high enough not to interfere with the logic in any tests, while also
+        # providing some background coverage of the connection limit code (i.e. that it
+        # doesn't crash, it doesn't limit when it shouldn't)
+        "kafka_connections_max": 2048,
+        "kafka_connections_max_per_ip": 1024,
+        "kafka_connections_max_overrides": ["1.2.3.4:5"],
+        # configure shutdown watchdog timeout to 20 seconds to give it a chance
+        # to fire before Redpanda node that doesn't stopped is killed
+        "partition_manager_shutdown_watchdog_timeout": 20000,
+    }
+
+    logs = {
+        "redpanda_start_stdout_stderr": {
+            "path": STDOUT_STDERR_CAPTURE,
+            "collect_default": True,
+        },
+        "code_coverage_profraw_file": {
+            "path": COVERAGE_PROFRAW_CAPTURE,
+            "collect_default": True,
+        },
+        "executable": {"path": EXECUTABLE_SAVE_PATH, "collect_default": False},
+        "backtraces": {"path": BACKTRACE_CAPTURE, "collect_default": True},
+    }
+
+    # Thread name of shards to be used with redpanda_tid()
+    SHARD_0_THREAD_NAME = "redpanda"
+    SHARD_1_THREAD_NAME = "reactor-1"
+
+    class FIPSMode(Enum):
+        disabled = 0
+        permissive = 1
+        enabled = 2
 
     nodes: list[ClusterNode]
 
@@ -2762,6 +2464,7 @@ class RedpandaService(RedpandaServiceBase):
         context: TestContext,
         num_brokers: int,
         *,
+        cluster_spec=None,
         extra_rp_conf=None,
         extra_node_conf=None,
         resource_settings=None,
@@ -2780,16 +2483,69 @@ class RedpandaService(RedpandaServiceBase):
         cloud_storage_scrub_timeout_s=None,
         rpk_node_config: Optional[RpkNodeConfig] = None,
     ):
-        super(RedpandaService, self).__init__(
-            context,
-            num_brokers,
-            extra_rp_conf=extra_rp_conf,
-            resource_settings=resource_settings,
-            si_settings=si_settings,
-            superuser=superuser,
-            skip_if_no_redpanda_log=skip_if_no_redpanda_log,
-            disable_cloud_storage_diagnostics=disable_cloud_storage_diagnostics,
+        super().__init__(context, num_nodes=num_brokers, cluster_spec=cluster_spec)
+
+        # def __init__(
+        #     self,
+        #     context: TestContext,
+        #     num_brokers: int,
+        #     *,
+        #     cluster_spec=None,
+        #     extra_rp_conf=None,
+        #     resource_settings: Optional[ResourceSettings] = None,
+        #     si_settings: Optional[SISettings] = None,
+        #     superuser: Optional[SaslCredentials] = None,
+        #     skip_if_no_redpanda_log: Optional[bool] = False,
+        #     disable_cloud_storage_diagnostics=True,
+        # ):
+
+        # BEGIN
+
+        self._context = context
+        self._extra_rp_conf = extra_rp_conf or dict()
+
+        if si_settings is not None:
+            self.set_si_settings(si_settings)
+        else:
+            self._si_settings = None
+
+        if superuser is None:
+            superuser = self.SUPERUSER_CREDENTIALS
+            self._skip_create_superuser = False
+        else:
+            # When we are passed explicit superuser credentials, presume that the caller
+            # is taking care of user creation themselves (e.g. when testing credential bootstrap)
+            self._skip_create_superuser = True
+
+        self._superuser = superuser
+
+        self._admin = Admin(
+            self, auth=(self._superuser.username, self._superuser.password)
         )
+
+        if resource_settings is None:
+            resource_settings = ResourceSettings()
+        self._resource_settings = resource_settings
+
+        # Disable saving cloud storage diagnostics. This may be useful for
+        # tests that generate millions of objecst, as collecting diagnostics
+        # may take a significant amount of time.
+        self._disable_cloud_storage_diagnostics = disable_cloud_storage_diagnostics
+
+        self._trim_logs = self._context.globals.get(self.TRIM_LOGS_KEY, True)
+
+        self._node_id_by_idx = {}
+        self._security_config: dict[str, str | int] = {}
+
+        self._skip_if_no_redpanda_log = skip_if_no_redpanda_log
+
+        self._dedicated_nodes: bool = self._context.globals.get(
+            self.DEDICATED_NODE_KEY, False
+        )
+
+        self.logger.info(f"ResourceSettings: dedicated_nodes={self._dedicated_nodes}")
+
+        # END
         self._security = security
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
         self._pandaproxy_config = pandaproxy_config
@@ -2888,6 +2644,281 @@ class RedpandaService(RedpandaServiceBase):
         self._seed_servers = self.nodes
 
         self._expect_max_controller_records = 1000
+
+    def restart_nodes(
+        self,
+        nodes,
+        override_cfg_params=None,
+        start_timeout=None,
+        stop_timeout=None,
+        auto_assign_node_id=False,
+        omit_seeds_on_idx_one=True,
+        extra_cli: list[str] = [],
+    ):
+        nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(nodes)) as executor:
+            # The list() wrapper is to cause futures to be evaluated here+now
+            # (including throwing any exceptions) and not just spawned in background.
+            list(executor.map(lambda n: self.stop_node(n, timeout=stop_timeout), nodes))
+            list(
+                executor.map(
+                    lambda n: self.start_node(
+                        n,
+                        override_cfg_params=override_cfg_params,
+                        timeout=start_timeout,
+                        auto_assign_node_id=auto_assign_node_id,
+                        omit_seeds_on_idx_one=omit_seeds_on_idx_one,
+                        extra_cli=extra_cli,
+                    ),
+                    nodes,
+                )
+            )
+
+    def set_extra_rp_conf(self, conf: dict[str, Any]):
+        self._extra_rp_conf = conf
+        if self._si_settings is not None:
+            self._extra_rp_conf = self._si_settings.update_rp_conf(self._extra_rp_conf)
+
+    def set_si_settings(self, si_settings: SISettings):
+        si_settings.load_context(self.logger, self._context)
+        self._si_settings = si_settings
+        self._extra_rp_conf = self._si_settings.update_rp_conf(self._extra_rp_conf)
+
+    def use_stress_fiber(self) -> bool:
+        """Return true if the test should run with the stress fiber."""
+        use_stress_fiber = self._context.globals.get(
+            self.GLOBAL_USE_STRESS_FIBER, self.DEFAULT_USE_STRESS_FIBER
+        )
+        if use_stress_fiber == "ON":
+            return True
+        elif use_stress_fiber == "OFF":
+            return False
+
+        self.logger.warn(f"{self.GLOBAL_USE_STRESS_FIBER} should be 'ON', or 'OFF'")
+        return False
+
+    def get_stress_fiber_params(self) -> Tuple[int, int, int]:
+        fibers = int(
+            self._context.globals.get(
+                self.GLOBAL_NUM_STRESS_FIBERS, self.DEFAULT_NUM_STRESS_FIBERS
+            )
+        )
+        min_ms = int(
+            self._context.globals.get(
+                self.GLOBAL_STRESS_FIBER_MIN_MS, self.DEFAULT_STRESS_FIBER_MIN_MS
+            )
+        )
+        max_ms = int(
+            self._context.globals.get(
+                self.GLOBAL_STRESS_FIBER_MAX_MS, self.DEFAULT_STRESS_FIBER_MAX_MS
+            )
+        )
+        return (fibers, min_ms, max_ms)
+
+    def add_extra_rp_conf(self, conf):
+        self._extra_rp_conf = {**self._extra_rp_conf, **conf}
+
+    def metric_sum(
+        self,
+        metric_name: str,
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+        namespace: str | None = None,
+        topic: str | None = None,
+        nodes: Any = None,
+        expect_metric: bool = False,
+    ):
+        """
+        Pings the 'metrics_endpoint' of each node and returns the summed values
+        of the given metric, optionally filtering by namespace and topic.
+        """
+
+        if nodes is None:
+            nodes = self.nodes
+
+        return self._metric_sum(
+            metric_name,
+            nodes,
+            metrics_endpoint,
+            namespace,
+            topic,
+            expect_metric=expect_metric,
+        )
+
+    def healthy(self):
+        """
+        A primitive health check on all the nodes which returns True when all
+        nodes report that no under replicated partitions exist. This should
+        later be replaced by a proper / official start-up probe type check on
+        the health of a node after a restart.
+        """
+        counts: dict[int, int | None] = {self.idx(node): None for node in self.nodes}
+        for node in self.nodes:
+            try:
+                metrics = self.metrics(node)
+            except:
+                return False
+            idx = self.idx(node)
+            for family in metrics:
+                for sample in family.samples:
+                    if (
+                        sample.name
+                        == "vectorized_cluster_partition_under_replicated_replicas"
+                    ):
+                        counts[idx] = int(sample.value) + (counts[idx] or 0)
+        return all(map(lambda count: count == 0, counts.values()))
+
+    def rolling_restart_nodes(
+        self,
+        nodes,
+        override_cfg_params=None,
+        start_timeout=None,
+        stop_timeout=None,
+        use_maintenance_mode=True,
+        omit_seeds_on_idx_one=True,
+        auto_assign_node_id=False,
+    ):
+        nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
+        restarter = RollingRestarter(self)
+        restarter.restart_nodes(
+            nodes,
+            override_cfg_params=override_cfg_params,
+            start_timeout=start_timeout,
+            stop_timeout=stop_timeout,
+            use_maintenance_mode=use_maintenance_mode,
+            omit_seeds_on_idx_one=omit_seeds_on_idx_one,
+            auto_assign_node_id=auto_assign_node_id,
+        )
+
+    def set_resource_settings(self, rs):
+        self._resource_settings = rs
+
+    @property
+    def si_settings(self) -> SISettings:
+        """Return the SISettings object associated with this redpanda service,
+        containing the cloud storage associated settings. Throws if si settings
+        were not configured for this service."""
+        assert self._si_settings, (
+            "si_settings were None, probably because they were not specified during redpanda service creation"
+        )
+        return self._si_settings
+
+    def for_nodes(self, nodes, cb: Callable) -> list:
+        n_workers = len(nodes)
+        if n_workers > 0:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=n_workers
+            ) as executor:
+                # The list() wrapper is to cause futures to be evaluated here+now
+                # (including throwing any exceptions) and not just spawned in background.
+                return list(executor.map(cb, nodes))
+        else:
+            return []
+
+    def trim_logs(self):
+        if not self._trim_logs:
+            return
+
+        # Excessive logging may cause disks to fill up quickly.
+        # Call this method to removes TRACE and DEBUG log lines from redpanda logs
+        # Ensure this is only done on tests that have passed
+        def prune(node):
+            node.account.ssh(
+                f"sed -i -E -e '/TRACE|DEBUG/d' {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
+            )
+
+        self.for_nodes(self.nodes, prune)
+
+    def node_id(self, node, force_refresh=False, timeout_sec=30):
+        """
+        Returns the node ID of a given node. Uses a cached value unless
+        'force_refresh' is set to True.
+
+        NOTE: this is not thread-safe.
+        """
+        idx = self.idx(node)
+        if not force_refresh:
+            if idx in self._node_id_by_idx:
+                return self._node_id_by_idx[idx]
+
+        def _try_get_node_id():
+            try:
+                node_cfg = self._admin.get_node_config(node)
+            except:
+                return (False, -1)
+            return (True, node_cfg["node_id"])
+
+        node_id = wait_until_result(
+            _try_get_node_id,
+            timeout_sec=timeout_sec,
+            err_msg=f"couldn't reach admin endpoint for {node.account.hostname}",
+        )
+        self.logger.info(f"Got node ID for {node.account.hostname}: {node_id}")
+        self._node_id_by_idx[idx] = node_id
+        return node_id
+
+    def kafka_client_security(self):
+        if self._security_config:
+
+            def get_str(key: str):
+                v = self._security_config[key]
+                assert isinstance(v, str)
+                return v
+
+            creds = SaslCredentials(
+                username=get_str("sasl_plain_username"),
+                password=get_str("sasl_plain_password"),
+                algorithm=get_str("sasl_mechanism"),
+            )
+        else:
+            creds = None
+
+        return KafkaClientSecurity(creds, tls_enabled=False)
+
+    def set_skip_if_no_redpanda_log(self, v: bool):
+        self._skip_if_no_redpanda_log = v
+
+    def raise_on_bad_logs(
+        self, allow_list: LogAllowList = (), test_start_time: float | None = None
+    ):
+        """
+        Raise a BadLogLines exception if any nodes' logs contain errors not
+        permitted by `allow_list`
+
+        :param allow_list: LogAllowList of additional lines to ignore (default
+            ignores are always included)
+        """
+
+        allow_list = prepare_allow_list(allow_list)
+
+        _searchable_nodes = []
+        for node in self.nodes:
+            if self._skip_if_no_redpanda_log and not node.account.exists(
+                RedpandaService.STDOUT_STDERR_CAPTURE
+            ):
+                self.logger.info(
+                    f"{RedpandaService.STDOUT_STDERR_CAPTURE} not found on {node.account.hostname}. Skipping log scan."
+                )
+                continue
+            _searchable_nodes.append((self.get_version_if_not_head(node), node))
+
+        lsearcher = LogSearchLocal(
+            self._context,
+            allow_list,
+            self.logger,
+            RedpandaService.STDOUT_STDERR_CAPTURE,
+        )
+        lsearcher.search_logs(_searchable_nodes)
+
+    @property
+    def dedicated_nodes(self):
+        """
+        If true, the nodes are dedicated linux servers, e.g. EC2 instances.
+
+        If false, the nodes are containers that share CPUs and memory with
+        one another.
+        :return:
+        """
+        return self._dedicated_nodes
 
     def redpanda_env_preamble(self):
         # Pass environment variables via FOO=BAR shell expressions
@@ -3651,7 +3682,7 @@ class RedpandaService(RedpandaServiceBase):
         """
         self.logger.debug(f"Gathering logs to analyze from {node.name}...")
         expr = '"application.*Stopping"'
-        cmd = f"grep {expr} {RedpandaServiceBase.STDOUT_STDERR_CAPTURE} || true"
+        cmd = f"grep {expr} {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
 
         other_stopping = []
         last_next_to_shutdown = None
@@ -4032,7 +4063,7 @@ class RedpandaService(RedpandaServiceBase):
         assert node in self.nodes, f"Node {node.account.hostname} is not started"
         return node.account.monitor_log(RedpandaService.STDOUT_STDERR_CAPTURE)
 
-    def raise_on_crash(self, log_allow_list: LogAllowList | None = None):
+    def raise_on_crash(self, log_allow_list: LogAllowList | None = ()) -> None:
         """
         Check if any redpanda nodes are unexpectedly not running,
         or if any logs contain segfaults or assertions.
@@ -5905,7 +5936,7 @@ class RedpandaService(RedpandaServiceBase):
                     f"Oversized controller log detected!  {max_length} records"
                 )
 
-    def estimate_bytes_written(self):
+    def estimate_bytes_written(self) -> float | None:
         try:
             samples = self.metrics_sample(
                 "vectorized_io_queue_total_write_bytes_total",
@@ -6029,7 +6060,7 @@ class RedpandaService(RedpandaServiceBase):
 def make_redpanda_service(
     context: TestContext, num_brokers: int | None, *, extra_rp_conf=None, **kwargs
 ) -> RedpandaService:
-    """Factory function for instatiating the appropriate RedpandaServiceBase subclass."""
+    """Factory function for instatiating the appropriate RedpandaServiceABC subclass."""
 
     # https://github.com/redpanda-data/core-internal/issues/1002
     assert not is_redpanda_cloud(context), (

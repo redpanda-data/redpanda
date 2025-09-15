@@ -96,7 +96,9 @@ lock_manager::range_lock(const local_log_reader_config& cfg) {
           // must be base offset
           return s->offsets().get_base_offset() <= cfg.max_offset;
       });
-    return range(std::move(tmp));
+    return range(
+      std::move(tmp),
+      cfg.read_lock_deadline.value_or(ss::semaphore::clock::time_point::max()));
 }
 
 std::ostream& operator<<(std::ostream& o, const lock_manager::lease& l) {

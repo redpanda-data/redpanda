@@ -9,16 +9,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import concurrent.futures
+import json
 import logging
 import os
-import subprocess
-import tempfile
-import json
 import shutil
+import subprocess
 import sys
-import concurrent.futures
-import hashlib
-from collections import defaultdict
+import tempfile
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)

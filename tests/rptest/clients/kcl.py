@@ -7,18 +7,19 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import namedtuple
+import itertools
 import json
 import random
 import re
 import string
 import subprocess
 import time
-import itertools
-from typing import Optional
+from collections import namedtuple
 from functools import cache
+from typing import Optional
+
 from ducktape.utils.util import wait_until
-from rptest.utils.functional import flat_map
+
 
 KclPartitionOffset = namedtuple(
     "KclPartitionOffset",
@@ -466,7 +467,7 @@ class RawKCL(KCL):
             return []
 
     def raw_create_topics(self, version, topics, validate_only=False):
-        assert version >= 0 and version <= 6, (
+        assert version >= 0 and version <= 7, (
             "version out of supported redpanda range for this API"
         )
         create_topics_request = {

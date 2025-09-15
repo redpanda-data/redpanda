@@ -19,6 +19,7 @@
 #include "datalake/tests/record_generator.h"
 #include "datalake/tests/test_data_writer.h"
 #include "datalake/tests/test_utils.h"
+#include "features/feature_table.h"
 #include "model/batch_compression.h"
 #include "model/compression.h"
 #include "model/record.h"
@@ -273,10 +274,12 @@ class record_multiplexer_bench_fixture
 public:
     record_multiplexer_bench_fixture()
       : _schema_cache({10, 5})
-      , _schema_mgr(catalog)
+      , _schema_mgr(catalog, &_features)
       , _type_resolver(registry, _schema_cache)
       , _record_gen(&registry)
-      , _table_creator(_type_resolver, _schema_mgr) {}
+      , _table_creator(_type_resolver, _schema_mgr) {
+        _features.testing_activate_all();
+    }
 
     template<typename T>
     requires std::same_as<T, ::testing::protobuf_generator_config>
@@ -326,6 +329,7 @@ private:
     const model::revision_id topic_rev{123};
 
     std::unordered_set<std::string> _added_names;
+    features::feature_table _features;
     datalake::chunked_schema_cache _schema_cache;
     datalake::catalog_schema_manager _schema_mgr;
     datalake::record_schema_resolver _type_resolver;
@@ -348,7 +352,8 @@ private:
           model::iceberg_invalid_record_action::dlq_table,
           datalake::location_provider(
             scoped_remote->remote.local().provider(), bucket_name),
-          _translation_probe);
+          _translation_probe,
+          &_features);
     }
 
     ss::future<>

@@ -7,22 +7,32 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from connectrpc.errors import ConnectError, ConnectErrorCode
+import random
+import re
+from contextlib import nullcontext
 
-from rptest.clients.admin.v2 import Admin as AdminV2
-from rptest.clients.admin.proto.redpanda.core.admin.v2 import (
-    shadow_link_pb2,
-    shadow_link_pb2_connect,
-)
+from connectrpc.errors import ConnectError, ConnectErrorCode
+from ducktape.mark import matrix
+
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierConsumerGroupConsumer,
+    KgoVerifierProducer,
+)
 from rptest.services.multi_cluster_services import (
     Cluster,
     MultiClusterServices,
     ServiceType,
 )
-from rptest.tests.cluster_linking_test_base import ShadowLinkTestBase
+from rptest.tests.cluster_linking_test_base import (
+    ShadowLinkPreAllocTestBase,
+    ShadowLinkTestBase,
+)
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import expect_exception, wait_until_result
+from rptest.util import bg_thread_cm, expect_exception, wait_until, wait_until_result
 
 
 class MultiClusterTestBase(RedpandaTest):
@@ -180,3 +190,171 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
             assert e.code == ConnectErrorCode.RESOURCE_EXHAUSTED, (
                 f"Expected {ConnectErrorCode.RESOURCE_EXHAUSTED}, got {e.code}"
             )
+
+    def create_source_consumer(self, topic, group_name="test_group", consumer_count=1):
+        return KgoVerifierConsumerGroupConsumer(
+            self.test_context,
+            self.source_cluster.service,
+            topic=topic,
+            group_name=group_name,
+            msg_size=128,
+            readers=consumer_count,
+        )
+
+    @cluster(num_nodes=7)
+    def test_consumer_groups_mirroring(self):
+        # Create a shadow link
+
+        topic = TopicSpec(name="source-topic", partition_count=5, replication_factor=3)
+
+        self.source_default_client().create_topic(topic)
+        # produce some data to the source cluster
+
+        KgoVerifierProducer.oneshot(
+            self.test_context, self.source_cluster.service, topic.name, 128, 10000
+        )
+
+        consumer = self.create_source_consumer(
+            topic=topic.name, group_name="test_group", consumer_count=1
+        )
+        consumer.start()
+        consumer.wait()
+        consumer.stop()
+        source_rpk = RpkTool(self.source_cluster.service)
+        description = source_rpk.group_describe(group="test_group")
+        self.logger.info(f">>> source_state: {description}")
+
+        self.create_link("test-link")
+
+        def _group_present_in_target_cluster():
+            target_rpk = RpkTool(self.target_cluster.service)
+            groups = target_rpk.group_list()
+
+            if not any(g.group == "test_group" for g in groups):
+                return False, None
+
+            desc = target_rpk.group_describe(
+                group="test_group", tolerant=True, summary=False
+            )
+
+            return True, desc
+
+        target_cluster_group = wait_until_result(
+            lambda: _group_present_in_target_cluster(),
+            timeout_sec=20,
+            err_msg="Failed to find consumer group in the target cluster",
+        )
+
+        assert target_cluster_group.state == "Empty", (
+            "Group test_group state expected to be empty on target cluster"
+        )
+
+    @cluster(num_nodes=6)
+    def test_topic_creation_in_target_cluster(self):
+        topics = []
+        for i in range(10):
+            cleanup_policy = "delete" if i % 2 == 0 else "compact"
+            topic = TopicSpec(
+                name=f"source-topic-{i}",
+                partition_count=i + 3,
+                replication_factor=3,
+                cleanup_policy=cleanup_policy,
+            )
+            self.source_default_client().create_topic(topic)
+            topics.append(topic)
+
+        self.create_link("test-link")
+
+        def _topics_are_present_in_target_cluster():
+            target_rpk = RpkTool(self.target_cluster.service)
+            topics_in_target = {t for t in target_rpk.list_topics()}
+            self.logger.info(f"Topics in target cluster: {topics_in_target}")
+            if len(topics_in_target) < len(topics):
+                return False
+            for t in topics:
+                if t.name not in topics_in_target:
+                    return False
+
+            return True
+
+        wait_until(
+            lambda: _topics_are_present_in_target_cluster(),
+            timeout_sec=20,
+            err_msg="Failed to find topics in the target cluster",
+        )
+        target_rpk = RpkTool(self.target_cluster.service)
+        for t in topics:
+            target_configs = target_rpk.describe_topic_configs(t.name)
+            self.logger.info(f"Target topic {t.name} configs: {target_configs}")
+            assert target_configs["cleanup.policy"][0] == t.cleanup_policy, (
+                f"Expected cleanup policy {t.cleanup_policy} for topic {t.name}, "
+                f"got {target_configs['cleanup.policy']}"
+            )
+
+
+class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
+    def leadership_shuffler(self, redpanda, topic: str, enabled: bool):
+        if not enabled:
+            return nullcontext()
+
+        @bg_thread_cm
+        def leadership_transfer_thread(redpanda, topic: str):
+            admin = Admin(redpanda, retry_codes=[503, 504])
+            while (yield):
+                try:
+                    partitions = admin.get_partitions(namespace="kafka", topic=topic)
+                    partition = random.choice(partitions)
+                    p_id = partition["partition_id"]
+                    admin.partition_transfer_leadership(
+                        namespace="kafka", topic=topic, partition=p_id
+                    )
+                except Exception as e:
+                    redpanda.logger.info(f"error transferring leadership: {e}")
+
+        return leadership_transfer_thread(redpanda, topic)
+
+    @cluster(num_nodes=7)
+    @matrix(shuffle_leadership=[True, False])
+    def test_replication_basic(self, shuffle_leadership):
+        topic = TopicSpec(name="source-topic", partition_count=5, replication_factor=3)
+
+        self.source_default_client().create_topic(topic)
+        self.create_link("test-link")
+
+        self.target_cluster.service.wait_until(
+            lambda: self.topic_exists_in_target(topic.name),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {topic.name} not found in target cluster",
+        )
+        with self.leadership_shuffler(
+            self.target_cluster.service, topic.name, enabled=shuffle_leadership
+        ):
+            self.start_producer_consumer(topic=topic.name, msg_size=128, msg_cnt=100000)
+            self.verify()
+
+    @cluster(
+        num_nodes=7,
+        log_allow_list=[
+            re.compile(".*Failed to sync write_at_offset_stm for partition"),
+        ],
+    )
+    def test_replication_with_failures(self):
+        topic = TopicSpec(name="source-topic", partition_count=5, replication_factor=3)
+
+        self.source_default_client().create_topic(topic)
+        self.create_link("test-link")
+
+        self.target_cluster.service.wait_until(
+            lambda: self.topic_exists_in_target(topic.name),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {topic.name} not found in target cluster",
+        )
+
+        self.start_producer_consumer(topic=topic.name, msg_size=128, msg_cnt=100000)
+        with (
+            self.create_source_failure_injector(),
+            self.create_target_failure_injector(),
+        ):
+            self.verify()

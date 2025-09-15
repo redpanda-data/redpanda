@@ -17,6 +17,7 @@
 #include "model/metadata.h"
 #include "serde/envelope.h"
 #include "serde/rw/variant.h"
+#include "utils/absl_sstring_hash.h"
 #include "utils/named_type.h"
 #include "utils/unresolved_address.h"
 #include "utils/uuid.h"
@@ -228,8 +229,9 @@ struct mirror_topic_metadata
     ::model::topic_id destination_topic_id;
     /// The number of partitions on the source topic
     int32_t partition_count;
-    /// The replication factor
-    int16_t replication_factor;
+    /// The replication factor - if not provided, is using
+    /// `default_topic_replication` cluster config
+    std::optional<int16_t> replication_factor;
     /// The configuration for the topic
     chunked_hash_map<ss::sstring, ss::sstring> topic_configs;
 
@@ -315,8 +317,10 @@ struct topic_metadata_mirroring_config
 
     /// Filters
     chunked_vector<resource_name_filter_pattern> topic_name_filters;
+    using properties_set
+      = absl::flat_hash_set<ss::sstring, sstring_hash, sstring_eq>;
     /// List of topic properties to mirror
-    absl::flat_hash_set<ss::sstring> topic_properties_to_mirror;
+    properties_set topic_properties_to_mirror;
 
     ss::lowres_clock::duration get_task_interval() const {
         return task_interval.value_or(task_interval_default);
@@ -347,7 +351,6 @@ struct consumer_groups_mirroring_config
     enabled_t is_enabled{enabled_t::yes};
     // Task interval for consumer group mirroring
     std::optional<ss::lowres_clock::duration> task_interval;
-    // Default interval for task (30s)
     static constexpr auto default_task_interval = std::chrono::seconds(30);
 
     /// Filters
@@ -378,11 +381,16 @@ struct link_configuration
       serde::compat_version<0>> {
     /// Configuration for the auto mirror topic creation task
     topic_metadata_mirroring_config topic_metadata_mirroring_cfg;
+    /// Configuration for the consumer groups mirroring task
+    consumer_groups_mirroring_config consumer_groups_mirroring_cfg;
 
     friend bool operator==(const link_configuration&, const link_configuration&)
       = default;
 
-    auto serde_fields() { return std::tie(topic_metadata_mirroring_cfg); }
+    auto serde_fields() {
+        return std::tie(
+          topic_metadata_mirroring_cfg, consumer_groups_mirroring_cfg);
+    }
 
     link_configuration copy() const;
 };
@@ -496,7 +504,7 @@ struct update_mirror_topic_properties_cmd
     /// Name of the topic
     ::model::topic topic;
     int32_t partition_count;
-    int16_t replication_factor;
+    std::optional<int16_t> replication_factor;
     chunked_hash_map<ss::sstring, ss::sstring> topic_configs;
 
     friend bool operator==(
@@ -701,6 +709,14 @@ struct fmt::formatter<cluster_link::model::topic_metadata_mirroring_config>
   : fmt::formatter<string_view> {
     auto format(
       const cluster_link::model::topic_metadata_mirroring_config& m,
+      format_context& ctx) const -> decltype(ctx.out());
+};
+
+template<>
+struct fmt::formatter<cluster_link::model::consumer_groups_mirroring_config>
+  : fmt::formatter<string_view> {
+    auto format(
+      const cluster_link::model::consumer_groups_mirroring_config& m,
       format_context& ctx) const -> decltype(ctx.out());
 };
 

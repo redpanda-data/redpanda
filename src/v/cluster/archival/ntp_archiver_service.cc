@@ -3485,8 +3485,7 @@ ntp_archiver::find_reupload_candidate(
             segment_collector_stream& collector_stream) mutable
             -> find_reupload_candidate_result {
               if (
-                collector_stream.size != run->meta.size_bytes
-                || collector_stream.start_offset != run->meta.base_offset
+                collector_stream.start_offset != run->meta.base_offset
                 || collector_stream.end_offset != run->meta.committed_offset) {
                   vlog(
                     _rtclog.error,
@@ -3495,6 +3494,15 @@ ntp_archiver::find_reupload_candidate(
                     collector_stream,
                     run->meta);
                   return {};
+              }
+              if (collector_stream.size != run->meta.size_bytes) {
+                  vlog(
+                    _rtclog.debug,
+                    "Failed to make reupload candidate due to size mismatch, "
+                    "skip this range: expected size: {}, actual size: {}",
+                    human::bytes(run->meta.size_bytes),
+                    human::bytes(collector_stream.size));
+                  return {.skip_to = collector_stream.end_offset};
               }
               return {
                 .units = std::move(units),
@@ -3577,7 +3585,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
     if (strm.is_compacted) {
         vlog(
           _rtclog.warn,
-          "Upload of the {} requested but sources are empty",
+          "Upload of {} requested but sources are compacted",
           sname);
         co_return false;
     }

@@ -18,6 +18,8 @@
 
 #include <expected>
 
+using namespace std::chrono_literals;
+
 namespace cloud_io {
 class remote;
 }
@@ -132,9 +134,9 @@ struct level_zero_gc_config {
      * polling worker from spinning. The throttling policy is very crude, and
      * will need to be revisited, but should keep things in check for now.
      */
-    std::chrono::milliseconds deletion_grace_period;
-    std::chrono::milliseconds throttle_progress;
-    std::chrono::milliseconds throttle_no_progress;
+    std::chrono::milliseconds deletion_grace_period{10s};
+    std::chrono::milliseconds throttle_progress{2s};
+    std::chrono::milliseconds throttle_no_progress{10s};
 };
 
 class level_zero_gc {

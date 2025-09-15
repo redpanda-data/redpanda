@@ -25,6 +25,8 @@
 
 static const auto test_ntp = model::ntp(
   model::ns("kafka"), model::topic("tapioca"), model::partition_id(0));
+static const auto test_tidp = model::topic_id_partition(
+  model::topic_id(uuid_t::create()), test_ntp.tp.partition);
 
 TEST(ReducerTest, Batches) {
     namespace l1 = cloud_topics::l1;
@@ -36,7 +38,7 @@ TEST(ReducerTest, Batches) {
 
     auto src = std::make_unique<compaction::simple_source>(
       std::move(input_batches), test_ntp);
-    auto sink = std::make_unique<l1::compaction_sink>(test_ntp);
+    auto sink = std::make_unique<l1::compaction_sink>(test_tidp);
 
     chunked_vector<l1::compaction_sink::object_output_t> output_objs;
     sink->set_object_sink(&output_objs);

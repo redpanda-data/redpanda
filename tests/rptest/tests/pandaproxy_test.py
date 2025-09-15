@@ -7,41 +7,41 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from concurrent.futures import ThreadPoolExecutor
+import base64
 import http.client
 import json
-import uuid
-import requests
 import socket
-import urllib.request
 import ssl
 import threading
 import urllib.parse
-import base64
-from rptest.services.cluster import cluster
-from ducktape.mark import matrix, parametrize
+import urllib.request
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, List, Optional, Union
+
+import requests
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
-from rptest.clients.rpk import RpkTool
-from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services import tls
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import (
+    LoggingConfig,
+    PandaproxyConfig,
+    ResourceSettings,
+    SecurityConfig,
+    TLSProvider,
+)
 from rptest.tests.group_membership_test import GroupCoordinatorTransferUtils
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import search_logs_with_timeout
-from rptest.services.redpanda import (
-    SecurityConfig,
-    LoggingConfig,
-    ResourceSettings,
-    PandaproxyConfig,
-    TLSProvider,
-)
-from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
-from rptest.services.admin import Admin
-from rptest.services import tls
-from rptest.utils.utf8 import CONTROL_CHARS_MAP
-from typing import Optional, List, Dict, Union
 from rptest.utils.mode_checks import skip_debug_mode
+from rptest.utils.utf8 import CONTROL_CHARS_MAP
 
 
 def create_topic_names(count):

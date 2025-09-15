@@ -6,7 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-from typing import Callable, Optional, Protocol
+from typing import Any, Callable, Optional, Protocol
 
 
 class ConvertableToBool(Protocol):
@@ -29,7 +29,7 @@ class AllowLogsOnPredicate:
         self.method = method
         self.predicate: Optional[PredicateT] = None
 
-    def initialize(self, test_case):
+    def initialize(self, test_case: Any):
         """
         Called with the test case during the `cluster` decorator run, after this object
         has been constructed with the method name. Validates and sets the method to be

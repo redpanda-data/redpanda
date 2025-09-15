@@ -22,6 +22,7 @@
 #include "datalake/tests/test_utils.h"
 #include "datalake/translation/translation_probe.h"
 #include "datalake/translation_task.h"
+#include "features/feature_table.h"
 #include "iceberg/uri.h"
 #include "model/record_batch_reader.h"
 #include "storage/record_batch_builder.h"
@@ -62,11 +63,13 @@ public:
       , location_provider(sr->remote.local().provider(), bucket_name)
       , probe(ntp) {
         set_expectations_and_listen({});
+        features.testing_activate_all();
     }
 
     auto& remote() { return sr->remote.local(); }
 
     std::unique_ptr<cloud_io::scoped_remote> sr;
+    features::feature_table features;
 
     model::record_batch_reader make_batches(
       int64_t batch_count,
@@ -139,6 +142,7 @@ public:
           rev,
           get_writer_factory(),
           cloud_io,
+          &features,
           *schema_mgr,
           *schema_resolver,
           *translator,
@@ -248,6 +252,7 @@ TEST_F(TranslateTaskTest, TestUploadError) {
       model::revision_id{123},
       get_writer_factory(),
       cloud_io,
+      &features,
       *schema_mgr,
       *schema_resolver,
       *translator,

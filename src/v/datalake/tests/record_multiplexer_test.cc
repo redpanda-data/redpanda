@@ -19,6 +19,7 @@
 #include "datalake/tests/test_data_writer.h"
 #include "datalake/tests/test_utils.h"
 #include "datalake/translation/translation_probe.h"
+#include "features/feature_table.h"
 #include "iceberg/filesystem_catalog.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
@@ -104,9 +105,11 @@ class RecordMultiplexerTestBase
   : public datalake::tests::catalog_and_registry_fixture {
 public:
     RecordMultiplexerTestBase()
-      : schema_mgr(catalog)
+      : schema_mgr(catalog, &features)
       , type_resolver(registry)
-      , t_creator(type_resolver, schema_mgr) {}
+      , t_creator(type_resolver, schema_mgr) {
+        features.testing_activate_all();
+    }
 
     record_multiplexer make_mux() {
         return record_multiplexer(
@@ -120,7 +123,8 @@ public:
           model::iceberg_invalid_record_action::dlq_table,
           location_provider(
             scoped_remote->remote.local().provider(), bucket_name),
-          *get_or_create_probe(ntp));
+          *get_or_create_probe(ntp),
+          &features);
     }
 
     // Runs the multiplexer on records generated with cb() based on the test
@@ -231,6 +235,7 @@ public:
         return it->second;
     }
 
+    features::feature_table features;
     catalog_schema_manager schema_mgr;
     record_schema_resolver type_resolver;
     direct_table_creator t_creator;

@@ -87,6 +87,9 @@ public:
       api_key key,
       std::optional<std::reference_wrapper<ss::abort_source>>);
 
+    // Returns a view of a all broker ids
+    auto get_broker_ids() const { return std::views::keys(_brokers); }
+
 private:
     ss::future<> do_erase(model::node_id id);
     /// \brief Brokers map a model::node_id to a client.

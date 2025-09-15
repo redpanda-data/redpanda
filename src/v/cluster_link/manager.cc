@@ -80,7 +80,10 @@ manager::manager(
   std::unique_ptr<link_registry> registry,
   std::unique_ptr<link_factory> link_factory,
   std::unique_ptr<cluster_factory> cluster_factory,
-  ss::lowres_clock::duration task_reconciler_interval)
+  std::unique_ptr<consumer_groups_router> group_router,
+  std::unique_ptr<partition_metadata_provider> partition_metadata_provider,
+  ss::lowres_clock::duration task_reconciler_interval,
+  config::binding<int16_t> default_topic_replication)
   : _self(self)
   , _partition_leader_cache(std::move(partition_leader_cache))
   , _partition_manager(std::move(partition_manager))
@@ -89,35 +92,21 @@ manager::manager(
   , _registry(std::move(registry))
   , _link_factory(std::move(link_factory))
   , _cluster_factory(std::move(cluster_factory))
+  , _group_router(std::move(group_router))
+  , _partition_metadata_provider(std::move(partition_metadata_provider))
   , _queue(
       [](const std::exception_ptr& ex) {
           vlog(cllog.warn, "unexpected cluster link manager error: {}", ex);
       },
       ssx::work_queue::is_paused_t::yes)
-  , _task_reconciler_interval(task_reconciler_interval) {}
+  , _task_reconciler_interval(task_reconciler_interval)
+  , _default_topic_replication(std::move(default_topic_replication)) {}
 
 ss::future<> manager::start() {
     vlog(cllog.info, "Starting cluster link manager");
     auto ids = _registry->get_all_link_ids();
     for (auto id : ids) {
         co_await handle_on_link_change(id);
-    }
-
-    auto controller_node_leader = _partition_leader_cache->get_leader_node(
-      ::model::controller_ntp);
-    if (
-      controller_node_leader.has_value()
-      && controller_node_leader.value() == _self) {
-        auto controller_shard_leader = _partition_manager->shard_owner(
-          ::model::controller_ntp);
-        if (
-          controller_shard_leader.has_value()
-          && controller_shard_leader.value() == ss::this_shard_id()) {
-            vlog(
-              cllog.info, "Cluster link manager started on controller shard");
-            handle_partition_state_change(
-              ::model::controller_ntp, ntp_leader::yes);
-        }
     }
 
     _link_task_reconciler_timer.set_callback([this] {
@@ -151,6 +140,8 @@ manager::upsert_cluster_link(model::metadata md) {
     auto name = md.name;
     vlog(cllog.info, "Attempting to create cluster link named '{}'", md.name);
     vlog(cllog.trace, "Cluster link metadata: {}", md);
+    const auto needs_consumer_offsets_topic
+      = md.configuration.consumer_groups_mirroring_cfg.is_enabled;
     auto ec = co_await _registry->upsert_link(
       std::move(md), ::model::timeout_clock::now() + 30s);
     auto err = map_cluster_errc(ec);
@@ -160,6 +151,9 @@ manager::upsert_cluster_link(model::metadata md) {
     }
 
     try {
+        if (needs_consumer_offsets_topic) {
+            co_await _group_router->assure_topic_exists();
+        }
         co_await _link_created_cv.wait(
           wait_for_link_creation_timeout, [this, name] {
               return _registry->find_link_by_name(name).has_value();
@@ -223,10 +217,12 @@ void manager::on_link_change(model::id_t id) {
 }
 
 void manager::handle_partition_state_change(
-  ::model::ntp ntp, ntp_leader is_ntp_leader) {
+  ::model::ntp ntp,
+  ntp_leader is_ntp_leader,
+  std::optional<::model::term_id> term) {
     vlog(cllog.trace, "NTP={} leadership changed to {}", ntp, is_ntp_leader);
-    _queue.submit([this, ntp{std::move(ntp)}, is_ntp_leader]() mutable {
-        return handle_on_leadership_change(std::move(ntp), is_ntp_leader);
+    _queue.submit([this, ntp{std::move(ntp)}, is_ntp_leader, term]() mutable {
+        return handle_on_leadership_change(std::move(ntp), is_ntp_leader, term);
     });
 }
 
@@ -243,20 +239,17 @@ ss::future<> manager::handle_on_link_change(model::id_t id) {
             try {
                 vlog(cllog.debug, "Stopping cluster link with id={}", id);
                 co_await it->second->stop();
-                _links.erase(it);
             } catch (const std::exception& e) {
+                // generally not possible since stop() is noexcept
+                // but is not enforced for coroutines by the compiler.
                 vlog(
                   cllog.warn,
-                  "Failed to stop link {}: \"{}\".  Re-attempting link "
-                  "stop "
-                  "within {} seconds",
+                  "Failed to stop link {}: \"{}, going ahead and removing "
+                  "it\".",
                   id,
-                  e,
-                  retry_delay.count());
-                _queue.submit_delayed(retry_delay, [this, id] {
-                    return handle_on_link_change(id);
-                });
+                  e);
             }
+            _links.erase(it);
         } else {
             vlog(cllog.trace, "No link found for id={}", id);
         }
@@ -312,7 +305,30 @@ ss::future<> manager::handle_on_link_change(model::id_t id) {
                       e);
                 }
             }
-            co_await new_link->start();
+
+            std::exception_ptr start_eptr = nullptr;
+            try {
+                co_await new_link->start();
+            } catch (...) {
+                start_eptr = std::current_exception();
+            }
+            if (start_eptr) {
+                vlog(
+                  cllog.warn,
+                  "Failed to start link {}: \"{}\"",
+                  id,
+                  start_eptr);
+                try {
+                    co_await new_link->stop();
+                } catch (...) {
+                    vlog(
+                      cllog.warn,
+                      "Failed to stop link {}: \"{}\", ignoring..",
+                      id,
+                      std::current_exception());
+                }
+                std::rethrow_exception(start_eptr);
+            }
             _links.emplace(id, std::move(new_link));
             _link_created_cv.broadcast();
         } catch (const ss::semaphore_aborted&) {
@@ -394,7 +410,9 @@ ss::future<> manager::link_task_reconciler() {
 }
 
 ss::future<> manager::handle_on_leadership_change(
-  ::model::ntp ntp, ntp_leader is_ntp_leader) {
+  ::model::ntp ntp,
+  ntp_leader is_ntp_leader,
+  std::optional<::model::term_id> term) {
     vlog(
       cllog.trace,
       "Handling leadership change for NTP={}, is_ntp_leader={}",
@@ -415,9 +433,11 @@ ss::future<> manager::handle_on_leadership_change(
         }
     }
 
-    co_await ss::parallel_for_each(_links, [ntp, is_ntp_leader](auto& pair) {
-        return pair.second->handle_on_leadership_change(ntp, is_ntp_leader);
-    });
+    co_await ss::parallel_for_each(
+      _links, [ntp, is_ntp_leader, term](auto& pair) {
+          return pair.second->handle_on_leadership_change(
+            ntp, is_ntp_leader, term);
+      });
 }
 
 ss::future<::cluster::cluster_link::errc> manager::add_mirror_topic(
@@ -475,7 +495,8 @@ ss::future<> manager::start_topic_reconciler() {
           _topic_creator.get(),
           _topic_metadata_cache.get(),
           _registry.get(),
-          topic_reconciler_interval);
+          topic_reconciler_interval,
+          _default_topic_replication);
     }
     try {
         co_await _topic_reconciler->start();
@@ -501,5 +522,14 @@ ss::future<> manager::stop_topic_reconciler() {
               10s, [this] { return stop_topic_reconciler(); });
         }
     }
+}
+
+consumer_groups_router& manager::get_group_router() noexcept {
+    return *_group_router;
+}
+
+partition_metadata_provider&
+manager::get_partition_metadata_provider() noexcept {
+    return *_partition_metadata_provider;
 }
 } // namespace cluster_link

@@ -49,7 +49,7 @@ void partition_change_notifier_impl::do_notify_call_back(
 
 notification_id_type
 partition_change_notifier_impl::register_partition_notifications(
-  notification_cb_t cb) {
+  notification_cb_t cb, notify_current_state notify_current) {
     notification_state nstate;
     auto id = _notification_id++;
     auto exceptional_cleanup = ss::defer(
@@ -134,6 +134,22 @@ partition_change_notifier_impl::register_partition_notifications(
       });
     exceptional_cleanup.cancel();
     nstate.cb = std::move(cb);
+    if (notify_current) {
+        // notify about all current partitions
+        for (const auto& partition :
+             _partition_mgr.local().partitions() | std::views::values) {
+            partition_state state{
+              partition->term(),
+              partition->is_leader(),
+              _topic_table.local().get_topic_cfg(
+                model::topic_namespace_view{partition->ntp()})};
+
+            nstate.cb(
+              notification_type::partition_replica_assigned,
+              partition->ntp(),
+              std::move(state));
+        }
+    }
     _notification_ids.emplace(id, std::move(nstate));
     return id;
 }

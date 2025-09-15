@@ -8,11 +8,13 @@
 # by the Apache License, Version 2.0
 
 import time
+from typing import Optional
+
 from requests.exceptions import HTTPError
+
 from rptest.services.admin import Admin
 from rptest.services.workload_protocol import PWorkload
 from rptest.utils.rpenv import sample_license
-from typing import Optional
 
 
 class LicenseWorkload(PWorkload):

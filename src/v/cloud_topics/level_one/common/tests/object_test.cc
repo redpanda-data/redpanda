@@ -10,6 +10,7 @@
 
 #include "bytes/iostream.h"
 #include "cloud_topics/level_one/common/object.h"
+#include "model/fundamental.h"
 #include "model/tests/random_batch.h"
 
 #include <seastar/util/backtrace.hh>
@@ -29,40 +30,44 @@ struct batch_spec {
     model::timestamp max_timestamp;
 };
 
+model::record_batch make_batch(const batch_spec& spec) {
+    int count = static_cast<int>(spec.last_offset - spec.base_offset) + 1;
+    std::vector<size_t> record_sizes;
+    std::fill_n(std::back_inserter(record_sizes), count, 100);
+    return model::test::make_random_batch(
+      model::test::record_batch_spec{
+        .offset = kafka::offset_cast(spec.base_offset),
+        .count = count,
+        .record_sizes = record_sizes,
+        .timestamp = spec.max_timestamp,
+        .all_records_have_same_timestamp = true,
+      });
+}
+
 chunked_vector<model::record_batch>
 make_batches(const std::vector<batch_spec>& specs) {
     chunked_vector<model::record_batch> batches;
+    batches.reserve(specs.size());
     for (const auto& spec : specs) {
-        int count = static_cast<int>(spec.last_offset - spec.base_offset) + 1;
-        std::vector<size_t> record_sizes;
-        std::fill_n(std::back_inserter(record_sizes), count, 100);
-        batches.push_back(
-          model::test::make_random_batch(
-            model::test::record_batch_spec{
-              .offset = kafka::offset_cast(spec.base_offset),
-              .count = count,
-              .record_sizes = record_sizes,
-              .timestamp = spec.max_timestamp,
-              .all_records_have_same_timestamp = true,
-            }));
+        batches.push_back(make_batch(spec));
     }
     return batches;
 }
 
-struct batches_by_ntp {
-    model::ntp ntp;
+struct batches_by_tidp {
+    model::topic_id_partition tidp;
     std::vector<batch_spec> batches;
 };
 
 std::pair<object_builder::object_info, iobuf> make_object(
-  const std::vector<batches_by_ntp>& specs_by_ntp,
+  const std::vector<batches_by_tidp>& specs_by_tidp,
   object_builder::options opts = {}) {
     iobuf output;
     auto builder = object_builder::create(
       make_iobuf_ref_output_stream(output), opts);
     auto _ = ss::defer([&builder] { builder->close().get(); });
-    for (const auto& [ntp, specs] : specs_by_ntp) {
-        builder->start_partition(ntp).get();
+    for (const auto& [tidp, specs] : specs_by_tidp) {
+        builder->start_partition(tidp).get();
         auto batches = make_batches(specs);
         for (auto& batch : batches) {
             builder->add_batch(std::move(batch)).get();
@@ -77,19 +82,19 @@ std::unique_ptr<object_reader> make_reader(iobuf& buf) {
       make_iobuf_input_stream(buf.share(0, buf.size_bytes())));
 }
 
-object_reader::result read_one_at(iobuf& buf, size_t offset) {
-    if (offset == footer::npos) {
+object_reader::result read_one_at(iobuf& buf, footer::seek_result result) {
+    if (result == footer::npos) {
         ss::throw_with_backtrace<std::runtime_error>(
           "Cannot read at npos offset, this is an invalid offset.");
     }
-    if (offset >= buf.size_bytes()) {
+    if (result.file_position >= buf.size_bytes()) {
         ss::throw_with_backtrace<std::out_of_range>(fmt::format(
-          "Offset {} is out of range for buffer size {}",
-          offset,
+          "result {} is out of range for buffer size {}",
+          result,
           buf.size_bytes()));
     }
     auto reader = object_reader::create(
-      make_iobuf_input_stream(buf.share(offset, buf.size_bytes() - offset)));
+      make_iobuf_input_stream(buf.share(result.file_position, result.length)));
     auto _ = ss::defer([&reader] { reader->close().get(); });
     return reader->read_next().get();
 }
@@ -107,9 +112,10 @@ model::timestamp operator""_t(unsigned long long t) {
 TEST(L1ObjectsIndex, OffsetSearch) {
     footer index;
     index.partitions.emplace(
-      model::ntp{"test_ns", "test_topic", model::partition_id(0)},
+      model::topic_id_partition{model::topic_id(uuid_t::create()), model::partition_id(0)},
       footer::partition{
         .file_position = 0,
+        .length = 600,
         .indexes = {
           {.file_position = 100, .kafka_offset = 5_o},
           {.file_position = 200, .kafka_offset = 20_o},
@@ -120,27 +126,41 @@ TEST(L1ObjectsIndex, OffsetSearch) {
         .first_offset = 3_o,
         .last_offset = 65_o,
       });
-    std::map<kafka::offset, size_t> offset_to_filepos = {
-      {2_o, 0},    {3_o, 0},    {4_o, 0},    {5_o, 100},           {6_o, 100},
-      {19_o, 100}, {20_o, 200}, {21_o, 200}, {29_o, 200},          {30_o, 300},
-      {31_o, 300}, {49_o, 300}, {50_o, 400}, {51_o, 400},          {59_o, 400},
-      {60_o, 500}, {61_o, 500}, {65_o, 500}, {66_o, footer::npos},
+    std::map<kafka::offset, footer::seek_result> offset_to_filepos = {
+      {2_o, {.file_position = 0, .length = 600}},
+      {3_o, {.file_position = 0, .length = 600}},
+      {4_o, {.file_position = 0, .length = 600}},
+      {5_o, {.file_position = 100, .length = 500}},
+      {6_o, {.file_position = 100, .length = 500}},
+      {19_o, {.file_position = 100, .length = 500}},
+      {20_o, {.file_position = 200, .length = 400}},
+      {21_o, {.file_position = 200, .length = 400}},
+      {29_o, {.file_position = 200, .length = 400}},
+      {30_o, {.file_position = 300, .length = 300}},
+      {31_o, {.file_position = 300, .length = 300}},
+      {49_o, {.file_position = 300, .length = 300}},
+      {50_o, {.file_position = 400, .length = 200}},
+      {51_o, {.file_position = 400, .length = 200}},
+      {59_o, {.file_position = 400, .length = 200}},
+      {60_o, {.file_position = 500, .length = 100}},
+      {61_o, {.file_position = 500, .length = 100}},
+      {65_o, {.file_position = 500, .length = 100}},
+      {66_o, footer::npos},
     };
     for (const auto& [seek, expected] : offset_to_filepos) {
-        EXPECT_EQ(
-          index.file_position_before_kafka_offset(
-            index.partitions.begin()->first, seek),
-          expected)
-          << " for offset " << seek;
+        auto seek_result = index.file_position_before_kafka_offset(
+          index.partitions.begin()->first, seek);
+        EXPECT_EQ(seek_result, expected) << " for offset " << seek;
     }
 }
 
 TEST(L1ObjectsIndex, TimestampSearch) {
     footer index;
     index.partitions.emplace(
-       model::ntp{"test_ns", "test_topic", model::partition_id(0)},
+      model::topic_id_partition{model::topic_id(uuid_t::create()), model::partition_id(0)},
     footer::partition{
       .file_position = 0,
+      .length = 600,
       .indexes = {
         {.file_position = 100, .kafka_offset = 5_o, .max_timestamp = 1000_t},
         {.file_position = 200, .kafka_offset = 20_o, .max_timestamp = 1500_t},
@@ -152,36 +172,36 @@ TEST(L1ObjectsIndex, TimestampSearch) {
       .last_offset = 65_o,
       .max_timestamp = 3000_t,
     });
-    std::map<model::timestamp, size_t> timequery_to_file_position = {
-      {999_t, 0},
-      {1000_t, 0},
-      {1001_t, 200},
-      {1499_t, 200},
-      {1500_t, 200},
-      {1501_t, 300},
-      {1999_t, 300},
-      {2000_t, 300},
-      {2001_t, 400},
-      {2499_t, 400},
-      {2500_t, 400},
-      {2501_t, 500},
-      {2999_t, 500},
-      {3000_t, 500},
-      {3001_t, footer::npos},
-    };
+    std::map<model::timestamp, footer::seek_result> timequery_to_file_position
+      = {
+        {999_t, {.file_position = 0, .length = 600}},
+        {1000_t, {.file_position = 0, .length = 600}},
+        {1001_t, {.file_position = 200, .length = 400}},
+        {1499_t, {.file_position = 200, .length = 400}},
+        {1500_t, {.file_position = 200, .length = 400}},
+        {1501_t, {.file_position = 300, .length = 300}},
+        {1999_t, {.file_position = 300, .length = 300}},
+        {2000_t, {.file_position = 300, .length = 300}},
+        {2001_t, {.file_position = 400, .length = 200}},
+        {2499_t, {.file_position = 400, .length = 200}},
+        {2500_t, {.file_position = 400, .length = 200}},
+        {2501_t, {.file_position = 500, .length = 100}},
+        {2999_t, {.file_position = 500, .length = 100}},
+        {3000_t, {.file_position = 500, .length = 100}},
+        {3001_t, footer::npos},
+      };
     for (const auto& [seek, expected] : timequery_to_file_position) {
-        EXPECT_EQ(
-          index.file_position_before_max_timestamp(
-            index.partitions.begin()->first, seek),
-          expected)
-          << " for timestamp " << seek;
+        auto seek_result = index.file_position_before_max_timestamp(
+          index.partitions.begin()->first, seek);
+        EXPECT_EQ(seek_result, expected) << " for timestamp " << seek;
     }
 }
 
 TEST(L1Objects, OffsetSearch) {
-    auto specs_by_ntp = std::vector<batches_by_ntp>{
+    auto test_topic_id = model::topic_id(uuid_t::create());
+    auto specs_by_tidp = std::vector<batches_by_tidp>{
       {
-        .ntp = model::ntp{"test_ns", "test_topic", model::partition_id(0)},
+        .tidp = model::topic_id_partition{test_topic_id, model::partition_id(0)},
         .batches = {
           {.base_offset = 5_o, .last_offset = 9_o},
           {.base_offset = 10_o, .last_offset = 19_o},
@@ -189,7 +209,7 @@ TEST(L1Objects, OffsetSearch) {
         },
       },
       {
-        .ntp = model::ntp{"test_ns", "test_topic", model::partition_id(0)},
+        .tidp = model::topic_id_partition{test_topic_id, model::partition_id(0)},
         .batches = {
           {.base_offset = 30_o, .last_offset = 39_o},
           {.base_offset = 40_o, .last_offset = 49_o},
@@ -197,7 +217,7 @@ TEST(L1Objects, OffsetSearch) {
         },
       },
       {
-        .ntp = model::ntp{"test_ns", "test_topic", model::partition_id(1)},
+        .tidp = model::topic_id_partition{test_topic_id, model::partition_id(1)},
         .batches = {
           {.base_offset = 5_o, .last_offset = 9_o},
           {.base_offset = 10_o, .last_offset = 19_o},
@@ -207,7 +227,7 @@ TEST(L1Objects, OffsetSearch) {
         },
       },
       {
-        .ntp = model::ntp{"test_ns", "test_topic", model::partition_id(0)},
+        .tidp = model::topic_id_partition{test_topic_id, model::partition_id(0)},
         .batches = {
           {.base_offset = 100_o, .last_offset = 109_o},
           {.base_offset = 110_o, .last_offset = 119_o},
@@ -217,9 +237,9 @@ TEST(L1Objects, OffsetSearch) {
     };
     // All batches end up being indexed this way.
     auto [index_one, object_one] = make_object(
-      specs_by_ntp, {.indexing_frequency = 1});
+      specs_by_tidp, {.indexing_frequency = 1});
 
-    model::ntp ntp{"test_ns", "test_topic", model::partition_id(0)};
+    model::topic_id_partition tidp{test_topic_id, model::partition_id(0)};
 
     std::unordered_map<kafka::offset, kafka::offset>
       offset_lookup_to_batch_start = {
@@ -232,26 +252,26 @@ TEST(L1Objects, OffsetSearch) {
       };
 
     for (const auto& [seek, expected] : offset_lookup_to_batch_start) {
-        size_t pos = index_one.index.file_position_before_kafka_offset(
-          ntp, seek);
+        auto pos = index_one.index.file_position_before_kafka_offset(
+          tidp, seek);
         ASSERT_NE(pos, footer::npos) << "No position found for " << seek
-                                     << " in partition " << ntp.tp.partition;
+                                     << " in partition " << tidp.partition;
         auto result = read_one_at(object_one, pos);
         ASSERT_TRUE(std::holds_alternative<model::record_batch>(result));
         ASSERT_EQ(
           std::get<model::record_batch>(result).base_offset(),
           kafka::offset_cast(expected))
-          << "for offset " << seek << " in partition " << ntp.tp.partition;
+          << "for offset " << seek << " in partition " << tidp.partition;
     }
     EXPECT_EQ(
       footer::npos,
-      index_one.index.file_position_before_kafka_offset(ntp, 9999_o));
+      index_one.index.file_position_before_kafka_offset(tidp, 9999_o));
 
     // Index only the middle batches in partition 1
     auto [index_two, object_two] = make_object(
-      specs_by_ntp, {.indexing_frequency = 3_KiB});
+      specs_by_tidp, {.indexing_frequency = 3_KiB});
 
-    ntp.tp.partition = model::partition_id(1);
+    tidp.partition = model::partition_id(1);
 
     // 20 and 60 are indexed.
     offset_lookup_to_batch_start = {
@@ -270,7 +290,7 @@ TEST(L1Objects, OffsetSearch) {
     for (const auto& [seek, expected] : offset_lookup_to_batch_start) {
         auto result = read_one_at(
           object_two,
-          index_two.index.file_position_before_kafka_offset(ntp, seek));
+          index_two.index.file_position_before_kafka_offset(tidp, seek));
         ASSERT_TRUE(std::holds_alternative<model::record_batch>(result));
         ASSERT_EQ(
           std::get<model::record_batch>(result).base_offset(),
@@ -278,13 +298,14 @@ TEST(L1Objects, OffsetSearch) {
     }
     EXPECT_EQ(
       footer::npos,
-      index_two.index.file_position_before_kafka_offset(ntp, 80_o));
+      index_two.index.file_position_before_kafka_offset(tidp, 80_o));
 }
 
 TEST(L1Objects, TimestampSearch) {
-    std::vector<batches_by_ntp> specs_by_ntp = {
+    auto test_topic_id = model::topic_id(uuid_t::create());
+    std::vector<batches_by_tidp> specs_by_tidp = {
       {
-        .ntp = model::ntp{"test_ns", "test_topic", model::partition_id(0)},
+        .tidp = model::topic_id_partition(test_topic_id, model::partition_id(0)),
         .batches = {
           {.base_offset = 30_o, .last_offset = 39_o, .max_timestamp = 1500_t},
           {.base_offset = 40_o, .last_offset = 49_o, .max_timestamp = 2000_t},
@@ -292,7 +313,7 @@ TEST(L1Objects, TimestampSearch) {
         },
       },
       {
-        .ntp = model::ntp{"test_ns", "test_topic", model::partition_id(1)},
+        .tidp = model::topic_id_partition(test_topic_id, model::partition_id(1)),
         .batches = {
           {.base_offset = 0_o, .last_offset = 9_o, .max_timestamp = 1000_t},
           {.base_offset = 10_o, .last_offset = 19_o, .max_timestamp = 2000_t},
@@ -300,14 +321,14 @@ TEST(L1Objects, TimestampSearch) {
         },
       },
       {
-        .ntp = model::ntp{"test_ns", "test_topic", model::partition_id(1)},
+        .tidp = model::topic_id_partition(test_topic_id, model::partition_id(1)),
         .batches = {
           {.base_offset = 40_o, .last_offset = 49_o, .max_timestamp = 4000_t},
           {.base_offset = 50_o, .last_offset = 59_o, .max_timestamp = 5000_t},
         },
       },
       {
-        .ntp = model::ntp{"test_ns", "test_topic", model::partition_id(0)},
+        .tidp = model::topic_id_partition(test_topic_id, model::partition_id(0)),
         .batches = {
           {.base_offset = 0_o, .last_offset = 9_o, .max_timestamp = 1000_t},
           {.base_offset = 10_o, .last_offset = 19_o, .max_timestamp = 1500_t},
@@ -317,9 +338,10 @@ TEST(L1Objects, TimestampSearch) {
     };
     // Every batch is indexed, except the first.
     auto [index_one, object_one] = make_object(
-      specs_by_ntp, {.indexing_frequency = 1});
+      specs_by_tidp, {.indexing_frequency = 1});
 
-    model::ntp ntp{"test_ns", "test_topic", model::partition_id(0)};
+    auto tidp = model::topic_id_partition(
+      test_topic_id, model::partition_id(0));
 
     std::map<model::timestamp, kafka::offset> timequery_to_batch_start = {
       {900_t, 0_o},
@@ -333,63 +355,64 @@ TEST(L1Objects, TimestampSearch) {
 
     for (const auto& [seek, expected] : timequery_to_batch_start) {
         auto pos = index_one.index.file_position_before_max_timestamp(
-          ntp, seek);
+          tidp, seek);
         ASSERT_NE(pos, footer::npos) << "No position found for " << seek
-                                     << " in partition " << ntp.tp.partition;
+                                     << " in partition " << tidp.partition;
         auto result = read_one_at(object_one, pos);
         ASSERT_TRUE(std::holds_alternative<model::record_batch>(result));
         ASSERT_EQ(
           std::get<model::record_batch>(result).base_offset(),
           kafka::offset_cast(expected))
-          << " for timestamp " << seek << " in partition " << ntp.tp.partition;
+          << " for timestamp " << seek << " in partition " << tidp.partition;
     }
     EXPECT_EQ(
       footer::npos,
-      index_one.index.file_position_before_max_timestamp(ntp, 2501_t));
+      index_one.index.file_position_before_max_timestamp(tidp, 2501_t));
 
-    ntp.tp.partition = model::partition_id(1);
+    tidp.partition = model::partition_id(1);
 
     timequery_to_batch_start = {};
 
     for (const auto& [seek, expected] : timequery_to_batch_start) {
         auto pos = index_one.index.file_position_before_max_timestamp(
-          ntp, seek);
+          tidp, seek);
         ASSERT_NE(pos, footer::npos) << "No position found for " << seek
-                                     << " in partition " << ntp.tp.partition;
+                                     << " in partition " << tidp.partition;
         auto result = read_one_at(object_one, pos);
         ASSERT_TRUE(std::holds_alternative<model::record_batch>(result));
         ASSERT_EQ(
           std::get<model::record_batch>(result).base_offset(),
           kafka::offset_cast(expected))
-          << " for timestamp " << seek << " in partition " << ntp.tp.partition;
+          << " for timestamp " << seek << " in partition " << tidp.partition;
     }
     EXPECT_EQ(
       footer::npos,
-      index_one.index.file_position_before_max_timestamp(ntp, 5001_t));
+      index_one.index.file_position_before_max_timestamp(tidp, 5001_t));
 }
 
 namespace {
 
 testing::AssertionResult expect_read_results(
   std::unique_ptr<object_reader> reader,
-  const std::vector<batches_by_ntp>& expected,
+  const std::vector<batches_by_tidp>& expected,
   std::optional<std::reference_wrapper<footer>> object_footer,
   bool expect_ntp_markers = true) {
     auto _ = ss::defer([&reader] { reader->close().get(); });
-    for (const auto& [ntp, specs] : expected) {
+    for (const auto& [tidp, specs] : expected) {
         if (expect_ntp_markers) {
-            SCOPED_TRACE(fmt::format("reading: {}", ntp));
+            SCOPED_TRACE(fmt::format("reading: {}", tidp));
             object_reader::result partition;
             EXPECT_NO_THROW(partition = reader->read_next().get());
-            if (!std::holds_alternative<model::ntp>(partition)) {
+            if (!std::holds_alternative<model::topic_id_partition>(partition)) {
                 return testing::AssertionFailure()
-                       << "Expected partition for ntp: " << ntp << ", but got "
-                       << partition.index();
+                       << "Expected partition for tidp: " << tidp
+                       << ", but got " << partition.index();
             }
-            if (std::get<model::ntp>(partition) != ntp) {
+            if (std::get<model::topic_id_partition>(partition) != tidp) {
                 return testing::AssertionFailure()
-                       << "Expected partition for ntp: " << ntp
-                       << ", but got: " << std::get<model::ntp>(partition);
+                       << "Expected partition for tidp: " << tidp
+                       << ", but got: "
+                       << std::get<model::topic_id_partition>(partition);
             }
         }
         for (const auto& spec : specs) {
@@ -449,9 +472,10 @@ testing::AssertionResult expect_read_results(
 } // namespace
 
 TEST(L1Objects, FullScan) {
-    std::vector<batches_by_ntp> specs_by_ntp = {
+    auto test_topic_id = model::topic_id(uuid_t::create());
+    std::vector<batches_by_tidp> specs_by_tidp = {
       {
-        .ntp = model::ntp{"test_ns", "test_topic", model::partition_id(0)},
+        .tidp = model::topic_id_partition(test_topic_id, model::partition_id(0)),
         .batches = {
           {
             .base_offset = 0_o,
@@ -471,7 +495,7 @@ TEST(L1Objects, FullScan) {
         },
       },
       {
-        .ntp = model::ntp{"test_ns", "test_topic", model::partition_id(1)},
+        .tidp = model::topic_id_partition(test_topic_id, model::partition_id(1)),
         .batches = {
           {
             .base_offset = 99_o,
@@ -491,7 +515,8 @@ TEST(L1Objects, FullScan) {
         },
       },
     };
-    auto [info, object] = make_object(specs_by_ntp);
+    auto [info, object] = make_object(specs_by_tidp);
+    EXPECT_EQ(info.index.partitions.size(), 2);
     EXPECT_EQ(info.size_bytes, object.size_bytes());
     std::variant<footer, size_t> read_footer_result;
     ASSERT_NO_THROW(
@@ -515,13 +540,14 @@ TEST(L1Objects, FullScan) {
           read_footer_result, testing::VariantWith<size_t>(missing_len));
     }
     EXPECT_TRUE(
-      expect_read_results(make_reader(object), specs_by_ntp, info.index));
+      expect_read_results(make_reader(object), specs_by_tidp, info.index));
 }
 
 TEST(L1Objects, PartialScan) {
-    std::vector<batches_by_ntp> specs_by_ntp = {
+    auto test_topic_id = model::topic_id(uuid_t::create());
+    std::vector<batches_by_tidp> specs_by_tidp = {
       {
-        .ntp = model::ntp{"test_ns", "test_topic", model::partition_id(0)},
+        .tidp = model::topic_id_partition(test_topic_id, model::partition_id(0)),
         .batches = {
           {
             .base_offset = 0_o,
@@ -541,7 +567,7 @@ TEST(L1Objects, PartialScan) {
         },
       },
       {
-        .ntp = model::ntp{"test_ns", "test_topic", model::partition_id(1)},
+        .tidp = model::topic_id_partition(test_topic_id, model::partition_id(1)),
         .batches = {
           {
             .base_offset = 99_o,
@@ -561,9 +587,9 @@ TEST(L1Objects, PartialScan) {
         },
       },
     };
-    auto [info, object] = make_object(specs_by_ntp);
-    for (const auto& spec : specs_by_ntp) {
-        auto it = info.index.partitions.find(spec.ntp);
+    auto [info, object] = make_object(specs_by_tidp);
+    for (const auto& spec : specs_by_tidp) {
+        auto it = info.index.partitions.find(spec.tidp);
         ASSERT_NE(it, info.index.partitions.end());
         auto reader = object_reader::create(make_iobuf_input_stream(
           object.share(it->second.file_position, it->second.length)));
@@ -573,4 +599,29 @@ TEST(L1Objects, PartialScan) {
           std::nullopt,
           /*expect_ntp_markers=*/false));
     }
+}
+
+TEST(L1Objects, BuilderSize) {
+    auto test_topic_id = model::topic_id(uuid_t::create());
+    iobuf output;
+    auto builder = object_builder::create(
+      make_iobuf_ref_output_stream(output), {});
+    auto _ = ss::defer([&builder] { builder->close().get(); });
+    EXPECT_EQ(builder->file_size(), 0);
+    builder->start_partition({test_topic_id, model::partition_id{0}}).get();
+    auto after_partition_size = builder->file_size();
+    EXPECT_GT(after_partition_size, 0);
+    builder
+      ->add_batch(make_batch({
+        .base_offset = 10_o,
+        .last_offset = 15_o,
+        .max_timestamp = 100_t,
+      }))
+      .get();
+    auto after_batch_size = builder->file_size();
+    EXPECT_GT(after_batch_size, after_partition_size);
+    auto finished = builder->finish().get();
+    auto final_size = builder->file_size();
+    EXPECT_GT(final_size, after_batch_size);
+    EXPECT_EQ(final_size, finished.size_bytes);
 }

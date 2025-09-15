@@ -22,6 +22,7 @@ apt-get install -y \
   git \
   libsasl2-dev \
   libsasl2-modules-gssapi-mit \
+  libcurl4-openssl-dev \
   libssl-dev \
   libzstd-dev \
   pkg-config \

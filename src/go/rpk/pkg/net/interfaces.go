@@ -23,19 +23,40 @@ func GetInterfacesByIps(addresses ...string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	for i, address := range addresses {
+		resolvedIps, err := net.LookupIP(address)
+		if err != nil {
+			zap.L().Sugar().Debugf("Can't resolve address '%s', err: %s", address, err)
+		}
+		for _, resolvedIP := range resolvedIps {
+			if resolvedIP.To4() != nil {
+				addresses[i] = resolvedIP.String()
+				break
+			}
+		}
+	}
+
 	nics := make(map[string]bool)
 	for _, iface := range ifaces {
+		if (iface.Flags & net.FlagLoopback) == net.FlagLoopback {
+			continue
+		}
+
 		addr, err := iface.Addrs()
 		if err != nil {
 			return nil, err
 		}
 		for _, address := range addr {
 			zap.L().Sugar().Debugf("Checking '%s' address '%s'", iface.Name, address)
+			nicIP, _, err := net.ParseCIDR(address.String())
+			if err != nil {
+				zap.L().Sugar().Debugf("Skipping address '%s' as not a valid CIDR, err: %s", address, err)
+				continue
+			}
 			for _, requestedAddr := range addresses {
-				if requestedAddr == "0.0.0.0" {
-					if (iface.Flags & net.FlagLoopback) == 0 {
-						nics[iface.Name] = true
-					}
+				if requestedAddr == nicIP.String() || requestedAddr == "0.0.0.0" {
+					nics[iface.Name] = true
 				}
 			}
 		}

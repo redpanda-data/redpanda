@@ -346,33 +346,23 @@ ss::future<http::client> refresh_credentials::impl::make_api_client(
 }
 
 ss::future<> refresh_credentials::impl::init_tls_certs(ss::sstring name) {
-    ss::tls::credentials_builder b;
-    b.set_client_auth(ss::tls::client_auth::NONE);
-    b.set_minimum_tls_version(
-      config::from_config(config::shard_local_cfg().tls_min_version()));
+    auto truststore
+      = config::shard_local_cfg().cloud_storage_trust_file().transform(
+        [](auto& f) { return net::certificate(std::filesystem::path(f)); });
 
-    if (auto trust_file_path
-        = config::shard_local_cfg().cloud_storage_trust_file.value();
-        trust_file_path.has_value()) {
-        vlog(
-          clrl_log.info,
-          "Using non-default trust file {}",
-          trust_file_path.value());
-        co_await b.set_x509_trust_file(
-          trust_file_path.value(), ss::tls::x509_crt_format::PEM);
-    } else if (auto ca_file = co_await net::find_ca_file();
-               ca_file.has_value()) {
-        vlog(clrl_log.info, "Using discovered trust file {}", ca_file.value());
-        co_await b.set_x509_trust_file(
-          ca_file.value(), ss::tls::x509_crt_format::PEM);
-    } else {
-        vlog(clrl_log.info, "Using system default");
-        co_await b.set_system_trust();
-    }
+    auto builder = co_await net::get_credentials_builder({
+      .truststore = std::move(truststore),
+      .k_store = std::nullopt,
+      .crl = std::nullopt,
+      .min_tls_version = config::from_config(
+        config::shard_local_cfg().tls_min_version()),
+      .enable_renegotiation = false,
+      .require_client_auth = false,
+    });
 
     _tls_certs = co_await net::build_reloadable_credentials_with_probe<
       ss::tls::certificate_credentials>(
-      std::move(b), "cloud_provider_client", std::move(name));
+      std::move(builder), "cloud_provider_client", std::move(name));
 }
 
 refresh_credentials make_refresh_credentials(

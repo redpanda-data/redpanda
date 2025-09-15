@@ -33,15 +33,16 @@
 #   should strongly consider leveraging the C++ type system to generate code
 #   that forces users to explicitly "unwrap" sensitive fields before use, to
 #   make it easier to audit where sensitive information is used.
+import enum
 import io
 import json
 import pathlib
 import re
 import sys
 import textwrap
-import jsonschema
+
 import jinja2
-import enum
+import jsonschema
 
 # Type overrides
 # ==============

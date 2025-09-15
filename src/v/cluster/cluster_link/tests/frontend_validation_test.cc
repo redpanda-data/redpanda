@@ -501,7 +501,8 @@ TEST_F_CORO(frontend_validation_test, update_mirror_topic_mirrored_by_other) {
 TEST_F_CORO(frontend_validation_test, test_mirror_properties) {
     auto m1 = create_base_metadata();
     m1.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
-      = absl::flat_hash_set<ss::sstring>{"segment.ms"};
+      = ::cluster_link::model::topic_metadata_mirroring_config::properties_set{
+        "segment.ms"};
     m1.configuration.topic_metadata_mirroring_cfg.topic_name_filters = {
       {
         .pattern_type = ::cluster_link::model::filter_pattern_type::literal,
@@ -523,7 +524,8 @@ TEST_F_CORO(frontend_validation_test, test_mirror_properties) {
 TEST_F_CORO(frontend_validation_test, test_mirror_properties_empty_pattern) {
     auto m1 = create_base_metadata();
     m1.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
-      = absl::flat_hash_set<ss::sstring>{"segment.ms"};
+      = ::cluster_link::model::topic_metadata_mirroring_config::properties_set{
+        "segment.ms"};
     m1.configuration.topic_metadata_mirroring_cfg.topic_name_filters = {
       {
         .pattern_type = ::cluster_link::model::filter_pattern_type::literal,
@@ -545,7 +547,8 @@ TEST_F_CORO(frontend_validation_test, test_mirror_properties_empty_pattern) {
 TEST_F_CORO(frontend_validation_test, test_mirror_properties_invalid_wildcard) {
     auto m1 = create_base_metadata();
     m1.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
-      = absl::flat_hash_set<ss::sstring>{"segment.ms"};
+      = ::cluster_link::model::topic_metadata_mirroring_config::properties_set{
+        "segment.ms"};
     m1.configuration.topic_metadata_mirroring_cfg.topic_name_filters = {{
       .pattern_type = ::cluster_link::model::filter_pattern_type::literal,
       .filter = ::cluster_link::model::filter_type::include,
@@ -560,7 +563,8 @@ TEST_F_CORO(
   frontend_validation_test, test_mirror_properties_wildcard_in_prefix) {
     auto m1 = create_base_metadata();
     m1.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
-      = absl::flat_hash_set<ss::sstring>{"segment.ms"};
+      = ::cluster_link::model::topic_metadata_mirroring_config::properties_set{
+        "segment.ms"};
     m1.configuration.topic_metadata_mirroring_cfg.topic_name_filters = {{
       .pattern_type = ::cluster_link::model::filter_pattern_type::prefix,
       .filter = ::cluster_link::model::filter_type::include,
@@ -576,7 +580,8 @@ TEST_F_CORO(
   frontend_validation_test, test_mirror_properties_invalid_characters) {
     auto m1 = create_base_metadata();
     m1.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
-      = absl::flat_hash_set<ss::sstring>{"segment.ms"};
+      = ::cluster_link::model::topic_metadata_mirroring_config::properties_set{
+        "segment.ms"};
     m1.configuration.topic_metadata_mirroring_cfg.topic_name_filters = {{
       .pattern_type = ::cluster_link::model::filter_pattern_type::literal,
       .filter = ::cluster_link::model::filter_type::include,
@@ -592,7 +597,8 @@ TEST_F_CORO(
   frontend_validation_test, test_mirror_properties_invalid_topic_name) {
     auto m1 = create_base_metadata();
     m1.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
-      = absl::flat_hash_set<ss::sstring>{"segment.ms"};
+      = ::cluster_link::model::topic_metadata_mirroring_config::properties_set{
+        "segment.ms"};
     m1.configuration.topic_metadata_mirroring_cfg.topic_name_filters = {{
       .pattern_type = ::cluster_link::model::filter_pattern_type::literal,
       .filter = ::cluster_link::model::filter_type::include,
@@ -608,7 +614,8 @@ TEST_F_CORO(
   frontend_validation_test, test_mirror_properties_invalid_topic_property) {
     auto m1 = create_base_metadata();
     m1.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
-      = absl::flat_hash_set<ss::sstring>{"redpanda.remote.readreplica"};
+      = ::cluster_link::model::topic_metadata_mirroring_config::properties_set{
+        "redpanda.remote.readreplica"};
 
     EXPECT_EQ(
       co_await upsert_cluster_link(std::move(m1)),

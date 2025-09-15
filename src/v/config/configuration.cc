@@ -378,6 +378,15 @@ configuration::configuration()
       "limit.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
+  , controller_backend_reconciliation_concurrency(
+      *this,
+      "controller_backend_reconciliation_concurrency",
+      "Maximum concurrent reconciliation operations the controller can run. "
+      "Higher values can speed up cluster state changes but use more "
+      "resources.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1024u,
+      {.min = 1u, .max = 2048u})
   , admin_api_require_auth(
       *this,
       "admin_api_require_auth",
@@ -1982,6 +1991,13 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       audit_failure_policy::reject,
       {audit_failure_policy::reject, audit_failure_policy::permit})
+  , audit_use_rpc(
+      *this,
+      "audit_use_rpc",
+      "Produce audit log messages using internal Redpanda RPCs. When disabled, "
+      "produce audit log messages using a Kafka client instead.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      true)
   , cloud_storage_enabled(
       *this,
       true,

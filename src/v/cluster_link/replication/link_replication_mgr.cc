@@ -29,7 +29,9 @@ link_replication_manager::link_replication_manager(
       vlog(cllog.error, "unexpected error in processing notifications: {}", ex);
   }) {}
 
-ss::future<> link_replication_manager::start() { return ss::now(); }
+ss::future<> link_replication_manager::start() {
+    return _source_factory->start();
+}
 
 ss::future<> link_replication_manager::stop() {
     vlog(cllog.trace, "Stopping link replication manager");
@@ -42,6 +44,7 @@ ss::future<> link_replication_manager::stop() {
         co_await replicator->stop();
     }
     _replicators.clear();
+    co_await _source_factory->stop();
     vlog(cllog.trace, "Link replication manager stopped");
 }
 
@@ -93,7 +96,7 @@ ss::future<> link_replication_manager::do_stop_replicator(
     auto it = _replicators.find(ntp);
     if (it == _replicators.end() || (term && (*term < it->second->term()))) {
         vlog(
-          cllog.warn,
+          cllog.trace,
           "No replicator found for {} at term {}, skipping stop",
           ntp,
           term);

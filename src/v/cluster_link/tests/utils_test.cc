@@ -48,10 +48,8 @@ TEST(cluster_link_utils_test, test_tls_file_config) {
 
     ASSERT_TRUE(tls_cfg.k_store.has_value());
     ASSERT_TRUE(
-      std::holds_alternative<kafka::client::key_cert_path>(
-        tls_cfg.k_store.value()));
-    auto& k_store = std::get<kafka::client::key_cert_path>(
-      tls_cfg.k_store.value());
+      std::holds_alternative<net::key_cert_path>(tls_cfg.k_store.value()));
+    auto& k_store = std::get<net::key_cert_path>(tls_cfg.k_store.value());
     EXPECT_EQ(k_store.cert, std::filesystem::path("/path/to/cert.crt"));
     EXPECT_EQ(k_store.key, std::filesystem::path("/path/to/key.key"));
 }
@@ -74,9 +72,8 @@ TEST(cluster_link_utils_test, test_tls_value_config) {
     EXPECT_EQ(std::get<ss::sstring>(tls_cfg.truststore.value()), "ca-cert");
 
     ASSERT_TRUE(tls_cfg.k_store.has_value());
-    ASSERT_TRUE(
-      std::holds_alternative<kafka::client::key_cert>(tls_cfg.k_store.value()));
-    auto& k_store = std::get<kafka::client::key_cert>(tls_cfg.k_store.value());
+    ASSERT_TRUE(std::holds_alternative<net::key_cert>(tls_cfg.k_store.value()));
+    auto& k_store = std::get<net::key_cert>(tls_cfg.k_store.value());
     EXPECT_EQ(k_store.cert, "cert-value");
     EXPECT_EQ(k_store.key, "key-value");
 }

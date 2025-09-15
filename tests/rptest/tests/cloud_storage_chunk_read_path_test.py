@@ -5,22 +5,20 @@ from time import sleep
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
-from rptest.services.admin import Admin
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
+    KgoVerifierRandomConsumer,
     KgoVerifierSeqConsumer,
 )
-from rptest.services.kgo_verifier_services import KgoVerifierRandomConsumer
 from rptest.services.metrics_check import MetricCheck
-from rptest.services.redpanda import RedpandaService
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import RedpandaService, SISettings
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.util import Scale
-from rptest.util import produce_until_segments, wait_for_removal_of_n_segments
+from rptest.util import Scale, produce_until_segments, wait_for_removal_of_n_segments
 from rptest.utils.si_utils import nodes_report_cloud_segments
 
 

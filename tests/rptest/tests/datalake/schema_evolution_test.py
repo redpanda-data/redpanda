@@ -23,7 +23,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import PandaproxyConfig, SchemaRegistryConfig, SISettings
+from rptest.services.redpanda import PandaproxyConfig, SISettings, SchemaRegistryConfig
 from rptest.tests.datalake.catalog_service_factory import (
     filesystem_catalog_type,
     supported_catalog_types,

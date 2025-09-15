@@ -154,6 +154,12 @@ private:
     cluster::callback_id _metadata_callback_id;
     bool _started = false;
     ss::gate _gate;
+
+public:
+    // For testing
+    const topic_partition_map<subscription>& subscriptions() const {
+        return _subscriptions;
+    }
 };
 } // namespace client
 } // namespace kafka

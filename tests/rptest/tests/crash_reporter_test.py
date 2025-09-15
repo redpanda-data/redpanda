@@ -9,13 +9,13 @@
 
 import json
 
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from ducktape.utils.util import wait_until
 
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.tests.metrics_reporter_test import MetricsReporterServer
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.tests.crash_loop_checks_test import HOSTNAME_ERRORS
+from rptest.tests.metrics_reporter_test import MetricsReporterServer
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class CrashReporterServer(MetricsReporterServer):
@@ -61,8 +61,10 @@ class CrashReporterTest(RedpandaTest):
                 self.logger.info("No requests yet")
                 return False
 
-        self.logger.info("Waiting for crash report to be posted")
-        wait_until(_request_received, 20, backoff_sec=1)
+        # Crash report uploads can fail in CI due to aborted connections, so allow extra time for retries
+        timeout_s = 40
+        self.logger.info(f"Waiting {timeout_s}s for crash report to be posted")
+        wait_until(_request_received, timeout_s, backoff_sec=1)
         self.telemetry.stop()
 
         self.logger.info("Verifying the content of the crash report requests")

@@ -9,11 +9,11 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from ducktape.tests.test import TestContext
-from ducktape.services.service import Service
 from typing import Any
 
 import requests
+from ducktape.services.service import Service
+from ducktape.tests.test import TestContext
 
 from rptest.services.redpanda import AnyRedpandaService, RedpandaServiceCloud
 

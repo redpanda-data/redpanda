@@ -23,62 +23,82 @@ ss::sstring from_iobuf(iobuf b) {
 }
 
 template<typename PrimitiveV>
-auto get_required_primitive(value v) {
+auto get_required_primitive(value v, std::string_view name) {
     if (!holds_alternative<primitive_value>(v)) {
-        throw std::invalid_argument("Value is not a primitive");
+        throw std::invalid_argument(
+          fmt::format("Value {} is not a primitive", name));
     }
     auto& as_primitive = std::get<primitive_value>(v);
     if (!holds_alternative<PrimitiveV>(as_primitive)) {
-        throw std::invalid_argument("Value is not the expected type");
+        throw std::invalid_argument(
+          fmt::format(
+            "Value of '{}' is not the expected type {}: actual {}",
+            name,
+            PrimitiveV::name(),
+            as_primitive));
     }
     // NOTE: values that contain iobufs must be moved.
     auto& as_t = std::get<PrimitiveV>(as_primitive);
     return std::move(as_t.val);
 }
 template<typename PrimitiveV>
-auto get_required_primitive(std::optional<value> v) {
+auto get_required_primitive(std::optional<value> v, std::string_view name) {
     if (!v.has_value()) {
-        throw std::invalid_argument("Expected primitive value is null");
+        throw std::invalid_argument(
+          fmt::format("Expected primitive value '{}' is null", name));
     }
-    return get_required_primitive<PrimitiveV>(std::move(*v));
+    return get_required_primitive<PrimitiveV>(std::move(*v), name);
 }
 
 template<typename T, typename PrimitiveV>
-std::optional<T> get_optional_primitive(std::optional<value> v) {
+std::optional<T>
+get_optional_primitive(std::optional<value> v, std::string_view name) {
     if (!v.has_value()) {
         return std::nullopt;
     }
-    return T{get_required_primitive<PrimitiveV>(std::move(*v))};
+    return T{get_required_primitive<PrimitiveV>(std::move(*v), name)};
 }
 
-std::unique_ptr<struct_value> get_required_struct(std::optional<value> v) {
+std::unique_ptr<struct_value>
+get_required_struct(std::optional<value> v, std::string_view name) {
     if (!v.has_value()) {
-        throw std::invalid_argument("Expected struct value is null");
+        throw std::invalid_argument(
+          fmt::format("Expected struct value {} is null", name));
     }
     if (!std::holds_alternative<std::unique_ptr<struct_value>>(*v)) {
-        throw std::invalid_argument("Value is not a struct");
+        throw std::invalid_argument(
+          fmt::format("Value of {} is not a struct: {}", name, *v));
     }
     auto ret = std::get<std::unique_ptr<struct_value>>(std::move(*v));
     if (!ret) {
-        throw std::invalid_argument("Struct value is nullptr");
+        throw std::invalid_argument(
+          fmt::format("Struct {} value is nullptr", name));
     }
     return ret;
 }
 
 chunked_hash_map<nested_field::id_t, size_t>
-get_counts_map(std::optional<value> v) {
+get_counts_map(std::optional<value> v, std::string_view name) {
     if (!v.has_value()) {
         return {};
     }
     if (!holds_alternative<std::unique_ptr<map_value>>(*v)) {
-        throw std::invalid_argument("Value is not a map");
+        throw std::invalid_argument(
+          fmt::format("Value for {} is not a map: {}", name, *v));
     }
     auto& as_map = std::get<std::unique_ptr<map_value>>(*v);
     chunked_hash_map<nested_field::id_t, size_t> ret;
     for (auto& kv : as_map->kvs) {
-        auto k = get_required_primitive<int_value>(std::move(kv.key));
-        auto v = get_required_primitive<long_value>(std::move(kv.val));
-        ret.emplace(nested_field::id_t{k}, v);
+        try {
+            auto k = get_required_primitive<int_value>(
+              std::move(kv.key), "key");
+            auto v = get_required_primitive<long_value>(
+              std::move(kv.val), "val");
+            ret.emplace(nested_field::id_t{k}, v);
+        } catch (const std::exception& e) {
+            throw std::runtime_error(
+              fmt::format("Error parsing '{}' map: {}", name, e.what()));
+        }
     }
     return ret;
 }
@@ -205,19 +225,22 @@ data_file data_file_from_value(struct_value v) {
         throw std::invalid_argument("Expected more values");
     }
     file.content_type = content_from_int(
-      get_required_primitive<int_value>(std::move(fs[0])));
-    file.file_path = uri(
-      from_iobuf(get_required_primitive<string_value>(std::move(fs[1]))));
-    file.file_format = format_from_str(
-      from_iobuf(get_required_primitive<string_value>(std::move(fs[2]))));
-    file.partition = {get_required_struct(std::move(fs[3]))};
-    file.record_count = get_required_primitive<long_value>(std::move(fs[4]));
-    file.file_size_bytes = get_required_primitive<long_value>(std::move(fs[5]));
-    file.column_sizes = get_counts_map(std::move(fs[6]));
-    file.value_counts = get_counts_map(std::move(fs[7]));
-    file.null_value_counts = get_counts_map(std::move(fs[8]));
-    file.distinct_counts = get_counts_map(std::move(fs[9]));
-    file.nan_value_counts = get_counts_map(std::move(fs[10]));
+      get_required_primitive<int_value>(std::move(fs[0]), "content_type"));
+    file.file_path = uri(from_iobuf(
+      get_required_primitive<string_value>(std::move(fs[1]), "file_path")));
+    file.file_format = format_from_str(from_iobuf(
+      get_required_primitive<string_value>(std::move(fs[2]), "file_format")));
+    file.partition = {get_required_struct(std::move(fs[3]), "partition")};
+    file.record_count = get_required_primitive<long_value>(
+      std::move(fs[4]), "record_count");
+    file.file_size_bytes = get_required_primitive<long_value>(
+      std::move(fs[5]), "file_size_bytes");
+    file.column_sizes = get_counts_map(std::move(fs[6]), "column_sizes");
+    file.value_counts = get_counts_map(std::move(fs[7]), "value_counts");
+    file.null_value_counts = get_counts_map(
+      std::move(fs[8]), "null_value_counts");
+    file.nan_value_counts = get_counts_map(
+      std::move(fs[9]), "nan_value_counts");
     return file;
 }
 
@@ -246,16 +269,16 @@ manifest_entry manifest_entry_from_value(struct_value v) {
         throw std::invalid_argument("Expected more values");
     }
     e.status = status_from_int(
-      get_required_primitive<int_value>(std::move(fs[0])));
+      get_required_primitive<int_value>(std::move(fs[0]), "status"));
     e.snapshot_id = get_optional_primitive<snapshot_id, long_value>(
-      std::move(fs[1]));
+      std::move(fs[1]), "snapshot_id");
     e.sequence_number = get_optional_primitive<sequence_number, long_value>(
-      std::move(fs[2]));
+      std::move(fs[2]), "sequence_number");
     e.file_sequence_number
       = get_optional_primitive<file_sequence_number, long_value>(
-        std::move(fs[3]));
+        std::move(fs[3]), "file_sequence_number");
     e.data_file = data_file_from_value(
-      std::move(*get_required_struct(std::move(fs[4]))));
+      std::move(*get_required_struct(std::move(fs[4]), "data_file")));
     return e;
 }
 

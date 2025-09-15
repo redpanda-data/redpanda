@@ -13,7 +13,6 @@
 #include "base/vassert.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
-#include "compat/run.h"
 #include "redpanda/admin/cluster_config_schema_util.h"
 #include "version/version.h"
 
@@ -43,18 +42,6 @@ int run_seastar(std::function<ss::future<int>()> main) {
         std::cerr << std::current_exception() << "\n";
         return 1;
     }
-}
-
-int corpus_write(std::filesystem::path dir) {
-    return run_seastar([dir = std::move(dir)]() -> ss::future<int> {
-        return compat::write_corpus(dir).then([] { return 0; });
-    });
-}
-
-int corpus_check(std::filesystem::path path) {
-    return run_seastar([path = std::move(path)]() -> ss::future<int> {
-        return compat::check_type(path).then([] { return 0; });
-    });
 }
 
 int print_cluster_config_schema() {
@@ -91,7 +78,6 @@ int print_cluster_config_schema() {
  * - This is _not_ customer facing tooling.
  * - This is _not_ a CLI tool to access Redpanda services.
  * - This may _not_ be shipped as a part of official release artifacts.
- * - This tool provides _no backward compatibility_ of any sorts.
  */
 int main(int ac, char* av[]) {
     namespace po = boost::program_options;
@@ -101,8 +87,6 @@ int main(int ac, char* av[]) {
     desc.add_options()
       ("help", "Allowed options")
       ("config_schema_json", "Generates JSON schema for cluster configuration")
-      ("corpus_write", po::value<std::filesystem::path>(), "Writes data structure corpus")
-      ("corpus_check", po::value<std::filesystem::path>(), "Check a corpus test case")
       ("version", "Redpanda core version for this utility");
     // clang-format on
 
@@ -116,10 +100,6 @@ int main(int ac, char* av[]) {
         return print_cluster_config_schema();
     } else if (vm.count("version")) {
         std::cout << redpanda_version() << "\n";
-    } else if (vm.count("corpus_write")) {
-        return corpus_write(vm["corpus_write"].as<std::filesystem::path>());
-    } else if (vm.count("corpus_check")) {
-        return corpus_check(vm["corpus_check"].as<std::filesystem::path>());
     } else {
         std::cout << "missing option" << "\n";
         std::cout << desc << "\n";

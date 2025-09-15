@@ -531,6 +531,10 @@ ss::future<> controller::start(
       }),
       ss::sharded_parameter(
         [] { return config::shard_local_cfg().retention_local_strict.bind(); }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .controller_backend_reconciliation_concurrency.bind();
+      }),
       _scheduling_group,
       std::ref(_as));
 

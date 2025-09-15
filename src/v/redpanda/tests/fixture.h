@@ -88,7 +88,8 @@ public:
       bool enable_data_transforms = false,
       bool enable_legacy_upload_mode = true,
       bool iceberg_enabled = false,
-      bool development_enable_cloud_topics = false);
+      bool development_enable_cloud_topics = false,
+      bool development_cluster_linking_enabled = false);
 
     // creates single node with default configuration
     redpanda_thread_fixture();
@@ -158,7 +159,8 @@ public:
       bool data_transforms_enabled = false,
       bool legacy_upload_mode_enabled = true,
       bool iceberg_enabled = false,
-      bool development_enable_cloud_topics = false);
+      bool development_enable_cloud_topics = false,
+      bool development_cluster_linking_enabled = false);
 
     YAML::Node proxy_config(uint16_t proxy_port = 8082);
 

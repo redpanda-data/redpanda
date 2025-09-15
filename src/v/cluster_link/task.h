@@ -49,7 +49,7 @@ public:
     virtual ss::future<result<void>> start();
     /// Stops the task from running
     /// Is virtual so these methods can be overriden by test classes
-    virtual ss::future<result<void>> stop();
+    virtual ss::future<result<void>> stop() noexcept;
     /// Pauses the task, prevening it from running until resumed
     ss::future<result<void>> pause();
     /// Returns the name of the task

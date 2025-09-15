@@ -247,4 +247,13 @@ TEST(TableMetadataJsonSerde, TestSchemaLookup) {
 
     auto* schema_by_id = parsed.get_schema(parsed.current_schema_id);
     ASSERT_NE(schema_by_id, nullptr);
+
+    auto* schema_by_struct = parsed.get_equivalent_schema(
+      schema_by_id->schema_struct);
+    ASSERT_NE(schema_by_struct, nullptr);
+
+    EXPECT_EQ(*schema_by_id, *schema_by_struct);
+    EXPECT_TRUE(
+      iceberg::schemas_equivalent(
+        schema_by_id->schema_struct, schema_by_struct->schema_struct));
 }

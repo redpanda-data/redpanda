@@ -13,6 +13,7 @@
 
 #include "config/configuration.h"
 #include "config/convert.h"
+#include "net/tls.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/do_with.hh>
@@ -21,66 +22,43 @@
 #include <seastar/util/variant_utils.hh>
 
 namespace config {
+namespace {
+net::key_store create_key_store(const key_cert_container& container) {
+    return ss::visit(
+      container,
+      [](const key_cert& kc) {
+          return net::key_store{net::key_cert_path{
+            .key = std::filesystem::path(kc.key_file),
+            .cert = std::filesystem::path(kc.cert_file),
+          }};
+      },
+      [](const p12_container& pkcs) {
+          return net::key_store{net::pkcs12{
+            .cert = std::filesystem::path(pkcs.p12_path),
+            .password = pkcs.p12_password,
+          }};
+      });
+}
+} // namespace
 ss::future<std::optional<ss::tls::credentials_builder>>
 tls_config::get_credentials_builder() const& {
     if (_enabled) {
-        return ss::do_with(
-          ss::tls::credentials_builder{},
-          [this](ss::tls::credentials_builder& builder) {
-              builder.enable_server_precedence();
-              builder.set_cipher_string(
-                {tlsv1_2_cipher_string.data(), tlsv1_2_cipher_string.size()});
-              builder.set_ciphersuites(
-                {tlsv1_3_ciphersuites.data(), tlsv1_3_ciphersuites.size()});
-              builder.set_minimum_tls_version(
-                from_config(config::shard_local_cfg().tls_min_version()));
-              builder.set_dh_level(ss::tls::dh_params::level::MEDIUM);
-              if (_require_client_auth) {
-                  builder.set_client_auth(ss::tls::client_auth::REQUIRE);
-              }
-              if (config::shard_local_cfg().tls_enable_renegotiation()) {
-                  builder.enable_tls_renegotiation();
-              }
-
-              auto f = _truststore_file
-                         ? builder.set_x509_trust_file(
-                             *_truststore_file, ss::tls::x509_crt_format::PEM)
-                         : builder.set_system_trust();
-
-              if (_crl_file) {
-                  f = f.then([this, &builder] {
-                      return builder.set_x509_crl_file(
-                        *_crl_file, ss::tls::x509_crt_format::PEM);
-                  });
-              }
-
-              if (_key_cert) {
-                  f = f.then([this, &builder] {
-                      return ss::visit(
-                        _key_cert.value(),
-                        [&builder](const key_cert& c) {
-                            return builder.set_x509_key_file(
-                              c.cert_file,
-                              c.key_file,
-                              ss::tls::x509_crt_format::PEM);
-                        },
-                        [&builder](const p12_container& p) {
-                            return builder.set_simple_pkcs12_file(
-                              p.p12_path,
-                              ss::tls::x509_crt_format::PEM,
-                              p.p12_password);
-                        });
-                  });
-              }
-
-              return f.then([&builder]() {
-                  return std::make_optional(std::move(builder));
-              });
-          });
+        auto builder = co_await net::get_credentials_builder({
+          .truststore = _truststore_file.transform(
+            [](auto& f) { return net::certificate(std::filesystem::path(f)); }),
+          .k_store = _key_cert.transform(create_key_store),
+          .crl = _crl_file.transform(
+            [](auto& f) { return net::certificate(std::filesystem::path(f)); }),
+          .min_tls_version = from_config(
+            config::shard_local_cfg().tls_min_version()),
+          .enable_renegotiation
+          = config::shard_local_cfg().tls_enable_renegotiation(),
+          .require_client_auth = _require_client_auth,
+        });
+        co_return builder;
     }
 
-    return ss::make_ready_future<std::optional<ss::tls::credentials_builder>>(
-      std::nullopt);
+    co_return std::nullopt;
 }
 
 ss::future<std::optional<ss::tls::credentials_builder>>

@@ -1,8 +1,10 @@
+from typing import NamedTuple
+
 from _typeshed import Incomplete
 from ducktape.mark import parametrized as parametrized
 from ducktape.mark.mark_expander import MarkedFunctionExpander as MarkedFunctionExpander
-from ducktape.tests.test import Test as Test, TestContext as TestContext
-from typing import NamedTuple
+from ducktape.tests.test import Test as Test
+from ducktape.tests.test import TestContext as TestContext
 
 class LoaderException(Exception): ...
 

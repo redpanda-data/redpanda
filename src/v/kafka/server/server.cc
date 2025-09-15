@@ -18,6 +18,7 @@
 #include "config/broker_authn_endpoint.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "container/chunked_hash_map.h"
 #include "features/enterprise_feature_messages.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
@@ -59,6 +60,7 @@
 #include "kafka/server/usage_manager.h"
 #include "model/record.h"
 #include "net/connection.h"
+#include "random/generators.h"
 #include "security/acl.h"
 #include "security/audit/schemas/iam.h"
 #include "security/audit/schemas/utils.h"
@@ -95,6 +97,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <ranges>
 #include <vector>
 
 namespace kafka {
@@ -115,6 +118,14 @@ security::audit::authentication_event_options make_auth_event_options(
       .uid = mtls_state.subject().value_or("")
     }
   };
+}
+
+model::topic_namespace as_tp_ns(model::topic tp) {
+    return {model::kafka_namespace, std::move(tp)};
+}
+
+model::topic_namespace_view as_tp_ns_view(const model::topic& tp) {
+    return {model::kafka_namespace, tp};
 }
 } // namespace
 
@@ -254,39 +265,6 @@ coordinator_ntp_mapper& server::coordinator_mapper() {
     return _group_router.local().coordinator_mapper().local();
 }
 
-config::broker_authn_method get_authn_method(const net::connection& conn) {
-    // If authn_method is set on the endpoint
-    //    Use it
-    // Else if kafka_enable_authorization is not set
-    //    Use sasl if enable_sasl
-    // Else if has mtls mapping rules
-    //    Use mtls_identity
-    // Else
-    //    Disable AuthN
-
-    std::optional<config::broker_authn_method> authn_method;
-    auto n = conn.name();
-    const auto& kafka_api = config::node().kafka_api.value();
-    auto ep_it = std::find_if(
-      kafka_api.begin(),
-      kafka_api.end(),
-      [&n](const config::broker_authn_endpoint& ep) { return ep.name == n; });
-    if (ep_it != kafka_api.end()) {
-        authn_method = ep_it->authn_method;
-    }
-    if (authn_method.has_value()) {
-        return *authn_method;
-    }
-    const auto& config = config::shard_local_cfg();
-    // if kafka_enable_authorization is not set, use sasl iff enable_sasl
-    if (
-      !config.kafka_enable_authorization().has_value()
-      && config.enable_sasl()) {
-        return config::broker_authn_method::sasl;
-    }
-    return config::broker_authn_method::none;
-}
-
 ss::future<security::tls::mtls_state> get_mtls_principal_state(
   const security::tls::principal_mapper& pm, net::connection& conn) {
     using namespace std::chrono_literals;
@@ -343,10 +321,8 @@ ss::future<security::tls::mtls_state> get_mtls_principal_state(
 }
 
 ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
-    const bool authz_enabled
-      = config::shard_local_cfg().kafka_enable_authorization().value_or(
-        config::shard_local_cfg().enable_sasl());
-    const auto authn_method = get_authn_method(*conn);
+    const bool authz_enabled = config::kafka_authz_enabled();
+    const auto authn_method = config::get_authn_method(conn->name());
 
     const auto sasl_max_reauth
       = config::shard_local_cfg().kafka_sasl_max_reauth_ms();
@@ -1235,8 +1211,7 @@ offset_delete_handler::handle(request_context ctx, ss::smp_service_group) {
           topic.partitions.end(),
           [&topic, &ctx](const offset_delete_request_partition& partition) {
               return ctx.metadata_cache().contains(
-                model::topic_namespace_view(model::kafka_namespace, topic.name),
-                partition.partition_index);
+                as_tp_ns_view(topic.name), partition.partition_index);
           });
         if (std::distance(unknowns_it, topic.partitions.end()) > 0) {
             unknowns.push_back(
@@ -1292,31 +1267,169 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
 
-    auto unauthorized_it = std::partition(
-      request.data.topic_names.begin(),
-      request.data.topic_names.end(),
-      [&ctx](const model::topic& topic) {
-          return ctx.authorized(security::acl_operation::remove, topic);
-      });
+    // Determine the names and IDs that have been provided, and detect
+    // duplicates.
+    chunked_hash_set<model::topic> provided_names;
+    chunked_hash_set<model::topic> duplicate_provided_names;
+    chunked_hash_set<model::topic_id> provided_ids;
+    chunked_hash_set<model::topic_id> duplicate_provided_ids;
+
+    // Ensure that the value exists either in provided or in duplicates
+    constexpr auto add_provided =
+      [](auto& provided, auto& duplicates, const auto& t) {
+          if (duplicates.contains(t)) {
+              provided.erase(t);
+          } else {
+              auto [it, inserted] = provided.insert(t);
+              if (!inserted) {
+                  provided.erase(it);
+                  duplicates.insert(t);
+              }
+          }
+      };
+
+    delete_topics_response resp;
+    resp.data.responses.reserve(
+      request.data.topic_names.size() + request.data.topics.size());
+
+    for (const auto& name : request.data.topic_names) {
+        add_provided(provided_names, duplicate_provided_names, name);
+    }
+
+    for (const auto& t : request.data.topics) {
+        if (!t.name.has_value()) {
+            if (t.topic_id == model::topic_id{}) {
+                resp.data.responses.push_back(
+                  {.error_code = error_code::invalid_request,
+                   .error_message
+                   = "Neither topic name nor id were specified."});
+            } else {
+                add_provided(provided_ids, duplicate_provided_ids, t.topic_id);
+            }
+        } else {
+            if (t.topic_id == model::topic_id{}) {
+                add_provided(
+                  provided_names, duplicate_provided_names, t.name.value());
+            } else {
+                resp.data.responses.push_back(
+                  {.name = t.name,
+                   .topic_id = t.topic_id,
+                   .error_code = error_code::invalid_request,
+                   .error_message
+                   = "You may not specify both topic name and topic id."});
+            }
+        }
+    }
+
+    for (auto& topic : duplicate_provided_names) {
+        resp.data.responses.push_back(
+          {.name = topic,
+           .error_code = error_code::invalid_request,
+           .error_message = "Duplicate topic name."});
+    }
+    duplicate_provided_names.clear();
+
+    for (const auto& id : duplicate_provided_ids) {
+        resp.data.responses.push_back(
+          {.topic_id = id,
+           .error_code = error_code::invalid_request,
+           .error_message = "Duplicate topic id."});
+    }
+    duplicate_provided_ids.clear();
+
+    chunked_vector<model::topic> to_authenticate(
+      std::make_move_iterator(provided_names.begin()),
+      std::make_move_iterator(provided_names.end()));
+
+    chunked_hash_map<model::topic_id, model::topic> id_to_name;
+    for (const auto& id : provided_ids) {
+        auto tp_ns = ctx.metadata_cache().get_name_by_id(id);
+        if (!tp_ns.has_value() || tp_ns->ns != model::kafka_namespace) {
+            resp.data.responses.push_back(
+              {.topic_id = id,
+               .error_code = error_code::unknown_topic_id,
+               .error_message = "This server does not host this topic ID."});
+        } else {
+            to_authenticate.push_back(tp_ns->tp);
+            id_to_name.emplace(id, std::move(tp_ns->tp));
+        }
+    }
+    provided_ids.clear();
+
+    for (auto it = id_to_name.begin(); it != id_to_name.end(); ++it) {
+        const auto& [id, name] = *it;
+        if (!ctx.authorized(security::acl_operation::remove, name)) {
+            if (ctx.authorized(security::acl_operation::describe, name)) {
+                resp.data.responses.push_back(
+                  {.name = name,
+                   .topic_id = id,
+                   .error_code = error_code::topic_authorization_failed});
+            } else {
+                resp.data.responses.push_back(
+                  {.topic_id = id,
+                   .error_code = error_code::topic_authorization_failed});
+            }
+            id_to_name.erase(it);
+        }
+    }
+
+    for (const auto& name : provided_names) {
+        auto tp_ns{as_tp_ns_view(name)};
+        const auto cfg = ctx.metadata_cache().get_topic_metadata_ref(tp_ns);
+        const auto id = cfg ? cfg->get().get_configuration().tp_id
+                            : std::nullopt;
+
+        if (!ctx.authorized(security::acl_operation::describe, name)) {
+            resp.data.responses.push_back(
+              {.name = name,
+               .error_code = error_code::topic_authorization_failed});
+        } else if (!id) {
+            resp.data.responses.push_back(
+              {.name = name,
+               .error_code = error_code::unknown_topic_or_partition,
+               .error_message
+               = "This server does not host this topic-partition."});
+        } else if (ctx.authorized(security::acl_operation::remove, name)) {
+            auto failed = duplicate_provided_ids.contains(*id)
+                          || !id_to_name.insert_or_assign(*id, name).second;
+            if (failed) {
+                duplicate_provided_ids.emplace(*id);
+                id_to_name.erase(*id);
+                resp.data.responses.push_back(
+                  {.name = name,
+                   .topic_id = *id,
+                   .error_code = error_code::invalid_request,
+                   .error_message = "The provided topic name maps to an ID "
+                                    "that was already supplied."});
+            }
+        } else {
+            resp.data.responses.push_back(
+              {.name = name,
+               .error_code = error_code::topic_authorization_failed});
+        }
+    }
+    provided_names.clear();
 
     if (!ctx.audit()) {
         delete_topics_response resp;
-        std::transform(
-          request.data.topic_names.begin(),
-          request.data.topic_names.end(),
+        resp.data.responses.reserve(
+          request.data.topic_names.size() + request.data.topics.size());
+
+        std::ranges::transform(
+          request.data.topic_names,
           std::back_inserter(resp.data.responses),
           [](const model::topic& t) {
               return deletable_topic_result{
                 .name = t, .error_code = error_code::broker_not_available};
           });
 
-        std::transform(
-          request.data.topics.begin(),
-          request.data.topics.end(),
+        std::ranges::transform(
+          request.data.topics,
           std::back_inserter(resp.data.responses),
           [](const delete_topic_state& t) {
               return deletable_topic_result{
                 .name = t.name,
+                .topic_id = t.topic_id,
                 .error_code = error_code::broker_not_available,
               };
           });
@@ -1324,11 +1437,14 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
         co_return co_await ctx.respond(std::move(resp));
     }
 
-    std::vector<model::topic> unauthorized(
-      std::make_move_iterator(unauthorized_it),
-      std::make_move_iterator(request.data.topic_names.end()));
-
-    request.data.topic_names.erase_to_end(unauthorized_it);
+    chunked_vector<model::topic> topic_names;
+    topic_names.reserve(id_to_name.size());
+    for (auto&& [_, name] : id_to_name) {
+        topic_names.push_back(std::move(name));
+    }
+    id_to_name.clear();
+    auto valid_topic_names = std::ranges::subrange(
+      topic_names.begin(), topic_names.end());
 
     auto kafka_nodelete_topics
       = config::shard_local_cfg().kafka_nodelete_topics();
@@ -1338,33 +1454,22 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
     if (config::shard_local_cfg().data_transforms_enabled()) {
         kafka_nodelete_topics.push_back(model::transform_log_internal_topic());
     }
-    auto nodelete_it = std::partition(
-      request.data.topic_names.begin(),
-      request.data.topic_names.end(),
-      [&kafka_nodelete_topics](const model::topic& topic) {
-          return std::find(
-                   kafka_nodelete_topics.begin(),
-                   kafka_nodelete_topics.end(),
-                   topic)
-                 == kafka_nodelete_topics.end();
+
+    auto nodelete_topics = std::ranges::partition(
+      valid_topic_names, [&kafka_nodelete_topics](const model::topic& topic) {
+          return !std::ranges::contains(kafka_nodelete_topics, topic);
       });
-    std::vector<model::topic> nodelete_topics(
-      std::make_move_iterator(nodelete_it),
-      std::make_move_iterator(request.data.topic_names.end()));
-
-    request.data.topic_names.erase_to_end(nodelete_it);
-
-    std::vector<cluster::topic_result> res;
+    valid_topic_names = std::ranges::subrange(
+      valid_topic_names.begin(), nodelete_topics.begin());
 
     // Measure the partition mutation rate
     auto resp_delay = 0ms;
     const auto now = quota_manager::clock::now();
     auto quota_exceeded_it = co_await ssx::partition(
-      request.data.topic_names.begin(),
-      request.data.topic_names.end(),
+      valid_topic_names.begin(),
+      valid_topic_names.end(),
       [&ctx, &resp_delay, now](const model::topic& t) {
-          const auto cfg = ctx.metadata_cache().get_topic_cfg(
-            model::topic_namespace_view(model::kafka_namespace, t));
+          const auto cfg = ctx.metadata_cache().get_topic_cfg(as_tp_ns_view(t));
           const auto mutations = cfg ? cfg->partition_count : 0;
           /// Capture before next scheduling point below
           auto& resp_delay_ref = resp_delay;
@@ -1376,50 +1481,10 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
             });
       });
 
-    std::vector<model::topic> quota_exceeded(
-      std::make_move_iterator(quota_exceeded_it),
-      std::make_move_iterator(request.data.topic_names.end()));
-
-    request.data.topic_names.erase_to_end(quota_exceeded_it);
-
-    if (!request.data.topic_names.empty()) {
-        // construct namespaced topic set from request
-        std::vector<model::topic_namespace> topics;
-        topics.reserve(request.data.topic_names.size());
-        std::transform(
-          std::begin(request.data.topic_names),
-          std::end(request.data.topic_names),
-          std::back_inserter(topics),
-          [](model::topic& tp) {
-              return model::topic_namespace(
-                model::kafka_namespace, std::move(tp));
-          });
-        auto tout = request.data.timeout_ms + model::timeout_clock::now();
-        res = co_await ctx.topics_frontend().delete_topics(
-          std::move(topics), tout);
-    }
-
-    // initialize response with topic placeholders
-    delete_topics_response resp;
-    resp.data.responses.reserve(res.size());
-    std::transform(
-      res.begin(),
-      res.end(),
-      std::back_inserter(resp.data.responses),
-      [](cluster::topic_result tr) {
-          return deletable_topic_result{
-            .name = std::move(tr.tp_ns.tp),
-            .error_code = map_topic_error_code(tr.ec)};
-      });
-
-    resp.data.throttle_time_ms = resp_delay;
-    for (auto& topic : unauthorized) {
-        resp.data.responses.push_back(
-          deletable_topic_result{
-            .name = std::move(topic),
-            .error_code = error_code::topic_authorization_failed,
-          });
-    }
+    std::ranges::subrange quota_exceeded(
+      quota_exceeded_it, valid_topic_names.end());
+    valid_topic_names = std::ranges::subrange(
+      valid_topic_names.begin(), quota_exceeded.begin());
 
     for (auto& topic : quota_exceeded) {
         /// The throttling_quota_exceeded code is only respected by newer
@@ -1429,11 +1494,30 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
                           ? error_code::throttling_quota_exceeded
                           : error_code::unknown_server_error;
         resp.data.responses.push_back(
-          deletable_topic_result{
-            .name = std::move(topic),
-            .error_code = ec,
-            .error_message = "Too many partition mutations requested"});
+          {.name = std::move(topic),
+           .error_code = ec,
+           .error_message = "Too many partition mutations requested"});
     }
+
+    std::vector<cluster::topic_result> do_delete_res;
+    if (!valid_topic_names.empty()) {
+        // construct namespaced topic set from request
+        auto topics = valid_topic_names | std::views::as_rvalue
+                      | std::views::transform(&as_tp_ns);
+        auto tout = request.data.timeout_ms + model::timeout_clock::now();
+        do_delete_res = co_await ctx.topics_frontend().delete_topics(
+          std::ranges::to<std::vector>(topics), tout);
+    }
+
+    resp.data.throttle_time_ms = resp_delay;
+
+    for (auto& tr : do_delete_res) {
+        resp.data.responses.push_back(
+          {.name = std::move(tr.tp_ns.tp),
+           .error_code = map_topic_error_code(tr.ec)});
+    }
+
+    std::ranges::shuffle(resp.data.responses, random_generators::internal::gen);
 
     co_return co_await ctx.respond(std::move(resp));
 }
@@ -1761,7 +1845,7 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         /*
          * check if topic exists
          */
-        model::topic_namespace_view tn(model::kafka_namespace, topic.name);
+        auto tn{as_tp_ns_view(topic.name)};
 
         if (!octx.rctx.metadata_cache().contains(tn)) {
             /*

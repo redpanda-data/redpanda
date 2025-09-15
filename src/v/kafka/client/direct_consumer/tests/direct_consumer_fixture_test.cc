@@ -34,9 +34,9 @@ TEST_P(BasicConsumerFixture, TestBasicConsumption) {
     }
 
     // produce some data
-    produce_to_partition(topic, 0, 1000);
-    produce_to_partition(topic, 1, 400);
-    produce_to_partition(topic, 2, 20);
+    produce_to_partition(topic, 0, 1000).get();
+    produce_to_partition(topic, 1, 400).get();
+    produce_to_partition(topic, 2, 20).get();
 
     auto fetched = fetch_until_empty(*consumer);
 
@@ -58,9 +58,9 @@ TEST_P(BasicConsumerFixture, TestBasicConsumption) {
       model::offset(19));
 
     // produce again
-    produce_to_partition(topic, 2, 1000);
-    produce_to_partition(topic, 1, 400);
-    produce_to_partition(topic, 0, 20);
+    produce_to_partition(topic, 2, 1000).get();
+    produce_to_partition(topic, 1, 400).get();
+    produce_to_partition(topic, 0, 20).get();
     auto fetched_2 = fetch_until_empty(*consumer);
     ASSERT_EQ(fetched_2.size(), 3);
     ASSERT_EQ(
@@ -91,7 +91,8 @@ TEST_P(BasicConsumerFixture, TestBasicLeadershipTransfer) {
 
     assign_partitions(make_assignment(topic, {test_partition_number}));
 
-    produce_to_partition(topic, test_partition_number, first_produce_count);
+    produce_to_partition(topic, test_partition_number, first_produce_count)
+      .get();
 
     { // fist fetch and assert
         auto fetched = fetch_until_empty(*consumer);
@@ -106,7 +107,8 @@ TEST_P(BasicConsumerFixture, TestBasicLeadershipTransfer) {
     // kick off a leadership shuffle and wait for the effect to be noticable
     wait_for_visible_leadership_shuffle(test_ntp);
 
-    produce_to_partition(topic, test_partition_number, second_produce_count);
+    produce_to_partition(topic, test_partition_number, second_produce_count)
+      .get();
 
     { // second fetch and assert
         auto fetched = fetch_until_empty(*consumer);
@@ -127,7 +129,7 @@ TEST_P(BasicConsumerFixture, TestUnassignPartition) {
 
     // produce some data
     for (auto p : std::array{0, 1, 2}) {
-        produce_to_partition(topic, p, n);
+        produce_to_partition(topic, p, n).get();
     }
 
     {
@@ -151,7 +153,7 @@ TEST_P(BasicConsumerFixture, TestUnassignPartition) {
     maybe_toggle_fetch_sessions();
 
     for (auto p : std::array{0, 1, 2}) {
-        produce_to_partition(topic, p, n);
+        produce_to_partition(topic, p, n).get();
     }
 
     {
@@ -175,7 +177,7 @@ TEST_P(BasicConsumerFixture, TestUnassignPartition) {
     assign_partitions(make_assignment(topic, {0}));
 
     for (auto p : std::array{0, 1, 2}) {
-        produce_to_partition(topic, p, n);
+        produce_to_partition(topic, p, n).get();
     }
 
     {
@@ -203,7 +205,7 @@ TEST_P(BasicConsumerFixture, TestUnassignTopic) {
 
     // produce some data
     for (auto p : std::array{0, 1, 2}) {
-        produce_to_partition(topic, p, n);
+        produce_to_partition(topic, p, n).get();
     }
 
     {
@@ -223,7 +225,7 @@ TEST_P(BasicConsumerFixture, TestUnassignTopic) {
     maybe_toggle_fetch_sessions();
 
     for (auto p : std::array{0, 1, 2}) {
-        produce_to_partition(topic, p, n);
+        produce_to_partition(topic, p, n).get();
     }
 
     {
@@ -241,7 +243,7 @@ TEST_P(BasicConsumerFixture, TestBogusPartitionIds) {
     constexpr int n = 100;
 
     for (auto p : std::array{0, 1, 2}) {
-        produce_to_partition(topic, p, n);
+        produce_to_partition(topic, p, n).get();
     }
 
     {
@@ -263,7 +265,7 @@ TEST_P(BasicConsumerFixture, TestBogusPartitionIds) {
     unassign_topic(model::topic{"noexist"});
 
     for (auto p : std::array{0, 1, 2}) {
-        produce_to_partition(topic, p, n);
+        produce_to_partition(topic, p, n).get();
     }
 
     {
@@ -558,7 +560,7 @@ TEST_F(FetchSessionFixture, TestFetchRequestContents) {
     constexpr int64_t n = 100;
 
     for (auto i : all_partitions) {
-        produce_to_partition(topic, i, n);
+        produce_to_partition(topic, i, n).get();
     }
 
     {
@@ -591,7 +593,7 @@ TEST_F(FetchSessionFixture, TestFetchRequestContents) {
     }
 
     for (auto i : second_produce) {
-        produce_to_partition(topic, i, n);
+        produce_to_partition(topic, i, n).get();
     }
 
     {
@@ -645,7 +647,7 @@ TEST_F(FetchSessionFixture, TestFetchRequestUnassignContents) {
     constexpr int64_t n = 100;
 
     for (auto i : all_partitions) {
-        produce_to_partition(topic, i, n);
+        produce_to_partition(topic, i, n).get();
     }
 
     {
@@ -670,7 +672,7 @@ TEST_F(FetchSessionFixture, TestFetchRequestUnassignContents) {
     }
 
     for (auto i : all_partitions) {
-        produce_to_partition(topic, i, n);
+        produce_to_partition(topic, i, n).get();
     }
 
     {

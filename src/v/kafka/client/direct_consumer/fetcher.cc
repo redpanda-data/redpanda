@@ -15,6 +15,7 @@
 #include "kafka/client/direct_consumer/data_queue.h"
 #include "kafka/client/direct_consumer/direct_consumer.h"
 #include "kafka/client/errors.h"
+#include "kafka/protocol/types.h"
 #include "ssx/async_algorithm.h"
 #include "ssx/future-util.h"
 
@@ -815,10 +816,11 @@ ss::future<kafka::error_code> fetcher::maybe_initialise_fetch_offsets(
 }
 
 ss::future<api_version> fetcher::get_fetch_request_version() const {
+    constexpr auto max_client_version = kafka::api_version{12};
     auto version = co_await _parent->_cluster->supported_api_versions(
       _id, kafka::fetch_api::key);
     if (version) {
-        co_return std::min(version->max, kafka::fetch_api::max_valid);
+        co_return std::min(version->max, max_client_version);
     }
     // if the version is not supported, we fallback to the minimum version
     // which is 1, this is the first version of the Fetch API that use the new

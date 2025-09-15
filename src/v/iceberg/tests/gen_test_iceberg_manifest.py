@@ -10,19 +10,20 @@
 # by the Apache License, Version 2.0
 
 import argparse
+
 from pyiceberg.io.fsspec import FsspecFileIO
-from pyiceberg.manifest import write_manifest, DataFile, DataFileContent, ManifestEntry
+from pyiceberg.manifest import DataFile, DataFileContent, ManifestEntry, write_manifest
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
-    StringType,
-    ListType,
-    IntegerType,
-    StructType,
     BooleanType,
-    NestedField,
-    MapType,
     FloatType,
+    IntegerType,
+    ListType,
+    MapType,
+    NestedField,
+    StringType,
+    StructType,
 )
 
 # TODO: support some other schemas.
@@ -107,8 +108,8 @@ def make_manifest_entries(num_entries: int) -> list[ManifestEntry]:
             value_counts={},
             null_value_counts={},
             nan_value_counts={},
-            lower_bounds={},
-            upper_bounds={},
+            lower_bounds={1: b"a", 2: b"b"},
+            upper_bounds={1: b"y", 2: b"z"},
             key_metadata=None,
             split_offsets=[],
             equality_ids=[],

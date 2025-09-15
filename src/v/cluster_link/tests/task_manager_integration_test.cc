@@ -406,17 +406,6 @@ public:
             co_return co_await task::start();
         }
     }
-
-    ss::future<result<void>> stop() override {
-        static unsigned num_calls = 0;
-        if (num_calls < 2) {
-            num_calls++;
-            throw std::runtime_error("Evil task stop method failed");
-        } else {
-            num_calls = 0; // reset for next start
-            co_return co_await task::stop();
-        }
-    }
 };
 
 class evil_task_factory : public task_factory {

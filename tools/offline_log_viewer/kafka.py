@@ -1,8 +1,9 @@
-from storage import Segment, BatchType
+import struct
 from enum import Enum, IntEnum
 from io import BytesIO
+
 from reader import Reader
-import struct
+from storage import BatchType, Segment
 
 
 class KafkaControlRecordType(Enum):

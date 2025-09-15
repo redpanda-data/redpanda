@@ -866,6 +866,10 @@ void admin_server::log_exception(
 }
 
 void admin_server::rearm_log_level_timer() {
+    vassert(
+      ss::this_shard_id() == ss::shard_id{0},
+      "Log levels should only be managed on shard 0");
+
     _log_level_timer.cancel();
 
     if (_log_level_resets.empty()) {
@@ -883,6 +887,9 @@ void admin_server::rearm_log_level_timer() {
 }
 
 void admin_server::log_level_timer_handler() {
+    vassert(
+      ss::this_shard_id() == ss::shard_id{0},
+      "Log levels should only be managed on shard 0");
     std::ranges::for_each(_log_level_resets, [](auto& pr) {
         auto& [name, lr] = pr;
         if (lr.expires.has_value() && lr.expires <= ss::timer<>::clock::now()) {
@@ -1576,179 +1583,192 @@ void admin_server::register_config_routes() {
     register_route<superuser>(
       ss::httpd::config_json::get_log_level,
       [this](std::unique_ptr<ss::http::request> req) {
-          ss::httpd::config_json::get_log_level_response rsp{};
-          ss::sstring name = req->get_path_param("name");
-          if (name == "") {
-              throw ss::httpd::bad_param_exception(
-                fmt::format(
-                  "Invalid parameter 'name' got {{{}}}",
-                  req->get_path_param("name")));
-          }
-          validate_no_control(name, string_conversion_exception{"name"});
+          return container().invoke_on(
+            ss::shard_id{0}, [req = std::move(req)](const admin_server& as) {
+                ss::httpd::config_json::get_log_level_response rsp{};
+                ss::sstring name = req->get_path_param("name");
+                if (name == "") {
+                    throw ss::httpd::bad_param_exception(
+                      fmt::format(
+                        "Invalid parameter 'name' got {{{}}}",
+                        req->get_path_param("name")));
+                }
+                validate_no_control(name, string_conversion_exception{"name"});
 
-          ss::log_level cur_level;
-          try {
-              cur_level = ss::global_logger_registry().get_logger_level(name);
-          } catch (const std::out_of_range&) {
-              throw ss::httpd::bad_param_exception(
-                fmt::format(
-                  "Cannot set log level: unknown logger {{{}}}", name));
-          }
+                ss::log_level cur_level;
+                try {
+                    cur_level = ss::global_logger_registry().get_logger_level(
+                      name);
+                } catch (const std::out_of_range&) {
+                    throw ss::httpd::bad_param_exception(
+                      fmt::format(
+                        "Cannot set log level: unknown logger {{{}}}", name));
+                }
 
-          rsp.name = name;
-          rsp.level = ss::to_sstring(cur_level);
+                rsp.name = name;
+                rsp.level = ss::to_sstring(cur_level);
 
-          auto find_iter = _log_level_resets.find(name);
-          if (
-            find_iter == _log_level_resets.end()
-            || !find_iter->second.expires.has_value()) {
-              rsp.expiration = 0;
-          } else {
-              auto remaining_dur = find_iter->second.expires.value()
-                                   - ss::timer<>::clock::now();
-              rsp.expiration = std::chrono::duration_cast<std::chrono::seconds>(
-                                 remaining_dur)
-                                 .count();
-          }
+                auto find_iter = as._log_level_resets.find(name);
+                if (
+                  find_iter == as._log_level_resets.end()
+                  || !find_iter->second.expires.has_value()) {
+                    rsp.expiration = 0;
+                } else {
+                    auto remaining_dur = find_iter->second.expires.value()
+                                         - ss::timer<>::clock::now();
+                    rsp.expiration
+                      = std::chrono::duration_cast<std::chrono::seconds>(
+                          remaining_dur)
+                          .count();
+                }
 
-          return ss::make_ready_future<ss::json::json_return_type>(rsp);
+                return ss::make_ready_future<ss::json::json_return_type>(rsp);
+            });
       });
 
     register_route<superuser>(
       ss::httpd::config_json::set_log_level,
       [this](std::unique_ptr<ss::http::request> req) {
-          using namespace std::chrono_literals;
-          ss::httpd::config_json::set_log_level_response rsp{};
-          ss::sstring name = req->get_path_param("name");
-          if (name == "") {
-              throw ss::httpd::bad_param_exception(
-                fmt::format(
-                  "Invalid parameter 'name' got {{{}}}",
-                  req->get_path_param("name")));
-          }
-          validate_no_control(name, string_conversion_exception{"name"});
+          return container().invoke_on(
+            ss::shard_id{0}, [req = std::move(req)](admin_server& as) {
+                using namespace std::chrono_literals;
+                ss::httpd::config_json::set_log_level_response rsp{};
+                ss::sstring name = req->get_path_param("name");
+                if (name == "") {
+                    throw ss::httpd::bad_param_exception(
+                      fmt::format(
+                        "Invalid parameter 'name' got {{{}}}",
+                        req->get_path_param("name")));
+                }
+                validate_no_control(name, string_conversion_exception{"name"});
 
-          // current level: will be used revert after a timeout (optional)
-          ss::log_level cur_level;
-          try {
-              cur_level = ss::global_logger_registry().get_logger_level(name);
-          } catch (const std::out_of_range&) {
-              throw ss::httpd::bad_param_exception(
-                fmt::format(
-                  "Cannot set log level: unknown logger {{{}}}", name));
-          }
+                // current level: will be used revert after a timeout (optional)
+                ss::log_level cur_level;
+                try {
+                    cur_level = ss::global_logger_registry().get_logger_level(
+                      name);
+                } catch (const std::out_of_range&) {
+                    throw ss::httpd::bad_param_exception(
+                      fmt::format(
+                        "Cannot set log level: unknown logger {{{}}}", name));
+                }
 
-          rsp.name = name;
-          rsp.previous_level = ss::to_sstring(cur_level);
+                rsp.name = name;
+                rsp.previous_level = ss::to_sstring(cur_level);
 
-          // decode new level
-          ss::log_level new_level;
-          try {
-              new_level = boost::lexical_cast<ss::log_level>(
-                req->get_query_param("level"));
-          } catch (const boost::bad_lexical_cast& e) {
-              throw ss::httpd::bad_param_exception(
-                fmt::format(
-                  "Cannot set log level for {{{}}}: unknown level {{{}}}",
+                // decode new level
+                ss::log_level new_level;
+                try {
+                    new_level = boost::lexical_cast<ss::log_level>(
+                      req->get_query_param("level"));
+                } catch (const boost::bad_lexical_cast& e) {
+                    throw ss::httpd::bad_param_exception(
+                      fmt::format(
+                        "Cannot set log level for {{{}}}: unknown level {{{}}}",
+                        name,
+                        req->get_query_param("level")));
+                }
+
+                rsp.new_level = ss::to_sstring(new_level);
+
+                // how long should the new log level be active
+                std::optional<std::chrono::seconds> expires;
+                if (auto e = req->get_query_param("expires"); !e.empty()) {
+                    try {
+                        expires = std::chrono::seconds(
+                          boost::lexical_cast<unsigned int>(e));
+                    } catch (const boost::bad_lexical_cast& e) {
+                        throw ss::httpd::bad_param_exception(
+                          fmt::format(
+                            "Cannot set log level for {{{}}}: invalid expires "
+                            "value "
+                            "{{{}}}",
+                            name,
+                            e));
+                    }
+                }
+
+                // Should we force the supplied expiration over the configured
+                // max?
+                auto force = false;
+                if (auto f = req->get_query_param("force"); !f.empty()) {
+                    force = str_to_bool(f);
+                }
+
+                auto is_verbose = [](auto new_level) {
+                    static std::unordered_set verbose_levels{
+                      ss::log_level::debug, ss::log_level::trace};
+                    return verbose_levels.contains(new_level);
+                };
+
+                auto clamp_expiry = [&is_verbose](
+                                      auto& expires, auto level, auto force) {
+                    // if no expiration was given, then use some reasonable
+                    // default that will prevent the system from remaining in a
+                    // non-optimal state (e.g. trace logging) indefinitely.
+                    auto exp = expires.value_or(600s);
+
+                    auto verbose = is_verbose(level);
+
+                    // subject to a node-config'ed max value, overrideable by
+                    // `force` query param
+                    auto max_exp
+                      = (!verbose || force)
+                          ? std::nullopt
+                          : config::node().verbose_logging_timeout_sec_max();
+
+                    // don't allow indefinite trace logging if we have a max
+                    // configured
+                    if (max_exp.has_value() && exp / 1s == 0) {
+                        return max_exp.value();
+                    }
+
+                    return std::min(
+                      exp, max_exp.value_or(std::chrono::seconds::max()));
+                };
+
+                // Maybe clamp expiration to node config
+                auto expires_v = clamp_expiry(expires, new_level, force);
+
+                vlog(
+                  adminlog.info,
+                  "Set log level for {{{}}}: {} -> {} (expiring {})",
                   name,
-                  req->get_query_param("level")));
-          }
+                  cur_level,
+                  new_level,
+                  expires_v / 1s > 0
+                    ? fmt::format(
+                        "{}s",
+                        std::chrono::duration_cast<std::chrono::seconds>(
+                          expires_v)
+                          .count())
+                    : "NEVER");
 
-          rsp.new_level = ss::to_sstring(new_level);
+                ss::global_logger_registry().set_logger_level(name, new_level);
 
-          // how long should the new log level be active
-          std::optional<std::chrono::seconds> expires;
-          if (auto e = req->get_query_param("expires"); !e.empty()) {
-              try {
-                  expires = std::chrono::seconds(
-                    boost::lexical_cast<unsigned int>(e));
-              } catch (const boost::bad_lexical_cast& e) {
-                  throw ss::httpd::bad_param_exception(
-                    fmt::format(
-                      "Cannot set log level for {{{}}}: invalid expires value "
-                      "{{{}}}",
-                      name,
-                      e));
-              }
-          }
+                auto when = [&]() -> std::optional<level_reset::time_point> {
+                    // expires=0 is same as not specifying it at all
+                    if (expires_v / 1s > 0) {
+                        return ss::timer<>::clock::now() + expires_v;
+                    } else {
+                        // new log level never expires, but we still want an
+                        // entry in the resets map as a record of the default
+                        return std::nullopt;
+                    }
+                }();
 
-          // Should we force the supplied expiration over the configured max?
-          auto force = false;
-          if (auto f = req->get_query_param("force"); !f.empty()) {
-              force = str_to_bool(f);
-          }
+                auto res = as._log_level_resets.try_emplace(
+                  name, cur_level, when);
+                if (!res.second) {
+                    res.first->second.expires = when;
+                }
 
-          auto is_verbose = [](auto new_level) {
-              static std::unordered_set verbose_levels{
-                ss::log_level::debug, ss::log_level::trace};
-              return verbose_levels.contains(new_level);
-          };
+                rsp.expiration = expires_v / 1s;
 
-          auto clamp_expiry = [&is_verbose](
-                                auto& expires, auto level, auto force) {
-              // if no expiration was given, then use some reasonable
-              // default that will prevent the system from remaining in a
-              // non-optimal state (e.g. trace logging) indefinitely.
-              auto exp = expires.value_or(600s);
+                as.rearm_log_level_timer();
 
-              auto verbose = is_verbose(level);
-
-              // subject to a node-config'ed max value, overrideable by
-              // `force` query param
-              auto max_exp
-                = (!verbose || force)
-                    ? std::nullopt
-                    : config::node().verbose_logging_timeout_sec_max();
-
-              // don't allow indefinite trace logging if we have a max
-              // configured
-              if (max_exp.has_value() && exp / 1s == 0) {
-                  return max_exp.value();
-              }
-
-              return std::min(
-                exp, max_exp.value_or(std::chrono::seconds::max()));
-          };
-
-          // Maybe clamp expiration to node config
-          auto expires_v = clamp_expiry(expires, new_level, force);
-
-          vlog(
-            adminlog.info,
-            "Set log level for {{{}}}: {} -> {} (expiring {})",
-            name,
-            cur_level,
-            new_level,
-            expires_v / 1s > 0
-              ? fmt::format(
-                  "{}s",
-                  std::chrono::duration_cast<std::chrono::seconds>(expires_v)
-                    .count())
-              : "NEVER");
-
-          ss::global_logger_registry().set_logger_level(name, new_level);
-
-          auto when = [&]() -> std::optional<level_reset::time_point> {
-              // expires=0 is same as not specifying it at all
-              if (expires_v / 1s > 0) {
-                  return ss::timer<>::clock::now() + expires_v;
-              } else {
-                  // new log level never expires, but we still want an entry in
-                  // the resets map as a record of the default
-                  return std::nullopt;
-              }
-          }();
-
-          auto res = _log_level_resets.try_emplace(name, cur_level, when);
-          if (!res.second) {
-              res.first->second.expires = when;
-          }
-
-          rsp.expiration = expires_v / 1s;
-
-          rearm_log_level_timer();
-
-          return ss::make_ready_future<ss::json::json_return_type>(rsp);
+                return ss::make_ready_future<ss::json::json_return_type>(rsp);
+            });
       });
 }
 

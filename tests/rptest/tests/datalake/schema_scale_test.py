@@ -9,24 +9,25 @@
 
 import json
 import random
+
 from confluent_kafka import avro
 from confluent_kafka.avro import AvroProducer
-from rptest.clients.rpk import RpkTool, RpkException
+from ducktape.mark import matrix
+
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import PandaproxyConfig, SISettings, SchemaRegistryConfig
-from rptest.tests.datalake.datalake_services import DatalakeServices
-from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
-from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.catalog_service_factory import supported_catalog_types
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.tests.datalake.utils import supported_storage_types
-from rptest.tests.datalake.schemas.schema_generator import SchemaGenerator
+from rptest.tests.datalake.datalake_services import DatalakeServices
+from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.schemas.data_types import (
-    ProducerType,
     ALL_PRIMITIVE_DATA_TYPES,
+    ProducerType,
 )
-from ducktape.mark import matrix
+from rptest.tests.datalake.schemas.schema_generator import SchemaGenerator
+from rptest.tests.datalake.utils import supported_storage_types
+from rptest.tests.redpanda_test import RedpandaTest
 
 QUERY_ENGINES = [
     QueryEngineType.SPARK,

@@ -14,11 +14,13 @@
 #include "config/property.h"
 #include "kafka/client/fwd.h"
 #include "kafka/client/types.h"
+#include "kafka/data/rpc/fwd.h"
 #include "kafka/protocol/types.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "net/types.h"
 #include "security/acl.h"
+#include "security/audit/fwd.h"
 #include "security/audit/logger.h"
 #include "security/audit/probe.h"
 #include "security/audit/schemas/application_activity.h"
@@ -50,8 +52,6 @@ template<typename T>
 concept InheritsFromOCSFBase
   = std::is_base_of<security::audit::ocsf_base_event<T>, T>::value;
 
-class audit_sink;
-
 using is_started = ss::bool_class<struct is_started_tag>;
 
 class audit_log_manager
@@ -65,8 +65,9 @@ public:
     audit_log_manager(
       model::node_id self,
       cluster::controller* controller,
-      kafka::client::configuration&,
-      ss::sharded<cluster::metadata_cache>*);
+      ss::sharded<cluster::metadata_cache>*,
+      ss::sharded<kafka::data::rpc::client>*,
+      kafka::client::configuration& cfg);
 
     audit_log_manager(const audit_log_manager&) = delete;
     audit_log_manager& operator=(const audit_log_manager&) = delete;
@@ -262,7 +263,14 @@ public:
     /// Returns true if the internal fibers are up
     bool is_effectively_enabled() const { return _effectively_enabled; }
 
+    ss::future<> pause();
+    ss::future<> resume();
+
     bool report_redpanda_app_event(is_started);
+
+    const kafka::client::configuration& get_client_config() const {
+        return *_config;
+    }
 
 private:
     using ignore_enabled_events
@@ -299,8 +307,9 @@ private:
     model::partition_id compute_partition_id();
 
     ss::future<> drain();
-    ss::future<> pause();
-    ss::future<> resume();
+
+    audit_sink& sink();
+    void set_auth_misconfigured(bool v) { _auth_misconfigured = v; }
 
     bool is_audit_event_enabled(event_type) const;
     void set_enabled_events();
@@ -490,9 +499,10 @@ private:
     /// Other references
     model::node_id _self;
     cluster::controller* _controller;
-    kafka::client::configuration& _config;
+    kafka::client::configuration* _config;
 
     ss::sharded<cluster::metadata_cache>* _metadata_cache;
+    ss::sharded<kafka::data::rpc::client>* _rpc_client;
 };
 
 } // namespace security::audit

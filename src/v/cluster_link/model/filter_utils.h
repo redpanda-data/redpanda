@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster_link/model/types.h"
+#include "kafka/protocol/types.h"
 
 namespace cluster_link::model {
 /**
@@ -28,4 +29,9 @@ namespace cluster_link::model {
 bool select_topic(
   ::model::topic_view topic,
   const chunked_vector<resource_name_filter_pattern>& patterns);
+
+bool select_group(
+  const kafka::group_id& group_id,
+  const chunked_vector<resource_name_filter_pattern>& patterns);
+
 } // namespace cluster_link::model

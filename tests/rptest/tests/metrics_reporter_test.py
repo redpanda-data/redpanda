@@ -11,15 +11,15 @@ import hashlib
 import json
 import random
 
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.utils.rpenv import sample_license
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.cluster import cluster
 from rptest.services.http_server import HttpServer
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.utils.rpenv import sample_license
 
 
 class MetricsReporterServer:

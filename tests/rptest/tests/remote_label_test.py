@@ -8,28 +8,29 @@
 # by the Apache License, Version 2.0
 
 import re
+
+from ducktape.mark import matrix
+from ducktape.tests.test import TestContext
+
 from rptest.clients.default import DefaultClient
-from rptest.clients.types import TopicSpec
-from rptest.services.admin import Admin
-from rptest.services.cluster import cluster
 from rptest.clients.rpk import RpkTool
-from rptest.services.admin import Admin, NamespacedTopic, InboundTopic
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin, InboundTopic, NamespacedTopic
+from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import (
     RedpandaService,
     SISettings,
     get_cloud_storage_type,
     make_redpanda_service,
 )
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.read_replica_e2e_test import (
-    hwms_are_identical,
     create_read_replica_topic,
+    hwms_are_identical,
 )
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until
-from ducktape.mark import matrix
-from ducktape.tests.test import TestContext
-from rptest.utils.si_utils import BucketView, NT, quiesce_uploads
+from rptest.utils.si_utils import NT, BucketView, quiesce_uploads
 
 
 class RemoteLabelsTest(RedpandaTest):

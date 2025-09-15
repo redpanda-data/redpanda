@@ -7,23 +7,21 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-
+import confluent_kafka as ck
+from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 
+from rptest.clients.rpk import AclList, RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import SaslCredentials, SecurityConfig
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.transactions.util import (
     TransactionsMixin,
     expect_kafka_error,
     try_transaction,
 )
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.admin import Admin
-from rptest.services.redpanda import SecurityConfig, SaslCredentials
-import confluent_kafka as ck
-
-from rptest.services.admin import Admin
-from rptest.clients.rpk import RpkTool, AclList
 
 
 class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
@@ -128,6 +126,7 @@ class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
 
         producer = self.sasl_txn_producer(user, cfg=producer_cfg)
 
+    @ignore  # https://github.com/redpanda-data/redpanda/pull/26968 - broken by newer librdkafka
     @cluster(num_nodes=3)
     def simple_authz_test(self):
         consume_user = self.USER_1

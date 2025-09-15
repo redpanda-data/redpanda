@@ -11,11 +11,18 @@
 #include "absl/container/flat_hash_set.h"
 #include "cluster/controller.h"
 #include "cluster/security_frontend.h"
+#include "config/broker_authn_endpoint.h"
 #include "features/enterprise_feature_messages.h"
 #include "json/document.h"
 #include "json/json.h"
 #include "json/stringbuffer.h"
+#include "kafka/client/config_utils.h"
+#include "kafka/client/configuration.h"
 #include "kafka/server/server.h"
+#include "pandaproxy/rest/api.h"
+#include "pandaproxy/rest/configuration.h"
+#include "pandaproxy/schema_registry/api.h"
+#include "pandaproxy/schema_registry/configuration.h"
 #include "redpanda/admin/api-doc/security.json.hh"
 #include "redpanda/admin/server.h"
 #include "security/credential_store.h"
@@ -37,6 +44,105 @@
 #include <algorithm>
 #include <optional>
 #include <sstream>
+
+namespace seastar::httpd::security_json {
+struct interfaces_report : public json::json_base {
+    json::json_list<kafka_interface_security_report> kafka;
+    json::json_element<rpc_interface_security_report> rpc;
+    json::json_list<admin_interface_security_report> admin;
+    json::json_list<schema_registry_interface_security_report> schema_registry;
+    json::json_element<client_security_report> schema_registry_client;
+    json::json_list<pandaproxy_interface_security_report> pandaproxy;
+    json::json_element<client_security_report> audit_log_client;
+
+    void register_params() {
+        add(&kafka, "kafka");
+        add(&rpc, "rpc");
+        add(&admin, "admin");
+        add(&schema_registry, "schema_registry");
+        add(&schema_registry_client, "schema_registry_client");
+        add(&pandaproxy, "pandaproxy");
+        add(&audit_log_client, "audit_log_client");
+    }
+
+    interfaces_report() { register_params(); }
+
+    interfaces_report(const interfaces_report& e) {
+        register_params();
+        kafka = e.kafka;
+        rpc = e.rpc;
+        admin = e.admin;
+        schema_registry = e.schema_registry;
+        schema_registry_client = e.schema_registry_client;
+        pandaproxy = e.pandaproxy;
+        audit_log_client = e.audit_log_client;
+    }
+    template<class T>
+    interfaces_report& operator=(const T& e) {
+        kafka = e.kafka;
+        rpc = e.rpc;
+        admin = e.admin;
+        schema_registry = e.schema_registry;
+        schema_registry_client = e.schema_registry_client;
+        pandaproxy = e.pandaproxy;
+        audit_log_client = e.audit_log_client;
+        return *this;
+    }
+    interfaces_report& operator=(const interfaces_report& e) {
+        kafka = e.kafka;
+        rpc = e.rpc;
+        admin = e.admin;
+        schema_registry = e.schema_registry;
+        schema_registry_client = e.schema_registry_client;
+        pandaproxy = e.pandaproxy;
+        audit_log_client = e.audit_log_client;
+        return *this;
+    }
+    template<class T>
+    interfaces_report& update(T& e) {
+        e.kafka = kafka;
+        e.rpc = rpc;
+        e.admin = admin;
+        e.schema_registry = schema_registry;
+        e.schema_registry_client = schema_registry_client;
+        e.pandaproxy = pandaproxy;
+        e.audit_log_client = audit_log_client;
+        return *this;
+    }
+};
+struct security_report : public json::json_base {
+    json::json_element<interfaces_report> interfaces;
+    json::json_list<security_report_alert> alerts;
+
+    void register_params() {
+        add(&interfaces, "interfaces");
+        add(&alerts, "alerts");
+    }
+    security_report() { register_params(); }
+    security_report(const security_report& e) {
+        register_params();
+        interfaces = e.interfaces;
+        alerts = e.alerts;
+    }
+    template<class T>
+    security_report& operator=(const T& e) {
+        interfaces = e.interfaces;
+        alerts = e.alerts;
+        return *this;
+    }
+    security_report& operator=(const security_report& e) {
+        interfaces = e.interfaces;
+        alerts = e.alerts;
+        return *this;
+    }
+    template<class T>
+    security_report& update(T& e) {
+        e.interfaces = interfaces;
+        e.alerts = alerts;
+        return *this;
+    }
+};
+} // namespace seastar::httpd::security_json
 
 namespace {
 
@@ -439,6 +545,13 @@ void admin_server::register_security_routes() {
         -> ss::future<ss::json::json_return_type> {
           check_license(features::enterprise_error_message::acl_with_rbac());
           return update_role_members_handler(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::security_json::get_security_report,
+      [this](std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return get_security_report(std::move(req));
       });
 }
 
@@ -893,4 +1006,523 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::delete_role_handler(
       std::move(rep),
       ss::http::reply::status_type::no_content,
       seastar::json::json_void{});
+}
+
+namespace {
+
+using kafka_authn_method
+  = ss::httpd::security_json::kafka_interface_security_report::
+    kafka_interface_security_report_authentication_method;
+
+using affected_interface = ss::httpd::security_json::security_report_alert::
+  security_report_alert_affected_interface;
+
+using alert_issue = ss::httpd::security_json::security_report_alert::
+  security_report_alert_issue;
+
+using pp_authn_method
+  = ss::httpd::security_json::pandaproxy_interface_security_report::
+    pandaproxy_interface_security_report_configured_authentication_method;
+
+using client_authn_method = ss::httpd::security_json::client_security_report::
+  client_security_report_configured_authentication_method;
+
+kafka_authn_method to_report_type(config::broker_authn_method m) {
+    switch (m) {
+    case config::broker_authn_method::none:
+        return kafka_authn_method::None;
+    case config::broker_authn_method::sasl:
+        return kafka_authn_method::SASL;
+    case config::broker_authn_method::mtls_identity:
+        return kafka_authn_method::mTLS;
+    }
+
+    __builtin_unreachable();
+}
+
+ss::sstring get_listener_name(ss::sstring name) {
+    static const ss::sstring unnamed_interface = "{{unnamed}}";
+    if (name.empty()) {
+        return unnamed_interface;
+    }
+    return name;
+}
+
+ss::httpd::security_json::security_report_alert make_interface_alert(
+  const affected_interface interface_type,
+  const alert_issue issue,
+  std::optional<ss::sstring> listener_name = std::nullopt) {
+    listener_name = std::move(listener_name).transform(get_listener_name);
+
+    ss::httpd::security_json::security_report_alert alert;
+    alert.affected_interface = interface_type;
+    if (listener_name.has_value()) {
+        alert.listener_name = listener_name.value();
+    }
+    alert.issue = issue;
+
+    const auto make_description = [&alert,
+                                   &listener_name](std::string_view msg) {
+        return ssx::sformat(
+          "{} interface{}{}. This is insecure and not recommended.",
+          alert.affected_interface().to_json(),
+          listener_name.has_value()
+            ? ss::format(" \"{}\"", listener_name.value())
+            : "",
+          msg);
+    };
+
+    switch (issue) {
+    case alert_issue::NO_TLS:
+        alert.description = make_description(" is not using TLS");
+        break;
+    case alert_issue::NO_AUTHN:
+        alert.description = make_description(" is not using authentication");
+        break;
+    case alert_issue::NO_AUTHZ:
+        alert.description = make_description(" is not using authorization");
+        break;
+    case alert_issue::SASL_PLAIN:
+        alert.description = make_description(" is using SASL/PLAIN");
+        break;
+    case alert_issue::PP_CONFIGURED_CLIENT:
+        alert.description = make_description(
+          ", authorization is not enabled and the pandaproxy client has scram "
+          "credentials");
+        break;
+    default:
+        vassert(
+          false, "make_interface_alert should not be called on this value");
+    }
+
+    return alert;
+}
+
+// Empty lists are normally ignored by ss::json. By setting the _set variable
+// they will be serialized even if empty.
+template<typename T>
+void force_list(seastar::json::json_list<T>& jlist) {
+    jlist._set = true;
+}
+
+template<typename Report, typename Endpoint>
+void set_report_advertised(
+  Report& report,
+  const ss::sstring& name,
+  const std::vector<Endpoint>& advertised_api) {
+    auto it = std::ranges::find(advertised_api, name, &Endpoint::name);
+    if (it != advertised_api.end()) {
+        report.advertised_host = it->address.host();
+        report.advertised_port = it->address.port();
+    } else {
+        report.advertised_host = report.host;
+        report.advertised_port = report.port;
+    }
+}
+
+template<typename Report, typename TlsConfig>
+void set_report_tls(
+  Report& report,
+  const ss::sstring& name,
+  const std::vector<TlsConfig>& tls_interfaces) {
+    auto it = std::ranges::find(tls_interfaces, name, &TlsConfig::name);
+    if (it != tls_interfaces.end()) {
+        report.tls_enabled = it->config.is_enabled();
+        report.mutual_tls_enabled = it->config.get_require_client_auth();
+    } else {
+        report.tls_enabled = false;
+        report.mutual_tls_enabled = false;
+    }
+}
+
+template<typename Report>
+void set_report_http_authentication(
+  Report& report, const bool& is_authn_enabled) {
+    force_list(report.authentication_methods);
+
+    if (!is_authn_enabled) {
+        return;
+    }
+
+    for (auto& meth : config::shard_local_cfg().http_authentication()) {
+        report.authentication_methods.push(meth);
+    }
+}
+
+std::vector<ss::httpd::security_json::kafka_interface_security_report>
+generate_kafka_interface_report(
+  std::vector<ss::httpd::security_json::security_report_alert>& alerts) {
+    std::vector<ss::httpd::security_json::kafka_interface_security_report>
+      reports;
+    const auto& kafka_interfaces = config::node().kafka_api();
+
+    reports.reserve(kafka_interfaces.size());
+
+    for (const auto& kface : kafka_interfaces) {
+        ss::httpd::security_json::kafka_interface_security_report report;
+        report.name = kface.name;
+        report.host = kface.address.host();
+        report.port = kface.address.port();
+
+        set_report_advertised(
+          report, kface.name, config::node().advertised_kafka_api_property()());
+
+        set_report_tls(report, kface.name, config::node().kafka_api_tls());
+        if (!report.tls_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::kafka, alert_issue::NO_TLS, kface.name));
+        }
+
+        auto authn_method = config::get_authn_method(kface.name);
+        report.authentication_method = to_report_type(authn_method);
+        if (report.authentication_method().v == kafka_authn_method::None) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::kafka, alert_issue::NO_AUTHN, kface.name));
+        }
+
+        if (authn_method == config::broker_authn_method::sasl) {
+            std::vector<ss::sstring> sasl_mechs{
+              config::shard_local_cfg().sasl_mechanisms()};
+
+            if (std::ranges::contains(sasl_mechs, "PLAIN")) {
+                alerts.push_back(make_interface_alert(
+                  affected_interface::kafka,
+                  alert_issue::SASL_PLAIN,
+                  kface.name));
+            }
+
+            report.supported_sasl_mechanisms = std::move(sasl_mechs);
+        }
+
+        report.authorization_enabled = config::kafka_authz_enabled();
+        if (!report.authorization_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::kafka, alert_issue::NO_AUTHZ, kface.name));
+        }
+
+        reports.emplace_back(std::move(report));
+    }
+
+    return reports;
+}
+
+ss::httpd::security_json::rpc_interface_security_report
+generate_rpc_interface_report(
+  std::vector<ss::httpd::security_json::security_report_alert>& alerts) {
+    ss::httpd::security_json::rpc_interface_security_report report;
+
+    const auto& rpc_server = config::node().rpc_server();
+    const auto& rpc_advertised = config::node().advertised_rpc_api();
+
+    report.host = rpc_server.host();
+    report.port = rpc_server.port();
+    report.advertised_host = rpc_advertised.host();
+    report.advertised_port = rpc_advertised.port();
+
+    report.tls_enabled = config::node().rpc_server_tls().is_enabled();
+    report.mutual_tls_enabled
+      = config::node().rpc_server_tls().get_require_client_auth();
+
+    if (!report.tls_enabled()) {
+        alerts.push_back(
+          make_interface_alert(affected_interface::rpc, alert_issue::NO_TLS));
+    }
+
+    return report;
+}
+
+std::vector<ss::httpd::security_json::admin_interface_security_report>
+generate_admin_interface_report(
+  std::vector<ss::httpd::security_json::security_report_alert>& alerts) {
+    std::vector<ss::httpd::security_json::admin_interface_security_report>
+      reports;
+    const auto& admin_interfaces = config::node().admin();
+
+    reports.reserve(admin_interfaces.size());
+
+    for (const auto& iface : admin_interfaces) {
+        ss::httpd::security_json::admin_interface_security_report report;
+        report.name = iface.name;
+        report.host = iface.address.host();
+        report.port = iface.address.port();
+
+        set_report_tls(report, iface.name, config::node().admin_api_tls());
+        if (!report.tls_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::admin, alert_issue::NO_TLS, iface.name));
+        }
+
+        const auto require_auth
+          = config::shard_local_cfg().admin_api_require_auth();
+
+        report.authorization_enabled = require_auth;
+        if (!report.authorization_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::admin, alert_issue::NO_AUTHZ, iface.name));
+        }
+
+        set_report_http_authentication(report, require_auth);
+        if (report.authentication_methods._elements.empty()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::admin, alert_issue::NO_AUTHN, iface.name));
+        }
+
+        reports.emplace_back(std::move(report));
+    }
+
+    return reports;
+}
+
+std::vector<ss::httpd::security_json::pandaproxy_interface_security_report>
+generate_pandaproxy_interface_report(
+  std::vector<ss::httpd::security_json::security_report_alert>& alerts,
+  const pandaproxy::rest::configuration& config,
+  const kafka::client::configuration& client_config) {
+    std::vector<ss::httpd::security_json::pandaproxy_interface_security_report>
+      reports;
+    const auto& pp_interfaces = config.pandaproxy_api();
+
+    reports.reserve(pp_interfaces.size());
+
+    for (const auto& iface : pp_interfaces) {
+        ss::httpd::security_json::pandaproxy_interface_security_report report;
+        report.name = iface.name;
+        report.host = iface.address.host();
+        report.port = iface.address.port();
+
+        set_report_advertised(
+          report, iface.name, config.advertised_pandaproxy_api());
+
+        set_report_tls(report, iface.name, config.pandaproxy_api_tls());
+        if (!report.tls_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::pandaproxy, alert_issue::NO_TLS, iface.name));
+        }
+
+        const auto authn = iface.authn_method.value_or(
+          config::rest_authn_method::none);
+        // If rest_authn_method is not none, then the actual authentication
+        // method is being read from http_authentication cluster config
+        const bool is_authn_enabled = authn
+                                      == config::rest_authn_method::http_basic;
+
+        const auto get_pp_auth_method = [is_authn_enabled, &client_config]() {
+            if (is_authn_enabled) {
+                return pp_authn_method::SCRAM_Proxied;
+            }
+
+            const auto kclient_configured = is_scram_configured(client_config);
+            if (kclient_configured) {
+                return pp_authn_method::SCRAM_Configured;
+            }
+
+            return pp_authn_method::None;
+        };
+        const auto config_authn_method = get_pp_auth_method();
+        report.configured_authentication_method = config_authn_method;
+
+        // For pp, authn kinda implies authz as well.
+        report.authorization_enabled = is_authn_enabled;
+        if (!report.authorization_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::pandaproxy,
+              alert_issue::NO_AUTHZ,
+              iface.name));
+        }
+
+        if (config_authn_method == pp_authn_method::SCRAM_Configured) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::pandaproxy,
+              alert_issue::PP_CONFIGURED_CLIENT,
+              iface.name));
+        }
+
+        set_report_http_authentication(report, is_authn_enabled);
+        if (report.authentication_methods._elements.empty()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::pandaproxy,
+              alert_issue::NO_AUTHN,
+              iface.name));
+        }
+
+        reports.emplace_back(std::move(report));
+    }
+
+    return reports;
+}
+
+std::vector<ss::httpd::security_json::schema_registry_interface_security_report>
+generate_schema_registry_interface_report(
+  std::vector<ss::httpd::security_json::security_report_alert>& alerts,
+  const pandaproxy::schema_registry::configuration& config) {
+    std::vector<
+      ss::httpd::security_json::schema_registry_interface_security_report>
+      reports;
+    const auto& sr_interfaces = config.schema_registry_api();
+
+    reports.reserve(sr_interfaces.size());
+
+    for (const auto& iface : sr_interfaces) {
+        ss::httpd::security_json::schema_registry_interface_security_report
+          report;
+        report.name = iface.name;
+        report.host = iface.address.host();
+        report.port = iface.address.port();
+
+        set_report_tls(report, iface.name, config.schema_registry_api_tls());
+        if (!report.tls_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::schema_registry,
+              alert_issue::NO_TLS,
+              iface.name));
+        }
+
+        const auto authn = iface.authn_method.value_or(
+          config::rest_authn_method::none);
+        // If rest_authn_method is not none, then the actual authentication
+        // method is being red from http_authentication cluster config
+        const bool is_authn_enabled = authn
+                                      == config::rest_authn_method::http_basic;
+
+        report.authorization_enabled
+          = config::shard_local_cfg().schema_registry_enable_authorization()
+            && is_authn_enabled;
+        if (!report.authorization_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::schema_registry,
+              alert_issue::NO_AUTHZ,
+              iface.name));
+        }
+
+        set_report_http_authentication(report, is_authn_enabled);
+        if (report.authentication_methods._elements.empty()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::schema_registry,
+              alert_issue::NO_AUTHN,
+              iface.name));
+        }
+
+        reports.emplace_back(std::move(report));
+    }
+
+    return reports;
+}
+
+using ephemeral_credentials = ss::bool_class<struct ephemeral_credentials_tag>;
+
+client_authn_method get_kclient_auth(
+  const kafka::client::configuration& config, ephemeral_credentials ephemeral) {
+    if (ephemeral) {
+        return client_authn_method::SCRAM_Ephemeral;
+    }
+    if (is_scram_configured(config)) {
+        return client_authn_method::SCRAM_Configured;
+    }
+    return client_authn_method::None;
+}
+
+ss::httpd::security_json::client_security_report
+generate_kafka_client_interface_report(
+  std::vector<ss::httpd::security_json::security_report_alert>& alerts,
+  const affected_interface interface,
+  const kafka::client::configuration& config,
+  ephemeral_credentials ephemeral = ephemeral_credentials::no) {
+    ss::httpd::security_json::client_security_report report;
+
+    const ss::sstring name = config.client_identifier().value_or("");
+    report.kafka_listener_name = name;
+
+    const auto& brokers = config.brokers();
+
+    std::vector<ss::httpd::security_json::host_port> json_brokers;
+    json_brokers.reserve(brokers.size());
+    for (const auto& broker : brokers) {
+        ss::httpd::security_json::host_port hp;
+        hp.host = broker.host();
+        hp.port = broker.port();
+        json_brokers.push_back(std::move(hp));
+    }
+    report.brokers = json_brokers;
+
+    const auto& broker_tls = config.broker_tls();
+    report.tls_enabled = broker_tls.is_enabled();
+    report.mutual_tls_enabled = broker_tls.get_require_client_auth();
+
+    if (!report.tls_enabled()) {
+        alerts.push_back(
+          make_interface_alert(interface, alert_issue::NO_TLS, name));
+    }
+
+    report.configured_authentication_method = get_kclient_auth(
+      config, ephemeral);
+
+    if (
+      report.configured_authentication_method().v
+      == ss::httpd::security_json::client_security_report::
+        client_security_report_configured_authentication_method::None) {
+        alerts.push_back(
+          make_interface_alert(interface, alert_issue::NO_AUTHN, name));
+    }
+
+    return report;
+}
+
+} // namespace
+
+ss::future<ss::json::json_return_type>
+admin_server::get_security_report(std::unique_ptr<ss::http::request>) {
+    ss::httpd::security_json::security_report report;
+    ss::httpd::security_json::interfaces_report interfaces_report;
+    std::vector<ss::httpd::security_json::security_report_alert> alerts;
+
+    interfaces_report.kafka = generate_kafka_interface_report(alerts);
+    interfaces_report.rpc = generate_rpc_interface_report(alerts);
+    interfaces_report.admin = generate_admin_interface_report(alerts);
+    if (_http_proxy) {
+        interfaces_report.pandaproxy = generate_pandaproxy_interface_report(
+          alerts, _http_proxy->get_config(), _http_proxy->get_client_config());
+    }
+    if (_schema_registry) {
+        interfaces_report.schema_registry
+          = generate_schema_registry_interface_report(
+            alerts, _schema_registry->get_config());
+        interfaces_report.schema_registry_client
+          = generate_kafka_client_interface_report(
+            alerts,
+            affected_interface::schema_registry_client,
+            _schema_registry->get_client_config(),
+            ephemeral_credentials{
+              _schema_registry->has_ephemeral_credentials()});
+    }
+    interfaces_report.audit_log_client = generate_kafka_client_interface_report(
+      alerts,
+      affected_interface::audit_log_client,
+      _audit_mgr.local().get_client_config(),
+      ephemeral_credentials::yes);
+    report.interfaces = std::move(interfaces_report);
+
+    const auto min_secure_tls = config::tls_version::v1_2;
+    if (config::shard_local_cfg().tls_min_version < min_secure_tls) {
+        ss::httpd::security_json::security_report_alert alert;
+        alert.issue = alert_issue::INSECURE_MIN_TLS_VERSION;
+        alert.description = ssx::sformat(
+          "TLS minimum version is set to {} which is less than {}. This is "
+          "insecure and not recommended.",
+          config::shard_local_cfg().tls_min_version,
+          min_secure_tls);
+        alerts.push_back(std::move(alert));
+    }
+
+    if (config::shard_local_cfg().tls_enable_renegotiation()) {
+        ss::httpd::security_json::security_report_alert alert;
+        alert.issue = alert_issue::TLS_RENEGOTIATION;
+        alert.description = ssx::sformat(
+          "TLS renegotiation is enabled. This is insecure and not "
+          "recommended.");
+        alerts.push_back(std::move(alert));
+    }
+
+    report.alerts = std::move(alerts);
+
+    return ss::make_ready_future<ss::json::json_return_type>(std::move(report));
 }

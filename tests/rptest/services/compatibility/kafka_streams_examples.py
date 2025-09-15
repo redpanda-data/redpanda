@@ -9,6 +9,7 @@
 
 import os
 import re
+
 from .example_base import ExampleBase
 
 # The kafka-streams root directory which is made in the

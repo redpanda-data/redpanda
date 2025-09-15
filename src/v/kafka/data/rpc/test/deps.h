@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config/mock_property.h"
 #include "kafka/data/rpc/client.h"
 #include "kafka/data/rpc/deps.h"
 #include "kafka/data/rpc/service.h"
@@ -327,11 +328,13 @@ public:
         new_ntp_cb,
       ss::noncopyable_function<
         cluster::errc(model::topic_namespace_view, int32_t, model::node_id)>
-        new_partition_count_cb)
+        new_partition_count_cb,
+      config::binding<int16_t> default_topic_replication)
       : _new_topic_cb(std::move(new_topic_cb))
       , _update_topic_cb(std::move(update_topic_cb))
       , _new_ntp_cb(std::move(new_ntp_cb))
-      , _new_partition_count_cb(std::move(new_partition_count_cb)) {}
+      , _new_partition_count_cb(std::move(new_partition_count_cb))
+      , _default_topic_replication(std::move(default_topic_replication)) {}
 
     ss::future<cluster::errc> create_topic(
       model::topic_namespace_view tp_ns,
@@ -342,7 +345,7 @@ public:
           tp_ns.ns,
           tp_ns.tp,
           partition_count,
-          replication_factor.value_or(1),
+          replication_factor.value_or(_default_topic_replication()),
         };
         tcfg.properties = properties;
         _new_topic_cb(tcfg);
@@ -383,6 +386,7 @@ private:
     ss::noncopyable_function<cluster::errc(
       model::topic_namespace_view, int32_t, model::node_id)>
       _new_partition_count_cb;
+    config::binding<int16_t> _default_topic_replication;
 };
 
 class fake_partition_manager_proxy {
@@ -426,7 +430,8 @@ public:
       ss::shard_id shard_id,
       const N& ntp,
       ss::noncopyable_function<
-        ss::future<result<R, cluster::errc>>(kafka::partition_proxy*)> fn) {
+        ss::future<result<R, cluster::errc>>(kafka::partition_proxy*)> fn,
+      require_leader = require_leader::yes) {
         auto owner = shard_owner(ntp);
         if (!owner || shard_id != *owner) {
             co_return cluster::errc::not_leader;
@@ -474,23 +479,25 @@ public:
       ss::shard_id shard_id,
       const model::ktp& ktp,
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
-        kafka::partition_proxy*)> fn) final {
+        kafka::partition_proxy*)> fn,
+      require_leader) final {
         return _fake_proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
     }
     ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
       ss::shard_id shard_id,
       const model::ntp& ntp,
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
-        kafka::partition_proxy*)> fn) final {
+        kafka::partition_proxy*)> fn,
+      require_leader) final {
         return _fake_proxy->invoke_on_shard_impl(shard_id, ntp, std::move(fn));
     }
 
     ss::future<result<partition_offsets, cluster::errc>> get_offsets_from_shard(
       ss::shard_id shard_id,
       const model::ktp& ktp,
-      ss::noncopyable_function<
-        ss::future<result<partition_offsets, cluster::errc>>(
-          kafka::partition_proxy*)> fn) final {
+      ss::noncopyable_function<ss::future<
+        result<partition_offsets, cluster::errc>>(kafka::partition_proxy*)> fn,
+      require_leader) final {
         return _fake_proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
     }
 
@@ -555,6 +562,7 @@ private:
     ss::sharded<local_service> _local_services;
     ss::sharded<local_service> _remote_services;
     ss::sharded<kafka::data::rpc::client> _client;
+    config::mock_property<int16_t> _default_topic_replication{1};
 
     model::node_id self_node;
     ss::sharded<::rpc::connection_cache>* _conn_cache;

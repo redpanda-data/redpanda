@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-from atlassian import Jira
 import argparse
-from enum import Enum
 import json
 import logging
 import os
@@ -9,7 +7,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from enum import Enum
 from typing import Optional, Tuple
+
+from atlassian import Jira
 
 
 class NoJiraIssueFound(Exception):

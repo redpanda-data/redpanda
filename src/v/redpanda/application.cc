@@ -120,6 +120,7 @@
 #include "kafka/server/rm_group_frontend.h"
 #include "kafka/server/snc_quota_manager.h"
 #include "kafka/server/usage_manager.h"
+#include "kafka/server/write_at_offset_stm.h"
 #include "metrics/prometheus_sanitize.h"
 #include "migrations/migrators.h"
 #include "migrations/rbac_migrator.h"
@@ -1430,7 +1431,8 @@ void application::wire_up_runtime_services(
             std::ref(cloud_io),
             std::ref(_datalake_credential_mgr)),
           std::ref(cloud_io),
-          std::ref(*bucket))
+          std::ref(*bucket),
+          ss::sharded_parameter([this] { return &feature_table.local(); }))
           .get();
         construct_service(
           _datalake_coordinator_fe,
@@ -1529,6 +1531,8 @@ void application::wire_up_runtime_services(
       &controller->get_shard_table(),
       &metadata_cache,
       controller.get(),
+      &group_router,
+      &controller->get_health_monitor(),
       smp_service_groups.cluster_link_smp_sg())
       .get();
 
@@ -2005,12 +2009,16 @@ void application::wire_up_redpanda_services(
     }
 
     syschecks::systemd_message("Creating auditing subsystem").get();
+    if (!_audit_log_client_config.has_value()) {
+        _audit_log_client_config.emplace();
+    }
     construct_service(
       audit_mgr,
       node_id,
       controller.get(),
-      std::ref(*_audit_log_client_config),
-      &metadata_cache)
+      &metadata_cache,
+      &_kafka_data_rpc_client,
+      std::ref(_audit_log_client_config.value()))
       .get();
 
     syschecks::systemd_message("Creating metadata dissemination service").get();
@@ -2567,7 +2575,8 @@ application::make_datalake_usage_aggregator() {
 }
 
 bool application::kafka_data_rpc_enabled() {
-    return wasm_data_transforms_enabled();
+    return wasm_data_transforms_enabled()
+           || config::shard_local_cfg().audit_use_rpc();
 }
 
 ss::future<>
@@ -3148,6 +3157,8 @@ void application::start_runtime_services(
               pm.register_factory<cloud_topics::ctp_stm_factory>();
               pm.register_factory<cloud_topics::l1::stm_factory>();
           }
+          pm.register_factory<kafka::write_at_offset_stm_factory>(
+            storage.local().kvs(), model::offset_translator_batch_types());
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();

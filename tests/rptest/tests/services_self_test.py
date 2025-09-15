@@ -7,48 +7,51 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import signal
 from subprocess import CalledProcessError
+from typing import Any
+
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.mark import matrix
 from ducktape.mark.resource import cluster as dt_cluster
 from ducktape.tests.test import Test
 
-from rptest.tests.redpanda_test import RedpandaMixedTest, RedpandaTest
-from rptest.services.cluster import cluster
-from rptest.clients.kubectl import is_redpanda_pod, SUPPORTED_PROVIDERS
+from rptest.clients.kubectl import is_redpanda_pod
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import CrashType
+from rptest.services.cluster import cluster
 from rptest.services.failure_injector import FailureSpec, make_failure_injector
-from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.kgo_repeater_service import repeater_traffic
 from rptest.services.kgo_verifier_services import (
-    KgoVerifierRandomConsumer,
-    KgoVerifierSeqConsumer,
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
+    KgoVerifierRandomConsumer,
+    KgoVerifierSeqConsumer,
 )
+from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
+from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.redpanda import (
+    CloudStorageType,
     LogSearchLocal,
     RedpandaService,
     RedpandaServiceCloud,
     SISettings,
-    CloudStorageType,
     get_cloud_storage_type,
-    make_redpanda_service,
     make_redpanda_mixed_service,
+    make_redpanda_service,
 )
-from rptest.services.admin import CrashType
+from rptest.services.utils import BadLogLines
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.utils.si_utils import BucketView
+from rptest.tests.redpanda_test import RedpandaMixedTest, RedpandaTest
 from rptest.util import expect_exception
 from rptest.utils.mode_checks import (
     ignore_if_not_asan,
+    ignore_if_not_debug,
     ignore_if_not_ubsan,
     skip_debug_mode,
 )
-from rptest.services.producer_swarm import ProducerSwarm
+from rptest.utils.si_utils import BucketView
 
 
 class OpenBenchmarkSelfTest(RedpandaTest):
@@ -357,9 +360,9 @@ class BucketScrubSelfTest(RedpandaTest):
 
 class SimpleSelfTest(Test):
     """
-    Verify instantiation of a RedpandaServiceBase subclass through the factory method.
+    Verify instantiation of a RedpandaServiceABC subclass through the factory method.
 
-    Runs a few methods of RedpandaServiceBase.
+    Runs a few methods of RedpandaService.
     """
 
     def __init__(self, test_context):
@@ -496,6 +499,25 @@ class FailureInjectorSelfTest(Test):
         fi.inject_failure(FailureSpec(FailureSpec.FAILURE_ISOLATE, None))
 
 
+def _assert_expected_backtrace_contents(
+    test: RedpandaTest, needle: str = "::log_backtrace"
+):
+    """
+    Assert that the backtrace capture file contains needle.
+    """
+    backtrace_contents = (
+        test.redpanda.nodes[0]
+        .account.ssh_output(f"cat {RedpandaService.BACKTRACE_CAPTURE}")
+        .decode()
+    )
+    test.logger.debug(f"Backtrace contents: {backtrace_contents}")
+    # we look for this characteristic string in the backtrace, which is
+    # the method in the admin API that was called to capture the backtrace
+    assert needle in backtrace_contents, (
+        f"Didn't find expected string '{needle}' in backtrace (see debug log for contents)"
+    )
+
+
 class RedpandaServiceSelfTest(RedpandaTest):
     @cluster(num_nodes=1)
     @matrix(simple_backtrace=[True, False])
@@ -510,7 +532,7 @@ class RedpandaServiceSelfTest(RedpandaTest):
 
         rp._admin.log_backtrace(node, simple_backtrace=simple_backtrace)
         rp.decode_backtraces(raise_on_failure=True)
-        self._assert_expected_backtrace_contents()
+        _assert_expected_backtrace_contents(self)
 
     @cluster(num_nodes=1)
     @matrix(fail_test=[False, True])
@@ -549,7 +571,7 @@ class RedpandaServiceSelfTest(RedpandaTest):
             assert fail_test, "inner test failed when it shouldn't"
 
         try:
-            self._assert_expected_backtrace_contents()
+            _assert_expected_backtrace_contents(self)
             assert fail_test
         except RemoteCommandError:
             # expected when the inner test passed, as if the inner test passed,
@@ -597,22 +619,39 @@ class RedpandaServiceSelfTest(RedpandaTest):
         assert lines, f"Did not find expected string '{needle}' in redpanda log"
         self.logger.debug(f"Found matching log line: {lines[0]}")
 
-    def _assert_expected_backtrace_contents(self):
-        """
-        Assert that the backtrace capture file contains expected contents.
-        """
-        backtrace_contents = (
-            self.redpanda.nodes[0]
-            .account.ssh_output(f"cat {RedpandaService.BACKTRACE_CAPTURE}")
-            .decode()
-        )
-        self.logger.debug(f"Backtrace contents: {backtrace_contents}")
-        # we look for this characteristic string in the backtrace, which is
-        # the method in the admin API that was called to capture the backtrace
-        assert "::log_backtrace" in backtrace_contents, (
-            "Didn't find expected string in backtrace (see debug log for contents)"
-        )
-
     @cluster(num_nodes=1)
     def test_start(self):
         pass
+
+
+class RedpandaServiceSelfRawTest(Test):
+    """This 'raw' test inherits only from Test, so that internally it
+    can set up a inner RedpandaTest object, and test behavior of that
+    test."""
+
+    # We need something that looks like a RedpandaTest to use the @cluster decorator
+    class InnerTest(RedpandaTest):
+        def __init__(self, *args: Any):
+            super().__init__(*args, num_brokers=1)
+
+        @cluster(num_nodes=1)
+        def run(self):
+            node = self.redpanda.nodes[0]
+            self.redpanda._admin.trigger_crash(node, CrashType.ASSERT)
+
+    @dt_cluster(num_nodes=1)
+    @ignore_if_not_debug
+    def test_cluster_decorator_backtrace(self):
+        test = self.InnerTest(self.test_context)
+
+        try:
+            test.setUp()
+            try:
+                test.run()  # type: ignore
+                raise RuntimeError("inner test passed when it shouldn't")
+            except BadLogLines:
+                # expected, as the test intentionally emits a bad log line
+                pass
+            _assert_expected_backtrace_contents(test, "::trigger_crash")
+        finally:
+            test.tearDown()

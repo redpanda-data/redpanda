@@ -158,6 +158,8 @@ public:
      */
     prefix_logger& logger() { return _logger; }
 
+    auto get_broker_ids() const { return _brokers.get_broker_ids(); }
+
 private:
     ss::future<> update_metadata();
     ss::future<> dispatch_metadata_request();

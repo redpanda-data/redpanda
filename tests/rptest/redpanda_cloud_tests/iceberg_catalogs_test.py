@@ -13,9 +13,7 @@ import logging
 import random
 import time
 from typing import Any
-
 from ducktape.mark import matrix
-
 from rptest.clients.installpack import InstallPackClient
 from rptest.clients.rpk import RpkException, RpkTool, TopicSpec
 from rptest.context.databricks import DatabricksContext, OauthCredentials

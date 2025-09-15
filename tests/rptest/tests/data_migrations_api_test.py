@@ -36,7 +36,7 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
 )
 from rptest.services.redpanda import (
-    RedpandaServiceBase,
+    RedpandaService,
     SISettings,
     make_redpanda_service,
 )
@@ -60,7 +60,7 @@ def now():
 
 
 @bg_thread_cm
-def TransferLeadersBackgroundThread(redpanda: RedpandaServiceBase, topic: str):
+def TransferLeadersBackgroundThread(redpanda: RedpandaService, topic: str):
     logger = redpanda.logger
     admin = Admin(redpanda, retry_codes=[503, 504])
     while (yield):

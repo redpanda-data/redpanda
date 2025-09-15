@@ -42,6 +42,7 @@ public:
     ss::future<> stop();
 
     configuration& config();
+    const configuration& config() const;
     ss::sharded<kafka::client::client>& client() { return _client; }
     ss::sharded<kafka_client_cache>& client_cache() { return _client_cache; }
     ss::future<> mitigate_error(std::exception_ptr);

@@ -2,10 +2,20 @@ from _typeshed import Incomplete
 from ducktape.json_serializable import DucktapeJSONEncoder as DucktapeJSONEncoder
 from ducktape.tests.status import (
     FAIL as FAIL,
+)
+from ducktape.tests.status import (
     FLAKY as FLAKY,
+)
+from ducktape.tests.status import (
     IGNORE as IGNORE,
+)
+from ducktape.tests.status import (
     OFAIL as OFAIL,
+)
+from ducktape.tests.status import (
     OPASS as OPASS,
+)
+from ducktape.tests.status import (
     PASS as PASS,
 )
 from ducktape.utils.terminal_size import get_terminal_size as get_terminal_size

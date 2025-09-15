@@ -427,4 +427,20 @@ private:
     std::optional<model::timestamp> _ts_cursor;
 };
 
+/// Specification for the segments and data to go into the log for a test
+struct log_spec {
+    // The base offsets for all segments. The difference in adjacent base
+    // offsets is converted to how many records we will write into each segment
+    // (as a single batch)
+    std::vector<model::offset::type> segment_starts;
+    // The indices of the segments which will be marked as compacted for the
+    // test. The segments are not actually compacted, only marked as such.
+    std::vector<size_t> compacted_segment_indices;
+    // The number of records in the final segment, required separately because
+    // there is no delta to use for the last segment.
+    size_t last_segment_num_records;
+};
+
+void populate_log(storage::disk_log_builder& b, const log_spec& spec);
+
 } // namespace storage

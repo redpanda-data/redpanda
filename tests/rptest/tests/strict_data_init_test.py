@@ -1,10 +1,10 @@
 import re
 
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import RedpandaService, RESTART_LOG_ALLOW_LIST
 from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaService
 from rptest.services.utils import BadLogLines
+from rptest.tests.redpanda_test import RedpandaTest
 
 STRICT_DATA_ERR_MSG_SUFFIX = "not found, is the expected filesystem mounted?"
 

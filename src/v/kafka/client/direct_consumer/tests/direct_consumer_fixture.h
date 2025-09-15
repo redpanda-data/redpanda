@@ -36,8 +36,14 @@ public:
 
     model::node_id get_partition_leader(const model::ntp& ntp);
 
-    void produce_to_partition(
+    ss::future<kafka::offset> produce_to_partition(
+      const model::topic& topic, int partition, model::record_batch);
+
+    ss::future<> produce_to_partition(
       const model::topic& topic, int partition, size_t record_count);
+
+    ss::future<chunked_vector<model::record>> consume_from_partition(
+      const model::topic& topic, int partition, kafka::offset offset);
 
     chunked_hash_map<
       model::topic_partition,
@@ -50,6 +56,8 @@ public:
     // shuffle leadership, wait for leadership change to become visible to the
     // test
     void wait_for_visible_leadership_shuffle(const model::ntp& ntp);
+
+    application* create_node_application(model::node_id node_id);
 
 protected:
     redpanda_thread_fixture* rp;
@@ -74,6 +82,11 @@ class basic_consumer_fixture
 public:
     void SetUp() override;
     void TearDown() override;
+    virtual void StartConsumer();
+    virtual void StopConsumer();
     void maybe_toggle_fetch_sessions();
+
+protected:
+    std::unique_ptr<kafka::client::direct_consumer> make_consumer();
 };
 } // namespace kafka::client::tests

@@ -122,4 +122,267 @@
             "type": "int"
         }
     }
+},
+"security_report_alert": {
+    "type": "object",
+    "properties": {
+        "affected_interface": {
+          "type": "string",
+          "enum": [
+            "kafka",
+            "rpc",
+            "admin",
+            "schema_registry",
+            "schema_registry_client",
+            "pandaproxy",
+            "audit_log_client"
+          ]
+        },
+        "listener_name": {
+          "description": "The listener name of the affected interface, if provided.",
+          "type": "string"
+        },
+        "issue": {
+          "required": true,
+          "type": "string",
+          "enum": [
+            "NO_TLS",
+            "NO_AUTHN",
+            "NO_AUTHZ",
+            "SASL_PLAIN",
+            "PP_CONFIGURED_CLIENT",
+            "INSECURE_MIN_TLS_VERSION",
+            "TLS_RENEGOTIATION"
+          ]
+        },
+        "description": {
+          "description": "Human-readable description of the alert",
+          "required": true,
+          "type": "string"
+        }
+      }
+},
+"kafka_interface_security_report": {
+    "description": "Security report for kafka interfaces",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        },
+        "advertised_host": {
+            "type": "string"
+        },
+        "advertised_port": {
+            "type": "int"
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        },
+        "authentication_method": {
+            "type": "string",
+            "enum": [
+                "SASL",
+                "mTLS",
+                "None"
+            ]
+        },
+        "authorization_enabled": {
+            "type": "boolean"
+        },
+        "supported_sasl_mechanisms": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        }
+    }
+},
+"rpc_interface_security_report": {
+    "description": "Security report for rpc interface",
+    "type": "object",
+    "properties": {
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        },
+        "advertised_host": {
+            "type": "string"
+        },
+        "advertised_port": {
+            "type": "int"
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        }
+    }
+},
+"admin_interface_security_report": {
+    "description": "Security report for admin interfaces",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        },
+        "authentication_methods": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": [
+                    "BASIC",
+                    "OIDC"
+                ]
+            }
+        },
+        "authorization_enabled": {
+            "type": "boolean"
+        }
+    }
+},
+"schema_registry_interface_security_report": {
+    "description": "Security report for schema registry interfaces",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        },
+        "authentication_methods": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": [
+                    "BASIC",
+                    "OIDC"
+                ]
+            }
+        },
+        "authorization_enabled": {
+            "type": "boolean"
+        }
+    }
+},
+"pandaproxy_interface_security_report": {
+    "description": "Security report for pandaproxy interfaces",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        },
+        "advertised_host": {
+            "type": "string"
+        },
+        "advertised_port": {
+            "type": "int"
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        },
+        "authentication_methods": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": [
+                    "BASIC",
+                    "OIDC"
+                ]
+            }
+        },
+        "authorization_enabled": {
+            "type": "boolean"
+        },
+        "configured_authentication_method": {
+            "type": "string",
+            "enum": [
+                "None",
+                "SCRAM_Configured",
+                "SCRAM_Proxied"
+            ]
+        }
+    }
+},
+"host_port": {
+    "type": "object",
+    "properties": {
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        }
+    }
+},
+"client_security_report": {
+    "description": "Security report for kafka client interfaces",
+    "type": "object",
+    "properties": {
+        "kafka_listener_name": {
+            "type": "string"
+        },
+        "brokers": {
+            "type": "array",
+            "items": {
+                "$ref": "host_port"
+            }
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        },
+        "configured_authentication_method": {
+            "type": "string",
+            "enum": [
+                "None",
+                "SCRAM_Configured",
+                "SCRAM_Ephemeral"
+            ]
+        }
+    }
 }

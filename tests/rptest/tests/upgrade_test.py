@@ -10,45 +10,42 @@
 import re
 import time
 from collections import defaultdict
+
+from ducktape.mark import matrix, parametrize
+from ducktape.utils.util import wait_until
 from packaging.version import Version
 
-from ducktape.mark import parametrize, matrix
-from ducktape.utils.util import wait_until
-from ducktape.errors import TimeoutError
 from rptest.clients.default import DefaultClient
-from rptest.services.admin import Admin
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.clients.offline_log_viewer import OfflineLogViewer
-from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.tests.end_to_end import EndToEndTest
-from rptest.util import (
-    segments_count,
-    wait_for_local_storage_truncate,
-    produce_until_segments,
-    wait_until_segments,
-)
-from rptest.utils.mode_checks import skip_debug_mode, skip_fips_mode
-from rptest.utils.si_utils import BucketView
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierConsumerGroupConsumer,
+    KgoVerifierProducer,
+    KgoVerifierRandomConsumer,
+    KgoVerifierSeqConsumer,
+)
 from rptest.services.redpanda import (
-    SISettings,
+    RESTART_LOG_ALLOW_LIST,
     CloudStorageType,
+    SISettings,
     get_cloud_storage_type,
 )
-from rptest.services.kgo_verifier_services import (
-    KgoVerifierProducer,
-    KgoVerifierSeqConsumer,
-    KgoVerifierRandomConsumer,
-    KgoVerifierConsumerGroupConsumer,
-)
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import (
     InstallOptions,
     RedpandaInstaller,
     wait_for_num_versions,
 )
+from rptest.tests.end_to_end import EndToEndTest
+from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import (
+    wait_for_local_storage_truncate,
+)
+from rptest.utils.mode_checks import skip_debug_mode, skip_fips_mode
+from rptest.utils.si_utils import BucketView
 
 
 class UpgradeFromSpecificVersion(RedpandaTest):

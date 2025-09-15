@@ -17,11 +17,13 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/logger.h"
 #include "kafka/protocol/timeout.h"
+#include "kafka/protocol/types.h"
 #include "kafka/server/handlers/configs/config_response_utils.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/handlers/topics/validators.h"
 #include "kafka/server/quota_manager.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "security/acl.h"
 #include "utils/to_string.h"
@@ -431,6 +433,23 @@ ss::future<response_ptr> create_topics_handler::handle(
     append_topic_properties(ctx, response);
     if (ctx.header().version >= api_version(5)) {
         append_topic_configs(ctx, response);
+    }
+
+    if (ctx.header().version >= api_version(7)) {
+        for (auto& topic : response.data.topics) {
+            if (topic.errored()) {
+                continue;
+            }
+
+            topic.topic_id = ctx.metadata_cache()
+                               .get_topic_metadata_ref(
+                                 model::topic_namespace_view{
+                                   model::kafka_namespace, topic.name})
+                               .transform([](const auto& md) {
+                                   return md.get().get_configuration().tp_id;
+                               })
+                               ->value_or(model::topic_id{});
+        }
     }
 
     log_topic_status(c_res);

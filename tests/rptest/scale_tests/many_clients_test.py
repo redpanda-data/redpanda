@@ -8,14 +8,14 @@
 # by the Apache License, Version 2.0
 import enum
 
-from rptest.clients.types import TopicSpec
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import ResourceSettings
-from rptest.services.cluster import cluster
-from rptest.services.rpk_consumer import RpkConsumer
+from ducktape.mark import ignore, matrix
 
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.producer_swarm import ProducerSwarm
-from ducktape.mark import matrix, ignore
+from rptest.services.redpanda import ResourceSettings
+from rptest.services.rpk_consumer import RpkConsumer
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class CompactionMode(str, enum.Enum):

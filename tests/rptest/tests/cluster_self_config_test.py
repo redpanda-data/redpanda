@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 import re
 
-from ducktape.mark import parametrize, matrix
+from ducktape.mark import matrix
 
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -17,8 +17,8 @@ from rptest.services.redpanda import (
     SISettings,
     get_cloud_storage_type,
 )
-from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.utils import LogSearchLocal
+from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.mode_checks import skip_fips_mode
 
 

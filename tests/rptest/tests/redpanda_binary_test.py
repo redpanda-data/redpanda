@@ -10,6 +10,7 @@
 import re
 
 from ducktape.tests.test import Test
+
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import make_redpanda_service
 

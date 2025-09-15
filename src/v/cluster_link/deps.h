@@ -107,4 +107,48 @@ public:
     virtual std::unique_ptr<kafka::client::cluster>
     create_cluster(const model::metadata& md);
 };
+
+/**
+ * Cluster linking entry point for consumer group operations in the cluster
+ */
+class consumer_groups_router {
+public:
+    consumer_groups_router() = default;
+    consumer_groups_router(const consumer_groups_router&) = delete;
+    consumer_groups_router(consumer_groups_router&&) = delete;
+    consumer_groups_router& operator=(const consumer_groups_router&) = delete;
+    consumer_groups_router& operator=(consumer_groups_router&&) = delete;
+    virtual ~consumer_groups_router() = default;
+
+    virtual std::optional<::model::partition_id>
+    partition_for(const kafka::group_id&) const = 0;
+
+    virtual ss::future<kafka::offset_commit_response>
+      offset_commit(kafka::offset_commit_request) = 0;
+
+    virtual ss::future<bool> assure_topic_exists() = 0;
+};
+
+/**
+ * Cluster linking entry point for retrieving partition metadata information
+ */
+class partition_metadata_provider {
+public:
+    partition_metadata_provider() = default;
+    partition_metadata_provider(const partition_metadata_provider&) = delete;
+    partition_metadata_provider(partition_metadata_provider&&) = delete;
+    partition_metadata_provider& operator=(const partition_metadata_provider&)
+      = delete;
+    partition_metadata_provider& operator=(partition_metadata_provider&&)
+      = delete;
+    virtual ~partition_metadata_provider() = default;
+
+    /**
+     * Returns the high watermark for a given topic partition. If the
+     * information is missing or error occurs, returns std::nullopt.
+     */
+    virtual ss::future<std::optional<kafka::offset>>
+      get_partition_high_watermark(::model::topic_partition_view) = 0;
+};
+
 } // namespace cluster_link

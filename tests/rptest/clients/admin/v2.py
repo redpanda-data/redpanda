@@ -1,15 +1,20 @@
 import random
 from typing import Literal, Protocol, final
+
 import urllib3
 import urllib3.util
-from ducktape.cluster.cluster import ClusterNode
-from rptest.clients.admin.proto.redpanda.core.admin.v2 import broker_pb2
-from rptest.clients.admin.proto.redpanda.core.admin.v2 import broker_pb2_connect
-from rptest.clients.admin.proto.redpanda.core.admin.v2 import shadow_link_pb2
-from rptest.clients.admin.proto.redpanda.core.admin.v2 import shadow_link_pb2_connect
-from rptest.clients.admin.proto.redpanda.core.admin.v2.internal import debug_pb2
-from rptest.clients.admin.proto.redpanda.core.admin.v2.internal import debug_pb2_connect
 from connectrpc.client_protocol import ConnectProtocol
+from ducktape.cluster.cluster import ClusterNode
+from rptest.clients.admin.proto.redpanda.core.admin.v2 import (
+    broker_pb2,
+    broker_pb2_connect,
+    shadow_link_pb2,
+    shadow_link_pb2_connect,
+)
+from rptest.clients.admin.proto.redpanda.core.admin.v2.internal import (
+    debug_pb2,
+    debug_pb2_connect,
+)
 
 
 class RedpandaServiceProto(Protocol):

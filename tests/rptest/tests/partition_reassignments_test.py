@@ -6,25 +6,23 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import random
 import json
 import re
 import subprocess
+from typing import Optional
 
-from ducktape.mark import ignore
 from ducktape.tests.test import TestLoggerMaker
 from ducktape.utils.util import wait_until
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import LoggingConfig, RedpandaService, SecurityConfig
-from rptest.services.verifiable_producer import VerifiableProducer
-from rptest.services.admin import Admin
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool, RpkException
 
-from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kcl import KCL
-from typing import Optional
+from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import LoggingConfig, SecurityConfig
+from rptest.services.verifiable_producer import VerifiableProducer
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 def get_topics_and_partitions(reassignments: dict):

@@ -1255,4 +1255,40 @@ bool health_monitor_backend::does_raft0_have_leader() {
     return _raft0->get_leader_id().has_value();
 }
 
+ss::future<result<std::optional<kafka::offset>>>
+health_monitor_backend::get_partition_high_watermark(
+  model::topic_namespace_view tp_ns, model::partition_id p_id) {
+    auto ec = co_await maybe_refresh_cluster_health(
+      force_refresh::no,
+      model::timeout_clock::now()
+        + config::shard_local_cfg().health_monitor_max_metadata_age());
+    if (ec) {
+        co_return ec;
+    }
+    kafka::offset high_watermark;
+    model::revision_id current_revision;
+    for (const auto& [node_id, report] : *_reports) {
+        auto t_it = report->topics.find(tp_ns);
+        if (t_it == report->topics.end()) {
+            continue;
+        }
+        auto partition_it = t_it->second.find(p_id);
+        if (partition_it == t_it->second.end()) {
+            continue;
+        }
+        const auto& partition_status = partition_it->second;
+        if (partition_status.revision_id > current_revision) {
+            current_revision = partition_status.revision_id;
+            // reset offset, we are only interested in current revision
+            high_watermark = kafka::offset{};
+        }
+        high_watermark = std::max(
+          high_watermark, partition_status.high_watermark);
+    }
+
+    co_return high_watermark == kafka::offset{}
+      ? std::nullopt
+      : std::make_optional(high_watermark);
+}
+
 } // namespace cluster

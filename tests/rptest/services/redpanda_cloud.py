@@ -1,26 +1,23 @@
 import base64
-import collections
-from functools import cache
+import ipaddress
 import json
 import os
-import requests
 import time
 import uuid
-import yaml
-import ipaddress
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional, Dict
-from prometheus_client.parser import text_string_to_metric_families
+from functools import cache
+from typing import Any, Dict
+from urllib.parse import urlparse
 
 from ducktape.utils.util import wait_until
+from prometheus_client.parser import text_string_to_metric_families
+
 from rptest.services.cloud_cluster_utils import CloudClusterUtils
 from rptest.services.provider_clients import make_provider_client
 from rptest.services.provider_clients.ec2_client import RTBS_LABEL
 from rptest.services.provider_clients.rpcloud_client import RpCloudApiClient
-from urllib.parse import urlparse
-
 from rptest.services.redpanda_types import SaslCredentials
 
 ns_name_prefix = "rp-ducktape-ns-"
@@ -465,6 +462,9 @@ class CloudCluster:
         return _cluster["state"] == state
 
     def _get_cluster_console_url(self):
+        if self.config.type == "SERVERLESS":
+            cluster = self.rpcloud.get_serverless_cluster(self.current.cluster_id)
+            return cluster["console_url"]
         cluster = self.rpcloud.get_cluster(self.current.cluster_id)
         return cluster["redpanda_console"]["url"]
 
@@ -570,10 +570,14 @@ class CloudCluster:
             "zones": self.current.zones,
         }
 
-    def _get_cluster(self, _id: str) -> dict[str, Any]:
+    def _get_cluster(
+        self, _id: str, is_serverless_cluster: bool = False
+    ) -> dict[str, Any]:
         """
         Calls public API to get cluster info
         """
+        if is_serverless_cluster:
+            return self.rpcloud.get_serverless_cluster(_id)
         return self.rpcloud.get_cluster(_id)
 
     def _get_legacy_cluster(self, _id: str) -> dict[str, Any]:
@@ -822,7 +826,7 @@ class CloudCluster:
         """Get the list of brokers from the pandaproxy API."""
         return self._query_panda_proxy("/brokers")["brokers"]
 
-    def _ensure_cluster_health(self) -> str | None:
+    def _ensure_cluster_health(self, is_serverless_cluster=False) -> str | None:
         """
         Check if current cluster is healthy
           - check connectivity
@@ -840,7 +844,9 @@ class CloudCluster:
         # Get cluster details
         try:
             self._logger.info("Getting cluster specs")
-            cluster = self._get_cluster(self.current.cluster_id)
+            cluster = self._get_cluster(
+                self.current.cluster_id, is_serverless_cluster=is_serverless_cluster
+            )
         except Exception as e:
             return warn_and_return(
                 f"# Failed to get info for cluster with Id: '{self.current.cluster_id}'"
@@ -850,6 +856,10 @@ class CloudCluster:
         self._logger.info(
             f"Cluster '{self.current.cluster_id}': state = '{cluster['state']}'"
         )
+
+        if is_serverless_cluster:
+            # if serverless cluster, assume healthy, we have no other state and we can't talk to the brokers directly
+            return None
 
         # Check if panda-proxy is available
         if not "url" in cluster["http_proxy"]:
@@ -947,7 +957,7 @@ class CloudCluster:
             # if there is still no id, just copy what globals.json had
             return self.config.id
 
-    def create(self, superuser: SaslCredentials) -> str:
+    def create(self, superuser: SaslCredentials, is_serverless_cluster=False) -> str:
         """Create a cloud cluster and a new namespace; block until cluster is finished creating.
 
         :param config_profile_name: config profile name, default 'tier-1-aws'
@@ -976,7 +986,9 @@ class CloudCluster:
                 self.current.consoleUrl = self._get_cluster_console_url()
                 self.update_cluster_acls(superuser)
                 # Do the health check
-                unhealthy_reason: str | None = self._ensure_cluster_health()
+                unhealthy_reason: str | None = self._ensure_cluster_health(
+                    is_serverless_cluster=is_serverless_cluster
+                )
             except Exception as e:
                 if fail_on_unhealthy:
                     raise
@@ -1004,7 +1016,9 @@ class CloudCluster:
                 self.rm_cluster_id_file()
                 # Create new cluster
                 self._create_new_cluster()
-            else:
+            elif not is_serverless_cluster:
+                # if serverless cluster we cannot ask about config profiles and such, the test will make assumptions
+                # about the supported capacity of serverless vclusters
                 # Just load needed info to create peering
                 self._logger.warning(
                     "will not create cluster; already have "
@@ -1142,6 +1156,10 @@ class CloudCluster:
 
     def get_broker_address(self):
         cluster = self.rpcloud.get_cluster(self.current.cluster_id)
+        return cluster["kafka_api"]["seed_brokers"][0]
+
+    def get_serverless_broker_address(self):
+        cluster = self.rpcloud.get_serverless_cluster(self.current.cluster_id)
         return cluster["kafka_api"]["seed_brokers"][0]
 
     def get_install_pack_version(self):

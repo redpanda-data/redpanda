@@ -13,6 +13,7 @@
 #include "cloud_topics/level_one/common/object.h"
 #include "compaction/reducer.h"
 #include "container/chunked_vector.h"
+#include "model/fundamental.h"
 
 namespace cloud_topics::l1 {
 
@@ -23,8 +24,9 @@ public:
         iobuf obj;
     };
 
-    compaction_sink(model::ntp ntp, object_builder::options opts = {})
-      : _ntp(std::move(ntp))
+    compaction_sink(
+      model::topic_id_partition tidp, object_builder::options opts = {})
+      : _tidp(tidp)
       , _opts(opts) {}
 
     ss::future<ss::stop_iteration>
@@ -42,7 +44,7 @@ private:
 
     ss::future<> maybe_roll();
 
-    model::ntp _ntp;
+    model::topic_id_partition _tidp;
     const object_builder::options _opts;
 
     std::optional<iobuf> _active_output_buf{std::nullopt};

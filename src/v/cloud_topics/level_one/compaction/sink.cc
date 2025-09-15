@@ -29,8 +29,8 @@ ss::future<> compaction_sink::maybe_flush_object_builder() {
     }
 
     auto builder = std::exchange(_builder, nullptr);
-    auto object_info = co_await builder->finish();
-    co_await builder->close();
+    auto object_info = co_await builder->finish().finally(
+      [&builder] { return builder->close(); });
 
     auto active_buf = std::exchange(_active_output_buf, std::nullopt).value();
     _closed_objs.emplace_back(std::move(object_info), std::move(active_buf));
@@ -47,7 +47,7 @@ ss::future<> compaction_sink::maybe_roll() {
     _builder = object_builder::create(
       make_iobuf_ref_output_stream(_active_output_buf.value()), _opts);
 
-    co_await _builder->start_partition(_ntp);
+    co_await _builder->start_partition(_tidp);
 
     co_return;
 }

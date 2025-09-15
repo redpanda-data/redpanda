@@ -7,19 +7,17 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.clients.kafka_cat import KafkaCat
+from ducktape.mark import matrix
+
 from rptest.clients.rpk import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import PandaproxyConfig, SISettings, SchemaRegistryConfig
 from rptest.services.spark_service import QueryEngineType
 from rptest.tests.datalake.datalake_e2e_test import DatalakeServices
 from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import PandaproxyConfig, SchemaRegistryConfig, SISettings
-from rptest.services.redpanda import SISettings
-from ducktape.mark import matrix
-import confluent_kafka as ck
-from rptest.transactions.verifiers.compacted_verifier import CompactedVerifier, Workload
-from rptest.services.cluster import cluster
 from rptest.tests.datalake.utils import supported_storage_types
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.transactions.verifiers.compacted_verifier import CompactedVerifier, Workload
 
 
 class DatalakeTransactionTests(RedpandaTest):

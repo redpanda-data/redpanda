@@ -7,26 +7,27 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from dataclasses import dataclass
-from enum import Enum
-from logging import Logger
-import random
 import json
-import copy
+import random
 import time
 import urllib.parse
-from typing import Any, Optional, Callable, NamedTuple, Protocol, cast
+from dataclasses import dataclass
+from enum import Enum
 from json.decoder import JSONDecodeError
+from logging import Logger
+from typing import Any, Callable, NamedTuple, Optional, Protocol, cast
 from uuid import UUID
+
+import requests
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.utils.util import wait_until
-import requests
 from requests import Response
 from requests.adapters import HTTPAdapter
 from requests.exceptions import HTTPError, RequestException
 from urllib3.util.retry import Retry
-from rptest.util import wait_until_result
+
 from rptest.services.redpanda_types import SaslCredentials
+from rptest.util import wait_until_result
 from rptest.utils.mode_checks import is_debug_mode
 
 DEFAULT_TIMEOUT = 30
@@ -1368,6 +1369,9 @@ class Admin:
             params=params,
             json=dict(add=to_add, remove=to_remove),
         )
+
+    def security_report(self):
+        return self._request("get", "security/report")
 
     def list_role_members(self, role: str):
         return self._request("get", f"security/roles/{role}/members")

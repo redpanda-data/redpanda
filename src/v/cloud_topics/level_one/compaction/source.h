@@ -17,9 +17,9 @@ namespace cloud_topics::l1 {
 class compaction_source : public compaction::sliding_window_reducer::source {
 public:
     ss::future<> initialize() final;
-    ss::future<ss::stop_iteration> backward_pass_iteration() final;
+    ss::future<ss::stop_iteration> map_building_iteration() final;
     ss::future<ss::stop_iteration>
-    forward_pass_iteration(compaction::sliding_window_reducer::sink&) final;
+    deduplication_iteration(compaction::sliding_window_reducer::sink&) final;
 
 private:
 };

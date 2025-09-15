@@ -7,8 +7,10 @@
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
 import time
+
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.catalog_service import CatalogType
@@ -19,10 +21,10 @@ from rptest.services.spark_service import SparkService
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
 from rptest.tests.datalake.query_engine_base import QueryEngineType
-from rptest.util import firewall_blocked
-from rptest.utils.rpcn_utils import counter_stream_config
 from rptest.tests.datalake.utils import supported_storage_types
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import firewall_blocked
+from rptest.utils.rpcn_utils import counter_stream_config
 
 
 class DatalakeBlockedCatalogTest(RedpandaTest):

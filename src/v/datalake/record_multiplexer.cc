@@ -19,6 +19,7 @@
 #include "datalake/table_creator.h"
 #include "datalake/table_id_provider.h"
 #include "datalake/translation/translation_probe.h"
+#include "features/feature_table.h"
 #include "model/batch_compression.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -79,7 +80,8 @@ record_multiplexer::record_multiplexer(
   table_creator& table_creator,
   model::iceberg_invalid_record_action invalid_record_action,
   location_provider location_provider,
-  translation_probe& translation_probe)
+  translation_probe& translation_probe,
+  features::feature_table* features)
   : _log(datalake_log, fmt::format("{}", ntp))
   , _ntp(ntp)
   , _topic_revision(topic_revision)
@@ -90,7 +92,8 @@ record_multiplexer::record_multiplexer(
   , _table_creator(table_creator)
   , _invalid_record_action(invalid_record_action)
   , _location_provider(std::move(location_provider))
-  , _translation_probe(translation_probe) {}
+  , _translation_probe(translation_probe)
+  , _features(features) {}
 
 ss::future<> record_multiplexer::multiplex(
   model::record_batch_reader reader,
@@ -258,7 +261,14 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
             }
 
             auto table_id = table_id_provider::table_id(_ntp.tp.topic);
-            auto load_res = co_await _schema_mgr.get_table_info(table_id);
+            std::optional<std::reference_wrapper<iceberg::struct_type>>
+              desired_type;
+            if (!_features->is_active(
+                  features::feature::iceberg_schema_merging)) {
+                desired_type = std::make_optional(std::ref(record_type.type));
+            }
+            auto load_res = co_await _schema_mgr.get_table_info(
+              table_id, desired_type);
             if (load_res.has_error()) {
                 auto e = load_res.error();
                 switch (e) {

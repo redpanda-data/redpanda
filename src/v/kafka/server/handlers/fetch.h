@@ -33,7 +33,7 @@ fetch_scheduling_group_provider(const connection_context&);
 using fetch_handler = single_stage_handler<
   fetch_api,
   4,
-  11,
+  13,
   default_estimate_adaptor,
   fetch_scheduling_group_provider>;
 
@@ -142,9 +142,6 @@ struct op_context {
      */
     size_t fetch_partition_count() const;
 
-    template<typename Func>
-    void for_each_fetch_partition(Func&& f) const;
-
     request_context rctx;
     ss::smp_service_group ssg;
     fetch_request request;
@@ -205,10 +202,10 @@ struct fetch_config {
 };
 
 struct ntp_fetch_config {
-    ntp_fetch_config(model::ktp ktp, fetch_config cfg)
+    ntp_fetch_config(model::ktp_with_hash&& ktp, fetch_config&& cfg)
       : _ktp(std::move(ktp))
-      , cfg(cfg) {}
-    model::ktp _ktp;
+      , cfg(std::move(cfg)) {}
+    model::ktp_with_hash _ktp;
     fetch_config cfg;
 
     const model::ktp& ktp() const { return _ktp; }
@@ -261,6 +258,13 @@ struct read_result {
       : start_offset(-1)
       , high_watermark(-1)
       , last_stable_offset(-1)
+      , error(e) {}
+
+    read_result(error_code e, leader_id_and_epoch leader)
+      : start_offset(-1)
+      , high_watermark(-1)
+      , last_stable_offset(-1)
+      , current_leader(std::move(leader))
       , error(e) {}
 
     // special case for offset_out_of_range_error
@@ -337,6 +341,7 @@ struct read_result {
     model::offset last_stable_offset;
     std::optional<std::chrono::milliseconds> delta_from_tip_ms;
     std::optional<model::node_id> preferred_replica;
+    std::optional<leader_id_and_epoch> current_leader;
     error_code error;
     model::partition_id partition;
     std::vector<cluster::tx::tx_range> aborted_transactions;
@@ -351,10 +356,13 @@ struct shard_fetch {
       , start_time{start_time} {}
 
     void push_back(
-      ntp_fetch_config config, op_context::response_placeholder_ptr r_ph) {
-        requests.push_back(std::move(config));
+      model::ktp_with_hash ktp,
+      kafka::fetch_config&& config,
+      op_context::response_placeholder_ptr r_ph) {
+        requests.emplace_back(std::move(ktp), std::move(config));
         responses.push_back(r_ph);
     }
+
     bool empty() const;
 
     void reserve(size_t n) {
@@ -420,6 +428,7 @@ namespace testing {
 
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager&,
+  const cluster::metadata_cache&,
   const replica_selector&,
   const model::ktp&,
   fetch_config,

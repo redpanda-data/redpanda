@@ -226,6 +226,8 @@ redpanda_cc_library(
         "//src/v/features:enterprise_features",
         "//src/v/finjector",
         "//src/v/json",
+        "//src/v/kafka/client:config_utils",
+        "//src/v/kafka/client:configuration",
         "//src/v/kafka/data:partition_proxy",
         "//src/v/kafka/server",
         "//src/v/metrics",

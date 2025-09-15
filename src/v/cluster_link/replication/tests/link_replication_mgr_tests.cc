@@ -86,6 +86,8 @@ private:
 };
 
 class test_data_source_factory : public data_source_factory {
+    ss::future<> start() override { return ss::now(); }
+    ss::future<> stop() noexcept override { return ss::now(); }
     std::unique_ptr<data_source> make_source(const model::ntp&) override {
         return std::make_unique<test_data_source>();
     }

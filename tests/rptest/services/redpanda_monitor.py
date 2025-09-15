@@ -7,12 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import time
 import threading
-
-from rptest.services.redpanda import RedpandaService
+import time
 
 from ducktape.services.background_thread import BackgroundThreadService
+
+from rptest.services.redpanda import RedpandaService
 
 
 class RedpandaMonitor(BackgroundThreadService):

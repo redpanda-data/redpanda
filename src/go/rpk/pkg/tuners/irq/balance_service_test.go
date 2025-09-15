@@ -176,6 +176,33 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 		},
 		{
 			name: "Shall update the config and then restart IRQ " +
+				"balance service with config in /etc/default/irqbalance & systemd",
+			proc: &procMock{
+				isRunning: running,
+				run: func(command string, args ...string) ([]string, error) {
+					require.Equal(t, "systemctl", command)
+					require.Equal(t, []string{"try-restart", "irqbalance"}, args)
+					return nil, nil
+				},
+			},
+			bannedIRQs:            []int{5, 12, 15},
+			testadataInitFilename: "testdata/irqbalance-03-init",
+			configFilename:        "/etc/default/irqbalance",
+			backupFilename:        "/etc/default/irqbalance.vectorized.911727b5a516f8e315b36f97e54facda.bk",
+			before: func(fs afero.Fs) {
+				_ = utils.WriteFileLines(fs, []string{""}, "/lib/systemd/system/irqbalance.service")
+			},
+			assert: func(fs afero.Fs, configFilename string, backupContent []string) {
+				require.Equal(t, 2, len(backupContent))
+				// Check if IRQs were banned in the file
+				fileContent, err := utils.ReadFileLines(fs, configFilename)
+				require.NoError(t, err)
+				require.Equal(t, 3, len(fileContent))
+				require.Equal(t, "IRQBALANCE_ARGS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
+			},
+		},
+		{
+			name: "Shall update the config and then restart IRQ " +
 				"balance service with config in /etc/conf.d/irqbalance & init daemon",
 			proc: &procMock{
 				isRunning: running,

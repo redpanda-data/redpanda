@@ -20,6 +20,9 @@
 #include "raft/fwd.h"
 #include "raft/notification.h"
 
+namespace features {
+class feature_table;
+}
 namespace datalake {
 class credential_manager;
 } // namespace datalake
@@ -52,7 +55,8 @@ public:
       pandaproxy::schema_registry::api*,
       std::unique_ptr<catalog_factory>,
       ss::sharded<cloud_io::remote>&,
-      cloud_storage_clients::bucket_name);
+      cloud_storage_clients::bucket_name,
+      features::feature_table*);
     ~coordinator_manager();
 
     ss::future<> start();
@@ -79,6 +83,7 @@ private:
     cluster::topic_table& topics_;
     ss::sharded<cluster::topics_frontend>& topics_fe_;
     std::unique_ptr<schema::registry> schema_registry_;
+    features::feature_table* features_;
 
     // Underlying IO is expected to outlive this class.
     iceberg::manifest_io manifest_io_;

@@ -200,10 +200,11 @@ func newStdioCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 // newProxyCommand will be called by an MCP client, and its responses are returned to the LLM, that synthesizes the response message.
 func newProxyCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		clusterID   string
-		mcpServerID string
-		install     bool
-		mcpClient   string
+		clusterID           string
+		serverlessClusterID string
+		mcpServerID         string
+		install             bool
+		mcpClient           string
 	)
 
 	cmd := &cobra.Command{
@@ -220,6 +221,9 @@ Use --install to configure the MCP client instead of serving stdio.`,
 			if install && mcpClient == "" {
 				return fmt.Errorf("--client flag is required when using --install")
 			}
+			if clusterID == "" && serverlessClusterID == "" {
+				return fmt.Errorf("must specify either --cluster-id or --serverless-cluster-id")
+			}
 			return nil
 		},
 		Run: func(cmd *cobra.Command, _ []string) {
@@ -231,15 +235,33 @@ Use --install to configure the MCP client instead of serving stdio.`,
 			// Start out with empty token, and use the maybeReloadToken function to update.
 			cl := publicapi.NewCloudClientSet(cfg.DevOverrides().PublicAPIURL, authToken)
 
-			// Get cluster information
-			cluster, err := cl.Cluster.GetCluster(cmd.Context(), connect.NewRequest(&controlplanev1.GetClusterRequest{
-				Id: clusterID,
-			}))
-			out.MaybeDie(err, "Failed to get cluster: %v", err)
+			// Get cluster information and dataplane URL
+			var dataplaneURL string
+			var actualClusterID string
+			if clusterID != "" {
+				// Regular cluster
+				cluster, err := cl.Cluster.GetCluster(cmd.Context(), connect.NewRequest(&controlplanev1.GetClusterRequest{
+					Id: clusterID,
+				}))
+				out.MaybeDie(err, "Failed to get cluster: %v", err)
 
-			dataplaneURL := cluster.Msg.GetCluster().GetDataplaneApi().GetUrl()
-			if dataplaneURL == "" {
-				out.Die("Cluster %s does not have a dataplane API URL", clusterID)
+				dataplaneURL = cluster.Msg.GetCluster().GetDataplaneApi().GetUrl()
+				actualClusterID = clusterID
+				if dataplaneURL == "" {
+					out.Die("Cluster %s does not have a dataplane API URL", clusterID)
+				}
+			} else {
+				// Serverless cluster
+				serverlessCluster, err := cl.Serverless.GetServerlessCluster(cmd.Context(), connect.NewRequest(&controlplanev1.GetServerlessClusterRequest{
+					Id: serverlessClusterID,
+				}))
+				out.MaybeDie(err, "Failed to get serverless cluster: %v", err)
+
+				dataplaneURL = serverlessCluster.Msg.GetServerlessCluster().GetDataplaneApi().GetUrl()
+				actualClusterID = serverlessClusterID
+				if dataplaneURL == "" {
+					out.Die("Serverless cluster %s does not have a dataplane API URL", serverlessClusterID)
+				}
 			}
 
 			// Create a dataplane client set for this specific dataplane
@@ -305,14 +327,17 @@ Use --install to configure the MCP client instead of serving stdio.`,
 
 			// Handle install mode
 			if install {
-				args := []string{
-					"cloud", "mcp", "proxy",
-					"--cluster-id", clusterID,
-					"--mcp-server-id", mcpServerID,
+				args := []string{"cloud", "mcp", "proxy"}
+				if clusterID != "" {
+					args = append(args, "--cluster-id", clusterID)
+				} else {
+					args = append(args, "--serverless-cluster-id", serverlessClusterID)
 				}
+				args = append(args, "--mcp-server-id", mcpServerID)
+
 				configFile, err := installMCPConfig(cfg, mcpClient, mcpServerName, args)
 				out.MaybeDie(err, "Failed to install MCP configuration: %v", err)
-				fmt.Printf("Successfully installed MCP server for '%s' (cluster: %s, server: %s) to %s.\n", mcpServerName, clusterID, mcpServerID, makePathPretty(configFile))
+				fmt.Printf("Successfully installed MCP server for '%s' (cluster: %s, server: %s) to %s.\n", mcpServerName, actualClusterID, mcpServerID, makePathPretty(configFile))
 				return
 			}
 
@@ -350,8 +375,14 @@ Use --install to configure the MCP client instead of serving stdio.`,
 			out.MaybeDie(err, "Failed to initialize remote MCP client: %v", err)
 
 			// Create local MCP server that will proxy to the remote client
+			var clusterType string
+			if clusterID != "" {
+				clusterType = "cluster"
+			} else {
+				clusterType = "serverless cluster"
+			}
 			localServer := server.NewMCPServer(
-				fmt.Sprintf("Redpanda Cloud MCP Proxy (cluster: %s, server: %s)", clusterID, mcpServerID),
+				fmt.Sprintf("Redpanda Cloud MCP Proxy (%s: %s, server: %s)", clusterType, actualClusterID, mcpServerID),
 				version.Pretty(),
 				server.WithToolHandlerMiddleware(func(thf server.ToolHandlerFunc) server.ToolHandlerFunc {
 					return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -378,11 +409,12 @@ Use --install to configure the MCP client instead of serving stdio.`,
 	}
 
 	cmd.Flags().StringVar(&clusterID, "cluster-id", "", "Cluster ID to connect to")
+	cmd.Flags().StringVar(&serverlessClusterID, "serverless-cluster-id", "", "Serverless cluster ID to connect to")
 	cmd.Flags().StringVar(&mcpServerID, "mcp-server-id", "", "MCP Server ID to proxy to")
 	cmd.Flags().BoolVar(&install, "install", false, "Install MCP proxy configuration instead of serving stdio")
 	cmd.Flags().StringVar(&mcpClient, "client", "", "Name of the MCP client to configure (required with --install)")
-	cmd.MarkFlagRequired("cluster-id")
 	cmd.MarkFlagRequired("mcp-server-id")
+	cmd.MarkFlagsMutuallyExclusive("cluster-id", "serverless-cluster-id")
 	cmd.RegisterFlagCompletionFunc("client", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{"claude", "claude-code"}, cobra.ShellCompDirectiveDefault
 	})

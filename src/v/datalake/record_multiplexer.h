@@ -25,6 +25,10 @@
 
 #include <memory>
 
+namespace features {
+class feature_table;
+}
+
 namespace datalake {
 class record_translator;
 class schema_manager;
@@ -74,7 +78,8 @@ public:
       table_creator&,
       model::iceberg_invalid_record_action,
       location_provider,
-      translation_probe&);
+      translation_probe&,
+      features::feature_table* features);
 
     /**
      * Multiplex the data from a reader into writers per schema and partition.
@@ -140,6 +145,7 @@ private:
     model::iceberg_invalid_record_action _invalid_record_action;
     location_provider _location_provider;
     translation_probe& _translation_probe;
+    [[maybe_unused]] features::feature_table* _features;
     chunked_hash_map<
       record_schema_components,
       std::unique_ptr<partitioning_writer>>

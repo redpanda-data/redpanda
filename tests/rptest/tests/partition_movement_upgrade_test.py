@@ -10,19 +10,20 @@
 import re
 import threading
 from time import sleep
+
 import requests
+from ducktape.utils.util import wait_until
+
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
 )
-
-from rptest.tests.partition_movement import PartitionMovementMixin
-from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
-from ducktape.utils.util import wait_until
+from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 
 
 class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):

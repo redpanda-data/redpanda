@@ -88,10 +88,14 @@ public:
       : sr(cloud_io::scoped_remote::create(10, conf))
       , storage(dummy_storage(feature_table))
       , catalog(remote(), bucket_name, ss::sstring(base_location))
-      , schema_mgr(catalog)
+      , schema_mgr(
+          catalog,
+          [this] {
+              feature_table.start().get();
+              return &feature_table.local();
+          }())
       , manifest_io(remote(), bucket_name)
       , committer(storage, catalog, manifest_io, config::mock_binding(false)) {
-        feature_table.start().get();
         feature_table
           .invoke_on_all(
             [](features::feature_table& f) { f.testing_activate_all(); })

@@ -38,7 +38,7 @@ model::metadata get_default_metadata() {
       model::mirror_topic_metadata{
         .source_topic_name = test_topic,
         .partition_count = 1,
-        .replication_factor = 1,
+        .replication_factor = std::nullopt,
         .topic_configs = {
           {"max.message.bytes", "1048576"},
           {"cleanup.policy", "delete"},
@@ -101,7 +101,7 @@ TEST_F_CORO(topic_properties_syncer_test, topic_properties_sync) {
         if (mirror_topic_it != mirror_topics.end()) {
             const auto& topic_metadata = mirror_topic_it->second;
             return topic_metadata.partition_count == 3
-                   && topic_metadata.replication_factor == 3
+                   && !topic_metadata.replication_factor.has_value()
                    && topic_metadata.topic_configs.at("max.message.bytes")
                         == "1024";
         }
@@ -134,6 +134,57 @@ TEST_F_CORO(topic_properties_syncer_test, topic_properties_sync) {
     ASSERT_NE_CORO(mirror_topic_it, mirror_topics.end());
     EXPECT_EQ(mirror_topic_it->second.partition_count, 3);
     EXPECT_EQ(mirror_topic_it->second.state, model::mirror_topic_state::failed);
+}
+
+TEST_F_CORO(topic_properties_syncer_test, sync_rf) {
+    auto md = get_default_metadata();
+    md.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
+      .emplace("replication.factor");
+
+    co_await fixture()->upsert_link(std::move(md));
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
+        auto link = fixture()->find_link_by_name(test_link_name);
+        const auto& mirror_topics = link->get().state.mirror_topics;
+        auto mirror_topic_it = mirror_topics.find(test_topic);
+        if (mirror_topic_it != mirror_topics.end()) {
+            const auto& topic_metadata = mirror_topic_it->second;
+            return topic_metadata.partition_count == 1
+                   && topic_metadata.replication_factor == 1;
+        }
+        return false;
+    });
+
+    fixture()->get_cluster_mock().set_topic_replication_factor(test_topic, 3);
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
+        auto link = fixture()->find_link_by_name(test_link_name);
+        const auto& mirror_topics = link->get().state.mirror_topics;
+        auto mirror_topic_it = mirror_topics.find(test_topic);
+        if (mirror_topic_it != mirror_topics.end()) {
+            const auto& topic_metadata = mirror_topic_it->second;
+            return topic_metadata.partition_count == 1
+                   && topic_metadata.replication_factor == 3;
+        }
+        return false;
+    });
+
+    // Now add a new topic and ensure it gets the RF set correctly
+    const ::model::topic new_topic{"new_topic"};
+    fixture()->get_cluster_mock().add_topic(
+      new_topic, 1, 3, kafka::topic_authorized_operations(0x508));
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, new_topic] {
+        auto link = fixture()->find_link_by_name(test_link_name);
+        const auto& mirror_topics = link->get().state.mirror_topics;
+        auto mirror_topic_it = mirror_topics.find(new_topic);
+        if (mirror_topic_it != mirror_topics.end()) {
+            const auto& topic_metadata = mirror_topic_it->second;
+            return topic_metadata.partition_count == 1
+                   && topic_metadata.replication_factor == 3;
+        }
+        return false;
+    });
 }
 
 class update_properties_invalid_describe_configs_test

@@ -15,19 +15,20 @@
 #
 #   [jerry@winterland]$ dev_cluster.py -e vbuild/debug/clang/bin/redpanda
 #
-import asyncio
-from typing import Optional
-import psutil
-import pathlib
-import yaml
-import dataclasses
 import argparse
-import signal
-import os
-import shutil
-import time
-import aioboto3
+import asyncio
+import dataclasses
 import json
+import os
+import pathlib
+import shutil
+import signal
+import time
+from typing import Optional
+
+import aioboto3
+import psutil
+import yaml
 
 BOOTSTRAP_YAML = ".bootstrap.yaml"
 

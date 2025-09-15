@@ -9,9 +9,9 @@
 
 import dataclasses
 import functools
-from re import Pattern
 import time
-from typing import Any, Protocol
+from dataclasses import dataclass
+from typing import Any, Callable, Protocol
 
 import psutil
 from ducktape.mark._mark import Mark
@@ -19,7 +19,6 @@ from ducktape.mark.resource import ClusterUseMetadata
 from ducktape.tests.test import TestContext
 
 from rptest.services.redpanda import (
-    RedpandaServiceBase,
     RedpandaService,
     RedpandaServiceCloud,
 )
@@ -27,8 +26,13 @@ from rptest.services.redpanda_types import LogAllowList
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 
 
+class HasRedpanda(Protocol):
+    redpanda: RedpandaService | RedpandaServiceCloud | None
+    test_context: TestContext
+
+
 def cluster(
-    log_allow_list: LogAllowList | None = None,
+    log_allow_list: LogAllowList = (),
     check_allowed_error_logs: bool = True,
     check_for_storage_usage_inconsistencies: bool = True,
     **kwargs: Any,
@@ -50,20 +54,19 @@ def cluster(
         We find all replicas by traversing ducktape's internal service registry.
         """
         rp = test.redpanda
-        assert isinstance(rp, RedpandaServiceBase) or isinstance(
-            rp, RedpandaServiceCloud
-        )
+        assert isinstance(rp, (RedpandaService, RedpandaServiceCloud))
         yield rp
 
         for svc in test.test_context.services:
             if (
-                isinstance(svc, RedpandaServiceBase)
-                or isinstance(svc, RedpandaServiceCloud)
+                isinstance(svc, (RedpandaService, RedpandaServiceCloud))
                 and svc is not test.redpanda
             ):
                 yield svc
 
-    def log_local_load(test_name, logger, t_initial, initial_disk_stats):
+    def log_local_load(
+        test_name: str, logger: Any, t_initial: float, initial_disk_stats: Any
+    ):
         """
         Log indicators of system load on the machine running ducktape tests.  When
         running tests in a single-node docker environment, this is useful to help
@@ -90,12 +93,133 @@ def cluster(
         logger.info(f"Disk activity during {test_name}: {disk_deltas}")
         logger.info(f"Disk rates during {test_name}: {disk_rates}")
 
-    def cluster_use_metadata_adder(f):
-        Mark.mark(f, ClusterUseMetadata(**kwargs))
+    @dataclass
+    class test_state:
+        t_initial: float
+        disk_stats_initial: Any
 
-        class HasRedpanda(Protocol):
-            redpanda: RedpandaService | RedpandaServiceCloud | None
-            test_context: TestContext
+    def _do_post_test_checks(
+        self: HasRedpanda, test_failed: bool, state: test_state
+    ) -> dict[str, Any]:
+        extra_results: dict[str, Any] = {}
+
+        if self.redpanda is None:
+            # We failed so early there isn't even a RedpandaService instantiated, or
+            # we passed without instantiating a RedpandaService, for example
+            # in a skipped test.
+            return extra_results
+
+        status_str = "failed" if test_failed else "passed"
+
+        log_local_load(
+            self.test_context.test_name,
+            self.redpanda.logger,
+            state.t_initial,
+            state.disk_stats_initial,
+        )
+
+        # In debug mode, any test writing too much traffic will impose too much
+        # load on the system and destabilize other tests.  Detect this with a
+        # post-test check for total bytes written.
+        debug_mode_data_limit = 64 * 1024 * 1024
+        if not test_failed and getattr(self, "debug_mode", False) is True:
+            assert isinstance(self.redpanda, RedpandaService)
+            bytes_written = self.redpanda.estimate_bytes_written()
+            if bytes_written is not None:
+                self.redpanda.logger.info(f"Estimated bytes written: {bytes_written}")
+                if bytes_written > debug_mode_data_limit:
+                    self.redpanda.logger.error(
+                        f"Debug-mode test wrote too much data ({int(bytes_written) // (1024 * 1024)}MiB)"
+                    )
+
+        for redpanda in all_redpandas(self):
+            redpanda.logger.exception(
+                f"Test {status_str}, doing failure checks on {redpanda.who_am_i()}..."
+            )
+
+            if not test_failed and check_allowed_error_logs:
+                # Only do log inspections on tests that are otherwise
+                # successful.  This executes *before* the end-of-test
+                # shutdown, thereby avoiding having to add the various
+                # gate_closed etc errors to our allow list.
+                # TODO: extend this to cover shutdown logging too, and
+                # clean up redpanda to not log so many errors on shutdown.
+                try:
+                    redpanda.raise_on_bad_logs(
+                        allow_list=log_allow_list, test_start_time=state.t_initial
+                    )
+                except:
+                    # Perform diagnostics only for Local run
+                    if isinstance(redpanda, RedpandaService):
+                        redpanda.cloud_storage_diagnostics()
+                    raise
+
+            if isinstance(redpanda, RedpandaService):
+                if test_failed:
+                    redpanda.cloud_storage_diagnostics()
+                elif check_for_storage_usage_inconsistencies:
+                    try:
+                        redpanda.raise_on_storage_usage_inconsistency()
+                    except:
+                        redpanda.cloud_storage_diagnostics()
+                        raise
+
+            if isinstance(redpanda, RedpandaServiceCloud):
+                return extra_results
+
+            if test_failed:
+                redpanda.raise_on_crash(log_allow_list=log_allow_list)
+
+        assert isinstance(
+            self.redpanda, RedpandaService
+        )  # we already returned above for cloud case
+
+        stopped = False
+
+        self.redpanda.validate_controller_log()
+
+        if (
+            self.redpanda._si_settings is not None
+            and not self.redpanda.si_settings.skip_end_of_test_scrubbing
+        ):
+            try:
+                self.redpanda.maybe_do_internal_scrub()
+                usage = self.redpanda.stop_and_scrub_object_storage()
+                stopped = True
+                extra_results["object_storage_usage"] = dataclasses.asdict(usage)
+            except:
+                self.redpanda.cloud_storage_diagnostics()
+                raise
+
+        # stop the cluster before decoding the logs so the decode process doesn't
+        # complete with the Redpanda nodes (failed case) and so that we catch stop
+        # timeouts (passed case)
+        if not stopped:
+            try:
+                self.redpanda.logger.info(
+                    f"While finishing {status_str} test, stopping Redpanda service {self.redpanda.who_am_i()}..."
+                )
+                self.redpanda.stop()
+            except Exception as e:
+                # ignore this since we want to propagate the original exception
+                self.redpanda.logger.info(
+                    f"While finishing {status_str} test, failed to stop Redpanda service: {e}"
+                )
+                if not test_failed:
+                    raise
+
+        # Finally, if the test passed and all post-test checks
+        # also passed, we may trim the logs to INFO level to
+        # save space.
+        if not test_failed:
+            for redpanda in all_redpandas(self):
+                assert isinstance(redpanda, RedpandaService)
+                redpanda.trim_logs()
+
+        return extra_results
+
+    def cluster_use_metadata_adder(f: Callable[..., Any]):
+        Mark.mark(f, ClusterUseMetadata(**kwargs))
 
         @functools.wraps(f)
         def wrapped(self: HasRedpanda, *args: Any, **kwargs: Any):
@@ -107,171 +231,38 @@ def cluster(
             # VMs or docker containers inside a ducktape node, where we have ssh access, for
             # other environemnts we will skip those checks
 
-            t_initial = time.time()
-            disk_stats_initial = psutil.disk_io_counters()
-            if log_allow_list is not None:
-                for entry in log_allow_list:
-                    if isinstance(entry, AllowLogsOnPredicate):
-                        entry.initialize(self)
+            test_state_initial = test_state(
+                t_initial=time.time(), disk_stats_initial=psutil.disk_io_counters()
+            )
+
+            for entry in log_allow_list:
+                if isinstance(entry, AllowLogsOnPredicate):
+                    entry.initialize(self)
+
             try:
-                r = f(self, *args, **kwargs)
-                test_results = {"result": r}
-            except:
-                if self.redpanda is None:
-                    # We failed so early there isn't even a RedpandaService instantiated
+                try:
+                    r = f(self, *args, **kwargs)
+                    test_results: dict[str, Any] = {"result": r}
+                except:
+                    _do_post_test_checks(self, True, test_state_initial)
                     raise
 
-                log_local_load(
-                    self.test_context.test_name,
-                    self.redpanda.logger,
-                    t_initial,
-                    disk_stats_initial,
-                )
-
-                for redpanda in all_redpandas(self):
-                    redpanda.logger.exception(
-                        f"Test failed, doing failure checks on {redpanda.who_am_i()}..."
-                    )
-
-                    if isinstance(redpanda, RedpandaService):
-                        redpanda.cloud_storage_diagnostics()
-
-                        # stop the cluster before decoding the logs so the decode process doesn't
-                        # complete with the Redpanda nodes
-                        try:
-                            redpanda.logger.info(
-                                f"While finishing failed test, stopping Redpanda service {redpanda.who_am_i()}..."
-                            )
-                            redpanda.stop()
-                        except Exception as e:
-                            # ignore this since we want to propagate the original exception
-                            redpanda.logger.info(
-                                f"While finishing failed test, failed to stop Redpanda service (ignored): {e}"
-                            )
-
-                        redpanda.decode_backtraces()
-
-                    if isinstance(redpanda, RedpandaService | RedpandaServiceCloud):
-                        redpanda.raise_on_crash(log_allow_list=log_allow_list)
-
-                raise
-            else:
-                if not isinstance(
-                    self.redpanda, RedpandaServiceBase | RedpandaServiceCloud
-                ):
-                    # If None we passed without instantiating a RedpandaService, for example
-                    # in a skipped test.
-                    # Also skip if we are running against the cloud
-                    return test_results
-
-                if isinstance(self.redpanda, RedpandaServiceCloud):
-                    # Call copy logs function for RedpandaServiceCloud
-                    # It can't be called from usual ducktape routing due
-                    # to different inheritance structure
-                    self.redpanda.copy_cloud_logs(t_initial)
-
-                log_local_load(
-                    self.test_context.test_name,
-                    self.redpanda.logger,
-                    t_initial,
-                    disk_stats_initial,
-                )
-
-                # In debug mode, any test writing too much traffic will impose too much
-                # load on the system and destabilize other tests.  Detect this with a
-                # post-test check for total bytes written.
-                debug_mode_data_limit = 64 * 1024 * 1024
-                if getattr(self, "debug_mode", False) is True:
-                    bytes_written = self.redpanda.estimate_bytes_written()
-                    if bytes_written is not None:
-                        self.redpanda.logger.info(
-                            f"Estimated bytes written: {bytes_written}"
-                        )
-                        if bytes_written > debug_mode_data_limit:
-                            self.redpanda.logger.error(
-                                f"Debug-mode test wrote too much data ({int(bytes_written) // (1024 * 1024)}MiB)"
-                            )
-
-                for redpanda in all_redpandas(self):
-                    redpanda.logger.info(
-                        f"Test passed, doing log checks on {redpanda.who_am_i()}..."
-                    )
-
-                    # the following checks don't work on cloud instances but we don't expect
-                    # any of those as we already early-outed above when Redpanda is not
-                    # RSB (technically, it might be that self.redpanda is RSB but some
-                    # additional redpanda in the registry is, but that situation never arises
-                    # in practice in our current tests)
-                    assert isinstance(
-                        redpanda, RedpandaServiceBase | RedpandaServiceCloud
-                    )
-
-                    if check_allowed_error_logs:
-                        # Only do log inspections on tests that are otherwise
-                        # successful.  This executes *before* the end-of-test
-                        # shutdown, thereby avoiding having to add the various
-                        # gate_closed etc errors to our allow list.
-                        # TODO: extend this to cover shutdown logging too, and
-                        # clean up redpanda to not log so many errors on shutdown.
-                        try:
-                            # We need test start time for RedpandaServiceCloud
-                            if isinstance(redpanda, RedpandaServiceCloud):
-                                redpanda.raise_on_bad_logs(
-                                    allow_list=log_allow_list, test_start_time=t_initial
-                                )
-                            else:
-                                redpanda.raise_on_bad_logs(allow_list=log_allow_list)
-                        except:
-                            # Perform diagnostics only for Local run
-                            if isinstance(redpanda, RedpandaServiceBase):
-                                redpanda.cloud_storage_diagnostics()
-                            raise
-
-                    # Do a check if this is the cloud
-                    # since the rest not applies to RedpandaServiceCloud class
-                    if isinstance(redpanda, RedpandaServiceCloud):
-                        return test_results
-
-                    if check_for_storage_usage_inconsistencies:
-                        try:
-                            redpanda.raise_on_storage_usage_inconsistency()
-                        except:
-                            redpanda.cloud_storage_diagnostics()
-                            raise
-
-                self.redpanda.validate_controller_log()
-
-                if (
-                    self.redpanda._si_settings is not None
-                    and not self.redpanda.si_settings.skip_end_of_test_scrubbing
-                ):
-                    try:
-                        self.redpanda.maybe_do_internal_scrub()
-                        usage = self.redpanda.stop_and_scrub_object_storage()
-                        test_results["object_storage_usage"] = dataclasses.asdict(usage)
-                    except:
-                        self.redpanda.cloud_storage_diagnostics()
-                        raise
-                else:
-                    # stop here explicitly to fail if stop times out, otherwise ducktape won't catch it
-                    self.redpanda.stop()
-
+                test_results |= _do_post_test_checks(self, False, test_state_initial)
                 test_results["usage_stats"] = {
                     r.who_am_i(): r.usage_stats_dict for r in all_redpandas(self)
                 }
+            except:
+                # for any failure, we decode backtraces
+                if isinstance(self.redpanda, RedpandaService):
+                    self.redpanda.decode_backtraces()
+                raise
 
-                # Finally, if the test passed and all post-test checks
-                # also passed, we may trim the logs to INFO level to
-                # save space.
-                for redpanda in all_redpandas(self):
-                    redpanda.trim_logs()
-
-                return test_results
+            return test_results
 
         # Propagate ducktape markers (e.g. parameterize) to our function
         # wrapper
-        wrapped.marks = f.marks
-        wrapped.mark_names = f.mark_names
+        wrapped.marks = f.marks  # type: ignore
+        wrapped.mark_names = f.mark_names  # type: ignore
 
         return wrapped
 

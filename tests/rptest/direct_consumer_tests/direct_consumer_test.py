@@ -7,33 +7,28 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from typing import Any
-
-import time
 import random
 import threading
-from typing import Callable
+from typing import Any, Callable
 
-from rptest.services.cluster import cluster
-from rptest.services.admin import Admin
-from ducktape.utils.util import wait_until
 from ducktape.tests.test import TestContext
-from ducktape.errors import TimeoutError
 
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.direct_consumer_verifier import (
-    DirectConsumerVerifier,
-    CreateDirectConsumerRequest,
-    BrokerAddress,
-    DirectConsumerConfiguration,
-    OffsetResetPolicy,
-    IsolationLevel,
     AssignPartitionsRequest,
-    TopicAssignment,
-    PartitionAssignment,
+    BrokerAddress,
+    CreateDirectConsumerRequest,
+    DirectConsumerConfiguration,
+    DirectConsumerVerifier,
     GetConsumerStateRequest,
+    IsolationLevel,
+    OffsetResetPolicy,
+    PartitionAssignment,
+    TopicAssignment,
 )
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_with_progress_check
 
@@ -182,8 +177,7 @@ class DirectConsumerVerifierTest(RedpandaTest):
             final_state = verifier.get_consumer_state(state_request)
 
             # assertions
-            # must have seen at least msg_count, duplicate offsets are legal but undesirable
-            assert final_state.total_consumed_messages >= msg_count, (
+            assert final_state.total_consumed_messages == msg_count, (
                 f"Expected {msg_count} messages, got {final_state.total_consumed_messages}"
             )
 

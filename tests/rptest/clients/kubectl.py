@@ -8,10 +8,10 @@
 # by the Apache License, Version 2.0
 
 import json
-from logging import Logger
 import os
 import subprocess
-from typing import Any, Union, Generator
+from logging import Logger
+from typing import Any, Generator, Union
 
 SUPPORTED_PROVIDERS = ["aws", "gcp", "azure"]
 

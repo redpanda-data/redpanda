@@ -9,7 +9,7 @@
 
 # noqa: E501
 
-from ast import NodeTransformer, parse, unparse, Constant
+from ast import Constant, NodeTransformer, parse, unparse
 from copy import deepcopy
 
 

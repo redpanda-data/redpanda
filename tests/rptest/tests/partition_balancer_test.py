@@ -6,33 +6,31 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
-import os
 import random
 import time
 from math import ceil
 
-from rptest.services.cluster import cluster
-from rptest.services.admin import Admin
-from rptest.util import wait_until_result
-from rptest.utils.mode_checks import skip_debug_mode
-from rptest.clients.default import DefaultClient
-from rptest.services.redpanda import (
-    SISettings,
-    make_redpanda_service,
-    CHAOS_LOG_ALLOW_LIST,
-    MetricsEndpoint,
-)
-from rptest.services.failure_injector import make_failure_injector, FailureSpec
-from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
-
-from rptest.util import wait_for_recovery_throttle_rate
-from rptest.tests.end_to_end import EndToEndTest
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool, RpkException
 from ducktape.cluster.cluster_spec import ClusterSpec
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
+
+from rptest.clients.default import DefaultClient
+from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
+from rptest.services.cluster import cluster
+from rptest.services.failure_injector import FailureSpec, make_failure_injector
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from rptest.services.redpanda import (
+    CHAOS_LOG_ALLOW_LIST,
+    MetricsEndpoint,
+    SISettings,
+    make_redpanda_service,
+)
+from rptest.tests.end_to_end import EndToEndTest
+from rptest.util import wait_for_recovery_throttle_rate, wait_until_result
+from rptest.utils.mode_checks import skip_debug_mode
 
 # We inject failures which might cause consumer groups
 # to re-negotiate, so it is necessary to have a longer

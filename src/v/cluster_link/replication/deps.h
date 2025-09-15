@@ -31,20 +31,20 @@ public:
     virtual kafka::offset last_replicated_offset() const = 0;
 
     virtual raft::replicate_stages replicate(
-      chunked_vector<model::record_batch> batches,
-      model::timeout_clock::duration timeout,
+      chunked_vector<::model::record_batch> batches,
+      ::model::timeout_clock::duration timeout,
       ss::abort_source& as)
       = 0;
 
     // Notifies the sink of any terminal failure that can
     // result in replicator not being able to start/progress.
-    virtual void notify_replicator_failure(model::term_id) = 0;
+    virtual void notify_replicator_failure(::model::term_id) = 0;
 };
 
 class data_sink_factory {
 public:
     virtual ~data_sink_factory() = default;
-    virtual std::unique_ptr<data_sink> make_sink(const model::ntp&) = 0;
+    virtual std::unique_ptr<data_sink> make_sink(const ::model::ntp&) = 0;
 };
 
 /**
@@ -64,7 +64,7 @@ public:
     virtual ss::future<> reset(kafka::offset) = 0;
 
     struct data {
-        chunked_vector<model::record_batch> batches;
+        chunked_vector<::model::record_batch> batches;
         ssx::semaphore_units units;
     };
 
@@ -76,8 +76,10 @@ public:
 
 class data_source_factory {
 public:
+    virtual ss::future<> start() = 0;
+    virtual ss::future<> stop() noexcept = 0;
     virtual ~data_source_factory() = default;
-    virtual std::unique_ptr<data_source> make_source(const model::ntp&) = 0;
+    virtual std::unique_ptr<data_source> make_source(const ::model::ntp&) = 0;
 };
 
 } // namespace cluster_link::replication

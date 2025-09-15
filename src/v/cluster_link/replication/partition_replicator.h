@@ -55,22 +55,22 @@ namespace cluster_link::replication {
 class partition_replicator {
 public:
     explicit partition_replicator(
-      const model::ntp& ntp,
-      model::term_id,
+      const ::model::ntp& ntp,
+      ::model::term_id,
       std::unique_ptr<data_source> source,
       std::unique_ptr<data_sink> sink);
     ss::future<> start();
     ss::future<> stop();
 
-    model::term_id term() const { return _term; }
+    ::model::term_id term() const { return _term; }
 
-    void notify_sink_on_failure(model::term_id) const;
+    void notify_sink_on_failure(::model::term_id) const;
 
 private:
     struct replicate_ctx {
-        model::offset begin;
-        model::offset end;
-        chunked_vector<model::record_batch> batches;
+        ::model::offset begin;
+        ::model::offset end;
+        chunked_vector<::model::record_batch> batches;
         ssx::semaphore_units inflight_units;
         ssx::semaphore_units data_units;
     };
@@ -80,9 +80,9 @@ private:
     // Returns true if replication was successful, false if it failed
     ss::future<bool> handle_replication_result(
       ss::future<result<raft::replicate_result>>,
-      model::offset begin,
-      model::offset end) noexcept;
-    model::term_id _term;
+      ::model::offset begin,
+      ::model::offset end) noexcept;
+    ::model::term_id _term;
     prefix_logger _log;
     ss::gate _gate;
     ss::abort_source _as;

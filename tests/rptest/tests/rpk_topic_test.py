@@ -7,19 +7,19 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import random
+import time
+
+import ducktape.errors
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.cluster import cluster
-import ducktape.errors
-
 from rptest.services.producer_swarm import ProducerSwarm
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.rpk_consumer import RpkConsumer
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
-
-import time
-import random
 
 
 class RpkToolTest(RedpandaTest):

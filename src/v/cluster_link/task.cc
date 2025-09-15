@@ -143,7 +143,7 @@ ss::future<result<void>> task::start() {
     co_return outcome::success();
 }
 
-ss::future<result<void>> task::stop() {
+ss::future<result<void>> task::stop() noexcept {
     vlog(logger().trace, "stop called");
     auto res = change_state(
       model::task_state::stopped, ssx::sformat("{} has stopped", name()));

@@ -7,12 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.util import wait_until_result
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.clients.kcl import RawKCL
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, LoggingConfig
 from rptest.services.redpanda_installer import wait_for_num_versions
-from rptest.clients.kcl import RawKCL
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until_result
 
 
 class TopicIDUpgradeTest(RedpandaTest):

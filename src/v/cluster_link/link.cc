@@ -13,7 +13,6 @@
 
 #include "cluster_link/logger.h"
 #include "cluster_link/manager.h"
-#include "model/namespace.h"
 #include "ssx/future-util.h"
 
 #include <seastar/coroutine/as_future.hh>
@@ -57,12 +56,19 @@ link::link(
   manager* manager,
   ss::lowres_clock::duration task_reconciler_interval,
   model::metadata config,
-  std::unique_ptr<kafka::client::cluster> cluster_connection)
+  std::unique_ptr<kafka::client::cluster> cluster_connection,
+  std::unique_ptr<replication::data_source_factory> data_source_factory,
+  std::unique_ptr<replication::data_sink_factory> data_sink_factory)
   : _self(self)
   , _link_id(link_id)
   , _manager(manager)
   , _config(std::move(config))
   , _cluster_connection(std::move(cluster_connection))
+  , _replication_mgr(
+      // todo: fix me
+      ss::default_scheduling_group(),
+      std::move(data_source_factory),
+      std::move(data_sink_factory))
   , _task_reconciler_interval(task_reconciler_interval) {}
 
 ss::future<> link::start() {
@@ -70,6 +76,7 @@ ss::future<> link::start() {
       cllog.info, "Starting cluster link {} ({})", _config.name, _config.uuid);
     // Allow exception to propagate to the caller
     co_await _cluster_connection->start();
+    co_await _replication_mgr.start();
     co_await run_task_reconciler();
     _task_reconciler.set_callback([this] {
         ssx::spawn_with_gate(_gate, [this] { return run_task_reconciler(); });
@@ -77,11 +84,12 @@ ss::future<> link::start() {
     _task_reconciler.arm_periodic(_task_reconciler_interval);
 }
 
-ss::future<> link::stop() {
+ss::future<> link::stop() noexcept {
     vlog(
       cllog.info, "Stopping cluster link {} ({})", _config.name, _config.uuid);
     _task_reconciler.cancel();
     _as.request_abort();
+    co_await _replication_mgr.stop();
     co_await _gate.close();
 
     for (auto& [_, t] : _tasks) {
@@ -90,7 +98,14 @@ ss::future<> link::stop() {
           "Stopping task {} for cluster link {}",
           t->name(),
           _config.name);
-        auto res = co_await stop_task(t.get());
+        auto res_f = co_await ss::coroutine::as_future(stop_task(t.get()));
+        if (res_f.failed()) {
+            auto exception = res_f.get_exception();
+            vlog(
+              cllog.warn, "Failed to stop task {}: {}", t->name(), exception);
+            continue;
+        }
+        auto res = res_f.get();
         if (!res) {
             if (res.assume_error().code() == errc::task_not_running) {
                 // that's ok, keep going
@@ -148,15 +163,34 @@ void link::update_config(model::metadata config) {
     }
 }
 
-ss::future<>
-link::handle_on_leadership_change(::model::ntp ntp, ntp_leader is_ntp_leader) {
+ss::future<> link::handle_on_leadership_change(
+  ::model::ntp ntp,
+  ntp_leader is_ntp_leader,
+  std::optional<::model::term_id> term) {
     vlog(
       cllog.trace,
-      "Cluster link {} handling leadership change for {}: {}",
+      "Cluster link {} handling leadership change for {}: {}, term: {}",
       _config.name,
       ntp,
-      is_ntp_leader);
+      is_ntp_leader,
+      term);
 
+    const auto& mirror_topics = _config.state.mirror_topics;
+    if (mirror_topics.contains(ntp.tp.topic)) {
+        vlog(
+          cllog.debug,
+          "[{}] Leadership change event for partition {}, is_leader: {}",
+          _link_id,
+          ntp,
+          is_ntp_leader);
+        if (is_ntp_leader) {
+            vassert(
+              term, "Term must be set when leadership is assumed: {}", ntp);
+            _replication_mgr.start_replicator(ntp, *term);
+        } else {
+            _replication_mgr.stop_replicator(ntp, term);
+        }
+    }
     // todo: add debouncing here so that we do not trigger multiple
     // reconciliation loops at once.
     co_await run_task_reconciler();
@@ -231,6 +265,14 @@ topic_creator& link::topic_creator() noexcept {
 
 kafka::client::cluster& link::get_cluster_connection() noexcept {
     return *_cluster_connection;
+}
+
+consumer_groups_router& link::get_group_router() {
+    return _manager->get_group_router();
+}
+
+partition_metadata_provider& link::get_partition_metadata_provider() {
+    return _manager->get_partition_metadata_provider();
 }
 
 std::optional<chunked_hash_map<::model::topic, model::mirror_topic_metadata>>

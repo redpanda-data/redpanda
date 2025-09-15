@@ -85,6 +85,7 @@ redpanda_cc_library(
         ":logger",
         "//src/v/base",
         "//src/v/config",
+        "//src/v/net:tls",
         "//src/v/security",
         "@fmt",
         "@seastar",

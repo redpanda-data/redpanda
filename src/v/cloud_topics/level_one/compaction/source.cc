@@ -18,11 +18,11 @@ namespace cloud_topics::l1 {
 
 ss::future<> compaction_source::initialize() { co_return; }
 
-ss::future<ss::stop_iteration> compaction_source::backward_pass_iteration() {
+ss::future<ss::stop_iteration> compaction_source::map_building_iteration() {
     co_return ss::stop_iteration::yes;
 }
 
-ss::future<ss::stop_iteration> compaction_source::forward_pass_iteration(
+ss::future<ss::stop_iteration> compaction_source::deduplication_iteration(
   compaction::sliding_window_reducer::sink&) {
     co_return ss::stop_iteration::yes;
 }

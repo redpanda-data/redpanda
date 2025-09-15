@@ -8,23 +8,23 @@
 # by the Apache License, Version 2.0
 
 import dataclasses
+import random
 import sys
 from time import sleep
-import random
 from typing import Any, Callable
 
 from ducktape.mark import matrix
 
-from rptest.util import wait_until
-from rptest.clients.types import TopicSpec
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.admin import Admin
-from rptest.services.failure_injector import FailureInjector
-from rptest.services.cluster import cluster
-from rptest.services.chaos.types import NoProgressError
-from rptest.utils.mode_checks import skip_debug_mode
-import rptest.services.chaos.workloads.all as workloads
 import rptest.services.chaos.faults.all as faults
+import rptest.services.chaos.workloads.all as workloads
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.chaos.types import NoProgressError
+from rptest.services.cluster import cluster
+from rptest.services.failure_injector import FailureInjector
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 @dataclasses.dataclass

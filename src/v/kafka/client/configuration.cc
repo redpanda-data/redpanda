@@ -297,17 +297,17 @@ client_configuration::from_config_store(const configuration& cfg) {
     };
 }
 namespace {
-key_store create_key_store(const config::key_cert_container& container) {
+net::key_store create_key_store(const config::key_cert_container& container) {
     return ss::visit(
       container,
       [](const config::key_cert& kc) {
-          return key_store{key_cert_path{
+          return net::key_store{net::key_cert_path{
             .key = std::filesystem::path(kc.key_file),
             .cert = std::filesystem::path(kc.cert_file),
           }};
       },
       [](const config::p12_container& pkcs) {
-          return key_store{pkcs12{
+          return net::key_store{net::pkcs12{
             .cert = std::filesystem::path(pkcs.p12_path),
             .password = pkcs.p12_password,
           }};
@@ -337,62 +337,17 @@ tls_configuration::from_tls_config(const config::tls_config& cfg) {
 
 ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
 tls_configuration::build_credentials() const {
-    ss::tls::credentials_builder builder;
-    builder.enable_server_precedence();
-    builder.set_cipher_string(
-      {config::tlsv1_2_cipher_string.data(),
-       config::tlsv1_2_cipher_string.size()});
-    builder.set_ciphersuites(
-      {config::tlsv1_3_ciphersuites.data(),
-       config::tlsv1_3_ciphersuites.size()});
-    builder.set_minimum_tls_version(
-      from_config(config::shard_local_cfg().tls_min_version()));
-    builder.set_dh_level(ss::tls::dh_params::level::MEDIUM);
+    auto builder = co_await net::get_credentials_builder({
+      .truststore = truststore,
+      .k_store = k_store,
+      .crl = std::nullopt,
+      .min_tls_version = from_config(
+        config::shard_local_cfg().tls_min_version()),
+      .enable_renegotiation
+      = config::shard_local_cfg().tls_enable_renegotiation(),
+      .require_client_auth = false,
+    });
 
-    if (config::shard_local_cfg().tls_enable_renegotiation()) {
-        builder.enable_tls_renegotiation();
-    }
-    if (truststore) {
-        co_await ss::visit(
-          *truststore,
-          [&builder](const std::filesystem::path& path) {
-              return builder.set_x509_trust_file(
-                path.string(), ss::tls::x509_crt_format::PEM);
-          },
-          [&builder](const ss::sstring& truststore_str) {
-              builder.set_x509_trust(
-                truststore_str, ss::tls::x509_crt_format::PEM);
-              return ss::now();
-          });
-    }
-    if (k_store) {
-        co_await ss::visit(
-          *k_store,
-          [&builder](const key_cert_path& kc) {
-              return builder.set_x509_key_file(
-                kc.cert.string(),
-                kc.key.string(),
-                ss::tls::x509_crt_format::PEM);
-          },
-          [&builder](const key_cert& kc) {
-              builder.set_x509_key(
-                kc.cert, kc.key, ss::tls::x509_crt_format::PEM);
-              return ss::now();
-          },
-          [&builder](const pkcs12& pkcs) {
-              return ss::visit(
-                pkcs.cert,
-                [&builder, &pkcs](const std::filesystem::path& p) {
-                    return builder.set_simple_pkcs12_file(
-                      p.string(), ss::tls::x509_crt_format::PEM, pkcs.password);
-                },
-                [&pkcs, &builder](const ss::sstring& p12_str) {
-                    builder.set_simple_pkcs12(
-                      p12_str, ss::tls::x509_crt_format::PEM, pkcs.password);
-                    return ss::now();
-                });
-          });
-    }
     co_return co_await builder.build_reloadable_certificate_credentials(
       [](
         const std::unordered_set<ss::sstring>& updated,

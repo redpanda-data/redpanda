@@ -12,7 +12,12 @@
 #include "iceberg/catalog.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/partition.h"
+#include "iceberg/schema.h"
 #include "iceberg/table_identifier.h"
+
+namespace features {
+class feature_table;
+}
 
 namespace datalake {
 
@@ -31,7 +36,7 @@ public:
 
     virtual ss::future<checked<std::nullopt_t, errc>> ensure_table_schema(
       const iceberg::table_identifier&,
-      const iceberg::struct_type& writer_struct_type,
+      const iceberg::struct_type& desired_type,
       const iceberg::unresolved_partition_spec&)
       = 0;
 
@@ -47,8 +52,11 @@ public:
         bool fill_registered_ids(iceberg::struct_type&);
     };
 
-    virtual ss::future<checked<table_info, errc>>
-    get_table_info(const iceberg::table_identifier&) = 0;
+    virtual ss::future<checked<table_info, errc>> get_table_info(
+      const iceberg::table_identifier&,
+      std::optional<std::reference_wrapper<iceberg::struct_type>> desired_type
+      = std::nullopt)
+      = 0;
 
     virtual ss::future<> stop() = 0;
     virtual ~schema_manager() = default;
@@ -64,11 +72,13 @@ public:
     ss::future<checked<std::nullopt_t, schema_manager::errc>>
     ensure_table_schema(
       const iceberg::table_identifier&,
-      const iceberg::struct_type& writer_struct_type,
+      const iceberg::struct_type& desired_type,
       const iceberg::unresolved_partition_spec&) override;
 
-    ss::future<checked<table_info, schema_manager::errc>>
-    get_table_info(const iceberg::table_identifier&) override;
+    ss::future<checked<table_info, schema_manager::errc>> get_table_info(
+      const iceberg::table_identifier&,
+      std::optional<std::reference_wrapper<iceberg::struct_type>> desired_type
+      = std::nullopt) override;
     ss::future<> stop() final { return ss::now(); }
 
 private:
@@ -81,8 +91,10 @@ private:
 // evolution.
 class catalog_schema_manager : public schema_manager {
 public:
-    explicit catalog_schema_manager(iceberg::catalog& catalog)
-      : catalog_(catalog) {}
+    explicit catalog_schema_manager(
+      iceberg::catalog& catalog, features::feature_table* features)
+      : catalog_(catalog)
+      , features_(features) {}
 
     // Ensure the table schema is compatible with the writer struct. If the
     // table does not exist it is created, or, if the table exists and its
@@ -96,26 +108,20 @@ public:
       const iceberg::unresolved_partition_spec&) override;
 
     // Loads the table metadata for the given topic.
-    ss::future<checked<table_info, schema_manager::errc>>
-    get_table_info(const iceberg::table_identifier&) override;
+    ss::future<checked<table_info, schema_manager::errc>> get_table_info(
+      const iceberg::table_identifier&,
+      std::optional<std::reference_wrapper<iceberg::struct_type>>
+        writer_struct_type
+      = std::nullopt) override;
 
     // Stops the schema manager, waiting for any ongoing operations to
     // complete.
     ss::future<> stop() override;
 
 private:
-    // Attempts to fill the field ids in the given type with those from the
-    // current schema of the given table metadata.
-    //
-    // Returns true if successful, false if the fill is incomplete because the
-    // table schema does not have all the necessary fields. The latter is a
-    // signal that the caller needs to add the schema to the table.
-    checked<bool, errc> apply_evolution_rules(
-      const iceberg::table_identifier&,
-      const iceberg::table_metadata&,
-      iceberg::struct_type&);
     checked<ss::gate::holder, errc> maybe_gate();
     iceberg::catalog& catalog_;
+    features::feature_table* features_;
     ss::gate gate_;
 };
 
