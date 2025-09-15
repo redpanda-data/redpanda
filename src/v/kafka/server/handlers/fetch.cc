@@ -556,12 +556,16 @@ static void fill_fetch_responses(
           0, std::min({results.size(), responses.size()}));
     }
 
-    // Used to aggregate semaphore_units from results.
-    std::optional<fetch_memory_units> total_memory_units;
+    // Used to aggregate semaphore units together by the shard they originate
+    // from. All units aggregated will be released when this function exits.
+    // Aggregating them ensures there is at most one cross shard call to each
+    // shard.
+    memory_units_by_shard mem_units_to_delete;
 
     for (auto idx : range) {
         auto& res = results[idx];
         const auto& resp_it = responses[idx];
+        const auto& ktp = resp_it->ktp();
 
         fetch_response::partition_response resp;
         resp.partition_index = res.partition;
@@ -589,10 +593,7 @@ static void fill_fetch_responses(
          * Cache fetch metadata
          */
         octx.rctx.get_fetch_metadata_cache().insert_or_assign(
-          {resp_it->topic(), resp_it->partition_id()},
-          res.start_offset,
-          res.high_watermark,
-          res.last_stable_offset);
+          ktp, res.start_offset, res.high_watermark, res.last_stable_offset);
         /**
          * Over response budget, we will just waste this read, it will cause
          * data to be stored in the cache so next read is fast
@@ -601,27 +602,33 @@ static void fill_fetch_responses(
             resp.preferred_read_replica = *res.preferred_replica;
         }
 
-        // Aggregate memory_units from all results together to avoid
-        // making more than one cross-shard function call to free them.
-        //
-        // Only aggregate non-empty memory_units.
-        if (res.memory_units.has_units()) {
-            if (unlikely(!total_memory_units)) {
-                // Move the first set of semaphore_units to get a copy of the
-                // semaphore pointer and the shard results originates from.
-                total_memory_units = std::move(res.memory_units);
-            } else {
-                total_memory_units->adopt(std::move(res.memory_units));
-            }
+        if (record_latency) {
+            std::chrono::microseconds fetch_latency
+              = std::chrono::duration_cast<std::chrono::microseconds>(
+                op_context::latency_clock::now() - start_time);
+            octx.rctx.probe().record_fetch_latency(fetch_latency);
         }
+
+        if (!res.has_data()) {
+            // It's possible that data for this partition has already been
+            // written to the response, but is no longer in the partition due to
+            // truncation or otherwise. Hence we move any existing response
+            // units out of the op_context and into the deleter here.
+            mem_units_to_delete.add_units(
+              octx.response_memory_units.remove_units(ktp));
+            resp.records = batch_reader();
+            resp_it->set(std::move(resp));
+            continue;
+        }
+
+        auto current_response_size = resp_it->response_size();
+        auto bytes_left = octx.bytes_left - current_response_size;
 
         /**
          * According to KIP-74 we have to return first batch even if it would
          * violate max_bytes fetch parameter
          */
-        if (
-          res.has_data()
-          && (octx.bytes_left >= res.data_size_bytes() || octx.response_size == 0)) {
+        if (bytes_left >= res.data_size_bytes() || octx.response_size == 0) {
             /**
              * set aborted transactions if present
              */
@@ -639,19 +646,29 @@ static void fill_fetch_responses(
                   });
                 resp.aborted_transactions = std::move(aborted);
             }
+
+            // Move the units for the previously written response into the
+            // deleter and the new units into the op_context.
+            mem_units_to_delete.add_units(octx.response_memory_units.add_units(
+              ktp, std::move(res.memory_units)));
+
             resp.records = batch_reader(std::move(res).release_data());
+            resp_it->set(std::move(resp));
         } else {
+            // The newly read partition data is free'd when the function
+            // exits. Hence the memory units should be free'd as well.
+            mem_units_to_delete.add_units(std::move(res.memory_units));
+
             // TODO: add probe to measure how much of read data is discarded
-            resp.records = batch_reader();
-        }
 
-        resp_it->set(std::move(resp));
-
-        if (record_latency) {
-            std::chrono::microseconds fetch_latency
-              = std::chrono::duration_cast<std::chrono::microseconds>(
-                op_context::latency_clock::now() - start_time);
-            octx.rctx.probe().record_fetch_latency(fetch_latency);
+            // If there was a previously written response that fits within the
+            // bytes_left limit then try to preserve it. However, it there
+            // wasn't then at least write the metadata for the partition into
+            // the response.
+            if (current_response_size == 0) {
+                resp.records = batch_reader();
+                resp_it->set(std::move(resp));
+            }
         }
     }
 }
