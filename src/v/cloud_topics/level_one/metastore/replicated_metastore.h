@@ -59,6 +59,13 @@ public:
     get_compaction_offsets(
       const model::topic_id_partition&, model::timestamp) override;
 
+    ss::future<std::expected<compaction_info_response, errc>>
+    get_compaction_info(const to_sample_info&) override;
+
+    // Vectorized RPC for obtaining compaction state for a number of partitions
+    ss::future<chunked_vector<std::expected<compaction_info_response, errc>>>
+    get_compaction_infos(const chunked_vector<to_sample_info>&) override;
+
 private:
     frontend& fe_;
 };

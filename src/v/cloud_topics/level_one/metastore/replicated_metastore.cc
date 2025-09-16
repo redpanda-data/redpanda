@@ -559,4 +559,23 @@ replicated_metastore::get_compaction_offsets(
     co_return resp;
 }
 
+ss::future<std::expected<metastore::compaction_info_response, metastore::errc>>
+replicated_metastore::get_compaction_info(
+  [[maybe_unused]] const to_sample_info& log) {
+    co_return compaction_info_response{};
+}
+
+// Vectorized RPC for obtaining compaction state for a number of partitions
+ss::future<chunked_vector<
+  std::expected<metastore::compaction_info_response, metastore::errc>>>
+replicated_metastore::get_compaction_infos(
+  [[maybe_unused]] const chunked_vector<to_sample_info>& to_sample) {
+    chunked_vector<std::expected<compaction_info_response, errc>> ret;
+    ret.reserve(to_sample.size());
+    for (const auto& log : to_sample) {
+        ret.push_back(co_await get_compaction_info(log));
+    }
+    co_return ret;
+}
+
 } // namespace cloud_topics::l1

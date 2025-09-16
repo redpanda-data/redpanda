@@ -110,6 +110,8 @@ redpanda_cc_library(
         ":state",
         "//src/v/base",
         "//src/v/cloud_topics/level_one/common:object_id",
+        "//src/v/container:chunked_vector",
+        "//src/v/model",
         "@seastar",
     ],
 )
@@ -191,6 +193,7 @@ redpanda_cc_library(
     hdrs = [
         "offset_interval_set.h",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/container:chunked_vector",
         "//src/v/container:interval_set",

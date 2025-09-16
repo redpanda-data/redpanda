@@ -12,6 +12,7 @@
 #include "base/seastarx.h"
 #include "cloud_topics/level_one/metastore/metastore.h"
 #include "cloud_topics/level_one/metastore/state.h"
+#include "model/timestamp.h"
 
 #include <seastar/core/future.hh>
 
@@ -90,6 +91,12 @@ public:
     get_compaction_offsets(
       const model::topic_id_partition&, model::timestamp) override;
 
+    ss::future<std::expected<compaction_info_response, errc>>
+    get_compaction_info(const to_sample_info&) override;
+
+    ss::future<chunked_vector<std::expected<compaction_info_response, errc>>>
+    get_compaction_infos(const chunked_vector<to_sample_info>&) override;
+
 private:
     friend class domain_manager;
     static std::expected<offsets_response, errc>
@@ -101,6 +108,10 @@ private:
     static std::expected<compaction_offsets_response, errc>
     get_compaction_offsets(
       const state&, const model::topic_id_partition&, model::timestamp);
+    static std::expected<double, errc>
+    get_dirty_ratio(const state&, const model::topic_id_partition&);
+    static std::expected<std::optional<model::timestamp>, errc>
+    get_earliest_dirty_ts(const state&, const model::topic_id_partition&);
     static std::expected<kafka::offset, errc> get_end_offset_for_term(
       const state&, const model::topic_id_partition&, model::term_id);
     static std::expected<model::term_id, errc> get_term_for_offset(

@@ -229,7 +229,7 @@ public:
         // been removed.
         offset_interval_set removed_tombstones_ranges;
 
-        // Timsetamp at which the compaction operation happened.
+        // Timestamp at which the compaction operation happened.
         model::timestamp cleaned_at;
     };
     using compaction_map_t
@@ -294,6 +294,29 @@ public:
       const model::topic_id_partition&,
       model::timestamp tombstone_removal_upper_bound_ts)
       = 0;
+
+    struct to_sample_info {
+        model::topic_id_partition tid_p;
+        model::timestamp tombstone_removal_upper_bound_ts;
+    };
+
+    struct compaction_info_response {
+        // The dirty ratio of the log
+        double dirty_ratio;
+        // The earliest dirty timestamp in the log. `std::nullopt` if there is
+        // no such timestamp.
+        std::optional<model::timestamp> earliest_dirty_ts;
+        // Compaction offsets
+        compaction_offsets_response offsets_response;
+    };
+
+    virtual ss::future<std::expected<compaction_info_response, errc>>
+    get_compaction_info(const to_sample_info&) = 0;
+
+    // Vectorized RPC for obtaining compaction state for a number of partitions
+    virtual ss::future<
+      chunked_vector<std::expected<compaction_info_response, errc>>>
+    get_compaction_infos(const chunked_vector<to_sample_info>&) = 0;
 };
 
 } // namespace cloud_topics::l1

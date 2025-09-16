@@ -13,6 +13,8 @@
 #include "cloud_topics/level_one/metastore/state.h"
 #include "cloud_topics/level_one/metastore/state_update.h"
 #include "cloud_topics/logger.h"
+#include "container/chunked_vector.h"
+#include "model/fundamental.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -479,6 +481,110 @@ simple_metastore::get_compaction_offsets(
         }
     }
     return resp;
+}
+
+std::expected<double, metastore::errc> simple_metastore::get_dirty_ratio(
+  const state& state, const model::topic_id_partition& tp) {
+    auto prt_ref = state.partition_state(tp);
+
+    if (!prt_ref.has_value()) {
+        return std::unexpected(errc::missing_ntp);
+    }
+
+    const auto& prt = prt_ref->get();
+
+    const auto& compaction_state = prt.compaction_state;
+
+    if (!compaction_state.has_value()) {
+        return 1.0;
+    }
+
+    // Compute
+    size_t total_size{0};
+    size_t dirty_size{0};
+    const auto& cleaned_ranges = compaction_state->cleaned_ranges;
+    for (const auto& extent : prt.extents) {
+        total_size += extent.len;
+        auto b = extent.base_offset;
+        auto e = extent.last_offset;
+        if (!cleaned_ranges.covers(b, e)) {
+            dirty_size += extent.len;
+        }
+    }
+
+    return total_size == 0 ? 0.0
+                           : static_cast<double>(dirty_size)
+                               / static_cast<double>(total_size);
+}
+
+std::expected<std::optional<model::timestamp>, metastore::errc>
+simple_metastore::get_earliest_dirty_ts(
+  const state& state, const model::topic_id_partition& tp) {
+    auto prt_ref = state.partition_state(tp);
+
+    if (!prt_ref.has_value()) {
+        return std::unexpected(errc::missing_ntp);
+    }
+
+    const auto& prt = prt_ref->get();
+
+    const auto& compaction_state = prt.compaction_state;
+
+    // Start search for first dirty offset from the start offset of the log
+    // (which may not be 0 for a `compact,delete` topic). If compaction hasn't
+    // yet been run for this partition, this is correct.
+    kafka::offset first_dirty_offset{prt.start_offset};
+    if (compaction_state.has_value()) {
+        const auto& clean_ranges = compaction_state->cleaned_ranges;
+        auto clean_ranges_strm = clean_ranges.make_stream();
+        while (clean_ranges_strm.has_next()) {
+            auto clean_interval = clean_ranges_strm.next();
+            if (first_dirty_offset < clean_interval.base_offset) {
+                break;
+            }
+
+            first_dirty_offset = kafka::next_offset(clean_interval.last_offset);
+        }
+    }
+
+    auto it = std::ranges::lower_bound(
+      prt.extents, first_dirty_offset, std::less<>{}, &extent::last_offset);
+    if (it != prt.extents.end()) {
+        return it->max_timestamp;
+    }
+
+    return std::nullopt;
+}
+
+ss::future<std::expected<metastore::compaction_info_response, metastore::errc>>
+simple_metastore::get_compaction_info(const to_sample_info& log) {
+    auto dirty_ratio = get_dirty_ratio(state_, log.tid_p);
+    auto earliest_dirty_ts = get_earliest_dirty_ts(state_, log.tid_p);
+    auto offsets = get_compaction_offsets(
+      state_, log.tid_p, log.tombstone_removal_upper_bound_ts);
+    if (
+      !dirty_ratio.has_value() || !earliest_dirty_ts.has_value()
+      || !offsets.has_value()) {
+        co_return std::unexpected(
+          offsets.error_or(earliest_dirty_ts.error_or(dirty_ratio.error())));
+    } else {
+        co_return compaction_info_response{
+          .dirty_ratio = dirty_ratio.value(),
+          .earliest_dirty_ts = earliest_dirty_ts.value(),
+          .offsets_response = std::move(offsets).value()};
+    }
+}
+
+ss::future<chunked_vector<
+  std::expected<metastore::compaction_info_response, metastore::errc>>>
+simple_metastore::get_compaction_infos(
+  const chunked_vector<to_sample_info>& to_sample) {
+    chunked_vector<std::expected<compaction_info_response, errc>> ret;
+    ret.reserve(to_sample.size());
+    for (const auto& log : to_sample) {
+        ret.push_back(co_await get_compaction_info(log));
+    }
+    co_return ret;
 }
 
 } // namespace cloud_topics::l1

@@ -22,6 +22,7 @@ const object_id oid1 = l1::create_object_id();
 const object_id oid2 = l1::create_object_id();
 const object_id oid3 = l1::create_object_id();
 const object_id oid4 = l1::create_object_id();
+const object_id oid5 = l1::create_object_id();
 
 const std::string_view tid_a = "deadbeef-aaaa-0000-0000-000000000000/0";
 const std::string_view tid_b = "deadbeef-bbbb-0000-0000-000000000000/0";
@@ -1454,4 +1455,70 @@ TEST(SimpleMetastoreTest, TestSetStartWithCompactionState) {
     EXPECT_THAT(
       cmp_after->removable_tombstone_ranges.to_vec(),
       testing::ElementsAre(MatchesRange(10_o, 15_o)));
+}
+
+TEST(SimpleMetastoreTest, TestDirtyRatio) {
+    simple_metastore m;
+    om_list_t os;
+    auto tp = model::topic_id_partition::from(tid_a);
+    os.emplace_back(
+      om_builder(oid1, 100, 10).add(tid_a, 0_o, 9_o, 1000_t, 0, 99).build());
+    os.emplace_back(
+      om_builder(oid2, 100, 10).add(tid_a, 10_o, 19_o, 2000_t, 0, 99).build());
+    auto add_res
+      = m.add_objects(os, terms_builder().add(tid_a, 0_tm, 0_o).build()).get();
+    ASSERT_TRUE(add_res.has_value());
+
+    // Clean range is [0, 5]. Both extents still have dirty offsets.
+    {
+        om_list_t new_os;
+        new_os.emplace_back(om_builder(oid3, 100, 10)
+                              .add(tid_a, 0_o, 9_o, 1000_t, 0, 99)
+                              .build());
+
+        auto cmb = cm_builder();
+        cmb.clean(tid_a, 0_o, 5_o, 3000_t);
+        auto compact_res = m.compact_objects(new_os, cmb.build()).get();
+        ASSERT_TRUE(compact_res.has_value());
+    }
+
+    auto to_sample = metastore::to_sample_info{
+      .tid_p = tp, .tombstone_removal_upper_bound_ts = 3000_t};
+    auto compaction_info = m.get_compaction_info(to_sample).get();
+    ASSERT_TRUE(compaction_info.has_value());
+    ASSERT_FLOAT_EQ(compaction_info->dirty_ratio, 1.0);
+
+    // Clean range is now [0, 9]. Only one extent still has dirty offsets.
+    {
+        om_list_t new_os;
+        new_os.emplace_back(om_builder(oid4, 100, 10)
+                              .add(tid_a, 0_o, 9_o, 1000_t, 0, 99)
+                              .build());
+
+        auto cmb = cm_builder();
+        cmb.clean(tid_a, 6_o, 9_o, 3000_t);
+        auto compact_res = m.compact_objects(new_os, cmb.build()).get();
+        ASSERT_TRUE(compact_res.has_value());
+    }
+
+    compaction_info = m.get_compaction_info(to_sample).get();
+    ASSERT_TRUE(compaction_info.has_value());
+    ASSERT_FLOAT_EQ(compaction_info->dirty_ratio, 0.5);
+
+    // Clean range is now [0, 19], the entire log is clean.
+    {
+        om_list_t new_os;
+        new_os.emplace_back(om_builder(oid5, 100, 10)
+                              .add(tid_a, 0_o, 19_o, 1000_t, 0, 99)
+                              .build());
+
+        auto cmb = cm_builder();
+        cmb.clean(tid_a, 10_o, 19_o, 3000_t);
+        auto compact_res = m.compact_objects(new_os, cmb.build()).get();
+        ASSERT_TRUE(compact_res.has_value());
+    }
+
+    compaction_info = m.get_compaction_info(to_sample).get();
+    ASSERT_TRUE(compaction_info.has_value());
+    ASSERT_FLOAT_EQ(compaction_info->dirty_ratio, 0.0);
 }
