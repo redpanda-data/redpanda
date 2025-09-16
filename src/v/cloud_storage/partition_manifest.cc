@@ -897,6 +897,7 @@ size_t partition_manifest::safe_segment_meta_to_add(
             subst.last_offset = m.committed_offset;
             subst.last_segment = m;
             subst.num_accepted++;
+            vlog(cst_log.debug, "WOO: new last offset: {}", subst.last_offset);
         } else {
             // We have segments to check
             auto format_seg_meta_anomalies =
@@ -943,6 +944,8 @@ size_t partition_manifest::safe_segment_meta_to_add(
                 subst.last_offset = m.committed_offset;
                 subst.last_segment = m;
                 subst.num_accepted++;
+                vlog(
+                  cst_log.debug, "WOO: new last offset: {}", subst.last_offset);
                 continue;
             } else {
                 // Segment reupload case:
@@ -1019,6 +1022,40 @@ size_t partition_manifest::safe_segment_meta_to_add(
 
 bool partition_manifest::safe_segment_meta_to_add(const segment_meta& m) const {
     return safe_segment_meta_to_add(std::vector<segment_meta>{m}) == 1;
+}
+
+auto partition_manifest::truncate_suffix(kafka::offset last_kafka_offset)
+  -> std::optional<truncate_suffix_result> {
+    partition_manifest result{_ntp, _rev};
+    std::vector<segment_meta> segs;
+    std::optional<segment_meta> last;
+    for (const segment_meta& s : _segments) {
+        vlog(cst_log.debug, "SEG: {}", s);
+        if (auto last_k = s.last_kafka_offset(); last_k <= last_kafka_offset) {
+            vlog(cst_log.debug, "SEG ACCEPTED");
+            segs.push_back(s);
+            if (last_k == last_kafka_offset) {
+                // on the off chance - don't need to check the next segment in
+                // this case.
+                break;
+            }
+        } else {
+            last.emplace(s);
+            break;
+        }
+    }
+    auto expected = segs.size();
+    auto n = result.safe_segment_meta_to_add(segs);
+    if (n != expected) {
+        vlog(cst_log.debug, "SEGS: expected {} - got {}", expected, n);
+        return std::nullopt;
+    }
+
+    for (const auto& m : segs) {
+        result.add(m);
+    }
+
+    return std::make_optional(std::make_pair(std::move(result), last));
 }
 
 partition_manifest

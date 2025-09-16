@@ -366,6 +366,12 @@ public:
     partition_manifest truncate(model::offset starting_rp_offset);
     partition_manifest truncate();
 
+    using truncate_suffix_result
+      = std::pair<partition_manifest, std::optional<segment_meta>>;
+
+    std::optional<truncate_suffix_result>
+    truncate_suffix(kafka::offset last_kafka_offset);
+
     /// Clone the entire manifest
     partition_manifest clone() const;
 
