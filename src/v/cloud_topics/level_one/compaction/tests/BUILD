@@ -44,3 +44,21 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "compaction_e2e_test",
+    timeout = "short",
+    srcs = [
+        "compaction_e2e_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/cloud_io/tests:s3_imposter",
+        "//src/v/cloud_topics/level_zero/stm:ctp_stm",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/redpanda/tests:fixture",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
