@@ -14,6 +14,7 @@
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/data_plane_impl.h"
 #include "cloud_topics/housekeeper/manager.h"
+#include "cloud_topics/level_one/compaction/scheduler.h"
 #include "cloud_topics/level_one/metastore/topic_purger.h"
 #include "cloud_topics/level_zero/gc/level_zero_gc.h"
 #include "cloud_topics/manager/manager.h"
@@ -111,6 +112,14 @@ ss::future<> app::construct(
                                    return &replicated_metastore.local();
                                }));
 
+    auto compaction_cluster_state = l1::compaction_cluster_state{
+      .self = self,
+      .leaders_table = leaders_table,
+      .topic_table = &controller->get_topics_state(),
+      .metadata_cache = metadata_cache};
+    compaction_scheduler = l1::make_default_compaction_scheduler(
+      std::move(compaction_cluster_state), &l1_io, &replicated_metastore);
+
     // Must be last to register so it will be first to be stopped in
     // `app::stop`. This is to ensure that stopped services don't receive
     // callbacks.
@@ -127,6 +136,7 @@ ss::future<> app::start() {
     co_await domain_supervisor.invoke_on_all(
       [](auto& ds) { return ds.start(); });
     co_await housekeeper_manager.invoke_on_all(&housekeeper_manager::start);
+    co_await compaction_scheduler->start();
 
     // When start is called, we must have registered all the callbacks before
     // this as starting the manager will invoke callbacks for partitions already
@@ -205,6 +215,7 @@ ss::future<> app::wire_up_notifications() {
 
 ss::future<> app::stop() {
     ssx::sharded_service_container::shutdown();
+    co_await compaction_scheduler->stop();
     co_await data_plane->stop();
 }
 
@@ -224,6 +235,10 @@ ss::sharded<state_accessors>* app::get_state() { return &state; }
 
 ss::sharded<l1::replicated_metastore>* app::get_sharded_replicated_metastore() {
     return &replicated_metastore;
+}
+
+l1::compaction_scheduler* app::get_compaction_scheduler() {
+    return compaction_scheduler.get();
 }
 
 } // namespace cloud_topics
