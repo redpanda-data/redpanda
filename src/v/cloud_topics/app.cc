@@ -49,8 +49,6 @@ ss::future<> app::construct(
       storage,
       &controller->get_cluster_epoch_generator());
 
-    co_await construct_service(state, data_plane.get());
-
     // Touch the L1 staging directory before L1 i/o starts.
     co_await ss::recursive_touch_directory(
       config::node().l1_staging_path().string());
@@ -80,6 +78,14 @@ ss::future<> app::construct(
       shard_table,
       connection_cache,
       &domain_supervisor);
+
+    co_await construct_service(
+      state,
+      data_plane.get(),
+      ss::sharded_parameter([this] { return &l1_metastore_fe.local(); }),
+      ss::sharded_parameter([this] { return &l1_io.local(); }),
+      ss::sharded_parameter(
+        [&metadata_cache] { return &metadata_cache->local(); }));
 
     co_await construct_service(
       manager,

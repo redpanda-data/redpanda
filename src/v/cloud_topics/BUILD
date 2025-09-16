@@ -174,6 +174,7 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/cloud_topics/level_one/common:file_io",
     ],
 )
 
