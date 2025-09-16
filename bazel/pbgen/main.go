@@ -636,7 +636,7 @@ func (g *headerGenerator) generateMessage(msg protoreflect.MessageDescriptor, w 
 	w.Println("// Convert a field path into a path of field numbers.")
 	w.Println("std::optional<std::vector<int32_t>> convert_field_path_to_numbers(std::span<std::string_view> field_path) const override;")
 	w.Println("// Look up a field based on the field numbers.")
-	w.Println("std::optional<serde::pb::field> lookup_field(std::span<int32_t> field_numbers) override;")
+	w.Println("std::optional<serde::pb::field> lookup_field(std::span<const int32_t> field_numbers) override;")
 	w.Println()
 	w.Println("// NOTE: This is intended to be used by field_mask only. Do not use directly.")
 	w.Println("static bool is_valid_field_path(std::span<const ss::sstring> path);")
@@ -804,7 +804,7 @@ func (g *implGenerator) generateMessagePathToNumbersHelper(msg protoreflect.Mess
 }
 
 func (g *implGenerator) generateMessageTraversalHelper(msg protoreflect.MessageDescriptor, w *codewriter) {
-	w.Printf("std::optional<serde::pb::field> %s::lookup_field(std::span<int32_t> field_numbers) {\n", g.cppTypeName(msg))
+	w.Printf("std::optional<serde::pb::field> %s::lookup_field(std::span<const int32_t> field_numbers) {\n", g.cppTypeName(msg))
 	defer w.Println("}")
 	w.Indent()
 	defer w.Dedent()

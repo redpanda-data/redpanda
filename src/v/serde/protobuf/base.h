@@ -156,7 +156,7 @@ public:
     // The same as `lookup_field_by_path`, except using field numbers instead of
     // a field path.
     virtual std::optional<field>
-    lookup_field(std::span<int32_t> field_numbers) = 0;
+    lookup_field(std::span<const int32_t> field_numbers) = 0;
 };
 
 } // namespace serde::pb
