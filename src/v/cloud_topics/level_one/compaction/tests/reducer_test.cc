@@ -11,7 +11,7 @@
 #include "bytes/iostream.h"
 #include "cloud_topics/level_one/common/object.h"
 #include "cloud_topics/level_one/common/object_utils.h"
-#include "cloud_topics/level_one/compaction/sink.h"
+#include "cloud_topics/level_one/compaction/tests/in_memory_sink.h"
 #include "compaction/reducer.h"
 #include "compaction/tests/simple_reducer.h"
 #include "container/chunked_circular_buffer.h"
@@ -38,10 +38,8 @@ TEST(ReducerTest, Batches) {
 
     auto src = std::make_unique<compaction::simple_source>(
       std::move(input_batches), test_ntp);
-    auto sink = std::make_unique<l1::compaction_sink>(test_tidp);
-
-    chunked_vector<l1::compaction_sink::object_output_t> output_objs;
-    sink->set_object_sink(&output_objs);
+    chunked_vector<l1::in_memory_sink::object_output_t> output_objs;
+    auto sink = std::make_unique<l1::in_memory_sink>(test_tidp, &output_objs);
     auto reducer = compaction::sliding_window_reducer(
       std::move(src), std::move(sink));
 
