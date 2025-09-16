@@ -94,3 +94,22 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "committing_policy",
+    srcs = [
+        "committing_policy.cc",
+    ],
+    hdrs = [
+        "committing_policy.h",
+    ],
+    implementation_deps = [
+        "//src/v/ssx:future_util",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":meta",
+        "//src/v/ssx:semaphore",
+        "@seastar",
+    ],
+)
