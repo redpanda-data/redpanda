@@ -61,3 +61,22 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "meta",
+    hdrs = [
+        "meta.h",
+    ],
+    visibility = [
+        "//src/v/cloud_topics/level_one:__subpackages__",
+    ],
+    deps = [
+        "//src/v/cloud_topics/level_one/common:abstract_io",
+        "//src/v/cloud_topics/level_one/common:object",
+        "//src/v/cloud_topics/level_one/metastore",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:intrusive",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
