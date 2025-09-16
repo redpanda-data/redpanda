@@ -52,6 +52,7 @@ redpanda_cc_library(
     visibility = [
         "//src/v/cloud_topics/frontend:__pkg__",
         "//src/v/cloud_topics/frontend/tests:__pkg__",
+        "//src/v/cloud_topics/frontend_reader:__pkg__",
         "//src/v/cloud_topics/level_one/frontend_reader:__pkg__",
         "//src/v/cloud_topics/level_one/frontend_reader/tests:__pkg__",
         "//src/v/cloud_topics/level_zero/frontend_reader:__pkg__",

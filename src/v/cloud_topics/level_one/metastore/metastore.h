@@ -50,6 +50,8 @@ namespace cloud_topics::l1 {
 // side effects. As such, callers can think of this interface as thread safe.
 class metastore {
 public:
+    virtual ~metastore() = default;
+
     enum class errc {
         missing_ntp,
         invalid_request,
