@@ -77,6 +77,31 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "worker",
+    srcs = [
+        "worker.cc",
+    ],
+    hdrs = [
+        "worker.h",
+    ],
+    visibility = [
+        "//src/v/cloud_topics/level_one:__subpackages__",
+    ],
+    deps = [
+        ":committer",
+        ":logger",
+        ":meta",
+        ":sink",
+        ":source",
+        "//src/v/cloud_topics/level_one/common:abstract_io",
+        "//src/v/compaction:reducer",
+        "//src/v/model",
+        "//src/v/ssx:future_util",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "meta",
     hdrs = [
         "meta.h",

@@ -16,6 +16,14 @@
 
 namespace cloud_topics::l1 {
 
+compaction_source::compaction_source(
+  model::topic_id_partition tp,
+  ss::abort_source& as,
+  compaction_job_state& state)
+  : _tp(tp)
+  , _as(as)
+  , _state(state) {}
+
 ss::future<> compaction_source::initialize() { co_return; }
 
 ss::future<ss::stop_iteration> compaction_source::map_building_iteration() {
