@@ -66,7 +66,7 @@ Use the flag '--no-confirm' to avoid the confirmation prompt.
 			if jobID != "" {
 				status = filterStatusByJobID(status, jobID)
 			}
-			ready := filterReadyBrokers(status)
+			ready, _ := filterCompletedBrokers(status)
 			if len(ready) == 0 {
 				out.Die("There are no bundles ready for download; to check status run 'rpk debug remote-bundle status'")
 			}
@@ -192,14 +192,17 @@ func downloadBundle(ctx context.Context, fs afero.Fs, downloadPath string, statu
 	return anyErr, response, nil
 }
 
-func filterReadyBrokers(status []statusResponse) []statusResponse {
-	var filtered []statusResponse
+func filterCompletedBrokers(status []statusResponse) (readyBrokers, erroredBrokers []statusResponse) {
+	var ready []statusResponse
+	var errored []statusResponse
 	for _, s := range status {
 		if strings.EqualFold(s.Status, "success") {
-			filtered = append(filtered, s)
+			ready = append(ready, s)
+		} else if strings.EqualFold(s.Status, "error") {
+			errored = append(ready, s)
 		}
 	}
-	return filtered
+	return ready, errored
 }
 
 func fileLocation(fs afero.Fs, path string) (string, error) {
