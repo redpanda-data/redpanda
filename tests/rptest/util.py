@@ -391,6 +391,14 @@ def expect_exception(exception_klass, validator):
         raise RuntimeError("Expected an exception!")
 
 
+def expect_timeout():
+    """
+    expect_exception wrapper for the not uncommon case where the expected exception is
+    a ducktape.errors.TimeoutError and its contents are of no interest.
+    """
+    return expect_exception(TimeoutError, lambda _: True)
+
+
 def expect_http_error(status_code: int):
     """
     Context manager for HTTP calls expected to result in an HTTP exception

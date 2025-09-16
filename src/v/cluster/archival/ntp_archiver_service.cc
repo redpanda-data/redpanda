@@ -3290,8 +3290,19 @@ ntp_archiver::get_housekeeping_jobs() {
 }
 
 ss::future<ntp_archiver::find_reupload_candidate_result>
-ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
+ntp_archiver::find_reupload_candidate(
+  manifest_scanner_t scanner, ss::abort_source& caller_as) {
     ss::gate::holder holder(_gate);
+
+    caller_as.check();
+    _as.check();
+
+    ss::abort_source local_as{};
+    auto archival_as_sub = _as.subscribe(
+      [&local_as] noexcept { local_as.request_abort(); });
+    auto caller_as_sub = caller_as.subscribe(
+      [&local_as] noexcept { local_as.request_abort(); });
+
     archival_stm_fence rw_fence{
       .read_write_fence
       = _parent.archival_meta_stm()->manifest().get_applied_offset(),
@@ -3309,7 +3320,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
     } else {
         vlog(_rtclog.debug, "Scan result: {}", run);
     }
-    auto units = co_await _mutex.get_units(_as);
+    auto units = co_await _mutex.get_units(local_as);
     if (run->meta.base_offset >= _parent.raft_start_offset()) {
         auto log_generic = _parent.log();
         auto& log = *log_generic;
@@ -3335,8 +3346,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
             segment_collector_stream& collector_stream) mutable
             -> find_reupload_candidate_result {
               if (
-                collector_stream.size != run->meta.size_bytes
-                || collector_stream.start_offset != run->meta.base_offset
+                collector_stream.start_offset != run->meta.base_offset
                 || collector_stream.end_offset != run->meta.committed_offset) {
                   vlog(
                     _rtclog.error,
@@ -3345,6 +3355,15 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
                     collector_stream,
                     run->meta);
                   return {};
+              }
+              if (collector_stream.size != run->meta.size_bytes) {
+                  vlog(
+                    _rtclog.debug,
+                    "Failed to make reupload candidate due to size mismatch, "
+                    "skip this range: expected size: {}, actual size: {}",
+                    human::bytes(run->meta.size_bytes),
+                    human::bytes(collector_stream.size));
+                  return {.skip_to = collector_stream.end_offset};
               }
               return {
                 .units = std::move(units),
@@ -3427,7 +3446,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
     if (strm.is_compacted) {
         vlog(
           _rtclog.warn,
-          "Upload of the {} requested but sources are empty",
+          "Upload of {} requested but sources are compacted",
           sname);
         co_return false;
     }
