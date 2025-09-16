@@ -1,0 +1,79 @@
+/*
+ * Copyright 2025 Redpanda Data, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+ */
+
+#pragma once
+
+#include "cloud_topics/level_one/common/abstract_io.h"
+#include "cloud_topics/level_one/common/object_id.h"
+#include "cloud_topics/level_one/compaction/committing_policy.h"
+#include "cloud_topics/level_one/compaction/meta.h"
+#include "cloud_topics/level_one/metastore/metastore.h"
+#include "container/chunked_circular_buffer.h"
+
+namespace cloud_topics::l1 {
+
+class compaction_committer {
+public:
+    compaction_committer(std::unique_ptr<committing_policy>, metastore*, io*);
+
+    // Shuts down concurrency primitives, thereby stopping the backgrounded
+    // committing loop.
+    ss::future<> stop();
+
+    void push_update(object_output_t&&);
+
+private:
+    using updates_t = chunked_circular_buffer<object_output_t>;
+
+    struct built_object {
+        model::topic_id_partition tp;
+        object_id oid;
+        object_builder::object_info info;
+        std::unique_ptr<staging_file> staging_file;
+        std::unique_ptr<metastore::object_metadata_builder> builder;
+        metastore::compaction_map_t compaction_map;
+    };
+
+    // Starts the backgrounded committing loop.
+    void start_bg_loop();
+
+    // The main committing loop. Invoked in a background fiber until `_as` has
+    // an abort requested or the `_gate` is closed.
+    ss::future<> committing_loop();
+
+    // Builds objects to be committed from the provided updates.
+    ss::future<chunked_vector<built_object>> build_objects(updates_t&&);
+
+    // Attempts to commit all updates in the provided container to the metastore
+    // and cloud storage.
+    ss::future<> commit_some(updates_t&&);
+
+private:
+    // A queue of updates to be committed.
+    // TODO: add clean-up safety to built staging files.
+    updates_t _updates;
+
+    // The committing policy. Controls pre-emption and scheduling of commits
+    // made to the metastore and cloud storage.
+    std::unique_ptr<committing_policy> _policy;
+
+    ssx::semaphore _sem{0, "cloud_topics::compaction::committing_loop"};
+
+    ss::abort_source _as;
+    ss::gate _gate;
+
+    // Commits of newly compacted objects go to the `metastore`.
+    [[maybe_unused]] metastore* _metastore;
+
+    // Newly compacted objects are uploaded using `io`.
+    [[maybe_unused]] io* _io;
+};
+
+} // namespace cloud_topics::l1

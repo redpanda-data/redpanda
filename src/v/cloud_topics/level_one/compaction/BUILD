@@ -113,3 +113,28 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "committer",
+    srcs = [
+        "committer.cc",
+    ],
+    hdrs = [
+        "committer.h",
+    ],
+    implementation_deps = [
+        "//src/v/ssx:future_util",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":committing_policy",
+        ":logger",
+        ":meta",
+        "//src/v/cloud_topics/level_one/common:abstract_io",
+        "//src/v/cloud_topics/level_one/common:object_id",
+        "//src/v/cloud_topics/level_one/metastore",
+        "//src/v/container:chunked_circular_buffer",
+        "//src/v/ssx:semaphore",
+        "@seastar",
+    ],
+)
