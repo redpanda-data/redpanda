@@ -131,6 +131,30 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "log_sampler",
+    srcs = [
+        "log_sampler.cc",
+    ],
+    hdrs = [
+        "log_sampler.h",
+    ],
+    implementation_deps = [
+        "//src/v/ssx:future_util",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":logger",
+        ":meta",
+        "//src/v/cloud_topics/level_one/metastore",
+        "//src/v/cluster",
+        "//src/v/config",
+        "//src/v/container:chunked_vector",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "committing_policy",
     srcs = [
         "committing_policy.cc",
