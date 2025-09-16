@@ -12,15 +12,19 @@
 #include "cloud_storage/types.h"
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/frontend/errc.h"
+#include "cloud_topics/frontend_reader/reader.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
 #include "cloud_topics/level_zero/frontend_reader/reader.h"
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "cloud_topics/level_zero/stm/placeholder.h"
 #include "cloud_topics/logger.h"
+#include "cloud_topics/state_accessors.h"
+#include "cluster/metadata_cache.h"
 #include "cluster/partition.h"
 #include "cluster/rm_stm_types.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
@@ -285,10 +289,34 @@ ss::future<storage::translating_reader> frontend::make_reader(
 
     auto ot_state = _partition->get_offset_translator_state();
 
-    // TODO: depending on the 'cfg' construct level zero or level one
-    // reader impl.
-    auto impl = std::make_unique<level_zero_log_reader_impl>(
-      cfg, _partition, _data_plane);
+    auto ct_state = _partition->get_cloud_topics_state();
+    vassert(ct_state != nullptr, "cloud topics state not initialized");
+
+    auto l1_frontend = ct_state->local().get_l1_metastore_frontend();
+    auto l1_io = ct_state->local().get_l1_io();
+    auto metadata_cache = ct_state->local().get_metadata_cache();
+
+    model::topic_namespace_view topic_ns_view(_partition->ntp());
+    auto topic_cfg = metadata_cache->get_topic_cfg(topic_ns_view);
+    if (!topic_cfg.has_value() || !topic_cfg->tp_id.has_value()) {
+        // Cloud topics must have a topic id.
+        throw std::runtime_error(
+          fmt::format(
+            "Topic ID not found for cloud topic {}", _partition->ntp()));
+    }
+
+    auto tidp = model::topic_id_partition{
+      *topic_cfg->tp_id, _partition->get_ntp_config().ntp().tp.partition};
+
+    auto impl = std::make_unique<cloud_topics_log_reader_impl>(
+      cfg,
+      _partition->ntp(),
+      tidp,
+      _partition,
+      l1_frontend,
+      l1_io,
+      _data_plane,
+      _ctp_stm_api.get());
 
     co_return storage::translating_reader{
       model::record_batch_reader(std::move(impl)), std::move(ot_state)};
