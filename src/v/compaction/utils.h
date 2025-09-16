@@ -52,4 +52,17 @@ ss::future<bool> is_latest_record_for_key(
   const model::record_batch& b,
   const model::record& r);
 
+// A log is eligible for compaction if at least one of the following
+// is true:
+// 1. It's dirty enough: the dirty ratio is at least the minimum
+//    cleanable dirty ratio.
+// 2. It's gone long enough without compaction: the earliest first
+//    batch timestamp of a dirty segment is longer ago than
+//    the max compaction lag.
+bool log_needs_compaction(
+  double dirty_ratio,
+  double min_cleanable_dirty_ratio,
+  std::optional<model::timestamp> earliest_dirty_ts,
+  std::chrono::milliseconds max_lag);
+
 } // namespace compaction

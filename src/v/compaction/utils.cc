@@ -84,4 +84,20 @@ ss::future<bool> is_latest_record_for_key(
     co_return o >= latest_offset_indexed.value();
 }
 
+bool log_needs_compaction(
+  double dirty_ratio,
+  double min_cleanable_dirty_ratio,
+  std::optional<model::timestamp> earliest_dirty_ts,
+  std::chrono::milliseconds max_lag) {
+    if (dirty_ratio >= min_cleanable_dirty_ratio) {
+        return true;
+    }
+
+    const auto exceed_compact_lag
+      = earliest_dirty_ts.has_value()
+        && (to_time_point(model::timestamp::now()) - to_time_point(earliest_dirty_ts.value()) > max_lag);
+
+    return exceed_compact_lag;
+}
+
 } // namespace compaction
