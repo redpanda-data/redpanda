@@ -589,7 +589,7 @@ configuration::configuration()
       "Cluster identifier.",
       {.needs_restart = needs_restart::no, .gets_restored = gets_restored::no},
       std::nullopt,
-      &validate_non_empty_string_opt)
+      &validate_non_empty_string_non_empty_opt)
   , disable_metrics(
       *this,
       "disable_metrics",

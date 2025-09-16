@@ -162,6 +162,17 @@ validate_non_empty_string_opt(const std::optional<ss::sstring>& os) {
 }
 
 std::optional<ss::sstring>
+validate_non_empty_string_non_empty_opt(const std::optional<ss::sstring>& os) {
+    if (!os.has_value()) {
+        return "Value must be set";
+    } else if (os.value().empty()) {
+        return "Empty string is not valid";
+    } else {
+        return std::nullopt;
+    }
+}
+
+std::optional<ss::sstring>
 validate_audit_event_types(const std::vector<ss::sstring>& vs) {
     /// TODO: Should match stringified enums in kafka/types.h
     static const absl::flat_hash_set<ss::sstring> audit_event_types{
