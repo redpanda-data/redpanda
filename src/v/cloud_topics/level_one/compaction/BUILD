@@ -131,6 +131,30 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "scheduling_policies",
+    srcs = [
+        "scheduling_policies.cc",
+    ],
+    hdrs = [
+        "scheduling_policies.h",
+    ],
+    implementation_deps = [
+        ":executor",
+        "//src/v/random:generators",
+    ],
+    visibility = [
+        "//src/v/cloud_topics/level_one:__subpackages__",
+    ],
+    deps = [
+        ":meta",
+        "//src/v/container:chunked_circular_buffer",
+        "//src/v/container:chunked_vector",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "meta",
     hdrs = [
         "meta.h",
