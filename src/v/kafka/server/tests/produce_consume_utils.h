@@ -95,6 +95,9 @@ public:
       std::optional<model::timestamp> ts = std::nullopt,
       model::compression compression_type = model::compression::none);
 
+    ss::future<kafka::offset> produce_to_partition(
+      model::topic topic_name, model::partition_id pid, model::record_batch);
+
 private:
     // Convert the given records-per-partition mapping to a set of per-partition
     // produce requests. Each request, once sent, will correspond to a

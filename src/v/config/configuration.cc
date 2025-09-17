@@ -846,6 +846,21 @@ configuration::configuration()
        .visibility = visibility::tunable},
       2h,
       {.min = 5min})
+  , kafka_produce_batch_validation(
+      *this,
+      "kafka_produce_batch_validation",
+      "Controls the level of validation performed on batches produced to "
+      "Redpanda. When set to `legacy`, there is minimal validation performed "
+      "on the produce path. When set to `relaxed`, full validation is "
+      "performed on uncompressed batches and on compressed batches with the "
+      "`max_timestamp` value left unset. When set to `strict`, full validation "
+      "of uncompressed and compressed batches is performed. This should be the "
+      "default in environments where producing clients are not trusted.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      model::kafka_batch_validation_mode::relaxed,
+      {model::kafka_batch_validation_mode::legacy,
+       model::kafka_batch_validation_mode::relaxed,
+       model::kafka_batch_validation_mode::strict})
   , log_compression_type(
       *this,
       "log_compression_type",

@@ -6084,3 +6084,13 @@ def make_redpanda_mixed_service(context: TestContext, *, min_brokers: int | None
 
 
 AnyRedpandaService = RedpandaService | RedpandaServiceCloud
+
+
+class ValidationMode(str, Enum):
+    """
+    Redpanda validation modes (see cluster config `kafka_produce_batch_validation`).
+    """
+
+    LEGACY = "legacy"
+    RELAXED = "relaxed"
+    STRICT = "strict"
