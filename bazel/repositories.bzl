@@ -130,17 +130,17 @@ def data_dependency():
     http_archive(
         name = "openssl",
         build_file = "//bazel/thirdparty:openssl.BUILD",
-        sha256 = "dfdd77e4ea1b57ff3a6dbde6b0bdc3f31db5ac99e7fdd4eaf9e1fbb6ec2db8ce",
-        strip_prefix = "openssl-3.0.17",
-        url = "https://github.com/openssl/openssl/releases/download/openssl-3.0.17/openssl-3.0.17.tar.gz",
+        sha256 = "c9489d2abcf943cdc8329a57092331c598a402938054dc3a22218aea8a8ec3bf",
+        strip_prefix = "openssl-3.5.3",
+        url = "https://github.com/openssl/openssl/releases/download/openssl-3.5.3/openssl-3.5.3.tar.gz",
     )
 
     http_archive(
         name = "openssl-fips",
         build_file = "//bazel/thirdparty:openssl-fips.BUILD",
-        sha256 = "eb1ab04781474360f77c318ab89d8c5a03abc38e63d65a603cabbf1b00a1dc90",
-        strip_prefix = "openssl-3.0.9",
-        url = "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/openssl-3.0.9.tar.gz",
+        sha256 = "a0ce69b8b97ea6a35b96875235aa453b966ba3cba8af2de23657d8b6767d6539",
+        strip_prefix = "openssl-3.1.2",
+        url = "https://github.com/openssl/openssl/releases/download/openssl-3.1.2/openssl-3.1.2.tar.gz",
     )
 
     http_archive(
