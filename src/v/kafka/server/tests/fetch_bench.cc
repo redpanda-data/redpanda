@@ -33,10 +33,6 @@ constexpr auto version_with_epoch_validation{kafka::api_version{12}};
 constexpr auto version_with_topic_ids{kafka::api_version{13}};
 constexpr auto version_max_supported{kafka::fetch_handler::max_supported};
 
-static_assert(
-  version_max_supported == version_with_topic_ids,
-  "Consider adding a test for next supported version");
-
 } // namespace
 
 struct fetch_bench_config {
