@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest")
 
 redpanda_cc_btest(
     name = "ocsf_schemas_test",
@@ -16,5 +16,19 @@ redpanda_cc_btest(
         "@boost//:test",
         "@rapidjson",
         "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "utils_test",
+    timeout = "short",
+    srcs = [
+        "utils_test.cc",
+    ],
+    deps = [
+        "//src/v/kafka/protocol:messages",
+        "//src/v/security/audit",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
     ],
 )
