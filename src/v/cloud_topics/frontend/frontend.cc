@@ -468,24 +468,32 @@ ss::future<> bg_upload_and_replicate(
                 if (res.has_error()) {
                     return res.error();
                 }
-                // We know that the data is replicated so it's safe to add
-                // the batch to the record batch cache before returning.
                 if (cache_enabled) {
-                    vassert(
-                      res.value().last_term != model::term_id{},
-                      "Term not set");
-                    update_batches(
-                      inp,
-                      kafka::offset_cast(res.value().last_offset),
-                      res.value().last_term);
-                    for (const auto& b : inp) {
+                    // The term_id is not guaranteed to be set if the request
+                    // was served from the list of finished requests. This might
+                    // happen if the request is coming from the snapshot (in
+                    // which case it's not stored) or from the log replay. The
+                    // simplest solution in this case is to skip caching.
+                    if (res.value().last_term >= model::term_id{0}) {
+                        update_batches(
+                          inp,
+                          kafka::offset_cast(res.value().last_offset),
+                          res.value().last_term);
+                        for (const auto& b : inp) {
+                            vlog(
+                              cd_log.trace,
+                              "Putting batch to cache: {}, term: {}",
+                              b.base_offset(),
+                              b.term());
+                            api->cache_put(ntp, b);
+                        }
+                    } else {
                         vlog(
-                          cd_log.trace,
-                          "Putting batch for {} to cache: {}, term: {}",
+                          cd_log.debug,
+                          "Skipping cache put for ntp {} at offset {} with "
+                          "unset term",
                           ntp,
-                          b.base_offset(),
-                          b.term());
-                        api->cache_put(ntp, b);
+                          res.value().last_offset);
                     }
                 }
                 return raft::replicate_result{

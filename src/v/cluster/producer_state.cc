@@ -218,7 +218,7 @@ void requests::stm_apply(
     ready.set_value(kafka_result{.last_offset = offset});
     _finished_requests.emplace_back(
       ss::make_lw_shared<request>(
-        bid.first_seq, bid.last_seq, model::term_id{-1}, std::move(ready)));
+        bid.first_seq, bid.last_seq, term, std::move(ready)));
 
     while (_finished_requests.size() > requests_cached_max) {
         _finished_requests.pop_front();
@@ -260,7 +260,7 @@ producer_state::producer_state(
           ss::make_lw_shared<request>(
             req.first_sequence,
             req.last_sequence,
-            model::term_id{-1},
+            req.last_term,
             std::move(ready)));
     }
 }
@@ -529,7 +529,10 @@ producer_state::snapshot(kafka::offset log_start_offset) const {
         // offsets older than log start are no longer interesting.
         if (kafka_offset >= log_start_offset) {
             snapshot.finished_requests.emplace_back(
-              req->_first_sequence, req->_last_sequence, kafka_offset);
+              req->_first_sequence,
+              req->_last_sequence,
+              kafka_offset,
+              req->term());
         }
     }
     if (_transaction_state) {
