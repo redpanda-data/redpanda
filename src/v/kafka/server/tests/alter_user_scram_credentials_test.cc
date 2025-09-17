@@ -558,3 +558,315 @@ FIXTURE_TEST(
     BOOST_CHECK_EQUAL(
       resp.data.results[0].error_code, kafka::error_code::duplicate_resource);
 }
+
+FIXTURE_TEST(
+  alter_user_scram_credentials_superuser_to_superuser,
+  alter_user_scram_credentials_fixture) {
+    wait_for_controller_leadership().get();
+
+    ss::smp::invoke_on_all([]() {
+        config::shard_local_cfg()
+          .get("superusers")
+          .set_value(std::vector<ss::sstring>{user_name_256, user_name_512});
+    }).get();
+
+    auto deferred_config = ss::defer([] {
+        ss::smp::invoke_on_all([]() {
+            config::shard_local_cfg()
+              .get("superusers")
+              .set_value(std::vector<ss::sstring>{});
+        }).get();
+    });
+
+    auto creds_256 = security::scram_sha256::make_credentials(
+      password_256, security::scram_sha256::min_iterations);
+    create_user(user_name_256, creds_256);
+
+    auto [creds_512, salted_password_512]
+      = security::scram_sha512::make_credentials_and_return_password(
+        password_512, security::scram_sha512::min_iterations);
+    create_user(user_name_512, creds_512);
+
+    enable_sasl();
+    auto disable_sasl_defer = ss::defer([this] { disable_sasl(); });
+
+    const auto make_acl_binding = [](const std::string_view name) {
+        return security::acl_binding(
+          security::resource_pattern(
+            security::resource_type::cluster,
+            security::default_cluster_name,
+            security::pattern_type::literal),
+          security::acl_entry(
+            kafka::details::to_acl_principal(ssx::sformat("User:{}", name)),
+            security::acl_host::wildcard_host(),
+            security::acl_operation::alter,
+            security::acl_permission::allow));
+    };
+    std::vector<security::acl_binding> cluster_bindings{
+      make_acl_binding(user_name_256),
+      make_acl_binding(user_name_512),
+    };
+
+    auto acl_result = app.controller->get_security_frontend()
+                        .local()
+                        .create_acls(std::move(cluster_bindings), 1s)
+                        .get();
+
+    const auto errors_in_acl_results =
+      [](const std::vector<cluster::errc>& errs) {
+          return std::ranges::any_of(errs, [](const cluster::errc& e) {
+              return e != cluster::errc::success;
+          });
+      };
+
+    BOOST_REQUIRE(!errors_in_acl_results(acl_result));
+
+    auto client = make_kafka_client().get();
+    auto deferred_close = ss::defer([&client] { client.stop().get(); });
+    client.connect().get();
+    authn_kafka_client<security::scram_sha512_authenticator>(
+      client, user_name_512, password_512);
+
+    // a superuser can update another superuser
+    {
+        kafka::alter_user_scram_credentials_request req;
+        req.data.upsertions.emplace_back(kafka::scram_credential_upsertion{
+          .name = kafka::scram_user_name{user_name_256},
+          .mechanism = kafka::scram_mechanism::scram_sha_512,
+          .iterations = security::scram_sha512::min_iterations,
+          .salt = creds_512.salt(),
+          .salted_password = salted_password_512,
+        });
+
+        auto resp
+          = client.dispatch(std::move(req), kafka::api_version(0)).get();
+        BOOST_REQUIRE(!resp.data.errored());
+        BOOST_REQUIRE_EQUAL(resp.data.results.size(), 1);
+        BOOST_CHECK_EQUAL(resp.data.results[0].user, user_name_256);
+        BOOST_CHECK_EQUAL(
+          resp.data.results[0].error_code, kafka::error_code::none);
+
+        auto& sec = app.controller->get_credential_store().local();
+        BOOST_REQUIRE(sec.contains(security::credential_user(user_name_256)));
+        auto cred = sec.get<security::scram_credential>(
+          security::credential_user(user_name_256));
+        BOOST_REQUIRE(cred.has_value());
+        BOOST_CHECK_EQUAL(cred, creds_512);
+    }
+
+    // a superuser can delete another superuser
+    {
+        kafka::alter_user_scram_credentials_request req;
+        req.data.deletions.emplace_back(kafka::scram_credential_deletion{
+          .name = kafka::scram_user_name{user_name_256},
+          .mechanism = kafka::scram_mechanism::scram_sha_512});
+
+        auto resp
+          = client.dispatch(std::move(req), kafka::api_version(0)).get();
+        BOOST_REQUIRE(!resp.data.errored());
+        BOOST_REQUIRE_EQUAL(resp.data.results.size(), 1);
+        BOOST_CHECK_EQUAL(resp.data.results[0].user, user_name_256);
+        BOOST_CHECK_EQUAL(
+          resp.data.results[0].error_code, kafka::error_code::none);
+
+        auto& sec = app.controller->get_credential_store().local();
+        BOOST_REQUIRE(!sec.contains(security::credential_user(user_name_256)));
+    }
+}
+
+FIXTURE_TEST(
+  alter_user_scram_credentials_user_to_superuser,
+  alter_user_scram_credentials_fixture) {
+    wait_for_controller_leadership().get();
+
+    ss::smp::invoke_on_all([]() {
+        config::shard_local_cfg()
+          .get("superusers")
+          .set_value(std::vector<ss::sstring>{user_name_256});
+    }).get();
+    auto deferred_config = ss::defer([] {
+        ss::smp::invoke_on_all([]() {
+            config::shard_local_cfg()
+              .get("superusers")
+              .set_value(std::vector<ss::sstring>{});
+        }).get();
+    });
+
+    auto creds_256 = security::scram_sha256::make_credentials(
+      password_256, security::scram_sha256::min_iterations);
+    create_user(user_name_256, creds_256);
+
+    auto [creds_512, salted_password_512]
+      = security::scram_sha512::make_credentials_and_return_password(
+        password_512, security::scram_sha512::min_iterations);
+    create_user(user_name_512, creds_512);
+
+    enable_sasl();
+    auto disable_sasl_defer = ss::defer([this] { disable_sasl(); });
+
+    const auto make_acl_binding = [](const std::string_view name) {
+        return security::acl_binding(
+          security::resource_pattern(
+            security::resource_type::cluster,
+            security::default_cluster_name,
+            security::pattern_type::literal),
+          security::acl_entry(
+            kafka::details::to_acl_principal(ssx::sformat("User:{}", name)),
+            security::acl_host::wildcard_host(),
+            security::acl_operation::alter,
+            security::acl_permission::allow));
+    };
+    std::vector<security::acl_binding> cluster_bindings{
+      make_acl_binding(user_name_256),
+      make_acl_binding(user_name_512),
+    };
+
+    auto acl_result = app.controller->get_security_frontend()
+                        .local()
+                        .create_acls(std::move(cluster_bindings), 1s)
+                        .get();
+
+    const auto errors_in_acl_results =
+      [](const std::vector<cluster::errc>& errs) {
+          return std::ranges::any_of(errs, [](const cluster::errc& e) {
+              return e != cluster::errc::success;
+          });
+      };
+
+    BOOST_REQUIRE(!errors_in_acl_results(acl_result));
+
+    auto client = make_kafka_client().get();
+    auto deferred_close = ss::defer([&client] { client.stop().get(); });
+    client.connect().get();
+    authn_kafka_client<security::scram_sha512_authenticator>(
+      client, user_name_512, password_512);
+
+    // a user cannot update a superuser
+    {
+        auto [creds_512, salted_password_512]
+          = security::scram_sha512::make_credentials_and_return_password(
+            password_512, security::scram_sha512::min_iterations);
+
+        kafka::alter_user_scram_credentials_request req;
+        req.data.upsertions.emplace_back(kafka::scram_credential_upsertion{
+          .name = kafka::scram_user_name{user_name_256},
+          .mechanism = kafka::scram_mechanism::scram_sha_512,
+          .iterations = security::scram_sha512::min_iterations,
+          .salt = creds_512.salt(),
+          .salted_password = salted_password_512,
+        });
+
+        auto resp
+          = client.dispatch(std::move(req), kafka::api_version(0)).get();
+        BOOST_REQUIRE(resp.data.errored());
+        BOOST_REQUIRE_EQUAL(resp.data.results.size(), 1);
+        BOOST_CHECK_EQUAL(resp.data.results[0].user, user_name_256);
+        BOOST_CHECK_EQUAL(
+          resp.data.results[0].error_code,
+          kafka::error_code::cluster_authorization_failed);
+
+        auto& sec = app.controller->get_credential_store().local();
+        BOOST_REQUIRE(sec.contains(security::credential_user(user_name_256)));
+        auto cred = sec.get<security::scram_credential>(
+          security::credential_user(user_name_256));
+        BOOST_REQUIRE(cred.has_value());
+        BOOST_CHECK_EQUAL(cred, creds_256);
+    }
+
+    // a user cannot delete a superuser
+    {
+        kafka::alter_user_scram_credentials_request req;
+        req.data.deletions.emplace_back(kafka::scram_credential_deletion{
+          .name = kafka::scram_user_name{user_name_256},
+          .mechanism = kafka::scram_mechanism::scram_sha_256});
+
+        auto resp
+          = client.dispatch(std::move(req), kafka::api_version(0)).get();
+        BOOST_REQUIRE(resp.data.errored());
+        BOOST_REQUIRE_EQUAL(resp.data.results.size(), 1);
+        BOOST_CHECK_EQUAL(resp.data.results[0].user, user_name_256);
+        BOOST_CHECK_EQUAL(
+          resp.data.results[0].error_code,
+          kafka::error_code::cluster_authorization_failed);
+
+        auto& sec = app.controller->get_credential_store().local();
+        BOOST_REQUIRE(sec.contains(security::credential_user(user_name_256)));
+    }
+}
+
+FIXTURE_TEST(
+  alter_user_scram_credentials_user_to_superuser_noauthz,
+  alter_user_scram_credentials_fixture) {
+    wait_for_controller_leadership().get();
+
+    ss::smp::invoke_on_all([]() {
+        config::shard_local_cfg()
+          .get("superusers")
+          .set_value(std::vector<ss::sstring>{user_name_256});
+    }).get();
+    auto deferred_config = ss::defer([] {
+        ss::smp::invoke_on_all([]() {
+            config::shard_local_cfg()
+              .get("superusers")
+              .set_value(std::vector<ss::sstring>{});
+        }).get();
+    });
+
+    auto creds_256 = security::scram_sha256::make_credentials(
+      password_256, security::scram_sha256::min_iterations);
+    create_user(user_name_256, creds_256);
+
+    auto client = make_kafka_client().get();
+    auto deferred_close = ss::defer([&client] { client.stop().get(); });
+    client.connect().get();
+
+    // any user can update a superuser when authz checks are disabled
+    {
+        auto [creds_512, salted_password_512]
+          = security::scram_sha512::make_credentials_and_return_password(
+            password_512, security::scram_sha512::min_iterations);
+
+        kafka::alter_user_scram_credentials_request req;
+        req.data.upsertions.emplace_back(kafka::scram_credential_upsertion{
+          .name = kafka::scram_user_name{user_name_256},
+          .mechanism = kafka::scram_mechanism::scram_sha_512,
+          .iterations = security::scram_sha512::min_iterations,
+          .salt = creds_512.salt(),
+          .salted_password = salted_password_512,
+        });
+
+        auto resp
+          = client.dispatch(std::move(req), kafka::api_version(0)).get();
+        BOOST_REQUIRE(!resp.data.errored());
+        BOOST_REQUIRE_EQUAL(resp.data.results.size(), 1);
+        BOOST_CHECK_EQUAL(resp.data.results[0].user, user_name_256);
+        BOOST_CHECK_EQUAL(
+          resp.data.results[0].error_code, kafka::error_code::none);
+
+        auto& sec = app.controller->get_credential_store().local();
+        BOOST_REQUIRE(sec.contains(security::credential_user(user_name_256)));
+        auto cred = sec.get<security::scram_credential>(
+          security::credential_user(user_name_256));
+        BOOST_REQUIRE(cred.has_value());
+        BOOST_CHECK_EQUAL(cred, creds_512);
+    }
+
+    // any user can delete a superuser when authz checks are disabled
+    {
+        kafka::alter_user_scram_credentials_request req;
+        req.data.deletions.emplace_back(kafka::scram_credential_deletion{
+          .name = kafka::scram_user_name{user_name_256},
+          .mechanism = kafka::scram_mechanism::scram_sha_512});
+
+        auto resp
+          = client.dispatch(std::move(req), kafka::api_version(0)).get();
+        BOOST_REQUIRE(!resp.data.errored());
+        BOOST_REQUIRE_EQUAL(resp.data.results.size(), 1);
+        BOOST_CHECK_EQUAL(resp.data.results[0].user, user_name_256);
+        BOOST_CHECK_EQUAL(
+          resp.data.results[0].error_code, kafka::error_code::none);
+
+        auto& sec = app.controller->get_credential_store().local();
+        BOOST_REQUIRE(!sec.contains(security::credential_user(user_name_256)));
+    }
+}
