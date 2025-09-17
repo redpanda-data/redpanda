@@ -317,7 +317,8 @@ tx_snapshot_v6::tx_snapshot_v6(tx_snapshot_v5 snap_v5, raft::group_id group)
             v6.finished_requests.emplace_back(
               request.first_sequence,
               request.last_sequence,
-              request.last_offset);
+              request.last_offset,
+              producer_state_snapshot::finished_request::unset_term);
         }
         producer_states.emplace(v6.id.get_id(), std::move(v6));
     }

@@ -258,10 +258,7 @@ producer_state::producer_state(
         ready.set_value(kafka_result{req.last_offset});
         _requests._finished_requests.push_back(
           ss::make_lw_shared<request>(
-            req.first_sequence,
-            req.last_sequence,
-            req.last_term,
-            std::move(ready)));
+            req.first_sequence, req.last_sequence, req.term, std::move(ready)));
     }
 }
 

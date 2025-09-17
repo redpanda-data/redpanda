@@ -196,25 +196,25 @@ struct producer_state_snapshot
           finished_request,
           serde::version<1>,
           serde::compat_version<0>> {
+        static constexpr model::term_id unset_term{-1};
         finished_request() = default;
         finished_request(
           int32_t first,
           int32_t last,
           kafka::offset last_offset,
-          model::term_id term = model::term_id{-1})
+          model::term_id term)
           : first_sequence(first)
           , last_sequence(last)
           , last_offset(last_offset)
-          , last_term(term) {}
+          , term(term) {}
 
         int32_t first_sequence;
         int32_t last_sequence;
         kafka::offset last_offset;
-        model::term_id last_term{model::term_id{-1}};
+        model::term_id term{model::term_id{-1}};
 
         auto serde_fields() {
-            return std::tie(
-              first_sequence, last_sequence, last_offset, last_term);
+            return std::tie(first_sequence, last_sequence, last_offset, term);
         }
     };
 
