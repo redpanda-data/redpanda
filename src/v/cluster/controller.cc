@@ -852,6 +852,7 @@ ss::future<> controller::start(
       std::ref(_tp_state.local()),
       std::ref(_shard_table.local()),
       std::ref(*data_migrations_group_proxy.local()),
+      std::ref(_cloud_cache.local()),
       _cloud_storage_api.local_is_initialized()
         ? std::make_optional(std::ref(_cloud_storage_api.local()))
         : std::nullopt,
