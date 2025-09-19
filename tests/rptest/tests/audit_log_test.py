@@ -2899,6 +2899,7 @@ class AuditLogTestSchemaRegistryACLs(AuditLogTestSchemaRegistryBase):
             "authn attempt in sr",
         )
 
+    @skip_fips_mode
     @cluster(num_nodes=5)
     @matrix(endpoint_name=[e.name for e in PUBLIC_ENDPOINTS])
     def test_sr_audit_public(self, endpoint_name):
@@ -3133,6 +3134,7 @@ class AuditLogTestBypassBase(AuditLogTestBase):
     def setUp(self):
         super().setUp(wait_for_audit_log=self.expect_topic)
 
+    @skip_fips_mode
     @cluster(
         num_nodes=4,
         log_allow_list=[
