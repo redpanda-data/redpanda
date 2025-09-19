@@ -144,6 +144,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "field_registry",
+    srcs = ["field_registry.cc"],
+    hdrs = [
+        "field_registry.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/redpanda/admin/tests:aip_filter_test_messages_redpanda_proto",
+        "//src/v/serde/protobuf:base",
+        "//src/v/utils:named_type",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/time",
+    ],
+)
+
+redpanda_cc_library(
     name = "admin",
     srcs = [
         "debug.cc",
