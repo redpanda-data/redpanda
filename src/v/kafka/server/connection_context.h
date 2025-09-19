@@ -189,6 +189,9 @@ public:
         return get_principal() == security::audit_principal;
     }
 
+    // Returns true if the user is a superuser or if authz is disabled
+    bool has_superuser_access() const;
+
     ss::future<> process();
     ss::future<> process_one_request();
     ss::net::inet_address client_host() const { return _client_addr; }
