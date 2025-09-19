@@ -253,23 +253,13 @@ ss::future<result<void>> manager::delete_cluster_link(model::name_t name) {
         co_return cl_resp.assume_error();
     }
 
-    const auto is_active = [](const model::mirror_topic_state s) {
-        switch (s) {
-        case model::mirror_topic_state::active:
-        case model::mirror_topic_state::paused:
-            return true;
-        case model::mirror_topic_state::failed:
-        case model::mirror_topic_state::promoted:
-            return false;
-        }
-    };
-
     const auto mirror_topic_states = cl_resp.assume_value().state.mirror_topics
                                      | std::views::values
                                      | std::views::transform(
                                        &model::mirror_topic_metadata::state);
 
-    if (std::ranges::any_of(mirror_topic_states, is_active)) {
+    if (std::ranges::any_of(
+          mirror_topic_states, model::is_mirror_topic_active)) {
         co_return err_info(
           errc::link_has_active_shadow_topics,
           fmt::format(

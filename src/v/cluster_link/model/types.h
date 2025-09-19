@@ -64,6 +64,17 @@ static constexpr std::string_view to_string_view(mirror_topic_state s) {
 
 std::ostream& operator<<(std::ostream& os, mirror_topic_state s);
 
+inline bool is_mirror_topic_active(mirror_topic_state s) {
+    switch (s) {
+    case mirror_topic_state::active:
+    case mirror_topic_state::paused:
+        return true;
+    case mirror_topic_state::failed:
+    case mirror_topic_state::promoted:
+        return false;
+    }
+}
+
 enum class task_state : uint8_t {
     /// The task is currently active and processing
     active,

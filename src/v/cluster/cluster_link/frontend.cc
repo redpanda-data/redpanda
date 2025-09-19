@@ -210,6 +210,24 @@ frontend::get_mirror_topics_for_link(id_t id) const {
     return mirror_topics;
 }
 
+bool frontend::has_active_mirror_topic(const model::topic& t) const {
+    const auto active_shadow_topic_in_link = [&t, this](const auto& link_id) {
+        auto link = _table->find_link_by_id(link_id);
+        if (!link) {
+            return false;
+        }
+        const auto& mirror_topics = link->get().state.mirror_topics;
+
+        const auto it = mirror_topics.find(t);
+        if (it == mirror_topics.end()) {
+            return false;
+        }
+
+        return ::cluster_link::model::is_mirror_topic_active(it->second.state);
+    };
+    return std::ranges::any_of(get_all_link_ids(), active_shadow_topic_in_link);
+}
+
 ss::future<errc> frontend::do_mutation(
   cluster_link_cmd cmd, model::timeout_clock::time_point timeout) {
     auto cluster_leader = _leaders->get_leader(model::controller_ntp);
