@@ -160,6 +160,28 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "aip_filter",
+    srcs = [
+        "aip_filter.cc",
+    ],
+    hdrs = [
+        "aip_filter.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":field_registry",
+        "//src/v/base",
+        "//src/v/redpanda/admin/tests:aip_filter_test_messages_redpanda_proto",
+        "//src/v/serde/protobuf:base",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/time",
+        "@boost//:spirit",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "admin",
     srcs = [
         "debug.cc",
