@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package aip_filter_test;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+message TestMessage {
+    message NestedInfo {
+        string name = 1;
+        int32 value = 2;
+    }
+
+    enum Status {
+        STATUS_UNSPECIFIED = 0;
+        STATUS_ACTIVE = 1;
+        STATUS_INACTIVE = 2;
+    }
+
+    int64 int_field = 1;
+    string string_field = 2;
+    bool bool_field = 3;
+    uint64 uint_field = 4;
+    double double_field = 5;
+
+    NestedInfo nested = 6;
+
+    Status status = 7;
+
+    google.protobuf.Timestamp timestamp_field = 8;
+    google.protobuf.Duration duration_field = 9;
+
+    int32 int32_field = 10;
+    float float_field = 11;
+    optional int64 optional_int_field = 12;
+    repeated int64 repeated_int_field = 13;
+    map<int64, int64> map_field = 14;
+}
