@@ -684,7 +684,7 @@ configuration::configuration()
       *this,
       "metadata_dissemination_retry_delay_ms",
       "Delay before retrying a topic lookup in a shard or other meta tables.",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       0'500ms)
   , metadata_dissemination_retries(
       *this,
