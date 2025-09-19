@@ -8,6 +8,9 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
+	"sort"
+	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -70,7 +73,68 @@ func newLogLevelCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	}
 	cmd.AddCommand(
 		newLogLevelSetCommand(fs, p),
+		newLogLevelGetCommand(fs, p),
 	)
+	return cmd
+}
+
+func newLogLevelGetCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var host string
+
+	cmd := &cobra.Command{
+		Use:   "get [LOGGERS...]",
+		Short: "Get broker logger's log level",
+		Long: `Get broker logger's log level.
+
+This command obtains the broker logger's log level. Each Redpanda
+broker has many loggers, and each can be individually returned.
+
+You can specify many loggers at once by separating each logger name with a space.
+To return all loggers, you can leave the logger argument empty or pass "all". 
+To see all possible loggers, run 'redpanda --help-loggers' in your node.
+`,
+
+		Example: `  # List log levels for raft and kafka
+  rpk redpanda admin config log-level get kafka raft --host localhost:9644
+`,
+		Args: cobra.MinimumNArgs(0),
+		Run: func(cmd *cobra.Command, loggers []string) {
+			p, err := p.LoadVirtualProfile(fs)
+			out.MaybeDie(err, "rpk unable to load config: %v", err)
+
+			config.CheckExitCloudAdmin(p)
+
+			cl, err := adminapi.NewHostClient(fs, p, host)
+			out.MaybeDie(err, "unable to initialize admin client: %v", err)
+
+			resp, err := cl.GetLogLevels(cmd.Context())
+			out.MaybeDie(err, "unable to get logger level: %v", err)
+
+			sort.Slice(resp, func(i, j int) bool {
+				return resp[i].Name < resp[j].Name
+			})
+
+			tw := out.NewTable("LOGGER", "LEVEL")
+			defer tw.Flush()
+
+			if len(loggers) == 0 || (len(loggers) == 1 && strings.ToLower(loggers[0]) == "all") {
+				for _, lResp := range resp {
+					tw.PrintStructFields(lResp)
+				}
+			} else {
+				for _, lResp := range resp {
+					if slices.ContainsFunc(loggers, func(l string) bool {
+						return strings.EqualFold(l, lResp.Name)
+					}) {
+						tw.PrintStructFields(lResp)
+					}
+				}
+			}
+		},
+	}
+	cmd.Flags().StringVar(&host, "host", "", "either a hostname or an index into rpk.admin_api.addresses config section to select the hosts to issue the request to")
+	cobra.MarkFlagRequired(cmd.Flags(), "host")
+
 	return cmd
 }
 
