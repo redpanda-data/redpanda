@@ -165,6 +165,7 @@ public:
         for (auto& f : _filters) {
             f.cancel();
         }
+        remove_requests_for_shutdown();
         co_await std::move(fut);
     }
 
@@ -183,25 +184,43 @@ protected:
         return _stages.next_stage(s);
     }
 
-    /// Find all timed out requests and remove them from the list
-    /// atomically.
-    void remove_timed_out_requests() {
+    /// Resolve every pending write that matches the predicate with an error.
+    template<typename Pred>
+    void remove_requests(Pred pred, errc error, std::string_view reason) {
         chunked_vector<ss::weak_ptr<Request>> expired;
         for (auto& wr : _pending) {
-            if (wr.has_expired()) {
+            if (pred(wr)) {
                 expired.push_back(wr.weak_from_this());
             }
         }
         if (!expired.empty()) {
-            vlog(_logger.debug, "{} requests have expired", expired.size());
+            vlog(
+              _logger.debug, "{} requests removed: {}", expired.size(), reason);
         }
         for (auto& wp : expired) {
             if (wp != nullptr) {
-                vlog(_logger.debug, "{} requests have expired", wp->ntp);
+                vlog(_logger.debug, "{} requests removed: {}", wp->ntp, reason);
                 wp->_hook.unlink();
-                wp->set_value(errc::timeout);
+                wp->set_value(error);
             }
         }
+    }
+
+    /// Find all timed out requests and remove them from the list
+    /// atomically.
+    void remove_timed_out_requests() {
+        remove_requests(
+          [](const auto& wr) { return wr.has_expired(); },
+          errc::timeout,
+          "expired");
+    }
+
+    /// Remove every pending request and resolve with shutdown error.
+    void remove_requests_for_shutdown() {
+        remove_requests(
+          [](const auto&) { return true; },
+          errc::shutting_down,
+          "shutting down");
     }
 
     basic_retry_chain_logger<Clock>& logger() { return _logger; }
