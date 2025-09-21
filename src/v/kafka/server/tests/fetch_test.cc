@@ -7,7 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/units.h"
 #include "cluster/tests/cluster_test_fixture.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/handlers/fetch.h"
@@ -1131,4 +1133,80 @@ FIXTURE_TEST(fetch_offset_out_of_range, redpanda_thread_fixture) {
       resp.data.responses[0].partitions[0].high_watermark, hwm);
     BOOST_REQUIRE_EQUAL(
       resp.data.responses[0].partitions[0].last_stable_offset, hwm);
+}
+
+FIXTURE_TEST(fetch_response_bytes_eq_units, redpanda_thread_fixture) {
+    // create topic with single partition
+    model::topic topic("foo");
+    model::partition_id pid(0);
+    auto ntp = make_default_ntp(topic, pid);
+    wait_for_controller_leadership().get();
+    add_topic(model::topic_namespace_view(ntp)).get();
+
+    wait_for_partition_offset(ntp, model::offset(0)).get();
+
+    // append some data
+    auto shard = app.shard_table.local().shard_for(ntp);
+    app.partition_manager
+      .invoke_on(
+        *shard,
+        [ntp](cluster::partition_manager& mgr) {
+            return model::test::make_random_batches(model::offset(0), 20)
+              .then([ntp, &mgr](auto batches) {
+                  auto partition = mgr.get(ntp);
+                  return partition->raft()->replicate(
+                    chunked_vector<model::record_batch>(
+                      std::from_range,
+                      std::move(batches) | std::views::as_rvalue),
+                    raft::replicate_options(
+                      raft::consistency_level::quorum_ack));
+              });
+        })
+      .get();
+    wait_for_partition_offset(ntp, model::offset(20)).get();
+
+    auto conn_context = make_connection_context();
+    conn_context->start().get();
+
+    auto make_rctx = [&] {
+        auto fetch_topics = chunked_vector<kafka::fetch_topic>{};
+
+        fetch_topics.push_back(
+          kafka::fetch_topic{
+            .topic = topic,
+            .partitions = {kafka::fetch_partition{
+              .partition = pid,
+              .current_leader_epoch = kafka::leader_epoch(-1),
+              .fetch_offset = model::offset(0),
+              .log_start_offset = model::offset(-1),
+              .partition_max_bytes = 10 * MiB,
+            }}});
+
+        // create a request
+        kafka::fetch_request_data frq_data{
+          .replica_id = kafka::client::consumer_replica_id,
+          .max_wait_ms = 500ms,
+          .min_bytes = 1,
+          .max_bytes = 50_MiB,
+          .isolation_level = model::isolation_level::read_uncommitted,
+          .session_id = kafka::invalid_fetch_session_id,
+          .session_epoch = kafka::final_fetch_session_epoch,
+          .topics = std::move(fetch_topics),
+        };
+
+        auto request = kafka::fetch_request{.data = std::move(frq_data)};
+
+        kafka::request_header header{
+          .key = kafka::fetch_handler::api::key,
+          .version = kafka::api_version{12}};
+
+        return make_request_context(std::move(request), header, conn_context);
+    };
+
+    auto octx = kafka::op_context(make_rctx(), ss::default_smp_service_group());
+    kafka::testing::do_fetch(octx).get();
+    conn_context->stop().get();
+
+    BOOST_REQUIRE(octx.response_size > 0);
+    BOOST_REQUIRE(octx.response_size == octx.total_response_memory_units());
 }

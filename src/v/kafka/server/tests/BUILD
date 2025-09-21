@@ -758,7 +758,9 @@ redpanda_cc_btest(
     ],
     cpu = 1,
     deps = [
+        "//src/v/base",
         "//src/v/cluster/tests:cluster_test_fixture",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/protocol",
         "//src/v/kafka/server",
         "//src/v/model",
