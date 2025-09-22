@@ -11,6 +11,7 @@
 #include "kafka/server/handlers/create_partitions.h"
 
 #include "absl/container/node_hash_map.h"
+#include "cluster/cluster_link/frontend.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
@@ -261,6 +262,19 @@ ss::future<response_ptr> create_partitions_handler::handle(
             [name{tp.name}](auto& iter) {
                 return iter.first.tp.topic == name;
             });
+      });
+
+    // check for active shadow topics
+    valid_range_end = validate_range(
+      request.data.topics.begin(),
+      valid_range_end,
+      std::back_inserter(resp.data.results),
+      error_code::policy_violation,
+      "Can't change partitions on an active shadow topic.",
+      [&ctx](const create_partitions_topic& tp) {
+          const auto& cl_frontend
+            = ctx.connection()->server().cluster_link_frontend();
+          return !cl_frontend.has_active_mirror_topic(tp.name);
       });
 
     if (request.data.validate_only) {

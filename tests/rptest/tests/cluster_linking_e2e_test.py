@@ -23,6 +23,8 @@ from ducktape.mark import ignore
 from rptest.clients.admin.proto.redpanda.core.admin.v2 import (
     shadow_link_pb2,
 )
+from rptest.clients.default import DefaultClient
+from rptest.clients.kafka_cli_tools import KafkaCliToolsError
 from rptest.clients.rpk import RpkTool, RPKACLInput, RpkException
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
@@ -601,6 +603,16 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
                 callback=on_delivery,
             )
             target_producer.flush()
+
+        # Verify that altering the partitions of an active shadow topic is not allowed
+        target_default_client = DefaultClient(self.target_cluster.service)
+
+        with expect_exception(
+            KafkaCliToolsError, lambda err: "PolicyViolationException" in str(err)
+        ):
+            target_default_client.alter_topic_partition_count(
+                topic.name, topic.partition_count + 2
+            )
 
     @cluster(
         num_nodes=7,
