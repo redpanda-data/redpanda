@@ -498,6 +498,9 @@ struct cloud_log_reader_config {
     // Tracks number of consumed bytes in lower level readers
     size_t bytes_consumed{0};
 
+    // Tracks number of skipped bytes in lower level readers
+    size_t bytes_skipped{0};
+
     // Used to signal to the log reader that consumed bytes has exceeded
     // max_bytes and that reading should stop.
     bool over_budget{false};

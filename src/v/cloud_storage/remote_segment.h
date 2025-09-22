@@ -433,6 +433,7 @@ public:
     bool is_stopped() const { return _stopped; }
 
     size_t bytes_consumed() const { return _config.bytes_consumed; }
+    size_t bytes_skipped() const { return _config.bytes_skipped; }
 
 private:
     friend class single_record_consumer;

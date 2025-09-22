@@ -1303,6 +1303,7 @@ public:
               _config.client_address,
               header.type);
             _seg_reader._probe.add_bytes_skip(header.size_bytes);
+            _config.bytes_skipped += header.size_bytes;
             return batch_consumer::consume_result::skip_batch;
         }
 
@@ -1320,6 +1321,7 @@ public:
               header.last_offset(),
               _config.start_offset);
             _seg_reader._probe.add_bytes_skip(header.size_bytes);
+            _config.bytes_skipped += header.size_bytes;
             return batch_consumer::consume_result::skip_batch;
         }
 
@@ -1341,6 +1343,7 @@ public:
               _config.client_address,
               header.first_timestamp);
             _seg_reader._probe.add_bytes_skip(header.size_bytes);
+            _config.bytes_skipped += header.size_bytes;
             return batch_consumer::consume_result::skip_batch;
         }
         _seg_reader._probe.add_bytes_accept(header.size_bytes);
