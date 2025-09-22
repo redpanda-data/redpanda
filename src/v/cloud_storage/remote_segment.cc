@@ -1524,7 +1524,9 @@ remote_segment_batch_reader::do_read_some(
               _bytes_consumed,
               _parser->error(),
               _config.client_address);
-            if (_parser->error() == storage::parser_errc::end_of_stream) {
+            if (
+              _parser->error() == storage::parser_errc::end_of_stream
+              || _parser->error() == storage::parser_errc::none) {
                 vlog(_ctxlog.info, "{}", msg);
             } else {
                 vlog(_ctxlog.error, "{}", msg);
