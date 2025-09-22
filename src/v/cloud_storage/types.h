@@ -443,7 +443,8 @@ struct cloud_log_reader_config {
       std::optional<model::timestamp> time,
       model::opt_abort_source_t as,
       model::opt_client_address_t client_addr = std::nullopt,
-      bool strict_max_bytes = false)
+      bool strict_max_bytes = false,
+      std::optional<std::size_t> batches_per_read = std::nullopt)
       : start_offset(start_offset)
       , max_offset(max_offset)
       , min_bytes(min_bytes)
@@ -452,7 +453,8 @@ struct cloud_log_reader_config {
       , first_timestamp(time)
       , abort_source(as)
       , client_address(std::move(client_addr))
-      , strict_max_bytes(strict_max_bytes) {}
+      , strict_max_bytes(strict_max_bytes)
+      , batches_per_read(batches_per_read) {}
 
     /**
      * Read offsets [start, end].
@@ -461,7 +463,8 @@ struct cloud_log_reader_config {
       kafka::offset start_offset,
       kafka::offset max_offset,
       model::opt_abort_source_t as = std::nullopt,
-      model::opt_client_address_t client_addr = std::nullopt)
+      model::opt_client_address_t client_addr = std::nullopt,
+      std::optional<std::size_t> batches_per_read = std::nullopt)
       : cloud_log_reader_config(
           start_offset,
           max_offset,
@@ -471,7 +474,8 @@ struct cloud_log_reader_config {
           std::nullopt,
           as,
           std::move(client_addr),
-          false) {}
+          false,
+          batches_per_read) {}
 
     kafka::offset start_offset;
     kafka::offset max_offset;
@@ -501,6 +505,9 @@ struct cloud_log_reader_config {
     // do not let the lower level readers go over budget even when that means
     // that the reader will return no batches.
     bool strict_max_bytes{false};
+
+    // optionally limit the number of batches returned per read_some call
+    std::optional<std::size_t> batches_per_read{std::nullopt};
 
     fmt::iterator format_to(fmt::iterator it) const;
 };
