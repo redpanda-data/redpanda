@@ -1420,9 +1420,15 @@ public:
         batch.header().header_crc = model::internal_header_only_crc(
           batch.header());
 
-        size_t sz = _seg_reader.produce(std::move(batch));
+        auto [sz, n_batches] = _seg_reader.produce(std::move(batch));
 
         if (_config.over_budget) {
+            co_return stop_parser::yes;
+        }
+
+        if (
+          _config.batches_per_read.has_value()
+          && n_batches >= _config.batches_per_read.value()) {
             co_return stop_parser::yes;
         }
 
@@ -1561,12 +1567,13 @@ remote_segment_batch_reader::init_parser() {
     co_return parser;
 }
 
-size_t remote_segment_batch_reader::produce(model::record_batch batch) {
+std::pair<size_t, size_t>
+remote_segment_batch_reader::produce(model::record_batch batch) {
     ss::gate::holder h(_gate);
     vlog(_ctxlog.debug, "remote_segment_batch_reader::produce");
     _total_size += batch.size_bytes();
     _ringbuf.push_back(std::move(batch));
-    return _total_size;
+    return std::make_pair(_total_size, _ringbuf.size());
 }
 
 ss::future<> remote_segment_batch_reader::stop() {

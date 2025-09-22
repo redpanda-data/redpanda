@@ -442,7 +442,7 @@ private:
     do_read_some(
       model::timeout_clock::time_point, storage::offset_translator_state&);
 
-    size_t produce(model::record_batch batch);
+    std::pair<size_t, size_t> produce(model::record_batch batch);
 
     ss::lw_shared_ptr<remote_segment> _seg;
     cloud_storage::cloud_log_reader_config _config;
