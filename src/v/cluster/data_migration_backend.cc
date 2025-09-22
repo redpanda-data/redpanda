@@ -16,6 +16,7 @@
 #include "cloud_storage/topic_manifest_downloader.h"
 #include "cloud_storage/topic_mount_handler.h"
 #include "cluster/partition_leaders_table.h"
+#include "cluster/segment_truncator.h"
 #include "config/node_config.h"
 #include "container/chunked_vector.h"
 #include "data_migration_frontend.h"
@@ -2050,6 +2051,36 @@ backend::maybe_truncate_partition(
     }
     auto [new_manifest, maybe_seg_to_truncate] = std::move(trunc_res).value();
     vlog(dm_log.debug, "{}: Coarse truncated manifest: {}", ntp, new_manifest);
+
+    if (maybe_seg_to_truncate.has_value()) {
+        if (auto last_seg = co_await truncate_remote_segment(
+              maybe_seg_to_truncate.value(),
+              offset,
+              ntp,
+              new_manifest,
+              bucket_name,
+              path_provider,
+              remote,
+              _cloud_cache,
+              parent_retry);
+            last_seg.has_value()
+            && new_manifest.safe_segment_meta_to_add(last_seg.value())) {
+            new_manifest.add(last_seg.value());
+            vlog(
+              dm_log.debug,
+              "{}: Truncated with last segment: {}",
+              ntp,
+              new_manifest);
+        } else {
+            // this is fine though. new_manifest is still behind the truncation
+            // point
+            vlog(
+              dm_log.debug,
+              "{}: Failed to truncate last segment ec: {}",
+              ntp,
+              last_seg.error());
+        }
+    }
 
     co_return std::move(new_manifest);
 }
