@@ -360,10 +360,12 @@ ss::future<> level_zero_log_reader_impl::materialize_batches(
                 const cloud_topics::extent_meta&) {
                   model::record_batch batch = std::move(*batches_it);
                   ++batches_it;
+                  // TODO: extract data-batch/placeholder-batch conversion utils
                   auto size = batch.header().size_bytes;
                   batch.header() = local_batch_header;
                   batch.header().type = model::record_batch_type::raft_data;
                   batch.header().size_bytes = size;
+                  // Recalculate the header crc
                   batch.header().reset_size_checksum_metadata(batch.data());
                   // Propagate materialized batches to the record batch cache
                   if (cache_enabled()) {

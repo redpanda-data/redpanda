@@ -20,6 +20,7 @@
 #include "cluster/partition.h"
 #include "cluster/rm_stm_types.h"
 #include "cluster/types.h"
+#include "model/batch_builder.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
@@ -27,7 +28,6 @@
 #include "model/timeout_clock.h"
 #include "raft/errc.h"
 #include "raft/replicate.h"
-#include "storage/record_batch_builder.h"
 #include "storage/types.h"
 
 #include <seastar/core/circular_buffer.hh>
@@ -70,16 +70,23 @@ static model::record_batch make_placeholder_batch(
       .size_bytes = extent.byte_range_size,
     };
 
-    storage::record_batch_builder builder(
-      model::record_batch_type::dl_placeholder, hdr.base_offset);
-
-    builder.set_producer_identity(hdr.producer_id, hdr.producer_epoch);
+    model::batch_builder builder;
+    builder.set_batch_type(model::record_batch_type::dl_placeholder);
+    builder.set_base_offset(hdr.base_offset);
+    builder.set_producer_id(hdr.producer_id);
+    builder.set_producer_epoch(hdr.producer_epoch);
     if (hdr.attrs.is_control()) {
-        builder.set_control_type();
+        builder.set_control();
     }
     if (hdr.attrs.is_transactional()) {
-        builder.set_transactional_type();
+        builder.set_transactional();
     }
+
+    builder.set_batch_timestamp(
+      model::timestamp_type::append_time, hdr.max_timestamp);
+    builder.set_batch_timestamp(
+      model::timestamp_type::append_time, hdr.first_timestamp);
+    builder.set_base_sequence(hdr.base_sequence);
 
     auto first_key = serde::to_iobuf(
       cloud_topics::dl_placeholder_record_key::payload);
@@ -91,17 +98,15 @@ static model::record_batch make_placeholder_batch(
     // records are added to avoid confusing any other code that may expect
     // that the number of records in the batch is equal to the number of
     // offsets in the header.
-    builder.add_raw_kv(std::move(first_key), std::move(first_value));
+    builder.add_record(
+      model::batch_builder::simple_record{
+        .key = std::move(first_key), .value = std::move(first_value)});
 
     for (int i = 1; i < hdr.record_count; ++i) {
-        builder.add_raw_kv(std::nullopt, std::nullopt);
+        builder.add_record(model::batch_builder::simple_record{});
     }
 
-    auto ph = std::move(builder).build();
-    ph.header().first_timestamp = hdr.first_timestamp;
-    ph.header().max_timestamp = hdr.max_timestamp;
-    ph.header().base_sequence = hdr.base_sequence;
-    ph.header().reset_size_checksum_metadata(ph.data());
+    auto ph = std::move(builder).build_sync();
     return ph;
 }
 

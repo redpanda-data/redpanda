@@ -28,7 +28,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_zero/stm:ctp_stm",
         "//src/v/cloud_topics/level_zero/stm:placeholder",
         "//src/v/cluster",
-        "//src/v/storage:record_batch_builder",
+        "//src/v/model:batch_builder",
     ],
     visibility = ["//visibility:public"],
     deps = [
