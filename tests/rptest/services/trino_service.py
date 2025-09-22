@@ -126,10 +126,26 @@ iceberg.{{ catalog_type }}-catalog.uri={{ catalog_uri }}
     def wait_node(self, node, timeout_sec):
         def _ready():
             try:
+                # Wait for server initialization.
                 self.run_query_fetch_all("show catalogs")
+
+                # Wait for the worker to register with the coordinator.
+                # Even though the coordinator and worker are in the same process,
+                # sometimes queries race with worker registration.
+                active_workers = self.run_query_fetch_all(
+                    "SELECT count(*) FROM system.runtime.nodes WHERE state = 'active'"
+                )
+                active_worker_count = len(active_workers) if active_workers else 0
+
+                if active_worker_count < 1:
+                    self.logger.debug(f"Trino initialized but has no active workers")
+                    return False
+
                 return True
             except Exception:
-                self.logger.debug(f"Exception querying catalog", exc_info=True)
+                self.logger.debug(
+                    f"Exception during Trino readiness check", exc_info=True
+                )
             return False
 
         wait_until(
