@@ -38,7 +38,7 @@ using namespace std::chrono_literals;
 
 configuration::configuration()
   : log_segment_size(
-      *this,
+      *this, *this,
       "log_segment_size",
       "Default log segment size in bytes for topics which do not set "
       "segment.bytes",
