@@ -11,27 +11,32 @@
 
 #pragma once
 
+#include <type_traits>
 #include <variant>
 
-namespace util::detail {
-
-template<typename... Option>
-static constexpr std::variant<std::type_identity<Option>...>
-variant_of_tags_impl(std::type_identity<std::variant<Option...>>) {
+namespace detail {
+template<
+  template<typename... MappedOption> typename TypeCombiner,
+  template<typename OrigType> typename TypeMapper,
+  typename... Option>
+static constexpr std::type_identity<TypeCombiner<TypeMapper<Option>...>>
+map_and_reassemble_variant_impl(std::type_identity<std::variant<Option...>>) {
     return {};
 }
-template<typename... Option>
-static constexpr std::tuple<std::type_identity<Option>...>
-tuple_of_tags_impl(std::type_identity<std::variant<Option...>>) {
-    return {};
-}
+} // namespace detail
 
-} // namespace util::detail
-
-template<typename Variant>
-using variant_of_identities = decltype(util::detail::variant_of_tags_impl(
-  std::type_identity<Variant>{}));
+template<
+  typename Variant,
+  template<typename... MappedOption> typename TypeCombiner,
+  template<typename OrigType> typename TypeMapper>
+using map_and_reassemble_variant
+  = decltype(detail::map_and_reassemble_variant_impl<TypeCombiner, TypeMapper>(
+    std::type_identity<Variant>{}))::type;
 
 template<typename Variant>
-using tuple_of_identities = decltype(util::detail::tuple_of_tags_impl(
-  std::type_identity<Variant>{}));
+using variant_of_identities
+  = map_and_reassemble_variant<Variant, std::variant, std::type_identity>;
+
+template<typename Variant>
+using tuple_of_identities
+  = map_and_reassemble_variant<Variant, std::tuple, std::type_identity>;
