@@ -1042,8 +1042,10 @@ configuration::configuration()
       "The retention time for tombstone records and transaction markers in a "
       "compacted topic.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      std::nullopt,
-      validate_tombstone_retention_ms)
+      24h,
+      validate_tombstone_retention_ms,
+      legacy_default<std::optional<std::chrono::milliseconds>>(
+        std::nullopt, legacy_version{17}))
   , min_cleanable_dirty_ratio(
       *this,
       "min_cleanable_dirty_ratio",
