@@ -5,7 +5,7 @@
 [![Twitter](https://img.shields.io/twitter/follow/redpandadata.svg?style=social&label=Follow)](https://twitter.com/intent/follow?screen_name=redpandadata)
 [![Redpanda University](https://img.shields.io/badge/Redpanda%20University-black)](https://university.redpanda.com/)
 <p align="center">
-<a href="https://redpanda.com/redpanda"><img src="docs/PANDA_sitting.png" alt="redpanda sitting" width="400"></a>
+  <a href="https://redpanda.com/redpanda"><img src="docs/PANDA_sitting.png" alt="redpanda sitting" width="400"></a>
 </p>
 
 Redpanda is the most complete, Apache Kafka®-compatible streaming data platform, designed from the ground up to be lighter, faster, and simpler to operate. Free from ZooKeeper™ and JVMs, it prioritizes an end-to-end developer experience with a huge ecosystem of connectors, configurable tiered storage, and more.
