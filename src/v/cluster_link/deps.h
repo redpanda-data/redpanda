@@ -36,11 +36,17 @@ public:
     virtual ss::future<::cluster::cluster_link::errc>
     upsert_link(model::metadata md, ::model::timeout_clock::time_point) = 0;
 
+    virtual ss::future<::cluster::cluster_link::errc>
+      delete_link(model::name_t, ::model::timeout_clock::time_point) = 0;
+
     virtual std::optional<std::reference_wrapper<const model::metadata>>
       find_link_by_id(model::id_t) const = 0;
 
     virtual std::optional<std::reference_wrapper<const model::metadata>>
     find_link_by_name(const model::name_t&) const = 0;
+
+    virtual std::optional<model::id_t>
+    find_link_id_by_name(const model::name_t&) const = 0;
 
     virtual chunked_vector<model::id_t> get_all_link_ids() const = 0;
 
@@ -67,6 +73,13 @@ public:
       ::model::topic,
       ::cluster_link::model::mirror_topic_metadata>>
     get_mirror_topics_for_link(model::id_t id) const = 0;
+
+    virtual ss::future<::cluster::cluster_link::errc>
+      update_cluster_link_configuration(
+        model::id_t,
+        model::update_cluster_link_configuration_cmd,
+        ::model::timeout_clock::time_point)
+      = 0;
 };
 
 /**
@@ -107,4 +120,48 @@ public:
     virtual std::unique_ptr<kafka::client::cluster>
     create_cluster(const model::metadata& md);
 };
+
+/**
+ * Cluster linking entry point for consumer group operations in the cluster
+ */
+class consumer_groups_router {
+public:
+    consumer_groups_router() = default;
+    consumer_groups_router(const consumer_groups_router&) = delete;
+    consumer_groups_router(consumer_groups_router&&) = delete;
+    consumer_groups_router& operator=(const consumer_groups_router&) = delete;
+    consumer_groups_router& operator=(consumer_groups_router&&) = delete;
+    virtual ~consumer_groups_router() = default;
+
+    virtual std::optional<::model::partition_id>
+    partition_for(const kafka::group_id&) const = 0;
+
+    virtual ss::future<kafka::offset_commit_response>
+      offset_commit(kafka::offset_commit_request) = 0;
+
+    virtual ss::future<bool> assure_topic_exists() = 0;
+};
+
+/**
+ * Cluster linking entry point for retrieving partition metadata information
+ */
+class partition_metadata_provider {
+public:
+    partition_metadata_provider() = default;
+    partition_metadata_provider(const partition_metadata_provider&) = delete;
+    partition_metadata_provider(partition_metadata_provider&&) = delete;
+    partition_metadata_provider& operator=(const partition_metadata_provider&)
+      = delete;
+    partition_metadata_provider& operator=(partition_metadata_provider&&)
+      = delete;
+    virtual ~partition_metadata_provider() = default;
+
+    /**
+     * Returns the high watermark for a given topic partition. If the
+     * information is missing or error occurs, returns std::nullopt.
+     */
+    virtual ss::future<std::optional<kafka::offset>>
+      get_partition_high_watermark(::model::topic_partition_view) = 0;
+};
+
 } // namespace cluster_link

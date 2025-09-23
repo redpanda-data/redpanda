@@ -32,7 +32,7 @@ public:
       cloud_storage_clients::client::list_bucket_result,
       cloud_storage_clients::error_outcome>>
     list_objects(seastar::abort_source*) override {
-        std::vector<cloud_storage_clients::client::list_bucket_item> keep;
+        chunked_vector<cloud_storage_clients::client::list_bucket_item> keep;
         for (const auto& object : *listed_) {
             auto not_deleted = true;
             for (const auto& deleted : *deleted_) {

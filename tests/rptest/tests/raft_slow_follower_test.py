@@ -7,20 +7,20 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
 import random
 import signal
 import threading
 import time
 
 import numpy
+from confluent_kafka import Producer
+from confluent_kafka.cimpl import KafkaError
+from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from confluent_kafka import Producer
-from confluent_kafka.cimpl import KafkaError
-from ducktape.utils.util import wait_until
 
 
 class ThreadedProducer:

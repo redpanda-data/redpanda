@@ -7,7 +7,7 @@ for ver in "2.3.1" "2.4.1" "2.5.0" "2.7.0" "3.0.0" "3.7.0" "3.8.0" "3.9.0"; do
   odir=/opt/kafka-${ver}
   mkdir -p "$odir"
   chmod a+rw "$odir"
-  DL_STRIP=1 download_extract "https://archive.apache.org/dist/kafka/${ver}/kafka_2.12-${ver}.tgz" "$odir"
+  DL_STRIP=1 download_extract "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/kafka_2.12-${ver}.tgz" "$odir"
 done
 ln -s /opt/kafka-3.9.0/ /opt/kafka-dev
 

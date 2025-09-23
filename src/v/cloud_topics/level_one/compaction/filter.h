@@ -18,25 +18,24 @@ namespace cloud_topics::l1 {
 class compaction_filter : public compaction::filter {
 public:
     compaction_filter(
-      compaction::sliding_window_reducer::sink& sink,
-      const compaction::key_offset_map& map,
-      model::ntp ntp)
-      : filter(sink, std::move(ntp))
-      , _map(map) {}
+      compaction::sliding_window_reducer::sink&,
+      const compaction::key_offset_map&,
+      model::ntp);
 
 private:
     ss::future<> maybe_index_offset_delta(
-      const model::record_batch& b,
-      const model::record& r,
-      std::vector<int32_t>& offset_deltas) const;
+      const model::record_batch&,
+      const model::record&,
+      std::vector<int32_t>&) const;
 
     ss::future<std::vector<int32_t>>
-    compute_offset_deltas_to_keep(const model::record_batch& b) const final;
+    compute_offset_deltas_to_keep(const model::record_batch&) const final;
 
     ss::future<std::optional<model::record_batch>>
-    filter_batch_with_offset_deltas(
-      model::record_batch b, std::vector<int32_t> offset_deltas) const final;
+      filter_batch_with_offset_deltas(
+        model::record_batch, std::vector<int32_t>) const final;
 
+private:
     const compaction::key_offset_map& _map;
 };
 

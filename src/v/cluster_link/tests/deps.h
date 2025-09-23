@@ -14,12 +14,19 @@
 #include "cluster/cluster_link/table.h"
 #include "cluster/cluster_link/tests/utils.h"
 #include "cluster_link/manager.h"
+#include "cluster_link/replication/tests/deps_test_impl.h"
 #include "cluster_link/utils.h"
+#include "config/mock_property.h"
 #include "kafka/client/test/cluster_mock.h"
 #include "kafka/data/rpc/deps.h"
 #include "kafka/data/rpc/test/deps.h"
 
 #include <seastar/util/defer.hh>
+
+using data_src_factory
+  = cluster_link::replication::tests::random_data_source_factory;
+using data_sink_factory
+  = cluster_link::replication::tests::accounting_sink_factory;
 namespace cluster_link::tests {
 
 class test_link_factory : public link_factory {
@@ -40,7 +47,9 @@ public:
           manager,
           _task_reconciler_interval,
           std::move(metadata),
-          std::move(cluster_connection));
+          std::move(cluster_connection),
+          std::make_unique<data_src_factory>(),
+          std::make_unique<data_sink_factory>());
 
         _links.emplace(std::move(name), created_link.get());
         return created_link;
@@ -72,6 +81,14 @@ public:
         co_return ec.value();
     }
 
+    ss::future<::cluster::cluster_link::errc> delete_link(
+      model::name_t name, ::model::timeout_clock::time_point) override {
+        auto batch = ::cluster::cluster_link::testing::create_remove_command(
+          std::move(name));
+        auto ec = co_await _table->apply_update(std::move(batch));
+        co_return ec.value();
+    }
+
     std::optional<std::reference_wrapper<const model::metadata>>
     find_link_by_id(model::id_t id) const override {
         return _table->find_link_by_id(id);
@@ -80,6 +97,11 @@ public:
     std::optional<std::reference_wrapper<const model::metadata>>
     find_link_by_name(const model::name_t& name) const override {
         return _table->find_link_by_name(name);
+    }
+
+    std::optional<model::id_t>
+    find_link_id_by_name(const model::name_t& name) const override {
+        return _table->find_id_by_name(name);
     }
 
     chunked_vector<model::id_t> get_all_link_ids() const override {
@@ -150,6 +172,20 @@ public:
         return mirror_topics;
     }
 
+    ss::future<::cluster::cluster_link::errc> update_cluster_link_configuration(
+      model::id_t id,
+      model::update_cluster_link_configuration_cmd cmd,
+      ::model::timeout_clock::time_point) override {
+        auto link = _table->find_link_by_id(id);
+        if (!link) {
+            co_return ::cluster::cluster_link::errc::does_not_exist;
+        }
+        auto batch = ::cluster::cluster_link::testing::
+          create_update_cluster_link_configuration_command(id, std::move(cmd));
+        auto ec = co_await _table->apply_update(std::move(batch));
+        co_return ec.value();
+    }
+
 private:
     cluster::cluster_link::table* _table;
     ::model::offset _last_offset{0};
@@ -184,7 +220,8 @@ public:
       ss::shard_id,
       const N&,
       ss::noncopyable_function<
-        ss::future<::result<R, cluster::errc>>(kafka::partition_proxy*)>) {
+        ss::future<::result<R, cluster::errc>>(kafka::partition_proxy*)>,
+      kafka::data::rpc::require_leader) {
         throw std::runtime_error("not implemented");
     }
 
@@ -213,21 +250,27 @@ public:
         _impl->remove_shard_owner(ntp);
     }
 
+    bool is_current_shard_leader(const ::model::ntp& ntp) const final {
+        return _impl->shard_owner(ntp) == ss::this_shard_id();
+    }
+
     ss::future<::result<::model::offset, cluster::errc>> invoke_on_shard(
       ss::shard_id shard_id,
       const ::model::ktp& ktp,
-      ss::noncopyable_function<
-        ss::future<::result<::model::offset, cluster::errc>>(
-          kafka::partition_proxy*)> fn) final {
-        return _impl->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
+      ss::noncopyable_function<ss::future<
+        ::result<::model::offset, cluster::errc>>(kafka::partition_proxy*)> fn,
+      kafka::data::rpc::require_leader require_leader) final {
+        return _impl->invoke_on_shard_impl(
+          shard_id, ktp, std::move(fn), require_leader);
     }
     ss::future<::result<::model::offset, cluster::errc>> invoke_on_shard(
       ss::shard_id shard_id,
       const ::model::ntp& ntp,
-      ss::noncopyable_function<
-        ss::future<::result<::model::offset, cluster::errc>>(
-          kafka::partition_proxy*)> fn) final {
-        return _impl->invoke_on_shard_impl(shard_id, ntp, std::move(fn));
+      ss::noncopyable_function<ss::future<
+        ::result<::model::offset, cluster::errc>>(kafka::partition_proxy*)> fn,
+      kafka::data::rpc::require_leader require_leader) final {
+        return _impl->invoke_on_shard_impl(
+          shard_id, ntp, std::move(fn), require_leader);
     }
 
     ss::future<::result<kafka::data::rpc::partition_offsets, cluster::errc>>
@@ -236,8 +279,10 @@ public:
       const ::model::ktp& ktp,
       ss::noncopyable_function<ss::future<
         ::result<kafka::data::rpc::partition_offsets, cluster::errc>>(
-        kafka::partition_proxy*)> fn) final {
-        return _impl->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
+        kafka::partition_proxy*)> fn,
+      kafka::data::rpc::require_leader require_leader) final {
+        return _impl->invoke_on_shard_impl(
+          shard_id, ktp, std::move(fn), require_leader);
     }
 
 private:
@@ -376,6 +421,34 @@ private:
       _topic_cfgs;
 };
 
+struct test_consumer_group_router : public consumer_groups_router {
+    struct group_state {
+        chunked_hash_map<
+          ::model::topic,
+          chunked_hash_map<::model::partition_id, kafka::offset>>
+          offsets;
+    };
+
+    std::optional<::model::partition_id>
+    partition_for(const kafka::group_id&) const override;
+
+    ss::future<kafka::offset_commit_response>
+      offset_commit(kafka::offset_commit_request) override;
+
+    ss::future<bool> assure_topic_exists() override { co_return true; }
+
+    chunked_hash_map<kafka::group_id, group_state> groups;
+
+    int partition_count = 1;
+};
+
+struct test_partition_metadata_provider : public partition_metadata_provider {
+    ss::future<std::optional<kafka::offset>>
+      get_partition_high_watermark(::model::topic_partition_view) final;
+
+    chunked_hash_map<::model::topic_partition, kafka::offset> hwms;
+};
+
 class cluster_link_manager_test_fixture {
 public:
     explicit cluster_link_manager_test_fixture(::model::node_id self);
@@ -440,6 +513,20 @@ public:
 
     void set_topic_config(cluster::topic_configuration cfg);
 
+    test_consumer_group_router* consumer_group_router() {
+        return _consumer_group_router;
+    }
+
+    test_partition_metadata_provider* partition_metadata_provider() {
+        return _partition_metadata_provider;
+    }
+
+    ss::future<bool> wait_for_report_to_match(
+      ss::lowres_clock::duration timeout,
+      ss::lowres_clock::duration backoff,
+      std::function<bool(const model::cluster_link_task_status_report&)>
+        predicate);
+
 private:
     void setup_cluster_mock();
 
@@ -455,9 +542,13 @@ private:
     fake_topic_metadata_cache* _tmc{nullptr};
     kafka::data::rpc::test::fake_topic_creator* _ftpc{nullptr};
     link_factory* _lf{nullptr};
+    test_consumer_group_router* _consumer_group_router{nullptr};
+    test_partition_metadata_provider* _partition_metadata_provider{nullptr};
     ss::sharded<manager> _manager;
+    config::mock_property<int16_t> _default_topic_replication{1};
 
     ::model::node_id _self;
     model::id_t _next_link_id{0};
+    int64_t _term_counter{0};
 };
 } // namespace cluster_link::tests

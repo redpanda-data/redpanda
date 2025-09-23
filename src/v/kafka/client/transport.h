@@ -85,7 +85,7 @@ public:
       RequestT r,
       api_version version,
       std::optional<model::timeout_clock::duration> timeout = default_timeout) {
-        return do_send(std::move(r), version, timeout)
+        return do_send_and_decode(std::move(r), version, timeout)
           .then(
             [this](
               checked<typename RequestT::api_type::response_type, errc> res) {
@@ -117,7 +117,40 @@ public:
       RequestT r,
       api_version version,
       std::optional<model::timeout_clock::duration> timeout = default_timeout) {
-        return do_send(std::move(r), version, timeout);
+        return do_send_and_decode(std::move(r), version, timeout);
+    }
+    /**
+     * Dispatches the request to the broker and returns the raw response
+     * as an iobuf. This is useful for requests that have a non-standard
+     * decoding rules f.e. API version request
+     */
+    template<typename RequestT>
+    requires(KafkaApi<typename RequestT::api_type>)
+    ss::future<iobuf> dispatch_request_raw_response(
+      RequestT r,
+      api_version version,
+      std::optional<model::timeout_clock::duration> timeout = default_timeout) {
+        return do_send(std::move(r), version, timeout)
+          .then([this](checked<iobuf, errc> res) {
+              if (res.has_error()) {
+                  if (res.error() == errc::disconnected) {
+                      throw kafka_request_disconnected_exception(
+                        fmt::format(
+                          "Broker {}:{} transport disconnected",
+                          server_address().host(),
+                          server_address().port()));
+                  } else if (res.error() == errc::timeout) {
+                      throw kafka_request_disconnected_exception(
+                        fmt::format(
+                          "Broker {}:{} request of type {} timed out",
+                          server_address().host(),
+                          server_address().port(),
+                          RequestT::api_type::name));
+                  }
+              }
+
+              return std::move(res.value());
+          });
     }
 
     ss::future<> connect(
@@ -166,12 +199,11 @@ private:
     void on_timeout(correlation_id correlation);
 
     template<typename RequestT>
-    ss::future<checked<typename RequestT::api_type::response_type, errc>>
-    do_send(
+    ss::future<checked<iobuf, errc>> do_send(
       RequestT request,
       api_version version,
       std::optional<model::timeout_clock::duration> timeout) {
-        using ret_t = checked<typename RequestT::api_type::response_type, errc>;
+        using ret_t = checked<iobuf, errc>;
         // hold the mutex here before the message is written to the output
         // stream to ensure ordering or requests.
         auto u = co_await _dispatch_mutex.get_units();
@@ -221,15 +253,32 @@ private:
         // return all units to the semaphore before flushing the output
         u.return_all();
         co_await _out.flush();
-        typename RequestT::api_type::response_type resp;
         auto response_data = co_await std::move(response_future);
         if (response_data.has_error()) {
             co_return ret_t(response_data.error());
         }
-        resp.decode(std::move(response_data.value().data), version);
-        // TODO: If we need to handle tags, we can do it here.
-        co_return resp;
+
+        co_return std::move(response_data.value().data);
     }
+
+    template<typename RequestT>
+    ss::future<checked<typename RequestT::api_type::response_type, errc>>
+    do_send_and_decode(
+      RequestT request,
+      api_version version,
+      std::optional<model::timeout_clock::duration> timeout) {
+        using ret_t = checked<typename RequestT::api_type::response_type, errc>;
+        auto response_data = co_await do_send(
+          std::move(request), version, timeout);
+        if (response_data.has_error()) {
+            co_return ret_t(response_data.error());
+        }
+        typename RequestT::api_type::response_type resp;
+        resp.decode(std::move(response_data.value()), version);
+        // TODO: If we need to handle tags, we can do it here.
+        co_return ret_t(std::move(resp));
+    }
+
     mutex _dispatch_mutex{"kafka::client::transport::dispatch_mutex"};
     bool _needs_stop = false;
     correlation_id _correlation{0};

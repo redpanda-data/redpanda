@@ -9,33 +9,49 @@
 
 from typing import Any
 
-import time
 import random
 import threading
+from enum import Enum
 from typing import Callable
 
+from ducktape.tests.test import TestContext
+from ducktape.mark import matrix
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
-from ducktape.utils.util import wait_until
-from ducktape.tests.test import TestContext
-from ducktape.errors import TimeoutError
 
+from rptest.clients.types import TopicSpec
 from rptest.services.direct_consumer_verifier import (
-    DirectConsumerVerifier,
-    CreateDirectConsumerRequest,
-    BrokerAddress,
-    DirectConsumerConfiguration,
-    OffsetResetPolicy,
-    IsolationLevel,
     AssignPartitionsRequest,
-    TopicAssignment,
-    PartitionAssignment,
+    BrokerAddress,
+    CreateDirectConsumerRequest,
+    DirectConsumerConfiguration,
+    DirectConsumerVerifier,
     GetConsumerStateRequest,
+    IsolationLevel,
+    OffsetResetPolicy,
+    PartitionAssignment,
+    TopicAssignment,
 )
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_with_progress_check
+from rptest.utils.node_operations import (
+    FailureInjectorBackgroundThread,
+)
+
+
+class FailureMode(str, Enum):
+    NONE = "NONE"
+    LEADERSHIP_TRANSFER = "LEADERSHIP_TRANSFER"
+    RANDOM = "RANDOM"
+
+
+class NoopThread:
+    def stop(self):
+        pass
+
+    def start(self):
+        pass
 
 
 class LoopThread(threading.Thread):
@@ -88,8 +104,32 @@ class DirectConsumerVerifierTest(RedpandaTest):
         )
         return thread
 
+    def get_failure_thread(self, failure_mode: FailureMode, topic_spec: str):
+        match failure_mode:
+            case FailureMode.LEADERSHIP_TRANSFER:
+                return self.create_troublemaker_thread(topic_spec)
+            case FailureMode.RANDOM:
+                return FailureInjectorBackgroundThread(
+                    self.redpanda,
+                    self.logger,
+                    max_inter_failure_time=30,
+                    min_inter_failure_time=10,
+                    max_suspend_duration_seconds=7,
+                )
+            case FailureMode.NONE:
+                return NoopThread()
+            case _:
+                return NoopThread()
+
     @cluster(num_nodes=5)
-    def test_basic_consuming_from_topic(self):
+    @matrix(
+        failure_mode=[
+            FailureMode.NONE,
+            FailureMode.LEADERSHIP_TRANSFER,
+            FailureMode.RANDOM,
+        ]
+    )
+    def test_basic_consuming_from_topic(self, failure_mode):
         topic_name = "test-topic"
         msg_count = 200000
         msg_size = 128
@@ -113,7 +153,7 @@ class DirectConsumerVerifierTest(RedpandaTest):
         verifier = DirectConsumerVerifier(self.test_context, log_level="DEBUG")
         verifier.start()
 
-        troublemaker = self.create_troublemaker_thread(topic_spec=topic_spec)
+        troublemaker = self.get_failure_thread(failure_mode, topic_spec)
         troublemaker.start()
 
         try:
@@ -175,15 +215,14 @@ class DirectConsumerVerifierTest(RedpandaTest):
                 timeout_sec=600,
                 progress_sec=10,
                 backoff_sec=2,
-                err_msg=f"Stopped consuming",
+                err_msg="Stopped consuming",
                 logger=self.logger,
             )
 
             final_state = verifier.get_consumer_state(state_request)
 
             # assertions
-            # must have seen at least msg_count, duplicate offsets are legal but undesirable
-            assert final_state.total_consumed_messages >= msg_count, (
+            assert final_state.total_consumed_messages == msg_count, (
                 f"Expected {msg_count} messages, got {final_state.total_consumed_messages}"
             )
 
@@ -197,6 +236,6 @@ class DirectConsumerVerifierTest(RedpandaTest):
 
         finally:
             troublemaker.stop()
-            producer.stop()
             verifier.stop()
             producer.wait(timeout_sec=600)
+            producer.stop()

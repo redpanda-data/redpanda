@@ -103,7 +103,7 @@ public:
      * The kitp must not be in a moved-from state and this is checked via assert
      * in non-release builds.
      */
-    const topic& get_topic() const { return ktp().get_topic(); }
+    const topic& get_topic() const { return as_ktp().get_topic(); }
 
     /**
      * @brief Returns the kitp's partition id.
@@ -111,7 +111,7 @@ public:
      * The kitp must not be in a moved-from state and this is checked via assert
      * in non-release builds.
      */
-    partition_id get_partition() const { return ktp().get_partition(); }
+    partition_id get_partition() const { return as_ktp().get_partition(); }
 
     topic_namespace_view as_tn_view() const {
         return {kafka_namespace, get_topic()};

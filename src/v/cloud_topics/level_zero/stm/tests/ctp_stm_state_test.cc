@@ -53,16 +53,16 @@ TEST(ctp_stm_state_test, advance_epoch) {
     ct::cluster_epoch epoch2(25);
     ct::cluster_epoch epoch3(10);
 
-    state.advance_epoch(epoch1);
+    state.advance_epoch(epoch1, model::offset(1));
     EXPECT_EQ(state.get_max_epoch().value(), epoch1);
     EXPECT_EQ(state.get_max_seen_epoch().value(), epoch1);
 
-    state.advance_epoch(epoch2);
+    state.advance_epoch(epoch2, model::offset(2));
     EXPECT_EQ(state.get_max_epoch().value(), epoch2);
     EXPECT_EQ(state.get_max_seen_epoch().value(), epoch2);
 
     // Should not go backwards
-    state.advance_epoch(epoch3);
+    state.advance_epoch(epoch3, model::offset(3));
     EXPECT_EQ(state.get_max_epoch().value(), epoch2);
     EXPECT_EQ(state.get_max_seen_epoch().value(), epoch2);
 }
@@ -72,7 +72,7 @@ TEST(ctp_stm_state_test, advance_epoch_on_a_follower) {
     ct::ctp_stm_state state;
     ct::cluster_epoch advance_epoch(20);
 
-    state.advance_epoch(advance_epoch);
+    state.advance_epoch(advance_epoch, model::offset(1));
 
     EXPECT_EQ(state.get_max_seen_epoch().value(), advance_epoch);
     EXPECT_EQ(state.get_max_epoch().value(), advance_epoch);
@@ -104,6 +104,30 @@ TEST(ctp_stm_state_test, get_max_collectible_offset) {
     model::offset log_offset(500);
     state.advance_last_reconciled_offset(kafka::offset(300), log_offset);
     EXPECT_EQ(state.get_max_collectible_offset(), log_offset);
+}
+
+TEST(ctp_stm_state_test, advance_lro_updates_min_epoch) {
+    ct::ctp_stm_state state;
+    ct::cluster_epoch epoch1(10);
+    ct::cluster_epoch epoch2(20);
+
+    // Initially min epoch is not set
+    EXPECT_FALSE(state.estimate_min_epoch().has_value());
+
+    state.advance_epoch(epoch1, model::offset(1));
+    EXPECT_TRUE(state.estimate_min_epoch().has_value());
+    EXPECT_EQ(state.estimate_min_epoch().value(), epoch1);
+
+    state.advance_epoch(epoch2, model::offset(5));
+    EXPECT_EQ(state.estimate_min_epoch().value(), epoch1);
+
+    // Advance LRO past the offset of epoch1
+    state.advance_last_reconciled_offset(kafka::offset(100), model::offset(2));
+    EXPECT_EQ(state.estimate_min_epoch().value(), epoch1);
+
+    // Advance LRO past the offset of epoch2
+    state.advance_last_reconciled_offset(kafka::offset(200), model::offset(6));
+    EXPECT_EQ(state.estimate_min_epoch().value(), epoch2);
 }
 
 } // anonymous namespace

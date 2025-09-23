@@ -14,6 +14,8 @@
 #include "cloud_topics/level_one/metastore/state_update.h"
 #include "cloud_topics/logger.h"
 
+#include <algorithm>
+
 namespace cloud_topics::l1 {
 
 namespace {
@@ -92,6 +94,7 @@ public:
 
     object_id
     get_or_create_object_for(const model::topic_id_partition&) override;
+    std::expected<void, error> remove_pending_object(object_id) override;
     std::expected<void, error>
       add(object_id, metastore::object_metadata::ntp_metadata) override;
     std::expected<void, error>
@@ -128,6 +131,25 @@ object_id replicated_object_builder::get_or_create_object_for(
         return oid;
     }
     return partition_objects.pending_objects_.begin()->first;
+}
+
+std::expected<void, replicated_object_builder::error>
+replicated_object_builder::remove_pending_object(object_id oid) {
+    auto p_it = std::ranges::find_if(partitions_, [oid](auto& p) {
+        return p.second.pending_objects_.contains(oid);
+    });
+    if (p_it == partitions_.end()) {
+        return std::unexpected(
+          error{fmt::format("Object {} is not a pending object", oid)});
+    }
+    auto& [_, objects] = *p_it;
+    auto it = objects.pending_objects_.find(oid);
+    dassert(
+      it != objects.pending_objects_.end(),
+      "Pending objects expected to contain {}",
+      oid);
+    objects.pending_objects_.erase(it);
+    return {};
 }
 
 std::expected<void, replicated_object_builder::error>
@@ -391,6 +413,8 @@ replicated_metastore::get_first_ge(
     resp.oid = reply.object.oid;
     resp.footer_pos = reply.object.footer_pos;
     resp.object_size = reply.object.object_size;
+    resp.first_offset = reply.object.first_offset;
+    resp.last_offset = reply.object.last_offset;
     co_return resp;
 }
 
@@ -418,7 +442,30 @@ replicated_metastore::get_first_ge(
     resp.oid = reply.object.oid;
     resp.footer_pos = reply.object.footer_pos;
     resp.object_size = reply.object.object_size;
+    resp.first_offset = reply.object.first_offset;
+    resp.last_offset = reply.object.last_offset;
     co_return resp;
+}
+
+ss::future<std::expected<kafka::offset, metastore::errc>>
+replicated_metastore::get_first_offset_for_bytes(
+  const model::topic_id_partition& tp, uint64_t size) {
+    rpc::get_first_offset_for_bytes_request req;
+    req.tp = tp;
+    req.size = size;
+
+    auto reply_fut = co_await ss::coroutine::as_future(
+      fe_.get_first_offset_for_bytes(req));
+    if (reply_fut.failed()) {
+        auto ex = reply_fut.get_exception();
+        vlog(cd_log.warn, "Error while sending request: {}", ex);
+        co_return std::unexpected(metastore::errc::transport_error);
+    }
+    auto reply = reply_fut.get();
+    if (reply.ec != rpc::errc::ok) {
+        co_return std::unexpected(rpc_to_meta_errc(reply.ec));
+    }
+    co_return reply.offset;
 }
 
 ss::future<std::expected<model::term_id, metastore::errc>>
@@ -555,6 +602,12 @@ replicated_metastore::get_compaction_offsets(
     resp.dirty_ranges = reply.dirty_ranges;
     resp.removable_tombstone_ranges = reply.removable_tombstone_ranges;
     co_return resp;
+}
+
+ss::future<std::expected<metastore::compaction_info_response, metastore::errc>>
+replicated_metastore::get_compaction_info(
+  [[maybe_unused]] const sample_spec& log) {
+    co_return compaction_info_response{};
 }
 
 } // namespace cloud_topics::l1

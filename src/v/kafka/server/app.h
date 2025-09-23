@@ -32,6 +32,9 @@ namespace client_quota {
 class frontend;
 class store;
 } // namespace client_quota
+namespace cluster_link {
+class frontend;
+}
 } // namespace cluster
 
 namespace security {
@@ -105,6 +108,7 @@ public:
       seastar::sharded<cluster::controller_api>&,
       seastar::sharded<cluster::tx_gateway_frontend>&,
       seastar::sharded<datalake_throttle_manager>&,
+      seastar::sharded<cluster::cluster_link::frontend>&,
       std::optional<qdc_monitor_config>,
       ssx::singleton_thread_worker&,
       const std::unique_ptr<pandaproxy::schema_registry::api>&);

@@ -8,14 +8,13 @@
 # by the Apache License, Version 2.0
 
 from rptest.services.redpanda import MetricsEndpoint
-from rptest.services.redpanda import FAILURE_INJECTION_LOG_ALLOW_LIST
 from rptest.services.storage_failure_injection import (
+    NTP,
+    BatchType,
+    FailureConfig,
     FailureInjectionConfig,
     NTPFailureInjectionConfig,
-    FailureConfig,
-    NTP,
     Operation,
-    BatchType,
 )
 from rptest.utils.si_utils import BucketView
 

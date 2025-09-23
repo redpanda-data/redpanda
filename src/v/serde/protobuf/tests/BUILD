@@ -180,6 +180,25 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "reflection_test",
+    timeout = "short",
+    srcs = [
+        "reflection_test.cc",
+    ],
+    cpu = 1,
+    memory = "128MiB",
+    deps = [
+        ":codegen_test_cc_proto",
+        ":codegen_test_redpanda_proto",
+        ":test_messages_edition2023_cc_proto",
+        ":test_messages_edition2023_redpanda_proto",
+        "//src/v/test_utils:gtest",
+        "@fmt",
+        "@googletest//:gtest",
+    ],
+)
+
 redpanda_golden_test(
     name = "protogen_golden_conformance_test",
     srcs = {

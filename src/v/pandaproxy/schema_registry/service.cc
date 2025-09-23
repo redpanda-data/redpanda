@@ -403,10 +403,7 @@ ss::future<> create_acls(cluster::security_frontend& security_fe) {
 
 ss::future<> service::configure() {
     auto sasl_config = co_await kafka::client::create_client_credentials(
-      *_controller,
-      config::shard_local_cfg(),
-      _client_config,
-      security::schema_registry_principal);
+      *_controller, _client_config, security::schema_registry_principal);
     co_await _client.invoke_on_all(
       [sasl_config = std::move(sasl_config)](kafka::client::client& c) {
           c.set_credentials(sasl_config);

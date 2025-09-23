@@ -128,7 +128,11 @@ void handle_authz(
       resource,
       [&](const detail::requires_auth auto& resource_name) {
           return rq.service().authorizor().authorized(
-            resource_name, op, params.principal, params.host);
+            resource_name,
+            op,
+            params.principal,
+            params.host,
+            security::superuser_required::no);
       },
       [&](const detail::no_auth auto&) {
           return security::auth_result::authz_disabled(
@@ -179,7 +183,11 @@ void handle_get_schemas_ids_id_authz(
     auto all_results = audit_resources{};
     for (const auto& sub : subjects) {
         auto res = rq.service().authorizor().authorized(
-          sub, op, params.principal, params.host);
+          sub,
+          op,
+          params.principal,
+          params.host,
+          security::superuser_required::no);
 
         if (res.is_authorized()) {
             authorizing_result = std::move(res);
@@ -225,7 +233,11 @@ void handle_get_subjects_authz(
 
     auto new_end = std::ranges::remove_if(subjects, [&](const auto& subject) {
         auto res = rq.service().authorizor().authorized(
-          subject, op, params.principal, params.host);
+          subject,
+          op,
+          params.principal,
+          params.host,
+          security::superuser_required::no);
         if (res.is_authorized()) {
             passing_results.emplace_back(subject(), subject_resource_type);
             return false; // keep

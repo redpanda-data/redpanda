@@ -21,6 +21,7 @@
 #include "datalake/tests/test_data_writer.h"
 #include "datalake/tests/test_utils.h"
 #include "datalake/translation/translation_probe.h"
+#include "features/feature_table.h"
 #include "iceberg/filesystem_catalog.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -52,6 +53,8 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
     auto writer_factory = std::make_unique<datalake::test_data_writer_factory>(
       false);
     translation_probe probe(ntp);
+    features::feature_table features;
+    features.testing_activate_all();
     datalake::record_multiplexer multiplexer(
       ntp,
       rev,
@@ -64,7 +67,8 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
       location_provider(
         cloud_io::s3_compat_provider{"s3"},
         cloud_storage_clients::bucket_name{"bucket"}),
-      probe);
+      probe,
+      &features);
 
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
@@ -109,6 +113,8 @@ TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
     auto writer_factory = std::make_unique<datalake::test_data_writer_factory>(
       true);
     translation_probe probe(ntp);
+    features::feature_table features;
+    features.testing_activate_all();
     datalake::record_multiplexer multiplexer(
       ntp,
       rev,
@@ -121,7 +127,8 @@ TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
       location_provider(
         cloud_io::s3_compat_provider{"s3"},
         cloud_storage_clients::bucket_name{"bucket"}),
-      probe);
+      probe,
+      &features);
 
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
@@ -160,6 +167,8 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
       tracker);
 
     translation_probe probe(ntp);
+    features::feature_table features;
+    features.testing_activate_all();
     datalake::record_multiplexer multiplexer(
       ntp,
       rev,
@@ -172,7 +181,8 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
       location_provider(
         cloud_io::s3_compat_provider{"s3"},
         cloud_storage_clients::bucket_name{"bucket"}),
-      probe);
+      probe,
+      &features);
 
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
@@ -237,9 +247,13 @@ class RecordMultiplexerParquetTest
   , public ::testing::Test {
 public:
     RecordMultiplexerParquetTest()
-      : schema_mgr(catalog)
+      : schema_mgr(catalog, &features)
       , type_resolver(registry)
-      , t_creator(type_resolver, schema_mgr) {}
+      , t_creator(type_resolver, schema_mgr) {
+        features.testing_activate_all();
+    }
+
+    features::feature_table features;
     catalog_schema_manager schema_mgr;
     record_schema_resolver type_resolver;
     direct_table_creator t_creator;
@@ -301,7 +315,8 @@ TEST_F(RecordMultiplexerParquetTest, TestSimple) {
       t_creator,
       model::iceberg_invalid_record_action::dlq_table,
       location_provider(scoped_remote->remote.local().provider(), bucket_name),
-      probe);
+      probe,
+      &features);
     mux
       .multiplex(
         std::move(reader), kafka::offset{start_offset}, model::no_timeout, as)

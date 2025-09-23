@@ -37,6 +37,7 @@ enum class errc : int {
     service_shutting_down,
     link_limit_reached,
     link_creation_failed,
+    link_has_active_shadow_topics,
 };
 
 std::error_code make_error_code(errc) noexcept;

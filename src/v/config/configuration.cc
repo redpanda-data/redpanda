@@ -14,10 +14,12 @@
 #include "config/base_property.h"
 #include "config/bounded_property.h"
 #include "config/node_config.h"
+#include "config/sasl_mechanisms.h"
 #include "config/types.h"
 #include "config/validators.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "net/tls.h"
 #include "security/config.h"
 #include "security/oidc_url_parser.h"
 #include "serde/rw/chrono.h"
@@ -378,6 +380,15 @@ configuration::configuration()
       "limit.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
+  , controller_backend_reconciliation_concurrency(
+      *this,
+      "controller_backend_reconciliation_concurrency",
+      "Maximum concurrent reconciliation operations the controller can run. "
+      "Higher values can speed up cluster state changes but use more "
+      "resources.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1024u,
+      {.min = 1u, .max = 2048u})
   , admin_api_require_auth(
       *this,
       "admin_api_require_auth",
@@ -428,14 +439,7 @@ configuration::configuration()
        .visibility = visibility::tunable},
       std::nullopt,
       {.min = 32_MiB})
-  , raft_recovery_default_read_size(
-      *this,
-      "raft_recovery_default_read_size",
-      "Specifies the default size of a read issued during Raft follower "
-      "recovery.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      512_KiB,
-      {.min = 128, .max = 5_MiB})
+  , raft_recovery_default_read_size(*this, "raft_recovery_default_read_size")
   , raft_enable_lw_heartbeat(
       *this,
       "raft_enable_lw_heartbeat",
@@ -856,6 +860,21 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       1h,
       {.min = 0ms, .max = serde::max_serializable_ms})
+  , kafka_produce_batch_validation(
+      *this,
+      "kafka_produce_batch_validation",
+      "Controls the level of validation performed on batches produced to "
+      "Redpanda. When set to `legacy`, there is minimal validation performed "
+      "on the produce path. When set to `relaxed`, full validation is "
+      "performed on uncompressed batches and on compressed batches with the "
+      "`max_timestamp` value left unset. When set to `strict`, full validation "
+      "of uncompressed and compressed batches is performed. This should be the "
+      "default in environments where producing clients are not trusted.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      model::kafka_batch_validation_mode::relaxed,
+      {model::kafka_batch_validation_mode::legacy,
+       model::kafka_batch_validation_mode::relaxed,
+       model::kafka_batch_validation_mode::strict})
   , log_compression_type(
       *this,
       "log_compression_type",
@@ -1625,17 +1644,33 @@ configuration::configuration()
       false)
   , sasl_mechanisms(
       *this,
-      std::vector<ss::sstring>{"GSSAPI", "OAUTHBEARER"},
+      is_enterprise_sasl_mechanism,
       "sasl_mechanisms",
-      "A list of supported SASL mechanisms. Accepted values: `SCRAM`, "
-      "`GSSAPI`, `OAUTHBEARER`, `PLAIN`.  Note that in order to enable PLAIN, "
-      "you must also enable SCRAM.",
+      "A list of supported SASL mechanisms, if no override is defined in "
+      "`sasl_mechanisms_overrides` for each kafka listener. Accepted values: "
+      "`SCRAM`, `GSSAPI`, `OAUTHBEARER`, `PLAIN`.  Note that in order to "
+      "enable PLAIN, you must also enable SCRAM.",
       meta{
         .needs_restart = needs_restart::no,
         .visibility = visibility::user,
       },
-      std::vector<ss::sstring>{"SCRAM"},
+      std::vector<ss::sstring>{ss::sstring{scram}},
       validate_sasl_mechanisms)
+  , sasl_mechanisms_overrides(
+      *this,
+      is_enterprise_sasl_mechanisms_override,
+      "sasl_mechanisms_overrides",
+      "A list of overrides for SASL mechanisms, defined by listener. SASL "
+      "mechanisms defined here will replace the ones set in `sasl_mechanisms`. "
+      "The same limitations apply as for `sasl_mechanisms`.",
+      meta{
+        .needs_restart = needs_restart::no,
+        .example
+        = "[{'listener':'kafka_listener', 'sasl_mechanisms':['SCRAM']}]",
+        .visibility = visibility::user,
+      },
+      std::vector<sasl_mechanisms_override>{},
+      validate_sasl_mechanisms_overrides)
   , sasl_kerberos_config(
       *this,
       "sasl_kerberos_config",
@@ -1982,6 +2017,13 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       audit_failure_policy::reject,
       {audit_failure_policy::reject, audit_failure_policy::permit})
+  , audit_use_rpc(
+      *this,
+      "audit_use_rpc",
+      "Produce audit log messages using internal Redpanda RPCs. When disabled, "
+      "produce audit log messages using a Kafka client instead.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      true)
   , cloud_storage_enabled(
       *this,
       true,
@@ -3893,6 +3935,36 @@ configuration::configuration()
       "connections as client-initiated renegotiation was removed.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
       false)
+  , tls_v1_2_cipher_suites(
+      *this,
+      "tls_v1_2_cipher_suites",
+      "Specifies the TLS 1.2 cipher suites available for external client "
+      "connections as a colon-separated OpenSSL-compatible list. Configure "
+      "this property to support legacy clients.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      ss::sstring{net::tls_v1_2_cipher_suites},
+      [](ss::sstring s) -> std::optional<ss::sstring> {
+          if (!validate_tls_v1_2_cipher_suites(s)) {
+              return ssx::sformat("Invalid cipher suites: {}", s);
+          }
+          return std::nullopt;
+      })
+  , tls_v1_3_cipher_suites(
+      *this,
+      "tls_v1_3_cipher_suites",
+      "Specifies the TLS 1.3 cipher suites available for external client "
+      "connections as a colon-separated OpenSSL-compatible list. Most "
+      "deployments don't need to modify this setting. Configure this property "
+      "only for specific organizational security policies.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      ss::sstring{net::tls_v1_3_cipher_suites},
+      [](ss::sstring s) -> std::optional<ss::sstring> {
+          if (!validate_tls_v1_3_cipher_suites(s)) {
+              return ssx::sformat("Invalid cipher suites: {}", s);
+          }
+          return std::nullopt;
+      })
+
   , iceberg_enabled(
       *this,
       true,

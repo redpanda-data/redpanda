@@ -7,14 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from rptest.utils.rpk_config import read_redpanda_cfg
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk_remote import RpkRemoteTool
-from rptest.services.redpanda import RedpandaService, RESTART_LOG_ALLOW_LIST
+import random
 
 import yaml
-import random
+
+from rptest.clients.rpk_remote import RpkRemoteTool
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaService
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.utils.rpk_config import read_redpanda_cfg
 
 
 class RpkConfigTest(RedpandaTest):

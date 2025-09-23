@@ -51,6 +51,7 @@ public:
     bool empty() const;
     bool insert(kafka::offset base, kafka::offset last);
     bool contains(kafka::offset offset) const;
+    bool covers(kafka::offset start, kafka::offset end) const;
     stream make_stream() const;
     chunked_vector<interval> to_vec() const;
     void truncate_with_new_start_offset(kafka::offset);

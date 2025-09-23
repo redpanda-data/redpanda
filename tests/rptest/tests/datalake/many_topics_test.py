@@ -6,27 +6,26 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
-import concurrent.futures
 import itertools
 import random
 import time
 from uuid import uuid4
 
+import pyhive
 from confluent_kafka import SerializingProducer
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroSerializer
 from confluent_kafka.serialization import StringSerializer
 from ducktape.mark import matrix
-import pyhive
 
 from rptest.clients.rpk import RpkTool
+from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings, SchemaRegistryConfig
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.catalog_service import CatalogType
 from rptest.utils.parallel import execute_in_parallel
 
 

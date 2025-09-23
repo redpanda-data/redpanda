@@ -1,5 +1,6 @@
-from _typeshed import Incomplete
 from collections.abc import Generator
+
+from _typeshed import Incomplete
 
 class NodeNotPresentError(Exception): ...
 class InsufficientResourcesError(Exception): ...

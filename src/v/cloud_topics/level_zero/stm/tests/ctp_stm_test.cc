@@ -52,7 +52,7 @@ public:
 
             raft::state_machine_manager_builder builder;
 
-            cloud_topics::ctp_stm_factory stm_factory;
+            cloud_topics::l0::ctp_stm_factory stm_factory;
             stm_factory.create(
               builder, &*node->raft(), cluster::stm_instance_config{nullptr});
 

@@ -1,7 +1,8 @@
 import json
 import tarfile
-import requests
 import tempfile
+
+import requests
 
 
 class InstallPackClient:

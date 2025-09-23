@@ -7,10 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import sys
-import traceback
 import logging
 import os
+import sys
+import traceback
 
 from ...types import ConsistencyCheckError
 from .log_utils import State, cmds, threads

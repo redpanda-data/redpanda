@@ -21,12 +21,14 @@ namespace cluster::cluster_link {
 using ::cluster_link::model::add_mirror_topic_cmd;
 using ::cluster_link::model::connection_config;
 using ::cluster_link::model::id_t;
+using ::cluster_link::model::link_configuration;
 using ::cluster_link::model::metadata;
 using ::cluster_link::model::mirror_topic_state;
 using ::cluster_link::model::name_t;
 using ::cluster_link::model::scram_credentials;
 using ::cluster_link::model::tls_file_path;
 using ::cluster_link::model::tls_value;
+using ::cluster_link::model::update_cluster_link_configuration_cmd;
 using ::cluster_link::model::update_mirror_topic_properties_cmd;
 using ::cluster_link::model::update_mirror_topic_state_cmd;
 using ::cluster_link::model::uuid_t;
@@ -130,6 +132,22 @@ public:
               "Failed to update mirror topic properties: {}",
               err.message());
         }
+        co_return ec;
+    }
+
+    ss::future<cluster::cluster_link::errc> update_cluster_link_configuration(
+      id_t id, update_cluster_link_configuration_cmd cmd) {
+        cluster::cluster_link_update_cluster_link_configuration_cmd update_cmd{
+          id, cmd.copy()};
+        auto ec = _validator->validate_mutation(std::move(update_cmd));
+        if (ec == errc::success) {
+            auto err = co_await _table.local().apply_update(
+              testing::create_update_cluster_link_configuration_command(
+                id, std::move(cmd)));
+            vassert(
+              !err, "Failed to update link configuration: {}", err.message());
+        }
+
         co_return ec;
     }
 
@@ -501,7 +519,8 @@ TEST_F_CORO(frontend_validation_test, update_mirror_topic_mirrored_by_other) {
 TEST_F_CORO(frontend_validation_test, test_mirror_properties) {
     auto m1 = create_base_metadata();
     m1.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
-      = absl::flat_hash_set<ss::sstring>{"segment.ms"};
+      = ::cluster_link::model::topic_metadata_mirroring_config::properties_set{
+        "segment.ms"};
     m1.configuration.topic_metadata_mirroring_cfg.topic_name_filters = {
       {
         .pattern_type = ::cluster_link::model::filter_pattern_type::literal,
@@ -523,7 +542,8 @@ TEST_F_CORO(frontend_validation_test, test_mirror_properties) {
 TEST_F_CORO(frontend_validation_test, test_mirror_properties_empty_pattern) {
     auto m1 = create_base_metadata();
     m1.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
-      = absl::flat_hash_set<ss::sstring>{"segment.ms"};
+      = ::cluster_link::model::topic_metadata_mirroring_config::properties_set{
+        "segment.ms"};
     m1.configuration.topic_metadata_mirroring_cfg.topic_name_filters = {
       {
         .pattern_type = ::cluster_link::model::filter_pattern_type::literal,
@@ -545,7 +565,8 @@ TEST_F_CORO(frontend_validation_test, test_mirror_properties_empty_pattern) {
 TEST_F_CORO(frontend_validation_test, test_mirror_properties_invalid_wildcard) {
     auto m1 = create_base_metadata();
     m1.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
-      = absl::flat_hash_set<ss::sstring>{"segment.ms"};
+      = ::cluster_link::model::topic_metadata_mirroring_config::properties_set{
+        "segment.ms"};
     m1.configuration.topic_metadata_mirroring_cfg.topic_name_filters = {{
       .pattern_type = ::cluster_link::model::filter_pattern_type::literal,
       .filter = ::cluster_link::model::filter_type::include,
@@ -560,7 +581,8 @@ TEST_F_CORO(
   frontend_validation_test, test_mirror_properties_wildcard_in_prefix) {
     auto m1 = create_base_metadata();
     m1.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
-      = absl::flat_hash_set<ss::sstring>{"segment.ms"};
+      = ::cluster_link::model::topic_metadata_mirroring_config::properties_set{
+        "segment.ms"};
     m1.configuration.topic_metadata_mirroring_cfg.topic_name_filters = {{
       .pattern_type = ::cluster_link::model::filter_pattern_type::prefix,
       .filter = ::cluster_link::model::filter_type::include,
@@ -576,7 +598,8 @@ TEST_F_CORO(
   frontend_validation_test, test_mirror_properties_invalid_characters) {
     auto m1 = create_base_metadata();
     m1.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
-      = absl::flat_hash_set<ss::sstring>{"segment.ms"};
+      = ::cluster_link::model::topic_metadata_mirroring_config::properties_set{
+        "segment.ms"};
     m1.configuration.topic_metadata_mirroring_cfg.topic_name_filters = {{
       .pattern_type = ::cluster_link::model::filter_pattern_type::literal,
       .filter = ::cluster_link::model::filter_type::include,
@@ -592,7 +615,8 @@ TEST_F_CORO(
   frontend_validation_test, test_mirror_properties_invalid_topic_name) {
     auto m1 = create_base_metadata();
     m1.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
-      = absl::flat_hash_set<ss::sstring>{"segment.ms"};
+      = ::cluster_link::model::topic_metadata_mirroring_config::properties_set{
+        "segment.ms"};
     m1.configuration.topic_metadata_mirroring_cfg.topic_name_filters = {{
       .pattern_type = ::cluster_link::model::filter_pattern_type::literal,
       .filter = ::cluster_link::model::filter_type::include,
@@ -608,7 +632,8 @@ TEST_F_CORO(
   frontend_validation_test, test_mirror_properties_invalid_topic_property) {
     auto m1 = create_base_metadata();
     m1.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
-      = absl::flat_hash_set<ss::sstring>{"redpanda.remote.readreplica"};
+      = ::cluster_link::model::topic_metadata_mirroring_config::properties_set{
+        "redpanda.remote.readreplica"};
 
     EXPECT_EQ(
       co_await upsert_cluster_link(std::move(m1)),
@@ -780,6 +805,74 @@ TEST_F_CORO(
       co_await update_mirror_topic_properties(
         id.value(), std::move(update_cmd)),
       errc::invalid_update);
+}
+
+TEST_F_CORO(frontend_validation_test, update_cluster_link_configuration) {
+    ASSERT_EQ_CORO(
+      co_await upsert_cluster_link(create_base_metadata()), errc::success);
+    auto id = _table.local().find_id_by_name(name_t("link1"));
+    ASSERT_TRUE_CORO(id.has_value());
+
+    update_cluster_link_configuration_cmd update_cmd{
+      .connection = connection_config{
+        .bootstrap_servers = {net::unresolved_address{"localhost", 9093}}}};
+
+    update_cmd.link_config.topic_metadata_mirroring_cfg.task_interval = 60s;
+
+    ASSERT_EQ_CORO(
+      co_await update_cluster_link_configuration(*id, update_cmd.copy()),
+      errc::success);
+
+    auto meta = _table.local().find_link_by_id(*id);
+    ASSERT_TRUE_CORO(meta.has_value());
+    EXPECT_EQ(meta->get().connection, update_cmd.connection);
+    EXPECT_EQ(meta->get().configuration, update_cmd.link_config);
+}
+
+TEST_F_CORO(
+  frontend_validation_test, update_cluster_link_configuration_errors) {
+    // First try updating without a link present
+    {
+        update_cluster_link_configuration_cmd update_cmd{
+          .connection = connection_config{
+            .bootstrap_servers = {net::unresolved_address{"localhost", 9093}}}};
+
+        update_cmd.link_config.topic_metadata_mirroring_cfg.task_interval = 60s;
+        EXPECT_EQ(
+          co_await update_cluster_link_configuration(
+            id_t{1}, update_cmd.copy()),
+          errc::does_not_exist);
+    }
+    // Now create a link
+    ASSERT_EQ_CORO(
+      co_await upsert_cluster_link(create_base_metadata()), errc::success);
+    auto id = _table.local().find_id_by_name(name_t("link1"));
+    ASSERT_TRUE_CORO(id.has_value());
+    // Update with no bootstrap address provided
+    {
+        update_cluster_link_configuration_cmd update_cmd{
+          .connection = connection_config{}};
+
+        update_cmd.link_config.topic_metadata_mirroring_cfg.task_interval = 60s;
+        EXPECT_EQ(
+          co_await update_cluster_link_configuration(*id, update_cmd.copy()),
+          errc::bootstrap_servers_empty);
+    }
+    // Update with invalid topic properties
+    {
+        update_cluster_link_configuration_cmd update_cmd{
+          .connection = connection_config{
+            .bootstrap_servers = {net::unresolved_address{"localhost", 9093}}}};
+
+        update_cmd.link_config.topic_metadata_mirroring_cfg
+          .topic_properties_to_mirror
+          = ::cluster_link::model::topic_metadata_mirroring_config::
+            properties_set{"redpanda.remote.readreplica"};
+
+        EXPECT_EQ(
+          co_await update_cluster_link_configuration(*id, update_cmd.copy()),
+          errc::topic_property_excluded_from_mirroring);
+    }
 }
 
 } // namespace cluster::cluster_link

@@ -143,6 +143,10 @@ public:
 
     config::configuration& mock_config() { return _mock_config; }
 
+    void set_cluster_authorized_operations(cluster_authorized_operations ops) {
+        _cluster_authorized_operations = ops;
+    }
+
 public:
     supported_versions default_supported_versions;
 
@@ -187,6 +191,8 @@ private:
 
     // If unset, will use the node_id of the first broker in _brokers
     std::optional<model::node_id> _controller_id;
+    cluster_authorized_operations _cluster_authorized_operations{
+      cluster_authorized_operations_not_set};
     prefix_logger _logger;
 };
 

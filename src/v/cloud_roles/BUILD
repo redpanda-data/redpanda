@@ -128,6 +128,7 @@ redpanda_cc_library(
         "//src/v/metrics",
         "//src/v/model",
         "//src/v/net",
+        "//src/v/net:tls",
         "//src/v/ssx:future_util",
         "//src/v/ssx:sformat",
         "//src/v/utils:base64",

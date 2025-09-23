@@ -106,6 +106,20 @@ public:
     bool does_raft0_have_leader();
 
     bool contains_node_health_report(model::node_id) const;
+    /**
+     * Returns maximum high watermark for a given partition across the cluster.
+     * It returns the high watermark for the partition replica with highest
+     * revision.
+     *
+     * NOTE: why not returning the high watermark from the leader replica ?
+     *
+     * The leader replica high watermark may be stale if leader health report is
+     * older than followers one. High watermark is monotonically increasing
+     * therefore it is always safe to return the highest value.
+     */
+    ss::future<result<std::optional<kafka::offset>>>
+      get_partition_high_watermark(
+        model::topic_namespace_view, model::partition_id);
 
 private:
     /**

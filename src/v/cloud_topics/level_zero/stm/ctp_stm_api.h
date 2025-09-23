@@ -55,9 +55,17 @@ public:
     ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
     advance_reconciled_offset(kafka::offset last_reconciled_offset);
 
-    /// Return the smallest epoch referenced by this ctp_stm.
+    /// Return the inactive epoch which is no longer referenced by this ctp_stm.
+    /// This method is guaranteed to return precise value but it creates
+    // a reader and scans the log for the minimum epoch.
+    /// \note This method could return std::nullopt if the partition is empty
     ss::future<std::expected<std::optional<cluster_epoch>, ctp_stm_api_errc>>
     get_inactive_epoch() const;
+
+    /// Return the inactive epoch which is no longer referenced by this ctp_stm.
+    /// This method can return stale value but is guaranteed to eventually
+    /// make forward progress.
+    std::optional<cluster_epoch> estimate_inactive_epoch() const noexcept;
 
     /// Sync STM state with the log.
     ///

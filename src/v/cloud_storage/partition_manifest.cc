@@ -223,12 +223,23 @@ partition_manifest::full_log_start_kafka_offset() const {
     if (_archive_start_offset != model::offset{}) {
         // The archive start offset is guaranteed to be smaller than
         // the manifest start offset.
-        vassert(
-          _archive_start_offset <= _start_offset,
-          "[{}] Archive start offset {} is greater than the start offset {}",
-          display_name(),
-          _archive_start_offset,
-          _start_offset);
+        if (_archive_start_offset > _start_offset) {
+            vlog(
+              cst_log.error,
+              "[{}] Archive start offset {} is greater than the start offset "
+              "{}",
+              display_name(),
+              _archive_start_offset,
+              _start_offset);
+            throw std::runtime_error(
+              fmt::format(
+                "{} Archive start offset {} is greater than the "
+                "start offset {}",
+                display_name(),
+                _archive_start_offset,
+                _start_offset));
+        }
+
         return _archive_start_offset - _archive_start_offset_delta;
     }
 
@@ -515,6 +526,16 @@ model::offset partition_manifest::get_archive_clean_offset() const {
 
 void partition_manifest::set_archive_start_offset(
   model::offset start_rp_offset, model::offset_delta start_delta) {
+    if (start_rp_offset > _start_offset) {
+        vlog(
+          cst_log.error,
+          "{} archive start is not moved to {} because start offset is {}. "
+          "Command is ignored.",
+          display_name(),
+          start_rp_offset,
+          _start_offset);
+        return;
+    }
     if (_archive_start_offset < start_rp_offset) {
         _archive_start_offset = start_rp_offset;
         _archive_start_offset_delta = start_delta;

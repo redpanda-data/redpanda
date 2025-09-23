@@ -99,7 +99,7 @@ public:
         co_return;
     }
 
-    ss::future<ss::stop_iteration> backward_pass_iteration() final {
+    ss::future<ss::stop_iteration> map_building_iteration() final {
         if (_b_it == _batches.rend()) {
             co_return ss::stop_iteration::yes;
         }
@@ -117,7 +117,7 @@ public:
     }
 
     ss::future<ss::stop_iteration>
-    forward_pass_iteration(sliding_window_reducer::sink& s) final {
+    deduplication_iteration(sliding_window_reducer::sink& s) final {
         if (_f_it == _batches.end()) {
             co_return ss::stop_iteration::yes;
         }

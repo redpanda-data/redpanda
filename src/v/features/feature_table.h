@@ -40,8 +40,10 @@ struct feature_table_snapshot;
 /// only used at runtime.  Therefore it is safe to re-use an integer that
 /// has been made available by another feature being retired.
 enum class feature : std::uint64_t {
+    iceberg_schema_merging = 1ULL << 0U,
     topic_locations_in_outbound_migrations = 1ULL << 2U,
     schema_registry_authz = 1ULL << 3U,
+    topic_ids_api = 1ULL << 4U,
     consumer_groups_migrations = 1ULL << 7U,
     cloud_retention = 1ULL << 11U,
     node_isolation = 1ULL << 19U,
@@ -474,6 +476,18 @@ inline constexpr std::array feature_schema{
     release_version::v25_2_1,
     "consumer_groups_migrations",
     feature::consumer_groups_migrations,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    release_version::v25_3_1,
+    "iceberg_schema_merging",
+    feature::iceberg_schema_merging,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    release_version::v25_3_1,
+    "topic_ids_api",
+    feature::topic_ids_api,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };

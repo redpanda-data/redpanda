@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/redpanda-data/redpanda/tests/go/kgo-verifier/pkg/util"
 	worker "github.com/redpanda-data/redpanda/tests/go/kgo-verifier/pkg/worker"
 	log "github.com/sirupsen/logrus"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -21,11 +22,12 @@ type GroupReadConfig struct {
 	nReaders       int
 	maxReadCount   int
 	rateLimitBytes int
+	maxUncommitted int
 }
 
 func NewGroupReadConfig(
 	wc worker.WorkerConfig, name string, nPartitions int32, nReaders int,
-	maxReadCount int, rateLimitBytes int) GroupReadConfig {
+	maxReadCount int, rateLimitBytes int, maxUncommitted int) GroupReadConfig {
 	return GroupReadConfig{
 		workerCfg:      wc,
 		groupName:      name,
@@ -33,6 +35,7 @@ func NewGroupReadConfig(
 		nReaders:       nReaders,
 		maxReadCount:   maxReadCount,
 		rateLimitBytes: rateLimitBytes,
+		maxUncommitted: maxUncommitted,
 	}
 }
 
@@ -246,7 +249,11 @@ func (grw *GroupReadWorker) consumerGroupReadInner(
 	}
 
 	for {
-		fetches := client.PollFetches(ctx)
+		if grw.config.maxUncommitted == 0 {
+			// for users to be aware that immediate commits are not supported
+			util.Die("max-uncommitted must be non-zero")
+		}
+		fetches := client.PollRecords(ctx, grw.config.maxUncommitted)
 		if ctx.Err() == context.Canceled {
 			break
 		} else if ctx.Err() != nil {
@@ -284,7 +291,14 @@ func (grw *GroupReadWorker) consumerGroupReadInner(
 			cgOffsets.AddRecord(ctx, r)
 		})
 
-		// Offsets will be committed on the next PollFetches invocation
+		// Otherwise offsets will be enqueued for commit on the next PollFetches invocation
+		// and the actual commit will happen in background respecting `kgo.AutoCommitInterval` (default: 5s).
+		if grw.config.maxUncommitted > 0 {
+			if err := client.CommitUncommittedOffsets(ctx); err != nil {
+				return err
+			}
+		}
+
 	}
 
 	return nil

@@ -8,15 +8,15 @@
 # by the Apache License, Version 2.0
 
 import math
+
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.services.cluster import cluster
-
-from ducktape.utils.util import wait_until
-from ducktape.mark import matrix
-
 from rptest.utils.mode_checks import skip_debug_mode
 
 MB = 1024 * 1024

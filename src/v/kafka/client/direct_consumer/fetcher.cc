@@ -15,6 +15,7 @@
 #include "kafka/client/direct_consumer/data_queue.h"
 #include "kafka/client/direct_consumer/direct_consumer.h"
 #include "kafka/client/errors.h"
+#include "kafka/protocol/types.h"
 #include "ssx/async_algorithm.h"
 #include "ssx/future-util.h"
 
@@ -385,7 +386,17 @@ ss::future<> fetcher::do_fetch() {
           partitions_with_epochs.partitions);
 
         if (fetch_result.has_error()) {
-            if (is_retriable_error(fetch_result.error())) {
+            auto ec = fetch_result.error();
+
+            // no need for backoff, reset fetch session and rerequest
+            if (ec == kafka::error_code::fetch_session_id_not_found) {
+                vlog(logger().trace, "fetch session invalidated");
+                _session_state.reset();
+                co_return;
+            }
+
+            // retriable error, backoff
+            if (is_retriable_error(ec)) {
                 needs_backoff = true;
             } else {
                 // propagate non retriable error to the queue
@@ -494,6 +505,23 @@ fetcher::process_fetch_response(
             part_data.partition_id = part_response.partition_index;
 
             if (part_response.error_code != kafka::error_code::none) {
+                if (
+                  part_response.error_code
+                  == kafka::error_code::offset_out_of_range) {
+                    vlog(
+                      logger().warn,
+                      "[broker: {}] {}/{} fetch returned: {}, resetting "
+                      "offset with policy: {}",
+                      _id,
+                      topic_data.topic,
+                      part_data.partition_id,
+                      part_response.error_code,
+                      _parent->_config.reset_policy);
+                    reset_partition_offset(
+                      model::topic_partition_view(
+                        topic_data.topic, part_data.partition_id));
+                    continue;
+                }
                 if (is_retriable_error(part_response.error_code)) {
                     vlog(
                       logger().debug,
@@ -673,6 +701,19 @@ fetcher::process_fetch_response(
     co_return result;
 }
 
+void fetcher::reset_partition_offset(model::topic_partition_view tp) {
+    auto t_it = _partitions.find(tp.topic);
+    if (t_it == _partitions.end()) {
+        return;
+    }
+    auto p_it = t_it->second.find(tp.partition);
+    if (p_it == t_it->second.end()) {
+        return;
+    }
+    p_it->second.fetch_offset = std::nullopt;
+    p_it->second.assignment_epoch = next_epoch();
+}
+
 namespace {
 model::timestamp timestamp_for_offset_reset_policy(offset_reset_policy policy) {
     switch (policy) {
@@ -815,10 +856,11 @@ ss::future<kafka::error_code> fetcher::maybe_initialise_fetch_offsets(
 }
 
 ss::future<api_version> fetcher::get_fetch_request_version() const {
+    constexpr auto max_client_version = kafka::api_version{12};
     auto version = co_await _parent->_cluster->supported_api_versions(
       _id, kafka::fetch_api::key);
     if (version) {
-        co_return std::min(version->max, kafka::fetch_api::max_valid);
+        co_return std::min(version->max, max_client_version);
     }
     // if the version is not supported, we fallback to the minimum version
     // which is 1, this is the first version of the Fetch API that use the new

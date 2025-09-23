@@ -179,6 +179,50 @@ void test_all_types_edition2023_nested_message::apply_field_path_from(std::span<
     }
   }
 }
+std::optional<std::vector<int32_t>> test_all_types_edition2023_nested_message::convert_field_path_to_numbers(std::span<std::string_view> field_path) const {
+  std::vector<int32_t> numbers;
+  if (convert_field_path_to_numbers(field_path, &numbers)) { return numbers; }
+  return std::nullopt;
+}
+bool test_all_types_edition2023_nested_message::convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out) {
+  if (field_path.empty()) {
+    return true;
+  }
+  constexpr static auto key_to_field_number = std::to_array<std::pair<std::string_view, bool(*)(decltype(field_path), decltype(out))>>({
+    {"a", [](auto path, auto* out) { out->push_back(1); return path.empty(); }},
+    {"corecursive", [](auto path, auto* out) { out->push_back(2); return test_all_types_edition2023::convert_field_path_to_numbers(path, out); }},
+  });
+  auto fields = std::ranges::equal_range(key_to_field_number, field_path.front(), std::less<>(), [](const auto& pair) { return pair.first; });
+  if (fields.empty()) {
+    return false;
+  }
+  return fields.front().second(field_path.subspan(1), out);
+}
+std::optional<serde::pb::field> test_all_types_edition2023_nested_message::lookup_field(std::span<int32_t> field_numbers) {
+
+  if (field_numbers.empty()) {
+    return serde::pb::field{.value = static_cast<serde::pb::base_message*>(this)};
+  }
+  serde::pb::field found;
+  switch (field_numbers.front()) {
+  case 1: { // a
+    found.value = get_a();
+    break;
+  }
+  case 2: { // corecursive
+    if (!get_corecursive()) { set_corecursive(std::make_unique<test_all_types_edition2023>()); }
+    found.value = get_corecursive().get();
+    break;
+  }
+  default:
+    return std::nullopt;
+  }
+  if (field_numbers.size() > 1) {
+    if (!std::holds_alternative<serde::pb::base_message*>(found.value)) { return std::nullopt; }
+    return std::get<serde::pb::base_message*>(found.value)->lookup_field(field_numbers.subspan(1));
+  }
+  return found;
+}
 
 test_all_types_edition2023_group_like_type::test_all_types_edition2023_group_like_type() noexcept = default;
 test_all_types_edition2023_group_like_type::test_all_types_edition2023_group_like_type(test_all_types_edition2023_group_like_type&&) noexcept = default;
@@ -309,6 +353,49 @@ void test_all_types_edition2023_group_like_type::apply_field_path_from(std::span
       return apply(path.subspan(1), this, update);
     }
   }
+}
+std::optional<std::vector<int32_t>> test_all_types_edition2023_group_like_type::convert_field_path_to_numbers(std::span<std::string_view> field_path) const {
+  std::vector<int32_t> numbers;
+  if (convert_field_path_to_numbers(field_path, &numbers)) { return numbers; }
+  return std::nullopt;
+}
+bool test_all_types_edition2023_group_like_type::convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out) {
+  if (field_path.empty()) {
+    return true;
+  }
+  constexpr static auto key_to_field_number = std::to_array<std::pair<std::string_view, bool(*)(decltype(field_path), decltype(out))>>({
+    {"group_int32", [](auto path, auto* out) { out->push_back(202); return path.empty(); }},
+    {"group_uint32", [](auto path, auto* out) { out->push_back(203); return path.empty(); }},
+  });
+  auto fields = std::ranges::equal_range(key_to_field_number, field_path.front(), std::less<>(), [](const auto& pair) { return pair.first; });
+  if (fields.empty()) {
+    return false;
+  }
+  return fields.front().second(field_path.subspan(1), out);
+}
+std::optional<serde::pb::field> test_all_types_edition2023_group_like_type::lookup_field(std::span<int32_t> field_numbers) {
+
+  if (field_numbers.empty()) {
+    return serde::pb::field{.value = static_cast<serde::pb::base_message*>(this)};
+  }
+  serde::pb::field found;
+  switch (field_numbers.front()) {
+  case 202: { // group_int32
+    found.value = get_group_int32();
+    break;
+  }
+  case 203: { // group_uint32
+    found.value = get_group_uint32();
+    break;
+  }
+  default:
+    return std::nullopt;
+  }
+  if (field_numbers.size() > 1) {
+    if (!std::holds_alternative<serde::pb::base_message*>(found.value)) { return std::nullopt; }
+    return std::get<serde::pb::base_message*>(found.value)->lookup_field(field_numbers.subspan(1));
+  }
+  return found;
 }
 
 test_all_types_edition2023::test_all_types_edition2023() noexcept = default;
@@ -4996,6 +5083,922 @@ void test_all_types_edition2023::apply_field_path_from(std::span<const ss::sstri
     }
   }
 }
+std::optional<std::vector<int32_t>> test_all_types_edition2023::convert_field_path_to_numbers(std::span<std::string_view> field_path) const {
+  std::vector<int32_t> numbers;
+  if (convert_field_path_to_numbers(field_path, &numbers)) { return numbers; }
+  return std::nullopt;
+}
+bool test_all_types_edition2023::convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out) {
+  if (field_path.empty()) {
+    return true;
+  }
+  constexpr static auto key_to_field_number = std::to_array<std::pair<std::string_view, bool(*)(decltype(field_path), decltype(out))>>({
+    {"delimited_field", [](auto path, auto* out) { out->push_back(202); return test_all_types_edition2023_group_like_type::convert_field_path_to_numbers(path, out); }},
+    {"groupliketype", [](auto path, auto* out) { out->push_back(201); return test_all_types_edition2023_group_like_type::convert_field_path_to_numbers(path, out); }},
+    {"map_bool_bool", [](auto path, auto* out) { out->push_back(68); return path.empty(); }},
+    {"map_fixed32_fixed32", [](auto path, auto* out) { out->push_back(62); return path.empty(); }},
+    {"map_fixed64_fixed64", [](auto path, auto* out) { out->push_back(63); return path.empty(); }},
+    {"map_int32_double", [](auto path, auto* out) { out->push_back(67); return path.empty(); }},
+    {"map_int32_float", [](auto path, auto* out) { out->push_back(66); return path.empty(); }},
+    {"map_int32_int32", [](auto path, auto* out) { out->push_back(56); return path.empty(); }},
+    {"map_int64_int64", [](auto path, auto* out) { out->push_back(57); return path.empty(); }},
+    {"map_sfixed32_sfixed32", [](auto path, auto* out) { out->push_back(64); return path.empty(); }},
+    {"map_sfixed64_sfixed64", [](auto path, auto* out) { out->push_back(65); return path.empty(); }},
+    {"map_sint32_sint32", [](auto path, auto* out) { out->push_back(60); return path.empty(); }},
+    {"map_sint64_sint64", [](auto path, auto* out) { out->push_back(61); return path.empty(); }},
+    {"map_string_bytes", [](auto path, auto* out) { out->push_back(70); return path.empty(); }},
+    {"map_string_foreign_enum", [](auto path, auto* out) { out->push_back(74); return path.empty(); }},
+    {"map_string_foreign_message", [](auto path, auto* out) { out->push_back(72); return path.empty(); }},
+    {"map_string_nested_enum", [](auto path, auto* out) { out->push_back(73); return path.empty(); }},
+    {"map_string_nested_message", [](auto path, auto* out) { out->push_back(71); return path.empty(); }},
+    {"map_string_string", [](auto path, auto* out) { out->push_back(69); return path.empty(); }},
+    {"map_uint32_uint32", [](auto path, auto* out) { out->push_back(58); return path.empty(); }},
+    {"map_uint64_uint64", [](auto path, auto* out) { out->push_back(59); return path.empty(); }},
+    {"oneof_bool", [](auto path, auto* out) { out->push_back(115); return path.empty(); }},
+    {"oneof_bytes", [](auto path, auto* out) { out->push_back(114); return path.empty(); }},
+    {"oneof_double", [](auto path, auto* out) { out->push_back(118); return path.empty(); }},
+    {"oneof_enum", [](auto path, auto* out) { out->push_back(119); return path.empty(); }},
+    {"oneof_float", [](auto path, auto* out) { out->push_back(117); return path.empty(); }},
+    {"oneof_nested_message", [](auto path, auto* out) { out->push_back(112); return test_all_types_edition2023_nested_message::convert_field_path_to_numbers(path, out); }},
+    {"oneof_string", [](auto path, auto* out) { out->push_back(113); return path.empty(); }},
+    {"oneof_uint32", [](auto path, auto* out) { out->push_back(111); return path.empty(); }},
+    {"oneof_uint64", [](auto path, auto* out) { out->push_back(116); return path.empty(); }},
+    {"optional_bool", [](auto path, auto* out) { out->push_back(13); return path.empty(); }},
+    {"optional_bytes", [](auto path, auto* out) { out->push_back(15); return path.empty(); }},
+    {"optional_cord", [](auto path, auto* out) { out->push_back(25); return path.empty(); }},
+    {"optional_double", [](auto path, auto* out) { out->push_back(12); return path.empty(); }},
+    {"optional_fixed32", [](auto path, auto* out) { out->push_back(7); return path.empty(); }},
+    {"optional_fixed64", [](auto path, auto* out) { out->push_back(8); return path.empty(); }},
+    {"optional_float", [](auto path, auto* out) { out->push_back(11); return path.empty(); }},
+    {"optional_foreign_enum", [](auto path, auto* out) { out->push_back(22); return path.empty(); }},
+    {"optional_foreign_message", [](auto path, auto* out) { out->push_back(19); return foreign_message_edition2023::convert_field_path_to_numbers(path, out); }},
+    {"optional_int32", [](auto path, auto* out) { out->push_back(1); return path.empty(); }},
+    {"optional_int64", [](auto path, auto* out) { out->push_back(2); return path.empty(); }},
+    {"optional_nested_enum", [](auto path, auto* out) { out->push_back(21); return path.empty(); }},
+    {"optional_nested_message", [](auto path, auto* out) { out->push_back(18); return test_all_types_edition2023_nested_message::convert_field_path_to_numbers(path, out); }},
+    {"optional_sfixed32", [](auto path, auto* out) { out->push_back(9); return path.empty(); }},
+    {"optional_sfixed64", [](auto path, auto* out) { out->push_back(10); return path.empty(); }},
+    {"optional_sint32", [](auto path, auto* out) { out->push_back(5); return path.empty(); }},
+    {"optional_sint64", [](auto path, auto* out) { out->push_back(6); return path.empty(); }},
+    {"optional_string", [](auto path, auto* out) { out->push_back(14); return path.empty(); }},
+    {"optional_string_piece", [](auto path, auto* out) { out->push_back(24); return path.empty(); }},
+    {"optional_uint32", [](auto path, auto* out) { out->push_back(3); return path.empty(); }},
+    {"optional_uint64", [](auto path, auto* out) { out->push_back(4); return path.empty(); }},
+    {"packed_bool", [](auto path, auto* out) { out->push_back(87); return path.empty(); }},
+    {"packed_double", [](auto path, auto* out) { out->push_back(86); return path.empty(); }},
+    {"packed_fixed32", [](auto path, auto* out) { out->push_back(81); return path.empty(); }},
+    {"packed_fixed64", [](auto path, auto* out) { out->push_back(82); return path.empty(); }},
+    {"packed_float", [](auto path, auto* out) { out->push_back(85); return path.empty(); }},
+    {"packed_int32", [](auto path, auto* out) { out->push_back(75); return path.empty(); }},
+    {"packed_int64", [](auto path, auto* out) { out->push_back(76); return path.empty(); }},
+    {"packed_nested_enum", [](auto path, auto* out) { out->push_back(88); return path.empty(); }},
+    {"packed_sfixed32", [](auto path, auto* out) { out->push_back(83); return path.empty(); }},
+    {"packed_sfixed64", [](auto path, auto* out) { out->push_back(84); return path.empty(); }},
+    {"packed_sint32", [](auto path, auto* out) { out->push_back(79); return path.empty(); }},
+    {"packed_sint64", [](auto path, auto* out) { out->push_back(80); return path.empty(); }},
+    {"packed_uint32", [](auto path, auto* out) { out->push_back(77); return path.empty(); }},
+    {"packed_uint64", [](auto path, auto* out) { out->push_back(78); return path.empty(); }},
+    {"recursive_message", [](auto path, auto* out) { out->push_back(27); return test_all_types_edition2023::convert_field_path_to_numbers(path, out); }},
+    {"repeated_bool", [](auto path, auto* out) { out->push_back(43); return path.empty(); }},
+    {"repeated_bytes", [](auto path, auto* out) { out->push_back(45); return path.empty(); }},
+    {"repeated_cord", [](auto path, auto* out) { out->push_back(55); return path.empty(); }},
+    {"repeated_double", [](auto path, auto* out) { out->push_back(42); return path.empty(); }},
+    {"repeated_fixed32", [](auto path, auto* out) { out->push_back(37); return path.empty(); }},
+    {"repeated_fixed64", [](auto path, auto* out) { out->push_back(38); return path.empty(); }},
+    {"repeated_float", [](auto path, auto* out) { out->push_back(41); return path.empty(); }},
+    {"repeated_foreign_enum", [](auto path, auto* out) { out->push_back(52); return path.empty(); }},
+    {"repeated_foreign_message", [](auto path, auto* out) { out->push_back(49); return path.empty(); }},
+    {"repeated_int32", [](auto path, auto* out) { out->push_back(31); return path.empty(); }},
+    {"repeated_int64", [](auto path, auto* out) { out->push_back(32); return path.empty(); }},
+    {"repeated_nested_enum", [](auto path, auto* out) { out->push_back(51); return path.empty(); }},
+    {"repeated_nested_message", [](auto path, auto* out) { out->push_back(48); return path.empty(); }},
+    {"repeated_sfixed32", [](auto path, auto* out) { out->push_back(39); return path.empty(); }},
+    {"repeated_sfixed64", [](auto path, auto* out) { out->push_back(40); return path.empty(); }},
+    {"repeated_sint32", [](auto path, auto* out) { out->push_back(35); return path.empty(); }},
+    {"repeated_sint64", [](auto path, auto* out) { out->push_back(36); return path.empty(); }},
+    {"repeated_string", [](auto path, auto* out) { out->push_back(44); return path.empty(); }},
+    {"repeated_string_piece", [](auto path, auto* out) { out->push_back(54); return path.empty(); }},
+    {"repeated_uint32", [](auto path, auto* out) { out->push_back(33); return path.empty(); }},
+    {"repeated_uint64", [](auto path, auto* out) { out->push_back(34); return path.empty(); }},
+    {"unpacked_bool", [](auto path, auto* out) { out->push_back(101); return path.empty(); }},
+    {"unpacked_double", [](auto path, auto* out) { out->push_back(100); return path.empty(); }},
+    {"unpacked_fixed32", [](auto path, auto* out) { out->push_back(95); return path.empty(); }},
+    {"unpacked_fixed64", [](auto path, auto* out) { out->push_back(96); return path.empty(); }},
+    {"unpacked_float", [](auto path, auto* out) { out->push_back(99); return path.empty(); }},
+    {"unpacked_int32", [](auto path, auto* out) { out->push_back(89); return path.empty(); }},
+    {"unpacked_int64", [](auto path, auto* out) { out->push_back(90); return path.empty(); }},
+    {"unpacked_nested_enum", [](auto path, auto* out) { out->push_back(102); return path.empty(); }},
+    {"unpacked_sfixed32", [](auto path, auto* out) { out->push_back(97); return path.empty(); }},
+    {"unpacked_sfixed64", [](auto path, auto* out) { out->push_back(98); return path.empty(); }},
+    {"unpacked_sint32", [](auto path, auto* out) { out->push_back(93); return path.empty(); }},
+    {"unpacked_sint64", [](auto path, auto* out) { out->push_back(94); return path.empty(); }},
+    {"unpacked_uint32", [](auto path, auto* out) { out->push_back(91); return path.empty(); }},
+    {"unpacked_uint64", [](auto path, auto* out) { out->push_back(92); return path.empty(); }},
+  });
+  auto fields = std::ranges::equal_range(key_to_field_number, field_path.front(), std::less<>(), [](const auto& pair) { return pair.first; });
+  if (fields.empty()) {
+    return false;
+  }
+  return fields.front().second(field_path.subspan(1), out);
+}
+std::optional<serde::pb::field> test_all_types_edition2023::lookup_field(std::span<int32_t> field_numbers) {
+
+  if (field_numbers.empty()) {
+    return serde::pb::field{.value = static_cast<serde::pb::base_message*>(this)};
+  }
+  serde::pb::field found;
+  switch (field_numbers.front()) {
+  case 1: { // optional_int32
+    found.value = get_optional_int32();
+    break;
+  }
+  case 2: { // optional_int64
+    found.value = get_optional_int64();
+    break;
+  }
+  case 3: { // optional_uint32
+    found.value = get_optional_uint32();
+    break;
+  }
+  case 4: { // optional_uint64
+    found.value = get_optional_uint64();
+    break;
+  }
+  case 5: { // optional_sint32
+    found.value = get_optional_sint32();
+    break;
+  }
+  case 6: { // optional_sint64
+    found.value = get_optional_sint64();
+    break;
+  }
+  case 7: { // optional_fixed32
+    found.value = get_optional_fixed32();
+    break;
+  }
+  case 8: { // optional_fixed64
+    found.value = get_optional_fixed64();
+    break;
+  }
+  case 9: { // optional_sfixed32
+    found.value = get_optional_sfixed32();
+    break;
+  }
+  case 10: { // optional_sfixed64
+    found.value = get_optional_sfixed64();
+    break;
+  }
+  case 11: { // optional_float
+    found.value = get_optional_float();
+    break;
+  }
+  case 12: { // optional_double
+    found.value = get_optional_double();
+    break;
+  }
+  case 13: { // optional_bool
+    found.value = get_optional_bool();
+    break;
+  }
+  case 14: { // optional_string
+    found.value = get_optional_string();
+    break;
+  }
+  case 15: { // optional_bytes
+    found.value = get_optional_bytes().share();
+    break;
+  }
+  case 18: { // optional_nested_message
+    found.value = &get_optional_nested_message();
+    break;
+  }
+  case 19: { // optional_foreign_message
+    if (!get_optional_foreign_message()) { set_optional_foreign_message(std::make_unique<foreign_message_edition2023>()); }
+    found.value = get_optional_foreign_message().get();
+    break;
+  }
+  case 21: { // optional_nested_enum
+    found.value = serde::pb::raw_enum_value{
+      .number = static_cast<int32_t>(get_optional_nested_enum()),
+      .name = enum_to_string(get_optional_nested_enum()),
+    };
+    break;
+  }
+  case 22: { // optional_foreign_enum
+    found.value = serde::pb::raw_enum_value{
+      .number = static_cast<int32_t>(get_optional_foreign_enum()),
+      .name = enum_to_string(get_optional_foreign_enum()),
+    };
+    break;
+  }
+  case 24: { // optional_string_piece
+    found.value = get_optional_string_piece();
+    break;
+  }
+  case 25: { // optional_cord
+    found.value = get_optional_cord();
+    break;
+  }
+  case 27: { // recursive_message
+    if (!get_recursive_message()) { set_recursive_message(std::make_unique<test_all_types_edition2023>()); }
+    found.value = get_recursive_message().get();
+    break;
+  }
+  case 31: { // repeated_int32
+    struct repeated_int32_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int32_t>* value;
+    };
+    auto value = std::make_unique<repeated_int32_field_value>();
+    value->value = &get_repeated_int32();
+    found.value = std::move(value);
+    break;
+  }
+  case 32: { // repeated_int64
+    struct repeated_int64_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int64_t>* value;
+    };
+    auto value = std::make_unique<repeated_int64_field_value>();
+    value->value = &get_repeated_int64();
+    found.value = std::move(value);
+    break;
+  }
+  case 33: { // repeated_uint32
+    struct repeated_uint32_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<uint32_t>* value;
+    };
+    auto value = std::make_unique<repeated_uint32_field_value>();
+    value->value = &get_repeated_uint32();
+    found.value = std::move(value);
+    break;
+  }
+  case 34: { // repeated_uint64
+    struct repeated_uint64_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<uint64_t>* value;
+    };
+    auto value = std::make_unique<repeated_uint64_field_value>();
+    value->value = &get_repeated_uint64();
+    found.value = std::move(value);
+    break;
+  }
+  case 35: { // repeated_sint32
+    struct repeated_sint32_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int32_t>* value;
+    };
+    auto value = std::make_unique<repeated_sint32_field_value>();
+    value->value = &get_repeated_sint32();
+    found.value = std::move(value);
+    break;
+  }
+  case 36: { // repeated_sint64
+    struct repeated_sint64_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int64_t>* value;
+    };
+    auto value = std::make_unique<repeated_sint64_field_value>();
+    value->value = &get_repeated_sint64();
+    found.value = std::move(value);
+    break;
+  }
+  case 37: { // repeated_fixed32
+    struct repeated_fixed32_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<uint32_t>* value;
+    };
+    auto value = std::make_unique<repeated_fixed32_field_value>();
+    value->value = &get_repeated_fixed32();
+    found.value = std::move(value);
+    break;
+  }
+  case 38: { // repeated_fixed64
+    struct repeated_fixed64_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<uint64_t>* value;
+    };
+    auto value = std::make_unique<repeated_fixed64_field_value>();
+    value->value = &get_repeated_fixed64();
+    found.value = std::move(value);
+    break;
+  }
+  case 39: { // repeated_sfixed32
+    struct repeated_sfixed32_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int32_t>* value;
+    };
+    auto value = std::make_unique<repeated_sfixed32_field_value>();
+    value->value = &get_repeated_sfixed32();
+    found.value = std::move(value);
+    break;
+  }
+  case 40: { // repeated_sfixed64
+    struct repeated_sfixed64_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int64_t>* value;
+    };
+    auto value = std::make_unique<repeated_sfixed64_field_value>();
+    value->value = &get_repeated_sfixed64();
+    found.value = std::move(value);
+    break;
+  }
+  case 41: { // repeated_float
+    struct repeated_float_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<float>* value;
+    };
+    auto value = std::make_unique<repeated_float_field_value>();
+    value->value = &get_repeated_float();
+    found.value = std::move(value);
+    break;
+  }
+  case 42: { // repeated_double
+    struct repeated_double_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<double>* value;
+    };
+    auto value = std::make_unique<repeated_double_field_value>();
+    value->value = &get_repeated_double();
+    found.value = std::move(value);
+    break;
+  }
+  case 43: { // repeated_bool
+    struct repeated_bool_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<bool>* value;
+    };
+    auto value = std::make_unique<repeated_bool_field_value>();
+    value->value = &get_repeated_bool();
+    found.value = std::move(value);
+    break;
+  }
+  case 44: { // repeated_string
+    struct repeated_string_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<ss::sstring>* value;
+    };
+    auto value = std::make_unique<repeated_string_field_value>();
+    value->value = &get_repeated_string();
+    found.value = std::move(value);
+    break;
+  }
+  case 45: { // repeated_bytes
+    struct repeated_bytes_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<iobuf>* value;
+    };
+    auto value = std::make_unique<repeated_bytes_field_value>();
+    value->value = &get_repeated_bytes();
+    found.value = std::move(value);
+    break;
+  }
+  case 48: { // repeated_nested_message
+    struct repeated_nested_message_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<test_all_types_edition2023_nested_message>* value;
+    };
+    auto value = std::make_unique<repeated_nested_message_field_value>();
+    value->value = &get_repeated_nested_message();
+    found.value = std::move(value);
+    break;
+  }
+  case 49: { // repeated_foreign_message
+    struct repeated_foreign_message_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<foreign_message_edition2023>* value;
+    };
+    auto value = std::make_unique<repeated_foreign_message_field_value>();
+    value->value = &get_repeated_foreign_message();
+    found.value = std::move(value);
+    break;
+  }
+  case 51: { // repeated_nested_enum
+    struct repeated_nested_enum_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<test_all_types_edition2023_nested_enum>* value;
+    };
+    auto value = std::make_unique<repeated_nested_enum_field_value>();
+    value->value = &get_repeated_nested_enum();
+    found.value = std::move(value);
+    break;
+  }
+  case 52: { // repeated_foreign_enum
+    struct repeated_foreign_enum_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<foreign_enum_edition2023>* value;
+    };
+    auto value = std::make_unique<repeated_foreign_enum_field_value>();
+    value->value = &get_repeated_foreign_enum();
+    found.value = std::move(value);
+    break;
+  }
+  case 54: { // repeated_string_piece
+    struct repeated_string_piece_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<ss::sstring>* value;
+    };
+    auto value = std::make_unique<repeated_string_piece_field_value>();
+    value->value = &get_repeated_string_piece();
+    found.value = std::move(value);
+    break;
+  }
+  case 55: { // repeated_cord
+    struct repeated_cord_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<ss::sstring>* value;
+    };
+    auto value = std::make_unique<repeated_cord_field_value>();
+    value->value = &get_repeated_cord();
+    found.value = std::move(value);
+    break;
+  }
+  case 75: { // packed_int32
+    struct packed_int32_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int32_t>* value;
+    };
+    auto value = std::make_unique<packed_int32_field_value>();
+    value->value = &get_packed_int32();
+    found.value = std::move(value);
+    break;
+  }
+  case 76: { // packed_int64
+    struct packed_int64_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int64_t>* value;
+    };
+    auto value = std::make_unique<packed_int64_field_value>();
+    value->value = &get_packed_int64();
+    found.value = std::move(value);
+    break;
+  }
+  case 77: { // packed_uint32
+    struct packed_uint32_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<uint32_t>* value;
+    };
+    auto value = std::make_unique<packed_uint32_field_value>();
+    value->value = &get_packed_uint32();
+    found.value = std::move(value);
+    break;
+  }
+  case 78: { // packed_uint64
+    struct packed_uint64_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<uint64_t>* value;
+    };
+    auto value = std::make_unique<packed_uint64_field_value>();
+    value->value = &get_packed_uint64();
+    found.value = std::move(value);
+    break;
+  }
+  case 79: { // packed_sint32
+    struct packed_sint32_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int32_t>* value;
+    };
+    auto value = std::make_unique<packed_sint32_field_value>();
+    value->value = &get_packed_sint32();
+    found.value = std::move(value);
+    break;
+  }
+  case 80: { // packed_sint64
+    struct packed_sint64_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int64_t>* value;
+    };
+    auto value = std::make_unique<packed_sint64_field_value>();
+    value->value = &get_packed_sint64();
+    found.value = std::move(value);
+    break;
+  }
+  case 81: { // packed_fixed32
+    struct packed_fixed32_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<uint32_t>* value;
+    };
+    auto value = std::make_unique<packed_fixed32_field_value>();
+    value->value = &get_packed_fixed32();
+    found.value = std::move(value);
+    break;
+  }
+  case 82: { // packed_fixed64
+    struct packed_fixed64_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<uint64_t>* value;
+    };
+    auto value = std::make_unique<packed_fixed64_field_value>();
+    value->value = &get_packed_fixed64();
+    found.value = std::move(value);
+    break;
+  }
+  case 83: { // packed_sfixed32
+    struct packed_sfixed32_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int32_t>* value;
+    };
+    auto value = std::make_unique<packed_sfixed32_field_value>();
+    value->value = &get_packed_sfixed32();
+    found.value = std::move(value);
+    break;
+  }
+  case 84: { // packed_sfixed64
+    struct packed_sfixed64_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int64_t>* value;
+    };
+    auto value = std::make_unique<packed_sfixed64_field_value>();
+    value->value = &get_packed_sfixed64();
+    found.value = std::move(value);
+    break;
+  }
+  case 85: { // packed_float
+    struct packed_float_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<float>* value;
+    };
+    auto value = std::make_unique<packed_float_field_value>();
+    value->value = &get_packed_float();
+    found.value = std::move(value);
+    break;
+  }
+  case 86: { // packed_double
+    struct packed_double_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<double>* value;
+    };
+    auto value = std::make_unique<packed_double_field_value>();
+    value->value = &get_packed_double();
+    found.value = std::move(value);
+    break;
+  }
+  case 87: { // packed_bool
+    struct packed_bool_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<bool>* value;
+    };
+    auto value = std::make_unique<packed_bool_field_value>();
+    value->value = &get_packed_bool();
+    found.value = std::move(value);
+    break;
+  }
+  case 88: { // packed_nested_enum
+    struct packed_nested_enum_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<test_all_types_edition2023_nested_enum>* value;
+    };
+    auto value = std::make_unique<packed_nested_enum_field_value>();
+    value->value = &get_packed_nested_enum();
+    found.value = std::move(value);
+    break;
+  }
+  case 89: { // unpacked_int32
+    struct unpacked_int32_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int32_t>* value;
+    };
+    auto value = std::make_unique<unpacked_int32_field_value>();
+    value->value = &get_unpacked_int32();
+    found.value = std::move(value);
+    break;
+  }
+  case 90: { // unpacked_int64
+    struct unpacked_int64_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int64_t>* value;
+    };
+    auto value = std::make_unique<unpacked_int64_field_value>();
+    value->value = &get_unpacked_int64();
+    found.value = std::move(value);
+    break;
+  }
+  case 91: { // unpacked_uint32
+    struct unpacked_uint32_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<uint32_t>* value;
+    };
+    auto value = std::make_unique<unpacked_uint32_field_value>();
+    value->value = &get_unpacked_uint32();
+    found.value = std::move(value);
+    break;
+  }
+  case 92: { // unpacked_uint64
+    struct unpacked_uint64_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<uint64_t>* value;
+    };
+    auto value = std::make_unique<unpacked_uint64_field_value>();
+    value->value = &get_unpacked_uint64();
+    found.value = std::move(value);
+    break;
+  }
+  case 93: { // unpacked_sint32
+    struct unpacked_sint32_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int32_t>* value;
+    };
+    auto value = std::make_unique<unpacked_sint32_field_value>();
+    value->value = &get_unpacked_sint32();
+    found.value = std::move(value);
+    break;
+  }
+  case 94: { // unpacked_sint64
+    struct unpacked_sint64_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int64_t>* value;
+    };
+    auto value = std::make_unique<unpacked_sint64_field_value>();
+    value->value = &get_unpacked_sint64();
+    found.value = std::move(value);
+    break;
+  }
+  case 95: { // unpacked_fixed32
+    struct unpacked_fixed32_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<uint32_t>* value;
+    };
+    auto value = std::make_unique<unpacked_fixed32_field_value>();
+    value->value = &get_unpacked_fixed32();
+    found.value = std::move(value);
+    break;
+  }
+  case 96: { // unpacked_fixed64
+    struct unpacked_fixed64_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<uint64_t>* value;
+    };
+    auto value = std::make_unique<unpacked_fixed64_field_value>();
+    value->value = &get_unpacked_fixed64();
+    found.value = std::move(value);
+    break;
+  }
+  case 97: { // unpacked_sfixed32
+    struct unpacked_sfixed32_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int32_t>* value;
+    };
+    auto value = std::make_unique<unpacked_sfixed32_field_value>();
+    value->value = &get_unpacked_sfixed32();
+    found.value = std::move(value);
+    break;
+  }
+  case 98: { // unpacked_sfixed64
+    struct unpacked_sfixed64_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<int64_t>* value;
+    };
+    auto value = std::make_unique<unpacked_sfixed64_field_value>();
+    value->value = &get_unpacked_sfixed64();
+    found.value = std::move(value);
+    break;
+  }
+  case 99: { // unpacked_float
+    struct unpacked_float_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<float>* value;
+    };
+    auto value = std::make_unique<unpacked_float_field_value>();
+    value->value = &get_unpacked_float();
+    found.value = std::move(value);
+    break;
+  }
+  case 100: { // unpacked_double
+    struct unpacked_double_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<double>* value;
+    };
+    auto value = std::make_unique<unpacked_double_field_value>();
+    value->value = &get_unpacked_double();
+    found.value = std::move(value);
+    break;
+  }
+  case 101: { // unpacked_bool
+    struct unpacked_bool_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<bool>* value;
+    };
+    auto value = std::make_unique<unpacked_bool_field_value>();
+    value->value = &get_unpacked_bool();
+    found.value = std::move(value);
+    break;
+  }
+  case 102: { // unpacked_nested_enum
+    struct unpacked_nested_enum_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<test_all_types_edition2023_nested_enum>* value;
+    };
+    auto value = std::make_unique<unpacked_nested_enum_field_value>();
+    value->value = &get_unpacked_nested_enum();
+    found.value = std::move(value);
+    break;
+  }
+  case 56: { // map_int32_int32
+    struct map_int32_int32_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<int32_t, int32_t>* value;
+    };
+    auto value = std::make_unique<map_int32_int32_field_value>();
+    value->value = &get_map_int32_int32();
+    found.value = std::move(value);
+    break;
+  }
+  case 57: { // map_int64_int64
+    struct map_int64_int64_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<int64_t, int64_t>* value;
+    };
+    auto value = std::make_unique<map_int64_int64_field_value>();
+    value->value = &get_map_int64_int64();
+    found.value = std::move(value);
+    break;
+  }
+  case 58: { // map_uint32_uint32
+    struct map_uint32_uint32_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<uint32_t, uint32_t>* value;
+    };
+    auto value = std::make_unique<map_uint32_uint32_field_value>();
+    value->value = &get_map_uint32_uint32();
+    found.value = std::move(value);
+    break;
+  }
+  case 59: { // map_uint64_uint64
+    struct map_uint64_uint64_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<uint64_t, uint64_t>* value;
+    };
+    auto value = std::make_unique<map_uint64_uint64_field_value>();
+    value->value = &get_map_uint64_uint64();
+    found.value = std::move(value);
+    break;
+  }
+  case 60: { // map_sint32_sint32
+    struct map_sint32_sint32_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<int32_t, int32_t>* value;
+    };
+    auto value = std::make_unique<map_sint32_sint32_field_value>();
+    value->value = &get_map_sint32_sint32();
+    found.value = std::move(value);
+    break;
+  }
+  case 61: { // map_sint64_sint64
+    struct map_sint64_sint64_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<int64_t, int64_t>* value;
+    };
+    auto value = std::make_unique<map_sint64_sint64_field_value>();
+    value->value = &get_map_sint64_sint64();
+    found.value = std::move(value);
+    break;
+  }
+  case 62: { // map_fixed32_fixed32
+    struct map_fixed32_fixed32_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<uint32_t, uint32_t>* value;
+    };
+    auto value = std::make_unique<map_fixed32_fixed32_field_value>();
+    value->value = &get_map_fixed32_fixed32();
+    found.value = std::move(value);
+    break;
+  }
+  case 63: { // map_fixed64_fixed64
+    struct map_fixed64_fixed64_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<uint64_t, uint64_t>* value;
+    };
+    auto value = std::make_unique<map_fixed64_fixed64_field_value>();
+    value->value = &get_map_fixed64_fixed64();
+    found.value = std::move(value);
+    break;
+  }
+  case 64: { // map_sfixed32_sfixed32
+    struct map_sfixed32_sfixed32_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<int32_t, int32_t>* value;
+    };
+    auto value = std::make_unique<map_sfixed32_sfixed32_field_value>();
+    value->value = &get_map_sfixed32_sfixed32();
+    found.value = std::move(value);
+    break;
+  }
+  case 65: { // map_sfixed64_sfixed64
+    struct map_sfixed64_sfixed64_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<int64_t, int64_t>* value;
+    };
+    auto value = std::make_unique<map_sfixed64_sfixed64_field_value>();
+    value->value = &get_map_sfixed64_sfixed64();
+    found.value = std::move(value);
+    break;
+  }
+  case 66: { // map_int32_float
+    struct map_int32_float_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<int32_t, float>* value;
+    };
+    auto value = std::make_unique<map_int32_float_field_value>();
+    value->value = &get_map_int32_float();
+    found.value = std::move(value);
+    break;
+  }
+  case 67: { // map_int32_double
+    struct map_int32_double_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<int32_t, double>* value;
+    };
+    auto value = std::make_unique<map_int32_double_field_value>();
+    value->value = &get_map_int32_double();
+    found.value = std::move(value);
+    break;
+  }
+  case 68: { // map_bool_bool
+    struct map_bool_bool_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<bool, bool>* value;
+    };
+    auto value = std::make_unique<map_bool_bool_field_value>();
+    value->value = &get_map_bool_bool();
+    found.value = std::move(value);
+    break;
+  }
+  case 69: { // map_string_string
+    struct map_string_string_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<ss::sstring, ss::sstring>* value;
+    };
+    auto value = std::make_unique<map_string_string_field_value>();
+    value->value = &get_map_string_string();
+    found.value = std::move(value);
+    break;
+  }
+  case 70: { // map_string_bytes
+    struct map_string_bytes_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<ss::sstring, iobuf>* value;
+    };
+    auto value = std::make_unique<map_string_bytes_field_value>();
+    value->value = &get_map_string_bytes();
+    found.value = std::move(value);
+    break;
+  }
+  case 71: { // map_string_nested_message
+    struct map_string_nested_message_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<ss::sstring, test_all_types_edition2023_nested_message>* value;
+    };
+    auto value = std::make_unique<map_string_nested_message_field_value>();
+    value->value = &get_map_string_nested_message();
+    found.value = std::move(value);
+    break;
+  }
+  case 72: { // map_string_foreign_message
+    struct map_string_foreign_message_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<ss::sstring, foreign_message_edition2023>* value;
+    };
+    auto value = std::make_unique<map_string_foreign_message_field_value>();
+    value->value = &get_map_string_foreign_message();
+    found.value = std::move(value);
+    break;
+  }
+  case 73: { // map_string_nested_enum
+    struct map_string_nested_enum_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<ss::sstring, test_all_types_edition2023_nested_enum>* value;
+    };
+    auto value = std::make_unique<map_string_nested_enum_field_value>();
+    value->value = &get_map_string_nested_enum();
+    found.value = std::move(value);
+    break;
+  }
+  case 74: { // map_string_foreign_enum
+    struct map_string_foreign_enum_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<ss::sstring, foreign_enum_edition2023>* value;
+    };
+    auto value = std::make_unique<map_string_foreign_enum_field_value>();
+    value->value = &get_map_string_foreign_enum();
+    found.value = std::move(value);
+    break;
+  }
+  case 111: { // oneof_uint32
+    if (!has_oneof_uint32()) {
+      set_oneof_uint32({});
+    }
+    found.value = get_oneof_uint32();
+    break;
+  }
+  case 112: { // oneof_nested_message
+    if (!has_oneof_nested_message()) {
+      set_oneof_nested_message({});
+    }
+    found.value = &get_oneof_nested_message();
+    break;
+  }
+  case 113: { // oneof_string
+    if (!has_oneof_string()) {
+      set_oneof_string({});
+    }
+    found.value = get_oneof_string();
+    break;
+  }
+  case 114: { // oneof_bytes
+    if (!has_oneof_bytes()) {
+      set_oneof_bytes({});
+    }
+    found.value = get_oneof_bytes().share();
+    break;
+  }
+  case 115: { // oneof_bool
+    if (!has_oneof_bool()) {
+      set_oneof_bool({});
+    }
+    found.value = get_oneof_bool();
+    break;
+  }
+  case 116: { // oneof_uint64
+    if (!has_oneof_uint64()) {
+      set_oneof_uint64({});
+    }
+    found.value = get_oneof_uint64();
+    break;
+  }
+  case 117: { // oneof_float
+    if (!has_oneof_float()) {
+      set_oneof_float({});
+    }
+    found.value = get_oneof_float();
+    break;
+  }
+  case 118: { // oneof_double
+    if (!has_oneof_double()) {
+      set_oneof_double({});
+    }
+    found.value = get_oneof_double();
+    break;
+  }
+  case 119: { // oneof_enum
+    if (!has_oneof_enum()) {
+      set_oneof_enum({});
+    }
+    found.value = serde::pb::raw_enum_value{
+      .number = static_cast<int32_t>(get_oneof_enum()),
+      .name = enum_to_string(get_oneof_enum()),
+    };
+    break;
+  }
+  case 201: { // groupliketype
+    found.value = &get_groupliketype();
+    break;
+  }
+  case 202: { // delimited_field
+    found.value = &get_delimited_field();
+    break;
+  }
+  default:
+    return std::nullopt;
+  }
+  if (field_numbers.size() > 1) {
+    if (!std::holds_alternative<serde::pb::base_message*>(found.value)) { return std::nullopt; }
+    return std::get<serde::pb::base_message*>(found.value)->lookup_field(field_numbers.subspan(1));
+  }
+  return found;
+}
 
 foreign_message_edition2023::foreign_message_edition2023() noexcept = default;
 foreign_message_edition2023::foreign_message_edition2023(foreign_message_edition2023&&) noexcept = default;
@@ -5104,6 +6107,44 @@ void foreign_message_edition2023::apply_field_path_from(std::span<const ss::sstr
     }
   }
 }
+std::optional<std::vector<int32_t>> foreign_message_edition2023::convert_field_path_to_numbers(std::span<std::string_view> field_path) const {
+  std::vector<int32_t> numbers;
+  if (convert_field_path_to_numbers(field_path, &numbers)) { return numbers; }
+  return std::nullopt;
+}
+bool foreign_message_edition2023::convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out) {
+  if (field_path.empty()) {
+    return true;
+  }
+  constexpr static auto key_to_field_number = std::to_array<std::pair<std::string_view, bool(*)(decltype(field_path), decltype(out))>>({
+    {"c", [](auto path, auto* out) { out->push_back(1); return path.empty(); }},
+  });
+  auto fields = std::ranges::equal_range(key_to_field_number, field_path.front(), std::less<>(), [](const auto& pair) { return pair.first; });
+  if (fields.empty()) {
+    return false;
+  }
+  return fields.front().second(field_path.subspan(1), out);
+}
+std::optional<serde::pb::field> foreign_message_edition2023::lookup_field(std::span<int32_t> field_numbers) {
+
+  if (field_numbers.empty()) {
+    return serde::pb::field{.value = static_cast<serde::pb::base_message*>(this)};
+  }
+  serde::pb::field found;
+  switch (field_numbers.front()) {
+  case 1: { // c
+    found.value = get_c();
+    break;
+  }
+  default:
+    return std::nullopt;
+  }
+  if (field_numbers.size() > 1) {
+    if (!std::holds_alternative<serde::pb::base_message*>(found.value)) { return std::nullopt; }
+    return std::get<serde::pb::base_message*>(found.value)->lookup_field(field_numbers.subspan(1));
+  }
+  return found;
+}
 
 void enum_from_proto(iobuf_parser* p, test_all_types_edition2023_nested_enum* e) {
   auto v = serde::pb::read_varint<int32_t, serde::pb::zigzag::no>(p);
@@ -5121,7 +6162,7 @@ void enum_from_proto(iobuf_parser* p, test_all_types_edition2023_nested_enum* e)
 void enum_to_proto(const test_all_types_edition2023_nested_enum& e, iobuf* buf) {
   serde::pb::write_varint<int32_t, serde::pb::zigzag::no>(static_cast<int32_t>(e), buf);
 }
-std::string_view enum_to_string(const test_all_types_edition2023_nested_enum& e) {
+static_str enum_to_string(const test_all_types_edition2023_nested_enum& e) {
   switch (e) {
   case test_all_types_edition2023_nested_enum::foo:
     return "FOO";
@@ -5192,7 +6233,7 @@ void enum_from_proto(iobuf_parser* p, foreign_enum_edition2023* e) {
 void enum_to_proto(const foreign_enum_edition2023& e, iobuf* buf) {
   serde::pb::write_varint<int32_t, serde::pb::zigzag::no>(static_cast<int32_t>(e), buf);
 }
-std::string_view enum_to_string(const foreign_enum_edition2023& e) {
+static_str enum_to_string(const foreign_enum_edition2023& e) {
   switch (e) {
   case foreign_enum_edition2023::foreign_foo:
     return "FOREIGN_FOO";

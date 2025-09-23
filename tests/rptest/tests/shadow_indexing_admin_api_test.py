@@ -7,6 +7,7 @@
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
 import re
+from random import choice
 
 import requests
 from ducktape.mark import matrix
@@ -18,7 +19,6 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
-    CloudStorageType,
     SISettings,
     get_cloud_storage_type,
 )
@@ -28,7 +28,6 @@ from rptest.util import (
     produce_until_segments,
     wait_for_local_storage_truncate,
 )
-from random import choice
 
 # Log errors expected when connectivity between redpanda and the S3
 # backend is disrupted

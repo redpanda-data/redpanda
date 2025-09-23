@@ -7,12 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from dataclasses import dataclass
 from math import ceil
-from ducktape.tests.test import TestContext
-from typing import Optional
-from rptest.services.client_swarm_base import ClientSwarmBase
+from typing import Any, Optional
 
+from ducktape.tests.test import TestContext
+
+from rptest.services.client_swarm_base import ClientSwarmBase
 from rptest.services.redpanda import AnyRedpandaService
 from rptest.services.utils import assert_int, assert_int_or_none
 
@@ -25,8 +25,8 @@ class ProducerSwarm(ClientSwarmBase):
         topic: str,
         producers: int,
         records_per_producer: int,
-        log_level="DEBUG",
-        properties={},
+        log_level: str = "DEBUG",
+        properties: dict[str, Any] = {},
         timeout_ms: int = 1000,
         compression_type: Optional[str] = None,
         compressible_payload: Optional[bool] = None,

@@ -9,7 +9,10 @@ redpanda_cc_library(
     hdrs = [
         "messages.h",
     ],
-    visibility = ["//src/v/kafka:__subpackages__"],
+    visibility = [
+        "//src/v/kafka:__subpackages__",
+        "//src/v/security/audit:__subpackages__",
+    ],
     deps = MESSAGE_TYPES,
 )
 

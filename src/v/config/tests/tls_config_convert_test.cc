@@ -30,6 +30,11 @@ SEASTAR_THREAD_TEST_CASE(test_decode_empty) {
     BOOST_TEST(!empty_cfg.get_key_cert_files());
     BOOST_TEST(!empty_cfg.get_truststore_file());
     BOOST_TEST(!empty_cfg.get_require_client_auth());
+    BOOST_TEST(!empty_cfg.get_crl_file());
+    BOOST_TEST(!empty_cfg.get_tls_v1_2_cipher_suites());
+    BOOST_TEST(!empty_cfg.get_tls_v1_3_cipher_suites());
+    BOOST_TEST(!empty_cfg.get_min_tls_version());
+    BOOST_TEST(!empty_cfg.get_enable_renegotiation());
 }
 
 SEASTAR_THREAD_TEST_CASE(test_decode_full_abs_path) {
@@ -84,6 +89,10 @@ SEASTAR_THREAD_TEST_CASE(test_decode_default_config) {
     BOOST_TEST(!empty_cfg.get_truststore_file());
     BOOST_TEST(!empty_cfg.get_crl_file());
     BOOST_TEST(!empty_cfg.get_require_client_auth());
+    BOOST_TEST(!empty_cfg.get_tls_v1_2_cipher_suites());
+    BOOST_TEST(!empty_cfg.get_tls_v1_3_cipher_suites());
+    BOOST_TEST(!empty_cfg.get_min_tls_version());
+    BOOST_TEST(!empty_cfg.get_enable_renegotiation());
 }
 
 SEASTAR_THREAD_TEST_CASE(test_decode_enabled_but_contains_empty_path) {
@@ -141,6 +150,35 @@ SEASTAR_THREAD_TEST_CASE(test_decode_p12_full_rel_path) {
     BOOST_TEST(*full_cfg.get_truststore_file() != "./truststore");
     BOOST_TEST(*full_cfg.get_crl_file() != "./crl");
     BOOST_TEST(full_cfg.get_require_client_auth());
+}
+
+SEASTAR_THREAD_TEST_CASE(test_decode_cipher_suites) {
+    auto with_values
+      = "tls_config:\n"
+        "  enabled: true\n"
+        "  tls_v1_2_cipher_suites: ECDHE-ECDSA-AES256-GCM-SHA384\n"
+        "  tls_v1_3_cipher_suites: TLS_AES_256_GCM_SHA384\n";
+    auto full_cfg = read_from_yaml(with_values);
+    BOOST_TEST(
+      full_cfg.get_tls_v1_2_cipher_suites() == "ECDHE-ECDSA-AES256-GCM-SHA384");
+    BOOST_TEST(
+      full_cfg.get_tls_v1_3_cipher_suites() == "TLS_AES_256_GCM_SHA384");
+}
+
+SEASTAR_THREAD_TEST_CASE(test_min_tls_version) {
+    auto with_values = "tls_config:\n"
+                       "  enabled: true\n"
+                       "  min_tls_version: v1.3\n";
+    auto full_cfg = read_from_yaml(with_values);
+    BOOST_TEST(full_cfg.get_min_tls_version() == config::tls_version::v1_3);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_enable_renegotiation) {
+    auto with_values = "tls_config:\n"
+                       "  enabled: true\n"
+                       "  enable_renegotiation: true\n";
+    auto full_cfg = read_from_yaml(with_values);
+    BOOST_TEST(full_cfg.get_enable_renegotiation());
 }
 
 SEASTAR_THREAD_TEST_CASE(test_decode_p12_and_key_cert) {

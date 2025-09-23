@@ -1,0 +1,46 @@
+---
+name: Python
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'tests/**/*.py'
+      - 'tests/type-checking/**'
+      - 'tests/pyrightconfig.json'
+      - 'tests/setup.py'
+      - '.github/workflows/type-check-python.yaml'
+    tags-ignore:
+      - '**'
+  pull_request:
+    paths:
+      - 'tests/**/*.py'
+      - 'tests/type-checking/**'
+      - 'tests/pyrightconfig.json'
+      - 'tests/setup.py'
+      - '.github/workflows/type-check-python.yaml'
+
+jobs:
+  type-check:
+    name: type checking
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: tests
+          file: tests/type-checking/Dockerfile
+          tags: redpanda-data/python-type-check
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          push: false
+          load: true
+      - name: Run type checking
+        run: |
+          cd tests
+          docker run --rm \
+            -v "$(pwd):/tests" \
+            redpanda-data/python-type-check \
+            ci --color=always --no-venv --tests-root /tests

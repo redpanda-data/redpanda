@@ -17,11 +17,14 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/logger.h"
 #include "kafka/protocol/timeout.h"
+#include "kafka/protocol/types.h"
+#include "kafka/server/connection_context.h"
 #include "kafka/server/handlers/configs/config_response_utils.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/handlers/topics/validators.h"
 #include "kafka/server/quota_manager.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "security/acl.h"
 #include "utils/to_string.h"
@@ -255,15 +258,28 @@ ss::future<response_ptr> create_topics_handler::handle(
         return topics;
     };
 
+    auto superuser_required = ctx.is_cluster_link_active()
+                                ? superuser_required::yes
+                                : superuser_required::no;
+
     const auto has_cluster_auth = ctx.authorized(
       security::acl_operation::create,
       security::default_cluster_name,
-      std::move(additional_resources_func));
+      std::move(additional_resources_func),
+      authz_quiet::no,
+      superuser_required);
 
     if (!has_cluster_auth) {
         auto unauthorized_it = std::partition(
-          begin, valid_range_end, [&ctx](const creatable_topic& t) {
-              return ctx.authorized(security::acl_operation::create, t.name);
+          begin,
+          valid_range_end,
+          [&ctx, superuser_required](const creatable_topic& t) {
+              return ctx.authorized(
+                security::acl_operation::create,
+                t.name,
+                authz_quiet::no,
+                audit_authz_check::yes,
+                superuser_required);
           });
         std::transform(
           unauthorized_it,
@@ -431,6 +447,23 @@ ss::future<response_ptr> create_topics_handler::handle(
     append_topic_properties(ctx, response);
     if (ctx.header().version >= api_version(5)) {
         append_topic_configs(ctx, response);
+    }
+
+    if (ctx.header().version >= api_version(7)) {
+        for (auto& topic : response.data.topics) {
+            if (topic.errored()) {
+                continue;
+            }
+
+            topic.topic_id = ctx.metadata_cache()
+                               .get_topic_metadata_ref(
+                                 model::topic_namespace_view{
+                                   model::kafka_namespace, topic.name})
+                               .transform([](const auto& md) {
+                                   return md.get().get_configuration().tp_id;
+                               })
+                               ->value_or(model::topic_id{});
+        }
     }
 
     log_topic_status(c_res);

@@ -14,6 +14,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/container/node_hash_set.h"
 #include "config/configuration.h"
+#include "config/sasl_mechanisms.h"
 #include "config/types.h"
 #include "datalake/partition_spec_parser.h"
 #include "model/namespace.h"
@@ -85,13 +86,9 @@ validate_connection_rate(const std::vector<ss::sstring>& ips_with_limit) {
 
 std::optional<ss::sstring>
 validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms) {
-    constexpr auto supported = std::to_array<std::string_view>(
-      {"GSSAPI", "SCRAM", "OAUTHBEARER", "PLAIN"});
-
     // Validate results
     for (const auto& m : mechanisms) {
-        if (std::ranges::none_of(
-              supported, [&m](const auto& s) { return s == m; })) {
+        if (!std::ranges::contains(supported_sasl_mechanisms, m)) {
             return ssx::sformat("'{}' is not a supported SASL mechanism", m);
         }
     }
@@ -100,10 +97,24 @@ validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms) {
         return std::ranges::contains(mechanisms, s);
     };
 
-    if (contains("PLAIN") && !contains("SCRAM")) {
-        return "SCRAM mechanism must be enabled if PLAIN is enabled";
+    if (contains(plain) && !contains(scram)) {
+        return ssx::sformat(
+          "{} mechanism must be enabled if {} is enabled", scram, plain);
     }
+    return std::nullopt;
+}
 
+std::optional<ss::sstring> validate_sasl_mechanisms_overrides(
+  const std::vector<config::sasl_mechanisms_override>& overrides) {
+    for (const auto& overide : overrides) {
+        const auto error = validate_sasl_mechanisms(overide.sasl_mechanisms);
+        if (error.has_value()) {
+            return ssx::sformat(
+              "Invalid sasl mechanisms override for listener '{}'. Error: {}",
+              overide.listener,
+              error.value());
+        }
+    }
     return std::nullopt;
 }
 
@@ -129,11 +140,7 @@ bool oidc_is_enabled_http() {
       [](const auto& m) { return m == "OIDC"; });
 }
 
-bool oidc_is_enabled_kafka() {
-    return std::ranges::any_of(
-      config::shard_local_cfg().sasl_mechanisms(),
-      [](const auto& m) { return m == "OAUTHBEARER"; });
-}
+bool oidc_is_enabled_kafka() { return has_sasl_mechanism(oauthbearer); }
 
 std::optional<ss::sstring> validate_0_to_1_ratio(const double d) {
     if (d < 0 || d > 1) {

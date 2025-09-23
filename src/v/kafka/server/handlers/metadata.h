@@ -25,6 +25,6 @@ namespace kafka {
 memory_estimate_fn metadata_memory_estimator;
 
 using metadata_handler
-  = single_stage_handler<metadata_api, 0, 8, metadata_memory_estimator>;
+  = single_stage_handler<metadata_api, 0, 12, metadata_memory_estimator>;
 
 } // namespace kafka

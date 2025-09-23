@@ -17,6 +17,7 @@ def redpanda_cc_library(
         defines = [],
         local_defines = [],
         implementation_deps = [],
+        include_prefix = None,
         visibility = None,
         copts = [],
         deps = [],
@@ -24,6 +25,8 @@ def redpanda_cc_library(
     """
     Define a Redpanda C++ library.
     """
+    if include_prefix == None:
+        include_prefix = native.package_name().removeprefix("src/v/")
     cc_library(
         name = name,
         srcs = srcs,
@@ -31,7 +34,7 @@ def redpanda_cc_library(
         defines = defines,
         local_defines = local_defines,
         visibility = visibility,
-        include_prefix = native.package_name().removeprefix("src/v/"),
+        include_prefix = include_prefix,
         implementation_deps = implementation_deps,
         deps = deps,
         copts = redpanda_copts() + copts,

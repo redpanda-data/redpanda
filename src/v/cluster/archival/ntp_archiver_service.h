@@ -342,6 +342,20 @@ public:
         std::optional<ssx::checkpoint_mutex_units> units;
         std::optional<segment_collector_stream> upload_stream{};
         archival_stm_fence read_write_fence{};
+        /// Set when find_reupload_candidate (non-compacted reupload) finds a
+        /// candidate that matches the offset bounds of some
+        /// adjacent_segment_run but does NOT match the expected size. If set,
+        /// adjacent_segment_merger moves its internal state to the end of the
+        /// run and begins its next scan from there.
+        ///
+        /// This can occur in situations where compaction is disabled before
+        /// some segment(s) in the manifest have been reuploaded. As a result,
+        /// the remote_segment sizes in the manifest won't match the size of the
+        /// (compacted) segments on disk. This situation is not recoverable from
+        /// the perspective of the housekeeping job, so we skip these offsets,
+        /// allowing adjacent segment merging to make forward progress on the
+        /// (presumably uncompacted) remainder of the log.
+        std::optional<model::offset> skip_to{};
     };
 
     /// Find upload candidate
@@ -352,7 +366,9 @@ public:
     /// candidate.remote_segments).
     ///
     /// \param scanner is a user provided function used to find upload candidate
-    /// \return {nullopt, nullopt} or the archiver lock and upload candidate
+    /// \return {nullopt, nullopt} OR the archiver lock and upload candidate OR
+    /// {.skip_to = <offset>} if the candidate contained compacted segments (see
+    /// find_reupload_candidate_result, above).
     ss::future<find_reupload_candidate_result>
     find_reupload_candidate(manifest_scanner_t scanner, ss::abort_source& as);
 

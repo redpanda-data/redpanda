@@ -1,7 +1,7 @@
 import dataclasses
 import random
 import time
-from threading import Thread, Event
+from threading import Event, Thread
 from typing import Optional
 
 from ducktape.cluster.cluster import ClusterNode

@@ -104,7 +104,7 @@ struct followers_stats
 };
 struct partition_status
   : serde::
-      envelope<partition_status, serde::version<5>, serde::compat_version<0>> {
+      envelope<partition_status, serde::version<6>, serde::compat_version<0>> {
     static constexpr size_t invalid_size_bytes = size_t(-1);
     static constexpr uint32_t invalid_shard_id = uint32_t(-1);
 
@@ -143,6 +143,15 @@ struct partition_status
      */
     kafka::offset high_watermark;
 
+    /*
+     * If the partition is a cloud topics partition, then this field records the
+     * maximum epoch (inclusive) that is eligible for garbage collection. When
+     * reducing (applying `min`) this value across node reports, ignore
+     * std::nullopt. If the reduced value is std::nullopt then the partition
+     * should be treated as if it contains no GC eligible data.
+     */
+    std::optional<int64_t> cloud_topic_max_gc_eligible_epoch;
+
     auto serde_fields() {
         return std::tie(
           id,
@@ -154,7 +163,8 @@ struct partition_status
           reclaimable_size_bytes,
           shard,
           followers_stats,
-          high_watermark);
+          high_watermark,
+          cloud_topic_max_gc_eligible_epoch);
     }
 
     friend std::ostream& operator<<(std::ostream&, const partition_status&);

@@ -21,20 +21,18 @@ namespace raft {
  */
 class recovery_memory_quota {
 public:
-    struct configuration {
-        config::binding<std::optional<size_t>> max_recovery_memory;
-        config::binding<size_t> default_read_buffer_size;
-    };
-    using config_provider_fn = ss::noncopyable_function<configuration()>;
-
-    explicit recovery_memory_quota(config_provider_fn);
+    explicit recovery_memory_quota(
+      config::binding<std::optional<size_t>> max_recovery_memory,
+      config::binding<size_t> raft_recovery_concurrency_per_shard);
 
     ss::future<ssx::semaphore_units> acquire_read_memory();
 
 private:
     void on_max_memory_changed();
 
-    configuration _cfg;
+    config::binding<std::optional<size_t>> _max_recovery_memory;
+    config::binding<size_t> _raft_recovery_concurrency_per_shard;
+
     size_t _current_max_recovery_mem;
     ssx::semaphore _memory;
 };

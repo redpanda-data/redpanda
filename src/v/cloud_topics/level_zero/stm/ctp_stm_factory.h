@@ -12,7 +12,7 @@
 
 #include "cluster/state_machine_registry.h"
 
-namespace cloud_topics {
+namespace cloud_topics::l0 {
 
 class ctp_stm_factory : public cluster::state_machine_factory {
 public:
@@ -24,4 +24,4 @@ public:
       const cluster::stm_instance_config& cfg) final;
 };
 
-} // namespace cloud_topics
+} // namespace cloud_topics::l0

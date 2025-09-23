@@ -58,6 +58,8 @@ struct error_category final : public std::error_category {
             return "shadow link limit reached";
         case errc::link_creation_failed:
             return "link creation failed";
+        case errc::link_has_active_shadow_topics:
+            return "link has active shadow topics";
         }
 
         return "(unknown error code)";

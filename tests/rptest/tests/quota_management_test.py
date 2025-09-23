@@ -7,19 +7,21 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import json
 from enum import Enum
 from functools import total_ordering
-import json
 from typing import NamedTuple
+
+from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
+
 from rptest.clients.kafka_cli_tools import KafkaCliTools, KafkaCliToolsError
+from rptest.clients.kcl import RawKCL
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
-from ducktape.mark import parametrize, ignore
-from rptest.clients.rpk import RpkException, RpkTool
-from rptest.clients.kcl import RawKCL
-from ducktape.utils.util import wait_until
 
 
 def expect_kafka_cli_error_msg(error_msg: str):

@@ -7,6 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+# ruff: noqa: F401
+# pyright: reportUnusedImport=none
+
 from .fault import FaultBase, OneoffFault, RecoverableFault
-from .isolate_leader import IsolateLeaderFault
 from .hijack_tx_ids import HijackTxIDsFault
+from .isolate_leader import IsolateLeaderFault

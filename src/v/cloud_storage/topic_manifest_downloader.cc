@@ -188,7 +188,7 @@ topic_manifest_downloader::download_manifest(
 
 namespace {
 using list_outcome_t
-  = std::vector<cloud_storage_clients::client::list_bucket_item>;
+  = chunked_vector<cloud_storage_clients::client::list_bucket_item>;
 ss::future<result<list_outcome_t, error_outcome>> find_prefixed_manifest_paths(
   remote& remote,
   cloud_storage_clients::bucket_name bucket,
@@ -214,7 +214,7 @@ ss::future<result<list_outcome_t, error_outcome>> find_prefixed_manifest_paths(
           prefixed_list_res.error());
         co_return error_outcome::manifest_download_error;
     }
-    co_return prefixed_list_res.value().contents;
+    co_return std::move(prefixed_list_res.value().contents);
 }
 } // namespace
 

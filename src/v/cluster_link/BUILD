@@ -73,6 +73,8 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/cluster_link/model",
+        "//src/v/cluster_link/replication:deps",
+        "//src/v/cluster_link/replication:link_replication_mgr",
         "//src/v/container:chunked_vector",
         "//src/v/kafka/client:cluster",
         "//src/v/kafka/data/rpc",
@@ -118,6 +120,34 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "group_mirroring_task",
+    srcs = [
+        "group_mirroring_task.cc",
+    ],
+    hdrs = [
+        "group_mirroring_task.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        "//src/v/base",
+        "//src/v/cluster_link/model",
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:find_coordinator",
+        "//src/v/kafka/protocol:list_offset",
+        "//src/v/kafka/server",
+        "//src/v/kafka/server:topic_config_utils",
+        "//src/v/ssx:async_algorithm",
+        "//src/v/ssx:future_util",
+        "@fmt",
+    ],
+    visibility = ["//src/v/cluster_link:__subpackages__"],
+    deps = [
+        ":impl",
+        "//src/v/kafka/client:cluster",
+    ],
+)
+
+redpanda_cc_library(
     name = "cluster_link",
     srcs = [
         "service.cc",
@@ -126,6 +156,7 @@ redpanda_cc_library(
         "service.h",
     ],
     implementation_deps = [
+        ":group_mirroring_task",
         ":impl",
         ":logger",
         ":source_topic_syncer",
@@ -138,6 +169,10 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/cluster/utils:partition_change_notifier_api",
+        "//src/v/cluster_link/replication:deps_impl",
+        "//src/v/cluster_link/replication:mux_remote_consumer",
+        "//src/v/kafka/client/direct_consumer",
+        "//src/v/kafka/server",
         "//src/v/model",
         "//src/v/raft",
         "@seastar",

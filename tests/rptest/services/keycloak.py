@@ -1,12 +1,10 @@
 import json
 import os
-import requests
 import tempfile
-from typing import Optional
 
+import requests
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
-
 from keycloak import KeycloakAdmin
 
 KC_INSTALL_DIR = os.path.join("/", "opt", "keycloak")
@@ -335,7 +333,7 @@ class KeycloakService(Service):
             access_token_lifespan_s=access_token_lifespan_s,
         )
 
-    def stop_node(self, node, clean_shutdown=True):
+    def stop_node(self, node, clean_shutdown=True, **_):
         s = "TERM" if clean_shutdown else "KILL"
         self.logger.warn(f"Stopping node {node.name}")
 

@@ -156,6 +156,9 @@ public:
     ss::future<update_mirror_topic_properties_response>
     update_mirror_topic_properties(
       update_mirror_topic_properties_request, rpc::streaming_context&) final;
+    ss::future<update_cluster_link_configuration_response>
+    update_cluster_link_configuration(
+      update_cluster_link_configuration_request, rpc::streaming_context&) final;
 
     ss::future<get_current_cluster_epoch_response> get_current_cluster_epoch(
       get_current_cluster_epoch_request, ::rpc::streaming_context&) final;

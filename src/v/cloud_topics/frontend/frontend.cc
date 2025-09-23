@@ -100,7 +100,7 @@ static model::record_batch make_placeholder_batch(
     ph.header().first_timestamp = hdr.first_timestamp;
     ph.header().max_timestamp = hdr.max_timestamp;
     ph.header().base_sequence = hdr.base_sequence;
-    ph.header().header_crc = model::internal_header_only_crc(ph.header());
+    ph.header().reset_size_checksum_metadata(ph.data());
     return ph;
 }
 
@@ -141,7 +141,7 @@ static void update_batch_base_offset(
   model::record_batch& src, model::offset offset, model::term_id term) {
     src.set_term(term);
     src.header().base_offset = offset;
-    src.header().header_crc = model::internal_header_only_crc(src.header());
+    src.header().reset_size_checksum_metadata(src.data());
 }
 
 static chunked_vector<model::record_batch>
@@ -468,23 +468,32 @@ ss::future<> bg_upload_and_replicate(
                 if (res.has_error()) {
                     return res.error();
                 }
-                // We know that the data is replicated so it's safe to add
-                // the batch to the record batch cache before returning.
                 if (cache_enabled) {
-                    vassert(
-                      res.value().last_term != model::term_id{},
-                      "Term not set");
-                    update_batches(
-                      inp,
-                      kafka::offset_cast(res.value().last_offset),
-                      res.value().last_term);
-                    for (const auto& b : inp) {
+                    // The term_id is not guaranteed to be set if the request
+                    // was served from the list of finished requests. This might
+                    // happen if the request is coming from the snapshot (in
+                    // which case it's not stored) or from the log replay. The
+                    // simplest solution in this case is to skip caching.
+                    if (res.value().last_term >= model::term_id{0}) {
+                        update_batches(
+                          inp,
+                          kafka::offset_cast(res.value().last_offset),
+                          res.value().last_term);
+                        for (const auto& b : inp) {
+                            vlog(
+                              cd_log.trace,
+                              "Putting batch to cache: {}, term: {}",
+                              b.base_offset(),
+                              b.term());
+                            api->cache_put(ntp, b);
+                        }
+                    } else {
                         vlog(
-                          cd_log.trace,
-                          "Putting batch to cache: {}, term: {}",
-                          b.base_offset(),
-                          b.term());
-                        api->cache_put(ntp, b);
+                          cd_log.debug,
+                          "Skipping cache put for ntp {} at offset {} with "
+                          "unset term",
+                          ntp,
+                          res.value().last_offset);
                     }
                 }
                 return raft::replicate_result{
@@ -567,7 +576,8 @@ ss::future<std::expected<kafka::offset, std::error_code>> frontend::replicate(
         for (const auto& b : rb_copy) {
             vlog(
               cd_log.trace,
-              "Putting batch to cache: {}, term: {}",
+              "Putting batch for {} to cache: {}, term: {}",
+              ntp(),
               b.base_offset(),
               b.term());
             _data_plane->cache_put(ntp(), b);
@@ -632,8 +642,44 @@ frontend::validate_fetch_offset(
   bool reading_from_follower,
   model::timeout_clock::time_point deadline) {
     if (reading_from_follower && !_partition->is_leader()) {
-        // TODO: implement follower fetching for cloud topics
-        co_return std::unexpected(frontend_errc::not_leader_for_partition);
+        std::optional<frontend_errc> ec = std::nullopt;
+        auto log_end_offset = get_log_end_offset(*_partition);
+
+        model::offset leader_hwm;
+        kafka::offset available_to_read;
+
+        if (!ec.has_value()) {
+            leader_hwm
+              = _partition->get_offset_translator_state()->from_log_offset(
+                _partition->leader_high_watermark());
+            available_to_read = std::min(
+              model::offset_cast(leader_hwm), log_end_offset);
+
+            if (fetch_offset < start_offset()) {
+                ec = frontend_errc::offset_out_of_range;
+            } else if (fetch_offset > available_to_read) {
+                // Offset know to be committed but not yet available on the
+                // follower.
+                ec = frontend_errc::offset_not_available;
+            }
+        }
+
+        if (ec.has_value()) {
+            vlog(
+              cd_log.warn,
+              "ntp {}: fetch offset out of range on follower, requested: {}, "
+              "partition start offset: {}, high watermark: {}, leader high "
+              "watermark: {}, log end offset: {}, ec: {}",
+              ntp(),
+              fetch_offset,
+              start_offset(),
+              high_watermark(),
+              leader_hwm,
+              log_end_offset,
+              ec);
+            co_return std::unexpected(*ec);
+        }
+        co_return std::monostate{};
     }
 
     auto timeout = deadline - model::timeout_clock::now();

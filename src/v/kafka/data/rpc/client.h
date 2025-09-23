@@ -62,7 +62,8 @@ public:
     ss::future<cluster::errc> create_topic(
       model::topic_namespace_view,
       cluster::topic_properties,
-      std::optional<int32_t> partition_count = std::nullopt);
+      std::optional<int32_t> partition_count = std::nullopt,
+      std::optional<int16_t> replication_factor = std::nullopt);
 
     ss::future<cluster::errc> update_topic(cluster::topic_properties_update);
 
@@ -72,7 +73,8 @@ public:
     ss::future<cluster::errc> try_create_topic(
       model::topic_namespace_view,
       cluster::topic_properties,
-      std::optional<int32_t> partition_count);
+      std::optional<int32_t> partition_count,
+      std::optional<int16_t> replication_factor = std::nullopt);
 
     ss::future<result<partition_offsets_map, cluster::errc>>
       get_partition_offsets(chunked_vector<topic_partitions>);

@@ -91,6 +91,7 @@
 #include "config/node_config.h"
 #include "config/property.h"
 #include "config/seed_server.h"
+#include "config/tls_config.h"
 #include "config/types.h"
 #include "crash_tracker/signals.h"
 #include "crypto/ossl_context_service.h"
@@ -120,6 +121,7 @@
 #include "kafka/server/rm_group_frontend.h"
 #include "kafka/server/snc_quota_manager.h"
 #include "kafka/server/usage_manager.h"
+#include "kafka/server/write_at_offset_stm.h"
 #include "metrics/prometheus_sanitize.h"
 #include "migrations/migrators.h"
 #include "migrations/rbac_migrator.h"
@@ -1151,16 +1153,18 @@ void application::configure_admin_server(model::node_id node_id) {
       .get();
     _admin
       .invoke_on_all([this, node_id](admin_server& s) {
-          admin::proxy::client client(node_id, &_connection_cache, [this] {
-              return controller->get_members_table().local().node_ids();
-          });
+          auto create_client = [node_id, this]() {
+              return admin::proxy::client(node_id, &_connection_cache, [this] {
+                  return controller->get_members_table().local().node_ids();
+              });
+          };
           // Add RPC services
           s.add_service(
             std::make_unique<admin::shadow_link_service_impl>(
-              &_cluster_link_service));
+              create_client(), &_cluster_link_service, &metadata_cache));
           s.add_service(
             std::make_unique<admin::debug_service_impl>(
-              std::move(client), stress_fiber_manager));
+              create_client(), stress_fiber_manager));
       })
       .get();
 }
@@ -1430,7 +1434,8 @@ void application::wire_up_runtime_services(
             std::ref(cloud_io),
             std::ref(_datalake_credential_mgr)),
           std::ref(cloud_io),
-          std::ref(*bucket))
+          std::ref(*bucket),
+          ss::sharded_parameter([this] { return &feature_table.local(); }))
           .get();
         construct_service(
           _datalake_coordinator_fe,
@@ -1529,6 +1534,8 @@ void application::wire_up_runtime_services(
       &controller->get_shard_table(),
       &metadata_cache,
       controller.get(),
+      &group_router,
+      &controller->get_health_monitor(),
       smp_service_groups.cluster_link_smp_sg())
       .get();
 
@@ -1627,15 +1634,9 @@ void application::wire_up_redpanda_services(
                   .bind(),
             };
         },
-        [] {
-            return raft::recovery_memory_quota::configuration{
-              .max_recovery_memory
-              = config::shard_local_cfg().raft_max_recovery_memory.bind(),
-              .default_read_buffer_size
-              = config::shard_local_cfg()
-                  .raft_recovery_default_read_size.bind(),
-            };
-        },
+        ss::sharded_parameter([] {
+            return config::shard_local_cfg().raft_max_recovery_memory.bind();
+        }),
         std::ref(_connection_cache),
         std::ref(storage),
         std::ref(recovery_throttle),
@@ -2005,12 +2006,16 @@ void application::wire_up_redpanda_services(
     }
 
     syschecks::systemd_message("Creating auditing subsystem").get();
+    if (!_audit_log_client_config.has_value()) {
+        _audit_log_client_config.emplace();
+    }
     construct_service(
       audit_mgr,
       node_id,
       controller.get(),
-      std::ref(*_audit_log_client_config),
-      &metadata_cache)
+      &metadata_cache,
+      &_kafka_data_rpc_client,
+      std::ref(_audit_log_client_config.value()))
       .get();
 
     syschecks::systemd_message("Creating metadata dissemination service").get();
@@ -2518,6 +2523,7 @@ void application::wire_up_redpanda_services(
         std::ref(controller->get_api()),
         std::ref(tx_gateway_frontend),
         std::ref(datalake_throttle_manager),
+        std::ref(controller->get_cluster_link_frontend()),
         qdc_config,
         std::ref(*thread_worker),
         std::ref(_schema_registry))
@@ -2567,7 +2573,8 @@ application::make_datalake_usage_aggregator() {
 }
 
 bool application::kafka_data_rpc_enabled() {
-    return wasm_data_transforms_enabled();
+    return wasm_data_transforms_enabled()
+           || config::shard_local_cfg().audit_use_rpc();
 }
 
 ss::future<>
@@ -2700,9 +2707,29 @@ void application::wire_up_bootstrap_services() {
                 = config::shard_local_cfg().rpc_server_tcp_recv_buf;
               c.tcp_send_buf
                 = config::shard_local_cfg().rpc_server_tcp_send_buf;
+              config::tls_config tls_config{
+                config::node().rpc_server_tls().is_enabled(),
+                config::node().rpc_server_tls().get_key_cert_files(),
+                config::node().rpc_server_tls().get_truststore_file(),
+                config::node().rpc_server_tls().get_crl_file(),
+                config::node().rpc_server_tls().get_require_client_auth(),
+                config::node()
+                  .rpc_server_tls()
+                  .get_tls_v1_2_cipher_suites()
+                  .value_or(ss::sstring{}),
+                config::node()
+                  .rpc_server_tls()
+                  .get_tls_v1_3_cipher_suites()
+                  .value_or(ss::sstring{net::tls_v1_3_cipher_suites_strict}),
+                config::node().rpc_server_tls().get_min_tls_version().value_or(
+                  config::tls_version::v1_3),
+                config::node()
+                  .rpc_server_tls()
+                  .get_enable_renegotiation()
+                  .value_or(false)};
               auto credentials
                 = net::build_reloadable_server_credentials_with_probe(
-                    config::node().rpc_server_tls(),
+                    tls_config,
                     "rpc",
                     "",
                     [this](
@@ -3145,9 +3172,11 @@ void application::start_runtime_services(
           pm.register_factory<datalake::translation::stm_factory>(
             config::shard_local_cfg().iceberg_enabled());
           if (config::shard_local_cfg().development_enable_cloud_topics()) {
-              pm.register_factory<cloud_topics::ctp_stm_factory>();
+              pm.register_factory<cloud_topics::l0::ctp_stm_factory>();
               pm.register_factory<cloud_topics::l1::stm_factory>();
           }
+          pm.register_factory<kafka::write_at_offset_stm_factory>(
+            storage.local().kvs(), model::offset_translator_batch_types());
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();

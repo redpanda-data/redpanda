@@ -14,6 +14,7 @@
 #include "cluster/cluster_link/tests/utils.h"
 #include "cluster_link/link.h"
 #include "cluster_link/manager.h"
+#include "cluster_link/replication/tests/deps_test_impl.h"
 #include "cluster_link/tests/deps.h"
 #include "test_utils/test.h"
 
@@ -24,6 +25,10 @@
 using namespace std::chrono_literals;
 
 using kafka::data::rpc::test::fake_topic_creator;
+using data_src_factory
+  = cluster_link::replication::tests::random_data_source_factory;
+using data_sink_factory
+  = cluster_link::replication::tests::accounting_sink_factory;
 
 namespace cluster_link::tests {
 
@@ -44,7 +49,7 @@ public:
       std::unique_ptr<kafka::client::cluster> cluster_connection);
 
     ss::future<> start() override;
-    ss::future<> stop() override;
+    ss::future<> stop() noexcept override;
 
 private:
     link_test* _link_test;
@@ -138,6 +143,7 @@ protected:
     ss::sharded<table> _table;
 
     std::unique_ptr<manager> _manager;
+    config::mock_property<int16_t> _default_topic_replication{3};
 
     absl::flat_hash_map<notification_id, ss::noncopyable_function<void(uuid_t)>>
       _callbacks;
@@ -173,11 +179,15 @@ public:
             [](const ::model::ntp&, ::model::node_id) {},
             [](::model::topic_namespace_view, int32_t, ::model::node_id) {
                 return cluster::errc::success;
-            }),
+            },
+            _default_topic_replication.bind()),
           std::make_unique<test_link_registry>(&_table.local()),
           std::make_unique<link_test_factory>(this, 1s),
           std::make_unique<cluster_mock_factory>(&_cluster_mock),
-          task_reconciler_interval);
+          std::make_unique<test_consumer_group_router>(),
+          std::make_unique<test_partition_metadata_provider>(),
+          task_reconciler_interval,
+          _default_topic_replication.bind());
     }
 
     virtual ss::future<> TearDownAsync() override {
@@ -227,7 +237,9 @@ test_link::test_link(
       manager,
       task_reconciler_interval,
       std::move(metadata),
-      std::move(cluster_connection))
+      std::move(cluster_connection),
+      std::make_unique<data_src_factory>(),
+      std::make_unique<data_sink_factory>())
   , _link_test(link_test) {}
 
 ss::future<> test_link::start() {
@@ -235,7 +247,7 @@ ss::future<> test_link::start() {
     _link_test->add_link_to_list(config().uuid, this);
 }
 
-ss::future<> test_link::stop() {
+ss::future<> test_link::stop() noexcept {
     _link_test->remove_link_from_list(config().uuid);
     co_await link::stop();
 }
@@ -344,28 +356,18 @@ public:
     using link::link;
 
     ss::future<> start() override {
-        static bool has_been_called = false;
-        if (has_been_called) {
-            has_been_called = false;
+        co_await link::start();
+        static bool start_errored = false;
+        if (start_errored) {
+            start_errored = false;
             _running = true;
-            return ss::now();
-        } else {
-            has_been_called = true;
-            throw std::runtime_error("Evil link start method failed");
+            co_return;
         }
+        start_errored = true;
+        throw std::runtime_error("Evil link start method failed");
     }
 
-    ss::future<> stop() override {
-        static bool has_been_called = false;
-        if (has_been_called) {
-            has_been_called = false;
-            _running = false;
-            return ss::now();
-        } else {
-            has_been_called = true;
-            throw std::runtime_error("Evil link stop method failed");
-        }
-    }
+    ss::future<> stop() noexcept override { co_await link::stop(); }
 
     bool running() const { return _running; }
 
@@ -387,14 +389,16 @@ public:
           manager,
           1s,
           std::move(metadata),
-          std::move(cluster_connection));
+          std::move(cluster_connection),
+          std::make_unique<data_src_factory>(),
+          std::make_unique<data_sink_factory>());
     }
 };
 
 class evil_link_test : public link_test_base {
 public:
     static constexpr auto task_reconciler_interval = 1s;
-    virtual ss::future<> SetUpAsync() override {
+    ss::future<> SetUpAsync() override {
         co_await link_test_base::SetUpAsync();
         auto elf = std::make_unique<evil_link_factory>();
         _elf = elf.get();
@@ -411,15 +415,19 @@ public:
             [](const ::model::ntp&, ::model::node_id) {},
             [](::model::topic_namespace_view, int32_t, ::model::node_id) {
                 return cluster::errc::success;
-            }),
+            },
+            _default_topic_replication.bind()),
           std::make_unique<test_link_registry>(&_table.local()),
           std::move(elf),
           std::make_unique<cluster_mock_factory>(&_cluster_mock),
-          task_reconciler_interval);
+          std::make_unique<test_consumer_group_router>(),
+          std::make_unique<test_partition_metadata_provider>(),
+          task_reconciler_interval,
+          _default_topic_replication.bind());
         co_await _manager->start();
     }
 
-    virtual ss::future<> TearDownAsync() override {
+    ss::future<> TearDownAsync() override {
         co_await _manager->stop();
         _elf = nullptr;
         _manager.reset(nullptr);
@@ -458,14 +466,6 @@ TEST_F_CORO(evil_link_test, test_evil_link_start_stop) {
       << "Link should be present after reconciler loop";
 
     co_await remove_link(name);
-    // Allow callback time to execute
-    co_await ss::sleep(500ms);
-
-    report = _manager->get_task_status_report();
-    link_report = report.link_reports.find(name);
-    EXPECT_NE(link_report, report.link_reports.end())
-      << "Link should be present after reconciler loop";
-
     // Link reconciler loop takes 10 seconds to run
     co_await ss::sleep(11s);
     report = _manager->get_task_status_report();

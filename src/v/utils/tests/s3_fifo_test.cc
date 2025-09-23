@@ -18,12 +18,15 @@ class cache_hook_accessor {
 public:
     static std::optional<size_t>
     get_hook_insertion_time(const utils::s3_fifo::cache_hook& hook) {
-        return hook.ghost_insertion_time_;
+        return hook.has_ghost_insertion_time_
+                 ? std::make_optional(hook.ghost_insertion_time_)
+                 : std::nullopt;
     }
 
     static void set_hook_insertion_time(
       utils::s3_fifo::cache_hook& hook, std::optional<size_t> time) {
-        hook.ghost_insertion_time_ = time;
+        hook.ghost_insertion_time_ = time.value_or(0);
+        hook.has_ghost_insertion_time_ = time.has_value();
     }
 
     static uint8_t get_hook_freq(utils::s3_fifo::cache_hook& hook) {

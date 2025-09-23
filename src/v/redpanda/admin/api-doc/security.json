@@ -404,5 +404,69 @@
             }
         }
     }
+},
+"/v1/security/report": {
+    "get": {
+        "summary": "Get security report",
+        "operationId": "get_security_report",
+        "produces": [
+            "application/json"
+        ],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "interfaces": {
+                            "type": "object",
+                            "properties": {
+                                "kafka": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/kafka_interface_security_report"
+                                    }
+                                },
+                                "rpc": {
+                                    "type": "object",
+                                    "$ref": "#/definitions/rpc_interface_security_report"
+                                },
+                                "admin": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/admin_interface_security_report"
+                                    }
+                                },
+                                "schema_registry": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/schema_registry_interface_security_report"
+                                    }
+                                },
+                                "schema_registry_client": {
+                                    "$ref": "#/definitions/client_security_report"
+                                },
+                                "pandaproxy": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/pandaproxy_interface_security_report"
+                                    }
+                                },
+                                "audit_log_client": {
+                                    "$ref": "#/definitions/client_security_report"
+                                }
+                            }
+                        },
+                        "alerts": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "security_report_alert"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 

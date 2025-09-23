@@ -11,6 +11,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "config/configuration.h"
+#include "config/sasl_mechanisms.h"
 #include "config/tls_config.h"
 #include "http/client.h"
 #include "metrics/metrics.h"
@@ -142,6 +143,8 @@ struct service::impl {
     ss::shard_id update_shard_id{0};
     impl(
       config::binding<std::vector<ss::sstring>> sasl_mechanisms,
+      config::binding<std::vector<config::sasl_mechanisms_override>>
+        sasl_mechanisms_overrides,
       config::binding<std::vector<ss::sstring>> http_authentication,
       config::binding<ss::sstring> discovery_url,
       config::binding<ss::sstring> token_audience,
@@ -150,6 +153,7 @@ struct service::impl {
       config::binding<std::chrono::seconds> jwks_refresh_interval)
       : _verifier{}
       , _sasl_mechanisms{std::move(sasl_mechanisms)}
+      , _sasl_mechanisms_overrides{std::move(sasl_mechanisms_overrides)}
       , _http_authentication{std::move(http_authentication)}
       , _discovery_url{std::move(discovery_url)}
       , _token_audience{std::move(token_audience)}
@@ -161,6 +165,9 @@ struct service::impl {
           ssx::spawn_with_gate(_gate, [this] { return update(); });
       }} {
         _sasl_mechanisms.watch([this]() {
+            ssx::spawn_with_gate(_gate, [this] { return update(); });
+        });
+        _sasl_mechanisms_overrides.watch([this]() {
             ssx::spawn_with_gate(_gate, [this] { return update(); });
         });
         _http_authentication.watch([this]() {
@@ -217,9 +224,15 @@ struct service::impl {
     }
 
     ss::future<> update() {
-        auto enabled = std::ranges::any_of(
-                         _sasl_mechanisms(),
-                         [](const auto& m) { return m == "OAUTHBEARER"; })
+        const auto has_oauthbearer = [](const std::vector<ss::sstring>& mechs) {
+            return std::ranges::contains(mechs, config::oauthbearer);
+        };
+        const auto sasl_overrides
+          = _sasl_mechanisms_overrides()
+            | std::views::transform(
+              &config::sasl_mechanisms_override::sasl_mechanisms);
+        auto enabled = has_oauthbearer(_sasl_mechanisms())
+                       || std::ranges::any_of(sasl_overrides, has_oauthbearer)
                        || std::ranges::any_of(
                          _http_authentication(),
                          [](const auto& m) { return m == "OIDC"; });
@@ -340,11 +353,13 @@ struct service::impl {
         if (is_https) {
             tls_host.emplace(url.host);
             if (!_creds) {
+                const auto& cfg = config::shard_local_cfg();
                 ss::tls::credentials_builder builder;
                 builder.set_client_auth(ss::tls::client_auth::NONE);
                 builder.set_minimum_tls_version(
-                  config::from_config(
-                    config::shard_local_cfg().tls_min_version()));
+                  config::from_config(cfg.tls_min_version()));
+                builder.set_cipher_string(cfg.tls_v1_2_cipher_suites);
+                builder.set_ciphersuites(cfg.tls_v1_3_cipher_suites);
                 co_await builder.set_system_trust();
                 _creds = co_await net::build_reloadable_credentials_with_probe<
                   ss::tls::certificate_credentials>(
@@ -396,6 +411,8 @@ struct service::impl {
     ss::gate _gate;
     verifier _verifier;
     config::binding<std::vector<ss::sstring>> _sasl_mechanisms;
+    config::binding<std::vector<config::sasl_mechanisms_override>>
+      _sasl_mechanisms_overrides;
     config::binding<std::vector<ss::sstring>> _http_authentication;
     config::binding<ss::sstring> _discovery_url;
     config::binding<ss::sstring> _token_audience;
@@ -413,6 +430,8 @@ struct service::impl {
 
 service::service(
   config::binding<std::vector<ss::sstring>> sasl_mechanisms,
+  config::binding<std::vector<config::sasl_mechanisms_override>>
+    sasl_mechanisms_overrides,
   config::binding<std::vector<ss::sstring>> http_authentication,
   config::binding<ss::sstring> discovery_url,
   config::binding<ss::sstring> token_audience,
@@ -421,6 +440,7 @@ service::service(
   config::binding<std::chrono::seconds> keys_refresh_interval)
   : _impl{std::make_unique<impl>(
       std::move(sasl_mechanisms),
+      std::move(sasl_mechanisms_overrides),
       std::move(http_authentication),
       std::move(discovery_url),
       std::move(token_audience),

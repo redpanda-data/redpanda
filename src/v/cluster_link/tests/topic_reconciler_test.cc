@@ -11,6 +11,7 @@
 
 #include "cluster_link/tests/deps.h"
 #include "cluster_link/topic_reconciler.h"
+#include "config/mock_property.h"
 #include "test_utils/async.h"
 #include "test_utils/test.h"
 
@@ -45,10 +46,15 @@ public:
             ::model::node_id) {
               _ftmc->set_partition_count(tp_ns, partition_count);
               return cluster::errc::success;
-          });
+          },
+          _default_topic_replication.bind());
 
         _reconciler = std::make_unique<topic_reconciler>(
-          _ftc.get(), _ftmc.get(), _link_registry.get(), 1s);
+          _ftc.get(),
+          _ftmc.get(),
+          _link_registry.get(),
+          1s,
+          _default_topic_replication.bind());
         co_await _reconciler->start();
 
         set_required_topic_properties(
@@ -112,7 +118,7 @@ public:
       model::id_t id,
       ::model::topic topic,
       int32_t partition_count,
-      int16_t replication_factor,
+      std::optional<int16_t> replication_factor,
       chunked_hash_map<ss::sstring, ss::sstring> topic_configs = {}) {
         topic_configs.insert(
           _required_topic_properties.begin(), _required_topic_properties.end());
@@ -157,6 +163,10 @@ public:
 
     link_registry* link_registry() const { return _link_registry.get(); }
 
+    config::mock_property<int16_t>& default_topic_replication() {
+        return _default_topic_replication;
+    }
+
 private:
     ss::sharded<cluster::cluster_link::table> _table;
     std::unique_ptr<test_link_registry> _link_registry;
@@ -168,6 +178,8 @@ private:
     model::id_t _created_link_id;
 
     model::id_t _next_link_id{1};
+
+    config::mock_property<int16_t> _default_topic_replication{3};
 };
 
 TEST_F_CORO(topic_reconciler_test, test_topic_creation_and_property_updates) {
@@ -274,5 +286,40 @@ TEST_F_CORO(topic_reconciler_test, test_topic_failure) {
     const auto topic_cfg = metadata_cache()->find_topic_cfg(topic);
     ASSERT_TRUE_CORO(topic_cfg.has_value());
     EXPECT_EQ(topic_cfg->replication_factor, 1);
+}
+
+TEST_F_CORO(topic_reconciler_test, test_no_rf_set) {
+    ::model::topic_namespace topic{
+      ::model::kafka_namespace, ::model::topic{"test_topic"}};
+    ::model::topic_namespace topic2{
+      ::model::kafka_namespace, ::model::topic{"test_topic2"}};
+
+    default_topic_replication().update(1);
+
+    co_await add_mirror_topic(get_link_id(), topic.tp, 1, std::nullopt);
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(
+      10s, [this, topic = ::model::topic_namespace_view{topic}] {
+          return metadata_cache()->find_topic_cfg(topic).has_value();
+      });
+
+    const auto topic_cfg = metadata_cache()->find_topic_cfg(topic).value();
+    EXPECT_EQ(topic_cfg.tp_ns, topic);
+    EXPECT_EQ(topic_cfg.partition_count, 1);
+    EXPECT_EQ(topic_cfg.replication_factor, 1);
+
+    default_topic_replication().update(3);
+
+    co_await add_mirror_topic(get_link_id(), topic2.tp, 1, std::nullopt);
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(
+      10s, [this, topic = ::model::topic_namespace_view{topic2}] {
+          return metadata_cache()->find_topic_cfg(topic).has_value();
+      });
+
+    const auto topic_cfg2 = metadata_cache()->find_topic_cfg(topic2).value();
+    EXPECT_EQ(topic_cfg2.tp_ns, topic2);
+    EXPECT_EQ(topic_cfg2.partition_count, 1);
+    EXPECT_EQ(topic_cfg2.replication_factor, 3);
 }
 } // namespace cluster_link::tests

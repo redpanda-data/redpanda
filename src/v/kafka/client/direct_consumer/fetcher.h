@@ -152,6 +152,7 @@ private:
  * - support incremental fetches
  * - support leader epochs
  * - support server side throttling and quotas
+ * - support topic identifiers
  */
 class fetcher {
 public:
@@ -190,7 +191,6 @@ private:
         std::optional<kafka::offset> fetch_offset;
         std::optional<kafka::offset> high_watermark;
         leader_epoch current_leader_epoch{kafka::invalid_leader_epoch};
-        intrusive_list_hook _hook;
         assignment_epoch assignment_epoch{0};
         bool incremental_include{false};
 
@@ -198,8 +198,7 @@ private:
             return fetch_offset.has_value();
         }
     };
-    using state_list
-      = intrusive_list<partition_fetch_state, &partition_fetch_state::_hook>;
+    using state_list = chunked_vector<partition_fetch_state>;
     struct partitions_to_process {
         model::topic topic;
         state_list to_include_in_fetch;
@@ -260,6 +259,8 @@ private:
     data_queue& queue();
     prefix_logger& logger();
     assignment_epoch next_epoch() { return ++_epoch; }
+
+    void reset_partition_offset(model::topic_partition_view);
 
     direct_consumer* _parent;
     model::node_id _id;

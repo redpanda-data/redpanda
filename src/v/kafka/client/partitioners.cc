@@ -111,9 +111,13 @@ partitioner default_partitioner(model::partition_id initial) {
       detail::roundrobin_partitioner{initial})};
 }
 
-void partitioners_cache::apply_metadata(const metadata_response_data& data) {
+void partitioners_cache::apply_metadata(const metadata_update& data) {
+    if (!data.topics.has_value()) {
+        // No topics in metadata update, nothing to do
+        return;
+    }
     chunked_hash_set<model::topic> metadata_topics;
-    for (const auto& t : data.topics) {
+    for (const auto& t : *data.topics) {
         static_assert(
           api_version_for(metadata_request::api_type::key) < api_version(12),
           "topic::name is nullable in v12+");

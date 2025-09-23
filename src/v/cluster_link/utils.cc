@@ -18,20 +18,20 @@ namespace cluster_link {
 namespace {
 
 struct tls_visitor {
-    kafka::client::key_store operator()(
+    net::key_store operator()(
       const model::tls_file_path& key, const model::tls_file_path& cert) {
-        return kafka::client::key_cert_path{
+        return net::key_cert_path{
           .key = std::filesystem::path{key()},
           .cert = std::filesystem::path{cert()}};
     }
-    kafka::client::key_store
+    net::key_store
     operator()(const model::tls_value& key, const model::tls_value& cert) {
-        return kafka::client::key_cert{.key = key(), .cert = cert()};
+        return net::key_cert{.key = key(), .cert = cert()};
     }
 
     template<typename T1, typename T2>
     requires(!std::is_same_v<T1, T2>)
-    kafka::client::key_store operator()(const T1&, const T2&) {
+    net::key_store operator()(const T1&, const T2&) {
         vassert(false, "TLS key and cert must be of the same type");
     }
 };
@@ -44,11 +44,10 @@ create_tls_configuration(const model::connection_config& link) {
         tls_cfg.truststore = ss::visit(
           link.ca.value(),
           [](const model::tls_file_path& path) {
-              return kafka::client::certificate_configuration{
-                std::filesystem::path{path()}};
+              return net::certificate{std::filesystem::path{path()}};
           },
           [](const model::tls_value& value) {
-              return kafka::client::certificate_configuration{value()};
+              return net::certificate{value()};
           });
     }
 

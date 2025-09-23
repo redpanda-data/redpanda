@@ -152,7 +152,7 @@ TEST_P_CORO(all_acks_fixture, validate_replication) {
 
     ASSERT_EQ_CORO(all_batches.size(), 3);
 
-    co_await assert_logs_equal();
+    ASSERT_TRUE_CORO(co_await assert_logs_equal());
 }
 
 TEST_P_CORO(all_acks_fixture, single_node_replication) {
@@ -170,7 +170,7 @@ TEST_P_CORO(all_acks_fixture, single_node_replication) {
 
     // wait for committed offset to propagate
     co_await wait_for_committed_offset(result.value().last_offset, 5s);
-    co_await assert_logs_equal();
+    ASSERT_TRUE_CORO(co_await assert_logs_equal());
 }
 
 TEST_P_CORO(all_acks_fixture, validate_recovery) {
@@ -201,7 +201,7 @@ TEST_P_CORO(all_acks_fixture, validate_recovery) {
 
     ASSERT_EQ_CORO(all_batches.size(), 3);
 
-    co_await assert_logs_equal();
+    ASSERT_TRUE_CORO(co_await assert_logs_equal());
 }
 
 TEST_F_CORO(raft_fixture, validate_adding_nodes_to_cluster) {
@@ -237,7 +237,7 @@ TEST_F_CORO(raft_fixture, validate_adding_nodes_to_cluster) {
 
     ASSERT_EQ_CORO(all_batches.size(), 3);
 
-    co_await assert_logs_equal();
+    ASSERT_TRUE_CORO(co_await assert_logs_equal());
 }
 
 TEST_P_CORO(
@@ -271,7 +271,7 @@ TEST_P_CORO(
     ASSERT_EQ_CORO(
       committed_offset_before, leader_node.raft()->committed_offset());
 
-    co_await assert_logs_equal();
+    ASSERT_TRUE_CORO(co_await assert_logs_equal());
 
     vlog(logger().info, "Reset-ing background flushing..");
 

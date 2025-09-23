@@ -7,20 +7,21 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import socket
-import time
-from ducktape.errors import TimeoutError
-from ducktape.mark import parametrize, matrix
-from ducktape.utils.util import wait_until
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.cluster import cluster
-from rptest.services.admin import Admin
-from rptest.clients.kcl import RawKCL
-from rptest.clients.rpk import RpkTool, ClusterAuthorizationError, RpkException, AclList
-from rptest.services.redpanda import LoggingConfig, SecurityConfig, TLSProvider
-from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
-from rptest.services import tls
-from typing import Optional
 from enum import Enum
+from typing import Optional
+
+from ducktape.errors import TimeoutError
+from ducktape.mark import matrix, parametrize
+from ducktape.utils.util import wait_until
+
+from rptest.clients.kcl import RawKCL
+from rptest.clients.rpk import AclList, ClusterAuthorizationError, RpkException, RpkTool
+from rptest.services import tls
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import LoggingConfig, SecurityConfig, TLSProvider
+from rptest.services.redpanda_installer import wait_for_num_versions
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class MTLSProvider(TLSProvider):

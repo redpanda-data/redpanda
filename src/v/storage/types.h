@@ -413,6 +413,9 @@ struct local_log_reader_config {
     // separately.
     model::translate_offsets translate_offsets{false};
 
+    // Timeout for segment range lock acquisition
+    std::optional<ss::semaphore::clock::time_point> read_lock_deadline{};
+
     fmt::iterator format_to(fmt::iterator it) const;
 };
 

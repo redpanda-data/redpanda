@@ -7,14 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from typing import Dict, Optional
-from ducktape.services.service import Service
-from rptest.context import cloud_storage
-
 import abc
 from enum import Enum
+from typing import Any, Dict, Optional
 
+from ducktape.services.service import Service
+from ducktape.tests.test import TestContext
 from pyiceberg.catalog import load_catalog
+
+from rptest.context import cloud_storage
 
 
 class CatalogType(str, Enum):
@@ -47,12 +48,12 @@ class CatalogService(abc.ABC, Service):
 
     def __init__(
         self,
-        ctx,
+        ctx: TestContext,
         cloud_storage_bucket: str,
         warehouse_name: str = DEFAULT_WAREHOUSE_NAME,
-        **kwargs,
+        **kwargs: Any,
     ):
-        super(CatalogService, self).__init__(ctx, **kwargs)
+        super().__init__(ctx, **kwargs)
         self.dedicated_nodes = ctx.globals.get("dedicated_nodes", False)
         self.credentials = cloud_storage.Credentials.from_context(ctx)
 
@@ -105,7 +106,7 @@ class CatalogService(abc.ABC, Service):
             raise ValueError(f"Unsupported credential type: {type(self.credentials)}")
 
     def client(self, catalog_name: str = "default"):
-        conf = dict()
+        conf: dict[str, str | None] = {}
         conf["uri"] = self.iceberg_rest_url
         conf["warehouse"] = self.cloud_storage_warehouse
 

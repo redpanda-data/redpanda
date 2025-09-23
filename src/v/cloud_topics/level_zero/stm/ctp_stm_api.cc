@@ -109,6 +109,11 @@ ctp_stm_api::get_inactive_epoch() const {
     co_return res.get();
 }
 
+std::optional<cluster_epoch>
+ctp_stm_api::estimate_inactive_epoch() const noexcept {
+    return _stm->estimate_inactive_epoch();
+}
+
 ss::future<bool> ctp_stm_api::sync_in_term(ss::abort_source& as) {
     vlog(_rtclog.debug, "Syncing ctp_stm in term {}", _stm->_raft->term());
     co_return co_await _stm->sync_in_term(as);

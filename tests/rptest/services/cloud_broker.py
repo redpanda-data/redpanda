@@ -1,9 +1,10 @@
 import json
 import os
 import subprocess
-from rptest.services.utils import KubeNodeShell
-
 from dataclasses import dataclass
+from typing import Any
+
+from rptest.clients.kubectl import KubeNodeShell
 
 
 @dataclass
@@ -16,9 +17,12 @@ class DummyAccount:
         return f"{self.node_name}/{self.pod_name}"
 
 
+Pod = dict[str, Any]
+
+
 class CloudBroker:
     # Mimic ducktape cluster node structure
-    def __init__(self, pod, kubectl, logger) -> None:
+    def __init__(self, pod: Pod, kubectl, logger) -> None:
         self.logger = logger
         # Validate
         if not isinstance(pod, dict) or pod["kind"] != "Pod":

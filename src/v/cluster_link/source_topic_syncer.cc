@@ -20,6 +20,8 @@
 
 namespace cluster_link {
 
+using properties_set = model::topic_metadata_mirroring_config::properties_set;
+
 namespace {
 const absl::flat_hash_set<ss::sstring> required_topic_properties{
   ss::sstring{kafka::topic_property_max_message_bytes},
@@ -480,6 +482,10 @@ source_topic_syncer::find_candidate_topics_for_update(
           "Cluster link table reporting that link does not exist!");
         return {};
     }
+
+    auto mirror_rf = _config.topic_properties_to_mirror.contains(
+      kafka::topic_property_replication_factor);
+
     candidate_update_map candidate_topics;
     candidate_topics.reserve(mirror_topics->size());
 
@@ -516,7 +522,10 @@ source_topic_syncer::find_candidate_topics_for_update(
         candidate_topics.emplace(
           std::move(topic),
           std::make_pair(
-            topic_metadata{.partition_count = partition_count, .rf = rf},
+            topic_metadata{
+              .partition_count = partition_count,
+              // Only mirror source topic replication factor if configured to do
+              .rf = mirror_rf ? std::make_optional(rf) : std::nullopt},
             std::move(mirror_metadata)));
     }
 
@@ -532,6 +541,9 @@ source_topic_syncer::find_candidate_topics_for_creation(
     /// Map of topics with partition count
     candidate_create_map candidate_topics;
     candidate_topics.reserve(topics.size());
+
+    auto mirror_rf = _config.topic_properties_to_mirror.contains(
+      kafka::topic_property_replication_factor);
 
     for (const auto& topic : topics) {
         vlog(logger().trace, "Checking topic: {}", topic);
@@ -607,7 +619,12 @@ source_topic_syncer::find_candidate_topics_for_creation(
 
         vlog(logger().debug, "Topic {} is candidate for mirroring", topic);
         candidate_topics.emplace(
-          topic, topic_metadata{.partition_count = partition_count, .rf = rf});
+          topic,
+          topic_metadata{
+            .partition_count = partition_count,
+            // Only mirror source topic replication factor if configured to do
+            // so
+            .rf = mirror_rf ? std::make_optional(rf) : std::nullopt});
     }
 
     return candidate_topics;
@@ -619,8 +636,8 @@ source_topic_syncer::describe_topics(
   ::model::node_id controller_id,
   kafka::api_version describe_configs_version,
   const chunked_vector<::model::topic>& topics,
-  const absl::flat_hash_set<ss::sstring>& configs) {
-    absl::flat_hash_set<ss::sstring> requested_configs_set = configs;
+  const properties_set& configs) {
+    properties_set requested_configs_set = configs;
     requested_configs_set.insert(
       required_topic_properties.begin(), required_topic_properties.end());
     chunked_vector<ss::sstring> requested_configs(

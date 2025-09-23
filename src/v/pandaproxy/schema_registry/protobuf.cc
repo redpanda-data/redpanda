@@ -26,6 +26,7 @@
 #include "utils/base64.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/memory.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/util/variant_utils.hh>
 
@@ -456,6 +457,7 @@ ss::future<pb::FileDescriptorProto> build_file_with_refs(
         }
     }
 
+    ss::memory::scoped_system_alloc_fallback fb;
     parser p;
     auto new_fdp = p.parse(schema);
     normalize_imports(new_fdp, norm);
@@ -515,7 +517,7 @@ struct protobuf_schema_definition::impl {
      * messages
      */
     ss::sstring debug_string() const {
-        // TODO BP: Prevent this linearization
+        ss::memory::scoped_system_alloc_fallback fb;
         auto s = fd->DebugString();
 
         // reordering not required if no package or no dependencies

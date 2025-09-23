@@ -799,4 +799,40 @@ topic_id_partition topic_id_partition::from(std::string_view s) {
       model::topic_id(tid), model::partition_id(p));
 }
 
+std::optional<kafka_batch_validation_mode>
+kafka_batch_validation_mode_from_string(std::string_view s) {
+    return string_switch<std::optional<kafka_batch_validation_mode>>(s)
+      .match(
+        model::kafka_batch_validation_mode_to_string(
+          model::kafka_batch_validation_mode::legacy),
+        model::kafka_batch_validation_mode::legacy)
+      .match(
+        model::kafka_batch_validation_mode_to_string(
+          model::kafka_batch_validation_mode::relaxed),
+        model::kafka_batch_validation_mode::relaxed)
+      .match(
+        model::kafka_batch_validation_mode_to_string(
+          model::kafka_batch_validation_mode::strict),
+        model::kafka_batch_validation_mode::strict)
+      .default_match(std::nullopt);
+}
+
+std::ostream&
+operator<<(std::ostream& o, const kafka_batch_validation_mode& mode) {
+    o << kafka_batch_validation_mode_to_string(mode);
+    return o;
+}
+
+std::istream& operator>>(std::istream& i, kafka_batch_validation_mode& mode) {
+    ss::sstring s;
+    i >> s;
+    auto value = kafka_batch_validation_mode_from_string(s);
+    if (!value) {
+        i.setstate(std::ios::failbit);
+        return i;
+    }
+    mode = *value;
+    return i;
+}
+
 } // namespace model

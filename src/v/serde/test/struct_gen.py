@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-import jinja2
 import sys
 from enum import Enum
-from typing import List
 from random import randrange
+from typing import List
+
+import jinja2
 
 
 class BasicType(Enum):

@@ -84,29 +84,38 @@ public:
         return _proxy->shard_owner(ntp);
     };
 
+    bool is_current_shard_leader(const model::ntp& ntp) const final {
+        return _proxy->is_current_shard_leader(ntp);
+    }
+
     ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
       ss::shard_id shard,
       const model::ktp& ktp,
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
-        kafka::partition_proxy*)> fn) final {
-        return _proxy->invoke_on_shard_impl(shard, ktp, std::move(fn));
+        kafka::partition_proxy*)> fn,
+      require_leader require_leader) final {
+        return _proxy->invoke_on_shard_impl(
+          shard, ktp, std::move(fn), require_leader);
     }
 
     ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
       ss::shard_id shard,
       const model::ntp& ntp,
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
-        kafka::partition_proxy*)> fn) final {
-        return _proxy->invoke_on_shard_impl(shard, ntp, std::move(fn));
+        kafka::partition_proxy*)> fn,
+      require_leader require_leader) final {
+        return _proxy->invoke_on_shard_impl(
+          shard, ntp, std::move(fn), require_leader);
     }
 
     ss::future<result<partition_offsets, cluster::errc>> get_offsets_from_shard(
       ss::shard_id shard_id,
       const model::ktp& ktp,
-      ss::noncopyable_function<
-        ss::future<result<partition_offsets, cluster::errc>>(
-          kafka::partition_proxy*)> fn) final {
-        return _proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
+      ss::noncopyable_function<ss::future<
+        result<partition_offsets, cluster::errc>>(kafka::partition_proxy*)> fn,
+      require_leader require_leader) final {
+        return _proxy->invoke_on_shard_impl(
+          shard_id, ktp, std::move(fn), require_leader);
     }
 
 private:
@@ -240,6 +249,21 @@ partition_manager_proxy::shard_owner(const model::ntp& ntp) {
 std::optional<ss::shard_id>
 partition_manager::shard_owner(const model::ktp& ktp) {
     return shard_owner(ktp.to_ntp());
+}
+
+bool partition_manager::is_current_shard_leader(const model::ktp& ktp) const {
+    return is_current_shard_leader(ktp.to_ntp());
+};
+
+bool partition_manager_proxy::is_current_shard_leader(const model::ntp& ntp) {
+    auto shard = shard_owner(ntp);
+    if (shard != ss::this_shard_id()) {
+        // not on this shard,
+        return false;
+    }
+
+    auto p = _manager->local().get(ntp);
+    return p && p->is_leader();
 }
 
 std::unique_ptr<topic_creator>

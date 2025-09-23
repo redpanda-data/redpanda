@@ -98,13 +98,17 @@ public:
       ss::shard_id shard_id,
       const model::ktp& ktp,
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
-        kafka::partition_proxy*)> fn) override
+        kafka::partition_proxy*)> fn,
+      kafka::data::rpc::require_leader
+      = kafka::data::rpc::require_leader::yes) override
       = 0;
     ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
       ss::shard_id,
       const model::ntp&,
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
-        kafka::partition_proxy*)>) override
+        kafka::partition_proxy*)>,
+      kafka::data::rpc::require_leader
+      = kafka::data::rpc::require_leader::yes) override
       = 0;
 
     ss::future<result<kafka::data::rpc::partition_offsets, cluster::errc>>
@@ -113,7 +117,9 @@ public:
       const model::ktp& ktp,
       ss::noncopyable_function<
         ss::future<result<kafka::data::rpc::partition_offsets, cluster::errc>>(
-          kafka::partition_proxy*)>) override
+          kafka::partition_proxy*)>,
+      kafka::data::rpc::require_leader
+      = kafka::data::rpc::require_leader::yes) override
       = 0;
 
     virtual ss::future<result<model::wasm_binary_iobuf, cluster::errc>>

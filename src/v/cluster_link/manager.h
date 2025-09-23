@@ -46,7 +46,10 @@ public:
       std::unique_ptr<link_registry> registry,
       std::unique_ptr<link_factory> link_factory,
       std::unique_ptr<cluster_factory> cluster_factory,
-      ss::lowres_clock::duration task_reconciler_interval);
+      std::unique_ptr<consumer_groups_router> group_router,
+      std::unique_ptr<partition_metadata_provider> partition_metadata_provider,
+      ss::lowres_clock::duration task_reconciler_interval,
+      config::binding<int16_t> default_topic_replication);
     manager(const manager&) = delete;
     manager(manager&&) = delete;
     manager& operator=(const manager&) = delete;
@@ -68,16 +71,31 @@ public:
      * @brief Returns list of cluster links
      */
     result<chunked_vector<model::metadata>> list_cluster_links();
+    /**
+     * @brief Updates the configuration of a cluster link
+     */
+    ss::future<result<model::metadata>> update_cluster_link(
+      model::name_t name, model::update_cluster_link_configuration_cmd cmd);
+    /**
+     * @brief Delete the cluster link object by name
+     */
+    ss::future<result<void>> delete_cluster_link(model::name_t name);
 
     /// Used to notify that a cluster link has been updated
     void on_link_change(model::id_t id);
     /// Used to notify manager in a change of NTP leadership
-    void
-    handle_partition_state_change(::model::ntp ntp, ntp_leader is_ntp_leader);
+    void handle_partition_state_change(
+      ::model::ntp ntp,
+      ntp_leader is_ntp_leader,
+      std::optional<::model::term_id>);
     /// Handles creation and start of a link
     ss::future<> handle_on_link_change(model::id_t id);
     /// Handles leadership changes for a given NTP
-    ss::future<> handle_on_leadership_change(::model::ntp, ntp_leader);
+    /// term will be set if partition still exists on the shard
+    /// Will definitely be set if is_ntp_leader == true because assuming
+    // leadership implies the partition is still present
+    ss::future<> handle_on_leadership_change(
+      ::model::ntp, ntp_leader, std::optional<::model::term_id>);
     /// Used to add a mirror topic to a cluster link
     ss::future<::cluster::cluster_link::errc>
     add_mirror_topic(model::id_t link_id, model::add_mirror_topic_cmd cmd);
@@ -125,7 +143,11 @@ public:
     const kafka::data::rpc::partition_manager&
     partition_manager() const noexcept;
 
+    consumer_groups_router& get_group_router() noexcept;
+
     kafka::data::rpc::topic_creator& topic_creator() noexcept;
+
+    partition_metadata_provider& get_partition_metadata_provider() noexcept;
 
 private:
     /// Called periodically to reconcile registered tasks on created links
@@ -145,6 +167,8 @@ private:
     std::unique_ptr<link_factory> _link_factory;
     std::unique_ptr<cluster_factory> _cluster_factory;
     std::unique_ptr<topic_reconciler> _topic_reconciler;
+    std::unique_ptr<consumer_groups_router> _group_router;
+    std::unique_ptr<partition_metadata_provider> _partition_metadata_provider;
     ssx::work_queue _queue;
 
     chunked_vector<std::unique_ptr<task_factory>> _task_factories;
@@ -154,6 +178,7 @@ private:
     mutex _link_task_reconciler_mutex{
       "cluster_link::manager::link_task_reconciler"};
     ss::timer<ss::lowres_clock> _link_task_reconciler_timer;
+    config::binding<int16_t> _default_topic_replication;
     ss::condition_variable _link_created_cv;
     ss::abort_source _as;
     ss::gate _g;

@@ -14,7 +14,7 @@
 #include "cloud_storage_clients/client.h"
 #include "thirdparty/libxml2/parser.h"
 
-#include <stack>
+#include <seastar/core/iostream.hh>
 
 namespace cloud_storage_clients {
 
@@ -54,7 +54,7 @@ struct parser_state {
         virtual void handle_start_element(std::string_view element_name) = 0;
         virtual void handle_end_element(std::string_view element_name) = 0;
         virtual void handle_characters(std::string_view characters) = 0;
-        client::list_bucket_result parsed_items() const;
+        client::list_bucket_result parsed_items() &&;
 
         virtual ~impl() = default;
 
@@ -81,8 +81,9 @@ struct parser_state {
         _impl->handle_characters(characters);
     }
 
-    client::list_bucket_result parsed_items() const {
-        return _impl->parsed_items();
+    client::list_bucket_result parsed_items() && {
+        auto impl = std::exchange(_impl, {});
+        return std::move(*impl).parsed_items();
     }
 
 private:
@@ -137,7 +138,7 @@ public:
     /// make sure that libxml2 parsing is finished.
     void end_parse();
 
-    client::list_bucket_result result() const;
+    client::list_bucket_result result() &&;
 
     /// \brief frees up the parser context pointer
     ~xml_sax_parser();
@@ -153,5 +154,12 @@ private:
     std::unique_ptr<xmlSAXHandler> _handler;
     xmlParserCtxtPtr _ctx{nullptr};
 };
+
+/*
+ * Process an input stream with SAX XML parser implementation.
+ */
+template<typename Impl>
+seastar::future<client::list_bucket_result> parse_from_stream(
+  seastar::input_stream<char>, std::optional<client::item_filter>);
 
 } // namespace cloud_storage_clients

@@ -1,7 +1,8 @@
 import json
+from typing import Any
+
 from rptest.clients.rpk import RpkTool
 from rptest.services.redpanda_types import KafkaClientSecurity
-from typing import Any
 
 
 class FakePanda:

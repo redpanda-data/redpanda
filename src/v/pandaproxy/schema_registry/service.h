@@ -65,6 +65,10 @@ public:
 
     std::unique_ptr<cluster::controller>& controller() { return _controller; }
 
+    bool has_ephemeral_credentials() const {
+        return _has_ephemeral_credentials;
+    }
+
 private:
     ss::future<> do_start();
     ss::future<> configure();

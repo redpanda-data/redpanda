@@ -18,6 +18,7 @@
 #include "kafka/data/replicated_partition.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
+#include "kafka/server/handlers/produce_validation.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -36,6 +37,9 @@
 #include <fmt/ostream.h>
 
 #include <chrono>
+#include <exception>
+#include <expected>
+#include <functional>
 
 namespace kafka {
 namespace {
@@ -201,91 +205,6 @@ ss::future<produce_response::partition> finalize_request_with_error_code(
         .error_message = std::move(err_msg)});
 }
 
-/**
- * @brief Validate the timestamps of the batch, they have to be within a window
- * to the broker's time. returns an optional containing an error message if the
- * batch should be rejected, or may set the passed `batch`'s `max_timestamp` to
- * the current timestamp if using `AppendTime`.
- */
-auto validate_batch_timestamps(
-  const model::ntp& ntp,
-  model::record_batch& batch,
-  model::timestamp_type timestamp_type,
-  std::chrono::milliseconds message_timestamp_before_max_ms,
-  std::chrono::milliseconds message_timestamp_after_max_ms,
-  kafka::kafka_probe& probe) -> std::optional<ss::sstring> {
-    auto broker_time = model::timestamp::now();
-    const auto& header = batch.header();
-    /*
-     * For append time setting we have to recompute
-     * the CRC.
-     */
-    if (timestamp_type == model::timestamp_type::append_time) {
-        batch.set_max_timestamp(
-          model::timestamp_type::append_time, broker_time);
-        return std::nullopt;
-    }
-
-    // `message.timestamp_type` is `CreateTime`. Validate record timestamps
-    // using `message.timestamp.before.max.ms` and
-    // `message.timestamp.after.max.ms`.
-
-    // reject if first_timestamp is too far in the past
-    if (
-      broker_time > header.first_timestamp
-      && (broker_time - header.first_timestamp)
-           > model::timestamp(message_timestamp_before_max_ms.count())) {
-        thread_local static ss::logger::rate_limit rate(despam_interval);
-        klog.log(
-          ss::log_level::warn,
-          rate,
-          "produce request timestamp for {} was before the threshold set by "
-          "message.timestamp.before.max.ms: {}, broker time: {}, timestamp: "
-          "{}. Rejecting batch {}",
-          ntp,
-          message_timestamp_before_max_ms,
-          broker_time,
-          header.first_timestamp,
-          header);
-        probe.produce_bad_create_time();
-        return ssx::sformat(
-          "Timestamp {} of message with offset {} is out of range. The "
-          "timestamp should be within [{}, {}] of the broker time.",
-          header.first_timestamp,
-          header.base_offset,
-          message_timestamp_before_max_ms,
-          message_timestamp_after_max_ms);
-    }
-
-    // reject if max_timestamp is too far in the future.
-    if (
-      broker_time < header.max_timestamp
-      && (header.max_timestamp - broker_time)
-           > model::timestamp(message_timestamp_after_max_ms.count())) {
-        thread_local static ss::logger::rate_limit rate(despam_interval);
-        klog.log(
-          ss::log_level::warn,
-          rate,
-          "produce request timestamp for {} was past the threshold set by "
-          "message.timestamp.after.max.ms: {}, broker time: {}, timestamp: {}. "
-          "Rejecting batch {}",
-          ntp,
-          message_timestamp_after_max_ms,
-          broker_time,
-          header.max_timestamp,
-          header);
-        probe.produce_bad_create_time();
-        return ssx::sformat(
-          "Timestamp {} of message with offset {} is out of range. The "
-          "timestamp should be within [{}, {}] of the broker time.",
-          header.max_timestamp,
-          header.last_offset(),
-          message_timestamp_before_max_ms,
-          message_timestamp_after_max_ms);
-    }
-
-    return std::nullopt;
-}
 struct topic_configuration_context {
     size_t batch_max_bytes;
     model::timestamp_type timestamp_type;
@@ -293,6 +212,7 @@ struct topic_configuration_context {
     std::chrono::milliseconds message_timestamp_after_max_ms;
     const cluster::topic_properties* properties;
 };
+
 /**
  * \brief handle writing to a single topic partition.
  */
@@ -321,21 +241,21 @@ partition_produce_stages produce_topic_partition(
     auto batch = std::make_unique<model::record_batch>(
       std::move(part.records->adapter.batch.value()));
 
-    // validate the batch timestamps by checking skew against broker time
-    auto validate_timestamp = validate_batch_timestamps(
-      ntp,
-      *batch,
-      cfg_ctx.timestamp_type,
-      cfg_ctx.message_timestamp_before_max_ms,
-      cfg_ctx.message_timestamp_after_max_ms,
-      octx.rctx.probe());
-    if (validate_timestamp.has_value()) {
+    auto validate_batch_res = validate_batch(
+      {.batch = *batch,
+       .timestamp_type = cfg_ctx.timestamp_type,
+       .message_timestamp_before_max_ms
+       = cfg_ctx.message_timestamp_before_max_ms,
+       .message_timestamp_after_max_ms = cfg_ctx.message_timestamp_after_max_ms,
+       .probe = octx.rctx.probe()});
+
+    if (validate_batch_res.has_value()) {
         auto dispatch_f = ss::now();
         auto f = ss::make_ready_future<produce_response::partition>(
           produce_response::partition{
             .partition_index = ntp.tp.partition,
-            .error_code = error_code::invalid_timestamp,
-            .error_message = std::move(validate_timestamp).value()});
+            .error_code = validate_batch_res->err,
+            .error_message = std::move(validate_batch_res->msg)});
         return partition_produce_stages{
           .dispatched = std::move(dispatch_f), .produced = std::move(f)};
     }
@@ -656,6 +576,7 @@ std::vector<topic_produce_stages> produce_topics(produce_ctx& octx) {
 
     return topics;
 }
+
 } // namespace
 
 produce_response produce_request::make_error_response(

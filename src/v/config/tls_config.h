@@ -61,16 +61,6 @@ struct p12_container {
 
 using key_cert_container = std::variant<key_cert, p12_container>;
 
-inline constexpr std::string_view tlsv1_2_cipher_string
-  = "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:AES128-GCM-"
-    "SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:AES256-"
-    "GCM-SHA384:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-CHACHA20-POLY1305:"
-    "ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA:AES128-SHA:AES128-CCM:ECDHE-"
-    "RSA-AES256-SHA:ECDHE-ECDSA-AES256-SHA:AES256-SHA:AES256-CCM";
-
-inline constexpr std::string_view tlsv1_3_ciphersuites
-  = "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_"
-    "SHA256:TLS_AES_128_CCM_SHA256";
 class tls_config {
 public:
     tls_config()
@@ -90,6 +80,26 @@ public:
       , _crl_file(std::move(crl))
       , _require_client_auth(require_client_auth) {}
 
+    tls_config(
+      bool enabled,
+      std::optional<key_cert_container> key_cert,
+      std::optional<ss::sstring> truststore,
+      std::optional<ss::sstring> crl,
+      bool require_client_auth,
+      std::optional<ss::sstring> tls_v1_2_cipher_suites,
+      std::optional<ss::sstring> tls_v1_3_cipher_suites,
+      std::optional<tls_version> min_tls_version,
+      std::optional<bool> enable_renegotiation)
+      : _enabled(enabled)
+      , _key_cert(std::move(key_cert))
+      , _truststore_file(std::move(truststore))
+      , _crl_file(std::move(crl))
+      , _require_client_auth(require_client_auth)
+      , _tls_v1_2_cipher_suites(std::move(tls_v1_2_cipher_suites))
+      , _tls_v1_3_cipher_suites(std::move(tls_v1_3_cipher_suites))
+      , _min_tls_version(min_tls_version)
+      , _enable_renegotiation(enable_renegotiation) {}
+
     bool is_enabled() const { return _enabled; }
 
     const std::optional<key_cert_container>& get_key_cert_files() const {
@@ -104,8 +114,23 @@ public:
 
     bool get_require_client_auth() const { return _require_client_auth; }
 
-    ss::future<std::optional<ss::tls::credentials_builder>>
+    const std::optional<ss::sstring>& get_tls_v1_2_cipher_suites() const {
+        return _tls_v1_2_cipher_suites;
+    }
 
+    const std::optional<ss::sstring>& get_tls_v1_3_cipher_suites() const {
+        return _tls_v1_3_cipher_suites;
+    }
+
+    const std::optional<tls_version>& get_min_tls_version() const {
+        return _min_tls_version;
+    }
+
+    const std::optional<bool>& get_enable_renegotiation() const {
+        return _enable_renegotiation;
+    }
+
+    ss::future<std::optional<ss::tls::credentials_builder>>
     get_credentials_builder() const&;
 
     ss::future<std::optional<ss::tls::credentials_builder>>
@@ -124,7 +149,14 @@ private:
     std::optional<ss::sstring> _truststore_file;
     std::optional<ss::sstring> _crl_file;
     bool _require_client_auth{false};
+    std::optional<ss::sstring> _tls_v1_2_cipher_suites{};
+    std::optional<ss::sstring> _tls_v1_3_cipher_suites{};
+    std::optional<tls_version> _min_tls_version{};
+    std::optional<bool> _enable_renegotiation{};
 };
+
+bool validate_tls_v1_2_cipher_suites(const ss::sstring& s);
+bool validate_tls_v1_3_cipher_suites(const ss::sstring& s);
 
 } // namespace config
 

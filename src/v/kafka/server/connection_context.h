@@ -65,6 +65,8 @@ using authz_quiet = ss::bool_class<struct authz_quiet_tag>;
 
 using audit_authz_check = ss::bool_class<struct audit_authz_check_tag>;
 
+using superuser_required = ss::bool_class<struct superuser_required_tag>;
+
 struct request_header;
 class request_context;
 
@@ -183,7 +185,10 @@ public:
 
     template<typename T>
     security::auth_result authorized(
-      security::acl_operation operation, const T& name, authz_quiet quiet);
+      security::acl_operation operation,
+      const T& name,
+      authz_quiet quiet,
+      superuser_required superuser_required);
 
     bool authorized_auditor() const {
         return get_principal() == security::audit_principal;
@@ -205,7 +210,8 @@ private:
       security::acl_principal principal,
       security::acl_operation operation,
       const T& name,
-      authz_quiet quiet);
+      authz_quiet quiet,
+      superuser_required superuser_required);
 
     security::acl_principal get_principal() const {
         if (_mtls_state) {

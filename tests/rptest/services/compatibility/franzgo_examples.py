@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import os
+
 from .example_base import ExampleBase
 
 # The franz-go root directory

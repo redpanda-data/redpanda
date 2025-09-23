@@ -7,28 +7,17 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from typing import Any
-import logging
-import json
-import time
-import requests
 import base64
 import random
+import time
 
-from ducktape.mark import matrix
-from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
-from rptest.services.provider_clients.rpcloud_client import RpCloudApiClient
 
 from rptest.clients.installpack import InstallPackClient
-from rptest.clients.rpk import RpkTool, TopicSpec, RpkException
-
-from rptest.services.redpanda import get_cloud_provider
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaServiceCloud
-
-from rptest.services.databricks_workspace import DatabricksWorkspace
+from rptest.clients.rpk import RpkTool, TopicSpec
 from rptest.context.databricks import DatabricksContext, OauthCredentials
-from rptest.services.catalog_service import CatalogType
+from rptest.services.cluster import cluster
+from rptest.services.databricks_workspace import DatabricksWorkspace
+from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 
 
 def supported_catalog_types():

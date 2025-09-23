@@ -58,6 +58,7 @@ iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len) {
     return ret;
 }
 
+iobuf iobuf::share() { return share(0, size_bytes()); }
 iobuf iobuf::share(size_t pos, size_t len) {
     iobuf ret;
     size_t left = len;

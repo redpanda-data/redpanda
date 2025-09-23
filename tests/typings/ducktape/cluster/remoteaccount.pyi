@@ -1,7 +1,6 @@
 # remoteaccount.pyi
-from typing import Any, Callable, Iterator, Optional, ContextManager
 import logging
-import socket
+from typing import Any, Callable, ContextManager, Iterator, Optional
 
 class RemoteAccountSSHConfig:
     host: Optional[str]

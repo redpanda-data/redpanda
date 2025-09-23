@@ -14,9 +14,9 @@ from ducktape.utils.util import wait_until
 from pyhive import hive
 
 from rptest.context import cloud_storage
-from rptest.tests.datalake.query_engine_base import QueryEngineBase, QueryEngineType
 from rptest.services.catalog_service import CatalogType
 from rptest.services.nessie_catalog import NessieCatalog
+from rptest.tests.datalake.query_engine_base import QueryEngineBase, QueryEngineType
 
 
 class SparkService(Service, QueryEngineBase):

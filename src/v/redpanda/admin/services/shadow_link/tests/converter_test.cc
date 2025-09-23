@@ -409,7 +409,8 @@ TEST(converter_test, create_with_metadata_sync_options) {
       proto::admin::pattern_type::prefix,
       proto::admin::filter_type::exclude,
       "test-prefix-exclude"));
-    topic_metadata_sync_options.set_topic_filters(std::move(filters));
+    topic_metadata_sync_options.set_auto_create_shadow_topic_filters(
+      std::move(filters));
     topic_metadata_sync_options.set_shadowed_topic_properties({"prop"});
 
     shadow_link_client_options.set_bootstrap_servers({"localhost:9092"});
@@ -688,7 +689,8 @@ TEST(converter_test, metadata_to_shadow_link_topic_mirroring_cfg) {
       "test-prefix-exclude"));
 
     EXPECT_EQ(
-      topic_metadata_sync_options.get_topic_filters(), expected_filters);
+      topic_metadata_sync_options.get_auto_create_shadow_topic_filters(),
+      expected_filters);
 }
 
 proto::admin::shadow_topic_status create_shadow_topic_status(
@@ -742,4 +744,202 @@ TEST(converter_test, metadata_to_shadow_link_topic_status) {
     });
 
     EXPECT_EQ(mirror_topics, expected);
+}
+
+TEST(converter_test, update_shadow_link_add_field) {
+    cluster_link::model::metadata current_md;
+    current_md.name = cluster_link::model::name_t{"test-link"};
+    current_md.uuid = cluster_link::model::uuid_t{uuid_t::create()};
+    current_md.connection.bootstrap_servers = {
+      net::unresolved_address("localhost", 9092)};
+    admin::set_client_id(current_md);
+
+    proto::admin::update_shadow_link_request req;
+    req.get_shadow_link()
+      .get_configurations()
+      .get_topic_metadata_sync_options()
+      .set_interval(absl::Seconds(300));
+    serde::pb::field_mask mask;
+    mask.paths.emplace_back(
+      serde::pb::field_mask::path{
+        "configurations", "topic_metadata_sync_options", "interval"});
+    req.set_update_mask(std::move(mask));
+
+    auto update_cmd = admin::create_update_cluster_link_config_cmd(
+      std::move(req), current_md.copy());
+
+    EXPECT_EQ(update_cmd.connection, current_md.connection);
+    EXPECT_NE(update_cmd.link_config, current_md.configuration);
+    EXPECT_EQ(
+      update_cmd.link_config.topic_metadata_mirroring_cfg.get_task_interval(),
+      300s);
+}
+
+TEST(converter_test, update_scram_creds) {
+    cluster_link::model::metadata current_md;
+    current_md.name = cluster_link::model::name_t{"test-link"};
+    current_md.uuid = cluster_link::model::uuid_t{uuid_t::create()};
+    current_md.connection.bootstrap_servers = {
+      net::unresolved_address("localhost", 9092)};
+    current_md.connection.authn_config = cluster_link::model::scram_credentials{
+      .username = "old-user",
+      .password = "old-password",
+      .mechanism = "SCRAM-SHA-256"};
+    admin::set_client_id(current_md);
+
+    proto::admin::scram_config scram_config;
+    scram_config.set_username("new-user");
+    scram_config.set_password("new-password");
+    scram_config.set_scram_mechanism(
+      proto::admin::scram_mechanism::scram_sha_512);
+
+    proto::admin::authentication_configuration authn_config;
+    authn_config.set_scram_configuration(std::move(scram_config));
+
+    proto::admin::update_shadow_link_request req;
+    req.get_shadow_link()
+      .get_configurations()
+      .get_client_options()
+      .set_authentication_configuration(std::move(authn_config));
+
+    serde::pb::field_mask mask;
+    mask.paths.emplace_back(
+      serde::pb::field_mask::path{
+        "configurations", "client_options", "authentication_configuration"});
+    req.set_update_mask(std::move(mask));
+
+    auto update_cmd = admin::create_update_cluster_link_config_cmd(
+      std::move(req), current_md.copy());
+
+    const auto& new_scram_config
+      = std::get<cluster_link::model::scram_credentials>(
+        update_cmd.connection.authn_config.value());
+
+    EXPECT_EQ(new_scram_config.username, "new-user");
+    EXPECT_EQ(new_scram_config.password, "new-password");
+    EXPECT_EQ(new_scram_config.mechanism, "SCRAM-SHA-512");
+}
+
+TEST(converter_test, do_not_update_scram_creds) {
+    cluster_link::model::metadata current_md;
+    current_md.name = cluster_link::model::name_t{"test-link"};
+    current_md.uuid = cluster_link::model::uuid_t{uuid_t::create()};
+    current_md.connection.bootstrap_servers = {
+      net::unresolved_address("localhost", 9092)};
+    current_md.connection.authn_config = cluster_link::model::scram_credentials{
+      .username = "old-user",
+      .password = "old-password",
+      .mechanism = "SCRAM-SHA-256"};
+    admin::set_client_id(current_md);
+
+    proto::admin::update_shadow_link_request req;
+    req.get_shadow_link()
+      .get_configurations()
+      .get_topic_metadata_sync_options()
+      .set_interval(absl::Seconds(300));
+    serde::pb::field_mask mask;
+    mask.paths.emplace_back(
+      serde::pb::field_mask::path{
+        "configurations", "topic_metadata_sync_options", "interval"});
+    req.set_update_mask(std::move(mask));
+
+    auto update_cmd = admin::create_update_cluster_link_config_cmd(
+      std::move(req), current_md.copy());
+
+    EXPECT_EQ(
+      update_cmd.link_config.topic_metadata_mirroring_cfg.get_task_interval(),
+      300s);
+
+    const auto& new_scram_config
+      = std::get<cluster_link::model::scram_credentials>(
+        update_cmd.connection.authn_config.value());
+
+    EXPECT_EQ(new_scram_config.username, "old-user");
+    EXPECT_EQ(new_scram_config.password, "old-password");
+    EXPECT_EQ(new_scram_config.mechanism, "SCRAM-SHA-256");
+}
+
+TEST(converter_test, invalid_scram_update) {
+    cluster_link::model::metadata current_md;
+    current_md.name = cluster_link::model::name_t{"test-link"};
+    current_md.uuid = cluster_link::model::uuid_t{uuid_t::create()};
+    current_md.connection.bootstrap_servers = {
+      net::unresolved_address("localhost", 9092)};
+    current_md.connection.authn_config = cluster_link::model::scram_credentials{
+      .username = "old-user",
+      .password = "old-password",
+      .mechanism = "SCRAM-SHA-256"};
+    admin::set_client_id(current_md);
+
+    proto::admin::scram_config scram_config;
+    // Do not set username, this should result in an error during update
+    scram_config.set_password("new-password");
+    scram_config.set_scram_mechanism(
+      proto::admin::scram_mechanism::scram_sha_512);
+
+    proto::admin::authentication_configuration authn_config;
+    authn_config.set_scram_configuration(std::move(scram_config));
+
+    proto::admin::update_shadow_link_request req;
+    req.get_shadow_link()
+      .get_configurations()
+      .get_client_options()
+      .set_authentication_configuration(std::move(authn_config));
+
+    serde::pb::field_mask mask;
+    mask.paths.emplace_back(
+      serde::pb::field_mask::path{
+        "configurations", "client_options", "authentication_configuration"});
+    req.set_update_mask(std::move(mask));
+
+    EXPECT_THROW(
+      admin::create_update_cluster_link_config_cmd(
+        std::move(req), current_md.copy()),
+      serde::pb::rpc::invalid_argument_exception);
+}
+
+TEST(converter_test, test_update_tls_value) {
+    cluster_link::model::metadata current_md;
+    current_md.name = cluster_link::model::name_t{"test-link"};
+    current_md.uuid = cluster_link::model::uuid_t{uuid_t::create()};
+    current_md.connection.bootstrap_servers = {
+      net::unresolved_address("localhost", 9092)};
+    current_md.connection.ca = cluster_link::model::tls_value("old-ca");
+    current_md.connection.key = cluster_link::model::tls_value("old-key");
+    current_md.connection.cert = cluster_link::model::tls_value("old-cert");
+
+    admin::set_client_id(current_md);
+
+    proto::admin::tlspem_settings tls_pem_settings;
+    tls_pem_settings.set_ca("new-ca");
+    tls_pem_settings.set_key("new-key");
+    tls_pem_settings.set_cert("new-cert");
+
+    proto::admin::tls_settings tls_settings;
+    tls_settings.set_tls_pem_settings(std::move(tls_pem_settings));
+
+    proto::admin::update_shadow_link_request req;
+    req.get_shadow_link()
+      .get_configurations()
+      .get_client_options()
+      .set_tls_settings(std::move(tls_settings));
+
+    serde::pb::field_mask mask;
+    mask.paths.emplace_back(
+      serde::pb::field_mask::path{
+        "configurations", "client_options", "tls_settings"});
+    req.set_update_mask(std::move(mask));
+
+    auto update_cmd = admin::create_update_cluster_link_config_cmd(
+      std::move(req), current_md.copy());
+
+    EXPECT_EQ(
+      std::get<cluster_link::model::tls_value>(*update_cmd.connection.ca),
+      "new-ca");
+    EXPECT_EQ(
+      std::get<cluster_link::model::tls_value>(*update_cmd.connection.key),
+      "new-key");
+    EXPECT_EQ(
+      std::get<cluster_link::model::tls_value>(*update_cmd.connection.cert),
+      "new-cert");
 }

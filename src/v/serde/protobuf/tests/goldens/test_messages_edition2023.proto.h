@@ -5,6 +5,8 @@
 
 #include "base/format_to.h"
 #include "bytes/iobuf.h"
+#include "serde/protobuf/base.h"
+#include "strings/static_str.h"
 #include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 
@@ -38,7 +40,7 @@ enum class test_all_types_edition2023_nested_enum : int8_t {
 void enum_to_proto(const test_all_types_edition2023_nested_enum&, iobuf*);
 void enum_from_proto(iobuf_parser*, test_all_types_edition2023_nested_enum*);
 // Returns the name of the enum value
-std::string_view enum_to_string(const test_all_types_edition2023_nested_enum&);
+static_str enum_to_string(const test_all_types_edition2023_nested_enum&);
 void enum_from_json(serde::pb::json::peekable_parser*, test_all_types_edition2023_nested_enum*);
 int32_t format_as(test_all_types_edition2023_nested_enum);
 
@@ -50,11 +52,11 @@ enum class foreign_enum_edition2023 : uint8_t {
 void enum_to_proto(const foreign_enum_edition2023&, iobuf*);
 void enum_from_proto(iobuf_parser*, foreign_enum_edition2023*);
 // Returns the name of the enum value
-std::string_view enum_to_string(const foreign_enum_edition2023&);
+static_str enum_to_string(const foreign_enum_edition2023&);
 void enum_from_json(serde::pb::json::peekable_parser*, foreign_enum_edition2023*);
 int32_t format_as(foreign_enum_edition2023);
 
-class foreign_message_edition2023 {
+class foreign_message_edition2023 : public serde::pb::base_message {
 public:
   foreign_message_edition2023() noexcept;
   foreign_message_edition2023(const foreign_message_edition2023&) = delete;
@@ -84,6 +86,14 @@ public:
   int32_t get_c() const;
   void set_c(int32_t v);
 
+  std::string_view full_name() const override { return "protobuf_test_messages.editions.ForeignMessageEdition2023"; }
+  // Convert a field path into a path of field numbers.
+  static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
+  // Convert a field path into a path of field numbers.
+  std::optional<std::vector<int32_t>> convert_field_path_to_numbers(std::span<std::string_view> field_path) const override;
+  // Look up a field based on the field numbers.
+  std::optional<serde::pb::field> lookup_field(std::span<int32_t> field_numbers) override;
+
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
   static bool is_valid_field_path(std::span<const ss::sstring> path);
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
@@ -94,7 +104,7 @@ private:
 };
 
 // groups
-class test_all_types_edition2023_group_like_type {
+class test_all_types_edition2023_group_like_type : public serde::pb::base_message {
 public:
   test_all_types_edition2023_group_like_type() noexcept;
   test_all_types_edition2023_group_like_type(const test_all_types_edition2023_group_like_type&) = delete;
@@ -126,6 +136,14 @@ public:
   uint32_t get_group_uint32() const;
   void set_group_uint32(uint32_t v);
 
+  std::string_view full_name() const override { return "protobuf_test_messages.editions.TestAllTypesEdition2023.GroupLikeType"; }
+  // Convert a field path into a path of field numbers.
+  static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
+  // Convert a field path into a path of field numbers.
+  std::optional<std::vector<int32_t>> convert_field_path_to_numbers(std::span<std::string_view> field_path) const override;
+  // Look up a field based on the field numbers.
+  std::optional<serde::pb::field> lookup_field(std::span<int32_t> field_numbers) override;
+
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
   static bool is_valid_field_path(std::span<const ss::sstring> path);
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
@@ -136,7 +154,7 @@ private:
   uint32_t group_uint32_{};
 };
 
-class test_all_types_edition2023_nested_message {
+class test_all_types_edition2023_nested_message : public serde::pb::base_message {
 public:
   test_all_types_edition2023_nested_message() noexcept;
   test_all_types_edition2023_nested_message(const test_all_types_edition2023_nested_message&) = delete;
@@ -169,6 +187,14 @@ public:
   const std::unique_ptr<test_all_types_edition2023>& get_corecursive() const;
   void set_corecursive(std::unique_ptr<test_all_types_edition2023>&& v);
 
+  std::string_view full_name() const override { return "protobuf_test_messages.editions.TestAllTypesEdition2023.NestedMessage"; }
+  // Convert a field path into a path of field numbers.
+  static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
+  // Convert a field path into a path of field numbers.
+  std::optional<std::vector<int32_t>> convert_field_path_to_numbers(std::span<std::string_view> field_path) const override;
+  // Look up a field based on the field numbers.
+  std::optional<serde::pb::field> lookup_field(std::span<int32_t> field_numbers) override;
+
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
   static bool is_valid_field_path(std::span<const ss::sstring> path);
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
@@ -179,7 +205,7 @@ private:
   std::unique_ptr<test_all_types_edition2023> corecursive_;
 };
 
-class test_all_types_edition2023 {
+class test_all_types_edition2023 : public serde::pb::base_message {
 public:
   test_all_types_edition2023() noexcept;
   test_all_types_edition2023(const test_all_types_edition2023&) = delete;
@@ -505,6 +531,14 @@ public:
   const test_all_types_edition2023_group_like_type& get_delimited_field() const;
   void set_delimited_field(test_all_types_edition2023_group_like_type&& v);
 
+  std::string_view full_name() const override { return "protobuf_test_messages.editions.TestAllTypesEdition2023"; }
+  // Convert a field path into a path of field numbers.
+  static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
+  // Convert a field path into a path of field numbers.
+  std::optional<std::vector<int32_t>> convert_field_path_to_numbers(std::span<std::string_view> field_path) const override;
+  // Look up a field based on the field numbers.
+  std::optional<serde::pb::field> lookup_field(std::span<int32_t> field_numbers) override;
+
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
   static bool is_valid_field_path(std::span<const ss::sstring> path);
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
@@ -601,7 +635,7 @@ private:
   chunked_hash_map<ss::sstring, foreign_message_edition2023> map_string_foreign_message_;
   chunked_hash_map<ss::sstring, test_all_types_edition2023_nested_enum> map_string_nested_enum_;
   chunked_hash_map<ss::sstring, foreign_enum_edition2023> map_string_foreign_enum_;
-  std::variant<std::monostate, uint32_t, test_all_types_edition2023_nested_message, ss::sstring, iobuf, bool, uint64_t, float, double, test_all_types_edition2023_nested_enum> oneof_field_{};
+  std::variant<std::monostate, uint32_t, test_all_types_edition2023_nested_message, ss::sstring, iobuf, bool, uint64_t, float, double, test_all_types_edition2023_nested_enum> oneof_field_;
   test_all_types_edition2023_group_like_type groupliketype_;
   test_all_types_edition2023_group_like_type delimited_field_;
 };

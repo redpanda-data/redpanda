@@ -152,7 +152,7 @@ TEST_F_CORO(source_topic_syncer_test, select_all_filter) {
     EXPECT_EQ(
       mirror_topic_it->second.source_topic_name, ::model::topic("test_topic"));
     EXPECT_EQ(mirror_topic_it->second.partition_count, 3);
-    EXPECT_EQ(mirror_topic_it->second.replication_factor, 3);
+    EXPECT_FALSE(mirror_topic_it->second.replication_factor.has_value());
     const auto& configs = mirror_topic_it->second.topic_configs;
     EXPECT_NE(configs.find("max.message.bytes"), configs.end());
     EXPECT_NE(configs.find("message.timestamp.type"), configs.end());

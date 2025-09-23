@@ -13,17 +13,17 @@ import re
 import threading
 from enum import Enum
 
-from rptest.clients.rpk import RpkTool
-from rptest.services.admin import Admin
-from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
-from rptest.tests.prealloc_nodes import PreallocNodesTest
-
-from ducktape.mark import matrix, ignore
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
-from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
+
 from rptest.clients.default import DefaultClient
+from rptest.clients.offline_log_viewer import OfflineLogViewer
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
+from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
+from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
@@ -31,7 +31,6 @@ from rptest.services.kgo_verifier_services import (
 from rptest.services.redpanda import (
     CHAOS_LOG_ALLOW_LIST,
     PREV_VERSION_LOG_ALLOW_LIST,
-    CloudStorageType,
     LoggingConfig,
     PandaproxyConfig,
     SISettings,
@@ -39,6 +38,8 @@ from rptest.services.redpanda import (
     get_cloud_storage_type,
 )
 from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.tests.datalake.utils import supported_storage_types
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.mode_checks import (
     cleanup_on_early_exit,
     skip_debug_mode,
@@ -50,10 +51,6 @@ from rptest.utils.node_operations import (
     generate_random_workload,
     verify_offset_translator_state_consistent,
 )
-from rptest.services.redpanda import MetricsEndpoint
-
-from rptest.clients.offline_log_viewer import OfflineLogViewer
-from rptest.tests.datalake.utils import supported_storage_types
 
 TS_LOG_ALLOW_LIST = [
     re.compile(".*archival_metadata_stm.*Replication wait for archival STM timed out"),
@@ -199,7 +196,9 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             f"running test with: [message_size {self.msg_size},  total_bytes: {self.total_data}, message_count: {self.msg_count}, rate_limit: {self.rate_limit}, cluster_operations: {self.node_operations}]"
         )
 
-    def _start_redpanda(self, mixed_versions, with_iceberg, compaction_mode):
+    def _start_redpanda(
+        self, mixed_versions, with_iceberg, compaction_mode, with_cloud_topics
+    ):
         # since this test is deleting topics we must tolerate missing manifests
         self._si_settings.set_expected_damage(
             {"ntr_no_topic_manifest", "ntpr_no_manifest"}
@@ -249,6 +248,19 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         self.redpanda.await_feature(
             "membership_change_controller_cmds", "active", timeout_sec=30
         )
+
+        if with_cloud_topics:
+            self.redpanda.enable_development_feature_support()
+            self.redpanda.set_cluster_config(
+                values={
+                    "development_enable_cloud_topics": True,
+                }
+            )
+            self.redpanda.restart_nodes(
+                nodes=self.redpanda.nodes,
+                auto_assign_node_id=True,
+                omit_seeds_on_idx_one=False,
+            )
 
     def _alter_local_topic_retention_bytes(self, topic, retention_bytes):
         rpk = RpkTool(self.redpanda)
@@ -435,6 +447,11 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                     "Skipping test with iceberg and unsupported cloud storage type"
                 )
 
+        with_cloud_topics = True
+        if mixed_versions:
+            with_cloud_topics = False
+            self.logger.info("Disabling cloud topics in mixed version test")
+
         def enable_write_caching_testing():
             if not mixed_versions:
                 return True
@@ -458,7 +475,10 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
         # start redpanda process
         self._start_redpanda(
-            mixed_versions, with_iceberg=with_iceberg, compaction_mode=compaction_mode
+            mixed_versions,
+            with_iceberg=with_iceberg,
+            compaction_mode=compaction_mode,
+            with_cloud_topics=with_cloud_topics,
         )
 
         self.redpanda.set_cluster_config({"controller_snapshot_max_age_sec": 1})
@@ -568,6 +588,34 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         )
         fast_producer_consumer.start()
 
+        if with_cloud_topics:
+            rpk = RpkTool(self.redpanda)
+            rpk.create_topic(
+                topic="tp-workload-ct",
+                partitions=self.max_partitions,
+                replicas=3,
+                config={
+                    "segment.bytes": default_segment_size,
+                    "cleanup.policy": "delete",
+                    "redpanda.remote.read": "false",
+                    "redpanda.remote.write": "false",
+                    "redpanda.cloud_topic.enabled": "true",
+                },
+            )
+            cloud_topics_consumer = RandomNodeOperationsTest.producer_consumer(
+                test_context=self.test_context,
+                logger=self.logger,
+                topic_name="tp-workload-ct",
+                redpanda=self.redpanda,
+                nodes=[self.preallocated_nodes[2]],
+                msg_size=self.msg_size,
+                rate_limit_bps=self.rate_limit,
+                msg_count=self.msg_count,
+                consumers_count=self.consumers_count,
+                compaction_enabled=False,
+            )
+            cloud_topics_consumer.start()
+
         write_caching_enabled = enable_write_caching_testing()
         if write_caching_enabled:
             cleanup_policy = TopicSpec._random_cleanup_policy()
@@ -660,6 +708,9 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             write_caching_producer_consumer.verify()
 
         fast_producer_consumer.verify()
+
+        if with_cloud_topics:
+            cloud_topics_consumer.verify()
 
         if mixed_versions:
             self.logger.info("Upgrading cluster with current Redpanda version")

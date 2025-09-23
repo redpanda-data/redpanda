@@ -86,11 +86,19 @@ struct replace_objects_request
 struct object_metadata
   : serde::
       envelope<object_metadata, serde::version<0>, serde::compat_version<0>> {
-    auto serde_fields() { return std::tie(oid, footer_pos, object_size); }
+    auto serde_fields() {
+        return std::tie(
+          oid, footer_pos, object_size, first_offset, last_offset);
+    }
 
     object_id oid;
     size_t footer_pos;
     size_t object_size;
+
+    // The first offset (inclusive) that is within this object.
+    kafka::offset first_offset;
+    // The last offset (inclusive) that is within this object.
+    kafka::offset last_offset;
 };
 
 struct get_first_offset_ge_reply
@@ -135,6 +143,29 @@ struct get_first_timestamp_ge_request
 
     model::topic_id_partition tp;
     model::timestamp ts;
+};
+
+struct get_first_offset_for_bytes_reply
+  : serde::envelope<
+      get_first_offset_for_bytes_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    auto serde_fields() { return std::tie(offset, ec); }
+
+    kafka::offset offset;
+    errc ec{};
+};
+
+struct get_first_offset_for_bytes_request
+  : serde::envelope<
+      get_first_offset_for_bytes_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using resp_t = get_first_offset_for_bytes_reply;
+    auto serde_fields() { return std::tie(tp, size); }
+
+    model::topic_id_partition tp;
+    uint64_t size{};
 };
 
 struct get_offsets_reply

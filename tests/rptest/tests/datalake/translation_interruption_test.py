@@ -8,6 +8,9 @@
 # by the Apache License, Version 2.0
 
 import re
+
+from ducktape.mark import matrix
+
 from rptest.clients.rpk import RpkTool, TopicSpec
 from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
@@ -16,7 +19,6 @@ from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
 from rptest.tests.redpanda_test import RedpandaTest
-from ducktape.mark import matrix
 
 OOM_ALLOW_LIST = [
     # partitioning_writer.cc:65 - Failed to create new writer: Memory exhausted

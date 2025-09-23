@@ -6,12 +6,10 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-from enum import Enum
 import random
 import string
+from enum import Enum
 from typing import Literal
-
-# pyright: strict
 
 
 class TopicSpec:

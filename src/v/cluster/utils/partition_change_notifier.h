@@ -24,6 +24,8 @@ namespace cluster {
 // Supports notifications for partitions with replicas on the current shard.
 class partition_change_notifier {
 public:
+    using notify_current_state
+      = ss::bool_class<struct notify_current_state_tag>;
     enum class notification_type : int8_t {
         // Notification for leadership change of a partition.
         // Notified on assuming leadership or losing leadership.
@@ -68,8 +70,8 @@ public:
 
     virtual ~partition_change_notifier() = default;
 
-    virtual notification_id_type
-      register_partition_notifications(notification_cb_t)
+    virtual notification_id_type register_partition_notifications(
+      notification_cb_t, notify_current_state = notify_current_state::no)
       = 0;
 
     virtual void unregister_partition_notifications(notification_id_type) = 0;

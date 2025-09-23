@@ -68,7 +68,7 @@ struct topic_recovery_service;
 
 extern ss::logger adminlog;
 
-class admin_server {
+class admin_server : public ss::peering_sharded_service<admin_server> {
 public:
     explicit admin_server(
       admin_server_cfg,
@@ -489,6 +489,9 @@ private:
 
     ss::future<ss::json::json_return_type>
     update_role_members_handler(std::unique_ptr<ss::http::request> req);
+
+    ss::future<ss::json::json_return_type>
+    get_security_report(std::unique_ptr<ss::http::request> req);
 
     /// Kafka routes
     ss::future<ss::json::json_return_type>

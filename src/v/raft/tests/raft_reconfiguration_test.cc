@@ -383,7 +383,7 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
 
     co_await wait_for_reconfiguration_to_finish(current_node_ids, 30s);
 
-    co_await assert_logs_equal(start_offset);
+    ASSERT_TRUE_CORO(co_await assert_logs_equal(start_offset));
 
     absl::flat_hash_set<raft::vnode> current_nodes_set(
       current_nodes.begin(), current_nodes.end());
@@ -801,7 +801,7 @@ TEST_F_CORO(raft_fixture, test_initial_learner_offset_adjustment) {
         }
     }
 
-    co_await assert_logs_equal(start_offset);
+    ASSERT_TRUE_CORO(co_await assert_logs_equal(start_offset));
 
     std::vector<raft_node_instance*> current_node_ptrs;
     for (auto& [id, node] : nodes()) {

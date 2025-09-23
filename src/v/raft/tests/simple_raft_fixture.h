@@ -109,13 +109,7 @@ struct simple_raft_fixture {
                   = config::mock_binding<size_t>(10),
                 };
             },
-            [] {
-                return raft::recovery_memory_quota::configuration{
-                  .max_recovery_memory
-                  = config::mock_binding<std::optional<size_t>>(std::nullopt),
-                  .default_read_buffer_size = config::mock_binding(512_KiB),
-                };
-            },
+            config::mock_binding<std::optional<size_t>>(std::nullopt),
             std::ref(_connections),
             std::ref(_storage),
             std::ref(_recovery_throttle),

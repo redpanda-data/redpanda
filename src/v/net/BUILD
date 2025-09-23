@@ -1,6 +1,21 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
 redpanda_cc_library(
+    name = "tls",
+    srcs = [
+        "tls.cc",
+    ],
+    hdrs = [
+        "tls.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "net",
     srcs = [
         "batched_output_stream.cc",
@@ -9,7 +24,6 @@ redpanda_cc_library(
         "dns.cc",
         "probes.cc",
         "server.cc",
-        "tls.cc",
         "transport.cc",
     ],
     hdrs = [
@@ -24,7 +38,6 @@ redpanda_cc_library(
         "fwd.h",
         "server.h",
         "server_probe.h",
-        "tls.h",
         "tls_certificate_probe.h",
         "transport.h",
         "types.h",
@@ -34,6 +47,7 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":tls",
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/config",

@@ -21,6 +21,9 @@
 #include <chrono>
 #include <sstream>
 
+static constexpr boost::beast::string_view x_amz_content_sha256
+  = "x-amz-content-sha256";
+
 std::chrono::time_point<std::chrono::system_clock>
 parse_time(const std::string& timestr) {
     std::tm tm = {};
@@ -51,8 +54,9 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_1) {
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::range, "bytes=0-9");
+    header.insert(x_amz_content_sha256, sha256);
 
-    BOOST_REQUIRE_EQUAL(sign.sign_header(header, sha256), std::error_code{});
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header), std::error_code{});
 
     std::string expected
       = "AWS4-HMAC-SHA256 "
@@ -89,8 +93,9 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_2) {
     header.insert(boost::beast::http::field::host, host);
     header.insert(
       boost::beast::http::field::date, "Fri, 24 May 2013 00:00:00 GMT");
+    header.insert(x_amz_content_sha256, sha256);
 
-    BOOST_REQUIRE_EQUAL(sign.sign_header(header, sha256), std::error_code{});
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header), std::error_code{});
 
     std::string expected
       = "AWS4-HMAC-SHA256 "
@@ -125,8 +130,9 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_3) {
     header.method(boost::beast::http::verb::get);
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
+    header.insert(x_amz_content_sha256, sha256);
 
-    BOOST_REQUIRE_EQUAL(sign.sign_header(header, sha256), std::error_code{});
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header), std::error_code{});
 
     std::string expected
       = "AWS4-HMAC-SHA256 "
@@ -159,8 +165,9 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_4) {
     header.method(boost::beast::http::verb::get);
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
+    header.insert(x_amz_content_sha256, sha256);
 
-    BOOST_REQUIRE_EQUAL(sign.sign_header(header, sha256), std::error_code{});
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header), std::error_code{});
 
     std::string expected
       = "AWS4-HMAC-SHA256 "
@@ -195,8 +202,9 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_non_s3) {
     header.method(boost::beast::http::verb::get);
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
+    header.insert(x_amz_content_sha256, sha256);
 
-    BOOST_REQUIRE_EQUAL(sign.sign_header(header, sha256), std::error_code{});
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header), std::error_code{});
 
     std::string expected
       = "AWS4-HMAC-SHA256 "

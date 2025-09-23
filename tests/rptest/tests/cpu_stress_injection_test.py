@@ -6,11 +6,12 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+from ducktape.cluster.cluster import ClusterNode
+from ducktape.utils.util import wait_until
+
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from ducktape.cluster.cluster import ClusterNode
-from ducktape.utils.util import wait_until
 
 
 def stop_stress(admin: Admin, node: ClusterNode):

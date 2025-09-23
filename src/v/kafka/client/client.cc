@@ -66,7 +66,7 @@ client::client(
       _logger,
       [this](std::exception_ptr ex) { return mitigate_error(std::move(ex)); }) {
     _metadata_callback_id = _cluster->register_metadata_cb(
-      [this](const metadata_response_data& res) { on_metadata_update(res); });
+      [this](const metadata_update& res) { on_metadata_update(res); });
 }
 
 ss::future<> client::connect() {
@@ -106,7 +106,7 @@ ss::future<> client::stop() noexcept {
     co_await catch_and_log(_logger, [this]() { return _cluster->stop(); });
 }
 
-void client::on_metadata_update(const metadata_response_data& res) {
+void client::on_metadata_update(const metadata_update& res) {
     _partitioners.apply_metadata(res);
 }
 

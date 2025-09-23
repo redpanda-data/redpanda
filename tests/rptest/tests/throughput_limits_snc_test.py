@@ -7,20 +7,21 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import random, time, math, json, string
+import math
+import random
+import string
+import time
 from enum import Enum
-from typing import Tuple
 
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import MetricsEndpoint
+from rptest.services.kcat_consumer import KcatConsumer
 from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.kcat_consumer import KcatConsumer
-from rptest.clients.kafka_cat import KafkaCat
 
 # This file is about throughput limiting that works at shard/node/cluster (SNC)
 # levels, like cluster-wide and node-wide throughput limits

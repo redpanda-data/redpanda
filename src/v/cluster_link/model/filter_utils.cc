@@ -12,8 +12,10 @@
 #include "cluster_link/model/filter_utils.h"
 
 namespace cluster_link::model {
-bool select_topic(
-  ::model::topic_view topic,
+namespace {
+template<typename T>
+bool select_using_filter(
+  const T& resource,
   const chunked_vector<resource_name_filter_pattern>& patterns) {
     bool matched = false;
     for (const auto& pattern : patterns) {
@@ -22,11 +24,11 @@ bool select_topic(
         case filter_pattern_type::literal:
             filter_selected = (pattern.pattern
                                == resource_name_filter_pattern::wildcard)
-                              || (topic == pattern.pattern);
+                              || (resource == pattern.pattern);
             break;
         case filter_pattern_type::prefix:
             if (!pattern.pattern.empty()) {
-                filter_selected = topic().starts_with(pattern.pattern);
+                filter_selected = resource().starts_with(pattern.pattern);
             }
             break;
         }
@@ -44,4 +46,18 @@ bool select_topic(
 
     return matched;
 }
+
+} // namespace
+bool select_topic(
+  ::model::topic_view topic,
+  const chunked_vector<resource_name_filter_pattern>& patterns) {
+    return select_using_filter(topic, patterns);
+}
+
+bool select_group(
+  const kafka::group_id& group_id,
+  const chunked_vector<resource_name_filter_pattern>& patterns) {
+    return select_using_filter(group_id, patterns);
+}
+
 } // namespace cluster_link::model

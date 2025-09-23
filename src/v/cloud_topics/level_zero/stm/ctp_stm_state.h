@@ -43,7 +43,7 @@ public:
     /// insync_offset greater or equal to the snapshot offset. All log records
     /// can be applied to the state again without changing the state because of
     /// the idempotency.
-    void advance_epoch(cluster_epoch epoch);
+    void advance_epoch(cluster_epoch epoch, model::offset offset);
 
     /// This is invoked in the write path before the batch with new
     /// epoch value is even replicated.
@@ -65,6 +65,10 @@ public:
     /// \return max_seen_epoch epoch.
     std::optional<cluster_epoch> get_max_seen_epoch() const noexcept;
 
+    /// Estimate the minimum epoch referenced by this ctp_stm.
+    /// \note This value might be stale.
+    std::optional<cluster_epoch> estimate_min_epoch() const noexcept;
+
     /// Advance LRO and it's translated log offset counterpart.
     void advance_last_reconciled_offset(
       kafka::offset new_last_reconciled_offset,
@@ -79,7 +83,9 @@ public:
         return std::tie(
           _max_applied_epoch,
           _last_reconciled_offset,
-          _last_reconciled_log_offset);
+          _last_reconciled_log_offset,
+          _max_applied_epoch_offset,
+          _min_epoch_lower_bound);
     }
 
     /// Max collectible offset is defined by the LRO.
@@ -107,6 +113,16 @@ private:
     ///
     /// We enforce no epochs applied or replicated are less than this value.
     std::optional<cluster_epoch> _max_applied_epoch;
+
+    /// The offset at which the max_applied_epoch was recorded first.
+    std::optional<model::offset> _max_applied_epoch_offset;
+
+    /// The epoch which is less or equal to the epoch referenced
+    /// by the first record batch after the last reconciled offset.
+    /// This epoch is not guaranteed to be "active" (from the point of
+    /// view of the partition) but it's guaranteed that all epochs before
+    /// this epoch are "inactive".
+    std::optional<cluster_epoch> _min_epoch_lower_bound;
 
     /// The last offset that was uploaded to L1. This value may lag behind
     /// the value stored in the L1 metastore, but should never be ahead of

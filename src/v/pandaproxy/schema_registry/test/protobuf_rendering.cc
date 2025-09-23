@@ -12,6 +12,7 @@
 #include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/test/compatibility_common.h"
+#include "pandaproxy/schema_registry/test/protobuf_utils.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "test_utils/runfiles.h"
 #include "utils/file_io.h"
@@ -23,42 +24,9 @@
 
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
+namespace ppstu = pp::schema_registry::test_utils;
 
 namespace {
-
-struct simple_sharded_store {
-    explicit simple_sharded_store()
-      : store{} {
-        store.start(pps::is_mutable::yes, ss::default_smp_service_group())
-          .get();
-    }
-    ~simple_sharded_store() { store.stop().get(); }
-    simple_sharded_store(const simple_sharded_store&) = delete;
-    simple_sharded_store(simple_sharded_store&&) = delete;
-    simple_sharded_store& operator=(const simple_sharded_store&) = delete;
-    simple_sharded_store& operator=(simple_sharded_store&&) = delete;
-
-    pps::schema_id
-    insert(const pps::subject_schema& schema, pps::schema_version version) {
-        const auto id = next_id++;
-        store
-          .upsert(
-            pps::seq_marker{
-              std::nullopt,
-              std::nullopt,
-              version,
-              pps::seq_marker_key_type::schema},
-            schema.share(),
-            id,
-            version,
-            pps::is_deleted::no)
-          .get();
-        return id;
-    }
-
-    pps::schema_id next_id{1};
-    pps::sharded_store store;
-};
 
 std::filesystem::path test_dir() {
     return test_utils::get_runfile_path(
@@ -87,30 +55,6 @@ ss::sstring read_schema(const std::string_view test_case, const SchemaType pt) {
 
 } // namespace
 
-std::string sanitize(
-  std::string_view raw_proto,
-  pps::normalize norm = pps::normalize::no,
-  pps::output_format format = pps::output_format::none) {
-    simple_sharded_store s;
-    iobuf buf = pps::make_canonical_protobuf_schema(
-                  s.store,
-                  pps::subject_schema{
-                    pps::subject{"foo"},
-                    pps::schema_definition{
-                      raw_proto, pps::schema_type::protobuf, {}}},
-                  norm,
-                  format)
-                  .get()
-                  .def()
-                  .raw()();
-    iobuf_parser parser{std::move(buf)};
-    return parser.read_string(parser.bytes_left());
-}
-
-auto normalize(std::string_view raw_proto) {
-    return sanitize(raw_proto, pps::normalize::yes);
-}
-
 class ProtoRendering : public testing::TestWithParam<std::string> {};
 
 TEST_P(ProtoRendering, test_protobuf_rendering) {
@@ -119,22 +63,22 @@ TEST_P(ProtoRendering, test_protobuf_rendering) {
 
     const auto sanitized_expected = read_schema(
       test_case, SchemaType::sanitized);
-    const auto sanitized_processed = sanitize(input);
+    const auto sanitized_processed = ppstu::sanitize(input);
     EXPECT_EQ(sanitized_expected, sanitized_processed);
 
     const auto normalized_expected = read_schema(
       test_case, SchemaType::normalized);
-    const auto normalized_processed = normalize(input);
+    const auto normalized_processed = ppstu::normalize(input);
     EXPECT_EQ(normalized_expected, normalized_processed);
 
     // These are to verify that the processed schemas are valid schemas.
     // We don't want to run these if the above fail because
     // they produce lot's of visual noise.
     if (sanitized_expected == sanitized_processed) {
-        EXPECT_EQ(sanitized_processed, sanitize(sanitized_processed));
+        EXPECT_EQ(sanitized_processed, ppstu::sanitize(sanitized_processed));
     }
     if (normalized_expected == normalized_processed) {
-        EXPECT_EQ(normalized_processed, normalize(normalized_processed));
+        EXPECT_EQ(normalized_processed, ppstu::normalize(normalized_processed));
     }
 }
 
@@ -144,9 +88,9 @@ TEST_P(ProtoRendering, test_protobuf_serialized_mode) {
 
     // Validate that a round trip to serialized and
     // back results in the starting schema
-    auto schema_b64 = sanitize(
+    auto schema_b64 = ppstu::sanitize(
       input, pps::normalize::no, pps::output_format::serialized);
-    const auto schema_text = sanitize(schema_b64, pps::normalize::no);
+    const auto schema_text = ppstu::sanitize(schema_b64, pps::normalize::no);
     EXPECT_EQ(input, schema_text);
 }
 

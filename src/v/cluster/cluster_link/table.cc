@@ -23,6 +23,7 @@ using ::cluster_link::model::id_t;
 using ::cluster_link::model::metadata;
 using ::cluster_link::model::mirror_topic_state;
 using ::cluster_link::model::name_t;
+using ::cluster_link::model::update_cluster_link_configuration_cmd;
 using ::cluster_link::model::update_mirror_topic_state_cmd;
 
 namespace {
@@ -31,7 +32,8 @@ static constexpr auto accepted_commands = cluster::make_commands_list<
   cluster::cluster_link_remove_cmd,
   cluster::cluster_link_add_mirror_topic_cmd,
   cluster::cluster_link_update_mirror_topic_state_cmd,
-  cluster::cluster_link_update_mirror_topic_properties_cmd>();
+  cluster::cluster_link_update_mirror_topic_properties_cmd,
+  cluster::cluster_link_update_cluster_link_configuration_cmd>();
 
 table::map_t copy_links(const table::map_t& links) {
     table::map_t copy;
@@ -209,6 +211,12 @@ ss::future<std::error_code> table::apply_update(model::record_batch b) {
               state) {
               return table.update_mirror_topic_properties(
                 state.key, state.value);
+          },
+          [&table](
+            const cluster::cluster_link_update_cluster_link_configuration_cmd&
+              cmd) {
+              return table.update_cluster_link_configuration(
+                cmd.key, cmd.value);
           });
     });
     auto first_res = results.front();
@@ -246,6 +254,11 @@ table::notification_id table::register_for_updates(notification_callback cb) {
 }
 
 void table::unregister_for_updates(notification_id id) { _callbacks.erase(id); }
+
+bool table::cluster_link_active() const {
+    // TODO: Update when we have proper states for cluster links
+    return !_link_metadata.empty();
+}
 
 void table::run_callbacks(id_t id) {
     for (const auto& [_, cb] : _callbacks) {
@@ -422,6 +435,19 @@ cluster::cluster_link::errc table::update_mirror_topic_properties(
     for (const auto& [key, value] : cmd.topic_configs) {
         md.topic_configs.emplace(key, value);
     }
+    run_callbacks(id);
+    return errc::success;
+}
+
+cluster::cluster_link::errc table::update_cluster_link_configuration(
+  id_t id, const update_cluster_link_configuration_cmd& cmd) {
+    if (!_link_metadata.contains(id)) {
+        vlog(cluster::clusterlog.warn, "Link id {} not found", id);
+        return errc::does_not_exist;
+    }
+    _link_metadata[id].connection = cmd.connection;
+    _link_metadata[id].configuration = cmd.link_config.copy();
+
     run_callbacks(id);
     return errc::success;
 }

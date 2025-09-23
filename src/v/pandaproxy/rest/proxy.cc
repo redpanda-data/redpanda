@@ -11,6 +11,7 @@
 
 #include "cluster/controller.h"
 #include "config/configuration.h"
+#include "kafka/client/config_utils.h"
 #include "kafka/client/configuration.h"
 #include "pandaproxy/api/api-doc/rest.json.hh"
 #include "pandaproxy/logger.h"
@@ -156,6 +157,7 @@ ss::future<> proxy::stop() {
 }
 
 configuration& proxy::config() { return _config; }
+const configuration& proxy::config() const { return _config; }
 
 ss::future<> proxy::do_start() {
     if (_is_started) {
@@ -178,10 +180,7 @@ ss::future<> proxy::do_start() {
 
 ss::future<> proxy::configure() {
     std::optional<kafka::client::sasl_configuration> sasl_config;
-    if (
-      _client_cfg.scram_username.is_overriden()
-      || _client_cfg.scram_password.is_overriden()
-      || _client_cfg.sasl_mechanism.is_overriden()) {
+    if (is_scram_configured(_client_cfg)) {
         sasl_config = kafka::client::sasl_configuration{
           .mechanism = _client_cfg.sasl_mechanism(),
           .username = _client_cfg.scram_username(),

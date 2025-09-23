@@ -10,9 +10,6 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "key",
-    srcs = [
-        "key.cc",
-    ],
     hdrs = [
         "key.h",
     ],

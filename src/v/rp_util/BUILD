@@ -11,7 +11,6 @@ redpanda_cc_binary(
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iostream",
-        "//src/v/compat:run",
         "//src/v/redpanda/admin:cluster_config_schema_util",
         "//src/v/version",
         "@boost//:program_options",

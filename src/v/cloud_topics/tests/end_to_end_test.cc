@@ -10,22 +10,15 @@
 
 #include "cloud_io/tests/s3_imposter.h"
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
-#include "config/configuration.h"
-#include "kafka/server/tests/list_offsets_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
-#include "random/generators.h"
 #include "redpanda/tests/fixture.h"
 #include "ssx/sformat.h"
-#include "storage/ntp_config.h"
-#include "test_utils/async.h"
 #include "test_utils/scoped_config.h"
 
 #include <gtest/gtest.h>
-
-#include <iterator>
 
 using tests::kafka_consume_transport;
 using tests::kafka_produce_transport;
@@ -85,7 +78,7 @@ TEST_F(e2e_fixture, test_l0_path) {
     auto deferred_close = ss::defer([&producer] { producer.stop().get(); });
 
     size_t total_records = 100;
-    size_t records_per_batch = 1;
+    size_t records_per_batch = 5;
     std::vector<kv_t> records;
     for (size_t i = 0; i < total_records; i += records_per_batch) {
         std::vector<kv_t> batch;
@@ -101,17 +94,20 @@ TEST_F(e2e_fixture, test_l0_path) {
     kafka_consume_transport consumer(make_kafka_client().get());
     consumer.start().get();
     auto deferred_c_close = ss::defer([&consumer] { consumer.stop().get(); });
-    auto consumed_records = consumer
-                              .consume_from_partition(
-                                topic_name,
-                                model::partition_id(0),
-                                model::offset(0))
-                              .get();
-    BOOST_CHECK_EQUAL(records.size(), consumed_records.size());
-    for (size_t i = 0; i < records.size(); ++i) {
-        BOOST_CHECK_EQUAL(records[i].key, consumed_records[i].key);
-        BOOST_CHECK_EQUAL(records[i].val, consumed_records[i].val);
+    for (auto [seek_offset, start_offset] :
+         std::map<int, int>{{0, 0}, {1, 0}, {5, 5}, {6, 5}, {99, 95}}) {
+        auto consumed_records = consumer
+                                  .consume_from_partition(
+                                    topic_name,
+                                    model::partition_id(0),
+                                    model::offset(seek_offset))
+                                  .get();
+        ASSERT_EQ(consumed_records.size(), records.size() - start_offset);
+        for (const auto& [expected_offset, consumed] : std::views::zip(
+               std::views::iota(start_offset), consumed_records)) {
+            ASSERT_EQ(records[expected_offset].key, consumed.key);
+            ASSERT_EQ(records[expected_offset].val, consumed.val);
+        }
     }
-
-    ss::sleep(10s).get();
+    ss::sleep(1s).get();
 }

@@ -26,13 +26,18 @@ model::record_batch create_update_mirror_topic_state_command(
 model::record_batch create_update_mirror_topic_properties_command(
   ::cluster_link::model::id_t,
   ::cluster_link::model::update_mirror_topic_properties_cmd);
+model::record_batch create_update_cluster_link_configuration_command(
+  ::cluster_link::model::id_t,
+  ::cluster_link::model::update_cluster_link_configuration_cmd);
 
 ::cluster_link::model::mirror_topic_metadata create_mirror_topic_metadata(
   ::cluster_link::model::mirror_topic_state,
   ::model::topic source_topic_name,
   std::optional<::model::topic_id> source_topic_id = std::nullopt,
   std::optional<::model::topic_id> destination_topoic_id = std::nullopt,
-  chunked_hash_map<ss::sstring, ss::sstring> topic_configs = {});
+  chunked_hash_map<ss::sstring, ss::sstring> topic_configs = {},
+  int32_t partition_count = 3,
+  std::optional<int16_t> replication_factor = std::nullopt);
 
 template<typename... Args>
 void set_link_mirror_topics(

@@ -45,6 +45,15 @@ bool offset_interval_set::contains(kafka::offset o) const {
     return iset_.find(o()) != iset_.end();
 }
 
+bool offset_interval_set::covers(kafka::offset start, kafka::offset end) const {
+    auto it = iset_.find(start());
+    if (it == iset_.end()) {
+        return false;
+    }
+
+    return (it->first <= start && it->second > end);
+}
+
 offset_interval_set::stream offset_interval_set::make_stream() const {
     return stream(iset_);
 }

@@ -9,11 +9,11 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from ducktape.tests.test import TestContext
-from ducktape.services.service import Service
 from typing import Any
 
 import requests
+from ducktape.services.service import Service
+from ducktape.tests.test import TestContext
 
 from rptest.services.redpanda import AnyRedpandaService, RedpandaServiceCloud
 
@@ -34,7 +34,7 @@ class ClientSwarmBase(Service, ABC):
         redpanda: AnyRedpandaService,
         topic: str,
         log_level: str = "DEBUG",
-        properties={},
+        properties: dict[str, Any] = {},
     ):
         super().__init__(context, num_nodes=1)
 

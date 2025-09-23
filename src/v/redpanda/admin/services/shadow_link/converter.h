@@ -16,6 +16,12 @@
 
 namespace admin {
 
+/// \brief Sets the client ID for the cluster link
+///
+/// The client is is the format:
+/// `cluster-link-{cluster-link-name}-{cluster-link-uuid}`
+void set_client_id(cluster_link::model::metadata& md);
+
 /// \brief Converts a create cluster link request into a cluster link metadata
 /// object
 ///
@@ -27,4 +33,14 @@ convert_create_to_metadata(proto::admin::create_shadow_link_request req);
 /// \brief Converts a cluster link metadata object into a shadow link resource
 proto::admin::shadow_link
 metadata_to_shadow_link(cluster_link::model::metadata md);
+
+/// \brief Converts an update shadow link request in to the appropriate model
+/// type
+///
+/// \throws serde::pb::rpc::invalid_argument_exception if the request contains
+/// invalid data
+cluster_link::model::update_cluster_link_configuration_cmd
+create_update_cluster_link_config_cmd(
+  proto::admin::update_shadow_link_request req,
+  cluster_link::model::metadata current_metadata);
 } // namespace admin

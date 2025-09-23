@@ -1,8 +1,8 @@
-import requests
 import json
-from ducktape.tests.test import Test
-from types import SimpleNamespace
 from io import BytesIO
+from types import SimpleNamespace
+
+import requests
 
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_cloud_test import RedpandaCloudTest

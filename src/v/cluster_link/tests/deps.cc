@@ -49,7 +49,8 @@ ss::future<> cluster_link_manager_test_fixture::wire_up_and_start(
         int32_t partition_count,
         ::model::node_id leader) {
           return update_partition_count(tp_ns, partition_count, leader);
-      });
+      },
+      _default_topic_replication.bind());
     _ftpc = ftpc.get();
 
     _lf = lf.get();
@@ -75,7 +76,18 @@ ss::future<> cluster_link_manager_test_fixture::wire_up_and_start(
       ss::sharded_parameter([this]() {
           return std::make_unique<cluster_mock_factory>(&_cluster_mock);
       }),
-      1s);
+      ss::sharded_parameter([this]() {
+          auto router = std::make_unique<test_consumer_group_router>();
+          _consumer_group_router = router.get();
+          return router;
+      }),
+      ss::sharded_parameter([this]() {
+          auto provider = std::make_unique<test_partition_metadata_provider>();
+          _partition_metadata_provider = provider.get();
+          return provider;
+      }),
+      1s,
+      _default_topic_replication.bind());
 
     auto notif_id = _table.local().register_for_updates(
       [this](model::id_t id) { _manager.local().on_link_change(id); });
@@ -105,10 +117,13 @@ void cluster_link_manager_test_fixture::elect_leader(
         auto shard = shard_id.value_or(ss::this_shard_id());
         partition_manager()->set_shard_owner(ntp, shard);
         _manager.local().handle_partition_state_change(
-          ntp, shard == ss::this_shard_id() ? ntp_leader::yes : ntp_leader::no);
+          ntp,
+          shard == ss::this_shard_id() ? ntp_leader::yes : ntp_leader::no,
+          ::model::term_id(_term_counter++));
     } else {
         partition_manager()->remove_shard_owner(ntp);
-        _manager.local().handle_partition_state_change(ntp, ntp_leader::no);
+        _manager.local().handle_partition_state_change(
+          ntp, ntp_leader::no, std::nullopt);
     }
 }
 
@@ -185,6 +200,17 @@ cluster_link_manager_test_fixture::await_status_report(
     co_return std::nullopt;
 }
 
+ss::future<bool> cluster_link_manager_test_fixture::wait_for_report_to_match(
+  ss::lowres_clock::duration timeout,
+  ss::lowres_clock::duration backoff,
+  std::function<bool(const model::cluster_link_task_status_report&)>
+    predicate) {
+    return await_status_report(timeout, backoff, std::move(predicate))
+      .then([](std::optional<model::cluster_link_task_status_report> report) {
+          return report.has_value();
+      });
+}
+
 void cluster_link_manager_test_fixture::set_topic_config(
   cluster::topic_configuration cfg) {
     _tmc->set_topic_config(std::move(cfg));
@@ -199,4 +225,35 @@ void cluster_link_manager_test_fixture::setup_cluster_mock() {
     _cluster_mock.add_broker(
       ::model::node_id(2), net::unresolved_address{"localhost", 9094});
 }
+
+std::optional<::model::partition_id>
+test_consumer_group_router::partition_for(const kafka::group_id& group) const {
+    auto hash = std::hash<kafka::group_id>{}(group);
+    return ::model::partition_id(
+      static_cast<::model::partition_id::type>(hash % partition_count));
+}
+
+ss::future<kafka::offset_commit_response>
+test_consumer_group_router::offset_commit(kafka::offset_commit_request req) {
+    auto& g_state = groups[req.data.group_id];
+    for (auto& tp : req.data.topics) {
+        auto& topic = g_state.offsets[tp.name];
+        for (auto& p : tp.partitions) {
+            topic[p.partition_index] = ::model::offset_cast(p.committed_offset);
+        }
+    }
+    kafka::offset_commit_response resp;
+
+    co_return resp;
+}
+
+ss::future<std::optional<kafka::offset>>
+test_partition_metadata_provider::get_partition_high_watermark(
+  ::model::topic_partition_view tp) {
+    auto it = hwms.find(::model::topic_partition(tp));
+    if (it != hwms.end()) {
+        co_return it->second;
+    }
+    co_return std::nullopt;
+};
 } // namespace cluster_link::tests

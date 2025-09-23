@@ -30,7 +30,7 @@ group_manager::group_manager(
   ss::scheduling_group raft_send_sg,
   ss::scheduling_group raft_heartbeats_sched_group,
   group_manager::config_provider_fn cfg,
-  recovery_memory_quota::config_provider_fn recovery_mem_cfg,
+  config::binding<std::optional<size_t>> max_recovery_memory,
   ss::sharded<rpc::connection_cache>& clients,
   ss::sharded<storage::api>& storage,
   ss::sharded<coordinated_recovery_throttle>& recovery_throttle,
@@ -55,7 +55,9 @@ group_manager::group_manager(
       feature_table.local())
   , _storage(storage.local())
   , _recovery_throttle(recovery_throttle.local())
-  , _recovery_mem_quota(std::move(recovery_mem_cfg))
+  , _recovery_mem_quota(
+      std::move(max_recovery_memory),
+      _configuration.recovery_concurrency_per_shard)
   , _recovery_scheduler(
       _configuration.recovery_concurrency_per_shard,
       _configuration.heartbeat_interval)

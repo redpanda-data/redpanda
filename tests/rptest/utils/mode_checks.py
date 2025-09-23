@@ -84,6 +84,16 @@ def skip_debug_mode(*args, **kwargs):
         return args[0]
 
 
+def ignore_if_not_debug(*args, **kwargs):
+    """
+    Test method decorator which ignores (skips) a test if redpanda is not debug mode.
+    """
+    if not is_debug_mode():
+        return ignore(*args, **kwargs)
+    else:
+        return args[0]
+
+
 def ignore_if_not_ubsan(*args, **kwargs):
     """
     Test method decorator which ignores (skips) a test if redpanda is not built

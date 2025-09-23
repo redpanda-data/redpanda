@@ -30,6 +30,10 @@ type ValidatorStatus struct {
 	// How many validation errors (indicating bugs!)
 	InvalidReads int64 `json:"invalid_reads"`
 
+	// Number of times the record offset jumped forward (indicating gaps in consumption)
+	// Only tracked in no compaction case
+	OffsetGaps int64 `json:"offset_gaps"`
+
 	// How many validation errors on extents that are not
 	// designated as valid by the producer (indicates
 	// offsets where retries happened or where unrelated
@@ -84,6 +88,7 @@ func (cs *ValidatorStatus) ValidateRecord(r *kgo.Record, validRanges *TopicOffse
 		if currentMax < r.Offset {
 			expected := currentMax + 1
 			if r.Offset != expected && !cs.compacted {
+				cs.OffsetGaps += 1
 				log.Warnf("Gap detected in consumed offsets. Expected %d, but got %d", expected, r.Offset)
 			}
 		} else {

@@ -15,6 +15,8 @@
 
 namespace cloud_topics::l1 {
 
+fake_io::fake_io() = default;
+
 class fake_file : public staging_file {
 public:
     fake_file() = default;

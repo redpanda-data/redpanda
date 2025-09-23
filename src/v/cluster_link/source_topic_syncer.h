@@ -47,7 +47,7 @@ protected:
 private:
     struct topic_metadata {
         int32_t partition_count;
-        int16_t rf;
+        std::optional<int16_t> rf;
     };
 
     using reconciler_commands = std::variant<
@@ -87,7 +87,7 @@ private:
       ::model::node_id controller_id,
       kafka::api_version describe_configs_version,
       const chunked_vector<::model::topic>& topics,
-      const absl::flat_hash_set<ss::sstring>& configs);
+      const model::topic_metadata_mirroring_config::properties_set& configs);
 
 private:
     model::topic_metadata_mirroring_config _config;

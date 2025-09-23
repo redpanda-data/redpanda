@@ -21,6 +21,13 @@
 
 namespace cloud_topics::l1 {
 
+compaction_filter::compaction_filter(
+  compaction::sliding_window_reducer::sink& sink,
+  const compaction::key_offset_map& map,
+  model::ntp ntp)
+  : filter(sink, std::move(ntp))
+  , _map(map) {}
+
 ss::future<> compaction_filter::maybe_index_offset_delta(
   const model::record_batch& b,
   const model::record& r,

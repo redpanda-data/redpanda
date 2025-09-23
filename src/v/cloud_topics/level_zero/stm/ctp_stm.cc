@@ -16,10 +16,6 @@
 #include "cloud_topics/level_zero/stm/placeholder.h"
 #include "cloud_topics/types.h"
 #include "raft/consensus.h"
-#include "serde/rw/map.h"
-#include "serde/rw/uuid.h"
-#include "serde/rw/vector.h"
-#include "storage/offset_translator_state.h"
 
 #include <seastar/core/abort_source.hh>
 
@@ -96,6 +92,10 @@ ss::future<bool> ctp_stm::sync_in_term(ss::abort_source& as) {
     co_return true;
 }
 
+std::optional<cluster_epoch> ctp_stm::estimate_inactive_epoch() const noexcept {
+    return _state.estimate_min_epoch().transform(prev_cluster_epoch);
+}
+
 ss::future<std::optional<cluster_epoch>> ctp_stm::get_inactive_epoch() {
     // Consume the first epoch from the partition starting from
     // start offset if nothing was reconciled yet or from the last
@@ -163,50 +163,68 @@ ss::future<> ctp_stm::do_apply(const model::record_batch& batch) {
     }
     vlog(_log.debug, "Applying record batch: {}", batch.header());
 
-    if (batch.header().type == model::record_batch_type::dl_placeholder) {
-        // Cherry-pick the placeholder from the record batch
-        vassert(
-          batch.record_count() > 0,
-          "Record batch must have at least one record");
-        iobuf value;
-        batch.for_each_record([&value](model::record&& r) {
-            value = std::move(r).release_value();
-            return ss::stop_iteration::yes;
-        });
+    switch (batch.header().type) {
+    case model::record_batch_type::dl_placeholder:
+        apply_placeholder(batch);
+        break;
 
-        auto placeholder = serde::from_iobuf<dl_placeholder>(std::move(value));
-        auto id = placeholder.id;
-        _state.advance_epoch(id.epoch);
-
-    } else if (
-      batch.header().type == model::record_batch_type::ctp_stm_command) {
+    case model::record_batch_type::ctp_stm_command:
         // Decode the command and apply it to the state.
-        kafka::offset lro;
-        batch.for_each_record([&lro](model::record&& r) {
+        batch.for_each_record([this](model::record&& r) {
             auto key = serde::from_iobuf<uint8_t>(r.release_key());
             auto cmd_key = static_cast<ctp_stm_key>(key);
+
             switch (cmd_key) {
-            case ctp_stm_key::advance_reconciled_offset: {
-                auto cmd = serde::from_iobuf<advance_reconciled_offset_cmd>(
-                  r.release_value());
-                lro = cmd.last_reconciled_offset;
+            case ctp_stm_key::advance_reconciled_offset:
+                apply_advance_reconciled_offset(std::move(r));
                 break;
-            }
+
             default:
                 throw std::runtime_error(fmt_with_ctx(
                   fmt::format,
                   "Unknown ctp_stm_key({})",
                   static_cast<int>(key)));
             }
+
             return ss::stop_iteration::no;
         });
-        vlog(_log.debug, "New LRO value is {}", lro);
-        // LRO is expected to be within the translation range
-        auto lro_log = _raft->log()->to_log_offset(kafka::offset_cast(lro));
-        _state.advance_last_reconciled_offset(lro, lro_log);
-    }
+        break;
 
-    co_return;
+    default:
+        break;
+    }
+}
+
+void ctp_stm::apply_advance_reconciled_offset(model::record record) {
+    auto cmd = serde::from_iobuf<advance_reconciled_offset_cmd>(
+      record.release_value());
+    auto lro = cmd.last_reconciled_offset;
+    vlog(_log.debug, "New LRO value is {}", lro);
+    // LRO is expected to be within the translation range
+    auto lro_log = _raft->log()->to_log_offset(kafka::offset_cast(lro));
+    _state.advance_last_reconciled_offset(lro, lro_log);
+}
+
+void ctp_stm::apply_placeholder(const model::record_batch& batch) {
+    vassert(
+      batch.record_count() > 0, "Record batch must have at least one record");
+    iobuf value;
+    batch.for_each_record([&value](model::record&& r) {
+        value = std::move(r).release_value();
+        return ss::stop_iteration::yes;
+    });
+    auto placeholder = serde::from_iobuf<dl_placeholder>(std::move(value));
+    auto id = placeholder.id;
+    // this assertion is made here rather than inside the state object itself
+    // because the assertion is about the physical content of the log rather
+    // than the computed state.
+    vassert(
+      id.epoch >= _last_seen_epoch,
+      "Observed a non-monotonic epoch sequence {} < {}",
+      id.epoch,
+      _last_seen_epoch);
+    _last_seen_epoch = id.epoch;
+    _state.advance_epoch(id.epoch, batch.header().base_offset);
 }
 
 ss::future<raft::local_snapshot_applied>

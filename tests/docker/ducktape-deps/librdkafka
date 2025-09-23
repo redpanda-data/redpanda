@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -e
 mkdir /opt/librdkafka
-curl -SL "https://github.com/confluentinc/librdkafka/archive/refs/tags/v2.6.1.tar.gz" | tar -xz --strip-components=1 -C /opt/librdkafka
+curl -SL "https://github.com/confluentinc/librdkafka/archive/refs/tags/v2.11.1.tar.gz" | tar -xz --strip-components=1 -C /opt/librdkafka
 cd /opt/librdkafka
-./configure
+./configure --enable-gssapi --enable-curl
 make -j$(nproc)
 make install
 cd /opt/librdkafka/tests

@@ -1,14 +1,13 @@
+import datetime
+import time
+from itertools import islice
+from logging import Logger
+from typing import Iterator, Optional, cast
+
+from azure.storage.blob import BlobClient, BlobServiceClient, BlobType, ContainerClient
 from rptest.archival.s3_client import ObjectMetadata
 from rptest.archival.shared_client_utils import key_to_topic
 from rptest.utils.type_utils import rcast
-
-from azure.storage.blob import BlobClient, BlobServiceClient, BlobType, ContainerClient
-from itertools import islice
-
-import time
-import datetime
-from logging import Logger
-from typing import Iterator, Optional, cast
 
 
 def build_connection_string(

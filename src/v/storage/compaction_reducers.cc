@@ -18,6 +18,7 @@
 #include "model/record_utils.h"
 #include "random/generators.h"
 #include "storage/compacted_index.h"
+#include "storage/compaction_key.h"
 #include "storage/index_state.h"
 #include "storage/logger.h"
 #include "storage/record_batch_utils.h"
@@ -456,7 +457,7 @@ ss::future<ss::stop_iteration> map_building_reducer::maybe_index_record_in_map(
     }
 
     auto key_view = iobuf_to_bytes(r.key());
-    auto key = compaction::enhance_key(type, is_control, key_view);
+    auto key = enhance_key(type, is_control, key_view);
     bool success = co_await _map->put(key, offset);
 
     if (success) {

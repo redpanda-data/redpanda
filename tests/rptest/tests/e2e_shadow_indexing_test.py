@@ -21,8 +21,7 @@ from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkException
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.action_injector import random_process_kills
 from rptest.services.admin import Admin
@@ -30,26 +29,25 @@ from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
-    KgoVerifierRandomConsumer,
     KgoVerifierSeqConsumer,
 )
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import (
+    CHAOS_LOG_ALLOW_LIST,
+    MetricsEndpoint,
     SISettings,
     get_cloud_storage_type,
     make_redpanda_service,
-    CHAOS_LOG_ALLOW_LIST,
-    MetricsEndpoint,
 )
-from rptest.services.utils import LogSearchLocal
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import Scale, wait_until_segments
 from rptest.util import (
+    Scale,
     produce_until_segments,
-    wait_for_removal_of_n_segments,
     wait_for_local_storage_truncate,
+    wait_for_removal_of_n_segments,
+    wait_until_segments,
 )
 from rptest.utils.cluster_topology import (
     ClusterTopology,
@@ -58,9 +56,9 @@ from rptest.utils.cluster_topology import (
 )
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.si_utils import (
-    nodes_report_cloud_segments,
-    BucketView,
     NTP,
+    BucketView,
+    nodes_report_cloud_segments,
     quiesce_uploads,
 )
 
@@ -1111,18 +1109,20 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
             )
         finally:
             producer.stop()
-            producer.wait()
 
-        seq_consumer = KgoVerifierSeqConsumer(
-            self.test_context,
-            self.redpanda,
-            self.topic,
-            0,
-            nodes=self.preallocated_nodes,
-        )
-        seq_consumer.start(clean=False)
-        seq_consumer.wait()
-        self.redpanda.stop_node(self.redpanda.nodes[0])
+        try:
+            seq_consumer = KgoVerifierSeqConsumer(
+                self.test_context,
+                self.redpanda,
+                self.topic,
+                0,
+                nodes=self.preallocated_nodes,
+            )
+            seq_consumer.start(clean=False)
+            seq_consumer.wait()
+            self.redpanda.stop_node(self.redpanda.nodes[0])
+        finally:
+            seq_consumer.stop()
 
     @skip_debug_mode
     @cluster(num_nodes=2)
@@ -1149,7 +1149,6 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
             )
         finally:
             producer.stop()
-            producer.wait()
 
         node = self.redpanda.nodes[0]
         self.redpanda.stop()
@@ -1720,7 +1719,6 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
                 )
             finally:
                 producer.stop()
-                producer.wait()
 
         self.logger.debug(
             "Now check that the things return to normal after traffic shaping is switched off"
@@ -1734,7 +1732,6 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
             )
         finally:
             producer.stop()
-            producer.wait()
 
         node = self.redpanda.nodes[0]
         self.redpanda.stop()

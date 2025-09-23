@@ -25,7 +25,11 @@ namespace cluster_link::replication {
 
 class test_data_source : public data_source {
 public:
-    ss::future<> start() final { return ss::now(); }
+    ss::future<> start(kafka::offset start_offset) final {
+        _start_offset = start_offset;
+        _next_to_consume = start_offset;
+        return ss::now();
+    }
     ss::future<> stop() noexcept final {
         _max_memory.broken();
         return _gate.close();
@@ -174,15 +178,15 @@ TEST_F_CORO(PartitionReplicatorFixture, TestResetOnFailure) {
     RPTEST_REQUIRE_EVENTUALLY_CORO(
       5s, [&] { return _sink->last_replicated_offset() == kafka::offset(99); });
 
-    // initial reset
-    ASSERT_EQ_CORO(_source->num_resets(), 1);
+    // initial state, no resets yet
+    ASSERT_EQ_CORO(_source->num_resets(), 0);
 
     // now fail the replication
     _sink->set_fail_replication(true);
     co_await push_data();
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [&] {
         return _sink->last_replicated_offset() == kafka::offset(99)
-               && _source->num_resets() == 2;
+               && _source->num_resets() == 1;
     });
 
     _sink->set_fail_replication(false);
@@ -190,7 +194,7 @@ TEST_F_CORO(PartitionReplicatorFixture, TestResetOnFailure) {
     // ensure replication is unblocked
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [&] {
         return _sink->last_replicated_offset() == kafka::offset(109)
-               && _source->num_resets() == 2;
+               && _source->num_resets() == 1;
     });
 }
 

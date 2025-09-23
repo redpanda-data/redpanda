@@ -14,6 +14,8 @@ redpanda_test_cc_library(
         "//src/v/cluster/cluster_link/tests:test_lib",
         "//src/v/cluster_link:impl",
         "//src/v/cluster_link:utils",
+        "//src/v/cluster_link/replication/tests:deps_test_impl",
+        "//src/v/config",
         "//src/v/kafka/client/test:cluster_mock",
         "//src/v/kafka/data/rpc",
         "//src/v/kafka/data/rpc/test:test_deps",
@@ -33,6 +35,7 @@ redpanda_cc_gtest(
         "//src/v/cluster",
         "//src/v/cluster/cluster_link/tests:test_lib",
         "//src/v/cluster_link:impl",
+        "//src/v/cluster_link/replication/tests:deps_test_impl",
         "//src/v/model",
         "//src/v/test_utils:gtest",
         "@abseil-cpp//absl/container:flat_hash_map",
@@ -124,6 +127,21 @@ redpanda_cc_gtest(
     deps = [
         ":test_deps",
         "//src/v/cluster_link:impl",
+        "//src/v/config",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "group_mirroring_task",
+    timeout = "short",
+    srcs = [
+        "group_mirroring_task_test.cc",
+    ],
+    deps = [
+        ":test_deps",
+        "//src/v/cluster_link:group_mirroring_task",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
     ],

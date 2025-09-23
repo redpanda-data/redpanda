@@ -70,7 +70,7 @@ FIXTURE_TEST(test_next_epoch, fixture) {
 FIXTURE_TEST(test_fetch_session_basic_operations, fixture) {
     kafka::fetch_session session(kafka::fetch_session_id(123));
     struct tpo {
-        model::ktp ktp;
+        model::kitp ktp;
         model::offset offset;
     };
     std::vector<tpo> expected;
@@ -84,12 +84,14 @@ FIXTURE_TEST(test_fetch_session_basic_operations, fixture) {
 
         expected.push_back(
           tpo{
-            model::ktp{
+            model::kitp{
+              model::topic_id(),
               model::topic(req.topic),
               model::partition_id(req.partitions[0].partition)},
             model::offset(req.partitions[0].fetch_offset)});
         session.partitions().emplace(
-          kafka::fetch_session_partition(req.topic, req.partitions[0]));
+          kafka::fetch_session_partition(
+            model::topic_id{}, req.topic, req.partitions[0]));
     }
 
     BOOST_TEST_MESSAGE("test insertion order iteration");
@@ -99,29 +101,31 @@ FIXTURE_TEST(test_fetch_session_basic_operations, fixture) {
       session.partitions().cend_insertion_order());
 
     for (auto fp : rng) {
-        BOOST_REQUIRE_EQUAL(fp.topic_partition, expected[i].ktp);
+        BOOST_REQUIRE_EQUAL(
+          static_cast<const model::kitp&>(fp.topic_partition), expected[i].ktp);
         BOOST_REQUIRE_EQUAL(fp.fetch_offset, expected[i].offset);
         ++i;
     }
 
     BOOST_TEST_MESSAGE("test lookup");
     for (auto& t : expected) {
-        const auto& key = t.ktp.as_tp_view();
+        const auto& key = t.ktp.as_kitp_view();
         BOOST_REQUIRE(session.partitions().contains(key));
         BOOST_REQUIRE(
           session.partitions().find(key) != session.partitions().end());
     }
 
-    auto not_existing = model::topic_partition(
-      model::topic("123456"), model::partition_id(9999));
+    auto not_existing = model::kitp(
+      model::topic_id(), model::topic("123456"), model::partition_id(9999));
 
-    BOOST_REQUIRE(!session.partitions().contains(not_existing));
+    BOOST_REQUIRE(!session.partitions().contains(not_existing.as_kitp_view()));
     BOOST_REQUIRE(
-      session.partitions().find(not_existing) == session.partitions().end());
+      session.partitions().find(not_existing.as_kitp_view())
+      == session.partitions().end());
 
     BOOST_TEST_MESSAGE("test erase");
 
-    const auto& key = expected[0].ktp.as_tp_view();
+    const auto& key = expected[0].ktp.as_kitp_view();
     auto mem_usage_before = session.mem_usage();
     session.partitions().erase(key);
     BOOST_REQUIRE(!session.partitions().contains(key));

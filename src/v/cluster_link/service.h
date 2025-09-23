@@ -18,8 +18,8 @@
 #include "cluster_link/errc.h"
 #include "cluster_link/fwd.h"
 #include "cluster_link/model/types.h"
+#include "kafka/server/fwd.h"
 #include "model/fundamental.h"
-#include "raft/fundamental.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
@@ -40,6 +40,8 @@ public:
       ss::sharded<cluster::shard_table>* shard_table,
       ss::sharded<cluster::metadata_cache>* metadata_cache,
       cluster::controller* controller,
+      ss::sharded<kafka::group_router>* group_router,
+      ss::sharded<cluster::health_monitor_frontend>* hm_frontend,
       ss::smp_service_group smp_group);
 
     service(const service&) = delete;
@@ -71,6 +73,22 @@ public:
      * @return List of cluster links
      */
     result<chunked_vector<model::metadata>> list_cluster_links();
+    /**
+     * @brief Updates the configuration of a cluster link
+     *
+     * @param name The name of the link
+     * @param cmd The command containing the new configuration
+     * @return Result containing the updated link
+     */
+    ss::future<result<model::metadata>> update_cluster_link(
+      model::name_t name, model::update_cluster_link_configuration_cmd cmd);
+    /**
+     * @brief Delete the cluster link object
+     *
+     * @param name The name of the link
+     * @return nothing on success or an error
+     */
+    ss::future<result<void>> delete_cluster_link(const model::name_t& name);
 
 private:
     void register_notifications();
@@ -87,6 +105,8 @@ private:
     ss::sharded<cluster::shard_table>* _shard_table;
     ss::sharded<cluster::metadata_cache>* _metadata_cache;
     cluster::controller* _controller;
+    ss::sharded<kafka::group_router>* _group_router;
+    ss::sharded<cluster::health_monitor_frontend>* _hm_frontend;
     ss::smp_service_group _smp_group;
     std::unique_ptr<manager> _manager;
     std::vector<ss::deferred_action<ss::noncopyable_function<void()>>>

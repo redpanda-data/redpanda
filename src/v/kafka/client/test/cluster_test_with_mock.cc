@@ -71,7 +71,7 @@ TEST_F(cluster_mock_fixture, TestMetadataCallback) {
       model::node_id(1), net::unresolved_address{"localhost", 9092});
     cluster.start().get();
     auto cid = cluster.register_metadata_cb(
-      [&](const kafka::metadata_response_data&) { callback_invocations++; });
+      [&](const kafka::client::metadata_update&) { callback_invocations++; });
     RPTEST_REQUIRE_EVENTUALLY(30s, [&]() { return callback_invocations >= 5; });
     cluster.unregister_metadata_cb(cid);
 }
@@ -136,7 +136,9 @@ TEST_F(cluster_mock_fixture, TestApiVersionDiscovery) {
 }
 
 TEST_F(cluster_mock_fixture, TestTopicMetadata) {
+    auto cluster_authorized_ops = kafka::cluster_authorized_operations{0x101};
     cluster_mock.register_default_handlers();
+    cluster_mock.set_cluster_authorized_operations(cluster_authorized_ops);
     auto cluster = create_client_cluster();
 
     cluster_mock.add_broker(
@@ -160,4 +162,6 @@ TEST_F(cluster_mock_fixture, TestTopicMetadata) {
     auto auth_ops = topics.authorized_operations_for_topic(
       model::topic_view{"test-topic"});
     EXPECT_EQ(auth_ops.value(), 0x508);
+    EXPECT_EQ(
+      cluster.get_cluster_authorized_operations(), cluster_authorized_ops);
 }

@@ -169,8 +169,14 @@ namespace {
 api_versions_request make_api_versions_request(api_version version) {
     api_versions_request req;
     if (version >= api_version(3)) {
+        /**
+         * In order to work with Kafka brokers this must match the following
+         * regex:
+         *
+         * [a-zA-Z0-9](?:[a-zA-Z0-9\\-.]*[a-zA-Z0-9])?
+         */
         req.data.client_software_name = "redpanda-client";
-        req.data.client_software_version = ss::sstring(redpanda_version());
+        req.data.client_software_version = ss::sstring(redpanda_git_version());
     }
     return req;
 }
@@ -192,33 +198,47 @@ ss::future<> remote_broker::initialize_versions() {
     api_versions_request request;
     request.data.client_software_name = "redpanda-client";
     request.data.client_software_version = ss::sstring(redpanda_version());
-    auto response = co_await _transport->dispatch(
+    auto response_buffer = co_await _transport->dispatch_request_raw_response(
       make_api_versions_request(api_versions_api::max_valid),
       api_versions_api::max_valid);
-
-    // TODO: handle the returned supported version here
-    if (response.data.error_code == error_code::unsupported_version) {
-        auto fallback_version = find_api_versions_request_version(
-          response.data.api_keys);
-        vlog(
-          _logger.info,
-          "Broker does not support API version request version {}, falling "
-          "back to version {}",
-          api_versions_api::max_valid,
-          fallback_version);
-        response = co_await _transport->dispatch(
-          make_api_versions_request(fallback_version), fallback_version);
-    }
-
-    if (response.data.error_code != error_code::none) {
-        vlog(
-          _logger.warn,
-          "Unable to initialize the API versions - {}",
-          std::current_exception());
-        throw broker_error(
-          _node_id,
-          response.data.error_code,
-          "Failed to initialize API versions");
+    /**
+     * Peek for the API versions response error code.
+     */
+    protocol::decoder reader(response_buffer.share());
+    auto resp_ec = kafka::error_code(reader.read_int16());
+    /**
+     * If the broker does not support the requested version of the API versions
+     * request, it will respond with UNSUPPORTED_VERSION error code and the
+     * ApiVersionResponse version 0.
+     *
+     * For more details see: KIP-511
+     */
+    api_versions_response response;
+    if (resp_ec == error_code::none) {
+        response.decode(
+          std::move(response_buffer), api_versions_api::max_valid);
+    } else {
+        // TODO: handle the returned supported version here
+        if (resp_ec == error_code::unsupported_version) {
+            response.decode(std::move(response_buffer), api_version(0));
+            auto fallback_version = find_api_versions_request_version(
+              response.data.api_keys);
+            vlog(
+              _logger.info,
+              "Broker does not support API version request version {}, falling "
+              "back to version {}",
+              api_versions_api::max_valid,
+              fallback_version);
+            response = co_await _transport->dispatch(
+              make_api_versions_request(fallback_version), fallback_version);
+        } else {
+            vlog(
+              _logger.warn,
+              "Unable to initialize the API versions - {}",
+              resp_ec);
+            throw broker_error(
+              _node_id, resp_ec, "Failed to initialize API versions");
+        }
     }
 
     for (auto& api : response.data.api_keys) {

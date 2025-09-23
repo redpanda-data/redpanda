@@ -11,16 +11,20 @@
 
 #pragma once
 
+#include "cluster/fwd.h"
 #include "cluster_link/fwd.h"
 #include "proto/redpanda/core/admin/v2/shadow_link.proto.h"
+#include "redpanda/admin/proxy/client.h"
 
 #include <seastar/core/sharded.hh>
 
 namespace admin {
 class shadow_link_service_impl : public proto::admin::shadow_link_service {
 public:
-    explicit shadow_link_service_impl(
-      ss::sharded<cluster_link::service>* service);
+    shadow_link_service_impl(
+      admin::proxy::client proxy_client,
+      ss::sharded<cluster_link::service>* service,
+      ss::sharded<cluster::metadata_cache>* md_cache);
 
     ss::future<proto::admin::create_shadow_link_response> create_shadow_link(
       serde::pb::rpc::context,
@@ -45,6 +49,21 @@ public:
       serde::pb::rpc::context, proto::admin::fail_over_request) override;
 
 private:
+    /**
+     * @brief Returns a node to redirect the message to
+     *
+     * @param ntp The ntp to find the leader for
+     * @return std::optional<model::node_id> Returns std::nullopt if no
+     * direction necessary, otherwise the node to redirect to
+     * @throws serde::pb::rpc::unavailable_exception if no leader is found for
+     * @p ntp
+     */
+    std::optional<model::node_id> redirect_to(const model::ntp& ntp);
+
+private:
+    admin::proxy::client _proxy_client;
+
     ss::sharded<cluster_link::service>* _service;
+    ss::sharded<cluster::metadata_cache>* _md_cache;
 };
 } // namespace admin

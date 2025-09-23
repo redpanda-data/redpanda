@@ -7,20 +7,16 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections.abc import Callable
-from typing import Any, List, Optional, Dict
-from functools import reduce
-from collections import defaultdict
-import z3
-from threading import Lock
-from abc import ABC, abstractclassmethod
-import os
-import sys
 import random
-
+from abc import ABC, abstractclassmethod
+from collections import defaultdict
 from enum import Enum
+from functools import reduce
 from logging import Logger
-import logging
+from threading import Lock
+from typing import Any, Dict, List, Optional
+
+import z3
 
 TestRunStage = Enum(
     "TestRunStage", ["Startup", "Produce", "Intermediate", "Consume", "Shutdown"]

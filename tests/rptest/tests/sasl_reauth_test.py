@@ -8,22 +8,23 @@
 # by the Apache License, Version 2.0
 
 import time
-import json
+import typing
 from typing import Optional
+
+from ducktape.cluster.cluster import ClusterNode
+from ducktape.utils.util import wait_until
 
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.rpk import RpkTool
-from rptest.services.redpanda import SecurityConfig
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import (
+    MetricSamples,
+    MetricsEndpoint,
+    RedpandaService,
+    SecurityConfig,
+)
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import MetricSamples, MetricsEndpoint, SecurityConfig
 from rptest.util import wait_until_result
-
-from ducktape.utils.util import wait_until
-from ducktape.cluster.cluster import ClusterNode
-
-import typing
 
 EXAMPLE_TOPIC = "foo"
 

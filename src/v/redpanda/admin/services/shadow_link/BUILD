@@ -22,7 +22,9 @@ redpanda_cc_library(
     visibility = ["//src/v/redpanda:__subpackages__"],
     deps = [
         "//proto/redpanda/core/admin/v2:shadow_link_redpanda_proto",
+        "//src/v/cluster",
         "//src/v/cluster_link:fwd",
+        "//src/v/redpanda/admin/proxy:client",
         "//src/v/serde/protobuf:rpc",
         "@seastar",
     ],

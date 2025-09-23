@@ -7,23 +7,23 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import time
-import requests
 import random
+import time
 
-from rptest.services.cluster import cluster
+import ducktape.errors
+import requests
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.utils.util import wait_until
-import ducktape.errors
 
-from rptest.clients.types import TopicSpec
-from rptest.services.admin import Admin
-from rptest.services.redpanda import RedpandaService
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RedpandaService
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.rpk_producer import RpkProducer
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class ListGroupsReplicationFactorTest(RedpandaTest):

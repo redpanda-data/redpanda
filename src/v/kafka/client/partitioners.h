@@ -67,7 +67,7 @@ partitioner default_partitioner(model::partition_id initial);
 
 class partitioners_cache {
 public:
-    void apply_metadata(const metadata_response_data& data);
+    void apply_metadata(const metadata_update& data);
 
     model::partition_id
     partition_for(model::topic_view tv, const record_essence& rec);

@@ -7,30 +7,27 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import random
-from ducktape.utils.util import wait_until
-from rptest.services.cluster import cluster
+
 from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
+from kafkatest.services.kafka import KafkaService
+from kafkatest.services.zookeeper import ZookeeperService
+from kafkatest.version import V_3_0_0
 
 from rptest.clients.default import DefaultClient
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.services.cluster import cluster
+from rptest.services.kafka import KafkaServiceAdapter
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
 )
-from rptest.services.rpk_consumer import RpkConsumer
-from rptest.services.rpk_producer import RpkProducer
-from rptest.services.kafka import KafkaServiceAdapter
 from rptest.services.mirror_maker2 import MirrorMaker2
-
 from rptest.services.redpanda import make_redpanda_service
-from rptest.tests.end_to_end import EndToEndTest
-from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
 from rptest.services.verifiable_consumer import VerifiableConsumer
-from kafkatest.services.kafka import KafkaService
-from kafkatest.services.zookeeper import ZookeeperService
-
-from kafkatest.version import V_3_0_0
+from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
+from rptest.tests.end_to_end import EndToEndTest
 
 
 class MirrorMakerService(EndToEndTest):

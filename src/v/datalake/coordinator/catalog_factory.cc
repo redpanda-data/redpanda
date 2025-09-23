@@ -36,51 +36,40 @@ void throw_if_not_present(const config::property<std::optional<T>>& property) {
     }
 }
 
+std::optional<net::certificate> get_truststore(config::configuration& cfg) {
+    if (cfg.iceberg_rest_catalog_trust().has_value()) {
+        return net::certificate(cfg.iceberg_rest_catalog_trust().value());
+    }
+    if (cfg.iceberg_rest_catalog_trust_file().has_value()) {
+        return net::certificate(
+          std::filesystem::path(cfg.iceberg_rest_catalog_trust_file().value()));
+    }
+    return std::nullopt;
+}
+
+std::optional<net::certificate> get_crl(config::configuration& cfg) {
+    if (cfg.iceberg_rest_catalog_crl().has_value()) {
+        return net::certificate(cfg.iceberg_rest_catalog_crl().value());
+    }
+    if (cfg.iceberg_rest_catalog_crl_file().has_value()) {
+        return net::certificate(
+          std::filesystem::path(cfg.iceberg_rest_catalog_crl_file().value()));
+    }
+    return std::nullopt;
+}
+
 ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
 build_tls_credentials(config::configuration& cfg) {
-    ss::tls::credentials_builder cred_builder;
-    cred_builder.set_cipher_string(
-      {config::tlsv1_2_cipher_string.data(),
-       config::tlsv1_2_cipher_string.size()});
-    cred_builder.set_ciphersuites(
-      {config::tlsv1_3_ciphersuites.data(),
-       config::tlsv1_3_ciphersuites.size()});
-    cred_builder.set_minimum_tls_version(from_config(cfg.tls_min_version()));
-    if (auto trust = cfg.iceberg_rest_catalog_trust(); trust.has_value()) {
-        vlog(datalake_log.info, "Using non-default trust");
-        cred_builder.set_x509_trust(*trust, ss::tls::x509_crt_format::PEM);
-    } else if (auto trust_file = cfg.iceberg_rest_catalog_trust_file();
-               trust_file.has_value()) {
-        auto file = trust_file.value();
-        vlog(datalake_log.info, "Using non-default trust file {}", file);
-        co_await cred_builder.set_x509_trust_file(
-          file, ss::tls::x509_crt_format::PEM);
-    } else {
-        // Use system defaults, might not work on all systems
-        auto ca_file = co_await net::find_ca_file();
-        if (ca_file) {
-            vlog(
-              datalake_log.info,
-              "Using automatically discovered trust file {}",
-              ca_file.value());
-            co_await cred_builder.set_x509_trust_file(
-              ca_file.value(), ss::tls::x509_crt_format::PEM);
-        } else {
-            vlog(
-              datalake_log.info,
-              "Trust file can't be detected automatically, using system "
-              "default");
-            co_await cred_builder.set_system_trust();
-        }
-    }
-    if (auto crl = cfg.iceberg_rest_catalog_crl(); crl.has_value()) {
-        cred_builder.set_x509_crl(*crl, ss::tls::x509_crt_format::PEM);
-    } else if (auto crl_file = cfg.iceberg_rest_catalog_crl_file();
-               crl_file.has_value()) {
-        co_await cred_builder.set_x509_crl_file(
-          *crl_file, ss::tls::x509_crt_format::PEM);
-    }
-    co_return co_await cred_builder.build_reloadable_certificate_credentials();
+    auto creds_builder = co_await net::get_credentials_builder({
+      .truststore = get_truststore(cfg),
+      .k_store = std::nullopt,
+      .crl = get_crl(cfg),
+      .min_tls_version = from_config(cfg.tls_min_version()),
+      .enable_renegotiation = false,
+      .require_client_auth = false,
+    });
+
+    co_return co_await creds_builder.build_reloadable_certificate_credentials();
 };
 struct endpoint_information {
     net::unresolved_address address;

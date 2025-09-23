@@ -12,13 +12,13 @@ import random
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
-from rptest.services.cluster import cluster
-from rptest.services.rpk_producer import RpkProducer
-from rptest.services.compatibility.example_runner import ExampleRunner
 import rptest.services.compatibility.sarama_examples as SaramaExamples
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SecurityConfig
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.compatibility.example_runner import ExampleRunner
+from rptest.services.redpanda import SecurityConfig
+from rptest.services.rpk_producer import RpkProducer
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class SaramaTest(RedpandaTest):
@@ -43,7 +43,7 @@ class SaramaTest(RedpandaTest):
         self._timeout = 30 if self.scale.local else 1200
 
     @cluster(num_nodes=4)
-    @matrix(version=["2.1.0"])
+    @matrix(version=["2.1.0", "2.6.0"])
     def test_sarama_interceptors(self, version):
         sarama_example = SaramaExamples.SaramaInterceptors(
             self.redpanda, version, self.topic
@@ -56,7 +56,7 @@ class SaramaTest(RedpandaTest):
         wait_until(example.condition_met, timeout_sec=self._timeout, backoff_sec=1)
 
     @cluster(num_nodes=4)
-    @matrix(version=["2.1.0"])
+    @matrix(version=["2.1.0", "2.6.0"])
     def test_sarama_http_server(self, version):
         sarama_example = SaramaExamples.SaramaHttpServer(self.redpanda, version)
         example = ExampleRunner(self._ctx, sarama_example, timeout_sec=self._timeout)
@@ -91,7 +91,7 @@ class SaramaTest(RedpandaTest):
         )
 
     @cluster(num_nodes=5)
-    @matrix(version=["2.1.0"])
+    @matrix(version=["2.1.0", "2.6.0"])
     def test_sarama_consumergroup(self, version):
         count = 10 if self.scale.local else 5000
 
@@ -144,7 +144,7 @@ class SaramaScramTest(RedpandaTest):
         super(SaramaScramTest, self).__init__(test_context, security=security)
 
     @cluster(num_nodes=3)
-    @matrix(version=["2.1.0"])
+    @matrix(version=["2.1.0", "2.6.0"])
     def test_sarama_sasl_scram(self, version):
         # Get the SASL SCRAM command and a ducktape node
         cmd = SaramaExamples.sarama_sasl_scram(self.redpanda, version, self.topic)

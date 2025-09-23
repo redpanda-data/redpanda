@@ -27,6 +27,7 @@ using ::cluster_link::model::add_mirror_topic_cmd;
 using ::cluster_link::model::id_t;
 using ::cluster_link::model::metadata;
 using ::cluster_link::model::name_t;
+using ::cluster_link::model::update_cluster_link_configuration_cmd;
 using ::cluster_link::model::update_mirror_topic_properties_cmd;
 using ::cluster_link::model::update_mirror_topic_state_cmd;
 
@@ -91,7 +92,7 @@ frontend::frontend(
 ss::future<errc> frontend::upsert_cluster_link(
   ::cluster_link::model::metadata meta,
   model::timeout_clock::time_point timeout) {
-    if (!cluster_link_active()) {
+    if (!cluster_linking_enabled()) {
         co_return errc::feature_disabled;
     }
     cluster_link_cmd c{cluster::cluster_link_upsert_cmd{0, std::move(meta)}};
@@ -101,7 +102,7 @@ ss::future<errc> frontend::upsert_cluster_link(
 ss::future<errc> frontend::remove_cluster_link(
   ::cluster_link::model::name_t name,
   model::timeout_clock::time_point timeout) {
-    if (!cluster_link_active()) {
+    if (!cluster_linking_enabled()) {
         co_return errc::feature_disabled;
     }
     cluster_link_cmd c{cluster::cluster_link_remove_cmd(std::move(name), 0)};
@@ -110,7 +111,7 @@ ss::future<errc> frontend::remove_cluster_link(
 
 ss::future<errc> frontend::add_mirror_topic(
   id_t id, add_mirror_topic_cmd cmd, model::timeout_clock::time_point timeout) {
-    if (!cluster_link_active()) {
+    if (!cluster_linking_enabled()) {
         co_return errc::feature_disabled;
     }
     cluster_link_cmd c{
@@ -122,7 +123,7 @@ ss::future<errc> frontend::update_mirror_topic_state(
   id_t id,
   update_mirror_topic_state_cmd cmd,
   model::timeout_clock::time_point timeout) {
-    if (!cluster_link_active()) {
+    if (!cluster_linking_enabled()) {
         co_return errc::feature_disabled;
     }
     cluster_link_cmd c{
@@ -134,7 +135,7 @@ ss::future<errc> frontend::update_mirror_topic_properties(
   id_t id,
   update_mirror_topic_properties_cmd cmd,
   model::timeout_clock::time_point timeout) {
-    if (!cluster_link_active()) {
+    if (!cluster_linking_enabled()) {
         co_return errc::feature_disabled;
     }
     cluster_link_cmd c{cluster::cluster_link_update_mirror_topic_properties_cmd(
@@ -142,7 +143,24 @@ ss::future<errc> frontend::update_mirror_topic_properties(
     co_return co_await do_mutation(std::move(c), timeout);
 }
 
+ss::future<errc> frontend::update_cluster_link_configuration(
+  id_t id,
+  update_cluster_link_configuration_cmd cmd,
+  model::timeout_clock::time_point timeout) {
+    if (!cluster_link_active()) {
+        co_return errc::feature_disabled;
+    }
+    cluster_link_cmd c{
+      cluster::cluster_link_update_cluster_link_configuration_cmd(
+        id, std::move(cmd))};
+    co_return co_await do_mutation(std::move(c), timeout);
+}
+
 bool frontend::cluster_link_active() const {
+    return _table->cluster_link_active();
+}
+
+bool frontend::cluster_linking_enabled() const {
     return config::shard_local_cfg().development_enable_cluster_link();
 }
 
@@ -153,6 +171,10 @@ frontend::register_for_updates(notification_callback cb) {
 
 void frontend::unregister_for_updates(notification_id id) {
     _table->unregister_for_updates(id);
+}
+
+std::optional<id_t> frontend::find_link_id_by_name(const name_t& name) const {
+    return _table->find_id_by_name(name);
 }
 
 std::optional<std::reference_wrapper<const metadata>>
@@ -306,6 +328,29 @@ ss::future<errc> frontend::dispatch_mutation_to_remote(
                     .then(
                       [](
                         result<cluster::update_mirror_topic_properties_response>
+                          r) {
+                          if (r.has_error()) {
+                              return result<void>(r.error());
+                          }
+                          return result<void>(r.value().ec);
+                      });
+              },
+              [client, timeout](
+                cluster::cluster_link_update_cluster_link_configuration_cmd
+                  cmd) mutable {
+                  return client
+                    .update_cluster_link_configuration(
+                      cluster::update_cluster_link_configuration_request{
+                        .link_id = cmd.key,
+                        .cmd = std::move(cmd.value),
+                        .timeout = timeout},
+                      rpc::client_opts(timeout))
+                    .then(&rpc::get_ctx_data<
+                          cluster::update_cluster_link_configuration_response>)
+                    .then(
+                      [](
+                        result<
+                          cluster::update_cluster_link_configuration_response>
                           r) {
                           if (r.has_error()) {
                               return result<void>(r.error());
@@ -477,6 +522,24 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
                   return errc::topic_already_being_mirrored;
               }
           }
+          if (cmd.value.metadata.partition_count < 1) {
+              vlog(
+                cluster::clusterlog.warn,
+                "Invalid partition count for topic {} in link {}: {}",
+                cmd.value.topic,
+                meta->get().name,
+                cmd.value.metadata.partition_count);
+              return errc::invalid_update;
+          }
+          if (
+            cmd.value.metadata.replication_factor.has_value()
+            && cmd.value.metadata.replication_factor < 1) {
+              vlog(
+                cluster::clusterlog.warn,
+                "Invalid replication factor: {}",
+                cmd.value.metadata.replication_factor);
+              return errc::invalid_update;
+          }
           return errc::success;
       },
       [this](const cluster::cluster_link_update_mirror_topic_state_cmd& cmd) {
@@ -550,12 +613,38 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
               return errc::invalid_update;
           }
 
-          if (cmd.value.replication_factor < 1) {
+          if (
+            cmd.value.replication_factor.has_value()
+            && cmd.value.replication_factor < 1) {
               vlog(
                 cluster::clusterlog.warn,
                 "Invalid replication factor: {}",
                 cmd.value.replication_factor);
               return errc::invalid_update;
+          }
+
+          return errc::success;
+      },
+      [this](
+        const cluster::cluster_link_update_cluster_link_configuration_cmd&
+          cmd) {
+          if (!_table->find_link_by_id(cmd.key).has_value()) {
+              vlog(
+                cluster::clusterlog.warn,
+                "Attempting to update a non-existant link id {}",
+                cmd.key);
+              return errc::does_not_exist;
+          }
+
+          auto ec = validate_connection_config(cmd.value.connection);
+          if (ec != errc::success) {
+              return ec;
+          }
+
+          ec = validate_metadata_mirroring_config(
+            cmd.value.link_config.topic_metadata_mirroring_cfg);
+          if (ec != errc::success) {
+              return ec;
           }
 
           return errc::success;

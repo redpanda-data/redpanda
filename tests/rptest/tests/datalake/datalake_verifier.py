@@ -7,19 +7,19 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 import random
 import threading
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from time import sleep
 from typing import List, Optional
+
+from confluent_kafka import Consumer, TopicPartition
+
 from rptest.clients.rpk import RpkPartition, RpkTool
 from rptest.services.redpanda import RedpandaService
 from rptest.tests.datalake.query_engine_base import QueryEngineBase
 from rptest.util import wait_until
-
-from confluent_kafka import Consumer
-from confluent_kafka import TopicPartition
 
 
 class DatalakeVerifier:

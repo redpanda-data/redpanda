@@ -8,23 +8,22 @@
 # by the Apache License, Version 2.0
 
 import re
-
-from ducktape.mark import matrix
-from ducktape.utils.util import wait_until
-from rptest.clients.rpk import RpkTool
-from rptest.clients.types import TopicSpec
+from time import sleep
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.default import DefaultClient
-from rptest.services.cluster import cluster
-from rptest.utils.mode_checks import skip_debug_mode
-from time import sleep
-from rptest.services.redpanda import RedpandaService
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
 
-from rptest.transactions.verifiers.compacted_verifier import CompactedVerifier, Workload
-from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.clients.default import DefaultClient
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.metrics_check import MetricCheck
+from rptest.services.redpanda import RedpandaService
+from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.transactions.verifiers.compacted_verifier import CompactedVerifier, Workload
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class CompactionE2EIdempotencyTest(RedpandaTest):
@@ -190,7 +189,8 @@ class CompactionWithRecoveryTest(RedpandaTest, PartitionMovementMixin):
         self.num_moves = 50
         # keep read size low to ensure reads fall within a transaction
         extra_rp_conf = {
-            "raft_recovery_default_read_size": 1024,
+            "raft_recovery_concurrency_per_shard": 16384,
+            "raft_max_recovery_memory": 32 * 1024,
             "log_compaction_interval_ms": 2000,
             "min_cleanable_dirty_ratio": 0.0,
         }

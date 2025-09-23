@@ -1,0 +1,102 @@
+/*
+ * Copyright 2025 Redpanda Data, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+ */
+
+#pragma once
+
+#include "cloud_topics/level_one/metastore/metastore.h"
+#include "config/property.h"
+#include "model/fundamental.h"
+
+#include <seastar/core/gate.hh>
+
+#include <chrono>
+
+namespace cloud_topics {
+
+// Housekeeper is a component responsible for managing retention in cloud
+// topics, primarily for L1 data. There is one housekeeper per CTP and it's
+// managed by the cloud_topics_manager.
+//
+// L1 retention: L1 retention is computed by periodically querying the
+// metastore, the propagating the updated start offset to L0 metadata storage
+// (i.e. l0::ctp_stm). We propagate to L0 so that the fetch path doesn't need to
+// make a RPC in order to service list offset requests. Since we write the data
+// to L0, we rely on the reconciler to actually push the new start offset, since
+// there is an additional Delete Records Kafka RPC that can also advance the
+// start offset for the partition. By centralizing the start offset, we can
+// give read-your-own-write consistency for delete records, and also have a
+// single source of truth for pushing the new start offset to the L1 metastore.
+//
+// L0 retention: This is managed entirely by l0::ctp_stm based on the process
+// the reconciler has made.
+class housekeeper {
+public:
+    // An abstraction for partition metadata storage in L0, this is the source
+    // of truth for the start offset in the partition.
+    class l0_metadata_storage {
+    public:
+        l0_metadata_storage() = default;
+        virtual ~l0_metadata_storage() = default;
+
+        // Update the start offset to the partition, this must be an
+        // idempotent operation.
+        virtual ss::future<>
+        set_start_offset(const model::topic_id_partition&, kafka::offset) = 0;
+    };
+
+    // A wrapper around a source of configuration for a give topic id +
+    // partition.
+    class retention_configuration {
+    public:
+        virtual ~retention_configuration() = default;
+
+        // The amount of bytes to retain in the partition.
+        virtual std::optional<size_t>
+        retention_bytes(const model::topic_id_partition&) = 0;
+
+        // How old of data to retain in the partition.
+        virtual std::optional<std::chrono::milliseconds>
+        retention_duration(const model::topic_id_partition&) = 0;
+    };
+
+    housekeeper(
+      model::topic_id_partition,
+      l0_metadata_storage*,
+      l1::metastore*,
+      retention_configuration*,
+      config::binding<std::chrono::milliseconds> loop_interval);
+
+    // Start the housekeeping loop.
+    ss::future<> start();
+
+    // Stop the housekeeping loop. Must be called before destructing if start
+    // was called.
+    ss::future<> stop();
+
+    // Run a single iteration of the housekeeping loop.
+    //
+    // Public for testing.
+    ss::future<> do_housekeeping();
+
+private:
+    ss::future<> do_loop();
+    ss::future<kafka::offset> do_bytes_retention(size_t size);
+    ss::future<kafka::offset> do_time_retention(std::chrono::milliseconds);
+
+    model::topic_id_partition _tidp;
+    l0_metadata_storage* _l0_metastore;
+    l1::metastore* _l1_metastore;
+    retention_configuration* _config;
+    config::binding<std::chrono::milliseconds> _loop_interval;
+    ss::gate _gate;
+    ss::abort_source _as;
+};
+
+} // namespace cloud_topics

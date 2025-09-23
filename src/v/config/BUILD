@@ -11,6 +11,7 @@ redpanda_cc_library(
         "node_overrides.cc",
         "rest_authn_endpoint.cc",
         "rjson_serialization.cc",
+        "sasl_mechanisms.cc",
         "throughput_control_group.cc",
         "tls_config.cc",
         "types.cc",
@@ -35,6 +36,7 @@ redpanda_cc_library(
         "property.h",
         "rest_authn_endpoint.h",
         "rjson_serialization.h",
+        "sasl_mechanisms.h",
         "seed_server.h",
         "throughput_control_group.h",
         "tls_config.h",
@@ -45,6 +47,7 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/cluster:topic_memory_per_partition_default",
         "//src/v/datalake:partition_spec_parser",
+        "//src/v/thirdparty/openssl",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -53,6 +56,7 @@ redpanda_cc_library(
         "//src/v/features:enterprise_feature_messages",
         "//src/v/json",
         "//src/v/model",
+        "//src/v/net:tls",
         "//src/v/pandaproxy/schema_registry:config",
         "//src/v/security:config",
         "//src/v/serde",

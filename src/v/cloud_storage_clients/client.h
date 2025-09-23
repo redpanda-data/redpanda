@@ -108,8 +108,8 @@ public:
         bool is_truncated = false;
         ss::sstring prefix;
         ss::sstring next_continuation_token;
-        std::vector<list_bucket_item> contents;
-        std::vector<ss::sstring> common_prefixes;
+        chunked_vector<list_bucket_item> contents;
+        chunked_vector<ss::sstring> common_prefixes;
     };
 
     /// A predicate to allow list_objects to collect items selectively, saving

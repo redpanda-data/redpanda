@@ -1049,7 +1049,7 @@ ss::future<list_result> remote::list_objects(
           item_filter);
 
         if (res) {
-            auto list_result = res.value();
+            auto list_result = std::move(res.value());
             // Successful call, prepare for future calls by getting
             // continuation_token if result was truncated
             items_remaining = list_result.is_truncated;
@@ -1126,7 +1126,7 @@ ss::future<list_result> remote::list_objects(
           bucket,
           result->error());
     }
-    co_return *result;
+    co_return std::move(*result);
 }
 
 ss::future<upload_result> remote::upload_object(upload_request upload_request) {

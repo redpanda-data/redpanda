@@ -46,7 +46,7 @@ public:
     friend bool operator==(const uuid_t& u, const uuid_t& v) = default;
     friend std::strong_ordering operator<=>(const uuid_t& u, const uuid_t& v);
 
-    operator ss::sstring() const;
+    operator ss::sstring() const; // NOLINT(*explicit*)
 
     template<typename H>
     friend H AbslHashValue(H h, const uuid_t& u) {
@@ -64,7 +64,7 @@ private:
     explicit uuid_t(const underlying_t& uuid)
       : _uuid(uuid) {}
 
-    underlying_t _uuid;
+    underlying_t _uuid{};
 };
 
 bool operator<(const uuid_t& l, const uuid_t& r);

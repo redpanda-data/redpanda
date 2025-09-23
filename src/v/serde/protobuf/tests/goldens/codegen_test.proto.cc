@@ -142,6 +142,44 @@ void a::apply_field_path_from(std::span<const ss::sstring> path, a* update) {
     }
   }
 }
+std::optional<std::vector<int32_t>> a::convert_field_path_to_numbers(std::span<std::string_view> field_path) const {
+  std::vector<int32_t> numbers;
+  if (convert_field_path_to_numbers(field_path, &numbers)) { return numbers; }
+  return std::nullopt;
+}
+bool a::convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out) {
+  if (field_path.empty()) {
+    return true;
+  }
+  constexpr static auto key_to_field_number = std::to_array<std::pair<std::string_view, bool(*)(decltype(field_path), decltype(out))>>({
+    {"c", [](auto path, auto* out) { out->push_back(1); return c::convert_field_path_to_numbers(path, out); }},
+  });
+  auto fields = std::ranges::equal_range(key_to_field_number, field_path.front(), std::less<>(), [](const auto& pair) { return pair.first; });
+  if (fields.empty()) {
+    return false;
+  }
+  return fields.front().second(field_path.subspan(1), out);
+}
+std::optional<serde::pb::field> a::lookup_field(std::span<int32_t> field_numbers) {
+
+  if (field_numbers.empty()) {
+    return serde::pb::field{.value = static_cast<serde::pb::base_message*>(this)};
+  }
+  serde::pb::field found;
+  switch (field_numbers.front()) {
+  case 1: { // c
+    found.value = &get_c();
+    break;
+  }
+  default:
+    return std::nullopt;
+  }
+  if (field_numbers.size() > 1) {
+    if (!std::holds_alternative<serde::pb::base_message*>(found.value)) { return std::nullopt; }
+    return std::get<serde::pb::base_message*>(found.value)->lookup_field(field_numbers.subspan(1));
+  }
+  return found;
+}
 
 b::b() noexcept = default;
 b::b(b&&) noexcept = default;
@@ -297,6 +335,49 @@ void b::apply_field_path_from(std::span<const ss::sstring> path, b* update) {
     }
   }
 }
+std::optional<std::vector<int32_t>> b::convert_field_path_to_numbers(std::span<std::string_view> field_path) const {
+  std::vector<int32_t> numbers;
+  if (convert_field_path_to_numbers(field_path, &numbers)) { return numbers; }
+  return std::nullopt;
+}
+bool b::convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out) {
+  if (field_path.empty()) {
+    return true;
+  }
+  constexpr static auto key_to_field_number = std::to_array<std::pair<std::string_view, bool(*)(decltype(field_path), decltype(out))>>({
+    {"a", [](auto path, auto* out) { out->push_back(2); return a::convert_field_path_to_numbers(path, out); }},
+    {"c", [](auto path, auto* out) { out->push_back(1); return c::convert_field_path_to_numbers(path, out); }},
+  });
+  auto fields = std::ranges::equal_range(key_to_field_number, field_path.front(), std::less<>(), [](const auto& pair) { return pair.first; });
+  if (fields.empty()) {
+    return false;
+  }
+  return fields.front().second(field_path.subspan(1), out);
+}
+std::optional<serde::pb::field> b::lookup_field(std::span<int32_t> field_numbers) {
+
+  if (field_numbers.empty()) {
+    return serde::pb::field{.value = static_cast<serde::pb::base_message*>(this)};
+  }
+  serde::pb::field found;
+  switch (field_numbers.front()) {
+  case 1: { // c
+    found.value = &get_c();
+    break;
+  }
+  case 2: { // a
+    found.value = &get_a();
+    break;
+  }
+  default:
+    return std::nullopt;
+  }
+  if (field_numbers.size() > 1) {
+    if (!std::holds_alternative<serde::pb::base_message*>(found.value)) { return std::nullopt; }
+    return std::get<serde::pb::base_message*>(found.value)->lookup_field(field_numbers.subspan(1));
+  }
+  return found;
+}
 
 c::c() noexcept = default;
 c::c(c&&) noexcept = default;
@@ -370,6 +451,31 @@ void c::apply_field_path_from(std::span<const ss::sstring> path, c* update) {
     *this = std::move(*update);
     return;
   }
+}
+std::optional<std::vector<int32_t>> c::convert_field_path_to_numbers(std::span<std::string_view> field_path) const {
+  std::vector<int32_t> numbers;
+  if (convert_field_path_to_numbers(field_path, &numbers)) { return numbers; }
+  return std::nullopt;
+}
+bool c::convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out) {
+  std::ignore = out;
+  return field_path.empty();
+}
+std::optional<serde::pb::field> c::lookup_field(std::span<int32_t> field_numbers) {
+
+  if (field_numbers.empty()) {
+    return serde::pb::field{.value = static_cast<serde::pb::base_message*>(this)};
+  }
+  serde::pb::field found;
+  switch (field_numbers.front()) {
+  default:
+    return std::nullopt;
+  }
+  if (field_numbers.size() > 1) {
+    if (!std::holds_alternative<serde::pb::base_message*>(found.value)) { return std::nullopt; }
+    return std::get<serde::pb::base_message*>(found.value)->lookup_field(field_numbers.subspan(1));
+  }
+  return found;
 }
 
 super_duper_secret::super_duper_secret() noexcept = default;
@@ -480,6 +586,44 @@ void super_duper_secret::apply_field_path_from(std::span<const ss::sstring> path
       return apply(path.subspan(1), this, update);
     }
   }
+}
+std::optional<std::vector<int32_t>> super_duper_secret::convert_field_path_to_numbers(std::span<std::string_view> field_path) const {
+  std::vector<int32_t> numbers;
+  if (convert_field_path_to_numbers(field_path, &numbers)) { return numbers; }
+  return std::nullopt;
+}
+bool super_duper_secret::convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out) {
+  if (field_path.empty()) {
+    return true;
+  }
+  constexpr static auto key_to_field_number = std::to_array<std::pair<std::string_view, bool(*)(decltype(field_path), decltype(out))>>({
+    {"value", [](auto path, auto* out) { out->push_back(1); return path.empty(); }},
+  });
+  auto fields = std::ranges::equal_range(key_to_field_number, field_path.front(), std::less<>(), [](const auto& pair) { return pair.first; });
+  if (fields.empty()) {
+    return false;
+  }
+  return fields.front().second(field_path.subspan(1), out);
+}
+std::optional<serde::pb::field> super_duper_secret::lookup_field(std::span<int32_t> field_numbers) {
+
+  if (field_numbers.empty()) {
+    return serde::pb::field{.value = static_cast<serde::pb::base_message*>(this)};
+  }
+  serde::pb::field found;
+  switch (field_numbers.front()) {
+  case 1: { // value
+    found.value = get_value();
+    break;
+  }
+  default:
+    return std::nullopt;
+  }
+  if (field_numbers.size() > 1) {
+    if (!std::holds_alternative<serde::pb::base_message*>(found.value)) { return std::nullopt; }
+    return std::get<serde::pb::base_message*>(found.value)->lookup_field(field_numbers.subspan(1));
+  }
+  return found;
 }
 
 mask_wrapper::mask_wrapper() noexcept = default;
@@ -597,6 +741,44 @@ void mask_wrapper::apply_field_path_from(std::span<const ss::sstring> path, mask
       return apply(path.subspan(1), this, update);
     }
   }
+}
+std::optional<std::vector<int32_t>> mask_wrapper::convert_field_path_to_numbers(std::span<std::string_view> field_path) const {
+  std::vector<int32_t> numbers;
+  if (convert_field_path_to_numbers(field_path, &numbers)) { return numbers; }
+  return std::nullopt;
+}
+bool mask_wrapper::convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out) {
+  if (field_path.empty()) {
+    return true;
+  }
+  constexpr static auto key_to_field_number = std::to_array<std::pair<std::string_view, bool(*)(decltype(field_path), decltype(out))>>({
+    {"mask", [](auto path, auto* out) { out->push_back(1); return path.empty(); }},
+  });
+  auto fields = std::ranges::equal_range(key_to_field_number, field_path.front(), std::less<>(), [](const auto& pair) { return pair.first; });
+  if (fields.empty()) {
+    return false;
+  }
+  return fields.front().second(field_path.subspan(1), out);
+}
+std::optional<serde::pb::field> mask_wrapper::lookup_field(std::span<int32_t> field_numbers) {
+
+  if (field_numbers.empty()) {
+    return serde::pb::field{.value = static_cast<serde::pb::base_message*>(this)};
+  }
+  serde::pb::field found;
+  switch (field_numbers.front()) {
+  case 1: { // mask
+    found.value = get_mask();
+    break;
+  }
+  default:
+    return std::nullopt;
+  }
+  if (field_numbers.size() > 1) {
+    if (!std::holds_alternative<serde::pb::base_message*>(found.value)) { return std::nullopt; }
+    return std::get<serde::pb::base_message*>(found.value)->lookup_field(field_numbers.subspan(1));
+  }
+  return found;
 }
 
 well_known_protos::well_known_protos() noexcept = default;
@@ -1177,6 +1359,114 @@ void well_known_protos::apply_field_path_from(std::span<const ss::sstring> path,
     }
   }
 }
+std::optional<std::vector<int32_t>> well_known_protos::convert_field_path_to_numbers(std::span<std::string_view> field_path) const {
+  std::vector<int32_t> numbers;
+  if (convert_field_path_to_numbers(field_path, &numbers)) { return numbers; }
+  return std::nullopt;
+}
+bool well_known_protos::convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out) {
+  if (field_path.empty()) {
+    return true;
+  }
+  constexpr static auto key_to_field_number = std::to_array<std::pair<std::string_view, bool(*)(decltype(field_path), decltype(out))>>({
+    {"duration_map", [](auto path, auto* out) { out->push_back(3); return path.empty(); }},
+    {"field_mask_map", [](auto path, auto* out) { out->push_back(6); return path.empty(); }},
+    {"repeated_duration", [](auto path, auto* out) { out->push_back(2); return path.empty(); }},
+    {"repeated_field_mask", [](auto path, auto* out) { out->push_back(5); return path.empty(); }},
+    {"repeated_timestamp", [](auto path, auto* out) { out->push_back(8); return path.empty(); }},
+    {"single_duration", [](auto path, auto* out) { out->push_back(1); return path.empty(); }},
+    {"single_field_mask", [](auto path, auto* out) { out->push_back(4); return path.empty(); }},
+    {"single_timestamp", [](auto path, auto* out) { out->push_back(7); return path.empty(); }},
+    {"timestamp_map", [](auto path, auto* out) { out->push_back(9); return path.empty(); }},
+  });
+  auto fields = std::ranges::equal_range(key_to_field_number, field_path.front(), std::less<>(), [](const auto& pair) { return pair.first; });
+  if (fields.empty()) {
+    return false;
+  }
+  return fields.front().second(field_path.subspan(1), out);
+}
+std::optional<serde::pb::field> well_known_protos::lookup_field(std::span<int32_t> field_numbers) {
+
+  if (field_numbers.empty()) {
+    return serde::pb::field{.value = static_cast<serde::pb::base_message*>(this)};
+  }
+  serde::pb::field found;
+  switch (field_numbers.front()) {
+  case 1: { // single_duration
+    found.value = get_single_duration();
+    break;
+  }
+  case 2: { // repeated_duration
+    struct repeated_duration_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<absl::Duration>* value;
+    };
+    auto value = std::make_unique<repeated_duration_field_value>();
+    value->value = &get_repeated_duration();
+    found.value = std::move(value);
+    break;
+  }
+  case 3: { // duration_map
+    struct duration_map_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<ss::sstring, absl::Duration>* value;
+    };
+    auto value = std::make_unique<duration_map_field_value>();
+    value->value = &get_duration_map();
+    found.value = std::move(value);
+    break;
+  }
+  case 4: { // single_field_mask
+    found.value = get_single_field_mask();
+    break;
+  }
+  case 5: { // repeated_field_mask
+    struct repeated_field_mask_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<serde::pb::field_mask>* value;
+    };
+    auto value = std::make_unique<repeated_field_mask_field_value>();
+    value->value = &get_repeated_field_mask();
+    found.value = std::move(value);
+    break;
+  }
+  case 6: { // field_mask_map
+    struct field_mask_map_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<ss::sstring, serde::pb::field_mask>* value;
+    };
+    auto value = std::make_unique<field_mask_map_field_value>();
+    value->value = &get_field_mask_map();
+    found.value = std::move(value);
+    break;
+  }
+  case 7: { // single_timestamp
+    found.value = get_single_timestamp();
+    break;
+  }
+  case 8: { // repeated_timestamp
+    struct repeated_timestamp_field_value : public serde::pb::field::repeated_value {
+      chunked_vector<absl::Time>* value;
+    };
+    auto value = std::make_unique<repeated_timestamp_field_value>();
+    value->value = &get_repeated_timestamp();
+    found.value = std::move(value);
+    break;
+  }
+  case 9: { // timestamp_map
+    struct timestamp_map_field_value : public serde::pb::field::map_value {
+      chunked_hash_map<ss::sstring, absl::Time>* value;
+    };
+    auto value = std::make_unique<timestamp_map_field_value>();
+    value->value = &get_timestamp_map();
+    found.value = std::move(value);
+    break;
+  }
+  default:
+    return std::nullopt;
+  }
+  if (field_numbers.size() > 1) {
+    if (!std::holds_alternative<serde::pb::base_message*>(found.value)) { return std::nullopt; }
+    return std::get<serde::pb::base_message*>(found.value)->lookup_field(field_numbers.subspan(1));
+  }
+  return found;
+}
 
 say_greeting_request::say_greeting_request() noexcept = default;
 say_greeting_request::say_greeting_request(say_greeting_request&&) noexcept = default;
@@ -1286,6 +1576,44 @@ void say_greeting_request::apply_field_path_from(std::span<const ss::sstring> pa
       return apply(path.subspan(1), this, update);
     }
   }
+}
+std::optional<std::vector<int32_t>> say_greeting_request::convert_field_path_to_numbers(std::span<std::string_view> field_path) const {
+  std::vector<int32_t> numbers;
+  if (convert_field_path_to_numbers(field_path, &numbers)) { return numbers; }
+  return std::nullopt;
+}
+bool say_greeting_request::convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out) {
+  if (field_path.empty()) {
+    return true;
+  }
+  constexpr static auto key_to_field_number = std::to_array<std::pair<std::string_view, bool(*)(decltype(field_path), decltype(out))>>({
+    {"greeting", [](auto path, auto* out) { out->push_back(1); return path.empty(); }},
+  });
+  auto fields = std::ranges::equal_range(key_to_field_number, field_path.front(), std::less<>(), [](const auto& pair) { return pair.first; });
+  if (fields.empty()) {
+    return false;
+  }
+  return fields.front().second(field_path.subspan(1), out);
+}
+std::optional<serde::pb::field> say_greeting_request::lookup_field(std::span<int32_t> field_numbers) {
+
+  if (field_numbers.empty()) {
+    return serde::pb::field{.value = static_cast<serde::pb::base_message*>(this)};
+  }
+  serde::pb::field found;
+  switch (field_numbers.front()) {
+  case 1: { // greeting
+    found.value = get_greeting();
+    break;
+  }
+  default:
+    return std::nullopt;
+  }
+  if (field_numbers.size() > 1) {
+    if (!std::holds_alternative<serde::pb::base_message*>(found.value)) { return std::nullopt; }
+    return std::get<serde::pb::base_message*>(found.value)->lookup_field(field_numbers.subspan(1));
+  }
+  return found;
 }
 
 say_greeting_response::say_greeting_response() noexcept = default;
@@ -1397,6 +1725,44 @@ void say_greeting_response::apply_field_path_from(std::span<const ss::sstring> p
     }
   }
 }
+std::optional<std::vector<int32_t>> say_greeting_response::convert_field_path_to_numbers(std::span<std::string_view> field_path) const {
+  std::vector<int32_t> numbers;
+  if (convert_field_path_to_numbers(field_path, &numbers)) { return numbers; }
+  return std::nullopt;
+}
+bool say_greeting_response::convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out) {
+  if (field_path.empty()) {
+    return true;
+  }
+  constexpr static auto key_to_field_number = std::to_array<std::pair<std::string_view, bool(*)(decltype(field_path), decltype(out))>>({
+    {"response", [](auto path, auto* out) { out->push_back(1); return path.empty(); }},
+  });
+  auto fields = std::ranges::equal_range(key_to_field_number, field_path.front(), std::less<>(), [](const auto& pair) { return pair.first; });
+  if (fields.empty()) {
+    return false;
+  }
+  return fields.front().second(field_path.subspan(1), out);
+}
+std::optional<serde::pb::field> say_greeting_response::lookup_field(std::span<int32_t> field_numbers) {
+
+  if (field_numbers.empty()) {
+    return serde::pb::field{.value = static_cast<serde::pb::base_message*>(this)};
+  }
+  serde::pb::field found;
+  switch (field_numbers.front()) {
+  case 1: { // response
+    found.value = get_response();
+    break;
+  }
+  default:
+    return std::nullopt;
+  }
+  if (field_numbers.size() > 1) {
+    if (!std::holds_alternative<serde::pb::base_message*>(found.value)) { return std::nullopt; }
+    return std::get<serde::pb::base_message*>(found.value)->lookup_field(field_numbers.subspan(1));
+  }
+  return found;
+}
 
 void enum_from_proto(iobuf_parser* p, corpus* e) {
   auto v = serde::pb::read_varint<int32_t, serde::pb::zigzag::no>(p);
@@ -1418,7 +1784,7 @@ void enum_from_proto(iobuf_parser* p, corpus* e) {
 void enum_to_proto(const corpus& e, iobuf* buf) {
   serde::pb::write_varint<int32_t, serde::pb::zigzag::no>(static_cast<int32_t>(e), buf);
 }
-std::string_view enum_to_string(const corpus& e) {
+static_str enum_to_string(const corpus& e) {
   switch (e) {
   case corpus::unspecified:
     return "CORPUS_UNSPECIFIED";
@@ -1514,7 +1880,7 @@ void enum_from_proto(iobuf_parser* p, protobuf3_test* e) {
 void enum_to_proto(const protobuf3_test& e, iobuf* buf) {
   serde::pb::write_varint<int32_t, serde::pb::zigzag::no>(static_cast<int32_t>(e), buf);
 }
-std::string_view enum_to_string(const protobuf3_test& e) {
+static_str enum_to_string(const protobuf3_test& e) {
   switch (e) {
   case protobuf3_test::unspecified:
     return "PROTOBUF3_TEST_UNSPECIFIED";
@@ -1579,7 +1945,7 @@ void enum_from_proto(iobuf_parser* p, proto3_test* e) {
 void enum_to_proto(const proto3_test& e, iobuf* buf) {
   serde::pb::write_varint<int32_t, serde::pb::zigzag::no>(static_cast<int32_t>(e), buf);
 }
-std::string_view enum_to_string(const proto3_test& e) {
+static_str enum_to_string(const proto3_test& e) {
   switch (e) {
   case proto3_test::unspecified:
     return "PROTO3_TEST_UNSPECIFIED";

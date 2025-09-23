@@ -7,22 +7,21 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 import threading
-from concurrent import futures
 import time
+from collections import defaultdict
+from concurrent import futures
+from concurrent.futures import ThreadPoolExecutor
 
-from ducktape.mark import matrix
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from rptest.services.admin import Admin
 import confluent_kafka as ck
-from rptest.services.failure_injector import FailureSpec
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.node_operations import FailureInjectorBackgroundThread
 
 

@@ -73,7 +73,7 @@ TEST_F(state_removal_test, remove_persistent_state_test_no_snapshot) {
 
     auto res = replicate_random_batches().get();
     ASSERT_TRUE(res.has_value());
-    assert_logs_equal().get();
+    ASSERT_TRUE(assert_logs_equal().get());
     auto& node = nodes().begin()->second;
 
     ASSERT_FALSE(is_group_state_cleared(*node));
@@ -91,7 +91,7 @@ TEST_F(state_removal_test, remove_persistent_state_test_with_snapshot) {
     auto res = replicate_random_batches().get();
     ASSERT_TRUE(res.has_value());
 
-    assert_logs_equal().get();
+    ASSERT_TRUE(assert_logs_equal().get());
     auto& node = nodes().begin()->second;
     node->raft()
       ->write_snapshot(
@@ -117,7 +117,7 @@ TEST_F(state_removal_test, reset_learner_state) {
     ASSERT_TRUE(res.has_value());
 
     wait_for_committed_offset(res.value().last_offset, 5s).get();
-    assert_logs_equal().get();
+    ASSERT_TRUE(assert_logs_equal().get());
 
     auto& leader = node(leader_id);
     auto follower_id_opt = random_follower_id();
@@ -147,7 +147,7 @@ TEST_F(state_removal_test, reset_non_learner_state) {
     ASSERT_TRUE(res.has_value());
 
     wait_for_committed_offset(res.value().last_offset, 5s).get();
-    assert_logs_equal().get();
+    ASSERT_TRUE(assert_logs_equal().get());
 
     auto& leader = node(leader_id);
     auto follower_id_opt = random_follower_id();

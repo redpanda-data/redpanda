@@ -1,5 +1,4 @@
-from setuptools import find_packages
-from setuptools import setup
+from setuptools import find_packages, setup
 
 setup(
     name="rptest",
@@ -63,6 +62,7 @@ setup(
         "databricks-sql-connector==4.0.2",
         "duckdb==1.3.1",
         "connect-python==0.4.2",
+        "avro==1.12.0",
     ],
     scripts=[],
 )

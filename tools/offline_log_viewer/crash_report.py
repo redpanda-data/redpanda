@@ -1,5 +1,6 @@
-from reader import Reader
 from typing import Any
+
+from reader import Reader
 
 
 def decode_crash_report(path: str) -> dict[str, Any]:

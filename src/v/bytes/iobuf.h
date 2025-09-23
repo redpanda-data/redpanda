@@ -124,6 +124,7 @@ public:
      * Since this call performs zero-copy operations, the sharing-mutation
      * caveat in the class comment applies.
      */
+    iobuf share();
     iobuf share(size_t pos, size_t len);
 
     /**

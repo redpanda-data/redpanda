@@ -186,6 +186,10 @@ ss::future<> controller::wire_up() {
             ss::sharded_parameter(
               [] { return config::shard_local_cfg().sasl_mechanisms.bind(); }),
             ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .sasl_mechanisms_overrides.bind();
+            }),
+            ss::sharded_parameter([] {
                 return config::shard_local_cfg().http_authentication.bind();
             }),
             ss::sharded_parameter([] {
@@ -531,6 +535,10 @@ ss::future<> controller::start(
       }),
       ss::sharded_parameter(
         [] { return config::shard_local_cfg().retention_local_strict.bind(); }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .controller_backend_reconciliation_concurrency.bind();
+      }),
       _scheduling_group,
       std::ref(_as));
 

@@ -59,7 +59,7 @@ public:
       ss::scheduling_group raft_send_sg,
       ss::scheduling_group raft_heartbeats_sched_group,
       config_provider_fn,
-      recovery_memory_quota::config_provider_fn recovery_mem_cfg,
+      config::binding<std::optional<size_t>> max_recovery_memory,
       ss::sharded<rpc::connection_cache>& clients,
       ss::sharded<storage::api>& storage,
       ss::sharded<coordinated_recovery_throttle>&,

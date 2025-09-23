@@ -15,11 +15,18 @@
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/sharded.hh>
 
 #include <expected>
 
+using namespace std::chrono_literals;
+
 namespace cloud_io {
 class remote;
+}
+
+namespace cluster {
+class health_monitor_frontend;
 }
 
 namespace cloud_topics {
@@ -132,9 +139,9 @@ struct level_zero_gc_config {
      * polling worker from spinning. The throttling policy is very crude, and
      * will need to be revisited, but should keep things in check for now.
      */
-    std::chrono::milliseconds deletion_grace_period;
-    std::chrono::milliseconds throttle_progress;
-    std::chrono::milliseconds throttle_no_progress;
+    std::chrono::milliseconds deletion_grace_period{10s};
+    std::chrono::milliseconds throttle_progress{2s};
+    std::chrono::milliseconds throttle_no_progress{10s};
 };
 
 class level_zero_gc {
@@ -205,6 +212,7 @@ public:
     level_zero_gc(
       cloud_io::remote*,
       cloud_storage_clients::bucket_name,
+      seastar::sharded<cluster::health_monitor_frontend>*,
       level_zero_gc_config = {});
 
     /*

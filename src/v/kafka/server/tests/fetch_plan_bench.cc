@@ -18,11 +18,15 @@
 #include "kafka/server/handlers/fetch.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "random/generators.h"
+#include "model/namespace.h"
 #include "redpanda/tests/fixture.h"
 #include "security/acl.h"
 
 #include <seastar/testing/perf_tests.hh>
+
+#include <fmt/core.h>
+
+#include <string>
 
 static ss::logger fpt_logger("fpt_test");
 
@@ -47,14 +51,13 @@ struct fixture {
     }
 };
 
+constexpr kafka::api_version topic_names{11};
+constexpr kafka::api_version topic_ids{13};
+
 static constexpr size_t topic_name_length = 30;
-#ifdef SEASTAR_DEFAULT_ALLOCATOR
-static constexpr size_t max_partition_count = 100;
-#else
-static constexpr size_t max_partition_count = 1000;
-#endif
 
 struct test_args {
+    kafka::api_version fetch_version{topic_names};
     size_t topic_count;
     size_t partitions_per_topic;
     bool use_authz;
@@ -99,22 +102,26 @@ struct fetch_plan : redpanda_thread_fixture {
         }
 
         _args = args;
-        auto [tcount, pcount, use_authz] = args;
+        auto [api_version, tcount, pcount, use_authz] = args;
 
         co_await wait_for_controller_leadership();
 
         _state.emplace();
 
-        co_await ss::parallel_for_each(boost::irange(tcount), [&, this](int) {
-            auto name = model::topic(
-              random_generators::gen_alphanum_string(topic_name_length));
-            _state->topics.push_back(name);
+        co_await ss::parallel_for_each(boost::irange(tcount), [&, this](int i) {
+            constexpr auto topic_name_format = "topic-{:05}-";
+            auto name = fmt::format(topic_name_format, i);
+            vassert(name.size() <= topic_name_length, "cannot fit name");
+            name += std::string(topic_name_length - name.size(), 'x');
+            vassert(name.size() == topic_name_length, "huh");
+            model::topic topic{name};
+            _state->topics.push_back(topic);
             return add_topic(
-              model::topic_namespace_view(model::kafka_namespace, name),
+              model::topic_namespace_view(model::kafka_namespace, topic),
               pcount);
         });
 
-        auto fetch_req = make_fetch_req();
+        auto fetch_req = make_fetch_req(api_version);
 
         // we need to share a connection among any requests here since the
         // session cache is associated with a connection
@@ -132,7 +139,8 @@ struct fetch_plan : redpanda_thread_fixture {
         // in the session cache
         kafka::fetch_session_id sess_id;
         {
-            auto rctx = make_request_context(make_fetch_req(), header, conn);
+            auto rctx = make_request_context(
+              make_fetch_req(api_version), header, conn);
             // set up a fetch session
             auto ctx = rctx.fetch_sessions().maybe_get_session(fetch_req);
             vassert(
@@ -206,7 +214,7 @@ struct fetch_plan : redpanda_thread_fixture {
         co_return *_state;
     }
 
-    kafka::fetch_request make_fetch_req() {
+    kafka::fetch_request make_fetch_req(kafka::api_version api_version) {
         // create a request
         kafka::fetch_request_data frq_data;
         frq_data.replica_id = kafka::client::consumer_replica_id;
@@ -220,7 +228,16 @@ struct fetch_plan : redpanda_thread_fixture {
         for (auto& topic : _state->topics) {
             // make the fetch topic
             kafka::fetch_topic ft;
-            ft.topic = topic;
+            if (api_version >= kafka::api_version{13}) {
+                ft.topic_id = app.metadata_cache.local()
+                                .get_topic_metadata_ref(
+                                  {model::kafka_namespace, topic})
+                                ->get()
+                                .get_configuration()
+                                .tp_id.value();
+            } else {
+                ft.topic = topic;
+            }
 
             // add the partitions to the fetch request
             for (size_t pid = 0; pid < _args.partitions_per_topic; pid++) {
@@ -239,7 +256,11 @@ struct fetch_plan : redpanda_thread_fixture {
         return kafka::fetch_request{std::move(frq_data)};
     };
 
-    ss::future<size_t> run_bench(size_t tcount, size_t pcount, bool authz) {
+    ss::future<size_t> run_bench(
+      kafka::api_version api_version,
+      size_t tcount,
+      size_t pcount,
+      bool authz) {
 #ifdef NDEBUG
         const size_t iters = 1000000 / (tcount * pcount);
 #else
@@ -247,7 +268,11 @@ struct fetch_plan : redpanda_thread_fixture {
         const size_t iters = 1;
 #endif
 
-        auto& state = co_await init_bench({tcount, pcount, authz});
+        auto& state = co_await init_bench(
+          {.fetch_version = api_version,
+           .topic_count = tcount,
+           .partitions_per_topic = pcount,
+           .use_authz = authz});
 
         perf_tests::start_measuring_time();
         for (size_t i = 0; i < iters; i++) {
@@ -266,16 +291,40 @@ struct fetch_plan : redpanda_thread_fixture {
     }
 };
 
-PERF_TEST_F(fetch_plan, t1p1_no_auth) { return run_bench(1, 1, false); }
-PERF_TEST_F(fetch_plan, t1p1_yes_auth) { return run_bench(1, 1, true); }
-PERF_TEST_F(fetch_plan, t1p100_no_auth) { return run_bench(1, 100, false); }
-PERF_TEST_F(fetch_plan, t1p100_yes_auth) { return run_bench(1, 100, true); }
-PERF_TEST_F(fetch_plan, t100p1_no_auth) { return run_bench(100, 1, false); }
-PERF_TEST_F(fetch_plan, t100p1_yes_auth) { return run_bench(100, 1, true); }
-
-PERF_TEST_F(fetch_plan, max_no_auth) {
-    return run_bench(1, max_partition_count, false);
+PERF_TEST_F(fetch_plan, t1p1_no_auth) {
+    return run_bench(topic_names, 1, 1, false);
 }
-PERF_TEST_F(fetch_plan, max_yes_auth) {
-    return run_bench(1, max_partition_count, true);
+PERF_TEST_F(fetch_plan, t1p1_yes_auth) {
+    return run_bench(topic_names, 1, 1, true);
+}
+PERF_TEST_F(fetch_plan, t1p100_no_auth) {
+    return run_bench(topic_names, 1, 100, false);
+}
+PERF_TEST_F(fetch_plan, t1p100_yes_auth) {
+    return run_bench(topic_names, 1, 100, true);
+}
+PERF_TEST_F(fetch_plan, t100p1_no_auth) {
+    return run_bench(topic_names, 100, 1, false);
+}
+PERF_TEST_F(fetch_plan, t100p1_yes_auth) {
+    return run_bench(topic_names, 100, 1, true);
+}
+
+PERF_TEST_F(fetch_plan, t1p1_no_auth_ids) {
+    return run_bench(topic_ids, 1, 1, false);
+}
+PERF_TEST_F(fetch_plan, t1p1_yes_auth_ids) {
+    return run_bench(topic_ids, 1, 1, true);
+}
+PERF_TEST_F(fetch_plan, t1p100_no_auth_ids) {
+    return run_bench(topic_ids, 1, 100, false);
+}
+PERF_TEST_F(fetch_plan, t1p100_yes_auth_ids) {
+    return run_bench(topic_ids, 1, 100, true);
+}
+PERF_TEST_F(fetch_plan, t100p1_no_auth_ids) {
+    return run_bench(topic_ids, 100, 1, false);
+}
+PERF_TEST_F(fetch_plan, t100p1_yes_auth_ids) {
+    return run_bench(topic_ids, 100, 1, true);
 }

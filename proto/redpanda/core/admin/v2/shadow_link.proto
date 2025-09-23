@@ -213,8 +213,11 @@ message TopicMetadataSyncOptions {
     // How often to sync metadata
     // If 0 provided, defaults to 30 seconds
     google.protobuf.Duration interval = 1;
-    // The topic filters to use
-    repeated NameFilter topic_filters = 2;
+    // List of filters that indicate which topics should be automatically
+    // created as shadow topics on the shadow cluster.  This only controls
+    // automatic creation of shadow topics and does not effect the state of the
+    // mirror topic once it is created.
+    repeated NameFilter auto_create_shadow_topic_filters = 2;
     // Additional topic properties to shadow
     // Partition count, `max.message.bytes`, `cleanup.policy` and
     // `timestamp.type` will always be replicated

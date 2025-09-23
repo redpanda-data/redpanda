@@ -741,4 +741,21 @@ struct convert<config::audit_failure_policy> {
     }
 };
 
+template<>
+struct convert<model::kafka_batch_validation_mode> {
+    using type = model::kafka_batch_validation_mode;
+
+    static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
+
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+        auto mode = model::kafka_batch_validation_mode_from_string(value);
+        if (!mode) {
+            return false;
+        }
+        rhs = mode.value();
+        return true;
+    }
+};
+
 } // namespace YAML

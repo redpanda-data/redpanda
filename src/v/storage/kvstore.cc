@@ -421,7 +421,7 @@ ss::future<> kvstore::recover() {
 
     auto segments = co_await recover_segments(
       partition_path(_ntpc),
-      _ntpc.is_compacted(),
+      _ntpc.is_locally_compacted(),
       [] { return std::nullopt; },
       _as,
       config::shard_local_cfg().storage_read_buffer_size(),

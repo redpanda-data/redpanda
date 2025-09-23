@@ -17,6 +17,7 @@
 #include "ssx/async_algorithm.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
+#include "storage/compaction_key.h"
 #include "storage/logger.h"
 #include "storage/segment_utils.h"
 #include "utils/vint.h"
@@ -202,7 +203,7 @@ ss::future<> spill_key_index::index(
        b = std::move(b),
        base_offset,
        delta]() {
-          auto key = compaction::enhance_key(batch_type, is_control_batch, b);
+          auto key = enhance_key(batch_type, is_control_batch, b);
           if (auto it = _midx.find(key); it != _midx.end()) {
               auto& pair = it->second;
               // must use both base+delta, since we only want to keep the

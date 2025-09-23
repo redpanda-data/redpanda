@@ -236,6 +236,10 @@ ss::future<response_t> cluster_mock::handle_metadata_request(
     }
 
     r_data.controller_id = _controller_id.value_or(_brokers.begin()->first);
+    r_data.cluster_authorized_operations
+      = md_req.data.include_cluster_authorized_operations
+          ? _cluster_authorized_operations
+          : kafka::cluster_authorized_operations_not_set;
 
     co_return metadata_response{.data = std::move(r_data)};
 }

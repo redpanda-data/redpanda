@@ -1,0 +1,13 @@
+# A typechecker and LSP from Meta written in Rust and very fast.
+# Docs: https://pyrefly.org/
+# It's still alpha, but I'm giving it a go and finding it quite capable so far
+# We should switch to a pyproject.yaml file and then we can embed these settings
+# into there... Our settings are the defaults, but we add `typings` to our search
+# path to pick up our ducktape typings.
+project-includes = ["**/*"]
+project-excludes = [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/*venv/**/*",
+]
+search-path = ["./typings"]

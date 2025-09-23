@@ -7,16 +7,17 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from re import sub
-from ducktape.tests.test import TestContext
-from ducktape.services.service import Service
-from ducktape.utils.util import wait_until
-import requests
 import dataclasses
-from dataclasses import dataclass, asdict, fields
-from typing import List, Optional, Dict, Any
-from enum import Enum
 import json
+from dataclasses import dataclass, fields
+from enum import Enum
+from re import sub
+from typing import List, Optional
+
+import requests
+from ducktape.services.service import Service
+from ducktape.tests.test import TestContext
+from ducktape.utils.util import wait_until
 
 
 def to_json_case(input_str: str):

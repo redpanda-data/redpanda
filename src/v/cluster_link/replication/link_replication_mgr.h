@@ -32,19 +32,20 @@ public:
 
     ss::future<> stop();
 
-    void start_replicator(model::ntp, model::term_id);
+    void start_replicator(::model::ntp, ::model::term_id);
     // term is optional because a replica being unmanaged out of the shard
     // can no longer has a term that we can access.
-    void stop_replicator(model::ntp, std::optional<model::term_id>);
+    void stop_replicator(::model::ntp, std::optional<::model::term_id>);
 
 private:
-    ss::future<> do_start_replicator(model::ntp, model::term_id);
-    ss::future<> do_stop_replicator(model::ntp, std::optional<model::term_id>);
+    ss::future<> do_start_replicator(::model::ntp, ::model::term_id);
+    ss::future<>
+      do_stop_replicator(::model::ntp, std::optional<::model::term_id>);
     ss::scheduling_group _sg;
     std::unique_ptr<data_source_factory> _source_factory;
     std::unique_ptr<data_sink_factory> _sink_factory;
     ssx::work_queue _queue;
-    chunked_hash_map<model::ntp, std::unique_ptr<partition_replicator>>
+    chunked_hash_map<::model::ntp, std::unique_ptr<partition_replicator>>
       _replicators;
     ss::gate _gate;
 };

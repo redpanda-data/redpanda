@@ -13,6 +13,7 @@ import signal
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.background_thread import BackgroundThreadService
+
 from rptest.util import inject_remote_script
 
 

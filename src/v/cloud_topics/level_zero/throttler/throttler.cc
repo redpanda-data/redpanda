@@ -155,8 +155,11 @@ ss::future<> throttler<Clock>::bg_throttle_write_pipeline() {
         } else {
             auto res = fut.get();
             if (res.has_error()) {
-                vlog(
-                  cd_log.error, "Pipeline throttling error: {}", res.error());
+                auto level = res.error() == errc::shutting_down
+                               ? ss::log_level::debug
+                               : ss::log_level::error;
+                vlogl(
+                  cd_log, level, "Pipeline throttling error: {}", res.error());
             } else {
                 total_bytes = res.value();
             }

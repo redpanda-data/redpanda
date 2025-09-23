@@ -7,14 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from ducktape.services.service import Service
-from rptest.util import wait_until_result
-import requests
-from time import sleep
-import sys
 import json
-from rptest.util import wait_until
+import sys
 from enum import Enum
+
+import requests
+from ducktape.services.service import Service
+
+from rptest.util import wait_until, wait_until_result
 
 
 class CrushedException(Exception):

@@ -33,11 +33,7 @@ level_zero_log_reader_impl::level_zero_log_reader_impl(
   data_plane_api* ct_api)
   : _config(cfg)
   , _underlying(std::move(underlying))
-  , _ct_api(ct_api) {
-    if (_config.max_bytes == 0) {
-        _current = state::end_of_stream_state;
-    }
-}
+  , _ct_api(ct_api) {}
 
 ss::future<model::record_batch_reader::storage_t>
 level_zero_log_reader_impl::do_load_slice(
@@ -84,9 +80,6 @@ level_zero_log_reader_impl::do_load_slice(
 
 std::optional<chunked_circular_buffer<model::record_batch>>
 level_zero_log_reader_impl::maybe_load_slices_from_cache() {
-    if (_config.skip_cache) {
-        return std::nullopt;
-    }
     chunked_circular_buffer<model::record_batch> ret;
     size_t materialized_bytes = 0;
     auto current = _config.start_offset;
@@ -105,7 +98,8 @@ level_zero_log_reader_impl::maybe_load_slices_from_cache() {
         }
         vlog(
           cd_log.trace,
-          "Loaded batch from cache: {}",
+          "Loaded batch from cache for {}: {} @ term {}",
+          current,
           batch.value().base_offset(),
           batch.value().term());
         vassert(
@@ -121,9 +115,12 @@ level_zero_log_reader_impl::maybe_load_slices_from_cache() {
             break;
         }
         vassert(
-          batch->base_offset() == kafka::offset_cast(current),
-          "Unexpected base offset {} vs {}",
+          batch->base_offset() <= kafka::offset_cast(current)
+            && kafka::offset_cast(current) <= batch->last_offset(),
+          "Unexpected batch for {}, got range: [{},{}] for offset {}",
+          _underlying->ntp(),
           batch->base_offset(),
+          batch->last_offset(),
           current);
         ret.push_back(std::move(batch.value()));
         materialized_bytes += batch_size;
@@ -364,16 +361,18 @@ ss::future<> level_zero_log_reader_impl::materialize_batches(
                   model::record_batch batch = std::move(*batches_it);
                   ++batches_it;
                   auto size = batch.header().size_bytes;
-                  auto crc = batch.header().crc;
                   batch.header() = local_batch_header;
                   batch.header().type = model::record_batch_type::raft_data;
                   batch.header().size_bytes = size;
-                  batch.header().crc = crc;
-                  // Recalculate the header crc
-                  batch.header().header_crc = model::internal_header_only_crc(
-                    batch.header());
+                  batch.header().reset_size_checksum_metadata(batch.data());
                   // Propagate materialized batches to the record batch cache
                   if (cache_enabled()) {
+                      vlog(
+                        cd_log.trace,
+                        "Putting batch for {} to cache: {}, term: {}",
+                        _underlying->ntp(),
+                        batch.base_offset(),
+                        batch.term());
                       _ct_api->cache_put(_underlying->ntp(), batch.copy());
                   }
                   return batch;

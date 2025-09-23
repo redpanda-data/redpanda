@@ -27,7 +27,7 @@ namespace cluster_link::replication {
 class test_data_source : public data_source {
 public:
     ss::future<> reset(kafka::offset) override { return ss::now(); }
-    ss::future<> start() override {
+    ss::future<> start(kafka::offset) override {
         if (tests::random_bool()) {
             return ss::make_exception_future<>(
               std::runtime_error("Simulated start failure"));
@@ -86,6 +86,8 @@ private:
 };
 
 class test_data_source_factory : public data_source_factory {
+    ss::future<> start() override { return ss::now(); }
+    ss::future<> stop() noexcept override { return ss::now(); }
     std::unique_ptr<data_source> make_source(const model::ntp&) override {
         return std::make_unique<test_data_source>();
     }

@@ -1,8 +1,14 @@
-from confluent_kafka import Producer, Consumer, KafkaException, KafkaError
-from confluent_kafka import TopicPartition, OFFSET_BEGINNING
 import random
-
 import time
+
+from confluent_kafka import (
+    OFFSET_BEGINNING,
+    Consumer,
+    KafkaError,
+    KafkaException,
+    Producer,
+    TopicPartition,
+)
 
 
 class SyncProducer:

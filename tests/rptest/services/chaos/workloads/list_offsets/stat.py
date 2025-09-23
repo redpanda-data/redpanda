@@ -7,15 +7,16 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import jinja2
-import sys
-import traceback
+import logging
 import os
 import subprocess
-import logging
+import sys
+import traceback
+
+import jinja2
 
 from ...types import Result
-from .log_utils import State, cmds, transitions, phantoms
+from .log_utils import State, cmds, transitions
 
 logger = logging.getLogger("stat")
 

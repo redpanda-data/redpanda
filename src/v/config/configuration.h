@@ -19,6 +19,7 @@
 #include "config/endpoint_tls_config.h"
 #include "config/leaders_preference.h"
 #include "config/property.h"
+#include "config/sasl_mechanisms.h"
 #include "config/throughput_control_group.h"
 #include "config/tls_config.h"
 #include "config/types.h"
@@ -157,6 +158,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds>
       partition_manager_shutdown_watchdog_timeout;
     property<std::optional<size_t>> topic_label_aggregation_limit;
+    bounded_property<uint32_t> controller_backend_reconciliation_concurrency;
 
     // Admin API
     property<bool> admin_api_require_auth;
@@ -169,7 +171,7 @@ struct configuration final : public config_store {
     deprecated_property min_version;
     deprecated_property max_version;
     bounded_property<std::optional<size_t>> raft_max_recovery_memory;
-    bounded_property<size_t> raft_recovery_default_read_size;
+    deprecated_property raft_recovery_default_read_size;
     property<bool> raft_enable_lw_heartbeat;
     bounded_property<size_t> raft_recovery_concurrency_per_shard;
     property<std::optional<size_t>> raft_replica_max_pending_flush_bytes;
@@ -234,6 +236,8 @@ struct configuration final : public config_store {
       log_message_timestamp_before_max_ms;
     bounded_property<std::chrono::milliseconds>
       log_message_timestamp_after_max_ms;
+    enum_property<model::kafka_batch_validation_mode>
+      kafka_produce_batch_validation;
     enum_property<model::compression> log_compression_type;
     property<size_t> fetch_max_bytes;
     property<bool> use_fetch_scheduler_group;
@@ -342,6 +346,8 @@ struct configuration final : public config_store {
     property<int16_t> id_allocator_batch_size;
     property<bool> enable_sasl;
     enterprise<property<std::vector<ss::sstring>>> sasl_mechanisms;
+    enterprise<property<std::vector<config::sasl_mechanisms_override>>>
+      sasl_mechanisms_overrides;
     property<ss::sstring> sasl_kerberos_config;
     property<ss::sstring> sasl_kerberos_keytab;
     property<ss::sstring> sasl_kerberos_principal;
@@ -392,6 +398,7 @@ struct configuration final : public config_store {
     property<std::vector<ss::sstring>> audit_excluded_topics;
     property<std::vector<ss::sstring>> audit_excluded_principals;
     enum_property<audit_failure_policy> audit_failure_policy;
+    property<bool> audit_use_rpc;
 
     // Archival storage
     enterprise<property<bool>> cloud_storage_enabled;
@@ -723,6 +730,8 @@ struct configuration final : public config_store {
 
     enum_property<tls_version> tls_min_version;
     property<bool> tls_enable_renegotiation;
+    property<ss::sstring> tls_v1_2_cipher_suites;
+    property<ss::sstring> tls_v1_3_cipher_suites;
 
     // datalake configurations
     enterprise<property<bool>> iceberg_enabled;

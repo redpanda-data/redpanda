@@ -239,7 +239,8 @@ void run_authz(
     acl_principal p{principal_type::user, ss::sstring{m.name()}};
 
     perf_tests::start_measuring_time();
-    auto result = auth.authorized(topic1, acl_operation::read, p, host1);
+    auto result = auth.authorized(
+      topic1, acl_operation::read, p, host1, security::superuser_required::no);
     perf_tests::do_not_optimize(result);
     perf_tests::stop_measuring_time();
 }
@@ -313,7 +314,12 @@ PERF_TEST(role_store_bench, role_authz_empty_store) {
     auth.add_bindings(bindings);
 
     perf_tests::start_measuring_time();
-    auto result = auth.authorized(topic1, acl_operation::read, user1, host1);
+    auto result = auth.authorized(
+      topic1,
+      acl_operation::read,
+      user1,
+      host1,
+      security::superuser_required::no);
     perf_tests::do_not_optimize(result);
     perf_tests::stop_measuring_time();
 }

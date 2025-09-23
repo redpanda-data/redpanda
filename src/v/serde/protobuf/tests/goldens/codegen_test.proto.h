@@ -5,6 +5,8 @@
 
 #include "base/format_to.h"
 #include "bytes/iobuf.h"
+#include "serde/protobuf/base.h"
+#include "strings/static_str.h"
 #include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "serde/protobuf/rpc.h"
@@ -52,7 +54,7 @@ enum class corpus : uint8_t {
 void enum_to_proto(const corpus&, iobuf*);
 void enum_from_proto(iobuf_parser*, corpus*);
 // Returns the name of the enum value
-std::string_view enum_to_string(const corpus&);
+static_str enum_to_string(const corpus&);
 void enum_from_json(serde::pb::json::peekable_parser*, corpus*);
 int32_t format_as(corpus);
 
@@ -65,7 +67,7 @@ enum class protobuf3_test : uint8_t {
 void enum_to_proto(const protobuf3_test&, iobuf*);
 void enum_from_proto(iobuf_parser*, protobuf3_test*);
 // Returns the name of the enum value
-std::string_view enum_to_string(const protobuf3_test&);
+static_str enum_to_string(const protobuf3_test&);
 void enum_from_json(serde::pb::json::peekable_parser*, protobuf3_test*);
 int32_t format_as(protobuf3_test);
 
@@ -77,11 +79,11 @@ enum class proto3_test : uint8_t {
 void enum_to_proto(const proto3_test&, iobuf*);
 void enum_from_proto(iobuf_parser*, proto3_test*);
 // Returns the name of the enum value
-std::string_view enum_to_string(const proto3_test&);
+static_str enum_to_string(const proto3_test&);
 void enum_from_json(serde::pb::json::peekable_parser*, proto3_test*);
 int32_t format_as(proto3_test);
 
-class c {
+class c : public serde::pb::base_message {
 public:
   c() noexcept;
   c(const c&) = delete;
@@ -109,6 +111,14 @@ public:
   static seastar::future<> from_json(serde::pb::json::peekable_parser*, c*);
 
 
+  std::string_view full_name() const override { return "example.C"; }
+  // Convert a field path into a path of field numbers.
+  static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
+  // Convert a field path into a path of field numbers.
+  std::optional<std::vector<int32_t>> convert_field_path_to_numbers(std::span<std::string_view> field_path) const override;
+  // Look up a field based on the field numbers.
+  std::optional<serde::pb::field> lookup_field(std::span<int32_t> field_numbers) override;
+
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
   static bool is_valid_field_path(std::span<const ss::sstring> path);
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
@@ -117,7 +127,7 @@ public:
 private:
 };
 
-class a {
+class a : public serde::pb::base_message {
 public:
   a() noexcept;
   a(const a&) = delete;
@@ -148,6 +158,14 @@ public:
   const c& get_c() const;
   void set_c(c&& v);
 
+  std::string_view full_name() const override { return "example.A"; }
+  // Convert a field path into a path of field numbers.
+  static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
+  // Convert a field path into a path of field numbers.
+  std::optional<std::vector<int32_t>> convert_field_path_to_numbers(std::span<std::string_view> field_path) const override;
+  // Look up a field based on the field numbers.
+  std::optional<serde::pb::field> lookup_field(std::span<int32_t> field_numbers) override;
+
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
   static bool is_valid_field_path(std::span<const ss::sstring> path);
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
@@ -157,7 +175,7 @@ private:
   c c_;
 };
 
-class b {
+class b : public serde::pb::base_message {
 public:
   b() noexcept;
   b(const b&) = delete;
@@ -191,6 +209,14 @@ public:
   const a& get_a() const;
   void set_a(a&& v);
 
+  std::string_view full_name() const override { return "example.B"; }
+  // Convert a field path into a path of field numbers.
+  static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
+  // Convert a field path into a path of field numbers.
+  std::optional<std::vector<int32_t>> convert_field_path_to_numbers(std::span<std::string_view> field_path) const override;
+  // Look up a field based on the field numbers.
+  std::optional<serde::pb::field> lookup_field(std::span<int32_t> field_numbers) override;
+
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
   static bool is_valid_field_path(std::span<const ss::sstring> path);
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
@@ -201,7 +227,7 @@ private:
   a a_;
 };
 
-class super_duper_secret {
+class super_duper_secret : public serde::pb::base_message {
 public:
   super_duper_secret() noexcept;
   super_duper_secret(const super_duper_secret&) = delete;
@@ -232,6 +258,14 @@ public:
   const ss::sstring& get_value() const;
   void set_value(ss::sstring&& v);
 
+  std::string_view full_name() const override { return "example.SuperDuperSecret"; }
+  // Convert a field path into a path of field numbers.
+  static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
+  // Convert a field path into a path of field numbers.
+  std::optional<std::vector<int32_t>> convert_field_path_to_numbers(std::span<std::string_view> field_path) const override;
+  // Look up a field based on the field numbers.
+  std::optional<serde::pb::field> lookup_field(std::span<int32_t> field_numbers) override;
+
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
   static bool is_valid_field_path(std::span<const ss::sstring> path);
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
@@ -241,7 +275,7 @@ private:
   ss::sstring value_;
 };
 
-class mask_wrapper {
+class mask_wrapper : public serde::pb::base_message {
 public:
   mask_wrapper() noexcept;
   mask_wrapper(const mask_wrapper&) = delete;
@@ -272,6 +306,14 @@ public:
   const serde::pb::field_mask& get_mask() const;
   void set_mask(serde::pb::field_mask&& v);
 
+  std::string_view full_name() const override { return "example.MaskWrapper"; }
+  // Convert a field path into a path of field numbers.
+  static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
+  // Convert a field path into a path of field numbers.
+  std::optional<std::vector<int32_t>> convert_field_path_to_numbers(std::span<std::string_view> field_path) const override;
+  // Look up a field based on the field numbers.
+  std::optional<serde::pb::field> lookup_field(std::span<int32_t> field_numbers) override;
+
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
   static bool is_valid_field_path(std::span<const ss::sstring> path);
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
@@ -281,7 +323,7 @@ private:
   serde::pb::field_mask mask_;
 };
 
-class well_known_protos {
+class well_known_protos : public serde::pb::base_message {
 public:
   well_known_protos() noexcept;
   well_known_protos(const well_known_protos&) = delete;
@@ -336,6 +378,14 @@ public:
   const chunked_hash_map<ss::sstring, absl::Time>& get_timestamp_map() const;
   void set_timestamp_map(chunked_hash_map<ss::sstring, absl::Time>&& v);
 
+  std::string_view full_name() const override { return "example.WellKnownProtos"; }
+  // Convert a field path into a path of field numbers.
+  static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
+  // Convert a field path into a path of field numbers.
+  std::optional<std::vector<int32_t>> convert_field_path_to_numbers(std::span<std::string_view> field_path) const override;
+  // Look up a field based on the field numbers.
+  std::optional<serde::pb::field> lookup_field(std::span<int32_t> field_numbers) override;
+
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
   static bool is_valid_field_path(std::span<const ss::sstring> path);
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
@@ -353,7 +403,7 @@ private:
   chunked_hash_map<ss::sstring, absl::Time> timestamp_map_;
 };
 
-class say_greeting_request {
+class say_greeting_request : public serde::pb::base_message {
 public:
   say_greeting_request() noexcept;
   say_greeting_request(const say_greeting_request&) = delete;
@@ -384,6 +434,14 @@ public:
   const ss::sstring& get_greeting() const;
   void set_greeting(ss::sstring&& v);
 
+  std::string_view full_name() const override { return "example.SayGreetingRequest"; }
+  // Convert a field path into a path of field numbers.
+  static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
+  // Convert a field path into a path of field numbers.
+  std::optional<std::vector<int32_t>> convert_field_path_to_numbers(std::span<std::string_view> field_path) const override;
+  // Look up a field based on the field numbers.
+  std::optional<serde::pb::field> lookup_field(std::span<int32_t> field_numbers) override;
+
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
   static bool is_valid_field_path(std::span<const ss::sstring> path);
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
@@ -393,7 +451,7 @@ private:
   ss::sstring greeting_;
 };
 
-class say_greeting_response {
+class say_greeting_response : public serde::pb::base_message {
 public:
   say_greeting_response() noexcept;
   say_greeting_response(const say_greeting_response&) = delete;
@@ -423,6 +481,14 @@ public:
   ss::sstring& get_response();
   const ss::sstring& get_response() const;
   void set_response(ss::sstring&& v);
+
+  std::string_view full_name() const override { return "example.SayGreetingResponse"; }
+  // Convert a field path into a path of field numbers.
+  static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
+  // Convert a field path into a path of field numbers.
+  std::optional<std::vector<int32_t>> convert_field_path_to_numbers(std::span<std::string_view> field_path) const override;
+  // Look up a field based on the field numbers.
+  std::optional<serde::pb::field> lookup_field(std::span<int32_t> field_numbers) override;
 
   // NOTE: This is intended to be used by field_mask only. Do not use directly.
   static bool is_valid_field_path(std::span<const ss::sstring> path);

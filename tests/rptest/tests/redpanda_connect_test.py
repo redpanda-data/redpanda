@@ -8,17 +8,15 @@
 # by the Apache License, Version 2.0
 
 import tempfile
-import time
+
+
 from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkTool
-from rptest.services.admin import Admin
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings, SchemaRegistryConfig
 from rptest.services.redpanda_connect import RedpandaConnectService
-from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-from jinja2 import Template
 
 avro_schema = """
 {

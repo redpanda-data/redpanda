@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/cluster_link/fwd.h"
 #include "cluster/fwd.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
@@ -79,6 +80,7 @@ public:
       ss::sharded<cluster::controller_api>&,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<datalake_throttle_manager>&,
+      ss::sharded<cluster::cluster_link::frontend>&,
       std::optional<qdc_monitor_config>,
       ssx::singleton_thread_worker&,
       const std::unique_ptr<pandaproxy::schema_registry::api>&) noexcept;
@@ -245,6 +247,12 @@ public:
     void
     mark_datalake_producer(const std::optional<std::string_view>& client_id);
 
+    cluster::cluster_link::frontend& cluster_link_frontend() {
+        return _cluster_link_frontend.local();
+    }
+
+    bool is_cluster_link_active() const;
+
 private:
     void setup_metrics();
 
@@ -278,6 +286,7 @@ private:
     ss::sharded<cluster::controller_api>& _controller_api;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     ss::sharded<kafka::datalake_throttle_manager>& _datalake_throttle_manager;
+    ss::sharded<cluster::cluster_link::frontend>& _cluster_link_frontend;
     std::optional<qdc_monitor> _qdc_mon;
     kafka::fetch_metadata_cache _fetch_metadata_cache;
     security::tls::principal_mapper _mtls_principal_mapper;

@@ -11,25 +11,23 @@ import logging
 import os
 import random
 import string
-import sys
 import subprocess
-
+import sys
 from dataclasses import dataclass
-
-from pyflink.datastream.checkpointing_mode import CheckpointingMode
-from pyflink.datastream.checkpoint_config import ExternalizedCheckpointCleanup
-from pyflink.table import (
-    StreamTableEnvironment,
-    EnvironmentSettings,
-    TableDescriptor,
-    Schema,
-    DataTypes,
-)
 
 from pyflink.common import Configuration
 from pyflink.datastream import StreamExecutionEnvironment
-from pyflink.table.udf import udf
+from pyflink.datastream.checkpoint_config import ExternalizedCheckpointCleanup
+from pyflink.datastream.checkpointing_mode import CheckpointingMode
+from pyflink.table import (
+    DataTypes,
+    EnvironmentSettings,
+    Schema,
+    StreamTableEnvironment,
+    TableDescriptor,
+)
 from pyflink.table.expressions import col
+from pyflink.table.udf import udf
 
 MODE_PRODUCE = "produce"
 MODE_CONSUME = "consume"

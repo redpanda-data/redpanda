@@ -182,13 +182,18 @@ std::ostream& operator<<(std::ostream& os, describe_configs_source s);
  * batch encoding utility in protocol/wire.h can remove the dependency on this,
  * for example by having the caller in the server perform this conversion.
  */
-inline kafka::leader_epoch leader_epoch_from_term(model::term_id term) {
-    try {
-        return kafka::leader_epoch(
-          boost::numeric_cast<kafka::leader_epoch::type>(term()));
-    } catch (const boost::bad_numeric_cast&) {
-        return kafka::invalid_leader_epoch;
-    }
+inline kafka::leader_epoch
+leader_epoch_from_term(std::optional<model::term_id> term) {
+    return term
+      .and_then([](auto&& term) {
+          try {
+              return std::make_optional<kafka::leader_epoch>(
+                boost::numeric_cast<kafka::leader_epoch::type>(term()));
+          } catch (const boost::bad_numeric_cast&) {
+              return std::optional<kafka::leader_epoch>{};
+          }
+      })
+      .value_or(kafka::invalid_leader_epoch);
 }
 
 /// Kafka API request correlation.

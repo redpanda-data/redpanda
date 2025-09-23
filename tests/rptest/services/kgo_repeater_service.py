@@ -7,24 +7,24 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import signal
-import time
-import requests
 import json
 import operator
-from functools import reduce, partial
-from typing import Optional, Callable
-from contextlib import contextmanager
+import signal
+import time
 from collections import defaultdict
+from contextlib import contextmanager
+from functools import partial, reduce
+from typing import Callable, Optional
 
-from ducktape.services.service import Service
+import requests
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
-from rptest.services.redpanda import RedpandaService, SaslCredentials
 from rptest.clients.rpk import RpkTool
+from rptest.services.redpanda import RedpandaService, SaslCredentials
 
 REMOTE_PORT_BASE = 8080
 

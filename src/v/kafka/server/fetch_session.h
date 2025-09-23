@@ -9,13 +9,13 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "absl/container/flat_hash_map.h"
 #include "container/chunked_hash_map.h"
 #include "container/intrusive_list_helpers.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
+#include "kafka/protocol/types.h"
 #include "model/fundamental.h"
-#include "model/ktp.h"
+#include "model/kitp.h"
 #include "model/timeout_clock.h"
 
 #include <boost/iterator/iterator_adaptor.hpp>
@@ -25,7 +25,7 @@
 namespace kafka {
 
 struct fetch_session_partition {
-    model::ktp_with_hash topic_partition;
+    model::kitp_with_hash topic_partition;
     int32_t max_bytes;
     model::offset start_offset;
     model::offset fetch_offset;
@@ -34,8 +34,10 @@ struct fetch_session_partition {
     kafka::leader_epoch current_leader_epoch = invalid_leader_epoch;
 
     fetch_session_partition(
-      const model::topic& tp, const fetch_request::partition& p)
-      : topic_partition(tp, p.partition)
+      const model::topic_id id,
+      const model::topic& tp,
+      const fetch_request::partition& p)
+      : topic_partition(id, tp, p.partition)
       , max_bytes(p.partition_max_bytes)
       , fetch_offset(p.fetch_offset)
       , high_watermark(model::offset(-1))
@@ -61,51 +63,8 @@ private:
         intrusive_list_hook _hook;
     };
 
-    struct topic_partition_hash {
-        using is_transparent = void;
-
-        size_t operator()(model::topic_partition_view v) const {
-            return absl::Hash<model::topic_partition_view>{}(v);
-        }
-
-        size_t operator()(const model::topic_partition& v) const {
-            return absl::Hash<model::topic_partition>{}(v);
-        }
-    };
-
-    struct topic_partition_eq {
-        using is_transparent = void;
-
-        bool operator()(
-          const model::topic_partition& lhs,
-          const model::topic_partition& rhs) const {
-            return lhs.topic == rhs.topic && lhs.partition == rhs.partition;
-        }
-
-        bool operator()(
-          const model::topic_partition_view& lhs,
-          const model::topic_partition_view& rhs) const {
-            return lhs.topic == rhs.topic && lhs.partition == rhs.partition;
-        }
-
-        bool operator()(
-          const model::topic_partition& lhs,
-          const model::topic_partition_view& rhs) const {
-            return model::topic_view(lhs.topic) == rhs.topic
-                   && lhs.partition == rhs.partition;
-        }
-        bool operator()(
-          const model::topic_partition_view& lhs,
-          const model::topic_partition& rhs) const {
-            return operator()(rhs, lhs);
-        }
-    };
-
-    using underlying_t = chunked_hash_map<
-      model::topic_partition_view,
-      std::unique_ptr<entry>,
-      topic_partition_hash,
-      topic_partition_eq>;
+    using underlying_t
+      = chunked_hash_map<model::kitp_view, std::unique_ptr<entry>>;
 
     using io_list_t = intrusive_list<entry, &entry::_hook>;
 
@@ -130,7 +89,7 @@ public:
     void emplace(kafka::fetch_session_partition v) {
         auto e = std::make_unique<entry>(std::move(v));
         auto [it, success] = partitions.emplace(
-          e->partition.topic_partition.as_tp_view(), std::move(e));
+          e->partition.topic_partition.as_kitp_view(), std::move(e));
         vassert(
           success,
           "Can not insert {} to partitions map as it is already present.",
@@ -138,17 +97,13 @@ public:
         insertion_order.push_back(*it->second);
     }
 
-    bool contains(model::topic_partition_view v) {
-        return partitions.contains(v);
-    }
+    bool contains(model::kitp_view v) { return partitions.contains(v); }
 
-    void erase(model::topic_partition_view v) { partitions.erase(v); }
+    void erase(model::kitp_view v) { partitions.erase(v); }
 
-    iterator find(model::topic_partition_view v) { return partitions.find(v); }
+    iterator find(model::kitp_view v) { return partitions.find(v); }
 
-    const_iterator find(model::topic_partition_view v) const {
-        return partitions.find(v);
-    }
+    const_iterator find(model::kitp_view v) const { return partitions.find(v); }
 
     bool empty() const { return partitions.empty(); }
 

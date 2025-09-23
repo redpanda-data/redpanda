@@ -19,11 +19,14 @@
 #include "datalake/tests/test_data_writer.h"
 #include "datalake/tests/test_utils.h"
 #include "datalake/translation/translation_probe.h"
+#include "features/feature_table.h"
+#include "gmock/gmock.h"
 #include "iceberg/filesystem_catalog.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
 #include "model/timeout_clock.h"
+#include "model/timestamp.h"
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
 
@@ -104,9 +107,11 @@ class RecordMultiplexerTestBase
   : public datalake::tests::catalog_and_registry_fixture {
 public:
     RecordMultiplexerTestBase()
-      : schema_mgr(catalog)
+      : schema_mgr(catalog, &features)
       , type_resolver(registry)
-      , t_creator(type_resolver, schema_mgr) {}
+      , t_creator(type_resolver, schema_mgr) {
+        features.testing_activate_all();
+    }
 
     record_multiplexer make_mux() {
         return record_multiplexer(
@@ -120,7 +125,8 @@ public:
           model::iceberg_invalid_record_action::dlq_table,
           location_provider(
             scoped_remote->remote.local().provider(), bucket_name),
-          *get_or_create_probe(ntp));
+          *get_or_create_probe(ntp),
+          &features);
     }
 
     // Runs the multiplexer on records generated with cb() based on the test
@@ -231,6 +237,7 @@ public:
         return it->second;
     }
 
+    features::feature_table features;
     catalog_schema_manager schema_mgr;
     record_schema_resolver type_resolver;
     direct_table_creator t_creator;
@@ -534,4 +541,58 @@ TEST_F(RecordMultiplexerTest, TestMultiplexingFromMiddleOfBatch) {
     EXPECT_FALSE(result.has_error()) << result.error();
     EXPECT_EQ(result.value().start_offset(), start_offset);
     EXPECT_EQ(result.value().last_offset(), last_offset);
+}
+
+TEST_F(RecordMultiplexerTest, TestRecordTimestamp) {
+    // Make sure we respect client vs broker timestamps.
+    binary_type_resolver kv_resolver; // This test doesn't need schemas
+    direct_table_creator table_creator(kv_resolver, schema_mgr);
+    key_value_translator kv_translator;
+    auto mux = record_multiplexer(
+      ntp,
+      topic_rev,
+      std::make_unique<test_data_writer_factory>(false),
+      schema_mgr,
+      kv_resolver,
+      kv_translator,
+      table_creator,
+      model::iceberg_invalid_record_action::dlq_table,
+      location_provider(scoped_remote->remote.local().provider(), bucket_name),
+      *get_or_create_probe(ntp),
+      &features);
+    auto batches = model::test::make_random_batches(
+                     {
+                       .offset = model::offset{0},
+                       .count = 2,
+                       .records = 100,
+                       // Use a timestamp from 1 year ago
+                       .timestamp = model::timestamp{1726262280000},
+                     })
+                     .get();
+    // Simulate the second batch is using the broker append time, which is a
+    // current timestamp
+    batches.back().set_max_timestamp(
+      model::timestamp_type::append_time, model::timestamp{1757884680000});
+    auto start_offset = batches.front().base_offset();
+    auto reader = model::make_memory_record_batch_reader(std::move(batches));
+    mux
+      .multiplex(
+        std::move(reader), kafka::offset{start_offset}, model::no_timeout, as)
+      .get();
+    auto result = std::move(mux).finish().get();
+    ASSERT_FALSE(result.has_error());
+    // We should get a partition between the two batches because the different
+    // timestamps
+    ASSERT_EQ(result.value().data_files.size(), 2);
+    // We don't require the order of the data files.
+    EXPECT_THAT(
+      result.value().data_files,
+      testing::UnorderedElementsAre(
+        testing::Field(
+          &partitioning_writer::partitioned_file::partition_key_path,
+          remote_path("redpanda.timestamp_hour=2024-09-13-21")),
+        testing::Field(
+          &partitioning_writer::partitioned_file::partition_key_path,
+          remote_path("redpanda.timestamp_hour=2025-09-14-21"))));
+    EXPECT_EQ(result.value().dlq_files.size(), 0);
 }

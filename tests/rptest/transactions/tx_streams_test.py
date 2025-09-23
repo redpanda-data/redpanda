@@ -7,18 +7,17 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
-
 import random
 
-from rptest.clients.offline_log_viewer import OfflineLogViewer
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.admin import Admin
-from rptest.transactions.util import TransactionsMixin
 import confluent_kafka as ck
 
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.transactions.util import TransactionsMixin
 
 
 class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):

@@ -79,6 +79,26 @@ void rjson_serialize_impl(
         w.Key("crl_file");
         w.String((*(v.get_crl_file())).c_str());
     }
+
+    if (v.get_tls_v1_2_cipher_suites()) {
+        w.Key("tls_v1_2_cipher_suites");
+        w.String(v.get_tls_v1_2_cipher_suites()->c_str());
+    }
+
+    if (v.get_tls_v1_3_cipher_suites()) {
+        w.Key("tls_v1_3_cipher_suites");
+        w.String(v.get_tls_v1_3_cipher_suites()->c_str());
+    }
+
+    if (v.get_min_tls_version()) {
+        w.Key("min_tls_version");
+        w.String(to_string_view(*v.get_min_tls_version()).data());
+    }
+
+    if (v.get_enable_renegotiation()) {
+        w.Key("enable_renegotiation");
+        w.Bool(*v.get_enable_renegotiation());
+    }
 }
 
 void rjson_serialize(
@@ -287,6 +307,12 @@ void rjson_serialize(
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, config::audit_failure_policy policy) {
     stringize(w, policy);
+}
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const model::kafka_batch_validation_mode& m) {
+    stringize(w, m);
 }
 
 } // namespace json

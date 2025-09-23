@@ -719,6 +719,7 @@ redpanda_cc_btest(
         "//src/v/random:generators",
         "//src/v/redpanda/tests:fixture",
         "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:scoped_config",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
         "@seastar",
@@ -754,9 +755,11 @@ redpanda_cc_btest(
     ],
     cpu = 1,
     deps = [
+        "//src/v/cluster/tests:cluster_test_fixture",
         "//src/v/kafka/protocol",
         "//src/v/kafka/server",
         "//src/v/model",
+        "//src/v/raft",
         "//src/v/redpanda/tests:fixture",
         "//src/v/storage/tests:disk_log_builder",
         "//src/v/test_utils:seastar_boost",
@@ -849,6 +852,7 @@ redpanda_cc_bench(
         "//src/v/security",
         "//src/v/test_utils:fixture",
         "@boost//:test",
+        "@fmt",
         "@seastar//:benchmark",
     ],
 )

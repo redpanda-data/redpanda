@@ -19,24 +19,32 @@
 
 namespace raft {
 
+static constexpr size_t max_recovery_memory = 32_MiB;
+
 recovery_memory_quota::recovery_memory_quota(
-  recovery_memory_quota::config_provider_fn config_provider)
-  : _cfg(config_provider())
-  , _current_max_recovery_mem(_cfg.max_recovery_memory().value_or(
-      memory_groups().recovery_max_memory()))
+  config::binding<std::optional<size_t>> max_recovery_memory,
+  config::binding<size_t> raft_recovery_concurrency_per_shard)
+  : _max_recovery_memory(std::move(max_recovery_memory))
+  , _raft_recovery_concurrency_per_shard(
+      std::move(raft_recovery_concurrency_per_shard))
+  , _current_max_recovery_mem(
+      _max_recovery_memory().value_or(memory_groups().recovery_max_memory()))
   , _memory(_current_max_recovery_mem, "raft/recovery-quota") {
-    _cfg.max_recovery_memory.watch([this] { on_max_memory_changed(); });
+    _max_recovery_memory.watch([this] { on_max_memory_changed(); });
 }
 
 ss::future<ssx::semaphore_units> recovery_memory_quota::acquire_read_memory() {
+    auto size = static_cast<double>(_max_recovery_memory().value_or(
+                  memory_groups().recovery_max_memory()))
+                / static_cast<double>(_raft_recovery_concurrency_per_shard());
+
     return ss::get_units(
-      _memory,
-      std::min(_current_max_recovery_mem, _cfg.default_read_buffer_size()));
+      _memory, std::min<size_t>(std::ceil(size), max_recovery_memory));
 }
 
 void recovery_memory_quota::on_max_memory_changed() {
-    int64_t new_size = int64_t(_cfg.max_recovery_memory().value_or(
-      memory_groups().recovery_max_memory()));
+    int64_t new_size = int64_t(
+      _max_recovery_memory().value_or(memory_groups().recovery_max_memory()));
 
     vlog(raftlog.info, "max recovery memory changed to {} bytes", new_size);
 

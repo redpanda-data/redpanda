@@ -468,6 +468,9 @@ log_eviction_stm_factory::log_eviction_stm_factory(storage::kvstore& kvstore)
 
 bool log_eviction_stm_factory::is_applicable_for(
   const storage::ntp_config& cfg) const {
+    if (cfg.cloud_topic_enabled()) {
+        return false;
+    }
     return !storage::deletion_exempt(cfg.ntp());
 }
 

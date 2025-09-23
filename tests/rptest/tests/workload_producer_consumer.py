@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import uuid
+
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.kgo_verifier_services import (
@@ -82,9 +83,10 @@ class ProducerConsumerWorkload(PWorkload):
         self._seq_consumer.start(clean=False)
 
     def end(self):
-        self._producer.stop()
         self._producer.wait()
+        self._producer.stop()
         self._seq_consumer.wait()
+        self._seq_consumer.stop()
         wrote_at_least = self._producer.produce_status.acked
         assert (
             self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least

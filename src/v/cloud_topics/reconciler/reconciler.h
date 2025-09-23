@@ -10,20 +10,24 @@
 
 #pragma once
 
-#include "absl/container/node_hash_map.h"
 #include "base/seastarx.h"
-#include "cloud_io/remote.h"
-#include "cloud_storage_clients/types.h"
-#include "cloud_topics/reconciler/range_batch_consumer.h"
+#include "cloud_topics/level_one/common/abstract_io.h"
+#include "cloud_topics/level_one/common/object.h"
+#include "cloud_topics/level_one/common/object_id.h"
+#include "cloud_topics/level_one/metastore/metastore.h"
+#include "cloud_topics/reconciler/reconciliation_consumer.h"
 #include "cluster/notification.h"
 #include "cluster/partition.h"
 #include "cluster/partition_manager.h"
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
+#include "model/fundamental.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 
+#include <memory>
 #include <optional>
 
 namespace cloud_topics {
@@ -33,19 +37,31 @@ class frontend;
 
 namespace cloud_topics::reconciler {
 
+enum class reconcile_error { build_or_put_failure, metadata_failure };
+
 /*
- * The reconciler runs on every shard. It queries the leader of cloud topic
- * partitions for new kafka batches. These batches are packaged up into L1
- * objects and uploaded into the cloud. Finally, overlay batches are committed
- * into each partition represented within an uploaded L1 object.
+ * The reconciler is the cloud topics subsystem responsible for lifting
+ * data from L0 to L1. This process periodically "reconciles" the
+ * metadata from the ctp log with the data in L0 objects, hence the
+ * name.
+ *
+ * The reconciler runs on every shard and processes cloud topics leader
+ * partitions on the shard. It reads data from the last reconciled
+ * offset (LRO) to the last stable offset (LSO) and loads it into an
+ * L1 object, possibly along with other cloud topics partitions, and
+ * possibly grouped into multiple objects as arranged by the L1
+ * metastore. It then uploads these objects and registers them with
+ * the L1 metastore. Finally, it updates the LRO, based on either
+ * its own progress, or a corrected LRO returned from the metastore.
  */
 class reconciler {
 public:
     reconciler(
-      ss::sharded<cluster::partition_manager>*,
-      ss::sharded<cloud_io::remote>*,
+      cluster::partition_manager*,
       data_plane_api*,
-      std::optional<cloud_storage_clients::bucket_name> = std::nullopt);
+      l1::io*,
+      cluster::metadata_cache*,
+      l1::metastore*);
 
     reconciler(const reconciler&) = delete;
     reconciler& operator=(const reconciler&) = delete;
@@ -58,30 +74,36 @@ public:
 
 private:
     /*
-     * an attached partition is a partition that the reconciler is tracking and
-     * periodically processing. partitions are attached/detatched via upcalls
-     * from the cluster module. the reconciler operates on the leaders of
+     * An attached partition is a partition that the reconciler is tracking and
+     * periodically processing. Partitions are attached/detached via upcalls
+     * from the cluster module. The reconciler operates on the leaders of
      * partitions with affinity to the local shard.
      */
     struct attached_partition_info {
         explicit attached_partition_info(
+          model::topic_id_partition tidp,
           ss::lw_shared_ptr<cluster::partition> p)
-          : partition(std::move(p)) {}
+          : tidp(tidp)
+          , partition(std::move(p)) {}
+
+        model::topic_id_partition tidp;
 
         ss::lw_shared_ptr<cluster::partition> partition;
 
         /*
-         * last reconciled offset. this forms the starting offset when querying
+         * Last reconciled offset. this forms the starting offset when querying
          * the partition for new data. In later versions of the system this will
          * be stored in and queried from the partition itself.
+         * TODO: Rename this, and set it using the L0 LRO and the L1 metastore.
          */
         kafka::offset lro;
     };
 
     using attached_partition = ss::lw_shared_ptr<attached_partition_info>;
 
-    // currently attached partitions
-    absl::node_hash_map<model::ntp, attached_partition> _partitions;
+    // NB: Partition attachment is the only part using ntps instead of
+    //     topic id partitions.
+    chunked_hash_map<model::ntp, attached_partition> _partitions;
 
     void attach_partition(ss::lw_shared_ptr<cluster::partition>);
     void detach_partition(const model::ntp&);
@@ -90,72 +112,168 @@ private:
     cluster::notification_id_type _unmanage_notify_handle;
 
 private:
-    static constexpr size_t max_object_size = 4_MiB;
+    static constexpr size_t max_object_size = 64_MiB;
 
     /*
-     * metadata about a materialized range of batches stored in an L1 object.
-     * after an object is created and uploaded, this metadata is used to drive
-     * the creation and replication of overlay batches to each partition.
-     *
-     * partition - the source partition
-     * physical extent - position within the object
-     * range info - additional metadata (e.g. kafka offset extent)
+     * A container for an object in the process of being built.
+     * Always requires cleanup via close_builder() and cleanup_staging().
      */
-    struct object_range_info {
+    struct builder_context {
+        std::unique_ptr<l1::staging_file> staging;
+        std::unique_ptr<l1::object_builder> builder;
+        size_t size_budget{max_object_size};
+
+        // Close the builder.
+        // Should be called before cleanup_staging.
+        ss::future<> close_builder() {
+            if (builder) {
+                co_await builder->close();
+                builder.reset();
+            }
+        }
+
+        // Remove staging file.
+        // Call after upload or an error.
+        ss::future<> cleanup_staging() {
+            if (staging) {
+                co_await staging->remove();
+                staging.reset();
+            }
+        }
+    };
+
+    /*
+     * Metadata about a partition in an L1 object, used for committing.
+     */
+    struct partition_commit_info {
         attached_partition partition;
-        uint64_t physical_offset_start;
-        uint64_t physical_offset_end;
-        range_info info;
+        partition_metadata metadata;
     };
 
     /*
-     * a staged / materialized L1 object.
-     *
-     * data - the payload
-     * ranges - metadata about each range in the payload
+     * The metadata produced when an object is successfully built.
+     * Contains the information necessary to register the object
+     * with the metastore.
      */
-    struct object {
-        iobuf data;
-        chunked_vector<object_range_info> ranges;
-
-        // add a range from the given partition
-        void add(range, const attached_partition&);
+    struct built_object_metadata {
+        l1::object_builder::object_info object_info;
+        chunked_vector<partition_commit_info> partitions;
     };
 
-    // top-level background worker that drives reconciliation
+    // Top-level background worker that drives reconciliation.
     ss::future<> reconciliation_loop();
     ssx::semaphore _control_sem{0, "reconciler::semaphore"};
 
     /*
-     * one round of reconciliation in which data from one or more partitions may
-     * be reconciled into an L1 object. operates on the set of currently
+     * Copy leader partitions from the attached partitions map into a new
+     * container. Shuffles the partitions to avoid starvation during
+     * reconciliation.
+     */
+    chunked_vector<attached_partition> collect_leader_partitions() const;
+
+    /*
+     * One round of reconciliation in which data from one or more partitions
+     * may be reconciled into an L1 object. Operates on the set of currently
      * attached partitions.
      */
     ss::future<> reconcile();
 
     /*
-     * reconciliation is a three step process. first an L1 object is built, then
-     * it is uploaded to cloud storage, and finally its committed.
+     * Reconcile a set of partitions into an object with id `oid`.
+     * The metastore must have previously assigned `oid` to each partition
+     * in `partitions`. Returns metadata on success, or an error if building,
+     * uploading, or metadata operations fail.
      */
-    ss::future<std::optional<object>> build_object();
-    ss::future<cloud_io::upload_result>
-      upload_object(cloud_storage_clients::object_key, iobuf);
-    ss::future<> commit_object(
-      const cloud_storage_clients::object_key&, const object_range_info&);
+    ss::future<std::expected<built_object_metadata, reconcile_error>>
+    reconcile_partitions(
+      const l1::object_id& oid,
+      const chunked_vector<attached_partition>& partitions);
 
     /*
-     * build a partition reader that returns batches to be reconciled. reading
-     * will start from the last reconcilied offset. if there is no data that
-     * needs to be reconciled then an empty reader is returned.
+     * Build and upload an object with id `oid` using the provided context.
+     * Reads data from `partitions` and packages it into the object.
+     * Returns metadata on success, or an error if no data was added or
+     * if the build/upload fails.
+     */
+    ss::future<std::expected<built_object_metadata, reconcile_error>>
+    build_and_put_object(
+      const l1::object_id& oid,
+      builder_context& ctx,
+      const chunked_vector<attached_partition>& partitions);
+
+    /*
+     * Create a new builder_context for constructing an L1 object.
+     * Returns an error if staging file or builder creation fails.
+     */
+    ss::future<std::expected<builder_context, reconcile_error>> make_context();
+
+    /*
+     * Build an object described by `ctx` and containing data from
+     * `partitions`, which must all belong to the same L1 domain.
+     *
+     * Returns empty metadata if no data was added to the object.
+     * Returns an error if building fails.
+     */
+    ss::future<std::expected<built_object_metadata, reconcile_error>>
+    build_object(
+      builder_context& ctx,
+      const chunked_vector<attached_partition>& partitions);
+
+    /*
+     * Add partition data to an L1 object builder. Returns the partition
+     * metadata if any batches were consumed, nullopt otherwise.
+     */
+    ss::future<std::optional<partition_metadata>> add_partition_to_object(
+      builder_context& ctx, const attached_partition& partition);
+
+    /*
+     * Upload an object to cloud storage with the specified id.
+     * Returns an error if the upload fails.
+     */
+    ss::future<std::expected<void, reconcile_error>>
+    put_object(const l1::object_id& oid, builder_context& ctx);
+
+    /*
+     * Add an object's metadata to the metastore metadata builder.
+     * Adds partition metadata for all partitions in the object.
+     * Returns an error if any metadata operation fails.
+     */
+    ss::future<std::expected<void, reconcile_error>> add_object_metadata(
+      const l1::object_id& oid,
+      const built_object_metadata& info,
+      l1::metastore::object_metadata_builder* meta_builder);
+
+    /*
+     * Commit multiple objects to the L1 metastore in a single operation.
+     * Updates the LRO (last reconciled offset) for each partition based on
+     * the committed data, using corrections from the metastore if provided.
+     */
+    ss::future<std::expected<void, reconcile_error>> commit_objects(
+      const chunked_vector<built_object_metadata>& objects,
+      std::unique_ptr<l1::metastore::object_metadata_builder> meta_builder);
+
+    /*
+     * Build a partition reader that returns batches to be reconciled.
+     * Reading will start from the last reconcilied offset. If there is no
+     * data that needs to be reconciled then an empty reader is returned.
      */
     ss::future<model::record_batch_reader>
     make_reader(frontend*, kafka::offset start_offset, size_t);
 
+    /*
+     * Convert an ntp to a topic_id_partition using the metadata cache.
+     * Returns nullopt if the topic doesn't exist or doesn't have a
+     * topic_id.
+     */
+    std::optional<model::topic_id_partition>
+    ntp_to_topic_id_partition(const model::ntp& ntp) const;
+
 private:
-    ss::sharded<cluster::partition_manager>* _partition_manager;
-    ss::sharded<cloud_io::remote>* _cloud_io;
+    cluster::partition_manager* _partition_manager;
     data_plane_api* _data_plane;
-    cloud_storage_clients::bucket_name _bucket;
+    l1::io* _l1_io;
+    cluster::metadata_cache* _metadata_cache;
+    l1::metastore* _metastore;
     ss::gate _gate;
     ss::abort_source _as;
 };

@@ -22,10 +22,4 @@ struct compaction_key : bytes {
       : bytes(std::move(b)) {}
 };
 
-// Adds additional context (batch type & whether the owning batch is a control
-// batch) to a key represented by `bytes_view`, and returns the result as a
-// `compaction_key`.
-compaction_key enhance_key(
-  model::record_batch_type type, bool is_control_batch, bytes_view key);
-
 } // namespace compaction

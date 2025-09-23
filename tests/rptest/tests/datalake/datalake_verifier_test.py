@@ -6,22 +6,16 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import json
-import os
-import tempfile
-import time
-from rptest.clients.rpk import RpkTool
+
+from ducktape.mark import matrix
+
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings, SchemaRegistryConfig
-from rptest.services.redpanda_connect import RedpandaConnectService
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
 from rptest.tests.datalake.query_engine_base import QueryEngineType
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.datalake.utils import supported_storage_types
-from ducktape.mark import matrix
-
-from rptest.utils.mode_checks import ignore
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 # Test checking that the verifier can detect Iceberg table anomalies

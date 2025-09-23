@@ -144,6 +144,14 @@ build:release --@seastar//:stack_guards=False --@seastar//:debug=False
 build:release --//src/v/redpanda:lto=True
 build:release --copt -flto=thin --copt -ffat-lto-objects
 build:release --copt -g --strip=never
+build:release --@rules_rust//rust/settings:lto=fat
+build:release --@rules_rust//rust/settings:extra_rustc_flag=-Ccodegen-units=1
+# I've seen others claim these flags help with LTO and the final binary, but these also
+# require a specific version of clang and I don't really want to tie rustc version with
+# clang version.
+# build:release --@rules_rust//rust/settings:extra_rustc_flag=-Clinker-plugin-lto
+# build:release --@rules_rust//rust/settings:extra_rustc_flag=-Cembed-bitcode=yes
+# build:release --@rules_rust//rust/settings:extra_rustc_flag=-Clink-arg=-fuse-ld=lld
 
 build:stamp --stamp --workspace_status_command=./bazel/stamp_vars.sh
 build:stamp-full --stamp --workspace_status_command='./bazel/stamp_vars.sh full'

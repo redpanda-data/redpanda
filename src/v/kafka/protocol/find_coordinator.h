@@ -26,12 +26,20 @@ struct find_coordinator_request final {
 
     find_coordinator_request() = default;
 
-    find_coordinator_request(
+    explicit find_coordinator_request(
       ss::sstring key, coordinator_type key_type = coordinator_type::group)
       : data({
           .key = std::move(key),
           .key_type = key_type,
         }) {}
+
+    explicit find_coordinator_request(
+      chunked_vector<ss::sstring> coordinator_keys,
+      coordinator_type key_type = coordinator_type::group)
+      : data{
+          .key = "",
+          .key_type = key_type,
+          .coordinator_keys = std::move(coordinator_keys)} {}
 
     void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
@@ -45,6 +53,33 @@ struct find_coordinator_request final {
     operator<<(std::ostream& os, const find_coordinator_request& r) {
         return os << r.data;
     }
+};
+
+struct coordinator_response final : kafka::coordinator {
+    coordinator_response() = default;
+
+    // error constructor
+    explicit coordinator_response(
+      ss::sstring key,
+      kafka::error_code error,
+      std::optional<ss::sstring> error_message = std::nullopt)
+      : coordinator{
+          .key = std::move(key),
+          .node_id = model::node_id{-1},
+          .host = "",
+          .port = -1,
+          .error_code = error,
+          .error_message = std::move(error_message)} {}
+
+    explicit coordinator_response(
+      ss::sstring key, model::node_id node, ss::sstring host, int32_t port)
+      : coordinator{
+          .key = std::move(key),
+          .node_id = node,
+          .host = std::move(host),
+          .port = port,
+          .error_code = kafka::error_code::none,
+          .error_message = std::nullopt} {}
 };
 
 struct find_coordinator_response final {

@@ -67,6 +67,10 @@ public:
     ss::future<rpc::get_first_timestamp_ge_reply> get_first_timestamp_ge(
       rpc::get_first_timestamp_ge_request, local_only = local_only::no);
 
+    ss::future<rpc::get_first_offset_for_bytes_reply>
+      get_first_offset_for_bytes(
+        rpc::get_first_offset_for_bytes_request, local_only = local_only::no);
+
     ss::future<rpc::get_offsets_reply>
       get_offsets(rpc::get_offsets_request, local_only = local_only::no);
 
@@ -127,6 +131,12 @@ private:
     ss::future<rpc::get_first_timestamp_ge_reply>
     get_first_timestamp_ge_locally(
       rpc::get_first_timestamp_ge_request,
+      const model::ntp& metastore_ntp,
+      ss::shard_id);
+
+    ss::future<rpc::get_first_offset_for_bytes_reply>
+    get_first_offset_for_bytes_locally(
+      rpc::get_first_offset_for_bytes_request,
       const model::ntp& metastore_ntp,
       ss::shard_id);
 

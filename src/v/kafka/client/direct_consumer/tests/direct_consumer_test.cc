@@ -187,8 +187,11 @@ struct consumer_test_mock : public ::testing::Test {
                     topic_data.partitions.push_back(std::move(part_data));
                     continue;
                 }
-                if (partition.fetch_offset >= state.high_watermark) {
-                    // No batches available, return empty response
+                if (partition.fetch_offset > state.high_watermark) {
+                    part_data.error_code
+                      = kafka::error_code::offset_out_of_range;
+                    part_data.high_watermark = model::offset(-1);
+                    topic_data.partitions.push_back(std::move(part_data));
                     continue;
                 }
                 auto batches_to_fetch = std::min<size_t>(
@@ -731,4 +734,39 @@ TEST(fetch_session_state_test, test_state_transitions) {
     ASSERT_EQ(state.session_state, fss::need_full_fetch);
     ASSERT_EQ(state.session_id, kafka::invalid_fetch_session_id);
     ASSERT_EQ(state.session_epoch, kafka::initial_fetch_session_epoch);
+}
+
+TEST_F(consumer_test_mock, TestOffsetOutOfRangeHandling) {
+    prepare_cluster();
+    model::topic test_topic("panda-test");
+    cluster_mock.add_topic(test_topic, 2, 3);
+    topic_partition_map<chunked_vector<model::record_batch>> all_batches;
+
+    // 10 batches available in partition 0
+    make_data_available(test_topic, 0, 10);
+    auto client_cluster = create_client_cluster();
+    client_cluster.start().get();
+    direct_consumer consumer(client_cluster, direct_consumer::configuration{});
+    consumer.start().get();
+    auto deferred_stop = ss::defer([&] {
+        consumer.stop().get();
+        client_cluster.stop().get();
+    });
+    chunked_vector<topic_assignment> assignment;
+    assignment.push_back({
+      .topic = test_topic,
+    });
+    // only partition 0 is assigned
+    assignment.back().partitions.push_back(
+      partition_assignment{
+        .partition_id = model::partition_id(0),
+        .next_offset = kafka::offset(10000),
+      });
+    consumer.assign_partitions(std::move(assignment)).get();
+    fetch_and_append_to_map(all_batches, consumer).get();
+
+    ASSERT_EQ(all_batches.size(), 1);
+    ASSERT_TRUE(all_batches.contains(test_topic));
+    ASSERT_EQ(all_batches[test_topic].size(), 1);
+    ASSERT_EQ(all_batches[test_topic][model::partition_id(0)].size(), 10);
 }

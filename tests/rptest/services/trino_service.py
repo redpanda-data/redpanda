@@ -16,10 +16,10 @@ from ducktape.utils.util import wait_until
 from pyhive import trino
 
 from rptest.context import cloud_storage
-from rptest.services.spark_service import QueryEngineBase
-from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.services.catalog_service import CatalogType, catalog_type_to_config_string
 from rptest.services.nessie_catalog import NessieCatalog
+from rptest.services.spark_service import QueryEngineBase
+from rptest.tests.datalake.query_engine_base import QueryEngineType
 
 
 class TrinoService(Service, QueryEngineBase):

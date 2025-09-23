@@ -21,6 +21,7 @@ using ::cluster_link::model::metadata;
 using ::cluster_link::model::mirror_topic_metadata;
 using ::cluster_link::model::mirror_topic_state;
 using ::cluster_link::model::name_t;
+using ::cluster_link::model::update_cluster_link_configuration_cmd;
 using ::cluster_link::model::update_mirror_topic_state_cmd;
 
 model::record_batch create_upsert_command(model::offset offset, metadata link) {
@@ -55,18 +56,29 @@ model::record_batch create_update_mirror_topic_properties_command(
     return cluster::serde_serialize_cmd(std::move(update_cmd));
 }
 
+model::record_batch create_update_cluster_link_configuration_command(
+  id_t id, update_cluster_link_configuration_cmd cmd) {
+    cluster::cluster_link_update_cluster_link_configuration_cmd update_cmd(
+      id, std::move(cmd));
+    return cluster::serde_serialize_cmd(std::move(update_cmd));
+}
+
 mirror_topic_metadata create_mirror_topic_metadata(
   mirror_topic_state state,
   ::model::topic source_topic_name,
   std::optional<::model::topic_id> source_topic_id,
   std::optional<::model::topic_id> destination_topic_id,
-  chunked_hash_map<ss::sstring, ss::sstring> topic_configs) {
+  chunked_hash_map<ss::sstring, ss::sstring> topic_configs,
+  int32_t partition_count,
+  std::optional<int16_t> replication_factor) {
     return {
       .state = state,
       .source_topic_id = source_topic_id,
       .source_topic_name = std::move(source_topic_name),
       .destination_topic_id = destination_topic_id.value_or(
         ::model::topic_id{uuid_t::create()}),
+      .partition_count = partition_count,
+      .replication_factor = replication_factor,
       .topic_configs = std::move(topic_configs),
     };
 }

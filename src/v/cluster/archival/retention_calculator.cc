@@ -79,7 +79,7 @@ std::optional<retention_calculator> retention_calculator::factory(
   const cloud_storage::partition_manifest& manifest,
   const storage::ntp_config& ntp_config,
   std::optional<kafka::offset> pinned_offset) {
-    if (!ntp_config.is_collectable()) {
+    if (!ntp_config.is_remotely_collectable()) {
         vlog(
           archival_log.trace, "{} Partition not collectible", ntp_config.ntp());
         return std::nullopt;

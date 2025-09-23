@@ -610,6 +610,16 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
     // Trigger spillover
     archiver.apply_spillover().get();
 
+    BOOST_REQUIRE_EQUAL(
+      part->archival_meta_stm()->manifest().get_archive_start_offset(),
+      model::offset{0});
+    BOOST_REQUIRE_EQUAL(
+      part->archival_meta_stm()->manifest().get_archive_clean_offset(),
+      model::offset{0});
+    BOOST_REQUIRE_EQUAL(
+      part->archival_meta_stm()->manifest().get_start_offset(),
+      model::offset(2000));
+
     const auto& spills
       = part->archival_meta_stm()->manifest().get_spillover_map();
     BOOST_REQUIRE_EQUAL(spills.size(), 1);

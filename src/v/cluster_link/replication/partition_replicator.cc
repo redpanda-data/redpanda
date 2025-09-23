@@ -33,15 +33,16 @@ partition_replicator::partition_replicator(
 
 ss::future<> partition_replicator::start() {
     vlog(_log.trace, "Starting replicator");
-    co_await _source->start();
     co_await _sink->start();
+    co_await _source->start(
+      kafka::next_offset(_sink->last_replicated_offset()));
     ssx::repeat_until_gate_closed(_gate, [this] {
         return fetch_and_replicate().handle_exception(
           [this](const std::exception_ptr& e) {
               auto log_level = ssx::is_shutdown_exception(e)
                                  ? ss::log_level::trace
                                  : ss::log_level::warn;
-              _log.log(log_level, "Error in partition replicator: {}", e);
+              vlogl(_log, log_level, "Error in fetch_and_replicate: {}", e);
           });
     });
 }
@@ -49,10 +50,10 @@ ss::future<> partition_replicator::start() {
 ss::future<> partition_replicator::stop() {
     vlog(_log.trace, "Stopping replicator");
     _as.request_abort();
-    auto f = _gate.close();
-    co_await _source->stop();
-    co_await _sink->stop();
-    co_await std::move(f);
+    // closing the gate first ensures all the units are returned to the
+    // semaphores before the source is stopped.
+    co_await _gate.close();
+    co_await ss::when_all_succeed(_source->stop(), _sink->stop());
     vlog(_log.trace, "Stopped replicator");
 }
 
@@ -77,7 +78,8 @@ ss::future<bool> partition_replicator::handle_replication_result(
         }
         vlog(
           _log.trace,
-          "Replicated batches in range [{} - {}] with at offset: {}",
+          "Replicated batches in kafka range [{} - {}] ending at raft offset: "
+          "{}",
           begin,
           end,
           result.value().last_offset);
@@ -87,8 +89,13 @@ ss::future<bool> partition_replicator::handle_replication_result(
         _backoff_policy.reset();
         co_return true;
     } catch (...) {
-        vlog(
-          _log.error,
+        auto eptr = std::current_exception();
+        auto log_level = ssx::is_shutdown_exception(eptr)
+                           ? ss::log_level::debug
+                           : ss::log_level::error;
+        vlogl(
+          _log,
+          log_level,
           "Exception during replication: {}",
           std::current_exception());
     }
@@ -99,7 +106,34 @@ ss::future<> partition_replicator::replicate_and_wait(
   replicate_ctx ctx, ss::gate& gate, ss::abort_source& as) {
     auto stages = _sink->replicate(
       std::move(ctx.batches), model::max_duration, as);
-    co_await std::move(stages.request_enqueued);
+    auto enqueue_f = co_await ss::coroutine::as_future(
+      std::move(stages.request_enqueued));
+    std::exception_ptr eptr = nullptr;
+    if (enqueue_f.failed()) {
+        eptr = enqueue_f.get_exception();
+        auto log_level = ssx::is_shutdown_exception(eptr)
+                           ? ss::log_level::debug
+                           : ss::log_level::error;
+        vlogl(
+          _log,
+          log_level,
+          "Exception during replicate request enqueue: {}",
+          eptr);
+    }
+    if (eptr != nullptr || gate.is_closed()) [[unlikely]] {
+        // always ensure `replicate_finished` is waited on.
+        // This branch is always called in error scenarios, so waiting in the
+        // foreground is acceptable and avoids dangling future.
+        vlog(
+          _log.trace,
+          "Waiting for replication to finish in the "
+          "foreground");
+        co_await std::move(stages.replicate_finished).discard_result();
+        if (eptr != nullptr) {
+            std::rethrow_exception(eptr);
+        }
+        co_return;
+    }
     ssx::spawn_with_gate(
       gate,
       [this,
@@ -125,8 +159,6 @@ ss::future<> partition_replicator::fetch_and_replicate() {
     // abort source for this iteration of fetch_and_replicate
     ss::abort_source as;
     auto subscription = _as.subscribe([&as] noexcept { as.request_abort(); });
-    co_await _source->reset(
-      kafka::next_offset(_sink->last_replicated_offset()));
     ss::gate gate;
     try {
         while (!_gate.is_closed() && !as.abort_requested()) {
@@ -147,14 +179,17 @@ ss::future<> partition_replicator::fetch_and_replicate() {
     } catch (const ss::sleep_aborted&) {
         // ignore, sleep from fetch was aborted.
     } catch (...) {
-        vlog(
-          _log.error,
-          "Error in fetch_and_replicate: {}",
-          std::current_exception());
+        auto eptr = std::current_exception();
+        auto log_level = ssx::is_shutdown_exception(eptr)
+                           ? ss::log_level::debug
+                           : ss::log_level::error;
+        vlogl(_log, log_level, "Error in fetch_and_replicate: {}", eptr);
         as.request_abort();
     }
     co_await gate.close();
     if (!_gate.is_closed() && !_as.abort_requested()) {
+        co_await _source->reset(
+          kafka::next_offset(_sink->last_replicated_offset()));
         auto sleep_for = _backoff_policy.current_backoff_duration();
         vlog(
           _log.trace,

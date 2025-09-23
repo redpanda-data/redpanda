@@ -32,6 +32,7 @@ using proto::admin::tls_file_settings;
 using proto::admin::tls_settings;
 using proto::admin::tlspem_settings;
 using proto::admin::topic_metadata_sync_options;
+using proto::admin::update_shadow_link_request;
 namespace {
 
 constexpr auto to_filter_pattern_type(proto::admin::pattern_type p) {
@@ -95,7 +96,8 @@ create_topic_metadata_mirroring_config(
           options.get_interval());
     }
 
-    config.topic_name_filters = to_filter_patterns(options.get_topic_filters());
+    config.topic_name_filters = to_filter_patterns(
+      options.get_auto_create_shadow_topic_filters());
 
     std::ranges::copy(
       options.get_shadowed_topic_properties(),
@@ -106,14 +108,30 @@ create_topic_metadata_mirroring_config(
     return config;
 }
 
+cluster_link::model::consumer_groups_mirroring_config
+create_consumer_groups_mirroring_config(
+  const proto::admin::consumer_offset_sync_options& options) {
+    cluster_link::model::consumer_groups_mirroring_config config;
+
+    if (options.get_interval() > absl::ZeroDuration()) {
+        config.task_interval = absl::ToChronoNanoseconds(
+          options.get_interval());
+    }
+
+    config.filters = to_filter_patterns(options.get_group_filters());
+
+    return config;
+}
 cluster_link::model::link_configuration
-create_link_configuration(const create_shadow_link_request& req) {
+create_link_configuration(const shadow_link& sl) {
     cluster_link::model::link_configuration config;
     config.topic_metadata_mirroring_cfg
       = create_topic_metadata_mirroring_config(
-        req.get_shadow_link()
-          .get_configurations()
-          .get_topic_metadata_sync_options());
+        sl.get_configurations().get_topic_metadata_sync_options());
+
+    config.consumer_groups_mirroring_cfg
+      = create_consumer_groups_mirroring_config(
+        sl.get_configurations().get_consumer_offset_sync_options());
 
     return config;
 }
@@ -134,13 +152,6 @@ constexpr auto scram_mechanism_to_string(scram_mechanism m) {
       "to either SCRAM-SHA-256 or SCRAM-SHA-512");
 }
 
-/// \brief Sets client ID to the format:
-/// "cluster-link-{cluster-link-name}-{cluster-link-uuid}"
-void set_client_id(cluster_link::model::metadata& md) {
-    md.connection.client_id = ssx::sformat(
-      "cluster-link-{}-{}", md.name, md.uuid);
-}
-
 /// \brief Creates the authentication settings from the create cluster link
 /// \brief throws std::invalid_argument if invalid config provided
 cluster_link::model::connection_config::authn_variant
@@ -149,6 +160,14 @@ create_authn_settings(const authentication_configuration& authn_config) {
       [](const scram_config& scram)
         -> cluster_link::model::connection_config::authn_variant {
           cluster_link::model::scram_credentials creds;
+          if (
+            scram.get_username().empty() || scram.get_password().empty()
+            || scram.get_scram_mechanism()
+                 == proto::admin::scram_mechanism::unspecified) {
+              throw std::invalid_argument(
+                "When setting SCRAM configuration, must provide username, "
+                "password, and mechanism");
+          }
           creds.username = scram.get_username();
           creds.password = scram.get_password();
           creds.mechanism = ss::sstring{
@@ -204,10 +223,9 @@ void set_tls_settings(
 /// \brief Creates a connection config from the create cluster link request
 /// \throws std::invalid_argument if the bootstrap servers are not valid
 cluster_link::model::connection_config
-create_connection_config(const create_shadow_link_request& req) {
+create_connection_config(const shadow_link& sl) {
     cluster_link::model::connection_config config;
-    const auto& client_options
-      = req.get_shadow_link().get_configurations().get_client_options();
+    const auto& client_options = sl.get_configurations().get_client_options();
     const auto& bootstrap_servers = client_options.get_bootstrap_servers();
     if (bootstrap_servers.empty()) {
         throw std::invalid_argument(
@@ -450,7 +468,8 @@ topic_metadata_sync_options create_topic_metadata_sync_options(
     options.set_interval(
       absl::FromChrono(
         cfg.task_interval.value_or(ss::lowres_clock::duration::zero())));
-    options.set_topic_filters(to_name_filters(cfg.topic_name_filters));
+    options.set_auto_create_shadow_topic_filters(
+      to_name_filters(cfg.topic_name_filters));
 
     chunked_vector<ss::sstring> mirrored_properties;
     mirrored_properties.reserve(cfg.topic_properties_to_mirror.size());
@@ -501,23 +520,90 @@ create_shadow_link_status(const cluster_link::model::metadata& md) {
 
     return status;
 }
+
+cluster_link::model::metadata shadow_link_to_metadata(shadow_link sl) {
+    cluster_link::model::metadata md;
+    md.name = cluster_link::model::name_t{std::move(sl.get_name())};
+    md.uuid = cluster_link::model::uuid_t(uuid_t::create());
+    md.connection = create_connection_config(sl);
+    md.configuration = create_link_configuration(sl);
+
+    set_client_id(md);
+    return md;
+}
+
+// Merges input only fields from the current metadata model into the shadow link
+// update
+void merge_input_only_fields(
+  const cluster_link::model::metadata& from, shadow_link& to) {
+    auto& client_options = to.get_configurations().get_client_options();
+    // Check to see if `to` has username set but not password.  If so, then the
+    // password was not updated so we will use the current password in from
+    if (
+      client_options.has_authentication_configuration()
+      && client_options.get_authentication_configuration()
+           .has_scram_configuration()) {
+        auto& to_scram = client_options.get_authentication_configuration()
+                           .get_scram_configuration();
+        if (
+          to_scram.get_password().empty() && !to_scram.get_username().empty()) {
+            if (
+              from.connection.authn_config.has_value()
+              && std::holds_alternative<cluster_link::model::scram_credentials>(
+                from.connection.authn_config.value())) {
+                const auto& from_scram
+                  = std::get<cluster_link::model::scram_credentials>(
+                    from.connection.authn_config.value());
+                to_scram.set_password(ss::sstring{from_scram.password});
+            }
+        }
+    }
+
+    // Now check to see if the TLS settings are using values and if cert is set.
+    // If so, then the key was not updated so we will use the curent key
+    if (
+      client_options.has_tls_settings()
+      && client_options.get_tls_settings().has_tls_pem_settings()) {
+        auto& to_pem = client_options.get_tls_settings().get_tls_pem_settings();
+        if (to_pem.get_key().empty() && !to_pem.get_cert().empty()) {
+            // Key is not set but cert is set, so we need to copy the current
+            // key
+            if (from.connection.key.has_value()) {
+                ss::visit(
+                  from.connection.key.value(),
+                  [&to_pem](
+                    const cluster_link::model::tls_value& value) mutable {
+                      to_pem.set_key(ss::sstring{value()});
+                  },
+                  [](const auto&) {
+                      throw std::invalid_argument(
+                        "Inconsistent TLS type used in update");
+                  });
+            }
+        }
+    }
+}
+
+// Used to merge in output only fields that are not set during conversion of
+// shadow link message to metadata model
+void merge_output_only_fields(
+  const cluster_link::model::metadata& from,
+  cluster_link::model::metadata& to) {
+    to.connection.client_id = from.connection.client_id;
+}
 } // namespace
+
+void set_client_id(cluster_link::model::metadata& md) {
+    md.connection.client_id = ssx::sformat(
+      "cluster-link-{}-{}", md.name, md.uuid);
+}
 
 cluster_link::model::metadata
 convert_create_to_metadata(create_shadow_link_request req) {
     cluster_link::model::metadata metadata;
 
     try {
-        auto& cluster_link = req.get_shadow_link();
-
-        metadata.name = cluster_link::model::name_t{
-          std::move(cluster_link.get_name())};
-        metadata.uuid = cluster_link::model::uuid_t(uuid_t::create());
-        metadata.connection = create_connection_config(req);
-        metadata.configuration = create_link_configuration(req);
-
-        set_client_id(metadata);
-        return metadata;
+        return shadow_link_to_metadata(std::move(req.get_shadow_link()));
     } catch (const std::invalid_argument& e) {
         throw serde::pb::rpc::invalid_argument_exception(
           ssx::sformat("Invalid cluster link configuration: {}", e.what()));
@@ -533,5 +619,36 @@ shadow_link metadata_to_shadow_link(cluster_link::model::metadata md) {
     sl.set_status(create_shadow_link_status(md));
 
     return sl;
+}
+
+cluster_link::model::update_cluster_link_configuration_cmd
+create_update_cluster_link_config_cmd(
+  update_shadow_link_request req,
+  cluster_link::model::metadata current_metadata) {
+    if (!req.get_update_mask().is_valid_for_message<shadow_link>()) {
+        throw serde::pb::rpc::invalid_argument_exception(
+          ssx::sformat(
+            "Invalid update mask for shadow_link: {}", req.get_update_mask()));
+    }
+    // Save off client ID to reuse later
+    // Client ID is an output only field so when the shadow link value is
+    // converted back to metadata, the client ID is not set
+    auto current_sl = metadata_to_shadow_link(current_metadata.copy());
+    req.get_update_mask().merge_into(
+      std::move(req.get_shadow_link()), &current_sl);
+    merge_input_only_fields(current_metadata, current_sl);
+    try {
+        auto updated_md = shadow_link_to_metadata(std::move(current_sl));
+
+        merge_output_only_fields(current_metadata, updated_md);
+
+        return cluster_link::model::update_cluster_link_configuration_cmd{
+          .connection = std::move(updated_md.connection),
+          .link_config = std::move(updated_md.configuration)};
+    } catch (const std::invalid_argument& e) {
+        throw serde::pb::rpc::invalid_argument_exception(
+          ssx::sformat(
+            "Invalid shadow link update configuration: {}", e.what()));
+    }
 }
 } // namespace admin

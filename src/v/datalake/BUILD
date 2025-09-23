@@ -11,9 +11,9 @@ redpanda_cc_library(
     implementation_deps = [
         ":logger",
         "//src/v/base",
+        "//src/v/features",
         "//src/v/iceberg:compatibility",
         "//src/v/iceberg:compatibility_types",
-        "//src/v/iceberg:field_collecting_visitor",
         "//src/v/iceberg:partition",
         "//src/v/iceberg:schema",
         "//src/v/iceberg:transaction",
@@ -316,6 +316,7 @@ redpanda_cc_library(
         ":table_creator",
         ":table_id_provider",
         "//src/v/base",
+        "//src/v/features",
         "//src/v/iceberg/conversion:conversion_outcome",
         "//src/v/model:batch_compression",
         "//src/v/utils:lazy_abort_source",

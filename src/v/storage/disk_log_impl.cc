@@ -200,7 +200,7 @@ disk_log_impl::disk_log_impl(
         config().ntp(),
         _manager.config().readers_cache_eviction_timeout,
         config::shard_local_cfg().readers_cache_target_max_size.bind()))
-  , _compaction_enabled(config().is_compacted()) {
+  , _compaction_enabled(config().is_locally_compacted()) {
     for (auto& s : _segs) {
         _probe->add_initial_segment(*s);
         if (_compaction_enabled) {
@@ -1340,7 +1340,7 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
      * Compaction. Could factor out into a public interface like gc/retention if
      * there is a need to run it separately.
      */
-    if (config().is_compacted() && !_segs.empty()) {
+    if (config().is_locally_compacted() && !_segs.empty()) {
         scoped_file_tracker::set_t leftovers;
         cfg.compact.files_to_cleanup = &leftovers;
         auto fut = co_await ss::coroutine::as_future(
@@ -1756,7 +1756,7 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
         co_return request_eviction_until_offset(offset);
     }
 
-    if (!config().is_collectable()) {
+    if (!config().is_locally_collectable()) {
         co_return std::nullopt;
     }
 
@@ -2016,7 +2016,7 @@ ss::future<> disk_log_impl::new_segment(model::offset o, model::term_id t) {
           return remove_empty_segments().then(
             [this, h = std::move(handles)]() mutable {
                 vassert(!_closed, "cannot add log segment to closed log");
-                if (config().is_compacted()) {
+                if (config().is_locally_compacted()) {
                     h->mark_as_compacted_segment();
                 }
                 _segs.add(std::move(h));
@@ -2074,7 +2074,7 @@ size_t disk_log_impl::max_segment_size() const {
         result = *config().get_overrides().segment_size;
     } else {
         // no overrides use defaults
-        result = config().is_compacted()
+        result = config().is_locally_compacted()
                    ? _manager.config().compacted_segment_size()
                    : _manager.config().max_segment_size();
     }
@@ -2265,7 +2265,7 @@ ss::future<> disk_log_impl::apply_segment_ms() {
     // what Kafka does exactly.
     auto max_lag = config().max_compaction_lag_ms();
     if (
-      config().is_compacted()
+      config().is_locally_compacted()
       && max_lag != local_config.max_compaction_lag_ms.default_value()) {
         // Clamp for the same reasons.
         const auto clamped_max_lag = std::clamp(
@@ -2987,7 +2987,7 @@ disk_log_impl::max_eligible_for_compacted_reupload_offset(
             // perfectly compacted data that truncation leaves us with
             // uncompacted data in cloud storage. so in this case, a single
             // round of windowed compaction is 'enough'.
-            if (config().is_collectable()) {
+            if (config().is_locally_collectable()) {
                 return seg->finished_windowed_compaction();
             }
 
@@ -3596,7 +3596,7 @@ ss::future<bool> disk_log_impl::update_start_offset(model::offset o) {
 }
 
 bool disk_log_impl::notify_compaction_update() {
-    bool new_compaction_enabled = config().is_compacted();
+    bool new_compaction_enabled = config().is_locally_compacted();
     bool result = (_compaction_enabled != new_compaction_enabled);
     _compaction_enabled = new_compaction_enabled;
 
@@ -3625,7 +3625,7 @@ void disk_log_impl::set_overrides(ntp_config::default_overrides o) {
  * perform full compaction.
  */
 int64_t disk_log_impl::compaction_backlog() {
-    if (!config().is_compacted() || _segs.empty()) {
+    if (!config().is_locally_compacted() || _segs.empty()) {
         return 0;
     }
 
@@ -3711,7 +3711,7 @@ ss::shared_ptr<log> make_disk_backed_log(
 ss::future<std::pair<usage, reclaim_size_limits>>
 disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
     std::optional<model::offset> max_offset;
-    if (config().is_collectable()) {
+    if (config().is_locally_collectable()) {
         auto cfg = apply_overrides(input_cfg);
         max_offset = retention_offset(cfg);
     }
@@ -3881,7 +3881,7 @@ disk_log_impl::disk_usage_target(gc_config cfg, usage usage) {
      * compacted topics are always stored whole on local storage such that local
      * retention settings do not come into play.
      */
-    if (config().is_compacted()) {
+    if (config().is_locally_compacted()) {
         /*
          * if there is no delete policy enabled for a compacted topic then its
          * local capacity requirement is limited only by compaction process and
@@ -3889,7 +3889,9 @@ disk_log_impl::disk_usage_target(gc_config cfg, usage usage) {
          * report space wanted as `factor * current capacity` to reflect that we
          * want space for continued growth.
          */
-        if (!config().is_collectable() || deletion_exempt(config().ntp())) {
+        if (
+          !config().is_locally_collectable()
+          || deletion_exempt(config().ntp())) {
             target.min_capacity_wanted = usage.total() * 2;
             co_return target;
         }
@@ -4535,7 +4537,7 @@ disk_log_impl::earliest_dirty_segment_ts() const {
 
 std::optional<model::timestamp>
 disk_log_impl::earliest_removable_timestamp(model::offset o) const {
-    if (!config().is_compacted()) {
+    if (!config().is_locally_compacted()) {
         return std::nullopt;
     }
 

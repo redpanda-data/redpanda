@@ -469,24 +469,13 @@ ss::future<http::client> details::metrics_http_client::make_http_client() {
     client_configuration.disable_metrics = net::metrics_disabled::yes;
 
     if (_conf.addr.protocol == "https") {
-        ss::tls::credentials_builder builder;
-        builder.set_client_auth(ss::tls::client_auth::NONE);
-        builder.set_minimum_tls_version(
-          config::from_config(config::shard_local_cfg().tls_min_version()));
-        auto ca_file = co_await net::find_ca_file();
-        if (ca_file) {
-            vlog(
-              _conf.logger.trace,
-              "using {} as metrics reporter CA store",
-              ca_file);
-            co_await builder.set_x509_trust_file(
-              ca_file.value(), ss::tls::x509_crt_format::PEM);
-        } else {
-            vlog(
-              _conf.logger.trace,
-              "ca file not found, defaulting to system trust store");
-            co_await builder.set_system_trust();
-        }
+        ss::tls::credentials_builder builder
+          = co_await net::get_credentials_builder({
+            .min_tls_version = config::from_config(
+              config::shard_local_cfg().tls_min_version()),
+            .enable_renegotiation = false,
+            .require_client_auth = false,
+          });
 
         client_configuration.credentials
           = co_await net::build_reloadable_credentials_with_probe<

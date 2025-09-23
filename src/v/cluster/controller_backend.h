@@ -26,6 +26,7 @@
 #include "model/metadata.h"
 #include "raft/group_configuration.h"
 #include "storage/api.h"
+#include "utils/adjustable_semaphore.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
@@ -214,6 +215,7 @@ public:
       config::binding<std::chrono::milliseconds>
         retention_local_target_ms_default,
       config::binding<bool> retention_local_strict,
+      config::binding<uint32_t> controller_backend_reconciliation_concurrency,
       ss::scheduling_group scheduling_group,
       ss::sharded<seastar::abort_source>&);
     ~controller_backend();
@@ -407,6 +409,7 @@ private:
     config::binding<std::chrono::milliseconds>
       _retention_local_target_ms_default;
     config::binding<bool> _retention_local_strict;
+    config::binding<uint32_t> _controller_backend_reconciliation_concurrency;
     ss::scheduling_group _scheduling_group;
     ss::sharded<ss::abort_source>& _as;
 
@@ -421,7 +424,7 @@ private:
     // Limits the number of concurrently executing reconciliation fibers.
     // Initially reconciliation is blocked and we deposit a non-zero amount of
     // units when we are ready to start reconciling.
-    ssx::semaphore _reconciliation_sem{0, "c/controller-be"};
+    adjustable_semaphore _reconciliation_sem{0, "c/controller-be"};
     ss::gate _gate;
 
     metrics::internal_metric_groups _metrics;

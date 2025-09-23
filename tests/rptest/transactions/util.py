@@ -7,11 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.util import wait_until_result
 import random
 from contextlib import contextmanager
-import confluent_kafka as ck
 from typing import Optional
+
+import confluent_kafka as ck
+
+from rptest.util import wait_until_result
 
 
 @contextmanager

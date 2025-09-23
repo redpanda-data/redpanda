@@ -11,6 +11,7 @@
 
 #include "base/outcome.h"
 #include "config/property.h"
+#include "config/sasl_mechanisms.h"
 #include "security/fwd.h"
 
 #include <chrono>
@@ -25,6 +26,8 @@ class service {
 public:
     service(
       config::binding<std::vector<ss::sstring>> sasl_mechanisms,
+      config::binding<std::vector<config::sasl_mechanisms_override>>
+        sasl_mechanisms_overrides,
       config::binding<std::vector<ss::sstring>> http_authentication,
       config::binding<ss::sstring> discovery_url,
       config::binding<ss::sstring> token_audience,

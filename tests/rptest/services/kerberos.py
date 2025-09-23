@@ -1,10 +1,11 @@
 import json
 import os
-
 from collections import namedtuple
-from ducktape.cluster.remoteaccount import RemoteCommandError, RemoteAccount
+
+from ducktape.cluster.remoteaccount import RemoteAccount, RemoteCommandError
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
+
 from rptest.services.redpanda import RedpandaService
 
 KADM5_ACL_TMPL = """

@@ -888,7 +888,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
       })
       .then([path, &ntpc, &resources, ntp_sanitizer_config](
               ss::lw_shared_ptr<segment> seg) mutable {
-          if (!ntpc.is_compacted()) {
+          if (!ntpc.is_locally_compacted()) {
               return ss::make_ready_future<ss::lw_shared_ptr<segment>>(seg);
           }
           return with_segment(

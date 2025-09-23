@@ -80,7 +80,7 @@ FIXTURE_TEST(test_config_utils, redpanda_thread_fixture) {
 
     const auto create_credentials = [&, this]() {
         return kafka::client::create_client_credentials(
-          *app.controller, cluster_cfg, client_cfg, principal);
+          *app.controller, client_cfg, principal);
     };
 
     // Default configuration, no authz - expect no changes

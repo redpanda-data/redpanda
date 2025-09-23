@@ -38,7 +38,8 @@ coordinator_manager::coordinator_manager(
   pandaproxy::schema_registry::api* sr_api,
   std::unique_ptr<catalog_factory> catalog_factory,
   ss::sharded<cloud_io::remote>& io,
-  cloud_storage_clients::bucket_name bucket)
+  cloud_storage_clients::bucket_name bucket,
+  features::feature_table* features)
   : self_(self)
   , storage_(storage.local())
   , gm_(gm.local())
@@ -46,6 +47,7 @@ coordinator_manager::coordinator_manager(
   , topics_(topics.local())
   , topics_fe_(topics_fe)
   , schema_registry_(schema::registry::make_default(sr_api))
+  , features_(features)
   , manifest_io_(io.local(), bucket)
   , catalog_factory_(std::move(catalog_factory))
   , type_resolver_(
@@ -55,7 +57,8 @@ coordinator_manager::~coordinator_manager() = default;
 
 ss::future<> coordinator_manager::start() {
     catalog_ = co_await catalog_factory_->create_catalog(as_);
-    schema_mgr_ = std::make_unique<catalog_schema_manager>(*catalog_);
+    schema_mgr_ = std::make_unique<catalog_schema_manager>(
+      *catalog_, features_);
     file_committer_ = std::make_unique<iceberg_file_committer>(
       storage_,
       *catalog_,

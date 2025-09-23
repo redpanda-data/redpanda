@@ -13,6 +13,7 @@
 #include "config/bounded_property.h"
 #include "config/config_store.h"
 #include "config/tls_config.h"
+#include "net/tls.h"
 
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
@@ -62,30 +63,9 @@ struct retries_configuration {
     size_t max_retries;
     std::chrono::milliseconds retry_base_backoff;
 };
-/**
- * TLS settings for the client
- */
-using certificate_configuration
-  = std::variant<std::filesystem::path, ss::sstring>;
-
-struct key_cert_path {
-    std::filesystem::path key;
-    std::filesystem::path cert;
-};
-struct key_cert {
-    ss::sstring key;
-    ss::sstring cert;
-};
-
-struct pkcs12 {
-    certificate_configuration cert;
-    ss::sstring password;
-};
-
-using key_store = std::variant<key_cert, key_cert_path, pkcs12>;
 struct tls_configuration {
-    std::optional<certificate_configuration> truststore;
-    std::optional<key_store> k_store;
+    std::optional<net::certificate> truststore;
+    std::optional<net::key_store> k_store;
     static std::optional<tls_configuration>
     from_tls_config(const config::tls_config&);
 

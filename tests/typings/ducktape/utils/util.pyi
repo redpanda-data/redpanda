@@ -1,5 +1,6 @@
-from ducktape.errors import TimeoutError as TimeoutError
 from typing import Any, Callable
+
+from ducktape.errors import TimeoutError as TimeoutError
 
 def wait_until(
     condition: Callable[[], Any],

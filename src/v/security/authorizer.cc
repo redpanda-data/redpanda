@@ -165,8 +165,10 @@ auth_result authorizer::authorized(
   const T& resource_name,
   acl_operation operation,
   const acl_principal& principal,
-  const acl_host& host) const {
-    auth_result r = do_authorized(resource_name, operation, principal, host);
+  const acl_host& host,
+  superuser_required superuser_required) const {
+    auth_result r = do_authorized(
+      resource_name, operation, principal, host, superuser_required);
     _probe->record_authz_result(
       r.is_authorized() ? authz_result::allow
       : r.empty_matches ? authz_result::empty
@@ -179,12 +181,18 @@ auth_result authorizer::do_authorized(
   const T& resource_name,
   acl_operation operation,
   const acl_principal& principal,
-  const acl_host& host) const {
+  const acl_host& host,
+  superuser_required superuser_required) const {
     auto type = get_resource_type<T>();
     auto acls = store().find(type, resource_name());
 
     if (_superusers.contains(principal)) {
         return auth_result::superuser_authorized(
+          principal, host, operation, resource_name);
+    }
+
+    if (superuser_required) {
+        return auth_result::superuser_required_unauthorized(
           principal, host, operation, resource_name);
     }
 
@@ -294,37 +302,43 @@ template auth_result authorizer::authorized(
   const model::topic&,
   acl_operation,
   const acl_principal&,
-  const acl_host&) const;
+  const acl_host&,
+  superuser_required) const;
 
 template auth_result authorizer::authorized(
   const kafka::group_id&,
   acl_operation,
   const acl_principal&,
-  const acl_host&) const;
+  const acl_host&,
+  superuser_required) const;
 
 template auth_result authorizer::authorized(
   const security::acl_cluster_name&,
   acl_operation,
   const acl_principal&,
-  const acl_host&) const;
+  const acl_host&,
+  superuser_required) const;
 
 template auth_result authorizer::authorized(
   const kafka::transactional_id&,
   acl_operation,
   const acl_principal&,
-  const acl_host&) const;
+  const acl_host&,
+  superuser_required) const;
 
 template auth_result authorizer::authorized(
   const pandaproxy::schema_registry::subject&,
   acl_operation,
   const acl_principal&,
-  const acl_host&) const;
+  const acl_host&,
+  superuser_required) const;
 
 template auth_result authorizer::authorized(
   const pandaproxy::schema_registry::registry_resource&,
   acl_operation,
   const acl_principal&,
-  const acl_host&) const;
+  const acl_host&,
+  superuser_required) const;
 
 std::optional<security::acl_match> authorizer::acl_any_implied_ops_allowed(
   const acl_matches& acls,

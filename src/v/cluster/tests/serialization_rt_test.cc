@@ -15,7 +15,6 @@
 #include "cluster/tests/topic_properties_generator.h"
 #include "cluster/tx_protocol_types.h"
 #include "cluster/types.h"
-#include "compat/check.h"
 #include "container/chunked_vector.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
@@ -469,9 +468,26 @@ struct adl<partition_status_v1> {
 };
 } // namespace reflection
 
+/*
+ * Specialize for types that cannot be copied.
+ */
+template<typename T>
+std::pair<T, T> compat_copy(T t) {
+    return {t, t};
+}
+
+template<typename T>
+concept ExplicitCopyable = requires(T a) {
+    { a.copy() } -> std::same_as<T>;
+};
+
+template<ExplicitCopyable T>
+std::pair<T, T> compat_copy(T t) {
+    return {t.copy(), std::move(t)};
+}
+
 template<typename T>
 void roundtrip_test(T a) {
-    using compat::compat_copy;
     auto [serde_in, original] = compat_copy(std::move(a));
     auto serde_out = serde::to_iobuf(std::move(serde_in));
 

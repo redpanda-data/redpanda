@@ -26,6 +26,19 @@
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/testing/perf_tests.hh>
 
+namespace {
+
+constexpr auto version_with_rack{kafka::api_version{11}};
+constexpr auto version_with_epoch_validation{kafka::api_version{12}};
+constexpr auto version_with_topic_ids{kafka::api_version{13}};
+constexpr auto version_max_supported{kafka::fetch_handler::max_supported};
+
+static_assert(
+  version_max_supported == version_with_topic_ids,
+  "Consider adding a test for next supported version");
+
+} // namespace
+
 struct fetch_bench_config {
     int num_fetches;
 
@@ -64,7 +77,10 @@ struct fetch_topic {
     std::vector<fetch_part> partitions;
 };
 
-using fetch_request_config = std::vector<fetch_topic>;
+struct fetch_request_config {
+    std::vector<fetch_topic> topics;
+    kafka::api_version api_version;
+};
 
 template<fetch_bench_config cfg>
 struct fetch_bench_fixture : redpanda_thread_fixture {
@@ -83,10 +99,24 @@ struct fetch_bench_fixture : redpanda_thread_fixture {
         auto make_rctx = [&] {
             size_t total_batches = 0;
 
+            const auto& md_cache = app.metadata_cache.local();
+
             chunked_vector<kafka::fetch_topic> fetch_topics;
-            for (auto& topic_fetch : req_config) {
+            for (auto& topic_fetch : req_config.topics) {
                 kafka::fetch_topic ft;
-                ft.topic = topic_fetch.name;
+                if (req_config.api_version >= version_with_topic_ids) {
+                    auto tp_id = md_cache
+                                   .get_topic_metadata_ref(
+                                     model::topic_namespace_view(
+                                       model::kafka_namespace,
+                                       topic_fetch.name))
+                                   ->get()
+                                   .get_configuration()
+                                   .tp_id.value();
+                    ft.topic_id = tp_id;
+                } else {
+                    ft.topic = topic_fetch.name;
+                }
 
                 // add the partitions to the fetch request
                 for (const auto& part : topic_fetch.partitions) {
@@ -125,7 +155,7 @@ struct fetch_bench_fixture : redpanda_thread_fixture {
 
             kafka::request_header header{
               .key = kafka::fetch_handler::api::key,
-              .version = kafka::fetch_handler::max_supported};
+              .version = req_config.api_version};
 
             return make_request_context(
               std::move(request), header, conn_context);
@@ -157,7 +187,10 @@ struct fetch_bench_fixture : redpanda_thread_fixture {
                                       * (cfg.batch_size + cfg.batch_overhead);
         for (int i = 0; i < cfg.num_fetches + 1; i++) {
             auto& octx = *octxs[i];
-            vassert(!octx.response_error, "fetch wasn't successful");
+            vassert(
+              !octx.response_error,
+              "fetch wasn't successful {}",
+              octx.response_error);
             vassert(
               octx.response_size == expected_response_size,
               "not the expected response size. expected {} actual {}",
@@ -291,33 +324,69 @@ struct fetch_bench_fixture : redpanda_thread_fixture {
 using large_fetch_t = fetch_bench_fixture<large_fetch_config>;
 using small_fetch_t = fetch_bench_fixture<small_fetch_config>;
 
-fetch_request_config single_partition_req_config(model::topic t) {
-    return fetch_request_config{fetch_topic{
-      .name = std::move(t),
-      .partitions = {fetch_part{model::partition_id(0), model::offset(0), 1}}}};
+fetch_request_config single_partition_req_config(
+  model::topic t, kafka::api_version v = version_max_supported) {
+    return fetch_request_config{
+      .topics = {fetch_topic{
+        .name = std::move(t),
+        .partitions = {fetch_part{
+          model::partition_id(0), model::offset(0), 1}}}},
+      .api_version = v};
 }
 
-fetch_request_config multi_partition_req_config(model::topic t) {
-    return fetch_request_config{fetch_topic{
-      .name = std::move(t),
-      .partitions = {
-        fetch_part{model::partition_id(0), model::offset(0), 1},
-        fetch_part{model::partition_id(1), model::offset(0), 1}}}};
+fetch_request_config multi_partition_req_config(
+  model::topic t, kafka::api_version v = version_max_supported) {
+    return fetch_request_config{
+      .topics = {fetch_topic{
+        .name = std::move(t),
+        .partitions
+        = {fetch_part{model::partition_id(0), model::offset(0), 1}, fetch_part{model::partition_id(1), model::offset(0), 1}}}},
+      .api_version = v};
 }
 
-PERF_TEST_CN(large_fetch_t, single_partition_fetch) {
+PERF_TEST_CN(large_fetch_t, single_partition_fetch_version_max) {
     static model::topic t = co_await initialize_single_partition_topic();
 
     co_return co_await fetch_from(single_partition_req_config(t));
 }
 
-PERF_TEST_CN(small_fetch_t, single_partition_fetch) {
+PERF_TEST_CN(large_fetch_t, single_partition_fetch_version_with_rack) {
+    static model::topic t = co_await initialize_single_partition_topic();
+
+    co_return co_await fetch_from(
+      single_partition_req_config(t, version_with_rack));
+}
+
+PERF_TEST_CN(
+  large_fetch_t, single_partition_fetch_version_with_epoch_validation) {
+    static model::topic t = co_await initialize_single_partition_topic();
+
+    co_return co_await fetch_from(
+      single_partition_req_config(t, version_with_epoch_validation));
+}
+
+PERF_TEST_CN(small_fetch_t, single_partition_fetch_version_max) {
     static model::topic t = co_await initialize_single_partition_topic();
 
     co_return co_await fetch_from(single_partition_req_config(t));
 }
 
-PERF_TEST_CN(large_fetch_t, multi_partition_fetch) {
+PERF_TEST_CN(small_fetch_t, single_partition_fetch_version_with_rack) {
+    static model::topic t = co_await initialize_single_partition_topic();
+
+    co_return co_await fetch_from(
+      single_partition_req_config(t, version_with_rack));
+}
+
+PERF_TEST_CN(
+  small_fetch_t, single_partition_fetch_version_with_epoch_validation) {
+    static model::topic t = co_await initialize_single_partition_topic();
+
+    co_return co_await fetch_from(
+      single_partition_req_config(t, version_with_epoch_validation));
+}
+
+PERF_TEST_CN(large_fetch_t, multi_partition_fetch_version_max) {
     static model::topic t = co_await initialize_multi_partition_topic();
 
     // One partition will be from the same shard, while the other will be
@@ -326,11 +395,41 @@ PERF_TEST_CN(large_fetch_t, multi_partition_fetch) {
     co_return co_await fetch_from(multi_partition_req_config(t));
 }
 
-PERF_TEST_CN(small_fetch_t, multi_partition_fetch) {
+PERF_TEST_CN(large_fetch_t, multi_partition_fetch_version_with_rack) {
+    static model::topic t = co_await initialize_multi_partition_topic();
+
+    co_return co_await fetch_from(
+      multi_partition_req_config(t, version_with_rack));
+}
+
+PERF_TEST_CN(
+  large_fetch_t, multi_partition_fetch_version_with_epoch_validation) {
+    static model::topic t = co_await initialize_multi_partition_topic();
+
+    co_return co_await fetch_from(
+      multi_partition_req_config(t, version_with_epoch_validation));
+}
+
+PERF_TEST_CN(small_fetch_t, multi_partition_fetch_version_max) {
     static model::topic t = co_await initialize_multi_partition_topic();
 
     // One partition will be from the same shard, while the other will be
     // from a foreign shard. This will hopefully allow us to detect if more
     // or less cross shard calls are being made for a fetch.
     co_return co_await fetch_from(multi_partition_req_config(t));
+}
+
+PERF_TEST_CN(small_fetch_t, multi_partition_fetch_version_with_rack) {
+    static model::topic t = co_await initialize_multi_partition_topic();
+
+    co_return co_await fetch_from(
+      multi_partition_req_config(t, version_with_rack));
+}
+
+PERF_TEST_CN(
+  small_fetch_t, multi_partition_fetch_version_with_epoch_validation) {
+    static model::topic t = co_await initialize_multi_partition_topic();
+
+    co_return co_await fetch_from(
+      multi_partition_req_config(t, version_with_epoch_validation));
 }

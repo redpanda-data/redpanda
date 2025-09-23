@@ -10,20 +10,20 @@
 from __future__ import annotations
 
 import os
-import time
 import signal
 import threading
-import requests
+import time
 from typing import Any, Dict, Optional
-from requests.adapters import HTTPAdapter
 
+import requests
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
-from ducktape.cluster.remoteaccount import RemoteCommandError
+from requests.adapters import HTTPAdapter
 from urllib3 import Retry
 
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda_types import RedpandaServiceForClients
 
 # Install location, specified by Dockerfile or AMI
 TESTS_DIR = os.path.join("/opt", "kgo-verifier")
@@ -44,7 +44,7 @@ class KgoVerifierService(Service):
     def __init__(
         self,
         context,
-        redpanda,
+        redpanda: RedpandaServiceForClients,
         topic,
         msg_size,
         custom_node,
@@ -70,7 +70,7 @@ class KgoVerifierService(Service):
             assert not self.nodes
             self.nodes = custom_node
 
-        self._redpanda: RedpandaService = redpanda
+        self._redpanda: RedpandaServiceForClients = redpanda
         self._topic = topic
         self._msg_size = msg_size
         self._pid = None
@@ -80,13 +80,15 @@ class KgoVerifierService(Service):
         self._username = username
         self._password = password
         self._enable_tls = enable_tls
+        self._status: ProduceStatus | ConsumerStatus
 
         # if testing redpanda cloud, override with default test super user/pass
         if hasattr(redpanda, "GLOBAL_CLOUD_CLUSTER_CONFIG"):
-            security_config = redpanda.security_config()
-            self._username = security_config.get("sasl_plain_username", None)
-            self._password = security_config.get("sasl_plain_password", None)
-            self._enable_tls = security_config.get("enable_tls", False)
+            security_config = redpanda.kafka_client_security()
+            if security_config.sasl_enabled:
+                self._username = security_config.username
+                self._password = security_config.password
+            self._enable_tls = security_config.tls_enabled
 
         for node in self.nodes:
             if not hasattr(node, "kgo_verifier_ports"):
@@ -277,13 +279,9 @@ class KgoVerifierService(Service):
         Wrapper to catch timeouts on wait, and send a `/print_stack` to the remote
         process in case it is experiencing a hang bug.
         """
-
-        if self._stopped:
-            raise RuntimeError(
-                f"Can't wait {self.who_am_i()}. It was already stopped."
-                f" You can either stop() a service or wait() and then stop() it"
-                f" but not the other way around."
-            )
+        assert not self._stopped, (
+            f"Can't wait {self.who_am_i()}. It was already stopped. You can either stop() a service or wait() and then stop() it but not the other way around."
+        )
 
         try:
             return self._do_wait_node(node, timeout_sec)
@@ -296,6 +294,11 @@ class KgoVerifierService(Service):
                 )
 
             raise
+
+    @property
+    def status_thread(self) -> StatusThread:
+        assert self._status_thread is not None
+        return self._status_thread
 
     def _do_wait_node(self, node, timeout_sec):
         """
@@ -323,16 +326,16 @@ class KgoVerifierService(Service):
             f"wait_node {self.who_am_i()}: waiting for worker to complete"
         )
         self._redpanda.wait_until(
-            lambda: self._status.active is False or self._status_thread.errored,
+            lambda: self._status.active is False or self.status_thread.errored,
             timeout_sec=timeout_sec,
             backoff_sec=5,
             err_msg=f"{self.who_am_i()} didn't complete in {timeout_sec} seconds",
         )
-        self._status_thread.raise_on_error()
+        self.status_thread.raise_on_error()
 
         # Read final status
         self.logger.debug(f"wait_node {self.who_am_i()}: reading final status")
-        self._status_thread.shutdown()
+        self.status_thread.shutdown()
         self._status_thread = None
 
         # Permit the subprocess to exit, and wait for it to do so
@@ -385,7 +388,7 @@ class KgoVerifierService(Service):
 class StatusThread(threading.Thread):
     INTERVAL = 5
 
-    def __init__(self, parent: Service, node, status_cls, *args, **kwargs):
+    def __init__(self, parent: KgoVerifierService, node, status_cls, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.daemon = True
 
@@ -429,8 +432,9 @@ class StatusThread(threading.Thread):
         for s in worker_statuses[1:]:
             reduced.merge(self._status_cls(**s))
 
-        if self._status_cls == ProduceStatus:
-            progress = worker_statuses[0]["sent"] / float(self._parent._msg_count)
+        if isinstance(self._parent, KgoVerifierProducer):
+            parent: KgoVerifierProducer = self._parent
+            progress = worker_statuses[0]["sent"] / float(parent._msg_count)
             self.logger.info(
                 f"Producer {self.who_am_i} progress: {progress * 100:.2f}% {reduced}"
             )
@@ -514,6 +518,7 @@ class ValidatorStatus:
         name: str,
         valid_reads: int,
         invalid_reads: int,
+        offset_gaps: int,
         out_of_scope_invalid_reads: int,
         max_offsets_consumed: Optional[int],
         lost_offsets: Dict[str, int],
@@ -525,6 +530,7 @@ class ValidatorStatus:
 
         self.valid_reads = valid_reads
         self.invalid_reads = invalid_reads
+        self.offset_gaps = offset_gaps
         self.out_of_scope_invalid_reads = out_of_scope_invalid_reads
         self.max_offsets_consumed = max_offsets_consumed
         self.lost_offsets = lost_offsets
@@ -546,6 +552,7 @@ class ValidatorStatus:
 
         self.valid_reads += rhs.valid_reads
         self.invalid_reads += rhs.invalid_reads
+        self.offset_gaps += rhs.offset_gaps
         self.out_of_scope_invalid_reads += rhs.out_of_scope_invalid_reads
 
     def __str__(self):
@@ -553,6 +560,7 @@ class ValidatorStatus:
             f"ValidatorStatus<"
             f"valid_reads={self.valid_reads}, "
             f"invalid_reads={self.invalid_reads}, "
+            f"offset_gaps={self.offset_gaps}, "
             f"out_of_scope_invalid_reads={self.out_of_scope_invalid_reads}, "
             f"lost_offsets={self.lost_offsets}, "
             f"tombstones_consumed={self.tombstones_consumed}>"
@@ -576,6 +584,7 @@ class ConsumerStatus:
             validator = {
                 "valid_reads": 0,
                 "invalid_reads": 0,
+                "offset_gaps": 0,
                 "out_of_scope_invalid_reads": 0,
                 "name": "",
                 "max_offsets_consumed": dict(),
@@ -657,10 +666,15 @@ class KgoVerifierProducer(KgoVerifierService):
         self._client_name = client_name
 
     @property
-    def produce_status(self):
+    def produce_status(self) -> ProduceStatus:
+        assert self._status is not None and isinstance(self._status, ProduceStatus)
         return self._status
 
-    def wait_node(self, node, timeout_sec=None):
+    def wait_node(self, node, timeout_sec: int | None):
+        assert not self._stopped, (
+            f"Can't wait {self.who_am_i()}. It was already stopped. You can either stop() a service or wait() and then stop() it but not the other way around."
+        )
+
         if not self._status_thread:
             return True
 
@@ -668,9 +682,9 @@ class KgoVerifierProducer(KgoVerifierService):
         self.logger.debug(what)
         try:
             self._redpanda.wait_until(
-                lambda: self._status_thread.errored
-                or self._status.acked >= self._msg_count,
-                timeout_sec=timeout_sec,
+                lambda: self.status_thread.errored
+                or self.produce_status.acked >= self._msg_count,
+                timeout_sec=timeout_sec if timeout_sec is not None else 30,
                 backoff_sec=self._status_thread.INTERVAL,
                 err_msg=what,
             )
@@ -680,7 +694,7 @@ class KgoVerifierProducer(KgoVerifierService):
 
         self._status_thread.raise_on_error()
 
-        if self._status.bad_offsets != 0:
+        if self.produce_status.bad_offsets != 0:
             # This either means that the test sent multiple producers' traffic to
             # the same topic, or that Redpanda showed a buggy behavior with
             # idempotency: producer records should always land at the next offset
@@ -698,10 +712,10 @@ class KgoVerifierProducer(KgoVerifierService):
 
     def wait_for_acks(self, count, timeout_sec, backoff_sec, progress_sec=None):
         def acks():
-            return self._status.acked
+            return self.produce_status.acked
 
         def acks_at_count():
-            return self._status_thread.errored or acks() >= count
+            return self.status_thread.errored or acks() >= count
 
         if progress_sec is not None:
             self._redpanda.wait_until_with_progress_check(
@@ -716,17 +730,17 @@ class KgoVerifierProducer(KgoVerifierService):
             self._redpanda.wait_until(
                 acks_at_count, timeout_sec=timeout_sec, backoff_sec=backoff_sec
             )
-        self._status_thread.raise_on_error()
+        self.status_thread.raise_on_error()
 
     def _wait_for_file_on_nodes(self, file_name):
         self._redpanda.wait_until(
-            lambda: self._status_thread.errored
+            lambda: self.status_thread.errored
             or all(node.account.exists(file_name) for node in self.nodes),
             timeout_sec=15,
             backoff_sec=1,
             err_msg=f"Timed out waiting for {file_name} to be created",
         )
-        self._status_thread.raise_on_error()
+        self.status_thread.raise_on_error()
 
     def wait_for_offset_map(self):
         # Producer worker aims to checkpoint every 5 seconds, so we should see this promptly.
@@ -739,7 +753,7 @@ class KgoVerifierProducer(KgoVerifierService):
         self._wait_for_file_on_nodes(value_map_file_name)
 
     def is_complete(self):
-        return self._status.acked >= self._msg_count
+        return self.produce_status.acked >= self._msg_count
 
     def client_name(self):
         return self._client_name if self._client_name else self.who_am_i()
@@ -757,7 +771,7 @@ class KgoVerifierProducer(KgoVerifierService):
             cmd = cmd + f" --password {self._password}"
 
         if self._enable_tls:
-            cmd = cmd + f" --enable-tls"
+            cmd = cmd + " --enable-tls"
 
         if self._batch_max_bytes is not None:
             cmd = cmd + f" --batch_max_bytes {self._batch_max_bytes}"
@@ -769,7 +783,7 @@ class KgoVerifierProducer(KgoVerifierService):
             cmd = cmd + f" --fake-timestamp-step-ms {self._fake_timestamp_step_ms}"
 
         if self._use_transactions:
-            cmd = cmd + f" --use-transactions"
+            cmd = cmd + " --use-transactions"
 
             if self._msgs_per_transaction is not None:
                 cmd = cmd + f" --msgs-per-transaction {self._msgs_per_transaction}"
@@ -820,12 +834,12 @@ class AbstractConsumer(KgoVerifierService):
         self.logger.info("Waiting for total reads to reach %d", count)
 
         self._redpanda.wait_until(
-            lambda: self._status_thread.errored
+            lambda: self.status_thread.errored
             or self.consumer_status.validator.total_reads >= count,
             timeout_sec=timeout_sec,
             backoff_sec=backoff_sec,
         )
-        self._status_thread.raise_on_error()
+        self.status_thread.raise_on_error()
 
 
 class KgoVerifierSeqConsumer(AbstractConsumer):
@@ -884,7 +898,7 @@ class KgoVerifierSeqConsumer(AbstractConsumer):
         if self._password is not None:
             cmd = cmd + f" --password {self._password}"
         if self._enable_tls:
-            cmd = cmd + f" --enable-tls"
+            cmd = cmd + " --enable-tls"
         if self._max_msgs is not None:
             cmd += f" --seq_read_msgs {self._max_msgs}"
         if self._max_throughput_mb is not None:
@@ -906,18 +920,23 @@ class KgoVerifierSeqConsumer(AbstractConsumer):
         self._status_thread.start()
 
     def wait_node(self, node, timeout_sec=None):
+        assert not self._stopped, (
+            f"Can't wait {self.who_am_i()}. It was already stopped. You can either stop() a service or wait() and then stop() it but not the other way around."
+        )
+
         if self._producer:
+            producer: KgoVerifierProducer = self._producer
 
             def consumed_whole_log():
-                producer_done = self._producer._status.sent == self._producer._msg_count
+                producer_done = producer.produce_status.sent == producer._msg_count
                 if not producer_done:
                     self.logger.debug(
-                        f"Producer {self._producer.who_am_i()} hasn't finished yet"
+                        f"Producer {producer.who_am_i()} hasn't finished yet"
                     )
                     return False
 
                 consumed = self._status.validator.max_offsets_consumed
-                produced = self._producer._status.max_offsets_produced
+                produced = producer.produce_status.max_offsets_produced
                 if consumed != produced:
                     self.logger.debug(
                         f"Consumer {self.who_am_i()} hasn't read all produced data yet: {consumed=} {produced=}"
@@ -929,7 +948,7 @@ class KgoVerifierSeqConsumer(AbstractConsumer):
                 consumed_whole_log,
                 timeout_sec=timeout_sec,
                 backoff_sec=2,
-                err_msg=f"Consumer hasn't read all produced data: consumed={self._status.validator.max_offsets_consumed} produced={self._producer._status.max_offsets_produced}",
+                err_msg=f"Consumer hasn't read all produced data: consumed={self._status.validator.max_offsets_consumed} produced={self._producer.produce_status.max_offsets_produced}",
             )
 
         return super().wait_node(node, timeout_sec=timeout_sec)
@@ -978,7 +997,7 @@ class KgoVerifierRandomConsumer(AbstractConsumer):
         if self._password is not None:
             cmd = cmd + f" --password {self._password}"
         if self._enable_tls:
-            cmd = cmd + f" --enable-tls"
+            cmd = cmd + " --enable-tls"
         if self._use_transactions:
             cmd += " --use-transactions"
 
@@ -1011,6 +1030,7 @@ class KgoVerifierConsumerGroupConsumer(AbstractConsumer):
         continuous=False,
         tolerate_data_loss=False,
         group_name=None,
+        max_uncommitted=None,  # None means rely on auto commit
         use_transactions=False,
         compacted=False,
         validate_latest_values=False,
@@ -1033,6 +1053,10 @@ class KgoVerifierConsumerGroupConsumer(AbstractConsumer):
         self._max_msgs = max_msgs
         self._max_throughput_mb = max_throughput_mb
         self._group_name = group_name
+        assert max_uncommitted is None or max_uncommitted > 0, (
+            "max_uncommitted must be positive or None"
+        )
+        self._max_uncommitted = max_uncommitted
         self._continuous = continuous
         self._tolerate_data_loss = tolerate_data_loss
         self._use_transactions = use_transactions
@@ -1049,7 +1073,7 @@ class KgoVerifierConsumerGroupConsumer(AbstractConsumer):
         if self._password is not None:
             cmd = cmd + f" --password {self._password}"
         if self._enable_tls:
-            cmd = cmd + f" --enable-tls"
+            cmd = cmd + " --enable-tls"
         if self._loop:
             cmd += " --loop"
         if self._max_msgs is not None:
@@ -1062,6 +1086,8 @@ class KgoVerifierConsumerGroupConsumer(AbstractConsumer):
             cmd += " --tolerate-data-loss"
         if self._group_name is not None:
             cmd += f" --consumer_group_name {self._group_name}"
+        if self._max_uncommitted is not None:
+            cmd += f" --max-uncommitted {self._max_uncommitted}"
         if self._use_transactions:
             cmd += " --use-transactions"
         if self._compacted:

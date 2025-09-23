@@ -160,6 +160,17 @@ src/v/base/format_to.h.
 
 ---
 
+## Python specific instructions
+
+### Instructions for python test code under tests/rptest
+
+- Avoid catching bare `except:` as this can hide system exceptions, including exceptions
+  raised by a signal when a test is being forcibly timed out. Instead use `except Exception:`.
+
+### Instructions for type hints
+
+- Use modern style with `|` instead of `Union` or `Optional`
+
 For further details, consult:
 - [README.md](https://github.com/redpanda-data/redpanda/blob/dev/README.md)
 - [CONTRIBUTING.md](https://github.com/redpanda-data/redpanda/blob/dev/CONTRIBUTING.md)

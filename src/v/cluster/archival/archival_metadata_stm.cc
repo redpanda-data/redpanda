@@ -1559,6 +1559,10 @@ void archival_metadata_stm::apply_spillover(const spillover_cmd& so) {
           get_last_offset());
     } else {
         vlog(_logger.error, "Can't apply spillover_cmd: {}", so.manifest_meta);
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Spillover command applied with invalid manifest: {}",
+          so.manifest_meta));
     }
 }
 

@@ -213,7 +213,7 @@ private:
       chunked_vector<model::topic> topics,
       std::optional<chunked_vector<ss::sstring>> configuration_keys);
 
-    void on_metadata_update(const metadata_response_data& res);
+    void on_metadata_update(const metadata_update& res);
 
     /// \brief Connect and update metdata.
     ss::future<> do_connect(net::unresolved_address addr);

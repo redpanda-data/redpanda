@@ -11,8 +11,8 @@ from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import SISettings, get_cloud_storage_type
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import SISettings, get_cloud_storage_type
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.si_utils import (
     BucketView,

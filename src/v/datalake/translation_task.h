@@ -21,6 +21,10 @@
 #include "model/record_batch_reader.h"
 #include "utils/retry_chain_node.h"
 
+namespace features {
+class feature_table;
+}
+
 namespace datalake {
 /**
  * An abstraction representing a task of consuming data, translating them to
@@ -33,6 +37,7 @@ public:
       model::revision_id topic_revision,
       std::unique_ptr<parquet_file_writer_factory> writer_factory,
       cloud_data_io& uploader,
+      features::feature_table* features,
       schema_manager& schema_mgr,
       type_resolver& type_resolver,
       record_translator& record_translator,

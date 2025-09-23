@@ -17,12 +17,14 @@
 #include "model/metadata.h"
 #include "serde/envelope.h"
 #include "serde/rw/variant.h"
+#include "utils/absl_sstring_hash.h"
 #include "utils/named_type.h"
 #include "utils/unresolved_address.h"
 #include "utils/uuid.h"
 
 #include <seastar/util/bool_class.hh>
 
+#include <ostream>
 #include <string_view>
 
 namespace cluster_link::model {
@@ -60,6 +62,8 @@ static constexpr std::string_view to_string_view(mirror_topic_state s) {
     return "unknown";
 }
 
+std::ostream& operator<<(std::ostream& os, mirror_topic_state s);
+
 enum class task_state : uint8_t {
     /// The task is currently active and processing
     active,
@@ -92,6 +96,8 @@ static constexpr std::string_view to_string_view(task_state st) {
     return "unknown";
 }
 
+std::ostream& operator<<(std::ostream& os, task_state s);
+
 /**
  * @brief SCRAM credentials to use for authentication
  */
@@ -108,12 +114,19 @@ struct scram_credentials
     friend bool operator==(const scram_credentials&, const scram_credentials&)
       = default;
     auto serde_fields() { return std::tie(username, password, mechanism); }
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const scram_credentials& creds);
 };
 
 using tls_file_path = named_type<ss::sstring, struct tls_file_path_tag>;
+std::ostream& operator<<(std::ostream& os, const tls_file_path& p);
+
 using tls_value = named_type<ss::sstring, struct tls_value_tag>;
+std::ostream& operator<<(std::ostream& os, const tls_value& v);
 
 using tls_file_or_value = serde::variant<tls_file_path, tls_value>;
+std::ostream& operator<<(std::ostream& os, const tls_file_or_value& t);
 
 /**
  * @brief Represents the settings for connection to a remote cluster
@@ -209,6 +222,9 @@ struct connection_config
           fetch_min_bytes,
           fetch_max_bytes);
     }
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const connection_config& cfg);
 };
 
 struct mirror_topic_metadata
@@ -228,8 +244,9 @@ struct mirror_topic_metadata
     ::model::topic_id destination_topic_id;
     /// The number of partitions on the source topic
     int32_t partition_count;
-    /// The replication factor
-    int16_t replication_factor;
+    /// The replication factor - if not provided, is using
+    /// `default_topic_replication` cluster config
+    std::optional<int16_t> replication_factor;
     /// The configuration for the topic
     chunked_hash_map<ss::sstring, ss::sstring> topic_configs;
 
@@ -249,6 +266,9 @@ struct mirror_topic_metadata
     }
 
     mirror_topic_metadata copy() const;
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const mirror_topic_metadata& md);
 };
 
 /// How the patch filters
@@ -269,6 +289,8 @@ static constexpr std::string_view to_string_view(filter_pattern_type f) {
     return "unknown";
 }
 
+std::ostream& operator<<(std::ostream& os, filter_pattern_type f);
+
 /// Whether or not the filter is an inclusive or exclusive filter
 enum class filter_type : uint8_t { include, exclude };
 
@@ -281,6 +303,8 @@ static constexpr std::string_view to_string_view(filter_type f) {
     }
     return "unknown";
 }
+
+std::ostream& operator<<(std::ostream& os, filter_type f);
 
 struct resource_name_filter_pattern
   : serde::envelope<
@@ -299,6 +323,9 @@ struct resource_name_filter_pattern
       = default;
 
     auto serde_fields() { return std::tie(pattern_type, filter, pattern); }
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const resource_name_filter_pattern& p);
 };
 
 struct topic_metadata_mirroring_config
@@ -315,8 +342,10 @@ struct topic_metadata_mirroring_config
 
     /// Filters
     chunked_vector<resource_name_filter_pattern> topic_name_filters;
+    using properties_set
+      = absl::flat_hash_set<ss::sstring, sstring_hash, sstring_eq>;
     /// List of topic properties to mirror
-    absl::flat_hash_set<ss::sstring> topic_properties_to_mirror;
+    properties_set topic_properties_to_mirror;
 
     ss::lowres_clock::duration get_task_interval() const {
         return task_interval.value_or(task_interval_default);
@@ -336,6 +365,9 @@ struct topic_metadata_mirroring_config
     }
 
     topic_metadata_mirroring_config copy() const;
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const topic_metadata_mirroring_config& cfg);
 };
 
 struct consumer_groups_mirroring_config
@@ -347,7 +379,6 @@ struct consumer_groups_mirroring_config
     enabled_t is_enabled{enabled_t::yes};
     // Task interval for consumer group mirroring
     std::optional<ss::lowres_clock::duration> task_interval;
-    // Default interval for task (30s)
     static constexpr auto default_task_interval = std::chrono::seconds(30);
 
     /// Filters
@@ -365,11 +396,14 @@ struct consumer_groups_mirroring_config
     auto serde_fields() { return std::tie(is_enabled, task_interval, filters); }
 
     consumer_groups_mirroring_config copy() const;
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const consumer_groups_mirroring_config& cfg);
 };
 
 /**
- * Configuration of a cluster link. Configuration changes are driven by the API
- * and are a result of user actions.
+ * Configuration of a cluster link. Configuration changes are driven by the
+ * API and are a result of user actions.
  */
 struct link_configuration
   : serde::envelope<
@@ -378,13 +412,21 @@ struct link_configuration
       serde::compat_version<0>> {
     /// Configuration for the auto mirror topic creation task
     topic_metadata_mirroring_config topic_metadata_mirroring_cfg;
+    /// Configuration for the consumer groups mirroring task
+    consumer_groups_mirroring_config consumer_groups_mirroring_cfg;
 
     friend bool operator==(const link_configuration&, const link_configuration&)
       = default;
 
-    auto serde_fields() { return std::tie(topic_metadata_mirroring_cfg); }
+    auto serde_fields() {
+        return std::tie(
+          topic_metadata_mirroring_cfg, consumer_groups_mirroring_cfg);
+    }
 
     link_configuration copy() const;
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const link_configuration& lc);
 };
 /**
  * Link state. The state is modified by the cluster link tasks and is
@@ -416,6 +458,8 @@ struct link_state
     auto serde_fields() { return std::tie(paused, mirror_topics); }
 
     link_state copy() const;
+
+    friend std::ostream& operator<<(std::ostream& os, const link_state& ls);
 };
 struct metadata
   : serde::envelope<metadata, serde::version<0>, serde::compat_version<0>> {
@@ -437,12 +481,14 @@ struct metadata
     }
 
     metadata copy() const;
+
+    friend std::ostream& operator<<(std::ostream& os, const metadata& md);
 };
 
 /// \brief Command used to add a mirror topic to a cluster link
 ///
-/// This command will be used either via the auto topic creation task via a user
-/// action when a new topic is to be created and used as a mirror topic
+/// This command will be used either via the auto topic creation task via a
+/// user action when a new topic is to be created and used as a mirror topic
 struct add_mirror_topic_cmd
   : serde::envelope<
       add_mirror_topic_cmd,
@@ -464,8 +510,8 @@ struct add_mirror_topic_cmd
 
 /// \brief Command used to update the state of a mirror topic
 ///
-/// Will be used by the cluster linking mirroring task to change the state of
-/// mirroring for the topic
+/// Will be used by the cluster linking mirroring task to change the state
+/// of mirroring for the topic
 struct update_mirror_topic_state_cmd
   : serde::envelope<
       update_mirror_topic_state_cmd,
@@ -496,7 +542,7 @@ struct update_mirror_topic_properties_cmd
     /// Name of the topic
     ::model::topic topic;
     int32_t partition_count;
-    int16_t replication_factor;
+    std::optional<int16_t> replication_factor;
     chunked_hash_map<ss::sstring, ss::sstring> topic_configs;
 
     friend bool operator==(
@@ -510,6 +556,25 @@ struct update_mirror_topic_properties_cmd
     }
 
     update_mirror_topic_properties_cmd copy() const;
+};
+
+/// \brief Command used to update the configuration of a cluster link
+struct update_cluster_link_configuration_cmd
+  : serde::envelope<
+      update_cluster_link_configuration_cmd,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    connection_config connection;
+    link_configuration link_config;
+
+    friend bool operator==(
+      const update_cluster_link_configuration_cmd&,
+      const update_cluster_link_configuration_cmd&)
+      = default;
+
+    auto serde_fields() { return std::tie(connection, link_config); }
+
+    update_cluster_link_configuration_cmd copy() const;
 };
 
 /// Status report for a task
@@ -705,6 +770,14 @@ struct fmt::formatter<cluster_link::model::topic_metadata_mirroring_config>
 };
 
 template<>
+struct fmt::formatter<cluster_link::model::consumer_groups_mirroring_config>
+  : fmt::formatter<string_view> {
+    auto format(
+      const cluster_link::model::consumer_groups_mirroring_config& m,
+      format_context& ctx) const -> decltype(ctx.out());
+};
+
+template<>
 struct fmt::formatter<
   decltype(cluster_link::model::link_state::mirror_topics)::value_type>
   : fmt::formatter<string_view> {
@@ -802,5 +875,14 @@ struct fmt::formatter<cluster_link::model::link_configuration>
   : fmt::formatter<string_view> {
     auto format(
       const cluster_link::model::link_configuration& m,
+      format_context& ctx) const -> decltype(ctx.out());
+};
+
+template<>
+struct fmt::formatter<
+  cluster_link::model::update_cluster_link_configuration_cmd>
+  : fmt::formatter<string_view> {
+    auto format(
+      const cluster_link::model::update_cluster_link_configuration_cmd& m,
       format_context& ctx) const -> decltype(ctx.out());
 };

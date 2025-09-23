@@ -108,6 +108,43 @@ TEST_F(ReplicatedMetastoreTest, TestAddNotFinished) {
     ASSERT_EQ(commit_res.error(), metastore::errc::invalid_request);
 }
 
+TEST_F(ReplicatedMetastoreTest, TestBuilderRemovedObjects) {
+    auto& app = get_ct_app(model::node_id{0});
+    replicated_metastore m(app.get_sharded_l1_metastore_fe()->local());
+    auto tp = make_tp(0);
+    auto ob = m.object_builder();
+
+    // pending object can be removed, but not twice
+    auto oid = ob->get_or_create_object_for(tp);
+    ASSERT_TRUE(ob->remove_pending_object(oid).has_value());
+    ASSERT_FALSE(ob->remove_pending_object(oid).has_value());
+
+    // after removal, object id shouldn't be reused in this builder
+    auto oid2 = ob->get_or_create_object_for(tp);
+    ASSERT_NE(oid, oid2);
+    oid = oid2;
+
+    // unfinished object with data can be removed
+    ASSERT_TRUE(
+      ob->add(oid, metastore::object_metadata::ntp_metadata{.tidp = tp})
+        .has_value());
+    ASSERT_TRUE(ob->remove_pending_object(oid).has_value());
+    ASSERT_FALSE(ob->remove_pending_object(oid).has_value());
+    ASSERT_FALSE(
+      ob->add(oid, metastore::object_metadata::ntp_metadata{.tidp = tp})
+        .has_value());
+
+    oid2 = ob->get_or_create_object_for(tp);
+    ASSERT_NE(oid, oid2);
+    oid = oid2;
+
+    // finished object cannot be removed
+    oid = ob->get_or_create_object_for(tp);
+    ASSERT_TRUE(ob->finish(oid, 0, 0).has_value());
+    ASSERT_FALSE(ob->remove_pending_object(oid).has_value());
+    ASSERT_FALSE(ob->finish(oid, 0, 0).has_value());
+}
+
 TEST_F(ReplicatedMetastoreTest, TestBasicAdd) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());

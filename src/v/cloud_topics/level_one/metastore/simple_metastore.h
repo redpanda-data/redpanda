@@ -12,6 +12,7 @@
 #include "base/seastarx.h"
 #include "cloud_topics/level_one/metastore/metastore.h"
 #include "cloud_topics/level_one/metastore/state.h"
+#include "model/timestamp.h"
 
 #include <seastar/core/future.hh>
 
@@ -30,6 +31,7 @@ public:
 
     object_id
     get_or_create_object_for(const model::topic_id_partition&) override;
+    std::expected<void, error> remove_pending_object(object_id) override;
     std::expected<void, error>
       add(object_id, metastore::object_metadata::ntp_metadata) override;
     std::expected<void, error>
@@ -74,6 +76,9 @@ public:
     ss::future<std::expected<object_response, errc>>
     get_first_ge(const model::topic_id_partition&, model::timestamp) override;
 
+    ss::future<std::expected<kafka::offset, errc>> get_first_offset_for_bytes(
+      const model::topic_id_partition&, uint64_t size) override;
+
     ss::future<std::expected<kafka::offset, errc>> get_end_offset_for_term(
       const model::topic_id_partition&, model::term_id) override;
 
@@ -90,6 +95,9 @@ public:
     get_compaction_offsets(
       const model::topic_id_partition&, model::timestamp) override;
 
+    ss::future<std::expected<compaction_info_response, errc>>
+    get_compaction_info(const sample_spec&) override;
+
 private:
     friend class domain_manager;
     static std::expected<offsets_response, errc>
@@ -98,9 +106,15 @@ private:
     get_first_ge(const state&, const model::topic_id_partition&, kafka::offset);
     static std::expected<object_response, errc> get_first_ge(
       const state&, const model::topic_id_partition&, model::timestamp);
+    static std::expected<kafka::offset, errc> get_first_offset_for_bytes(
+      const state&, const model::topic_id_partition&, uint64_t size);
     static std::expected<compaction_offsets_response, errc>
     get_compaction_offsets(
       const state&, const model::topic_id_partition&, model::timestamp);
+    static std::expected<double, errc>
+    get_dirty_ratio(const state&, const model::topic_id_partition&);
+    static std::expected<std::optional<model::timestamp>, errc>
+    get_earliest_dirty_ts(const state&, const model::topic_id_partition&);
     static std::expected<kafka::offset, errc> get_end_offset_for_term(
       const state&, const model::topic_id_partition&, model::term_id);
     static std::expected<model::term_id, errc> get_term_for_offset(

@@ -157,6 +157,8 @@ inline constexpr int8_t cluster_link_add_mirror_topic_cmd_type = 2;
 inline constexpr int8_t cluster_link_update_mirror_topic_state_cmd_type = 3;
 inline constexpr int8_t cluster_link_update_mirror_topic_properties_cmd_type
   = 4;
+inline constexpr int8_t cluster_link_update_cluster_link_configuration_cmd_type
+  = 5;
 
 using create_topic_cmd = controller_command<
   model::topic_namespace,
@@ -482,6 +484,13 @@ using cluster_link_update_mirror_topic_properties_cmd = controller_command<
   ::cluster_link::model::id_t,
   ::cluster_link::model::update_mirror_topic_properties_cmd,
   cluster_link_update_mirror_topic_properties_cmd_type,
+  model::record_batch_type::cluster_link,
+  serde_opts::serde_only>;
+
+using cluster_link_update_cluster_link_configuration_cmd = controller_command<
+  ::cluster_link::model::id_t,
+  ::cluster_link::model::update_cluster_link_configuration_cmd,
+  cluster_link_update_cluster_link_configuration_cmd_type,
   model::record_batch_type::cluster_link,
   serde_opts::serde_only>;
 

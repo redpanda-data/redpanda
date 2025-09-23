@@ -7,28 +7,29 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import json
-import subprocess
-import re
-import typing
-import time
 import itertools
+import json
 import os
+import re
+import subprocess
 import tempfile
+import time
+import typing
 from collections import namedtuple
+from dataclasses import dataclass, field
 from typing import Any, Iterator, Optional
+
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.errors import TimeoutError
+
 from rptest.clients.types import TopicSpec
+from rptest.services import tls
 from rptest.services.redpanda_types import (
     SSL_SECURITY,
     KafkaClientSecurity,
     check_username_password,
 )
 from rptest.util import wait_until_result
-from rptest.services import tls
-from rptest.clients.types import TopicSpec
-from ducktape.errors import TimeoutError
-from dataclasses import dataclass, field
 
 DEFAULT_TIMEOUT = 30
 

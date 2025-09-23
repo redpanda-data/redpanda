@@ -1,0 +1,15 @@
+// this file may contain comments like this, but they must
+// be on their own line (leading whitespace allowed)
+{
+    "include": [
+        "rptest/**/*.py"
+    ],
+
+    "exclude": [
+    ],
+
+    "stubPath" : "typings",
+
+    "typeCheckingMode": "strict"
+
+}

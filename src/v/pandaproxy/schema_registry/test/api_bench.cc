@@ -12,8 +12,8 @@
 #include "absl/strings/escaping.h"
 #include "base/vassert.h"
 #include "http/client.h"
-#include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/test/client_utils.h"
+#include "pandaproxy/schema_registry/test/protobuf_utils.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/test/pandaproxy_fixture.h"
 
@@ -38,16 +38,6 @@ struct endpoint {
     signature fn;
     ss::sstring name;
 };
-
-ss::sstring make_proto_schema(const pps::subject& sub, int n_fields) {
-    ss::sstring body = ss::format(
-      "syntax = \"proto3\";\nmessage MyType{} {{\n", sub);
-    for (int32_t i = 1; i <= n_fields; ++i) {
-        body += ss::format("\tint32 i{} = {};\n", i, i);
-    }
-    body += "}\n";
-    return body;
-}
 
 ss::sstring make_payload(
   const ss::sstring& schema,
@@ -77,7 +67,7 @@ void setup_client(::http::client& client, perf_settings ps) {
     for (int i_sub = 0; i_sub < ps.n_subjects; ++i_sub) {
         pps::subject sub = make_subject(i_sub);
         for (int i_ver = 1; i_ver <= ps.n_versions; ++i_ver) {
-            auto schema = make_proto_schema(sub, i_ver);
+            auto schema = pps::test_utils::make_proto_schema(sub, i_ver);
             auto payload = make_payload(schema);
             auto res = post_schema(client, sub, payload);
             vassert(
@@ -93,7 +83,7 @@ void perf_body(
   ::http::client& client, const endpoint& ep, const perf_settings& ps) {
     const auto subject = make_subject(ps.i_subject);
     const auto version = ps.version_logic(ps.n_versions);
-    const auto schema = make_proto_schema(subject, version);
+    const auto schema = pps::test_utils::make_proto_schema(subject, version);
     const auto payload = make_payload(schema);
 
     perf_tests::start_measuring_time();

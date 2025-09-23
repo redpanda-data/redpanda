@@ -11,6 +11,7 @@
 #pragma once
 
 #include "absl/container/btree_map.h"
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "container/chunked_vector.h"
@@ -39,10 +40,10 @@ namespace cloud_topics::l1 {
 // [Partition 1 Marker][Partition 1 Data][Partition 2 Marker][Partition 2 Data]...[Footer][Footer Size]
 //
 // Components:
-// 1. Partition Marker: A data type delimiter (1 byte) + size (4 bytes) + serialized model::ntp
+// 1. Partition Marker: A data type delimiter (1 byte) + size (4 bytes) + serialized model::topic_id_partition
 //    - Delimiter: 0x01 (data_type::partition_marker)
-//    - Size: uint32_t size of the serialized ntp data
-//    - Data: Serialized model::ntp identifying the partition
+//    - Size: uint32_t size of the serialized topid id partition data
+//    - Data: Serialized model::topic_id_partition identifying the partition
 //
 // 2. Partition Data: Sequence of kafka record batches for the partition,
 //    with offsets strictly increasing within each partition
@@ -100,6 +101,7 @@ struct footer
                 return std::tie(file_position, kafka_offset, max_timestamp);
             }
             bool operator==(const index_entry&) const = default;
+            fmt::iterator format_to(fmt::iterator) const;
         };
         // Index information for l1 data, this is a snapshot of the state at a
         // periodic interval within the partition data. For example, we can
@@ -123,6 +125,7 @@ struct footer
         ss::future<> serde_async_read(iobuf_parser&, serde::header);
         ss::future<> serde_async_write(iobuf&) const;
         bool operator==(const partition&) const = default;
+        fmt::iterator format_to(fmt::iterator) const;
 
         partition copy() const;
     };
@@ -134,7 +137,7 @@ struct footer
     //
     // However in terms of offsets, there *must* not be overlapping ranges
     // within the same file.
-    absl::btree_multimap<model::ntp, partition> partitions;
+    absl::btree_multimap<model::topic_id_partition, partition> partitions;
 
     footer copy() const;
 
@@ -142,10 +145,25 @@ struct footer
     ss::future<> serde_async_write(iobuf&) const;
 
     bool operator==(const footer&) const = default;
+    fmt::iterator format_to(fmt::iterator) const;
 
+    // seek result is the result of asking the index where to start reading some
+    // data based on an offset or time query. Returned is the position or offset
+    // within the file to start reading from, as well as the remaining length of
+    // the partition data within that chunk.
+    struct seek_result {
+        size_t file_position = 0;
+        size_t length = 0;
+
+        bool operator==(const seek_result&) const = default;
+        fmt::iterator format_to(fmt::iterator) const;
+    };
     // The value returned when an index search doesn't have contain matching
     // data.
-    constexpr static size_t npos = std::numeric_limits<size_t>::max();
+    constexpr static seek_result npos = {
+      .file_position = std::numeric_limits<size_t>::max(),
+      .length = 0,
+    };
 
     // Return the file position of the latest record batch that has the offset
     // at or before the given offset. If the offset is not in this file then
@@ -154,14 +172,15 @@ struct footer
     // Example:
     //
     // If the footer has the following offset ranges indexed for the given
-    // ntp:
+    // topic_id_partition:
     //
     // [[1, 10], [11, 20], [30, 40]]
     //
     // Searching for offset 5 would yield the position of the batch[0],
     // while a search for offsets 25 or 40 would yield batch[2]. Searching for
     // offset 50 would yield `npos`.
-    size_t file_position_before_kafka_offset(const model::ntp&, kafka::offset);
+    seek_result file_position_before_kafka_offset(
+      const model::topic_id_partition&, kafka::offset);
 
     // Return the file position of the latest record batch that has a
     // max_timestamp at or before the given timestamp. If the timestamp is
@@ -170,7 +189,7 @@ struct footer
     // Example:
     //
     // If the footer has the following max timestamps indexed for the given
-    // ntp:
+    // topic_id_partition:
     //
     // 3, 10, 10, 10, 40
     //
@@ -178,8 +197,8 @@ struct footer
     // the timestamp 1 would yield the position of batch[0].
     // While a search for timestamp 25 or 40 would yield batch[4] and the
     // timestamp 50 would yield `npos`.
-    size_t
-    file_position_before_max_timestamp(const model::ntp&, model::timestamp);
+    seek_result file_position_before_max_timestamp(
+      const model::topic_id_partition&, model::timestamp);
 
     // Read the footer using the suffix of an L1 object.
     //
@@ -224,9 +243,10 @@ struct footer
 // discarded. It's possible there is partially flushed data that would result
 // in an invalid file if resumed.
 //
-// NOTE: It's valid to call start_partition() with the same NTP multiple times
-// but the data *must* contain disjoint offset ranges. There is currently no
-// restriction that segments for the same NTP must be written in order.
+// NOTE: It's valid to call start_partition() with the same topic_id_partition
+// multiple times but the data *must* contain disjoint offset ranges. There is
+// currently no restriction that segments for the same topic_id_partition must
+// be written in order.
 class object_builder {
 public:
     object_builder() = default;
@@ -254,7 +274,7 @@ public:
     // This must be called before any add_batch() calls, and calling this
     // after calling start_partition() implicitly ends the current partition
     // and starts a new one.
-    virtual ss::future<> start_partition(model::ntp ntp) = 0;
+    virtual ss::future<> start_partition(model::topic_id_partition tidp) = 0;
 
     // Append a kafka batch to the object. The batch here is expected to be:
     //
@@ -262,6 +282,12 @@ public:
     //  - The offsets in this batch are > than the previous batch in this
     //    partition.
     virtual ss::future<> add_batch(model::record_batch) = 0;
+
+    // Return the size of file in bytes that has been built so far.
+    //
+    // After `finish` has been called, this will be the size of the fully
+    // constructed file.
+    virtual size_t file_size() const = 0;
 
     // Information about the finished object.
     struct object_info {
@@ -287,8 +313,9 @@ public:
 // from object_builder.
 //
 // This represents an L1 object, which is just a stream of segments,where a
-// segment is a series of batches for a NTP. If used with a object_seeker, then
-// it can also represent the tail of an L1 object (see object_seeker for more).
+// segment is a series of batches for a topic_id_partition. If used with a
+// object_seeker, then it can also represent the tail of an L1 object (see
+// object_seeker for more).
 class object_reader {
 public:
     // A marker struct that indicates we've reached the end of the file.
@@ -327,12 +354,13 @@ public:
     // and we are about to start reading the next partition. If an footer
     // is returned, then we've reached the end of the file and the footer is
     // returned.
-    using result = std::variant<model::ntp, model::record_batch, footer, eof>;
+    using result = std::
+      variant<model::topic_id_partition, model::record_batch, footer, eof>;
 
     // Read the "next" item from the L1 object.
     //
-    // The next item can be either a partition marker (model::ntp) or a
-    // data batch (model::record_batch).
+    // The next item can be either a partition marker
+    // (model::topic_id_partition) or a data batch (model::record_batch).
     virtual ss::future<result> read_next() = 0;
 
     // Close the reader, releasing any resources it holds.
@@ -341,58 +369,36 @@ public:
     virtual ss::future<> close() = 0;
 };
 
+// The parameters to combine multiple L1 objects into a single L1 object.
+struct combine_objects_parameters {
+    // The input object that will be combined.
+    struct input_object {
+        // A stream for the full object that was built using an
+        // `object_builder`.
+        //
+        // Since this takes ownership of the stream it will also close the
+        // stream.
+        ss::input_stream<char> stream;
+        // The output from `object_builder::finish` containing metadata from the
+        // constructed object.
+        object_builder::object_info info;
+    };
+    // Mechanically, the objects to combine into a single object. The resulting
+    // object will contain data in the order of these input objects.
+    chunked_vector<input_object> inputs;
+    // The stream to write the output to.
+    //
+    // Since this takes ownership of the output stream it will also be
+    // responsible for closing it.
+    ss::output_stream<char> output;
+};
+
+// Combine multiple L1 objects into a single object, and write it to the output
+// stream.
+//
+// The new object metadata is returned after the merging of files is
+// successful.
+ss::future<object_builder::object_info>
+  combine_objects(combine_objects_parameters);
+
 } // namespace cloud_topics::l1
-
-template<>
-struct fmt::formatter<cloud_topics::l1::footer::partition::index_entry> {
-    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
-
-    template<typename FormatContext>
-    typename FormatContext::iterator format(
-      const cloud_topics::l1::footer::partition::index_entry& entry,
-      FormatContext& ctx) const {
-        return fmt::format_to(
-          ctx.out(),
-          "{{file_position: {}, kafka_offset: {}, max_timestamp: {}}}",
-          entry.file_position,
-          entry.kafka_offset,
-          entry.max_timestamp);
-    }
-};
-
-template<>
-struct fmt::formatter<cloud_topics::l1::footer::partition> {
-    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
-
-    template<typename FormatContext>
-    typename FormatContext::iterator format(
-      const cloud_topics::l1::footer::partition& partition,
-      FormatContext& ctx) const {
-        return fmt::format_to(
-          ctx.out(),
-          "{{file_position: {}, length: {}, first_offset: {}, last_offset: {}, "
-          "max_timestamp: {}, indexes: [{}]}}",
-          partition.file_position,
-          partition.length,
-          partition.first_offset,
-          partition.last_offset,
-          partition.max_timestamp,
-          fmt::join(partition.indexes, ", "));
-    }
-};
-
-template<>
-struct fmt::formatter<cloud_topics::l1::footer> {
-    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
-
-    template<typename FormatContext>
-    typename FormatContext::iterator
-    format(const cloud_topics::l1::footer& index, FormatContext& ctx) const {
-        auto out = fmt::format_to(ctx.out(), "{{partitions: [");
-        for (const auto& [ntp, partition] : index.partitions) {
-            out = fmt::format_to(
-              out, "{{ntp: {}, partition: {}}}, ", ntp, partition);
-        }
-        return fmt::format_to(out, "]}}");
-    }
-};

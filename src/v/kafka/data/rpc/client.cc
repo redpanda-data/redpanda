@@ -196,23 +196,26 @@ ss::future<cluster::errc> client::do_produce_once(produce_request req) {
 ss::future<cluster::errc> client::create_topic(
   model::topic_namespace_view tp,
   cluster::topic_properties props,
-  std::optional<int32_t> partition_count) {
+  std::optional<int32_t> partition_count,
+  std::optional<int16_t> replication_factor) {
     co_return co_await retry(
-      [this, tp, partition_count, p = std::move(props)]() {
-          return try_create_topic(tp, p, partition_count);
+      [this, tp, partition_count, replication_factor, p = std::move(props)]() {
+          return try_create_topic(tp, p, partition_count, replication_factor);
       });
 }
 
 ss::future<cluster::errc> client::try_create_topic(
   model::topic_namespace_view nt,
   cluster::topic_properties props,
-  std::optional<int32_t> partition_count) {
+  std::optional<int32_t> partition_count,
+  std::optional<int16_t> replication_factor) {
     auto fut = co_await ss::coroutine::as_future<cluster::errc>(
       _topic_creator->create_topic(
         nt,
         partition_count.value_or(
           config::shard_local_cfg().default_topic_partitions()),
-        std::move(props)));
+        std::move(props),
+        replication_factor));
     if (fut.failed()) {
         throw std::runtime_error(
           fmt::format(

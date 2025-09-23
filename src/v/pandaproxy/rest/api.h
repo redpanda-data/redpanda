@@ -43,6 +43,9 @@ public:
     ss::future<> set_config(ss::sstring name, std::any val);
     ss::future<> set_client_config(ss::sstring name, std::any val);
 
+    const configuration& get_config() const;
+    const kafka::client::configuration& get_client_config() const;
+
 private:
     ss::smp_service_group _sg;
     size_t _max_memory;

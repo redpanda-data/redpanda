@@ -1,9 +1,10 @@
-from logging import Logger
 import random
+from logging import Logger
 
 from ducktape.utils.util import wait_until
-from rptest.services.redpanda import RedpandaService
+
 from rptest.services.admin import Admin
+from rptest.services.redpanda import RedpandaService
 
 
 class FullDiskHelper:

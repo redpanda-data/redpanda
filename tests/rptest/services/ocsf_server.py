@@ -9,11 +9,12 @@
 
 import json
 import os
-import requests
 
+import requests
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.service import Service
-from rptest.util import wait_until, wait_until_result
+
+from rptest.util import wait_until_result
 
 SERVER_DIR = "/opt/ocsf-server"
 SCHEMA_DIR = "/opt/ocsf-schema"

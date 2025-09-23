@@ -324,6 +324,7 @@ redpanda_cc_library(
     deps = [
         ":batch_cache",
         ":chunk_cache",
+        ":compaction_key",
         ":disk",
         ":file_sanitizer_types",
         ":index_state",
@@ -480,6 +481,23 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/serde",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "compaction_key",
+    srcs = [
+        "compaction_key.cc",
+    ],
+    hdrs = [
+        "compaction_key.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/bytes",
+        "//src/v/compaction:key",
+        "//src/v/model",
         "@seastar",
     ],
 )

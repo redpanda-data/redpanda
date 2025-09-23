@@ -9,10 +9,11 @@
 
 import bisect
 import time
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.services.cluster import cluster
-from rptest.clients.types import TopicSpec
+
 from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import MetricsEndpoint
 from rptest.tests.redpanda_test import RedpandaTest
 

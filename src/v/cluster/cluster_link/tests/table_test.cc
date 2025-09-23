@@ -36,9 +36,14 @@ table::map_t copy_links(const table::map_t& links) {
 using ::cluster_link::model::add_mirror_topic_cmd;
 using ::cluster_link::model::connection_config;
 using ::cluster_link::model::id_t;
+using ::cluster_link::model::link_configuration;
+using ::cluster_link::model::link_state;
 using ::cluster_link::model::metadata;
+using ::cluster_link::model::mirror_topic_metadata;
 using ::cluster_link::model::mirror_topic_state;
 using ::cluster_link::model::name_t;
+using ::cluster_link::model::topic_metadata_mirroring_config;
+using ::cluster_link::model::update_cluster_link_configuration_cmd;
 using ::cluster_link::model::update_mirror_topic_properties_cmd;
 using ::cluster_link::model::update_mirror_topic_state_cmd;
 using ::cluster_link::model::uuid_t;
@@ -863,6 +868,66 @@ TEST_F_CORO(
 
     EXPECT_EQ(res.value(), int(errc::topic_being_mirrored_by_other_link))
       << "Expected error for mirrored by other link, got: " << res.message();
+}
+
+TEST_F_CORO(cluster_link_table_test, update_cluster_link_configuration) {
+    chunked_hash_map<model::topic, mirror_topic_metadata> mirror_topics;
+    mirror_topics.emplace(
+      model::topic("test-topic"),
+      mirror_topic_metadata{
+        .source_topic_name = model::topic("test-topic"),
+      });
+    metadata link{
+      .name = name_t{"link"},
+      .uuid = uuid_t(::uuid_t::create()),
+      .connection = connection_config{}};
+
+    link.state.set_mirror_topics(std::move(mirror_topics));
+
+    auto ec = co_await _table.local().apply_update(
+      testing::create_upsert_command(model::offset{1}, link.copy()));
+    ASSERT_FALSE_CORO(ec);
+
+    update_cluster_link_configuration_cmd update_cmd {
+        .connection = connection_config{
+        .bootstrap_servers = {net::unresolved_address{"localhost", 9092}},
+      },
+      .link_config = link_configuration{
+            .topic_metadata_mirroring_cfg = topic_metadata_mirroring_config {
+                .task_interval = std::chrono::seconds(60)
+            }
+      }
+    };
+
+    ec = co_await _table.local().apply_update(
+      testing::create_update_cluster_link_configuration_command(
+        id_t{1}, update_cmd.copy()));
+    ASSERT_EQ_CORO(ec.value(), int(errc::success));
+
+    auto found_link = _table.local().find_link_by_id(id_t{1});
+    ASSERT_TRUE_CORO(found_link.has_value());
+    EXPECT_EQ(found_link->get().connection, update_cmd.connection);
+    EXPECT_EQ(found_link->get().state, link.state);
+    EXPECT_EQ(found_link->get().configuration, update_cmd.link_config);
+}
+
+TEST_F_CORO(cluster_link_table_test, update_non_existent_link) {
+    update_cluster_link_configuration_cmd update_cmd {
+        .connection = connection_config{
+        .bootstrap_servers = {net::unresolved_address{"localhost", 9092}},
+      },
+      .link_config = link_configuration{
+            .topic_metadata_mirroring_cfg = topic_metadata_mirroring_config {
+                .task_interval = std::chrono::seconds(60)
+            }
+      }
+    };
+
+    auto ec = co_await _table.local().apply_update(
+      testing::create_update_cluster_link_configuration_command(
+        id_t{1}, update_cmd.copy()));
+
+    EXPECT_EQ(static_cast<errc>(ec.value()), errc::does_not_exist);
 }
 
 } // namespace cluster::cluster_link

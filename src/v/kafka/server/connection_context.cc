@@ -32,6 +32,7 @@
 #include "kafka/server/server.h"
 #include "kafka/server/snc_quota_manager.h"
 #include "net/exceptions.h"
+#include "security/authorizer.h"
 #include "security/exceptions.h"
 
 #include <seastar/core/coroutine.hh>
@@ -229,46 +230,61 @@ ss::future<> connection_context::stop() {
 
 template<typename T>
 security::auth_result connection_context::authorized(
-  security::acl_operation operation, const T& name, authz_quiet quiet) {
+  security::acl_operation operation,
+  const T& name,
+  authz_quiet quiet,
+  superuser_required superuser_required) {
     // authorization disabled?
     if (!_enable_authorizer) {
         return security::auth_result::authz_disabled(
           get_principal(), security::acl_host(_client_addr), operation, name);
     }
 
-    return authorized_user(get_principal(), operation, name, quiet);
+    return authorized_user(
+      get_principal(), operation, name, quiet, superuser_required);
 }
 
 template security::auth_result connection_context::authorized<model::topic>(
   security::acl_operation operation,
   const model::topic& name,
-  authz_quiet quiet);
+  authz_quiet quiet,
+  superuser_required);
 
 template security::auth_result connection_context::authorized<kafka::group_id>(
   security::acl_operation operation,
   const kafka::group_id& name,
-  authz_quiet quiet);
+  authz_quiet quiet,
+  superuser_required);
 
 template security::auth_result
 connection_context::authorized<kafka::transactional_id>(
   security::acl_operation operation,
   const kafka::transactional_id& name,
-  authz_quiet quiet);
+  authz_quiet quiet,
+  superuser_required);
 
 template security::auth_result
 connection_context::authorized<security::acl_cluster_name>(
   security::acl_operation operation,
   const security::acl_cluster_name& name,
-  authz_quiet quiet);
+  authz_quiet quiet,
+  superuser_required);
 
 template<typename T>
 security::auth_result connection_context::authorized_user(
   security::acl_principal principal,
   security::acl_operation operation,
   const T& name,
-  authz_quiet quiet) {
+  authz_quiet quiet,
+  superuser_required superuser_required) {
     auto authorized = _server.authorizer().authorized(
-      name, operation, principal, security::acl_host(_client_addr));
+      name,
+      operation,
+      principal,
+      security::acl_host(_client_addr),
+      security::superuser_required{
+        superuser_required ? security::superuser_required::yes
+                           : security::superuser_required::no});
 
     if (!authorized) {
         if (_sasl) {
@@ -322,28 +338,32 @@ connection_context::authorized_user<model::topic>(
   security::acl_principal principal,
   security::acl_operation operation,
   const model::topic& name,
-  authz_quiet quiet);
+  authz_quiet quiet,
+  superuser_required);
 
 template security::auth_result
 connection_context::authorized_user<kafka::group_id>(
   security::acl_principal principal,
   security::acl_operation operation,
   const kafka::group_id& name,
-  authz_quiet quiet);
+  authz_quiet quiet,
+  superuser_required);
 
 template security::auth_result
 connection_context::authorized_user<kafka::transactional_id>(
   security::acl_principal principal,
   security::acl_operation operation,
   const kafka::transactional_id& name,
-  authz_quiet quiet);
+  authz_quiet quiet,
+  superuser_required);
 
 template security::auth_result
 connection_context::authorized_user<security::acl_cluster_name>(
   security::acl_principal principal,
   security::acl_operation operation,
   const security::acl_cluster_name& name,
-  authz_quiet quiet);
+  authz_quiet quiet,
+  superuser_required);
 
 ss::future<> connection_context::revoke_credentials(std::string_view name) {
     if (

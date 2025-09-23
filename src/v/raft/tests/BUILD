@@ -58,7 +58,36 @@ redpanda_test_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/storage",
-        "//src/v/test_utils:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "raft_fixture_base",
+    srcs = ["raft_fixture_base.cc"],
+    hdrs = [
+        "raft_fixture_base.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":failure_injectable_log",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/config",
+        "//src/v/features",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/random:generators",
+        "//src/v/rpc",
+        "//src/v/ssx:future_util",
+        "//src/v/ssx:sformat",
+        "//src/v/storage",
+        "//src/v/test_utils:random_bytes",
+        "//src/v/utils:prefix_logger",
+        "//src/v/utils:unresolved_address",
+        "@abseil-cpp//absl/container:node_hash_map",
+        "@boost//:range",
         "@seastar",
     ],
 )
@@ -72,6 +101,7 @@ redpanda_test_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":failure_injectable_log",
+        ":raft_fixture_base",
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
@@ -650,6 +680,17 @@ redpanda_cc_bench(
         "//src/v/raft",
         "//src/v/random:generators",
         "//src/v/test_utils:random",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "raft_replicate_rpbench",
+    srcs = ["raft_replicate_benchmark.cc"],
+    deps = [
+        "//src/v/raft",
+        "//src/v/raft/tests:raft_fixture_base",
         "@seastar",
         "@seastar//:benchmark",
     ],

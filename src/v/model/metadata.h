@@ -723,6 +723,32 @@ enum class iceberg_invalid_record_action : uint8_t {
 std::ostream& operator<<(std::ostream&, const iceberg_invalid_record_action&);
 std::istream& operator>>(std::istream&, iceberg_invalid_record_action&);
 
+enum class kafka_batch_validation_mode : uint8_t {
+    legacy = 0,
+    relaxed = 1,
+    strict = 2,
+};
+
+constexpr const char*
+kafka_batch_validation_mode_to_string(const kafka_batch_validation_mode& m) {
+    switch (m) {
+    case kafka_batch_validation_mode::legacy:
+        return "legacy";
+    case kafka_batch_validation_mode::relaxed:
+        return "relaxed";
+    case kafka_batch_validation_mode::strict:
+        return "strict";
+    }
+}
+
+std::optional<kafka_batch_validation_mode>
+kafka_batch_validation_mode_from_string(std::string_view s);
+
+std::ostream&
+operator<<(std::ostream& o, const kafka_batch_validation_mode& mode);
+
+std::istream& operator>>(std::istream& i, kafka_batch_validation_mode& mode);
+
 } // namespace model
 
 template<>

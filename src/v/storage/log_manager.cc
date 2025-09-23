@@ -757,7 +757,7 @@ ss::future<ss::shared_ptr<log>> log_manager::do_manage(
 
     auto segments = co_await recover_segments(
       partition_path(cfg),
-      cfg.is_compacted(),
+      cfg.is_locally_compacted(),
       [this, cache_enabled] { return create_cache(cache_enabled); },
       _abort_source,
       config::shard_local_cfg().storage_read_buffer_size(),

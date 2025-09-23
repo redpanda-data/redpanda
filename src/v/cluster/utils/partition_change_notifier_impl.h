@@ -27,8 +27,8 @@ public:
       ss::sharded<cluster::partition_manager>&,
       ss::sharded<cluster::topic_table>&);
 
-    notification_id_type
-      register_partition_notifications(notification_cb_t) final;
+    notification_id_type register_partition_notifications(
+      notification_cb_t, notify_current_state) final;
 
     void unregister_partition_notifications(notification_id_type) final;
 

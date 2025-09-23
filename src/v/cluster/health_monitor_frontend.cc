@@ -173,4 +173,13 @@ ss::future<> health_monitor_frontend::refresh_info() {
       });
 }
 
+ss::future<result<std::optional<kafka::offset>>>
+health_monitor_frontend::get_partition_high_watermark(
+  model::topic_namespace_view tp_ns, model::partition_id p_id) {
+    co_return co_await dispatch_to_backend(
+      [tp_ns, p_id](health_monitor_backend& be) {
+          return be.get_partition_high_watermark(tp_ns, p_id);
+      });
+}
+
 } // namespace cluster

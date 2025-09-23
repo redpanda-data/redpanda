@@ -14,7 +14,6 @@
 #include "cluster/archival/adjacent_segment_merger.h"
 #include "cluster/archival/archival_policy.h"
 #include "cluster/archival/segment_reupload.h"
-#include "cluster/archival/tests/service_fixture.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/offset_interval.h"
@@ -29,10 +28,9 @@
 #include "test_utils/tmp_dir.h"
 
 #include <seastar/core/loop.hh>
-#include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
 
-#include <boost/test/tools/old/interface.hpp>
+#include <gtest/gtest.h>
 
 #include <variant>
 
@@ -201,7 +199,7 @@ static constexpr std::string_view test_manifest = R"json({
 static constexpr size_t max_upload_size{4096_KiB};
 static constexpr ss::lowres_clock::duration segment_lock_timeout{60s};
 
-SEASTAR_THREAD_TEST_CASE(test_segment_collection) {
+TEST(SegmentReuploadUnit, test_segment_collection) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json, make_manifest_stream(manifest))
@@ -234,13 +232,13 @@ SEASTAR_THREAD_TEST_CASE(test_segment_collection) {
 
     // The three compacted segments are collected, with the begin and end
     // markers set to align with manifest segment.
-    BOOST_REQUIRE(collector.should_replace_manifest_segment());
-    BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{10});
-    BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{39});
-    BOOST_REQUIRE_EQUAL(3, collector.segments().size());
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
+    ASSERT_EQ(collector.end_inclusive(), model::offset{39});
+    ASSERT_EQ(3, collector.segments().size());
 }
 
-SEASTAR_THREAD_TEST_CASE(test_make_upload_candidate_stream) {
+TEST(SegmentReuploadUnit, test_make_upload_candidate_stream) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json, make_manifest_stream(manifest))
@@ -268,18 +266,18 @@ SEASTAR_THREAD_TEST_CASE(test_make_upload_candidate_stream) {
       max_upload_size};
 
     collector.collect_segments();
-    BOOST_REQUIRE(collector.should_replace_manifest_segment());
-    BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{10});
-    BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{39});
-    BOOST_REQUIRE_EQUAL(3, collector.segments().size());
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
+    ASSERT_EQ(collector.end_inclusive(), model::offset{39});
+    ASSERT_EQ(3, collector.segments().size());
 
     auto result
       = collector.make_upload_candidate_stream(segment_lock_timeout).get();
-    BOOST_REQUIRE(!has_failure(result));
-    BOOST_REQUIRE(!std::holds_alternative<skip_offset_range>(result));
+    ASSERT_TRUE(!has_failure(result));
+    ASSERT_TRUE(!std::holds_alternative<skip_offset_range>(result));
 
     auto cstream = std::move(value(result));
-    BOOST_REQUIRE_GE(cstream.size, size_t{1});
+    ASSERT_GE(cstream.size, size_t{1});
 
     // Read from candidate stream
     iobuf candidate_data;
@@ -294,10 +292,10 @@ SEASTAR_THREAD_TEST_CASE(test_make_upload_candidate_stream) {
         }
         is.close().get();
     }
-    BOOST_REQUIRE_EQUAL(candidate_data.size_bytes(), cstream.size);
+    ASSERT_EQ(candidate_data.size_bytes(), cstream.size);
 }
 
-SEASTAR_THREAD_TEST_CASE(test_make_upload_candidate_skip_offsets) {
+TEST(SegmentReuploadUnit, test_make_upload_candidate_skip_offsets) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json, make_manifest_stream(manifest))
@@ -327,13 +325,13 @@ SEASTAR_THREAD_TEST_CASE(test_make_upload_candidate_skip_offsets) {
     collector.collect_segments();
     auto result
       = collector.make_upload_candidate_stream(segment_lock_timeout).get();
-    BOOST_REQUIRE(!has_failure(result));
-    BOOST_REQUIRE(std::holds_alternative<skip_offset_range>(result));
-    BOOST_REQUIRE_EQUAL(
+    ASSERT_TRUE(!has_failure(result));
+    ASSERT_TRUE(std::holds_alternative<skip_offset_range>(result));
+    ASSERT_EQ(
       std::get<skip_offset_range>(result).end_offset, model::offset{39});
 }
 
-SEASTAR_THREAD_TEST_CASE(test_start_ahead_of_manifest) {
+TEST(SegmentReuploadUnit, test_start_ahead_of_manifest) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json, make_manifest_stream(manifest))
@@ -358,9 +356,9 @@ SEASTAR_THREAD_TEST_CASE(test_start_ahead_of_manifest) {
 
         collector.collect_segments();
 
-        BOOST_REQUIRE_EQUAL(false, collector.should_replace_manifest_segment());
+        ASSERT_EQ(false, collector.should_replace_manifest_segment());
         auto segments = collector.segments();
-        BOOST_REQUIRE(segments.empty());
+        ASSERT_TRUE(segments.empty());
     }
 
     {
@@ -375,13 +373,13 @@ SEASTAR_THREAD_TEST_CASE(test_start_ahead_of_manifest) {
 
         collector.collect_segments();
 
-        BOOST_REQUIRE_EQUAL(false, collector.should_replace_manifest_segment());
+        ASSERT_EQ(false, collector.should_replace_manifest_segment());
         auto segments = collector.segments();
-        BOOST_REQUIRE(segments.empty());
+        ASSERT_TRUE(segments.empty());
     }
 }
 
-SEASTAR_THREAD_TEST_CASE(test_empty_manifest) {
+TEST(SegmentReuploadUnit, test_empty_manifest) {
     cloud_storage::partition_manifest m;
 
     temporary_dir tmp_dir("concat_segment_read");
@@ -402,11 +400,12 @@ SEASTAR_THREAD_TEST_CASE(test_empty_manifest) {
 
     collector.collect_segments();
 
-    BOOST_REQUIRE_EQUAL(false, collector.should_replace_manifest_segment());
-    BOOST_REQUIRE(collector.segments().empty());
+    ASSERT_EQ(false, collector.should_replace_manifest_segment());
+    ASSERT_TRUE(collector.segments().empty());
 }
 
-SEASTAR_THREAD_TEST_CASE(test_short_compacted_segment_inside_manifest_segment) {
+TEST(
+  SegmentReuploadUnit, test_short_compacted_segment_inside_manifest_segment) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json, make_manifest_stream(manifest))
@@ -441,11 +440,12 @@ SEASTAR_THREAD_TEST_CASE(test_short_compacted_segment_inside_manifest_segment) {
 
     collector.collect_segments();
 
-    BOOST_REQUIRE_EQUAL(false, collector.should_replace_manifest_segment());
-    BOOST_REQUIRE_EQUAL(collector.segments().size(), 0);
+    ASSERT_EQ(false, collector.should_replace_manifest_segment());
+    ASSERT_EQ(collector.segments().size(), 0);
 }
 
-SEASTAR_THREAD_TEST_CASE(test_compacted_segment_aligned_with_manifest_segment) {
+TEST(
+  SegmentReuploadUnit, test_compacted_segment_aligned_with_manifest_segment) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json, make_manifest_stream(manifest))
@@ -475,17 +475,17 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_aligned_with_manifest_segment) {
 
     collector.collect_segments();
 
-    BOOST_REQUIRE(collector.should_replace_manifest_segment());
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
     auto segments = collector.segments();
-    BOOST_REQUIRE_EQUAL(1, segments.size());
+    ASSERT_EQ(1, segments.size());
 
     const auto& seg = segments.front();
-    BOOST_REQUIRE_EQUAL(seg->offsets().get_base_offset(), model::offset{10});
-    BOOST_REQUIRE_EQUAL(
-      seg->offsets().get_committed_offset(), model::offset{19});
+    ASSERT_EQ(seg->offsets().get_base_offset(), model::offset{10});
+    ASSERT_EQ(seg->offsets().get_committed_offset(), model::offset{19});
 }
 
-SEASTAR_THREAD_TEST_CASE(
+TEST(
+  SegmentReuploadUnit,
   test_short_compacted_segment_aligned_with_manifest_segment) {
     cloud_storage::partition_manifest m;
     m.update(
@@ -518,17 +518,17 @@ SEASTAR_THREAD_TEST_CASE(
 
     collector.collect_segments();
 
-    BOOST_REQUIRE_EQUAL(false, collector.should_replace_manifest_segment());
+    ASSERT_EQ(false, collector.should_replace_manifest_segment());
     auto segments = collector.segments();
-    BOOST_REQUIRE_EQUAL(1, segments.size());
+    ASSERT_EQ(1, segments.size());
 
     const auto& seg = segments.front();
-    BOOST_REQUIRE_EQUAL(seg->offsets().get_base_offset(), model::offset{10});
-    BOOST_REQUIRE_EQUAL(
-      seg->offsets().get_committed_offset(), model::offset{14});
+    ASSERT_EQ(seg->offsets().get_base_offset(), model::offset{10});
+    ASSERT_EQ(seg->offsets().get_committed_offset(), model::offset{14});
 }
 
-SEASTAR_THREAD_TEST_CASE(
+TEST(
+  SegmentReuploadUnit,
   test_many_compacted_segments_make_up_to_manifest_segment) {
     cloud_storage::partition_manifest m;
     m.update(
@@ -561,14 +561,14 @@ SEASTAR_THREAD_TEST_CASE(
 
     collector.collect_segments();
 
-    BOOST_REQUIRE(collector.should_replace_manifest_segment());
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
     auto segments = collector.segments();
-    BOOST_REQUIRE_EQUAL(5, segments.size());
-    BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{10});
-    BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{19});
+    ASSERT_EQ(5, segments.size());
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
+    ASSERT_EQ(collector.end_inclusive(), model::offset{19});
 }
 
-SEASTAR_THREAD_TEST_CASE(test_compacted_segment_larger_than_manifest_segment) {
+TEST(SegmentReuploadUnit, test_compacted_segment_larger_than_manifest_segment) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json, make_manifest_stream(manifest))
@@ -600,17 +600,17 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_larger_than_manifest_segment) {
 
     collector.collect_segments();
 
-    BOOST_REQUIRE(collector.should_replace_manifest_segment());
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
     auto segments = collector.segments();
 
-    BOOST_REQUIRE_EQUAL(1, segments.size());
+    ASSERT_EQ(1, segments.size());
 
     // Begin and end markers are aligned to manifest segment.
-    BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{10});
-    BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{19});
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
+    ASSERT_EQ(collector.end_inclusive(), model::offset{19});
 }
 
-SEASTAR_THREAD_TEST_CASE(test_collect_capped_by_size) {
+TEST(SegmentReuploadUnit, test_collect_capped_by_size) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json, make_manifest_stream(manifest))
@@ -645,25 +645,25 @@ SEASTAR_THREAD_TEST_CASE(test_collect_capped_by_size) {
 
     collector.collect_segments();
 
-    BOOST_REQUIRE(collector.should_replace_manifest_segment());
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
     auto segments = collector.segments();
 
-    BOOST_REQUIRE_EQUAL(3, segments.size());
+    ASSERT_EQ(3, segments.size());
 
     // Begin marker starts on first manifest segment boundary.
-    BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{10});
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
 
     // End marker ends on second manifest segment boundary.
-    BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{29});
+    ASSERT_EQ(collector.end_inclusive(), model::offset{29});
 
     size_t collected_size = std::transform_reduce(
       segments.begin(), segments.end(), 0, std::plus<>{}, [](const auto& seg) {
           return seg->size_bytes();
       });
-    BOOST_REQUIRE_LE(collected_size, max_size);
+    ASSERT_LE(collected_size, max_size);
 }
 
-SEASTAR_THREAD_TEST_CASE(test_no_compacted_segments) {
+TEST(SegmentReuploadUnit, test_no_compacted_segments) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json, make_manifest_stream(manifest))
@@ -693,11 +693,11 @@ SEASTAR_THREAD_TEST_CASE(test_no_compacted_segments) {
 
     collector.collect_segments();
 
-    BOOST_REQUIRE_EQUAL(false, collector.should_replace_manifest_segment());
-    BOOST_REQUIRE(collector.segments().empty());
+    ASSERT_EQ(false, collector.should_replace_manifest_segment());
+    ASSERT_TRUE(collector.segments().empty());
 }
 
-SEASTAR_THREAD_TEST_CASE(test_segment_name_adjustment) {
+TEST(SegmentReuploadUnit, test_segment_name_adjustment) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json, make_manifest_stream(manifest))
@@ -727,10 +727,10 @@ SEASTAR_THREAD_TEST_CASE(test_segment_name_adjustment) {
 
     collector.collect_segments();
     auto name = collector.adjust_segment_name();
-    BOOST_REQUIRE_EQUAL(name, cloud_storage::segment_name{"10-0-v1.log"});
+    ASSERT_EQ(name, cloud_storage::segment_name{"10-0-v1.log"});
 }
 
-SEASTAR_THREAD_TEST_CASE(test_segment_name_no_adjustment) {
+TEST(SegmentReuploadUnit, test_segment_name_no_adjustment) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json, make_manifest_stream(manifest))
@@ -759,11 +759,12 @@ SEASTAR_THREAD_TEST_CASE(test_segment_name_no_adjustment) {
       max_upload_size};
 
     collector.collect_segments();
+
     auto name = collector.adjust_segment_name();
-    BOOST_REQUIRE_EQUAL(name, cloud_storage::segment_name{"10-0-v1.log"});
+    ASSERT_EQ(name, cloud_storage::segment_name{"10-0-v1.log"});
 }
 
-SEASTAR_THREAD_TEST_CASE(test_collected_segments_completely_cover_gap) {
+TEST(SegmentReuploadUnit, test_collected_segments_completely_cover_gap) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json,
@@ -802,16 +803,16 @@ SEASTAR_THREAD_TEST_CASE(test_collected_segments_completely_cover_gap) {
 
         collector.collect_segments();
 
-        BOOST_REQUIRE(collector.should_replace_manifest_segment());
+        ASSERT_TRUE(collector.should_replace_manifest_segment());
         auto segments = collector.segments();
 
-        BOOST_REQUIRE_EQUAL(3, segments.size());
+        ASSERT_EQ(3, segments.size());
 
         // Collection start aligned to manifest start at 10
-        BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{10});
+        ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
 
         // End marker adjusted to the end of the gap.
-        BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{29});
+        ASSERT_EQ(collector.end_inclusive(), model::offset{29});
 
         size_t collected_size = std::transform_reduce(
           segments.begin(),
@@ -819,7 +820,7 @@ SEASTAR_THREAD_TEST_CASE(test_collected_segments_completely_cover_gap) {
           0,
           std::plus<>{},
           [](const auto& seg) { return seg->size_bytes(); });
-        BOOST_REQUIRE_LE(collected_size, max_size);
+        ASSERT_LE(collected_size, max_size);
     }
 
     {
@@ -850,16 +851,16 @@ SEASTAR_THREAD_TEST_CASE(test_collected_segments_completely_cover_gap) {
 
         collector.collect_segments();
 
-        BOOST_REQUIRE(collector.should_replace_manifest_segment());
+        ASSERT_TRUE(collector.should_replace_manifest_segment());
         auto segments = collector.segments();
 
-        BOOST_REQUIRE_EQUAL(3, segments.size());
+        ASSERT_EQ(3, segments.size());
 
         // Collection start aligned to manifest start at 10
-        BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{10});
+        ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
 
         // End marker adjusted to the end of the gap.
-        BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{39});
+        ASSERT_EQ(collector.end_inclusive(), model::offset{39});
 
         size_t collected_size = std::transform_reduce(
           segments.begin(),
@@ -867,11 +868,11 @@ SEASTAR_THREAD_TEST_CASE(test_collected_segments_completely_cover_gap) {
           0,
           std::plus<>{},
           [](const auto& seg) { return seg->size_bytes(); });
-        BOOST_REQUIRE_LE(collected_size, max_size);
+        ASSERT_LE(collected_size, max_size);
     }
 }
 
-SEASTAR_THREAD_TEST_CASE(test_compacted_segment_after_manifest_start) {
+TEST(SegmentReuploadUnit, test_compacted_segment_after_manifest_start) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json, make_manifest_stream(manifest))
@@ -903,13 +904,13 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_after_manifest_start) {
       max_upload_size};
 
     collector.collect_segments();
-    BOOST_REQUIRE(collector.should_replace_manifest_segment());
-    BOOST_REQUIRE_EQUAL(1, collector.segments().size());
-    BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{20});
-    BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{39});
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
+    ASSERT_EQ(1, collector.segments().size());
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{20});
+    ASSERT_EQ(collector.end_inclusive(), model::offset{39});
 }
 
-SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
+TEST(SegmentReuploadUnit, test_upload_candidate_generation) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json, make_manifest_stream(manifest))
@@ -961,15 +962,15 @@ SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
       max_size};
 
     collector.collect_segments();
-    BOOST_REQUIRE(collector.should_replace_manifest_segment());
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
 
     auto upload_with_locks = require_upload_candidate(
       collector.make_upload_candidate(segment_lock_timeout).get());
 
     auto upload_candidate = upload_with_locks.candidate;
-    BOOST_REQUIRE(!upload_candidate.sources.empty());
-    BOOST_REQUIRE_EQUAL(upload_candidate.starting_offset, model::offset{10});
-    BOOST_REQUIRE_EQUAL(upload_candidate.final_offset, model::offset{29});
+    ASSERT_TRUE(!upload_candidate.sources.empty());
+    ASSERT_EQ(upload_candidate.starting_offset, model::offset{10});
+    ASSERT_EQ(upload_candidate.final_offset, model::offset{29});
 
     // Start with all the segments collected
     auto expected_content_length = collector.collected_size();
@@ -980,13 +981,12 @@ SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
     // Add back the portion of the last segment we included
     expected_content_length += upload_candidate.final_file_offset;
 
-    BOOST_REQUIRE_EQUAL(
-      expected_content_length, upload_candidate.content_length);
+    ASSERT_EQ(expected_content_length, upload_candidate.content_length);
 
-    BOOST_REQUIRE_EQUAL(upload_with_locks.read_locks.size(), 3);
+    ASSERT_EQ(upload_with_locks.read_locks.size(), 3);
 }
 
-SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
+TEST(SegmentReuploadUnit, test_upload_aligned_to_non_existent_offset) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json, make_manifest_stream(manifest))
@@ -1048,7 +1048,7 @@ SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
       max_size};
 
     collector.collect_segments();
-    BOOST_REQUIRE(collector.should_replace_manifest_segment());
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
 
     auto upload_with_locks = require_upload_candidate(
       collector.make_upload_candidate(segment_lock_timeout).get());
@@ -1056,9 +1056,9 @@ SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
     // The upload candidate should align with the manifest's segment
     // boundaries.
     auto upload_candidate = upload_with_locks.candidate;
-    BOOST_REQUIRE(!upload_candidate.sources.empty());
-    BOOST_REQUIRE_EQUAL(upload_candidate.starting_offset, model::offset{10});
-    BOOST_REQUIRE_EQUAL(upload_candidate.final_offset, model::offset{39});
+    ASSERT_TRUE(!upload_candidate.sources.empty());
+    ASSERT_EQ(upload_candidate.starting_offset, model::offset{10});
+    ASSERT_EQ(upload_candidate.final_offset, model::offset{39});
 
     // Start with all the segments collected
     auto expected_content_length = collector.collected_size();
@@ -1069,13 +1069,12 @@ SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
     // Add back the portion of the last segment we included
     expected_content_length += upload_candidate.final_file_offset;
 
-    BOOST_REQUIRE_EQUAL(
-      expected_content_length, upload_candidate.content_length);
+    ASSERT_EQ(expected_content_length, upload_candidate.content_length);
 
-    BOOST_REQUIRE_EQUAL(upload_with_locks.read_locks.size(), 1);
+    ASSERT_EQ(upload_with_locks.read_locks.size(), 1);
 }
 
-SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
+TEST(SegmentReuploadUnit, test_same_size_reupload_skipped) {
     // 'segment_collector' should not propose the re-upload
     // of a segment if the compacted size is equal to
     // the size of the segment in the manifest. In that case,
@@ -1128,8 +1127,8 @@ SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
           first_seg_size};
 
         collector.collect_segments();
-        BOOST_REQUIRE_EQUAL(collector.collected_size(), first_seg_size);
-        BOOST_REQUIRE(collector.should_replace_manifest_segment());
+        ASSERT_EQ(collector.collected_size(), first_seg_size);
+        ASSERT_TRUE(collector.should_replace_manifest_segment());
 
         require_skip_offset(
           collector.make_upload_candidate(1s).get(),
@@ -1171,9 +1170,8 @@ SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
           first_seg_size + second_seg_size};
 
         collector.collect_segments();
-        BOOST_REQUIRE_EQUAL(
-          collector.collected_size(), first_seg_size + second_seg_size);
-        BOOST_REQUIRE(collector.should_replace_manifest_segment());
+        ASSERT_EQ(collector.collected_size(), first_seg_size + second_seg_size);
+        ASSERT_TRUE(collector.should_replace_manifest_segment());
 
         require_skip_offset(
           collector.make_upload_candidate(1s).get(),
@@ -1182,7 +1180,7 @@ SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
     }
 }
 
-SEASTAR_THREAD_TEST_CASE(test_do_not_reupload_self_concatenated) {
+TEST(SegmentReuploadUnit, test_do_not_reupload_self_concatenated) {
     auto ntp = model::ntp{"test_ns", "test_tpc", 0};
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -1243,12 +1241,12 @@ SEASTAR_THREAD_TEST_CASE(test_do_not_reupload_self_concatenated) {
           seg_size * 10};
 
         collector.collect_segments();
-        BOOST_REQUIRE_EQUAL(collector.segments().size(), 0);
-        BOOST_REQUIRE(!collector.should_replace_manifest_segment());
+        ASSERT_EQ(collector.segments().size(), 0);
+        ASSERT_TRUE(!collector.should_replace_manifest_segment());
     }
 }
 
-SEASTAR_THREAD_TEST_CASE(test_do_not_reupload_prefix_truncated) {
+TEST(SegmentReuploadUnit, test_do_not_reupload_prefix_truncated) {
     auto ntp = model::ntp{"test_ns", "test_tpc", 0};
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -1328,14 +1326,14 @@ SEASTAR_THREAD_TEST_CASE(test_do_not_reupload_prefix_truncated) {
     // Since we can't replace offsets starting at 0, the first remote segment
     // isn't eligible for reupload and we should start from the next segment.
     collector.collect_segments();
-    BOOST_REQUIRE_EQUAL(collector.begin_inclusive()(), 500);
-    BOOST_REQUIRE_EQUAL(collector.segments().size(), 3);
-    BOOST_REQUIRE_EQUAL(
+    ASSERT_EQ(collector.begin_inclusive()(), 500);
+    ASSERT_EQ(collector.segments().size(), 3);
+    ASSERT_EQ(
       collector.segments()[0]->offsets().get_base_offset(), model::offset{0});
-    BOOST_REQUIRE(collector.should_replace_manifest_segment());
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
 }
 
-SEASTAR_THREAD_TEST_CASE(test_bump_start_when_not_aligned) {
+TEST(SegmentReuploadUnit, test_bump_start_when_not_aligned) {
     auto ntp = model::ntp{"test_ns", "test_tpc", 0};
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -1411,15 +1409,16 @@ SEASTAR_THREAD_TEST_CASE(test_bump_start_when_not_aligned) {
       m,
       b.get_disk_log_impl(),
       seg_size * 10};
+
     collector.collect_segments();
-    BOOST_REQUIRE_EQUAL(collector.begin_inclusive()(), 500);
-    BOOST_REQUIRE_EQUAL(collector.segments().size(), 3);
-    BOOST_REQUIRE_EQUAL(
+    ASSERT_EQ(collector.begin_inclusive()(), 500);
+    ASSERT_EQ(collector.segments().size(), 3);
+    ASSERT_EQ(
       collector.segments()[0]->offsets().get_base_offset(), model::offset{0});
-    BOOST_REQUIRE(collector.should_replace_manifest_segment());
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
 }
 
-SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection) {
+TEST(SegmentReuploadUnit, test_adjacent_segment_collection) {
     auto ntp = model::ntp{"test_ns", "test_tpc", 0};
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -1462,9 +1461,8 @@ SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection) {
     collector.collect_segments();
     auto candidate = require_upload_candidate(
       collector.make_upload_candidate(10s).get());
-    BOOST_REQUIRE_EQUAL(
-      candidate.candidate.starting_offset, model::offset{104});
-    BOOST_REQUIRE_EQUAL(candidate.candidate.final_offset, model::offset{115});
+    ASSERT_EQ(candidate.candidate.starting_offset, model::offset{104});
+    ASSERT_EQ(candidate.candidate.final_offset, model::offset{115});
 }
 
 static constexpr std::string_view cross_term_reupload_manifest = R"json({
@@ -1548,7 +1546,7 @@ static constexpr std::string_view cross_term_reupload_manifest = R"json({
   }
 })json";
 
-SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection_x_term) {
+TEST(SegmentReuploadUnit, test_adjacent_segment_collection_x_term) {
     // The test validates that the segments from different terms are
     // not merged.
 
@@ -1563,7 +1561,7 @@ SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection_x_term) {
     auto run = adjacent_segment_run(ntp);
 
     // This covers three segments with total size of 3000
-    BOOST_REQUIRE(!run.maybe_add_segment(
+    ASSERT_TRUE(!run.maybe_add_segment(
       m,
       cloud_storage::segment_meta{
         .is_compacted = false,
@@ -1582,7 +1580,7 @@ SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection_x_term) {
       5000,
       path_provider));
 
-    BOOST_REQUIRE(!run.maybe_add_segment(
+    ASSERT_TRUE(!run.maybe_add_segment(
       m,
       cloud_storage::segment_meta{
         .is_compacted = false,
@@ -1605,7 +1603,7 @@ SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection_x_term) {
     // has different term. The method should return 'true' because
     // we were able to add a segment to the run and we can't extend it
     // further.
-    BOOST_REQUIRE(run.maybe_add_segment(
+    ASSERT_TRUE(run.maybe_add_segment(
       m,
       cloud_storage::segment_meta{
         .is_compacted = false,
@@ -1624,12 +1622,12 @@ SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection_x_term) {
       5000,
       path_provider));
 
-    BOOST_REQUIRE_EQUAL(run.num_segments, 2);
-    BOOST_REQUIRE_EQUAL(run.meta.base_offset(), 0);
-    BOOST_REQUIRE_EQUAL(run.meta.committed_offset(), 400);
+    ASSERT_EQ(run.num_segments, 2);
+    ASSERT_EQ(run.meta.base_offset(), 0);
+    ASSERT_EQ(run.meta.committed_offset(), 400);
 }
 
-SEASTAR_THREAD_TEST_CASE(test_segment_concurrent_compaction) {
+TEST(SegmentReuploadUnit, test_segment_concurrent_compaction) {
     cloud_storage::partition_manifest m;
     m.update(
        cloud_storage::manifest_format::json, make_manifest_stream(manifest))
@@ -1661,8 +1659,8 @@ SEASTAR_THREAD_TEST_CASE(test_segment_concurrent_compaction) {
       model::offset{39}};
 
     collector.collect_segments();
-    BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{10});
-    BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{39});
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
+    ASSERT_EQ(collector.end_inclusive(), model::offset{39});
 
     // Simulate concurrent compaction.
     // The collector already stores collected segments. After the compaction
@@ -1675,8 +1673,8 @@ SEASTAR_THREAD_TEST_CASE(test_segment_concurrent_compaction) {
     // The three compacted segments are collected, with the begin and end
     // markers set to align with manifest segment.
     auto candidate = collector.make_upload_candidate(1s).get();
-    BOOST_REQUIRE(std::holds_alternative<candidate_creation_error>(candidate));
-    BOOST_REQUIRE(
+    ASSERT_TRUE(std::holds_alternative<candidate_creation_error>(candidate));
+    ASSERT_TRUE(
       std::get<candidate_creation_error>(candidate)
       == candidate_creation_error::concurrency_error);
 }
@@ -1691,26 +1689,25 @@ static void validate_non_compacted_collector(archival::segment_collector& c) {
     auto collected_interval = model::bounded_offset_interval::checked(
       c.segments().front()->offsets().get_base_offset(),
       c.segments().back()->offsets().get_committed_offset());
-    BOOST_REQUIRE(collected_interval.contains(c.begin_inclusive()));
-    BOOST_REQUIRE(collected_interval.contains(c.end_inclusive()));
+    ASSERT_TRUE(collected_interval.contains(c.begin_inclusive()));
+    ASSERT_TRUE(collected_interval.contains(c.end_inclusive()));
 
     // Unrelated segments should not be collected.
     for (const auto& s : c.segments()) {
         auto seg_interval = model::bounded_offset_interval::checked(
           s->offsets().get_base_offset(), s->offsets().get_committed_offset());
-        BOOST_REQUIRE(interval.overlaps(seg_interval));
+        ASSERT_TRUE(interval.overlaps(seg_interval));
     }
 
     // Check that collected segments are aligned
     auto prev = model::prev_offset(collected_interval.min());
     for (const auto& s : c.segments()) {
-        BOOST_REQUIRE(
-          model::next_offset(prev) == s->offsets().get_base_offset());
+        ASSERT_TRUE(model::next_offset(prev) == s->offsets().get_base_offset());
         prev = s->offsets().get_committed_offset();
     }
 }
 
-SEASTAR_THREAD_TEST_CASE(test_new_segment_upload) {
+TEST(SegmentReuploadUnit, test_new_segment_upload) {
     // Start with empty manifest and upload the log.
     cloud_storage::partition_manifest m(
       model::ntp{"test_ns", "test_tpc", 0}, model::initial_revision_id{0});
@@ -1750,8 +1747,8 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload) {
       max_upload_size};
 
     collector1.collect_segments();
-    BOOST_REQUIRE_EQUAL(collector1.begin_inclusive(), model::offset{00});
-    BOOST_REQUIRE_EQUAL(collector1.end_inclusive(), model::offset{19});
+    ASSERT_EQ(collector1.begin_inclusive(), model::offset{00});
+    ASSERT_EQ(collector1.end_inclusive(), model::offset{19});
     validate_non_compacted_collector(collector1);
 
     // Upload the segment in the middle of the log.
@@ -1763,8 +1760,8 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload) {
       max_upload_size};
 
     collector2.collect_segments();
-    BOOST_REQUIRE_EQUAL(collector2.begin_inclusive(), model::offset{20});
-    BOOST_REQUIRE_EQUAL(collector2.end_inclusive(), model::offset{29});
+    ASSERT_EQ(collector2.begin_inclusive(), model::offset{20});
+    ASSERT_EQ(collector2.end_inclusive(), model::offset{29});
     validate_non_compacted_collector(collector2);
 
     // Upload the last segment of the log. This should fail because
@@ -1777,7 +1774,7 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload) {
       max_upload_size};
 
     collector3.collect_segments();
-    BOOST_REQUIRE(!collector3.segment_ready_for_upload());
+    ASSERT_TRUE(!collector3.segment_ready_for_upload());
     validate_non_compacted_collector(collector3);
 
     // Collect multiple segments at once. This should succeed.
@@ -1791,10 +1788,11 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload) {
       b.get_disk_log_impl(),
       max_upload_size,
       model::offset{39}};
+
     collector4.collect_segments();
-    BOOST_REQUIRE(collector4.segment_ready_for_upload());
-    BOOST_REQUIRE_EQUAL(collector4.begin_inclusive(), model::offset{0});
-    BOOST_REQUIRE_EQUAL(collector4.end_inclusive(), model::offset{39});
+    ASSERT_TRUE(collector4.segment_ready_for_upload());
+    ASSERT_EQ(collector4.begin_inclusive(), model::offset{0});
+    ASSERT_EQ(collector4.end_inclusive(), model::offset{39});
     validate_non_compacted_collector(collector4);
 
     // Same as the previous case but the target end offset is set to
@@ -1811,10 +1809,11 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload) {
       b.get_disk_log_impl(),
       max_upload_size,
       model::offset{42}};
+
     collector5.collect_segments();
-    BOOST_REQUIRE(collector5.segment_ready_for_upload());
-    BOOST_REQUIRE_EQUAL(collector5.begin_inclusive(), model::offset{0});
-    BOOST_REQUIRE_EQUAL(collector5.end_inclusive(), model::offset{42});
+    ASSERT_TRUE(collector5.segment_ready_for_upload());
+    ASSERT_EQ(collector5.begin_inclusive(), model::offset{0});
+    ASSERT_EQ(collector5.end_inclusive(), model::offset{42});
     validate_non_compacted_collector(collector5);
 
     // Similar to the previous case but the start of the upload is not aligned
@@ -1827,9 +1826,9 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload) {
       max_upload_size,
       model::offset{42}};
     collector6.collect_segments();
-    BOOST_REQUIRE(collector6.segment_ready_for_upload());
-    BOOST_REQUIRE_EQUAL(collector6.begin_inclusive(), model::offset{8});
-    BOOST_REQUIRE_EQUAL(collector6.end_inclusive(), model::offset{42});
+    ASSERT_TRUE(collector6.segment_ready_for_upload());
+    ASSERT_EQ(collector6.begin_inclusive(), model::offset{8});
+    ASSERT_EQ(collector6.end_inclusive(), model::offset{42});
     validate_non_compacted_collector(collector6);
 
     // The upload starts and stops inside the unsealed segment.
@@ -1841,9 +1840,9 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload) {
       max_upload_size,
       model::offset{45}};
     collector7.collect_segments();
-    BOOST_REQUIRE(collector7.segment_ready_for_upload());
-    BOOST_REQUIRE_EQUAL(collector7.begin_inclusive(), model::offset{42});
-    BOOST_REQUIRE_EQUAL(collector7.end_inclusive(), model::offset{45});
+    ASSERT_TRUE(collector7.segment_ready_for_upload());
+    ASSERT_EQ(collector7.begin_inclusive(), model::offset{42});
+    ASSERT_EQ(collector7.end_inclusive(), model::offset{45});
     validate_non_compacted_collector(collector7);
 
     // The upload size is limited by the size. The last offset is not set
@@ -1857,9 +1856,9 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload) {
       b.get_disk_log_impl(),
       first_segment_size};
     collector8.collect_segments();
-    BOOST_REQUIRE(collector8.segment_ready_for_upload());
-    BOOST_REQUIRE_EQUAL(collector8.begin_inclusive(), model::offset{0});
-    BOOST_REQUIRE_EQUAL(collector8.end_inclusive(), model::offset{19});
+    ASSERT_TRUE(collector8.segment_ready_for_upload());
+    ASSERT_EQ(collector8.begin_inclusive(), model::offset{0});
+    ASSERT_EQ(collector8.end_inclusive(), model::offset{19});
     validate_non_compacted_collector(collector8);
 
     // Same case but the last offset is set explicitly. The collector should
@@ -1872,9 +1871,9 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload) {
       first_segment_size,
       model::offset{42} /*this will be ignored*/};
     collector9.collect_segments();
-    BOOST_REQUIRE(collector9.segment_ready_for_upload());
-    BOOST_REQUIRE_EQUAL(collector9.begin_inclusive(), model::offset{0});
-    BOOST_REQUIRE_EQUAL(collector9.end_inclusive(), model::offset{19});
+    ASSERT_TRUE(collector9.segment_ready_for_upload());
+    ASSERT_EQ(collector9.begin_inclusive(), model::offset{0});
+    ASSERT_EQ(collector9.end_inclusive(), model::offset{19});
     validate_non_compacted_collector(collector9);
 
     // Similar to the previous case but the start of the upload is not aligned
@@ -1888,13 +1887,13 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload) {
       first_segment_size,
       model::offset{42} /*this will be ignored*/};
     collector10.collect_segments();
-    BOOST_REQUIRE(collector10.segment_ready_for_upload());
-    BOOST_REQUIRE_EQUAL(collector10.begin_inclusive(), model::offset{18});
-    BOOST_REQUIRE_EQUAL(collector10.end_inclusive(), model::offset{19});
+    ASSERT_TRUE(collector10.segment_ready_for_upload());
+    ASSERT_EQ(collector10.begin_inclusive(), model::offset{18});
+    ASSERT_EQ(collector10.end_inclusive(), model::offset{19});
     validate_non_compacted_collector(collector10);
 }
 
-SEASTAR_THREAD_TEST_CASE(test_new_segment_upload_off_by_one) {
+TEST(SegmentReuploadUnit, test_new_segment_upload_off_by_one) {
     // Upload segments that contain only one record so begin_inclusive
     // is equal to end_inclusive.
     cloud_storage::partition_manifest m(
@@ -1933,9 +1932,9 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload_off_by_one) {
       max_upload_size};
 
     collector1.collect_segments();
-    BOOST_REQUIRE_EQUAL(collector1.begin_inclusive(), model::offset{0});
-    BOOST_REQUIRE_EQUAL(collector1.end_inclusive(), model::offset{0});
-    BOOST_REQUIRE(collector1.segment_ready_for_upload());
+    ASSERT_EQ(collector1.begin_inclusive(), model::offset{0});
+    ASSERT_EQ(collector1.end_inclusive(), model::offset{0});
+    ASSERT_TRUE(collector1.segment_ready_for_upload());
     validate_non_compacted_collector(collector1);
 
     // Upload second segment which contains only one record [1-1 offset range]
@@ -1946,9 +1945,9 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload_off_by_one) {
       b.get_disk_log_impl(),
       max_upload_size};
     collector2.collect_segments();
-    BOOST_REQUIRE_EQUAL(collector2.begin_inclusive(), model::offset{1});
-    BOOST_REQUIRE_EQUAL(collector2.end_inclusive(), model::offset{1});
-    BOOST_REQUIRE(collector2.segment_ready_for_upload());
+    ASSERT_EQ(collector2.begin_inclusive(), model::offset{1});
+    ASSERT_EQ(collector2.end_inclusive(), model::offset{1});
+    ASSERT_TRUE(collector2.segment_ready_for_upload());
     validate_non_compacted_collector(collector2);
 
     // Upload second segment which contains only one record [3-3 offset range]
@@ -1959,7 +1958,7 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload_off_by_one) {
       b.get_disk_log_impl(),
       max_upload_size};
     collector3.collect_segments();
-    BOOST_REQUIRE(!collector3.segment_ready_for_upload());
+    ASSERT_TRUE(!collector3.segment_ready_for_upload());
     validate_non_compacted_collector(collector3);
 
     // Upload series of segments. Last segment which is not sealed is not
@@ -1972,9 +1971,9 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload_off_by_one) {
       max_upload_size,
       model::offset{2}};
     collector4.collect_segments();
-    BOOST_REQUIRE_EQUAL(collector4.begin_inclusive(), model::offset{0});
-    BOOST_REQUIRE_EQUAL(collector4.end_inclusive(), model::offset{2});
-    BOOST_REQUIRE(collector4.segment_ready_for_upload());
+    ASSERT_EQ(collector4.begin_inclusive(), model::offset{0});
+    ASSERT_EQ(collector4.end_inclusive(), model::offset{2});
+    ASSERT_TRUE(collector4.segment_ready_for_upload());
     validate_non_compacted_collector(collector4);
 
     // Upload series of segments but include last segment which is not sealed.
@@ -1990,9 +1989,9 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload_off_by_one) {
       max_upload_size,
       model::offset{3}};
     collector5.collect_segments();
-    BOOST_REQUIRE_EQUAL(collector5.begin_inclusive(), model::offset{0});
-    BOOST_REQUIRE_EQUAL(collector5.end_inclusive(), model::offset{3});
-    BOOST_REQUIRE(collector5.segment_ready_for_upload());
+    ASSERT_EQ(collector5.begin_inclusive(), model::offset{0});
+    ASSERT_EQ(collector5.end_inclusive(), model::offset{3});
+    ASSERT_TRUE(collector5.segment_ready_for_upload());
     validate_non_compacted_collector(collector5);
 }
 
@@ -2015,7 +2014,7 @@ struct consumer {
     std::vector<size_t>* running_sum;
 };
 
-SEASTAR_THREAD_TEST_CASE(test_new_segment_upload_fuzz) {
+TEST(SegmentReuploadUnit, test_new_segment_upload_fuzz) {
     static ss::logger testlog("test_new_segment_upload_fuzz");
     cloud_storage::partition_manifest m(
       model::ntp{"test_ns", "test_tpc", 0}, model::initial_revision_id{0});
@@ -2128,7 +2127,7 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload_fuzz) {
                                         auto end_bound,
                                         size_t expected_size) {
             auto candidate = collector.make_upload_candidate(10s).get();
-            BOOST_REQUIRE(
+            ASSERT_TRUE(
               std::holds_alternative<upload_candidate_with_locks>(candidate));
             auto& c = std::get<upload_candidate_with_locks>(candidate);
             vlog(
@@ -2137,18 +2136,18 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload_fuzz) {
               c.candidate.starting_offset,
               c.candidate.final_offset,
               c.candidate.content_length);
-            BOOST_REQUIRE_EQUAL(
+            ASSERT_EQ(
               std::get<upload_candidate_with_locks>(candidate)
                 .candidate.starting_offset,
               start_bound.min());
-            BOOST_REQUIRE_EQUAL(
+            ASSERT_EQ(
               std::get<upload_candidate_with_locks>(candidate)
                 .candidate.final_offset,
               end_bound.max());
             auto candidate_size = std::get<upload_candidate_with_locks>(
                                     candidate)
                                     .candidate.content_length;
-            BOOST_REQUIRE_EQUAL(candidate_size, expected_size);
+            ASSERT_EQ(candidate_size, expected_size);
         };
 
         // Case 1:
@@ -2213,7 +2212,7 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload_fuzz) {
                 break;
             }
         }
-        BOOST_REQUIRE(batch_found);
+        ASSERT_TRUE(batch_found);
         vlog(
           testlog.info,
           "Collecting {} bytes starting from the offset {}-{}",
@@ -2235,7 +2234,7 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_upload_fuzz) {
     }
 }
 
-SEASTAR_THREAD_TEST_CASE(test_new_segment_never_skip_offsets) {
+TEST(SegmentReuploadUnit, test_new_segment_never_skip_offsets) {
     // Start with empty manifest and try to upload
     cloud_storage::partition_manifest m(
       model::ntp{"test_ns", "test_tpc", 0}, model::initial_revision_id{0});
@@ -2268,8 +2267,8 @@ SEASTAR_THREAD_TEST_CASE(test_new_segment_never_skip_offsets) {
         collector.collect_segments();
 
         auto c = collector.make_upload_candidate_stream(1s).get();
-        BOOST_REQUIRE(std::holds_alternative<candidate_creation_error>(c));
-        BOOST_REQUIRE(
+        ASSERT_TRUE(std::holds_alternative<candidate_creation_error>(c));
+        ASSERT_TRUE(
           std::get<candidate_creation_error>(c)
           == candidate_creation_error::offset_inside_batch);
     }

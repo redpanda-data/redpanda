@@ -8,9 +8,9 @@
 # by the Apache License, Version 2.0
 
 import re
-from rptest.services.cluster import cluster
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 
 usable_api_re = re.compile("(.*)\((\d*)\): (\d*) to (\d*) \[usable: (\d*)\]")

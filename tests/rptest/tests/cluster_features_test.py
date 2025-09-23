@@ -7,21 +7,20 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import time
 import json
-
-from rptest.utils.rpenv import sample_license, sample_license_v1
-from rptest.services.admin import Admin
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.cluster import cluster
-from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
-from rptest.util import expect_exception
+import time
 
 from ducktape.errors import TimeoutError as DucktapeTimeoutError
-from ducktape.utils.util import wait_until
 from ducktape.mark import parametrize
-from rptest.util import wait_until_result
+from ducktape.utils.util import wait_until
+
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import expect_exception, wait_until_result
+from rptest.utils.rpenv import sample_license, sample_license_v1
 
 FEATURE_ALPHA_NAME = "__test_alpha"
 FEATURE_BRAVO_NAME = "__test_bravo"

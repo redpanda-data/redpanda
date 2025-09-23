@@ -6,6 +6,7 @@
 #include "kafka/server/logger.h"
 #include "metrics/prometheus_sanitize.h"
 #include "model/fundamental.h"
+#include "model/kitp.h"
 #include "model/timeout_clock.h"
 
 #include <seastar/core/metrics.hh>
@@ -18,9 +19,9 @@ void update_fetch_session(fetch_session& session, const fetch_request& req) {
     for (auto it = req.cbegin(); it != req.cend(); ++it) {
         auto& topic = *it->topic;
         auto& partition = *it->partition;
-        model::topic_partition tp(topic.topic, partition.partition);
+        model::kitp_view kitp(topic.topic_id, topic.topic, partition.partition);
 
-        if (auto s_it = session.partitions().find(tp);
+        if (auto s_it = session.partitions().find(kitp);
             s_it != session.partitions().end()) {
             s_it->second->partition.max_bytes = partition.partition_max_bytes;
             s_it->second->partition.fetch_offset = partition.fetch_offset;
@@ -28,7 +29,7 @@ void update_fetch_session(fetch_session& session, const fetch_request& req) {
               = partition.current_leader_epoch;
         } else {
             session.partitions().emplace(
-              fetch_session_partition(topic.topic, partition));
+              fetch_session_partition(topic.topic_id, topic.topic, partition));
         }
     }
 
@@ -36,7 +37,7 @@ void update_fetch_session(fetch_session& session, const fetch_request& req) {
         for (auto& fp : ft.partitions) {
             model::topic_partition tp(ft.topic, model::partition_id(fp));
             session.partitions().erase(
-              model::topic_partition_view(ft.topic, model::partition_id(fp)));
+              model::kitp_view(ft.topic_id, ft.topic, model::partition_id(fp)));
         }
     }
 }

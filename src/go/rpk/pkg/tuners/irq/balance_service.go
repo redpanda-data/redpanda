@@ -202,6 +202,14 @@ func (balanceService *balanceService) getBalanceServiceInfo() (
 	optionsKey := "OPTIONS"
 	configFile := "/etc/default/irqbalance"
 	systemd := false
+
+	libSystemdServiceExists, _ := afero.Exists(fs, "/lib/systemd/system/irqbalance.service")
+	usrLibSystemdServiceExists, _ := afero.Exists(fs, "/usr/lib/systemd/system/irqbalance.service")
+	if libSystemdServiceExists || usrLibSystemdServiceExists {
+		optionsKey = "IRQBALANCE_ARGS"
+		systemd = true
+	}
+
 	if exists, _ := afero.Exists(fs, configFile); !exists {
 		zap.L().Sugar().Debugf("File '%s' does not exist", configFile)
 		if exists, _ := afero.Exists(fs, "/etc/sysconfig/irqbalance"); exists {

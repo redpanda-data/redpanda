@@ -11,7 +11,10 @@
 
 #pragma once
 
+#include "cluster_link/deps.h"
 #include "cluster_link/model/types.h"
+#include "cluster_link/replication/deps.h"
+#include "cluster_link/replication/link_replication_mgr.h"
 #include "cluster_link/task.h"
 #include "cluster_link/types.h"
 #include "kafka/client/cluster.h"
@@ -31,7 +34,9 @@ public:
       manager* manager,
       ss::lowres_clock::duration task_reconciler_interval,
       model::metadata config,
-      std::unique_ptr<kafka::client::cluster> cluster_connection);
+      std::unique_ptr<kafka::client::cluster> cluster_connection,
+      std::unique_ptr<replication::data_source_factory>,
+      std::unique_ptr<replication::data_sink_factory>);
     link(const link&) = delete;
     link(link&&) = delete;
     link& operator=(const link&) = delete;
@@ -39,14 +44,16 @@ public:
     virtual ~link() = default;
 
     virtual ss::future<> start();
-    virtual ss::future<> stop();
+    virtual ss::future<> stop() noexcept;
 
     ss::future<result<void>> register_task(task_factory*);
 
     void update_config(model::metadata);
 
-    ss::future<>
-    handle_on_leadership_change(::model::ntp ntp, ntp_leader is_ntp_leader);
+    ss::future<> handle_on_leadership_change(
+      ::model::ntp ntp,
+      ntp_leader is_ntp_leader,
+      std::optional<::model::term_id>);
 
     const model::metadata& config() const;
 
@@ -94,15 +101,24 @@ public:
 
     kafka::client::cluster& get_cluster_connection() noexcept;
 
+    consumer_groups_router& get_group_router();
+
+    partition_metadata_provider& get_partition_metadata_provider();
+
     std::optional<
       chunked_hash_map<::model::topic, model::mirror_topic_metadata>>
     get_mirror_topics_for_link() const;
+
+    ::model::node_id self() const { return _self; }
 
 private:
     bool should_start_task(task* t) const;
     bool should_stop_task(task* t) const;
     ss::future<> run_task_reconciler();
     ss::future<result<void>> do_register_task(std::unique_ptr<task>);
+    void maybe_update_sasl_configuration(
+      const std::optional<model::connection_config::authn_variant>&
+        authn_config);
 
 private:
     ::model::node_id _self;
@@ -111,6 +127,7 @@ private:
     chunked_hash_map<ss::sstring, std::unique_ptr<task>> _tasks;
     model::metadata _config;
     std::unique_ptr<kafka::client::cluster> _cluster_connection;
+    replication::link_replication_manager _replication_mgr;
 
     notification_list<task_state_change_cb, task_state_notification_id>
       _task_state_change_notifications;

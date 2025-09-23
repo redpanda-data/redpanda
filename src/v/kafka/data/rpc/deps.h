@@ -125,6 +125,7 @@ public:
       update_topic(cluster::topic_properties_update) = 0;
 };
 
+using require_leader = ss::bool_class<struct on_leader_only_tag>;
 /**
  * Handles routing for shard local partitions.
  */
@@ -149,6 +150,13 @@ public:
     virtual std::optional<ss::shard_id> shard_owner(const model::ntp&) = 0;
 
     /**
+     * Checks if current shard owns a given ntp and is the leader for it.
+     */
+    bool is_current_shard_leader(const model::ktp&) const;
+
+    virtual bool is_current_shard_leader(const model::ntp&) const = 0;
+
+    /**
      * Invoke a function on the ntp's leader shard.
      *
      * Will return cluster::errc::not_leader if the shard_id is incorrect for
@@ -158,13 +166,15 @@ public:
       ss::shard_id shard_id,
       const model::ktp& ktp,
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
-        kafka::partition_proxy*)> fn)
+        kafka::partition_proxy*)>,
+      require_leader req_leader = require_leader::yes)
       = 0;
     virtual ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
       ss::shard_id,
       const model::ntp&,
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
-        kafka::partition_proxy*)>)
+        kafka::partition_proxy*)>,
+      require_leader req_leader = require_leader::yes)
       = 0;
 
     virtual ss::future<result<partition_offsets, cluster::errc>>
@@ -172,7 +182,8 @@ public:
       ss::shard_id shard_id,
       const model::ktp& ktp,
       ss::noncopyable_function<ss::future<
-        result<partition_offsets, cluster::errc>>(kafka::partition_proxy*)>)
+        result<partition_offsets, cluster::errc>>(kafka::partition_proxy*)>,
+      require_leader req_leader = require_leader::yes)
       = 0;
 };
 
@@ -194,13 +205,18 @@ public:
       ss::shard_id shard,
       const NTP& ntp,
       ss::noncopyable_function<
-        ss::future<result<R, cluster::errc>>(kafka::partition_proxy*)> func) {
+        ss::future<result<R, cluster::errc>>(kafka::partition_proxy*)> func,
+      require_leader req_leader = require_leader::yes) {
         return invoke_func_on_shard_impl(
           shard,
-          [ntp,
-           func = std::move(func)](cluster::partition_manager& mgr) mutable {
+          [ntp, func = std::move(func), req_leader](
+            cluster::partition_manager& mgr) mutable {
               auto pp = kafka::make_partition_proxy(ntp, mgr);
-              if (!pp || !pp->is_leader()) {
+              if (!pp) {
+                  return ss::make_ready_future<result<R, cluster::errc>>(
+                    cluster::errc::not_leader);
+              }
+              if (req_leader && !pp->is_leader()) {
                   return ss::make_ready_future<result<R, cluster::errc>>(
                     cluster::errc::not_leader);
               }
@@ -222,6 +238,8 @@ public:
 
     std::optional<ss::shard_id> shard_owner(const model::ktp& ntp);
     std::optional<ss::shard_id> shard_owner(const model::ntp& ntp);
+
+    bool is_current_shard_leader(const model::ntp& ntp);
 
 private:
     ss::sharded<cluster::shard_table>* _table;

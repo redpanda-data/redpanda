@@ -201,6 +201,11 @@
             "name": "get_current_cluster_epoch",
             "input_type": "get_current_cluster_epoch_request",
             "output_type": "get_current_cluster_epoch_response"
+        },
+        {
+            "name": "update_cluster_link_configuration",
+            "input_type": "update_cluster_link_configuration_request",
+            "output_type": "update_cluster_link_configuration_response"
         }
     ]
 }

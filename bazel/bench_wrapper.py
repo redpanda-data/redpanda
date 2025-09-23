@@ -8,8 +8,8 @@
 # by the Apache License, Version 2.0
 
 import os
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
 

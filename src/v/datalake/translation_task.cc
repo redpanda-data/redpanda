@@ -218,6 +218,7 @@ translation_task::translation_task(
   model::revision_id topic_revision,
   std::unique_ptr<parquet_file_writer_factory> writer_factory,
   cloud_data_io& cloud_io,
+  features::feature_table* features,
   schema_manager& schema_mgr,
   type_resolver& type_resolver,
   record_translator& record_translator,
@@ -244,7 +245,8 @@ translation_task::translation_task(
       *_table_creator,
       _invalid_record_action,
       _location_provider,
-      *_translation_probe) {}
+      *_translation_probe,
+      features) {}
 
 ss::future<> translation_task::translate_once(
   model::record_batch_reader reader,

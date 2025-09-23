@@ -10,6 +10,7 @@ redpanda_test_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/config",
         "//src/v/kafka/data/rpc",
         "//src/v/model",
         "//src/v/model/tests:random",

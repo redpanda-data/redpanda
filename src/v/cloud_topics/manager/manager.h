@@ -15,10 +15,12 @@
 #include "raft/notification.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/sharded.hh>
 
 namespace cluster {
 class partition;
 class partition_manager;
+class health_monitor_frontend;
 } // namespace cluster
 
 namespace cloud_io {
@@ -49,8 +51,9 @@ public:
     cloud_topics_manager(
       cloud_io::remote* remote,
       cloud_storage_clients::bucket_name bucket,
-      cluster::partition_manager*,
-      raft::group_manager*);
+      seastar::sharded<cluster::partition_manager>*,
+      seastar::sharded<raft::group_manager>*,
+      seastar::sharded<cluster::health_monitor_frontend>*);
 
     seastar::future<> start();
     seastar::future<> stop();
@@ -58,8 +61,9 @@ public:
 private:
     cloud_io::remote* remote_;
     cloud_storage_clients::bucket_name bucket_;
-    cluster::partition_manager* partition_manager_;
-    raft::group_manager* group_manager_;
+    seastar::sharded<cluster::partition_manager>* partition_manager_;
+    seastar::sharded<raft::group_manager>* group_manager_;
+    seastar::sharded<cluster::health_monitor_frontend>* health_monitor_;
 
     std::optional<cluster::notification_id_type> manage_notifications_;
     std::optional<cluster::notification_id_type> unmanage_notifications_;

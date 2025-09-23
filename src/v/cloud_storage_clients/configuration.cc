@@ -25,45 +25,19 @@ ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
 build_tls_credentials(
   ss::sstring name,
   std::optional<cloud_storage_clients::ca_trust_file> trust_file,
-  ss::logger& log) {
-    ss::tls::credentials_builder cred_builder;
-    cred_builder.set_cipher_string(
-      {config::tlsv1_2_cipher_string.data(),
-       config::tlsv1_2_cipher_string.size()});
-    cred_builder.set_ciphersuites(
-      {config::tlsv1_3_ciphersuites.data(),
-       config::tlsv1_3_ciphersuites.size()});
-    cred_builder.set_minimum_tls_version(
-      from_config(config::shard_local_cfg().tls_min_version()));
-    if (trust_file.has_value()) {
-        auto file = trust_file.value();
-        vlog(log.info, "Use non-default trust file {}", file());
-        co_await cred_builder.set_x509_trust_file(
-          file().string(), ss::tls::x509_crt_format::PEM);
-    } else {
-        // Use system defaults, might not work on all systems
-        auto ca_file = co_await net::find_ca_file();
-        if (ca_file) {
-            vlog(
-              log.info,
-              "Use automatically discovered trust file {}",
-              ca_file.value());
-            co_await cred_builder.set_x509_trust_file(
-              ca_file.value(), ss::tls::x509_crt_format::PEM);
-        } else {
-            vlog(
-              log.info,
-              "Trust file can't be detected automatically, using system "
-              "default");
-            co_await cred_builder.set_system_trust();
-        }
-    }
-    if (auto crl_file
-        = config::shard_local_cfg().cloud_storage_crl_file.value();
-        crl_file.has_value()) {
-        co_await cred_builder.set_x509_crl_file(
-          *crl_file, ss::tls::x509_crt_format ::PEM);
-    }
+  ss::logger&) {
+    auto cred_builder = co_await net::get_credentials_builder({
+      .truststore = trust_file.transform(
+        [](auto& f) { return net::certificate(std::filesystem::path(f)); }),
+      .k_store = std::nullopt,
+      .crl = config::shard_local_cfg().cloud_storage_crl_file().transform(
+        [](auto& f) { return net::certificate(std::filesystem::path(f)); }),
+      .min_tls_version = from_config(
+        config::shard_local_cfg().tls_min_version()),
+      .enable_renegotiation = false,
+      .require_client_auth = false,
+    });
+
     co_return co_await net::build_reloadable_credentials_with_probe<
       ss::tls::certificate_credentials>(
       std::move(cred_builder), "cloud_storage_client", std::move(name));

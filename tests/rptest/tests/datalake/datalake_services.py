@@ -9,23 +9,25 @@
 
 import operator
 from typing import Any, Literal, Optional
+
 from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool, TopicSpec
 from rptest.context import databricks as databricks_ctx
 from rptest.context.gcp import GCPContext
 from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
+from rptest.services.catalog_service import CatalogService, CatalogType
 from rptest.services.databricks_workspace import DatabricksWorkspace
 from rptest.services.datalake.catalog.biglake import BiglakeMetastore
 from rptest.services.datalake.catalog.databricks_unity import DatabricksUnity
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from rptest.services.nessie_catalog import NessieCatalog
 from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda_connect import RedpandaConnectService
 from rptest.services.spark_service import SparkService
 from rptest.services.trino_service import TrinoService
 from rptest.tests.datalake.query_engine_base import QueryEngineBase, QueryEngineType
-from rptest.services.redpanda_connect import RedpandaConnectService
 from rptest.tests.datalake.query_engine_factory import get_query_engine_by_type
-from rptest.services.catalog_service import CatalogType, CatalogService
-from rptest.services.nessie_catalog import NessieCatalog
 
 
 class DatalakeServices:

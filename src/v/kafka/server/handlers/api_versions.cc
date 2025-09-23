@@ -140,7 +140,7 @@ api_versions_response api_versions_handler::handle_raw(request_context& ctx) {
     {
         // If feature::topic_ids is not active, limit reported API versions
         const auto& features = ctx.feature_table().local();
-        if (unlikely(!features.is_active(features::feature::topic_ids))) {
+        if (unlikely(!features.is_active(features::feature::topic_ids_api))) {
             topic_id_api_version_limiter(r);
         }
     }

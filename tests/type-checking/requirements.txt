@@ -1,0 +1,2 @@
+# requirements for type-checking
+pyright[nodejs]==1.1.405

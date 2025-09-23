@@ -72,9 +72,6 @@ public:
       , ctxlog(test_log, rtc)
       , probe(manifest_ntp)
       , view(api, cache, stm_manifest, bucket, path_provider) {
-        stm_manifest.set_archive_start_offset(
-          model::offset{0}, model::offset_delta{0});
-        stm_manifest.set_archive_clean_offset(model::offset{0}, 0);
         view.start().get();
         base_timestamp = model::timestamp_clock::now() - storage_duration;
         last_timestamp = base_timestamp;
@@ -83,6 +80,12 @@ public:
     ~async_manifest_view_fixture() { view.stop().get(); }
 
     expectation spill_manifest(const spillover_manifest& spm, bool hydrate) {
+        if (stm_manifest.get_archive_start_offset() == model::offset{}) {
+            // Create archive lazily
+            stm_manifest.set_archive_start_offset(
+              model::offset{0}, model::offset_delta{0});
+            stm_manifest.set_archive_clean_offset(model::offset{0}, 0);
+        }
         stm_manifest.spillover(spm.make_manifest_metadata());
         // update cache
         auto path = spm.get_manifest_path(path_provider);
@@ -190,6 +193,13 @@ public:
 
     void trigger_spillover(int num_segments, bool hydrate = true) {
         BOOST_REQUIRE_GT(stm_manifest.size(), num_segments + 1);
+
+        if (stm_manifest.get_archive_start_offset() == model::offset{}) {
+            // Create empty archive
+            stm_manifest.set_archive_start_offset(
+              model::offset{0}, model::offset_delta{0});
+            stm_manifest.set_archive_clean_offset(model::offset{0}, 0);
+        }
 
         const auto so = model::next_offset(stm_manifest.get_last_offset());
         spillover_manifest spm(manifest_ntp, manifest_rev);

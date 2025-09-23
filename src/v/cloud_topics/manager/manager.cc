@@ -21,13 +21,15 @@ namespace cloud_topics {
 cloud_topics_manager::cloud_topics_manager(
   cloud_io::remote* remote,
   cloud_storage_clients::bucket_name bucket,
-  cluster::partition_manager* partition_manager,
-  raft::group_manager* group_manager)
+  ss::sharded<cluster::partition_manager>* partition_manager,
+  ss::sharded<raft::group_manager>* group_manager,
+  ss::sharded<cluster::health_monitor_frontend>* health_monitor)
   : remote_(remote)
   , bucket_(std::move(bucket))
   , partition_manager_(partition_manager)
   , group_manager_(group_manager)
-  , level_zero_gc_(remote_, bucket_) {}
+  , health_monitor_(health_monitor)
+  , level_zero_gc_(remote_, bucket_, health_monitor_) {}
 
 seastar::future<> cloud_topics_manager::start() {
     vlog(cd_log.info, "Cloud topics manager starting");
@@ -37,17 +39,18 @@ seastar::future<> cloud_topics_manager::start() {
       model::l1_metastore_topic,
       model::partition_id(0));
 
-    manage_notifications_ = partition_manager_->register_manage_notification(
-      manager_ntp.ns,
-      manager_ntp.tp.topic,
-      [this, manager_ntp](const auto& partition) {
-          if (partition->ntp() == manager_ntp) {
-              start_managing(*partition);
-          }
-      });
+    manage_notifications_
+      = partition_manager_->local().register_manage_notification(
+        manager_ntp.ns,
+        manager_ntp.tp.topic,
+        [this, manager_ntp](const auto& partition) {
+            if (partition->ntp() == manager_ntp) {
+                start_managing(*partition);
+            }
+        });
 
     unmanage_notifications_
-      = partition_manager_->register_unmanage_notification(
+      = partition_manager_->local().register_unmanage_notification(
         manager_ntp.ns, manager_ntp.tp.topic, [this, manager_ntp](auto tp) {
             if (tp.partition == manager_ntp.tp.partition) {
                 stop_managing(manager_ntp);
@@ -55,12 +58,12 @@ seastar::future<> cloud_topics_manager::start() {
         });
 
     leadership_notifications_
-      = group_manager_->register_leadership_notification(
+      = group_manager_->local().register_leadership_notification(
         [this, manager_ntp](
           raft::group_id group,
           model::term_id,
           std::optional<model::node_id> leader_id) {
-            auto partition = partition_manager_->partition_for(group);
+            auto partition = partition_manager_->local().partition_for(group);
             if (partition && partition->ntp() == manager_ntp) {
                 notify_leadership(partition, leader_id);
             }
@@ -75,17 +78,17 @@ seastar::future<> cloud_topics_manager::stop() {
     vlog(cd_log.info, "Cloud topics manager stopping");
 
     if (manage_notifications_) {
-        partition_manager_->unregister_manage_notification(
+        partition_manager_->local().unregister_manage_notification(
           *manage_notifications_);
     }
 
     if (unmanage_notifications_) {
-        partition_manager_->unregister_unmanage_notification(
+        partition_manager_->local().unregister_unmanage_notification(
           *unmanage_notifications_);
     }
 
     if (leadership_notifications_) {
-        group_manager_->unregister_leadership_notification(
+        group_manager_->local().unregister_leadership_notification(
           *leadership_notifications_);
     }
 

@@ -21,7 +21,7 @@ class BiglakeMetastore(CatalogService):
 
     def __init__(
         self,
-        ctx,
+        ctx: Any,
         *,
         cloud_storage_bucket: str,
         gcp_context: GCPContext,

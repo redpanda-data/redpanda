@@ -150,6 +150,10 @@ public:
         return data_directory().path / "datalake_staging";
     }
 
+    std::filesystem::path l1_staging_path() const {
+        return data_directory().path / "l1_staging";
+    }
+
     std::vector<model::broker_endpoint> advertised_kafka_api() const {
         if (_advertised_kafka_api().empty()) {
             std::vector<model::broker_endpoint> eps;

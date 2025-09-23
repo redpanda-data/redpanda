@@ -17,6 +17,7 @@
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 
 #include <expected>
@@ -48,7 +49,16 @@ namespace cloud_topics::l1 {
 // implementation to ensure such requests are rejected and don't have harmful
 // side effects. As such, callers can think of this interface as thread safe.
 class metastore {
+protected:
+    metastore() = default;
+
 public:
+    virtual ~metastore() = default;
+    metastore(const metastore&) = delete;
+    metastore& operator=(const metastore&) = delete;
+    metastore(const metastore&&) = delete;
+    metastore& operator=(const metastore&&) = delete;
+
     enum class errc {
         missing_ntp,
         invalid_request,
@@ -78,6 +88,11 @@ public:
         object_id oid;
         size_t footer_pos;
         size_t object_size;
+        // The first offset available in the object (inclusive).
+        kafka::offset first_offset;
+        // The last offset available in the object (inclusive).
+        // This can be used to skip to the next offset.
+        kafka::offset last_offset;
     };
 
     // Interface to build object metadata for the L1 metastore. Meant to be
@@ -95,6 +110,12 @@ public:
         virtual object_id
         get_or_create_object_for(const model::topic_id_partition&)
           = 0;
+
+        // Removes a pending object from the builder. The object must be in the
+        // pending state. Further calls to get_or_create_object_for() will not
+        // return the object id. Any other call that references the object id
+        // will return an error.
+        virtual std::expected<void, error> remove_pending_object(object_id) = 0;
 
         // Adds the given partition metadata for the given object. Expected
         // that finish() has not yet been called on the object.
@@ -180,6 +201,16 @@ public:
     virtual ss::future<std::expected<object_response, errc>>
     get_first_ge(const model::topic_id_partition&, model::timestamp) = 0;
 
+    // Finds the kafka offset such that if data was truncated before this offset
+    // where the total amount of data left would be ~size (within the
+    // granularity of a single object's size). This is intended to be used for
+    // bytes based retention of the metastore.
+    //
+    // If no such offset exists, returns `out_of_range`.
+    virtual ss::future<std::expected<kafka::offset, errc>>
+    get_first_offset_for_bytes(const model::topic_id_partition&, uint64_t size)
+      = 0;
+
     // Returns the end (i.e. one past the last) offset at which data was added
     // for the given partition term.
     virtual ss::future<std::expected<kafka::offset, errc>>
@@ -226,7 +257,7 @@ public:
         // been removed.
         offset_interval_set removed_tombstones_ranges;
 
-        // Timsetamp at which the compaction operation happened.
+        // Timestamp at which the compaction operation happened.
         model::timestamp cleaned_at;
     };
     using compaction_map_t
@@ -291,6 +322,47 @@ public:
       const model::topic_id_partition&,
       model::timestamp tombstone_removal_upper_bound_ts)
       = 0;
+
+    // All the information required to query a `compaction_info_response` from
+    // the metastore. Parameters are used for call to
+    // `get_compaction_offsets()`.
+    struct sample_spec {
+        model::topic_id_partition tid_p;
+        model::timestamp tombstone_removal_upper_bound_ts;
+    };
+
+    struct compaction_info_response {
+        // The dirty ratio of the log/partition.
+        double dirty_ratio;
+        // The earliest dirty timestamp in the log. `std::nullopt` if there is
+        // no such timestamp.
+        std::optional<model::timestamp> earliest_dirty_ts;
+        // Compaction offsets returned by call to `get_compaction_offsets()`
+        // (see above).
+        compaction_offsets_response offsets_response;
+    };
+
+    // Obtains compaction state for a provided `sample_spec` on the basis of a
+    // single partition. Provides information relevant to determining if a
+    // partition requires compaction - e.g dirty ratio and earliest dirty
+    // timestamp, as well as compaction offsets (see `get_compaction_offsets()`
+    // above).
+    virtual ss::future<std::expected<compaction_info_response, errc>>
+    get_compaction_info(const sample_spec&) = 0;
+
+    // Vectorized RPC for obtaining compaction state for a number of partitions.
+    // Ensures `compaction_info_response`s for partitions are returned in the
+    // same order as requested in `to_sample`.
+    virtual ss::future<
+      chunked_vector<std::expected<compaction_info_response, errc>>>
+    get_compaction_infos(const chunked_vector<sample_spec>& to_sample) {
+        chunked_vector<std::expected<compaction_info_response, errc>> ret;
+        ret.reserve(to_sample.size());
+        for (const auto& log : to_sample) {
+            ret.push_back(co_await get_compaction_info(log));
+        }
+        co_return ret;
+    }
 };
 
 } // namespace cloud_topics::l1

@@ -81,11 +81,11 @@ TEST(FindLatestReport, NonDatePathsIgnored) {
     ss::abort_source as;
     retry_chain_node parent{as};
 
-    const auto dates = cl::client::list_bucket_result{
+    auto dates = cl::client::list_bucket_result{
       .common_prefixes = {"1215-06/", "133701Z/"}};
 
     csi::MockRemote remote;
-    setup_and_validate_list_call(remote, parent, dates);
+    setup_and_validate_list_call(remote, parent, std::move(dates));
 
     csi::aws_ops ops{bucket, id, prefix};
     const auto result = ops.fetch_latest_report_metadata(remote, parent).get();
@@ -114,7 +114,7 @@ void run_test(csi::MockRemote& remote, retry_chain_node& parent, T... ts) {
     // We expect the following prefixes to be checked, in order from latest to
     // earliest.
     // The scanning will stop once the first manifest checksum is found
-    auto common_prefixes = std::vector<ss::sstring>{
+    auto common_prefixes = chunked_vector<ss::sstring>{
       "1215-06-15T01-02Z/",
       latest_date_which_has_report,
       latest_date,
@@ -122,10 +122,10 @@ void run_test(csi::MockRemote& remote, retry_chain_node& parent, T... ts) {
     for (auto& p : common_prefixes) {
         p = fmt::format("{}{}", list_prefix, p);
     }
-    const auto dates = cl::client::list_bucket_result{
-      .common_prefixes = common_prefixes};
+    auto dates = cl::client::list_bucket_result{
+      .common_prefixes = std::move(common_prefixes)};
 
-    setup_and_validate_list_call(remote, parent, dates);
+    setup_and_validate_list_call(remote, parent, std::move(dates));
 
     // The latest date does not have a manifest checksum, so it will be checked
     // and then discarded

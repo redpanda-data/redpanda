@@ -10,12 +10,15 @@
 import time
 import traceback
 from typing import Any, Optional
+
+from ducktape.mark import matrix
+
 from rptest.clients.offline_log_viewer import OfflineLogViewer
-from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
-    SISettings,
     CloudStorageType,
+    SISettings,
     get_cloud_storage_type,
 )
 from rptest.services.redpanda_installer import (
@@ -25,13 +28,11 @@ from rptest.services.redpanda_installer import (
 )
 from rptest.services.workload_protocol import PWorkload
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.tests.workload_producer_consumer import ProducerConsumerWorkload
-from rptest.tests.workload_dummy import DummyWorkload, MinimalWorkload
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.tests.workload_license import LicenseWorkload
+from rptest.tests.workload_dummy import DummyWorkload, MinimalWorkload
+from rptest.tests.workload_producer_consumer import ProducerConsumerWorkload
 from rptest.tests.workload_upgrade_config_defaults import SetLogSegmentMsMinConfig
 from rptest.utils.mode_checks import skip_debug_mode, skip_fips_mode
-from ducktape.mark import matrix
 
 
 def expand_version(

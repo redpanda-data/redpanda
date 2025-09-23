@@ -8,25 +8,20 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.clients.consumer_offsets_recovery import ConsumerOffsetsRecovery
-from rptest.services.cluster import cluster
+import re
 
-from rptest.clients.rpk import RpkException, RpkTool
+from ducktape.utils.util import wait_until
+
+from rptest.clients.consumer_offsets_recovery import ConsumerOffsetsRecovery
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.services.kafka_cli_consumer import KafkaCliConsumer
+from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
 )
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
-from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize
-
-import re
 
 
 class ConsumerOffsetsRecoveryToolTest(PreallocNodesTest):

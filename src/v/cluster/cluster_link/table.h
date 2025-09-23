@@ -72,6 +72,10 @@ public:
     notification_id register_for_updates(notification_callback);
     void unregister_for_updates(notification_id);
 
+    /// Returns whether or not there is at least one cluster link present and
+    /// active
+    bool cluster_link_active() const;
+
 private:
     /// Snapshot copy of all the cluster links
     map_t all_links() const;
@@ -96,6 +100,10 @@ private:
     cluster::cluster_link::errc update_mirror_topic_properties(
       ::cluster_link::model::id_t,
       const ::cluster_link::model::update_mirror_topic_properties_cmd&);
+
+    cluster::cluster_link::errc update_cluster_link_configuration(
+      ::cluster_link::model::id_t,
+      const ::cluster_link::model::update_cluster_link_configuration_cmd&);
 
     void run_callbacks(::cluster_link::model::id_t);
 

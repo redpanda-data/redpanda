@@ -276,7 +276,7 @@ public:
         return _conn->server().credentials();
     }
 
-    bool audit() { return _audit_successful; }
+    bool audit() const { return _audit_successful; }
 
     bool audit_authn_failure(ss::sstring reason) {
         return audit_authn_failure(std::move(reason), "");
@@ -344,8 +344,9 @@ public:
       security::acl_operation operation,
       const T& name,
       authz_quiet quiet = authz_quiet{false},
-      audit_authz_check audit_authz = audit_authz_check::yes) {
-        auto result = do_authorized(operation, name, quiet);
+      audit_authz_check audit_authz = audit_authz_check::yes,
+      superuser_required superuser_required = superuser_required::no) {
+        auto result = do_authorized(operation, name, quiet, superuser_required);
         auto resp = bool(result);
 
         auto key = _header.key;
@@ -364,8 +365,9 @@ public:
       security::acl_operation operation,
       const T& name,
       Func&& f,
-      authz_quiet quiet = authz_quiet{false}) {
-        auto result = do_authorized(operation, name, quiet);
+      authz_quiet quiet = authz_quiet{false},
+      superuser_required superuser_required = superuser_required::no) {
+        auto result = do_authorized(operation, name, quiet, superuser_required);
         auto resp = bool(result);
 
         auto key = _header.key;
@@ -412,18 +414,23 @@ public:
 
     ss::sharded<server>& server() { return _conn->server().container(); }
 
+    bool is_cluster_link_active() const {
+        return _conn->server().container().local().is_cluster_link_active();
+    }
+
 private:
     template<typename T>
     security::auth_result do_authorized(
       security::acl_operation operation,
       const T& name,
-      authz_quiet quiet = authz_quiet{false}) {
+      authz_quiet quiet = authz_quiet{false},
+      superuser_required superuser_required = superuser_required::no) {
         if constexpr (std::is_same_v<T, model::topic>) {
             if (name == model::kafka_audit_logging_topic) [[unlikely]] {
                 _request_contains_audit_topic = true;
             }
         }
-        return _conn->authorized(operation, name, quiet);
+        return _conn->authorized(operation, name, quiet, superuser_required);
     }
     template<typename T>
     void do_audit(
