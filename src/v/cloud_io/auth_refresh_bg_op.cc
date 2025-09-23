@@ -81,16 +81,15 @@ void auth_refresh_bg_op::do_start_auth_refresh_op(
                     cloud_roles::aws_region_name{});
               });
 
-            _refresh_credentials.emplace(
-              cloud_roles::make_refresh_credentials(
-                _cloud_credentials_source,
-                _as,
-                std::move(credentials_update_cb),
-                service_name,
-                region_name,
-                std::nullopt,
-                cloud_roles::default_retry_params,
-                std::move(metrics_tag)));
+            _refresh_credentials.emplace(cloud_roles::make_refresh_credentials(
+              _cloud_credentials_source,
+              _as,
+              std::move(credentials_update_cb),
+              service_name,
+              region_name,
+              std::nullopt,
+              cloud_roles::default_retry_params,
+              std::move(metrics_tag)));
 
             vlog(
               log.info,
