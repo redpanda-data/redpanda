@@ -57,7 +57,7 @@ services:
   azurite:
     container_name: azurite
     restart: always
-    command: "azurite-blob -l /data --blobHost 0.0.0.0"
+    command: "azurite-blob -d /tmp/azurite.debug.log -l /data --blobHost 0.0.0.0"
     ports:
     - 10000:10000
     # image: mcr.microsoft.com/azure-storage/azurite:3.34.0
