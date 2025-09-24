@@ -65,13 +65,11 @@ std::optional<primitive_value> convert_primitive(
             double source_value = p.value_double();
             // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
             double int_part;
-            if (
-              std::modf(source_value, &int_part) != 0.0
-
-              || int_part
-                   < static_cast<double>(std::numeric_limits<int64_t>::min())
-              || int_part
-                   > static_cast<double>(std::numeric_limits<int64_t>::max())) {
+            const bool is_integer = (std::modf(source_value, &int_part) == 0.0);
+            const bool can_be_represented_as_iceberg_long
+              = is_integer
+                && (int_part >= static_cast<double>(std::numeric_limits<int64_t>::min()) && int_part <= static_cast<double>(std::numeric_limits<int64_t>::max()));
+            if (!can_be_represented_as_iceberg_long) {
                 throw value_conversion_exception(fmt::format(
                   "Cannot convert non-integer double value {} to integer "
                   "without precision loss",
