@@ -122,7 +122,7 @@ ss::future<client::request_response_t> client::make_request(
     auto target = header.target();
     ss::sstring target_str(target.data(), target.size());
     prefix_logger ctxlog(http_log, ssx::sformat("[{}]", target_str));
-    vlog(ctxlog.trace, "client.make_request {}", header);
+    vlog(ctxlog.info, "client.make_request {}", header);
 
     auto req = ss::make_shared<request_stream>(this, std::move(header));
     auto res = ss::make_shared<response_stream>(this, verb, target_str);
@@ -134,11 +134,11 @@ ss::future<client::request_response_t> client::make_request(
     if (is_valid()) {
         if (age < _max_idle_time) {
             // Reuse connection
-            vlog(ctxlog.debug, "reusing connection, age {}", age.count());
+            vlog(ctxlog.info, "reusing connection, age {}", age.count());
             return ss::make_ready_future<request_response_t>(
               std::make_tuple(req, res));
         } else {
-            vlog(ctxlog.debug, "shutdown connection, age {}", age.count());
+            vlog(ctxlog.info, "shutdown connection, age {}", age.count());
             // Connection is too old and likeley already received
             // RST packet from the server. If we will try to use
             // it the broken pipe (32) error will be triggered.
@@ -182,7 +182,7 @@ ss::future<reconnect_result_t> client::get_connected(
         throw std::runtime_error("client is stopped");
     }
     vlog(
-      ctxlog.debug,
+      ctxlog.info,
       "about to start connecting, is_valid: {}, connect gate closed: {}, "
       "dispatch gate closed: {}",
       is_valid(),
@@ -365,7 +365,7 @@ ss::future<iobuf> client::response_stream::recv_some() {
     }
     return _client->receive()
       .then([this](ss::temporary_buffer<char> chunk) mutable {
-          vlog(_ctxlog.trace, "chunk received, chunk length {}", chunk.size());
+          vlog(_ctxlog.info, "chunk received, chunk length {}", chunk.size());
           if (chunk.empty()) {
               // NOTE: to make the parser stop we need to use the 'put_eof'
               // method, because it will handle situation when the data is
@@ -504,11 +504,11 @@ ss::future<> client::request_stream::send_some(iobuf&& seq) {
     } catch (...) {
         return ss::current_exception_as_future();
     }
-    vlog(_ctxlog.trace, "request_stream.send_some {}", seq.size_bytes());
+    vlog(_ctxlog.info, "request_stream.send_some {}", seq.size_bytes());
     if (_serializer.is_header_done()) {
         // Fast path
         return ss::with_gate(_gate, [this, seq = std::move(seq)]() mutable {
-            vlog(_ctxlog.trace, "header is done, bypass protocol serializer");
+            vlog(_ctxlog.info, "header is done, bypass protocol serializer");
             return forward(_client, _chunk_encode(std::move(seq)));
         });
     }
