@@ -128,7 +128,8 @@ public:
       std::unique_ptr<impl> impl,
       ss::abort_source& as,
       credentials_update_cb_t creds_update,
-      aws_region_name region);
+      aws_region_name region,
+      ss::sstring metrics_tag = "");
 
     void start();
 
@@ -177,7 +178,8 @@ refresh_credentials make_refresh_credentials(
   aws_service_name service,
   aws_region_name region,
   std::optional<net::unresolved_address> endpoint = std::nullopt,
-  retry_params retry_params = default_retry_params) {
+  retry_params retry_params = default_retry_params,
+  ss::sstring metrics_tag = "") {
     ss::sstring host = {
       CredentialsProvider::default_host.data(),
       CredentialsProvider::default_host.size()};
@@ -203,7 +205,11 @@ refresh_credentials make_refresh_credentials(
       as,
       retry_params);
     return refresh_credentials{
-      std::move(impl), as, std::move(creds_update_cb), std::move(region)};
+      std::move(impl),
+      as,
+      std::move(creds_update_cb),
+      std::move(region),
+      std::move(metrics_tag)};
 }
 
 /// Builds a refresh_credentials object based on the credentials source set
@@ -215,6 +221,7 @@ refresh_credentials make_refresh_credentials(
   aws_service_name service,
   aws_region_name region,
   std::optional<net::unresolved_address> endpoint = std::nullopt,
-  retry_params retry_params = default_retry_params);
+  retry_params retry_params = default_retry_params,
+  ss::sstring metrics_tag = "");
 
 } // namespace cloud_roles

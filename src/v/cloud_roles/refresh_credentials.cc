@@ -47,12 +47,13 @@ refresh_credentials::refresh_credentials(
   std::unique_ptr<impl> impl,
   ss::abort_source& as,
   credentials_update_cb_t creds_update,
-  aws_region_name region)
+  aws_region_name region,
+  ss::sstring metrics_tag)
   : _impl(std::move(impl))
   , _as(as)
   , _credentials_update(std::move(creds_update))
   , _region{std::move(region)}
-  , _probe(std::make_unique<auth_refresh_probe>()) {}
+  , _probe(std::make_unique<auth_refresh_probe>(std::move(metrics_tag))) {}
 
 void refresh_credentials::start() {
     _probe->setup_metrics();
@@ -381,7 +382,8 @@ refresh_credentials make_refresh_credentials(
   aws_service_name service,
   aws_region_name region,
   std::optional<net::unresolved_address> endpoint,
-  retry_params retry_params) {
+  retry_params retry_params,
+  ss::sstring metrics_tag) {
     switch (cloud_credentials_source) {
     case model::cloud_credentials_source::config_file:
         vlog(
@@ -397,7 +399,8 @@ refresh_credentials make_refresh_credentials(
           std::move(service),
           std::move(region),
           std::move(endpoint),
-          retry_params);
+          retry_params,
+          std::move(metrics_tag));
     case model::cloud_credentials_source::sts:
         return make_refresh_credentials<aws_sts_refresh_impl>(
           as,
@@ -405,7 +408,8 @@ refresh_credentials make_refresh_credentials(
           std::move(service),
           std::move(region),
           std::move(endpoint),
-          retry_params);
+          retry_params,
+          std::move(metrics_tag));
     case model::cloud_credentials_source::gcp_instance_metadata:
         return make_refresh_credentials<gcp_refresh_impl>(
           as,
@@ -413,7 +417,8 @@ refresh_credentials make_refresh_credentials(
           std::move(service),
           std::move(region),
           std::move(endpoint),
-          retry_params);
+          retry_params,
+          std::move(metrics_tag));
     case model::cloud_credentials_source::azure_aks_oidc_federation:
         return make_refresh_credentials<azure_aks_refresh_impl>(
           as,
@@ -421,7 +426,8 @@ refresh_credentials make_refresh_credentials(
           std::move(service),
           std::move(region),
           std::move(endpoint),
-          retry_params);
+          retry_params,
+          std::move(metrics_tag));
     case model::cloud_credentials_source::azure_vm_instance_metadata:
         return make_refresh_credentials<azure_vm_refresh_impl>(
           as,
@@ -429,7 +435,8 @@ refresh_credentials make_refresh_credentials(
           std::move(service),
           std::move(region),
           std::move(endpoint),
-          retry_params);
+          retry_params,
+          std::move(metrics_tag));
     }
 }
 

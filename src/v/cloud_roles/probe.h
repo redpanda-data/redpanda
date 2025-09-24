@@ -19,6 +19,9 @@ namespace cloud_roles {
 
 class auth_refresh_probe {
 public:
+    explicit auth_refresh_probe(ss::sstring tag);
+
+public:
     void setup_metrics();
     void reset() { _metrics.clear(); }
 
@@ -33,6 +36,7 @@ public:
     ~auth_refresh_probe() = default;
 
 private:
+    ss::sstring _tag;
     uint64_t _successful_fetches{0};
     uint64_t _fetch_errors{0};
     metrics::internal_metric_groups _metrics;
