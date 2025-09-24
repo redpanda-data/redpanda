@@ -64,12 +64,6 @@ TS_LOG_ALLOW_LIST = [
     re.compile(
         """.*state_machine_manager.* error applying raft snapshot - std::runtime_error \\(couldn't download manifest: cloud_storage::error_outcome:2\\).*"""
     ),
-    # https://github.com/Azure/Azurite/issues/2596
-    # TODO(cloud_topics) this shouldn't be specific to cloud topics, but it is
-    # trigger the most in the tests probably because CT puts a lot more pressure
-    # on cloud storage. Everything looks ok, so it may be something like an
-    # overloaded Azurite node. Still investing this.
-    re.compile(".*abs_client.cc.* - Received [Bad Request] Unknown unexpected error response from ABS.*"),
 ]
 
 
