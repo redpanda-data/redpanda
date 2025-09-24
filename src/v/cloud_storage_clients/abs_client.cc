@@ -655,7 +655,7 @@ ss::future<> abs_client::do_put_object(
         throw std::system_error(header.error());
     }
 
-    vlog(abs_log.trace, "send https request:\n{}", header.value());
+    vlog(abs_log.info, "send https request:{}\n{}", key, header.value());
 
     auto response_stream = co_await _client
                              .request(std::move(header.value()), body, timeout)
@@ -667,13 +667,27 @@ ss::future<> abs_client::do_put_object(
     const auto status = response_stream->get_headers().result();
     using enum boost::beast::http::status;
 
+    vlog(
+      abs_log.info,
+      "send https response:{}\n{}",
+      key,
+      response_stream->get_headers());
+
+    // had Connection: close header
     if (const auto is_no_content_and_accepted = accept_no_content
                                                 && status == no_content;
         status != created && !is_no_content_and_accepted) {
+        for (const auto& header : response_stream->get_headers()) {
+            vlog(abs_log.info, "XXX: {}: {}", header.name(), header.value());
+        }
         const auto content_type = util::get_response_content_type(
           response_stream->get_headers());
         auto buf = co_await util::drain_response_stream(
           std::move(response_stream));
+        auto body = iobuf_to_bytes(buf);
+        auto bodys = ss::sstring(
+          reinterpret_cast<const char*>(body.data()), body.size());
+        vlog(abs_log.info, "XXX-BODY: {}", bodys);
         throw parse_rest_error_response(content_type, status, std::move(buf));
     }
 }
