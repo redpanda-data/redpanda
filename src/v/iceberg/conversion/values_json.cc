@@ -59,12 +59,30 @@ std::optional<primitive_value> convert_primitive(
               ft));
         }
     case token::value_double:
-        if (!std::holds_alternative<double_type>(ft)) {
+        if (std::holds_alternative<double_type>(ft)) {
+            return iceberg::double_value(p.value_double());
+        } else if (std::holds_alternative<long_type>(ft)) {
+            double source_value = p.value_double();
+            // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
+            double int_part;
+            if (
+              std::modf(source_value, &int_part) != 0.0
+
+              || int_part
+                   < static_cast<double>(std::numeric_limits<int64_t>::min())
+              || int_part
+                   > static_cast<double>(std::numeric_limits<int64_t>::max())) {
+                throw value_conversion_exception(fmt::format(
+                  "Cannot convert non-integer double value {} to integer "
+                  "without precision loss",
+                  source_value));
+            }
+            return iceberg::long_value(static_cast<int64_t>(int_part));
+        } else {
             throw value_conversion_exception(fmt::format(
               "Mismatch json between json double value and schema type: {}",
               ft));
         }
-        return iceberg::double_value(p.value_double());
     case token::value_string: {
         // Trivial case for string type.
         if (std::holds_alternative<string_type>(ft)) {

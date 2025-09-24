@@ -890,6 +890,8 @@ TEST_CORO(IcebergValues, ValuePrimitives) {
       {"boolean", "true", iceberg::boolean_value(true)},
       {"boolean", "false", iceberg::boolean_value(false)},
       {"integer", "42", iceberg::long_value(42)},
+      {"integer", "42.0", iceberg::long_value(42)},
+      {"integer", "4.2e1", iceberg::long_value(42)},
       {"integer", "-42", iceberg::long_value(-42)},
       {"number", "42", iceberg::double_value(42)},
       {"number", "3.14", iceberg::double_value(3.14)},
