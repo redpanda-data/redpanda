@@ -123,7 +123,7 @@ private:
 object_id replicated_object_builder::get_or_create_object_for(
   const model::topic_id_partition& tidp) {
     auto metastore_pid = fe_.metastore_partition(tidp);
-    auto& partition_objects = partitions_[*metastore_pid];
+    auto& partition_objects = partitions_[metastore_pid.value()];
 
     if (partition_objects.pending_objects_.empty()) {
         auto oid = create_object_id();
@@ -156,6 +156,10 @@ std::expected<void, replicated_object_builder::error>
 replicated_object_builder::add(
   object_id oid, metastore::object_metadata::ntp_metadata ntp_meta) {
     auto metastore_pid = fe_.metastore_partition(ntp_meta.tidp);
+    if (!metastore_pid) {
+       return std::unexpected(
+          error{fmt::format("missing partition for {}", ntp_meta.tidp)});
+    }
     auto& partition_objects = partitions_[*metastore_pid];
     auto it = partition_objects.pending_objects_.find(oid);
     if (it == partition_objects.pending_objects_.end()) {
