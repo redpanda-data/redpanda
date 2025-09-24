@@ -891,6 +891,7 @@ TEST_CORO(IcebergValues, ValuePrimitives) {
       {"boolean", "false", iceberg::boolean_value(false)},
       {"integer", "42", iceberg::long_value(42)},
       {"integer", "-42", iceberg::long_value(-42)},
+      {"number", "42", iceberg::double_value(42)},
       {"number", "3.14", iceberg::double_value(3.14)},
       {"string", R"("foo")", iceberg::string_value(iobuf::from("foo"))},
     });

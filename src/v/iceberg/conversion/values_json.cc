@@ -48,12 +48,16 @@ std::optional<primitive_value> convert_primitive(
         }
         return iceberg::boolean_value(false);
     case token::value_int:
-        if (!std::holds_alternative<long_type>(ft)) {
+
+        if (std::holds_alternative<long_type>(ft)) {
+            return iceberg::long_value(p.value_int());
+        } else if (std::holds_alternative<double_type>(ft)) {
+            return iceberg::double_value(static_cast<double>(p.value_int()));
+        } else {
             throw value_conversion_exception(fmt::format(
               "Mismatch json between json integer value and schema type: {}",
               ft));
         }
-        return iceberg::long_value(p.value_int());
     case token::value_double:
         if (!std::holds_alternative<double_type>(ft)) {
             throw value_conversion_exception(fmt::format(
