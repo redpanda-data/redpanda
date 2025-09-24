@@ -14,8 +14,6 @@ redpanda_cc_library(
         ":domain_manager",
         "//src/v/cloud_topics:logger",
         "//src/v/cluster",
-        "//src/v/cluster/utils:partition_change_notifier_api",
-        "//src/v/cluster/utils:partition_change_notifier_impl",
         "//src/v/model",
         "//src/v/ssx:when_all",
         "//src/v/ssx:work_queue",

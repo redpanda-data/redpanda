@@ -14,6 +14,8 @@
 #include "cluster/topic_configuration.h"
 #include "cluster/utils/partition_change_notifier.h"
 #include "model/fundamental.h"
+#include "model/ktp.h"
+#include "model/metadata.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
@@ -103,8 +105,8 @@ public:
 private:
     void on_leadership_change(
       const model::ntp& ntp,
-      bool is_leader,
-      const cluster::topic_configuration&) noexcept;
+      const model::topic_id_partition& tidp,
+      bool is_leader) noexcept;
 
     ss::sharded<cluster::partition_manager>* partition_manager_;
     ss::sharded<cluster::topic_table>* topic_table_;
@@ -112,6 +114,15 @@ private:
     std::vector<notification_cb_t> ctp_callbacks_;
     std::vector<notification_cb_t> l1_callbacks_;
     std::optional<cluster::notification_id_type> notification_;
+    // In the case of a topic being deleted, we no longer have the
+    // topic_id_mapping_, but we need to still emit a notification with it.
+    //
+    // Fix this by keeping an explicit mapping and looking it up if we can't
+    // find it.
+    //
+    // We have to key this by ntp and not just ns_tp because we want to GC
+    // entries over time.
+    model::ntp_map_type<model::topic_id> topic_id_mapping_;
 };
 
 } // namespace cloud_topics

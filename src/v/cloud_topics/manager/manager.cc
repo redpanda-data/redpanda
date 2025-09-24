@@ -66,12 +66,37 @@ ss::future<> cloud_topics_manager::start() {
                     return topic_table_->local().get_topic_cfg(
                       {ntp.ns, ntp.tp.topic});
                 });
-          if (!config) {
-              vlog(
-                cd_log.warn, "unable to find topic configuration for {}", ntp);
+          if (!config || !config->tp_id) {
+              auto it = topic_id_mapping_.find(ntp);
+              if (it == topic_id_mapping_.end()) {
+                  // This can happen if a topic is deleted and it wasn't a cloud
+                  // topic, so keep logging below INFO.
+                  vlog(cd_log.debug, "unable to find topic ID for {}", ntp);
+                  return;
+              }
+              // Always emit these even if they are not cloud topics (we can't
+              // know), because it means the topic was deleted.
+              model::topic_id_partition tidp{it->second, ntp.tp.partition};
+              topic_id_mapping_.erase(it);
+              on_leadership_change(ntp, tidp, /*is_leader=*/false);
               return;
           }
-          on_leadership_change(ntp, is_leader, *config);
+          if (
+            !config->properties.cloud_topic_enabled
+            && model::topic_namespace_view(ntp) != model::l1_metastore_nt) {
+              return;
+          }
+          if (is_leader) {
+              // Always ensure that if there is a leadership notification
+              // emitted, that we also emit a no leader notification, even if
+              // the topic is deleted and we no longer have the topic ID.
+              topic_id_mapping_.try_emplace(ntp, config->tp_id.value());
+          } else {
+              topic_id_mapping_.erase(ntp);
+          }
+          model::topic_id_partition tidp{
+            config->tp_id.value(), ntp.tp.partition};
+          on_leadership_change(ntp, tidp, is_leader);
       },
       notify_current_state::yes);
     co_return;
@@ -87,28 +112,18 @@ ss::future<> cloud_topics_manager::stop() {
 
 void cloud_topics_manager::on_leadership_change(
   const model::ntp& ntp,
-  bool is_leader,
-  const cluster::topic_configuration& config) noexcept {
+  const model::topic_id_partition& tidp,
+  bool is_leader) noexcept {
     ss::optimized_optional<ss::lw_shared_ptr<cluster::partition>> partition;
     if (is_leader) {
         partition = partition_manager_->local().get(ntp);
     }
-    if (config.properties.cloud_topic_enabled) {
-        if (!config.tp_id) {
-            vlog(cd_log.warn, "missing topic ID for cloud topic: {}", ntp);
-            return;
-        }
-        model::topic_id_partition tidp{*config.tp_id, ntp.tp.partition};
-        for (const auto& cb : ctp_callbacks_) {
+    if (model::l1_metastore_nt == model::topic_namespace_view(ntp)) {
+        for (const auto& cb : l1_callbacks_) {
             cb(ntp, tidp, partition);
         }
-    } else if (model::l1_metastore_nt == model::topic_namespace_view(ntp)) {
-        if (!config.tp_id) {
-            vlog(cd_log.warn, "missing topic ID for metastore domain: {}", ntp);
-            return;
-        }
-        model::topic_id_partition tidp{*config.tp_id, ntp.tp.partition};
-        for (const auto& cb : l1_callbacks_) {
+    } else {
+        for (const auto& cb : ctp_callbacks_) {
             cb(ntp, tidp, partition);
         }
     }

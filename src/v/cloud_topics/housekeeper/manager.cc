@@ -127,10 +127,14 @@ void housekeeper_manager::stop_housekeeper(model::topic_id_partition tidp) {
 ss::future<> housekeeper_manager::start() { co_return; }
 
 ss::future<> housekeeper_manager::stop() {
+    vlog(cd_log.info, "stopping cloud_topics::housekeeper_manager");
     co_await _queue.shutdown();
-    for (auto& [_, state] : _state) {
+    vlog(cd_log.info, "cloud_topics::housekeeper_manager queue stopped");
+    for (auto& [tidp, state] : _state) {
+        vlog(cd_log.info, "stopping cloud_topics::housekeeper {}", tidp);
         co_await state.housekeeper->stop();
     }
+    vlog(cd_log.info, "successfully stopped cloud_topics::housekeeper");
     _state.clear();
 }
 

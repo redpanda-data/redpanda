@@ -31,11 +31,6 @@
 namespace {
 ss::logger lg("reconciler");
 
-bool is_cloud_partition(
-  const ss::lw_shared_ptr<cluster::partition>& partition) {
-    return partition->get_ntp_config().cloud_topic_enabled();
-}
-
 class aborted_transaction_tracker_impl
   : public kafka::aborted_transaction_tracker {
 public:
@@ -82,14 +77,13 @@ void reconciler::attach_partition(
   const model::ntp& ntp,
   model::topic_id_partition tidp,
   ss::lw_shared_ptr<cluster::partition> partition) {
-    if (!is_cloud_partition(partition)) {
+    if (_partitions.contains(ntp)) {
         return;
     }
     vlog(lg.debug, "Attaching partition {} (tidp: {})", ntp, tidp);
     auto attached = ss::make_lw_shared<attached_partition_info>(
       tidp, partition);
-    auto res = _partitions.try_emplace(ntp, std::move(attached));
-    vassert(res.second, "Double registration of ntp {}", ntp);
+    _partitions.emplace(ntp, std::move(attached));
 }
 
 void reconciler::detach_partition(const model::ntp& ntp) {

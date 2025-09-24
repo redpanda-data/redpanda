@@ -163,6 +163,14 @@ ss::future<> app::wire_up_notifications() {
               }
           });
     });
+    co_await domain_supervisor.invoke_on_all([this](auto& ds) {
+        manager.local().on_l1_domain_leader([&ds](
+                                              const model::ntp& ntp,
+                                              const model::topic_id_partition&,
+                                              auto partition) noexcept {
+            ds.on_domain_leadership_change(ntp, std::move(partition));
+        });
+    });
 }
 
 ss::future<> app::stop() {
