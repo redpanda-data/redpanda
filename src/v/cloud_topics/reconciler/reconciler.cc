@@ -425,7 +425,8 @@ reconciler::build_object(
     }
     metas.shrink_to_fit();
 
-    auto obj_info = co_await ctx.builder->finish();
+    auto obj_info = co_await ctx.builder->finish().finally(
+      [&ctx] { return ctx.close_builder(); });
     vlog(
       lg.debug,
       "Built L1 object from {} partitions ({} partitions didn't fit)",

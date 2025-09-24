@@ -327,6 +327,10 @@ public:
       : _output(std::move(output))
       , _opts(opts) {}
 
+    ~object_builder_impl() override {
+        vassert(_closed, "L1 object builders must be closed unconditionally");
+    }
+
     ss::future<> start_partition(model::topic_id_partition tidp) final {
         end_partition();
         co_await serde_write_to_stream(data_type::partition_marker, tidp);
@@ -393,7 +397,10 @@ public:
         co_return info;
     }
 
-    ss::future<> close() final { return _output.close(); }
+    ss::future<> close() final {
+        _closed = true;
+        return _output.close();
+    }
 
     size_t file_size() const final { return _offset; }
 
@@ -444,6 +451,7 @@ private:
     model::topic_id_partition _current_tidp{};
     footer::partition _current_partition;
     options _opts;
+    bool _closed = false;
 };
 
 } // namespace
@@ -459,6 +467,10 @@ class object_reader_impl : public object_reader {
 public:
     explicit object_reader_impl(ss::input_stream<char> input)
       : _input(std::move(input)) {}
+
+    ~object_reader_impl() override {
+        vassert(_closed, "L1 object readers must be closed unconditionally");
+    }
 
     ss::future<result> read_next() final {
         if (_saw_footer) {
@@ -493,7 +505,10 @@ public:
             "unknown data type in object: {}", std::to_underlying(dt)));
     }
 
-    ss::future<> close() final { return _input.close(); }
+    ss::future<> close() final {
+        _closed = true;
+        return _input.close();
+    }
 
 private:
     template<typename T>
@@ -538,6 +553,7 @@ private:
 
     ss::input_stream<char> _input;
     bool _saw_footer = false;
+    bool _closed = false;
 };
 
 } // namespace
