@@ -553,6 +553,7 @@ ss::future<> ntp_archiver::upload_until_abort() {
         co_return;
     }
     if (!_probe) {
+        vlog(_rtclog.info, "Initialize archiver probe");
         _probe.emplace(
           _conf->ntp_metrics_disabled, _ntp, _parent.archival_meta_stm());
     }
@@ -741,6 +742,7 @@ ss::future<> ntp_archiver::sync_manifest_until_abort() {
         co_return;
     }
     if (!_probe) {
+        vlog(_rtclog.info, "Initialize archiver probe");
         _probe.emplace(
           _conf->ntp_metrics_disabled, _ntp, _parent.archival_meta_stm());
     }
