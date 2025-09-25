@@ -349,7 +349,8 @@ ss::future<writer_error> record_multiplexer::flush_writers() {
 }
 
 ss::future<result<record_multiplexer::write_result, writer_error>>
-record_multiplexer::finish() && {
+record_multiplexer::finish(
+  record_multiplexer::finished_files& finished_files) && {
     auto writers = std::move(_writers);
     for (auto& [id, writer] : writers) {
         auto res = co_await std::move(*writer).finish();
@@ -362,7 +363,7 @@ record_multiplexer::finish() && {
             std::move(
               files.begin(),
               files.end(),
-              std::back_inserter(_result->data_files));
+              std::back_inserter(finished_files.data_files));
         }
     }
     if (_invalid_record_writer) {
@@ -375,7 +376,7 @@ record_multiplexer::finish() && {
             std::move(
               files.begin(),
               files.end(),
-              std::back_inserter(_result->dlq_files));
+              std::back_inserter(finished_files.dlq_files));
         }
     }
     if (_error && !is_recoverable_error(_error.value())) {
