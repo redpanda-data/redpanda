@@ -1147,6 +1147,8 @@ ss::future<> ntp_archiver::stop() {
     _leader_cond.broken();
     _flush_cond.broken();
     _wakeup_event.broken();
+
+    _probe.reset();
     co_await _gate.close();
 }
 
