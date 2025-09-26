@@ -218,11 +218,11 @@ class ClusterRateQuotaTest(RedpandaTest):
         ]
         assert throttle_ms == 0
 
-    def produce(self, producer, amount, message=None, timeout=1):
+    def produce(self, producer, amount, message=None, timeout_sec=10):
         msg = message if message else self.msg
         response_futures = [producer.send(self.topic, msg) for _ in range(amount)]
         for f in response_futures:
-            f.get(timeout=timeout)
+            f.get(timeout=timeout_sec)
 
     def fetch(self, consumer, messages_amount, timeout_sec=300):
         deadline = datetime.datetime.now() + datetime.timedelta(seconds=timeout_sec)
@@ -584,7 +584,7 @@ class ClusterRateQuotaTest(RedpandaTest):
 
         # Because the python client doesn't seem to enforce the quota
         # client-side, it is going to be enforced broker-side
-        self.produce(producer1, 3, self.large_msg, timeout=10)
+        self.produce(producer1, 3, self.large_msg)
         self.check_producer_throttled(producer1, ignore_max_throttle=True)
         wait_until(
             self._throttling_enforced_broker_side,
