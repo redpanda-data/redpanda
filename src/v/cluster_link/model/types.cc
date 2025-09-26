@@ -100,6 +100,7 @@ mirror_topic_metadata mirror_topic_metadata::copy() const {
     for (const auto& [key, value] : topic_configs) {
         copy.topic_configs.emplace(key, value);
     }
+    copy.starting_offset = starting_offset;
 
     return copy;
 }
@@ -114,6 +115,7 @@ topic_metadata_mirroring_config topic_metadata_mirroring_config::copy() const {
         copy.topic_name_filters.emplace_back(filter);
     }
     copy.topic_properties_to_mirror = topic_properties_to_mirror;
+    copy.starting_offset = starting_offset;
 
     return copy;
 }
@@ -314,14 +316,15 @@ auto fmt::formatter<cluster_link::model::mirror_topic_metadata>::format(
       ctx.out(),
       "{{state: {}, source_topic_id: {}, source_topic_name: {}, "
       "destination_topic_id: {}, partition_count: {}, replication_factor: {}, "
-      "topic_configs: {}}}",
+      "topic_configs: {}, starting_offset: {}}}",
       m.state,
       m.source_topic_id,
       m.source_topic_name,
       m.destination_topic_id,
       m.partition_count,
       m.replication_factor,
-      m.topic_configs);
+      m.topic_configs,
+      m.starting_offset);
 }
 
 auto fmt::formatter<
@@ -364,11 +367,12 @@ auto fmt::formatter<cluster_link::model::topic_metadata_mirroring_config>::
     return fmt::format_to(
       ctx.out(),
       "{{is_enabled: {}, task_interval: {}, filters: {}, "
-      "topic_properties_to_mirror: {}}}",
+      "topic_properties_to_mirror: {}, starting_offset: {}}}",
       m.is_enabled,
       m.task_interval,
       m.topic_name_filters,
-      m.topic_properties_to_mirror);
+      m.topic_properties_to_mirror,
+      m.starting_offset);
 }
 
 auto fmt::formatter<cluster_link::model::consumer_groups_mirroring_config>::
@@ -398,11 +402,12 @@ auto fmt::formatter<cluster_link::model::metadata>::format(
   -> decltype(ctx.out()) {
     return fmt::format_to(
       ctx.out(),
-      "{{name: {}, uuid: {}, connection: {}, state: {}}}",
+      "{{name: {}, uuid: {}, connection: {}, state: {}, configuration: {}}}",
       m.name,
       m.uuid,
       m.connection,
-      m.state);
+      m.state,
+      m.configuration);
 }
 
 auto fmt::formatter<cluster_link::model::add_mirror_topic_cmd>::format(
