@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "scoped_remote",
@@ -112,6 +112,32 @@ redpanda_cc_btest(
         "//src/v/cloud_io:cache",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "remote_test",
+    timeout = "short",
+    srcs = [
+        "remote_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/bytes:iostream",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_io/tests:s3_imposter",
+        "//src/v/cloud_storage_clients",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:retry_chain_node",
+        "@boost//:range",
+        "@googletest//:gtest",
         "@seastar",
         "@seastar//:testing",
     ],
