@@ -151,7 +151,7 @@ class ClusterRateQuotaTest(RedpandaTest):
         # produce) and response (for fetch) including the header size.
         # Therefore these configurations need to adjust for that overhead.
         self.max_throttle_time = 10
-        self.target_default_quota_byte_rate = 1048576
+        self.target_default_quota_byte_rate = 20480
         self.target_group_quota_byte_rate = 10240
         self.message_size = 1024
         self.under_group_quota_message_amount = 8
@@ -463,6 +463,9 @@ class ClusterRateQuotaTest(RedpandaTest):
             timeout_ms=1000, max_records=self.break_default_quota_message_amount
         )
         self.check_consumer_not_throttled(consumer)
+
+        # Drop bufferered data
+        consumer.poll(timeout_ms=0)
 
         # Consume must be throttled
         consumer.poll(timeout_ms=1000)
