@@ -584,7 +584,7 @@ class ClusterRateQuotaTest(RedpandaTest):
 
         # Because the python client doesn't seem to enforce the quota
         # client-side, it is going to be enforced broker-side
-        self.produce(producer1, 3, self.large_msg)
+        self.produce(producer1, 10, self.large_msg)
         self.check_producer_throttled(producer1, ignore_max_throttle=True)
         wait_until(
             self._throttling_enforced_broker_side,
