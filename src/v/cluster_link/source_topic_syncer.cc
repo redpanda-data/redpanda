@@ -324,6 +324,7 @@ void source_topic_syncer::enqueue_create_mirror_topic_commands(
               .partition_count = it->second.partition_count,
               .replication_factor = it->second.rf,
               .topic_configs = std::move(*configs),
+              .starting_offset = _config.get_starting_offset(),
             }});
     }
 }
