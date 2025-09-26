@@ -27,9 +27,12 @@ class mux_remote_consumer;
 class remote_partition_source : public data_source {
 public:
     explicit remote_partition_source(
-      ::model::topic_partition tp, mux_remote_consumer& consumer)
+      ::model::topic_partition tp,
+      mux_remote_consumer& consumer,
+      ::model::timestamp starting_offset)
       : _tp(std::move(tp))
-      , _consumer(consumer) {}
+      , _consumer(consumer)
+      , _starting_offset(starting_offset) {}
     ss::future<> start(kafka::offset) override;
     ss::future<> stop() noexcept override;
     ss::future<> reset(kafka::offset) override;
@@ -38,6 +41,7 @@ public:
 private:
     ::model::topic_partition _tp;
     mux_remote_consumer& _consumer;
+    ::model::timestamp _starting_offset;
     ss::gate _gate;
 };
 
@@ -47,7 +51,8 @@ public:
     ~remote_data_source_factory() override;
     ss::future<> start() override;
     ss::future<> stop() noexcept override;
-    std::unique_ptr<data_source> make_source(const ::model::ntp&) override;
+    std::unique_ptr<data_source>
+    make_source(const ::model::ntp&, ::model::timestamp) override;
 
 private:
     std::unique_ptr<mux_remote_consumer> _consumer;

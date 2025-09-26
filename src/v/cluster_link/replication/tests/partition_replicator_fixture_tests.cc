@@ -38,7 +38,7 @@ public:
         vassert(partition, "no partition for {}", _target);
 
         auto source = std::make_unique<remote_partition_source>(
-          _source.tp, *_mux_consumer);
+          _source.tp, *_mux_consumer, model::timestamp{-2});
         auto sink = std::make_unique<local_partition_sink>(partition);
         _replicator = std::make_unique<partition_replicator>(
           _source, model::term_id{0}, std::move(source), std::move(sink));

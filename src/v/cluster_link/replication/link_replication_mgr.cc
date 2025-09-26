@@ -49,7 +49,7 @@ ss::future<> link_replication_manager::stop() {
 }
 
 ss::future<> link_replication_manager::do_start_replicator(
-  model::ntp ntp, model::term_id term) {
+  model::ntp ntp, model::term_id term, model::timestamp starting_offset) {
     auto holder = _gate.hold();
     vlog(cllog.debug, "Starting replicator for {}", ntp);
     auto it = _replicators.find(ntp);
@@ -58,7 +58,7 @@ ss::future<> link_replication_manager::do_start_replicator(
       "Replicator for {} already exists, an instance should be stopped before "
       "starting a new one",
       ntp);
-    auto source = _source_factory->make_source(ntp);
+    auto source = _source_factory->make_source(ntp, starting_offset);
     auto sink = _sink_factory->make_sink(ntp);
     auto replicator = std::make_unique<partition_replicator>(
       ntp, term, std::move(source), std::move(sink), _sg);
@@ -67,26 +67,27 @@ ss::future<> link_replication_manager::do_start_replicator(
 }
 
 void link_replication_manager::start_replicator(
-  model::ntp ntp, model::term_id term) {
+  model::ntp ntp, model::term_id term, model::timestamp starting_offset) {
     if (_gate.is_closed()) {
         return;
     }
-    _queue.submit([this, term, ntp = std::move(ntp)]() mutable {
-        return do_start_replicator(ntp, term).handle_exception(
-          [this, term, ntp = std::move(ntp)](
-            const std::exception_ptr& e) mutable {
-              vlog(
-                cllog.error,
-                "Failed to start replicator for {} at term {}: {},",
-                ntp,
-                term,
-                e);
-              auto it = _replicators.find(ntp);
-              if (it != _replicators.end() && !_gate.is_closed()) {
-                  it->second->notify_sink_on_failure(term);
-              }
-          });
-    });
+    _queue.submit(
+      [this, term, ntp = std::move(ntp), starting_offset]() mutable {
+          return do_start_replicator(ntp, term, starting_offset)
+            .handle_exception([this, term, ntp = std::move(ntp)](
+                                const std::exception_ptr& e) mutable {
+                vlog(
+                  cllog.error,
+                  "Failed to start replicator for {} at term {}: {},",
+                  ntp,
+                  term,
+                  e);
+                auto it = _replicators.find(ntp);
+                if (it != _replicators.end() && !_gate.is_closed()) {
+                    it->second->notify_sink_on_failure(term);
+                }
+            });
+      });
 }
 
 ss::future<> link_replication_manager::do_stop_replicator(

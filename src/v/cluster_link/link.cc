@@ -204,7 +204,8 @@ ss::future<> link::handle_on_leadership_change(
       term);
 
     const auto& mirror_topics = _config.state.mirror_topics;
-    if (mirror_topics.contains(ntp.tp.topic)) {
+    const auto& it = mirror_topics.find(ntp.tp.topic);
+    if (it != mirror_topics.end()) {
         vlog(
           cllog.debug,
           "[{}] Leadership change event for partition {}, is_leader: {}",
@@ -214,7 +215,8 @@ ss::future<> link::handle_on_leadership_change(
         if (is_ntp_leader) {
             vassert(
               term, "Term must be set when leadership is assumed: {}", ntp);
-            _replication_mgr.start_replicator(ntp, *term);
+            _replication_mgr.start_replicator(
+              ntp, *term, it->second.get_starting_offset());
         } else {
             _replication_mgr.stop_replicator(ntp, term);
         }

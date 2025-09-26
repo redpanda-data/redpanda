@@ -71,8 +71,8 @@ random_data_source::fetch_next(ss::abort_source& as) {
     co_return data_source::data{std::move(batches), ssx::semaphore_units{}};
 }
 
-std::unique_ptr<data_source>
-random_data_source_factory::make_source(const ::model::ntp&) {
+std::unique_ptr<data_source> random_data_source_factory::make_source(
+  const ::model::ntp&, ::model::timestamp) {
     return std::make_unique<random_data_source>();
 }
 

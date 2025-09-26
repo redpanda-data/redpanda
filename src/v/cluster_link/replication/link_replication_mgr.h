@@ -32,13 +32,14 @@ public:
 
     ss::future<> stop();
 
-    void start_replicator(::model::ntp, ::model::term_id);
+    void start_replicator(::model::ntp, ::model::term_id, ::model::timestamp);
     // term is optional because a replica being unmanaged out of the shard
     // can no longer has a term that we can access.
     void stop_replicator(::model::ntp, std::optional<::model::term_id>);
 
 private:
-    ss::future<> do_start_replicator(::model::ntp, ::model::term_id);
+    ss::future<>
+      do_start_replicator(::model::ntp, ::model::term_id, ::model::timestamp);
     ss::future<>
       do_stop_replicator(::model::ntp, std::optional<::model::term_id>);
     ss::scheduling_group _sg;

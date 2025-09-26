@@ -34,13 +34,26 @@ ss::future<> remote_data_source_factory::stop() noexcept {
     return _consumer->stop();
 }
 
-std::unique_ptr<data_source>
-remote_data_source_factory::make_source(const ::model::ntp& ntp) {
-    return std::make_unique<remote_partition_source>(ntp.tp, *_consumer);
+std::unique_ptr<data_source> remote_data_source_factory::make_source(
+  const ::model::ntp& ntp, ::model::timestamp starting_offset) {
+    return std::make_unique<remote_partition_source>(
+      ntp.tp, *_consumer, starting_offset);
 }
 
 ss::future<> remote_partition_source::start(kafka::offset offset) {
-    vlog(cllog.trace, "[{}] Starting remote partition source", _tp);
+    vlog(
+      cllog.trace,
+      "[{}] Starting remote partition source at offset {}",
+      _tp,
+      offset);
+    if (offset == kafka::offset{0}) {
+        vlog(
+          cllog.debug,
+          "[{}] Starting with empty partition, issuing ListOffsets with "
+          "timestamp {}",
+          _tp,
+          _starting_offset);
+    }
     auto result = _consumer.add(_tp, offset);
     if (!result.has_value()) [[unlikely]] {
         // this is usually indicative of a bug in the manager where

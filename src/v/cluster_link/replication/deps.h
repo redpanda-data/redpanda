@@ -79,7 +79,8 @@ public:
     virtual ss::future<> start() = 0;
     virtual ss::future<> stop() noexcept = 0;
     virtual ~data_source_factory() = default;
-    virtual std::unique_ptr<data_source> make_source(const ::model::ntp&) = 0;
+    virtual std::unique_ptr<data_source>
+    make_source(const ::model::ntp&, ::model::timestamp) = 0;
 };
 
 } // namespace cluster_link::replication
