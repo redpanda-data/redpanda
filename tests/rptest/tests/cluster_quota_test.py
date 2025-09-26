@@ -685,10 +685,14 @@ class ClusterRateQuotaTest(RedpandaTest):
                 check_sample(sample, sample.value == 0)
 
         self.redpanda.logger.debug("Produce over the limit")
-        self.produce(producer_with_group, self.break_group_quota_message_amount)
-        self.fetch(consumer_with_group, self.break_group_quota_message_amount)
-        self.produce(unknown_producer, self.break_default_quota_message_amount)
-        self.fetch(unknown_consumer, self.break_default_quota_message_amount)
+        # Send more data than required to ensure that even if some produce
+        # requests end up being slower (due to contention on locks, disk,
+        # etc.), the test doesn't flake
+        n = 3
+        self.produce(producer_with_group, self.break_group_quota_message_amount * n)
+        self.fetch(consumer_with_group, self.break_group_quota_message_amount * n)
+        self.produce(unknown_producer, self.break_default_quota_message_amount * n)
+        self.fetch(unknown_consumer, self.break_default_quota_message_amount * n)
 
         self.redpanda.logger.debug(
             "Assert that throttling time is positive when over the limit"
