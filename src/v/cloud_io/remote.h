@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "absl/container/node_hash_set.h"
 #include "cloud_io/auth_refresh_bg_op.h"
 #include "cloud_io/io_resources.h"
 #include "cloud_io/io_result.h"
@@ -18,6 +19,7 @@
 #include "cloud_roles/refresh_credentials.h"
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_pool.h"
+#include "container/intrusive_list_helpers.h"
 #include "model/metadata.h"
 #include "utils/lazy_abort_source.h"
 #include "utils/retry_chain_node.h"
@@ -124,6 +126,21 @@ public:
       = std::nullopt,
       std::function<void(size_t)> throttle_metric_ms_cb = {})
       = 0;
+};
+
+enum class api_activity_type {
+    object_upload,
+    object_download,
+    delete_object,
+    delete_plural,
+    list_objects,
+    head_object,
+};
+
+struct api_activity_notification {
+    api_activity_type type;
+    bool is_retry{false};
+    size_t io_bytes{0};
 };
 
 /// \brief Represents remote endpoint
@@ -304,7 +321,75 @@ public:
 
     const io_resources& resources() const { return *_resources; }
 
+    /// Event filter class.
+    ///
+    /// The filter can be used to subscribe to subset of events.
+    /// For instance, only to object downloads and uploads, or to
+    /// events from all subsystems except one.
+    ///
+    /// The filter is a RAII object. It works until the object
+    /// exists. If the filter is destroyed before the notification
+    /// will be received the receiver of the event will see broken
+    /// promise error.
+    class event_filter {
+        friend class remote;
+
+    public:
+        event_filter() = default;
+
+        explicit event_filter(
+          std::unordered_set<api_activity_type> ignored_events)
+          : _events_to_ignore(std::move(ignored_events)) {}
+
+        void add_source_to_ignore(const retry_chain_node* source) {
+            _sources_to_ignore.insert(source);
+        }
+
+        void remove_source_to_ignore(const retry_chain_node* source) {
+            _sources_to_ignore.erase(source);
+        }
+
+        void cancel() {
+            if (_promise.has_value()) {
+                _hook.unlink();
+                _promise.reset();
+            }
+        }
+
+    private:
+        absl::node_hash_set<const retry_chain_node*> _sources_to_ignore;
+        std::unordered_set<api_activity_type> _events_to_ignore;
+        std::optional<ss::promise<api_activity_notification>> _promise{
+          std::nullopt};
+        intrusive_list_hook _hook;
+    };
+
+    /// Return future that will become available on next cloud I/O
+    /// api operation.
+    ///
+    /// \note The operations which are trigger notifications are object upload,
+    /// object download, object(s) delete, head object, and list objects.
+    /// Every retry generates its own notification. Errors are not propagated to
+    /// the subscriber. The notification is triggered only when the operation is
+    /// finished successfully. The notification contains information about the
+    /// type of the operation and size of the object in bytes.
+    ///
+    /// \param filter is a notification filter which allows to narrow the set of
+    ///        possible notifications by source and type.
+    /// \return the future which will be available after the next cloud storage
+    ///         API operation.
+    ss::future<api_activity_notification> subscribe(event_filter& filter);
+
 private:
+    /// Notify all subscribers about cloud I/O activity.
+    ///
+    /// \param type is a type of activity
+    /// \param source is a retry chain node of the subscriber (pointer equality
+    ///        is used to compare retry_chain_node instances). This parameter is
+    ///        used to prevent subscriber from receiving its own notifications.
+    void notify_external_subscribers(
+      api_activity_notification type, const retry_chain_node& source);
+
     ss::future<> propagate_credentials(cloud_roles::credentials credentials);
 
     ss::sharded<cloud_storage_clients::client_pool>& _pool;
@@ -318,6 +403,8 @@ private:
     model::cloud_storage_backend _cloud_storage_backend;
     cloud_io::provider _provider;
     config::binding<std::chrono::milliseconds> _lease_timeout;
+
+    intrusive_list<event_filter, &event_filter::_hook> _subscriptions;
 };
 
 } // namespace cloud_io

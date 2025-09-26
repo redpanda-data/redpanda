@@ -98,10 +98,12 @@ redpanda_cc_library(
         "//src/v/cloud_roles",
         "//src/v/cloud_storage_clients",
         "//src/v/config",
+        "//src/v/container:intrusive",
         "//src/v/model",
         "//src/v/utils:lazy_abort_source",
         "//src/v/utils:retry_chain_node",
         "//src/v/utils:stream_provider",
+        "@abseil-cpp//absl/container:node_hash_set",
         "@seastar",
     ],
 )

@@ -288,6 +288,13 @@ ss::future<upload_result> remote::upload_stream(
           reader_handle->take_stream(),
           fib.get_timeout());
 
+        notify_external_subscribers(
+          api_activity_notification{
+            api_activity_type::object_upload,
+            fib.retry_count() > 1,
+            content_length},
+          fib);
+
         // `put_object` closed the encapsulated input_stream, but we must
         // call close() on the segment_reader_handle to release the FD.
         co_await reader_handle->close();
@@ -403,6 +410,16 @@ ss::future<download_result> remote::download_stream(
                 uint64_t content_length = co_await cons_str(
                   length, std::move(throttled_st));
                 transfer_details.on_success_size(content_length);
+
+                /// Notify external subscribers about the download activity
+                /// after it completes and we know its size.
+                notify_external_subscribers(
+                  api_activity_notification{
+                    api_activity_type::object_download,
+                    fib.retry_count() > 1,
+                    length},
+                  fib);
+
                 co_return download_result::success;
             } catch (...) {
                 const auto ex = std::current_exception();
@@ -517,6 +534,12 @@ remote::download_object(download_request download_request) {
                 auto buffer
                   = co_await cloud_storage_clients::util::drain_response_stream(
                     resp.value());
+                notify_external_subscribers(
+                  api_activity_notification{
+                    api_activity_type::object_download,
+                    fib.retry_count() > 1,
+                    buffer.size_bytes()},
+                  fib);
                 download_request.payload.append_fragments(std::move(buffer));
                 transfer_details.on_success();
                 co_return download_result::success;
@@ -598,6 +621,10 @@ ss::future<download_result> remote::object_exists(
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto resp = co_await lease.client->head_object(
           bucket, path, fib.get_timeout());
+        notify_external_subscribers(
+          api_activity_notification{
+            api_activity_type::head_object, fib.retry_count() > 1, 0},
+          fib);
         if (resp) {
             vlog(
               ctxlog.debug,
@@ -681,6 +708,11 @@ remote::delete_object(transfer_details transfer_details) {
         transfer_details.on_request(fib.retry_count());
         auto res = co_await lease.client->delete_object(
           bucket, path, fib.get_timeout());
+
+        notify_external_subscribers(
+          api_activity_notification{
+            api_activity_type::delete_object, fib.retry_count() > 1, 0},
+          fib);
 
         if (res) {
             co_return upload_result::success;
@@ -836,6 +868,11 @@ ss::future<upload_result> remote::delete_object_batch(
         req_cb(fib.retry_count());
         auto res = co_await lease.client->delete_objects(
           bucket, keys, fib.get_timeout());
+
+        notify_external_subscribers(
+          api_activity_notification{
+            api_activity_type::delete_plural, fib.retry_count() > 1, 0},
+          fib);
 
         if (res) {
             if (!res.value().undeleted_keys.empty()) {
@@ -1048,6 +1085,11 @@ ss::future<list_result> remote::list_objects(
           delimiter,
           item_filter);
 
+        notify_external_subscribers(
+          api_activity_notification{
+            api_activity_type::list_objects, fib.retry_count() > 1, 0},
+          fib);
+
         if (res) {
             auto list_result = std::move(res.value());
             // Successful call, prepare for future calls by getting
@@ -1169,6 +1211,13 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
           fib.get_timeout(),
           upload_request.accept_no_content_response);
 
+        notify_external_subscribers(
+          api_activity_notification{
+            api_activity_type::object_upload,
+            fib.retry_count() > 1,
+            content_length},
+          fib);
+
         if (res) {
             transfer_details.on_success();
             co_return upload_result::success;
@@ -1229,6 +1278,45 @@ remote::propagate_credentials(cloud_roles::credentials credentials) {
       [c = std::move(credentials)](remote& svc) mutable {
           svc._pool.local().load_credentials(std::move(c));
       });
+}
+
+ss::future<api_activity_notification>
+remote::subscribe(remote::event_filter& filter) {
+    _as.check();
+    auto holder = _gate.hold();
+    vassert(filter._hook.is_linked() == false, "Filter is already in use");
+    _subscriptions.push_back(filter);
+    filter._promise.emplace();
+    return filter._promise->get_future().then(
+      [h = std::move(holder)](api_activity_notification r) { return r; });
+    ;
+}
+
+void remote::notify_external_subscribers(
+  api_activity_notification event, const retry_chain_node& caller) {
+    const auto* caller_root = caller.get_root();
+
+    for (auto& flt : _subscriptions) {
+        if (flt._events_to_ignore.contains(event.type)) {
+            continue;
+        }
+
+        if (flt._sources_to_ignore.contains(caller_root)) {
+            continue;
+        }
+
+        // Invariant: the filter._promise is always initialized
+        // by the 'subscribe' method.
+        vassert(
+          flt._promise.has_value(),
+          "Filter object is not initialized properly");
+        flt._promise->set_value(event);
+        flt._promise = std::nullopt;
+        // NOTE: the filter object can be reused by the owner
+    }
+
+    _subscriptions.remove_if(
+      [](const event_filter& f) { return !f._promise.has_value(); });
 }
 
 } // namespace cloud_io
