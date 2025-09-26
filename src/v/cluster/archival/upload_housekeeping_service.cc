@@ -122,27 +122,22 @@ ss::future<> upload_housekeeping_service::bg_idle_loop() {
         double slow_down_weight = 0;
         switch (event.type) {
         // Write path events
-        case cloud_storage::api_activity_type::manifest_upload:
-        case cloud_storage::api_activity_type::segment_upload:
-        case cloud_storage::api_activity_type::segment_delete:
         case cloud_storage::api_activity_type::object_upload:
+        case cloud_storage::api_activity_type::delete_object:
+        case cloud_storage::api_activity_type::delete_plural:
             weight = 1;
             if (event.is_retry) {
                 slow_down_weight = 1;
             }
             break;
         // Read path events
-        case cloud_storage::api_activity_type::manifest_download:
-        case cloud_storage::api_activity_type::segment_download:
         case cloud_storage::api_activity_type::object_download:
+        case cloud_storage::api_activity_type::list_objects:
+        case cloud_storage::api_activity_type::head_object:
             weight = 1;
             if (event.is_retry) {
                 slow_down_weight = 1;
             }
-            break;
-        // Controller snapshot IO is independent of housekeeping.
-        case cloud_storage::api_activity_type::controller_snapshot_download:
-        case cloud_storage::api_activity_type::controller_snapshot_upload:
             break;
         };
 

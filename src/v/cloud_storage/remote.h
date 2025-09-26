@@ -44,22 +44,8 @@ class materialized_resources;
 
 inline constexpr ss::shard_id auth_refresh_shard_id = 0;
 
-enum class api_activity_type {
-    segment_upload,
-    segment_download,
-    segment_delete,
-    manifest_upload,
-    manifest_download,
-    controller_snapshot_upload,
-    controller_snapshot_download,
-    object_upload,
-    object_download
-};
-
-struct api_activity_notification {
-    api_activity_type type;
-    bool is_retry;
-};
+using api_activity_type = cloud_io::api_activity_type;
+using api_activity_notification = cloud_io::api_activity_notification;
 
 // Enables creating mocks from remote. A mock class should be extended from this
 // interface in tests, and methods in real code should accept
@@ -419,46 +405,7 @@ public:
 
     materialized_resources& materialized() { return *_materialized; }
 
-    /// Event filter class.
-    ///
-    /// The filter can be used to subscribe to subset of events.
-    /// For instance, only to segment downloads and uploads, or to
-    /// events from all sybsystems except one.
-    /// The filter is a RAII object. It works until the object
-    /// exists. If the filter is destroyed before the notification
-    /// will be received the receiver of the event will see broken
-    /// promise error.
-    class event_filter {
-        friend class remote;
-
-    public:
-        event_filter() = default;
-
-        explicit event_filter(
-          std::unordered_set<api_activity_type> ignored_events)
-          : _events_to_ignore(std::move(ignored_events)) {}
-
-        void add_source_to_ignore(const retry_chain_node* source) {
-            _sources_to_ignore.insert(source);
-        }
-
-        void remove_source_to_ignore(const retry_chain_node* source) {
-            _sources_to_ignore.erase(source);
-        }
-
-        void cancel() {
-            if (_promise.has_value()) {
-                _hook.unlink();
-                _promise.reset();
-            }
-        }
-
-    private:
-        absl::node_hash_set<const retry_chain_node*> _sources_to_ignore;
-        std::unordered_set<api_activity_type> _events_to_ignore;
-        std::optional<ss::promise<api_activity_notification>> _promise;
-        intrusive_list_hook _hook;
-    };
+    using event_filter = cloud_io::remote::event_filter;
 
     /// Return future that will become available on next cloud storage
     /// api operation.
@@ -486,12 +433,6 @@ private:
     cloud_io::remote& io() { return _io.local(); }
     const cloud_io::remote& io() const { return _io.local(); }
 
-    /// Notify all subscribers about segment or manifest upload/download
-    void notify_external_subscribers(
-      api_activity_notification, const retry_chain_node& caller);
-    std::function<void(size_t)>
-    make_notify_cb(api_activity_type t, retry_chain_node& retry);
-
     ss::gate _gate;
     ss::abort_source _as;
 
@@ -500,8 +441,6 @@ private:
 
     // Lifetime: probe has reference to _materialized, must be destroyed after
     remote_probe _probe;
-
-    intrusive_list<event_filter, &event_filter::_hook> _filters;
 };
 
 } // namespace cloud_storage

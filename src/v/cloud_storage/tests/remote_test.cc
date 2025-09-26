@@ -172,16 +172,12 @@ public:
 
 TEST_P(all_types_remote_fixture, test_download_manifest_timeout) { // NOLINT
     partition_manifest actual(manifest_ntp, manifest_revision);
-    auto subscription = remote.local().subscribe(allow_all);
     retry_chain_node fib(never_abort, 100ms, 20ms);
     auto res = remote.local()
                  .download_manifest(
                    bucket_name, json_manifest_format_path, actual, fib)
                  .get();
     ASSERT_TRUE(res == download_result::timedout);
-    ASSERT_TRUE(subscription.available());
-    ASSERT_TRUE(
-      subscription.get().type == api_activity_type::manifest_download);
 }
 
 TEST_P(all_types_remote_fixture, test_upload_segment) { // NOLINT
@@ -207,13 +203,12 @@ TEST_P(all_types_remote_fixture, test_upload_segment) { // NOLINT
     ASSERT_EQ(req.content_length, clen);
     ASSERT_EQ(req.content, ss::sstring(manifest_payload));
     ASSERT_TRUE(subscription.available());
-    ASSERT_TRUE(subscription.get().type == api_activity_type::segment_upload);
+    ASSERT_TRUE(subscription.get().type == api_activity_type::object_upload);
 }
 
 TEST_P(
   all_types_remote_fixture, test_upload_segment_lost_leadership) { // NOLINT
     set_expectations_and_listen({});
-    auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
     auto path = remote_segment_path{prefixed_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123})};
@@ -234,12 +229,9 @@ TEST_P(
                  .get();
     ASSERT_EQ(res, upload_result::cancelled);
     ASSERT_TRUE(get_requests().empty());
-    ASSERT_TRUE(subscription.available());
-    ASSERT_TRUE(subscription.get().type == api_activity_type::segment_upload);
 }
 
 TEST_P(all_types_remote_fixture, test_upload_segment_timeout) { // NOLINT
-    auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
     auto path = remote_segment_path{prefixed_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123})};
@@ -256,8 +248,6 @@ TEST_P(all_types_remote_fixture, test_upload_segment_timeout) { // NOLINT
                    bucket_name, path, clen, reset_stream, fib, always_continue)
                  .get();
     ASSERT_TRUE(res == upload_result::timedout);
-    ASSERT_TRUE(subscription.available());
-    ASSERT_TRUE(subscription.get().type == api_activity_type::segment_upload);
 }
 
 TEST_P(all_types_remote_fixture, test_download_segment) { // NOLINT
@@ -300,11 +290,10 @@ TEST_P(all_types_remote_fixture, test_download_segment) { // NOLINT
     auto actual = p.read_string(p.bytes_left());
     ASSERT_TRUE(actual == manifest_payload);
     ASSERT_TRUE(subscription.available());
-    ASSERT_TRUE(subscription.get().type == api_activity_type::segment_upload);
+    ASSERT_TRUE(subscription.get().type == api_activity_type::object_upload);
 }
 
 TEST_P(all_types_remote_fixture, test_download_segment_timeout) { // NOLINT
-    auto subscription = remote.local().subscribe(allow_all);
     auto name = segment_name("1-2-v1.log");
     auto path = remote_segment_path{prefixed_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123})};
@@ -319,8 +308,6 @@ TEST_P(all_types_remote_fixture, test_download_segment_timeout) { // NOLINT
                      .download_segment(bucket_name, path, try_consume, fib)
                      .get();
     ASSERT_TRUE(dnl_res == download_result::timedout);
-    ASSERT_TRUE(subscription.available());
-    ASSERT_TRUE(subscription.get().type == api_activity_type::segment_download);
 }
 
 TEST_P(all_types_remote_fixture, test_download_segment_range) {
@@ -382,7 +369,7 @@ TEST_P(all_types_remote_fixture, test_download_segment_range) {
       manifest_payload.begin(), manifest_payload.begin() + 2};
     ASSERT_EQ(actual, expected);
     ASSERT_TRUE(subscription.available());
-    ASSERT_TRUE(subscription.get().type == api_activity_type::segment_upload);
+    ASSERT_TRUE(subscription.get().type == api_activity_type::object_upload);
 
     const auto& req = get_requests()[1];
     ASSERT_EQ(req.method, "GET");
@@ -469,7 +456,7 @@ TEST_P(all_types_remote_fixture, test_segment_delete) { // NOLINT
       = remote.local().segment_exists(bucket_name, path, fib).get();
     ASSERT_TRUE(expected_notfound == download_result::notfound);
     ASSERT_TRUE(subscription.available());
-    ASSERT_TRUE(subscription.get().type == api_activity_type::segment_delete);
+    ASSERT_TRUE(subscription.get().type == api_activity_type::delete_object);
 }
 
 TEST_P(all_types_remote_fixture, test_concat_segment_upload) {
@@ -1042,8 +1029,7 @@ TEST_P(all_types_remote_fixture, test_filter_by_source) { // NOLINT
             .get();
     ASSERT_TRUE(res == download_result::success);
     ASSERT_TRUE(subscription.available());
-    ASSERT_TRUE(
-      subscription.get().type == api_activity_type::manifest_download);
+    ASSERT_TRUE(subscription.get().type == api_activity_type::object_download);
 
     // Reuse filter for the next event
     subscription = remote.local().subscribe(flt);
@@ -1053,8 +1039,7 @@ TEST_P(all_types_remote_fixture, test_filter_by_source) { // NOLINT
             .get();
     ASSERT_TRUE(res == download_result::success);
     ASSERT_TRUE(subscription.available());
-    ASSERT_TRUE(
-      subscription.get().type == api_activity_type::manifest_download);
+    ASSERT_TRUE(subscription.get().type == api_activity_type::object_download);
 
     // Remove the rtc node from the filter and re-subscribe. This time we should
     // receive the notification.
@@ -1066,8 +1051,7 @@ TEST_P(all_types_remote_fixture, test_filter_by_source) { // NOLINT
             .get();
     ASSERT_TRUE(res == download_result::success);
     ASSERT_TRUE(subscription.available());
-    ASSERT_TRUE(
-      subscription.get().type == api_activity_type::manifest_download);
+    ASSERT_TRUE(subscription.get().type == api_activity_type::object_download);
 }
 
 TEST_P(all_types_remote_fixture, test_filter_by_type) { // NOLINT
@@ -1076,8 +1060,9 @@ TEST_P(all_types_remote_fixture, test_filter_by_type) { // NOLINT
     retry_chain_node root_rtc(never_abort, 100ms, 20ms);
     partition_manifest actual(manifest_ntp, manifest_revision);
 
-    remote::event_filter flt1({api_activity_type::manifest_download});
-    remote::event_filter flt2({api_activity_type::manifest_upload});
+    remote::event_filter flt1({api_activity_type::object_download});
+    remote::event_filter flt2({api_activity_type::object_upload});
+
     auto subscription1 = remote.local().subscribe(flt1);
     auto subscription2 = remote.local().subscribe(flt2);
 
@@ -1089,8 +1074,7 @@ TEST_P(all_types_remote_fixture, test_filter_by_type) { // NOLINT
     ASSERT_TRUE(dl_res == download_result::success);
     ASSERT_TRUE(!subscription1.available());
     ASSERT_TRUE(subscription2.available());
-    ASSERT_TRUE(
-      subscription2.get().type == api_activity_type::manifest_download);
+    ASSERT_TRUE(subscription2.get().type == api_activity_type::object_download);
 
     auto upl_res
       = remote.local()
@@ -1099,7 +1083,7 @@ TEST_P(all_types_remote_fixture, test_filter_by_type) { // NOLINT
           .get();
     ASSERT_TRUE(upl_res == upload_result::success);
     ASSERT_TRUE(subscription1.available());
-    ASSERT_TRUE(subscription1.get().type == api_activity_type::manifest_upload);
+    ASSERT_TRUE(subscription1.get().type == api_activity_type::object_upload);
 }
 
 TEST_P(all_types_remote_fixture, test_filter_lifetime_1) { // NOLINT
@@ -1121,8 +1105,7 @@ TEST_P(all_types_remote_fixture, test_filter_lifetime_1) { // NOLINT
     // is destroyed.
     ASSERT_TRUE(res == download_result::success);
     ASSERT_TRUE(subscription.available());
-    ASSERT_TRUE(
-      subscription.get().type == api_activity_type::manifest_download);
+    ASSERT_TRUE(subscription.get().type == api_activity_type::object_download);
 }
 
 TEST_P(all_types_remote_fixture, test_filter_lifetime_2) { // NOLINT
@@ -1300,36 +1283,6 @@ TEST_P(
                                  .get_downloads_throttled_sum();
         ASSERT_TRUE(times_throttled == 0);
     }
-}
-
-TEST_P(all_types_remote_fixture, test_notification_retry_meta) {
-    set_expectations_and_listen(
-      {expectation{.url = manifest_serde_url, .slowdown = true}});
-
-    retry_chain_node fib(never_abort, 500ms, 10ms);
-    partition_manifest actual(manifest_ntp, manifest_revision);
-    auto filter = remote::event_filter{};
-
-    remote_path_provider path_provider(std::nullopt, std::nullopt);
-    partition_manifest_downloader dl(
-      bucket_name,
-      path_provider,
-      manifest_ntp,
-      manifest_revision,
-      remote.local());
-
-    auto fut = dl.download_manifest(fib, &actual);
-
-    RPTEST_REQUIRE_EVENTUALLY(2s, [&] {
-        auto sub = remote.local().subscribe(filter);
-        return sub.then([](api_activity_notification event) {
-            return ss::make_ready_future<bool>(event.is_retry);
-        });
-    });
-
-    auto res = fut.get();
-    EXPECT_TRUE(res.has_error());
-    EXPECT_TRUE(res.error() == error_outcome::manifest_download_error);
 }
 
 TEST_P(all_types_remote_fixture, test_get_object) {

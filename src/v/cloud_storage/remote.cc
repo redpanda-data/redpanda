@@ -39,6 +39,7 @@
 #include <boost/range/irange.hpp>
 #include <fmt/chrono.h>
 
+#include <cstddef>
 #include <exception>
 #include <iterator>
 #include <utility>
@@ -168,8 +169,6 @@ ss::future<download_result> remote::do_download_manifest(
          .success_cb = std::nullopt,
          .failure_cb = [this]() { _probe.failed_manifest_download(); },
          .backoff_cb = [this]() { _probe.manifest_download_backoff(); },
-         .on_req_cb = make_notify_cb(
-           api_activity_type::manifest_download, parent),
        },
        .display_str = "manifest",
        .payload = buffer,
@@ -252,39 +251,11 @@ ss::future<upload_result> remote::upload_manifest(
         .success_cb = std::move(success_cb),
         .failure_cb = [this] { _probe.failed_manifest_upload(); },
         .backoff_cb = [this] { _probe.manifest_upload_backoff(); },
-        .on_req_cb = make_notify_cb(api_activity_type::manifest_upload, parent),
       },
       .display_str = to_string(upload_type::manifest),
       .payload = std::move(buf),
       .accept_no_content_response = false,
     });
-}
-
-void remote::notify_external_subscribers(
-  api_activity_notification event, const retry_chain_node& caller) {
-    const auto* caller_root = caller.get_root();
-
-    for (auto& flt : _filters) {
-        if (flt._events_to_ignore.contains(event.type)) {
-            continue;
-        }
-
-        if (flt._sources_to_ignore.contains(caller_root)) {
-            continue;
-        }
-
-        // Invariant: the filter._promise is always initialized
-        // by the 'subscribe' method.
-        vassert(
-          flt._promise.has_value(),
-          "Filter object is not initialized properly");
-        flt._promise->set_value(event);
-        flt._promise = std::nullopt;
-        // NOTE: the filter object can be reused by the owner
-    }
-
-    _filters.remove_if(
-      [](const event_filter& f) { return !f._promise.has_value(); });
 }
 
 ss::future<upload_result> remote::upload_controller_snapshot(
@@ -315,8 +286,6 @@ ss::future<upload_result> remote::upload_controller_snapshot(
           [this](size_t sz) { _probe.register_upload_size(sz); },
         .failure_cb = [this] { _probe.controller_snapshot_failed_upload(); },
         .backoff_cb = [this] { _probe.controller_snapshot_upload_backoff(); },
-        .on_req_cb = make_notify_cb(
-          api_activity_type::controller_snapshot_upload, parent),
       },
       file_size,
       reset_str,
@@ -346,8 +315,6 @@ ss::future<upload_result> remote::upload_segment(
             [this](size_t sz) { _probe.register_upload_size(sz); },
           .failure_cb = [this] { _probe.failed_upload(); },
           .backoff_cb = [this] { _probe.upload_backoff(); },
-          .on_req_cb = make_notify_cb(
-            api_activity_type::segment_upload, parent),
         },
         content_length,
         reset_str,
@@ -373,7 +340,6 @@ ss::future<upload_result> remote::upload_index(
           .parent_rtc = parent,
           .success_cb = [this] { _probe.index_upload(); },
           .failure_cb = [this] { _probe.failed_index_upload(); },
-          .on_req_cb = make_notify_cb(api_activity_type::object_upload, parent),
         },
         .display_str = to_string(upload_type::segment_index),
         .payload = std::move(buf),
@@ -405,9 +371,6 @@ ss::future<download_result> remote::download_stream(
           .failure_cb = [&metrics] { metrics.failed_download_metric(); },
           .backoff_cb = [&metrics] { metrics.download_backoff_metric(); },
           .client_acquire_cb = [this] { _probe.client_acquisition(); },
-          // TODO: pass type in as an argument.
-          .on_req_cb = make_notify_cb(
-            api_activity_type::segment_download, parent),
           .measure_latency_cb =
             [&metrics] { return metrics.download_latency_measurement(); },
         },
@@ -441,8 +404,6 @@ ss::future<download_result> remote::download_segment(
           .failure_cb = [this] { _probe.failed_download(); },
           .backoff_cb = [this] { _probe.download_backoff(); },
           .client_acquire_cb = [this] { _probe.client_acquisition(); },
-          .on_req_cb = make_notify_cb(
-            api_activity_type::segment_download, parent),
           .measure_latency_cb = [this] { return _probe.segment_download(); },
         },
         cons_str,
@@ -471,8 +432,6 @@ ss::future<download_result> remote::download_index(
          .success_cb = [this]() { _probe.index_download(); },
          .failure_cb = [this]() { _probe.failed_index_download(); },
          .backoff_cb = [this]() { _probe.download_backoff(); },
-         .on_req_cb = make_notify_cb(
-           api_activity_type::object_download, parent),
        },
        .display_str = to_string(download_type::segment_index),
        .payload = buffer});
@@ -487,10 +446,6 @@ remote::download_object(download_request download_request) {
     _as.check();
     auto holder = _gate.hold();
     auto details = std::move(download_request.transfer_details);
-    if (!details.on_req_cb.has_value()) {
-        details.on_req_cb = make_notify_cb(
-          api_activity_type::object_download, details.parent_rtc);
-    }
     return io()
       .download_object({
         .transfer_details = std::move(details),
@@ -535,7 +490,6 @@ ss::future<upload_result> remote::delete_object(
         .bucket = bucket,
         .key = path,
         .parent_rtc = parent,
-        .on_req_cb = make_notify_cb(api_activity_type::segment_delete, parent),
       })
       .then([h = std::move(holder)](upload_result r) { return r; });
 }
@@ -552,11 +506,7 @@ ss::future<upload_result> remote::delete_objects(
     _as.check();
     auto holder = _gate.hold();
     return io()
-      .delete_objects(
-        bucket,
-        std::move(keys),
-        parent,
-        make_notify_cb(api_activity_type::segment_delete, parent))
+      .delete_objects(bucket, std::move(keys), parent, [](size_t) {})
       .then([h = std::move(holder)](upload_result r) { return r; });
 }
 
@@ -598,10 +548,6 @@ ss::future<upload_result> remote::upload_object(upload_request req) {
     _as.check();
     auto holder = _gate.hold();
     auto details = std::move(req.transfer_details);
-    if (!details.on_req_cb.has_value()) {
-        details.on_req_cb = make_notify_cb(
-          api_activity_type::object_upload, details.parent_rtc);
-    }
     return io()
       .upload_object({
         .transfer_details = std::move(details),
@@ -612,25 +558,8 @@ ss::future<upload_result> remote::upload_object(upload_request req) {
       .then([h = std::move(holder)](upload_result r) { return r; });
 }
 
-ss::future<api_activity_notification>
-remote::subscribe(remote::event_filter& filter) {
-    _as.check();
-    auto holder = _gate.hold();
-    vassert(filter._hook.is_linked() == false, "Filter is already in use");
-    _filters.push_back(filter);
-    filter._promise.emplace();
-    return filter._promise->get_future().then(
-      [h = std::move(holder)](api_activity_notification r) { return r; });
-    ;
-}
-
-std::function<void(size_t)>
-remote::make_notify_cb(api_activity_type t, retry_chain_node& retry) {
-    return [this, t, &retry](size_t attempt_num) {
-        notify_external_subscribers(
-          api_activity_notification{.type = t, .is_retry = attempt_num > 1},
-          retry);
-    };
+ss::future<api_activity_notification> remote::subscribe(event_filter& filter) {
+    return io().subscribe(filter);
 }
 
 } // namespace cloud_storage
