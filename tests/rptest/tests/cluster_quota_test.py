@@ -165,6 +165,8 @@ class ClusterRateQuotaTest(RedpandaTest):
         self.max_partition_fetch_bytes = self.message_size * 11
         additional_options = {
             "max_kafka_throttle_delay_ms": self.max_throttle_time,
+            # Enable write caching to avoid occasionally slow log flushes on the produce path
+            "write_caching_default": True,
         }
         super().__init__(
             *args,
