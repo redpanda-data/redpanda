@@ -124,6 +124,8 @@ public:
      */
     void update_configuration(configuration cfg);
 
+    cluster& get_cluster() { return *_cluster; }
+
 private:
     struct subscription {
         subscription(
