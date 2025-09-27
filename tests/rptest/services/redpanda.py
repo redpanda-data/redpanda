@@ -150,6 +150,7 @@ DEFAULT_LOG_ALLOW_LIST = [
     # the catalog that have "Assert" in them. These are typically benign and
     # just indicate a race in committing to Iceberg.
     re.compile(r"UpdateRequirement.*Assert"),
+    re.compile("assert-ref-snapshot-id"),
 ]
 
 # Log errors that are expected in tests that restart nodes mid-test
