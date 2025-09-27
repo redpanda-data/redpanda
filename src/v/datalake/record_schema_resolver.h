@@ -157,6 +157,20 @@ public:
     ~binary_type_resolver() override = default;
 };
 
+class test_binary_type_resolver : public binary_type_resolver {
+public:
+    ss::future<checked<type_and_buf, type_resolver::errc>>
+    resolve_buf_type(std::optional<iobuf> b) const override;
+
+    ss::future<checked<resolved_type, errc>>
+      resolve_identifier(schema_identifier) const override;
+    ~test_binary_type_resolver() override = default;
+    void set_fail_requests(type_resolver::errc e) { injected_error_ = e; }
+
+private:
+    std::optional<type_resolver::errc> injected_error_{};
+};
+
 // record_schema_resolver uses the schema registry wire format
 // to decode messages and resolve their schemas.
 class record_schema_resolver : public type_resolver {

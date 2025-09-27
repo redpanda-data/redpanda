@@ -359,6 +359,22 @@ binary_type_resolver::resolve_identifier(schema_identifier) const {
 }
 
 ss::future<checked<type_and_buf, type_resolver::errc>>
+test_binary_type_resolver::resolve_buf_type(std::optional<iobuf> b) const {
+    if (injected_error_.has_value()) {
+        co_return *injected_error_;
+    }
+    co_return co_await binary_type_resolver::resolve_buf_type(std::move(b));
+}
+
+ss::future<checked<resolved_type, type_resolver::errc>>
+test_binary_type_resolver::resolve_identifier(schema_identifier id) const {
+    if (injected_error_.has_value()) {
+        co_return *injected_error_;
+    }
+    co_return co_await binary_type_resolver::resolve_identifier(std::move(id));
+}
+
+ss::future<checked<type_and_buf, type_resolver::errc>>
 record_schema_resolver::resolve_buf_type(std::optional<iobuf> b) const {
     if (!b.has_value()) {
         vlog(datalake_log.trace, "Ignoring tombstone value");
