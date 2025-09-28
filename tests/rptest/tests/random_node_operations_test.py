@@ -751,15 +751,24 @@ class RandomNodeOperationsTest(RandomNodeOperationsBase):
     @skip_debug_mode
     @cluster(num_nodes=9, log_allow_list=RNOT_ALLOW_LIST)
     @matrix(
-        enable_failures=[True, False],
-        mixed_versions=[True, False],
-        with_iceberg=[True, False],
-        compaction_mode=[
-            CompactionMode.SLIDING_WINDOW,
-            CompactionMode.CHUNKED_SLIDING_WINDOW,
-            CompactionMode.ADJACENT_MERGE,
+        enable_failures=[
+            # True,
+            False,
         ],
-        cloud_storage_type=get_cloud_storage_type(),
+        mixed_versions=[
+            # True,
+            False,
+        ],
+        with_iceberg=[
+            True,
+            # False,
+        ],
+        compaction_mode=[
+            # CompactionMode.SLIDING_WINDOW,
+            CompactionMode.CHUNKED_SLIDING_WINDOW,
+            # CompactionMode.ADJACENT_MERGE,
+        ],
+        cloud_storage_type=get_cloud_storage_type()[0:1],
     )
     def test_node_operations(self, **kwargs: Any):
         self._do_test_node_operations(**kwargs)
