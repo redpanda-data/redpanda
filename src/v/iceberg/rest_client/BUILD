@@ -138,6 +138,9 @@ redpanda_cc_library(
     hdrs = [
         "catalog_client.h",
     ],
+    implementation_deps = [
+        "//src/v/bytes:iobuf_parser",
+    ],
     include_prefix = "iceberg/rest_client",
     visibility = ["//visibility:public"],
     deps = [
