@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -58,27 +59,26 @@ const linuxUtilsRoot = "utils"
 //   - File Extension: if no extension is provided we default to .zip
 //   - File Location: we check for write permissions in the pwd (for backcompat);
 //     if permission is denied we default to $HOME unless isFlag is true.
-func determineFilepath(fs afero.Fs, rp *config.RedpandaYaml, path string, isFlag bool) (finalPath string, err error) {
+func determineFilepath(fs afero.Fs, rp *config.RedpandaYaml, pathArg string, isFlag bool) (finalPath string, err error) {
 	// if it's empty, use ./<timestamp>-bundle.zip
-	if path == "" {
+	if isDir, _ := afero.IsDir(fs, pathArg); isDir || pathArg == "" {
 		timestamp := time.Now().Unix()
 		if rp.Redpanda.AdvertisedRPCAPI != nil {
-			path = fmt.Sprintf("%v-%d-bundle.zip", common.SanitizeName(rp.Redpanda.AdvertisedRPCAPI.Address), timestamp)
+			finalPath = fmt.Sprintf("%v-%d-bundle.zip", common.SanitizeName(rp.Redpanda.AdvertisedRPCAPI.Address), timestamp)
 		} else {
-			path = fmt.Sprintf("%d-bundle.zip", timestamp)
+			finalPath = fmt.Sprintf("%d-bundle.zip", timestamp)
 		}
-	} else if isDir, _ := afero.IsDir(fs, path); isDir {
-		return "", fmt.Errorf("output file path is a directory, please specify the name of the file")
-	}
-
-	// Check for file extension, if extension is empty, defaults to .zip
-	switch ext := filepath.Ext(path); ext {
-	case ".zip":
-		finalPath = path
-	case "":
-		finalPath = path + ".zip"
-	default:
-		return "", fmt.Errorf("extension %q not supported", ext)
+		finalPath = path.Join(pathArg, finalPath) // Prepend dir if specified, no-op if not
+	} else {
+		// Check for file extension, if extension is empty, defaults to .zip
+		switch ext := filepath.Ext(pathArg); ext {
+		case ".zip":
+			finalPath = pathArg
+		case "":
+			finalPath = pathArg + ".zip"
+		default:
+			return "", fmt.Errorf("extension %q not supported", ext)
+		}
 	}
 
 	// Now we check for write permissions:
@@ -90,11 +90,11 @@ func determineFilepath(fs afero.Fs, rp *config.RedpandaYaml, path string, isFlag
 		if isFlag {
 			// If the user sets the output flag, we fail if we don't have
 			// write permissions
-			return "", fmt.Errorf("unable to create bundle file in %q: %v", path, err)
+			return "", fmt.Errorf("unable to create bundle file in %q: %v", pathArg, err)
 		}
 		home, err := os.UserHomeDir()
 		if err != nil {
-			out.Die("unable to create bundle file in %q due to permission issues and cannot use home directory: %v", path, err)
+			out.Die("unable to create bundle file in %q due to permission issues and cannot use home directory: %v", pathArg, err)
 		}
 		// We are here only if the user did not specify a flag so finalpath
 		// here is the <timestamp>-bundle.zip string

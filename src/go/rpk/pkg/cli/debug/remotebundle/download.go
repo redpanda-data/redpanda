@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -205,21 +206,19 @@ func filterCompletedBrokers(status []statusResponse) (readyBrokers, erroredBroke
 	return ready, errored
 }
 
-func fileLocation(fs afero.Fs, path string) (string, error) {
+func fileLocation(fs afero.Fs, pathArg string) (string, error) {
 	// If it's empty, use "./<timestamp>-remote-bundle.zip"
-	if path == "" {
-		path = fmt.Sprintf("%d-remote-bundle.zip", time.Now().Unix())
-	} else if isDir, _ := afero.IsDir(fs, path); isDir {
-		return "", fmt.Errorf("output file path is a directory, please specify the name of the file")
+	if isDir, _ := afero.IsDir(fs, pathArg); isDir || pathArg == "" {
+		return path.Join(pathArg, fmt.Sprintf("%d-remote-bundle.zip", time.Now().Unix())), nil
 	}
 
 	var finalPath string
 	// Check for file extension, if extension is empty, defaults to .zip
-	switch ext := filepath.Ext(path); ext {
+	switch ext := filepath.Ext(pathArg); ext {
 	case ".zip":
-		finalPath = path
+		finalPath = pathArg
 	case "":
-		finalPath = path + ".zip"
+		finalPath = pathArg + ".zip"
 	default:
 		return "", fmt.Errorf("extension %q not supported", ext)
 	}
