@@ -8,6 +8,7 @@ redpanda_cc_library(
     hdrs = [
         "backend.h",
         "config.h",
+        "frontend.h",
         "kinds.h",
     ],
     visibility = ["//visibility:public"],
