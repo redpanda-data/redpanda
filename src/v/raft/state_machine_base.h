@@ -23,6 +23,16 @@ using snapshot_at_offset_supported
   = ss::bool_class<struct snapshot_at_offset_supported_tag>;
 class consensus;
 
+// An exception for an STM to throw during it's `apply` method to mark this as
+// an non-terminal error.
+class stm_apply_exception : public std::runtime_error {
+public:
+    explicit stm_apply_exception(const char* msg)
+      : std::runtime_error(msg) {}
+    explicit stm_apply_exception(const std::string& msg)
+      : std::runtime_error(msg) {}
+};
+
 /**
  * Class defining the state machine behavior when it is created for the first
  * time for a given partition.

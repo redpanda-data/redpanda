@@ -50,6 +50,7 @@ concept StateMachineIterateFunc = requires(
   Func f, const ss::sstring& name, const state_machine_base& stm) {
     { f(name, stm) } -> std::convertible_to<void>;
 };
+
 /**
  * State machine manager is an entry point for registering state machines
  * built on top of replicated log. State machine managers uses a single

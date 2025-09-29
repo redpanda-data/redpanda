@@ -142,7 +142,7 @@ batch_applicator::apply_to_stm(
 
         co_await state.stm_entry->stm->apply(batch);
         co_return applied_successfully::yes;
-    } catch (...) {
+    } catch (const stm_apply_exception& ex) {
         vlog(
           _log.warn,
           "[{}][{}] error applying batch with base_offset: {} - {}",
@@ -150,9 +150,17 @@ batch_applicator::apply_to_stm(
           state.stm_entry->name,
           batch.base_offset(),
           std::current_exception());
-        state.error = true;
-        co_return applied_successfully::no;
+    } catch (...) {
+        vlog(
+          _log.error,
+          "[{}][{}] unexpected error applying batch with base_offset: {} - {}",
+          _ctx,
+          state.stm_entry->name,
+          batch.base_offset(),
+          std::current_exception());
     }
+    state.error = true;
+    co_return applied_successfully::no;
 }
 
 state_machine_manager::named_stm::named_stm(ss::sstring name, stm_ptr stm)
