@@ -54,8 +54,7 @@ partition_balancer_backend::partition_balancer_backend(
   ss::sharded<topics_frontend>& topics_frontend,
   ss::sharded<members_frontend>& members_frontend,
   config::binding<std::chrono::seconds>&& availability_timeout,
-  config::binding<unsigned>&& max_disk_usage_percent,
-  config::binding<unsigned>&& storage_space_alert_free_threshold_percent,
+  config::binding<unsigned> max_disk_usage_percent,
   config::binding<std::chrono::milliseconds>&& tick_interval,
   config::binding<size_t>&& max_concurrent_actions,
   config::binding<double>&& moves_drop_threshold,
@@ -77,8 +76,6 @@ partition_balancer_backend::partition_balancer_backend(
             partition_auto_balancing_continuous>())
   , _availability_timeout(std::move(availability_timeout))
   , _max_disk_usage_percent(std::move(max_disk_usage_percent))
-  , _storage_space_alert_free_threshold_percent(
-      std::move(storage_space_alert_free_threshold_percent))
   , _tick_interval(std::move(tick_interval))
   , _max_concurrent_actions(std::move(max_concurrent_actions))
   , _concurrent_moves_drop_threshold(std::move(moves_drop_threshold))
@@ -370,9 +367,7 @@ ss::future<> partition_balancer_backend::do_tick() {
         co_return;
     }
 
-    double soft_max_disk_usage_ratio = _max_disk_usage_percent() / 100.0;
-    double hard_max_disk_usage_ratio
-      = (100 - _storage_space_alert_free_threshold_percent()) / 100.0;
+    double max_disk_usage_ratio = _max_disk_usage_percent() / 100.0;
     // claim node unresponsive it doesn't responded to at least 7
     // status requests by default 700ms
     const auto node_responsiveness_timeout = _node_status_interval() * 7;
@@ -398,8 +393,7 @@ ss::future<> partition_balancer_backend::do_tick() {
     partition_balancer_planner planner(
       planner_config{
         .mode = mode,
-        .soft_max_disk_usage_ratio = soft_max_disk_usage_ratio,
-        .hard_max_disk_usage_ratio = hard_max_disk_usage_ratio,
+        .max_disk_usage_ratio = max_disk_usage_ratio,
         .max_concurrent_actions = _max_concurrent_actions(),
         .node_availability_timeout_sec = _availability_timeout(),
         .ondemand_rebalance_requested

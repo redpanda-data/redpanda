@@ -101,10 +101,7 @@ partition_balancer_planner::partition_balancer_planner(
   partition_allocator& partition_allocator)
   : _config(config)
   , _state(state)
-  , _partition_allocator(partition_allocator) {
-    _config.soft_max_disk_usage_ratio = std::min(
-      _config.soft_max_disk_usage_ratio, _config.hard_max_disk_usage_ratio);
-}
+  , _partition_allocator(partition_allocator) {}
 
 class partition_balancer_planner::request_context {
 public:
@@ -398,7 +395,7 @@ void partition_balancer_planner::init_per_node_state(
           node_report->local_state);
         auto disk_info = node_disk_space{node_report->id, total, total - free};
         const bool is_full = disk_info.original_used_ratio()
-                             > _config.soft_max_disk_usage_ratio;
+                             > _config.max_disk_usage_ratio;
         vlogl(
           clusterlog,
           is_full ? ss::log_level::info : ss::log_level::debug,
@@ -1567,9 +1564,7 @@ ss::future<> partition_balancer_planner::get_node_drain_actions(
               for (const auto& replica : to_move) {
                   if (part.is_original(replica)) {
                       auto result = part.move_replica(
-                        replica,
-                        ctx.config().hard_max_disk_usage_ratio,
-                        reason);
+                        replica, ctx.config().max_disk_usage_ratio, reason);
                       if (!result) {
                           ctx.report_reallocation_failure(
                             part.ntp(),
@@ -1671,7 +1666,7 @@ ss::future<> partition_balancer_planner::get_rack_constraint_repair_actions(
                           // other reasons
                           auto r = part.move_replica(
                             replica,
-                            ctx.config().soft_max_disk_usage_ratio,
+                            ctx.config().max_disk_usage_ratio,
                             change_reason::rack_constraint_repair);
                           if (r.has_error()) {
                               ctx.report_reallocation_failure(
@@ -1788,9 +1783,7 @@ partition_balancer_planner::get_full_node_actions(request_context& ctx) {
     std::vector<const node_disk_space*> sorted_full_nodes;
     for (const auto& kv : ctx.node_disk_reports) {
         const auto* node_disk = &kv.second;
-        if (
-          node_disk->final_used_ratio()
-          > ctx.config().soft_max_disk_usage_ratio) {
+        if (node_disk->final_used_ratio() > ctx.config().max_disk_usage_ratio) {
             sorted_full_nodes.push_back(node_disk);
         }
     }
@@ -1810,8 +1803,7 @@ partition_balancer_planner::get_full_node_actions(request_context& ctx) {
         if (it == ctx.node_disk_reports.end()) {
             return nullptr;
         } else if (
-          it->second.final_used_ratio()
-          > ctx.config().soft_max_disk_usage_ratio) {
+          it->second.final_used_ratio() > ctx.config().max_disk_usage_ratio) {
             return &it->second;
         } else {
             return nullptr;
@@ -1865,7 +1857,7 @@ partition_balancer_planner::get_full_node_actions(request_context& ctx) {
             }
             if (
               node_disk->final_used_ratio()
-              < ctx.config().soft_max_disk_usage_ratio) {
+              < ctx.config().max_disk_usage_ratio) {
                 break;
             }
 
@@ -1906,7 +1898,7 @@ partition_balancer_planner::get_full_node_actions(request_context& ctx) {
                       for (const auto& replica : full_node_replicas) {
                           auto r = part.move_replica(
                             replica.node_id,
-                            ctx.config().soft_max_disk_usage_ratio,
+                            ctx.config().max_disk_usage_ratio,
                             change_reason::disk_full);
                           if (r.has_error()) {
                               ctx.report_reallocation_failure(
@@ -2038,7 +2030,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
 
                 auto res = part.move_replica(
                   node,
-                  ctx.config().soft_max_disk_usage_ratio,
+                  ctx.config().max_disk_usage_ratio,
                   change_reason::partition_count_rebalancing);
                 if (!res) {
                     ctx.report_reallocation_failure(
@@ -2117,7 +2109,7 @@ partition_balancer_planner::get_force_repair_actions(request_context& ctx) {
             part.match_variant(
               [&](force_reassignable_partition& part) {
                   part.force_move_dead_replicas(
-                    ctx.config().hard_max_disk_usage_ratio);
+                    ctx.config().max_disk_usage_ratio);
               },
               [&](reassignable_partition&) {},
               [&](moving_partition&) {

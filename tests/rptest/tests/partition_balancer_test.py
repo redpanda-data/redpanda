@@ -667,8 +667,7 @@ class PartitionBalancerTest(PartitionBalancerService):
         Test partition balancer full disk node handling with the following scenario:
         * produce data and fill the cluster up to ~75%
         * kill a node.
-        * partition balancer will move partitions to remaining nodes,
-          causing remaining nodes to go over 80%
+        * partition balancer will move partitions to remaining nodes
         * start the killed node, check that partition balancer will balance
           partitions away from full nodes.
         """
@@ -697,6 +696,7 @@ class PartitionBalancerTest(PartitionBalancerService):
                 "retention_local_target_capacity_percent": 100.0,
                 "retention_local_trim_interval": 3000,
                 "disk_reservation_percent": 0.0,
+                "partition_autobalancing_max_disk_usage_percent": 90,
             },
             environment={"__REDPANDA_TEST_DISK_SIZE": disk_size},
         )
@@ -784,10 +784,10 @@ class PartitionBalancerTest(PartitionBalancerService):
                 f"node {self.redpanda.idx(n)}: "
                 f"disk used percentage: {int(100.0 * used_ratio)}"
             )
-            # Checking that used_ratio is less than 81 instead of 80
+            # Checking that used_ratio is less than 91 instead of 90
             # Because when we check, disk can become overfilled one more time
             # and partition balancing is not invoked yet
-            assert used_ratio < 0.81
+            assert used_ratio < 0.91
 
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @skip_debug_mode
