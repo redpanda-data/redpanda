@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/pkg/browser"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloudapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
@@ -21,7 +20,10 @@ var prodAuth0Endpoint = endpoint{
 }
 
 // RPKClientID is the auth0 client ID, it is public and is safe to have it here.
-const RPKClientID = "ehNhbNUwjPIWUinE2b7njFyE4VBrxXZm"
+const (
+	RPKClientID     = "ehNhbNUwjPIWUinE2b7njFyE4VBrxXZm"
+	CloudAPIProdURL = "https://cloud-api.prd.cloud.redpanda.com"
+)
 
 // endpoint groups what url and audience to use for getting tokens.
 type (
@@ -47,7 +49,7 @@ func NewClient(overrides config.DevOverrides) *Client {
 
 	cl := &Client{
 		httpCl:       httpCl,
-		cloudURL:     cloudapi.ProdURL, // Once we migrate to use Auth0 this must change to use AuthURL.
+		cloudURL:     CloudAPIProdURL, // Once we migrate to use Auth0 this must change to use AuthURL.
 		authClientID: RPKClientID,
 		endpoint:     prodAuth0Endpoint,
 	}
