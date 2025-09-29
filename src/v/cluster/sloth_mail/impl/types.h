@@ -16,16 +16,21 @@
 #include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "serde/envelope.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/tags.h"
+#include "serde/rw/vector.h"
 #include "utils/named_type.h"
 #include "utils/variant.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/util/log.hh>
 
 #include <boost/container_hash/hash.hpp>
 #include <sys/types.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <tuple>
@@ -137,9 +142,93 @@ private:
     }
 
 public:
-    using kind_map_t = chunked_hash_map<kind_id, any_pairs_vector>;
-    using kv_map_t = chunked_hash_map<any_tagged_key, any_value>;
+    // serde-compatible map from kind_id to vector of pairs of that kind
+    struct kind_map_t : public chunked_hash_map<kind_id, any_pairs_vector> {
+        using base = chunked_hash_map<kind_id, any_pairs_vector>;
+        using base::base;
+        using kinds = Kinds;
+        kind_map_t(kind_map_t&&) = default;
+        kind_map_t& operator=(kind_map_t&&) = default;
+        ~kind_map_t() = default;
 
+    private:
+        using pairs_vector_creator_t = void (*)(
+          any_pairs_vector& vec,
+          iobuf_parser& in,
+          const size_t bytes_left_limit);
+        using pairs_vector_creators_t
+          = std::array<pairs_vector_creator_t, std::variant_size_v<Kinds>>;
+        template<std::size_t... Is>
+
+        consteval static pairs_vector_creators_t
+        make_pairs_vector_creators(std::index_sequence<Is...>) {
+            return std::array<pairs_vector_creator_t, sizeof...(Is)>{
+              [](
+                any_pairs_vector& vec,
+                iobuf_parser& in,
+                const size_t bytes_left_limit) {
+                  using option_t
+                    = std::variant_alternative_t<Is, any_pairs_vector>;
+                  vec.template emplace<option_t>();
+                  serde::read_nested(
+                    in, std::get<option_t>(vec), bytes_left_limit);
+              }...};
+        }
+
+        constexpr static auto pairs_vector_creators
+          = make_pairs_vector_creators(
+            std::make_index_sequence<std::variant_size_v<Kinds>>{});
+
+    public:
+        static void
+        tag_invoke(serde::tag_t<serde::write_tag>, iobuf& out, kind_map_t t) {
+            serde::write(out, t.size());
+            for (auto& [k, v] : t) {
+                serde::write(out, k);
+                std::visit(
+                  [&out](auto&& v) { serde::write(out, std::move(v)); },
+                  std::move(v));
+            }
+        }
+
+        static void tag_invoke(
+          serde::tag_t<serde::read_tag>,
+          iobuf_parser& in,
+          kind_map_t& t,
+          const size_t bytes_left_limit) {
+            auto size = serde::read_nested<size_t>(in, bytes_left_limit);
+            t.reserve(size);
+            for (size_t _ : std::views::iota(size_t{0}, size)) {
+                kind_id k;
+                serde::read_nested(in, k, bytes_left_limit);
+                auto index = variant_index_by_kind_id(k);
+                if (index >= std::variant_size_v<Kinds>) [[unlikely]] {
+                    throw serde::serde_exception(fmt_with_ctx(
+                      ssx::sformat,
+                      "SlothMail received unsupported kind of mail kind_id: "
+                      "{}, "
+                      "supported kind ids: {}",
+                      k,
+                      chunked_vector<kind_id>{
+                        std::from_range, kinds_ids_array}));
+                }
+
+                // init with garbage, will be overwritten by the creator
+                auto [it, ins] = t.emplace(
+                  k, typename std::decay_t<decltype(t)>::mapped_type{});
+                if (!ins) [[unlikely]] {
+                    throw serde::serde_exception(fmt_with_ctx(
+                      ssx::sformat,
+                      "duplicate kind_id {} in SlothMail serde",
+                      k));
+                }
+
+                pairs_vector_creators[index](it->second, in, bytes_left_limit);
+            }
+        }
+    };
+
+    using kv_map_t = chunked_hash_map<any_tagged_key, any_value>;
     struct mail_request
       : serde::
           envelope<mail_request, serde::version<0>, serde::compat_version<0>> {
@@ -189,6 +278,30 @@ concept mail_config
        };
 
 } // namespace cluster::sloth_mail
+
+namespace serde {
+template<typename KindMap>
+requires std::is_same_v<
+  KindMap,
+  typename cluster::sloth_mail::impl::types<
+    typename KindMap::kinds>::kind_map_t>
+inline void tag_invoke(serde::tag_t<serde::write_tag>, iobuf& out, KindMap t) {
+    KindMap::kind_map_t::tag_invoke(serde::write_tag, out, std::move(t));
+}
+
+template<typename KindMap>
+requires std::is_same_v<
+  KindMap,
+  typename cluster::sloth_mail::impl::types<
+    typename KindMap::kinds>::kind_map_t>
+inline void tag_invoke(
+  serde::tag_t<serde::read_tag>,
+  iobuf_parser& in,
+  KindMap& t,
+  const size_t bytes_left_limit) {
+    KindMap::tag_invoke(serde::read_tag, in, t, bytes_left_limit);
+}
+} // namespace serde
 
 namespace std {
 template<typename TaggedKeyOfKind>

@@ -53,3 +53,18 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "serde_test",
+    timeout = "short",
+    srcs = [
+        "serde_test.cc",
+    ],
+    deps = [
+        ":kinds",
+        "//src/v/base",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
