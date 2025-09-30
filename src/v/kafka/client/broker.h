@@ -149,7 +149,7 @@ private:
     ss::future<RespT> do_dispatch(ReqT r, api_version version) {
         log_request(r, version);
         auto response = co_await _transport->dispatch(std::move(r), version);
-        log_response(r);
+        log_response(response);
         co_return response;
     }
     /**
