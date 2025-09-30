@@ -60,9 +60,9 @@ public:
       = ss::futurize<std::invoke_result_t<Func, kafka::client::client&>>>
     typename Futurator::type with_client_for(
       credential_t user, config::rest_authn_method authn_method, Func&& func) {
-        auto [client, client_mu] = fetch_or_insert(
+        auto [client, client_lock] = fetch_or_insert(
           std::move(user), authn_method);
-        auto units = co_await client_mu->get_units();
+        auto units = co_await client_lock->hold_read_lock();
         co_return co_await Futurator::invoke(std::forward<Func>(func), *client);
     }
 
@@ -72,7 +72,7 @@ public:
     size_t max_size() const;
 
 protected:
-    std::pair<client_ptr, client_mu_ptr>
+    std::pair<client_ptr, client_lock_ptr>
     fetch_or_insert(credential_t user, config::rest_authn_method authn_method);
 
 private:
