@@ -41,12 +41,13 @@ ss::future<std::optional<ss::sstring>> find_ca_file() {
     }
     co_return std::nullopt;
 }
-const std::string_view tls_v1_2_cipher_suites = "ECDHE-ECDSA-AES256-GCM-SHA384:"
-                                                "ECDHE-RSA-AES256-GCM-SHA384:"
-                                                "ECDHE-ECDSA-CHACHA20-POLY1305:"
-                                                "ECDHE-RSA-CHACHA20-POLY1305:"
-                                                "ECDHE-ECDSA-AES128-GCM-SHA256:"
-                                                "ECDHE-RSA-AES128-GCM-SHA256";
+const std::string_view tls_v1_2_cipher_suites
+  = "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384:"
+    "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384:"
+    "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256:"
+    "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256:"
+    "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:"
+    "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256";
 
 const std::string_view tls_v1_3_cipher_suites = "TLS_AES_256_GCM_SHA384:"
                                                 "TLS_CHACHA20_POLY1305_SHA256:"
