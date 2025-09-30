@@ -222,6 +222,17 @@ message TopicMetadataSyncOptions {
     // Partition count, `max.message.bytes`, `cleanup.policy` and
     // `timestamp.type` will always be replicated
     repeated string shadowed_topic_properties = 3;
+    // Start at the earliest offset in the partition
+    message EarliestOffset {}
+    // Start at the latest offset in the partition
+    message LatestOffset {}
+    // The starting offset for new shadow topics.  If none are set, defaults to
+    // earliest
+    oneof start_offset {
+        EarliestOffset earliest = 4;
+        LatestOffset latest = 5;
+        google.protobuf.Timestamp timestamp = 6;
+    }
 }
 // Options for syncing consumer offsets
 message ConsumerOffsetSyncOptions {

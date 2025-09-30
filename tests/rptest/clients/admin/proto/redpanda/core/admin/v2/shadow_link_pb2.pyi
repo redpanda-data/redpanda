@@ -543,9 +543,28 @@ global___ShadowLinkClientOptions = ShadowLinkClientOptions
 class TopicMetadataSyncOptions(google.protobuf.message.Message):
     """Options for syncing topic metadata"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    @typing.final
+    class EarliestOffset(google.protobuf.message.Message):
+        """Start at the earliest offset in the partition"""
+        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+        def __init__(self) -> None:
+            ...
+
+    @typing.final
+    class LatestOffset(google.protobuf.message.Message):
+        """Start at the latest offset in the partition"""
+        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+        def __init__(self) -> None:
+            ...
     INTERVAL_FIELD_NUMBER: builtins.int
     AUTO_CREATE_SHADOW_TOPIC_FILTERS_FIELD_NUMBER: builtins.int
     SHADOWED_TOPIC_PROPERTIES_FIELD_NUMBER: builtins.int
+    EARLIEST_FIELD_NUMBER: builtins.int
+    LATEST_FIELD_NUMBER: builtins.int
+    TIMESTAMP_FIELD_NUMBER: builtins.int
 
     @property
     def interval(self) -> google.protobuf.duration_pb2.Duration:
@@ -568,13 +587,28 @@ class TopicMetadataSyncOptions(google.protobuf.message.Message):
         `timestamp.type` will always be replicated
         """
 
-    def __init__(self, *, interval: google.protobuf.duration_pb2.Duration | None=..., auto_create_shadow_topic_filters: collections.abc.Iterable[global___NameFilter] | None=..., shadowed_topic_properties: collections.abc.Iterable[builtins.str] | None=...) -> None:
+    @property
+    def earliest(self) -> global___TopicMetadataSyncOptions.EarliestOffset:
         ...
 
-    def HasField(self, field_name: typing.Literal['interval', b'interval']) -> builtins.bool:
+    @property
+    def latest(self) -> global___TopicMetadataSyncOptions.LatestOffset:
         ...
 
-    def ClearField(self, field_name: typing.Literal['auto_create_shadow_topic_filters', b'auto_create_shadow_topic_filters', 'interval', b'interval', 'shadowed_topic_properties', b'shadowed_topic_properties']) -> None:
+    @property
+    def timestamp(self) -> google.protobuf.timestamp_pb2.Timestamp:
+        ...
+
+    def __init__(self, *, interval: google.protobuf.duration_pb2.Duration | None=..., auto_create_shadow_topic_filters: collections.abc.Iterable[global___NameFilter] | None=..., shadowed_topic_properties: collections.abc.Iterable[builtins.str] | None=..., earliest: global___TopicMetadataSyncOptions.EarliestOffset | None=..., latest: global___TopicMetadataSyncOptions.LatestOffset | None=..., timestamp: google.protobuf.timestamp_pb2.Timestamp | None=...) -> None:
+        ...
+
+    def HasField(self, field_name: typing.Literal['earliest', b'earliest', 'interval', b'interval', 'latest', b'latest', 'start_offset', b'start_offset', 'timestamp', b'timestamp']) -> builtins.bool:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['auto_create_shadow_topic_filters', b'auto_create_shadow_topic_filters', 'earliest', b'earliest', 'interval', b'interval', 'latest', b'latest', 'shadowed_topic_properties', b'shadowed_topic_properties', 'start_offset', b'start_offset', 'timestamp', b'timestamp']) -> None:
+        ...
+
+    def WhichOneof(self, oneof_group: typing.Literal['start_offset', b'start_offset']) -> typing.Literal['earliest', 'latest', 'timestamp'] | None:
         ...
 global___TopicMetadataSyncOptions = TopicMetadataSyncOptions
 
