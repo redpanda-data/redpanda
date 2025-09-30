@@ -842,7 +842,7 @@ class RpkTool:
 
             initialized = (
                 obj["LEADER"] >= 0
-                and obj["EPOCH"] >= 0
+                and obj["EPOCH"] >= -1
                 and obj["REPLICAS"] != None
                 and obj["LOG-START-OFFSET"] != None
                 and obj["LOG-START-OFFSET"] >= 0
