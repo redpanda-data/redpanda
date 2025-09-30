@@ -3,12 +3,33 @@ name: Trigger redpanda install-pack bump
 on:
   release:
     types: [published]
+permissions:
+  id-token: write
+  contents: read
 jobs:
-  trigger-bump:
+  check-version:
+    outputs:
+      is_supported: ${{ steps.check_version.outputs.is_supported }}
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
+    steps:
+      - name: Checkout redpanda dev
+        uses: actions/checkout@v5
+        with:
+          ref: 'dev'
+      - name: Check if version is supported in cloud
+        id: check_version
+        run: |
+          set -eo pipefail
+          supported_ga=$(git tag --list | grep '^v.*' | grep -v '\-dev' | grep -v '\-rc' | awk -F. '{print $1 "." $2}' | sort | uniq | tail -2)
+          if grep "$supported" <<< "${{ github.ref_name }}" ; then
+            echo "is_supported=true" >>$GITHUB_OUTPUT
+          else
+            echo "is_supported=false" >>$GITHUB_OUTPUT
+          fi
+  trigger-bump:
+    needs: check-version
+    runs-on: ubuntu-latest
+    if: needs.check-version.outputs.is_supported == 'true'
     steps:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
