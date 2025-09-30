@@ -177,7 +177,7 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
 
     auto topic = parse::request_param<model::topic>(*rq.req, "topic_name");
 
-    vlog(plog.debug, "get_topics_name: topic: {}", topic);
+    vlog(plog.debug, "post_topics_name: topic: {}", topic);
 
     auto records = co_await rjson_parse(
       *rq.req, ppj::produce_request_handler(req_fmt));
