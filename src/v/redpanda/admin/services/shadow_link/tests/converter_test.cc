@@ -49,6 +49,11 @@ TEST(converter_test, create_to_metadata_no_authn) {
     EXPECT_EQ(
       md.connection.bootstrap_servers[0],
       net::unresolved_address("localhost", 9092));
+    EXPECT_EQ(
+      md.configuration.topic_metadata_mirroring_cfg.get_starting_offset(),
+      cluster_link::model::earliest_offset);
+    EXPECT_FALSE(md.configuration.topic_metadata_mirroring_cfg.starting_offset
+                   .has_value());
 }
 
 TEST(converter_test, create_no_bootstrap) {
@@ -1044,4 +1049,134 @@ TEST(converter_test, shadow_link_to_metadata_security) {
       acl_filter.resource_filter.pattern_type,
       cluster_link::model::acl_pattern::any);
     EXPECT_EQ(acl_filter.resource_filter.name, "*");
+}
+
+namespace {
+proto::admin::create_shadow_link_request create_base_link() {
+    const auto name = "test-link";
+    proto::admin::shadow_link shadow_link;
+    proto::admin::create_shadow_link_request req;
+    proto::admin::shadow_link_configurations shadow_link_configurations;
+    proto::admin::shadow_link_client_options shadow_link_client_options;
+
+    shadow_link_client_options.set_bootstrap_servers({"localhost:9092"});
+    shadow_link_configurations.set_client_options(
+      std::move(shadow_link_client_options));
+
+    shadow_link.set_configurations(std::move(shadow_link_configurations));
+    shadow_link.set_name(ss::sstring{name});
+    req.set_shadow_link(std::move(shadow_link));
+
+    return req;
+}
+} // namespace
+
+TEST(converter_test, test_convert_timestamp) {
+    {
+        auto req = create_base_link();
+
+        req.get_shadow_link()
+          .get_configurations()
+          .get_topic_metadata_sync_options()
+          .set_earliest({});
+
+        auto md = admin::convert_create_to_metadata(std::move(req));
+        EXPECT_EQ(
+          md.configuration.topic_metadata_mirroring_cfg.get_starting_offset(),
+          cluster_link::model::earliest_offset);
+    }
+
+    {
+        auto req = create_base_link();
+
+        req.get_shadow_link()
+          .get_configurations()
+          .get_topic_metadata_sync_options()
+          .set_latest({});
+
+        auto md = admin::convert_create_to_metadata(std::move(req));
+        EXPECT_EQ(
+          md.configuration.topic_metadata_mirroring_cfg.get_starting_offset(),
+          cluster_link::model::latest_offset);
+    }
+
+    {
+        auto req = create_base_link();
+
+        auto now = absl::Now();
+
+        req.get_shadow_link()
+          .get_configurations()
+          .get_topic_metadata_sync_options()
+          .set_timestamp(absl::Time{now});
+
+        auto md = admin::convert_create_to_metadata(std::move(req));
+        EXPECT_EQ(
+          md.configuration.topic_metadata_mirroring_cfg.get_starting_offset(),
+          model::timestamp{absl::ToUnixMillis(now)});
+    }
+}
+
+namespace {
+cluster_link::model::metadata create_base_metadata() {
+    auto uuid = uuid_t::create();
+    cluster_link::model::metadata md;
+    md.name = cluster_link::model::name_t{"test-link"};
+    md.uuid = cluster_link::model::uuid_t(uuid);
+    md.connection.bootstrap_servers = {
+      net::unresolved_address("localhost", 9092)};
+
+    return md;
+}
+} // namespace
+
+TEST(converter_test, timestamp_to_string) {
+    {
+        auto md = create_base_metadata();
+        auto sl = admin::metadata_to_shadow_link(std::move(md));
+
+        sl.get_configurations()
+          .get_topic_metadata_sync_options()
+          .visit_start_offset(
+            [](std::monostate) {},
+            [](auto&&) { ADD_FAILURE() << "Expected unset starting offset"; });
+    }
+    {
+        auto md = create_base_metadata();
+        md.configuration.topic_metadata_mirroring_cfg.starting_offset
+          = cluster_link::model::earliest_offset;
+        auto sl = admin::metadata_to_shadow_link(std::move(md));
+
+        EXPECT_TRUE(sl.get_configurations()
+                      .get_topic_metadata_sync_options()
+                      .has_earliest())
+          << "Expected earliest starting offset";
+    }
+    {
+        auto md = create_base_metadata();
+        md.configuration.topic_metadata_mirroring_cfg.starting_offset
+          = cluster_link::model::latest_offset;
+        auto sl = admin::metadata_to_shadow_link(std::move(md));
+
+        EXPECT_TRUE(sl.get_configurations()
+                      .get_topic_metadata_sync_options()
+                      .has_latest())
+          << "Expected latest starting offset";
+    }
+    {
+        auto md = create_base_metadata();
+        md.configuration.topic_metadata_mirroring_cfg.starting_offset
+          = model::timestamp{1759193250080};
+        auto sl = admin::metadata_to_shadow_link(std::move(md));
+
+        ASSERT_TRUE(sl.get_configurations()
+                      .get_topic_metadata_sync_options()
+                      .has_timestamp())
+          << "Expected timestamp starting offset";
+
+        auto ts = sl.get_configurations()
+                    .get_topic_metadata_sync_options()
+                    .get_timestamp();
+        EXPECT_EQ(absl::FromUnixMillis(1759193250080), ts);
+    }
 }
