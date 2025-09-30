@@ -38,9 +38,12 @@ ss::future<> partition_data_queue::stop() noexcept {
     co_await std::move(f);
 }
 
-bool partition_data_queue::enqueue(
-  chunked_vector<model::record_batch> batches) {
+bool partition_data_queue::enqueue(data_entry data) {
     _gate.check();
+    _last_seen_high_watermark = data.high_watermark;
+    _last_seen_last_stable_offset = data.last_stable_offset;
+    _last_seen_log_start_offset = data.log_start_offset;
+    auto& batches = data.batches;
     if (batches.empty()) {
         return _sem.available_units() > 0;
     }

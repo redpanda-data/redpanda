@@ -34,6 +34,12 @@ namespace cluster_link::replication {
  */
 class partition_data_queue {
 public:
+    struct data_entry {
+        kafka::offset high_watermark;
+        kafka::offset last_stable_offset;
+        kafka::offset log_start_offset;
+        chunked_vector<::model::record_batch> batches;
+    };
     explicit partition_data_queue(size_t max_buffered_bytes);
     struct fetch_data {
         chunked_vector<::model::record_batch> batches;
@@ -45,7 +51,7 @@ public:
     // cleared.
     // returns true if the queue has more memory available for further enqueues,
     // false is the queue is full.
-    bool enqueue(chunked_vector<::model::record_batch>);
+    bool enqueue(data_entry data);
     ss::future<fetch_data> fetch(ss::abort_source&);
     // Resets consumption to the provided offset. Any inflight fetches are
     // aborted (with ss::abort_requested_exception) and the buffered data is
@@ -63,6 +69,9 @@ private:
     std::optional<ss::promise<fetch_data>> _waiter;
     ssx::semaphore _sem;
     ssx::semaphore_units _batch_units;
+    kafka::offset _last_seen_high_watermark{-1};
+    kafka::offset _last_seen_last_stable_offset{-1};
+    kafka::offset _last_seen_log_start_offset{-1};
     chunked_vector<::model::record_batch> _batches;
     ss::gate _gate;
 };

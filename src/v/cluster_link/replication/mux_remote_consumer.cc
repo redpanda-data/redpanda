@@ -194,7 +194,11 @@ ss::future<> mux_remote_consumer::process_fetched_data(
             // unassign the partition temporarily if the queue is full and then
             // retry at a later time.
             auto can_enqueue_more = it->second->enqueue(
-              std::move(partition.data));
+              partition_data_queue::data_entry{
+                .high_watermark = partition.high_watermark,
+                .last_stable_offset = partition.last_stable_offset,
+                .log_start_offset = partition.log_start_offset,
+                .batches = std::move(partition.data)});
             if (!can_enqueue_more) {
                 // the queue is full, this is usually a rare case indicating the
                 // sink is not able to catchup with the rate of incoming data.

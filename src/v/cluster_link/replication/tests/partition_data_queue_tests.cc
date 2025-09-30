@@ -41,7 +41,8 @@ public:
           std::from_range,
           co_await model::test::make_random_batches(model::offset{0}, 10, true)
             | std::views::as_rvalue};
-        co_return _queue->enqueue(std::move(data));
+        co_return _queue->enqueue(
+          partition_data_queue::data_entry{.batches = std::move(data)});
     }
 
 protected:
