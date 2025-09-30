@@ -63,6 +63,7 @@ struct fetched_partition_data {
     kafka::leader_epoch leader_epoch;
     kafka::offset high_watermark;
     kafka::offset last_stable_offset;
+    kafka::offset log_start_offset;
     chunked_vector<model::record_batch> data;
     kafka::error_code error = kafka::error_code::none;
     std::optional<chunked_vector<aborted_transaction>> aborted_transactions;

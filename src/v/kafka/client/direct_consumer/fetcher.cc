@@ -549,6 +549,8 @@ fetcher::process_fetch_response(
                   = part_response.current_leader.leader_epoch;
                 part_data.aborted_transactions = std::move(
                   part_response.aborted_transactions);
+                part_data.log_start_offset = model::offset_cast(
+                  part_response.log_start_offset);
 
                 vlog(
                   logger().trace,
