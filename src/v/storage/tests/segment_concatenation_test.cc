@@ -11,6 +11,7 @@
 #include "bytes/iostream.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
+#include "model/timestamp.h"
 #include "random/generators.h"
 #include "storage/disk_log_impl.h"
 #include "storage/parser.h"
@@ -206,11 +207,18 @@ TEST_P(MakeConcatenatedSegmentFixture, ConcatenateSegments) {
 
     auto [num_segments, maybe_compress] = GetParam();
     auto records_per_seg = random_generators::get_int(50, 200);
+    model::timestamp base_ts = model::timestamp::min();
     for (size_t i = 0; i < num_segments; ++i) {
         auto offset = i * records_per_seg;
         b
           | add_random_batch(
-            offset, records_per_seg, maybe_compress_batches(maybe_compress));
+            offset,
+            records_per_seg,
+            maybe_compress_batches(maybe_compress),
+            model::record_batch_type::raft_data,
+            append_config(),
+            disk_log_builder::should_flush_after::yes,
+            base_ts);
         disk_log.force_roll().get();
     }
 

@@ -13,7 +13,7 @@
 #include "cluster/cloud_metadata/tests/manual_mixin.h"
 #include "cluster/topic_recovery_service.h"
 #include "redpanda/tests/fixture.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "utils/memory_data_source.h"
 
 #include <seastar/core/iostream.hh>

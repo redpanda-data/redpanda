@@ -100,11 +100,11 @@ def _redpanda_protogen_impl(ctx):
         list: A list of providers
     """
     proto = [dep[ProtoInfo] for dep in ctx.attr.deps if ProtoInfo in dep]
-    transitive_sources = [
-        f[RedpandaProtoInfo].transitive_proto_sources
-        for f in ctx.attr.deps
-        if RedpandaProtoInfo in f
-    ]
+    direct_sources = []
+    transitive_sources = []
+    for proto_info in [f[RedpandaProtoInfo] for f in ctx.attr.deps if RedpandaProtoInfo in f]:
+        direct_sources.extend(proto_info.proto_sources)
+        transitive_sources.append(proto_info.transitive_proto_sources)
 
     protoc_plugin = ctx.file._protoc_plugin
     proto_toolchain = proto_toolchains.find_toolchain(
@@ -115,9 +115,8 @@ def _redpanda_protogen_impl(ctx):
     protoc = proto_toolchain.proto_compiler
 
     args = ctx.actions.args()
-    protos = depset(transitive = transitive_sources)
     imports = depset(transitive = [p.transitive_imports for p in proto])
-    if not protos:
+    if not direct_sources:
         fail("Protobuf compilation requested without inputs!")
     proto_srcs = [src for p in proto for src in p.direct_sources]
     cc_hdrs = []
@@ -137,7 +136,7 @@ def _redpanda_protogen_impl(ctx):
         join_with = ":",
         format_joined = "--descriptor_set_in=%s",
     )
-    args.add_all(proto_srcs)
+    args.add_all(direct_sources)
     ctx.actions.run(
         inputs = depset(transitive = [descriptor_sets, imports]),
         tools = [protoc_plugin, protoc.executable],

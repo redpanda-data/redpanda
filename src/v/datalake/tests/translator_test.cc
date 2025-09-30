@@ -11,6 +11,7 @@
 #include "datalake/tests/fixture.h"
 #include "kafka/client/client.h"
 #include "kafka/client/test/utils.h"
+#include "test_utils/boost_fixture.h"
 #include "test_utils/scoped_config.h"
 
 namespace kc = kafka::client;

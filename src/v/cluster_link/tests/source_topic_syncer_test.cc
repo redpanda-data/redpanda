@@ -318,6 +318,43 @@ TEST_F_CORO(source_topic_syncer_test, topic_with_no_partitions) {
     EXPECT_TRUE(mirror_topics.empty());
 }
 
+TEST_F_CORO(source_topic_syncer_test, topic_id_changes) {
+    auto topic_name = ::model::topic("test_topic");
+    fixture()->get_cluster_mock().add_topic(
+      topic_name, 3, 3, kafka::topic_authorized_operations(0x508));
+
+    co_await fixture()->upsert_link(get_default_metadata());
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, topic_name] {
+        auto link_metadata = fixture()->find_link_by_name(
+          model::name_t("test_link"));
+        if (!link_metadata.has_value()) {
+            return false;
+        }
+        auto& mirror_topics = link_metadata->get().state.mirror_topics;
+        return mirror_topics.contains(topic_name);
+    });
+
+    fixture()->get_cluster_mock().remove_topic(topic_name);
+    // Re-create the topic which should change the topic ID
+    fixture()->get_cluster_mock().add_topic(
+      topic_name, 3, 3, kafka::topic_authorized_operations(0x508));
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, topic_name] {
+        auto link_metadata = fixture()->find_link_by_name(
+          model::name_t("test_link"));
+        if (!link_metadata.has_value()) {
+            return false;
+        }
+        auto& mirror_topics = link_metadata->get().state.mirror_topics;
+        auto it = mirror_topics.find(topic_name);
+        if (it == mirror_topics.end()) {
+            return false;
+        }
+        return it->second.state == model::mirror_topic_state::failed;
+    });
+}
+
 TEST_F_CORO(source_topic_syncer_test, topic_with_no_replicas) {
     fixture()->get_cluster_mock().add_topic(
       ::model::topic("test_topic"),

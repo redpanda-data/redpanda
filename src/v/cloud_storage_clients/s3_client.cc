@@ -1022,27 +1022,8 @@ ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
                       });
                 }
 
-                return ss::do_with(
-                  resp->as_input_stream(),
-                  xml_sax_parser{},
-                  [pred = std::move(gather_item_if)](
-                    ss::input_stream<char>& stream, xml_sax_parser& p) mutable {
-                      p.start_parse(
-                        std::make_unique<aws_parse_impl>(std::move(pred)));
-                      return ss::do_until(
-                               [&stream] { return stream.eof(); },
-                               [&stream, &p] {
-                                   return stream.read().then(
-                                     [&p](ss::temporary_buffer<char>&& chunk) {
-                                         p.parse_chunk(std::move(chunk));
-                                     });
-                               })
-                        .then([&stream] { return stream.close(); })
-                        .then([&p] {
-                            p.end_parse();
-                            return p.result();
-                        });
-                  });
+                return parse_from_stream<aws_parse_impl>(
+                  resp->as_input_stream(), std::move(gather_item_if));
             });
       });
 }

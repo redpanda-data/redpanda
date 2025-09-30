@@ -10,6 +10,7 @@
 
     "stubPath" : "typings",
 
-    "typeCheckingMode": "strict"
+    "typeCheckingMode": "strict",
 
+    "reportPrivateUsage": "none"
 }

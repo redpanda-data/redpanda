@@ -58,7 +58,7 @@ validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
         if (cfg.is_read_replica()) {
             return false;
         }
-        /// Immitates the logic in ntp_config::is_collectable
+        /// Immitates the logic in ntp_config::is_*_collectable
         if (
           !cfg.properties.has_overrides()
           || !cfg.properties.cleanup_policy_bitflags) {
@@ -84,7 +84,11 @@ validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
     } else if (!is_deletable(*cfg)) {
         return make_partition_errors(t, error_code::policy_violation);
     } else if (is_nodelete_topic(t)) {
-        return make_partition_errors(t, error_code::invalid_topic_exception);
+        vlog(
+          klog.warn,
+          "Topic {} is protected by 'kafka_nodelete_topics'",
+          t.name);
+        return make_partition_errors(t, error_code::topic_authorization_failed);
     }
     return {};
 }

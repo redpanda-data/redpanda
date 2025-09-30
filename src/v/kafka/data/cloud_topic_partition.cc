@@ -69,6 +69,8 @@ kafka::error_code map_errc(frontend_errc errc) {
         return kafka::error_code::not_leader_for_partition;
     case frontend_errc::offset_out_of_range:
         return kafka::error_code::offset_out_of_range;
+    case frontend_errc::timeout:
+        return kafka::error_code::request_timed_out;
     default:
         return kafka::error_code::unknown_server_error;
     }
@@ -187,9 +189,10 @@ cloud_topic_partition::get_leader_epoch_last_offset(
 }
 
 ss::future<error_code> cloud_topic_partition::prefix_truncate(
-  model::offset, ss::lowres_clock::time_point) {
-    /// DeleteRecords API is not supported in cloud topics yet.
-    co_return error_code::invalid_topic_exception;
+  model::offset offset, ss::lowres_clock::time_point deadline) {
+    auto result = co_await _fe->prefix_truncate(
+      model::offset_cast(offset), deadline);
+    co_return result.transform_error(map_errc).error_or(error_code::none);
 }
 
 ss::future<error_code> cloud_topic_partition::validate_fetch_offset(

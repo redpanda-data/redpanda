@@ -164,6 +164,10 @@ public:
         return _fake_proxy->shard_owner(ntp);
     }
 
+    bool is_current_shard_leader(const model::ntp& ntp) const override {
+        return _fake_proxy->shard_owner(ntp) == ss::this_shard_id();
+    }
+
     void set_errors(int n) {
         // TODO(oren): could just reach down for this
         _errors_to_inject = n;

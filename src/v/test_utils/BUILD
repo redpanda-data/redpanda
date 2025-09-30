@@ -1,23 +1,6 @@
 load("//bazel:test.bzl", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
-    name = "fixture",
-    hdrs = [
-        "async.h",
-        "fixture.h",
-        "test_macros.h",
-        "tmp_dir.h",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//src/v/base",
-        "//src/v/model:timeout_clock",
-        "//src/v/ssx:sformat",
-        "@seastar//:testing",
-    ],
-)
-
-redpanda_test_cc_library(
     name = "gtest",
     srcs = [
         "gtest_main.cc",
@@ -25,17 +8,20 @@ redpanda_test_cc_library(
     ],
     hdrs = [
         "async.h",
-        "fixture.h",
         "gtest_exception.h",
         "gtest_utils.h",
         "test.h",
         "test_macros.h",
         "tmp_dir.h",
     ],
+    implementation_deps = [
+        ":global_test_hooks",
+    ],
     visibility = ["//visibility:public"],
     deps = [
-        ":fixture",
         "//src/v/base",
+        "//src/v/model:timeout_clock",
+        "//src/v/ssx:sformat",
         "@fmt",
         "@googletest//:gtest",
         "@seastar",
@@ -50,14 +36,17 @@ redpanda_test_cc_library(
     ],
     hdrs = [
         "async.h",
-        "fixture.h",
+        "boost_fixture.h",
         "test_macros.h",
         "tmp_dir.h",
     ],
+    local_defines = ["IS_BTEST"],
     visibility = ["//visibility:public"],
     deps = [
         ":boost_result_redirect",
-        ":fixture",
+        "//src/v/base",
+        "//src/v/model:timeout_clock",
+        "//src/v/ssx:sformat",
         "@seastar//:testing",
     ],
 )
@@ -77,6 +66,44 @@ redpanda_test_cc_library(
         "@boost//:test",
     ],
     visibility = ["//visibility:public"],
+)
+
+redpanda_test_cc_library(
+    name = "test_macros",
+    hdrs = [
+        "test_macros.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "tmp_dir",
+    hdrs = [
+        "tmp_dir.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "async",
+    hdrs = [
+        "async.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":test_macros",
+        "//src/v/base",
+        "//src/v/model:timeout_clock",
+        "//src/v/ssx:sformat",
+        "@seastar",
+    ],
 )
 
 redpanda_test_cc_library(
@@ -185,12 +212,12 @@ redpanda_test_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":test_macros",
         "//src/v/bytes:iostream",
         "//src/v/cloud_storage",
         "//src/v/cluster",
         "//src/v/model/tests:random",
         "//src/v/storage/tests:disk_log_builder",
-        "@boost//:test",
     ],
 )
 
@@ -207,6 +234,21 @@ redpanda_test_cc_library(
     ],
 )
 
+# Gives access to test environment configuration such as TEST_TMPDIR.
+redpanda_test_cc_library(
+    name = "test_env",
+    srcs = [
+        "test_env.cc",
+    ],
+    hdrs = [
+        "test_env.h",
+    ],
+    implementation_deps = [
+        "//src/v/random:generators",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 redpanda_test_cc_library(
     name = "tee_log",
     hdrs = [
@@ -216,5 +258,40 @@ redpanda_test_cc_library(
     deps = [
         "@boost//:iostreams",
         "@seastar",
+    ],
+)
+
+# Test hooks are things that run before/after test cases or the entire test
+# run. This library has global test hooks which should run for every type of
+# test (gtest or btest).
+redpanda_test_cc_library(
+    name = "global_test_hooks",
+    srcs = [
+        "global_test_hooks.cc",
+    ],
+    hdrs = [
+        "global_test_hooks.h",
+    ],
+    implementation_deps = [
+        "//src/v/random:test_seeding",
+        "@fmt",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# The hook implementation for boost tests, installs the global test hooks.
+redpanda_test_cc_library(
+    name = "boost_test_hooks",
+    srcs = [
+        "boost_test_hooks.cc",
+    ],
+    hdrs = [
+    ],
+    implementation_deps = [
+        ":global_test_hooks",
+        "@boost//:test",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
     ],
 )

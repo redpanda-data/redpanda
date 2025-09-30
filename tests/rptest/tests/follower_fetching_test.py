@@ -24,6 +24,28 @@ from rptest.services.redpanda import SISettings
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import wait_for_local_storage_truncate, wait_until_result
 from rptest.utils.mode_checks import skip_debug_mode
+from enum import Enum
+
+
+class FetchFrom(str, Enum):
+    LOCAL = "fetch-from-local"
+    TIERED_STORAGE = "fetch-from-tiered-storage"
+    CLOUD_TOPIC = "fetch-from-cloud-topic"
+
+
+def make_topic_config(fetch_from):
+    if fetch_from == FetchFrom.CLOUD_TOPIC:
+        config = {
+            "redpanda.cloud_topic.enabled": "true",
+        }
+    elif fetch_from == FetchFrom.TIERED_STORAGE:
+        config = {
+            "redpanda.remote.read": "true",
+            "redpanda.remote.write": "true",
+        }
+    else:
+        config = {}
+    return config
 
 
 class FollowerFetchingTest(PreallocNodesTest):
@@ -34,8 +56,8 @@ class FollowerFetchingTest(PreallocNodesTest):
             test_context,
             cloud_storage_max_connections=5,
             log_segment_size=self.log_segment_size,
-            cloud_storage_enable_remote_read=True,
-            cloud_storage_enable_remote_write=True,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
         )
         self.s3_bucket_name = si_settings.cloud_storage_bucket
 
@@ -47,6 +69,11 @@ class FollowerFetchingTest(PreallocNodesTest):
                 "enable_rack_awareness": True,
                 # disable leader balancer to prevent leaders from moving and causing additional client retries
                 "enable_leader_balancer": False,
+                # enable dev features to allow cloud topics to be created
+                "enable_developmental_unrecoverable_data_corrupting_features": int(
+                    time.time()
+                ),
+                "development_enable_cloud_topics": True,
             },
             si_settings=si_settings,
         )
@@ -126,9 +153,26 @@ class FollowerFetchingTest(PreallocNodesTest):
             topic, "vectorized_cluster_partition_bytes_fetched_from_follower_total"
         )
 
+    def _maybe_adjust_local_retention(
+        self, topic, fetch_from, wait_for_truncation=True
+    ):
+        """Adjust local retention for TS topic and wait for truncation in the local storage to happen"""
+        if fetch_from == FetchFrom.TIERED_STORAGE:
+            RpkTool(self.redpanda).alter_topic_config(
+                topic.name,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
+                self.local_retention,
+            )
+            if wait_for_truncation:
+                wait_for_local_storage_truncate(
+                    self.redpanda, topic.name, target_bytes=self.local_retention
+                )
+
     @cluster(num_nodes=5)
-    @matrix(read_from_object_store=[True, False])
-    def test_basic_follower_fetching(self, read_from_object_store):
+    @matrix(
+        fetch_from=[FetchFrom.LOCAL, FetchFrom.TIERED_STORAGE, FetchFrom.CLOUD_TOPIC]
+    )
+    def test_basic_follower_fetching(self, fetch_from):
         rack_layout_str = "ABC"
         rack_layout = [str(i) for i in rack_layout_str]
 
@@ -146,19 +190,18 @@ class FollowerFetchingTest(PreallocNodesTest):
         self.redpanda.start()
         topic = TopicSpec(partition_count=1, replication_factor=3)
 
-        self.client().create_topic(topic)
+        config = make_topic_config(fetch_from)
+
+        RpkTool(self.redpanda).create_topic(
+            topic=topic.name,
+            partitions=topic.partition_count,
+            replicas=topic.replication_factor,
+            config=config,
+        )
 
         self.produce(topic.name)
         self.logger.info(f"Producing to {topic.name} finished")
-        if read_from_object_store:
-            RpkTool(self.redpanda).alter_topic_config(
-                topic.name,
-                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
-                self.local_retention,
-            )
-            wait_for_local_storage_truncate(
-                self.redpanda, topic.name, target_bytes=self.local_retention
-            )
+        self._maybe_adjust_local_retention(topic, fetch_from)
         number_of_samples = 10
         for n in range(0, number_of_samples):
             node_idx = random.randint(0, 2)
@@ -170,7 +213,7 @@ class FollowerFetchingTest(PreallocNodesTest):
             f_fetched_before = self._follower_bytes_fetched_per_node(topic.name)
             consumer = self.create_consumer(topic.name, rack=consumer_rack)
             consumer.start()
-            consumer.wait_for_messages(1000)
+            consumer.wait_for_messages(1000, timeout=60)
             consumer.stop()
             consumer.wait()
             consumer.clean()
@@ -199,7 +242,10 @@ class FollowerFetchingTest(PreallocNodesTest):
                     assert follower_fetched == 0
 
     @cluster(num_nodes=5)
-    def test_with_leadership_transfers(self):
+    @matrix(
+        fetch_from=[FetchFrom.LOCAL, FetchFrom.TIERED_STORAGE, FetchFrom.CLOUD_TOPIC]
+    )
+    def test_with_leadership_transfers(self, fetch_from):
         """
         Test consuming from a single node while leadership is randomly transfered.
         """
@@ -214,7 +260,17 @@ class FollowerFetchingTest(PreallocNodesTest):
         self.redpanda.start()
 
         topic = TopicSpec(name="mytopic", partition_count=1, replication_factor=3)
-        self.client().create_topic(topic)
+
+        config = make_topic_config(fetch_from)
+
+        RpkTool(self.redpanda).create_topic(
+            topic=topic.name,
+            partitions=topic.partition_count,
+            replicas=topic.replication_factor,
+            config=config,
+        )
+
+        self._maybe_adjust_local_retention(topic, fetch_from, False)
 
         producer = KgoVerifierProducer(
             self.test_context,
@@ -256,7 +312,7 @@ class FollowerFetchingTest(PreallocNodesTest):
 
         hwm = wait_until_result(
             get_hwm,
-            timeout_sec=30,
+            timeout_sec=120,
             backoff_sec=1,
             err_msg="couldn't get high watermark",
         )
@@ -266,7 +322,10 @@ class FollowerFetchingTest(PreallocNodesTest):
         assert consumer.message_cnt() <= hwm
 
     @cluster(num_nodes=5)
-    def test_follower_fetching_with_maintenance_mode(self):
+    @matrix(
+        fetch_from=[FetchFrom.LOCAL, FetchFrom.TIERED_STORAGE, FetchFrom.CLOUD_TOPIC]
+    )
+    def test_follower_fetching_with_maintenance_mode(self, fetch_from):
         rack_layout_str = "ABC"
         rack_layout = [str(i) for i in rack_layout_str]
 
@@ -284,10 +343,16 @@ class FollowerFetchingTest(PreallocNodesTest):
         self.redpanda.start()
         topic = TopicSpec(partition_count=1, replication_factor=3)
 
-        self.client().create_topic(topic)
-
+        config = make_topic_config(fetch_from)
+        RpkTool(self.redpanda).create_topic(
+            topic=topic.name,
+            partitions=topic.partition_count,
+            replicas=topic.replication_factor,
+            config=config,
+        )
         self.produce(topic.name)
         self.logger.info(f"Producing to {topic.name} finished")
+        self._maybe_adjust_local_retention(topic, fetch_from)
 
         number_of_samples = 10
         enable_maintenance_mode = True

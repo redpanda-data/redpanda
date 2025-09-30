@@ -398,6 +398,8 @@ disk_log_impl::time_based_gc_max_offset(gc_config cfg) const {
                     : _segs.front()->index().retention_timestamp(retention_cfg),
       retention_cfg);
 
+    auto validated_timestamps = _feature_table.local().is_active(
+      features::feature::validated_batch_timestamps);
     static constexpr auto const_threshold = 1min;
     auto bogus_threshold = model::timestamp(
       model::timestamp::now().value() + const_threshold / 1ms);
@@ -405,23 +407,33 @@ disk_log_impl::time_based_gc_max_offset(gc_config cfg) const {
     auto it = std::find_if(
       std::cbegin(_segs),
       std::cend(_segs),
-      [this, time = cfg.eviction_time, bogus_threshold, retention_cfg](
-        const ss::lw_shared_ptr<segment>& s) {
+      [this,
+       time = cfg.eviction_time,
+       bogus_threshold,
+       retention_cfg,
+       validated_timestamps](const ss::lw_shared_ptr<segment>& s) {
           auto retention_ts = s->index().retention_timestamp(retention_cfg);
 
-          if (retention_ts > bogus_threshold) {
-              // Warn on timestamps more than the "bogus" threshold in future
-              // this should not fire for segments created after v23.3
-              vlog(
-                gclog.warn,
-                "[{}] found segment with bogus retention timestamp: {} (base "
-                "{}, max {}) - {}",
-                config().ntp(),
-                retention_ts,
-                s->index().base_timestamp(),
-                s->index().max_timestamp(),
-                s->index().broker_timestamp(),
-                s);
+          if (!validated_timestamps) {
+              // This legacy behavior of warning on timestamps above
+              // `bogus_threshold` is only needed in older clusters that didn't
+              // validate timestamps.
+              if (retention_ts > bogus_threshold) {
+                  // Warn on timestamps more than the "bogus" threshold in
+                  // future this should not fire for segments created after
+                  // v23.3
+                  vlog(
+                    gclog.warn,
+                    "[{}] found segment with bogus retention timestamp: {} "
+                    "(base "
+                    "{}, max {}) - {}",
+                    config().ntp(),
+                    retention_ts,
+                    s->index().base_timestamp(),
+                    s->index().max_timestamp(),
+                    s->index().broker_timestamp(),
+                    s);
+              }
           }
 
           // first that is not going to be collected
@@ -1756,7 +1768,7 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
         co_return request_eviction_until_offset(offset);
     }
 
-    if (!config().is_collectable()) {
+    if (!config().is_locally_collectable()) {
         co_return std::nullopt;
     }
 
@@ -1776,6 +1788,13 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
 }
 
 ss::future<> disk_log_impl::maybe_adjust_retention_timestamps() {
+    auto validated_timestamps = _feature_table.local().is_active(
+      features::feature::validated_batch_timestamps);
+    if (validated_timestamps) {
+        // Legacy behavior of adjusting retention timestamps is only needed in
+        // older clusters that didn't validate timestamps.
+        co_return;
+    }
     // Correct any timestamps too far in the future, meant to be called before
     // calculating the retention offset for garbage collection.
     // It's expected that this will be used only for segments pre v23.3,
@@ -2987,7 +3006,7 @@ disk_log_impl::max_eligible_for_compacted_reupload_offset(
             // perfectly compacted data that truncation leaves us with
             // uncompacted data in cloud storage. so in this case, a single
             // round of windowed compaction is 'enough'.
-            if (config().is_collectable()) {
+            if (config().is_locally_collectable()) {
                 return seg->finished_windowed_compaction();
             }
 
@@ -3085,7 +3104,6 @@ disk_log_impl::make_reader(timequery_config config) {
           local_log_reader_config config(
             start_offset,
             cfg.max_offset,
-            0,
             2048, // We just need one record batch
             cfg.type_filter,
             cfg.time,
@@ -3711,7 +3729,7 @@ ss::shared_ptr<log> make_disk_backed_log(
 ss::future<std::pair<usage, reclaim_size_limits>>
 disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
     std::optional<model::offset> max_offset;
-    if (config().is_collectable()) {
+    if (config().is_locally_collectable()) {
         auto cfg = apply_overrides(input_cfg);
         max_offset = retention_offset(cfg);
     }
@@ -3889,7 +3907,9 @@ disk_log_impl::disk_usage_target(gc_config cfg, usage usage) {
          * report space wanted as `factor * current capacity` to reflect that we
          * want space for continued growth.
          */
-        if (!config().is_collectable() || deletion_exempt(config().ntp())) {
+        if (
+          !config().is_locally_collectable()
+          || deletion_exempt(config().ntp())) {
             target.min_capacity_wanted = usage.total() * 2;
             co_return target;
         }

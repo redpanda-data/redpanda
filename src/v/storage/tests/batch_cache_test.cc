@@ -12,7 +12,6 @@
 #include "random/generators.h"
 #include "storage/batch_cache.h"
 #include "storage/record_batch_builder.h"
-#include "test_utils/fixture.h"
 #include "test_utils/random_bytes.h"
 
 #include <seastar/core/sharded.hh>

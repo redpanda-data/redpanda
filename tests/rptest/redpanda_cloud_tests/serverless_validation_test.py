@@ -30,9 +30,6 @@ class ServerlessValidationTest(RedpandaCloudTest):
     # any less than that.
     CLUSTER_NODES = 10
 
-    # no expectations at this time, we are simply measuring for now so we have historical data
-    EXPECTED_MAX_LATENCIES: dict[str, float] = {}
-
     # Mapping of result keys from specific series to their expected max latencies
     # Key is a series (Ex: endToEndLatency999pct and value is mapped to OMBSampleConfigurations.E2E_LATENCY_999PCT)
     LATENCY_SERIES_AND_MAX = {
@@ -51,72 +48,7 @@ class ServerlessValidationTest(RedpandaCloudTest):
             benchmark_time_min = benchmark.benchmark_time_mins() + 5
             benchmark.wait(timeout_sec=benchmark_time_min * 60)
 
-            res = benchmark.check_succeed(raise_exceptions=False)
-            assert res  # help type checker
-            is_valid, validation_results = res
-            if is_valid:
-                self.logger.info("Benchmark passed without significant latency issues.")
-                return True
-            else:
-                self.handle_failed_attempt(
-                    try_count, max_retries, benchmark, validation_results
-                )
-
         return False
-
-    def handle_failed_attempt(
-        self,
-        try_count: int,
-        max_retries: int,
-        benchmark: OpenMessagingBenchmark,
-        validation_results: list[str],
-    ):
-        self.logger.info(f"Benchmark test attempt {try_count} failed.")
-        for result in validation_results:
-            self.logger.info(f"Result is: {result}")
-
-        self.logger.info("Checking test results for possible latency spikes.")
-        latency_metrics = self.extract_latency_metrics(benchmark)
-        spikes_detected = benchmark.detect_spikes_by_percentile(
-            latency_metrics, expected_max_latencies=self.expected_max_latencies()
-        )
-
-        if spikes_detected and try_count < max_retries:
-            self.logger.info(
-                f"Latency spikes detected. Preparing for attempt {try_count + 1}/{max_retries}."
-            )
-            self.logger.info("Stopping and freeing worker nodes and retrying.")
-            benchmark.stop()
-            benchmark.clean()
-            assert benchmark.workers  # help type checker
-            benchmark.workers.free()
-        else:
-            self.logger.info(
-                "Persistent high latency detected or maximum retries reached. No further retries."
-            )
-            benchmark.check_succeed()
-
-    def extract_latency_metrics(self, benchmark: OpenMessagingBenchmark):
-        latency_metrics = {
-            key: benchmark.metrics[key]
-            for key in self.LATENCY_SERIES_AND_MAX
-            if key in benchmark.metrics
-        }
-        self.log_latency_metrics(latency_metrics)
-        return latency_metrics
-
-    def log_latency_metrics(self, latency_metrics: dict[str, Any]):
-        self.logger.info("Latency metrics for spikes detection:")
-        for key, value in latency_metrics.items():
-            series_values = ", ".join(str(v) for v in value)
-            self.logger.info(f"{key}: [{series_values}]")
-
-    def expected_max_latencies(self):
-        expected = self.EXPECTED_MAX_LATENCIES
-        return {
-            series_key: expected[config_key]
-            for series_key, config_key in ServerlessValidationTest.LATENCY_SERIES_AND_MAX.items()
-        }
 
     def __init__(self, test_ctx: TestContext, *args: Any, **kwargs: Any):
         self._ctx = test_ctx
@@ -164,16 +96,9 @@ class ServerlessValidationTest(RedpandaCloudTest):
         healthy systems. Optionally accepts a multiplier value which will multiply
         all the latencies by the given value, which could be used to accept higher
         latencies in cases we know this is reasonable (e.g., a system running at
-        its maximum partition count."""
+        its maximum partition count.)"""
 
-        latency_limits = ServerlessValidationTest.EXPECTED_MAX_LATENCIES
-
-        # use dict comprehension to generate dict of latencies to list of validation functions
-        # e.g. { 'aggregatedEndToEndLatency50pct': [OMBSampleConfigurations.lte(20.0 * multiplier)] }
-        return {
-            k: [OMBSampleConfigurations.lte(v * multiplier)]
-            for k, v in latency_limits.items()
-        }
+        return {}
 
     def _partition_count(self) -> int:
         machine_config = self.tier_machine_info

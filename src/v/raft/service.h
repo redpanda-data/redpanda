@@ -19,6 +19,7 @@
 #include "raft/raftgen_service.h"
 #include "raft/types.h"
 #include "ssx/async_algorithm.h"
+#include "ssx/when_all.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
@@ -118,7 +119,7 @@ public:
         const auto target = r.target();
         auto grouped = group_hbeats_by_shard(std::move(r));
 
-        std::vector<ss::future<shard_heartbeat_replies>> futures;
+        chunked_vector<ss::future<shard_heartbeat_replies>> futures;
         futures.reserve(grouped.shard_requests.size());
         for (auto& [shard, req] : grouped.shard_requests) {
             // dispatch to each core in parallel
@@ -126,7 +127,7 @@ public:
               shard, source, target, std::move(req)));
         }
         // replies for groups that are not yet registered at this node
-        std::vector<full_heartbeat_reply> group_missing_replies;
+        chunked_vector<full_heartbeat_reply> group_missing_replies;
         group_missing_replies.reserve(grouped.group_missing_requests.size());
         std::transform(
           std::begin(grouped.group_missing_requests),
@@ -137,8 +138,8 @@ public:
                 .group = r.group, .result = reply_result::group_unavailable};
           });
 
-        std::vector<shard_heartbeat_replies> replies
-          = co_await ss::when_all_succeed(futures.begin(), futures.end());
+        auto replies = co_await ssx::when_all_succeed<
+          chunked_vector<shard_heartbeat_replies>>(std::move(futures));
 
         heartbeat_reply_v2 reply(_self, source);
         ssx::async_counter cnt;
@@ -288,7 +289,7 @@ private:
     };
     struct shard_groupped_hbeat_requests_v2 {
         absl::flat_hash_map<ss::shard_id, shard_heartbeats> shard_requests;
-        std::vector<group_heartbeat> group_missing_requests;
+        chunked_vector<group_heartbeat> group_missing_requests;
     };
 
     static ss::future<vote_reply> make_failed_vote_reply() {
@@ -474,7 +475,7 @@ private:
               replies.lw_replies.emplace_back(gr, result);
           });
 
-        std::vector<ss::future<full_heartbeat_reply>> futures;
+        chunked_vector<ss::future<full_heartbeat_reply>> futures;
         const auto timeout = clock_type::now() + _heartbeat_interval;
         futures.reserve(reqs.full_heartbeats.size());
 

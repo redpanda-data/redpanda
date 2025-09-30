@@ -25,6 +25,7 @@
 #include "storage/kvstore.h"
 #include "storage/storage_resources.h"
 #include "test_utils/test.h"
+#include "test_utils/test_env.h"
 #include "utils/file_io.h"
 
 #include <seastar/core/fstream.hh>
@@ -41,20 +42,6 @@
 #include <variant>
 
 using namespace std::chrono_literals;
-
-namespace {
-inline std::filesystem::path test_directory() {
-    char* tmpdir = std::getenv("TEST_TMPDIR");
-    if (!tmpdir) {
-        return fmt::format(
-          "test.dir_{}", random_generators::gen_alphanum_string(6));
-    }
-    return std::filesystem::path(tmpdir)
-           / fmt::format(
-             "test.dir_{}", random_generators::gen_alphanum_string(6));
-}
-} // namespace
-
 struct debug_bundle_service_fixture : public seastar_test {
     ss::future<> SetUpAsync() override {
         const char* script_path = std::getenv("RPK_SHIM");
@@ -64,7 +51,7 @@ struct debug_bundle_service_fixture : public seastar_test {
           << script_path << " does not exist";
         _rpk_shim_path = script_path;
 
-        _data_dir = test_directory();
+        _data_dir = test_env::random_dir_path();
         ASSERT_NO_THROW_CORO(
           co_await ss::recursive_touch_directory(_data_dir.native()))
           << "Failed to create " << _data_dir;

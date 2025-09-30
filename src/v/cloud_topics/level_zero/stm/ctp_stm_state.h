@@ -49,6 +49,15 @@ public:
     /// epoch value is even replicated.
     void advance_max_seen_epoch(cluster_epoch epoch) noexcept;
 
+    // Set the new start offset for the partition.
+    //
+    // This method is idempotent in that it does never cause the start offset to
+    // regress.
+    void set_start_offset(kafka::offset new_offset) noexcept;
+
+    // Get the start offset for this partition.
+    kafka::offset start_offset() const noexcept;
+
     /// Find the maximum cluster epoch registered in the state.
     std::optional<cluster_epoch> get_max_epoch() const noexcept;
 
@@ -85,7 +94,8 @@ public:
           _last_reconciled_offset,
           _last_reconciled_log_offset,
           _max_applied_epoch_offset,
-          _min_epoch_lower_bound);
+          _min_epoch_lower_bound,
+          _start_offset);
     }
 
     /// Max collectible offset is defined by the LRO.
@@ -134,6 +144,13 @@ private:
     /// This is used to lookup the epoch that was last reconciled for
     /// L0 GC.
     std::optional<model::offset> _last_reconciled_log_offset;
+
+    // The start offset for the partition (inclusive).
+    //
+    // This is the source of truth over what is in the local raft log, and is
+    // inclusive of what is L1 as well. Any changes to start offset should go
+    // through here, then be reconciled to L1.
+    kafka::offset _start_offset = kafka::offset{0};
 };
 
 }; // namespace cloud_topics

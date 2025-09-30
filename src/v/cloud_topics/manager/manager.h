@@ -9,21 +9,22 @@
  */
 #pragma once
 
-#include "cloud_topics/level_zero/gc/level_zero_gc.h"
+#include "base/seastarx.h"
 #include "cluster/notification.h"
+#include "cluster/topic_configuration.h"
+#include "cluster/utils/partition_change_notifier.h"
 #include "model/fundamental.h"
-#include "raft/notification.h"
+#include "model/ktp.h"
+#include "model/metadata.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/sharded.hh>
 
 namespace cluster {
 class partition;
 class partition_manager;
+class topic_table;
 } // namespace cluster
-
-namespace cloud_io {
-class remote;
-}
 
 namespace raft {
 class group_manager;
@@ -32,47 +33,96 @@ class group_manager;
 namespace cloud_topics {
 
 /*
- * Management of cluster-level state and operations.
+ * Management of leadership following for various different cloud topics related
+ * partitions.
  *
  * Examples
- * - L0 GC is a global operation that spans NTPs.
- * - L1 domains are cluster-level resources
- *
- * The manager runs as a singleton attached to the partition 0 leader of the
- * domains topic. This is convenient because the manager current only implements
- * L0 GC using a strategy that is stateless. A more sophisticated L0 GC strategy
- * or L1 domain management functions will likely require us to re-home the
- * manager on top of a dedicated partition for cloud topics management state.
+ * - L0 GC follows L1 metastore partition 0 to have a centralized location
+ * - CTP partitions need reconcilers and housekeepers attached to them.
+ * - L1 domains need a manager that is colocated with leaders.
  */
 class cloud_topics_manager {
 public:
-    cloud_topics_manager(
-      cloud_io::remote* remote,
-      cloud_storage_clients::bucket_name bucket,
-      cluster::partition_manager*,
-      raft::group_manager*);
+    // The callback to be invoked when leadership for a partition changes.
+    //
+    // If the partition is `nullptr`, then that means the leader is no longer on
+    // this core. If the partition is not `nullptr` then the leader is now
+    // living on this core. Callers should be idempotent if the callback is
+    // notified twice with the same state.
+    using notification_cb_t = ss::noncopyable_function<void(
+      const model::ntp& ntp,
+      model::topic_id_partition tidp,
+      ss::optimized_optional<ss::lw_shared_ptr<cluster::partition>>&
+        partition) noexcept>;
 
-    seastar::future<> start();
-    seastar::future<> stop();
+    cloud_topics_manager(
+      ss::sharded<cluster::partition_manager>*,
+      ss::sharded<raft::group_manager>*,
+      ss::sharded<cluster::topic_table>*);
+
+    // Register for notifications to kafka namespaced partitions which have
+    // cloud topics enabled. These partitions have a l0::ctp_stm attached to
+    // them. The provided callback will be invoked when
+    // leadership changes on this shard for the partition. See the
+    // partition_change_notifier for more details.
+    //
+    // This method should be called *before* start is called on the
+    // cloud_topics_manager.
+    //
+    // The provided callback will be invoked for all
+    // existing shards once `start` has been called for the
+    // `cloud_topics_manager`.
+    //
+    // These callbacks are invoked until the cloud topics manager is stopped.
+    void on_ctp_partition_leader(notification_cb_t) noexcept;
+
+    // Register for notifications to our metastore domain partition leadership
+    // changes. These partitions are colocated with a domain (which is a
+    // partition of the metastore). The provided callback will be invoked when
+    // leadership changes on this shard for the partition. See the
+    // partition_change_notifier for more details.
+    //
+    // This method should be called *before* start is called on the
+    // cloud_topics_manager.
+    //
+    // The provided callback will be invoked for all
+    // existing shards once `start` has been called for the
+    // `cloud_topics_manager`.
+    //
+    // These callbacks are invoked until the cloud topics manager is stopped.
+    void on_l1_domain_leader(notification_cb_t) noexcept;
+
+    // Start the cloud topics manager. After this is invoked, all notifications
+    // will be invoked with existing leadership status. All `on_*_leader`
+    // methods should be already be setup before this method is called. It's not
+    // supported to register new callbacks once the manager is started.
+    ss::future<> start();
+
+    // Stop the cloud topics manager. After this point notifications will no
+    // longer be invoked.
+    ss::future<> stop();
 
 private:
-    cloud_io::remote* remote_;
-    cloud_storage_clients::bucket_name bucket_;
-    cluster::partition_manager* partition_manager_;
-    raft::group_manager* group_manager_;
+    void on_leadership_change(
+      const model::ntp& ntp,
+      const model::topic_id_partition& tidp,
+      bool is_leader) noexcept;
 
-    std::optional<cluster::notification_id_type> manage_notifications_;
-    std::optional<cluster::notification_id_type> unmanage_notifications_;
-    std::optional<raft::group_manager_notification_id>
-      leadership_notifications_;
-
-    void start_managing(cluster::partition&);
-    void stop_managing(const model::ntp&);
-    void notify_leadership(
-      seastar::lw_shared_ptr<cluster::partition>,
-      std::optional<model::node_id>);
-
-    level_zero_gc level_zero_gc_;
+    ss::sharded<cluster::partition_manager>* partition_manager_;
+    ss::sharded<cluster::topic_table>* topic_table_;
+    std::unique_ptr<cluster::partition_change_notifier> notifier_;
+    std::vector<notification_cb_t> ctp_callbacks_;
+    std::vector<notification_cb_t> l1_callbacks_;
+    std::optional<cluster::notification_id_type> notification_;
+    // In the case of a topic being deleted, we no longer have the
+    // topic_id_mapping_, but we need to still emit a notification with it.
+    //
+    // Fix this by keeping an explicit mapping and looking it up if we can't
+    // find it.
+    //
+    // We have to key this by ntp and not just ns_tp because we want to GC
+    // entries over time.
+    model::ntp_map_type<model::topic_id> topic_id_mapping_;
 };
 
 } // namespace cloud_topics

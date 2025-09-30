@@ -1,0 +1,10 @@
+version: v2
+inputs:
+  - module: buf.build/redpandadata/core
+    exclude_paths:
+      - proto/redpanda/pbgen
+      - redpanda/pbgen
+
+plugins:
+  - remote: buf.build/community/sudorandom-connect-openapi:v0.21.2
+    out: vbuild/openapi

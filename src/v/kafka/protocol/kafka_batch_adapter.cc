@@ -147,12 +147,22 @@ iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
         vlog(klog.error, "kbatch is unexpectedly small");
         return iobuf{};
     }
-
     auto batch_length =
       [peeker{iobuf_parser(kbatch.share(0, kafka_length_diff))}]() mutable {
           peeker.skip(sizeof(model::record_batch_header::base_offset));
           return peeker.consume_be_type<int32_t>() + kafka_length_diff;
       }();
+
+    if (batch_length > kbatch.size_bytes()) {
+        short_read = true;
+        vlog(
+          klog.debug,
+          "batch is unexpectedly small for the indicated batch length: {} > "
+          "{}",
+          batch_length,
+          kbatch.size_bytes());
+        return iobuf{};
+    }
 
     auto remainder = kbatch.share(
       batch_length, kbatch.size_bytes() - batch_length);

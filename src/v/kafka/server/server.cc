@@ -1362,22 +1362,30 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
     }
     provided_ids.clear();
 
-    for (auto it = id_to_name.begin(); it != id_to_name.end(); ++it) {
-        const auto& [id, name] = *it;
-        if (!ctx.authorized(security::acl_operation::remove, name)) {
-            if (ctx.authorized(security::acl_operation::describe, name)) {
-                resp.data.responses.push_back(
-                  {.name = name,
-                   .topic_id = id,
-                   .error_code = error_code::topic_authorization_failed});
-            } else {
-                resp.data.responses.push_back(
-                  {.topic_id = id,
-                   .error_code = error_code::topic_authorization_failed});
-            }
-            id_to_name.erase(it);
+    const auto unauthorized_topic = [&ctx, &resp](const auto& elem) {
+        const auto& [id, name] = elem;
+        if (ctx.authorized(security::acl_operation::remove, name)) {
+            return false;
         }
-    }
+
+        if (ctx.authorized(security::acl_operation::describe, name)) {
+            resp.data.responses.push_back(
+              {.name = name,
+               .topic_id = id,
+               .error_code = error_code::topic_authorization_failed,
+               .error_message = "Authorized to describe but not allowed to "
+                                "delete this topic ID."});
+            return true;
+        }
+
+        resp.data.responses.push_back(
+          {.topic_id = id,
+           .error_code = error_code::topic_authorization_failed,
+           .error_message
+           = "Not authorized to describe or delete this topic ID."});
+        return true;
+    };
+    erase_if(id_to_name, unauthorized_topic);
 
     for (const auto& name : provided_names) {
         auto tp_ns{as_tp_ns_view(name)};
@@ -1388,7 +1396,8 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
         if (!ctx.authorized(security::acl_operation::describe, name)) {
             resp.data.responses.push_back(
               {.name = name,
-               .error_code = error_code::topic_authorization_failed});
+               .error_code = error_code::topic_authorization_failed,
+               .error_message = "Not authorized to describe this topic."});
         } else if (!id) {
             resp.data.responses.push_back(
               {.name = name,
@@ -1411,7 +1420,9 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
         } else {
             resp.data.responses.push_back(
               {.name = name,
-               .error_code = error_code::topic_authorization_failed});
+               .error_code = error_code::topic_authorization_failed,
+               .error_message = "Authorized to describe but not allowed to "
+                                "delete this topic."});
         }
     }
     provided_names.clear();
@@ -1502,7 +1513,16 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
         resp.data.responses.push_back(
           {.name = std::move(topic),
            .error_code = ec,
-           .error_message = "Too many partition mutations requested"});
+           .error_message = "Too many partition mutations requested."});
+    }
+
+    for (auto& topic : nodelete_topics) {
+        resp.data.responses.push_back(
+          deletable_topic_result{
+            .name = std::move(topic),
+            .error_code = error_code::topic_authorization_failed,
+            .error_message = "Topic is protected by 'kafka_nodelete_topics'.",
+          });
     }
 
     std::vector<cluster::topic_result> do_delete_res;
@@ -1523,7 +1543,8 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
            .error_code = map_topic_error_code(tr.ec)});
     }
 
-    std::ranges::shuffle(resp.data.responses, random_generators::internal::gen);
+    std::ranges::shuffle(
+      resp.data.responses, random_generators::global().engine());
 
     co_return co_await ctx.respond(std::move(resp));
 }
@@ -2031,7 +2052,15 @@ describe_groups_handler::handle(request_context ctx, ss::smp_service_group) {
               [&ctx, &request, group_id](auto res) {
                   if (request.data.include_authorized_operations) {
                       res.authorized_operations = details::to_bit_field(
-                        details::authorized_operations(ctx, group_id));
+                        details::authorized_operations<kafka::group_id>(
+                          [&ctx](
+                            security::acl_operation op,
+                            const kafka::group_id& resource,
+                            authz_quiet q,
+                            audit_authz_check c) {
+                              return ctx.authorized(op, resource, q, c);
+                          },
+                          group_id));
                   }
                   return res;
               }));

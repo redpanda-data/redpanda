@@ -11,6 +11,7 @@
 #include "cloud_topics/batch_cache/batch_cache.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/tests/random_batch.h"
 #include "redpanda/tests/fixture.h"
 
 #include <seastar/core/sstring.hh>

@@ -15,7 +15,7 @@
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/cache_service.h"
 #include "random/generators.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "test_utils/iostream.h"
 #include "test_utils/scoped_config.h"
 #include "utils/directory_walker.h"

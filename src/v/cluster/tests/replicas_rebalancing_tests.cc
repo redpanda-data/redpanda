@@ -7,6 +7,7 @@
 #include "model/namespace.h"
 #include "ssx/future-util.h"
 #include "test_utils/async.h"
+#include "test_utils/boost_fixture.h"
 
 #include <boost/test/tools/old/interface.hpp>
 

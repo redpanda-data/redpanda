@@ -18,6 +18,7 @@
 #include "kafka/protocol/metadata.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "test_utils/boost_fixture.h"
 #include "utils/unresolved_address.h"
 
 #include <chrono>

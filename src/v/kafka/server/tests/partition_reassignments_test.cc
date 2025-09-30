@@ -18,7 +18,7 @@
 #include "kafka/server/handlers/topics/types.h"
 #include "model/namespace.h"
 #include "redpanda/tests/fixture.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/loop.hh>
 #include <seastar/core/sstring.hh>

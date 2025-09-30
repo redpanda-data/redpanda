@@ -696,6 +696,7 @@ redpanda_cc_gtest(
     cpu = 1,
     deps = [
         ":test_schemas",
+        "//src/v/bytes",
         "//src/v/datalake:partition_spec_parser",
         "//src/v/iceberg:compatibility",
         "//src/v/iceberg:compatibility_types",

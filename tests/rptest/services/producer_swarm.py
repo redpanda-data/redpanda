@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 from math import ceil
-from typing import Optional
+from typing import Any, Optional
 
 from ducktape.tests.test import TestContext
 
@@ -25,8 +25,8 @@ class ProducerSwarm(ClientSwarmBase):
         topic: str,
         producers: int,
         records_per_producer: int,
-        log_level="DEBUG",
-        properties={},
+        log_level: str = "DEBUG",
+        properties: dict[str, Any] = {},
         timeout_ms: int = 1000,
         compression_type: Optional[str] = None,
         compressible_payload: Optional[bool] = None,

@@ -17,6 +17,7 @@
 #include "ssx/future-util.h"
 
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/switch_to.hh>
 
 namespace cluster_link {
 namespace {
@@ -85,8 +86,7 @@ link::link(
   , _config(std::move(config))
   , _cluster_connection(std::move(cluster_connection))
   , _replication_mgr(
-      // todo: fix me
-      ss::default_scheduling_group(),
+      _manager->scheduling_group(),
       std::move(data_source_factory),
       std::move(data_sink_factory))
   , _task_reconciler_interval(task_reconciler_interval) {}
@@ -99,7 +99,11 @@ ss::future<> link::start() {
     co_await _replication_mgr.start();
     co_await run_task_reconciler();
     _task_reconciler.set_callback([this] {
-        ssx::spawn_with_gate(_gate, [this] { return run_task_reconciler(); });
+        ssx::spawn_with_gate(_gate, [this] {
+            return ss::with_scheduling_group(
+              _manager->scheduling_group(),
+              [this] { return run_task_reconciler(); });
+        });
     });
     _task_reconciler.arm_periodic(_task_reconciler_interval);
 }
@@ -149,6 +153,7 @@ ss::future<> link::stop() noexcept {
 }
 
 ss::future<result<void>> link::register_task(task_factory* tf) {
+    co_await ss::coroutine::switch_to(_manager->scheduling_group());
     vlog(
       cllog.debug,
       "Registering task factory {} for cluster link {} ({})",
@@ -189,6 +194,7 @@ ss::future<> link::handle_on_leadership_change(
   ::model::ntp ntp,
   ntp_leader is_ntp_leader,
   std::optional<::model::term_id> term) {
+    co_await ss::coroutine::switch_to(_manager->scheduling_group());
     vlog(
       cllog.trace,
       "Cluster link {} handling leadership change for {}: {}, term: {}",
@@ -269,6 +275,10 @@ partition_leader_cache& link::partition_leader_cache() noexcept {
     return _manager->partition_leader_cache();
 }
 
+security_service& link::get_security_service() noexcept {
+    return _manager->get_security_service();
+}
+
 const partition_leader_cache& link::partition_leader_cache() const noexcept {
     return _manager->partition_leader_cache();
 }
@@ -311,6 +321,12 @@ bool link::should_stop_task(task* t) const {
 }
 
 ss::future<> link::run_task_reconciler() {
+    /**
+     * Always run the task reconciler in the manager scheduling group this way
+     * task fibers will be run in the correct scheduling group
+     */
+    // TODO: consider adding a separate scheduling group per task
+    co_await ss::coroutine::switch_to(_manager->scheduling_group());
     auto fut = co_await ss::coroutine::as_future(
       _task_reconciler_mutex.get_units(_as));
     if (fut.failed()) {

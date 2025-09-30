@@ -449,7 +449,7 @@ ss::future<bool> config_manager::load_bootstrap() {
 
     // This node has never seen a cluster configuration message.
     // Bootstrap configuration from local yaml file.
-    auto errors = config::shard_local_cfg().read_yaml(config, {});
+    auto errors = config::shard_local_cfg().read_yaml(config);
     for (const auto& i : errors) {
         vlog(
           clusterlog.warn,
@@ -459,7 +459,7 @@ ss::future<bool> config_manager::load_bootstrap() {
     }
 
     co_await ss::smp::invoke_on_all(
-      [&config] { config::shard_local_cfg().read_yaml(config, {}); });
+      [&config] { config::shard_local_cfg().read_yaml(config); });
 
     co_return true;
 }

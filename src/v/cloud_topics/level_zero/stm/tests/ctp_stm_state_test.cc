@@ -130,4 +130,26 @@ TEST(ctp_stm_state_test, advance_lro_updates_min_epoch) {
     EXPECT_EQ(state.estimate_min_epoch().value(), epoch2);
 }
 
+TEST(ctp_stm_state_test, advance_start_offset) {
+    ct::ctp_stm_state state;
+
+    EXPECT_EQ(state.start_offset(), kafka::offset{0});
+    state.advance_last_reconciled_offset(kafka::offset(5), model::offset(5));
+
+    state.set_start_offset(kafka::offset{3});
+    EXPECT_EQ(state.start_offset(), kafka::offset{3});
+
+    state.set_start_offset(kafka::offset{1});
+    EXPECT_EQ(state.start_offset(), kafka::offset{3});
+
+    state.set_start_offset(kafka::offset{5});
+    EXPECT_EQ(state.start_offset(), kafka::offset{5});
+
+    state.set_start_offset(kafka::offset{5});
+    EXPECT_EQ(state.start_offset(), kafka::offset{5});
+
+    state.set_start_offset(kafka::offset{2});
+    EXPECT_EQ(state.start_offset(), kafka::offset{5});
+}
+
 } // anonymous namespace

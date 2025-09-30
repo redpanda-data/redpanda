@@ -21,6 +21,7 @@ cluster::topic_status make_topic_status(size_t id, size_t num_partitions) {
         part_status.id = model::partition_id(i);
         part_status.leader_id = model::node_id(1);
         part_status.reclaimable_size_bytes = 100;
+        part_status.cloud_topic_max_gc_eligible_epoch = 101;
         part_status.revision_id = model::revision_id(1);
         part_status.term = model::term_id(1);
         if (i % 3 == 0) { // leaders

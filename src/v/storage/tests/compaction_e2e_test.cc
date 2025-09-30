@@ -22,6 +22,7 @@
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "redpanda/tests/fixture.h"
+#include "storage/disk_log_impl.h"
 #include "storage/log_reader.h"
 #include "storage/segment.h"
 #include "storage/segment_set.h"

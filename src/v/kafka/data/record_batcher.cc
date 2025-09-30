@@ -46,8 +46,8 @@ public:
           /*attributes*/ {},
           /*ts_delta*/ 0,
           /*offset_delta*/ std::numeric_limits<int32_t>::max(),
-          std::move(k).value_or(iobuf{}),
-          std::move(v).value_or(iobuf{}),
+          std::move(k),
+          std::move(v),
           /*headers*/ {});
         size_t record_size = record.size_bytes();
         if (record_size > max_records_bytes()) {

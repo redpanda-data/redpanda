@@ -29,6 +29,24 @@ redpanda_test_cc_library(
     ],
 )
 
+redpanda_test_cc_library(
+    name = "raw_record_batch_factory",
+    srcs = [
+    ],
+    hdrs = [
+        "raw_record_batch_factory.h",
+    ],
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_btest(
     name = "ktp_test",
     timeout = "short",
@@ -206,5 +224,19 @@ redpanda_cc_gtest(
         "//src/v/test_utils:random_bytes",
         "@googletest//:gtest",
         "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "batch_builder_test",
+    timeout = "short",
+    srcs = ["batch_builder_test.cc"],
+    cpu = 1,
+    deps = [
+        "//src/v/model",
+        "//src/v/model:batch_builder",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:random",
+        "@googletest//:gtest",
     ],
 )

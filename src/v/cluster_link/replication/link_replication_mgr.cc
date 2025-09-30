@@ -61,7 +61,7 @@ ss::future<> link_replication_manager::do_start_replicator(
     auto source = _source_factory->make_source(ntp);
     auto sink = _sink_factory->make_sink(ntp);
     auto replicator = std::make_unique<partition_replicator>(
-      ntp, term, std::move(source), std::move(sink));
+      ntp, term, std::move(source), std::move(sink), _sg);
     auto [r_it, _] = _replicators.emplace(ntp, std::move(replicator));
     co_await r_it->second->start();
 }

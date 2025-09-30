@@ -8,15 +8,28 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+
+#pragma once
 #include "kafka/protocol/schemata/create_acls_request.h"
 #include "kafka/protocol/schemata/delete_acls_request.h"
 #include "kafka/protocol/schemata/describe_acls_request.h"
+#include "kafka/protocol/schemata/describe_acls_response.h"
 #include "kafka/protocol/types.h"
-#include "kafka/server/request_context.h"
 #include "model/validation.h"
 #include "security/acl.h"
 #include "security/scram_credential.h"
-namespace kafka::details {
+namespace kafka {
+
+/*
+ * authz failures should be quiet or logged at a reduced severity level.
+ */
+using authz_quiet = ss::bool_class<struct authz_quiet_tag>;
+
+using audit_authz_check = ss::bool_class<struct audit_authz_check_tag>;
+
+using superuser_required = ss::bool_class<struct superuser_required_tag>;
+
+namespace details {
 
 constexpr auto sr_subject_wire_value = 100;
 constexpr auto sr_registry_wire_value = 101;
@@ -365,8 +378,12 @@ inline int32_t to_bit_field(const std::vector<security::acl_operation>& ops) {
 }
 
 template<typename T>
+using authorized_function = std::function<bool(
+  security::acl_operation, const T&, authz_quiet, audit_authz_check)>;
+
+template<typename T>
 std::vector<security::acl_operation>
-authorized_operations(request_context& ctx, const T& resource) {
+authorized_operations(authorized_function<T> fn, const T& resource) {
     std::vector<security::acl_operation> allowed_operations;
     auto& ops = security::get_allowed_operations<T>();
 
@@ -374,9 +391,8 @@ authorized_operations(request_context& ctx, const T& resource) {
       ops.begin(),
       ops.end(),
       std::back_inserter(allowed_operations),
-      [&ctx, &resource](security::acl_operation op) {
-          return ctx.authorized(
-            op, resource, authz_quiet::no, audit_authz_check::no);
+      [&fn, &resource](security::acl_operation op) {
+          return fn(op, resource, authz_quiet::no, audit_authz_check::no);
       });
 
     return allowed_operations;
@@ -465,4 +481,10 @@ kafka_to_security_mechanism(kafka::scram_mechanism mechanism);
 
 scram_mechanism key_size_to_mechanism(size_t key_size);
 
-} // namespace kafka::details
+describe_acls_resource acl_entry_to_resource(
+  security::resource_pattern pattern,
+  chunked_vector<security::acl_entry> acl_entries,
+  bool describe_registry_resource);
+
+} // namespace details
+} // namespace kafka

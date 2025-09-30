@@ -16,6 +16,9 @@
 
 #include <seastar/util/defer.hh>
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+
 namespace testing {
 static constexpr auto seconds_in_day = 24 * 60 * 60;
 

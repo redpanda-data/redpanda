@@ -7,12 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from logging import Logger
 import random
 import re
 import threading
 import time
 from collections import defaultdict
 from enum import Enum
+from typing import Any, Iterable
 
 import requests
 from ducktape.utils.util import wait_until
@@ -31,13 +33,13 @@ class OperationType(Enum):
 
 
 class NodeOperation:
-    def __init__(self, type: OperationType, node: int, wait_for_finish: bool):
-        self.type = type
-        self.node = node
-        self.wait_for_finish = wait_for_finish
+    def __init__(self, type: OperationType, node: int, wait_for_finish: bool) -> None:
+        self.type: OperationType = type
+        self.node: int = node
+        self.wait_for_finish: bool = wait_for_finish
 
 
-def generate_random_workload(available_nodes):
+def generate_random_workload(available_nodes: Iterable[int]) -> Iterable[NodeOperation]:
     op_types = [
         OperationType.ADD,
         OperationType.DE_RECOMMISSION,
@@ -46,13 +48,13 @@ def generate_random_workload(available_nodes):
 
     # current state
     active_nodes = list(available_nodes)
-    decommissioned_nodes = []
+    decommissioned_nodes: list[int] = []
 
-    def remove(idx):
+    def remove(idx: int) -> None:
         active_nodes.remove(idx)
         decommissioned_nodes.append(idx)
 
-    def add(idx):
+    def add(idx: int) -> None:
         active_nodes.append(idx)
         decommissioned_nodes.remove(idx)
 
@@ -81,7 +83,7 @@ def generate_random_workload(available_nodes):
                 yield NodeOperation(op, idx, random.choice([True, False]))
 
 
-def verify_offset_translator_state_consistent(redpanda: RedpandaService):
+def verify_offset_translator_state_consistent(redpanda: RedpandaService) -> None:
     logger = redpanda.logger
     last_delta_pattern = re.compile("^\\{.*, last delta: (?P<delta>\\d+)\\}$")
     admin = Admin(redpanda)
@@ -90,7 +92,9 @@ def verify_offset_translator_state_consistent(redpanda: RedpandaService):
         node_id = redpanda.node_id(n)
         all_partitions = admin.get_partitions(node=n)
 
-        def _state_consistent(ns, topic, partition):
+        def _state_consistent(
+            ns: str, topic: str, partition: int
+        ) -> tuple[bool, dict[str, Any] | None]:
             state = admin.get_partition_state(ns, topic, partition, node=n)
             dirty_offset = state["replicas"][0]["dirty_offset"]
             if all(r["dirty_offset"] == dirty_offset for r in state["replicas"]):
@@ -130,26 +134,26 @@ def verify_offset_translator_state_consistent(redpanda: RedpandaService):
 class NodeDecommissionWaiter:
     def __init__(
         self,
-        redpanda,
-        node_id,
-        logger,
-        progress_timeout=30,
-        decommissioned_node_ids=None,
-    ):
-        self.redpanda = redpanda
-        self.node_id = node_id
-        self.logger = logger
-        self.admin = Admin(self.redpanda)
-        self.last_update = None
-        self.last_replicas_left = None
-        self.last_partitions_bytes_left = None
-        self.progress_timeout = progress_timeout
-        self.decommissioned_node_ids = (
-            [node_id] if decommissioned_node_ids == None else decommissioned_node_ids
+        redpanda: RedpandaService,
+        node_id: int,
+        logger: Any,
+        progress_timeout: int = 30,
+        decommissioned_node_ids: list[int] | None = None,
+    ) -> None:
+        self.redpanda: RedpandaService = redpanda
+        self.node_id: int = node_id
+        self.logger: Any = logger
+        self.admin: Admin = Admin(self.redpanda)
+        self.last_update: float | None = None
+        self.last_replicas_left: int | None = None
+        self.last_partitions_bytes_left: int | None = None
+        self.progress_timeout: int = progress_timeout
+        self.decommissioned_node_ids: list[int] = (
+            [node_id] if decommissioned_node_ids is None else decommissioned_node_ids
         )
 
-    def _dump_partition_move_available_bandwidth(self):
-        def get_metric(self, node):
+    def _dump_partition_move_available_bandwidth(self) -> None:
+        def get_metric(self: "NodeDecommissionWaiter", node: Any) -> Any:
             try:
                 metrics = list(self.redpanda.metrics(node))
                 family = filter(
@@ -161,7 +165,7 @@ class NodeDecommissionWaiter:
                     {m.labels["shard"]: m.value} for m in next(family).samples
                 ]
                 return shard_to_bandwidth
-            except:
+            except Exception:
                 self.logger.debug(f"error querying metrics for {node}", exc_info=True)
                 return None
 
@@ -170,7 +174,7 @@ class NodeDecommissionWaiter:
                 f"partition move available bandwidth: node_id: {self.redpanda.node_id(n)} ==> {get_metric(self, n)}"
             )
 
-    def _not_decommissioned_node(self):
+    def _not_decommissioned_node(self) -> Any:
         return random.choice(
             [
                 n
@@ -179,15 +183,16 @@ class NodeDecommissionWaiter:
             ]
         )
 
-    def _made_progress(self):
+    def _made_progress(self) -> bool:
+        assert self.last_update is not None
         return (time.time() - self.last_update) < self.progress_timeout
 
-    def _node_removed(self):
+    def _node_removed(self) -> bool:
         brokers = []
         node_to_query = self._not_decommissioned_node()
         try:
             brokers = self.admin.get_brokers(node=node_to_query)
-        except:
+        except Exception:
             # Failure injection is not coordinated, some nodes may
             # not be reachable, ignore and retry.
             self.logger.debug(f"Unable to query {node_to_query}", exc_info=True)
@@ -197,7 +202,7 @@ class NodeDecommissionWaiter:
                 return False
         return True
 
-    def _collect_partitions_bytes_left(self, status):
+    def _collect_partitions_bytes_left(self, status: dict[str, Any]) -> int | None:
         if "partitions" not in status:
             return None
 
@@ -208,7 +213,7 @@ class NodeDecommissionWaiter:
 
         return total_left
 
-    def wait_for_removal(self):
+    def wait_for_removal(self) -> None:
         self.last_update = time.time()
         # wait for removal only if progress was reported
         while self._made_progress():
@@ -219,14 +224,14 @@ class NodeDecommissionWaiter:
                 partition_balancer_status = self.admin.get_partition_balancer_status(
                     self._not_decommissioned_node()
                 )
-            except requests.exceptions.HTTPError as e:
+            except requests.exceptions.HTTPError:
                 self.logger.info(
-                    f"unable to get decommission status, HTTP error", exc_info=True
+                    "unable to get decommission status, HTTP error", exc_info=True
                 )
                 time.sleep(1)
                 continue
-            except Exception as e:
-                self.logger.warn(f"unable to get decommission status", exc_info=True)
+            except Exception:
+                self.logger.warn("unable to get decommission status", exc_info=True)
                 time.sleep(1)
                 continue
 
@@ -268,9 +273,11 @@ class NodeDecommissionWaiter:
             f"Node {self.node_id} decommissioning stopped making progress"
         )
 
-        (
-            wait_until(self._node_removed, timeout_sec=60, backoff_sec=1),
-            f"Node {self.node_id} still exists in the cluster but decommission operation status reported it is finished",
+        wait_until(
+            self._node_removed,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg=f"Node {self.node_id} still exists in the cluster but decommission operation status reported it is finished",
         )
 
 
@@ -278,26 +285,26 @@ class NodeOpsExecutor:
     def __init__(
         self,
         redpanda: RedpandaService,
-        logger,
+        logger: Logger,
         lock: threading.Lock,
-        progress_timeout=60,
-    ):
+        progress_timeout: int = 60,
+    ) -> None:
         self.redpanda = redpanda
         self.logger = logger
         self.timeout = 360
         self.lock = lock
         self.progress_timeout = progress_timeout
-        self.override_config_params: None | dict = None
+        self.override_config_params: dict[str, Any] | None = None
 
-    def node_id(self, idx):
+    def node_id(self, idx: int) -> int:
         return self.redpanda.node_id(self.redpanda.get_node(idx), force_refresh=True)
 
-    def decommission(self, idx: int, node_id=None):
+    def decommission(self, idx: int, node_id: int | None = None) -> None:
         node_id = self.node_id(idx) if not node_id else node_id
         self.logger.info(f"executor - decommissioning node {node_id} (idx: {idx})")
         admin = Admin(self.redpanda)
 
-        def decommissioned():
+        def decommissioned() -> bool:
             try:
                 # if broker is already draining, it is success
                 brokers = admin.get_brokers()
@@ -323,13 +330,13 @@ class NodeOpsExecutor:
             backoff_sec=1,
         )
 
-    def get_statuses(self, node_to_query=None):
+    def get_statuses(self, node_to_query: Any = None) -> list[dict[str, Any]]:
         admin = Admin(self.redpanda)
         brokers = admin.get_brokers(node=node_to_query)
 
         return [{"id": b["node_id"], "status": b["membership_status"]} for b in brokers]
 
-    def has_status(self, node_id, status):
+    def has_status(self, node_id: int, status: str) -> bool:
         try:
             brokers = self.get_statuses()
 
@@ -343,19 +350,19 @@ class NodeOpsExecutor:
             self.logger.info(f"error querying broker statuses - {e}")
             return False
 
-    def is_node_removed(self, node_to_query, node_id):
+    def is_node_removed(self, node_to_query: Any, node_id: int) -> bool:
         try:
             brokers = self.get_statuses(node_to_query)
             self.logger.info(
                 f"broker statuses from {self.redpanda.node_id(node_to_query)}: {brokers}"
             )
             ids = map(lambda broker: broker["id"], brokers)
-            return not node_id in ids
+            return node_id not in ids
         except Exception as e:
             self.logger.info(f"error querying broker statuses - {e}")
             return False
 
-    def node_removed(self, node_id):
+    def node_removed(self, node_id: int) -> bool:
         node_removed_cnt = 0
         for n in self.redpanda.started_nodes():
             if self.is_node_removed(n, node_id):
@@ -369,7 +376,7 @@ class NodeOpsExecutor:
         return node_removed_cnt >= majority
 
     # just confirm if node removal was propagated to the the majority of nodes
-    def wait_for_removed(self, node_id: int):
+    def wait_for_removed(self, node_id: int) -> None:
         self.logger.info(f"executor - waiting for node {node_id} to be removed")
 
         # wait for node to be removed of decommissioning to stop making progress
@@ -385,7 +392,7 @@ class NodeOpsExecutor:
             lambda: self.node_removed(node_id), timeout_sec=self.timeout, backoff_sec=1
         )
 
-    def stop_node(self, idx):
+    def stop_node(self, idx: int) -> None:
         node = self.redpanda.get_node(idx)
         # remove from started nodes before actually stopping redpanda process
         # to prevent failures from being injected after this point
@@ -397,13 +404,13 @@ class NodeOpsExecutor:
         )
         self.redpanda.set_seed_servers(self.redpanda.started_nodes())
 
-    def recommission(self, idx: int):
+    def recommission(self, idx: int) -> None:
         node_id = self.node_id(idx)
         self.logger.info(f"executor - recommissioning {node_id} (idx: {idx})")
 
         admin = Admin(self.redpanda)
 
-        def recommissioned():
+        def recommissioned() -> bool:
             try:
                 statuses = []
                 for n in self.redpanda.started_nodes():
@@ -415,7 +422,7 @@ class NodeOpsExecutor:
                 if all(statuses):
                     return True
 
-                r = admin.recommission_broker(id=node_id)
+                admin.recommission_broker(id=node_id)
             except requests.exceptions.RetryError:
                 return False
             except requests.exceptions.ConnectionError:
@@ -432,7 +439,7 @@ class NodeOpsExecutor:
             backoff_sec=1,
         )
 
-    def add(self, idx: int):
+    def add(self, idx: int) -> None:
         self.logger.info(f"executor - adding node (idx: {idx})")
 
         node = self.redpanda.get_node(idx)
@@ -447,7 +454,7 @@ class NodeOpsExecutor:
 
         self.logger.info(f"added node: {idx} with new node id: {self.node_id(idx)}")
 
-    def _replicas_per_node(self):
+    def _replicas_per_node(self) -> dict[int, int]:
         kafkacat = KafkaCat(self.redpanda)
         node_replicas = defaultdict(int)
         md = kafkacat.metadata()
@@ -459,13 +466,13 @@ class NodeOpsExecutor:
 
         return node_replicas
 
-    def wait_for_rebalanced(self, idx: int):
+    def wait_for_rebalanced(self, idx: int) -> None:
         node_id = self.node_id(idx)
         self.logger.info(
             f"executor - waiting for  node {node_id} (idx: {idx}) to be rebalanced"
         )
 
-        def has_new_replicas():
+        def has_new_replicas() -> bool:
             per_node = self._replicas_per_node()
             self.logger.info(
                 f"waiting for node {node_id} replicas, current replicas per node: {per_node}"
@@ -474,7 +481,7 @@ class NodeOpsExecutor:
 
         wait_until(has_new_replicas, timeout_sec=self.timeout, backoff_sec=1)
 
-    def execute_operation(self, operation: NodeOperation):
+    def execute_operation(self, operation: NodeOperation) -> None:
         start = time.perf_counter()
         self.logger.info(
             f"executor - node {operation.node} operation: {operation.type}, wait for finish: {operation.wait_for_finish}"
@@ -509,36 +516,36 @@ class FailureInjectorBackgroundThread:
     def __init__(
         self,
         redpanda: RedpandaService,
-        logger,
+        logger: Logger,
         lock: threading.Lock = threading.Lock(),
         max_suspend_duration_seconds: int = 10,
         min_inter_failure_time: int = 30,
         max_inter_failure_time: int = 60,
-        failure_specs: list = FailureSpec.FAILURE_TYPES,
-    ):
+        failure_specs: list[Any] = FailureSpec.FAILURE_TYPES,
+    ) -> None:
         self.stop_ev = threading.Event()
         self.redpanda = redpanda
-        self.thread = None
+        self.thread: threading.Thread | None = None
         self.logger = logger
         self.max_suspend_duration_seconds = max_suspend_duration_seconds
         self.min_inter_failure_time = min_inter_failure_time
         self.max_inter_failure_time = max_inter_failure_time
         self.allowed_failures = failure_specs
         self.lock = lock
-        self.error = None
+        self.error: Exception | None = None
 
-    def start(self):
+    def start(self) -> None:
         assert self.thread is None, "failure injector thread already started"
         self.logger.info(
             f"Starting failure injector thread with: (max suspend duration {self.max_suspend_duration_seconds},"
             f"min inter failure time: {self.min_inter_failure_time}, max inter failure time: {self.max_inter_failure_time})"
         )
         self.redpanda.tolerate_not_running += 1
-        self.thread = threading.Thread(target=lambda: self._worker(), args=())
+        self.thread = threading.Thread(target=lambda: self._worker())
         self.thread.daemon = True
         self.thread.start()
 
-    def stop(self):
+    def stop(self) -> None:
         assert self.thread is not None, "failure injector thread not started"
         self.logger.info("Stopping failure injector thread")
         self.stop_ev.set()
@@ -548,7 +555,7 @@ class FailureInjectorBackgroundThread:
             f"failure injector error, most likely node failed to stop: {self.error}"
         )
 
-    def _worker(self):
+    def _worker(self) -> None:
         with FailureInjector(self.redpanda) as f_injector:
             while not self.stop_ev.is_set():
                 f_type = random.choice(self.allowed_failures)

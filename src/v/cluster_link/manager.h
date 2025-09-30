@@ -43,13 +43,15 @@ public:
       std::unique_ptr<kafka::data::rpc::topic_metadata_cache>
         topic_metadata_cache,
       std::unique_ptr<kafka::data::rpc::topic_creator> topic_creator,
+      std::unique_ptr<security_service> security_service,
       std::unique_ptr<link_registry> registry,
       std::unique_ptr<link_factory> link_factory,
       std::unique_ptr<cluster_factory> cluster_factory,
       std::unique_ptr<consumer_groups_router> group_router,
       std::unique_ptr<partition_metadata_provider> partition_metadata_provider,
       ss::lowres_clock::duration task_reconciler_interval,
-      config::binding<int16_t> default_topic_replication);
+      config::binding<int16_t> default_topic_replication,
+      ss::scheduling_group scheduling_group);
     manager(const manager&) = delete;
     manager(manager&&) = delete;
     manager& operator=(const manager&) = delete;
@@ -135,6 +137,8 @@ public:
 
     kafka::data::rpc::partition_leader_cache& partition_leader_cache() noexcept;
 
+    security_service& get_security_service() noexcept;
+
     const kafka::data::rpc::partition_leader_cache&
     partition_leader_cache() const noexcept;
 
@@ -148,6 +152,10 @@ public:
     kafka::data::rpc::topic_creator& topic_creator() noexcept;
 
     partition_metadata_provider& get_partition_metadata_provider() noexcept;
+
+    ss::scheduling_group scheduling_group() const noexcept {
+        return _scheduling_group;
+    }
 
 private:
     /// Called periodically to reconcile registered tasks on created links
@@ -163,6 +171,7 @@ private:
     std::unique_ptr<kafka::data::rpc::topic_metadata_cache>
       _topic_metadata_cache;
     std::unique_ptr<kafka::data::rpc::topic_creator> _topic_creator;
+    std::unique_ptr<security_service> _security_service;
     std::unique_ptr<link_registry> _registry;
     std::unique_ptr<link_factory> _link_factory;
     std::unique_ptr<cluster_factory> _cluster_factory;
@@ -179,6 +188,7 @@ private:
       "cluster_link::manager::link_task_reconciler"};
     ss::timer<ss::lowres_clock> _link_task_reconciler_timer;
     config::binding<int16_t> _default_topic_replication;
+    ss::scheduling_group _scheduling_group;
     ss::condition_variable _link_created_cv;
     ss::abort_source _as;
     ss::gate _g;

@@ -1,6 +1,6 @@
 #include "raft/mutex_buffer.h"
 #include "ssx/sformat.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "utils/mutex.h"
 
 #include <seastar/testing/thread_test_case.hh>

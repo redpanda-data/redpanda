@@ -32,7 +32,7 @@ public:
       cloud_storage_clients::client::list_bucket_result,
       cloud_storage_clients::error_outcome>>
     list_objects(seastar::abort_source*) override {
-        std::vector<cloud_storage_clients::client::list_bucket_item> keep;
+        chunked_vector<cloud_storage_clients::client::list_bucket_item> keep;
         for (const auto& object : *listed_) {
             auto not_deleted = true;
             for (const auto& deleted : *deleted_) {
@@ -101,7 +101,7 @@ public:
           std::make_unique<object_storage_test_impl>(&listed, &deleted),
           std::make_unique<epoch_source_test_impl>(&max_epoch)) {}
 
-    void TearDown() override { gc.shutdown().get(); }
+    void TearDown() override { gc.stop().get(); }
 
     /*
      * Insert an entry into the `listed` container which is the source of

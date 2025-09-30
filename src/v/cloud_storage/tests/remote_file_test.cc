@@ -15,7 +15,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_file.h"
 #include "cloud_storage/tests/cache_test_fixture.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "utils/lazy_abort_source.h"
 
 #include <seastar/core/seastar.hh>

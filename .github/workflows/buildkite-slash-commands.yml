@@ -7,7 +7,6 @@ on:
       - ci-repeat-command
       - dt-command
       - microbench-command
-      - install-pack-command
       - rp-unit-test-command
       - test-arm64-command
       - test-codecov-command

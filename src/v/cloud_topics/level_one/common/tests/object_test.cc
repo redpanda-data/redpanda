@@ -625,3 +625,105 @@ TEST(L1Objects, BuilderSize) {
     EXPECT_GT(final_size, after_batch_size);
     EXPECT_EQ(final_size, finished.size_bytes);
 }
+
+namespace {
+
+std::pair<object_builder::object_info, iobuf>
+combine_objects_via_reader(std::span<iobuf> objects) {
+    iobuf output_iobuf;
+    auto builder = object_builder::create(
+      make_iobuf_ref_output_stream(output_iobuf), {});
+    for (const auto& obj : objects) {
+        auto reader = object_reader::create(
+          make_iobuf_input_stream(obj.copy()));
+        while (true) {
+            auto stop = ss::visit(
+              reader->read_next().get(),
+              [&builder](model::topic_id_partition tidp) {
+                  builder->start_partition(tidp).get();
+                  return false;
+              },
+              [&builder](model::record_batch batch) {
+                  builder->add_batch(std::move(batch)).get();
+                  return false;
+              },
+              [](const auto&) { return true; });
+            if (stop) {
+                break;
+            }
+        }
+        reader->close().get();
+    }
+    auto info = builder->finish().get();
+    builder->close().get();
+    return std::make_pair(std::move(info), std::move(output_iobuf));
+}
+
+} // namespace
+
+TEST(L1Objects, CanCombineObjects) {
+    auto test_topic_id = model::topic_id(uuid_t::create());
+    std::vector<batches_by_tidp> specs_by_tidp = {
+      {
+        .tidp = model::topic_id_partition(test_topic_id, model::partition_id(0)),
+        .batches = {
+          {.base_offset = 0_o, .last_offset = 10_o, .max_timestamp = model::timestamp{1000}},
+          {.base_offset = 11_o, .last_offset = 20_o, .max_timestamp = model::timestamp{2000}},
+          {.base_offset = 21_o, .last_offset = 30_o, .max_timestamp = model::timestamp{3000}},
+        },
+      },
+      {
+        .tidp = model::topic_id_partition(test_topic_id, model::partition_id(1)),
+        .batches = {
+          {.base_offset = 0_o, .last_offset = 10_o, .max_timestamp = model::timestamp{2000}},
+          {.base_offset = 15_o, .last_offset = 20_o, .max_timestamp = model::timestamp{3000}},
+          {.base_offset = 21_o, .last_offset = 30_o, .max_timestamp = model::timestamp{3000}},
+        },
+      },
+      {
+        .tidp = model::topic_id_partition(test_topic_id, model::partition_id(2)),
+        .batches = {
+          {.base_offset = 0_o, .last_offset = 10_o, .max_timestamp = model::timestamp{2000}},
+          {.base_offset = 11_o, .last_offset = 30_o, .max_timestamp = model::timestamp{5000}},
+        },
+      },
+      {
+        .tidp = model::topic_id_partition(test_topic_id, model::partition_id(3)),
+        .batches = {
+          {.base_offset = 0_o, .last_offset = 5_o, .max_timestamp = model::timestamp{1050}},
+          {.base_offset = 6_o, .last_offset = 20_o, .max_timestamp = model::timestamp{2050}},
+          {.base_offset = 21_o, .last_offset = 30_o, .max_timestamp = model::timestamp{3050}},
+        },
+      },
+    };
+    auto [info1, object1] = make_object({specs_by_tidp.front()});
+    auto [info2, object2] = make_object(
+      {specs_by_tidp.at(1), specs_by_tidp.at(2)});
+    auto [info3, object3] = make_object({specs_by_tidp.back()});
+    auto all_objects = std::to_array({
+      object1.copy(),
+      object2.copy(),
+      object3.copy(),
+    });
+    auto [info_all, object_all] = combine_objects_via_reader(all_objects);
+    chunked_vector<combine_objects_parameters::input_object> inputs;
+    inputs.emplace_back(
+      make_iobuf_input_stream(std::move(object1)), std::move(info1));
+    inputs.emplace_back(
+      make_iobuf_input_stream(std::move(object2)), std::move(info2));
+    inputs.emplace_back(
+      make_iobuf_input_stream(std::move(object3)), std::move(info3));
+    iobuf output;
+    auto combined_info = combine_objects(
+                           {
+                             .inputs = std::move(inputs),
+                             .output = make_iobuf_ref_output_stream(output),
+                           })
+                           .get();
+    EXPECT_EQ(info_all.size_bytes, combined_info.size_bytes);
+    EXPECT_EQ(info_all.footer_offset, combined_info.footer_offset);
+    EXPECT_EQ(output.size_bytes(), combined_info.size_bytes);
+    EXPECT_EQ(info_all.index, combined_info.index);
+    // Look ma, byte for byte the same!
+    EXPECT_EQ(object_all, output);
+}

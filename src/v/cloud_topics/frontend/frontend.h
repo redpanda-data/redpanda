@@ -152,6 +152,8 @@ private:
       model::record_batch,
       raft::replicate_options);
 
+    kafka::offset get_log_end_offset() const;
+
     bool cache_enabled() const;
 
     ss::abort_source _as;

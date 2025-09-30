@@ -15,6 +15,7 @@
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "storage/compacted_index_writer.h"
+#include "storage/compaction_key.h"
 #include "storage/compaction_reducers.h"
 #include "storage/exceptions.h"
 #include "storage/index_state.h"
@@ -47,6 +48,26 @@ ss::future<ss::stop_iteration> put_entry(
     }
     fully_indexed = false;
     co_return ss::stop_iteration::yes;
+}
+
+ss::future<bool> is_latest_record_for_enhanced_key(
+  const compaction::key_offset_map& map,
+  const model::record_batch& b,
+  const model::record& r) {
+    const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
+    auto key_view = compaction::compaction_key{iobuf_to_bytes(r.key())};
+    auto key = enhance_key(
+      b.header().type, b.header().attrs.is_control(), key_view);
+
+    auto latest_offset_indexed = co_await map.get(key);
+    // If the map hasn't indexed the given key, we should keep the
+    // key.
+    if (!latest_offset_indexed.has_value()) {
+        co_return true;
+    }
+    // We should only keep the record if its offset is equal or higher than
+    // that indexed.
+    co_return o >= latest_offset_indexed.value();
 }
 
 } // anonymous namespace
@@ -189,7 +210,7 @@ ss::future<index_state> deduplicate_segment(
     auto is_latest_record = [&map](
                               const model::record_batch& b,
                               const model::record& r) -> ss::future<bool> {
-        return compaction::is_latest_record_for_key(map, b, r);
+        return is_latest_record_for_enhanced_key(map, b, r);
     };
 
     const auto& ntp = seg->path().get_ntp();

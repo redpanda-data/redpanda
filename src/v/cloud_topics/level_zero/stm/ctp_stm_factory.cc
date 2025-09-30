@@ -13,7 +13,7 @@
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "cloud_topics/logger.h"
 
-namespace cloud_topics {
+namespace cloud_topics::l0 {
 
 bool ctp_stm_factory::is_applicable_for(
   const storage::ntp_config& ntp_cfg) const {
@@ -29,4 +29,4 @@ void ctp_stm_factory::create(
     raft->log()->stm_manager()->add_stm(stm);
 }
 
-} // namespace cloud_topics
+} // namespace cloud_topics::l0

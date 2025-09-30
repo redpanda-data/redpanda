@@ -53,7 +53,16 @@ public:
     kafka::offset get_last_reconciled_offset() const;
 
     ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
-    advance_reconciled_offset(kafka::offset last_reconciled_offset);
+    advance_reconciled_offset(
+      kafka::offset last_reconciled_offset,
+      model::timeout_clock::time_point deadline);
+
+    ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
+    set_start_offset(
+      kafka::offset new_start_offset,
+      model::timeout_clock::time_point deadline);
+
+    kafka::offset get_start_offset() const;
 
     /// Return the inactive epoch which is no longer referenced by this ctp_stm.
     /// This method is guaranteed to return precise value but it creates
@@ -75,7 +84,7 @@ public:
     /// with the log messages replicated in the current term.
     /// \return 'true' if the replica is a leader and the in-memory state of
     /// the STM is up-to-date. Otherwise, return 'false'.
-    ss::future<bool> sync_in_term(ss::abort_source& as);
+    ss::future<bool> sync_in_term(model::timeout_clock::time_point deadline);
 
     /// Fence writes
     ss::future<cluster_epoch_fence> fence_epoch(cluster_epoch e);
@@ -87,8 +96,8 @@ public:
 private:
     /// Replicate a record batch and wait for it to be applied to the ctp_stm.
     /// Returns the offset at which the batch was applied.
-    ss::future<std::expected<model::offset, ctp_stm_api_errc>>
-    replicated_apply(model::record_batch&& batch);
+    ss::future<std::expected<model::offset, ctp_stm_api_errc>> replicated_apply(
+      model::record_batch&& batch, model::timeout_clock::time_point deadline);
 
 private:
     retry_chain_node _rtc;

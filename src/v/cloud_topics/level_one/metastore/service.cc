@@ -51,6 +51,13 @@ ss::future<get_first_timestamp_ge_reply> service::get_first_timestamp_ge(
       std::move(request), frontend::local_only::yes);
 }
 
+ss::future<get_first_offset_for_bytes_reply>
+service::get_first_offset_for_bytes(
+  get_first_offset_for_bytes_request request, ::rpc::streaming_context&) {
+    return _frontend->local().get_first_offset_for_bytes(
+      std::move(request), frontend::local_only::yes);
+}
+
 ss::future<get_offsets_reply>
 service::get_offsets(get_offsets_request request, ::rpc::streaming_context&) {
     return _frontend->local().get_offsets(

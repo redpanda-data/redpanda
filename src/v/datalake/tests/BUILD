@@ -236,7 +236,6 @@ redpanda_cc_gtest(
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg/tests:value_generator",
         "//src/v/test_utils:gtest",
-        "//src/v/test_utils:seastar_boost",
         "@fmt",
         "@googletest//:gtest",
         "@seastar",
@@ -257,7 +256,6 @@ redpanda_cc_gtest(
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg/tests:value_generator",
         "//src/v/test_utils:gtest",
-        "//src/v/test_utils:seastar_boost",
         "@fmt",
         "@googletest//:gtest",
         "@seastar",
@@ -406,6 +404,7 @@ redpanda_cc_btest(
         "//src/v/model/tests:random",
         "//src/v/test_utils:random",
         "//src/v/test_utils:scoped_config",
+        "//src/v/test_utils:seastar_boost",
         "@seastar",
     ],
 )

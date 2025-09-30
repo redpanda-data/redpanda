@@ -30,3 +30,24 @@ io::read_object_as_iobuf(object_extent extent, ss::abort_source* as) {
 }
 
 } // namespace cloud_topics::l1
+
+auto fmt::formatter<cloud_topics::l1::io::errc>::format(
+  const cloud_topics::l1::io::errc& err, fmt::format_context& ctx) const
+  -> decltype(ctx.out()) {
+    std::string_view name = "unknown";
+    switch (err) {
+    case cloud_topics::l1::io::errc::file_io_error:
+        name = "file_io_error";
+        break;
+    case cloud_topics::l1::io::errc::cloud_missing_object:
+        name = "cloud_missing_object";
+        break;
+    case cloud_topics::l1::io::errc::cloud_op_error:
+        name = "cloud_op_error";
+        break;
+    case cloud_topics::l1::io::errc::cloud_op_timeout:
+        name = "cloud_op_timeout";
+        break;
+    }
+    return fmt::format_to(ctx.out(), "cloud_topics::l1::io::errc::{}", name);
+}

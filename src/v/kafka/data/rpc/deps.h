@@ -150,6 +150,13 @@ public:
     virtual std::optional<ss::shard_id> shard_owner(const model::ntp&) = 0;
 
     /**
+     * Checks if current shard owns a given ntp and is the leader for it.
+     */
+    bool is_current_shard_leader(const model::ktp&) const;
+
+    virtual bool is_current_shard_leader(const model::ntp&) const = 0;
+
+    /**
      * Invoke a function on the ntp's leader shard.
      *
      * Will return cluster::errc::not_leader if the shard_id is incorrect for
@@ -231,6 +238,8 @@ public:
 
     std::optional<ss::shard_id> shard_owner(const model::ktp& ntp);
     std::optional<ss::shard_id> shard_owner(const model::ntp& ntp);
+
+    bool is_current_shard_leader(const model::ntp& ntp);
 
 private:
     ss::sharded<cluster::shard_table>* _table;

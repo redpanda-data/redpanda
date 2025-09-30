@@ -8,6 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "bytes/bytes.h"
 #include "bytes/details/io_fragment.h"
 #include "bytes/iobuf.h"
 #include "random/generators.h"
@@ -43,7 +44,8 @@ iobuf fragmented_iobuf(std::string_view str, int n_fragments) {
         remaining_len -= fragment_len;
     }
     fragment_lengths.push_back(remaining_len);
-    std::ranges::shuffle(fragment_lengths, random_generators::internal::gen);
+    std::ranges::shuffle(
+      fragment_lengths, random_generators::global().engine());
 
     iobuf res;
     auto cur = str.begin();

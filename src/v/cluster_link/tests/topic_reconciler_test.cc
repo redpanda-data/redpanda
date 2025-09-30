@@ -54,7 +54,8 @@ public:
           _ftmc.get(),
           _link_registry.get(),
           1s,
-          _default_topic_replication.bind());
+          _default_topic_replication.bind(),
+          ss::default_scheduling_group());
         co_await _reconciler->start();
 
         set_required_topic_properties(

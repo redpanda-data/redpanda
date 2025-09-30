@@ -1,0 +1,38 @@
+---
+name: Lint bazel dependency graph
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'BUILD'
+      - '.github/workflows/lint-bazel-dependency-graph.yml'
+  pull_request:
+    paths:
+      - 'BUILD'
+      - '.github/workflows/lint-bazel-dependency-graph.yml'
+jobs:
+  lint:
+    name: Lint bazel dependency graph
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          # Avoid downloading Bazel every time.
+          bazelisk-cache: true
+          # Share repository cache between workflows.
+          repository-cache: true
+      - name: Check no targets depend on both boost and gtest
+        env:
+          # Bazel uses this to enforce strict sandboxing - we can't do it in Github Actions,
+          # so set CI=false to disable the check we do in `//tools:bazel`
+          CI: false
+        run: |
+          set -euo pipefail
+          bad_targets=$(bazel query --universe_scope=//src/v/... 'rdeps(tests(//src/v/...), @boost//:test) intersect rdeps(tests(//src/v/...), @googletest//:gtest)')
+          if [ -n "$bad_targets" ]; then
+            echo "The following targets depend on both boost and gtest, which is not allowed:"
+            echo "$bad_targets"
+            exit 1
+          fi

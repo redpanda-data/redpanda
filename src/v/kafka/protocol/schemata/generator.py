@@ -274,6 +274,12 @@ path_type_map = {
             "int32",
         ),
     },
+    "DescribeClusterResponseData": {
+        "ClusterAuthorizedOperations": (
+            "kafka::cluster_authorized_operations",
+            "int32",
+        ),
+    },
     "FetchRequestData": {
         "MaxWaitMs": ("std::chrono::milliseconds", "int32"),
         "IsolationLevel": ("model::isolation_level", "int8"),

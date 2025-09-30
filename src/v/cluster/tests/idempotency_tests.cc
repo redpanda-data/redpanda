@@ -13,7 +13,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/tests/random_batch.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/util/defer.hh>
 

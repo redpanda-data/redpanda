@@ -669,3 +669,35 @@ TEST_F(log_builder_fixture, timequery_clamp) {
 
     b | stop();
 }
+
+TEST_F(log_builder_fixture, timequery_append_time) {
+    using namespace storage; // NOLINT
+
+    b | start();
+
+    b | add_segment(0);
+    // The client sets timestamps from 0-100
+    auto batch = make_random_batch(
+      model::term_id(0), model::offset(0), model::timestamp(0), 100);
+    // server append time says they are all 1000
+    batch.set_max_timestamp(
+      model::timestamp_type::append_time, model::timestamp(1000));
+    b | add_batch(std::move(batch));
+
+    auto log = b.get_log();
+    // If we used the client timestamp we'll get halfway through the batch
+    // if we use the server timestamp we'll get the first record.
+    storage::timequery_config config(
+      log->offsets().start_offset,
+      model::timestamp(50),
+      log->offsets().dirty_offset,
+      std::nullopt);
+
+    auto res = log->timequery(config).get();
+    EXPECT_EQ(
+      res,
+      storage::timequery_result(
+        model::term_id(0), model::offset(0), model::timestamp(1000)));
+
+    b | stop();
+}

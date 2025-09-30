@@ -11,6 +11,7 @@
 #include "cluster/tests/topic_table_fixture.h"
 #include "cluster/topic_updates_dispatcher.h"
 #include "model/metadata.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/testing/thread_test_case.hh>
 

@@ -702,7 +702,7 @@ struct configuration final : public config_store {
     bounded_property<size_t> max_in_flight_pandaproxy_requests_per_shard;
 
     bounded_property<double, numeric_bounds> kafka_memory_share_for_fetch;
-    property<size_t> kafka_memory_batch_size_estimate_for_fetch;
+    deprecated_property kafka_memory_batch_size_estimate_for_fetch;
     // debug controls
     property<bool> cpu_profiler_enabled;
     bounded_property<std::chrono::milliseconds> cpu_profiler_sample_period_ms;
@@ -730,6 +730,8 @@ struct configuration final : public config_store {
 
     enum_property<tls_version> tls_min_version;
     property<bool> tls_enable_renegotiation;
+    property<ss::sstring> tls_v1_2_cipher_suites;
+    property<ss::sstring> tls_v1_3_cipher_suites;
 
     // datalake configurations
     enterprise<property<bool>> iceberg_enabled;
@@ -795,6 +797,7 @@ struct configuration final : public config_store {
     property<double> datalake_disk_usage_overage_coeff;
     bounded_property<size_t> datalake_scheduler_disk_reservation_block_size;
     property<bool> consumer_offsets_topic_batch_cache_enabled;
+    property<bool> enable_shadow_linking;
 
     configuration();
 
@@ -802,7 +805,9 @@ struct configuration final : public config_store {
 
 public:
     development_feature_property<bool> development_enable_cloud_topics;
-    development_feature_property<bool> development_enable_cluster_link;
+    property<size_t> cloud_topics_produce_batching_size_threshold;
+    property<std::chrono::milliseconds> cloud_topics_produce_upload_interval;
+    property<size_t> cloud_topics_produce_cardinality_threshold;
 
     development_feature_property<int> development_feature_property_testing_only;
 

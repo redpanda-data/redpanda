@@ -18,6 +18,49 @@
 #include <seastar/coroutine/as_future.hh>
 namespace kafka::client {
 
+namespace {
+using topic_metadata_included_t
+  = ss::bool_class<struct topic_metadata_included_tag>;
+metadata_update to_metadata_update(
+  metadata_response r, topic_metadata_included_t topic_metadata_included) {
+    metadata_update update;
+    update.brokers.reserve(r.data.brokers.size());
+    for (auto& b : r.data.brokers) {
+        update.brokers.push_back(
+          metadata_update::broker{
+            .node_id = b.node_id,
+            .host = std::move(b.host),
+            .port = b.port,
+            .rack = std::move(b.rack)});
+    }
+    update.cluster_id = std::move(r.data.cluster_id);
+    update.controller_id = r.data.controller_id;
+    if (topic_metadata_included) {
+        update.topics = std::move(r.data.topics);
+    }
+    // cluster_authorized_operations field was deprecated in v11
+    update.cluster_authorized_operations = r.data.cluster_authorized_operations;
+
+    return update;
+}
+metadata_update to_metadata_update(describe_cluster_response r) {
+    metadata_update update;
+    update.brokers.reserve(r.data.brokers.size());
+    for (auto& b : r.data.brokers) {
+        update.brokers.push_back(
+          metadata_update::broker{
+            .node_id = b.broker_id,
+            .host = std::move(b.host),
+            .port = b.port,
+            .rack = std::move(b.rack)});
+    }
+    update.cluster_id = std::move(r.data.cluster_id);
+    update.controller_id = r.data.controller_id;
+    update.cluster_authorized_operations = r.data.cluster_authorized_operations;
+    return update;
+}
+} // namespace
+
 using namespace std::chrono_literals;
 cluster::cluster(connection_configuration config)
   : _config(std::move(config))
@@ -72,7 +115,8 @@ ss::future<> cluster::stop() {
     co_await _brokers.stop();
 }
 
-ss::future<> cluster::update_metadata() {
+ss::future<> cluster::update_metadata(
+  std::optional<chunked_vector<model::topic>> topics_request_list) {
     auto request_time = ss::lowres_clock::now();
 
     _as.check();
@@ -80,34 +124,99 @@ ss::future<> cluster::update_metadata() {
     if (_last_update_time >= request_time) {
         co_return;
     }
-    co_await dispatch_metadata_request();
+    co_await dispatch_and_apply_metadata_updates(
+      std::move(topics_request_list));
 }
 
-ss::future<> cluster::request_metadata_update() {
+ss::future<> cluster::dispatch_and_apply_metadata_updates(
+  std::optional<chunked_vector<model::topic>> topics_request_list) {
+    auto h = _gate.hold();
+
+    vlog(_logger.debug, "Starting cluster metadata dispatch and update");
+
+    if (_brokers.empty()) {
+        // If there are no brokers, connect to one of the seeds
+        co_await initialize_metadata_with_seed();
+    }
+
+    try {
+        auto broker = _brokers.any();
+        auto describe_cluster_version = co_await broker->get_supported_versions(
+          describe_cluster_api::key, _as);
+        metadata_update mu;
+        if (describe_cluster_version) {
+            auto describe_cluster_resp
+              = co_await dispatch_describe_cluster_request(broker);
+            mu = to_metadata_update(std::move(describe_cluster_resp));
+        } else {
+            // If describe cluster isn't supported, then dispatch a metadata
+            // request with no topics at API version 10 in order to get the
+            // cluster level authorized operations
+            auto metadata_resp = co_await dispatch_metadata_request(
+              broker, {}, api_version(10));
+            mu = to_metadata_update(
+              std::move(metadata_resp), topic_metadata_included_t::no);
+        }
+
+        if (!topics_request_list.has_value() || !topics_request_list->empty()) {
+            // If there are topics to request, then do another metadata request
+            // with the most up-to-date version
+            auto metadata_resp = co_await dispatch_metadata_request(
+              broker, std::move(topics_request_list));
+            mu.topics = std::move(metadata_resp.data.topics);
+        }
+
+        co_await apply_metadata(std::move(mu));
+    } catch (const broker_error& e) {
+        vlog(
+          _logger.warn, "Failed to dispatch metadata request - {}", e.what());
+    }
+}
+
+ss::future<> cluster::request_metadata_update(
+  std::optional<chunked_vector<model::topic>> topics_request_list) {
     vlog(_logger.debug, "Requesting metadata update");
     auto h = _gate.hold();
-    co_await update_metadata();
+    co_await update_metadata(std::move(topics_request_list));
 }
 
 namespace {
-ss::future<api_version> get_metadata_request_version(
-  const shared_broker_t& broker,
-  std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    auto supported_version = co_await broker->get_supported_versions(
-      metadata_api::key, as);
-    // Currently we require at least version 1 of the metadata API. (The api
-    // where NULL topic list represents request to list all topics)
-    if (!supported_version || supported_version->max < api_version(1)) {
+
+template<KafkaApi Api>
+ss::future<api_version> get_required_api_version(
+  shared_broker_t broker,
+  std::optional<std::reference_wrapper<ss::abort_source>> as,
+  api_version min_required) {
+    auto supported_versions = co_await broker->get_supported_versions(
+      Api::key, as);
+    if (!supported_versions || supported_versions->max < min_required) {
         throw broker_error(
           broker->id(),
           error_code::unsupported_version,
           fmt::format(
-            "Broker {} at {}:{} does not support metadata API",
+            "Broker {} at {}:{} does not support {} API with required "
+            "version >= {}",
             broker->id(),
             broker->get_address().host(),
-            broker->get_address().port()));
+            broker->get_address().port(),
+            Api::name,
+            min_required));
     }
-    co_return std::min(supported_version->max, kafka::metadata_api::max_valid);
+    co_return std::min(supported_versions->max, Api::max_valid);
+}
+
+ss::future<api_version> get_metadata_request_version(
+  shared_broker_t broker,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    return get_required_api_version<metadata_api>(
+      std::move(broker), as, api_version(1));
+}
+
+ss::future<api_version> get_describe_cluster_request_version(
+  shared_broker_t broker,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    return get_required_api_version<describe_cluster_api>(
+      std::move(broker), as, api_version(0));
 }
 } // namespace
 ss::future<> cluster::initialize_metadata_with_seed() {
@@ -121,28 +230,31 @@ ss::future<> cluster::initialize_metadata_with_seed() {
         _next_seed = (_next_seed + 1) % _config.initial_brokers.size();
         const auto& address = _config.initial_brokers[_next_seed];
         auto broker = co_await _brokers.create_broker(unknown_node_id, address);
-        // explicitly connect to the broker to initialize connection before
-        // requesting metadata
 
-        auto request_version_f = co_await ss::coroutine::as_future(
-          get_metadata_request_version(broker, _as));
-        if (request_version_f.failed()) {
-            auto ex = request_version_f.get_exception();
+        auto describe_cluster_version_f = co_await ss::coroutine::as_future(
+          broker->get_supported_versions(describe_cluster_api::key, _as));
+        if (describe_cluster_version_f.failed()) {
+            error = describe_cluster_version_f.get_exception();
             vlog(
               _logger.warn,
-              "Failed to get supported metadata version {}:{} - {}",
+              "Failed to get supported describe cluster version {}:{} - {}",
               address.host(),
               address.port(),
-              ex);
-            error = ex;
+              error);
             co_await broker->stop();
             continue;
         }
-        auto reply_f = co_await ss::coroutine::as_future(broker->dispatch(
-          // use empty topic list not to request all topics, we are only
-          // interested in brokers list
-          metadata_request{.data = metadata_request_data{.topics = {}}},
-          request_version_f.get()));
+
+        auto describe_cluster_version = describe_cluster_version_f.get();
+        ss::future<> f = ss::now();
+        if (describe_cluster_version.has_value()) {
+            f = co_await ss::coroutine::as_future(
+              initialize_with_describe_cluster(broker));
+        } else {
+            f = co_await ss::coroutine::as_future(
+              initialize_with_metadata(broker));
+        }
+
         /**
          * stop the broker after the request is done to ensure that
          * the broker is not left in a connected state. This is important
@@ -150,19 +262,22 @@ ss::future<> cluster::initialize_metadata_with_seed() {
          * want to keep it connected.
          */
         co_await broker->stop();
-        if (!reply_f.failed()) {
-            co_await apply_metadata(
-              std::get<metadata_response>(std::move(reply_f.get())));
-            co_return;
+
+        if (f.failed()) {
+            error = f.get_exception();
+            vlog(
+              _logger.warn,
+              "Failed to initialize metadata using {} with seed broker {}:{} - "
+              "{}",
+              describe_cluster_version ? "describe_cluster" : "metadata",
+              address.host(),
+              address.port(),
+              error);
+            continue;
         }
-        auto ex = reply_f.get_exception();
-        vlog(
-          _logger.warn,
-          "Failed to initialize metadata with seed broker {}:{} - {}",
-          address.host(),
-          address.port(),
-          ex);
-        error = ex;
+
+        // If we are successful in connecting to the broker, then we can stop
+        co_return;
     }
     if (error) {
         vlog(
@@ -173,38 +288,75 @@ ss::future<> cluster::initialize_metadata_with_seed() {
     }
 }
 
-ss::future<> cluster::dispatch_metadata_request() {
+ss::future<> cluster::initialize_with_describe_cluster(shared_broker_t broker) {
+    vlog(_logger.debug, "Initializing cluster with describe_cluster request");
+    auto resp = co_await dispatch_describe_cluster_request(std::move(broker));
+    co_await apply_metadata(to_metadata_update(std::move(resp)));
+}
+
+ss::future<> cluster::initialize_with_metadata(shared_broker_t broker) {
+    vlog(_logger.debug, "Initializing cluster with metadata request");
+    auto resp = co_await dispatch_metadata_request(std::move(broker), {});
+    co_await apply_metadata(
+      to_metadata_update(std::move(resp), topic_metadata_included_t::no));
+}
+
+ss::future<metadata_response> cluster::dispatch_metadata_request(
+  shared_broker_t broker,
+  std::optional<chunked_vector<model::topic>> topics_request_list,
+  std::optional<api_version> requested_version) {
     auto h = _gate.hold();
     vlog(_logger.debug, "Dispatching metadata request");
-    shared_broker_t broker;
 
-    if (_brokers.empty()) {
-        // If there are no brokers, connect to one of the seeds
-        co_await initialize_metadata_with_seed();
+    std::optional<chunked_vector<metadata_request_topic>> topics_to_request
+      = std::nullopt;
+    if (topics_request_list.has_value()) {
+        topics_to_request.emplace();
+        topics_to_request->reserve(topics_request_list->size());
+        std::ranges::transform(
+          std::move(topics_request_list.value()),
+          std::back_inserter(*topics_to_request),
+          [](model::topic& t) {
+              return metadata_request_topic{.name = std::move(t)};
+          });
     }
 
-    try {
-        auto broker = _brokers.any();
-        // Initialize the broker if it is not connected, this is required to
-        // make sure the broker has up to date API version information.
+    auto request_version = co_await get_metadata_request_version(broker, _as);
+    auto metadata_version = std::min(
+      requested_version.value_or(request_version), request_version);
+    // TODO: support topic subscription
+    auto reply = co_await broker->dispatch(
+      metadata_request{.data{
+        .topics = std::move(topics_to_request),
+        .allow_auto_topic_creation = false,
+        .include_cluster_authorized_operations = true,
+        .include_topic_authorized_operations = true}},
+      metadata_version);
+    vassert(
+      std::holds_alternative<kafka::metadata_response>(reply),
+      "Metadata response is required to be returned as a result of "
+      "metadata request");
 
-        auto request_version = co_await get_metadata_request_version(
-          broker, _as);
-        // TODO: support topic subscription
-        auto reply = co_await broker->dispatch(
-          metadata_request{.data{.include_topic_authorized_operations = true}},
-          request_version);
-        vassert(
-          std::holds_alternative<kafka::metadata_response>(reply),
-          "Metadata response is required to be returned as a result of "
-          "metadata request");
+    co_return std::get<metadata_response>(std::move(reply));
+}
 
-        co_await apply_metadata(
-          std::get<kafka::metadata_response>(std::move(reply)));
-    } catch (const broker_error& e) {
-        vlog(
-          _logger.warn, "Failed to dispatch metadata request - {}", e.what());
-    }
+ss::future<describe_cluster_response>
+cluster::dispatch_describe_cluster_request(shared_broker_t broker) {
+    auto h = _gate.hold();
+    vlog(_logger.debug, "Dispatching describe cluster request");
+
+    auto request_version = co_await get_describe_cluster_request_version(
+      broker, _as);
+    auto reply = co_await broker->dispatch(
+      describe_cluster_request{
+        .data{.include_cluster_authorized_operations = true}},
+      request_version);
+    vassert(
+      std::holds_alternative<kafka::describe_cluster_response>(reply),
+      "Describe cluster response is required to be returned as a result of "
+      "describe cluster request");
+
+    co_return std::get<describe_cluster_response>(std::move(reply));
 }
 
 void cluster::set_sasl_configuration(std::optional<sasl_configuration> creds) {
@@ -212,7 +364,7 @@ void cluster::set_sasl_configuration(std::optional<sasl_configuration> creds) {
     _config.sasl_cfg = std::move(creds);
 }
 
-ss::future<> cluster::apply_metadata(metadata_response reply) {
+ss::future<> cluster::apply_metadata(metadata_update reply) {
     /**
      * this is the only place where the cluster brokers are updated. It happens
      * under the metadata update lock.
@@ -222,22 +374,28 @@ ss::future<> cluster::apply_metadata(metadata_response reply) {
       _logger.debug,
       "Applying metadata response with {{ cluster_id: {}, "
       "controller_id: {}, brokers: {} and {} topics }}",
-      reply.data.cluster_id,
-      reply.data.controller_id,
-      reply.data.brokers,
-      reply.data.topics.size());
+      reply.cluster_id,
+      reply.controller_id,
+      reply.brokers,
+      reply.topics.has_value() ? reply.topics->size() : 0);
 
-    _cluster_id = reply.data.cluster_id;
-    if (reply.data.controller_id == unknown_node_id) {
+    _cluster_id = reply.cluster_id;
+    _cluster_authorized_operations = reply.cluster_authorized_operations;
+    if (reply.controller_id == unknown_node_id) {
         _controller_id.reset();
     } else {
-        _controller_id = reply.data.controller_id;
+        _controller_id = reply.controller_id;
     }
-    _topic_cache.apply(reply.data.topics);
-    co_await _brokers.apply(reply.data.brokers);
+
+    if (reply.topics.has_value()) {
+        // Only apply topics if the response contains any, an empty list may be
+        // because none were requested
+        _topic_cache.apply(reply.topics.value());
+    }
+    co_await _brokers.apply(reply.brokers);
     _last_update_time = ss::lowres_clock::now();
     // trigger notification last, after the metadata is applied
-    _notifications.notify(reply.data);
+    _notifications.notify(reply);
 }
 
 ss::future<std::optional<api_version_range>> cluster::supported_api_versions(

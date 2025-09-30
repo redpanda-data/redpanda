@@ -161,7 +161,8 @@ bool frontend::cluster_link_active() const {
 }
 
 bool frontend::cluster_linking_enabled() const {
-    return config::shard_local_cfg().development_enable_cluster_link();
+    return config::shard_local_cfg().enable_shadow_linking()
+           && _features->is_active(features::feature::shadow_linking);
 }
 
 frontend::notification_id

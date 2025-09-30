@@ -10,7 +10,7 @@
 #include "storage/log_manager.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
-#include "test_utils/fixture.h"
+#include "test_utils/test_env.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/temporary_buffer.hh>
@@ -20,7 +20,7 @@
 
 struct fixture : public testing::Test {
     storage::disk_log_builder b{storage::log_config(
-      storage::random_dir(),
+      test_env::random_dir_path(),
       1_GiB,
       storage::with_cache::no,
       storage::make_sanitized_file_config())};

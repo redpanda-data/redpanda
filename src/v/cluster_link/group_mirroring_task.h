@@ -112,6 +112,10 @@ private:
     ss::future<std::expected<::model::node_id, error>> do_find_coordinator(
       const kafka::group_id& group_id, kafka::api_version max_version);
 
+    ss::future<std::expected<chunked_vector<kafka::coordinator>, error>>
+    do_find_coordinator_batched(
+      chunked_vector<ss::sstring> group_ids, kafka::api_version max_version);
+
     inline bool should_group_be_mirrored(
       const kafka::group_id& group_id,
       const chunked_hash_set<::model::partition_id>&

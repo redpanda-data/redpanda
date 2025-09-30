@@ -19,6 +19,82 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	defaultFileAnnotation     = "--- Loaded from file: rpk.yaml"
+	effectiveConfigAnnotation = "--- Effective configuration"
+)
+
+// renderProfile loads a profile based on its name, redacts sensitive fields, and
+// outputs the marshalled yaml.
+func renderProfile(rpkYaml *config.RpkYaml, name string) (string, error) {
+	profile := rpkYaml.Profile(name)
+	if profile == nil {
+		return "", fmt.Errorf("profile %s does not exist", name)
+	}
+
+	// remove the license check and redacts the SASL password, if present
+	profile.LicenseCheck = nil
+	if profile.KafkaAPI.SASL != nil && profile.KafkaAPI.SASL.Password != "" {
+		profile.KafkaAPI.SASL.Password = "[REDACTED]"
+	}
+
+	marshalled, err := yaml.Marshal(profile)
+	if err != nil {
+		return "", fmt.Errorf("unable to encode profile: %w", err)
+	}
+
+	return string(marshalled), nil
+}
+
+func renderCommand(fs afero.Fs, p *config.Params, args []string) (string, error) {
+	cfg, err := p.Load(fs)
+	if err != nil {
+		return "", fmt.Errorf("rpk unable to load config: %v", err)
+	}
+
+	actual, ok := cfg.ActualRpkYaml()
+	if !ok {
+		return "", fmt.Errorf("rpk.yaml file does not exist")
+	}
+
+	// If they haven't provided a profile, use the default
+	profileName := actual.CurrentProfile
+	if len(args) > 0 {
+		profileName = args[0]
+	}
+
+	defaultMarshalled, err := renderProfile(actual, profileName)
+	if err != nil {
+		return "", err
+	}
+
+	// If the -v/--verbose flag is set, annotate the file config
+	// and also output the computed config, like:
+	//
+	// --- Loaded from file: rpk.yaml
+	// ...
+	//
+	// --- Effective configuration
+	// ...
+
+	if p.DebugLogs {
+		effective := cfg.VirtualRpkYaml()
+		effectiveMarshalled, err := renderProfile(effective, profileName)
+		if err != nil {
+			return "", err
+		}
+
+		return fmt.Sprintf(`%s
+%s
+
+%s
+%s
+`, defaultFileAnnotation, defaultMarshalled, effectiveConfigAnnotation, effectiveMarshalled), nil
+	} else {
+		return defaultMarshalled, nil
+	}
+}
+
 func newPrintCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
 		Use:   "print [NAME]",
@@ -27,33 +103,17 @@ func newPrintCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 If no name is specified, this command prints the current profile as it exists
 in the rpk.yaml file.
+
+To print both the profile as it exists in the rpk.yaml file and the current
+profile as it is loaded in rpk with internal defaults, user-specified flags,
+and environment variables applied, use the -v/--verbose flag.
 `,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: ValidProfiles(fs, p),
 		Run: func(_ *cobra.Command, args []string) {
-			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "rpk unable to load config: %v", err)
-
-			y, ok := cfg.ActualRpkYaml()
-			if !ok {
-				out.Die("rpk.yaml file does not exist")
-			}
-
-			if len(args) == 0 {
-				args = append(args, y.CurrentProfile)
-			}
-			p := y.Profile(args[0])
-			if p == nil {
-				out.Die("profile %s does not exist", args[0])
-			}
-			// We hide the license check and the SASL password.
-			p.LicenseCheck = nil
-			if p.KafkaAPI.SASL != nil && p.KafkaAPI.SASL.Password != "" {
-				p.KafkaAPI.SASL.Password = "[REDACTED]"
-			}
-			m, err := yaml.Marshal(p)
-			out.MaybeDie(err, "unable to encode profile: %v", err)
-			fmt.Println(string(m))
+			output, err := renderCommand(fs, p, args)
+			out.MaybeDieErr(err)
+			fmt.Println(output)
 		},
 	}
 }

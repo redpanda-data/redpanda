@@ -60,7 +60,7 @@ redpanda_cc_library(
         "random.h",
     ],
     implementation_deps = [
-        "//src/v/random:generators",
+        "//src/v/random:secure_random",
     ],
     visibility = ["//visibility:public"],
     deps = [

@@ -35,11 +35,9 @@ from rptest.utils.mode_checks import is_debug_mode
 TopicPartition = namedtuple("TopicPartition", ["topic", "partition"])
 
 
-def annotate_missing_msgs(missing, acked, consumed, msg):
+def annotate_missing_msgs(missing, acked, consumed, msg, expected_missing_records=0):
     missing_list = list(missing)
-    msg += "%s acked message did not make it to the Consumer. They are: " % len(
-        missing_list
-    )
+    msg += f"{len(missing_list)} acked message did not make it to the Consumer, expected: {expected_missing_records}. They are: "
     if len(missing_list) < 20:
         msg += str(missing_list) + ". "
     else:
@@ -59,6 +57,8 @@ class EndToEndTest(Test):
       - Perform some action (e.g. partition movement)
       - Run validation
     """
+
+    topic: str | None
 
     def __init__(
         self, test_context, extra_rp_conf=None, extra_node_conf=None, si_settings=None
@@ -315,7 +315,19 @@ class EndToEndTest(Test):
         enable_idempotence=False,
         enable_compaction=False,
         acks=-1,
+        expected_missing_records=0,
     ) -> None:
+        """
+        Run validation for the consumer
+
+        Args:
+          consumer_timeout_sec: the timeout for the consumer to run in seconds
+          enable_idempotence: if idempotence is enabled
+          enable_compaction: if compaction is enabled for the topic
+          acks: the acks level the records were produced at
+          expected_missing_records: expected missing records from the producer
+                                    - this can happen with DeleteRecords for example
+        """
         try:
             # Take copy of this dict in case a rogue VerifiableProducer
             # thread modifies it.
@@ -330,7 +342,9 @@ class EndToEndTest(Test):
 
             self.consumer.stop()
 
-            self.validate(enable_idempotence, enable_compaction, acks)
+            self.validate(
+                enable_idempotence, enable_compaction, acks, expected_missing_records
+            )
         except BaseException:
             self._collect_all_logs()
             raise
@@ -410,7 +424,9 @@ class EndToEndTest(Test):
 
         return success, msg
 
-    def validate(self, enable_idempotence, enable_compaction, acks=-1):
+    def validate(
+        self, enable_idempotence, enable_compaction, acks=-1, expected_missing_records=0
+    ):
         assert acks in [-1, 1], "acks must be -1 or 1"
 
         self.logger.info("Number of acked records: %d" % len(self.producer.acked))
@@ -426,11 +442,15 @@ class EndToEndTest(Test):
             # message_validators in producer and consumer
             missing = set(self.producer.acked) - set(self.records_consumed)
 
-            if len(missing) > 0:
+            if len(missing) != expected_missing_records:
                 if acks == -1:
                     success = False
                     msg = annotate_missing_msgs(
-                        missing, self.producer.acked, self.records_consumed, msg
+                        missing,
+                        self.producer.acked,
+                        self.records_consumed,
+                        msg,
+                        expected_missing_records,
                     )
                 else:
                     # Losing leader-acked messages is bad but acceptable.

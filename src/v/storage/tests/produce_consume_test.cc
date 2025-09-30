@@ -9,7 +9,6 @@
 
 #include "model/record_batch_reader.h"
 #include "storage/tests/utils/disk_log_builder.h"
-#include "test_utils/fixture.h"
 
 #include <boost/range/irange.hpp>
 #include <gtest/gtest.h>

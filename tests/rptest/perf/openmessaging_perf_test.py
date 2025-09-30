@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from ducktape.tests.test import TestContext
 
 from rptest.services.cluster import cluster
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
@@ -17,7 +18,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
     BENCHMARK_WAIT_TIME_MIN = 10
 
-    def __init__(self, ctx):
+    def __init__(self, ctx: TestContext):
         self._ctx = ctx
         super(RedPandaOpenMessagingBenchmarkPerf, self).__init__(
             test_context=ctx, num_brokers=3

@@ -2,6 +2,7 @@
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/sstring.hh>
 

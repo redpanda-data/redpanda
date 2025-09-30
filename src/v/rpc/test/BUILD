@@ -135,7 +135,6 @@ redpanda_cc_btest(
         "//src/v/model",
         "//src/v/random:generators",
         "//src/v/rpc",
-        "//src/v/test_utils:fixture",
         "//src/v/test_utils:random_bytes",
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:backoff_policy",

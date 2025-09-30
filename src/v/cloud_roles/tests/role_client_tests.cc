@@ -14,7 +14,7 @@
 #include "cloud_roles/gcp_refresh_impl.h"
 #include "http/tests/http_imposter.h"
 #include "test_definitions.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "utils/file_io.h"
 
 #include <seastar/core/file.hh>

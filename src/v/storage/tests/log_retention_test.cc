@@ -9,8 +9,6 @@
 
 #include "model/fundamental.h"
 #include "storage/tests/utils/disk_log_builder.h"
-// fixture
-#include "test_utils/fixture.h"
 
 #include <seastar/util/defer.hh>
 
@@ -459,7 +457,7 @@ TEST_F(gc_fixture, non_collectible_disk_usage_test) {
         offset += model::offset(num_records);
     }
 
-    ASSERT_EQ(builder.get_disk_log_impl().config().is_collectable(), false);
+    ASSERT_FALSE(builder.get_disk_log_impl().config().is_locally_collectable());
 
     EXPECT_EQ(
       builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention,

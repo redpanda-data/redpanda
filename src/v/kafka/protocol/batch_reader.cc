@@ -113,12 +113,8 @@ model::offset batch_reader::last_offset() const {
 }
 
 kafka_batch_adapter batch_reader::consume_batch() {
-    iobuf_const_parser p{_buf};
-    const auto hdr = read_record_batch_info(p);
-    const auto size_bytes = hdr.size_bytes();
     kafka_batch_adapter kba;
-    kba.adapt(_buf.share(0, size_bytes));
-    _buf.trim_front(size_bytes);
+    _buf = kba.adapt(std::move(_buf));
     return kba;
 }
 
@@ -131,6 +127,10 @@ batch_reader::do_load_slice(model::timeout_clock::time_point tp) {
         };
         const auto consume_one = [this, &batches]() {
             auto kba = consume_batch();
+
+            if (kba.short_read && _tolerate_partial) [[unlikely]] {
+                return ss::now();
+            }
             if (likely(kba.v2_format && kba.valid_crc && kba.batch)) {
                 batches.push_back(std::move(*kba.batch));
                 return ss::now();

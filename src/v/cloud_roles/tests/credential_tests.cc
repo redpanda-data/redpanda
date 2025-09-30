@@ -77,6 +77,23 @@ BOOST_AUTO_TEST_CASE(test_aws_headers) {
           h.at("x-amz-content-sha256"),
           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
     }
+
+    // Test with existing x-amz-content-sha256 header.
+    // Datalake auth manager does this.
+    {
+        bh::request_header<> h{};
+        h.method(bh::verb::get);
+        h.set(
+          "x-amz-content-sha256",
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        BOOST_REQUIRE_EQUAL(applier.add_auth(h), std::error_code{});
+        fmt::print("{}", h);
+        BOOST_REQUIRE_EQUAL(h.at("x-amz-security-token"), "tok2");
+        // get request contains empty signature
+        BOOST_REQUIRE_EQUAL(
+          h.at("x-amz-content-sha256"),
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    }
 }
 
 BOOST_AUTO_TEST_CASE(test_credentials_print) {

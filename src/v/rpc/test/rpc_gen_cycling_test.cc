@@ -19,7 +19,7 @@
 #include "rpc/test/rpc_integration_fixture.h"
 #include "rpc/types.h"
 #include "test_utils/async.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "test_utils/random_bytes.h"
 #include "utils/backoff_policy.h"
 
@@ -753,7 +753,7 @@ FIXTURE_TEST(missing_method_test, rpc_integration_fixture) {
         std::shuffle(
           request_factory.begin(),
           request_factory.end(),
-          random_generators::internal::gen);
+          random_generators::global().engine());
 
         // dispatch the requests
         std::vector<ss::future<>> requests;
@@ -916,7 +916,7 @@ FIXTURE_TEST(version_not_supported, rpc_integration_fixture) {
     std::shuffle(
       request_factory.begin(),
       request_factory.end(),
-      random_generators::internal::gen);
+      random_generators::global().engine());
 
     // dispatch the requests
     std::vector<ss::future<>> requests;

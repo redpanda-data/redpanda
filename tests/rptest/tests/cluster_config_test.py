@@ -80,7 +80,7 @@ def check_restart_clears(admin, redpanda, nodes=None):
         lambda: admin.get_cluster_config_status()[0]["restart"] == False,
         timeout_sec=10,
         backoff_sec=0.5,
-        err_msg=f"Restart flag did not clear after restart",
+        err_msg="Restart flag did not clear after restart",
     )
 
     redpanda.restart_nodes(other_nodes)
@@ -89,7 +89,7 @@ def check_restart_clears(admin, redpanda, nodes=None):
         == {False},
         timeout_sec=10,
         backoff_sec=0.5,
-        err_msg=f"Not all nodes cleared restart flag",
+        err_msg="Not all nodes cleared restart flag",
     )
 
 
@@ -140,7 +140,7 @@ def wait_for_version_status_sync(admin, redpanda, version, nodes=None):
         )
 
 
-class ClusterConfigUpgradeTest(RedpandaTest):
+class ClusterConfigBootstrapTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, extra_rp_conf={}, **kwargs)
 
@@ -173,7 +173,7 @@ class ClusterConfigUpgradeTest(RedpandaTest):
         # On first startup, redpanda should notice the value in
         # redpanda.yaml and import it into central config store
         assert admin.get_cluster_config()["log_retention_ms"] == 9876, (
-            f"trouble with the value for log_retention_ms at first start"
+            "trouble with the value for log_retention_ms at first start"
         )
 
         # On second startup, central config is already initialized,
@@ -184,9 +184,24 @@ class ClusterConfigUpgradeTest(RedpandaTest):
         )
 
         assert admin.get_cluster_config()["log_retention_ms"] == 9876, (
-            f"trouble with the value for log_retention_ms after restart"
+            "trouble with the value for log_retention_ms after restart"
         )
-        assert self.redpanda.search_log_any(f"Ignoring value for 'log_retention_ms'")
+        assert self.redpanda.search_log_any("Ignoring value for 'log_retention_ms'")
+
+    @cluster(num_nodes=1)
+    def test_unknown_redpanda_yaml(self):
+        """
+        Verify that an unknown parameter doesn't cause Redpanda to abort startup.
+        """
+
+        node = self.redpanda.nodes[0]
+
+        # Since we skip RedpandaService.start, must clean node explicitly
+        self.redpanda.clean_node(node)
+
+        self.redpanda.start_node(
+            node, override_cfg_params={"pandamonium": "false_i_hope"}
+        )
 
 
 class HasRedpandaAndAdmin(Protocol):
@@ -500,7 +515,7 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 raise
             assert set(e.response.json().keys()) == {"log_message_timestamp_type"}
         else:
-            raise RuntimeError(f"Expected 400 but got success")
+            raise RuntimeError("Expected 400 but got success")
 
         # A valid PUT
         self.admin.patch_cluster_config(
@@ -754,6 +769,44 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 # Doubling the default puts it out of the valid range.
                 # Do this instead.
                 valid_value = 10000
+
+            if name == "tls_v1_2_cipher_suites":
+                valid_value = ":".join(
+                    random.sample(
+                        [
+                            "ECDHE-RSA-AES128-GCM-SHA256",
+                            "ECDHE-ECDSA-AES128-GCM-SHA256",
+                            "AES128-GCM-SHA256",
+                            "ECDHE-RSA-AES256-GCM-SHA384",
+                            "ECDHE-ECDSA-AES256-GCM-SHA384",
+                            "AES256-GCM-SHA384",
+                            "ECDHE-RSA-CHACHA20-POLY1305",
+                            "ECDHE-ECDSA-CHACHA20-POLY1305",
+                            "ECDHE-RSA-AES128-SHA",
+                            "ECDHE-ECDSA-AES128-SHA",
+                            "AES128-SHA",
+                            "AES128-CCM",
+                            "ECDHE-RSA-AES256-SHA",
+                            "ECDHE-ECDSA-AES256-SHA",
+                            "AES256-SHA",
+                            "AES256-CCM",
+                        ],
+                        random.randint(3, 8),
+                    )
+                )
+            if name == "tls_v1_3_cipher_suites":
+                valid_value = ":".join(
+                    random.sample(
+                        [
+                            "TLS_AES_256_GCM_SHA384",
+                            "TLS_CHACHA20_POLY1305_SHA256",
+                            "TLS_AES_128_GCM_SHA256",
+                            "TLS_AES_128_CCM_8_SHA256",
+                            "TLS_AES_128_CCM_SHA256",
+                        ],
+                        random.randint(1, 3),
+                    )
+                )
 
             updates[name] = valid_value
 
@@ -2689,7 +2742,7 @@ class DevelopmentFeatureTest(RedpandaTest):
                     raise
                 errors = e.response.json()
                 assert (
-                    f"Development feature flag cannot be changed once enabled."
+                    "Development feature flag cannot be changed once enabled."
                     in errors[
                         "enable_developmental_unrecoverable_data_corrupting_features"
                     ]
@@ -2709,7 +2762,7 @@ class DevelopmentFeatureTest(RedpandaTest):
             ),
             timeout_sec=10,
             backoff_sec=1.0,
-            err_msg=f"Expected to see experimental feature nag",
+            err_msg="Expected to see experimental feature nag",
         )
 
     @cluster(num_nodes=3)
@@ -2743,7 +2796,7 @@ class DevelopmentFeatureTest(RedpandaTest):
                 raise
             errors = e.response.json()
             assert (
-                f"Development feature support is not enabled."
+                "Development feature support is not enabled."
                 in errors[self._property_name]
             ), f"{errors}"
         else:

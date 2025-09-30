@@ -30,8 +30,8 @@ type NetCheckersFactory interface {
 	NewNicIRQAffinityChecker(nic network.Nic, mode irq.Mode, mask string) Checker
 	NewNicRpsSetCheckers(interfaces []string, mode irq.Mode, mask string) []Checker
 	NewNicRpsSetChecker(nic network.Nic, mode irq.Mode, mask string) Checker
-	NewNicRfsCheckers(interfaces []string) []Checker
-	NewNicRfsChecker(nic network.Nic) Checker
+	NewNicRfsCheckers(interfaces []string, mode irq.Mode, mask string) []Checker
+	NewNicRfsChecker(nic network.Nic, mode irq.Mode, mask string) Checker
 	NewNicNTupleCheckers(interfaces []string) []Checker
 	NewNicNTupleChecker(nic network.Nic) Checker
 	NewNicXpsCheckers(interfaces []string) []Checker
@@ -180,11 +180,14 @@ func (f *netCheckersFactory) NewNicRpsSetChecker(
 	)
 }
 
-func (f *netCheckersFactory) NewNicRfsCheckers(interfaces []string) []Checker {
-	return f.forNonVirtualInterfaces(interfaces, f.NewNicRfsChecker)
+func (f *netCheckersFactory) NewNicRfsCheckers(interfaces []string, mode irq.Mode, cpuMask string) []Checker {
+	return f.forNonVirtualInterfaces(interfaces,
+		func(nic network.Nic) Checker {
+			return f.NewNicRfsChecker(nic, mode, cpuMask)
+		})
 }
 
-func (f *netCheckersFactory) NewNicRfsChecker(nic network.Nic) Checker {
+func (f *netCheckersFactory) NewNicRfsChecker(nic network.Nic, mode irq.Mode, cpuMask string) Checker {
 	return NewEqualityChecker(
 		NicRfsChecker,
 		fmt.Sprintf("NIC %s RFS set", nic.Name()),
@@ -193,7 +196,10 @@ func (f *netCheckersFactory) NewNicRfsChecker(nic network.Nic) Checker {
 		func() (interface{}, error) {
 			return isSet(nic, func(currentNic network.Nic) (bool, error) {
 				limits, err := currentNic.GetRpsLimitFiles()
-				queueLimit := network.OneRPSQueueLimit(limits)
+				if err != nil {
+					return false, err
+				}
+				queueLimit, err := network.OneRPSQueueLimit(limits, nic, mode, cpuMask, f.cpuMasks)
 				if err != nil {
 					return false, err
 				}

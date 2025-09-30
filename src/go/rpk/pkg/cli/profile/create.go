@@ -297,8 +297,20 @@ func CreateFlow(
 				}
 				dup := *src
 				p = &dup
-			} else if err := yaml.Unmarshal(raw, &p); err != nil {
-				return fmt.Errorf("unable to yaml decode file %q: %v", fromProfile, err)
+			} else {
+				// `rpk profile print -v` outputs the file-backed config as well
+				// as the effective config. If we see the annotations from that,
+				// we should use only the file-backed portion to create the new profile
+				ystr := string(raw)
+				annotationPos := strings.Index(ystr, defaultFileAnnotation)
+				endPos := strings.Index(ystr, effectiveConfigAnnotation)
+				if annotationPos > -1 && endPos > -1 {
+					raw = []byte(strings.TrimSpace(ystr[annotationPos+len(defaultFileAnnotation) : endPos]))
+				}
+
+				if err := yaml.Unmarshal(raw, &p); err != nil {
+					return fmt.Errorf("unable to yaml decode file %q: %v", fromProfile, err)
+				}
 			}
 		}
 

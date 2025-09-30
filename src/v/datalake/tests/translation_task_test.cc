@@ -38,7 +38,6 @@ using namespace std::chrono_literals;
 using namespace testing;
 using namespace datalake;
 namespace {
-auto schema_resolver = std::make_unique<binary_type_resolver>();
 auto translator = std::make_unique<default_translator>();
 const auto ntp = model::ntp{};
 const auto rev = model::revision_id{123};
@@ -54,6 +53,7 @@ public:
       , tmp_dir("translation_task_test")
       , test_rcn(as, 10s, 1s)
       , cloud_io(sr->remote.local(), bucket_name)
+      , schema_resolver(std::make_unique<test_binary_type_resolver>())
       , schema_mgr(
           std::make_unique<simple_schema_manager>(
             iceberg::uri_converter(sr->remote.local().provider())
@@ -156,6 +156,7 @@ public:
     temporary_dir tmp_dir;
     retry_chain_node test_rcn;
     datalake::cloud_data_io cloud_io;
+    std::unique_ptr<test_binary_type_resolver> schema_resolver;
     std::unique_ptr<simple_schema_manager> schema_mgr;
     std::unique_ptr<table_creator> t_creator;
     datalake::location_provider location_provider;
@@ -280,6 +281,83 @@ TEST_F(TranslateTaskTest, TestUploadError) {
     ASSERT_TRUE(result.has_error());
     ASSERT_EQ(result.error(), datalake::translation_task::errc::cloud_io_error);
     // check no data files are left behind
+    ASSERT_THAT(list_data_files().get(), IsEmpty());
+}
+
+TEST_F(TranslateTaskTest, TestCleanupAfterTransientError) {
+    datalake::translation_task task(
+      ntp,
+      model::revision_id{123},
+      get_writer_factory(),
+      cloud_io,
+      &features,
+      *schema_mgr,
+      *schema_resolver,
+      *translator,
+      *t_creator,
+      model::iceberg_invalid_record_action::dlq_table,
+      location_provider,
+      probe);
+
+    // Translate some data to create some files locally.
+    task.translate_once(make_batches(10, 16), kafka::offset{0}, as).get();
+    auto flush_res = task.flush().get();
+    ASSERT_FALSE(flush_res.has_error());
+
+    // Now make a supposedly transient error happen. This will fail the task
+    // rather than sending the data to the DLQ.
+    schema_resolver->set_fail_requests(type_resolver::errc::registry_error);
+    task
+      .translate_once(
+        make_batches(10, 16, model::offset{160}), kafka::offset{160}, as)
+      .get();
+    auto result = std::move(task)
+                    .finish(
+                      translation_task::custom_partitioning_enabled::yes,
+                      test_rcn,
+                      as)
+                    .get();
+
+    ASSERT_TRUE(result.has_error());
+    ASSERT_EQ(
+      result.error(), datalake::translation_task::errc::type_resolution_error);
+
+    // Check no data files are left behind
+    ASSERT_THAT(list_data_files().get(), IsEmpty());
+}
+
+TEST_F(TranslateTaskTest, TestCleanupAfterTransientErrorDiscard) {
+    datalake::translation_task task(
+      ntp,
+      model::revision_id{123},
+      get_writer_factory(),
+      cloud_io,
+      &features,
+      *schema_mgr,
+      *schema_resolver,
+      *translator,
+      *t_creator,
+      model::iceberg_invalid_record_action::dlq_table,
+      location_provider,
+      probe);
+
+    // Translate some data to create some files locally.
+    task.translate_once(make_batches(10, 16), kafka::offset{0}, as).get();
+    auto flush_res = task.flush().get();
+    ASSERT_FALSE(flush_res.has_error());
+
+    // Now make a supposedly transient error happen. This will fail the task
+    // rather than sending the data to the DLQ.
+    schema_resolver->set_fail_requests(type_resolver::errc::registry_error);
+    task
+      .translate_once(
+        make_batches(10, 16, model::offset{160}), kafka::offset{160}, as)
+      .get();
+    auto result = std::move(task).discard().get();
+    ASSERT_TRUE(result.has_error());
+    ASSERT_EQ(result.error(), datalake::translation_task::errc::file_io_error);
+
+    // Check no data files are left behind
     ASSERT_THAT(list_data_files().get(), IsEmpty());
 }
 // TODO: add more sophisticated test cases when multiplexer will be capable of

@@ -166,7 +166,7 @@ class ClusterLinkingTopicSyncingTestBase(ShadowLinkTestBase):
             "test-link", mirror_all_topics=False, mirror_all_groups=False
         )
 
-        shadow_link_req.shadow_link.configurations.topic_metadata_sync_options.topic_filters.extend(
+        shadow_link_req.shadow_link.configurations.topic_metadata_sync_options.auto_create_shadow_topic_filters.extend(
             [
                 shadow_link_pb2.NameFilter(
                     pattern_type=shadow_link_pb2.PATTERN_TYPE_PREFIX,

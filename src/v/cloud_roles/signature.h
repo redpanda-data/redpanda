@@ -101,10 +101,7 @@ public:
     /// header.
     ///
     /// \param header is an in/out parameter that contains request headers
-    /// \param sha256 is a hash of the payload if payload is signed or default
-    /// value otherwise
-    std::error_code sign_header(
-      http::client::request_header& header, std::string_view sha256) const;
+    std::error_code sign_header(http::client::request_header& header) const;
 
     static ss::sstring gen_sig_key(
       std::string_view key,

@@ -10,6 +10,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_split.h"
+#include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "model/compression.h"
@@ -24,6 +25,7 @@
 #include "serde/rw/sstring.h"
 #include "serde/serde_exception.h"
 #include "strings/string_switch.h"
+#include "utils/base64.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/print.hh>
@@ -781,6 +783,12 @@ std::istream& operator>>(std::istream& is, fips_mode_flag& f) {
             to_string_view(fips_mode_flag::permissive),
             fips_mode_flag::permissive);
     return is;
+}
+
+fmt::iterator topic_id::format_to(fmt::iterator it) const {
+    const auto& uuid = (*this)().uuid();
+    const bytes_view bv{uuid.begin(), uuid.size()};
+    return fmt::format_to(it, "{}", bytes_to_base64(bv));
 }
 
 topic_id_partition topic_id_partition::from(std::string_view s) {

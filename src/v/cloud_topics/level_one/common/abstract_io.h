@@ -20,7 +20,6 @@
 #include <seastar/core/reactor.hh>
 
 #include <expected>
-#include <limits>
 
 namespace cloud_topics::l1 {
 
@@ -102,3 +101,11 @@ protected:
 };
 
 } // namespace cloud_topics::l1
+
+template<>
+struct fmt::formatter<cloud_topics::l1::io::errc>
+  : fmt::formatter<std::string_view> {
+    auto
+    format(const cloud_topics::l1::io::errc&, fmt::format_context& ctx) const
+      -> decltype(ctx.out());
+};

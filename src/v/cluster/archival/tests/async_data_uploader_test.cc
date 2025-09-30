@@ -13,7 +13,6 @@
 #include "model/fundamental.h"
 #include "model/record_batch_types.h"
 #include "random/generators.h"
-#include "test_utils/fixture.h"
 
 #include <seastar/core/file-types.hh>
 #include <seastar/core/fstream.hh>
@@ -303,7 +302,7 @@ TEST_F(
     vlog(
       test_log.info,
       "Seed used for the test: {}",
-      random_generators::internal::seed);
+      random_generators::global().initial_seed());
     create_topic();
     for (int i = 0; i < 10; i++) {
         random_records_generator generator;
@@ -350,7 +349,7 @@ TEST_F(AsyncDataUploaderFixture, test_async_segment_upload_random_compacted) {
     vlog(
       test_log.info,
       "Seed used for the test: {}",
-      random_generators::internal::seed);
+      random_generators::global().initial_seed());
     create_topic(true);
     for (int i = 0; i < 10; i++) {
         random_records_generator generator;
@@ -419,7 +418,7 @@ TEST_F(
     vlog(
       test_log.info,
       "Seed used for the test: {}",
-      random_generators::internal::seed);
+      random_generators::global().initial_seed());
     create_topic();
     for (int i = 0; i < 10; i++) {
         random_records_generator generator;

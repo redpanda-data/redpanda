@@ -241,47 +241,46 @@ void read_result::memory_units_t::adopt(memory_units_t&& o) {
  * available resources: if none, there is no memory for the operation;
  * if less than \p max_bytes, the fetch should be capped to that size.
  *
- * \param max_bytes The limit of how much data is going to be fetched
- * \param obligatory_batch_read Set to true for the first ntp in the fetch
- *   fetch request, at least one batch must be fetched for that ntp. Also it
- *   is assumed that a batch size has already been consumed from kafka
- *   memory semaphore for it.
+ * \param max_units The maximum number of units the function will attempt to
+ * allocate.
+ * \param min_units The minimum number of units the function will attempt to
+ * allocate. If it can't allocate at least this many units no units will be
+ * allocated.
+ * \param require_min_units If true then at least \ref min_units will be
+ * allocated regardless of the units available in \ref memory_sem and \ref
+ * memory_fetch_sem.
  */
 static read_result::memory_units_t reserve_memory_units(
   ssx::semaphore& memory_sem,
   ssx::semaphore& memory_fetch_sem,
-  const size_t max_bytes,
-  const bool obligatory_batch_read) {
-    read_result::memory_units_t memory_units;
-    const size_t memory_kafka_now = memory_sem.current();
-    const size_t memory_fetch = memory_fetch_sem.current();
-    const size_t batch_size_estimate
-      = config::shard_local_cfg().kafka_memory_batch_size_estimate_for_fetch();
+  size_t max_units,
+  const size_t min_units,
+  const bool require_min_units) {
+    const size_t available_units = std::min(
+      memory_sem.current(), memory_fetch_sem.current());
+    // Note that it's not currently enforced that max_units >= min_units. Hence
+    // we set max_units to the larger of the two here to ensure that is the
+    // case.
+    max_units = std::max(max_units, min_units);
 
-    if (obligatory_batch_read) {
-        // cap what we want at what we have, but no further down than a single
-        // batch size - with \ref obligatory_batch_read, it must be fetched
-        // regardless
-        const size_t fetch_size = std::max(
-          batch_size_estimate,
-          std::min({max_bytes, memory_kafka_now, memory_fetch}));
-        memory_units.fetch = ss::consume_units(memory_fetch_sem, fetch_size);
-        memory_units.kafka = ss::consume_units(memory_sem, fetch_size);
-    } else {
-        // max_bytes is how much we prepare to read from this ntp, but no less
-        // than one full batch
-        const size_t requested_fetch_size = std::max(
-          max_bytes, batch_size_estimate);
-        // cap what we want at what we have
-        const size_t fetch_size = std::min(
-          {requested_fetch_size, memory_kafka_now, memory_fetch});
-        // only reserve memory if we have space for at least one batch,
-        // otherwise this ntp will be skipped
-        if (fetch_size >= batch_size_estimate) {
-            memory_units.fetch = ss::consume_units(
-              memory_fetch_sem, fetch_size);
-            memory_units.kafka = ss::consume_units(memory_sem, fetch_size);
-        }
+    size_t units_to_alloc = 0;
+    if (require_min_units) {
+        // if \ref require_min_units is true then we must read at least \ref
+        // min_units. So allocate at least that many even if it causes the
+        // semaphores to become negative.
+        units_to_alloc = std::max(
+          min_units, std::min(max_units, available_units));
+    } else if (available_units >= min_units) {
+        // only reserve memory if we have space for at least \ref min_units,
+        // otherwise allocate none.
+        units_to_alloc = std::min(available_units, max_units);
+    }
+
+    read_result::memory_units_t memory_units;
+    if (units_to_alloc > 0) {
+        memory_units.fetch = ss::consume_units(
+          memory_fetch_sem, units_to_alloc);
+        memory_units.kafka = ss::consume_units(memory_sem, units_to_alloc);
     }
 
     return memory_units;
@@ -336,6 +335,7 @@ static ss::future<read_result> do_read_from_ntp(
           memory_sem,
           memory_fetch_sem,
           ntp_config.cfg.max_bytes,
+          ntp_config.cfg.max_batch_size,
           obligatory_batch_read);
         if (!memory_units.fetch) {
             ntp_config.cfg.skip_read = true;
@@ -462,9 +462,14 @@ read_result::memory_units_t reserve_memory_units(
   ssx::semaphore& memory_sem,
   ssx::semaphore& memory_fetch_sem,
   const size_t max_bytes,
+  const size_t max_batch_size,
   const bool obligatory_batch_read) {
     return kafka::reserve_memory_units(
-      memory_sem, memory_fetch_sem, max_bytes, obligatory_batch_read);
+      memory_sem,
+      memory_fetch_sem,
+      max_bytes,
+      max_batch_size,
+      obligatory_batch_read);
 }
 
 } // namespace testing
@@ -618,6 +623,15 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
             ntp_cfg.cfg.skip_read = true;
         }
 
+        // In Kafka first non-empty partition in a request or session
+        // is considered the `obligatory` batch read.
+        const bool obligatory_batch_read = total_read_size == 0;
+
+        // If it's the obligatory batch read then we need to allow for the
+        // configured max bytes to exceeded if the next batch in the partition
+        // is larger. This is needed to conform with KIP-74.
+        ntp_cfg.cfg.strict_max_bytes = !obligatory_batch_read;
+
         auto&& res = co_await do_read_from_ntp(
           cluster_pm,
           md_cache,
@@ -625,10 +639,7 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
           ntp_cfg,
           foreign_read,
           deadline,
-          // In Kafka first non-empty partition in a request or session
-          // is considered the `obligatory` batch read. The logic below
-          // is designed to approximate this behavior.
-          total_read_size == 0,
+          obligatory_batch_read,
           memory_sem,
           memory_fetch_sem);
 
@@ -664,75 +675,6 @@ bool shard_fetch::empty() const {
     }
     return requests.empty();
 }
-
-/**
- * Top-level handler for fetching from single shard. The result is
- * unwrapped and any errors from the storage sub-system are translated
- * into kafka specific response codes. On failure or success the
- * partition response is finalized and placed into its position in the
- * response message.
- */
-static ss::future<>
-handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
-    // if over budget skip the fetch.
-    if (octx.bytes_left <= 0) {
-        return ss::now();
-    }
-    // no requests for this shard, do nothing
-    if (fetch.empty()) {
-        return ss::now();
-    }
-
-    const bool foreign_read = shard != ss::this_shard_id();
-
-    // dispatch to remote core
-    return octx.rctx.partition_manager()
-      .invoke_on(
-        shard,
-        octx.ssg,
-        [foreign_read, configs = std::move(fetch.requests), &octx](
-          cluster::partition_manager& mgr) mutable {
-            // &octx is captured only to immediately use its accessors here so
-            // that there is a list of all objects accessed next to `invoke_on`.
-            // This is meant to help avoiding unintended cross shard access
-            return fetch_ntps(
-              mgr,
-              octx.rctx.metadata_cache(),
-              octx.rctx.server().local().get_replica_selector(),
-              std::move(configs),
-              octx.rctx.server().local().read_probe(),
-              foreign_read,
-              octx.deadline,
-              octx.bytes_left,
-              octx.rctx.server().local().memory(),
-              octx.rctx.server().local().memory_fetch_sem());
-        })
-      .then([responses = std::move(fetch.responses),
-             start_time = fetch.start_time,
-             &octx](auto results) mutable {
-          fill_fetch_responses(octx, std::move(results), responses, start_time);
-      });
-}
-
-class parallel_fetch_plan_executor final : public fetch_plan_executor::impl {
-    ss::future<> execute_plan(op_context& octx, fetch_plan plan) final {
-        std::vector<ss::future<>> fetches;
-        fetches.reserve(ss::smp::count);
-
-        // start fetching from random shard to make sure that we fetch data from
-        // all the partition even if we reach fetch message size limit
-        const ss::shard_id start_shard_idx = random_generators::get_int(
-          ss::smp::count - 1);
-        for (size_t i = 0; i < ss::smp::count; ++i) {
-            auto shard = (start_shard_idx + i) % ss::smp::count;
-
-            fetches.push_back(handle_shard_fetch(
-              shard, octx, std::move(plan.fetches_per_shard[shard])));
-        }
-
-        return ss::when_all_succeed(fetches.begin(), fetches.end());
-    }
-};
 
 class fetch_worker {
 public:
@@ -1054,9 +996,7 @@ public:
     ss::future<> execute_plan(op_context& octx, fetch_plan plan) final {
         auto fetch_read_strategy
           = config::shard_local_cfg().fetch_read_strategy();
-        if (
-          fetch_read_strategy
-          == model::fetch_read_strategy::non_polling_with_debounce) {
+        if (is_fetch_strategy_with_debounce(fetch_read_strategy)) {
             co_await ss::sleep(
               std::min(
                 config::shard_local_cfg().fetch_reads_debounce_timeout(),
@@ -1184,6 +1124,21 @@ private:
         }
 
         return true;
+    }
+
+    bool is_fetch_strategy_with_debounce(model::fetch_read_strategy s) const {
+        if (s == model::fetch_read_strategy::non_polling_with_debounce) {
+            return true;
+        }
+
+        if (
+          s == model::fetch_read_strategy::polling
+          && !config::shard_local_cfg()
+                .fetch_reads_debounce_timeout.is_default()) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -1441,6 +1396,27 @@ class simple_fetch_planner final : public fetch_planner::impl {
                     error_code::invalid_topic_exception);
               }
 
+              const auto& topic_md = metadata_cache.get_topic_metadata_ref(
+                model::topic_namespace_view{model::kafka_namespace, topic});
+
+              if (!topic_md) {
+                  return fail_all_partitions(
+                    error_code::unknown_topic_or_partition);
+              }
+
+              const auto& topic_cfg = topic_md->get().get_configuration();
+              // Max batch size or `message.max.bytes` is a user configurable
+              // topic property that defines the max size of a batch that can be
+              // produced to any partition in the topic.
+              //
+              // It is used later in the fetch path to establish the minimum
+              // number of memory semaphore units that need to be allocated
+              // before reading a single batch from any of the topic's
+              // partitions.
+              const auto max_batch_size
+                = topic_cfg.properties.batch_max_bytes.value_or(
+                  metadata_cache.get_default_batch_max_bytes());
+
               for (const kafka::fetch_session_partition& fp : partitions) {
                   // if this is not an initial fetch we are allowed to skip
                   // partitions that already have an error or we have enough
@@ -1503,10 +1479,11 @@ class simple_fetch_planner final : public fetch_planner::impl {
                       .start_offset = fp.fetch_offset,
                       .max_offset = model::model_limits<model::offset>::max(),
                       .max_bytes = max_bytes,
+                      .max_batch_size = max_batch_size,
                       .timeout = octx.deadline.value_or(model::no_timeout),
                       .current_leader_epoch = fp.current_leader_epoch,
                       .isolation_level = octx.request.data.isolation_level,
-                      .strict_max_bytes = octx.response_size > 0,
+                      .strict_max_bytes = true,
                       .skip_read = bytes_left_in_plan == 0 && max_bytes == 0,
                       .read_from_follower = octx.request.has_rack_id(),
                       .consumer_rack_id = octx.request.has_rack_id()
@@ -1524,50 +1501,6 @@ class simple_fetch_planner final : public fetch_planner::impl {
     }
 };
 
-/**
- * Process partition fetch requests.
- *
- * Each request is handled serially in the order they appear in the request.
- * There are a couple reasons why we are not **yet** processing these in
- * parallel. First, Kafka expects to some extent that the order of the
- * partitions in the request is an implicit priority on which partitions to
- * read from. This is closely related to the request budget limits specified
- * in terms of maximum bytes and maximum time delay.
- *
- * Once we start processing requests in parallel we'll have to work through
- * various challenges. First, once we dispatch in parallel, we'll need to
- * develop heuristics for dealing with the implicit priority order. We'll
- * also need to develop techniques and heuristics for dealing with budgets
- * since global budgets aren't trivially divisible onto each core when
- * partition requests may produce non-uniform amounts of data.
- *
- * w.r.t. what is needed to parallelize this, there are no data dependencies
- * between partition requests within the fetch request, and so they can be
- * run fully in parallel. The only dependency that exists is that the
- * response must be reassembled such that the responses appear in these
- * order as the partitions in the request.
- */
-static ss::future<> fetch_topic_partitions(op_context& octx) {
-    auto planner = make_fetch_planner<simple_fetch_planner>();
-
-    auto fetch_plan = planner.create_plan(octx);
-
-    fetch_plan_executor executor
-      = make_fetch_plan_executor<parallel_fetch_plan_executor>();
-    co_await executor.execute_plan(octx, std::move(fetch_plan));
-
-    if (octx.should_stop_fetch()) {
-        co_return;
-    }
-
-    octx.reset_context();
-    // debounce next read retry
-    co_await ss::sleep(
-      std::min(
-        config::shard_local_cfg().fetch_reads_debounce_timeout(),
-        octx.request.data.max_wait_ms));
-}
-
 namespace testing {
 kafka::fetch_plan make_simple_fetch_plan(op_context& octx) {
     auto planner = make_fetch_planner<simple_fetch_planner>();
@@ -1577,28 +1510,11 @@ kafka::fetch_plan make_simple_fetch_plan(op_context& octx) {
 
 namespace {
 ss::future<> do_fetch(op_context& octx) {
-    switch (config::shard_local_cfg().fetch_read_strategy) {
-    case model::fetch_read_strategy::polling: {
-        // first fetch, do not wait
-        co_await fetch_topic_partitions(octx).then([&octx] {
-            return ss::do_until(
-              [&octx] { return octx.should_stop_fetch(); },
-              [&octx] { return fetch_topic_partitions(octx); });
-        });
-    } break;
-    case model::fetch_read_strategy::non_polling:
-    case model::fetch_read_strategy::non_polling_with_pid:
-    case model::fetch_read_strategy::non_polling_with_debounce: {
-        auto planner = make_fetch_planner<simple_fetch_planner>();
-        auto fetch_plan = planner.create_plan(octx);
+    auto planner = make_fetch_planner<simple_fetch_planner>();
+    auto fetch_plan = planner.create_plan(octx);
 
-        nonpolling_fetch_plan_executor executor;
-        co_await executor.execute_plan(octx, std::move(fetch_plan));
-    } break;
-    default: {
-        vassert(false, "not implemented");
-    } break;
-    }
+    nonpolling_fetch_plan_executor executor;
+    co_await executor.execute_plan(octx, std::move(fetch_plan));
 }
 } // namespace
 

@@ -946,6 +946,8 @@ partition_status build_partition_status(const partition& p) {
     status.revision_id = p.get_revision_id();
     status.size_bytes = p.size_bytes() + p.non_log_disk_size_bytes();
     status.reclaimable_size_bytes = p.reclaimable_size_bytes();
+    status.cloud_topic_max_gc_eligible_epoch
+      = p.cloud_topic_max_gc_eligible_epoch();
     status.shard = ss::this_shard_id();
 
     if (p.ntp().ns == model::kafka_namespace) {

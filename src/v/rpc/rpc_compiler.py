@@ -35,7 +35,7 @@ RPC_TEMPLATE = """
 #include "rpc/service.h"
 #include "finjector/hbadger.h"
 #include "strings/string_switch.h"
-#include "random/fast_prng.h"
+#include "random/generators.h"
 #include "base/outcome.h"
 #include "metrics/prometheus_sanitize.h"
 #include "base/seastarx.h"
@@ -205,7 +205,7 @@ private:
             "{{namespace}}::{{service_name}}::{{method.name}}"));
         }
         if (_delay_methods & type(methods::{{method.name}})) {
-            return ss::sleep(std::chrono::milliseconds(_prng() % 50));
+            return ss::sleep(std::chrono::milliseconds(_prng.get_int(50)));
         }
         if (_termination_methods & type(methods::{{method.name}})) {
             std::terminate();
@@ -214,7 +214,7 @@ private:
     }
     {%- endfor %}
 
-    fast_prng _prng;
+    random_generators::rng _prng;
 };
 
 } // namespace

@@ -27,6 +27,22 @@ class Level(Enum):
     def __str__(self) -> str:
         return self.value
 
+    @classmethod
+    def _level_order(cls) -> list["Level"]:
+        """Return levels in order from least to most strict."""
+        return [cls.SKIP, cls.OFF, cls.BASIC, cls.STANDARD, cls.STRICT]
+
+    def get_stricter_levels(self) -> list["Level"]:
+        """Return all levels stricter than this one."""
+        order = self._level_order()
+        current_index = order.index(self)
+        return order[current_index + 1 :]
+
+    def get_next_level(self) -> "Level | None":
+        """Return the next stricter level, or None if already at strictest."""
+        stricter_levels = self.get_stricter_levels()
+        return stricter_levels[0] if stricter_levels else None
+
 
 @dataclass
 class Diagnostic:
@@ -203,6 +219,27 @@ class TypeCheck:
 
         return dict(sorted(dmap.items(), key=error_count))
 
+    def _test_files_at_level(self, files: list[Path], target_level: Level) -> DiagMap:
+        """Test a list of files at a specific strictness level.
+
+        Returns a map of file paths to their diagnostics at that level.
+        """
+        if target_level == Level.SKIP:
+            # SKIP level files always pass (no diagnostics)
+            return {file_path: [] for file_path in files}
+
+        # Temporarily override force level to test at the target level
+        original_force_level = self._force_level
+        self._force_level = target_level
+
+        try:
+            # Create a temporary strictness map with only these files at the target level
+            temp_strictness_map: dict[Level, list[Path]] = {target_level: files}
+            return self._run_diagnostics(input_files=temp_strictness_map)
+        finally:
+            # Restore original force level
+            self._force_level = original_force_level
+
     def check(self):
         """Run pyright on the input set, printing errors to stdout."""
         strictness_map = self._get_input_files()
@@ -257,7 +294,7 @@ class TypeCheck:
                     f"  {rel_path}: {current_level.value} → {strictest_passing.value}"
                 )
             print(
-                f"{self.info} See https://github.com/redpanda-data/redpanda/blob/dev/tests/type-checking/README.md#failed-promo-check\n"
+                f"{self.info} See https://github.com/redpanda-data/redpanda/blob/dev/tests/type-checking/README.md#failed-promotion-check\n"
             )
         else:
             print("No files can be promoted to stricter levels.")
@@ -335,55 +372,73 @@ class TypeCheck:
 
         Returns:
             Tuple of (promotable_files, files_by_next_level)
-            - promotable_files: List of (file_path, current_level, target_level)
+            - promotable_files: List of (file_path, current_level, strictest_passing_level)
             - files_by_next_level: Map from next stricter level to list of (file_path, diagnostics)
         """
-        next_level_map = {
-            Level.SKIP: Level.OFF,
-            Level.OFF: Level.BASIC,
-            Level.BASIC: Level.STANDARD,
-            Level.STANDARD: Level.STRICT,
-            Level.STRICT: None,  # Already at the strictest level
-        }
-
         promotable_files: list[tuple[Path, Level, Level]] = []
         files_by_next_level: dict[Level, list[tuple[Path, list[Diagnostic]]]] = (
             defaultdict(list)
         )
 
-        # Test each group at their next strictest level
+        # First pass: batch test files at their next level to find initially promotable files
+        candidates_by_level: dict[Level, list[Path]] = {}
+
         for current_level, files in files_by_level.items():
-            if (next_level := next_level_map[current_level]) is None:
+            next_level = current_level.get_next_level()
+            if next_level is None:
                 continue  # Already at strictest level, nothing to do
 
             self.vprint(
                 f"Testing {len(files)} files at {current_level.value} level for promotion to {next_level.value}"
             )
 
-            # Temporarily override force level to test at the next strictest level
-            original_force_level = self._force_level
-            self._force_level = next_level
+            # Batch test all files at their next level
+            dmap = self._test_files_at_level(files, next_level)
 
-            try:
-                # Run diagnostics on files at the next level
-                # Create a temporary strictness map with only these files at the target level
-                temp_strictness_map: dict[Level, list[Path]] = {next_level: files}
+            promotable_to_next: list[Path] = []
+            for file_path in files:
+                diagnostics = dmap.get(file_path, [])
+                if len(diagnostics) == 0:
+                    # File passes at next level
+                    promotable_to_next.append(file_path)
+                else:
+                    # File fails at next level, record diagnostics
+                    files_by_next_level[next_level].append((file_path, diagnostics))
 
-                dmap = self._run_diagnostics(input_files=temp_strictness_map)
+            if promotable_to_next:
+                candidates_by_level[next_level] = promotable_to_next
+                self.vprint(
+                    f"Found {len(promotable_to_next)} files promotable to {next_level.value}"
+                )
 
-                # Check which files pass at the next level
-                for file_path in files:
+        # Second pass: for files that can be promoted, find their strictest possible level
+        for current_level, candidate_files in candidates_by_level.items():
+            for file_path in candidate_files:
+                strictest_passing_level = current_level
+
+                # Test each stricter level until we find one that fails
+                for test_level in current_level.get_stricter_levels():
+                    dmap = self._test_files_at_level([file_path], test_level)
                     diagnostics = dmap.get(file_path, [])
-                    if len(diagnostics) == 0:
-                        # File passes at next level, can be promoted
-                        promotable_files.append((file_path, current_level, next_level))
-                    else:
-                        # File fails at next level, record diagnostics for that level
-                        files_by_next_level[next_level].append((file_path, diagnostics))
 
-            finally:
-                # Restore original force level
-                self._force_level = original_force_level
+                    if len(diagnostics) == 0:
+                        # File passes at this level
+                        strictest_passing_level = test_level
+                    else:
+                        # File fails at this level, stop testing stricter levels
+                        break
+
+                # Find the original level for this file
+                original_level = None
+                for level, files in files_by_level.items():
+                    if file_path in files:
+                        original_level = level
+                        break
+
+                if original_level is not None:
+                    promotable_files.append(
+                        (file_path, original_level, strictest_passing_level)
+                    )
 
         return promotable_files, dict(files_by_next_level)
 
@@ -506,7 +561,6 @@ class TypeCheck:
         print(
             f"Updated {len(promotable_files)} file assignments in {strictness_config_path}"
         )
-        print("Re-run the command to see if further promotions are possible.")
 
     def _get_input_files(self):
         """Return a map of strictness level to a list of files which are in that level."""

@@ -58,9 +58,9 @@ ss::future<> brokers::do_erase(model::node_id node_id) {
 }
 
 ss::future<> brokers::apply(
-  const chunked_vector<metadata_response::broker>& brokers_metadata) {
+  const chunked_vector<metadata_update::broker>& brokers_metadata) {
     auto u = co_await _state_mutex.get_units();
-    chunked_vector<metadata_response::broker> brokers_to_add;
+    chunked_vector<metadata_update::broker> brokers_to_add;
     chunked_vector<model::node_id> brokers_to_remove;
 
     for (auto& broker : brokers_metadata) {

@@ -8,11 +8,9 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/iobuf.h"
-#include "cluster/health_monitor_types.h"
-#include "cluster/node/types.h"
-#include "model/fundamental.h"
-#include "model/metadata.h"
 #include "serde/envelope.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/iobuf.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>

@@ -10,7 +10,7 @@
 #include "config/mock_property.h"
 #include "raft/coordinated_recovery_throttle.h"
 #include "test_utils/async.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>

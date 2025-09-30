@@ -10,7 +10,9 @@
  * by the Apache License, Version 2.0
  */
 
+// IWYU pragma: always_keep; symbols for ADL
 #pragma once
+
 #include "cluster/errc.h"
 #include "raft/errc.h"
 #include "raft/tests/raft_fixture.h"

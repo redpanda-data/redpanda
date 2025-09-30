@@ -13,10 +13,13 @@
 #include "model/fundamental.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/shared_ptr.hh>
+#include <seastar/util/optimized_optional.hh>
 
 namespace cluster {
 class controller;
-}
+class partition;
+} // namespace cluster
 
 namespace cloud_topics::l1 {
 class domain_manager;
@@ -36,6 +39,13 @@ public:
 
     ss::future<> start();
     ss::future<> stop();
+
+    // This is expected to be called when leadership for a L1 domain is called
+    // to notify the domain_supervisor if there is a manager that needs to be
+    // created (or removed if partition is nullptr).
+    void on_domain_leadership_change(
+      const model::ntp&,
+      ss::optimized_optional<ss::lw_shared_ptr<cluster::partition>>);
 
     // Returns nullopt if the domain manager for the given L1 metastore NTP, if
     // one exists (e.g. if it is currently leader and has processed the

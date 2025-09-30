@@ -113,7 +113,7 @@ ss::future<std::error_code> partition::prefix_truncate(
   model::offset rp_start_offset,
   kafka::offset kafka_start_offset,
   ss::lowres_clock::time_point deadline) {
-    if (!_log_eviction_stm || !_raft->log_config().is_collectable()) {
+    if (!_log_eviction_stm || !_raft->log_config().is_locally_collectable()) {
         vlog(
           clusterlog.info,
           "Cannot prefix-truncate topic/partition {} retention settings not "
@@ -473,6 +473,12 @@ ss::future<> partition::start(
     // store partition properties stm offset for fast access
     _partition_properties_stm
       = _raft->stm_manager()->get<cluster::partition_properties_stm>();
+
+    // the cloud topics stm provides access to garbage collection metadata. this
+    // metadata is collected into cluster health reports as a way to disseminate
+    // this information to the garbage collection process.
+    _ctp_stm = _raft->stm_manager()->get<cloud_topics::ctp_stm>();
+
     // Start the probe after the partition is fully initialised
     _probe.setup_metrics(ntp);
 
@@ -566,6 +572,7 @@ ss::future<> partition::stop() {
               "Stopping archiver on partition: {}",
               partition_ntp);
             co_await _archiver->stop();
+            _archiver.reset(nullptr);
         }
     }
 
@@ -1836,6 +1843,13 @@ ss::future<result<ss::rwlock::holder>> partition::hold_writes_enabled() {
     }
 
     co_return *std::move(maybe_units);
+}
+
+std::optional<int64_t> partition::cloud_topic_max_gc_eligible_epoch() const {
+    if (_ctp_stm) {
+        return _ctp_stm->estimate_inactive_epoch();
+    }
+    return std::nullopt;
 }
 
 ss::sharded<cloud_topics::state_accessors>*

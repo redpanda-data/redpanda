@@ -11,7 +11,6 @@
 
 #include "cluster/crash_reporter.h"
 #include "storage/tests/kvstore_fixture.h"
-#include "test_utils/fixture.h"
 
 #include <seastar/util/defer.hh>
 

@@ -2502,8 +2502,10 @@ struct leader_term {
       : leader(leader)
       , term(term) {}
 
+    explicit leader_term(std::optional<model::node_id> leader)
+      : leader(leader) {}
     std::optional<model::node_id> leader;
-    model::term_id term;
+    std::optional<model::term_id> term;
     friend auto operator<=>(const leader_term&, const leader_term&) = default;
     friend std::ostream& operator<<(std::ostream&, const leader_term&);
 };

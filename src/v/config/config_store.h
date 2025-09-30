@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "config/logger.h"
 #include "config/property.h"
 #include "utils/to_string.h"
 
@@ -47,14 +48,9 @@ public:
      * bad YAML type, or an error flagged by the property's validator hook.
      *
      * @param root_node
-     * @param ignore_missing Tolerate extra values in the config if they are
-     *        contained in this set -- this is for reading old configs that
-     *        mix node & cluster config properties.
      * @return map of property name to error.  Empty on clean load.
      */
-    virtual error_map_t read_yaml(
-      const YAML::Node& root_node,
-      const std::set<std::string_view> ignore_missing = {}) {
+    virtual error_map_t read_yaml(const YAML::Node& root_node) {
         error_map_t errors;
 
         for (const auto& [name, property] : _properties) {
@@ -84,10 +80,7 @@ public:
             }();
 
             if (prop == nullptr) {
-                if (!ignore_missing.contains(name)) {
-                    throw std::invalid_argument(
-                      fmt::format("Unknown property {}", name));
-                }
+                vlog(configlog.warn, "Unknown property {}", name);
                 continue;
             }
             bool ok = false;

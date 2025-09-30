@@ -10,7 +10,7 @@
  */
 #include "bytes/random.h"
 
-#include "random/generators.h"
+#include "random/secure_generators.h"
 
 namespace random_generators {
 

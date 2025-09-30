@@ -140,8 +140,8 @@ private:
  *
  * Fetcher locks the assignment state while changing assignments, preparing the
  * fetch request and processing the response. Every time the partition
- * assignment is updated its corresponding assignment epoch is incremented.
- * Partition fetch responses with stale assignment epoch are ignored. This
+ * assignment is updated its corresponding fetcher epoch is incremented.
+ * Partition fetch responses with stale fetcher epoch are ignored. This
  * concurrency control mechanism guarantees that the fetcher will not update its
  * subscriptions with the stale information from the request when it was changed
  * more than once while it was waiting for the response.
@@ -165,7 +165,9 @@ public:
      * update the fetch offsets for the already assigned partitions.
      */
     ss::future<> assign_partition(
-      model::topic_partition_view, std::optional<kafka::offset>);
+      model::topic_partition_view,
+      std::optional<kafka::offset>,
+      subscription_epoch);
     /**
      * Unassign partition from the fetcher, it will stop fetching data for the
      * partition and remove it from the fetcher state. After the unassignment
@@ -185,14 +187,36 @@ public:
     void toggle_sessions(fetch_sessions_enabled);
 
 private:
-    using assignment_epoch = named_type<uint64_t, struct fetcher_epoch_tag>;
+    using fetcher_epoch = named_type<uint64_t, struct fetcher_epoch_tag>;
+    /**
+     * Fields required s.t. they are harder to forget.
+     * Defaults:
+     *  - high_watermark: nullopt, not known at instantiation
+     *  - current_leader_epoch: nullopt, not known at instantiation
+     *  - incremental_include: true, new assignments should always be included
+     *    in the next fetch
+     */
     struct partition_fetch_state {
+        partition_fetch_state(
+          model::partition_id partition_id,
+          std::optional<kafka::offset> fetch_offset,
+          fetcher_epoch fetcher_epoch,
+          subscription_epoch subscription_epoch) noexcept
+          : partition_id{partition_id}
+          , fetch_offset{fetch_offset}
+          , high_watermark{std::nullopt}
+          , current_leader_epoch{kafka::invalid_leader_epoch}
+          , fetcher_epoch{fetcher_epoch}
+          , incremental_include{true}
+          , subscription_epoch{subscription_epoch} {}
+
         model::partition_id partition_id;
         std::optional<kafka::offset> fetch_offset;
         std::optional<kafka::offset> high_watermark;
-        leader_epoch current_leader_epoch{kafka::invalid_leader_epoch};
-        assignment_epoch assignment_epoch{0};
-        bool incremental_include{false};
+        leader_epoch current_leader_epoch;
+        fetcher_epoch fetcher_epoch;
+        bool incremental_include;
+        subscription_epoch subscription_epoch;
 
         bool include_in_fetch_request() const {
             return fetch_offset.has_value();
@@ -210,8 +234,23 @@ private:
                    && to_forget.empty();
         }
     };
+
+    // consistency tracking, fetcher_epoch will be used to detect fetcher
+    // assignment updates, subscription epoch will be used in direct_consumer to
+    // filter stale fetch responses
+    struct epoch_set {
+        epoch_set(
+          fetcher_epoch fetcher_epoch,
+          subscription_epoch subscription_epoch) noexcept
+          : fetcher_epoch{fetcher_epoch}
+          , subscription_epoch{subscription_epoch} {}
+
+        fetcher_epoch fetcher_epoch;
+        subscription_epoch subscription_epoch;
+    };
+
     struct partitions_with_epoch {
-        topic_partition_map<assignment_epoch> assignment_epochs;
+        topic_partition_map<epoch_set> epochs;
         chunked_vector<partitions_to_process> partitions;
     };
     struct fetch_response_content {
@@ -221,10 +260,28 @@ private:
         kafka::fetch_session_id session_id{0};
     };
 
-    static std::optional<assignment_epoch> find_assignment_epoch(
+    static std::optional<epoch_set> find_epoch_set(
       const model::topic& topic,
       model::partition_id partition,
-      const topic_partition_map<assignment_epoch>& epochs);
+      const topic_partition_map<epoch_set>& epochs);
+
+    /**
+     * finds a fetcher_state within the map of assigned partitions
+     * returns a reference to its fetch state if found, nullopt otherwise
+     */
+    std::optional<std::reference_wrapper<partition_fetch_state>>
+    find_fetcher_state(
+      const model::topic& topic, model::partition_id partition);
+
+    /**
+     * given a tp and an epoch map compares the current fetcher epoch against
+     * that from the provided map. If either epoch is missing, or the epochs
+     * disagree, the tp is inconsistent.
+     */
+    bool is_consistent_fetcher_epoch(
+      const model::topic& topic,
+      model::partition_id partition_id,
+      const topic_partition_map<epoch_set>& epochs);
 
     ss::future<api_version> get_fetch_request_version() const;
     ss::future<api_version> get_list_offsets_request_version() const;
@@ -232,14 +289,14 @@ private:
     ss::future<partitions_with_epoch> collect_partitions();
     ss::future<kafka::error_code> maybe_initialise_fetch_offsets(
       const chunked_vector<partitions_to_process>&,
-      const topic_partition_map<assignment_epoch>& epochs);
+      const topic_partition_map<epoch_set>& epochs);
 
     ss::future<fetch_request>
     make_fetch_request(const chunked_vector<partitions_to_process>&);
 
     ss::future<kafka_result<fetch_response_content>> process_fetch_response(
       fetch_response resp,
-      const topic_partition_map<assignment_epoch>& epochs,
+      const topic_partition_map<epoch_set>& epochs,
       const chunked_vector<partitions_to_process>& partitions);
     /**
      * Returns false if the partition was not found or the fetch offset was
@@ -247,18 +304,14 @@ private:
      * This indicates that the fetch response should be ignored.
      */
     bool maybe_update_fetch_offset(
-      const model::topic&,
-      model::partition_id,
-      kafka::offset,
-      kafka::offset,
-      std::optional<assignment_epoch>);
+      const model::topic&, model::partition_id, kafka::offset, kafka::offset);
 
     ss::future<kafka_result<chunked_vector<topic_partition_offsets>>>
       do_list_offsets(list_offsets_request);
 
     data_queue& queue();
     prefix_logger& logger();
-    assignment_epoch next_epoch() { return ++_epoch; }
+    fetcher_epoch next_epoch() { return ++_epoch; }
 
     void reset_partition_offset(model::topic_partition_view);
 
@@ -270,7 +323,16 @@ private:
     ss::condition_variable _partitions_updated;
     ss::gate _gate;
     mutex _state_lock;
-    assignment_epoch _epoch{0};
+    /**
+     * A fetcher epoch will be incremented and assigned to every assigned
+     * partition. This allows for different assignment instances of a tp to be
+     * differentiated, e.g. a tp is assigned to a fetcher, unassigned, and
+     * reassigned with a lower fetch offset. Any response from the first
+     * instance of assignment should
+     * 1. not be placed on the output queue and
+     * 2. not be used to update the fetch offset of the second assignment
+     */
+    fetcher_epoch _epoch{0};
     ss::abort_source _as;
 };
 } // namespace kafka::client

@@ -15,6 +15,7 @@
 #include "kafka/client/test/cluster_mock.h"
 #include "kafka/client/types.h"
 #include "kafka/protocol/types.h"
+#include "model/fundamental.h"
 #include "model/tests/random_batch.h"
 #include "test_utils/async.h"
 #include "test_utils/test.h"
@@ -466,6 +467,130 @@ TEST_F(consumer_test_mock, TestLeadershipChange) {
             return all_batches[test_topic][model::partition_id(0)].size() == 33;
         });
     });
+}
+
+namespace {
+// types and functions specific to subscription epoch filtering
+namespace epoch_filtering_ns {
+
+enum reassign_direction : uint8_t { backward, same, forward };
+
+std::pair<kafka::offset, kafka::offset>
+init_offsets(reassign_direction direction) {
+    switch (direction) {
+    case backward:
+        return {kafka::offset{20}, kafka::offset{10}};
+    case same:
+        return {kafka::offset{10}, kafka::offset{10}};
+    case forward:
+        return {kafka::offset{10}, kafka::offset{20}};
+    }
+}
+
+/**
+ * Checks stale subscription filtering.
+ * 1. replicate batches of 10, offset 0 -> 49
+ * 2. assign ntp to direct_consumer with assignment_offset
+ * 3. let dc fetch data
+ * 4. unassign ntp
+ * 5. reassign ntp with reassignment_offset
+ * 6. check the first call to fetch_next is a empty fetch (was filtered out)
+ * 7. drain all fetches, check we see only 50 - reassignment offset
+ */
+void epoch_filtering_test(
+  consumer_test_mock* self, reassign_direction direction) {
+    self->prepare_cluster();
+    model::topic test_topic("panda-test");
+    self->cluster_mock.add_topic(test_topic, 1, 3);
+    topic_partition_map<chunked_vector<model::record_batch>> all_batches;
+
+    static constexpr auto batch_count{5};
+    static constexpr auto batch_size{10};
+
+    // 1. replicate [0,9], [10,19], [20,29]... [40,49]
+    for (auto index{0}; index < batch_count; ++index) {
+        std::ignore = index;
+        self->make_data_available(test_topic, 0, batch_size);
+    }
+
+    auto client_cluster = self->create_client_cluster();
+    client_cluster.start().get();
+    direct_consumer consumer(client_cluster, direct_consumer::configuration{});
+    consumer.start().get();
+    auto deferred_stop = ss::defer([&] {
+        consumer.stop().get();
+        client_cluster.stop().get();
+    });
+
+    auto [assignment_offset, reassignment_offset] = init_offsets(direction);
+
+    auto get_assignment = [test_topic](kafka::offset begin) {
+        chunked_vector<topic_assignment> assignment;
+        assignment.push_back({
+          .topic = test_topic,
+        });
+        // only partition 0 is assigned
+        assignment.back().partitions.push_back(
+          partition_assignment{
+            .partition_id = model::partition_id(0),
+            .next_offset = kafka::offset(begin),
+          });
+        return assignment;
+    };
+
+    // 2. assign ntp at assignment_offset to direct_consumer
+    consumer.assign_partitions(get_assignment(assignment_offset)).get();
+
+    // 3. let dc fetch data
+    // TODO we need a way to force iterations to occur
+    ss::sleep(2s).get();
+
+    // 4&5. unassign & reassign with offset reassignment_offset instead
+    consumer.unassign_topics({test_topic}).get();
+    consumer.assign_partitions(get_assignment(reassignment_offset)).get();
+
+    // 6. check the first call to fetch_next is an empty fetch (was filtered)
+    auto filtered_fetch_result = consumer.fetch_next(5s).get();
+    ASSERT_TRUE(filtered_fetch_result.has_value());
+    auto filtered_fetch = std::move(filtered_fetch_result).value();
+    int found_partition_count{0};
+
+    for (auto& topic_data : filtered_fetch) {
+        for (auto& partition_data : topic_data.partitions) {
+            std::ignore = partition_data;
+            ++found_partition_count;
+            ASSERT_EQ(topic_data.total_bytes, 0);
+        }
+    }
+    ASSERT_EQ(found_partition_count, 0);
+
+    const size_t expected_size = (batch_count * batch_size)
+                                 - static_cast<int64_t>(reassignment_offset);
+    const model::offset final_offset{batch_count * batch_size - 1};
+
+    // 7. drain all fetches, check we see only 50 - reassignment_offset
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+        return self->fetch_and_append_to_map(all_batches, consumer).then([&] {
+            auto& ntp_batches = all_batches[test_topic][model::partition_id(0)];
+            return ntp_batches.size() == expected_size
+                   && ntp_batches.back().last_offset() == final_offset;
+        });
+    });
+}
+} // namespace epoch_filtering_ns
+} // namespace
+
+TEST_F(consumer_test_mock, TestEpochFilteringBackward) {
+    epoch_filtering_ns::epoch_filtering_test(
+      this, epoch_filtering_ns::backward);
+}
+
+TEST_F(consumer_test_mock, TestEpochFilteringSame) {
+    epoch_filtering_ns::epoch_filtering_test(this, epoch_filtering_ns::same);
+}
+
+TEST_F(consumer_test_mock, TestEpochFilteringForward) {
+    epoch_filtering_ns::epoch_filtering_test(this, epoch_filtering_ns::forward);
 }
 
 TEST_F(consumer_test_mock, TestOffsetResetPolicy) {

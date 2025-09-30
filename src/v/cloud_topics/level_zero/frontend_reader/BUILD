@@ -27,6 +27,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_zero/common:extent_meta",
         "//src/v/model",
         "//src/v/storage",
+        "//src/v/utils:prefix_logger",
         "@boost//:outcome",
         "@seastar",
     ],

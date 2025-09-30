@@ -413,7 +413,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                 backoff_sec=5,
                 err_msg="Waiting for elections to complete after restart",
             )
-            self.logger.info(f"Post-restart elections done.")
+            self.logger.info("Post-restart elections done.")
 
             inter_restart_check()
 
@@ -484,7 +484,6 @@ class ManyPartitionsTest(PreallocNodesTest):
                 )
             finally:
                 producer.stop()
-                producer.wait(timeout_sec=expect_runtime)
                 self.free_preallocated_nodes()
         finally:
             self.logger.info(
@@ -629,7 +628,6 @@ class ManyPartitionsTest(PreallocNodesTest):
         rand_consumer.wait()
 
         fast_producer.stop()
-        fast_producer.wait()
         self.logger.info("Write+randread stress test complete, verifying sequentially")
 
         max_msgs = None
@@ -943,14 +941,14 @@ class ManyPartitionsTest(PreallocNodesTest):
                 tn, partitions=n_partitions, replicas=replication_factor, config=config
             )
 
-        self.logger.info(f"Awaiting elections...")
+        self.logger.info("Awaiting elections...")
         wait_until(
             lambda: self._all_elections_done(topic_names, n_partitions),
             timeout_sec=60,
             backoff_sec=5,
             err_msg="Waiting for initial elections",
         )
-        self.logger.info(f"Initial elections done.")
+        self.logger.info("Initial elections done.")
 
         for node_name, file_count in self._get_fd_counts():
             self.logger.info(
@@ -1008,7 +1006,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                 # Explicit wait for consumer group, because we might have e.g.
                 # just restarted the cluster, and don't want to include that
                 # delay in our throughput-driven timeout expectations
-                self.logger.info(f"Checking repeater group is ready...")
+                self.logger.info("Checking repeater group is ready...")
                 repeater.await_group_ready()
 
                 t = repeater_await_bytes / scale.expect_bandwidth
@@ -1017,7 +1015,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                 )
                 t1 = time.time()
                 repeater.await_progress(
-                    repeater_await_msgs, t, err_msg=f"Waiting for repeater messages"
+                    repeater_await_msgs, t, err_msg="Waiting for repeater messages"
                 )
                 t2 = time.time()
 
@@ -1029,18 +1027,18 @@ class ManyPartitionsTest(PreallocNodesTest):
 
             progress_check()
 
-            self.logger.info(f"Entering single node restart phase")
+            self.logger.info("Entering single node restart phase")
             self._single_node_restart(scale, topic_names, n_partitions)
             progress_check()
 
-            self.logger.info(f"Entering restart stress test phase")
+            self.logger.info("Entering restart stress test phase")
             self._restart_stress(scale, topic_names, n_partitions, progress_check)
 
-            self.logger.info(f"Post-restarts: checking repeater group is ready...")
+            self.logger.info("Post-restarts: checking repeater group is ready...")
             repeater.await_group_ready()
 
             # Done with restarts, now do a longer traffic soak
-            self.logger.info(f"Entering traffic soak phase")
+            self.logger.info("Entering traffic soak phase")
 
             # soak for two minutes
             soak_time_seconds = 120

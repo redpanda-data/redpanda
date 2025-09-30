@@ -10,6 +10,10 @@
 
 #include "security/audit/schemas/utils.h"
 
+#include "kafka/protocol/api_versions.h"
+#include "kafka/protocol/describe_cluster.h"
+#include "kafka/protocol/sasl_authenticate.h"
+#include "kafka/protocol/sasl_handshake.h"
 #include "kafka/protocol/schemata/add_offsets_to_txn_request.h"
 #include "kafka/protocol/schemata/add_partitions_to_txn_request.h"
 #include "kafka/protocol/schemata/alter_client_quotas_request.h"
@@ -485,12 +489,21 @@ event_type kafka_api_to_event_type(kafka::api_key key) {
         return event_type::describe;
     case kafka::alter_user_scram_credentials_api::key:
         return event_type::management;
+    case kafka::describe_cluster_api::key:
+        return event_type::describe;
+    // The following Kafka APIs should not generate an audit event as either
+    // they are not an action taken by an authenticated user (such as an API
+    // request) or are covered by other auditing events, for example
+    // authentication
+    case kafka::api_versions_api::key:
+        return event_type::describe;
+    case kafka::sasl_authenticate_api::key:
+        return event_type::authenticate;
+    case kafka::sasl_handshake_api::key:
+        return event_type::authenticate;
     }
 
-    // this method should only be used by handlers or the audit system while an
-    // event is being handled meaning if we have reached this spot, there is a
-    // bug
-    vassert(false, "Unhandled Kafka API in kafka_api_to_event_type: {}", key);
+    return event_type::unknown;
 }
 
 api_activity api_activity::construct(

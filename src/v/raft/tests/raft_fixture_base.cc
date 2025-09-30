@@ -37,6 +37,7 @@
 #include "storage/log_manager.h"
 #include "storage/ntp_config.h"
 #include "storage/types.h"
+#include "test_utils/test_env.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/coroutine/maybe_yield.hh>
@@ -388,8 +389,7 @@ raft_node_instance::raft_node_instance(
   : raft_node_instance(
       id,
       revision,
-      fmt::format(
-        "test_raft_{}_{}", _id, random_generators::gen_alphanum_string(12)),
+      test_env::random_dir_path("test_raft_{}_", 12),
       node_map,
       feature_table,
       std::move(leader_update_clb),

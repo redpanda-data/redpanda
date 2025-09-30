@@ -14,6 +14,7 @@
 #include "cloud_storage/types.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
+#include "test_utils/test_macros.h"
 #include "utils/stream_provider.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -379,7 +380,7 @@ std::vector<in_memory_segment> make_segments(
                       : 0;
                 s.push_back(std::move(truncated));
             } else {
-                BOOST_REQUIRE(body.delta_offset_overlap == 0);
+                RPTEST_REQUIRE(body.delta_offset_overlap == 0);
                 prev = copy_in_memory_segment(body);
                 s.push_back(std::move(body));
             }
@@ -480,7 +481,7 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
           "computed segment delta {}, segment {}",
           segment_delta,
           s);
-        BOOST_REQUIRE(model::offset_cast(segment_delta) <= s.base_offset());
+        RPTEST_REQUIRE(model::offset_cast(segment_delta) <= s.base_offset());
         cloud_storage::partition_manifest::segment_meta meta{
           .is_compacted = false,
           .size_bytes = s.bytes.size(),
@@ -577,7 +578,7 @@ std::vector<in_memory_segment> replace_segments(
     for (const auto& s : segments) {
         auto bo = s.base_offset;
         auto it = manifest.find(bo);
-        BOOST_REQUIRE(it != manifest.end());
+        RPTEST_REQUIRE(it != manifest.end());
         auto path = manifest.generate_segment_path(*it, path_provider);
         segments_to_remove.push_back(path().native());
     }
@@ -639,8 +640,8 @@ partition_manifest hydrate_manifest(
     retry_chain_node rtc(never_abort, 300s, 200ms);
     ss::lowres_clock::update();
     auto res = dl.download_manifest(rtc, &m).get();
-    BOOST_REQUIRE(res.has_value());
-    BOOST_REQUIRE(res.value() == find_partition_manifest_outcome::success);
+    RPTEST_REQUIRE(res.has_value());
+    RPTEST_REQUIRE(res.value() == find_partition_manifest_outcome::success);
     return m;
 }
 
@@ -724,7 +725,7 @@ std::vector<model::record_batch_header> scan_remote_partition_incrementally(
           std::back_inserter(headers));
         num_fetches++;
     }
-    BOOST_REQUIRE(num_fetches > 0);
+    RPTEST_REQUIRE(num_fetches > 0);
     vlog(test_util_log.info, "{} fetch operations performed", num_fetches);
     return headers;
 }
@@ -934,7 +935,7 @@ scan_remote_partition_incrementally_with_closest_lso(
             // test is prepared to see the gaps in place of tx-fence batches
             continue;
         }
-        BOOST_REQUIRE(headers_read.size() == 1);
+        RPTEST_REQUIRE(headers_read.size() == 1);
         vlog(test_util_log.info, "header {}", headers_read.front());
         next = headers_read.back().last_offset() + model::offset(1);
         std::copy(
@@ -943,7 +944,7 @@ scan_remote_partition_incrementally_with_closest_lso(
           std::back_inserter(headers));
         num_fetches++;
     }
-    BOOST_REQUIRE(num_fetches > 0);
+    RPTEST_REQUIRE(num_fetches > 0);
     vlog(test_util_log.info, "{} fetch operations performed", num_fetches);
     return headers;
 }
@@ -1005,7 +1006,7 @@ void reupload_compacted_segments(
                               rtc,
                               always_continue)
                             .get();
-            BOOST_REQUIRE_EQUAL(result, cloud_storage::upload_result::success);
+            RPTEST_REQUIRE_EQ(result, cloud_storage::upload_result::success);
         }
     }
     m.advance_insync_offset(m.get_last_offset());

@@ -10,7 +10,7 @@
 #include "rpc/response_handler.h"
 #include "rpc/types.h"
 #include "ssx/semaphore.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/sleep.hh>
 

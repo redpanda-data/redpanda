@@ -185,7 +185,8 @@ public:
         if (!io) {
             return std::nullopt;
         }
-        return batch_reader(std::move(*io));
+        return batch_reader(
+          std::move(*io), batch_reader::tolerate_partial_last_batch::yes);
     }
 
     std::optional<batch_reader> read_nullable_flex_batch_reader() {
@@ -193,7 +194,8 @@ public:
         if (!io) {
             return std::nullopt;
         }
-        return batch_reader(std::move(*io));
+        return batch_reader(
+          std::move(*io), batch_reader::tolerate_partial_last_batch::yes);
     }
 
     template<

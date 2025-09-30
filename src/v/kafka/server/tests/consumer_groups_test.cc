@@ -24,7 +24,7 @@
 #include "model/timeout_clock.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/async.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "test_utils/scoped_config.h"
 #include "utils/base64.h"
 

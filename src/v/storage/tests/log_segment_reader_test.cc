@@ -85,7 +85,6 @@ TEST(reader_test, test_can_read_single_batch_same_offset) {
     storage::local_log_reader_config reader_config(
       model::offset(1),
       model::offset(1),
-      0,
       model::model_limits<model::offset>::max(),
       std::nullopt,
       std::nullopt,
@@ -104,7 +103,6 @@ TEST(reader_test, test_can_read_multiple_batches) {
     storage::local_log_reader_config reader_config(
       batches.front().base_offset(),
       batches.back().last_offset(),
-      0,
       model::model_limits<model::offset>::max(),
       std::nullopt,
       std::nullopt,
@@ -122,7 +120,6 @@ TEST(reader_test, test_does_not_read_past_committed_offset_one_segment) {
     storage::local_log_reader_config reader_config(
       batches.back().last_offset() + model::offset(1),
       batches.back().last_offset() + model::offset(1),
-      0,
       model::model_limits<model::offset>::max(),
       std::nullopt,
       std::nullopt,
@@ -140,7 +137,6 @@ TEST(reader_test, test_does_not_read_past_committed_offset_multiple_segments) {
     storage::local_log_reader_config reader_config(
       batches.back().last_offset(),
       batches.back().last_offset(),
-      0,
       model::model_limits<model::offset>::max(),
       std::nullopt,
       std::nullopt,
@@ -160,7 +156,6 @@ TEST(reader_test, test_does_not_read_past_max_bytes) {
     storage::local_log_reader_config reader_config(
       batches.front().base_offset(),
       batches.front().last_offset(),
-      0,
       static_cast<size_t>(batches.begin()->size_bytes()),
       std::nullopt,
       std::nullopt,
@@ -180,7 +175,6 @@ TEST(reader_test, test_reads_at_least_one_batch) {
     storage::local_log_reader_config reader_config(
       batches.front().base_offset(),
       batches.front().last_offset(),
-      0,
       model::model_limits<model::offset>::max(),
       std::nullopt,
       std::nullopt,
@@ -200,7 +194,6 @@ TEST(reader_test, test_read_batch_range) {
     storage::local_log_reader_config reader_config(
       batches.front().base_offset(),
       batches.back().last_offset(),
-      0,
       model::model_limits<model::offset>::max(),
       std::nullopt,
       std::nullopt,
@@ -227,7 +220,6 @@ TEST(reader_test, test_batch_type_filter) {
     storage::local_log_reader_config reader_config(
       batches.front().base_offset(),
       batches.back().last_offset(),
-      0,
       model::model_limits<model::offset>::max(),
       std::nullopt,
       std::nullopt,
@@ -247,7 +239,6 @@ TEST(reader_test, test_batch_type_filter) {
         auto config = local_log_reader_config(
           batches.front().base_offset(),
           batches.back().last_offset(),
-          0,
           std::numeric_limits<size_t>::max(),
           type_filter,
           std::nullopt,
@@ -285,7 +276,6 @@ TEST(reader_test, test_does_not_read_past_max_offset) {
     storage::local_log_reader_config reader_config(
       batches.front().base_offset(),
       batches.back().last_offset(),
-      0,
       std::numeric_limits<size_t>::max(),
       std::nullopt,
       std::nullopt,
@@ -368,7 +358,6 @@ TEST(reader_test, test_ghost_read_with_index_overflow) {
     storage::local_log_reader_config reader_config(
       model::offset{100},
       model::offset::max(),
-      0,
       model::model_limits<model::offset>::max(),
       std::nullopt,
       std::nullopt,
@@ -419,7 +408,6 @@ TEST(reader_test, test_read_with_index_overflow_base) {
     storage::local_log_reader_config reader_config(
       s->offsets().get_base_offset(),
       model::offset::max(),
-      0,
       model::model_limits<model::offset>::max(),
       std::nullopt,
       std::nullopt,

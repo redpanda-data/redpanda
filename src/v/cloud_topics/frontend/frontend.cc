@@ -38,6 +38,7 @@
 #include <seastar/util/defer.hh>
 
 #include <chrono>
+#include <expected>
 #include <iterator>
 #include <optional>
 #include <stdexcept>
@@ -100,7 +101,7 @@ static model::record_batch make_placeholder_batch(
     ph.header().first_timestamp = hdr.first_timestamp;
     ph.header().max_timestamp = hdr.max_timestamp;
     ph.header().base_sequence = hdr.base_sequence;
-    ph.header().header_crc = model::internal_header_only_crc(ph.header());
+    ph.header().reset_size_checksum_metadata(ph.data());
     return ph;
 }
 
@@ -141,7 +142,7 @@ static void update_batch_base_offset(
   model::record_batch& src, model::offset offset, model::term_id term) {
     src.set_term(term);
     src.header().base_offset = offset;
-    src.header().header_crc = model::internal_header_only_crc(src.header());
+    src.header().reset_size_checksum_metadata(src.data());
 }
 
 static chunked_vector<model::record_batch>
@@ -182,29 +183,6 @@ static ss::lw_shared_ptr<cloud_topics::ctp_stm_api> make_ctp_stm_api(
     return ss::make_lw_shared<cloud_topics::ctp_stm_api>(rtc, stm);
 }
 
-} // namespace
-
-frontend::frontend(
-  ss::lw_shared_ptr<cluster::partition> p, data_plane_api* app) noexcept
-  : _rtc(_as)
-  , _partition(std::move(p))
-  , _data_plane(app)
-  , _ctp_stm_api(make_ctp_stm_api(_rtc, _partition)) {}
-
-const model::ntp& frontend::ntp() const { return _partition->ntp(); }
-
-static kafka::offset get_log_end_offset(cluster::partition& p) {
-    auto ot_state = p.get_offset_translator_state();
-    // Local log is empty
-    if (p.dirty_offset() < p.raft_start_offset()) {
-        return model::offset_cast(
-          ot_state->from_log_offset(p.raft_start_offset()));
-    }
-    // Local log is not empty
-    return model::offset_cast(
-      ot_state->from_log_offset(model::next_offset(p.dirty_offset())));
-}
-
 static ss::future<std::vector<cluster::tx::tx_range>>
 get_aborted_transactions_local(
   cluster::partition& p, cloud_storage::offset_range offsets) {
@@ -228,6 +206,29 @@ get_aborted_transactions_local(
     co_return target;
 }
 
+} // namespace
+
+frontend::frontend(
+  ss::lw_shared_ptr<cluster::partition> p, data_plane_api* app) noexcept
+  : _rtc(_as)
+  , _partition(std::move(p))
+  , _data_plane(app)
+  , _ctp_stm_api(make_ctp_stm_api(_rtc, _partition)) {}
+
+const model::ntp& frontend::ntp() const { return _partition->ntp(); }
+
+kafka::offset frontend::get_log_end_offset() const {
+    auto ot_state = _partition->get_offset_translator_state();
+    // Local log is empty
+    if (_partition->dirty_offset() < _partition->raft_start_offset()) {
+        return model::offset_cast(
+          ot_state->from_log_offset(_partition->raft_start_offset()));
+    }
+    // Local log is not empty
+    return model::offset_cast(ot_state->from_log_offset(
+      model::next_offset(_partition->dirty_offset())));
+}
+
 kafka::offset frontend::local_start_offset() const {
     // NOTE: the "local" start offset is only used by the datalake subsystem.
     // The method defines the boundary starting from which the translation
@@ -238,21 +239,16 @@ kafka::offset frontend::local_start_offset() const {
 }
 
 kafka::offset frontend::start_offset() const {
-    // Ask partition for its start offset
-    // TODO: query metadata layer to get the actual start offset.
-    // the 'partition::sync_kafka_start_offset_override' is not invoked here
-    // because it's tied to both archival_metadata_stm and log_eviction_stm.
-    // For cloud topics we will do log eviction differently and the
-    // DeleteRecords API is not implemented yet. So the code is just
-    // using the start_offset of the Raft log at the moment which is incorrect.
-    auto so = _partition->raft_start_offset();
-    auto kso = _partition->get_offset_translator_state()->from_log_offset(so);
-    return model::offset_cast(kso);
+    return _ctp_stm_api->get_start_offset();
 }
 
 ss::future<std::expected<kafka::offset, frontend_errc>>
-frontend::sync_effective_start(model::timeout_clock::duration) {
-    // TODO: ask metadata layer
+frontend::sync_effective_start(model::timeout_clock::duration duration) {
+    bool synced = co_await _ctp_stm_api->sync_in_term(
+      model::timeout_clock::now() + duration);
+    if (!synced) {
+        co_return std::unexpected(frontend_errc::timeout);
+    }
     co_return start_offset();
 }
 
@@ -468,24 +464,32 @@ ss::future<> bg_upload_and_replicate(
                 if (res.has_error()) {
                     return res.error();
                 }
-                // We know that the data is replicated so it's safe to add
-                // the batch to the record batch cache before returning.
                 if (cache_enabled) {
-                    vassert(
-                      res.value().last_term != model::term_id{},
-                      "Term not set");
-                    update_batches(
-                      inp,
-                      kafka::offset_cast(res.value().last_offset),
-                      res.value().last_term);
-                    for (const auto& b : inp) {
+                    // The term_id is not guaranteed to be set if the request
+                    // was served from the list of finished requests. This might
+                    // happen if the request is coming from the snapshot (in
+                    // which case it's not stored) or from the log replay. The
+                    // simplest solution in this case is to skip caching.
+                    if (res.value().last_term >= model::term_id{0}) {
+                        update_batches(
+                          inp,
+                          kafka::offset_cast(res.value().last_offset),
+                          res.value().last_term);
+                        for (const auto& b : inp) {
+                            vlog(
+                              cd_log.trace,
+                              "Putting batch to cache: {}, term: {}",
+                              b.base_offset(),
+                              b.term());
+                            api->cache_put(ntp, b);
+                        }
+                    } else {
                         vlog(
-                          cd_log.trace,
-                          "Putting batch for {} to cache: {}, term: {}",
+                          cd_log.debug,
+                          "Skipping cache put for ntp {} at offset {} with "
+                          "unset term",
                           ntp,
-                          b.base_offset(),
-                          b.term());
-                        api->cache_put(ntp, b);
+                          res.value().last_offset);
                     }
                 }
                 return raft::replicate_result{
@@ -622,10 +626,36 @@ frontend::get_leader_epoch_last_offset(model::term_id term) const {
     co_return start_offset();
 }
 
-ss::future<std::expected<void, frontend_errc>>
-frontend::prefix_truncate(kafka::offset, ss::lowres_clock::time_point) {
-    /// DeleteRecords API is not supported in cloud topics yet.
-    co_return std::unexpected(frontend_errc::invalid_topic_exception);
+ss::future<std::expected<void, frontend_errc>> frontend::prefix_truncate(
+  kafka::offset truncation_point, ss::lowres_clock::time_point deadline) {
+    if (!_partition->raft()->log_config().is_remotely_collectable()) {
+        vlog(
+          cd_log.info,
+          "Cannot prefix-truncate topic/partition {} retention settings not "
+          "applied",
+          _partition->ntp());
+        co_return std::unexpected(frontend_errc::invalid_topic_exception);
+    }
+    if (truncation_point <= start_offset()) {
+        // no-op, return early
+        co_return std::expected<void, frontend_errc>{};
+    }
+    if (truncation_point > high_watermark()) {
+        co_return std::unexpected(frontend_errc::offset_out_of_range);
+    }
+    auto result = co_await _ctp_stm_api->set_start_offset(
+      truncation_point, deadline);
+    if (!result.has_value()) {
+        switch (result.error()) {
+        case ctp_stm_api_errc::not_leader:
+            co_return std::unexpected(frontend_errc::not_leader_for_partition);
+        case ctp_stm_api_errc::shutdown:
+        case ctp_stm_api_errc::failure:
+        case ctp_stm_api_errc::timeout:
+            co_return std::unexpected(frontend_errc::timeout);
+        }
+    }
+    co_return std::expected<void, frontend_errc>{};
 }
 
 ss::future<std::expected<std::monostate, frontend_errc>>
@@ -634,8 +664,44 @@ frontend::validate_fetch_offset(
   bool reading_from_follower,
   model::timeout_clock::time_point deadline) {
     if (reading_from_follower && !_partition->is_leader()) {
-        // TODO: implement follower fetching for cloud topics
-        co_return std::unexpected(frontend_errc::not_leader_for_partition);
+        std::optional<frontend_errc> ec = std::nullopt;
+        auto log_end_offset = get_log_end_offset();
+
+        model::offset leader_hwm;
+        kafka::offset available_to_read;
+
+        if (!ec.has_value()) {
+            leader_hwm
+              = _partition->get_offset_translator_state()->from_log_offset(
+                _partition->leader_high_watermark());
+            available_to_read = std::min(
+              model::offset_cast(leader_hwm), log_end_offset);
+
+            if (fetch_offset < start_offset()) {
+                ec = frontend_errc::offset_out_of_range;
+            } else if (fetch_offset > available_to_read) {
+                // Offset know to be committed but not yet available on the
+                // follower.
+                ec = frontend_errc::offset_not_available;
+            }
+        }
+
+        if (ec.has_value()) {
+            vlog(
+              cd_log.warn,
+              "ntp {}: fetch offset out of range on follower, requested: {}, "
+              "partition start offset: {}, high watermark: {}, leader high "
+              "watermark: {}, log end offset: {}, ec: {}",
+              ntp(),
+              fetch_offset,
+              start_offset(),
+              high_watermark(),
+              leader_hwm,
+              log_end_offset,
+              ec);
+            co_return std::unexpected(*ec);
+        }
+        co_return std::monostate{};
     }
 
     auto timeout = deadline - model::timeout_clock::now();
@@ -644,9 +710,7 @@ frontend::validate_fetch_offset(
         co_return std::unexpected(so.error());
     }
 
-    if (
-      fetch_offset < so.value()
-      || fetch_offset > get_log_end_offset(*_partition)) {
+    if (fetch_offset < so.value() || fetch_offset > get_log_end_offset()) {
         co_return std::unexpected(frontend_errc::offset_out_of_range);
     }
 
@@ -690,7 +754,7 @@ frontend::get_partition_info() const {
       replica_info{
         .id = _partition->raft()->self().id(),
         .high_watermark = high_watermark(),
-        .log_end_offset = get_log_end_offset(*_partition),
+        .log_end_offset = get_log_end_offset(),
         .is_alive = true,
       });
 

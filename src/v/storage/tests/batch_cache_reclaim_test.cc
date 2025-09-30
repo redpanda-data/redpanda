@@ -10,10 +10,10 @@
 #include "model/record.h"
 #include "storage/batch_cache.h"
 #include "storage/record_batch_builder.h"
-#include "test_utils/fixture.h"
 
 #include <seastar/core/memory.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/thread.hh>
 
 #include <gtest/gtest.h>
 

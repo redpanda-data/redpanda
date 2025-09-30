@@ -12,7 +12,7 @@
 #pragma once
 #include "base/seastarx.h"
 #include "finjector/hbadger.h"
-#include "random/fast_prng.h"
+#include "random/generators.h"
 #include "strings/string_switch.h"
 
 #include <seastar/core/sleep.hh>
@@ -88,14 +88,14 @@ private:
                 method_name)));
         }
         if (_delay_methods & type(method)) {
-            return ss::sleep(std::chrono::milliseconds(_prng() % 50));
+            return ss::sleep(std::chrono::milliseconds(_prng.get_int(50)));
         }
         if (_termination_methods & type(method)) {
             std::terminate();
         }
         return ss::make_ready_future<>();
     }
-    fast_prng _prng;
+    random_generators::rng _prng;
 };
 
 }; // namespace storage

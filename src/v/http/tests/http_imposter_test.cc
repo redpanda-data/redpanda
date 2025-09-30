@@ -11,7 +11,7 @@
 #include "bytes/iobuf_parser.h"
 #include "http/client.h"
 #include "http/tests/http_imposter.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <boost/test/unit_test.hpp>
 

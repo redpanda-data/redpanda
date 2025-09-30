@@ -24,7 +24,7 @@
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "storage/types.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "utils/lazy_abort_source.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_provider.h"

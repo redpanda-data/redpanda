@@ -30,7 +30,6 @@ jobs:
             ci-repeat
             dt
             microbench
-            install-pack
             rp-unit-test
             test-arm64
             test-codecov

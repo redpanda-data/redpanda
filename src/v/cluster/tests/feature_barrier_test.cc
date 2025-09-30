@@ -14,7 +14,7 @@
 #include "cluster/feature_manager.h"
 #include "cluster/members_table.h"
 #include "test_utils/async.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/manual_clock.hh>
 #include <seastar/core/sleep.hh>

@@ -2064,6 +2064,28 @@ void admin_server::register_cluster_config_routes() {
       });
 }
 
+namespace {
+ss::sstring redact_if_secret(std::string_view key, std::string_view val) {
+    if (config::shard_local_cfg().contains(ss::sstring{key})) {
+        const auto& p = config::shard_local_cfg().get(ss::sstring{key});
+        if (p.is_secret()) {
+            return "<redacted>";
+        }
+    }
+    return ss::sstring{val};
+}
+ss::sstring format_upsert_redacted(
+  const std::vector<cluster::cluster_property_kv>& upsert) {
+    std::vector<ss::sstring> parts;
+    parts.reserve(upsert.size());
+    for (const auto& p : upsert) {
+        parts.emplace_back(
+          fmt::format("{}={}", p.key, redact_if_secret(p.key, p.value)));
+    }
+    return fmt::format("[{}]", fmt::join(parts, ", "));
+}
+} // namespace
+
 ss::future<ss::json::json_return_type>
 admin_server::patch_cluster_config_handler(
   std::unique_ptr<ss::http::request> req,
@@ -2282,11 +2304,22 @@ admin_server::patch_cluster_config_handler(
       update.upsert.size(),
       update.remove.size());
 
+    auto upserts_str = format_upsert_redacted(update.upsert);
+    auto removes_str = update.remove;
+
     auto patch_result
       = co_await _controller->get_config_frontend().local().patch(
         std::move(update), model::timeout_clock::now() + 5s);
 
     co_await throw_on_error(*req, patch_result.errc, model::controller_ntp);
+
+    vlog(
+      adminlog.info,
+      "Successfully updated cluster configuration upsert={} remove={} with "
+      "version {}",
+      upserts_str,
+      removes_str,
+      patch_result.version);
 
     ss::httpd::cluster_config_json::cluster_config_write_result result;
     result.config_version = patch_result.version;

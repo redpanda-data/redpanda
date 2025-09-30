@@ -80,6 +80,8 @@ redpanda_cc_library(
     implementation_deps = [
         ":cluster_services_interface",
         ":data_plane_impl",
+        "//src/v/cloud_topics/housekeeper:manager",
+        "//src/v/cloud_topics/level_zero/gc:level_zero_gc",
         "//src/v/cloud_topics/manager",
     ],
     visibility = [
@@ -99,6 +101,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/common:file_io",
         "//src/v/cloud_topics/level_one/domain:domain_supervisor",
         "//src/v/cloud_topics/level_one/metastore:frontend",
+        "//src/v/cloud_topics/level_one/metastore:replicated_metastore",
         "//src/v/cloud_topics/level_zero/common:extent_meta",
         "//src/v/cloud_topics/reconciler",
         "//src/v/cluster",

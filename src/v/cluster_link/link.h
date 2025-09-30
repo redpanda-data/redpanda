@@ -89,6 +89,8 @@ public:
 
     kafka::data::rpc::partition_leader_cache& partition_leader_cache() noexcept;
 
+    security_service& get_security_service() noexcept;
+
     const kafka::data::rpc::partition_leader_cache&
     partition_leader_cache() const noexcept;
 

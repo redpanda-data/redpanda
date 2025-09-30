@@ -36,7 +36,7 @@
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/types.h"
 #include "test_utils/archival.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "test_utils/scoped_config.h"
 #include "utils/retry_chain_node.h"
 #include "utils/unresolved_address.h"
@@ -416,18 +416,16 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
        .term = model::term_id(2),
        .num_records = 1000,
        .timestamp = old_stamp},
-      {
-        .ntp = manifest_ntp,
-        .base_offset = model::offset(2000),
-        .term = model::term_id(3),
-        .num_records = 1000,
-      },
-      {
-        .ntp = manifest_ntp,
-        .base_offset = model::offset(3000),
-        .term = model::term_id(4),
-        .num_records = 1000,
-      }};
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(2000),
+       .term = model::term_id(3),
+       .num_records = 1000,
+       .timestamp = model::timestamp::now()},
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(3000),
+       .term = model::term_id(4),
+       .num_records = 1000,
+       .timestamp = model::timestamp::now()}};
 
     init_storage_api_local(segments);
     vlog(test_log.info, "Initialized, start waiting for partition leadership");
@@ -732,12 +730,11 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
        .term = model::term_id(3),
        .num_records = 1000,
        .timestamp = old_stamp},
-      {
-        .ntp = manifest_ntp,
-        .base_offset = model::offset(3000),
-        .term = model::term_id(4),
-        .num_records = 1000,
-      }};
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(3000),
+       .term = model::term_id(4),
+       .num_records = 1000,
+       .timestamp = model::timestamp::now()}};
 
     init_storage_api_local(segments);
 

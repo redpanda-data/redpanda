@@ -13,6 +13,7 @@
 #include "cloud_topics/level_one/common/object.h"
 #include "cloud_topics/level_one/common/object_id.h"
 #include "cloud_topics/level_one/frontend_reader/reader.h"
+#include "cloud_topics/level_one/frontend_reader/tests/l1_reader_fixture.h"
 #include "cloud_topics/level_one/metastore/simple_metastore.h"
 #include "cloud_topics/log_reader_config.h"
 #include "container/chunked_circular_buffer.h"
@@ -32,18 +33,6 @@ using namespace cloud_topics;
 using namespace std::chrono_literals;
 
 namespace {
-
-std::pair<model::ntp, model::topic_id_partition>
-make_ntidp(std::string_view topic_name) {
-    static constexpr auto test_namespace = "test_ns";
-    static constexpr model::partition_id test_partition_id{0};
-
-    auto ntp = model::ntp{
-      model::ns{test_namespace}, model::topic{topic_name}, test_partition_id};
-    auto tidp = model::topic_id_partition{
-      model::topic_id{uuid_t::create()}, test_partition_id};
-    return std::make_pair(ntp, tidp);
-}
 
 chunked_circular_buffer<model::record_batch>
 copy(chunked_circular_buffer<model::record_batch>& input) {
@@ -84,120 +73,7 @@ chunked_circular_buffer<model::record_batch> slice_by_offset(
 
 } // anonymous namespace
 
-class l1_reader_test : public seastar_test {
-protected:
-    using tidp_batches_t = std::pair<
-      model::topic_id_partition,
-      chunked_circular_buffer<model::record_batch>>;
-
-    void make_l1_objects(std::vector<tidp_batches_t>& batches_by_tidp) {
-        auto meta_builder = _metastore.object_builder();
-
-        // First record the object ID for each tidp,
-        std::map<model::topic_id_partition, l1::object_id> oid_by_tidp;
-        for (auto& [tidp, unused] : batches_by_tidp) {
-            oid_by_tidp[tidp] = meta_builder->get_or_create_object_for(tidp);
-        }
-
-        // Then create output streams and builders for each object.
-        std::map<l1::object_id, iobuf> bufs_by_oid;
-        std::map<l1::object_id, std::unique_ptr<l1::object_builder>>
-          builders_by_oid;
-        for (auto& [unused, oid] : oid_by_tidp) {
-            if (!builders_by_oid.contains(oid)) {
-                bufs_by_oid[oid] = iobuf{};
-                builders_by_oid[oid] = l1::object_builder::create(
-                  make_iobuf_ref_output_stream(bufs_by_oid[oid]), {});
-            }
-        }
-
-        // Create the term offset map first before consuming batches.
-        l1::metastore::term_offset_map_t term_map;
-        for (auto& [tidp, batches] : batches_by_tidp) {
-            term_map[tidp].push_back(
-              l1::metastore::term_offset{
-                .term = model::term_id{1},
-                .first_offset = model::offset_cast(
-                  batches.front().base_offset()),
-              });
-        }
-
-        // Load each ntp's batches into the object.
-        for (auto& [tidp, batches] : batches_by_tidp) {
-            auto& oid = oid_by_tidp[tidp];
-            auto& builder = builders_by_oid[oid];
-            builder->start_partition(tidp).get();
-            for (auto& batch : batches) {
-                builder->add_batch(std::move(batch)).get();
-            }
-        }
-
-        // Finish all the objects, upload them, and use the metadata
-        // to prepare the metastore registration.
-        for (auto& [oid, builder] : builders_by_oid) {
-            auto obj_info = builder->finish().get();
-            builder->close().get();
-
-            _io.put_object(oid, std::move(bufs_by_oid[oid]));
-
-            for (auto& [tidp, partition] : obj_info.index.partitions) {
-                meta_builder
-                  ->add(
-                    oid,
-                    l1::metastore::object_metadata::ntp_metadata{
-                      .tidp = tidp,
-                      .base_offset = partition.first_offset,
-                      .last_offset = partition.last_offset,
-                      .max_timestamp = partition.max_timestamp,
-                      .pos = partition.file_position,
-                      .size = partition.length,
-                    })
-                  .value();
-            }
-
-            meta_builder
-              ->finish(oid, obj_info.footer_offset, obj_info.size_bytes)
-              .value();
-        }
-
-        _metastore.add_objects(std::move(meta_builder), term_map).get().value();
-    }
-
-    model::record_batch_reader make_reader(
-      const model::ntp& ntp,
-      const model::topic_id_partition& tidp,
-      kafka::offset start_offset = kafka::offset{0},
-      kafka::offset max_offset = kafka::offset::max(),
-      size_t max_bytes = std::numeric_limits<size_t>::max(),
-      bool strict_max_bytes = false) {
-        cloud_topic_log_reader_config config(
-          start_offset,
-          max_offset,
-          /*min_bytes=*/0, // min_bytes
-          max_bytes,
-          /*type_filter=*/std::nullopt,
-          /*first_timestamp=*/std::nullopt,
-          /*abort_source=*/std::nullopt,
-          /*client_addr=*/std::nullopt,
-          /*strict_max_bytes=*/strict_max_bytes);
-        return model::record_batch_reader(
-          std::make_unique<level_one_log_reader_impl>(
-            config, ntp, tidp, &_metastore, &_io));
-    }
-
-    chunked_circular_buffer<model::record_batch>
-    read_all(model::record_batch_reader reader) {
-        auto data = model::consume_reader_to_memory(
-                      std::move(reader), model::no_timeout)
-                      .get();
-        chunked_circular_buffer<model::record_batch> result;
-        std::move(data.begin(), data.end(), std::back_inserter(result));
-        return result;
-    }
-
-    l1::simple_metastore _metastore{};
-    l1::fake_io _io{};
-};
+class l1_reader_test : public l1::l1_reader_fixture {};
 
 TEST_F(l1_reader_test, empty_read) {
     auto [ntp, tidp] = make_ntidp("test_topic");
@@ -405,8 +281,8 @@ TEST_F(l1_reader_test, missing_object) {
 
     // Register object in metastore but don't upload.
     // This is corruption and readers should throw.
-    auto builder = _metastore.object_builder();
-    auto oid = builder->get_or_create_object_for(tidp);
+    auto builder = _metastore.object_builder().get().value();
+    auto oid = builder->get_or_create_object_for(tidp).value();
     builder
       ->add(
         oid,
@@ -428,7 +304,7 @@ TEST_F(l1_reader_test, missing_object) {
         .first_offset = kafka::offset{0},
       });
 
-    _metastore.add_objects(std::move(builder), term_map).get().value();
+    _metastore.add_objects(*builder, term_map).get().value();
 
     auto reader = make_reader(ntp, tidp);
     EXPECT_THROW(read_all(std::move(reader)), std::runtime_error);
@@ -451,9 +327,9 @@ TEST_F(l1_reader_test, empty_offset_range) {
     // Mimic an object from which all partition data has been compacted.
     // The object has no data for the partition, but is registered
     // to cover a non-empty offset range in the metastore.
-    auto meta_builder = _metastore.object_builder();
+    auto meta_builder = _metastore.object_builder().get().value();
 
-    auto oid = meta_builder->get_or_create_object_for(tidp);
+    auto oid = meta_builder->get_or_create_object_for(tidp).value();
 
     auto buf = iobuf{};
     auto builder = l1::object_builder::create(
@@ -488,7 +364,7 @@ TEST_F(l1_reader_test, empty_offset_range) {
         .term = model::term_id{1},
         .first_offset = high_watermark,
       });
-    _metastore.add_objects(std::move(meta_builder), term_map).get().value();
+    _metastore.add_objects(*meta_builder, term_map).get().value();
 
     // Write some objects after the empty object.
     auto final_batches

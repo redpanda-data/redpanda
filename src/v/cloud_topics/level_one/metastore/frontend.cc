@@ -69,6 +69,18 @@ ss::future<rpc::get_first_timestamp_ge_reply> do_get_first_timestamp_ge(
     co_return co_await domain_mgr->get_first_timestamp_ge(std::move(req));
 }
 
+ss::future<rpc::get_first_offset_for_bytes_reply> do_get_first_offset_for_bytes(
+  domain_supervisor& domain_supervisor,
+  const model::ntp& ntp,
+  rpc::get_first_offset_for_bytes_request req) {
+    auto domain_mgr = domain_supervisor.get(ntp);
+    if (!domain_mgr) {
+        co_return rpc::get_first_offset_for_bytes_reply{
+          .ec = rpc::errc::not_leader};
+    }
+    co_return co_await domain_mgr->get_first_offset_for_bytes(std::move(req));
+}
+
 ss::future<rpc::get_offsets_reply> do_get_offsets(
   domain_supervisor& domain_supervisor,
   const model::ntp& ntp,
@@ -376,12 +388,34 @@ frontend::get_first_timestamp_ge_locally(
       });
 }
 
+ss::future<rpc::get_first_offset_for_bytes_reply>
+frontend::get_first_offset_for_bytes_locally(
+  rpc::get_first_offset_for_bytes_request request,
+  const model::ntp& metastore_ntp,
+  ss::shard_id shard) {
+    co_return co_await container().invoke_on(
+      shard, [metastore_ntp, req = std::move(request)](frontend& fe) mutable {
+          return do_get_first_offset_for_bytes(
+            *(fe._domain_supervisor), metastore_ntp, std::move(req));
+      });
+}
+
 ss::future<rpc::get_first_timestamp_ge_reply> frontend::get_first_timestamp_ge(
   rpc::get_first_timestamp_ge_request request, local_only local_only_exec) {
     auto holder = _gate.hold();
     co_return co_await process<
       &frontend::get_first_timestamp_ge_locally,
       &client::get_first_timestamp_ge>(
+      std::move(request), bool(local_only_exec));
+}
+
+ss::future<rpc::get_first_offset_for_bytes_reply>
+frontend::get_first_offset_for_bytes(
+  rpc::get_first_offset_for_bytes_request request, local_only local_only_exec) {
+    auto holder = _gate.hold();
+    co_return co_await process<
+      &frontend::get_first_offset_for_bytes_locally,
+      &client::get_first_offset_for_bytes>(
       std::move(request), bool(local_only_exec));
 }
 

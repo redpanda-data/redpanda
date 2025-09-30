@@ -39,7 +39,7 @@
 #include "storage/segment.h"
 #include "storage/types.h"
 #include "test_utils/async.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/future.hh>

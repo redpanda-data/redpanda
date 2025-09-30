@@ -865,8 +865,12 @@ ss::sstring coordinator::get_effective_default_partition_spec(
       using_glue_catalog()
       && current_spec == cfg.iceberg_default_partition_spec.default_value()) {
         // Glue can't partition on nested fields like redpanda.timestamp.
-        vlog(
-          datalake_log.warn,
+        static constexpr auto rate_limit = std::chrono::seconds(5);
+        static thread_local ss::logger::rate_limit rate(rate_limit);
+        vloglr(
+          datalake_log,
+          ss::log_level::warn,
+          rate,
           "Overriding default partition spec to '()' for AWS Glue "
           "compatibility");
         return "()";

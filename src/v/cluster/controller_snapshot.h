@@ -315,7 +315,7 @@ struct cluster_link_t
 struct controller_snapshot
   : public serde::checksum_envelope<
       controller_snapshot,
-      serde::version<4>,
+      serde::version<5>,
       serde::compat_version<0>> {
     controller_snapshot_parts::bootstrap_t bootstrap;
     controller_snapshot_parts::features_t features;

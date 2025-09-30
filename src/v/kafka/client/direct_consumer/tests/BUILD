@@ -28,6 +28,7 @@ redpanda_cc_gtest(
         "//src/v/kafka/client/direct_consumer",
         "//src/v/kafka/client/test:cluster_mock",
         "//src/v/kafka/protocol",
+        "//src/v/model",
         "//src/v/model/tests:random",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",

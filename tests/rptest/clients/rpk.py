@@ -17,7 +17,7 @@ import time
 import typing
 from collections import namedtuple
 from dataclasses import dataclass, field
-from typing import Any, Iterator, Optional
+from typing import Any, Iterator, Literal, overload
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.errors import TimeoutError
@@ -37,15 +37,21 @@ DEFAULT_PRODUCE_TIMEOUT = 5
 
 
 class ClusterAuthorizationError(Exception):
-    def __init__(self, message):
+    def __init__(self, message: str) -> None:
         self.message = message
 
-    def __str__(self):
+    def __str__(self) -> str:
         return repr(self.message)
 
 
 class RpkException(Exception):
-    def __init__(self, msg, stderr="", returncode=None, stdout=""):
+    def __init__(
+        self,
+        msg: str,
+        stderr: str = "",
+        returncode: int | None = None,
+        stdout: str = "",
+    ) -> None:
         self.msg = msg
         self.stdout = stdout
         self.stderr = stderr
@@ -54,8 +60,8 @@ class RpkException(Exception):
         # to caller when when rpk exits 1
         self.parsed_output: list[RpkOffsetDeleteResponsePartition] | None = None
 
-    def __str__(self):
-        def last_two(input: str):
+    def __str__(self) -> str:
+        def last_two(input: str) -> str:
             lines = input.splitlines()
             if len(lines) > 2:
                 return f"... ({len(lines) - 2} lines skipped)\n" + "\n".join(lines[-2:])
@@ -79,8 +85,16 @@ class RpkException(Exception):
 
 class RpkPartition:
     def __init__(
-        self, id, leader, leader_epoch, replicas, lso, hw, start_offset, load_error=None
-    ):
+        self,
+        id: int,
+        leader: int,
+        leader_epoch: int,
+        replicas: list[int],
+        lso: int,
+        hw: int,
+        start_offset: int,
+        load_error: str | None = None,
+    ) -> None:
         self.id = id
         self.leader = leader
         self.leader_epoch = leader_epoch
@@ -90,7 +104,7 @@ class RpkPartition:
         self.start_offset = start_offset
         self.load_error = load_error
 
-    def __str__(self):
+    def __str__(self) -> str:
         ret = "id: {}, leader: {}, leader_epoch: {} replicas: {}, hw: {}, start_offset: {}".format(
             self.id,
             self.leader,
@@ -103,8 +117,8 @@ class RpkPartition:
             ret += f", load_error: `{self.load_error}'"
         return ret
 
-    def __eq__(self, other):
-        if other is None:
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, RpkPartition):
             return False
         return (
             self.id == other.id
@@ -120,10 +134,10 @@ class RpkPartition:
 class RpkGroupPartition(typing.NamedTuple):
     topic: str
     partition: int
-    current_offset: Optional[int]
-    log_start_offset: Optional[int]
-    log_end_offset: Optional[int]
-    lag: Optional[int]
+    current_offset: int | None
+    log_start_offset: int | None
+    log_end_offset: int | None
+    lag: int | None
     member_id: str
     instance_id: str | None
     client_id: str
@@ -148,7 +162,7 @@ class RpkListGroup(typing.NamedTuple):
     state: str
 
     @staticmethod
-    def from_line(line: str):
+    def from_line(line: str) -> "RpkListGroup":
         parts = line.split()
         return RpkListGroup(broker=parts[0], group=parts[1], state=parts[2])
 
@@ -171,7 +185,7 @@ class RpkWasmListResponse(typing.NamedTuple):
 
 
 class RpkClusterInfoNode:
-    def __init__(self, id, address):
+    def __init__(self, id: int, address: str) -> None:
         self.id = id
         self.address = address
 
@@ -214,7 +228,7 @@ class RpkColumnHeader:
     name: str
     padding: int = 0
 
-    def width(self):
+    def width(self) -> int:
         return len(self.name) + self.padding
 
 
@@ -228,28 +242,28 @@ class RpkTable:
 class RPKACLInput:
     # Can't use mutables in defaults of dataclass
     # https://docs.python.org/3/library/dataclasses.html#dataclasses.field
-    allow_principal: list[str] = field(default_factory=list)
-    deny_principal: list[str] = field(default_factory=list)
-    allow_role: list[str] = field(default_factory=list)
-    deny_role: list[str] = field(default_factory=list)
-    allow_host: list[str] = field(default_factory=list)
-    deny_host: list[str] = field(default_factory=list)
-    topic: list[str] = field(default_factory=list)
-    group: list[str] = field(default_factory=list)
-    operation: list[str] = field(default_factory=list)
-    txn_id: list[str] = field(default_factory=list)
+    allow_principal: list[str] = field(default_factory=list[str])
+    deny_principal: list[str] = field(default_factory=list[str])
+    allow_role: list[str] = field(default_factory=list[str])
+    deny_role: list[str] = field(default_factory=list[str])
+    allow_host: list[str] = field(default_factory=list[str])
+    deny_host: list[str] = field(default_factory=list[str])
+    topic: list[str] = field(default_factory=list[str])
+    group: list[str] = field(default_factory=list[str])
+    operation: list[str] = field(default_factory=list[str])
+    txn_id: list[str] = field(default_factory=list[str])
     cluster: bool = False
     resource_pattern_type: str = ""
-    registry_subject: list[str] = field(default_factory=list)
+    registry_subject: list[str] = field(default_factory=list[str])
     registry_global: bool = False
 
 
-def parse_rpk_table(out):
+def parse_rpk_table(out: str) -> RpkTable:
     lines = out.splitlines()
     return parse_rpk_table_lines(lines)
 
 
-def parse_rpk_table_lines(lines):
+def parse_rpk_table_lines(lines: list[str]) -> RpkTable:
     h_idx = 0
     for line in lines:
         m = re.match("^\(.+\)$", line)
@@ -328,7 +342,7 @@ class AclList:
         }
 
     @classmethod
-    def parse_raw(cls, raw: str):
+    def parse_raw(cls, raw: str) -> "AclList":
         table = parse_rpk_table(raw)
         return AclList(table)
 
@@ -358,13 +372,13 @@ class RpkTool:
 
     def __init__(
         self,
-        redpanda,
+        redpanda: Any,
         username: str | None = None,
         password: str | None = None,
         sasl_mechanism: str | None = None,
-        tls_cert: Optional[tls.Certificate] = None,
-        tls_enabled: Optional[bool] = None,
-    ):
+        tls_cert: tls.Certificate | None = None,
+        tls_enabled: bool | None = None,
+    ) -> None:
         self._redpanda = redpanda
 
         check_username_password(username, password)
@@ -397,7 +411,7 @@ class RpkTool:
         replicas: int | None = None,
         config: dict[str, Any] | None = None,
     ):
-        def create_topic():
+        def create_topic() -> tuple[bool, str] | bool:
             try:
                 cmd = ["create", topic]
                 cmd += ["--partitions", str(partitions)]
@@ -425,11 +439,11 @@ class RpkTool:
         except TimeoutError:
             raise RpkException("rpk couldn't create topic within 10s timeout")
 
-    def add_partitions(self, topic, partitions):
+    def add_partitions(self, topic: str, partitions: int) -> str:
         cmd = ["add-partitions", topic, "-n", str(partitions)]
         return self._run_topic(cmd)
 
-    def _check_stdout_success(self, output):
+    def _check_stdout_success(self, output: str) -> None:
         """
         Helper for topic operations where rpk does not surface errors
         in return codes
@@ -443,16 +457,16 @@ class RpkTool:
 
     def _sasl_set_principal_access(
         self,
-        principal,
-        operations,
-        resource,
-        resource_name,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-        mechanism: Optional[str] = None,
-        deny=False,
+        principal: str,
+        operations: str,
+        resource: str,
+        resource_name: str,
+        username: str | None = None,
+        password: str | None = None,
+        mechanism: str | None = None,
+        deny: bool = False,
         ptype: str = "principal",
-    ):
+    ) -> str:
         username = username if username is not None else self._username
         password = password if password is not None else self._password
         mechanism = mechanism if mechanism is not None else self._sasl_mechanism
@@ -490,21 +504,23 @@ class RpkTool:
         ] + self._tls_settings()
         return self._run(cmd)
 
-    def sasl_allow_principal(self, *args, **kwargs):
+    def sasl_allow_principal(self, *args: Any, **kwargs: Any) -> str:
         return self._sasl_set_principal_access(*args, **kwargs, deny=False)
 
-    def sasl_deny_principal(self, *args, **kwargs):
+    def sasl_deny_principal(self, *args: Any, **kwargs: Any) -> str:
         return self._sasl_set_principal_access(*args, **kwargs, deny=True)
 
-    def sasl_allow_role(self, *args, **kwargs):
+    def sasl_allow_role(self, *args: Any, **kwargs: Any) -> str:
         return self._sasl_set_principal_access(
             *args, **kwargs, deny=False, ptype="role"
         )
 
-    def sasl_deny_role(self, *args, **kwargs):
+    def sasl_deny_role(self, *args: Any, **kwargs: Any) -> str:
         return self._sasl_set_principal_access(*args, **kwargs, deny=True, ptype="role")
 
-    def allow_principal(self, principal, operations, resource, resource_name):
+    def allow_principal(
+        self, principal: str, operations: list[str], resource: str, resource_name: str
+    ) -> str:
         if resource == "topic":
             resource = "--topic"
         elif resource == "transactional-id":
@@ -527,7 +543,9 @@ class RpkTool:
         ]
         return self._run(cmd)
 
-    def delete_principal(self, principal, operations, resource, resource_name):
+    def delete_principal(
+        self, principal: str, operations: list[str], resource: str, resource_name: str
+    ) -> str:
         if resource == "topic":
             resource = "--topic"
         elif resource == "transactional-id":
@@ -549,7 +567,9 @@ class RpkTool:
         ] + self._kafka_conn_settings()
         return self._run(cmd)
 
-    def _sasl_create_user_cmd(self, new_username, new_password, mechanism):
+    def _sasl_create_user_cmd(
+        self, new_username: str, new_password: str, mechanism: str
+    ) -> list[str]:
         cmd = ["security", "user", "create", new_username]
         cmd += ["--api-urls", self._redpanda.admin_endpoints()]
         cmd += ["--mechanism", mechanism]
@@ -560,19 +580,22 @@ class RpkTool:
         return cmd
 
     def sasl_create_user(
-        self, new_username, new_password="", mechanism="SCRAM-SHA-256"
-    ):
+        self,
+        new_username: str,
+        new_password: str = "",
+        mechanism: str = "SCRAM-SHA-256",
+    ) -> str:
         cmd = self._sasl_create_user_cmd(new_username, new_password, mechanism)
 
         return self._run(cmd)
 
-    def sasl_list_users(self):
+    def sasl_list_users(self) -> str:
         cmd = ["security", "user", "list"]
         cmd += ["--api-urls", self._redpanda.admin_endpoints()]
 
         return self._run(cmd)
 
-    def sasl_delete_user(self, username):
+    def sasl_delete_user(self, username: str) -> str:
         cmd = ["acl", "user", "delete", username]
         cmd += ["--api-urls", self._redpanda.admin_endpoints()]
 
@@ -580,12 +603,12 @@ class RpkTool:
 
     def sasl_create_user_basic(
         self,
-        new_username,
-        auth_user="",
-        auth_password="",
-        new_password="",
-        mechanism="SCRAM-SHA-256",
-    ):
+        new_username: str,
+        auth_user: str = "",
+        auth_password: str = "",
+        new_password: str = "",
+        mechanism: str = "SCRAM-SHA-256",
+    ) -> str:
         cmd = self._sasl_create_user_cmd(new_username, new_password, mechanism)
         cmd += ["--user", auth_user, "--password", auth_password]
 
@@ -593,12 +616,12 @@ class RpkTool:
 
     def sasl_create_user_basic_mix(
         self,
-        new_username,
-        auth_user="",
-        auth_password="",
-        new_password="",
-        mechanism="SCRAM-SHA-256",
-    ):
+        new_username: str,
+        auth_user: str = "",
+        auth_password: str = "",
+        new_password: str = "",
+        mechanism: str = "SCRAM-SHA-256",
+    ) -> str:
         cmd = [
             "acl",
             "user",
@@ -615,7 +638,7 @@ class RpkTool:
 
         return self._run(cmd)
 
-    def sasl_update_user(self, user, new_password, new_mechanism):
+    def sasl_update_user(self, user: str, new_password: str, new_mechanism: str) -> str:
         cmd = [
             "acl",
             "user",
@@ -630,7 +653,7 @@ class RpkTool:
         ]
         return self._run(cmd)
 
-    def delete_topic(self, topic: str):
+    def delete_topic(self, topic: str) -> bool:
         cmd = ["delete", topic]
         output = self._run_topic(cmd)
         table = parse_rpk_table(output)
@@ -653,14 +676,20 @@ class RpkTool:
 
         return True
 
-    def list_topics(self, detailed=False):
+    @overload
+    def list_topics(self, detailed: Literal[False] = False) -> list[str]: ...
+
+    @overload
+    def list_topics(self, detailed: Literal[True]) -> list[list[str]]: ...
+
+    def list_topics(self, detailed: bool = False) -> list[str | list[str]]:
         cmd = ["list"]
 
         output = self._run_topic(cmd)
         if "No topics found." in output:
             return []
 
-        def topic_line(line):
+        def topic_line(line: str) -> str | list[str]:
             parts = line.split()
             assert len(parts) == 3
             return parts[0] if not detailed else parts
@@ -668,25 +697,25 @@ class RpkTool:
         lines = output.splitlines()
         for i, line in enumerate(lines):
             if line.split() == ["NAME", "PARTITIONS", "REPLICAS"]:
-                return map(topic_line, lines[i + 1 :])
+                return list(map(topic_line, lines[i + 1 :]))
 
         assert False, "Unexpected output format"
 
     def produce(
         self,
-        topic,
-        key,
-        msg,
-        headers=[],
-        partition=None,
-        timeout=None,
-        compression_type=TopicSpec.COMPRESSION_NONE,
-        schema_id=None,
-        schema_key_id=None,
-        proto_msg=None,
-        proto_key_msg=None,
-        tombstone=False,
-    ):
+        topic: str,
+        key: str,
+        msg: str,
+        headers: list[str] = [],
+        partition: int | None = None,
+        timeout: float | None = None,
+        compression_type: str = TopicSpec.COMPRESSION_NONE,
+        schema_id: int | None = None,
+        schema_key_id: int | None = None,
+        proto_msg: str | None = None,
+        proto_key_msg: str | None = None,
+        tombstone: bool = False,
+    ) -> int:
         if timeout is None:
             # For produce, we use a lower timeout than the general
             # default, because tests generally call this when
@@ -802,7 +831,7 @@ class RpkTool:
         :return:
         """
 
-        def int_or_none(value):
+        def int_or_none(value: str) -> int | None:
             m = re.match("^-?\d+$", value)
             if m:
                 return int(value)
@@ -869,7 +898,7 @@ class RpkTool:
 
             initialized = (
                 obj["LEADER"] >= 0
-                and obj["EPOCH"] >= 0
+                and obj["EPOCH"] >= -1
                 and obj["REPLICAS"] != None
                 and obj["LOG-START-OFFSET"] != None
                 and obj["LOG-START-OFFSET"] >= 0
@@ -891,7 +920,7 @@ class RpkTool:
             if initialized or tolerant:
                 yield partition
 
-    def describe_topic_configs(self, topic):
+    def describe_topic_configs(self, topic: str) -> dict[str, tuple[str, str]]:
         cmd = ["describe", topic, "-c"]
         output = self._run_topic(cmd)
         assert "not found" not in output, (
@@ -905,11 +934,11 @@ class RpkTool:
                 if key == "KEY":
                     continue
                 res[key] = value, source
-            except:
+            except Exception:
                 pass
         return res
 
-    def alter_topic_config(self, topic, set_key, set_value):
+    def alter_topic_config(self, topic: str, set_key: str, set_value: Any) -> None:
         cmd = ["alter-config", topic, "--set", f"{set_key}={set_value}", "--no-confirm"]
         out = self._run_topic(cmd)
         lines = out.splitlines()
@@ -927,11 +956,11 @@ class RpkTool:
                 f"Unexpected output, expected '{topic}\\s+OK' got '{lines[1]}' on setting {topic} {set_key}={set_value}"
             )
 
-    def delete_topic_config(self, topic, key):
+    def delete_topic_config(self, topic: str, key: str) -> None:
         cmd = ["alter-config", topic, "--delete", key]
         self._run_topic(cmd)
 
-    def add_topic_partitions(self, topic, additional):
+    def add_topic_partitions(self, topic: str, additional: int) -> str:
         cmd = ["add-partitions", topic, "--num", str(additional)]
         output = self._run_topic(cmd)
         self._check_stdout_success(output)
@@ -939,18 +968,18 @@ class RpkTool:
 
     def consume(
         self,
-        topic,
-        n=None,
-        group=None,
-        regex=False,
-        offset=None,
-        partition=None,
-        fetch_max_bytes=None,
-        quiet=False,
-        format=None,
-        timeout=None,
-        use_schema_registry=None,
-    ):
+        topic: str,
+        n: int | None = None,
+        group: str | None = None,
+        regex: bool = False,
+        offset: str | int | None = None,
+        partition: int | None = None,
+        fetch_max_bytes: int | None = None,
+        quiet: bool = False,
+        format: str | None = None,
+        timeout: float | None = None,
+        use_schema_registry: str | None = None,
+    ) -> str:
         cmd = ["consume", topic]
         if group is not None:
             cmd += ["-g", group]
@@ -975,7 +1004,7 @@ class RpkTool:
             cmd, timeout=timeout, use_schema_registry=use_schema_registry is not None
         )
 
-    def group_seek_to(self, group, to):
+    def group_seek_to(self, group: str, to: str) -> None:
         cmd = ["seek", group, "--to", to]
         self._run_group(cmd)
 
@@ -1398,7 +1427,14 @@ class RpkTool:
         ]
         return self._execute(cmd)
 
-    def _execute(self, cmd, stdin=None, timeout=None, log_cmd=True, env=None):
+    def _execute(
+        self,
+        cmd: list[str],
+        stdin: str | None = None,
+        timeout: int | None = None,
+        log_cmd: bool = True,
+        env: dict[str, str] | None = None,
+    ) -> str:
         if timeout is None:
             timeout = DEFAULT_TIMEOUT
 
@@ -1451,7 +1487,7 @@ class RpkTool:
 
         return output
 
-    def _rpk_binary(self):
+    def _rpk_binary(self) -> str:
         # NOTE: since this runs on separate nodes from the service, the binary
         # path used by each node may differ from that returned by
         # redpanda.find_binary(), e.g. if using a RedpandaInstaller.
@@ -1562,7 +1598,7 @@ class RpkTool:
             ]
         return flags
 
-    def _kafka_conn_settings(self, node: Optional[ClusterNode] = None):
+    def _kafka_conn_settings(self, node: ClusterNode | None = None) -> list[str]:
         brokers = (
             self._redpanda.broker_address(node) if node else self._redpanda.brokers()
         )
@@ -1584,9 +1620,9 @@ class RpkTool:
     def acl_list(
         self,
         flags: list[str] = [],
-        node: Optional[ClusterNode] = None,
+        node: ClusterNode | None = None,
         format: str = "text",
-    ):
+    ) -> Any:
         """
         Run `rpk acl list` and return the results.
 
@@ -2367,7 +2403,7 @@ class RpkTool:
         name=[],
         strict=False,
         output_format="json",
-        node: Optional[ClusterNode] = None,
+        node: ClusterNode | None = None,
     ):
         cmd = ["describe"]
 
@@ -2390,7 +2426,7 @@ class RpkTool:
         name=[],
         dry=False,
         output_format="json",
-        node: Optional[ClusterNode] = None,
+        node: ClusterNode | None = None,
     ):
         cmd = ["alter"]
 
@@ -2412,7 +2448,7 @@ class RpkTool:
         return self._run_cluster_quotas(cmd, output_format=output_format)
 
     def _run_cluster_quotas(
-        self, cmd, output_format="json", node: Optional[ClusterNode] = None
+        self, cmd, output_format="json", node: ClusterNode | None = None
     ):
         cmd = (
             [

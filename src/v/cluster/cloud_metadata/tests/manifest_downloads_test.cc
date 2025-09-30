@@ -87,7 +87,7 @@ TEST_F(cluster_metadata_fixture, test_download_manifest) {
                        remote, cluster_uuid, bucket, retry_node)
                        .get();
         ASSERT_TRUE(m_res.has_value());
-        BOOST_CHECK_EQUAL(i, m_res.value().metadata_id());
+        EXPECT_EQ(i, m_res.value().metadata_id());
     }
 
     // Now set the deadline to something very low, and check that it fails.
@@ -96,8 +96,8 @@ TEST_F(cluster_metadata_fixture, test_download_manifest) {
     m_res = download_highest_manifest_for_cluster(
               remote, cluster_uuid, bucket, timeout_retry_node)
               .get();
-    BOOST_CHECK(m_res.has_error());
-    BOOST_CHECK_EQUAL(error_outcome::list_failed, m_res.error());
+    ASSERT_TRUE(m_res.has_error());
+    ASSERT_EQ(error_outcome::list_failed, m_res.error());
 }
 
 TEST_F(cluster_metadata_fixture, test_download_highest_manifest_in_bucket) {
@@ -122,8 +122,8 @@ TEST_F(cluster_metadata_fixture, test_download_highest_manifest_in_bucket) {
     m_res
       = download_highest_manifest_in_bucket(remote, bucket, retry_node).get();
     ASSERT_TRUE(m_res.has_value());
-    BOOST_CHECK_EQUAL(cluster_uuid, m_res.value().cluster_uuid);
-    BOOST_CHECK_EQUAL(10, m_res.value().metadata_id());
+    EXPECT_EQ(cluster_uuid, m_res.value().cluster_uuid);
+    EXPECT_EQ(10, m_res.value().metadata_id());
 
     auto new_uuid = model::cluster_uuid(uuid_t::create());
     manifest.cluster_uuid = new_uuid;

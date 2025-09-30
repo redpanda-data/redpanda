@@ -1017,10 +1017,10 @@ class DataTransformsLoggingTest(BaseDataTransformsLoggingTest):
         self.setup_identity_xform(self.topics[0], self.topics[1])
 
         self.logger.debug(
-            f"{self.logs_topic.name}: delete topic should fail (empty response table)"
+            f"{self.logs_topic.name}: delete topic should fail (protected by 'kafka_nodelete_topics')"
         )
         with expect_exception(
-            RpkException, lambda e: "expected one row; found 0" in str(e)
+            RpkException, lambda e: "TOPIC_AUTHORIZATION_FAILED" in str(e)
         ):
             self._rpk.delete_topic(self.logs_topic.name)
 

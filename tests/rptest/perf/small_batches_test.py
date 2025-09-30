@@ -1,3 +1,4 @@
+from ducktape.tests.test import TestContext
 from rptest.services.cluster import cluster
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
@@ -9,8 +10,7 @@ class SmallBatchesTest(RedpandaTest):
     A many clients and partitions test where producers send small batches to Redpanda.
     """
 
-    def __init__(self, ctx):
-        self._ctx = ctx
+    def __init__(self, ctx: TestContext):
         super(SmallBatchesTest, self).__init__(
             test_context=ctx, extra_rp_conf={"aggregate_metrics": True}
         )
@@ -55,7 +55,7 @@ class SmallBatchesTest(RedpandaTest):
         }
 
         benchmark = OpenMessagingBenchmark(
-            ctx=self._ctx,
+            ctx=self.test_context,
             redpanda=self.redpanda,
             driver=driver,
             workload=(workload, validator),

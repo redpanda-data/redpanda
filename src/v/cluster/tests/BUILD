@@ -52,7 +52,8 @@ redpanda_test_cc_library(
         "//src/v/redpanda",
         "//src/v/redpanda/tests:fixture",
         "//src/v/resource_mgmt:cpu_scheduling",
-        "//src/v/test_utils:fixture",
+        "//src/v/test_utils:async",
+        "//src/v/test_utils:test_macros",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@seastar",
     ],
@@ -65,6 +66,7 @@ redpanda_test_cc_library(
     ],
     deps = [
         ":cluster_test_fixture",
+        "@boost//:test",
     ],
 )
 
@@ -76,6 +78,7 @@ redpanda_test_cc_library(
     deps = [
         ":cluster_test_fixture",
         "//src/v/container:chunked_circular_buffer",
+        "//src/v/model/tests:random",
     ],
 )
 
@@ -114,7 +117,8 @@ redpanda_test_cc_library(
     deps = [
         "//src/v/cluster",
         "//src/v/container:chunked_circular_buffer",
-        "//src/v/test_utils:seastar_boost",
+        "//src/v/test_utils:async",
+        "@seastar",
     ],
 )
 
@@ -138,6 +142,7 @@ redpanda_test_cc_library(
         ":utils",
         "//src/v/base",
         "//src/v/cluster",
+        "@boost//:test",
     ],
 )
 
@@ -194,7 +199,6 @@ redpanda_cc_gtest(
         "//src/v/random:generators",
         "//src/v/serde",
         "//src/v/test_utils:gtest",
-        "//src/v/test_utils:seastar_boost",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/container:flat_hash_set",
         "@googletest//:gtest",
@@ -374,7 +378,6 @@ redpanda_cc_btest(
         "//src/v/model",
         "//src/v/raft",
         "//src/v/raft:fundamental",
-        "//src/v/random:fast_prng",
         "//src/v/random:generators",
         "//src/v/resource_mgmt:memory_groups",
         "//src/v/test_utils:seastar_boost",
@@ -434,6 +437,7 @@ redpanda_cc_btest(
         "//src/v/reflection:adl",
         "//src/v/test_utils:logs",
         "//src/v/test_utils:seastar_boost",
+        "//src/v/test_utils:test_env",
         "@boost//:test",
         "@seastar",
         "@seastar//:testing",
@@ -449,9 +453,7 @@ redpanda_cc_btest(
     deps = [
         "//src/v/cluster",
         "//src/v/model",
-        "//src/v/storage/tests:kvstore_fixture",
         "//src/v/test_utils:seastar_boost",
-        "//src/v/utils:prefix_logger",
         "//src/v/utils:unresolved_address",
         "@boost//:test",
         "@seastar",
@@ -694,7 +696,7 @@ redpanda_cc_gtest(
         "//src/v/model",
         "//src/v/raft",
         "//src/v/raft/tests:raft_fixture",
-        "//src/v/test_utils:seastar_boost",
+        "//src/v/test_utils:gtest",
         "//src/v/utils:to_string",
         "@googletest//:gtest",
         "@seastar",
@@ -714,7 +716,7 @@ redpanda_cc_gtest(
         "//src/v/model",
         "//src/v/raft",
         "//src/v/raft/tests:raft_fixture",
-        "//src/v/test_utils:seastar_boost",
+        "//src/v/test_utils:gtest",
         "//src/v/utils:to_string",
         "@googletest//:gtest",
         "@seastar",
@@ -925,11 +927,8 @@ redpanda_cc_gtest(
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/model",
-        "//src/v/raft",
         "//src/v/raft/tests:raft_fixture",
         "//src/v/test_utils:gtest",
-        "//src/v/test_utils:seastar_boost",
-        "//src/v/utils:unresolved_address",
         "@fmt",
         "@googletest//:gtest",
         "@seastar",
@@ -1009,23 +1008,12 @@ redpanda_cc_gtest(
     ],
     deps = [
         ":raft_fixture_retry_policy",
-        "//src/v/base",
         "//src/v/cluster",
         "//src/v/config",
-        "//src/v/model",
-        "//src/v/raft",
         "//src/v/raft/tests:raft_fixture",
-        "//src/v/random:generators",
-        "//src/v/reflection:adl",
-        "//src/v/storage",
-        "//src/v/storage:record_batch_builder",
-        "//src/v/storage/tests:disk_log_builder",
         "//src/v/test_utils:scoped_config",
-        "//src/v/test_utils:seastar_boost",
-        "//src/v/utils:to_string",
         "@googletest//:gtest",
         "@seastar",
-        "@seastar//:testing",
     ],
 )
 
@@ -1110,6 +1098,7 @@ redpanda_cc_btest(
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/config",
+        "//src/v/random:generators",
         "//src/v/redpanda/tests:fixture",
         "//src/v/storage",
         "//src/v/test_utils:seastar_boost",
@@ -1269,6 +1258,7 @@ redpanda_cc_btest(
         "//src/v/raft",
         "//src/v/test_utils:scoped_config",
         "//src/v/test_utils:seastar_boost",
+        "//src/v/test_utils:test_env",
         "@boost//:test",
         "@seastar",
     ],

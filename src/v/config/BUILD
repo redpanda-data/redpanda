@@ -7,6 +7,7 @@ redpanda_cc_library(
         "broker_authn_endpoint.cc",
         "configuration.cc",
         "leaders_preference.cc",
+        "logger.cc",
         "node_config.cc",
         "node_overrides.cc",
         "rest_authn_endpoint.cc",
@@ -30,6 +31,7 @@ redpanda_cc_library(
         "from_string_view.h",
         "fwd.h",
         "leaders_preference.h",
+        "logger.h",
         "mock_property.h",
         "node_config.h",
         "node_overrides.h",
@@ -47,6 +49,7 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/cluster:topic_memory_per_partition_default",
         "//src/v/datalake:partition_spec_parser",
+        "//src/v/thirdparty/openssl",
     ],
     visibility = ["//visibility:public"],
     deps = [

@@ -34,7 +34,7 @@ class ClientSwarmBase(Service, ABC):
         redpanda: AnyRedpandaService,
         topic: str,
         log_level: str = "DEBUG",
-        properties={},
+        properties: dict[str, Any] = {},
     ):
         super().__init__(context, num_nodes=1)
 

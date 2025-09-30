@@ -22,7 +22,6 @@
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "random/fast_prng.h"
 #include "random/generators.h"
 #include "utils/unresolved_address.h"
 
@@ -142,7 +141,7 @@ struct partition_allocator_fixture {
     ss::sharded<features::feature_table> features;
     ss::sharded<cluster::partition_allocator> _allocator;
 
-    fast_prng prng;
+    random_generators::rng prng;
 
     uint32_t partitions_per_shard;
 

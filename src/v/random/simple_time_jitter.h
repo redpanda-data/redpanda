@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "random/fast_prng.h"
+#include "random/generators.h"
 
 template<
   typename ClockType,
@@ -31,12 +31,12 @@ public:
     DurationType jitter_duration() const { return _jitter; }
     DurationType base_duration() const { return _base; }
     DurationType next_jitter_duration() {
-        return DurationType(_rand() % _jitter.count());
+        return DurationType(_rand.get_int(_jitter.count() - 1));
     }
     DurationType next_duration() { return _base + next_jitter_duration(); }
 
 private:
     DurationType _base;
     DurationType _jitter;
-    fast_prng _rand{};
+    random_generators::rng _rand;
 };

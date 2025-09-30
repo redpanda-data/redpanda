@@ -24,6 +24,7 @@
 #include "redpanda/tests/fixture.h"
 #include "storage/disk_log_impl.h"
 #include "test_utils/async.h"
+#include "test_utils/boost_fixture.h"
 #include "test_utils/scoped_config.h"
 
 #include <boost/algorithm/string/predicate.hpp>

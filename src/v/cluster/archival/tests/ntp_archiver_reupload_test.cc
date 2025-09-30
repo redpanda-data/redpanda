@@ -17,7 +17,7 @@
 #include "config/configuration.h"
 #include "storage/disk_log_impl.h"
 #include "storage/ntp_config.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "test_utils/scoped_config.h"
 
 #include <seastar/core/sharded.hh>
@@ -129,7 +129,8 @@ struct reupload_fixture : public archiver_fixture {
                            10,
                            1_MiB)
                          .get();
-        write_random_batches(segment, seg.num_records.value(), 2);
+        write_random_batches(
+          segment, seg.num_records.value(), 2, model::timestamp::min());
         disk_log_impl()->segments().add(segment);
     }
 
@@ -540,7 +541,7 @@ FIXTURE_TEST(test_upload_both_compacted_and_non_compacted, reupload_fixture) {
     // Close current segment and add a new open segment, so both compacted and
     // non-compacted uploads run together.
     auto& last_segment = disk_log_impl()->segments().back();
-    write_random_batches(last_segment, 20, 2);
+    write_random_batches(last_segment, 20, 2, model::timestamp::min());
     last_segment->appender().close().get();
     last_segment->release_appender();
     add_segment_bytes(last_segment, last_segment->size_bytes());
@@ -610,7 +611,7 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
     // Close current segment and add a new open segment, so both compacted and
     // non-compacted uploads run together.
     auto& last_segment = disk_log_impl()->segments().back();
-    write_random_batches(last_segment, 20, 2);
+    write_random_batches(last_segment, 20, 2, model::timestamp::min());
     last_segment->appender().close().get();
     last_segment->release_appender();
     add_segment_bytes(last_segment, last_segment->size_bytes());
@@ -798,7 +799,7 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
     // NOTE: uploaded 4 segments, so offset is 54 at the start
     for (auto i = 0; i < 3; ++i) {
         auto& last_segment = disk_log_impl()->segments().back();
-        write_random_batches(last_segment, 10, 2);
+        write_random_batches(last_segment, 10, 2, model::timestamp::min());
         last_segment->appender().close().get();
         last_segment->release_appender();
         add_segment_bytes(last_segment, last_segment->size_bytes());

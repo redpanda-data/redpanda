@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from math import floor
+from typing import Optional
 from rptest.services.redpanda import RedpandaService, ResourceSettings, SISettings
 
 
@@ -53,6 +55,7 @@ class ScaleParameters:
         tiered_storage_enabled=False,
         partition_memory_reserve_percentage=DEFAULT_PARTITIONS_MEMORY_ALLOCATION_PERCENT,
     ):
+        self.partition_limit: int
         self.redpanda = redpanda
         self.tiered_storage_enabled = tiered_storage_enabled
         self.partition_memory_reserve_percentage = partition_memory_reserve_percentage
@@ -82,9 +85,9 @@ class ScaleParameters:
         # On large nodes, reserve half of shard 0 to minimize interference
         # between data and control plane, as control plane messages become
         # very large.
-        shard0_reserve = None
+        shard0_reserve: Optional[int] = None
         if self.node_cpus >= 8:
-            shard0_reserve = topic_replicas_per_shard / 2
+            shard0_reserve = floor(topic_replicas_per_shard / 2)
 
         # Reserve a few slots for internal partitions. This is a count of
         # partitions and we assume the replication factor is 'replication_factor'
@@ -117,9 +120,12 @@ class ScaleParameters:
             f"shard_replicas_from_memory {shard_replicas_from_memory})"
         )
 
-        self.partition_limit = node_count * (
-            self.node_cpus * (shard_replicas_effective // replication_factor)
-            - internal_partition_slack
+        self.partition_limit = floor(
+            node_count
+            * (
+                self.node_cpus * (shard_replicas_effective // replication_factor)
+                - internal_partition_slack
+            )
         )
 
         self.logger.info(

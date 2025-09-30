@@ -21,7 +21,14 @@ class RpkRemoteTool:
         self._redpanda = redpanda
         self._node = node
 
-    def config_set(self, key, value, format=None, path=None, timeout=30):
+    def config_set(
+        self,
+        key: str,
+        value: str,
+        format: str | None = None,
+        path: str | None = None,
+        timeout: int = 30,
+    ) -> str:
         cmd = [
             "set",
             f"'{key}'",
@@ -56,8 +63,11 @@ class RpkRemoteTool:
     def cluster_config_lint(self):
         return self._execute([self._rpk_binary(), "cluster", "config", "lint"])
 
-    def tune(self, tuner):
-        return self._execute([self._rpk_binary(), "redpanda", "tune", tuner])
+    def tune(self, tuner: str) -> str:
+        return self._execute([self._rpk_binary(), "redpanda", "tune", tuner, "-v"])
+
+    def check(self) -> str:
+        return self._execute([self._rpk_binary(), "redpanda", "check", "-v"])
 
     def mode_set(self, mode):
         return self._execute([self._rpk_binary(), "redpanda", "mode", mode])

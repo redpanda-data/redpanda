@@ -27,10 +27,23 @@ class batch_reader final : public model::record_batch_reader::impl {
     using storage_t = model::record_batch_reader::storage_t;
 
 public:
+    /**
+     * Kafka brokers may return partial batch in fetch responses. This is to
+     * optimize the maintenance of fetch max bytes. The partial batch is always
+     * the last batch in the fetch response. This flag allows the caller to
+     * indicate that it is ok to ignore the partial batch and stop read earlier.
+     */
+    using tolerate_partial_last_batch
+      = ss::bool_class<struct tolerate_partial_last_batch_tag>;
+
     batch_reader() = default;
 
-    explicit batch_reader(iobuf buf)
-      : _buf(std::move(buf)) {}
+    explicit batch_reader(
+      iobuf buf,
+      tolerate_partial_last_batch tolerate_partial
+      = tolerate_partial_last_batch::no)
+      : _buf(std::move(buf))
+      , _tolerate_partial(tolerate_partial) {}
 
     bool empty() const { return _buf.empty(); }
 
@@ -69,6 +82,8 @@ public:
 private:
     iobuf _buf;
     bool _do_load_slice_failed{false};
+    tolerate_partial_last_batch _tolerate_partial{
+      tolerate_partial_last_batch::no};
 };
 
 } // namespace kafka

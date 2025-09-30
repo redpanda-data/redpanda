@@ -16,7 +16,7 @@
 #include "redpanda/tests/fixture.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/async.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/smp.hh>
 
@@ -164,6 +164,7 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
           .start_offset = model::offset(0),
           .max_offset = model::model_limits<model::offset>::max(),
           .max_bytes = max_bytes,
+          .max_batch_size = 1_MiB,
           .timeout = model::no_timeout,
           .isolation_level = model::isolation_level::read_uncommitted,
         };

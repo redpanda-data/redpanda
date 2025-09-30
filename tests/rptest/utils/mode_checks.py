@@ -1,7 +1,11 @@
 import os
+from typing import Any
 
 from ducktape.cluster.cluster_spec import ClusterSpec
 from ducktape.mark import ignore
+from ducktape.tests.test import TestContext
+
+from rptest.utils.type_utils import rcast
 
 
 def allocate_and_free(cluster, logger):
@@ -13,7 +17,7 @@ def allocate_and_free(cluster, logger):
     cluster.free(nodes)
 
 
-def cleanup_on_early_exit(caller):
+def cleanup_on_early_exit(caller: Any):
     """
     Cleans up on early exit to avoid errors due to unused resources.
 
@@ -21,16 +25,16 @@ def cleanup_on_early_exit(caller):
     but if a method called `early_exit_hook` is defined on the class
     then it is called instead of the default action.
     """
-    name = type(caller).__name__
     if hook := getattr(caller, "early_exit_hook", None):
         assert callable(hook), (
-            f"{name.early_exit_hook} should be a method which can be called to set up early exit from test"
+            f"{type(caller).__name__}.early_exit_hook should be a method which can be called to set up early exit from test"
         )
         hook()
 
     caller.logger.debug(f"Cleaning up unused nodes.")
 
     if test_context := getattr(caller, "test_context", None):
+        test_context = rcast(TestContext, test_context)
         allocate_and_free(test_context.cluster, caller.logger)
 
 
@@ -54,7 +58,7 @@ def is_asan():
     return is_debug_mode()
 
 
-def skip_debug_mode(*args, **kwargs):
+def skip_debug_mode(*args: Any, **kwargs: Any):
     """
     Test method decorator which signals to the test runner to ignore a given test.
 
@@ -130,7 +134,7 @@ def in_fips_environment() -> bool:
     return False
 
 
-def skip_fips_mode(*args, **kwargs):
+def skip_fips_mode(*args: Any, **kwargs: Any):
     """
     Decorator indicating that the test should not run in FIPS mode.
 

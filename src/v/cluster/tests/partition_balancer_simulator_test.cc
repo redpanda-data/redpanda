@@ -13,7 +13,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "random/generators.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -106,7 +106,7 @@ public:
             model::ntp ntp{tp_ns.ns, tp_ns.tp, as.id};
             auto jitter = std::max(
               -int64_t(mean_partition_size),
-              int64_t(*stddev * dist(random_generators::internal::gen)));
+              int64_t(*stddev * dist(random_generators::global().engine())));
             auto size = mean_partition_size + jitter;
             auto partition = ss::make_lw_shared<partition_state>(ntp, size);
             _partitions.emplace(ntp, partition);
@@ -206,7 +206,7 @@ public:
             std::shuffle(
               recovery_streams.begin(),
               recovery_streams.end(),
-              random_generators::internal::gen);
+              random_generators::global().engine());
 
             for (const auto& rs : recovery_streams) {
                 if (node.bandwidth_left >= recovery_batch_size) {

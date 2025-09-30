@@ -22,6 +22,7 @@
 #include "random/generators.h"
 #include "storage/api.h"
 #include "storage/disk_log_impl.h"
+#include "test_utils/test_env.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sstring.hh>
@@ -32,19 +33,11 @@
 #include <vector>
 namespace storage {
 
-inline ss::sstring random_dir() {
-    char* tmpdir = std::getenv("TEST_TMPDIR");
-    if (!tmpdir) {
-        return ss::format("test.dir_{}", time(nullptr));
-    }
-    return {
-      std::filesystem::path(tmpdir)
-      / fmt::format("test.dir_{}", time(nullptr))};
-}
-
 inline log_config log_builder_config() {
     return log_config(
-      random_dir(), 100_MiB, storage::make_sanitized_file_config());
+      test_env::random_dir_path(),
+      100_MiB,
+      storage::make_sanitized_file_config());
 }
 
 inline local_log_reader_config reader_config() {

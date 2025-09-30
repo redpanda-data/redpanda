@@ -9,7 +9,7 @@
 
 #include "cluster/tests/cluster_test_fixture.h"
 #include "features/feature_table_snapshot.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 using namespace std::chrono_literals; // NOLINT
 

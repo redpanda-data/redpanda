@@ -21,6 +21,7 @@
 #include "storage/log_manager.h"
 #include "storage/tests/batch_generators.h"
 #include "storage/types.h"
+#include "test_utils/test_env.h"
 #include "test_utils/test_macros.h"
 
 #include <seastar/core/file.hh>
@@ -47,7 +48,7 @@ public:
     std::optional<model::timestamp> ts_cursor;
 
     storage_test_fixture()
-      : test_dir("test.data." + random_generators::gen_alphanum_string(10))
+      : test_dir(test_env::random_dir_path("test.data.", 10))
       , kvstore(
           storage::kvstore_config(
             1_MiB,
@@ -168,6 +169,7 @@ public:
       ss::shared_ptr<storage::log> log,
       int appends,
       model::term_id term = model::term_id(0),
+      std::optional<model::timestamp> ts_override = std::nullopt,
       T batch_generator = T{},
       storage::log_append_config::fsync sync
       = storage::log_append_config::fsync::no,
@@ -184,16 +186,18 @@ public:
         // do multiple append calls
 
         for ([[maybe_unused]] auto append : boost::irange(0, appends)) {
-            auto batches = batch_generator(ts_cursor);
+            auto ts = ts_override.has_value() ? ts_override : ts_cursor;
+            auto batches = batch_generator(ts);
             // Collect batches offsets
             for (auto& b : batches) {
                 headers.push_back(b.header());
                 b.set_term(term);
                 total_records += b.record_count();
             }
-
-            ts_cursor = model::timestamp{
-              batches.back().header().max_timestamp() + 1};
+            if (!ts_override.has_value()) {
+                ts_cursor = model::timestamp{
+                  batches.back().header().max_timestamp() + 1};
+            }
 
             // make expected offset inclusive
             auto reader = model::make_memory_record_batch_reader(

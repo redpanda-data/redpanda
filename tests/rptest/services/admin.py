@@ -1005,7 +1005,7 @@ class Admin:
             responses.append(self._request("put", path, node=node).json())
         return responses
 
-    def get_brokers(self, node=None):
+    def get_brokers(self, node: MaybeNode = None) -> list[dict[str, Any]]:
         """
         Return metadata about brokers.
         """

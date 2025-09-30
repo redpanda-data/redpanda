@@ -170,7 +170,18 @@ public:
                && model::is_compaction_enabled(cleanup_policy());
     }
 
-    bool is_collectable() const {
+    // If time/bytes based retention is enabled for local storage.
+    bool is_locally_collectable() const {
+        if (cloud_topic_enabled()) {
+            // Cloud topics always manually retains the log based
+            // on what has been written to L1.
+            return false;
+        }
+        return model::is_deletion_enabled(cleanup_policy());
+    }
+
+    // If time/bytes based retention is enabled for remote storage.
+    bool is_remotely_collectable() const {
         return model::is_deletion_enabled(cleanup_policy());
     }
 
@@ -226,23 +237,35 @@ public:
     }
 
     topic_recovery_enabled recovery_enabled() const {
+        if (cloud_topic_enabled()) {
+            return topic_recovery_enabled::no;
+        }
         return _overrides != nullptr ? _overrides->recovery_enabled
                                      : topic_recovery_enabled::no;
     }
 
     bool is_archival_enabled() const {
+        if (cloud_topic_enabled()) {
+            return false;
+        }
         return _overrides != nullptr && _overrides->shadow_indexing_mode
                && model::is_archival_enabled(
                  _overrides->shadow_indexing_mode.value());
     }
 
     bool is_remote_fetch_enabled() const {
+        if (cloud_topic_enabled()) {
+            return false;
+        }
         return _overrides != nullptr && _overrides->shadow_indexing_mode
                && model::is_fetch_enabled(
                  _overrides->shadow_indexing_mode.value());
     }
 
     bool is_read_replica_mode_enabled() const {
+        if (cloud_topic_enabled()) {
+            return false;
+        }
         return _overrides != nullptr && _overrides->read_replica
                && _overrides->read_replica.value();
     }
@@ -261,6 +284,9 @@ public:
      * both reads and writes to S3, and is not a read replica.
      */
     bool is_tiered_storage() const {
+        if (cloud_topic_enabled()) {
+            return false;
+        }
         return _overrides != nullptr
                && !_overrides->read_replica.value_or(false)
                && _overrides->shadow_indexing_mode
@@ -296,7 +322,7 @@ public:
     }
 
     bool write_caching() const {
-        if (!model::is_user_topic(_ntp)) {
+        if (!model::is_user_topic(_ntp) || cloud_topic_enabled()) {
             return false;
         }
         auto cluster_default
@@ -389,6 +415,10 @@ public:
     }
 
     model::iceberg_mode iceberg_mode() const {
+        // TODO(cloud_topics): support iceberg
+        if (cloud_topic_enabled()) {
+            return model::iceberg_mode::disabled;
+        }
         if (!config::shard_local_cfg().iceberg_enabled) {
             return model::iceberg_mode::disabled;
         }

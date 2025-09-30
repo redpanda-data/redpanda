@@ -505,7 +505,6 @@ class NodesDecommissioningTest(PreallocNodesTest):
             f"decommissioning node: {to_decommission_id}",
         )
         self._decommission(to_decommission_id)
-        self.producer.wait()
 
         def learner_gap_reported(decommissioned_node_id: int):
             total_gap = calculate_total_learners_gap()

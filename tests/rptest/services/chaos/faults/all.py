@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 # ruff: noqa: F401
+# pyright: reportUnusedImport=none
 
 from .fault import FaultBase, OneoffFault, RecoverableFault
 from .hijack_tx_ids import HijackTxIDsFault

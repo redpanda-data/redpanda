@@ -7,12 +7,10 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "model/metadata.h"
 #include "raft/errc.h"
 #include "raft/group_configuration.h"
 #include "raft/tests/raft_fixture.h"
 #include "raft/tests/raft_fixture_retry_policy.h"
-#include "storage/api.h"
 #include "test_utils/async.h"
 
 #include <gtest/gtest.h>

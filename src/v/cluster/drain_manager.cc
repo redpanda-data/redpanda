@@ -200,7 +200,7 @@ ss::future<> drain_manager::do_drain() {
           eligible.end(),
           std::back_inserter(selected),
           max_parallel_transfers,
-          random_generators::internal::gen);
+          random_generators::global().engine());
         eligible.clear();
 
         /*

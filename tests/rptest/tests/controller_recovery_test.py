@@ -23,6 +23,7 @@ class ControllerRecoveryTest(RedpandaTest):
         stop controller node and wait for failover
         """
         prev = self.redpanda.controller()
+        assert prev, "no controller?"
         self.redpanda.stop_node(prev)
 
         def new_controller_elected():

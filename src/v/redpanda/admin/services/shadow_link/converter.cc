@@ -18,11 +18,19 @@
 using namespace std::chrono_literals;
 
 namespace admin {
+using proto::admin::acl_access_filter;
+using proto::admin::acl_filter;
+using proto::admin::acl_operation;
+using proto::admin::acl_pattern;
+using proto::admin::acl_permission_type;
+using proto::admin::acl_resource;
+using proto::admin::acl_resource_filter;
 using proto::admin::authentication_configuration;
 using proto::admin::create_shadow_link_request;
 using proto::admin::name_filter;
 using proto::admin::scram_config;
 using proto::admin::scram_mechanism;
+using proto::admin::security_settings_sync_options;
 using proto::admin::shadow_link;
 using proto::admin::shadow_link_client_options;
 using proto::admin::shadow_link_configurations;
@@ -96,7 +104,8 @@ create_topic_metadata_mirroring_config(
           options.get_interval());
     }
 
-    config.topic_name_filters = to_filter_patterns(options.get_topic_filters());
+    config.topic_name_filters = to_filter_patterns(
+      options.get_auto_create_shadow_topic_filters());
 
     std::ranges::copy(
       options.get_shadowed_topic_properties(),
@@ -121,12 +130,166 @@ create_consumer_groups_mirroring_config(
 
     return config;
 }
+
+cluster_link::model::acl_resource to_acl_resource(acl_resource r) {
+    switch (r) {
+    case proto::admin::acl_resource::unspecified:
+        throw std::invalid_argument("acl_resource is unspecified");
+    case proto::admin::acl_resource::any:
+        return cluster_link::model::acl_resource::any;
+    case proto::admin::acl_resource::cluster:
+        return cluster_link::model::acl_resource::cluster;
+    case proto::admin::acl_resource::group:
+        return cluster_link::model::acl_resource::group;
+    case proto::admin::acl_resource::topic:
+        return cluster_link::model::acl_resource::topic;
+    case proto::admin::acl_resource::txn_id:
+        return cluster_link::model::acl_resource::txn_id;
+    case proto::admin::acl_resource::sr_subject:
+        return cluster_link::model::acl_resource::schema_registry_subject;
+    case proto::admin::acl_resource::sr_registry:
+        return cluster_link::model::acl_resource::schema_registry_global;
+    case proto::admin::acl_resource::sr_any:
+        return cluster_link::model::acl_resource::schema_registry_any;
+    }
+}
+
+cluster_link::model::acl_pattern to_acl_pattern(acl_pattern p) {
+    switch (p) {
+    case proto::admin::acl_pattern::unspecified:
+        throw std::invalid_argument("acl_pattern is unspecified");
+    case proto::admin::acl_pattern::any:
+        return cluster_link::model::acl_pattern::any;
+    case proto::admin::acl_pattern::literal:
+        return cluster_link::model::acl_pattern::literal;
+    case proto::admin::acl_pattern::prefixed:
+        return cluster_link::model::acl_pattern::prefixed;
+    case proto::admin::acl_pattern::match:
+        return cluster_link::model::acl_pattern::match;
+    }
+}
+
+cluster_link::model::acl_resource_filter
+to_resource_filter(const acl_resource_filter& proto_resource_filter) {
+    cluster_link::model::acl_resource_filter filter;
+
+    filter.resource_type = to_acl_resource(
+      proto_resource_filter.get_resource_type());
+    filter.pattern_type = to_acl_pattern(
+      proto_resource_filter.get_pattern_type());
+
+    if (!proto_resource_filter.get_name().empty()) {
+        filter.name = proto_resource_filter.get_name();
+    }
+
+    return filter;
+}
+
+cluster_link::model::acl_operation to_acl_operation(acl_operation op) {
+    switch (op) {
+    case proto::admin::acl_operation::unspecified:
+        throw std::invalid_argument("acl_operation is unspecified");
+    case proto::admin::acl_operation::any:
+        return cluster_link::model::acl_operation::any;
+    case proto::admin::acl_operation::read:
+        return cluster_link::model::acl_operation::read;
+    case proto::admin::acl_operation::write:
+        return cluster_link::model::acl_operation::write;
+    case proto::admin::acl_operation::create:
+        return cluster_link::model::acl_operation::create;
+    case proto::admin::acl_operation::remove:
+        return cluster_link::model::acl_operation::remove;
+    case proto::admin::acl_operation::alter:
+        return cluster_link::model::acl_operation::alter;
+    case proto::admin::acl_operation::describe:
+        return cluster_link::model::acl_operation::describe;
+    case proto::admin::acl_operation::cluster_action:
+        return cluster_link::model::acl_operation::cluster_action;
+    case proto::admin::acl_operation::describe_configs:
+        return cluster_link::model::acl_operation::describe_configs;
+    case proto::admin::acl_operation::alter_configs:
+        return cluster_link::model::acl_operation::alter_configs;
+    case proto::admin::acl_operation::idempotent_write:
+        return cluster_link::model::acl_operation::idempotent_write;
+    }
+}
+
+cluster_link::model::acl_permission_type
+to_acl_permission_type(acl_permission_type t) {
+    switch (t) {
+    case proto::admin::acl_permission_type::unspecified:
+        throw std::invalid_argument("acl_permission_type unspecified");
+    case proto::admin::acl_permission_type::any:
+        return cluster_link::model::acl_permission_type::any;
+    case proto::admin::acl_permission_type::allow:
+        return cluster_link::model::acl_permission_type::allow;
+    case proto::admin::acl_permission_type::deny:
+        return cluster_link::model::acl_permission_type::deny;
+    }
+}
+
+cluster_link::model::acl_access_filter
+to_access_filter(const acl_access_filter& proto_access_filter) {
+    cluster_link::model::acl_access_filter filter;
+
+    if (!proto_access_filter.get_principal().empty()) {
+        filter.principal = proto_access_filter.get_principal();
+    }
+
+    filter.operation = to_acl_operation(proto_access_filter.get_operation());
+    filter.permission_type = to_acl_permission_type(
+      proto_access_filter.get_permission_type());
+
+    if (!proto_access_filter.get_host().empty()) {
+        filter.host = proto_access_filter.get_host();
+    }
+
+    return filter;
+}
+
+cluster_link::model::acl_filter to_acl_filter(const acl_filter& proto_filter) {
+    return {
+      .resource_filter = to_resource_filter(proto_filter.get_resource_filter()),
+      .access_filter = to_access_filter(proto_filter.get_access_filter()),
+    };
+}
+
+chunked_vector<cluster_link::model::acl_filter>
+to_acl_filters(const chunked_vector<acl_filter>& proto_filters) {
+    chunked_vector<cluster_link::model::acl_filter> filters;
+    filters.reserve(proto_filters.size());
+    std::ranges::transform(
+      proto_filters, std::back_inserter(filters), [](const acl_filter& f) {
+          return to_acl_filter(f);
+      });
+
+    return filters;
+}
+
+cluster_link::model::security_settings_sync_config
+create_security_settings_sync_config(
+  const security_settings_sync_options& options) {
+    cluster_link::model::security_settings_sync_config config;
+
+    if (options.get_interval() > absl::ZeroDuration()) {
+        config.task_interval = absl::ToChronoNanoseconds(
+          options.get_interval());
+    }
+
+    config.acl_filters = to_acl_filters(options.get_acl_filters());
+
+    return config;
+}
+
 cluster_link::model::link_configuration
 create_link_configuration(const shadow_link& sl) {
     cluster_link::model::link_configuration config;
     config.topic_metadata_mirroring_cfg
       = create_topic_metadata_mirroring_config(
         sl.get_configurations().get_topic_metadata_sync_options());
+
+    config.security_settings_sync_cfg = create_security_settings_sync_config(
+      sl.get_configurations().get_security_sync_options());
 
     config.consumer_groups_mirroring_cfg
       = create_consumer_groups_mirroring_config(
@@ -151,8 +314,9 @@ constexpr auto scram_mechanism_to_string(scram_mechanism m) {
       "to either SCRAM-SHA-256 or SCRAM-SHA-512");
 }
 
-/// \brief Creates the authentication settings from the create cluster link
-/// \brief throws std::invalid_argument if invalid config provided
+/// \brief Creates the authentication variant
+///
+/// \throws std::invalid_argument if invalid config provided
 cluster_link::model::connection_config::authn_variant
 create_authn_settings(const authentication_configuration& authn_config) {
     return authn_config.visit_authentication(
@@ -219,7 +383,8 @@ void set_tls_settings(
       },
       [](std::monostate) {});
 }
-/// \brief Creates a connection config from the create cluster link request
+/// \brief Creates a connection config from the create cluster link
+/// request
 /// \throws std::invalid_argument if the bootstrap servers are not valid
 cluster_link::model::connection_config
 create_connection_config(const shadow_link& sl) {
@@ -313,7 +478,8 @@ struct tls_visitor {
           },
           [](tlspem_settings&) {
               throw std::invalid_argument(
-                "Cannot set both tls_file_settings and tls_pem_settings");
+                "Cannot set both tls_file_settings and "
+                "tls_pem_settings");
           },
           [this, &key, &cert](std::monostate) {
               tls_file_settings file_settings;
@@ -329,7 +495,8 @@ struct tls_visitor {
         _tls_settings->visit_tls_settings(
           [](tls_file_settings&) {
               throw std::invalid_argument(
-                "Cannot set both tls_file_settings and tls_pem_settings");
+                "Cannot set both tls_file_settings and "
+                "tls_pem_settings");
           },
           [&key, &cert](tlspem_settings& pem_settings) {
               pem_settings.set_key(ss::sstring{key()});
@@ -460,6 +627,149 @@ chunked_vector<name_filter> to_name_filters(
     return filters;
 }
 
+acl_resource to_acl_resource(cluster_link::model::acl_resource r) {
+    switch (r) {
+    case cluster_link::model::acl_resource::any:
+        return acl_resource::any;
+    case cluster_link::model::acl_resource::cluster:
+        return acl_resource::cluster;
+    case cluster_link::model::acl_resource::group:
+        return acl_resource::group;
+    case cluster_link::model::acl_resource::topic:
+        return acl_resource::topic;
+    case cluster_link::model::acl_resource::txn_id:
+        return acl_resource::txn_id;
+    case cluster_link::model::acl_resource::schema_registry_subject:
+        return acl_resource::sr_subject;
+    case cluster_link::model::acl_resource::schema_registry_global:
+        return acl_resource::sr_registry;
+    case cluster_link::model::acl_resource::schema_registry_any:
+        return acl_resource::sr_any;
+    }
+}
+
+acl_pattern to_acl_pattern(cluster_link::model::acl_pattern p) {
+    switch (p) {
+    case cluster_link::model::acl_pattern::any:
+        return acl_pattern::any;
+    case cluster_link::model::acl_pattern::literal:
+        return acl_pattern::literal;
+    case cluster_link::model::acl_pattern::prefixed:
+        return acl_pattern::prefixed;
+    case cluster_link::model::acl_pattern::match:
+        return acl_pattern::match;
+    }
+}
+
+acl_resource_filter to_acl_resource_filter(
+  const cluster_link::model::acl_resource_filter& resource_filter) {
+    acl_resource_filter filter;
+
+    filter.set_resource_type(to_acl_resource(resource_filter.resource_type));
+    filter.set_pattern_type(to_acl_pattern(resource_filter.pattern_type));
+    if (!resource_filter.name.empty()) {
+        filter.set_name(ss::sstring{resource_filter.name});
+    }
+
+    return filter;
+}
+
+acl_operation to_acl_operation(cluster_link::model::acl_operation o) {
+    switch (o) {
+    case cluster_link::model::acl_operation::any:
+        return acl_operation::any;
+    case cluster_link::model::acl_operation::all:
+        throw std::invalid_argument("No conversion to acl_operation::all");
+    case cluster_link::model::acl_operation::read:
+        return acl_operation::read;
+    case cluster_link::model::acl_operation::write:
+        return acl_operation::write;
+    case cluster_link::model::acl_operation::create:
+        return acl_operation::create;
+    case cluster_link::model::acl_operation::remove:
+        return acl_operation::remove;
+    case cluster_link::model::acl_operation::alter:
+        return acl_operation::alter;
+    case cluster_link::model::acl_operation::describe:
+        return acl_operation::describe;
+    case cluster_link::model::acl_operation::cluster_action:
+        return acl_operation::cluster_action;
+    case cluster_link::model::acl_operation::describe_configs:
+        return acl_operation::describe_configs;
+    case cluster_link::model::acl_operation::alter_configs:
+        return acl_operation::alter_configs;
+    case cluster_link::model::acl_operation::idempotent_write:
+        return acl_operation::idempotent_write;
+    }
+}
+
+acl_permission_type
+to_acl_permission_type(cluster_link::model::acl_permission_type t) {
+    switch (t) {
+    case cluster_link::model::acl_permission_type::any:
+        return acl_permission_type::any;
+    case cluster_link::model::acl_permission_type::allow:
+        return acl_permission_type::allow;
+    case cluster_link::model::acl_permission_type::deny:
+        return acl_permission_type::deny;
+    }
+}
+
+acl_access_filter to_acl_access_filter(
+  const cluster_link::model::acl_access_filter& access_filter) {
+    acl_access_filter filter;
+
+    if (!access_filter.host.empty()) {
+        filter.set_host(ss::sstring{access_filter.host});
+    }
+
+    filter.set_operation(to_acl_operation(access_filter.operation));
+    filter.set_permission_type(
+      to_acl_permission_type(access_filter.permission_type));
+
+    if (!access_filter.principal.empty()) {
+        filter.set_principal(ss::sstring{access_filter.principal});
+    }
+
+    return filter;
+}
+
+acl_filter to_acl_filter(const cluster_link::model::acl_filter& filter) {
+    acl_filter acl;
+
+    acl.set_resource_filter(to_acl_resource_filter(filter.resource_filter));
+    acl.set_access_filter(to_acl_access_filter(filter.access_filter));
+
+    return acl;
+}
+
+chunked_vector<acl_filter>
+to_acl_filters(const chunked_vector<cluster_link::model::acl_filter>& filters) {
+    chunked_vector<acl_filter> acl_filters;
+    acl_filters.reserve(filters.size());
+
+    std::ranges::transform(
+      filters,
+      std::back_inserter(acl_filters),
+      [](const cluster_link::model::acl_filter& f) {
+          return to_acl_filter(f);
+      });
+
+    return acl_filters;
+}
+
+security_settings_sync_options create_security_settings_sync_options(
+  const cluster_link::model::security_settings_sync_config& config) {
+    security_settings_sync_options options;
+
+    options.set_interval(
+      absl::FromChrono(
+        config.task_interval.value_or(ss::lowres_clock::duration::zero())));
+    options.set_acl_filters(to_acl_filters(config.acl_filters));
+
+    return options;
+}
+
 topic_metadata_sync_options create_topic_metadata_sync_options(
   const cluster_link::model::topic_metadata_mirroring_config& cfg) {
     topic_metadata_sync_options options;
@@ -467,7 +777,8 @@ topic_metadata_sync_options create_topic_metadata_sync_options(
     options.set_interval(
       absl::FromChrono(
         cfg.task_interval.value_or(ss::lowres_clock::duration::zero())));
-    options.set_topic_filters(to_name_filters(cfg.topic_name_filters));
+    options.set_auto_create_shadow_topic_filters(
+      to_name_filters(cfg.topic_name_filters));
 
     chunked_vector<ss::sstring> mirrored_properties;
     mirrored_properties.reserve(cfg.topic_properties_to_mirror.size());
@@ -489,6 +800,9 @@ create_shadow_link_configuration(const cluster_link::model::metadata& md) {
     configurations.set_topic_metadata_sync_options(
       create_topic_metadata_sync_options(
         md.configuration.topic_metadata_mirroring_cfg));
+    configurations.set_security_sync_options(
+      create_security_settings_sync_options(
+        md.configuration.security_settings_sync_cfg));
 
     return configurations;
 }

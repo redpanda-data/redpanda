@@ -429,10 +429,10 @@ class ScalingUpTest(PreallocNodesTest):
         return usage_per_node
 
     def _partition_sizes(self, topic, nodes):
-        sizes = defaultdict(int)
+        sizes: defaultdict[int, float] = defaultdict(float)
         metrics = self.redpanda.metrics_sample("partition_size", nodes=nodes)
         if not metrics:
-            return {}
+            return sizes
 
         for s in metrics.samples:
             if s.labels["topic"] == topic:

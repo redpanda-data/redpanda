@@ -11,6 +11,7 @@
 #include "kafka/client/test/cluster_mock.h"
 
 #include "kafka/server/handlers/configs/config_response_utils.h"
+#include "kafka/server/handlers/details/security.h"
 
 namespace kafka::client {
 
@@ -188,6 +189,12 @@ void cluster_mock::register_default_handlers() {
       [this](model::node_id id, request_t req, api_version version) {
           return handle_api_versions_request(id, std::move(req), version);
       });
+
+    register_handler(
+      describe_acls_api::key,
+      [this](model::node_id id, request_t req, api_version version) {
+          return handle_describe_acls_request(id, std::move(req), version);
+      });
 }
 
 void cluster_mock::register_handler(api_key key, mock_handler handler) {
@@ -201,7 +208,8 @@ void cluster_mock::register_broker_handler(
 }
 
 ss::future<response_t> cluster_mock::handle_metadata_request(
-  model::node_id, request_t req, api_version) {
+  model::node_id, request_t req, api_version v) {
+    static const auto topic_id_support_version = api_version(10);
     auto md_req = std::get<metadata_request>(std::move(req));
     metadata_response_data r_data;
     for (auto& b : _brokers) {
@@ -216,8 +224,10 @@ ss::future<response_t> cluster_mock::handle_metadata_request(
 
     for (const auto& [topic, md] : _topics) {
         metadata_response::topic md_topic;
-        // TODO - Update when supporting topic IDs on RP
         md_topic.name = topic;
+        if (v >= topic_id_support_version) {
+            md_topic.topic_id = md.topic_id;
+        }
 
         md_topic.topic_authorized_operations
           = md_req.data.include_topic_authorized_operations
@@ -236,6 +246,10 @@ ss::future<response_t> cluster_mock::handle_metadata_request(
     }
 
     r_data.controller_id = _controller_id.value_or(_brokers.begin()->first);
+    r_data.cluster_authorized_operations
+      = md_req.data.include_cluster_authorized_operations
+          ? _cluster_authorized_operations
+          : kafka::cluster_authorized_operations_not_set;
 
     co_return metadata_response{.data = std::move(r_data)};
 }
@@ -324,6 +338,35 @@ ss::future<response_t> cluster_mock::handle_api_versions_request(
     co_return make_api_versions_response(it->second);
 }
 
+ss::future<response_t> cluster_mock::handle_describe_acls_request(
+  model::node_id, request_t req, api_version) {
+    auto describe_req = std::get<describe_acls_request>(std::move(req));
+    auto filter = details::to_acl_binding_filter(describe_req.data);
+    auto bindings = _acl_store.acls(filter);
+
+    chunked_hash_map<
+      security::resource_pattern,
+      chunked_vector<security::acl_entry>>
+      entries;
+
+    kafka::describe_acls_response response;
+    auto& response_data = response.data;
+
+    for (const auto& binding : bindings) {
+        entries[binding.pattern()].emplace_back(binding.entry());
+    }
+
+    for (auto& entry : entries) {
+        response_data.resources.push_back(
+          details::acl_entry_to_resource(
+            entry.first,
+            std::move(entry.second),
+            describe_req.data.describe_registry_acls));
+    }
+
+    co_return response;
+}
+
 template<typename ReqT, typename Ret>
 requires(KafkaApi<typename ReqT::api_type>)
 ss::future<Ret> cluster_mock::do_handle(
@@ -368,7 +411,8 @@ void cluster_mock::add_topic(
   model::topic topic_name,
   size_t partition_count,
   size_t replication_factor,
-  kafka::topic_authorized_operations authorized_operations) {
+  kafka::topic_authorized_operations authorized_operations,
+  std::optional<model::topic_id> topic_id) {
     if (_topics.contains(topic_name)) {
         // Topic already exists, do not overwrite
         throw std::invalid_argument(
@@ -386,6 +430,7 @@ void cluster_mock::add_topic(
 
     topic_metadata md;
     md.authorized_operations = authorized_operations;
+    md.topic_id = topic_id.value_or(model::topic_id{uuid_t::create()});
 
     for (auto p_id : std::views::iota(size_t(0), partition_count)) {
         partition_metadata p_md{
@@ -533,5 +578,7 @@ cluster_mock::cluster_mock()
     default_supported_versions[describe_configs_api::key] = {
       .min = kafka::describe_configs_api::min_valid,
       .max = kafka::describe_configs_api::max_valid};
+    default_supported_versions[describe_acls_api::key] = {
+      .min = api_version{0}, .max = api_version{2}};
 }
 } // namespace kafka::client

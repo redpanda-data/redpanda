@@ -6,7 +6,6 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import collections
 import concurrent.futures
 import copy
 import dataclasses
@@ -38,7 +37,7 @@ from typing import (
     List,
     Literal,
     Mapping,
-    Optional,
+    NamedTuple,
     Protocol,
     Set,
     Tuple,
@@ -88,6 +87,8 @@ from rptest.services.redpanda_installer import (
     int_tuple as ri_int_tuple,
 )
 from rptest.services.redpanda_types import (
+    CompiledLogAllowElem,
+    CompiledLogAllowList,
     KafkaClientSecurity,
     LogAllowList,
     LogAllowListElem,
@@ -98,21 +99,28 @@ from rptest.services.storage_failure_injection import FailureInjectionConfig
 from rptest.services.utils import LogSearchCloud, LogSearchLocal, NodeCrash, Stopwatch
 from rptest.util import (
     inject_remote_script,
+    not_none,
     ssh_output_stderr,
     wait_until_result,
     wait_until_with_progress_check,
 )
-from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 from rptest.utils.mode_checks import in_fips_environment
 from rptest.utils.rpenv import sample_license
 
-Partition = collections.namedtuple(
-    "Partition", ["topic", "index", "leader", "replicas"]
-)
 
-MetricSample = collections.namedtuple(
-    "MetricSample", ["family", "sample", "node", "value", "labels"]
-)
+class Partition(NamedTuple):
+    topic: str
+    index: int  # type: ignore existing name clash, fix later
+    leader: ClusterNode | None
+    replicas: list[ClusterNode | None] | None
+
+
+class MetricSample(NamedTuple):
+    family: str
+    sample: str
+    node: Any
+    value: float
+    labels: dict[str, str]
 
 
 @dataclass
@@ -156,7 +164,7 @@ NodeConfigOverridesT = dict[ClusterNode, dict[str, Any]]
 AZURITE_HOSTNAME = "azurite"
 AZURITE_PORT = 10000
 
-DEFAULT_LOG_ALLOW_LIST: list[LogAllowListElem] = [
+DEFAULT_LOG_ALLOW_LIST: list[CompiledLogAllowElem] = [
     # Tests may be run on workstations that do not have XFS filesystem volumes
     # for containers.
     # Pre-23.2 version of the message
@@ -180,6 +188,7 @@ DEFAULT_LOG_ALLOW_LIST: list[LogAllowListElem] = [
     # the catalog that have "Assert" in them. These are typically benign and
     # just indicate a race in committing to Iceberg.
     re.compile(r"UpdateRequirement.*Assert"),
+    re.compile("assert-ref-snapshot-id"),
     # Temporary: https://redpandadata.atlassian.net/browse/CORE-9897
     # there is an ongoing investigation into s3_client receiving 400 Bad Request. For now, stop the CI bleed
     re.compile(
@@ -287,14 +296,16 @@ class RemoteClusterNode(Protocol):
 
 
 class MetricSamples:
-    def __init__(self, samples: list[MetricSample]):
+    def __init__(self, samples: list[MetricSample]) -> None:
         self.samples = samples
 
-    def label_filter(self, labels: Mapping[str, str]):
-        def f(sample: MetricSample):
+    def label_filter(self, labels: Mapping[str, str]) -> "MetricSamples":
+        def f(sample: MetricSample) -> bool:
             for key, value in labels.items():
                 assert key in sample.labels
                 return sample.labels[key] == value
+            # TODO: above logic looks wrong, it only matches the first label in labels
+            assert False, "unreachable"
 
         return MetricSamples([s for s in filter(f, self.samples)])
 
@@ -307,12 +318,9 @@ class MetricsEndpoint(Enum):
 CloudStorageTypeAndUrlStyle = Tuple[CloudStorageType, Literal["virtual_host", "path"]]
 
 
-def prepare_allow_list(allow_list: LogAllowList) -> LogAllowList:
-    def maybe_compile(a: LogAllowListElem) -> LogAllowListElem:
-        if should_compile(a):
-            assert isinstance(a, str)
-            return re.compile(a)
-        return a
+def prepare_allow_list(allow_list: LogAllowList) -> CompiledLogAllowList:
+    def maybe_compile(a: LogAllowListElem) -> CompiledLogAllowElem:
+        return re.compile(a) if isinstance(a, str) else a
 
     return DEFAULT_LOG_ALLOW_LIST + list(map(maybe_compile, allow_list))
 
@@ -411,7 +419,7 @@ def get_cloud_storage_type_and_url_style() -> List[CloudStorageTypeAndUrlStyle]:
     ]
 
 
-def is_redpanda_cloud(context: TestContext):
+def is_redpanda_cloud(context: TestContext) -> bool:
     """
     Returns True if we are running againt a Redpanda Cloud cluster,
     False otherwise."""
@@ -419,12 +427,6 @@ def is_redpanda_cloud(context: TestContext):
     # we use the presence of a non-empty cloud_cluster key in the config as our
     # global signal that it's a cloud run
     return bool(context.globals.get(RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG))
-
-
-def should_compile(allow_list_element: LogAllowListElem) -> bool:
-    return not isinstance(allow_list_element, re.Pattern) and not isinstance(
-        allow_list_element, AllowLogsOnPredicate
-    )
 
 
 class ResourceSettings:
@@ -447,13 +449,13 @@ class ResourceSettings:
     def __init__(
         self,
         *,
-        num_cpus: Optional[int] = None,
-        memory_mb: Optional[int] = None,
-        bypass_fsync: Optional[bool] = None,
-        nfiles: Optional[int] = None,
-        reactor_stall_threshold: Optional[int] = None,
-        core_dump_limit: Optional[str] = "unlimited",
-    ):
+        num_cpus: int | None = None,
+        memory_mb: int | None = None,
+        bypass_fsync: bool | None = None,
+        nfiles: int | None = None,
+        reactor_stall_threshold: int | None = None,
+        core_dump_limit: str | None = "unlimited",
+    ) -> None:
         self._num_cpus = num_cpus
         self._memory_mb = memory_mb
 
@@ -467,14 +469,14 @@ class ResourceSettings:
         self._core_dump_limit = core_dump_limit
 
     @property
-    def memory_mb(self):
+    def memory_mb(self) -> int | None:
         return self._memory_mb
 
     @property
-    def num_cpus(self):
+    def num_cpus(self) -> int | None:
         return self._num_cpus
 
-    def to_cli(self, *, dedicated_node: bool):
+    def to_cli(self, *, dedicated_node: bool) -> Tuple[str, str]:
         """
 
         Generate Redpanda CLI flags based on the settings passed in at construction
@@ -555,35 +557,35 @@ class SISettings:
         test_context: TestContext,
         *,
         log_segment_size: int = 16 * 1000000,
-        cloud_storage_cache_chunk_size: Optional[int] = None,
+        cloud_storage_cache_chunk_size: int | None = None,
         cloud_storage_credentials_source: str = "config_file",
         cloud_storage_access_key: str = "panda-user",
         cloud_storage_secret_key: str = "panda-secret",
         cloud_storage_region: str = "panda-region",
-        cloud_storage_api_endpoint: Optional[str] = None,
+        cloud_storage_api_endpoint: str | None = None,
         cloud_storage_api_endpoint_port: int = 9000,
         cloud_storage_url_style: str = "virtual_host",
-        cloud_storage_cache_size: Optional[int] = None,
-        cloud_storage_cache_max_objects: Optional[int] = None,
+        cloud_storage_cache_size: int | None = None,
+        cloud_storage_cache_max_objects: int | None = None,
         cloud_storage_enable_remote_read: bool = True,
         cloud_storage_enable_remote_write: bool = True,
-        cloud_storage_max_connections: Optional[int] = None,
+        cloud_storage_max_connections: int | None = None,
         cloud_storage_disable_tls: bool = True,
-        cloud_storage_segment_max_upload_interval_sec: Optional[int] = None,
-        cloud_storage_manifest_max_upload_interval_sec: Optional[int] = None,
-        cloud_storage_readreplica_manifest_sync_timeout_ms: Optional[int] = None,
+        cloud_storage_segment_max_upload_interval_sec: int | None = None,
+        cloud_storage_manifest_max_upload_interval_sec: int | None = None,
+        cloud_storage_readreplica_manifest_sync_timeout_ms: int | None = None,
         bypass_bucket_creation: bool = False,
         use_bucket_cleanup_policy: bool = True,
-        cloud_storage_housekeeping_interval_ms: Optional[int] = None,
-        cloud_storage_spillover_manifest_max_segments: Optional[int] = None,
+        cloud_storage_housekeeping_interval_ms: int | None = None,
+        cloud_storage_spillover_manifest_max_segments: int | None = None,
         fast_uploads: bool = False,
         retention_local_strict: bool = True,
-        cloud_storage_max_throughput_per_shard: Optional[int] = None,
+        cloud_storage_max_throughput_per_shard: int | None = None,
         cloud_storage_signature_version: str = "s3v4",
-        before_call_headers: Optional[Callable[[], dict[str, str]]] = None,
+        before_call_headers: Callable[[], dict[str, str]] | None = None,
         skip_end_of_test_scrubbing: bool = False,
         addressing_style: S3AddressingStyle = S3AddressingStyle.PATH,
-    ):
+    ) -> None:
         """
         :param fast_uploads: if true, set low upload intervals to help tests run
                              quickly when they wait for uploads to complete.
@@ -725,8 +727,9 @@ class SISettings:
         elif use_fips_option == "OFF":
             return False
 
-        self.logger.warn(f"{self.GLOBAL_USE_FIPS_S3_ENDPOINT} should be 'ON', or 'OFF'")
-        return False
+        raise RuntimeError(
+            f"{self.GLOBAL_USE_FIPS_S3_ENDPOINT} should be 'ON', or 'OFF'"
+        )
 
     def use_fips_endpoint(self) -> bool:
         """
@@ -743,13 +746,13 @@ class SISettings:
             and (self.get_use_fips_s3_endpoint() or in_fips_environment())
         )
 
-    def load_context(self, logger: Logger, test_context: TestContext):
+    def load_context(self, logger: Logger, test_context: TestContext) -> None:
         if self.cloud_storage_type == CloudStorageType.S3:
             self._load_s3_context(logger, test_context)
         elif self.cloud_storage_type == CloudStorageType.ABS:
             self._load_abs_context(logger, test_context)
 
-    def _load_abs_context(self, logger: Logger, test_context: TestContext):
+    def _load_abs_context(self, logger: Logger, test_context: TestContext) -> None:
         storage_account = test_context.globals.get(
             self.GLOBAL_ABS_STORAGE_ACCOUNT, None
         )
@@ -769,7 +772,7 @@ class SISettings:
                 "Using Azurite defualt credentials."
             )
 
-    def _load_s3_context(self, logger: Logger, test_context: TestContext):
+    def _load_s3_context(self, logger: Logger, test_context: TestContext) -> None:
         """
         Update based on the test context, to e.g. consume AWS access keys in
         the globals dictionary.
@@ -846,11 +849,10 @@ class SISettings:
     @property
     def cloud_storage_bucket(self) -> str:
         if self.cloud_storage_type == CloudStorageType.S3:
-            bucket = self._cloud_storage_bucket
-        elif self.cloud_storage_type == CloudStorageType.ABS:
-            bucket = self._cloud_storage_azure_container
-
-        return bucket
+            return self._cloud_storage_bucket
+        else:
+            assert self.cloud_storage_type == CloudStorageType.ABS
+            return self._cloud_storage_azure_container
 
     def reset_cloud_storage_bucket(self, new_bucket_name: str) -> None:
         if self.cloud_storage_type == CloudStorageType.S3:
@@ -955,7 +957,7 @@ class SISettings:
 
         return conf
 
-    def set_expected_damage(self, damage_types: set[str]):
+    def set_expected_damage(self, damage_types: set[str]) -> None:
         """
         ***This is NOT for making a racy test pass.  This is ONLY for tests
            that intentionally damage data by e.g. deleting a segment out
@@ -972,10 +974,10 @@ class SISettings:
         """
         self._expected_damage_types = damage_types
 
-    def is_damage_expected(self, damage_types: set[str]):
+    def is_damage_expected(self, damage_types: set[str]) -> bool:
         return (damage_types & self._expected_damage_types) == damage_types
 
-    def get_expected_damage(self):
+    def get_expected_damage(self) -> set[str]:
         return self._expected_damage_types
 
     @classmethod
@@ -1040,22 +1042,22 @@ class SecurityConfig:
     # configuration becomes more general.
     __DEFAULT_PRINCIPAL_MAPPING_RULES = "RULE:^O=Redpanda,CN=(.*?)$/$1/L, DEFAULT"
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.enable_sasl = False
-        self.kafka_enable_authorization: Optional[bool] = None
-        self.sasl_mechanisms: Optional[list[str]] = None
-        self.sasl_mechanisms_overrides: Optional[list] = None
-        self.http_authentication: Optional[list[str]] = None
-        self.endpoint_authn_method: Optional[str] = None
-        self.tls_provider: Optional[TLSProvider] = None
+        self.kafka_enable_authorization: bool | None = None
+        self.sasl_mechanisms: list[str] | None = None
+        self.sasl_mechanisms_overrides: list | None = None
+        self.http_authentication: list[str] | None = None
+        self.endpoint_authn_method: str | None = None
+        self.tls_provider: TLSProvider | None = None
         self.require_client_auth: bool = True
-        self.auto_auth: Optional[bool] = None
+        self.auto_auth: bool | None = None
 
         # The rules to extract principal from mtls
         self.principal_mapping_rules = self.__DEFAULT_PRINCIPAL_MAPPING_RULES
 
     # sasl is required
-    def sasl_enabled(self):
+    def sasl_enabled(self) -> bool:
         return (
             self.kafka_enable_authorization is None
             and self.enable_sasl
@@ -1063,7 +1065,7 @@ class SecurityConfig:
         ) or self.endpoint_authn_method == "sasl"
 
     # principal is extracted from mtls distinguished name
-    def mtls_identity_enabled(self):
+    def mtls_identity_enabled(self) -> bool:
         return self.endpoint_authn_method == "mtls_identity"
 
 
@@ -1075,14 +1077,14 @@ class LoggingConfig:
         "datalake": (24, 3, 1),
     }
 
-    def __init__(self, default_level: str, logger_levels={}):
+    def __init__(self, default_level: str, logger_levels: dict[str, str] = {}) -> None:
         self.default_level = default_level
         self.logger_levels = logger_levels
 
-    def enable_finject_logging(self):
+    def enable_finject_logging(self) -> None:
         self.logger_levels["finject"] = "trace"
 
-    def to_args(self, redpanda_version: Optional[RedpandaVersionTriple] = None) -> str:
+    def to_args(self, redpanda_version: RedpandaVersionTriple | None = None) -> str:
         """
         Generate redpanda CLI arguments for this logging config
 
@@ -1114,25 +1116,29 @@ class LoggingConfig:
 
 
 class AuthConfig:
-    def __init__(self):
-        self.authn_method: Optional[str] = None
+    def __init__(self) -> None:
+        self.authn_method: str | None = None
 
 
 class TlsConfig(AuthConfig):
-    def __init__(self):
+    def __init__(self) -> None:
         super(TlsConfig, self).__init__()
-        self.server_key: Optional[str] = None
-        self.server_crt: Optional[str] = None
-        self.truststore_file: Optional[str] = None
-        self.crl_file: Optional[str] = None
-        self.client_key: Optional[str] = None
-        self.client_crt: Optional[str] = None
+        self.server_key: str | None = None
+        self.server_crt: str | None = None
+        self.truststore_file: str | None = None
+        self.crl_file: str | None = None
+        self.client_key: str | None = None
+        self.client_crt: str | None = None
         self.require_client_auth: bool = True
         self.enable_broker_tls: bool = True
 
     def maybe_write_client_certs(
-        self, node, logger, tls_client_key_file: str, tls_client_crt_file: str
-    ):
+        self,
+        node: ClusterNode,
+        logger: Logger,
+        tls_client_key_file: str,
+        tls_client_crt_file: str,
+    ) -> None:
         if self.client_key is not None:
             logger.info(f"Writing client tls key file: {tls_client_key_file}")
             logger.debug(open(self.client_key, "r").read())
@@ -1150,11 +1156,11 @@ class PandaproxyConfig(TlsConfig):
     PP_TLS_CLIENT_KEY_FILE = "/etc/redpanda/pp_client.key"
     PP_TLS_CLIENT_CRT_FILE = "/etc/redpanda/pp_client.crt"
 
-    def __init__(self):
+    def __init__(self) -> None:
         super(PandaproxyConfig, self).__init__()
-        self.cache_keep_alive_ms: Optional[int] = 300000
-        self.cache_max_size: Optional[int] = 10
-        self.advertised_api_host: Optional[str] = None
+        self.cache_keep_alive_ms: int | None = 300000
+        self.cache_max_size: int | None = 10
+        self.advertised_api_host: str | None = None
 
 
 class SchemaRegistryConfig(TlsConfig):
@@ -1163,7 +1169,7 @@ class SchemaRegistryConfig(TlsConfig):
 
     mode_mutability = False
 
-    def __init__(self):
+    def __init__(self) -> None:
         super(SchemaRegistryConfig, self).__init__()
 
 
@@ -1173,17 +1179,17 @@ class AuditLogConfig(TlsConfig):
 
     def __init__(
         self,
-        listener_port: Optional[int] = None,
-        listener_authn_method: Optional[str] = None,
-    ):
+        listener_port: int | None = None,
+        listener_authn_method: str | None = None,
+    ) -> None:
         super(AuditLogConfig, self).__init__()
         self.listener_port = listener_port
         self.listener_authn_method = listener_authn_method
 
 
 class RpkNodeConfig:
-    def __init__(self):
-        self.ca_file = None
+    def __init__(self) -> None:
+        self.ca_file: str | None = None
 
 
 class RedpandaServiceConstants:
@@ -1204,16 +1210,15 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
     """
 
     context: TestContext
-    logger: Logger
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        # Now ensure that this base is part of the right type of object.
-        # For these checks to work, this __init__ method should appear in
-        # the MRO after all the __init__ methods that would set these properties
-        self._check_attr("context", TestContext)
-        self._check_attr("logger", Logger)
         self._usage_stats = UsageStats()
+
+    @property
+    @abstractmethod
+    def logger(self) -> Logger:
+        pass
 
     @property
     def usage_stats(self) -> UsageStats:
@@ -1229,13 +1234,13 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
         return dataclasses.asdict(self._usage_stats)
 
     @abstractmethod
-    def all_up(self):
+    def all_up(self) -> bool:
         pass
 
     @abstractmethod
     def raise_on_bad_logs(
         self, allow_list: LogAllowList = (), test_start_time: float | None = None
-    ):
+    ) -> None:
         pass
 
     @abstractmethod
@@ -1244,12 +1249,16 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
         on this broker."""
         pass
 
+    def export_cluster_config(self) -> None:
+        self.logger.debug("export_cluster_config not implemented for this service")
+
     def wait_until(
         self,
         fn: Callable[[], Any],
         timeout_sec: int,
         backoff_sec: int,
         err_msg: str | Callable[[], str] = "",
+        retry_on_exc: bool = False,
     ) -> None:
         """
         Cluster-aware variant of wait_until, which will fail out
@@ -1276,7 +1285,11 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
             return r
 
         wait_until(
-            wrapped, timeout_sec=timeout_sec, backoff_sec=backoff_sec, err_msg=err_msg
+            wrapped,
+            timeout_sec=timeout_sec,
+            backoff_sec=backoff_sec,
+            err_msg=err_msg,
+            retry_on_exc=retry_on_exc,
         )
 
     def wait_until_with_progress_check(
@@ -1288,7 +1301,7 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
         backoff_sec: int,
         err_msg: str | None = None,
         logger: Logger | None = None,
-    ):
+    ) -> None:
         """
         Cluster-aware variant of wait_until_with_progress_check, which will
         fail out early if a node dies.
@@ -1322,19 +1335,9 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
             logger=logger,
         )
 
-    def _check_attr(self, name: str, t: Type):
-        v = getattr(self, name, None)
-        mro = self.__class__.__mro__
-        assert v is not None, (
-            f"RedpandaServiceABC was missing attribute {name} after __init__: {mro}\n"
-        )
-        assert isinstance(v, t), (
-            f"{name} had wrong type, expected {t} but was {type(v)}"
-        )
-
     def _extract_samples(
-        self, metrics, sample_pattern: str, node
-    ) -> list[MetricSamples]:
+        self, metrics: Generator[Metric, Any, None], sample_pattern: str, node: Any
+    ) -> list[MetricSample]:
         """Extract metrics samples given a sample pattern. Embed the node in which it came from."""
         found_sample = None
         sample_values = []
@@ -1368,9 +1371,9 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
     def metrics_sample(
         self,
         sample_pattern: str,
-        nodes=None,
+        nodes: Any = None,
         metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
-    ) -> Optional[MetricSamples]:
+    ) -> MetricSamples | None:
         """Implement this method to iterate over nodes to query metrics.
 
         Query metrics for a single sample using fuzzy name matching. This
@@ -1398,7 +1401,7 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
         sample_pattern: str,
         ns: list[Any],
         metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
-    ) -> Optional[MetricSamples]:
+    ) -> MetricSamples | None:
         """Does the main work of the metrics_sample() implementation given a list of ns to iterate over."""
 
         sample_values = []
@@ -1450,12 +1453,12 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
     @abstractmethod
     def metric_sum(
         self,
-        metric_name,
+        metric_name: str,
         metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
         namespace: str | None = None,
         topic: str | None = None,
-        nodes=None,
-    ):
+        nodes: Any = None,
+    ) -> float:
         """Implement this method to sum the metrics.
 
         Pings the 'metrics_endpoint' of each node and returns the summed values
@@ -1471,7 +1474,7 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
         namespace: str | None = None,
         topic: str | None = None,
         expect_metric: bool = False,
-    ):
+    ) -> float:
         """Does the main work of the metric_sum() implementation given a list of ns to iterate over."""
 
         count = 0
@@ -1505,21 +1508,24 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
         return count
 
 
-class KubeServiceMixin:
-    kubectl: KubectlTool
+class KubeServiceMixin(ABC):
+    @property
+    @abstractmethod
+    def kubectl(self) -> KubectlTool:
+        pass
 
-    def get_node_memory_mb(self):
+    def get_node_memory_mb(self) -> float:
         line = self.kubectl.exec("cat /proc/meminfo | grep MemTotal")
         memory_kb = int(line.strip().split()[1])
         return memory_kb / 1024
 
-    def get_node_cpu_count(self):
+    def get_node_cpu_count(self) -> int:
         core_count_str = self.kubectl.exec(
             "cat /proc/cpuinfo | grep ^processor | wc -l"
         )
         return int(core_count_str.strip())
 
-    def get_node_disk_free(self):
+    def get_node_disk_free(self) -> int:
         if self.kubectl.exists(RedpandaService.PERSISTENT_ROOT):
             df_path = RedpandaService.PERSISTENT_ROOT
         else:
@@ -1553,10 +1559,10 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         context: TestContext,
         *,
         config_profile_name: str,
-        skip_if_no_redpanda_log: Optional[bool] = False,
+        skip_if_no_redpanda_log: bool | None = False,
         min_brokers: int = 3,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         """Initialize a RedpandaServiceCloud object.
 
         :param context: test context object
@@ -1570,7 +1576,6 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         # we save the test context under both names since RedpandaService and Service
         # save them under these two names, respetively
         self.context = self._context = context
-        self.logger = context.logger
 
         super().__init__()
 
@@ -1656,14 +1661,18 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         )
 
     @property
-    def kubectl(self):
+    def logger(self) -> Logger:
+        return self._context.logger
+
+    @property
+    def kubectl(self) -> KubectlTool:
         assert self.__kubectl, "kubectl accessed before cluster was started?"
         return self.__kubectl
 
-    def who_am_i(self):
-        return self._cloud_cluster.cluster_id
+    def who_am_i(self) -> str:
+        return not_none(self._cloud_cluster.cluster_id)
 
-    def security_config(self):
+    def security_config(self) -> dict[str, Any]:
         return dict(
             security_protocol="SASL_SSL",
             sasl_mechanism=self._superuser.algorithm,
@@ -1672,35 +1681,37 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             enable_tls=True,
         )
 
-    def kafka_client_security(self):
+    def kafka_client_security(self) -> KafkaClientSecurity:
         return KafkaClientSecurity(self._superuser, True)
 
-    def rebuild_pods_classes(self):
+    def rebuild_pods_classes(self) -> None:
         """Querry pods and create Classes fresh"""
         self.pods = [
             CloudBroker(p, self.kubectl, self.logger) for p in self.get_redpanda_pods()
         ]
 
-    def start(self):
+    def start(self) -> None:
         """Does nothing, do not call."""
         # everything here was moved into __init__
         pass
 
-    def format_pod_status(self, pods):
+    def format_pod_status(self, pods: list[dict[str, Any]]) -> str:
         statuses_list = [(p["metadata"]["name"], p["status"]["phase"]) for p in pods]
         if len(statuses_list) < 1:
             return "none"
         else:
             return ", ".join([f"{n}: {s}" for n, s in statuses_list])
 
-    def get_redpanda_pods_filtered(self, status):
+    def get_redpanda_pods_filtered(self, status: str) -> list[dict[str, Any]]:
         return [
             p
             for p in self.get_redpanda_pods()
             if p["status"]["phase"].lower() == status
         ]
 
-    def get_redpanda_pods_presorted(self):
+    def get_redpanda_pods_presorted(
+        self,
+    ) -> Tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
         """Method gets all pods and separates them into active and inactive
 
         return: active_pods, inactive_pods, unknown lists
@@ -1738,27 +1749,26 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
         return active_rp_pods, inactive_rp_pods, unknown_rp_pods
 
-    def get_redpanda_statefulset(self):
+    def get_redpanda_statefulset(self) -> dict[str, Any]:
         """Get the statefulset for redpanda brokers"""
-        if not self.is_operator_v2_cluster():
-            return None
+        assert self.is_operator_v2_cluster(), "statefulset called on op v1 cluster"
         return json.loads(
             self.kubectl.cmd("get statefulset -n redpanda redpanda-broker -o json")
         )
 
-    def get_redpanda_pods(self):
+    def get_redpanda_pods(self) -> list[dict[str, Any]]:
         """Get the current list of redpanda pods as k8s API objects."""
         pods = json.loads(self.kubectl.cmd("get pods -n redpanda -o json"))
 
         return [p for p in pods["items"] if is_redpanda_pod(p, self.cluster_id)]
 
     @property
-    def cluster_id(self):
+    def cluster_id(self) -> str:
         cid = self._cloud_cluster.cluster_id
         assert cid, cid
         return cid
 
-    def get_node_by_id(self, id):
+    def get_node_by_id(self, id: int) -> CloudBroker | None:
         for p in self.pods:
             if p.slot_id == id:
                 return p
@@ -1774,7 +1784,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             )
         return profiles[self.config_profile_name]
 
-    def restart_pod(self, pod_name: str, timeout: int = 180):
+    def restart_pod(self, pod_name: str, timeout: int = 180) -> None:
         """Restart a pod by name
 
         Using kubectl delete to gracefully stop the pod,
@@ -1818,7 +1828,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         # Call to rebuild metadata for all cloud brokers
         self.rebuild_pods_classes()
 
-    def is_operator_v2_cluster(self):
+    def is_operator_v2_cluster(self) -> bool:
         # Below will fail if there is no 'redpanda' resource type. This is the
         # case on operator v1 but exists on operator v2.
         try:
@@ -1829,12 +1839,12 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
         return True
 
-    def rolling_restart_pods(self, pod_timeout: int = 180):
+    def rolling_restart_pods(self, pod_timeout: int = 180) -> None:
         """Restart all pods in the cluster one at a time.
 
         Restart a pod in the cluster and does not restart another
         until the previous one has finished.
-        Block until cluster is ready after all restarts are finished.
+        Block until cluster is
 
         :param pod_timeout: seconds to wait for each pod to be ready after restart
         """
@@ -1849,7 +1859,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             # Check cluster readiness after pod restart
             self.check_cluster_readiness(cluster_name, expected_replicas, pod_timeout)
 
-    def concurrent_restart_pods(self, pod_timeout):
+    def concurrent_restart_pods(self, pod_timeout: int) -> None:
         """
         Restart all pods in the cluster concurrently and wait
         for the entire cluster to be ready.
@@ -1905,7 +1915,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             f"Cluster {cluster_name} arrived at readyReplicas {expected_replicas}"
         )
 
-    def cluster_desired_replicas(self, cluster_name: str = ""):
+    def cluster_desired_replicas(self, cluster_name: str = "") -> int:
         """Return cluster desired replica count."""
         if self.is_operator_v2_cluster():
             rp_statefulset = self.get_redpanda_statefulset()
@@ -1923,7 +1933,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         )
         return expected_replicas
 
-    def cluster_ready_replicas(self, cluster_name: str = ""):
+    def cluster_ready_replicas(self, cluster_name: str = "") -> int:
         """Retrieves the number of ready replicas for the given cluster."""
         if self.is_operator_v2_cluster():
             rp_statefulset = self.get_redpanda_statefulset()
@@ -1939,7 +1949,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         )
         return int(0 if not ret else ret)
 
-    def verify_basic_produce_consume(self, producer, consumer):
+    def verify_basic_produce_consume(self, producer: Any, consumer: Any) -> None:
         self.logger.info("Checking basic producer functions")
         current_sent = producer.produce_status.sent
         produce_count = 100
@@ -1983,20 +1993,25 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             return self._cloud_cluster.get_serverless_broker_address()
         return self._cloud_cluster.get_broker_address()
 
+    def brokers_list(self) -> list[str]:
+        return self.brokers().split(",")
+
     def install_pack_version(self) -> str:
         if self._is_serverless_cluster:
             # if serverless cluster we do not have an install pack version
             return "unknown_version"
         return self._cloud_cluster.get_install_pack_version()
 
-    def sockets_clear(self, node: RemoteClusterNode):
+    def sockets_clear(self, node: RemoteClusterNode) -> bool:
         return True
 
     def all_up(self) -> bool:
         return self.cluster_healthy()
 
     def metrics(
-        self, pod, metrics_endpoint: MetricsEndpoint = MetricsEndpoint.PUBLIC_METRICS
+        self,
+        node: Any,
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.PUBLIC_METRICS,
     ):
         """Parse the prometheus text format metric from a given pod."""
         if metrics_endpoint == MetricsEndpoint.PUBLIC_METRICS:
@@ -2005,16 +2020,16 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             # operator V2 clusters use HTTPS for all the things
             p = "-k https" if self.is_operator_v2_cluster() else "http"
             text = self.kubectl.exec(
-                f"curl -f -s -S {p}://localhost:9644/metrics", pod.name
+                f"curl -f -s -S {p}://localhost:9644/metrics", node.name
             )
         return text_string_to_metric_families(text)
 
     def metrics_sample(
         self,
         sample_pattern: str,
-        pods=None,
+        nodes: Any = None,
         metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
-    ) -> Optional[MetricSamples]:
+    ) -> MetricSamples | None:
         """
         Query metrics for a single sample using fuzzy name matching. This
         interface matches the sample pattern against sample names, and requires
@@ -2035,22 +2050,21 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             sample = vectorized_cluster_partition_under_replicated_replicas
         """
 
-        if pods is None:
-            pods = self.pods
+        pods = nodes or self.pods
 
         return self._metrics_sample(sample_pattern, pods, metrics_endpoint)
 
     def metrics_samples(
         self,
         sample_patterns: list[str],
-        pods=None,
+        nodes: Any = None,
         metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
     ) -> dict[str, MetricSamples]:
         """
         Query metrics for multiple sample names using fuzzy matching.
         Similar to metrics_sample(), but works with multiple patterns.
         """
-        pods = pods or self.pods
+        pods = nodes or self.pods
         return self._metrics_samples(sample_patterns, pods, metrics_endpoint)
 
     def metric_sum(
@@ -2059,16 +2073,14 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
         namespace: str | None = None,
         topic: str | None = None,
-        pods: Any = None,
+        nodes: Any = None,
     ):
         """
         Pings the 'metrics_endpoint' of each pod and returns the summed values
         of the given metric, optionally filtering by namespace and topic.
         """
 
-        if pods is None:
-            pods = self.pods
-
+        pods = nodes or self.pods
         return self._metric_sum(metric_name, pods, metrics_endpoint, namespace, topic)
 
     @staticmethod
@@ -2364,7 +2376,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         return {}
 
 
-class RedpandaService(RedpandaServiceABC, Service):
+class RedpandaService(Service, RedpandaServiceABC):
     PERSISTENT_ROOT = "/var/lib/redpanda"
     TRIM_LOGS_KEY = "trim_logs"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
@@ -2465,25 +2477,25 @@ class RedpandaService(RedpandaServiceABC, Service):
         context: TestContext,
         num_brokers: int,
         *,
-        cluster_spec=None,
-        extra_rp_conf=None,
-        extra_node_conf=None,
-        resource_settings=None,
-        si_settings=None,
-        log_level: Optional[str] = None,
-        log_config: Optional[LoggingConfig] = None,
-        environment: Optional[dict[str, str]] = None,
+        cluster_spec: Any = None,
+        extra_rp_conf: dict[str, Any] | None = None,
+        extra_node_conf: dict[str, Any] | None = None,
+        resource_settings: ResourceSettings | None = None,
+        si_settings: SISettings | None = None,
+        log_level: str | None = None,
+        log_config: LoggingConfig | None = None,
+        environment: dict[str, str] | None = None,
         security: SecurityConfig = SecurityConfig(),
-        node_ready_timeout_s=None,
-        superuser: Optional[SaslCredentials] = None,
+        node_ready_timeout_s: int | None = None,
+        superuser: SaslCredentials | None = None,
         skip_if_no_redpanda_log: bool = False,
-        pandaproxy_config: Optional[PandaproxyConfig] = None,
-        schema_registry_config: Optional[SchemaRegistryConfig] = None,
-        audit_log_config: Optional[AuditLogConfig] = None,
-        disable_cloud_storage_diagnostics=False,
-        cloud_storage_scrub_timeout_s=None,
-        rpk_node_config: Optional[RpkNodeConfig] = None,
-    ):
+        pandaproxy_config: PandaproxyConfig | None = None,
+        schema_registry_config: SchemaRegistryConfig | None = None,
+        audit_log_config: AuditLogConfig | None = None,
+        disable_cloud_storage_diagnostics: bool = False,
+        cloud_storage_scrub_timeout_s: int | None = None,
+        rpk_node_config: RpkNodeConfig | None = None,
+    ) -> None:
         super().__init__(context, num_nodes=num_brokers, cluster_spec=cluster_spec)
 
         # def __init__(
@@ -2648,14 +2660,14 @@ class RedpandaService(RedpandaServiceABC, Service):
 
     def restart_nodes(
         self,
-        nodes,
-        override_cfg_params=None,
-        start_timeout=None,
-        stop_timeout=None,
-        auto_assign_node_id=False,
-        omit_seeds_on_idx_one=True,
+        nodes: ClusterNode | list[ClusterNode],
+        override_cfg_params: dict[str, Any] | None = None,
+        start_timeout: int | None = None,
+        stop_timeout: int | None = None,
+        auto_assign_node_id: bool = False,
+        omit_seeds_on_idx_one: bool = True,
         extra_cli: list[str] = [],
-    ):
+    ) -> None:
         nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(nodes)) as executor:
             # The list() wrapper is to cause futures to be evaluated here+now
@@ -2716,7 +2728,7 @@ class RedpandaService(RedpandaServiceABC, Service):
         )
         return (fibers, min_ms, max_ms)
 
-    def add_extra_rp_conf(self, conf):
+    def add_extra_rp_conf(self, conf: dict[str, Any]):
         self._extra_rp_conf = {**self._extra_rp_conf, **conf}
 
     def metric_sum(
@@ -2756,7 +2768,7 @@ class RedpandaService(RedpandaServiceABC, Service):
         for node in self.nodes:
             try:
                 metrics = self.metrics(node)
-            except:
+            except Exception:
                 return False
             idx = self.idx(node)
             for family in metrics:
@@ -2844,7 +2856,7 @@ class RedpandaService(RedpandaServiceABC, Service):
         def _try_get_node_id():
             try:
                 node_cfg = self._admin.get_node_config(node)
-            except:
+            except Exception:
                 return (False, -1)
             return (True, node_cfg["node_id"])
 
@@ -2925,7 +2937,7 @@ class RedpandaService(RedpandaServiceABC, Service):
         # Pass environment variables via FOO=BAR shell expressions
         return " ".join([f"{k}={v}" for (k, v) in self._environment.items()])
 
-    def set_seed_servers(self, node_list):
+    def set_seed_servers(self, node_list: list[ClusterNode]):
         assert len(node_list) > 0
         self._seed_servers = node_list
 
@@ -3114,20 +3126,23 @@ class RedpandaService(RedpandaServiceABC, Service):
 
     def start(
         self,
-        nodes=None,
-        clean_nodes=True,
-        start_si=True,
+        nodes: list[ClusterNode] | None = None,
+        clean_nodes: bool = True,
+        start_si: bool = True,
         expect_fail: bool = False,
         auto_assign_node_id: bool = False,
         omit_seeds_on_idx_one: bool = True,
         node_config_overrides: NodeConfigOverridesT = {},
-    ):
+        **kwargs: Any,
+    ) -> None:
         """
         Start the service on all nodes.
 
         :param expect_fail: if true, expect redpanda nodes to terminate shortly
                             after starting.  Raise exception if they don't.
         """
+
+        assert not kwargs, f"unexpected keyword args: {kwargs}"
 
         # Callers sometimes forget that this must be keyed by ClusterNode.
         for k in node_config_overrides:
@@ -3326,7 +3341,7 @@ class RedpandaService(RedpandaServiceABC, Service):
 
             node.account.copy_to(ca.crt, RedpandaService.SYSTEM_TLS_CA_CRT_FILE)
             node.account.ssh(f"chmod 755 {RedpandaService.SYSTEM_TLS_CA_CRT_FILE}")
-            node.account.ssh(f"update-ca-certificates")
+            node.account.ssh("update-ca-certificates")
 
             if self._pandaproxy_config is not None:
                 self._pandaproxy_config.maybe_write_client_certs(
@@ -3386,7 +3401,7 @@ class RedpandaService(RedpandaServiceABC, Service):
 
         env_preamble = self.redpanda_env_preamble()
 
-        cur_ver: Optional[RedpandaVersionTriple] = None
+        cur_ver: RedpandaVersionTriple | None = None
         try:
             cur_ver = self.get_version_int_tuple(node)
         except:  # noqa
@@ -3501,7 +3516,7 @@ class RedpandaService(RedpandaServiceABC, Service):
         # Fall through: no problematic lines found
         return True
 
-    def lsof_node(self, node: ClusterNode, filter: Optional[str] = None):
+    def lsof_node(self, node: ClusterNode, filter: str | None = None):
         """
         Get the list of open files for a running node
 
@@ -3551,24 +3566,27 @@ class RedpandaService(RedpandaServiceABC, Service):
 
     def start_node(
         self,
-        node,
-        override_cfg_params=None,
-        timeout=None,
-        write_config=True,
-        first_start=False,
+        node: ClusterNode,
+        override_cfg_params: dict[str, Any] | None = None,
+        timeout: int | None = None,
+        write_config: bool = True,
+        first_start: bool = False,
         expect_fail: bool = False,
         auto_assign_node_id: bool = False,
         omit_seeds_on_idx_one: bool = True,
         skip_readiness_check: bool = False,
         node_id_override: int | None = None,
         extra_cli: list[str] = [],
-    ):
+        **kwargs: Any,
+    ) -> None:
         """
         Start a single instance of redpanda. This function will not return until
         redpanda appears to have started successfully. If redpanda does not
         start within a timeout period the service will fail to start. Thus this
         function also acts as an implicit test that redpanda starts quickly.
         """
+
+        assert not kwargs, "kwargs not empty"
         node.account.mkdirs(RedpandaService.DATA_DIR)
         node.account.mkdirs(os.path.dirname(RedpandaService.NODE_CONFIG_FILE))
 
@@ -3915,14 +3933,14 @@ class RedpandaService(RedpandaServiceABC, Service):
 
         return result
 
-    def set_cluster_config_to_null(self, name: str, **kwargs):
+    def set_cluster_config_to_null(self, name: str, **kwargs: Any) -> None:
         self.set_cluster_config(values={name: None}, **kwargs)
 
     def set_cluster_config(
         self,
-        values: dict,
+        values: dict[str, Any],
         expect_restart: bool = False,
-        admin_client: Optional[Admin] = None,
+        admin_client: Admin | None = None,
         timeout: int = 10,
         tolerate_stopped_nodes=False,
     ):
@@ -3948,7 +3966,7 @@ class RedpandaService(RedpandaServiceABC, Service):
             tolerate_stopped_nodes=tolerate_stopped_nodes,
         )
 
-    def enable_development_feature_support(self, key: Optional[int] = None):
+    def enable_development_feature_support(self, key: int | None = None):
         """
         Enable experimental feature support.
 
@@ -3967,12 +3985,14 @@ class RedpandaService(RedpandaServiceABC, Service):
         config_version,
         expect_restart: bool,
         timeout: int,
-        admin_client: Optional[Admin] = None,
+        admin_client: Admin | None = None,
         tolerate_stopped_nodes=False,
     ):
         admin_client = admin_client or self._admin
         if tolerate_stopped_nodes:
             started_node_ids = {self.node_id(n) for n in self.started_nodes()}
+        else:
+            started_node_ids = {}
 
         def is_ready():
             status = admin_client.get_cluster_config_status(node=self.controller())
@@ -4064,7 +4084,7 @@ class RedpandaService(RedpandaServiceABC, Service):
         assert node in self.nodes, f"Node {node.account.hostname} is not started"
         return node.account.monitor_log(RedpandaService.STDOUT_STDERR_CAPTURE)
 
-    def raise_on_crash(self, log_allow_list: LogAllowList | None = ()) -> None:
+    def raise_on_crash(self, log_allow_list: LogAllowList = ()) -> None:
         """
         Check if any redpanda nodes are unexpectedly not running,
         or if any logs contain segfaults or assertions.
@@ -4293,13 +4313,14 @@ class RedpandaService(RedpandaServiceABC, Service):
                     observed,
                     observed_total,
                 )
-            except:
+            except Exception:
                 return 0.0, 0.0, None, None, None, None
 
         # inspect the node and check that we fall below a 5% + reclaimabled_by_retention%
         # threshold difference. at this point the test is over, but we allow for a couple
         # retries in case things need to settle.
         nodes = [(n, None) for n in self.nodes]
+        retries = []
         for _ in range(3):
             retries = []
             results = self.for_nodes(nodes, lambda n: (n, inspect_node(n)))
@@ -4366,7 +4387,7 @@ class RedpandaService(RedpandaServiceABC, Service):
 
             try:
                 node.account.ssh(cmd)
-            except:
+            except Exception:
                 # We run during teardown on failures, so if something
                 # goes wrong we must not raise, or we would usurp
                 # the original exception that caused the failure.
@@ -4378,7 +4399,7 @@ class RedpandaService(RedpandaServiceABC, Service):
         if self._installer._started:
             # The installer sets up binaries to always use /opt/redpanda.
             return "/opt/redpanda"
-        return self._context.globals.get("rp_install_path_root", None)
+        return self._context.globals["rp_install_path_root"]
 
     def find_binary(self, name):
         rp_install_path_root = self.rp_install_path()
@@ -4425,11 +4446,11 @@ class RedpandaService(RedpandaServiceABC, Service):
             return self.get_version(node)
         return None
 
-    def stop(self, **kwargs):
+    def export_cluster_config(self) -> None:
         """
-        Override default stop() to execude stop_node in parallel
+        Export the cluster configuration of all nodes to the ducktape log
+        directory for later inspection.
         """
-        self._stop_time = time.time()  # The last time stop is invoked
         self.logger.info("%s: exporting cluster config" % self.who_am_i())
 
         service_dir = os.path.join(
@@ -4452,6 +4473,12 @@ class RedpandaService(RedpandaServiceABC, Service):
             # Configuration is optional: if redpanda has e.g. crashed, you
             # will not be able to get it from the admin API
             self.logger.info(f"{self.who_am_i()}: error getting config: {e}")
+
+    def stop(self, **kwargs: Any) -> None:
+        """
+        Override default stop() to execude stop_node in parallel
+        """
+        self._stop_time = time.time()  # The last time stop is invoked
 
         self.logger.info("%s: stopping service" % self.who_am_i())
 
@@ -4484,7 +4511,7 @@ class RedpandaService(RedpandaServiceABC, Service):
             samples = self.metrics_sample(name, [node])
             if samples is None:
                 return 0
-            return sum(s.value for s in samples.samples)
+            return int(sum(s.value for s in samples.samples))
 
         try:
             self._usage_stats.disk_bytes_read += _metrics_sum(
@@ -4516,7 +4543,14 @@ class RedpandaService(RedpandaServiceABC, Service):
         except Exception as e:
             self.logger.warning(f"Cannot check metrics - {e}")
 
-    def stop_node(self, node, timeout=None, forced=False):
+    def stop_node(
+        self,
+        node: ClusterNode,
+        timeout: float | None = None,
+        forced: bool = False,
+        **kwargs: Any,
+    ):
+        assert not kwargs, f"Unknown args {kwargs}"
         # collect usage stats before the node is stopped, the usage stats
         # accumulate metrics from all the nodes before they are stopped.
         self._update_usage_stats(node)
@@ -4529,18 +4563,18 @@ class RedpandaService(RedpandaServiceABC, Service):
         self.remove_from_started_nodes(node)
 
         pid = self.redpanda_pid(node)
-        if pid is not None:
-            node.account.signal(
-                pid, signal.SIGKILL if forced else signal.SIGTERM, allow_fail=False
-            )
 
-        if timeout is None:
-            timeout = 30
+        if pid is None:
+            return
+
+        node.account.signal(
+            pid, signal.SIGKILL if forced else signal.SIGTERM, allow_fail=False
+        )
 
         try:
             wait_until(
-                lambda: self.redpanda_pid(node) == None,
-                timeout_sec=timeout,
+                lambda: self.redpanda_pid(node) is None,
+                timeout_sec=timeout or 30,
                 err_msg=f"Redpanda node {node.account.hostname} failed to stop in {timeout} seconds",
             )
         except TimeoutError:
@@ -4559,7 +4593,7 @@ class RedpandaService(RedpandaServiceABC, Service):
             node.account.signal(pid, signal.SIGKILL, allow_fail=True)
             raise
 
-    def remove_from_started_nodes(self, node):
+    def remove_from_started_nodes(self, node: ClusterNode):
         if node in self._started:
             self._started.remove(node)
 
@@ -4586,7 +4620,10 @@ class RedpandaService(RedpandaServiceABC, Service):
 
                 raise e
 
-    def clean_node(self, node, preserve_logs=False, preserve_current_install=False):
+    def clean_node(
+        self, node, preserve_logs=False, preserve_current_install=False, **kwargs: Any
+    ):
+        assert not kwargs, f"Unknown args {kwargs}"
         # These are allow_fail=True to allow for a race where kill_process finds
         # the PID, but then the process has died before it sends the SIGKILL.  This
         # should be safe against actual failures to of the process to stop, because
@@ -4663,7 +4700,7 @@ class RedpandaService(RedpandaServiceABC, Service):
             thread_name = parts[4]
             if thread == thread_name:
                 return int(parts[0]), int(parts[1])
-        return None
+        raise RuntimeError(f"Thread {thread} not found in ps output")
 
     def started_nodes(self) -> List[ClusterNode]:
         return list(self._started)
@@ -4759,11 +4796,6 @@ class RedpandaService(RedpandaServiceABC, Service):
         # Grab the node's FQDN which is needed for Kerberos name
         # resolution
         fqdn = self.get_node_fqdn(node)
-
-        try:
-            cur_ver = self.get_version_int_tuple(node)
-        except:
-            cur_ver = None
 
         if self._security.tls_provider and self._rpk_node_config is not None:
             self._rpk_node_config.ca_file = RedpandaService.TLS_CA_CRT_FILE
@@ -5020,14 +5052,16 @@ class RedpandaService(RedpandaServiceABC, Service):
                 )
 
         if self.brokers():  # Conditional in case Kafka API turned off
-            auth_args = {}
             if self.sasl_enabled():
-                auth_args = {
-                    "username": self._superuser.username,
-                    "password": self._superuser.password,
-                    "algorithm": self._superuser.algorithm,
-                }
-            client = PythonLibrdkafka(self, tls_cert=self._tls_cert, **auth_args)
+                client = PythonLibrdkafka(
+                    self,
+                    tls_cert=self._tls_cert,
+                    username=self._superuser.username,
+                    password=self._superuser.password,
+                    algorithm=self._superuser.algorithm,
+                )
+            else:
+                client = PythonLibrdkafka(self, tls_cert=self._tls_cert)
             brokers = client.brokers()
             broker = brokers.get(node_id, None)
             if broker is None:
@@ -5219,7 +5253,9 @@ class RedpandaService(RedpandaServiceABC, Service):
         under the Redpanda data directory. File paths are normalized to be relative
         to the data directory.
         """
-        cmd = f"find {RedpandaService.DATA_DIR} -type f -exec stat -c '%n %s' '{{}}' \;"
+        cmd = (
+            f"find {RedpandaService.DATA_DIR} -type f -exec stat -c '%n %s' '{{}}' \\;"
+        )
         lines = node.account.ssh_output(cmd, timeout_sec=120)
         lines = lines.decode().split("\n")
 
@@ -5291,19 +5327,12 @@ class RedpandaService(RedpandaServiceABC, Service):
         ]
         return ",".join(schema_reg)
 
-    def _extract_samples(
-        self, metrics, sample_pattern: str, node: ClusterNode
-    ) -> list[MetricSamples]:
-        """Override superclass method by ensuring node is type ClusterNode."""
-
-        return super()._extract_samples(metrics, sample_pattern, node)
-
     def metrics_sample(
         self,
         sample_pattern: str,
         nodes=None,
         metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
-    ) -> Optional[MetricSamples]:
+    ) -> MetricSamples | None:
         """
         Query metrics for a single sample using fuzzy name matching. This
         interface matches the sample pattern against sample names, and requires
@@ -5391,7 +5420,7 @@ class RedpandaService(RedpandaServiceABC, Service):
 
         return False
 
-    def search_log_any(self, pattern: str, nodes: Optional[list[ClusterNode]] = None):
+    def search_log_any(self, pattern: str, nodes: list[ClusterNode] | None = None):
         """
         Test helper for grepping the redpanda log.
         The design follows python's built-in any() function.
@@ -5411,7 +5440,7 @@ class RedpandaService(RedpandaServiceABC, Service):
         # Fall through, no matches
         return False
 
-    def search_log_all(self, pattern: str, nodes: Optional[list[ClusterNode]] = None):
+    def search_log_all(self, pattern: str, nodes: list[ClusterNode] | None = None):
         # Test helper for grepping the redpanda log
         # The design follows python's  built-in all() function.
         # https://docs.python.org/3/library/functions.html#all
@@ -5480,7 +5509,7 @@ class RedpandaService(RedpandaServiceABC, Service):
          "segments_outside_manifest":[],
          "unknown_keys":[]}
         """
-        vars = {"RUST_LOG": "warn"}
+        vars: dict[str, Any] = {"RUST_LOG": "warn"}
         backend = ""
         if self.si_settings.cloud_storage_type == CloudStorageType.S3:
             backend = "aws"
@@ -5550,7 +5579,7 @@ class RedpandaService(RedpandaServiceABC, Service):
         )
 
         # if stderr contains a WARN logline, log it as DEBUG, since this is mostly related to debugging rp-storage-tool itself
-        if re.search(b"\[\S+ WARN", stderr) is not None:
+        if re.search(rb"\[\S+ WARN", stderr) is not None:
             self.logger.debug(f"rp-storage-tool stderr output: {stderr}")
 
         report = {}
@@ -5852,7 +5881,7 @@ class RedpandaService(RedpandaServiceABC, Service):
 
         return all_anomalies
 
-    def set_expected_controller_records(self, max_records: Optional[int]):
+    def set_expected_controller_records(self, max_records: int | None):
         self._expect_max_controller_records = max_records
 
     def set_up_failure_injection(
@@ -6066,7 +6095,11 @@ class RedpandaService(RedpandaServiceABC, Service):
 
 
 def make_redpanda_service(
-    context: TestContext, num_brokers: int | None, *, extra_rp_conf=None, **kwargs
+    context: TestContext,
+    num_brokers: int | None,
+    *,
+    extra_rp_conf: dict[str, Any] | None = None,
+    **kwargs: Any,
 ) -> RedpandaService:
     """Factory function for instatiating the appropriate RedpandaServiceABC subclass."""
 
@@ -6111,7 +6144,9 @@ def make_redpanda_cloud_service(
     )
 
 
-def make_redpanda_mixed_service(context: TestContext, *, min_brokers: int | None = 3):
+def make_redpanda_mixed_service(
+    context: TestContext, *, min_brokers: int | None = 3
+) -> "AnyRedpandaService":
     """Creates either a RedpandaService or RedpandaServiceCloud depending on which
     environemnt we are running in. This allows you to write a so-called 'mixed' test
     which can run against services of different types.

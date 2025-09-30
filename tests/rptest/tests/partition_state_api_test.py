@@ -89,6 +89,7 @@ class PartitionStateAPItest(RedpandaTest):
         node_id = states[0]["replicas"][0]["raft_state"]["node_id"]
         self.redpanda.logger.debug(f"Stopping node: {node_id}")
         node = self.redpanda.get_node_by_id(node_id)
+        assert node
         self.redpanda.stop_node(node)
 
     @cluster(num_nodes=5)

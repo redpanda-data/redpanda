@@ -52,6 +52,18 @@ def _parse_bytes(value):
     return int(value) * factor
 
 def _test_options():
+    """
+    Returns common data dependencies and environment variables for Redpanda tests.
+
+    This function provides a centralized place to define common settings for all
+    C++ tests, ensuring consistency and making it easier to manage test
+    configurations.
+
+    Returns:
+        A tuple containing:
+        - A list of common data dependencies needed by tests (e.g., suppression files).
+        - A dictionary of common environment variables for test execution.
+    """
     data = [
         "//:ubsan_suppressions",
         "//:lsan_suppressions",
@@ -67,6 +79,8 @@ def _test_options():
         "ASAN_SYMBOLIZER_PATH": "$(rootpath @current_llvm_toolchain//:llvm-symbolizer)",
         "LSAN_OPTIONS": "suppressions=$(rootpath //:lsan_suppressions)",
         "UBSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:report_error_type=1:suppressions=$(rootpath //:ubsan_suppressions)",
+        # see https://redpandadata.atlassian.net/wiki/x/BwDSUw
+        "REDPANDA_RNG_SEEDING_MODE_DEFAULT": "fixed",
     }
     return data, env
 
@@ -262,6 +276,10 @@ def redpanda_cc_btest(
         data = [],
         tags = [],
         flaky = False):
+    deps.append(
+        "//src/v/test_utils:boost_test_hooks",
+    )
+
     _redpanda_cc_unit_test(
         dash_dash_protocol = True,
         name = name,
@@ -308,6 +326,7 @@ def redpanda_cc_btest_no_seastar(
         cpu = 1,
         memory = "128MiB",
         deps = []):
+    test_data, test_env = _test_options()
     cc_test(
         name = name,
         timeout = timeout,
@@ -318,10 +337,14 @@ def redpanda_cc_btest_no_seastar(
         srcs = srcs,
         defines = defines,
         copts = redpanda_copts(),
+        local_defines = ["IS_BTEST"],
         deps = [
             "//src/v/test_utils:boost_result_redirect",
+            "//src/v/test_utils:boost_test_hooks",
             "@boost//:test.so",
         ] + deps,
+        data = test_data,
+        env = test_env,
     )
 
 def redpanda_test_cc_library(

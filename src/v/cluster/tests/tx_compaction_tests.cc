@@ -10,27 +10,15 @@
 #include "cluster/rm_stm.h"
 #include "cluster/tests/rm_stm_test_fixture.h"
 #include "cluster/tests/tx_compaction_utils.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "test_utils/scoped_config.h"
+#include "test_utils/test_env.h"
 
 #include <seastar/util/defer.hh>
 
 static ss::logger test_logger{"tx_compaction_tests"};
 
 using cluster::tx_executor;
-
-namespace {
-inline ss::sstring random_dir() {
-    char* tmpdir = std::getenv("TEST_TMPDIR");
-    if (!tmpdir) {
-        return ss::format(
-          "test.dir_{}", random_generators::gen_alphanum_string(6));
-    }
-    return {
-      std::filesystem::path(tmpdir)
-      / fmt::format("test.dir_{}", random_generators::gen_alphanum_string(6))};
-}
-} // namespace
 
 #define STM_BOOTSTRAP()                                                        \
     storage::ntp_config::default_overrides o{                                  \
@@ -42,7 +30,7 @@ inline ss::sstring random_dir() {
     auto stm = _stm;                                                           \
     stm->testing_only_disable_auto_abort();                                    \
     auto stop = ss::defer([&] {                                                \
-        _data_dir = random_dir();                                              \
+        _data_dir = test_env::random_dir_path();                               \
         stop_all();                                                            \
         producer_state_manager.stop().get();                                   \
         producer_expiration_ms.stop().get();                                   \

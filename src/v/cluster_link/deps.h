@@ -164,4 +164,22 @@ public:
       get_partition_high_watermark(::model::topic_partition_view) = 0;
 };
 
+/// \brief This interface class provides access to the cluster security
+/// subsystem
+class security_service {
+public:
+    security_service() = default;
+    security_service(const security_service&) = delete;
+    security_service(security_service&&) = delete;
+    security_service& operator=(const security_service&) = delete;
+    security_service& operator=(security_service&&) = delete;
+    virtual ~security_service() = default;
+
+    static std::unique_ptr<security_service>
+    make_default(ss::sharded<cluster::security_frontend>*);
+
+    virtual ss::future<std::vector<cluster::errc>> create_acls(
+      std::vector<security::acl_binding>, ::model::timeout_clock::duration)
+      = 0;
+};
 } // namespace cluster_link

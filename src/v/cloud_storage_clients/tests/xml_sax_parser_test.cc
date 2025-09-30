@@ -194,7 +194,7 @@ BOOST_AUTO_TEST_CASE(test_parse_payload) {
     p.start_parse(std::make_unique<cloud_storage_clients::aws_parse_impl>());
     p.parse_chunk(std::move(buffer));
     p.end_parse();
-    auto result = p.result();
+    auto result = std::move(p).result();
     BOOST_REQUIRE_EQUAL(result.contents.size(), 2);
     BOOST_REQUIRE_EQUAL(result.contents[0].key, "test-key1");
     BOOST_REQUIRE_EQUAL(result.contents[0].size_bytes, 111);
@@ -240,7 +240,7 @@ BOOST_AUTO_TEST_CASE(test_parse_abs) {
     p.parse_chunk(std::move(buffer));
     p.end_parse();
 
-    auto result = p.result();
+    auto result = std::move(p).result();
     BOOST_REQUIRE_EQUAL(result.contents.size(), 1);
     BOOST_REQUIRE_EQUAL(result.contents[0].key, "blob-name");
     BOOST_REQUIRE_EQUAL(result.contents[0].size_bytes, 1112);
@@ -271,7 +271,7 @@ BOOST_AUTO_TEST_CASE(test_parse_abs_with_continuation) {
     p.parse_chunk(std::move(buffer));
     p.end_parse();
 
-    auto result = p.result();
+    auto result = std::move(p).result();
     BOOST_REQUIRE_EQUAL(result.is_truncated, true);
     BOOST_REQUIRE_EQUAL(result.next_continuation_token, "nnn");
 }
@@ -285,7 +285,7 @@ BOOST_AUTO_TEST_CASE(test_parse_abs_with_blob_prefix) {
     p.parse_chunk(std::move(buffer));
     p.end_parse();
 
-    auto result = p.result();
+    auto result = std::move(p).result();
     BOOST_REQUIRE(result.contents.empty());
     BOOST_REQUIRE_EQUAL(result.common_prefixes.size(), 1);
     BOOST_REQUIRE_EQUAL(

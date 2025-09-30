@@ -15,6 +15,7 @@
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "model/fundamental.h"
 #include "model/tests/random_batch.h"
+#include "model/tests/raw_record_batch_factory.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/sstring.hh>
@@ -219,6 +220,111 @@ SEASTAR_THREAD_TEST_CASE(batch_reader_record_batch_reader_impl_fail_magic) {
     BOOST_REQUIRE_EXCEPTION(
       // NOLINTNEXTLINE(bugprone-use-after-move)
       model::consume_reader_to_memory(std::move(rdr), model::no_timeout).get(),
+      kafka::exception,
+      [](const kafka::exception& e) {
+          return e.error == kafka::error_code::corrupt_message;
+      });
+}
+
+SEASTAR_THREAD_TEST_CASE(batch_reader_truncated_last_batch) {
+    auto ctx = make_context(base_offset, many_batches);
+    // truncate the last batch
+
+    const auto all_batches
+      = model::consume_reader_to_memory(
+          model::make_record_batch_reader<kafka::batch_reader>(
+            ctx.record_set.copy()),
+          model::no_timeout)
+          .get();
+
+    auto non_tolerating_reader
+      = model::make_record_batch_reader<kafka::batch_reader>(
+        ctx.record_set.copy().share(0, ctx.record_set.size_bytes() - 10));
+    // reader is expected to fail on truncated batch, as the flag was not set
+    // to tolerate the truncation
+    BOOST_REQUIRE_EXCEPTION(
+      model::consume_reader_to_memory(
+        // NOLINTNEXTLINE(bugprone-use-after-move)
+        std::move(non_tolerating_reader),
+        model::no_timeout)
+        .get(),
+      kafka::exception,
+      [](const kafka::exception& e) {
+          return e.error == kafka::error_code::corrupt_message;
+      });
+
+    auto tolerating_reader
+      = model::make_record_batch_reader<kafka::batch_reader>(
+        ctx.record_set.copy().share(0, ctx.record_set.size_bytes() - 10),
+        kafka::batch_reader::tolerate_partial_last_batch::yes);
+
+    auto truncated_batches = model::consume_reader_to_memory(
+                               std::move(tolerating_reader), model::no_timeout)
+                               .get();
+
+    /**
+     * Validate that indeed the last batch was truncated.
+     */
+    BOOST_REQUIRE_EQUAL(truncated_batches.size(), all_batches.size() - 1);
+    BOOST_REQUIRE_EQUAL(
+      std::next(all_batches.rbegin())->base_offset(),
+      truncated_batches.back().base_offset());
+}
+
+SEASTAR_THREAD_TEST_CASE(batch_reader_truncated_batch_in_the_middle) {
+    /** make some batches */
+    auto input = model::test::make_random_batches(base_offset, 10).get();
+    auto to_truncate = model::test::make_random_batch(
+      model::next_offset(input.back().last_offset()));
+
+    auto truncated_batch
+      = model::test::raw_record_batch_factory::create_record_batch(
+        to_truncate.header(),
+        to_truncate.data().copy().share(0, to_truncate.data().size_bytes() / 2),
+        true);
+    input.push_back(std::move(truncated_batch));
+    for (int i = 0; i < 5; ++i) {
+        input.push_back(
+          model::test::make_random_batch(
+            model::next_offset(input.back().last_offset())));
+    }
+
+    auto batches_buffer
+      = model::make_memory_record_batch_reader(std::move(input))
+          .consume(kafka::kafka_batch_serializer{}, model::no_timeout)
+          .get();
+
+    auto non_tolerating_reader
+      = model::make_record_batch_reader<kafka::batch_reader>(
+        batches_buffer.data.copy());
+
+    BOOST_REQUIRE_EXCEPTION(
+      model::consume_reader_to_memory(
+        // NOLINTNEXTLINE(bugprone-use-after-move)
+        std::move(non_tolerating_reader),
+        model::no_timeout)
+        .get(),
+      kafka::exception,
+      [](const kafka::exception& e) {
+          return e.error == kafka::error_code::corrupt_message;
+      });
+
+    /**
+     * Batch is in the middle, the reader should still return corrupted message
+     * error
+     */
+
+    auto tolerating_reader
+      = model::make_record_batch_reader<kafka::batch_reader>(
+        batches_buffer.data.copy(),
+        kafka::batch_reader::tolerate_partial_last_batch::yes);
+
+    BOOST_REQUIRE_EXCEPTION(
+      model::consume_reader_to_memory(
+        // NOLINTNEXTLINE(bugprone-use-after-move)
+        std::move(tolerating_reader),
+        model::no_timeout)
+        .get(),
       kafka::exception,
       [](const kafka::exception& e) {
           return e.error == kafka::error_code::corrupt_message;

@@ -10,50 +10,61 @@
 
 #pragma once
 
+#include "cloud_topics/level_one/common/abstract_io.h"
 #include "cloud_topics/level_one/common/object.h"
+#include "cloud_topics/level_one/compaction/committer.h"
 #include "compaction/reducer.h"
 #include "container/chunked_vector.h"
 #include "model/fundamental.h"
+#include "model/timestamp.h"
 
 namespace cloud_topics::l1 {
 
 class compaction_sink : public compaction::sliding_window_reducer::sink {
 public:
-    struct object_output_t {
-        object_builder::object_info info;
-        iobuf obj;
-    };
-
     compaction_sink(
-      model::topic_id_partition tidp, object_builder::options opts = {})
-      : _tidp(tidp)
-      , _opts(opts) {}
+      l1::io*,
+      compaction_committer*,
+      model::topic_id_partition,
+      object_builder::options = {});
 
     ss::future<ss::stop_iteration>
-    operator()(model::record_batch b, model::compression c) final;
+    operator()(model::record_batch, model::compression) final;
+
     ss::future<> finalize() final;
 
-    void set_object_sink(chunked_vector<object_output_t>* obj_sink) {
-        _obj_sink = obj_sink;
-    }
-
 private:
+    // Returns `true` if the current object represented by
+    // `_active_staging_file` and `_builder` should be rolled.
     bool needs_roll() const;
 
-    ss::future<> maybe_flush_object_builder();
+    // Pushes the current object represented by `_active_staging_file` and
+    // `_builder` to the `_committer`. Leaves `_active_staging_file` and
+    // `_builder` as `nullptr`.
+    ss::future<> commit_update_and_roll();
 
+    // May commit the current object if `needs_roll()`. Leaves
+    // `_active_staging_file` and `_builder` in a set state.
     ss::future<> maybe_roll();
 
-    model::topic_id_partition _tidp;
+    // Resets metadata (base_offset, max_offset, max_timestamp) to uninitalized
+    // values. Must be called after rolling builder/active_staging_file.
+    void reset_metadata();
+
+    // Updates metadata (base_offset, max_offset, max_timestamp) with data from
+    // batch. Should be called for every batch processed.
+    void update_metadata(const model::record_batch&);
+
+private:
+    io* _io;
+    compaction_committer* _committer;
+
+    model::topic_id_partition _tp;
     const object_builder::options _opts;
 
-    std::optional<iobuf> _active_output_buf{std::nullopt};
-    // Guaranteed to have a value iff _output_buf.has_value().
+    std::unique_ptr<staging_file> _active_staging_file{nullptr};
+    // Guaranteed to have a value iff _active_staging_file.
     std::unique_ptr<object_builder> _builder{nullptr};
-    chunked_vector<object_output_t> _closed_objs;
-
-    // TODO: This is very temporary.
-    chunked_vector<object_output_t>* _obj_sink{nullptr};
 };
 
 } // namespace cloud_topics::l1

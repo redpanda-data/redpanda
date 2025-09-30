@@ -20,11 +20,13 @@
 #include "datalake/tests/test_utils.h"
 #include "datalake/translation/translation_probe.h"
 #include "features/feature_table.h"
+#include "gmock/gmock.h"
 #include "iceberg/filesystem_catalog.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
 #include "model/timeout_clock.h"
+#include "model/timestamp.h"
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
 
@@ -133,6 +135,7 @@ public:
       const records_param& param,
       model::offset o,
       const std::function<void(storage::record_batch_builder&)>& cb,
+      record_multiplexer::finished_files& files,
       bool expect_error = false) {
         auto start_offset = o;
         chunked_circular_buffer<model::record_batch> batches;
@@ -180,7 +183,7 @@ public:
             mux.flush_writers().get();
         }
         EXPECT_EQ(total_batches, total_split_batches);
-        auto res = std::move(mux).finish().get();
+        auto res = std::move(mux).finish(files).get();
         if (expect_error) {
             EXPECT_TRUE(res.has_error());
         } else {
@@ -256,21 +259,27 @@ public:
     std::optional<record_multiplexer::write_result> mux(
       model::offset o,
       const std::function<void(storage::record_batch_builder&)>& cb,
+      record_multiplexer::finished_files& files,
       bool expect_error = false) {
-        return RecordMultiplexerTestBase::mux(GetParam(), o, cb, expect_error);
+        return RecordMultiplexerTestBase::mux(
+          GetParam(), o, cb, files, expect_error);
     }
 };
 
 TEST_P(RecordMultiplexerParamTest, TestNoSchema) {
     auto start_offset = model::offset{0};
-    auto res = mux(start_offset, [](storage::record_batch_builder& b) {
-        b.add_raw_kv(std::nullopt, iobuf::from("foobar"));
-    });
+    record_multiplexer::finished_files files;
+    auto res = mux(
+      start_offset,
+      [](storage::record_batch_builder& b) {
+          b.add_raw_kv(std::nullopt, iobuf::from("foobar"));
+      },
+      files);
     ASSERT_TRUE(res.has_value());
-    EXPECT_EQ(res.value().data_files.size(), 0);
+    EXPECT_EQ(files.data_files.size(), 0);
 
     assert_dlq_table(ntp.tp.topic, true);
-    EXPECT_EQ(res.value().dlq_files.size(), GetParam().hrs);
+    EXPECT_EQ(files.dlq_files.size(), GetParam().hrs);
 }
 
 TEST_P(RecordMultiplexerParamTest, TestSimpleAvroRecords) {
@@ -281,16 +290,20 @@ TEST_P(RecordMultiplexerParamTest, TestSimpleAvroRecords) {
 
     // Add Avro records.
     auto start_offset = model::offset{0};
-    auto res = mux(start_offset, [&gen](storage::record_batch_builder& b) {
-        auto res = gen.add_random_avro_record(b, "avro_v1", std::nullopt).get();
-        ASSERT_FALSE(res.has_error());
-    });
+    record_multiplexer::finished_files files;
+    auto res = mux(
+      start_offset,
+      [&gen](storage::record_batch_builder& b) {
+          auto res
+            = gen.add_random_avro_record(b, "avro_v1", std::nullopt).get();
+          ASSERT_FALSE(res.has_error());
+      },
+      files);
     ASSERT_TRUE(res.has_value());
-    const auto& write_res = res.value();
-    EXPECT_EQ(write_res.data_files.size(), GetParam().hrs);
+    EXPECT_EQ(files.data_files.size(), GetParam().hrs);
 
     std::unordered_set<int> hrs;
-    for (auto& f : write_res.data_files) {
+    for (auto& f : files.data_files) {
         hrs.emplace(get_hour(f.partition_key));
         EXPECT_EQ(f.local_file.row_count, GetParam().records_per_hr());
     }
@@ -314,22 +327,25 @@ TEST_P(RecordMultiplexerParamTest, TestAvroRecordsMultipleSchemas) {
 
     auto start_offset = model::offset{0};
     int i = 0;
-    auto res = mux(start_offset, [&gen, &i](storage::record_batch_builder& b) {
-        auto res = gen
-                     .add_random_avro_record(
-                       b, (++i % 2) ? "avro_v1" : "avro_v2", std::nullopt)
-                     .get();
-        ASSERT_FALSE(res.has_error());
-    });
+    record_multiplexer::finished_files files;
+    auto res = mux(
+      start_offset,
+      [&gen, &i](storage::record_batch_builder& b) {
+          auto res = gen
+                       .add_random_avro_record(
+                         b, (++i % 2) ? "avro_v1" : "avro_v2", std::nullopt)
+                       .get();
+          ASSERT_FALSE(res.has_error());
+      },
+      files);
     ASSERT_TRUE(res.has_value());
-    const auto& write_res = res.value();
 
     // There should be twice as many files as normal, since we have twice the
     // schemas.
-    EXPECT_EQ(write_res.data_files.size(), 2 * GetParam().hrs);
+    EXPECT_EQ(files.data_files.size(), 2 * GetParam().hrs);
 
     std::unordered_set<int> hrs;
-    for (auto& f : write_res.data_files) {
+    for (auto& f : files.data_files) {
         hrs.emplace(get_hour(f.partition_key));
         // Each file should have half the records as normal, since we have
         // twice the files.
@@ -372,18 +388,21 @@ TEST_F(RecordMultiplexerTest, TestAvroRecordsWithRedpandaField) {
 
     // Add Avro records.
     auto start_offset = model::offset{0};
+    record_multiplexer::finished_files files;
     auto res = mux(
-      default_param, start_offset, [&gen](storage::record_batch_builder& b) {
+      default_param,
+      start_offset,
+      [&gen](storage::record_batch_builder& b) {
           auto res
             = gen.add_random_avro_record(b, "avro_rp", std::nullopt).get();
           ASSERT_FALSE(res.has_error());
-      });
+      },
+      files);
     ASSERT_TRUE(res.has_value());
-    const auto& write_res = res.value();
-    EXPECT_EQ(write_res.data_files.size(), default_param.hrs);
+    EXPECT_EQ(files.data_files.size(), default_param.hrs);
 
     std::unordered_set<int> hrs;
-    for (auto& f : write_res.data_files) {
+    for (auto& f : files.data_files) {
         hrs.emplace(get_hour(f.partition_key));
         EXPECT_EQ(f.local_file.row_count, default_param.records_per_hr());
     }
@@ -403,19 +422,23 @@ TEST_F(RecordMultiplexerTest, TestAvroRecordsWithRedpandaField) {
 
 TEST_F(RecordMultiplexerTest, TestMissingSchema) {
     auto start_offset = model::offset{0};
+    record_multiplexer::finished_files files;
     auto res = mux(
-      default_param, start_offset, [](storage::record_batch_builder& b) {
+      default_param,
+      start_offset,
+      [](storage::record_batch_builder& b) {
           iobuf buf;
           // Append data with a magic 0 byte that doesn't actually correspond to
           // anything.
           buf.append("\0\0\0\0\0\0\0", 7);
           b.add_raw_kv(std::nullopt, std::move(buf));
-      });
+      },
+      files);
     ASSERT_TRUE(res.has_value());
-    EXPECT_EQ(res.value().data_files.size(), 0);
+    EXPECT_EQ(files.data_files.size(), 0);
 
     assert_dlq_table(ntp.tp.topic, true);
-    EXPECT_EQ(res.value().dlq_files.size(), default_param.hrs);
+    EXPECT_EQ(files.dlq_files.size(), default_param.hrs);
 
     EXPECT_EQ(
       get_or_create_probe(ntp)->counter_ref(
@@ -432,6 +455,7 @@ TEST_F(RecordMultiplexerTest, TestBadData) {
     auto schema_id = reg_res.value();
 
     auto start_offset = model::offset{0};
+    record_multiplexer::finished_files files;
     auto res = mux(
       default_param,
       start_offset,
@@ -444,12 +468,13 @@ TEST_F(RecordMultiplexerTest, TestBadData) {
           buf.append((const uint8_t*)(&encoded_id), 4);
           buf.append("\1\1\1", 3);
           b.add_raw_kv(std::nullopt, std::move(buf));
-      });
+      },
+      files);
     ASSERT_TRUE(res.has_value());
-    EXPECT_EQ(res.value().data_files.size(), 0);
+    EXPECT_EQ(files.data_files.size(), 0);
 
     assert_dlq_table(ntp.tp.topic, true);
-    EXPECT_EQ(res.value().dlq_files.size(), default_param.hrs);
+    EXPECT_EQ(files.dlq_files.size(), default_param.hrs);
 
     EXPECT_EQ(
       get_or_create_probe(ntp)->counter_ref(
@@ -475,34 +500,43 @@ TEST_F(RecordMultiplexerTest, TestBadSchemaChange) {
 
     // Write with a valid schema.
     auto start_offset = model::offset{0};
+    record_multiplexer::finished_files files;
     auto res = mux(
-      default_param, start_offset++, [&gen](storage::record_batch_builder& b) {
+      default_param,
+      start_offset++,
+      [&gen](storage::record_batch_builder& b) {
           auto res
             = gen.add_random_avro_record(b, "avro_v1", std::nullopt).get();
           ASSERT_FALSE(res.has_error());
-      });
+      },
+      files);
     ASSERT_TRUE(res.has_value());
-    EXPECT_EQ(res.value().data_files.size(), default_param.hrs);
+    EXPECT_EQ(files.data_files.size(), default_param.hrs);
 
     // This should have registered the valid schema.
     auto schema = get_current_schema();
     EXPECT_EQ(schema->highest_field_id(), 11);
 
+    files.data_files.clear();
+    files.dlq_files.clear();
     // Now try writing with an incompatible schema.
     res = mux(
-      default_param, start_offset, [&gen](storage::record_batch_builder& b) {
+      default_param,
+      start_offset,
+      [&gen](storage::record_batch_builder& b) {
           auto res
             = gen.add_random_avro_record(b, "incompat", std::nullopt).get();
           ASSERT_FALSE(res.has_error());
-      });
+      },
+      files);
 
     // No new files should have been written to the main table.
     ASSERT_TRUE(res.has_value());
-    EXPECT_EQ(res.value().data_files.size(), 0);
+    EXPECT_EQ(files.data_files.size(), 0);
 
     // The DLQ table should have the invalid records.
     assert_dlq_table(ntp.tp.topic, true);
-    EXPECT_EQ(res.value().dlq_files.size(), default_param.hrs);
+    EXPECT_EQ(files.dlq_files.size(), default_param.hrs);
 
     // The schema for the main table should not have changed.
     schema = get_current_schema();
@@ -535,8 +569,64 @@ TEST_F(RecordMultiplexerTest, TestMultiplexingFromMiddleOfBatch) {
       .multiplex(
         std::move(reader), kafka::offset{start_offset}, model::no_timeout, as)
       .get();
-    auto result = std::move(mux).finish().get();
+    record_multiplexer::finished_files files;
+    auto result = std::move(mux).finish(files).get();
     EXPECT_FALSE(result.has_error()) << result.error();
     EXPECT_EQ(result.value().start_offset(), start_offset);
     EXPECT_EQ(result.value().last_offset(), last_offset);
+}
+
+TEST_F(RecordMultiplexerTest, TestRecordTimestamp) {
+    // Make sure we respect client vs broker timestamps.
+    binary_type_resolver kv_resolver; // This test doesn't need schemas
+    direct_table_creator table_creator(kv_resolver, schema_mgr);
+    key_value_translator kv_translator;
+    auto mux = record_multiplexer(
+      ntp,
+      topic_rev,
+      std::make_unique<test_data_writer_factory>(false),
+      schema_mgr,
+      kv_resolver,
+      kv_translator,
+      table_creator,
+      model::iceberg_invalid_record_action::dlq_table,
+      location_provider(scoped_remote->remote.local().provider(), bucket_name),
+      *get_or_create_probe(ntp),
+      &features);
+    auto batches = model::test::make_random_batches(
+                     {
+                       .offset = model::offset{0},
+                       .count = 2,
+                       .records = 100,
+                       // Use a timestamp from 1 year ago
+                       .timestamp = model::timestamp{1726262280000},
+                     })
+                     .get();
+    // Simulate the second batch is using the broker append time, which is a
+    // current timestamp
+    batches.back().set_max_timestamp(
+      model::timestamp_type::append_time, model::timestamp{1757884680000});
+    auto start_offset = batches.front().base_offset();
+    auto reader = model::make_memory_record_batch_reader(std::move(batches));
+    mux
+      .multiplex(
+        std::move(reader), kafka::offset{start_offset}, model::no_timeout, as)
+      .get();
+    record_multiplexer::finished_files files;
+    auto result = std::move(mux).finish(files).get();
+    ASSERT_FALSE(result.has_error());
+    // We should get a partition between the two batches because the different
+    // timestamps
+    ASSERT_EQ(files.data_files.size(), 2);
+    // We don't require the order of the data files.
+    EXPECT_THAT(
+      files.data_files,
+      testing::UnorderedElementsAre(
+        testing::Field(
+          &partitioning_writer::partitioned_file::partition_key_path,
+          remote_path("redpanda.timestamp_hour=2024-09-13-21")),
+        testing::Field(
+          &partitioning_writer::partitioned_file::partition_key_path,
+          remote_path("redpanda.timestamp_hour=2025-09-14-21"))));
+    EXPECT_EQ(files.dlq_files.size(), 0);
 }

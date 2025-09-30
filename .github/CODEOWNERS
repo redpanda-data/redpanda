@@ -51,3 +51,9 @@ licenses           @emaxerrno
 /src/v/pandaproxy/schema_registry/configuration.cc  @redpanda-data/documentation
 /src/v/pandaproxy/schema_registry/configuration.h   @redpanda-data/documentation
 /src/v/redpanda/admin/api-doc                       @redpanda-data/documentation
+
+#
+# automatically tag docs team for any changes to our public proto files
+#
+/proto/redpanda/core/admin/v2/*.proto    @redpanda-data/documentation
+/proto/redpanda/core/common/*.proto      @redpanda-data/documentation

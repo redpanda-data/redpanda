@@ -2544,7 +2544,7 @@ SEASTAR_THREAD_TEST_CASE(test_estimate_size_empty) {
 
 SEASTAR_THREAD_TEST_CASE(test_partition_manifest_outofbound_trigger) {
     BOOST_TEST_INFO(
-      fmt::format("random_seed: [{}]", random_generators::internal::gen));
+      fmt::format("random_seed: [{}]", random_generators::global().engine()));
     auto m = partition_manifest{manifest_ntp, model::initial_revision_id(0)};
     BOOST_REQUIRE(m.get_start_offset() == std::nullopt);
     auto max_committed_offset = random_generators::get_int(0, 100000);

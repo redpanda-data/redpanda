@@ -635,7 +635,7 @@ private:
   chunked_hash_map<ss::sstring, foreign_message_edition2023> map_string_foreign_message_;
   chunked_hash_map<ss::sstring, test_all_types_edition2023_nested_enum> map_string_nested_enum_;
   chunked_hash_map<ss::sstring, foreign_enum_edition2023> map_string_foreign_enum_;
-  std::variant<std::monostate, uint32_t, test_all_types_edition2023_nested_message, ss::sstring, iobuf, bool, uint64_t, float, double, test_all_types_edition2023_nested_enum> oneof_field_{};
+  std::variant<std::monostate, uint32_t, test_all_types_edition2023_nested_message, ss::sstring, iobuf, bool, uint64_t, float, double, test_all_types_edition2023_nested_enum> oneof_field_;
   test_all_types_edition2023_group_like_type groupliketype_;
   test_all_types_edition2023_group_like_type delimited_field_;
 };

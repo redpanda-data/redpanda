@@ -173,6 +173,7 @@ redpanda_cc_btest(
     deps = [
         "//src/v/random:generators",
         "//src/v/test_utils:seastar_boost",
+        "//src/v/test_utils:test_env",
         "//src/v/utils:directory_walker",
         "@fmt",
         "@seastar",

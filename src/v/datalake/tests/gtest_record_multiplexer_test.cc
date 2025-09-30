@@ -92,13 +92,13 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
       .multiplex(
         std::move(reader), kafka::offset{start_offset}, model::no_timeout, as)
       .get();
-    auto result = std::move(multiplexer).finish().get();
+    record_multiplexer::finished_files files;
+    auto result = std::move(multiplexer).finish(files).get();
 
     ASSERT_TRUE(result.has_value());
-    ASSERT_EQ(result.value().data_files.size(), 1);
+    ASSERT_EQ(files.data_files.size(), 1);
     EXPECT_EQ(
-      result.value().data_files[0].local_file.row_count,
-      record_count * batch_count);
+      files.data_files[0].local_file.row_count, record_count * batch_count);
     EXPECT_EQ(result.value().start_offset(), start_offset);
     // Subtract one since offsets end at 0, and this is an inclusive range.
     EXPECT_EQ(
@@ -144,7 +144,8 @@ TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
     multiplexer
       .multiplex(std::move(reader), kafka::offset{0}, model::no_timeout, as)
       .get();
-    auto res = std::move(multiplexer).finish().get();
+    record_multiplexer::finished_files files;
+    auto res = std::move(multiplexer).finish(files).get();
     ASSERT_TRUE(res.has_error());
     EXPECT_EQ(res.error(), datalake::writer_error::parquet_conversion_error);
 }
@@ -201,13 +202,13 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
       .multiplex(
         std::move(reader), kafka::offset{start_offset}, model::no_timeout, as)
       .get();
-    auto result = std::move(multiplexer).finish().get();
+    record_multiplexer::finished_files files;
+    auto result = std::move(multiplexer).finish(files).get();
 
     ASSERT_TRUE(result.has_value());
-    ASSERT_EQ(result.value().data_files.size(), 1);
+    ASSERT_EQ(files.data_files.size(), 1);
     EXPECT_EQ(
-      result.value().data_files[0].local_file.row_count,
-      record_count * batch_count);
+      files.data_files[0].local_file.row_count, record_count * batch_count);
     EXPECT_EQ(result.value().start_offset(), start_offset);
     // Subtract one since offsets end at 0, and this is an inclusive range.
     EXPECT_EQ(
@@ -321,7 +322,8 @@ TEST_F(RecordMultiplexerParquetTest, TestSimple) {
       .multiplex(
         std::move(reader), kafka::offset{start_offset}, model::no_timeout, as)
       .get();
-    auto res = std::move(mux).finish().get();
+    record_multiplexer::finished_files files;
+    auto res = std::move(mux).finish(files).get();
     ASSERT_FALSE(res.has_error()) << res.error();
     EXPECT_EQ(res.value().start_offset(), start_offset());
 

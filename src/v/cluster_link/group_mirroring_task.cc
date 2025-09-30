@@ -27,8 +27,8 @@ void group_mirroring_task::update_config(const model::metadata& link_metadata) {
 
 namespace {
 
-chunked_hash_set<::model::partition_id> coordinators_on_current_shard(
-  link& link, ss::shard_id current_shard, ::model::node_id self_id) {
+chunked_hash_set<::model::partition_id>
+coordinators_on_current_shard(link& link, ss::shard_id, ::model::node_id) {
     auto topic_cfg = link.topic_metadata_cache().find_topic_cfg(
       ::model::kafka_consumer_offsets_nt);
     chunked_hash_set<::model::partition_id> ret;
@@ -39,12 +39,9 @@ chunked_hash_set<::model::partition_id> coordinators_on_current_shard(
          p_id < ::model::partition_id(topic_cfg->partition_count);
          ++p_id) {
         ::model::ktp ktp(::model::kafka_consumer_offsets_topic, p_id);
-        const auto is_leader = link.partition_leader_cache().get_leader_node(
-                                 ktp.as_tn_view(), ktp.get_partition())
-                               == self_id;
-        const auto on_current_shard = link.partition_manager().shard_owner(ktp)
-                                      == current_shard;
-        if (is_leader && on_current_shard) {
+        const auto is_leader = link.partition_manager().is_current_shard_leader(
+          ktp);
+        if (is_leader) {
             ret.insert(p_id);
         }
     }
@@ -665,6 +662,7 @@ group_mirroring_task::list_groups_from_broker(::model::node_id broker_id) {
 
 ss::future<group_mirroring_task::result_t>
 group_mirroring_task::update_group_coordinators() {
+    static constexpr kafka::api_version batched_find_coordinator_v{4};
     auto& c_connection = get_cluster_connection();
 
     auto versions = co_await c_connection.supported_api_versions(
@@ -673,39 +671,71 @@ group_mirroring_task::update_group_coordinators() {
         co_return std::unexpected<error>(
           "Remote cluster does not support find coordinator API");
     }
-
     bool errored = false;
-    // TODO: add support for batched find coordinator, this will require
-    // supporting FindCoordinatorRequest v4
-    co_await ss::max_concurrent_for_each(
-      _groups_to_mirror.begin(),
-      _groups_to_mirror.end(),
-      concurrent_requests_limit,
-      [this,
-       &errored,
-       version = get_max_supported<kafka::find_coordinator_api>(*versions)](
-        auto& entry) {
-          return do_find_coordinator(entry.first, version)
-            .then([this, &entry, &errored](
+    const auto max_supported_v = get_max_supported<kafka::find_coordinator_api>(
+      *versions);
+    if (max_supported_v >= batched_find_coordinator_v) {
+        chunked_vector<ss::sstring> group_ids;
+        group_ids.reserve(_groups_to_mirror.size());
+        std::ranges::transform(
+          _groups_to_mirror,
+          std::back_inserter(group_ids),
+          [](const auto& entry) { return entry.first(); });
+        auto coordinators = co_await do_find_coordinator_batched(
+          std::move(group_ids), max_supported_v);
+        if (!coordinators.has_value()) {
+            co_return std::unexpected{std::move(coordinators.error())};
+        }
+
+        for (auto& coord : coordinators.value()) {
+            if (coord.error_code != kafka::error_code::none) {
+                vlog(
+                  logger().warn,
+                  "Error finding coordinator for {} - {}",
+                  coord.key,
+                  coord.error_code);
+                continue;
+            }
+            auto it = _groups_to_mirror.find(
+              kafka::group_id(std::move(coord.key)));
+            if (it != _groups_to_mirror.end()) {
+                it->second.coordinator_id = coord.node_id;
+                vlog(
+                  logger().trace,
+                  "Group {} coordinator discovered: {}",
+                  coord.key,
+                  coord.node_id);
+            }
+        }
+
+    } else {
+        co_await ss::max_concurrent_for_each(
+          _groups_to_mirror.begin(),
+          _groups_to_mirror.end(),
+          concurrent_requests_limit,
+          [this, &errored, max_supported_v](auto& entry) {
+              return do_find_coordinator(entry.first, max_supported_v)
+                .then(
+                  [this, &entry, &errored](
                     std::expected<::model::node_id, group_mirroring_task::error>
                       result) {
-                if (result.has_value()) {
-                    vlog(
-                      logger().trace,
-                      "Group {} coordinator discovered: {}",
-                      entry.first,
-                      *result);
-                    entry.second.coordinator_id = *result;
-                } else {
-                    errored |= true;
-                }
-            });
-      });
+                      if (result.has_value()) {
+                          vlog(
+                            logger().trace,
+                            "Group {} coordinator discovered: {}",
+                            entry.first,
+                            *result);
+                          entry.second.coordinator_id = *result;
+                      } else {
+                          errored |= true;
+                      }
+                  });
+          });
+    }
 
     if (!errored) {
         _needs_coordinator_update = false;
     }
-
     co_return result_t{};
 }
 
@@ -722,7 +752,8 @@ group_mirroring_task::do_find_coordinator(
     req.data.key = group_id;
     // limit version to 3 as the next one use batched api
     auto resp = co_await get_cluster_connection().dispatch_to_any(
-      std::move(req), std::min(max_version, kafka::api_version(3)));
+      std::move(req),
+      std::min(max_version, std::min(max_version, kafka::api_version{3})));
 
     if (resp.data.error_code != kafka::error_code::none) {
         vlog(
@@ -735,6 +766,35 @@ group_mirroring_task::do_find_coordinator(
           resp.data.error_code));
     }
     co_return resp.data.node_id;
+}
+
+ss::future<std::expected<
+  chunked_vector<kafka::coordinator>,
+  group_mirroring_task::error>>
+group_mirroring_task::do_find_coordinator_batched(
+  chunked_vector<ss::sstring> group_ids, kafka::api_version max_version) {
+    vlog(
+      logger().trace,
+      "Requesting find coordinator for {} groups",
+      group_ids.size());
+    kafka::find_coordinator_request req;
+    req.data.key_type = kafka::coordinator_type::group;
+    req.data.coordinator_keys = std::move(group_ids);
+
+    auto resp = co_await get_cluster_connection().dispatch_to_any(
+      std::move(req), std::min(max_version, max_version));
+
+    if (resp.data.error_code != kafka::error_code::none) {
+        vlog(
+          logger().warn,
+          "Error finding coordinator for groups - {}",
+          resp.data.error_code);
+        co_return std::unexpected(error(
+          ssx::sformat("Error finding coordinator for groups"),
+          resp.data.error_code));
+    }
+
+    co_return std::move(resp.data.coordinators);
 }
 
 std::string_view

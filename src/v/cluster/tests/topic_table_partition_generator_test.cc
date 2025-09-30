@@ -10,6 +10,7 @@
 
 #include "cluster/tests/topic_table_fixture.h"
 #include "cluster/topic_table_partition_generator.h"
+#include "test_utils/boost_fixture.h"
 
 inline ss::logger test_log("test");
 

@@ -22,17 +22,17 @@ class replicated_metastore : public metastore {
 public:
     explicit replicated_metastore(frontend& fe);
 
-    std::unique_ptr<object_metadata_builder> object_builder() override;
+    ss::future<std::expected<std::unique_ptr<object_metadata_builder>, errc>>
+    object_builder() override;
 
     ss::future<std::expected<offsets_response, errc>>
     get_offsets(const model::topic_id_partition&) override;
 
     ss::future<std::expected<add_response, errc>> add_objects(
-      std::unique_ptr<object_metadata_builder>,
-      const term_offset_map_t&) override;
+      const object_metadata_builder&, const term_offset_map_t&) override;
 
     ss::future<std::expected<void, errc>>
-      replace_objects(std::unique_ptr<object_metadata_builder>) override;
+    replace_objects(const object_metadata_builder&) override;
 
     ss::future<std::expected<void, errc>>
     set_start_offset(const model::topic_id_partition&, kafka::offset) override;
@@ -43,6 +43,9 @@ public:
     ss::future<std::expected<object_response, errc>>
     get_first_ge(const model::topic_id_partition&, model::timestamp) override;
 
+    ss::future<std::expected<kafka::offset, errc>> get_first_offset_for_bytes(
+      const model::topic_id_partition&, uint64_t size) override;
+
     ss::future<std::expected<kafka::offset, errc>> get_end_offset_for_term(
       const model::topic_id_partition&, model::term_id) override;
 
@@ -50,14 +53,16 @@ public:
       const model::topic_id_partition&, kafka::offset) override;
 
     ss::future<std::expected<void, errc>> compact_objects(
-      std::unique_ptr<object_metadata_builder>,
-      const compaction_map_t&) override;
+      const object_metadata_builder&, const compaction_map_t&) override;
     ss::future<std::expected<void, errc>> compact_objects(
       const chunked_vector<object_metadata>&, const compaction_map_t&);
 
     ss::future<std::expected<compaction_offsets_response, errc>>
     get_compaction_offsets(
       const model::topic_id_partition&, model::timestamp) override;
+
+    ss::future<std::expected<compaction_info_response, errc>>
+    get_compaction_info(const compaction_sample_spec&) override;
 
 private:
     frontend& fe_;

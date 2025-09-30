@@ -126,6 +126,9 @@ redpanda_cc_library(
         "scram_credential.h",
         "types.h",
     ],
+    implementation_deps = [
+        "//src/v/random:secure_random",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":config",
@@ -143,7 +146,6 @@ redpanda_cc_library(
         "//src/v/model",
         "//src/v/net",
         "//src/v/pandaproxy/schema_registry:types",
-        "//src/v/random:generators",
         "//src/v/reflection:adl",
         "//src/v/security/audit:types",
         "//src/v/serde",

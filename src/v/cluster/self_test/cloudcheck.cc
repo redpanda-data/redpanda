@@ -323,7 +323,7 @@ ss::future<cloudcheck::verify_list_result> cloudcheck::verify_list(
 
     try {
         auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
-        const cloud_storage::remote::list_result object_list
+        cloud_storage::remote::list_result object_list
           = co_await _cloud_storage_api.local().list_objects(
             bucket, rtc, prefix, std::nullopt, std::nullopt, std::nullopt);
 

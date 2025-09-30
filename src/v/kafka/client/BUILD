@@ -164,13 +164,19 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "types",
-    srcs = [],
+    srcs = ["types.cc"],
     hdrs = ["types.h"],
+    implementation_deps = [
+        "//src/v/utils:to_string",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/container:chunked_vector",
+        "//src/v/kafka/protocol:metadata",
         "//src/v/model",
+        "@fmt",
     ],
 )
 

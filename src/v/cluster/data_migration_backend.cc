@@ -1371,7 +1371,16 @@ ss::future<> backend::reconcile_migration(
 
         for (const auto& group : groups) {
             auto partition = _group_proxy.partition_for(group);
-            vassert(partition, "cannot get ntp for group {}", group);
+            // Group topic existence has been checked on migration creation.
+            // The only reason to disappear is transient topic table lag.
+            while (!partition) {
+                vlog(
+                  dm_log.warn,
+                  "waiting for group {} to be available in partition map",
+                  group);
+                co_await ss::sleep_abortable(1s, _as);
+                partition = _group_proxy.partition_for(group);
+            }
             auto [it, ins] = mrstate.partition_group_map->try_emplace(
               *partition);
             it->second.push_back(group);

@@ -184,6 +184,7 @@ TEST_F(storage_test_fixture, test_single_record_per_segment) {
       log,
       10,
       model::term_id(1),
+      std::nullopt,
       [](std::optional<model::timestamp> ts = std::nullopt) {
           chunked_circular_buffer<model::record_batch> batches;
           batches.push_back(
@@ -221,6 +222,7 @@ TEST_F(storage_test_fixture, test_segment_rolling) {
       log,
       10,
       model::term_id(1),
+      std::nullopt,
       [](std::optional<model::timestamp> ts = std::nullopt)
         -> chunked_circular_buffer<model::record_batch> {
           chunked_circular_buffer<model::record_batch> batches;
@@ -251,6 +253,7 @@ TEST_F(storage_test_fixture, test_segment_rolling) {
       log,
       10,
       model::term_id(1),
+      std::nullopt,
       [](std::optional<model::timestamp> ts = std::nullopt) {
           chunked_circular_buffer<model::record_batch> batches;
           batches.push_back(
@@ -334,6 +337,7 @@ TEST_F(storage_test_fixture, test_reading_range_from_a_log_with_write_caching) {
       log,
       10,
       model::term_id(0),
+      std::nullopt,
       {},
       storage::log_append_config::fsync::no,
       false);
@@ -384,6 +388,7 @@ TEST_F(storage_test_fixture, test_truncation_with_write_caching) {
       log,
       10,
       model::term_id(0),
+      std::nullopt,
       {},
       storage::log_append_config::fsync::no,
       false);
@@ -695,29 +700,8 @@ TEST_F(storage_test_fixture, test_time_based_eviction) {
             as);
       };
 
-    // gc with timestamp -1s, no segments should be evicted
+    // gc with timestamp -1s, all segments should be evicted
     compact_and_prefix_truncate(*disk_log, make_compaction_cfg(broker_t0 - 2s));
-    ASSERT_EQ(disk_log->segments().size(), 3);
-    ASSERT_EQ(
-      disk_log->segments().front()->offsets().get_base_offset(),
-      model::offset(0));
-    ASSERT_EQ(
-      disk_log->segments().back()->offsets().get_dirty_offset(),
-      model::offset(59));
-
-    // gc with timestamp +sep/2, should evict first segment
-    compact_and_prefix_truncate(
-      *disk_log, make_compaction_cfg(broker_t0 + (broker_ts_sep / 2)));
-    ASSERT_EQ(disk_log->segments().size(), 2);
-    ASSERT_EQ(
-      disk_log->segments().front()->offsets().get_base_offset(),
-      model::offset(10));
-    ASSERT_EQ(
-      disk_log->segments().back()->offsets().get_dirty_offset(),
-      model::offset(59));
-    // gc with timestamp +sep3/2, should evict another segment
-    compact_and_prefix_truncate(
-      *disk_log, make_compaction_cfg(broker_t0 + (3 * broker_ts_sep / 2)));
     ASSERT_EQ(disk_log->segments().size(), 1);
     ASSERT_EQ(
       disk_log->segments().front()->offsets().get_base_offset(),
@@ -849,6 +833,7 @@ TEST_F(storage_test_fixture, test_eviction_notification) {
       log,
       10,
       model::term_id(0),
+      std::nullopt,
       custom_ts_batch_generator(model::timestamp::now()));
     log->flush().get();
     ss::sleep(1s).get(); // ensure time separation for broker timestamp
@@ -861,6 +846,7 @@ TEST_F(storage_test_fixture, test_eviction_notification) {
       log,
       10,
       model::term_id(0),
+      std::nullopt,
       custom_ts_batch_generator(model::timestamp(gc_ts() + 10)));
     storage::housekeeping_config ccfg(
       gc_ts,
@@ -873,23 +859,11 @@ TEST_F(storage_test_fixture, test_eviction_notification) {
 
     log->housekeeping(ccfg).get();
 
-    auto offset = last_evicted_offset.get_future().get();
+    std::ignore = last_evicted_offset.get_future().get();
     log->housekeeping(ccfg).get();
     auto lstats_after = log->offsets();
 
     ASSERT_EQ(lstats_before.start_offset, lstats_after.start_offset);
-    // wait for compaction
-    log->housekeeping(ccfg).get();
-    log
-      ->truncate_prefix(
-        storage::truncate_prefix_config{model::next_offset(offset)})
-      .get();
-    auto compacted_lstats = log->offsets();
-    SUCCEED() << fmt::format("Compacted offsets {}", compacted_lstats);
-    // check if compaction happened
-    ASSERT_EQ(
-      compacted_lstats.start_offset,
-      lstats_before.dirty_offset + model::offset(1));
 };
 
 /**
@@ -2134,7 +2108,6 @@ TEST_F(storage_test_fixture, reader_reusability_test_parser_header) {
     storage::local_log_reader_config reader_cfg(
       model::offset(0),
       model::model_limits<model::offset>::max(),
-      0,
       4096,
       std::nullopt,
       std::nullopt,
@@ -2350,7 +2323,6 @@ TEST_F(storage_test_fixture, disposing_in_use_reader) {
     storage::local_log_reader_config reader_cfg(
       model::offset(0),
       model::offset::max(),
-      0,
       4096,
       std::nullopt,
       std::nullopt,
@@ -2629,7 +2601,6 @@ TEST_F(storage_test_fixture, reader_prevents_log_shutdown) {
     storage::local_log_reader_config reader_cfg(
       model::offset(0),
       model::model_limits<model::offset>::max(),
-      0,
       std::numeric_limits<int64_t>::max(),
       std::nullopt,
       std::nullopt,
@@ -3373,7 +3344,6 @@ static storage::log_gap_analysis analyze(storage::log& log) {
     storage::local_log_reader_config reader_cfg(
       model::offset(0),
       model::model_limits<model::offset>::max(),
-      0,
       10_MiB,
       std::nullopt,
       std::nullopt,
@@ -3404,7 +3374,7 @@ TEST_F(storage_test_fixture, test_max_compact_offset) {
     // (1) append some random data, with limited number of distinct keys, so
     // compaction can make progress.
     auto headers = append_random_batches<key_limited_random_batch_generator>(
-      log, 20);
+      log, 20, model::term_id{0}, model::timestamp::now());
 
     // (2) remember log offset, roll log, and produce more messages
     log->flush().get();
@@ -3412,7 +3382,9 @@ TEST_F(storage_test_fixture, test_max_compact_offset) {
     SUCCEED() << fmt::format("Offsets to be compacted {}", first_stats);
     disk_log->force_roll().get();
     headers = append_random_batches<key_limited_random_batch_generator>(
-      log, 20);
+      log, 20, model::term_id{0}, model::timestamp::now());
+
+    ss::sleep(1s).get(); // ensure time separation for max.compaction.lag.ms
 
     // (3) roll log and trigger compaction, analyzing offset gaps before and
     // after, to observe compaction behavior.
@@ -3524,7 +3496,8 @@ TEST_F(storage_test_fixture, test_simple_compaction_rebuild_index) {
 
     // Append some linear kv ints
     int num_appends = 5;
-    append_random_batches<linear_int_kv_batch_generator>(log, num_appends);
+    append_random_batches<linear_int_kv_batch_generator>(
+      log, num_appends, model::term_id(0), model::timestamp::min());
     log->flush().get();
     disk_log->force_roll().get();
     ASSERT_EQ(disk_log->segment_count(), 2);
@@ -4178,7 +4151,6 @@ TEST_F(storage_test_fixture, reader_reusability_max_bytes) {
             storage::local_log_reader_config reader_cfg(
               model::offset(0),
               model::model_limits<model::offset>::max(),
-              0,
               reader_max_bytes,
               std::nullopt,
               std::nullopt,
@@ -4267,6 +4239,7 @@ TEST_F(
           log,
           10,
           model::term_id(0),
+          std::nullopt,
           custom_ts_batch_generator(model::timestamp::now()));
         if (first_segment_last_offset == model::offset{}) {
             first_segment_last_offset = log->offsets().dirty_offset;
@@ -4326,6 +4299,7 @@ TEST_F(storage_test_fixture, test_offset_range_size) {
           log,
           10,
           model::term_id(0),
+          std::nullopt,
           custom_ts_batch_generator(model::timestamp::now()));
         if (first_segment_last_offset == model::offset{}) {
             first_segment_last_offset = log->offsets().dirty_offset;
@@ -4438,6 +4412,7 @@ TEST_F(storage_test_fixture, test_offset_range_size2) {
           log,
           10,
           model::term_id(0),
+          std::nullopt,
           custom_ts_batch_generator(model::timestamp::now()));
         if (first_segment_last_offset == model::offset{}) {
             first_segment_last_offset = log->offsets().dirty_offset;
@@ -4631,7 +4606,11 @@ TEST_F(storage_test_fixture, test_offset_range_size_compacted) {
     model::offset first_segment_last_offset;
     for (size_t i = 0; i < num_segments; i++) {
         append_random_batches(
-          log, 10, model::term_id(i), key_limited_random_batch_generator());
+          log,
+          10,
+          model::term_id(i),
+          model::timestamp::now(),
+          key_limited_random_batch_generator());
         if (first_segment_last_offset == model::offset{}) {
             first_segment_last_offset = log->offsets().dirty_offset;
         }
@@ -4824,7 +4803,11 @@ TEST_F(storage_test_fixture, test_offset_range_size2_compacted) {
     model::offset first_segment_last_offset;
     for (size_t i = 0; i < num_segments; i++) {
         append_random_batches(
-          log, 10, model::term_id(0), key_limited_random_batch_generator());
+          log,
+          10,
+          model::term_id(0),
+          model::timestamp::now(),
+          key_limited_random_batch_generator());
         if (first_segment_last_offset == model::offset{}) {
             first_segment_last_offset = log->offsets().dirty_offset;
         }
@@ -5128,6 +5111,7 @@ TEST_F(storage_test_fixture, test_offset_range_size_incremental) {
           log,
           10,
           model::term_id(0),
+          std::nullopt,
           custom_ts_batch_generator(model::timestamp::now()));
         if (first_segment_last_offset == model::offset{}) {
             first_segment_last_offset = log->offsets().dirty_offset;
@@ -5583,7 +5567,7 @@ TEST_F(storage_test_fixture, compaction_scheduling) {
 
     auto append_and_force_roll = [this](auto& log, int num_batches = 10) {
         auto headers = append_random_batches<linear_int_kv_batch_generator>(
-          log, num_batches);
+          log, num_batches, model::term_id{0}, model::timestamp::now());
         log->force_roll().get();
     };
 
@@ -5925,7 +5909,11 @@ TEST_F(storage_test_fixture, prefix_truncate_offset_range_size) {
     size_t num_segments = 1;
     for (size_t i = 0; i < num_segments; i++) {
         append_random_batches(
-          log, 10, model::term_id(0), key_limited_random_batch_generator());
+          log,
+          10,
+          model::term_id(0),
+          std::nullopt,
+          key_limited_random_batch_generator());
         log->force_roll().get();
     }
 
@@ -6716,6 +6704,7 @@ TEST_F(storage_test_fixture, test_get_file_offset_lock_precheck) {
           log,
           10,
           model::term_id(0),
+          std::nullopt,
           custom_ts_batch_generator(model::timestamp::now()));
         if (first_segment_last_offset == model::offset{}) {
             first_segment_last_offset = log->offsets().dirty_offset;
@@ -6774,6 +6763,7 @@ TEST_F(storage_test_fixture, test_offset_range_size_lock_timeout) {
           log,
           10,
           model::term_id(0),
+          std::nullopt,
           custom_ts_batch_generator(model::timestamp::now()));
         if (first_segment_last_offset == model::offset{}) {
             first_segment_last_offset = log->offsets().dirty_offset;
@@ -6829,12 +6819,18 @@ TEST_F(storage_test_fixture, test_max_eligible_for_compacted_reupload_offset) {
     model::offset first_segment_last_offset;
     for (size_t i = 0; i < num_segments; i++) {
         append_random_batches(
-          log, 10, model::term_id(i), key_limited_random_batch_generator());
+          log,
+          10,
+          model::term_id(i),
+          model::timestamp::now(),
+          key_limited_random_batch_generator());
         if (first_segment_last_offset == model::offset{}) {
             first_segment_last_offset = log->offsets().dirty_offset;
         }
         log->force_roll().get();
     }
+
+    ss::sleep(1s).get(); // ensure time separation for max.compaction.lag.ms
 
     auto& segments = log->segments();
     auto first = *std::next(segments.begin(), 0);

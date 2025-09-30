@@ -73,7 +73,12 @@ public:
         /// The caller is responsible for handling each write request.
         /// The request could be either returned using 'push_next_stage'
         /// method.
-        write_requests_list pull_write_requests(size_t max_bytes);
+        /// \param max_bytes Maximum number of bytes to extract
+        /// \param max_requests Maximum number of requests to extract
+        /// \return List of write requests that were extracted
+        write_requests_list pull_write_requests(
+          size_t max_bytes,
+          size_t max_requests = std::numeric_limits<size_t>::max());
 
         /// Wait until either the 'deadline' is reached or the pipeline
         /// accumulated 'max_bytes' bytes
@@ -162,8 +167,14 @@ private:
     /// Get write requests atomically.
     /// The total size of returned write requests and the stage to which they
     /// belong to should be specified.
-    write_requests_list
-    get_write_requests(size_t max_bytes, pipeline_stage stage);
+    /// \param max_bytes Maximum number of bytes to extract
+    /// \param stage Pipeline stage to get write requests from
+    /// \param max_requests Maximum number of requests to extract
+    /// \return List of write requests that were extracted
+    write_requests_list get_write_requests(
+      size_t max_bytes,
+      pipeline_stage stage,
+      size_t max_requests = std::numeric_limits<size_t>::max());
 
     /// Return write request which was already been in the pipeline
     /// before back into the pipeline.

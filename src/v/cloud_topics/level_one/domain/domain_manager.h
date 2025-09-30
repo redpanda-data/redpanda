@@ -40,6 +40,9 @@ public:
     ss::future<rpc::get_first_timestamp_ge_reply>
       get_first_timestamp_ge(rpc::get_first_timestamp_ge_request);
 
+    ss::future<rpc::get_first_offset_for_bytes_reply>
+      get_first_offset_for_bytes(rpc::get_first_offset_for_bytes_request);
+
     ss::future<rpc::get_offsets_reply> get_offsets(rpc::get_offsets_request);
 
     ss::future<rpc::get_compaction_offsets_reply>

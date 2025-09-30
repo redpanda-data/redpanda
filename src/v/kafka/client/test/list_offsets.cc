@@ -11,6 +11,7 @@
 #include "kafka/client/test/fixture.h"
 #include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
+#include "test_utils/boost_fixture.h"
 
 #include <boost/test/tools/old/interface.hpp>
 

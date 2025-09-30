@@ -16,6 +16,7 @@
 #include "cluster/partition_balancer_types.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/types.h"
+#include "container/chunked_vector.h"
 #include "model/metadata.h"
 
 #include <chrono>
@@ -81,8 +82,8 @@ public:
 
     struct plan_data {
         partition_balancer_violations violations;
-        std::vector<ntp_reassignment> reassignments;
-        std::vector<model::ntp> cancellations;
+        chunked_vector<ntp_reassignment> reassignments;
+        chunked_vector<model::ntp> cancellations;
         chunked_hash_map<model::ntp, reallocation_failure_details>
           reallocation_failures;
         bool counts_rebalancing_finished = false;

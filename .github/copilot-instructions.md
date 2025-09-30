@@ -160,6 +160,17 @@ src/v/base/format_to.h.
 
 ---
 
+## Python specific instructions
+
+### Instructions for python test code under tests/rptest
+
+- Avoid catching bare `except:` as this can hide system exceptions, including exceptions
+  raised by a signal when a test is being forcibly timed out. Instead use `except Exception:`.
+
+### Instructions for type hints
+
+- Use modern style with `|` instead of `Union` or `Optional`
+
 For further details, consult:
 - [README.md](https://github.com/redpanda-data/redpanda/blob/dev/README.md)
 - [CONTRIBUTING.md](https://github.com/redpanda-data/redpanda/blob/dev/CONTRIBUTING.md)
@@ -167,5 +178,13 @@ For further details, consult:
 - CI/CD configs in `.github/workflows/` and `.buildkite/`
 
 ---
+
+## Commit message instructions
+
+When writing or critiquing commit messages, follow these guidelines:
+
+ - First line of the commit message should be a short summary (max 50 chars)
+ - Remain lines should be wrapped at 72 chars
+
 
 _Results from code search may be incomplete. For more C++ details, see the [repository code search](https://github.com/redpanda-data/redpanda/search?q=c%2B%2B)._

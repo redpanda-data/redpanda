@@ -15,6 +15,7 @@
 #include "cloud_topics/level_zero/pipeline/event_filter.h"
 #include "cloud_topics/level_zero/pipeline/read_request.h"
 #include "cloud_topics/logger.h"
+#include "resource_mgmt/memory_groups.h"
 #include "utils/human.h"
 
 #include <seastar/core/abort_source.hh>
@@ -30,10 +31,21 @@
 
 namespace cloud_topics::l0 {
 
+// Memory limit used in tests (when cluster config is disabled)
+static constexpr size_t max_memory_when_disabled = 100 * 1024 * 1024;
+
+namespace {
+size_t get_cloud_topics_l0_read_path_memory() {
+    return memory_groups().cloud_topics_memory() > 0
+             // TODO: take L1 into account.
+             ? memory_groups().cloud_topics_memory() / 2
+             : max_memory_when_disabled;
+}
+} // namespace
+
 template<class Clock>
 read_pipeline<Clock>::read_pipeline()
-  // TODO: use config parameter
-  : _mem_quota(100_MiB, "read-pipeline")
+  : _mem_quota(get_cloud_topics_l0_read_path_memory(), "read-pipeline")
   // TODO: use config parameter
   , _breaker(10, std::chrono::seconds(1)) {}
 

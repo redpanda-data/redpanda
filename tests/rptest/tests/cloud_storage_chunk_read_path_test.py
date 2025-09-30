@@ -129,19 +129,20 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
             msg_count=msg_count,
             custom_node=self.preallocated_nodes,
         )
-        producer.start()
-        produce_until_segments(
-            redpanda=self.redpanda,
-            topic=self.topic,
-            partition_idx=0,
-            count=n_segments,
-        )
+        try:
+            producer.start()
+            produce_until_segments(
+                redpanda=self.redpanda,
+                topic=self.topic,
+                partition_idx=0,
+                count=n_segments,
+            )
+        finally:
+            producer.stop()
+
         snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
             "kafka", self.topic, 0
         )
-
-        producer.stop()
-        producer.wait()
 
         wait_until(
             lambda: nodes_report_cloud_segments(
@@ -167,8 +168,6 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
             n=n_remove,
             original_snapshot=snapshot,
         )
-
-        return producer
 
     def _remove_indices_from_cloud(self):
         for obj in self.cloud_storage_client.list_objects(

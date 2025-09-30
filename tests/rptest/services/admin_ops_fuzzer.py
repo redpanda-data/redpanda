@@ -15,6 +15,7 @@ from abc import ABC, abstractmethod
 from enum import Enum, auto, unique
 from threading import Condition, Event
 from time import sleep
+from typing import Any, Callable
 
 import requests
 from confluent_kafka import Producer
@@ -26,32 +27,38 @@ from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
+from rptest.services.redpanda import RedpandaService
+from rptest.util import not_none
 
 
 # Operation context (used to save state between invocation of operations)
 class OperationCtx:
-    def __init__(self, redpanda):
+    def __init__(self, redpanda: RedpandaService) -> None:
         self.redpanda = redpanda
 
-    def rpk(self):
+    def rpk(self) -> RpkTool:
         return RpkTool(self.redpanda)
 
-    def admin(self):
+    def admin(self) -> Admin:
         return Admin(self.redpanda, retry_codes=[503, 504])
 
-    def kcl(self):
+    def kcl(self) -> KCL:
         return KCL(self.redpanda)
 
 
 # Base class for operation
 class Operation(ABC):
     @abstractmethod
-    def execute(self, ctx) -> bool: ...
+    def execute(self, ctx: OperationCtx) -> bool: ...
 
-    def validate(self, ctx) -> bool: ...
+    @abstractmethod
+    def validate(self, ctx: OperationCtx) -> bool: ...
+
+    @abstractmethod
+    def describe(self) -> dict[str, Any]: ...
 
 
-def random_string(length):
+def random_string(length: int) -> str:
     return "".join(
         [random.choice(string.ascii_lowercase) for i in range(0, length)]
     )  # Using only lower case to avoid getting "ERROR" or other string that would be perceived as an error in the log
@@ -71,22 +78,22 @@ class RedpandaAdminOperation(Enum):
     DELETE_RECORDS = auto()
 
 
-def _random_choice(prefix, collection):
+def _random_choice(prefix: str, collection: Any) -> str | None:
     filtered = list(filter(lambda t: t.startswith(prefix), collection))
     if len(filtered) == 0:
         return None
     return random.choice(filtered)
 
 
-def _choice_random_topic(ctx, prefix):
+def _choice_random_topic(ctx: OperationCtx, prefix: str) -> str | None:
     return _random_choice(prefix, ctx.rpk().list_topics())
 
 
-def _choice_random_user(ctx, prefix):
+def _choice_random_user(ctx: OperationCtx, prefix: str) -> str | None:
     return _random_choice(prefix, ctx.admin().list_users())
 
 
-TOPIC_PROPERTIES = {
+TOPIC_PROPERTIES: dict[str, Callable[[], Any]] = {
     TopicSpec.PROPERTY_CLEANUP_POLICY: lambda: random.choice(["delete", "compact"]),
     TopicSpec.PROPERTY_TIMESTAMP_TYPE: lambda: random.choice(
         ["CreateTime", "LogAppendTime"]
@@ -99,25 +106,31 @@ TOPIC_PROPERTIES = {
 
 # topic operations
 class CreateTopicOperation(Operation):
-    def __init__(self, prefix, max_partitions, min_replication, max_replication):
-        self.prefix = prefix
-        self.topic = f"{prefix}-{random_string(6)}"
-        self.partitions = random.randint(1, max_partitions)
-        self.rf = random.choice(
+    def __init__(
+        self,
+        prefix: str,
+        max_partitions: int,
+        min_replication: int,
+        max_replication: int,
+    ) -> None:
+        self.prefix: str = prefix
+        self.topic: str = f"{prefix}-{random_string(6)}"
+        self.partitions: int = random.randint(1, max_partitions)
+        self.rf: int = random.choice(
             [x for x in range(min_replication, max_replication + 1, 2)]
         )
-        self.config = {
+        self.config: dict[str, Any] = {
             k: v() for k, v in TOPIC_PROPERTIES.items() if random.choice([True, False])
         }
 
-    def execute(self, ctx):
+    def execute(self, ctx: OperationCtx) -> bool:
         ctx.redpanda.logger.info(
             f"Creating topic with name {self.topic}, replication: {self.rf} partitions: {self.partitions}"
         )
         ctx.rpk().create_topic(self.topic, self.partitions, self.rf, self.config)
         return True
 
-    def validate(self, ctx):
+    def validate(self, ctx: OperationCtx) -> bool:
         if self.topic is None:
             return False
         ctx.redpanda.logger.info(f"Validating topic {self.topic} creation")
@@ -128,7 +141,7 @@ class CreateTopicOperation(Operation):
             desc = ctx.rpk().describe_topic_configs(self.topic)
             return all([desc[k][0] == str(v) for k, v in self.config.items()])
 
-    def describe(self):
+    def describe(self) -> dict[str, Any]:
         return {
             "type": "create_topic",
             "properties": {
@@ -141,11 +154,11 @@ class CreateTopicOperation(Operation):
 
 
 class DeleteTopicOperation(Operation):
-    def __init__(self, prefix):
-        self.prefix = prefix
-        self.topic = None
+    def __init__(self, prefix: str) -> None:
+        self.prefix: str = prefix
+        self.topic: str | None = None
 
-    def execute(self, ctx):
+    def execute(self, ctx: OperationCtx) -> bool:
         if self.topic is None:
             self.topic = _choice_random_topic(ctx, prefix=self.prefix)
         if self.topic is None:
@@ -154,7 +167,7 @@ class DeleteTopicOperation(Operation):
         ctx.rpk().delete_topic(self.topic)
         return True
 
-    def validate(self, ctx):
+    def validate(self, ctx: OperationCtx) -> bool:
         if self.topic is None:
             return False
         ctx.redpanda.logger.info(f"Validating topic {self.topic} deletion")
@@ -168,7 +181,7 @@ class DeleteTopicOperation(Operation):
 
         try:
             brokers = ctx.admin().get_brokers()
-        except:
+        except Exception:
             return False
         # since metadata in Redpanda and Kafka are eventually consistent
         # we must check all the nodes before proceeding
@@ -188,7 +201,7 @@ class DeleteTopicOperation(Operation):
 
         return True
 
-    def describe(self):
+    def describe(self) -> dict[str, Any]:
         return {
             "type": "delete_topic",
             "properties": {
@@ -198,13 +211,13 @@ class DeleteTopicOperation(Operation):
 
 
 class UpdateTopicOperation(Operation):
-    def __init__(self, prefix):
-        self.prefix = prefix
-        self.topic = None
-        self.property = None
-        self.value = None
+    def __init__(self, prefix: str) -> None:
+        self.prefix: str = prefix
+        self.topic: str | None = None
+        self.property: str | None = None
+        self.value: Any = None
 
-    def execute(self, ctx):
+    def execute(self, ctx: OperationCtx) -> bool:
         if self.topic is None:
             self.topic = _choice_random_topic(ctx, prefix=self.prefix)
             if self.topic is None:
@@ -215,10 +228,12 @@ class UpdateTopicOperation(Operation):
         ctx.redpanda.logger.info(
             f"Updating topic: {self.topic} with: {self.property}={self.value}"
         )
-        ctx.rpk().alter_topic_config(self.topic, self.property, str(self.value))
+        ctx.rpk().alter_topic_config(
+            self.topic, not_none(self.property), str(self.value)
+        )
         return True
 
-    def validate(self, ctx):
+    def validate(self, ctx: OperationCtx) -> bool:
         if self.topic is None:
             return False
         ctx.redpanda.logger.info(
@@ -226,9 +241,9 @@ class UpdateTopicOperation(Operation):
         )
 
         desc = ctx.rpk().describe_topic_configs(self.topic)
-        return desc[self.property][0] == str(self.value)
+        return desc[not_none(self.property)][0] == str(self.value)
 
-    def describe(self):
+    def describe(self) -> dict[str, Any]:
         return {
             "type": "update_topic_properties",
             "properties": {
@@ -240,17 +255,17 @@ class UpdateTopicOperation(Operation):
 
 
 class AddPartitionsOperation(Operation):
-    def __init__(self, prefix):
-        self.prefix = prefix
-        self.topic = None
-        self.total = None
-        self.current = None
+    def __init__(self, prefix: str) -> None:
+        self.prefix: str = prefix
+        self.topic: str | None = None
+        self.total: int | None = None
+        self.current: int | None = None
 
-    def _current_partition_count(self, ctx):
+    def _current_partition_count(self, ctx: OperationCtx) -> int | None:
         per_node_count = set()
         try:
             brokers = ctx.admin().get_brokers()
-        except:
+        except Exception:
             return None
         for b in brokers:
             n = ctx.redpanda.get_node_by_id(b["node_id"])
@@ -273,7 +288,7 @@ class AddPartitionsOperation(Operation):
 
         return next(iter(per_node_count))
 
-    def execute(self, ctx):
+    def execute(self, ctx: OperationCtx) -> bool:
         if self.topic is None:
             self.topic = _choice_random_topic(ctx, prefix=self.prefix)
         if self.topic is None:
@@ -292,7 +307,7 @@ class AddPartitionsOperation(Operation):
         cli.create_topic_partitions(self.topic, self.total)
         return True
 
-    def validate(self, ctx):
+    def validate(self, ctx: OperationCtx) -> bool:
         if self.topic is None:
             return False
         ctx.redpanda.logger.info(f"Validating topic {self.topic} partitions update")
@@ -470,6 +485,7 @@ class ProduceToTopic(Operation):
             )
             return True
 
+        assert self.topic  # we've assigned it in execute
         partitions = ctx.rpk().describe_topic(self.topic)
         for p in partitions:
             if p.id in self.delivery_offsets:
@@ -586,51 +602,53 @@ class DeleteRecords(Operation):
 class AdminOperationsFuzzer:
     def __init__(
         self,
-        redpanda,
-        initial_entities=10,
-        retries=5,
-        retries_interval=5,
-        operation_timeout=30,
-        operations_interval=1,
-        max_partitions=10,
-        min_replication=1,
-        max_replication=3,
-        allowed_operations=None,
-    ):
-        self.redpanda = redpanda
-        self.operation_ctx = OperationCtx(self.redpanda)
-        self.initial_entities = initial_entities
-        self.retries = retries
-        self.retries_interval = retries_interval
-        self.operation_timeout = operation_timeout
-        self.operations_interval = operations_interval
-        self.max_partitions = max_partitions
-        self.min_replication = min_replication
-        self.max_replication = max_replication
+        redpanda: Any,
+        initial_entities: int = 10,
+        retries: int = 5,
+        retries_interval: int = 5,
+        operation_timeout: int = 30,
+        operations_interval: int = 1,
+        max_partitions: int = 10,
+        min_replication: int = 1,
+        max_replication: int = 3,
+        allowed_operations: list[RedpandaAdminOperation] | None = None,
+    ) -> None:
+        self.redpanda: Any = redpanda
+        self.operation_ctx: OperationCtx = OperationCtx(self.redpanda)
+        self.initial_entities: int = initial_entities
+        self.retries: int = retries
+        self.retries_interval: int = retries_interval
+        self.operation_timeout: int = operation_timeout
+        self.operations_interval: int = operations_interval
+        self.max_partitions: int = max_partitions
+        self.min_replication: int = min_replication
+        self.max_replication: int = max_replication
         if allowed_operations is None:
-            self.allowed_operations = [o for o in RedpandaAdminOperation]
+            self.allowed_operations: list[RedpandaAdminOperation] = [
+                o for o in RedpandaAdminOperation
+            ]
         else:
             self.allowed_operations = allowed_operations
 
-        self.prefix = f"fuzzy-operator-{random.randint(0, 10000)}"
-        self._stopping = Event()
-        self.executed = 0
-        self.attempted = 0
-        self.history = []
-        self.error = None
+        self.prefix: str = f"fuzzy-operator-{random.randint(0, 10000)}"
+        self._stopping: Event = Event()
+        self.executed: int = 0
+        self.attempted: int = 0
+        self.history: list[dict[str, Any]] = []
+        self.error: Exception | None = None
 
-        self._pause_cond = Condition()
-        self._pause_requested = False
-        self._pause_reached = False
+        self._pause_cond: Condition = Condition()
+        self._pause_requested: bool = False
+        self._pause_reached: bool = False
 
-    def start(self):
+    def start(self) -> None:
         self.create_initial_entities()
 
-        self.thread = threading.Thread(target=lambda: self.thread_loop(), args=())
+        self.thread = threading.Thread(target=lambda: self.thread_loop())
         self.thread.daemon = True
         self.thread.start()
 
-    def create_initial_entities(self):
+    def create_initial_entities(self) -> None:
         # pre-populate cluster with users and topics
         for i in range(0, self.initial_entities):
             tp = CreateTopicOperation(
@@ -643,7 +661,7 @@ class AdminOperationsFuzzer:
             self.append_to_history(user)
             user.execute(self.operation_ctx)
 
-    def thread_loop(self):
+    def thread_loop(self) -> None:
         while not self._stopping.is_set():
             with self._pause_cond:
                 if self._pause_requested:
@@ -665,27 +683,27 @@ class AdminOperationsFuzzer:
             self._pause_reached = True
             self._pause_cond.notify()
 
-    def pause(self):
+    def pause(self) -> None:
         with self._pause_cond:
             self.redpanda.logger.info("pausing admin ops fuzzer...")
-            assert self._pause_requested == False
+            assert not self._pause_requested
             self._pause_requested = True
             while not self._pause_reached:
                 self._pause_cond.wait()
             self.redpanda.logger.info("paused admin ops fuzzer")
 
-    def unpause(self):
+    def unpause(self) -> None:
         with self._pause_cond:
             self._pause_requested = False
             self._pause_cond.notify()
             self.redpanda.logger.info("unpaused admin ops fuzzer")
 
-    def append_to_history(self, op):
+    def append_to_history(self, op: Operation) -> None:
         d = op.describe()
         d["timestamp"] = int(time.time())
         self.history.append(d)
 
-    def execute_one(self):
+    def execute_one(self) -> bool:
         op_type, op = self.make_random_operation()
 
         def validate_result():
@@ -722,7 +740,9 @@ class AdminOperationsFuzzer:
         finally:
             self.append_to_history(op)
 
-    def execute_with_retries(self, op_type, op):
+    def execute_with_retries(
+        self, op_type: RedpandaAdminOperation, op: Operation
+    ) -> bool:
         self.redpanda.logger.info(
             f"Executing operation: {op_type} with {self.retries} retries"
         )
@@ -746,9 +766,9 @@ class AdminOperationsFuzzer:
         assert error  # will always be set but type checker can't figure it out
         raise error
 
-    def make_random_operation(self):
+    def make_random_operation(self) -> tuple[RedpandaAdminOperation, Operation]:
         op = random.choice(self.allowed_operations)
-        actions = {
+        actions: dict[RedpandaAdminOperation, Callable[[], Operation]] = {
             RedpandaAdminOperation.CREATE_TOPIC: lambda: CreateTopicOperation(
                 self.prefix,
                 self.max_partitions,
@@ -779,7 +799,7 @@ class AdminOperationsFuzzer:
         }
         return (op, actions[op]())
 
-    def stop(self):
+    def stop(self) -> None:
         if self._stopping.is_set():
             return
 
@@ -791,7 +811,7 @@ class AdminOperationsFuzzer:
             f"Encountered an error in admin operations fuzzer: {self.error}"
         )
 
-    def ensure_progress(self):
+    def ensure_progress(self) -> None:
         executed = self.executed
         attempted = self.attempted
 
@@ -808,8 +828,8 @@ class AdminOperationsFuzzer:
                 return True
             elif self._stopping.is_set():
                 # We cannot ever reach the count, error out
-                self.redpanda.logger.error(f"wait: terminating for stop")
-                raise RuntimeError(f"Stopped without observing progress")
+                self.redpanda.logger.error("wait: terminating for stop")
+                raise RuntimeError("Stopped without observing progress")
             return False
 
         # we use 2*self.operation_timeout to give time (self.operation_timeout) for
@@ -817,7 +837,7 @@ class AdminOperationsFuzzer:
         # measuring the real indicator (next self.operation_timeout)
         wait_until(check, timeout_sec=2 * self.operation_timeout, backoff_sec=2)
 
-    def wait(self, count, timeout):
+    def wait(self, count: int, timeout: int) -> None:
         def check():
             # Drop out immediately if the main loop errored out.
             if self.error:
@@ -828,7 +848,7 @@ class AdminOperationsFuzzer:
                 return True
             elif self._stopping.is_set():
                 # We cannot ever reach the count, error out
-                self.redpanda.logger.error(f"wait: terminating for stop")
+                self.redpanda.logger.error("wait: terminating for stop")
                 raise RuntimeError(
                     f"Stopped without reaching target ({self.executed}/{count})"
                 )

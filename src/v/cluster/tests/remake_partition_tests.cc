@@ -20,6 +20,7 @@
 #include "model/timeout_clock.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/async.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/loop.hh>
 

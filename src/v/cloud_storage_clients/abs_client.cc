@@ -874,26 +874,8 @@ ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
         throw parse_rest_error_response(content_type, status, std::move(buf));
     }
 
-    co_return co_await ss::do_with(
-      response_stream->as_input_stream(),
-      xml_sax_parser{},
-      [pred = std::move(collect_item_if)](
-        ss::input_stream<char>& stream, xml_sax_parser& p) mutable {
-          p.start_parse(std::make_unique<abs_parse_impl>(std::move(pred)));
-          return ss::do_until(
-                   [&stream] { return stream.eof(); },
-                   [&stream, &p] {
-                       return stream.read().then(
-                         [&p](ss::temporary_buffer<char>&& chunk) {
-                             p.parse_chunk(std::move(chunk));
-                         });
-                   })
-            .then([&stream] { return stream.close(); })
-            .then([&p] {
-                p.end_parse();
-                return p.result();
-            });
-      });
+    co_return co_await parse_from_stream<abs_parse_impl>(
+      response_stream->as_input_stream(), std::move(collect_item_if));
 }
 
 ss::future<result<abs_client::storage_account_info, error_outcome>>

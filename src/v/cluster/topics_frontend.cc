@@ -896,7 +896,7 @@ ss::future<topic_result> topics_frontend::replicate_create_topic(
         std::shuffle(
           p_as.replicas.begin(),
           p_as.replicas.end(),
-          random_generators::internal::gen);
+          random_generators::global().engine());
     }
 
     return replicate_and_wait(_stm, _as, std::move(cmd), timeout)

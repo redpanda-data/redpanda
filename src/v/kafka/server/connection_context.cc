@@ -381,6 +381,14 @@ ss::future<> connection_context::revoke_credentials(std::string_view name) {
     return ss::now();
 }
 
+bool connection_context::has_superuser_access() const {
+    if (!_enable_authorizer) {
+        return true;
+    }
+    return std::ranges::contains(
+      config::shard_local_cfg().superusers(), get_principal().name());
+}
+
 ss::future<> connection_context::process() {
     co_await ss::coroutine::switch_to(_server.get_request_handler_sg());
     while (true) {

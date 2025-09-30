@@ -137,6 +137,26 @@ Iter validate_range_valid_iterations(
     return valid_range_end;
 }
 
+template<typename Iter, typename ErrIter>
+Iter validate_range_superusers_scram_users(
+  Iter begin, Iter end, ErrIter out_it) {
+    using type = Iter::value_type;
+    const auto can_be_modified = [](const type& item) {
+        return !std::ranges::contains(
+          config::shard_local_cfg().superusers(), item.name());
+    };
+    auto valid_range_end = std::partition(begin, end, can_be_modified);
+
+    std::transform(valid_range_end, end, out_it, [](const type& item) {
+        return generate_error(
+          item,
+          kafka::error_code::cluster_authorization_failed,
+          "Cannot modify superuser SCRAM user");
+    });
+
+    return valid_range_end;
+}
+
 template<typename UpsertIter, typename DeleteIter, typename ErrIter>
 std::pair<UpsertIter, DeleteIter> validate_range_no_duplicates(
   UpsertIter upsert_begin,
@@ -239,6 +259,8 @@ ss::future<response_ptr> alter_user_scram_credentials_handler::handle(
         co_return co_await ctx.respond(std::move(res));
     }
 
+    const auto no_superuser_access = !ctx.connection()->has_superuser_access();
+
     auto upsert_begin = request.data.upsertions.begin();
     auto upsert_valid_range_end = validate_range_no_empty_users(
       upsert_begin,
@@ -265,6 +287,14 @@ ss::future<response_ptr> alter_user_scram_credentials_handler::handle(
       max_iterations);
     upsert_valid_range_end = invalid_iterations_it;
 
+    if (no_superuser_access) {
+        auto superuser_name_it = validate_range_superusers_scram_users(
+          upsert_begin,
+          upsert_valid_range_end,
+          std::back_inserter(res.data.results));
+        upsert_valid_range_end = superuser_name_it;
+    }
+
     auto deletions_begin = request.data.deletions.begin();
     auto deletions_valid_range_end = validate_range_no_empty_users(
       deletions_begin,
@@ -276,6 +306,15 @@ ss::future<response_ptr> alter_user_scram_credentials_handler::handle(
       deletions_valid_range_end,
       std::back_inserter(res.data.results));
     deletions_valid_range_end = invalid_mech_deletions_it;
+
+    if (no_superuser_access) {
+        auto superuser_name_deletions_it
+          = validate_range_superusers_scram_users(
+            deletions_begin,
+            deletions_valid_range_end,
+            std::back_inserter(res.data.results));
+        deletions_valid_range_end = superuser_name_deletions_it;
+    }
 
     auto [upsert_dup_it, delete_dup_it] = validate_range_no_duplicates(
       upsert_begin,

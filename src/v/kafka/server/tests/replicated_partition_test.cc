@@ -18,7 +18,7 @@
 #include "redpanda/tests/fixture.h"
 #include "storage/record_batch_builder.h"
 #include "test_utils/async.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 FIXTURE_TEST(test_replicated_partition_end_offset, redpanda_thread_fixture) {
     wait_for_controller_leadership().get();

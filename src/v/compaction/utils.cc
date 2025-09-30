@@ -70,9 +70,8 @@ ss::future<bool> is_latest_record_for_key(
   const model::record_batch& b,
   const model::record& r) {
     const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
-    auto key_view = compaction_key{iobuf_to_bytes(r.key())};
-    auto key = enhance_key(
-      b.header().type, b.header().attrs.is_control(), key_view);
+    auto key = compaction_key{iobuf_to_bytes(r.key())};
+
     auto latest_offset_indexed = co_await map.get(key);
     // If the map hasn't indexed the given key, we should keep the
     // key.

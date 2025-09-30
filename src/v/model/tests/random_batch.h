@@ -26,6 +26,7 @@ struct record_batch_spec {
     int count{0};
     std::optional<int> records{std::nullopt};
     std::optional<int> max_key_cardinality{std::nullopt};
+    int headers_per_record = 2;
 
     model::record_batch_type bt{model::record_batch_type::raft_data};
     bool enable_idempotence{false};

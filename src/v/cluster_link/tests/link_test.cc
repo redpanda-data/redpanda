@@ -181,13 +181,15 @@ public:
                 return cluster::errc::success;
             },
             _default_topic_replication.bind()),
+          std::make_unique<fake_security_service>(),
           std::make_unique<test_link_registry>(&_table.local()),
           std::make_unique<link_test_factory>(this, 1s),
           std::make_unique<cluster_mock_factory>(&_cluster_mock),
           std::make_unique<test_consumer_group_router>(),
           std::make_unique<test_partition_metadata_provider>(),
           task_reconciler_interval,
-          _default_topic_replication.bind());
+          _default_topic_replication.bind(),
+          ss::default_scheduling_group());
     }
 
     virtual ss::future<> TearDownAsync() override {
@@ -417,13 +419,15 @@ public:
                 return cluster::errc::success;
             },
             _default_topic_replication.bind()),
+          std::make_unique<fake_security_service>(),
           std::make_unique<test_link_registry>(&_table.local()),
           std::move(elf),
           std::make_unique<cluster_mock_factory>(&_cluster_mock),
           std::make_unique<test_consumer_group_router>(),
           std::make_unique<test_partition_metadata_provider>(),
           task_reconciler_interval,
-          _default_topic_replication.bind());
+          _default_topic_replication.bind(),
+          ss::default_scheduling_group());
         co_await _manager->start();
     }
 

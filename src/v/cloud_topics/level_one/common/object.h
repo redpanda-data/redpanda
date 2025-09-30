@@ -369,4 +369,36 @@ public:
     virtual ss::future<> close() = 0;
 };
 
+// The parameters to combine multiple L1 objects into a single L1 object.
+struct combine_objects_parameters {
+    // The input object that will be combined.
+    struct input_object {
+        // A stream for the full object that was built using an
+        // `object_builder`.
+        //
+        // Since this takes ownership of the stream it will also close the
+        // stream.
+        ss::input_stream<char> stream;
+        // The output from `object_builder::finish` containing metadata from the
+        // constructed object.
+        object_builder::object_info info;
+    };
+    // Mechanically, the objects to combine into a single object. The resulting
+    // object will contain data in the order of these input objects.
+    chunked_vector<input_object> inputs;
+    // The stream to write the output to.
+    //
+    // Since this takes ownership of the output stream it will also be
+    // responsible for closing it.
+    ss::output_stream<char> output;
+};
+
+// Combine multiple L1 objects into a single object, and write it to the output
+// stream.
+//
+// The new object metadata is returned after the merging of files is
+// successful.
+ss::future<object_builder::object_info>
+  combine_objects(combine_objects_parameters);
+
 } // namespace cloud_topics::l1

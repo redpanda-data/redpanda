@@ -435,7 +435,7 @@ redpanda_cc_library(
     ],
     deps = [
         "//src/v/base",
-        "//src/v/random:fast_prng",
+        "//src/v/random:generators",
         "//src/v/ssx:sformat",
         "@fmt",
         "@seastar",

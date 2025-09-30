@@ -19,10 +19,44 @@
 #include <boost/intrusive/list.hpp>
 
 /**
- * An auto-unlink intrusive list hook.
+ * list_member_hook was written before move semantics.
+ *
+ * copy construction of a list_member_hook initializes the constructed hook to
+ * unlinked
+ * copy assignment is a noop does nothing.
+ *
+ * When an object which contains a list_member_hook is moved, the copy semantics
+ * for list_member_hook are invoked.
+ *
+ * Move can be implemented with swap_nodes to maintain the integrity and order
+ * of the intrusive list, but swap_nodes invalidates any iterators which point
+ * to the swapped nodes.
+ *
+ * Destruction of an intrusive list element in auto_unlink mode also invalidates
+ * any iterator to the pointed-to node.
+ *
+ * Given the above, intrusive list iterators should not be used without proper
+ * concurrency controls on both the intrusive list itself and the memory owner
+ * of the intrusive list elements.
+ *
+ * Avoid asynchronous loops over unlocked intrusive lists.
+ *
  */
-using intrusive_list_hook = boost::intrusive::list_member_hook<
-  boost::intrusive::link_mode<boost::intrusive::auto_unlink>>;
+template<boost::intrusive::link_mode_type LinkModeType>
+struct base_intrusive_list_hook
+  : public boost::intrusive::list_member_hook<
+      boost::intrusive::link_mode<LinkModeType>> {
+    base_intrusive_list_hook() = default;
+    base_intrusive_list_hook(const base_intrusive_list_hook&) = delete;
+    base_intrusive_list_hook& operator=(const base_intrusive_list_hook&)
+      = delete;
+    base_intrusive_list_hook(base_intrusive_list_hook&&) = delete;
+    base_intrusive_list_hook& operator=(base_intrusive_list_hook&&) = delete;
+    ~base_intrusive_list_hook() = default;
+};
+
+using intrusive_list_hook
+  = base_intrusive_list_hook<boost::intrusive::link_mode_type::auto_unlink>;
 
 /**
  * An intrusive list.
@@ -63,8 +97,8 @@ using intrusive_list = boost::intrusive::list<
 /**
  * A safe-link intrusive list hook.
  */
-using safe_intrusive_list_hook = boost::intrusive::list_member_hook<
-  boost::intrusive::link_mode<boost::intrusive::safe_link>>;
+using safe_intrusive_list_hook
+  = base_intrusive_list_hook<boost::intrusive::safe_link>;
 
 /**
  * An intrusive list with const-time size() method.

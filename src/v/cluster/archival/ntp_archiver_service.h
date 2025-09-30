@@ -466,6 +466,9 @@ private:
     static constexpr const char* segment_merger_ctx_label
       = "adjacent_segment_merger";
 
+    /// Create a fence value for the next STM operation
+    archival_stm_fence emit_rw_fence();
+
     /// Delete objects, return true on success and false otherwise
     ss::future<bool>
     batch_delete(std::vector<cloud_storage_clients::object_key> paths);

@@ -6,21 +6,11 @@
 // As of the Change Date specified in that file, in accordance with
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
-#include "base/outcome.h"
+
 #include "cluster/id_allocator_stm.h"
 #include "cluster/tests/raft_fixture_retry_policy.h"
 #include "config/configuration.h"
-#include "model/fundamental.h"
-#include "model/record.h"
-#include "model/timeout_clock.h"
-#include "raft/fundamental.h"
 #include "raft/tests/raft_fixture.h"
-#include "random/generators.h"
-#include "reflection/adl.h"
-#include "storage/record_batch_builder.h"
-#include "storage/tests/utils/disk_log_builder.h"
-#include "test_utils/async.h"
-#include "test_utils/fixture.h"
 #include "test_utils/scoped_config.h"
 
 #include <seastar/core/abort_source.hh>
@@ -29,8 +19,6 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
-
-#include <thread>
 
 using namespace std::chrono_literals;
 using namespace raft;

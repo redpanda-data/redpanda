@@ -19,7 +19,7 @@
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>

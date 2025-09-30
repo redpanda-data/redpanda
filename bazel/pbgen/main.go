@@ -65,8 +65,8 @@ func Run() error {
 					emitError: func(err error) {
 						errs = append(errs, err)
 					},
+					file: f,
 				},
-				file: f,
 			}
 			headerGenerator.generateFile(&w)
 			headerFilepath := filepath.Base(strings.ReplaceAll(f.Path(), ".proto", ".proto.h"))
@@ -83,8 +83,8 @@ func Run() error {
 					emitError: func(err error) {
 						errs = append(errs, err)
 					},
+					file: f,
 				},
-				file: f,
 			}
 			implGenerator.generateFile(&w)
 			implFilepath := filepath.Base(strings.ReplaceAll(f.Path(), ".proto", ".proto.cc"))
@@ -229,6 +229,7 @@ type baseGenerator struct {
 	needsRpcs           bool
 
 	emitError func(error)
+	file      protoreflect.FileDescriptor
 }
 
 func (g *baseGenerator) translateType(f protoreflect.FieldDescriptor) (typ string, isTriviallyCopyable bool) {
@@ -276,18 +277,9 @@ func (g *baseGenerator) translateBaseType(f protoreflect.FieldDescriptor) (typ s
 		g.emitError(fmt.Errorf("groups are not supported: %s", f.FullName()))
 		return "GROUPS_NOT_SUPPORTED"
 	case protoreflect.EnumKind:
-		if f.Enum().ParentFile().Package() == f.ParentFile().FullName() {
-			return cppTypeName(f.Enum())
-		}
-		return fullyQualifiedTypeName(f.Enum())
+		return g.cppTypeName(f.Enum())
 	case protoreflect.MessageKind:
-		var typeName string
-		if f.Message().ParentFile().Package() == f.ParentFile().FullName() {
-			typeName = cppTypeName(f.Message())
-		} else {
-			typeName = fullyQualifiedTypeName(f.Message())
-		}
-		return typeName
+		return g.cppTypeName(f.Message())
 	case protoreflect.StringKind:
 		if isIOBuf(f) {
 			return "iobuf"
@@ -298,12 +290,42 @@ func (g *baseGenerator) translateBaseType(f protoreflect.FieldDescriptor) (typ s
 	}
 }
 
+func (g *baseGenerator) cppTypeName(d protoreflect.Descriptor) string {
+	switch d.FullName() {
+	case "google.protobuf.Duration":
+		return "absl::Duration"
+	case "google.protobuf.Timestamp":
+		return "absl::Time"
+	case "google.protobuf.FieldMask":
+		return "serde::pb::field_mask"
+	default:
+		if isWellKnownType(d) {
+			log.Fatalf("well-known types need an entry above: %s\n", d.FullName())
+		}
+	}
+	pkg := d.ParentFile().Package()
+	name := d.FullName()
+	path := strings.TrimPrefix(string(name), string(pkg))
+	path = strings.TrimPrefix(path, ".")
+	typeName := pascalToSnakeCase(strings.ReplaceAll(path, ".", "_"))
+	if d.ParentFile().Package() == g.file.FullName() {
+		return typeName
+	}
+	ns := nameToCppNamespace(d.ParentFile())
+	return "::" + ns + "::" + typeName
+}
+
+func (g *baseGenerator) enumMemberName(val protoreflect.EnumValueDescriptor) string {
+	fullName := strings.ToLower(string(val.Name()))
+	strippedName := strings.TrimPrefix(fullName, g.cppTypeName(val.Parent())+"_")
+	return strippedName
+}
+
 // ----------------------------------------------------------
 
 type headerGenerator struct {
 	baseGenerator
 	needsVariant bool
-	file         protoreflect.FileDescriptor
 }
 
 func (g *headerGenerator) source(msg protoreflect.Descriptor) protoreflect.SourceLocation {
@@ -379,7 +401,7 @@ func (g *headerGenerator) generateFile(w *codewriter) {
 	msgs, enums := collectDescriptors(g.file)
 	// Forward declare all messages.
 	for _, d := range msgs {
-		w.Printf("class %s;\n", cppTypeName(d))
+		w.Printf("class %s;\n", g.cppTypeName(d))
 	}
 	w.Println()
 	// Emit enums first, since we don't forward declare them.
@@ -409,7 +431,7 @@ func (g *headerGenerator) generateFile(w *codewriter) {
 func (g *headerGenerator) generateService(service protoreflect.ServiceDescriptor, w *codewriter) {
 	g.needsRpcs = true
 	g.leadingComments(service, w)
-	cppName := cppTypeName(service)
+	cppName := g.cppTypeName(service)
 	w.Printf("class %s : public ::serde::pb::rpc::base_service {\n", cppName)
 	defer w.Println("};")
 	w.Println("public:")
@@ -434,9 +456,9 @@ func (g *headerGenerator) generateService(service protoreflect.ServiceDescriptor
 		g.leadingComments(method, w)
 		w.Printf(
 			"virtual seastar::future<%s> %s(serde::pb::rpc::context, %s) = 0;\n",
-			cppTypeName(method.Output()),
+			g.cppTypeName(method.Output()),
 			pascalToSnakeCase(string(method.Name())),
-			cppTypeName(method.Input()),
+			g.cppTypeName(method.Input()),
 		)
 	}
 	w.Dedent()
@@ -455,7 +477,7 @@ func (g *headerGenerator) generateService(service protoreflect.ServiceDescriptor
 func (g *headerGenerator) generateClient(service protoreflect.ServiceDescriptor, w *codewriter) {
 	g.needsRpcs = true
 	g.leadingComments(service, w)
-	cppName := cppTypeName(service)
+	cppName := g.cppTypeName(service)
 	w.Printf("class %s_client {\n", cppName)
 	defer w.Println("};")
 	w.Println("public:")
@@ -483,9 +505,9 @@ func (g *headerGenerator) generateClient(service protoreflect.ServiceDescriptor,
 		g.leadingComments(method, w)
 		w.Printf(
 			"seastar::future<%s> %s(serde::pb::rpc::context, %s);\n",
-			cppTypeName(method.Output()),
+			g.cppTypeName(method.Output()),
 			pascalToSnakeCase(string(method.Name())),
-			cppTypeName(method.Input()),
+			g.cppTypeName(method.Input()),
 		)
 	}
 	w.Dedent()
@@ -496,7 +518,7 @@ func (g *headerGenerator) generateClient(service protoreflect.ServiceDescriptor,
 }
 
 func (g *headerGenerator) generateEnumSerde(msg protoreflect.EnumDescriptor, w *codewriter) {
-	cppName := cppTypeName(msg)
+	cppName := g.cppTypeName(msg)
 	w.Printf("void enum_to_proto(const %s&, iobuf*);\n", cppName)
 	w.Printf("void enum_from_proto(iobuf_parser*, %s*);\n", cppName)
 	w.Println("// Returns the name of the enum value")
@@ -527,19 +549,19 @@ func (g *headerGenerator) generateEnum(enum protoreflect.EnumDescriptor, w *code
 	if smallest < 0 {
 		sign = "int"
 	}
-	w.Printf("enum class %s : %s%d_t {\n", cppTypeName(enum), sign, width)
+	w.Printf("enum class %s : %s%d_t {\n", g.cppTypeName(enum), sign, width)
 	defer w.Println("};")
 	w.Indent()
 	defer w.Dedent()
 	for i := range enum.Values().Len() {
 		val := enum.Values().Get(i)
-		w.Printf("%s = %d,\n", enumMemberName(val), val.Number())
+		w.Printf("%s = %d,\n", g.enumMemberName(val), val.Number())
 	}
 }
 
 func (g *headerGenerator) generateMessage(msg protoreflect.MessageDescriptor, w *codewriter) {
 	g.leadingComments(msg, w)
-	typeName := cppTypeName(msg)
+	typeName := g.cppTypeName(msg)
 	w.Printf("class %s : public serde::pb::base_message {\n", typeName)
 	defer w.Println("};")
 	w.Println("public:")
@@ -639,7 +661,7 @@ func (g *headerGenerator) generateMessage(msg protoreflect.MessageDescriptor, w 
 				types = append(types, subTyp)
 			}
 			w.Printf(
-				"std::variant<std::monostate, %s> %s_{};\n",
+				"std::variant<std::monostate, %s> %s_;\n",
 				strings.Join(types, ", "),
 				oneof.Name(),
 			)
@@ -658,7 +680,6 @@ func (g *headerGenerator) generateMessage(msg protoreflect.MessageDescriptor, w 
 
 type implGenerator struct {
 	baseGenerator
-	file protoreflect.FileDescriptor
 }
 
 func (g *implGenerator) generateFile(w *codewriter) {
@@ -713,7 +734,7 @@ func (g *implGenerator) generateFile(w *codewriter) {
 		g.generateEnumWrite(enum, w)
 		g.generateEnumToString(enum, w)
 		g.generateEnumFromJson(enum, w)
-		w.Printf("int32_t format_as(%s e) { return std::to_underlying(e); }\n", cppTypeName(enum))
+		w.Printf("int32_t format_as(%s e) { return std::to_underlying(e); }\n", g.cppTypeName(enum))
 		w.Println()
 	}
 	for i := range g.file.Services().Len() {
@@ -726,14 +747,14 @@ func (g *implGenerator) generateFile(w *codewriter) {
 }
 
 func (g *implGenerator) generateMessagePathToNumbersHelper(msg protoreflect.MessageDescriptor, w *codewriter) {
-	w.Printf("std::optional<std::vector<int32_t>> %s::convert_field_path_to_numbers(std::span<std::string_view> field_path) const {\n", cppTypeName(msg))
+	w.Printf("std::optional<std::vector<int32_t>> %s::convert_field_path_to_numbers(std::span<std::string_view> field_path) const {\n", g.cppTypeName(msg))
 	w.Indent()
 	w.Println("std::vector<int32_t> numbers;")
 	w.Println("if (convert_field_path_to_numbers(field_path, &numbers)) { return numbers; }")
 	w.Println("return std::nullopt;")
 	w.Dedent()
 	w.Println("}")
-	w.Printf("bool %s::convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out) {\n", cppTypeName(msg))
+	w.Printf("bool %s::convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out) {\n", g.cppTypeName(msg))
 	defer w.Println("}")
 	w.Indent()
 	defer w.Dedent()
@@ -761,7 +782,7 @@ func (g *implGenerator) generateMessagePathToNumbersHelper(msg protoreflect.Mess
 		lambda := strings.Join([]string{
 			"[](auto path, auto* out) {",
 			fmt.Sprintf("out->push_back(%d);", f.Number()),
-			fmt.Sprintf("return %s::convert_field_path_to_numbers(path, out);", cppTypeName(msg)),
+			fmt.Sprintf("return %s::convert_field_path_to_numbers(path, out);", g.cppTypeName(msg)),
 			"}",
 		}, " ")
 		pairs = append(pairs, fmt.Sprintf("{%q, %s},", f.Name(), lambda))
@@ -783,7 +804,7 @@ func (g *implGenerator) generateMessagePathToNumbersHelper(msg protoreflect.Mess
 }
 
 func (g *implGenerator) generateMessageTraversalHelper(msg protoreflect.MessageDescriptor, w *codewriter) {
-	w.Printf("std::optional<serde::pb::field> %s::lookup_field(std::span<int32_t> field_numbers) {\n", cppTypeName(msg))
+	w.Printf("std::optional<serde::pb::field> %s::lookup_field(std::span<int32_t> field_numbers) {\n", g.cppTypeName(msg))
 	defer w.Println("}")
 	w.Indent()
 	defer w.Dedent()
@@ -828,7 +849,7 @@ func (g *implGenerator) generateMessageTraversalHelper(msg protoreflect.MessageD
 			}
 			if msg := f.Message(); msg != nil && !isWellKnownType(msg) {
 				if isPtr(f) {
-					w.Printf("if (!get_%s()) { set_%s(std::make_unique<%s>()); }\n", f.Name(), f.Name(), cppTypeName(msg))
+					w.Printf("if (!get_%s()) { set_%s(std::make_unique<%s>()); }\n", f.Name(), f.Name(), g.cppTypeName(msg))
 					w.Printf("found.value = get_%s().get();\n", f.Name())
 				} else {
 					w.Printf("found.value = &get_%s();\n", f.Name())
@@ -862,7 +883,7 @@ func (g *implGenerator) generateMessageTraversalHelper(msg protoreflect.MessageD
 }
 
 func (g *implGenerator) generateMessageFieldMaskIsValidHelper(msg protoreflect.MessageDescriptor, w *codewriter) {
-	w.Printf("bool %s::is_valid_field_path(std::span<const ss::sstring> path) {\n", cppTypeName(msg))
+	w.Printf("bool %s::is_valid_field_path(std::span<const ss::sstring> path) {\n", g.cppTypeName(msg))
 	defer w.Println("}")
 	w.Indent()
 	defer w.Dedent()
@@ -881,7 +902,7 @@ func (g *implGenerator) generateMessageFieldMaskIsValidHelper(msg protoreflect.M
 			// but that is much more complex, so we don't support it.
 			w.Printf("{%q, [](auto path) { return path.empty(); }},\n", field.Name())
 		} else if msg := field.Message(); msg != nil && !isWellKnownType(msg) {
-			w.Printf("{%q, %s::is_valid_field_path},\n", field.Name(), cppTypeName(msg))
+			w.Printf("{%q, %s::is_valid_field_path},\n", field.Name(), g.cppTypeName(msg))
 		} else {
 			w.Printf("{%q, [](auto path) { return path.empty(); }},\n", field.Name())
 		}
@@ -901,7 +922,7 @@ func (g *implGenerator) generateMessageFieldMaskIsValidHelper(msg protoreflect.M
 }
 
 func (g *implGenerator) generateMessageFieldMaskApplyHelper(msg protoreflect.MessageDescriptor, w *codewriter) {
-	w.Printf("void %s::apply_field_path_from(std::span<const ss::sstring> path, %s* update) {\n", cppTypeName(msg), cppTypeName(msg))
+	w.Printf("void %s::apply_field_path_from(std::span<const ss::sstring> path, %s* update) {\n", g.cppTypeName(msg), g.cppTypeName(msg))
 	defer w.Println("}")
 	w.Indent()
 	defer w.Dedent()
@@ -944,7 +965,7 @@ func (g *implGenerator) generateMessageFieldMaskApplyHelper(msg protoreflect.Mes
 					w.Println("if (!self_field && !update_field) return;")
 					w.Println("if (!self_field) {")
 					w.Indent()
-					w.Printf("self->set_%s(std::make_unique<%s>());\n", field.Name(), cppTypeName(field.Message()))
+					w.Printf("self->set_%s(std::make_unique<%s>());\n", field.Name(), g.cppTypeName(field.Message()))
 					w.Printf("self_field = self->get_%s().get();\n", field.Name())
 					w.Dedent()
 					w.Println("}")
@@ -955,7 +976,7 @@ func (g *implGenerator) generateMessageFieldMaskApplyHelper(msg protoreflect.Mes
 					w.Dedent()
 					w.Println("} else if (!update_field) {")
 					w.Indent()
-					w.Printf("update->set_%s(std::make_unique<%s>());\n", field.Name(), cppTypeName(field.Message()))
+					w.Printf("update->set_%s(std::make_unique<%s>());\n", field.Name(), g.cppTypeName(field.Message()))
 					w.Printf("update_field = update->get_%s().get();\n", field.Name())
 					w.Dedent()
 					w.Println("}")
@@ -1004,7 +1025,7 @@ func (g *implGenerator) generateMessageFieldMaskApplyHelper(msg protoreflect.Mes
 
 func (g *implGenerator) generateServiceRoutes(service protoreflect.ServiceDescriptor, w *codewriter) {
 	g.needsRpcs = true
-	w.Printf("std::vector<serde::pb::rpc::route_descriptor> %s::all_routes() {\n", cppTypeName(service))
+	w.Printf("std::vector<serde::pb::rpc::route_descriptor> %s::all_routes() {\n", g.cppTypeName(service))
 	defer w.Println("}")
 	w.Indent()
 	defer w.Dedent()
@@ -1026,7 +1047,7 @@ func (g *implGenerator) generateServiceRoutes(service protoreflect.ServiceDescri
 			w.Printf(".method_name = %q,\n", method.Name())
 			w.Printf(".path = %q,\n", path)
 			w.Printf(".authz_level = serde::pb::rpc::authz_level::%s,\n", rpcAuthzLevel(method))
-			w.Printf(".handler = std::bind_front(&%s::%s_handler_impl, this),\n", cppTypeName(service), pascalToSnakeCase(string(method.Name())))
+			w.Printf(".handler = std::bind_front(&%s::%s_handler_impl, this),\n", g.cppTypeName(service), pascalToSnakeCase(string(method.Name())))
 			w.Dedent()
 			w.Println("},")
 		}
@@ -1038,21 +1059,21 @@ func (g *implGenerator) generateServiceHandlers(service protoreflect.ServiceDesc
 		method := service.Methods().Get(i)
 		w.Printf(
 			"seastar::future<iobuf> %s::%s_handler_impl(serde::pb::rpc::context ctx, iobuf payload) {\n",
-			cppTypeName(service),
+			g.cppTypeName(service),
 			pascalToSnakeCase(string(method.Name())),
 		)
 		w.Indent()
 		w.Println("bool is_json = ctx.content_type == serde::pb::rpc::content_type::json;")
-		w.Printf("%s input;\n", cppTypeName(method.Input()))
+		w.Printf("%s input;\n", g.cppTypeName(method.Input()))
 		w.Println("try {")
 		w.Indent()
 		w.Println(`if (is_json) {`)
 		w.Indent()
-		w.Printf("input = co_await %s::from_json(std::move(payload));\n", cppTypeName(method.Input()))
+		w.Printf("input = co_await %s::from_json(std::move(payload));\n", g.cppTypeName(method.Input()))
 		w.Dedent()
 		w.Println("} else {")
 		w.Indent()
-		w.Printf("input = co_await %s::from_proto(std::move(payload));\n", cppTypeName(method.Input()))
+		w.Printf("input = co_await %s::from_proto(std::move(payload));\n", g.cppTypeName(method.Input()))
 		w.Dedent()
 		w.Println("}")
 		w.Dedent()
@@ -1062,7 +1083,7 @@ func (g *implGenerator) generateServiceHandlers(service protoreflect.ServiceDesc
 		w.Println(`throw serde::pb::rpc::invalid_argument_exception("invalid request input");`)
 		w.Dedent()
 		w.Println("}")
-		w.Printf("%s output;\n", cppTypeName(method.Output()))
+		w.Printf("%s output;\n", g.cppTypeName(method.Output()))
 		w.Println("try {")
 		w.Indent()
 		w.Printf("output = co_await this->%s(std::move(ctx), std::move(input));\n", pascalToSnakeCase(string(method.Name())))
@@ -1088,10 +1109,10 @@ func (g *implGenerator) generateServiceClient(service protoreflect.ServiceDescri
 		method := service.Methods().Get(i)
 		w.Printf(
 			"seastar::future<%s> %s_client::%s(serde::pb::rpc::context ctx, %s input) {\n",
-			cppTypeName(method.Output()),
-			cppTypeName(service),
+			g.cppTypeName(method.Output()),
+			g.cppTypeName(service),
 			pascalToSnakeCase(string(method.Name())),
-			cppTypeName(method.Input()),
+			g.cppTypeName(method.Input()),
 		)
 		w.Indent()
 		w.Println("iobuf payload = co_await input.to_proto();")
@@ -1099,14 +1120,14 @@ func (g *implGenerator) generateServiceClient(service protoreflect.ServiceDescri
 		w.Printf("ctx.method_name = %q;\n", method.Name())
 		w.Println("ctx.content_type = serde::pb::rpc::content_type::proto;")
 		w.Println("payload = co_await send_rpc_fn_(std::move(ctx), std::move(payload));")
-		w.Printf("co_return co_await %s::from_proto(std::move(payload));\n", cppTypeName(method.Output()))
+		w.Printf("co_return co_await %s::from_proto(std::move(payload));\n", g.cppTypeName(method.Output()))
 		w.Dedent()
 		w.Println("}")
 	}
 }
 
 func (g *implGenerator) generateEnumWrite(enum protoreflect.EnumDescriptor, w *codewriter) {
-	w.Printf("void enum_to_proto(const %s& e, iobuf* buf) {\n", cppTypeName(enum))
+	w.Printf("void enum_to_proto(const %s& e, iobuf* buf) {\n", g.cppTypeName(enum))
 	defer w.Println("}")
 	w.Indent()
 	defer w.Dedent()
@@ -1114,7 +1135,7 @@ func (g *implGenerator) generateEnumWrite(enum protoreflect.EnumDescriptor, w *c
 }
 
 func (g *implGenerator) generateEnumToString(enum protoreflect.EnumDescriptor, w *codewriter) {
-	w.Printf("static_str enum_to_string(const %s& e) {\n", cppTypeName(enum))
+	w.Printf("static_str enum_to_string(const %s& e) {\n", g.cppTypeName(enum))
 	defer w.Println("}")
 	w.Indent()
 	defer w.Dedent()
@@ -1126,7 +1147,7 @@ func (g *implGenerator) generateEnumToString(enum protoreflect.EnumDescriptor, w
 		if enum.Values().ByNumber(v.Number()) != v {
 			continue
 		}
-		w.Printf("case %s::%s:\n", cppTypeName(enum), enumMemberName(v))
+		w.Printf("case %s::%s:\n", g.cppTypeName(enum), g.enumMemberName(v))
 		w.Indent()
 		w.Printf("return %q;\n", v.Name())
 		w.Dedent()
@@ -1138,7 +1159,7 @@ func (g *implGenerator) generateEnumToString(enum protoreflect.EnumDescriptor, w
 }
 
 func (g *implGenerator) generateEnumFromJson(enum protoreflect.EnumDescriptor, w *codewriter) {
-	w.Printf("void enum_from_json(serde::pb::json::peekable_parser* p, %s* e) {\n", cppTypeName(enum))
+	w.Printf("void enum_from_json(serde::pb::json::peekable_parser* p, %s* e) {\n", g.cppTypeName(enum))
 	defer w.Println("}")
 	w.Indent()
 	defer w.Dedent()
@@ -1149,7 +1170,7 @@ func (g *implGenerator) generateEnumFromJson(enum protoreflect.EnumDescriptor, w
 		defer w.Println("}")
 		w.Indent()
 		defer w.Dedent()
-		w.Printf("constexpr static auto values = std::to_array<std::pair<std::string_view, %s>>({\n", cppTypeName(enum))
+		w.Printf("constexpr static auto values = std::to_array<std::pair<std::string_view, %s>>({\n", g.cppTypeName(enum))
 		w.Indent()
 		pairs := make([]string, 0, enum.Values().Len())
 		for i := range enum.Values().Len() {
@@ -1158,7 +1179,7 @@ func (g *implGenerator) generateEnumFromJson(enum protoreflect.EnumDescriptor, w
 			if enum.Values().ByNumber(value.Number()) != value {
 				continue
 			}
-			pair := fmt.Sprintf("{%q, %s::%s},", value.Name(), cppTypeName(enum), enumMemberName(value))
+			pair := fmt.Sprintf("{%q, %s::%s},", value.Name(), g.cppTypeName(enum), g.enumMemberName(value))
 			pairs = append(pairs, pair)
 		}
 		// Sort the pairs for binary search.
@@ -1172,7 +1193,7 @@ func (g *implGenerator) generateEnumFromJson(enum protoreflect.EnumDescriptor, w
 		w.Println("if (eq.empty()) {")
 		w.Indent()
 		defaultValue := enum.Values().ByNumber(0)
-		w.Printf("*e = %s::%s;\n", cppTypeName(enum), enumMemberName(defaultValue))
+		w.Printf("*e = %s::%s;\n", g.cppTypeName(enum), g.enumMemberName(defaultValue))
 		w.Dedent()
 		w.Println("} else {")
 		w.Indent()
@@ -1196,14 +1217,14 @@ func (g *implGenerator) generateEnumFromJson(enum protoreflect.EnumDescriptor, w
 			}
 			w.Printf("case %d:\n", value.Number())
 			w.Indent()
-			w.Printf("*e = %s::%s;\n", cppTypeName(enum), enumMemberName(value))
+			w.Printf("*e = %s::%s;\n", g.cppTypeName(enum), g.enumMemberName(value))
 			w.Println("return;")
 			w.Dedent()
 		}
 		value := enum.Values().ByNumber(0)
 		w.Println("default:")
 		w.Indent()
-		w.Printf("*e = %s::%s;\n", cppTypeName(enum), enumMemberName(value))
+		w.Printf("*e = %s::%s;\n", g.cppTypeName(enum), g.enumMemberName(value))
 		w.Println("return;")
 		w.Dedent()
 	}()
@@ -1214,7 +1235,7 @@ func (g *implGenerator) generateEnumFromJson(enum protoreflect.EnumDescriptor, w
 }
 
 func (g *implGenerator) generateEnumRead(enum protoreflect.EnumDescriptor, w *codewriter) {
-	w.Printf("void enum_from_proto(iobuf_parser* p, %s* e) {\n", cppTypeName(enum))
+	w.Printf("void enum_from_proto(iobuf_parser* p, %s* e) {\n", g.cppTypeName(enum))
 	defer w.Println("}")
 	w.Indent()
 	defer w.Dedent()
@@ -1239,13 +1260,13 @@ func (g *implGenerator) generateEnumRead(enum protoreflect.EnumDescriptor, w *co
 	w.Println("v = 0;")
 	w.Dedent()
 	w.Println("}")
-	w.Printf("*e = static_cast<%s>(v);\n", cppTypeName(enum))
+	w.Printf("*e = static_cast<%s>(v);\n", g.cppTypeName(enum))
 }
 
 func (g *implGenerator) generateMessageWriteJson(msg protoreflect.MessageDescriptor, w *codewriter) {
 	retType := "seastar::future<iobuf>"
 	method := "to_json"
-	w.Printf("%s %s::%s() const {\n", retType, cppTypeName(msg), method)
+	w.Printf("%s %s::%s() const {\n", retType, g.cppTypeName(msg), method)
 	defer w.Println("}")
 	w.Indent()
 	defer w.Dedent()
@@ -1479,7 +1500,7 @@ func (g *implGenerator) generateSingularFieldWriteJson(f protoreflect.FieldDescr
 func (g *implGenerator) generateMessageWrite(msg protoreflect.MessageDescriptor, w *codewriter) {
 	retType := "seastar::future<iobuf>"
 	method := "to_proto"
-	w.Printf("%s %s::%s() const {\n", retType, cppTypeName(msg), method)
+	w.Printf("%s %s::%s() const {\n", retType, g.cppTypeName(msg), method)
 	defer w.Println("}")
 	w.Indent()
 	defer w.Dedent()
@@ -1747,7 +1768,7 @@ func (g *implGenerator) generateRepeatedFieldWrite(f protoreflect.FieldDescripto
 }
 
 func (g *implGenerator) generateMessageReadJsonHelper(msg protoreflect.MessageDescriptor, w *codewriter) {
-	cppType := cppTypeName(msg)
+	cppType := g.cppTypeName(msg)
 	w.Printf("seastar::future<%s> %s::from_json(iobuf data) {\n", cppType, cppType)
 	defer w.Println("}")
 	w.Indent()
@@ -1760,7 +1781,7 @@ func (g *implGenerator) generateMessageReadJsonHelper(msg protoreflect.MessageDe
 }
 
 func (g *implGenerator) generateMessageReadJson(msg protoreflect.MessageDescriptor, w *codewriter) {
-	cppType := cppTypeName(msg)
+	cppType := g.cppTypeName(msg)
 	w.Printf("seastar::future<> %s::from_json(serde::pb::json::peekable_parser* parser, %s* self) {\n", cppType, cppType)
 	defer w.Println("}")
 	w.Indent()
@@ -1933,7 +1954,7 @@ func (g *implGenerator) generateMessageReadJson(msg protoreflect.MessageDescript
 }
 
 func (g *implGenerator) generateMessageReadHelper(msg protoreflect.MessageDescriptor, w *codewriter) {
-	cppType := cppTypeName(msg)
+	cppType := g.cppTypeName(msg)
 	retType := fmt.Sprintf("seastar::future<%s>", cppType)
 	method := "from_proto"
 	w.Printf("%s %s::%s(iobuf buf) {\n", retType, cppType, method)
@@ -1948,7 +1969,7 @@ func (g *implGenerator) generateMessageReadHelper(msg protoreflect.MessageDescri
 }
 
 func (g *implGenerator) generateMessage(msg protoreflect.MessageDescriptor, w *codewriter) {
-	parentType := cppTypeName(msg)
+	parentType := g.cppTypeName(msg)
 	w.Printf("%s::%s() noexcept = default;\n", parentType, parentType)
 	w.Printf("%s::%s(%s&&) noexcept = default;\n", parentType, parentType, parentType)
 	w.Printf("%s& %s::operator=(%s&&) noexcept = default;\n", parentType, parentType, parentType)
@@ -2044,7 +2065,7 @@ func (g *implGenerator) generateMessage(msg protoreflect.MessageDescriptor, w *c
 func (g *implGenerator) generateMessageRead(msg protoreflect.MessageDescriptor, w *codewriter) {
 	retType := "seastar::future<>"
 	method := "from_proto"
-	w.Printf("%s %s::%s(serde::pb::wire_format_parser* parser, %s* self) {\n", retType, cppTypeName(msg), method, cppTypeName(msg))
+	w.Printf("%s %s::%s(serde::pb::wire_format_parser* parser, %s* self) {\n", retType, g.cppTypeName(msg), method, g.cppTypeName(msg))
 	defer w.Println("}")
 	w.Indent()
 	defer w.Dedent()
@@ -2326,14 +2347,6 @@ func sortMessages(msgs []protoreflect.MessageDescriptor) []protoreflect.MessageD
 
 // ----------------------------------------------------------
 
-func cppTypeName(d protoreflect.Descriptor) string {
-	pkg := d.ParentFile().Package()
-	name := d.FullName()
-	path := strings.TrimPrefix(string(name), string(pkg))
-	path = strings.TrimPrefix(path, ".")
-	return pascalToSnakeCase(strings.ReplaceAll(path, ".", "_"))
-}
-
 func nameToCppNamespace(file protoreflect.FileDescriptor) string {
 	if ns, ok := customNamespace(file); ok {
 		return ns
@@ -2372,24 +2385,6 @@ func isWellKnownType(d protoreflect.Descriptor) bool {
 	return false
 }
 
-func fullyQualifiedTypeName(d protoreflect.Descriptor) string {
-	switch d.FullName() {
-	case "google.protobuf.Duration":
-		return "absl::Duration"
-	case "google.protobuf.Timestamp":
-		return "absl::Time"
-	case "google.protobuf.FieldMask":
-		return "serde::pb::field_mask"
-	default:
-		if isWellKnownType(d) {
-			log.Fatalf("well-known types need an entry above: %s\n", d.FullName())
-		}
-	}
-	ns := nameToCppNamespace(d.ParentFile())
-	name := cppTypeName(d)
-	return "::" + ns + "::" + name
-}
-
 // getOneofFieldVariantIndex returns the std::variant index of a field in a oneof
 func getOneofFieldVariantIndex(oneof protoreflect.OneofDescriptor, field protoreflect.FieldDescriptor) int {
 	for i := range oneof.Fields().Len() {
@@ -2398,10 +2393,4 @@ func getOneofFieldVariantIndex(oneof protoreflect.OneofDescriptor, field protore
 		}
 	}
 	return -1
-}
-
-func enumMemberName(val protoreflect.EnumValueDescriptor) string {
-	fullName := strings.ToLower(string(val.Name()))
-	strippedName := strings.TrimPrefix(fullName, cppTypeName(val.Parent())+"_")
-	return strippedName
 }

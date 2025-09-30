@@ -23,6 +23,7 @@
 #include "model/batch_compression.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "model/timestamp.h"
 
 #include <seastar/core/loop.hh>
 
@@ -128,7 +129,10 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
       raw_size_bytes,
       decompressed_size_bytes);
 
+    auto is_broker_time = batch.header().attrs.timestamp_type()
+                          == model::timestamp_type::append_time;
     auto first_timestamp = batch.header().first_timestamp.value();
+    auto max_timestamp = batch.header().max_timestamp;
     auto it = model::record_batch_iterator::create(batch);
     while (it.has_next()) {
         if (as.abort_requested()) {
@@ -138,8 +142,10 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
         auto record = it.next();
         auto key = record.share_key_opt();
         auto val = record.share_value_opt();
-        auto timestamp = model::timestamp{
-          first_timestamp + record.timestamp_delta()};
+        auto timestamp = is_broker_time
+                           ? max_timestamp
+                           : model::timestamp{
+                               first_timestamp + record.timestamp_delta()};
         kafka::offset offset{batch.base_offset()() + record.offset_delta()};
         if (offset < start_offset) {
             continue;
@@ -376,7 +382,8 @@ ss::future<writer_error> record_multiplexer::flush_writers() {
 }
 
 ss::future<result<record_multiplexer::write_result, writer_error>>
-record_multiplexer::finish() && {
+record_multiplexer::finish(
+  record_multiplexer::finished_files& finished_files) && {
     vlog(
       _log.trace,
       "starting multiplexer finish: writers={}, kafka_bytes_processed={}",
@@ -398,7 +405,7 @@ record_multiplexer::finish() && {
             std::move(
               files.begin(),
               files.end(),
-              std::back_inserter(_result->data_files));
+              std::back_inserter(finished_files.data_files));
         }
     }
     if (_invalid_record_writer) {
@@ -415,7 +422,7 @@ record_multiplexer::finish() && {
             std::move(
               files.begin(),
               files.end(),
-              std::back_inserter(_result->dlq_files));
+              std::back_inserter(finished_files.dlq_files));
         }
     }
     if (_error && !is_recoverable_error(_error.value())) {

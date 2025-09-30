@@ -10,10 +10,13 @@
  */
 #include "kafka/client/direct_consumer/direct_consumer.h"
 
+#include "kafka/client/direct_consumer/api_types.h"
 #include "kafka/client/direct_consumer/data_queue.h"
 #include "kafka/client/direct_consumer/fetcher.h"
 #include "model/validation.h"
 #include "ssx/future-util.h"
+
+#include <algorithm>
 
 namespace kafka::client {
 
@@ -31,10 +34,65 @@ direct_consumer::fetch_next(std::chrono::milliseconds timeout) {
     }
     auto holder = _gate.hold();
     try {
-        co_return co_await _fetched_data_queue->pop(timeout);
+        auto maybe_response_to_filter = co_await _fetched_data_queue->pop(
+          timeout);
+        if (maybe_response_to_filter.has_error()) {
+            co_return maybe_response_to_filter;
+        }
+
+        // the remainder is synchronous, no lock is needed
+        auto& response_to_filter = maybe_response_to_filter.value();
+        filter_stale_subscriptions(response_to_filter);
+        co_return maybe_response_to_filter;
+
     } catch (ss::condition_variable_timed_out&) {
         co_return chunked_vector<fetched_topic_data>{};
     }
+}
+
+void direct_consumer::filter_stale_subscriptions(
+  chunked_vector<fetched_topic_data>& responses_to_filter) {
+    // for each topic, remove stale partitions
+    for (auto& topic_data : responses_to_filter) {
+        auto& partition_data = topic_data.partitions;
+
+        auto non_stale_subsegment = std::ranges::partition(
+          partition_data,
+          [this, &topic_data](const fetched_partition_data& data) mutable {
+              auto maybe_current_subscription_epoch = find_subscription_epoch(
+                topic_data.topic, data.partition_id);
+
+              vlog(
+                _cluster->logger().debug,
+                "current subscription epoch: {}, found request epoch: {}",
+                maybe_current_subscription_epoch,
+                data.subscription_epoch);
+
+              bool is_stale = data.subscription_epoch
+                              != maybe_current_subscription_epoch;
+              if (is_stale) {
+                  topic_data.total_bytes -= data.size_bytes;
+              }
+              // negate s.t. stale records accumulate at the back of the
+              // chunked_vector, allows for them to be removed with
+              // erase_to_end
+              return !is_stale;
+          });
+
+        auto erase_iterator = partition_data.end()
+                              - non_stale_subsegment.size();
+
+        partition_data.erase_to_end(erase_iterator);
+    }
+
+    // remove newly empty topics
+    auto non_empty_subsegment = std::ranges::partition(
+      responses_to_filter, [](const fetched_topic_data& topic_data) {
+          return !topic_data.partitions.empty();
+      });
+
+    responses_to_filter.erase_to_end(
+      responses_to_filter.end() - non_empty_subsegment.size());
 }
 
 void direct_consumer::update_configuration(configuration cfg) {
@@ -103,13 +161,17 @@ ss::future<> direct_consumer::update_fetchers(
                 sub.current_fetcher = *leader_id;
                 auto& new_fetcher = get_fetcher(*leader_id);
                 co_await new_fetcher.assign_partition(
-                  model::topic_partition_view(topic, p_id), sub.fetch_offset);
+                  model::topic_partition_view(topic, p_id),
+                  sub.fetch_offset,
+                  sub.subscription_epoch);
 
             } else if (sub.fetch_offset) {
                 // If the fetch offset is set, update it
                 auto& current = get_fetcher(*sub.current_fetcher);
                 co_await current.assign_partition(
-                  model::topic_partition_view(topic, p_id), sub.fetch_offset);
+                  model::topic_partition_view(topic, p_id),
+                  sub.fetch_offset,
+                  sub.subscription_epoch);
             }
             sub.fetch_offset.reset();
         }
@@ -148,12 +210,27 @@ fetcher& direct_consumer::get_fetcher(model::node_id id) {
     return *it->second;
 }
 
+std::optional<subscription_epoch> direct_consumer::find_subscription_epoch(
+  const model::topic& topic, model::partition_id partition_id) {
+    auto t_it = _subscriptions.find(topic);
+    if (t_it == _subscriptions.end()) {
+        return std::nullopt;
+    }
+
+    auto& p_map = t_it->second;
+    auto p_it = p_map.find(partition_id);
+    if (p_it == p_map.end()) {
+        return std::nullopt;
+    }
+    return p_it->second.subscription_epoch;
+}
+
 ss::future<> direct_consumer::start() {
     if (_started) {
         co_return;
     }
     _metadata_callback_id = _cluster->register_metadata_cb(
-      [this](const metadata_response_data& d) { on_metadata_update(d); });
+      [this](const metadata_update& d) { on_metadata_update(d); });
     _started = true;
 
     auto lock_holder = co_await _subscriptions_lock.get_units();
@@ -182,14 +259,17 @@ direct_consumer::assign_partitions(chunked_vector<topic_assignment> topics) {
                 "Invalid topic name: {}, error: {}", t.topic, ec.message()));
         }
         for (auto& p : t.partitions) {
+            auto epoch_to_assign = ++epoch;
             vlog(
               _cluster->logger().trace,
-              "Assigning partition: {}/{} with offset: {}",
+              "Assigning partition: {}/{} with offset: {} and epoch {}",
               t.topic,
               p.partition_id,
-              p.next_offset);
-            auto& sub = _subscriptions[t.topic][p.partition_id];
-            sub.fetch_offset = p.next_offset;
+              p.next_offset,
+              epoch_to_assign);
+            _subscriptions[t.topic].insert_or_assign(
+              p.partition_id,
+              subscription{std::nullopt, p.next_offset, epoch_to_assign});
         }
     }
     co_await update_fetchers(std::move(lock_holder));
@@ -207,7 +287,7 @@ direct_consumer::unassign_topics(chunked_vector<model::topic> topics) {
         }
         removals[topic].reserve(state_it->second.size());
         for (const auto& [p_id, sub] : state_it->second) {
-            removals[topic][p_id] = sub;
+            removals[topic].insert_or_assign(p_id, sub);
         }
         _subscriptions.erase(topic);
     }
@@ -227,7 +307,7 @@ ss::future<> direct_consumer::unassign_partitions(
         auto p_it = state_it->second.find(tp.partition);
 
         if (p_it != state_it->second.end()) {
-            removals[tp.topic][tp.partition] = p_it->second;
+            removals[tp.topic].insert_or_assign(tp.partition, p_it->second);
             state_it->second.erase(p_it);
         }
         if (state_it->second.empty()) {
@@ -242,7 +322,7 @@ ss::future<> direct_consumer::handle_metadata_update() {
     co_await update_fetchers(std::move(lock_holder));
 }
 
-void direct_consumer::on_metadata_update(const metadata_response_data&) {
+void direct_consumer::on_metadata_update(const metadata_update&) {
     ssx::spawn_with_gate(_gate, [this] { return handle_metadata_update(); });
 }
 

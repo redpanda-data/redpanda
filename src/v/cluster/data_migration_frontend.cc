@@ -265,7 +265,8 @@ ss::future<result<id>> frontend::do_create_migration(data_migration migration) {
               dm_log.warn,
               "data migration involving consumer groups failed to create "
               "consumer offsets topic.");
-            co_return errc::topic_not_exists;
+            // presumably leadership changed and we failed to create the topic
+            co_return errc::leadership_changed;
         };
     }
 

@@ -1162,7 +1162,7 @@ partition_balancer_planner::request_context::for_each_replica_random_order(
     }
 
     std::shuffle(
-      replicas.begin(), replicas.end(), random_generators::internal::gen);
+      replicas.begin(), replicas.end(), random_generators::global().engine());
 
     for (const auto& repl : replicas) {
         state().topics().check_topics_map_stable(start_rev);

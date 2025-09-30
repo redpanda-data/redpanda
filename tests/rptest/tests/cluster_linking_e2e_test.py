@@ -12,12 +12,13 @@ import google.protobuf.duration_pb2
 import google.protobuf.field_mask_pb2
 import random
 import re
-from contextlib import nullcontext
-
 
 from connectrpc.errors import ConnectError, ConnectErrorCode
+from contextlib import nullcontext
 from ducktape.mark import matrix
+from ducktape.mark import ignore
 
+from rptest.clients.admin.proto.redpanda.core.common import acl_pb2
 from rptest.clients.admin.proto.redpanda.core.admin.v2 import (
     shadow_link_pb2,
 )
@@ -32,8 +33,11 @@ from rptest.services.kgo_verifier_services import (
 from rptest.services.multi_cluster_services import (
     Cluster,
     MultiClusterServices,
+    SecondaryClusterArgs,
+    SecondaryClusterSpec,
     ServiceType,
 )
+from rptest.services.redpanda import SchemaRegistryConfig
 from rptest.tests.cluster_linking_test_base import (
     ShadowLinkPreAllocTestBase,
     ShadowLinkTestBase,
@@ -46,6 +50,9 @@ from rptest.util import (
     wait_until,
     wait_until_result,
 )
+from typing import Any
+
+import google.protobuf.duration_pb2
 
 
 class MultiClusterTestBase(RedpandaTest):
@@ -113,7 +120,7 @@ class MultiClusterRedpandaTest(MultiClusterTestBase):
             self.test_context,
             self.logger,
             self.redpanda,
-            secondary_type=ServiceType.REDPANDA,
+            secondary_spec=SecondaryClusterSpec(ServiceType.REDPANDA),
             num_brokers=3,
         ) as services:
             assert services.secondary.is_redpanda, (
@@ -136,13 +143,15 @@ class MultiClusterKafkaTest(MultiClusterTestBase):
         # MultiClusterServices will set itself up
         pass
 
-    @cluster(num_nodes=7)
+    @cluster(num_nodes=6)
     def test_basic_ops(self):
         with MultiClusterServices(
             self.test_context,
             self.logger,
             self.redpanda,
-            secondary_type=ServiceType.KAFKA,
+            secondary_spec=SecondaryClusterSpec(
+                ServiceType.KAFKA, kafka_version="3.8.0", kafka_quorum="COMBINED_KRAFT"
+            ),
             num_brokers=3,
         ) as services:
             assert services.secondary.is_kafka, (
@@ -337,7 +346,7 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
         with expect_exception(ducktape.errors.TimeoutError, lambda _: True):
             wait_until(_any_topics_are_present_in_target_cluster, timeout_sec=5)
 
-        shadow_link.configurations.topic_metadata_sync_options.topic_filters.extend(
+        shadow_link.configurations.topic_metadata_sync_options.auto_create_shadow_topic_filters.extend(
             [
                 shadow_link_pb2.NameFilter(
                     pattern_type=shadow_link_pb2.PATTERN_TYPE_PREFIX,
@@ -352,10 +361,10 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
             ]
         )
 
-        update_mask: google.protobuf.field_mask_pb2.FieldMask = (
-            google.protobuf.field_mask_pb2.FieldMask(
-                paths=["configurations.topic_metadata_sync_options.topic_filters"]
-            )
+        update_mask: google.protobuf.field_mask_pb2.FieldMask = google.protobuf.field_mask_pb2.FieldMask(
+            paths=[
+                "configurations.topic_metadata_sync_options.auto_create_shadow_topic_filters"
+            ]
         )
 
         updated_link = self.update_link(
@@ -394,7 +403,7 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
             "test-link", mirror_all_topics=False, mirror_all_groups=False
         )
 
-        shadow_link.configurations.topic_metadata_sync_options.topic_filters.extend(
+        shadow_link.configurations.topic_metadata_sync_options.auto_create_shadow_topic_filters.extend(
             [
                 shadow_link_pb2.NameFilter(
                     pattern_type=shadow_link_pb2.PATTERN_TYPE_PREFIX,
@@ -426,10 +435,12 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
         )
 
         assert (
-            len(updated_link.configurations.topic_metadata_sync_options.topic_filters)
+            len(
+                updated_link.configurations.topic_metadata_sync_options.auto_create_shadow_topic_filters
+            )
             == 0
         ), (
-            f"Expected topic filters to not be updated, got {updated_link.configurations.topic_metadata_sync_options.topic_filters}"
+            f"Expected topic filters to not be updated, got {updated_link.configurations.topic_metadata_sync_options.auto_create_shadow_topic_filters}"
         )
 
     @cluster(num_nodes=6)
@@ -547,9 +558,17 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
 
         return leadership_transfer_thread(redpanda, topic)
 
-    @cluster(num_nodes=7)
-    @matrix(shuffle_leadership=[True, False])
-    def test_replication_basic(self, shuffle_leadership):
+    @cluster(num_nodes=8)
+    @matrix(
+        shuffle_leadership=[True, False],
+        source_cluster_spec=[
+            SecondaryClusterSpec(ServiceType.REDPANDA),
+            SecondaryClusterSpec(
+                ServiceType.KAFKA, kafka_version="3.8.0", kafka_quorum="COMBINED_KRAFT"
+            ),
+        ],
+    )
+    def test_replication_basic(self, shuffle_leadership, source_cluster_spec):
         topic = TopicSpec(name="source-topic", partition_count=5, replication_factor=3)
 
         self.source_default_client().create_topic(topic)
@@ -568,7 +587,7 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
             self.verify()
 
     @cluster(
-        num_nodes=7,
+        num_nodes=8,
         log_allow_list=[
             re.compile(".*Failed to sync write_at_offset_stm for partition"),
         ],
@@ -606,7 +625,15 @@ class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
         )
 
     @cluster(num_nodes=7)
-    def test_consumer_groups_mirroring(self):
+    @matrix(
+        source_cluster_spec=[
+            SecondaryClusterSpec(ServiceType.REDPANDA),
+            SecondaryClusterSpec(
+                ServiceType.KAFKA, kafka_version="3.8.0", kafka_quorum="COMBINED_KRAFT"
+            ),
+        ]
+    )
+    def test_consumer_groups_mirroring(self, source_cluster_spec):
         topic = TopicSpec(name="source-topic", partition_count=5, replication_factor=3)
 
         self.source_default_client().create_topic(topic)
@@ -659,8 +686,22 @@ class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
             pass
 
     @cluster(num_nodes=7)
-    @matrix(with_failures=[True, False])
-    def test_continuous_group_sync(self, with_failures):
+    @ignore(
+        with_failures=True,
+        source_cluster_spec=SecondaryClusterSpec(
+            ServiceType.KAFKA, kafka_version="3.8.0", kafka_quorum="COMBINED_KRAFT"
+        ),
+    )
+    @matrix(
+        with_failures=[True, False],
+        source_cluster_spec=[
+            SecondaryClusterSpec(ServiceType.REDPANDA),
+            SecondaryClusterSpec(
+                ServiceType.KAFKA, kafka_version="3.8.0", kafka_quorum="COMBINED_KRAFT"
+            ),
+        ],
+    )
+    def test_continuous_group_sync(self, with_failures, source_cluster_spec):
         partition_count = 120
         topic_count = 6
 
@@ -746,3 +787,95 @@ class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
                     err_msg="Group states not consistent between source and target clusters",
                     retry_on_exc=True,
                 )
+
+
+class ShadowLinkSecurityTests(ShadowLinkTestBase):
+    """
+    Tests that verify security settings syncing
+    """
+
+    def __init__(self, test_context, *args, **kwargs):
+        super().__init__(
+            test_context=test_context,
+            secondary_cluster_args=SecondaryClusterArgs(
+                schema_registry_config=SchemaRegistryConfig()
+            ),
+            schema_registry_config=SchemaRegistryConfig(),
+            *args,
+            **kwargs,
+        )
+
+    @cluster(num_nodes=6)
+    @matrix(check_sr=[False, True])
+    def test_acl_sync(self, check_sr: bool):
+        """
+        This test verifies that Kafka ACLs are synced from source to target cluster
+        when a shadow link is created and configured
+        """
+        req = self.create_default_link_request("test-link")
+
+        resource_type = (
+            acl_pb2.ACL_RESOURCE_SR_ANY if check_sr else acl_pb2.ACL_RESOURCE_ANY
+        )
+
+        resource_filter = shadow_link_pb2.ACLResourceFilter(
+            resource_type=resource_type, pattern_type=acl_pb2.ACL_PATTERN_ANY
+        )
+        access_filter = shadow_link_pb2.ACLAccessFilter(
+            permission_type=acl_pb2.ACL_PERMISSION_TYPE_ANY,
+            operation=acl_pb2.ACL_OPERATION_ANY,
+        )
+        acl_filter = shadow_link_pb2.ACLFilter(
+            resource_filter=resource_filter, access_filter=access_filter
+        )
+        acl_filters: list[shadow_link_pb2.ACLFilter] = [acl_filter]
+
+        security_sync_options = shadow_link_pb2.SecuritySettingsSyncOptions(
+            interval=google.protobuf.duration_pb2.Duration(seconds=1),
+            acl_filters=acl_filters,
+        )
+        req.shadow_link.configurations.security_sync_options.CopyFrom(
+            security_sync_options
+        )
+
+        _ = self.create_link_with_request(req=req)
+        self.logger.info("Successfully created link")
+
+        target_acls: Any = self.target_cluster_rpk.acl_list(format="json")
+        assert len(target_acls["matches"]) == 0, (
+            f"Expected no ACLs on target cluster, got {target_acls}"
+        )
+
+        sr_kafka_acl = RPKACLInput(
+            allow_principal=["test-user"],
+            topic=["foo"],
+            registry_subject=["foo-value"],
+            operation=["read"],
+            resource_pattern_type="literal",
+        )
+        self.source_cluster_rpk.acl_create(sr_kafka_acl)
+
+        def check_if_acls_synced():
+            target_acls: Any = self.target_cluster_rpk.acl_list(format="json")
+            if len(target_acls["matches"]) == 1:
+                acl = target_acls["matches"][0]
+                self.logger.info(f"Found ACL on target cluster: {acl}")
+                expected_resource_type = "SUBJECT" if check_sr else "TOPIC"
+                expected_resource_name = "foo-value" if check_sr else "foo"
+                return (
+                    acl["principal"] == "User:test-user"
+                    and acl["host"] == "*"
+                    and acl["operation"] == "READ"
+                    and acl["resource_type"] == expected_resource_type
+                    and acl["resource_name"] == expected_resource_name
+                    and acl["resource_pattern_type"] == "LITERAL"
+                    and acl["permission"] == "ALLOW"
+                )
+            return False
+
+        wait_until(
+            check_if_acls_synced,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Failed to sync acls",
+        )

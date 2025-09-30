@@ -168,6 +168,7 @@ struct fetch_config {
     model::offset start_offset;
     model::offset max_offset;
     size_t max_bytes;
+    size_t max_batch_size;
     model::timeout_clock::time_point timeout;
     kafka::leader_epoch current_leader_epoch;
     model::isolation_level isolation_level;
@@ -182,11 +183,12 @@ struct fetch_config {
     friend std::ostream& operator<<(std::ostream& o, const fetch_config& cfg) {
         fmt::print(
           o,
-          R"({{"start_offset": {}, "max_offset": {}, "isolation_lvl": {}, "max_bytes": {}, "strict_max_bytes": {}, "skip_read": {}, "current_leader_epoch:" {}, "follower_read:" {}, "consumer_rack_id": {}, "abortable": {}, "aborted": {}, "client_address": {}}})",
+          R"({{"start_offset": {}, "max_offset": {}, "isolation_lvl": {}, "max_bytes": {}, "max_batch_size": {}, "strict_max_bytes": {}, "skip_read": {}, "current_leader_epoch:" {}, "follower_read:" {}, "consumer_rack_id": {}, "abortable": {}, "aborted": {}, "client_address": {}}})",
           cfg.start_offset,
           cfg.max_offset,
           cfg.isolation_level,
           cfg.max_bytes,
+          cfg.max_batch_size,
           cfg.strict_max_bytes,
           cfg.skip_read,
           cfg.current_leader_epoch,
@@ -449,6 +451,7 @@ read_result::memory_units_t reserve_memory_units(
   ssx::semaphore& memory_sem,
   ssx::semaphore& memory_fetch_sem,
   const size_t max_bytes,
+  const size_t max_batch_size,
   const bool obligatory_batch_read);
 
 ss::future<> do_fetch(op_context& octx);

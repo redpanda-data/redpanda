@@ -295,8 +295,8 @@ void abs_parse_impl::handle_characters(std::string_view characters) {
     }
 }
 
-client::list_bucket_result parser_state::impl::parsed_items() const {
-    return _items;
+client::list_bucket_result parser_state::impl::parsed_items() && {
+    return std::move(_items);
 }
 
 xml_sax_parser::xml_sax_parser(xml_sax_parser&& other) noexcept {
@@ -348,8 +348,9 @@ void xml_sax_parser::end_parse() {
     }
 }
 
-client::list_bucket_result xml_sax_parser::result() const {
-    return _state->parsed_items();
+client::list_bucket_result xml_sax_parser::result() && {
+    auto state = std::exchange(_state, {});
+    return std::move(*state).parsed_items();
 }
 
 void xml_sax_parser::start_element(
@@ -371,5 +372,52 @@ void xml_sax_parser::characters(
     state->handle_characters(
       {reinterpret_cast<const char*>(data), static_cast<size_t>(size)});
 }
+
+template<typename Impl>
+seastar::future<client::list_bucket_result> parse_from_stream(
+  seastar::input_stream<char> stream, std::optional<client::item_filter> pred) {
+    return ss::do_with(
+      std::move(stream),
+      xml_sax_parser{},
+      [pred = std::move(pred)](
+        ss::input_stream<char>& stream, xml_sax_parser& p) mutable {
+          p.start_parse(std::make_unique<Impl>(std::move(pred)));
+          return ss::do_until(
+                   [&stream] { return stream.eof(); },
+                   [&stream, &p] {
+                       return stream.read().then(
+                         [&p](ss::temporary_buffer<char> chunk) {
+                             /*
+                              * Seastar may return chunks of 128KB which is very
+                              * close to our max allocation limit. But when this
+                              * is handed off to to libxml the data may be
+                              * incorporated into a buffer that needs resizing
+                              * and exceed the max allocation limit. So break
+                              * this up into smaller chunks for processing.
+                              */
+                             constexpr auto max_part_size = 16_KiB;
+                             while (!chunk.empty()) {
+                                 auto part_size = std::min(
+                                   max_part_size, chunk.size());
+                                 p.parse_chunk(chunk.share(0, part_size));
+                                 chunk.trim_front(part_size);
+                             }
+                         });
+                   })
+            .finally([&stream] { return stream.close(); })
+            .then([&p] {
+                p.end_parse();
+                return std::move(p).result();
+            });
+      });
+}
+
+template seastar::future<client::list_bucket_result>
+parse_from_stream<aws_parse_impl>(
+  seastar::input_stream<char> stream, std::optional<client::item_filter> pred);
+
+template seastar::future<client::list_bucket_result>
+parse_from_stream<abs_parse_impl>(
+  seastar::input_stream<char> stream, std::optional<client::item_filter> pred);
 
 } // namespace cloud_storage_clients

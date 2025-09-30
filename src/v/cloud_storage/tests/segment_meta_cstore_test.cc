@@ -274,12 +274,12 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_full_contains) {
 
 void test_cstore_prefix_truncate(size_t test_size, size_t max_truncate_ix) {
     // failing seed:
-    // std::istringstream{"10263162"} >> random_generators::internal::gen;
+    // std::istringstream{"10263162"} >> random_generators::global().engine();
     BOOST_REQUIRE_GE(test_size, 2);
     BOOST_TEST_INFO(
       fmt::format(
-        "random_generators::internal::gen: [{}]",
-        random_generators::internal::gen));
+        "random_generators::global().engine(): [{}]",
+        random_generators::global().engine()));
 
     segment_meta_cstore store;
     auto manifest = generate_metadata(test_size);
@@ -460,12 +460,13 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_whole_range_replacement) {
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_replacements) {
-    // std::istringstream{"1868201168"} >> random_generators::internal::gen;
+    // std::istringstream{"1868201168"} >>
+    // random_generators::global().engine();
 
     BOOST_TEST_INFO(
       fmt::format(
-        "random_generators::internal::gen: [{}]",
-        random_generators::internal::gen));
+        "random_generators::global().engine(): [{}]",
+        random_generators::global().engine()));
 
     segment_meta_cstore store{};
     auto manifest = generate_metadata(9973);
@@ -535,7 +536,7 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_replacements) {
         std::shuffle(
           replacements_slice.begin(),
           replacements_slice.end(),
-          random_generators::internal::gen);
+          random_generators::global().engine());
         // insert replacements
         for (auto& r : replacements_slice) {
             store.insert(r);

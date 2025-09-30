@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "base/vassert.h"
 #include "bytes/iobuf.h"
@@ -535,9 +536,28 @@ constexpr std::string_view to_string_view(fips_mode_flag f) {
 std::ostream& operator<<(std::ostream& os, const fips_mode_flag& f);
 std::istream& operator>>(std::istream& is, fips_mode_flag& f);
 
-using topic_id = named_type<uuid_t, struct topic_id_type>;
+struct topic_id : named_type<uuid_t, struct topic_id_tag> {
+    static topic_id create() { return topic_id{uuid_t::create()}; }
+    using base = named_type<uuid_t, struct topic_id_tag>;
+    using base::base;
+    using base::operator=;
 
-inline topic_id create_topic_id() { return topic_id{uuid_t::create()}; }
+    fmt::iterator format_to(fmt::iterator it) const;
+
+    constexpr friend bool
+    operator==(const topic_id& lhs, const topic_id& rhs) noexcept
+      = default;
+    constexpr friend auto
+    operator<=>(const topic_id& lhs, const topic_id& rhs) noexcept
+      = default;
+
+    template<typename H>
+    friend H AbslHashValue(H h, const topic_id& u) {
+        return H::combine(std::move(h), static_cast<const base&>(u));
+    }
+};
+
+inline topic_id create_topic_id() { return topic_id::create(); }
 
 struct topic_id_partition {
     topic_id_partition() = default;

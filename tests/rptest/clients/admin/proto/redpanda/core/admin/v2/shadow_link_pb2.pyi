@@ -544,7 +544,7 @@ class TopicMetadataSyncOptions(google.protobuf.message.Message):
     """Options for syncing topic metadata"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     INTERVAL_FIELD_NUMBER: builtins.int
-    TOPIC_FILTERS_FIELD_NUMBER: builtins.int
+    AUTO_CREATE_SHADOW_TOPIC_FILTERS_FIELD_NUMBER: builtins.int
     SHADOWED_TOPIC_PROPERTIES_FIELD_NUMBER: builtins.int
 
     @property
@@ -554,8 +554,12 @@ class TopicMetadataSyncOptions(google.protobuf.message.Message):
         """
 
     @property
-    def topic_filters(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___NameFilter]:
-        """The topic filters to use"""
+    def auto_create_shadow_topic_filters(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___NameFilter]:
+        """List of filters that indicate which topics should be automatically
+        created as shadow topics on the shadow cluster.  This only controls
+        automatic creation of shadow topics and does not effect the state of the
+        mirror topic once it is created.
+        """
 
     @property
     def shadowed_topic_properties(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
@@ -564,13 +568,13 @@ class TopicMetadataSyncOptions(google.protobuf.message.Message):
         `timestamp.type` will always be replicated
         """
 
-    def __init__(self, *, interval: google.protobuf.duration_pb2.Duration | None=..., topic_filters: collections.abc.Iterable[global___NameFilter] | None=..., shadowed_topic_properties: collections.abc.Iterable[builtins.str] | None=...) -> None:
+    def __init__(self, *, interval: google.protobuf.duration_pb2.Duration | None=..., auto_create_shadow_topic_filters: collections.abc.Iterable[global___NameFilter] | None=..., shadowed_topic_properties: collections.abc.Iterable[builtins.str] | None=...) -> None:
         ...
 
     def HasField(self, field_name: typing.Literal['interval', b'interval']) -> builtins.bool:
         ...
 
-    def ClearField(self, field_name: typing.Literal['interval', b'interval', 'shadowed_topic_properties', b'shadowed_topic_properties', 'topic_filters', b'topic_filters']) -> None:
+    def ClearField(self, field_name: typing.Literal['auto_create_shadow_topic_filters', b'auto_create_shadow_topic_filters', 'interval', b'interval', 'shadowed_topic_properties', b'shadowed_topic_properties']) -> None:
         ...
 global___TopicMetadataSyncOptions = TopicMetadataSyncOptions
 

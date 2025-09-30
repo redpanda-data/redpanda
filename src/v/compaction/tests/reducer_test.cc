@@ -25,7 +25,7 @@ TEST(CompactionReducerTest, SimpleReducer) {
     int num_batches = 10;
     auto gen = linear_int_kv_batch_generator();
     auto spec = model::test::record_batch_spec{
-      .allow_compression = false, .count = 1};
+      .allow_compression = false, .count = 10};
     auto input_batches = gen(spec, num_batches);
     chunked_circular_buffer<model::record_batch> output_batches;
 

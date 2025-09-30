@@ -445,6 +445,10 @@ public:
         co_return co_await fn(&pp);
     }
 
+    bool is_current_shard_leader(const model::ntp& ntp) {
+        return shard_owner(ntp) == ss::this_shard_id();
+    }
+
 private:
     int _errors_to_inject = 0;
     ss::chunked_fifo<produced_batch> _produced_batches;
@@ -499,6 +503,10 @@ public:
         result<partition_offsets, cluster::errc>>(kafka::partition_proxy*)> fn,
       require_leader) final {
         return _fake_proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
+    }
+
+    bool is_current_shard_leader(const model::ntp& ntp) const override {
+        return _fake_proxy->is_current_shard_leader(ntp);
     }
 
 private:

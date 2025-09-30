@@ -15,6 +15,7 @@
 #include "cloud_topics/level_zero/pipeline/pipeline_stage.h"
 #include "cloud_topics/level_zero/pipeline/write_request.h"
 #include "cloud_topics/logger.h"
+#include "resource_mgmt/memory_groups.h"
 #include "utils/human.h"
 
 #include <seastar/core/abort_source.hh>
@@ -29,10 +30,30 @@
 
 namespace cloud_topics::l0 {
 
+// The max value is used in unit-tests only. Normally, the memory_groups
+// function is used to set up the limit. If the cloud_topics are disabled
+// but the pipeline is still created (which is something we do in tests)
+// then this constant will be used.
+static constexpr size_t max_memory_when_disabled = 100 * 1024 * 1024;
+
+namespace {
+size_t get_cloud_topics_l0_write_path_memory() {
+    return memory_groups().cloud_topics_memory() > 0
+             // Split memory in half between read and write path.
+             // TODO: take L1 into account.
+             ? memory_groups().cloud_topics_memory() / 2
+             : max_memory_when_disabled;
+}
+} // namespace
+
 template<class Clock>
 write_pipeline<Clock>::write_pipeline()
-  // TODO: use configuration parameter and binding
-  : _mem_budget(10_MiB, "write-pipeline") {}
+  : _mem_budget(get_cloud_topics_l0_write_path_memory(), "write-pipeline") {
+    vlog(
+      cd_log.trace,
+      "write_pipeline created, memory budget: {}",
+      _mem_budget.current());
+}
 
 template<class Clock>
 write_pipeline<Clock>::~write_pipeline() = default;
@@ -111,18 +132,19 @@ write_pipeline<Clock>::stage::stage(write_pipeline<Clock>* p, pipeline_stage s)
 template<class Clock>
 typename write_pipeline<Clock>::write_requests_list
 write_pipeline<Clock>::get_write_requests(
-  size_t max_bytes, pipeline_stage stage) {
+  size_t max_bytes, pipeline_stage stage, size_t max_requests) {
     // First remove timed out write request to avoid returning them
     this->remove_timed_out_requests();
 
     vlog(
-      cd_log.debug, "get_write_requests called with max_bytes = {}", max_bytes);
+      cd_log.trace, "get_write_requests called with max_bytes = {}", max_bytes);
 
     auto& pending = this->get_pending();
 
     write_requests_list result(this, stage, {});
 
     size_t acc_size = 0;
+    size_t acc_req = 0;
 
     // The elements in the list are in the insertion order.
     auto it = pending.begin();
@@ -132,7 +154,8 @@ write_pipeline<Clock>::get_write_requests(
         }
         auto sz = it->data_chunk.payload.size_bytes();
         acc_size += sz;
-        if (acc_size >= max_bytes) {
+        acc_req++;
+        if (acc_size >= max_bytes || acc_req >= max_requests) {
             // Include last element
             it++;
             break;
@@ -141,7 +164,7 @@ write_pipeline<Clock>::get_write_requests(
     result.requests.splice(result.requests.end(), pending, pending.begin(), it);
     result.complete = pending.empty();
     vlog(
-      cd_log.debug,
+      cd_log.trace,
       "get_write_requests returned {} elements, containing {} ({}B)",
       result.requests.size(),
       human::bytes(acc_size),
@@ -183,8 +206,9 @@ void write_pipeline<Clock>::stage::push_next_stage(write_request<Clock>& req) {
 
 template<class Clock>
 write_pipeline<Clock>::write_requests_list
-write_pipeline<Clock>::stage::pull_write_requests(size_t max_bytes) {
-    return _parent->get_write_requests(max_bytes, _ps);
+write_pipeline<Clock>::stage::pull_write_requests(
+  size_t max_bytes, size_t max_requests) {
+    return _parent->get_write_requests(max_bytes, _ps, max_requests);
 }
 
 template<class Clock>

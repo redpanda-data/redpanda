@@ -23,7 +23,7 @@ class Result:
     NODATA = "NODATA"
 
     @staticmethod
-    def more_severe(a, b):
+    def more_severe(a: str, b: str):
         results = [Result.FAILED, Result.UNKNOWN, Result.PASSED, Result.NODATA]
         if a not in results:
             raise Exception(f"unknown result value: a={a}")

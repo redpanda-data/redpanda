@@ -9,6 +9,7 @@
  */
 
 #include "absl/container/btree_map.h"
+#include "bytes/bytes.h"
 #include "datalake/partition_spec_parser.h"
 #include "iceberg/compatibility.h"
 #include "iceberg/compatibility_types.h"

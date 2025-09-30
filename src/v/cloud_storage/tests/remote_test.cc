@@ -30,7 +30,6 @@
 #include "model/metadata.h"
 #include "storage/directories.h"
 #include "test_utils/async.h"
-#include "test_utils/fixture.h"
 #include "test_utils/tmp_dir.h"
 #include "utils/lazy_abort_source.h"
 #include "utils/retry_chain_node.h"
@@ -755,7 +754,7 @@ TEST_P(all_types_remote_fixture, test_list_bucket_with_prefix) {
                       cloud_storage_clients::object_key{url_base() + "x/"})
                     .get();
     ASSERT_TRUE(result.has_value());
-    auto items = result.value().contents;
+    const auto& items = result.value().contents;
     ASSERT_EQ(items.size(), 2);
     ASSERT_EQ(items[0].key, url_base() + "x/a");
     ASSERT_EQ(items[1].key, url_base() + "x/b");
@@ -790,7 +789,7 @@ TEST_P(all_types_remote_fixture, test_list_bucket_with_filter) {
                       })
                     .get();
     ASSERT_TRUE(result.has_value());
-    auto items = result.value().contents;
+    const auto& items = result.value().contents;
     ASSERT_EQ(items.size(), 1);
     ASSERT_EQ(items[0].key, path_with_prefix);
 }

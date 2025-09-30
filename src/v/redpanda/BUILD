@@ -61,6 +61,7 @@ redpanda_cc_library(
         "//src/v/migrations",
         "//src/v/model",
         "//src/v/net",
+        "//src/v/net:tls",
         "//src/v/pandaproxy:core",
         "//src/v/pandaproxy/schema_registry:server",
         "//src/v/pandaproxy/rest:server",

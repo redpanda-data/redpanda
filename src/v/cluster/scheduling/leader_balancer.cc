@@ -1082,7 +1082,7 @@ leader_balancer::index_type leader_balancer::build_index(
                       replicas.cend(),
                       std::back_inserter(leader),
                       1,
-                      random_generators::internal::gen);
+                      random_generators::global().engine());
                     // replicas.empty() is checked above
                     vassert(!leader.empty(), "Failed to select replica");
                     leader_core = leader.front();

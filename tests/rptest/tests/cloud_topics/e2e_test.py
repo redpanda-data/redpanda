@@ -39,6 +39,8 @@ class EndToEndCloudTopicsBase(EndToEndTest):
         ),
     )
 
+    rpk: RpkTool
+
     def __init__(self, test_context, extra_rp_conf=None, environment=None):
         super(EndToEndCloudTopicsBase, self).__init__(test_context=test_context)
 
@@ -114,6 +116,29 @@ class EndToEndCloudTopicsTest(EndToEndCloudTopicsBase):
         self.start_consumer()
         self.run_validation()
 
+    @cluster(num_nodes=5)
+    def test_delete_records(self):
+        self.start_producer()
+        self.await_num_produced(min_records=50000)
+        self.producer.stop()
+        for part in self.rpk.describe_topic(self.s3_topic_name):
+            self.logger.info(
+                f"lwm={part.start_offset},hwm={part.high_watermark},lso={part.last_stable_offset}"
+            )
+        output = self.rpk.trim_prefix(self.s3_topic_name, 35)
+        self.logger.info(f"{output}")
+        for part in self.rpk.describe_topic(self.s3_topic_name):
+            assert part.start_offset == 35, (
+                f"expected the start offset to be 35 after, got: {part}"
+            )
+            self.logger.info(
+                f"lwm={part.start_offset},hwm={part.high_watermark},lso={part.last_stable_offset}"
+            )
+        self.start_consumer()
+        self.run_consumer_validation(
+            expected_missing_records=35 * self.topics[0].partition_count
+        )
+
 
 class EndToEndCloudTopicsTxTest(EndToEndCloudTopicsBase):
     """Cloud topics end-to-end test with transactions used."""
@@ -125,20 +150,20 @@ class EndToEndCloudTopicsTxTest(EndToEndCloudTopicsBase):
             replication_factor=3,
         ),
     )
+    kgo_producer: KgoVerifierProducer
+    kgo_consumer: KgoVerifierSeqConsumer
 
     def __init__(self, test_context, extra_rp_conf=None, env=None):
         super(EndToEndCloudTopicsTxTest, self).__init__(
             test_context, extra_rp_conf, env
         )
-        self.producer = None
-        self.consumer = None
         self.msg_size = 4096
         # Use a smaller message count to prevent timeouts
         self.msg_count = 1000
         self.per_transaction = 10
 
     def start_producer_with_tx(self):
-        self.producer = KgoVerifierProducer(
+        self.kgo_producer = KgoVerifierProducer(
             self.test_context,
             self.redpanda,
             self.topic,
@@ -149,12 +174,12 @@ class EndToEndCloudTopicsTxTest(EndToEndCloudTopicsBase):
             msgs_per_transaction=self.per_transaction,
             debug_logs=True,
         )
-        self.producer.start()
-        self.producer.wait()
+        self.kgo_producer.start()
+        self.kgo_producer.wait()
 
     def start_consumer_with_tx(self):
-        traffic_node = self.producer.nodes[0]
-        self.consumer = KgoVerifierSeqConsumer(
+        traffic_node = self.kgo_producer.nodes[0]
+        self.kgo_consumer = KgoVerifierSeqConsumer(
             self.test_context,
             self.redpanda,
             self.topic,
@@ -162,17 +187,19 @@ class EndToEndCloudTopicsTxTest(EndToEndCloudTopicsBase):
             loop=False,
             nodes=[traffic_node],
             use_transactions=True,
+            debug_logs=True,
+            trace_logs=True,
         )
-        self.consumer.start(clean=False)
-        self.consumer.wait()
+        self.kgo_consumer.start(clean=False)
+        self.kgo_consumer.wait()
 
     @cluster(num_nodes=4)
     def test_write(self):
         self.start_producer_with_tx()
         self.start_consumer_with_tx()
         # Validate by checking stats
-        pstatus = self.producer.produce_status
-        cstatus = self.consumer.consumer_status
+        pstatus = self.kgo_producer.produce_status
+        cstatus = self.kgo_consumer.consumer_status
         committed_messages = pstatus.acked - pstatus.aborted_transaction_messages
         assert pstatus.acked == self.msg_count
         assert 0 < committed_messages <= self.msg_count

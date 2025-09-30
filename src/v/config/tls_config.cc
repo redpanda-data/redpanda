@@ -14,11 +14,14 @@
 #include "config/configuration.h"
 #include "config/convert.h"
 #include "net/tls.h"
+#include "thirdparty/openssl/err.h"
+#include "thirdparty/openssl/ssl.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/net/tls.hh>
+#include <seastar/util/defer.hh>
 #include <seastar/util/variant_utils.hh>
 
 namespace config {
@@ -39,10 +42,28 @@ net::key_store create_key_store(const key_cert_container& container) {
           }};
       });
 }
+
+template<typename T, auto fn>
+struct ssl_deleter {
+    void operator()(T* ptr) { fn(ptr); }
+};
+
+template<typename T, auto fn>
+using ssl_handle = std::unique_ptr<T, ssl_deleter<T, fn>>;
+
+using ssl_ctx_ptr = ssl_handle<SSL_CTX, SSL_CTX_free>;
+
+bool ssl_clean_room(auto func) {
+    auto cleanup = ss::defer([] { ERR_clear_error(); });
+    ssl_ctx_ptr ctx{SSL_CTX_new(TLS_method())};
+    return ctx && func(ctx.get());
+}
 } // namespace
+
 ss::future<std::optional<ss::tls::credentials_builder>>
 tls_config::get_credentials_builder() const& {
     if (_enabled) {
+        const auto& cfg = config::shard_local_cfg();
         auto builder = co_await net::get_credentials_builder({
           .truststore = _truststore_file.transform(
             [](auto& f) { return net::certificate(std::filesystem::path(f)); }),
@@ -50,10 +71,14 @@ tls_config::get_credentials_builder() const& {
           .crl = _crl_file.transform(
             [](auto& f) { return net::certificate(std::filesystem::path(f)); }),
           .min_tls_version = from_config(
-            config::shard_local_cfg().tls_min_version()),
-          .enable_renegotiation
-          = config::shard_local_cfg().tls_enable_renegotiation(),
+            _min_tls_version.value_or(cfg.tls_min_version())),
+          .enable_renegotiation = _enable_renegotiation.value_or(
+            cfg.tls_enable_renegotiation()),
           .require_client_auth = _require_client_auth,
+          .tls_v1_2_cipher_suites = _tls_v1_2_cipher_suites.value_or(
+            cfg.tls_v1_2_cipher_suites()),
+          .tls_v1_3_cipher_suites = _tls_v1_3_cipher_suites.value_or(
+            cfg.tls_v1_3_cipher_suites()),
         });
         co_return builder;
     }
@@ -107,6 +132,17 @@ std::ostream& operator<<(std::ostream& o, const config::tls_config& c) {
       << " }";
     return o;
 }
+
+bool validate_tls_v1_2_cipher_suites(const ss::sstring& s) {
+    return ssl_clean_room(
+      [&](auto ctx) { return SSL_CTX_set_cipher_list(ctx, s.data()) == 1; });
+}
+
+bool validate_tls_v1_3_cipher_suites(const ss::sstring& s) {
+    return ssl_clean_room(
+      [&](auto ctx) { return SSL_CTX_set_ciphersuites(ctx, s.data()) == 1; });
+}
+
 } // namespace config
 
 namespace YAML {
@@ -148,6 +184,22 @@ Node convert<config::tls_config>::encode(const config::tls_config& rhs) {
 
     if (rhs.get_truststore_file()) {
         node["truststore_file"] = *rhs.get_truststore_file();
+    }
+
+    if (rhs.get_tls_v1_2_cipher_suites()) {
+        node["tls_v1_2_cipher_suites"] = *rhs.get_tls_v1_2_cipher_suites();
+    }
+
+    if (rhs.get_tls_v1_3_cipher_suites()) {
+        node["tls_v1_3_cipher_suites"] = *rhs.get_tls_v1_3_cipher_suites();
+    }
+
+    if (rhs.get_min_tls_version()) {
+        node["min_tls_version"] = *rhs.get_min_tls_version();
+    }
+
+    if (rhs.get_enable_renegotiation()) {
+        node["enable_renegotiation"] = *rhs.get_enable_renegotiation();
     }
 
     return node;
@@ -205,8 +257,14 @@ bool convert<config::tls_config>::decode(
           container,
           to_absolute(read_optional(node, "truststore_file")),
           to_absolute(read_optional(node, "crl_file")),
-          node["require_client_auth"]
-            && node["require_client_auth"].as<bool>());
+          node["require_client_auth"] && node["require_client_auth"].as<bool>(),
+          read_optional(node, "tls_v1_2_cipher_suites"),
+          read_optional(node, "tls_v1_3_cipher_suites"),
+          node["min_tls_version"]
+            ? node["min_tls_version"].as<config::tls_version>()
+            : std::optional<config::tls_version>(),
+          node["enable_renegotiation"] ? node["enable_renegotiation"].as<bool>()
+                                       : std::optional<bool>());
     }
     return true;
 }

@@ -17,7 +17,6 @@
 #include "storage/log_manager.h"
 #include "storage/offset_translator.h"
 #include "storage/record_batch_builder.h"
-#include "test_utils/fixture.h"
 #include "test_utils/random_bytes.h"
 
 #include <seastar/core/coroutine.hh>

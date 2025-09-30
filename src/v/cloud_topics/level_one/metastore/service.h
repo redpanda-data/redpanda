@@ -41,6 +41,9 @@ public:
     ss::future<get_first_timestamp_ge_reply> get_first_timestamp_ge(
       get_first_timestamp_ge_request, ::rpc::streaming_context&) override;
 
+    ss::future<get_first_offset_for_bytes_reply> get_first_offset_for_bytes(
+      get_first_offset_for_bytes_request, ::rpc::streaming_context&) override;
+
     ss::future<get_offsets_reply>
     get_offsets(get_offsets_request, ::rpc::streaming_context&) override;
 

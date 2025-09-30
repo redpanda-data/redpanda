@@ -122,7 +122,6 @@ chunked_vector<R> authorize_alter_config_resources(
       to_authorize.topic_changes.end(),
       [&ctx, &kafka_nodelete_topics, &kafka_noproduce_topics](const T& res) {
           auto topic = model::topic(res.resource_name);
-
           auto is_nodelete_topic = std::find(
                                      kafka_nodelete_topics.cbegin(),
                                      kafka_nodelete_topics.cend(),
@@ -150,7 +149,11 @@ chunked_vector<R> authorize_alter_config_resources(
       std::back_inserter(not_authorized),
       [](T& res) {
           return make_error_alter_config_resource_response<R>(
-            res, error_code::topic_authorization_failed);
+            res,
+            error_code::topic_authorization_failed,
+            "Not authorized to alter_configs or topic is protected by "
+            "'kafka_nodelete_topics' or "
+            "'kafka_noproduce_topics'");
       });
 
     to_authorize.topic_changes.erase_to_end(unauthorized_it);

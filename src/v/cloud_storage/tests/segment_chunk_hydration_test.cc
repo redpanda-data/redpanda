@@ -18,6 +18,7 @@
 #include "cloud_storage/types.h"
 #include "container/chunked_circular_buffer.h"
 #include "test_utils/async.h"
+#include "test_utils/boost_fixture.h"
 #include "test_utils/scoped_config.h"
 #include "utils/lazy_abort_source.h"
 #include "utils/stream_provider.h"

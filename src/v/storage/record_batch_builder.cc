@@ -60,8 +60,9 @@ model::record_batch record_batch_builder::build() && {
     if (!_timestamp) {
         _timestamp = model::timestamp::now();
     }
+    auto header = build_header();
     auto batch = model::record_batch(
-      build_header(), std::move(_records), model::record_batch::tag_ctor_ng{});
+      header, std::move(_records), model::record_batch::tag_ctor_ng{});
     if (_compression == model::compression::none) {
         batch.header().reset_size_checksum_metadata(batch.data());
         return batch;
@@ -73,8 +74,9 @@ ss::future<model::record_batch> record_batch_builder::build_async() && {
     if (!_timestamp) {
         _timestamp = model::timestamp::now();
     }
+    auto header = build_header();
     auto batch = model::record_batch(
-      build_header(), std::move(_records), model::record_batch::tag_ctor_ng{});
+      header, std::move(_records), model::record_batch::tag_ctor_ng{});
     if (_compression == model::compression::none) {
         batch.header().reset_size_checksum_metadata(batch.data());
         co_return batch;

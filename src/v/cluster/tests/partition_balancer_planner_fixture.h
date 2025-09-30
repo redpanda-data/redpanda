@@ -30,14 +30,19 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "random/generators.h"
-#include "test_utils/fixture.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <boost/test/unit_test.hpp>
+
 #include <chrono>
 #include <optional>
+
+#if defined(IS_GTEST)
+#error "this fixture is not gtest compatible because it uses boost assertions"
+#endif
 
 constexpr uint64_t node_size = 200_MiB;
 constexpr uint64_t full_node_free_size = 5_MiB;

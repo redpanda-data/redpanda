@@ -9,6 +9,7 @@
 
 from time import time
 
+from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -28,7 +29,7 @@ class NodeMetricsTest(RedpandaTest):
 
     topics = (TopicSpec(),)  # override
 
-    def __init__(self, test_ctx):
+    def __init__(self, test_ctx: TestContext):
         super().__init__(test_context=test_ctx)
         self.node_metrics = NodeMetrics(self.redpanda)
 

@@ -1,6 +1,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "cluster/tests/rebalancing_tests_fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sstring.hh>

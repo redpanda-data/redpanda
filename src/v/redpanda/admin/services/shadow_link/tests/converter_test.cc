@@ -13,6 +13,8 @@
 
 #include <gtest/gtest.h>
 
+#include <utility>
+
 using namespace std::chrono_literals;
 
 namespace {
@@ -409,7 +411,8 @@ TEST(converter_test, create_with_metadata_sync_options) {
       proto::admin::pattern_type::prefix,
       proto::admin::filter_type::exclude,
       "test-prefix-exclude"));
-    topic_metadata_sync_options.set_topic_filters(std::move(filters));
+    topic_metadata_sync_options.set_auto_create_shadow_topic_filters(
+      std::move(filters));
     topic_metadata_sync_options.set_shadowed_topic_properties({"prop"});
 
     shadow_link_client_options.set_bootstrap_servers({"localhost:9092"});
@@ -688,7 +691,8 @@ TEST(converter_test, metadata_to_shadow_link_topic_mirroring_cfg) {
       "test-prefix-exclude"));
 
     EXPECT_EQ(
-      topic_metadata_sync_options.get_topic_filters(), expected_filters);
+      topic_metadata_sync_options.get_auto_create_shadow_topic_filters(),
+      expected_filters);
 }
 
 proto::admin::shadow_topic_status create_shadow_topic_status(
@@ -940,4 +944,104 @@ TEST(converter_test, test_update_tls_value) {
     EXPECT_EQ(
       std::get<cluster_link::model::tls_value>(*update_cmd.connection.cert),
       "new-cert");
+}
+
+TEST(converter_test, metadata_to_shadow_link_security) {
+    cluster_link::model::metadata md;
+    md.configuration.security_settings_sync_cfg.task_interval = 10s;
+    md.configuration.security_settings_sync_cfg.acl_filters.emplace_back(
+      cluster_link::model::acl_filter{
+        .resource_filter = cluster_link::model::
+          acl_resource_filter{.resource_type = cluster_link::model::acl_resource::any, .pattern_type = cluster_link::model::acl_pattern::any, .name = "*"},
+        .access_filter = cluster_link::model::
+          acl_access_filter{.principal = "User:*", .operation = cluster_link::model::acl_operation::any, .permission_type = cluster_link::model::acl_permission_type::any, .host = "*"},
+      });
+
+    auto sl = admin::metadata_to_shadow_link(std::move(md));
+
+    const auto& security_settings
+      = sl.get_configurations().get_security_sync_options();
+
+    EXPECT_EQ(security_settings.get_interval(), absl::Seconds(10));
+    ASSERT_EQ(security_settings.get_acl_filters().size(), 1);
+
+    const auto& filter = security_settings.get_acl_filters()[0];
+    EXPECT_EQ(filter.get_access_filter().get_principal(), "User:*");
+    EXPECT_EQ(
+      filter.get_access_filter().get_operation(),
+      proto::admin::acl_operation::any);
+    EXPECT_EQ(
+      filter.get_access_filter().get_permission_type(),
+      proto::admin::acl_permission_type::any);
+    EXPECT_EQ(filter.get_access_filter().get_host(), "*");
+
+    EXPECT_EQ(
+      filter.get_resource_filter().get_resource_type(),
+      proto::admin::acl_resource::any);
+    EXPECT_EQ(
+      filter.get_resource_filter().get_pattern_type(),
+      proto::admin::acl_pattern::any);
+    EXPECT_EQ(filter.get_resource_filter().get_name(), "*");
+}
+
+TEST(converter_test, shadow_link_to_metadata_security) {
+    proto::admin::shadow_link shadow_link;
+    proto::admin::create_shadow_link_request req;
+    proto::admin::shadow_link_configurations shadow_link_configurations;
+    proto::admin::security_settings_sync_options security_settings;
+    proto::admin::shadow_link_client_options shadow_link_client_options;
+
+    shadow_link_client_options.set_bootstrap_servers({"localhost:9092"});
+    shadow_link_configurations.set_client_options(
+      std::move(shadow_link_client_options));
+
+    security_settings.set_interval(absl::Seconds(10));
+    chunked_vector<proto::admin::acl_filter> filters;
+    proto::admin::acl_filter filter;
+    proto::admin::acl_resource_filter resource_filter;
+    resource_filter.set_resource_type(proto::admin::acl_resource::any);
+    resource_filter.set_pattern_type(proto::admin::acl_pattern::any);
+    resource_filter.set_name("*");
+    filter.set_resource_filter(std::move(resource_filter));
+
+    proto::admin::acl_access_filter access_filter;
+    access_filter.set_host("*");
+    access_filter.set_principal("User:*");
+    access_filter.set_operation(proto::admin::acl_operation::any);
+    access_filter.set_permission_type(proto::admin::acl_permission_type::any);
+    filter.set_access_filter(std::move(access_filter));
+
+    filters.emplace_back(std::move(filter));
+    security_settings.set_acl_filters(std::move(filters));
+    shadow_link_configurations.set_security_sync_options(
+      std::move(security_settings));
+
+    shadow_link.set_configurations(std::move(shadow_link_configurations));
+    shadow_link.set_name("test-link");
+
+    req.set_shadow_link(std::move(shadow_link));
+
+    auto md = admin::convert_create_to_metadata(std::move(req));
+
+    const auto& model_security = md.configuration.security_settings_sync_cfg;
+    EXPECT_EQ(model_security.get_task_interval(), 10s);
+    ASSERT_EQ(model_security.acl_filters.size(), 1);
+    const auto& acl_filter = model_security.acl_filters[0];
+
+    EXPECT_EQ(acl_filter.access_filter.principal, "User:*");
+    EXPECT_EQ(acl_filter.access_filter.host, "*");
+    EXPECT_EQ(
+      acl_filter.access_filter.operation,
+      cluster_link::model::acl_operation::any);
+    EXPECT_EQ(
+      acl_filter.access_filter.permission_type,
+      cluster_link::model::acl_permission_type::any);
+
+    EXPECT_EQ(
+      acl_filter.resource_filter.resource_type,
+      cluster_link::model::acl_resource::any);
+    EXPECT_EQ(
+      acl_filter.resource_filter.pattern_type,
+      cluster_link::model::acl_pattern::any);
+    EXPECT_EQ(acl_filter.resource_filter.name, "*");
 }

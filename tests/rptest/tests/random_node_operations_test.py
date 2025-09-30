@@ -12,6 +12,11 @@ import random
 import re
 import threading
 from enum import Enum
+from typing import Any
+from logging import Logger
+
+from ducktape.cluster.cluster import ClusterNode
+from ducktape.tests.test import TestContext
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
@@ -31,8 +36,10 @@ from rptest.services.kgo_verifier_services import (
 from rptest.services.redpanda import (
     CHAOS_LOG_ALLOW_LIST,
     PREV_VERSION_LOG_ALLOW_LIST,
+    CloudStorageType,
     LoggingConfig,
     PandaproxyConfig,
+    RedpandaService,
     SISettings,
     SchemaRegistryConfig,
     get_cloud_storage_type,
@@ -73,10 +80,17 @@ class CompactionMode(str, Enum):
     ADJACENT_MERGE = "adjacent_merge"
 
 
-class RandomNodeOperationsTest(PreallocNodesTest):
-    def __init__(self, test_context, *args, **kwargs):
-        self.admin_fuzz = None
-        self.should_skip = False
+RNOT_ALLOW_LIST = CHAOS_LOG_ALLOW_LIST + PREV_VERSION_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST
+
+
+class RandomNodeOperationsBase(PreallocNodesTest):
+    def __init__(
+        self,
+        test_context: TestContext,
+        *args: Any,
+        is_smoke_test: bool = False,
+        **kwargs: Any,
+    ):
         super().__init__(
             test_context=test_context,
             num_brokers=5,
@@ -108,11 +122,16 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                     "cloud_storage": "debug",
                     "cloud_io": "debug",
                     "kafka": "debug",
+                    "reconciler": "debug",
                 },
             ),
             *args,
             **kwargs,
         )
+
+        self.admin_fuzz = None
+        self.should_skip = False
+        self.is_smoke_test = is_smoke_test
         self.nodes_with_prev_version = []
         self.installer = self.redpanda._installer
         self.previous_version = self.installer.highest_from_prior_feature_version(
@@ -133,16 +152,14 @@ class RandomNodeOperationsTest(PreallocNodesTest):
     def min_producer_records(self):
         return 20 * self.producer_throughput
 
-    def _create_topics(self, count):
-        topics = []
-        for _ in range(0, count):
-            spec = TopicSpec(
+    def _create_topics(self, count: int):
+        def rand_topic():
+            return TopicSpec(
                 partition_count=random.randint(1, self.max_partitions),
                 replication_factor=3,
             )
-            topics.append(spec)
 
-        for spec in topics:
+        for spec in [rand_topic() for _ in range(count)]:
             DefaultClient(self.redpanda).create_topic(spec)
 
     def tearDown(self):
@@ -166,37 +183,52 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         self.producer_timeout = 180
         self.consumer_timeout = 180
 
+        self.topic_count = 10
+        self.max_partitions = 32
+
         if self.redpanda.dedicated_nodes:
             # scale test setup
-            self.max_partitions = 32
             self.producer_throughput = 20000
             self.node_operations = 30
             self.msg_size = 1024  # 1KiB
             self.rate_limit = 100 * 1024 * 1024  # 100 MBps
             self.total_data = 5 * 1024 * 1024 * 1024
         else:
-            self.max_partitions = 32
             self.producer_throughput = 1000 if self.debug_mode else 10000
             self.node_operations = 10
             self.msg_size = 128
             self.rate_limit = 1024 * 1024
             self.total_data = 50 * 1024 * 1024
 
+        # if we are in smoke_test mode, reduce the scale of the test by a lot
+        # to make it go fast, primarily by dropping the number of partitions
+        if self.is_smoke_test:
+            self.max_partitions = 2
+            # for an even faster test, while iterating, reduce the number of
+            # operations to 1
+            self.node_operations = 10
+
         # Tip off the end-of-test controller log validation that we will
         # create a large number of records, scaling with partition count
         # and operation count.
         self.redpanda.set_expected_controller_records(
-            self.max_partitions * self.node_operations * 10
+            self.max_partitions * self.node_operations * self.topic_count
         )
 
-        self.consumers_count = int(self.max_partitions / 4)
+        self.consumers_count = math.ceil(self.max_partitions / 4)
+        assert self.consumers_count > 0
         self.msg_count = int(self.total_data / self.msg_size)
+        assert self.msg_count > 0
 
         self.logger.info(
             f"running test with: [message_size {self.msg_size},  total_bytes: {self.total_data}, message_count: {self.msg_count}, rate_limit: {self.rate_limit}, cluster_operations: {self.node_operations}]"
         )
 
-    def _start_redpanda(self, mixed_versions, with_iceberg, compaction_mode):
+        self.logger.info(f"RandomNodeOperationsBase object after setup: {self}")
+
+    def _start_redpanda(
+        self, mixed_versions: bool, with_iceberg: bool, compaction_mode: CompactionMode
+    ):
         # since this test is deleting topics we must tolerate missing manifests
         self._si_settings.set_expected_damage(
             {"ntr_no_topic_manifest", "ntpr_no_manifest"}
@@ -247,7 +279,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             "membership_change_controller_cmds", "active", timeout_sec=30
         )
 
-    def _alter_local_topic_retention_bytes(self, topic, retention_bytes):
+    def _alter_local_topic_retention_bytes(self, topic: str, retention_bytes: int):
         rpk = RpkTool(self.redpanda)
 
         def alter_and_verify():
@@ -263,7 +295,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                     cfgs[TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES][0]
                 )
                 return retention == retention_bytes
-            except:
+            except Exception:
                 return False
 
         wait_until(alter_and_verify, 15, 0.5)
@@ -271,18 +303,18 @@ class RandomNodeOperationsTest(PreallocNodesTest):
     class producer_consumer:
         def __init__(
             self,
-            test_context,
-            logger,
-            topic_name,
-            redpanda,
-            nodes,
-            msg_size,
-            rate_limit_bps,
-            msg_count,
-            consumers_count,
-            compaction_enabled=False,
-            key_set_cardinality=None,
-            tolerate_data_loss=False,
+            test_context: TestContext,
+            logger: Logger,
+            topic_name: str,
+            redpanda: RedpandaService,
+            nodes: list[ClusterNode],
+            msg_size: int,
+            rate_limit_bps: int,
+            msg_count: int,
+            consumers_count: int,
+            compaction_enabled: bool = False,
+            key_set_cardinality: int | None = None,
+            tolerate_data_loss: bool = False,
         ):
             self.test_context = test_context
             self.logger = logger
@@ -318,7 +350,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 backoff_sec=1,
             )
 
-        def _start_consumer(self, with_logs=False):
+        def _start_consumer(self, with_logs: bool = False):
             self.consumer = KgoVerifierConsumerGroupConsumer(
                 self.test_context,
                 self.redpanda,
@@ -384,33 +416,13 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 topic_spec.name, TopicSpec.PROPERTY_ICEBERG_MODE, "key_value"
             )
 
-    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
-    @skip_fips_mode
-    @skip_debug_mode
-    @cluster(
-        num_nodes=9,
-        log_allow_list=CHAOS_LOG_ALLOW_LIST
-        + PREV_VERSION_LOG_ALLOW_LIST
-        + TS_LOG_ALLOW_LIST,
-    )
-    @matrix(
-        enable_failures=[True, False],
-        mixed_versions=[True, False],
-        with_iceberg=[True, False],
-        compaction_mode=[
-            CompactionMode.SLIDING_WINDOW,
-            CompactionMode.CHUNKED_SLIDING_WINDOW,
-            CompactionMode.ADJACENT_MERGE,
-        ],
-        cloud_storage_type=get_cloud_storage_type(),
-    )
-    def test_node_operations(
+    def _do_test_node_operations(
         self,
-        enable_failures,
-        mixed_versions,
-        with_iceberg,
-        compaction_mode,
-        cloud_storage_type,
+        enable_failures: bool,
+        mixed_versions: bool,
+        with_iceberg: bool,
+        compaction_mode: CompactionMode,
+        cloud_storage_type: CloudStorageType,
     ):
         # In order to reduce the number of parameters and at the same time cover
         # as many use cases as possible this test uses 3 topics which 3 separate
@@ -468,7 +480,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         client = DefaultClient(self.redpanda)
 
         # create some initial topics
-        self._create_topics(10)
+        self._create_topics(self.topic_count)
         regular_topic = TopicSpec(
             name="tp-workload-deletion",
             partition_count=self.max_partitions,
@@ -488,7 +500,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             regular_topic.name, 3 * default_segment_size
         )
 
-        regular_producer_consumer = RandomNodeOperationsTest.producer_consumer(
+        regular_producer_consumer = RandomNodeOperationsBase.producer_consumer(
             test_context=self.test_context,
             logger=self.logger,
             topic_name=regular_topic.name,
@@ -512,7 +524,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         client.create_topic(compacted_topic)
         self.maybe_enable_iceberg_for_topic(compacted_topic, with_iceberg)
 
-        compacted_producer_consumer = RandomNodeOperationsTest.producer_consumer(
+        compacted_producer_consumer = RandomNodeOperationsBase.producer_consumer(
             test_context=self.test_context,
             logger=self.logger,
             topic_name=compacted_topic.name,
@@ -551,7 +563,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             fast_topic.name, 8 * default_segment_size
         )
         self.maybe_enable_iceberg_for_topic(fast_topic, with_iceberg)
-        fast_producer_consumer = RandomNodeOperationsTest.producer_consumer(
+        fast_producer_consumer = RandomNodeOperationsBase.producer_consumer(
             test_context=self.test_context,
             logger=self.logger,
             topic_name=fast_topic.name,
@@ -566,6 +578,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         fast_producer_consumer.start()
 
         write_caching_enabled = enable_write_caching_testing()
+        write_caching_producer_consumer = None
         if write_caching_enabled:
             cleanup_policy = TopicSpec._random_cleanup_policy()
             tp_suffix = cleanup_policy.replace(",", "-")
@@ -584,7 +597,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             )
             self.maybe_enable_iceberg_for_topic(write_caching_topic, with_iceberg)
             write_caching_producer_consumer = (
-                RandomNodeOperationsTest.producer_consumer(
+                RandomNodeOperationsBase.producer_consumer(
                     test_context=self.test_context,
                     logger=self.logger,
                     topic_name=write_caching_topic.name,
@@ -611,7 +624,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         )
 
         self.admin_fuzz.start()
-        self.active_node_idxs = set([self.redpanda.idx(n) for n in self.redpanda.nodes])
+        self.active_node_idxs = {self.redpanda.idx(n) for n in self.redpanda.nodes}
 
         fi = None
         if enable_failures:
@@ -702,3 +715,84 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             if log_viewer.has_controller_snapshot(node):
                 controller_snapshot = log_viewer.read_controller_snapshot(node)
                 self.logger.info(f"Read controller snapshot: {controller_snapshot} ")
+
+    def __str__(self):
+        fields = [
+            f"test_context={self.test_context!r}",
+            f"admin_fuzz={self.admin_fuzz!r}",
+            f"should_skip={self.should_skip!r}",
+            f"is_smoke_test={self.is_smoke_test!r}",
+            f"nodes_with_prev_version={self.nodes_with_prev_version!r}",
+            f"previous_version={self.previous_version!r}",
+            f"catalog_service={self.catalog_service!r}",
+            f"producer_timeout={getattr(self, 'producer_timeout', None)!r}",
+            f"consumer_timeout={getattr(self, 'consumer_timeout', None)!r}",
+            f"topic_count={getattr(self, 'topic_count', None)!r}",
+            f"max_partitions={getattr(self, 'max_partitions', None)!r}",
+            f"producer_throughput={getattr(self, 'producer_throughput', None)!r}",
+            f"node_operations={getattr(self, 'node_operations', None)!r}",
+            f"msg_size={getattr(self, 'msg_size', None)!r}",
+            f"rate_limit={getattr(self, 'rate_limit', None)!r}",
+            f"total_data={getattr(self, 'total_data', None)!r}",
+            f"consumers_count={getattr(self, 'consumers_count', None)!r}",
+            f"msg_count={getattr(self, 'msg_count', None)!r}",
+            f"redpanda={getattr(self, 'redpanda', None)!r}",
+        ]
+        return f"<RandomNodeOperationsBase {', '.join(fields)}>"
+
+
+class RandomNodeOperationsTest(RandomNodeOperationsBase):
+    """
+    Main test for RNOT test with all the parameterization.
+    """
+
+    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
+    @skip_fips_mode
+    @skip_debug_mode
+    @cluster(num_nodes=9, log_allow_list=RNOT_ALLOW_LIST)
+    @matrix(
+        enable_failures=[True, False],
+        mixed_versions=[True, False],
+        with_iceberg=[True, False],
+        compaction_mode=[
+            CompactionMode.SLIDING_WINDOW,
+            CompactionMode.CHUNKED_SLIDING_WINDOW,
+            CompactionMode.ADJACENT_MERGE,
+        ],
+        cloud_storage_type=get_cloud_storage_type(),
+    )
+    def test_node_operations(self, **kwargs: Any):
+        self._do_test_node_operations(**kwargs)
+
+
+class RedpandaNodeOperationsSmokeTest(RandomNodeOperationsBase):
+    """
+    Smoke test for RNOT.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs, is_smoke_test=True)
+
+    @cluster(num_nodes=9, log_allow_list=RNOT_ALLOW_LIST)
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type()[:1], mixed_versions=[True, False]
+    )
+    def test_node_ops_smoke_test(
+        self, cloud_storage_type: CloudStorageType, mixed_versions: bool
+    ):
+        """
+        Smoke test for node operations, run with a reduced workload and only two
+        parameterizations, that we think is the most useful.
+        """
+
+        # iceberg and mixed versions are mutually incompatible, so run two
+        # flavors of the smoke test, one with iceberg and one with mixed versions
+        with_iceberg = not mixed_versions
+        self._do_test_node_operations(
+            enable_failures=True,
+            mixed_versions=mixed_versions,
+            with_iceberg=with_iceberg,
+            # https://redpandadata.slack.com/archives/C02BDN76HUK/p1750974997157089?thread_ts=1750974846.673979&cid=C02BDN76HUK
+            compaction_mode=CompactionMode.SLIDING_WINDOW,
+            cloud_storage_type=cloud_storage_type,
+        )

@@ -83,9 +83,10 @@ class ProducerConsumerWorkload(PWorkload):
         self._seq_consumer.start(clean=False)
 
     def end(self):
-        self._producer.stop()
         self._producer.wait()
+        self._producer.stop()
         self._seq_consumer.wait()
+        self._seq_consumer.stop()
         wrote_at_least = self._producer.produce_status.acked
         assert (
             self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least

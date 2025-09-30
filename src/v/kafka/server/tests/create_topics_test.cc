@@ -20,7 +20,7 @@
 #include "model/errc.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>

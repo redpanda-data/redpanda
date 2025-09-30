@@ -9,10 +9,8 @@ redpanda_cc_bench(
     ],
     deps = [
         "//src/v/bytes:iobuf",
-        "//src/v/cluster",
-        "//src/v/model",
         "//src/v/serde",
-        "@boost//:container_hash",
+        "//src/v/serde:iobuf",
         "@seastar",
         "@seastar//:benchmark",
     ],

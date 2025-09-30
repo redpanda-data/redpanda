@@ -16,6 +16,7 @@
 #include "cluster/tests/utils.h"
 #include "cluster/types.h"
 #include "container/chunked_circular_buffer.h"
+#include "model/tests/random_batch.h"
 #include "storage/types.h"
 
 using batches_ptr_t = ss::lw_shared_ptr<batches_t>;

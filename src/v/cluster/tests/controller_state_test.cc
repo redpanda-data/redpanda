@@ -19,7 +19,7 @@
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "test_utils/async.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "utils/unresolved_address.h"
 
 #include <seastar/core/future-util.hh>

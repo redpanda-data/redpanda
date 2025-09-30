@@ -14,6 +14,7 @@
 #include "cluster/producer_state_manager.h"
 #include "cluster/rm_stm_types.h"
 #include "cluster/snapshot.h"
+#include "cluster/tx_errc.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/types.h"
 #include "container/chunked_hash_map.h"
@@ -1632,15 +1633,25 @@ void rm_stm::maybe_rearm_autoabort_timer(time_point_type deadline) {
 }
 
 ss::future<tx::errc> rm_stm::abort_all_txes() {
+    static constexpr uint max_concurrency = 5u;
     if (!co_await sync(_sync_timeout())) {
         co_return tx::errc::stale;
     }
 
     tx::errc last_err = tx::errc::none;
 
+    // snap the intrusive list produced_ids before yielding the cpu
+    chunked_vector<model::producer_identity> producer_ids_to_expire{
+      std::from_range,
+      std::ranges::views::transform(
+        _active_tx_producers,
+        [](const auto& producer) { return producer.id(); })};
+
     co_await ss::max_concurrent_for_each(
-      _active_tx_producers, 5, [this, &last_err](const auto& producer) {
-          return mark_expired(producer.id()).then([&last_err](tx::errc res) {
+      std::move(producer_ids_to_expire),
+      max_concurrency,
+      [this, &last_err](const auto producer_id) {
+          return mark_expired(producer_id).then([&last_err](tx::errc res) {
               if (res != tx::errc::none) {
                   last_err = res;
               }

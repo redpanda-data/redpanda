@@ -18,6 +18,8 @@
 #include "model/fundamental.h"
 #include "ssx/future-util.h"
 
+#include <seastar/coroutine/switch_to.hh>
+
 #include <exception>
 
 using namespace std::chrono_literals;
@@ -28,12 +30,14 @@ topic_reconciler::topic_reconciler(
   kafka::data::rpc::topic_metadata_cache* topic_metadata_cache,
   link_registry* link_registry,
   ss::lowres_clock::duration run_interval,
-  config::binding<int16_t> default_topic_replication)
+  config::binding<int16_t> default_topic_replication,
+  ss::scheduling_group scheduling_group)
   : _topic_creator(topic_creator)
   , _topic_metadata_cache(topic_metadata_cache)
   , _link_registry(link_registry)
   , _run_interval(run_interval)
-  , _default_topic_replication(std::move(default_topic_replication)) {}
+  , _default_topic_replication(std::move(default_topic_replication))
+  , _scheduling_group(scheduling_group) {}
 
 ss::future<> topic_reconciler::start() {
     vlog(cllog.info, "Starting topic reconciler");
@@ -79,6 +83,7 @@ void topic_reconciler::trigger(model::id_t link_id) {
 }
 
 ss::future<> topic_reconciler::execute(std::optional<model::id_t> link_id) {
+    co_await ss::coroutine::switch_to(_scheduling_group);
     static constexpr auto max_concurrent_reconcilations = 5;
     vlog(cllog.trace, "Executing topic reconciler, link_id: {}", link_id);
     auto units = co_await _reconciler_mutex.get_units(_as);

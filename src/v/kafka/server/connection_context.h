@@ -15,6 +15,7 @@
 #include "config/property.h"
 #include "container/chunked_hash_map.h"
 #include "kafka/server/fwd.h"
+#include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/handler_probe.h"
 #include "kafka/server/logger.h"
 #include "net/connection.h"
@@ -57,15 +58,6 @@ public:
     explicit sasl_session_expired_exception(const std::string& m)
       : std::runtime_error(m) {}
 };
-
-/*
- * authz failures should be quiet or logged at a reduced severity level.
- */
-using authz_quiet = ss::bool_class<struct authz_quiet_tag>;
-
-using audit_authz_check = ss::bool_class<struct audit_authz_check_tag>;
-
-using superuser_required = ss::bool_class<struct superuser_required_tag>;
 
 struct request_header;
 class request_context;
@@ -193,6 +185,9 @@ public:
     bool authorized_auditor() const {
         return get_principal() == security::audit_principal;
     }
+
+    // Returns true if the user is a superuser or if authz is disabled
+    bool has_superuser_access() const;
 
     ss::future<> process();
     ss::future<> process_one_request();

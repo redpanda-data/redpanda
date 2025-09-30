@@ -48,6 +48,7 @@ private:
     struct topic_metadata {
         int32_t partition_count;
         std::optional<int16_t> rf;
+        std::optional<::model::topic_id> topic_id;
     };
 
     using reconciler_commands = std::variant<

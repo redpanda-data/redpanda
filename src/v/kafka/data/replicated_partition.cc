@@ -42,7 +42,6 @@ storage::local_log_reader_config kafka_to_local_log_reader_config(
     return storage::local_log_reader_config(
       /*start_offset=*/start_offset,
       /*max_offset=*/max_offset,
-      /*min_bytes=*/cfg.min_bytes,
       /*max_bytes=*/cfg.max_bytes,
       /*type_filter=*/std::nullopt,
       /*first_timestamp=*/cfg.first_timestamp,

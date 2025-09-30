@@ -9,6 +9,8 @@ package(default_visibility = [
     "//src/v/cloud_topics/level_zero/reader/tests:__pkg__",
     "//src/v/cloud_topics/level_zero/throttler:__pkg__",
     "//src/v/cloud_topics/level_zero/throttler/tests:__pkg__",
+    "//src/v/cloud_topics/level_zero/write_request_scheduler:__pkg__",
+    "//src/v/cloud_topics/level_zero/write_request_scheduler/tests:__pkg__",
 ])
 
 redpanda_cc_library(
@@ -148,6 +150,7 @@ redpanda_cc_library(
     implementation_deps = [
         ":serializer",
         "//src/v/cloud_topics:logger",
+        "//src/v/resource_mgmt:memory_groups",
         "//src/v/ssx:sformat",
         "//src/v/utils:human",
     ],
@@ -183,6 +186,7 @@ redpanda_cc_library(
     implementation_deps = [
         ":serializer",
         "//src/v/cloud_topics:logger",
+        "//src/v/resource_mgmt:memory_groups",
         "//src/v/ssx:sformat",
         "//src/v/utils:human",
     ],

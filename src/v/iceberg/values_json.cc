@@ -521,9 +521,12 @@ struct rjson_visitor {
           fmt::format(
             "{}{}.{}",
             is_neg ? "-" : "",
-            std::string_view{&integral_part.front(), integral_part.size()},
             std::string_view{
-              &fractional_part.front(), fractional_part.size()}));
+              integral_part.empty() ? nullptr : &integral_part.front(),
+              integral_part.size()},
+            std::string_view{
+              fractional_part.empty() ? nullptr : &fractional_part.front(),
+              fractional_part.size()}));
     }
 
     void operator()(

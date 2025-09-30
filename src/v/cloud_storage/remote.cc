@@ -617,7 +617,6 @@ remote::subscribe(remote::event_filter& filter) {
     _as.check();
     auto holder = _gate.hold();
     vassert(filter._hook.is_linked() == false, "Filter is already in use");
-    filter._hook = {};
     _filters.push_back(filter);
     filter._promise.emplace();
     return filter._promise->get_future().then(

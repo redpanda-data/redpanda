@@ -14,7 +14,6 @@
 #include "redpanda/tests/fixture.h"
 #include "storage/types.h"
 #include "test_utils/async.h"
-#include "test_utils/fixture.h"
 #include "test_utils/scoped_config.h"
 #include "test_utils/test.h"
 

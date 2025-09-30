@@ -17,6 +17,7 @@
 #include "container/chunked_vector.h"
 #include "kafka/client/broker.h"
 #include "kafka/client/configuration.h"
+#include "kafka/client/types.h"
 #include "kafka/protocol/metadata.h"
 #include "model/fundamental.h"
 
@@ -61,8 +62,7 @@ public:
      * Applies the metadata response to the brokers. This method will throw if
      * any of the brokers can not be connected to.
      */
-    ss::future<>
-    apply(const chunked_vector<metadata_response::broker>& brokers);
+    ss::future<> apply(const chunked_vector<metadata_update::broker>& brokers);
 
     /// \brief Returns true if there are no connected brokers
     bool empty() const;

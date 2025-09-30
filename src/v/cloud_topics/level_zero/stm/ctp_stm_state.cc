@@ -88,4 +88,15 @@ model::offset ctp_stm_state::get_max_collectible_offset() const noexcept {
     return model::offset::min();
 }
 
+void ctp_stm_state::set_start_offset(kafka::offset new_offset) noexcept {
+    if (new_offset <= _start_offset) {
+        return;
+    }
+    _start_offset = new_offset;
+}
+
+kafka::offset ctp_stm_state::start_offset() const noexcept {
+    return _start_offset;
+}
+
 } // namespace cloud_topics

@@ -245,7 +245,6 @@ recovery_stm::read_range_for_recovery(
     storage::local_log_reader_config cfg(
       start_offset,
       model::offset::max(),
-      1,
       read_size,
       std::nullopt,
       std::nullopt,

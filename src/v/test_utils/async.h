@@ -10,10 +10,11 @@
  */
 
 #pragma once
+
 #include "base/seastarx.h"
-#include "base/vassert.h"
+#include "base/vassert.h" // IWYU pragma: keep; macro expansion
 #include "model/timeout_clock.h"
-#include "ssx/sformat.h"
+#include "ssx/sformat.h" // IWYU pragma: keep; macro expansion
 #include "test_utils/test_macros.h"
 
 #include <seastar/core/future-util.hh>

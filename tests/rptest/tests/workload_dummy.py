@@ -7,16 +7,19 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from typing import Any
 import uuid
+
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.redpanda_installer import RedpandaVersionTriple
 from rptest.services.workload_protocol import PWorkload
 from rptest.tests.redpanda_test import RedpandaTest
 
 
 class DummyWorkload(PWorkload):
-    def __init__(self, ctx) -> None:
+    def __init__(self, ctx: RedpandaTest) -> None:
         self.ctx = ctx
 
     def get_earliest_applicable_release(self):
@@ -34,7 +37,9 @@ class DummyWorkload(PWorkload):
     def end(self):
         self.ctx.logger.info("end: no-op")
 
-    def on_partial_cluster_upgrade(self, versions) -> int:
+    def on_partial_cluster_upgrade(
+        self, versions: dict[Any, RedpandaVersionTriple]
+    ) -> int:
         self.ctx.logger.info(
             f"partial_progress called with versions={ {n.account.hostname: v for n, v in versions.items()} }"
         )

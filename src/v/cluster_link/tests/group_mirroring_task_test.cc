@@ -277,7 +277,9 @@ public:
     }
 
     ss::future<kafka::client::response_t> handle_find_coordinator_request(
-      ::model::node_id, kafka::client::request_t req, kafka::api_version) {
+      ::model::node_id,
+      kafka::client::request_t req,
+      kafka::api_version version) {
         auto fc_req = std::get<kafka::find_coordinator_request>(std::move(req));
         if (fc_req.data.key_type != kafka::coordinator_type::group) {
             co_return kafka::find_coordinator_response{
@@ -285,21 +287,37 @@ public:
               ssx::sformat(
                 "Unsupported coordinator type: {}", fc_req.data.key_type)};
         }
-
-        kafka::group_id gr{std::move(fc_req.data.key)};
-        auto it = source_cluster_group.find(gr);
-        if (it == source_cluster_group.end()) {
-            co_return kafka::find_coordinator_response{
-              kafka::error_code::coordinator_not_available,
-              ssx::sformat("Unknown group: {}", gr)};
+        // older versions only support single key
+        if (version < kafka::api_version(4)) {
+            auto coordinator = do_find_coordinator(
+              kafka::group_id(std::move(fc_req.data.key)));
+            co_return kafka::find_coordinator_response(
+              coordinator.node_id, coordinator.host, coordinator.port);
         }
 
-        co_return kafka::find_coordinator_response{
-          kafka::error_code::none,
-          std::nullopt,
-          it->second.coordinator_id,
-          "localhost",
-          9092};
+        kafka::find_coordinator_response resp;
+        resp.data.error_code = kafka::error_code::none;
+        for (auto& key : fc_req.data.coordinator_keys) {
+            kafka::coordinator coordinator = do_find_coordinator(
+              kafka::group_id(std::move(key)));
+            resp.data.coordinators.push_back(std::move(coordinator));
+        }
+        co_return resp;
+    }
+
+    kafka::coordinator do_find_coordinator(const kafka::group_id& group) {
+        auto it = source_cluster_group.find(group);
+        if (it == source_cluster_group.end()) {
+            throw std::runtime_error(ssx::sformat("Unknown group: {}", group));
+        }
+
+        return kafka::coordinator{
+          .key = group,
+          .node_id = it->second.coordinator_id,
+          .host = "localhost",
+          .port = 9092,
+          .error_code = kafka::error_code::none,
+          .error_message = std::nullopt};
     }
 
     ss::future<kafka::client::response_t> handle_offset_fetch_request(
@@ -378,6 +396,47 @@ TEST_F(group_mirroring_task_test, check_if_task_follows_the_leader) {
  */
 TEST_F(group_mirroring_task_test, test_happy_path_offsets_mirroring) {
     make_current_node_leader_for({0, 1, 2, 3});
+    fixture()->upsert_link(get_default_metadata()).get();
+
+    bool is_active = wait_for_task_state(model::task_state::active).get();
+    ASSERT_TRUE(is_active);
+
+    // set consumer group offsets
+
+    kafka::group_id test_group("t-group");
+
+    consumer_group_metadata metadata;
+    metadata.group_id = test_group;
+    metadata.coordinator_id = ::model::node_id(0);
+    source_cluster_group[test_group] = std::move(metadata);
+
+    set_source_cluster_group_offsets(
+      test_group, {{"t-topic", {{0, 100}, {4, 312}}}});
+    set_source_cluster_high_watermark(
+      {{"t-topic", {{0, 1000}, {1, 1000}, {4, 1000}}}});
+    /**
+     * Verify if offset is mirrored
+     */
+    wait_for_mirrored_offsets(test_group, {{"t-topic", {{0, 100}, {4, 312}}}})
+      .get();
+    set_source_cluster_group_offsets(
+      test_group, {{"t-topic", {{0, 0}, {4, 312}, {1, 10}}}});
+
+    wait_for_mirrored_offsets(
+      test_group, {{"t-topic", {{0, 0}, {4, 312}, {1, 10}}}})
+      .get();
+}
+
+TEST_F(group_mirroring_task_test, test_find_coordinator_v3) {
+    make_current_node_leader_for({0, 1, 2, 3});
+    for (int i = 0; i < 3; ++i) {
+        ::model::node_id id{i};
+        fixture()->get_cluster_mock().set_supported_versions(
+          id,
+          kafka::find_coordinator_api::key,
+          {.min = kafka::find_coordinator_api::min_valid,
+           .max = kafka::api_version(3)});
+    }
     fixture()->upsert_link(get_default_metadata()).get();
 
     bool is_active = wait_for_task_state(model::task_state::active).get();

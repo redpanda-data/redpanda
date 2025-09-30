@@ -69,7 +69,6 @@ read_recovery_stages(cluster::partition& controller_prt) {
     storage::local_log_reader_config reader_config(
       model::offset(0),
       controller_prt.raft()->committed_offset(),
-      0,
       std::numeric_limits<size_t>::max(),
       model::record_batch_type::cluster_recovery_cmd,
       std::nullopt,

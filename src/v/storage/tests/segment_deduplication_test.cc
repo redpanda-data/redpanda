@@ -53,7 +53,13 @@ void add_segments(
         auto offset = start_offset + i * records_per_seg;
         b | add_segment(offset)
           | add_random_batch(
-            offset, records_per_seg, maybe_compress_batches::yes);
+            offset,
+            records_per_seg,
+            maybe_compress_batches::yes,
+            model::record_batch_type::raft_data,
+            append_config(),
+            disk_log_builder::should_flush_after::yes,
+            model::timestamp::min());
     }
     for (auto& seg : disk_log.segments()) {
         if (mark_compacted) {

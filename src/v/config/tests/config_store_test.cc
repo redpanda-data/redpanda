@@ -606,22 +606,13 @@ aliased_bool_legacy: false
       "if a key is managed by the config, it will be set and "
       "the ignored_missing list does not matter") {
         auto cfg = test_config{};
-        BOOST_REQUIRE_NO_THROW(cfg.read_yaml(
-          yaml_with_unknown_properties,
-          {"secret_string", "aliased_bool_legacy"}));
+        BOOST_REQUIRE_NO_THROW(cfg.read_yaml(yaml_with_unknown_properties));
         BOOST_CHECK_EQUAL(cfg.secret_string.value(), "terces");
         BOOST_CHECK_EQUAL(cfg.aliased_bool.value(), false);
     }
-    BOOST_TEST_CONTEXT("an unknow key will generate an exception") {
+    BOOST_TEST_CONTEXT("an unknown key will not generate an exception") {
         auto noop_cfg = noop_config{};
-        BOOST_REQUIRE_THROW(
-          noop_cfg.read_yaml(yaml_with_unknown_properties),
-          std::invalid_argument);
-    }
-    BOOST_TEST_CONTEXT("unknown keys that are accounted for are fine") {
-        auto noop_cfg = noop_config{};
-        BOOST_REQUIRE_NO_THROW(noop_cfg.read_yaml(
-          yaml_with_unknown_properties,
-          test_config{}.property_names_and_aliases()));
+        BOOST_REQUIRE_NO_THROW(
+          noop_cfg.read_yaml(yaml_with_unknown_properties));
     }
 }

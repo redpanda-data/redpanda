@@ -20,6 +20,7 @@
 #include "kafka/client/test/cluster_mock.h"
 #include "kafka/data/rpc/deps.h"
 #include "kafka/data/rpc/test/deps.h"
+#include "security/acl_entry_set.h"
 
 #include <seastar/util/defer.hh>
 
@@ -250,6 +251,10 @@ public:
         _impl->remove_shard_owner(ntp);
     }
 
+    bool is_current_shard_leader(const ::model::ntp& ntp) const final {
+        return _impl->shard_owner(ntp) == ss::this_shard_id();
+    }
+
     ss::future<::result<::model::offset, cluster::errc>> invoke_on_shard(
       ss::shard_id shard_id,
       const ::model::ktp& ktp,
@@ -445,6 +450,32 @@ struct test_partition_metadata_provider : public partition_metadata_provider {
     chunked_hash_map<::model::topic_partition, kafka::offset> hwms;
 };
 
+class fake_security_service : public security_service {
+public:
+    ss::future<std::vector<cluster::errc>> create_acls(
+      std::vector<security::acl_binding> bindings,
+      ::model::timeout_clock::duration) final {
+        std::vector<cluster::errc> results;
+        results.reserve(bindings.size());
+        for (auto& binding : bindings) {
+            auto& entries = _acls[binding.pattern()];
+            entries.insert(binding.entry());
+            entries.rehash();
+            results.emplace_back(cluster::errc::success);
+        }
+
+        co_return results;
+    }
+
+    const auto& acls() { return _acls; }
+
+private:
+    using container_type
+      = chunked_hash_map<security::resource_pattern, security::acl_entry_set>;
+
+    container_type _acls;
+};
+
 class cluster_link_manager_test_fixture {
 public:
     explicit cluster_link_manager_test_fixture(::model::node_id self);
@@ -523,6 +554,8 @@ public:
       std::function<bool(const model::cluster_link_task_status_report&)>
         predicate);
 
+    fake_security_service& security_service() { return *_fss; }
+
 private:
     void setup_cluster_mock();
 
@@ -537,6 +570,7 @@ private:
     fake_partition_leader_cache_impl* _fplci{nullptr};
     fake_topic_metadata_cache* _tmc{nullptr};
     kafka::data::rpc::test::fake_topic_creator* _ftpc{nullptr};
+    fake_security_service* _fss{nullptr};
     link_factory* _lf{nullptr};
     test_consumer_group_router* _consumer_group_router{nullptr};
     test_partition_metadata_provider* _partition_metadata_provider{nullptr};

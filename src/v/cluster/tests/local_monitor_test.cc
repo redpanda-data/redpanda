@@ -13,7 +13,9 @@
 #include "cluster/logger.h"
 #include "cluster/tests/local_monitor_fixture.h"
 #include "config/configuration.h"
+#include "random/generators.h"
 #include "redpanda/tests/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sstring.hh>

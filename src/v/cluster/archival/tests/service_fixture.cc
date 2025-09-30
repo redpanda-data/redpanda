@@ -232,23 +232,6 @@ archiver_fixture::get_configurations() {
       ss::make_lw_shared<archival::configuration>(aconf), cconf);
 }
 
-std::unique_ptr<storage::disk_log_builder>
-archiver_fixture::get_started_log_builder(
-  model::ntp ntp, model::revision_id rev) {
-    storage::ntp_config ntp_cfg(
-      std::move(ntp),
-      config::node().data_directory().as_sstring(),
-      nullptr,
-      rev);
-
-    auto conf = storage::log_config(
-      config::node().data_directory().as_sstring(),
-      1_MiB,
-      storage::make_sanitized_file_config());
-    auto builder = std::make_unique<storage::disk_log_builder>(std::move(conf));
-    builder->start(std::move(ntp_cfg)).get();
-    return builder;
-}
 /// Wait unill all information will be replicated and the local node
 /// will become a leader for 'ntp'.
 void archiver_fixture::wait_for_partition_leadership(const model::ntp& ntp) {

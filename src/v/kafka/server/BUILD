@@ -76,6 +76,26 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "security",
+    srcs = [
+        "handlers/details/security.cc",
+    ],
+    hdrs = [
+        "handlers/details/security.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol/schemata:create_acls_request",
+        "//src/v/kafka/protocol/schemata:delete_acls_request",
+        "//src/v/kafka/protocol/schemata:describe_acls_request",
+        "//src/v/kafka/protocol/schemata:describe_acls_response",
+        "//src/v/model",
+        "//src/v/security",
+    ],
+)
+
+redpanda_cc_library(
     name = "server",
     srcs = [
         "client_quota_translator.cc",
@@ -108,7 +128,6 @@ redpanda_cc_library(
         "handlers/describe_producers.cc",
         "handlers/describe_transactions.cc",
         "handlers/describe_user_scram_credentials.cc",
-        "handlers/details/security.cc",
         "handlers/fetch.cc",
         "handlers/find_coordinator.cc",
         "handlers/handler_interface.cc",
@@ -181,7 +200,6 @@ redpanda_cc_library(
         "handlers/describe_user_scram_credentials.h",
         "handlers/details/alter_config_utils.h",
         "handlers/details/leader_epoch.h",
-        "handlers/details/security.h",
         "handlers/end_txn.h",
         "handlers/fetch.h",
         "handlers/fetch/fetch_plan_executor.h",
@@ -237,6 +255,7 @@ redpanda_cc_library(
         ":datalake_usage_api",
         ":logger",
         ":qdc_monitor_config",
+        ":security",
         ":topic_config_utils",
         "//src/v/base",
         "//src/v/bytes",

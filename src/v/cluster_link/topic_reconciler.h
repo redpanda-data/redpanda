@@ -28,7 +28,8 @@ public:
       kafka::data::rpc::topic_metadata_cache* topic_metadata_cache,
       link_registry* link_registry,
       ss::lowres_clock::duration run_interval,
-      config::binding<int16_t> default_topic_replication);
+      config::binding<int16_t> default_topic_replication,
+      ss::scheduling_group sg);
     topic_reconciler(const topic_reconciler&) = delete;
     topic_reconciler(topic_reconciler&&) = delete;
     topic_reconciler& operator=(const topic_reconciler&) = delete;
@@ -79,6 +80,7 @@ private:
     ss::timer<ss::lowres_clock> _reconciler_timer;
     ss::lowres_clock::duration _run_interval;
     config::binding<int16_t> _default_topic_replication;
+    ss::scheduling_group _scheduling_group;
     ss::abort_source _as;
     ss::gate _gate;
 };

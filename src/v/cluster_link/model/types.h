@@ -401,6 +401,190 @@ struct consumer_groups_mirroring_config
     operator<<(std::ostream& os, const consumer_groups_mirroring_config& cfg);
 };
 
+enum class acl_resource : uint8_t {
+    any,
+    cluster,
+    group,
+    topic,
+    txn_id,
+    schema_registry_subject,
+    schema_registry_global,
+    schema_registry_any
+};
+
+static constexpr std::string_view to_string_view(acl_resource r) {
+    switch (r) {
+    case acl_resource::any:
+        return "any";
+    case acl_resource::cluster:
+        return "cluster";
+    case acl_resource::group:
+        return "group";
+    case acl_resource::topic:
+        return "topic";
+    case acl_resource::txn_id:
+        return "txn_id";
+    case acl_resource::schema_registry_subject:
+        return "schema_registry_subject";
+    case acl_resource::schema_registry_global:
+        return "schema_registry_global";
+    case acl_resource::schema_registry_any:
+        return "schema_registry_any";
+    }
+    return "unknown";
+}
+
+enum class acl_pattern : uint8_t { any, literal, prefixed, match };
+
+static constexpr std::string_view to_string_view(acl_pattern p) {
+    switch (p) {
+    case acl_pattern::any:
+        return "any";
+    case acl_pattern::literal:
+        return "literal";
+    case acl_pattern::prefixed:
+        return "prefixed";
+    case acl_pattern::match:
+        return "match";
+    }
+    return "unknown";
+}
+
+enum class acl_operation : uint8_t {
+    any,
+    all,
+    read,
+    write,
+    create,
+    remove,
+    alter,
+    describe,
+    cluster_action,
+    describe_configs,
+    alter_configs,
+    idempotent_write
+};
+
+static constexpr std::string_view to_string_view(acl_operation op) {
+    switch (op) {
+    case acl_operation::any:
+        return "any";
+    case acl_operation::all:
+        return "all";
+    case acl_operation::read:
+        return "read";
+    case acl_operation::write:
+        return "write";
+    case acl_operation::create:
+        return "create";
+    case acl_operation::remove:
+        return "remove";
+    case acl_operation::alter:
+        return "alter";
+    case acl_operation::describe:
+        return "describe";
+    case acl_operation::cluster_action:
+        return "cluster_action";
+    case acl_operation::describe_configs:
+        return "describe_configs";
+    case acl_operation::alter_configs:
+        return "alter_configs";
+    case acl_operation::idempotent_write:
+        return "idempotent_write";
+    }
+    return "unknown";
+}
+
+enum class acl_permission_type : uint8_t { any, allow, deny };
+
+static constexpr std::string_view to_string_view(acl_permission_type p) {
+    switch (p) {
+    case acl_permission_type::any:
+        return "any";
+    case acl_permission_type::allow:
+        return "allow";
+    case acl_permission_type::deny:
+        return "deny";
+    }
+    return "unknown";
+}
+
+struct acl_resource_filter
+  : serde::envelope<
+      acl_resource_filter,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    acl_resource resource_type;
+    acl_pattern pattern_type;
+    ss::sstring name;
+
+    friend bool
+    operator==(const acl_resource_filter&, const acl_resource_filter&)
+      = default;
+
+    auto serde_fields() { return std::tie(resource_type, pattern_type, name); }
+};
+
+struct acl_access_filter
+  : serde::
+      envelope<acl_access_filter, serde::version<0>, serde::compat_version<0>> {
+    ss::sstring principal;
+    acl_operation operation;
+    acl_permission_type permission_type;
+    ss::sstring host;
+
+    friend bool operator==(const acl_access_filter&, const acl_access_filter&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(principal, operation, permission_type, host);
+    }
+};
+
+struct acl_filter
+  : serde::envelope<acl_filter, serde::version<0>, serde::compat_version<0>> {
+    acl_resource_filter resource_filter;
+    acl_access_filter access_filter;
+
+    friend bool operator==(const acl_filter&, const acl_filter&) = default;
+
+    auto serde_fields() { return std::tie(resource_filter, access_filter); }
+};
+
+/**
+ * Configuration for syncing security settings
+ *
+ */
+struct security_settings_sync_config
+  : serde::envelope<
+      security_settings_sync_config,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    /// Flag to indicate if the task is enabled or not
+    enabled_t is_enabled{enabled_t::yes};
+    /// Interval for the topic creation task
+    std::optional<ss::lowres_clock::duration> task_interval;
+    /// Default interval
+    static constexpr auto task_interval_default = std::chrono::seconds{30};
+
+    ss::lowres_clock::duration get_task_interval() const {
+        return task_interval.value_or(task_interval_default);
+    }
+
+    chunked_vector<acl_filter> acl_filters;
+
+    friend bool operator==(
+      const security_settings_sync_config&,
+      const security_settings_sync_config&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(is_enabled, task_interval, acl_filters);
+    }
+
+    security_settings_sync_config copy() const;
+};
+
 /**
  * Configuration of a cluster link. Configuration changes are driven by the
  * API and are a result of user actions.
@@ -414,13 +598,16 @@ struct link_configuration
     topic_metadata_mirroring_config topic_metadata_mirroring_cfg;
     /// Configuration for the consumer groups mirroring task
     consumer_groups_mirroring_config consumer_groups_mirroring_cfg;
+    security_settings_sync_config security_settings_sync_cfg;
 
     friend bool operator==(const link_configuration&, const link_configuration&)
       = default;
 
     auto serde_fields() {
         return std::tie(
-          topic_metadata_mirroring_cfg, consumer_groups_mirroring_cfg);
+          topic_metadata_mirroring_cfg,
+          consumer_groups_mirroring_cfg,
+          security_settings_sync_cfg);
     }
 
     link_configuration copy() const;
@@ -867,6 +1054,38 @@ struct fmt::formatter<cluster_link::model::cluster_link_task_status_report>
   : fmt::formatter<string_view> {
     auto format(
       const cluster_link::model::cluster_link_task_status_report& m,
+      format_context& ctx) const -> decltype(ctx.out());
+};
+
+template<>
+struct fmt::formatter<cluster_link::model::acl_resource_filter>
+  : fmt::formatter<string_view> {
+    auto format(
+      const cluster_link::model::acl_resource_filter& m,
+      format_context& ctx) const -> decltype(ctx.out());
+};
+
+template<>
+struct fmt::formatter<cluster_link::model::acl_access_filter>
+  : fmt::formatter<string_view> {
+    auto format(
+      const cluster_link::model::acl_access_filter& m,
+      format_context& ctx) const -> decltype(ctx.out());
+};
+
+template<>
+struct fmt::formatter<cluster_link::model::acl_filter>
+  : fmt::formatter<string_view> {
+    auto
+    format(const cluster_link::model::acl_filter& m, format_context& ctx) const
+      -> decltype(ctx.out());
+};
+
+template<>
+struct fmt::formatter<cluster_link::model::security_settings_sync_config>
+  : fmt::formatter<string_view> {
+    auto format(
+      const cluster_link::model::security_settings_sync_config& m,
       format_context& ctx) const -> decltype(ctx.out());
 };
 

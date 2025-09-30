@@ -26,9 +26,15 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "random/generators.h"
-#include "test_utils/fixture.h"
 
 #include <seastar/core/sharded.hh>
+
+#include <boost/test/unit_test.hpp>
+
+#if defined(IS_GTEST)
+#error                                                                         \
+  "topic table fixture cannot be used in gtest because it uses boost assertions"
+#endif
 
 struct topic_table_fixture {
     static constexpr uint32_t partitions_per_shard = 7000;

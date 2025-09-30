@@ -91,6 +91,7 @@
 #include "config/node_config.h"
 #include "config/property.h"
 #include "config/seed_server.h"
+#include "config/tls_config.h"
 #include "config/types.h"
 #include "crash_tracker/signals.h"
 #include "crypto/ossl_context_service.h"
@@ -1535,7 +1536,9 @@ void application::wire_up_runtime_services(
       controller.get(),
       &group_router,
       &controller->get_health_monitor(),
-      smp_service_groups.cluster_link_smp_sg())
+      &controller->get_security_frontend(),
+      smp_service_groups.cluster_link_smp_sg(),
+      sched_groups.cluster_linking_sg())
       .get();
 
     syschecks::systemd_message("Creating kafka usage manager frontend").get();
@@ -2186,7 +2189,6 @@ void application::wire_up_redpanda_services(
           ->construct(
             node_id,
             controller.get(),
-            &controller->get_partition_manager(),
             &controller->get_partition_leaders(),
             &controller->get_shard_table(),
             &cloud_io,
@@ -2706,9 +2708,29 @@ void application::wire_up_bootstrap_services() {
                 = config::shard_local_cfg().rpc_server_tcp_recv_buf;
               c.tcp_send_buf
                 = config::shard_local_cfg().rpc_server_tcp_send_buf;
+              config::tls_config tls_config{
+                config::node().rpc_server_tls().is_enabled(),
+                config::node().rpc_server_tls().get_key_cert_files(),
+                config::node().rpc_server_tls().get_truststore_file(),
+                config::node().rpc_server_tls().get_crl_file(),
+                config::node().rpc_server_tls().get_require_client_auth(),
+                config::node()
+                  .rpc_server_tls()
+                  .get_tls_v1_2_cipher_suites()
+                  .value_or(ss::sstring{}),
+                config::node()
+                  .rpc_server_tls()
+                  .get_tls_v1_3_cipher_suites()
+                  .value_or(ss::sstring{net::tls_v1_3_cipher_suites_strict}),
+                config::node().rpc_server_tls().get_min_tls_version().value_or(
+                  config::tls_version::v1_3),
+                config::node()
+                  .rpc_server_tls()
+                  .get_enable_renegotiation()
+                  .value_or(false)};
               auto credentials
                 = net::build_reloadable_server_credentials_with_probe(
-                    config::node().rpc_server_tls(),
+                    tls_config,
                     "rpc",
                     "",
                     [this](
@@ -3151,7 +3173,7 @@ void application::start_runtime_services(
           pm.register_factory<datalake::translation::stm_factory>(
             config::shard_local_cfg().iceberg_enabled());
           if (config::shard_local_cfg().development_enable_cloud_topics()) {
-              pm.register_factory<cloud_topics::ctp_stm_factory>();
+              pm.register_factory<cloud_topics::l0::ctp_stm_factory>();
               pm.register_factory<cloud_topics::l1::stm_factory>();
           }
           pm.register_factory<kafka::write_at_offset_stm_factory>(

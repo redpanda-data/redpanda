@@ -11,7 +11,7 @@
 #include "cluster/tests/cluster_test_fixture.h"
 #include "security/acl.h"
 #include "security/credential_store.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>

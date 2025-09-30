@@ -11,6 +11,7 @@
 #include "kafka/protocol/describe_acls.h"
 #include "redpanda/tests/fixture.h"
 #include "security/acl.h"
+#include "test_utils/boost_fixture.h"
 
 using namespace std::chrono_literals;
 

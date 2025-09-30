@@ -20,6 +20,7 @@ redpanda_test_cc_library(
         "//src/v/kafka/data/rpc",
         "//src/v/kafka/data/rpc/test:test_deps",
         "//src/v/model",
+        "//src/v/security",
         "@seastar",
     ],
 )
@@ -142,6 +143,22 @@ redpanda_cc_gtest(
     deps = [
         ":test_deps",
         "//src/v/cluster_link:group_mirroring_task",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "security_migrator_test",
+    timeout = "short",
+    srcs = [
+        "security_migrator_test.cc",
+    ],
+    deps = [
+        ":test_deps",
+        "//src/v/cluster_link:security_migrator",
+        "//src/v/kafka/server:security",
+        "//src/v/security",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
     ],

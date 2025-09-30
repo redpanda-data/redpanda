@@ -15,8 +15,6 @@
 #include "cluster/controller.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
-#include "cluster/utils/partition_change_notifier.h"
-#include "cluster/utils/partition_change_notifier_impl.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "ssx/when_all.h"
@@ -32,11 +30,6 @@ class domain_supervisor::impl {
 public:
     explicit impl(cluster::controller* controller)
       : _controller(controller)
-      , _partition_notifications(
-          cluster::partition_change_notifier_impl::make_default(
-            _controller->get_raft_manager(),
-            _controller->get_partition_manager(),
-            _controller->get_topics_state()))
       , _queue([](const std::exception_ptr& ex) {
           vlog(cd_log.error, "Unexpected domain supervisor error: {}", ex);
       }) {}
@@ -46,27 +39,16 @@ public:
             _as = {};
             _loop = do_topic_reconciliation_loop();
         }
-        _partition_notifications_id
-          = _partition_notifications->register_partition_notifications(
-            [this](
-              cluster::partition_change_notifier::notification_type,
-              const model::ntp& ntp,
-              std::optional<cluster::partition_change_notifier::partition_state>
-                partition) {
-                auto is_l1_topic = ntp.ns == model::kafka_internal_namespace
-                                   && ntp.tp.topic == model::l1_metastore_topic;
-                if (!is_l1_topic) {
-                    return;
-                }
-                // NOTE: listen on all partition notification types.
-                _queue.submit([this,
-                               ntp = ntp,
-                               partition = std::move(partition)]() mutable {
-                    return reset_domain_manager(
-                      std::move(ntp), std::move(partition));
-                });
-            });
         co_return;
+    }
+
+    void on_domain_leadership_change(
+      const model::ntp& ntp,
+      ss::optimized_optional<ss::lw_shared_ptr<cluster::partition>> partition) {
+        _queue.submit(
+          [this, ntp = ntp, partition = std::move(partition)]() mutable {
+              return reset_domain_manager(std::move(ntp), std::move(partition));
+          });
     }
 
     ss::future<> stop() {
@@ -74,8 +56,6 @@ public:
             _as.request_abort();
             co_await *std::exchange(_loop, std::nullopt);
         }
-        _partition_notifications->unregister_partition_notifications(
-          _partition_notifications_id);
         co_await _queue.shutdown();
         chunked_vector<ss::future<std::monostate>> stop_futs;
         stop_futs.reserve(_domains.size());
@@ -262,47 +242,37 @@ private:
 
     ss::future<> reset_domain_manager(
       model::ntp ntp,
-      std::optional<cluster::partition_change_notifier::partition_state>
-        partition) {
+      ss::optimized_optional<ss::lw_shared_ptr<cluster::partition>> partition) {
         auto dm_id = domain_manager_id{ntp};
         auto dm_it = _domains.find(dm_id);
         auto dm_exists = dm_it != _domains.end();
         if (dm_exists) {
+            if (partition) {
+                // We already have a domain manager, there is nothing to do.
+                co_return;
+            }
             auto dm = std::move(dm_it->second);
             _domains.erase(dm_it);
             auto stop_fut = co_await ss::coroutine::as_future(
               dm->stop_and_wait());
             if (stop_fut.failed()) {
+                auto ex = stop_fut.get_exception();
                 vlog(
                   cd_log.error,
                   "Removing domain manager {} failed: {}",
                   dm_id,
-                  stop_fut.get_exception());
+                  ex);
             }
-            co_return;
         }
-        auto requires_domain_mgr = partition && partition->is_leader;
-        if (!requires_domain_mgr) {
-            co_return;
-        }
-        auto& pm = _controller->get_partition_manager().local();
-        auto partition_ptr = pm.get(ntp);
-        if (!partition_ptr) {
+        if (!partition) {
             co_return;
         }
         auto domain_mgr = ss::make_lw_shared<domain_manager>(
-          partition_ptr->raft()->stm_manager()->get<simple_stm>());
+          (*partition)->raft()->stm_manager()->get<simple_stm>());
         _domains.emplace(dm_id, std::move(domain_mgr));
     }
 
     cluster::controller* _controller;
-
-    // Notification hook to start domain managers on leaders of the L1
-    // metastore topic partitions.
-    std::unique_ptr<cluster::partition_change_notifier>
-      _partition_notifications;
-    cluster::notification_id_type _partition_notifications_id
-      = cluster::notification_id_type_invalid;
 
     // Queue to process async work associated with starting and stopping domain
     // managers when handling partition notifications.
@@ -336,4 +306,9 @@ ss::future<bool> domain_supervisor::maybe_create_metastore_topic() {
     return _impl->maybe_create_metastore_topic();
 }
 
+void domain_supervisor::on_domain_leadership_change(
+  const model::ntp& ntp,
+  ss::optimized_optional<ss::lw_shared_ptr<cluster::partition>> partition) {
+    _impl->on_domain_leadership_change(ntp, std::move(partition));
+}
 } // namespace cloud_topics::l1

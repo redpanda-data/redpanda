@@ -32,6 +32,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/profile"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/registry"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/security"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/shadow"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/topic"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version"
@@ -120,6 +121,7 @@ func Execute() {
 		plugincmd.NewCommand(fs),
 		registry.NewCommand(fs, p),
 		security.NewCommand(fs, p),
+		shadow.NewCommand(fs, p),
 		topic.NewCommand(fs, p),
 		transform.NewCommand(fs, p, osExec),
 		versioncmd.NewCommand(fs, p),

@@ -598,7 +598,7 @@ TEST_F_CORO(raft_fixture, test_force_reconfiguration) {
             std::shuffle(
               base_replica_set.begin(),
               base_replica_set.end(),
-              random_generators::internal::gen);
+              random_generators::global().engine());
             current_replicas = {
               base_replica_set.begin(), std::next(base_replica_set.begin(), 3)};
         } else {

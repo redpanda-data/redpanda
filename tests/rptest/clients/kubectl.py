@@ -11,7 +11,7 @@ import json
 import os
 import subprocess
 from logging import Logger
-from typing import Any, Generator, Union
+from typing import Any, Generator, Union, overload, Literal
 
 SUPPORTED_PROVIDERS = ["aws", "gcp", "azure"]
 
@@ -283,6 +283,14 @@ class KubectlTool:
         else:
             return f"rp-{self._cluster_id}-blue-a-0"
 
+    @overload
+    def _ssh_cmd(self, cmd: list[str], capture: Literal[False] = False) -> str: ...
+
+    @overload
+    def _ssh_cmd(
+        self, cmd: list[str], capture: Literal[True]
+    ) -> Generator[bytes, Any, None]: ...
+
     def _ssh_cmd(
         self, cmd: list[str], capture: bool = False
     ) -> Union[str, Generator[bytes, Any, None]]:
@@ -292,6 +300,14 @@ class KubectlTool:
             return self._local_captured(local_cmd)
         else:
             return self._local_cmd(local_cmd)
+
+    @overload
+    def cmd(self, kcmd: list[str] | str, capture: Literal[False] = False) -> str: ...
+
+    @overload
+    def cmd(
+        self, kcmd: list[str] | str, capture: Literal[True]
+    ) -> Generator[bytes, Any, None]: ...
 
     def cmd(self, kcmd: list[str] | str, capture=False):
         """Execute a kubectl command on the agent node.
@@ -600,7 +616,7 @@ class KubeNodeShell:
             self.destroy_nodeshell()
         return
 
-    def __call__(self, cmd: list[str] | str, capture=False):
+    def __call__(self, cmd: list[str] | str, capture: bool = False):
         self.logger.info(f"Running command inside node '{self.node_name}'")
         # Prefix for running inside proper pod
         _kcmd = ["-n", f"{self.namespace}", "exec", self.pod_name, "--"]
@@ -608,8 +624,7 @@ class KubeNodeShell:
         _cmd = cmd if isinstance(cmd, list) else cmd.split()
         _kcmd += _cmd
         # exception handler is inside subclass
-        _out = self.kubectl.cmd(_kcmd, capture=capture)
         if capture:
-            return _out
+            return self.kubectl.cmd(_kcmd, capture=capture)
         else:
-            return _out.splitlines()
+            return self.kubectl.cmd(_kcmd, capture=capture).splitlines()

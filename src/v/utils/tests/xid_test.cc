@@ -20,7 +20,9 @@ xid random_xid() {
     static std::uniform_int_distribution<int> rand_fill('@', '~');
     xid::data_t array;
     memset(
-      array.data(), rand_fill(random_generators::internal::gen), array.size());
+      array.data(),
+      rand_fill(random_generators::global().engine()),
+      array.size());
 
     return xid(array);
 }

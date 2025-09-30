@@ -52,6 +52,10 @@ public:
         return _proxy->shard_owner(ntp);
     };
 
+    bool is_current_shard_leader(const model::ntp& ntp) const final {
+        return _proxy->is_current_shard_leader(ntp);
+    }
+
     ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
       ss::shard_id shard,
       const model::ktp& ktp,

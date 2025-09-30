@@ -20,6 +20,7 @@
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <fmt/format.h>
@@ -27,6 +28,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstring>
+#include <exception>
 #include <ranges>
 #include <type_traits>
 #include <utility>
@@ -325,6 +327,10 @@ public:
       : _output(std::move(output))
       , _opts(opts) {}
 
+    ~object_builder_impl() override {
+        vassert(_closed, "L1 object builders must be closed unconditionally");
+    }
+
     ss::future<> start_partition(model::topic_id_partition tidp) final {
         end_partition();
         co_await serde_write_to_stream(data_type::partition_marker, tidp);
@@ -385,17 +391,32 @@ public:
           .footer_offset = footer_start,
           .size_bytes = _offset + sizeof(uint32_t),
         };
-        auto footer_size
-          = std::bit_cast<std::array<char, sizeof(uint32_t)>, uint32_t>(
-            _offset - footer_start);
+        auto footer_size = as_bytes<uint32_t>(_offset - footer_start);
         co_await _output.write(footer_size.data(), footer_size.size());
         _offset += footer_size.size();
         co_return info;
     }
 
-    ss::future<> close() final { return _output.close(); }
+    ss::future<> close() final {
+        _closed = true;
+        return _output.close();
+    }
 
     size_t file_size() const final { return _offset; }
+
+    template<typename T>
+    static ss::future<size_t> serde_write_to_stream(
+      data_type dt, T data, ss::output_stream<char>* output) {
+        iobuf b;
+        b.append(as_bytes(dt));
+        iobuf serialized;
+        co_await serde::write_async(serialized, std::move(data));
+        b.append(as_bytes<uint32_t>(serialized.size_bytes()));
+        b.append(std::move(serialized));
+        auto size = b.size_bytes();
+        co_await write_iobuf_to_output_stream(std::move(b), *output);
+        co_return size;
+    }
 
 private:
     void end_partition() {
@@ -410,14 +431,8 @@ private:
 
     template<typename T>
     ss::future<> serde_write_to_stream(data_type dt, T data) {
-        iobuf b;
-        b.append(as_bytes(dt));
-        iobuf serialized;
-        co_await serde::write_async(serialized, std::move(data));
-        b.append(as_bytes<uint32_t>(serialized.size_bytes()));
-        b.append(std::move(serialized));
-        _offset += b.size_bytes();
-        co_await write_iobuf_to_output_stream(std::move(b), _output);
+        _offset += co_await object_builder_impl::serde_write_to_stream(
+          dt, std::move(data), &_output);
     }
 
     ss::future<> write_batch_to_stream(model::record_batch batch) {
@@ -436,6 +451,7 @@ private:
     model::topic_id_partition _current_tidp{};
     footer::partition _current_partition;
     options _opts;
+    bool _closed = false;
 };
 
 } // namespace
@@ -451,6 +467,10 @@ class object_reader_impl : public object_reader {
 public:
     explicit object_reader_impl(ss::input_stream<char> input)
       : _input(std::move(input)) {}
+
+    ~object_reader_impl() override {
+        vassert(_closed, "L1 object readers must be closed unconditionally");
+    }
 
     ss::future<result> read_next() final {
         if (_saw_footer) {
@@ -485,7 +505,10 @@ public:
             "unknown data type in object: {}", std::to_underlying(dt)));
     }
 
-    ss::future<> close() final { return _input.close(); }
+    ss::future<> close() final {
+        _closed = true;
+        return _input.close();
+    }
 
 private:
     template<typename T>
@@ -530,6 +553,7 @@ private:
 
     ss::input_stream<char> _input;
     bool _saw_footer = false;
+    bool _closed = false;
 };
 
 } // namespace
@@ -548,6 +572,105 @@ object_reader::create(std::filesystem::path p, size_t offset, size_t length) {
 std::unique_ptr<object_reader>
 object_reader::create(ss::file f, size_t offset, size_t length) {
     return create(ss::make_file_input_stream(std::move(f), offset, length));
+}
+
+namespace {
+
+// Copy upto N bytes to the output stream from the input stream
+ss::future<> copy_n(
+  ss::input_stream<char>* input, ss::output_stream<char>* output, size_t n) {
+    struct limited_copier {
+        size_t n = 0;
+        ss::output_stream<char>* os;
+
+        ss::future<ss::consumption_result<char>>
+        operator()(ss::temporary_buffer<char> data) {
+            if (data.empty() || n == 0) {
+                co_return ss::stop_consuming<char>(std::move(data));
+            }
+            size_t amt = std::min(data.size(), n);
+            data.trim(amt);
+            co_await os->write(std::move(data));
+            n -= amt;
+            co_return ss::continue_consuming();
+        }
+    };
+    limited_copier copier{.n = n, .os = output};
+    co_await input->consume(copier);
+}
+
+ss::future<>
+close_all_streams(combine_objects_parameters parameters, bool quiet) {
+    std::exception_ptr ex;
+    for (auto& input : parameters.inputs) {
+        auto fut = co_await ss::coroutine::as_future(input.stream.close());
+        if (fut.failed()) {
+            ex = fut.get_exception();
+        }
+    }
+    auto fut = co_await ss::coroutine::as_future(parameters.output.close());
+    if (fut.failed()) {
+        ex = fut.get_exception();
+    }
+    if (ex && !quiet) {
+        std::rethrow_exception(ex);
+    }
+    std::ignore = ex;
+}
+
+} // namespace
+
+ss::future<object_builder::object_info>
+combine_objects(combine_objects_parameters parameters) {
+    footer index;
+    size_t written = 0;
+    for (auto& input : parameters.inputs) {
+        for (const auto& [tidp, part] : input.info.index.partitions) {
+            // As we copy over our partition and index entries, we also
+            // need to update the offsets.
+            footer::partition updated = part.copy();
+            updated.file_position += written;
+            for (auto& index_entry : updated.indexes) {
+                index_entry.file_position += written;
+            }
+            index.partitions.emplace(tidp, std::move(updated));
+        }
+        auto n = input.info.footer_offset;
+        auto fut = co_await ss::coroutine::as_future(
+          copy_n(&input.stream, &parameters.output, n));
+        if (fut.failed()) {
+            auto ex = fut.get_exception();
+            co_await close_all_streams(
+              std::move(parameters),
+              /*quiet=*/true);
+            std::rethrow_exception(ex);
+        }
+        written += n;
+    }
+    auto footer_offset = written;
+    auto footer_write_fut = co_await ss::coroutine::as_future(
+      object_builder_impl::serde_write_to_stream(
+        data_type::footer, index.copy(), &parameters.output));
+    if (footer_write_fut.failed()) {
+        auto ex = footer_write_fut.get_exception();
+        co_await close_all_streams(std::move(parameters), /*quiet=*/true);
+        std::rethrow_exception(ex);
+    }
+    auto footer_size = footer_write_fut.get();
+    auto footer_size_data = as_bytes<uint32_t>(footer_size);
+    auto fut = co_await ss::coroutine::as_future(parameters.output.write(
+      footer_size_data.data(), footer_size_data.size()));
+    if (fut.failed()) {
+        auto ex = fut.get_exception();
+        co_await close_all_streams(std::move(parameters), /*quiet=*/true);
+        std::rethrow_exception(ex);
+    }
+    co_await close_all_streams(std::move(parameters), /*quiet=*/false);
+    co_return object_builder::object_info{
+      .index = std::move(index),
+      .footer_offset = footer_offset,
+      .size_bytes = footer_offset + footer_size + sizeof(uint32_t),
+    };
 }
 
 fmt::iterator

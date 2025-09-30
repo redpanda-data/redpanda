@@ -48,10 +48,10 @@ public:
       int partitions_count,
       int last_offset,
       std::unique_ptr<metastore::object_metadata_builder>* objs) {
-        auto ret = meta.object_builder();
+        auto ret = meta.object_builder().get().value();
         for (int i = 0; i < partitions_count; ++i) {
             auto tp = make_tp(i);
-            auto oid = ret->get_or_create_object_for(tp);
+            auto oid = ret->get_or_create_object_for(tp).value();
             auto add_res = ret->add(
               oid,
               metastore::object_metadata::ntp_metadata{
@@ -81,17 +81,53 @@ public:
               metastore::term_offset{
                 .term = model::term_id{0}, .first_offset = o{0}});
         }
-        auto add_res = meta.add_objects(std::move(objs), terms).get();
+        auto add_res = meta.add_objects(*objs, terms).get();
         ASSERT_TRUE_CORO(add_res.has_value());
     }
 };
+
+TEST_F(ReplicatedMetastoreTest, TestMissingMetastore) {
+    auto& app = get_ct_app(model::node_id{0});
+    replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
+    auto obj_builder = meta.object_builder().get().value();
+    auto& tp_fe = get_node_application(model::node_id{0})
+                    ->controller->get_topics_frontend()
+                    .local();
+    tp_fe.dispatch_delete_topics({model::l1_metastore_nt}, 10s).get();
+    for (const auto& node_id : instance_ids()) {
+        auto& tp_state = get_node_application(node_id)
+                           ->controller->get_topics_state()
+                           .local();
+        RPTEST_REQUIRE_EVENTUALLY(10s, [&tp_state] {
+            return !tp_state.contains(model::l1_metastore_nt);
+        });
+    }
+
+    // We won't be able to find the partition of the metastore topic because it
+    // doesn't exist.
+    auto tp = make_tp(0);
+    auto oid = obj_builder->get_or_create_object_for(tp);
+    ASSERT_FALSE(oid.has_value());
+
+    // Adding an object should fail immediately too because the metastore topic
+    // doesn't exist and we don't know how to partition objects.
+    auto add_res = obj_builder->add(create_object_id(), {});
+    ASSERT_FALSE(add_res.has_value());
+
+    // Creating an object builder should attempt to create the metastore topic
+    // since it doesn't exist.
+    auto builder_res = meta.object_builder().get();
+    ASSERT_TRUE(builder_res.has_value());
+    oid = builder_res.value()->get_or_create_object_for(tp);
+    ASSERT_TRUE(oid.has_value());
+}
 
 TEST_F(ReplicatedMetastoreTest, TestAddNotFinished) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
     auto tp = make_tp(0);
-    auto obj_builder = meta.object_builder();
-    auto oid = obj_builder->get_or_create_object_for(tp);
+    auto obj_builder = meta.object_builder().get().value();
+    auto oid = obj_builder->get_or_create_object_for(tp).value();
     auto add_res = obj_builder->add(
       oid,
       metastore::object_metadata::ntp_metadata{
@@ -103,9 +139,85 @@ TEST_F(ReplicatedMetastoreTest, TestAddNotFinished) {
         .size = 500,
       });
     ASSERT_TRUE(add_res.has_value()) << add_res.error();
-    auto commit_res = meta.add_objects(std::move(obj_builder), {}).get();
+    auto commit_res = meta.add_objects(*obj_builder, {}).get();
     ASSERT_FALSE(commit_res.has_value());
     ASSERT_EQ(commit_res.error(), metastore::errc::invalid_request);
+}
+
+TEST_F(ReplicatedMetastoreTest, TestBuilderRemovedObjects) {
+    auto& app = get_ct_app(model::node_id{0});
+    replicated_metastore m(app.get_sharded_l1_metastore_fe()->local());
+    auto tp = make_tp(0);
+    auto ob = m.object_builder().get().value();
+
+    // pending object can be removed, but not twice
+    auto oid = ob->get_or_create_object_for(tp).value();
+    ASSERT_TRUE(ob->remove_pending_object(oid).has_value());
+    ASSERT_FALSE(ob->remove_pending_object(oid).has_value());
+
+    // after removal, object id shouldn't be reused in this builder
+    auto oid2 = ob->get_or_create_object_for(tp).value();
+    ASSERT_NE(oid, oid2);
+    oid = oid2;
+
+    // unfinished object with data can be removed
+    ASSERT_TRUE(
+      ob->add(oid, metastore::object_metadata::ntp_metadata{.tidp = tp})
+        .has_value());
+    ASSERT_TRUE(ob->remove_pending_object(oid).has_value());
+    ASSERT_FALSE(ob->remove_pending_object(oid).has_value());
+    ASSERT_FALSE(
+      ob->add(oid, metastore::object_metadata::ntp_metadata{.tidp = tp})
+        .has_value());
+
+    oid2 = ob->get_or_create_object_for(tp).value();
+    ASSERT_NE(oid, oid2);
+    oid = oid2;
+
+    // finished object cannot be removed
+    oid = ob->get_or_create_object_for(tp).value();
+    ASSERT_TRUE(ob->finish(oid, 0, 0).has_value());
+    ASSERT_FALSE(ob->remove_pending_object(oid).has_value());
+    ASSERT_FALSE(ob->finish(oid, 0, 0).has_value());
+}
+
+// Regression test, where removing an object from the builder left some
+// metadata behind, which would result in a failure.
+TEST_F(ReplicatedMetastoreTest, TestBuilderRemoveObjectRemovesPartition) {
+    auto& app = get_ct_app(model::node_id{0});
+    replicated_metastore m(app.get_sharded_l1_metastore_fe()->local());
+    auto tp1 = make_tp(0);
+    auto tp2 = make_tp(1);
+    auto ob = m.object_builder().get().value();
+
+    // Add and remove an object, setting up potential for an old bug where an
+    // empty partition is left behind after removal.
+    auto oid1 = ob->get_or_create_object_for(tp1).value();
+    ASSERT_TRUE(ob->remove_pending_object(oid1).has_value());
+
+    // Now add an object as normal.
+    auto oid2 = ob->get_or_create_object_for(tp2).value();
+    auto add_res = ob->add(
+      oid2,
+      metastore::object_metadata::ntp_metadata{
+        .tidp = tp2,
+        .base_offset = o{0},
+        .last_offset = o{199},
+        .max_timestamp = ts{10000},
+        .pos = 0,
+        .size = 500,
+      });
+    ASSERT_TRUE(add_res.has_value()) << add_res.error();
+    auto fin_res = ob->finish(oid2, 500, 1000);
+    metastore::term_offset_map_t terms;
+    terms[tp2].emplace_back(
+      metastore::term_offset{.term = model::term_id{1}, .first_offset = o{0}});
+
+    // There should be no issues here. Previously Redpanda would complain that
+    // it needed term information routed to the domain for tp1, despite the
+    // object for tp1 being removed.
+    auto commit_res = m.add_objects(*ob, terms).get();
+    ASSERT_TRUE(commit_res.has_value());
 }
 
 TEST_F(ReplicatedMetastoreTest, TestBasicAdd) {
@@ -200,7 +312,7 @@ TEST_F(ReplicatedMetastoreTest, TestBasicCompact) {
         update.new_cleaned_range->last_offset = o{999};
         cmap[make_tp(i)] = std::move(update);
     }
-    auto cmp_res = meta.compact_objects(std::move(new_objs), cmap).get();
+    auto cmp_res = meta.compact_objects(*new_objs, cmap).get();
     ASSERT_TRUE(cmp_res.has_value()) << fmt::to_string(cmp_res.error());
 
     // Check across the partitions of the L1 metastore that we have the right
@@ -306,8 +418,8 @@ TEST_F(ReplicatedMetastoreTest, TestNotLeader) {
             timed_out = true;
             break;
         }
-        auto obj_builder = meta.object_builder();
-        auto oid = obj_builder->get_or_create_object_for(tp);
+        auto obj_builder = meta.object_builder().get().value();
+        auto oid = obj_builder->get_or_create_object_for(tp).value();
         kafka::offset next_last{next_to_send() + 99};
         auto add_res = obj_builder->add(
           oid,
@@ -327,7 +439,7 @@ TEST_F(ReplicatedMetastoreTest, TestNotLeader) {
         terms[tp].emplace_back(
           metastore::term_offset{
             .term = model::term_id{0}, .first_offset = next_to_send});
-        auto commit_res = meta.add_objects(std::move(obj_builder), terms).get();
+        auto commit_res = meta.add_objects(*obj_builder, terms).get();
         if (!commit_res.has_value()) {
             while (true) {
                 if (ss::lowres_clock::now() > deadline) {
@@ -392,7 +504,7 @@ TEST_F(ReplicatedMetastoreTest, TestInvalidTermRequest) {
     }
     // This constitutes an incorrectly formed request, and is not expected
     // ever, hence overall failure.
-    auto add_res = meta.add_objects(std::move(objs), terms).get();
+    auto add_res = meta.add_objects(*objs, terms).get();
     ASSERT_FALSE(add_res.has_value());
     ASSERT_EQ(add_res.error(), metastore::errc::invalid_request);
 }
@@ -403,8 +515,8 @@ TEST_F(ReplicatedMetastoreTest, TestGetTermForOffset) {
 
     auto tp = make_tp(0);
 
-    auto obj_builder = meta.object_builder();
-    auto oid1 = obj_builder->get_or_create_object_for(tp);
+    auto obj_builder = meta.object_builder().get().value();
+    auto oid1 = obj_builder->get_or_create_object_for(tp).value();
     auto add_res1 = obj_builder->add(
       oid1,
       metastore::object_metadata::ntp_metadata{
@@ -427,7 +539,7 @@ TEST_F(ReplicatedMetastoreTest, TestGetTermForOffset) {
       metastore::term_offset{
         .term = model::term_id{2}, .first_offset = o{100}});
 
-    auto add_res = meta.add_objects(std::move(obj_builder), terms).get();
+    auto add_res = meta.add_objects(*obj_builder, terms).get();
     ASSERT_TRUE(add_res.has_value());
 
     const auto assert_term_eq = [&](kafka::offset o, model::term_id t) {
@@ -462,8 +574,8 @@ TEST_F(ReplicatedMetastoreTest, TestGetEndOffsetForTerm) {
     auto tp = make_tp(0);
 
     // Set up initial objects with multiple terms
-    auto obj_builder = meta.object_builder();
-    auto oid1 = obj_builder->get_or_create_object_for(tp);
+    auto obj_builder = meta.object_builder().get().value();
+    auto oid1 = obj_builder->get_or_create_object_for(tp).value();
     auto add_res1 = obj_builder->add(
       oid1,
       metastore::object_metadata::ntp_metadata{
@@ -486,7 +598,7 @@ TEST_F(ReplicatedMetastoreTest, TestGetEndOffsetForTerm) {
       metastore::term_offset{
         .term = model::term_id{2}, .first_offset = o{100}});
 
-    auto add_res = meta.add_objects(std::move(obj_builder), terms).get();
+    auto add_res = meta.add_objects(*obj_builder, terms).get();
     ASSERT_TRUE(add_res.has_value());
 
     auto assert_end_offset_eq = [&](

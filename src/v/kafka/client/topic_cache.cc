@@ -28,6 +28,9 @@ void topic_cache::apply(
           "topic::name is nullable in v12+");
         auto& cache_t = new_cache.emplace(*t.name, topic_data{}).first->second;
         cache_t.authorized_operations = t.topic_authorized_operations;
+        if (t.topic_id != model::topic_id{}) {
+            cache_t.topic_id = t.topic_id;
+        }
         if (!t.partitions.empty()) {
             cache_t.replication_factor = t.partitions[0].replica_nodes.size();
         }
@@ -81,6 +84,15 @@ topic_cache::leader_epoch(model::topic_partition_view tp) const {
     }
 
     return p_data.leader_epoch;
+}
+
+std::optional<model::topic_id>
+topic_cache::topic_id_for_name(model::topic_view tp) const {
+    auto topic_it = _topics.find(tp);
+    if (topic_it == _topics.end()) {
+        return std::nullopt;
+    }
+    return topic_it->second.topic_id;
 }
 
 std::optional<kafka::topic_authorized_operations>

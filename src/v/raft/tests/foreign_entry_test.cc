@@ -25,10 +25,10 @@
 #include "storage/log.h"
 #include "storage/log_manager.h"
 #include "storage/record_batch_builder.h"
-#include "test_utils/randoms.h"
+#include "test_utils/test_env.h"
 #include "utils/copy_range.h"
 // testing
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
@@ -39,13 +39,7 @@
 
 using namespace std::chrono_literals; // NOLINT
 
-inline ss::sstring test_directory() {
-    char* tmpdir = std::getenv("TEST_TMPDIR");
-    if (!tmpdir) {
-        return "test.dir";
-    }
-    return {std::filesystem::path(tmpdir) / std::string("test.dir")};
-}
+ss::sstring test_directory() { return test_env::random_dir_path(); }
 struct foreign_entry_fixture {
     static constexpr int active_nodes = 3;
 

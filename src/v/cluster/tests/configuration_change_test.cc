@@ -15,7 +15,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "utils/unresolved_address.h"
 
 #include <seastar/core/future-util.hh>

@@ -258,7 +258,8 @@ struct counting_consumer {
         return mux.do_multiplex(std::move(batch), kafka::offset{}, as);
     }
     ss::future<counting_consumer> end_of_stream() {
-        auto res = co_await std::move(mux).finish();
+        datalake::record_multiplexer::finished_files files;
+        auto res = co_await std::move(mux).finish(files);
         if (res.has_error()) [[unlikely]] {
             throw std::runtime_error(
               fmt::format("failed to end stream: {}", res.error()));

@@ -19,6 +19,7 @@
 static constexpr size_t total_shares_without_optionals = 85;
 static constexpr size_t total_wasm_shares = 10;
 static constexpr size_t total_datalake_shares = 10;
+static constexpr size_t total_cloud_topic_shares = 10;
 
 // It's not really useful to know the exact byte values for each of these
 // numbers so we just make sure we're within a MB
@@ -32,7 +33,7 @@ MATCHER_P(IsApprox, n, "") {
 
 class MemoryGroupSharesTest
   : public ::testing::Test
-  , public ::testing::WithParamInterface<std::tuple<bool, bool, bool>> {
+  , public ::testing::WithParamInterface<std::tuple<bool, bool, bool, bool>> {
 public:
     static constexpr size_t total_memory = 2_GiB;
     static constexpr size_t user_wasm_reservation = 20_MiB;
@@ -41,6 +42,7 @@ public:
     bool compaction_enabled() const { return std::get<0>(GetParam()); }
     bool wasm_enabled() const { return std::get<1>(GetParam()); }
     bool datalake_enabled() const { return std::get<2>(GetParam()); }
+    bool cloud_topics_enabled() const { return std::get<3>(GetParam()); }
 };
 
 TEST_P(MemoryGroupSharesTest, DividesSharesCorrectly) {
@@ -64,6 +66,7 @@ TEST_P(MemoryGroupSharesTest, DividesSharesCorrectly) {
       reservation,
       wasm_enabled(),
       datalake_enabled(),
+      cloud_topics_enabled(),
       partitions);
     auto total_shares = total_shares_without_optionals;
     if (wasm_enabled()) {
@@ -71,6 +74,9 @@ TEST_P(MemoryGroupSharesTest, DividesSharesCorrectly) {
     }
     if (datalake_enabled()) {
         total_shares += total_datalake_shares;
+    }
+    if (cloud_topics_enabled()) {
+        total_shares += total_cloud_topic_shares;
     }
     EXPECT_THAT(
       groups.chunk_cache_min_memory(),
@@ -134,6 +140,7 @@ TEST(MemoryGroups, CompactionMemoryBytes) {
           },
           /*wasm_enabled=*/false,
           /*datalake_enabled=*/false,
+          /*cloud_topics_enabled=*/false,
           {
             .max_limit_pct = 20,
           });
@@ -150,6 +157,7 @@ TEST(MemoryGroups, CompactionMemoryBytes) {
           },
           /*wasm_enabled=*/false,
           /*datalake_enabled=*/false,
+          /*cloud_topics_enabled=*/false,
           {
             .max_limit_pct = 20,
           });
@@ -161,4 +169,8 @@ TEST(MemoryGroups, CompactionMemoryBytes) {
 INSTANTIATE_TEST_SUITE_P(
   MemoryGroupShares,
   MemoryGroupSharesTest,
-  ::testing::Combine(::testing::Bool(), ::testing::Bool(), ::testing::Bool()));
+  ::testing::Combine(
+    ::testing::Bool(),
+    ::testing::Bool(),
+    ::testing::Bool(),
+    ::testing::Bool()));

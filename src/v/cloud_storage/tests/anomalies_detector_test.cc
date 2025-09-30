@@ -23,7 +23,7 @@
 #include "config/node_config.h"
 #include "hashing/xx.h"
 #include "http/tests/http_imposter.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "test_utils/scoped_config.h"
 
 #include <seastar/util/short_streams.hh>

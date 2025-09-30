@@ -7,16 +7,16 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "compaction/key.h"
+#include "storage/compaction_key.h"
 
 #include "model/record_batch_types.h"
 
 #include <algorithm>
 #include <type_traits>
 
-namespace compaction {
+namespace storage {
 
-compaction_key enhance_key(
+compaction::compaction_key enhance_key(
   model::record_batch_type type, bool is_control_batch, bytes_view key) {
     auto bt_le = ss::cpu_to_le(
       static_cast<std::underlying_type_t<model::record_batch_type>>(type));
@@ -29,7 +29,7 @@ compaction_key enhance_key(
     out = std::copy_n(
       reinterpret_cast<const char*>(&ctrl_le), sizeof(ctrl_le), out);
     std::copy_n(key.begin(), key.size(), out);
-    return compaction_key(std::move(enriched_key));
+    return compaction::compaction_key(std::move(enriched_key));
 }
 
-} // namespace compaction
+} // namespace storage

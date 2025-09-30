@@ -13,11 +13,12 @@
 
 namespace cloud_topics {
 // Frontend error codes
-enum class frontend_errc {
+enum class frontend_errc : uint8_t {
     offset_not_available,
     invalid_topic_exception,
     not_leader_for_partition,
     offset_out_of_range,
+    timeout,
 };
 } // namespace cloud_topics
 template<>

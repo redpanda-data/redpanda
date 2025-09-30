@@ -10,7 +10,7 @@
 #include "config/mock_property.h"
 #include "net/conn_quota.h"
 #include "test_utils/async.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/preempt.hh>

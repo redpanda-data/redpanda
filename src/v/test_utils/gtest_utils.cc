@@ -11,6 +11,7 @@
 #include "test_utils/gtest_utils.h"
 
 #include "base/vassert.h"
+#include "test_utils/global_test_hooks.h"
 
 #include <seastar/core/lowres_clock.hh>
 
@@ -46,6 +47,14 @@ void rp_test_listener::OnTestPartResult(
         // https://google.github.io/googletest/advanced.html#asserting-on-subroutines-with-an-exception.
         throw testing::AssertionException(result);
     }
+}
+
+void rp_test_listener::OnTestStart(const ::testing::TestInfo& test_info) {
+    test_hooks::before_test_case(test_info.name());
+}
+
+void rp_test_listener::OnTestEnd(const ::testing::TestInfo& test_info) {
+    test_hooks::after_test_case(test_info.name());
 }
 
 ss::sstring get_test_directory() {

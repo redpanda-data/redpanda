@@ -88,7 +88,8 @@ private:
 
 class log_segment_batch_reader {
 public:
-    static constexpr size_t max_buffer_size = 32 * 1024; // 32KB
+    static constexpr size_t max_buffer_size
+      = local_log_reader_config::segment_reader_max_buffer_size;
 
     log_segment_batch_reader(
       segment&, local_log_reader_config& config, probe& p) noexcept;

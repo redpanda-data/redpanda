@@ -573,20 +573,22 @@ ss::future<timequery_result> batch_timequery(
     if (batch.compressed()) {
         batch = co_await model::decompress_batch(batch);
     }
+    const auto& header = batch.header();
     co_await batch.for_each_record_async(
-      [&result_o, &result_t, &batch, query_interval, t](
-        const model::record& r) -> ss::future<ss::stop_iteration> {
-          auto record_o = model::offset{r.offset_delta()} + batch.base_offset();
-          auto record_t = model::timestamp(
-            batch.header().first_timestamp() + r.timestamp_delta());
+      [&result_o, &result_t, &header, query_interval, t](
+        const model::record& r) {
+          auto record_o = model::offset{r.offset_delta()} + header.base_offset;
+          auto record_t = header.attrs.timestamp_type()
+                              == model::timestamp_type::create_time
+                            ? model::timestamp(
+                                header.first_timestamp() + r.timestamp_delta())
+                            : header.max_timestamp;
           if (record_t >= t && query_interval.contains(record_o)) {
               result_o = record_o;
               result_t = record_t;
-              return ss::make_ready_future<ss::stop_iteration>(
-                ss::stop_iteration::yes);
+              return ss::stop_iteration::yes;
           } else {
-              return ss::make_ready_future<ss::stop_iteration>(
-                ss::stop_iteration::no);
+              return ss::stop_iteration::no;
           }
       });
 

@@ -21,5 +21,5 @@ docker build "$TESTS_DIR" -t $tag -f type-checking/Dockerfile ${TARGET:+--target
 
 # Run the container with the tests directory mounted
 # echo "Running type checker in Docker container..."
-docker run --rm -it \
+docker run --rm -t \
   -v "$TESTS_DIR:$TESTS_DIR" $tag --no-venv --tests-root "$TESTS_DIR" "$@"

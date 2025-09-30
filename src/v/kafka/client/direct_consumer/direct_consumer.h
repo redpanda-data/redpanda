@@ -13,6 +13,7 @@
 #include "container/chunked_hash_map.h"
 #include "kafka/client/cluster.h"
 #include "kafka/client/direct_consumer/api_types.h"
+#include "model/fundamental.h"
 
 namespace kafka {
 struct metadata_response_data;
@@ -125,11 +126,20 @@ public:
 
 private:
     struct subscription {
+        subscription(
+          std::optional<model::node_id> current_fetcher,
+          std::optional<kafka::offset> fetch_offset,
+          subscription_epoch subscription_epoch) noexcept
+          : current_fetcher{current_fetcher}
+          , fetch_offset{fetch_offset}
+          , subscription_epoch{subscription_epoch} {}
+
         std::optional<model::node_id> current_fetcher;
         std::optional<kafka::offset> fetch_offset;
+        subscription_epoch subscription_epoch;
     };
     friend class fetcher;
-    void on_metadata_update(const metadata_response_data&);
+    void on_metadata_update(const metadata_update&);
 
     ss::future<> handle_metadata_update();
     ss::future<> update_fetchers(
@@ -137,6 +147,12 @@ private:
       topic_partition_map<subscription> removals = {});
 
     fetcher& get_fetcher(model::node_id id);
+
+    std::optional<subscription_epoch> find_subscription_epoch(
+      const model::topic& topic, model::partition_id partition_id);
+
+    void filter_stale_subscriptions(
+      chunked_vector<fetched_topic_data>& responses_to_filter);
 
     cluster* _cluster;
 
@@ -151,6 +167,16 @@ private:
     chunked_hash_map<model::node_id, std::unique_ptr<fetcher>> _broker_fetchers;
     std::unique_ptr<data_queue> _fetched_data_queue;
     ss::condition_variable _data_available;
+
+    /**
+     * Versions subscriptions; inc'd and assigned to all new subs. A sub's
+     * subscription_epoch tags along for the lifecycles of fetch requests to
+     * responses. On fetch_next, a fetch_response's subscription_epoch will get
+     * be compared against the current sub's subscription_epoch. A difference
+     * indicates a stale fetch.
+     * Stale fetches need to be dropped.
+     */
+    subscription_epoch epoch{0};
 
     cluster::callback_id _metadata_callback_id;
     bool _started = false;

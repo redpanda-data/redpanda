@@ -12,6 +12,7 @@
 #include "base/seastarx.h"
 #include "kafka/client/brokers.h"
 #include "kafka/client/topic_cache.h"
+#include "kafka/client/types.h"
 #include "utils/notification_list.h"
 #include "utils/prefix_logger.h"
 namespace kafka::client {
@@ -24,7 +25,7 @@ class cluster {
 public:
     using callback_id = named_type<int16_t, struct callback_id_tag>;
     using metadata_callback
-      = ss::noncopyable_function<void(const metadata_response_data&)>;
+      = ss::noncopyable_function<void(const metadata_update&)>;
 
     explicit cluster(connection_configuration config);
 
@@ -105,8 +106,14 @@ public:
      * This method propages the exception to the caller, that may change
      * in the future but now it is needed because of the way how PandaProxy and
      * SchemaRegistry works with ephemeral credentials.
+     *
+     * \param topics_request_list optional list of topics to request metadata
+     * on.  If `std::nullopt`, then request update on all topics, or only the
+     * topics in the list.  Any empty list means no topics to request update on
      */
-    ss::future<> request_metadata_update();
+    ss::future<> request_metadata_update(
+      std::optional<chunked_vector<model::topic>> topics_request_list
+      = std::nullopt);
 
     std::optional<model::node_id> get_controller_id() const {
         return _controller_id;
@@ -160,12 +167,29 @@ public:
 
     auto get_broker_ids() const { return _brokers.get_broker_ids(); }
 
+    cluster_authorized_operations get_cluster_authorized_operations() const {
+        return _cluster_authorized_operations;
+    }
+
 private:
-    ss::future<> update_metadata();
-    ss::future<> dispatch_metadata_request();
+    ss::future<> update_metadata(
+      std::optional<chunked_vector<model::topic>> topics_request_list
+      = std::nullopt);
+    ss::future<> dispatch_and_apply_metadata_updates(
+      std::optional<chunked_vector<model::topic>> topics_request_list
+      = std::nullopt);
+    ss::future<metadata_response> dispatch_metadata_request(
+      shared_broker_t broker,
+      std::optional<chunked_vector<model::topic>> topics_request_list
+      = std::nullopt,
+      std::optional<api_version> requested_version = std::nullopt);
+    ss::future<describe_cluster_response>
+    dispatch_describe_cluster_request(shared_broker_t broker);
     ss::future<> initialize_metadata_with_seed();
+    ss::future<> initialize_with_describe_cluster(shared_broker_t);
+    ss::future<> initialize_with_metadata(shared_broker_t);
     void update_timer_callback();
-    ss::future<> apply_metadata(metadata_response reply);
+    ss::future<> apply_metadata(metadata_update reply);
 
     connection_configuration _config;
     prefix_logger _logger;
@@ -175,6 +199,8 @@ private:
 
     std::optional<model::node_id> _controller_id;
     std::optional<ss::sstring> _cluster_id;
+    cluster_authorized_operations _cluster_authorized_operations{
+      cluster_authorized_operations_not_set};
 
     ss::timer<> _metadata_update_timer;
     mutex _update_lock{"kc/metadata_update_lock"};

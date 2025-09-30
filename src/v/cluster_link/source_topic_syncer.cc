@@ -85,7 +85,11 @@ validate_and_get_configs_from_response(
 // Validates the contents of the metadata cache from the source cluster.  If
 // partition count or replication count are invalid then will return
 // std::nullopt.  Otherwise returns the metadata information.
-std::optional<std::tuple<int32_t, int16_t, kafka::topic_authorized_operations>>
+std::optional<std::tuple<
+  int32_t,
+  int16_t,
+  kafka::topic_authorized_operations,
+  std::optional<::model::topic_id>>>
 validate_topic_cache_entry(
   prefix_logger& logger,
   const kafka::client::topic_cache& cache,
@@ -113,16 +117,23 @@ validate_topic_cache_entry(
         return std::nullopt;
     }
 
+    auto topic_id = it->second.topic_id;
+
     vlog(
       logger.trace,
-      "Topic {} has {} partitions, RF={} and authorized operations {:08x}",
+      "Topic {} has {} partitions, RF={} and authorized operations {:08x} and "
+      "topic_id {}",
       topic,
       partition_count,
       replication_factor,
-      it->second.authorized_operations);
+      it->second.authorized_operations,
+      topic_id);
 
     return std::make_tuple(
-      partition_count, replication_factor, it->second.authorized_operations);
+      partition_count,
+      replication_factor,
+      it->second.authorized_operations,
+      topic_id);
 }
 } // namespace
 
@@ -308,6 +319,7 @@ void source_topic_syncer::enqueue_create_mirror_topic_commands(
           model::add_mirror_topic_cmd{
             .topic = it->first,
             .metadata = model::mirror_topic_metadata{
+              .source_topic_id = it->second.topic_id,
               .source_topic_name = it->first,
               .partition_count = it->second.partition_count,
               .replication_factor = it->second.rf,
@@ -369,6 +381,23 @@ void source_topic_syncer::enqueue_update_mirror_topic_commands(
                 .topic = topic,
                 .state = model::mirror_topic_state::failed,
               });
+            continue;
+        }
+
+        if (
+          mirror_topic_cache.source_topic_id.has_value()
+          && metadata_cache.topic_id.has_value()
+          && mirror_topic_cache.source_topic_id != metadata_cache.topic_id) {
+            vlog(
+              logger().warn,
+              "Topic {} has changed its topic ID from {} -> {}.  Marking as "
+              "failed",
+              topic,
+              mirror_topic_cache.source_topic_id,
+              metadata_cache.topic_id);
+            commands.emplace_back(
+              model::update_mirror_topic_state_cmd{
+                .topic = topic, .state = model::mirror_topic_state::failed});
             continue;
         }
 
@@ -510,22 +539,25 @@ source_topic_syncer::find_candidate_topics_for_update(
             continue;
         }
 
-        auto [partition_count, rf, authorized_operations]
+        auto [partition_count, rf, authorized_operations, topic_id]
           = metadata_value.value();
 
         vlog(
           logger().trace,
-          "Emplacing topic {} with {} partitions, RF={} for update candidate",
+          "Emplacing topic {} with {} partitions, RF={}, topic_id={} for "
+          "update candidate",
           topic,
           partition_count,
-          rf);
+          rf,
+          topic_id);
         candidate_topics.emplace(
           std::move(topic),
           std::make_pair(
             topic_metadata{
               .partition_count = partition_count,
               // Only mirror source topic replication factor if configured to do
-              .rf = mirror_rf ? std::make_optional(rf) : std::nullopt},
+              .rf = mirror_rf ? std::make_optional(rf) : std::nullopt,
+              .topic_id = topic_id},
             std::move(mirror_metadata)));
     }
 
@@ -565,7 +597,7 @@ source_topic_syncer::find_candidate_topics_for_creation(
             continue;
         }
 
-        auto [partition_count, rf, authorized_operations]
+        auto [partition_count, rf, authorized_operations, topic_id]
           = metadata_value.value();
 
         if (get_link()
@@ -624,7 +656,8 @@ source_topic_syncer::find_candidate_topics_for_creation(
             .partition_count = partition_count,
             // Only mirror source topic replication factor if configured to do
             // so
-            .rf = mirror_rf ? std::make_optional(rf) : std::nullopt});
+            .rf = mirror_rf ? std::make_optional(rf) : std::nullopt,
+            .topic_id = topic_id});
     }
 
     return candidate_topics;

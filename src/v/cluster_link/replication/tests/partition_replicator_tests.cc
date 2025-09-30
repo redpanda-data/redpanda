@@ -106,7 +106,7 @@ public:
 
     raft::replicate_stages replicate(
       chunked_vector<model::record_batch> batches,
-      model::timeout_clock::duration,
+      model::timeout_clock::duration duration,
       ss::abort_source&) final {
         if (_fail_replication) {
             if (tests::random_bool()) {
@@ -115,9 +115,15 @@ public:
             result<raft::replicate_result> err{raft::errc::not_leader};
             return raft::replicate_stages{ss::now(), ssx::now(err)};
         }
+        auto with_timeout = [duration](auto&& f) {
+            return ss::with_timeout(
+              model::timeout_clock::now() + duration,
+              std::forward<decltype(f)>(f));
+        };
         return raft::replicate_stages{
-          _replication_mu.get_units().discard_result(),
-          replicate_success(model::offset_cast(batches.back().last_offset()))};
+          with_timeout(_replication_mu.get_units().discard_result()),
+          with_timeout(replicate_success(
+            model::offset_cast(batches.back().last_offset())))};
     }
 
     void notify_replicator_failure(model::term_id) final {}

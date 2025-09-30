@@ -13,6 +13,11 @@ redpanda_cc_library(
     hdrs = [
         "object_id.h",
     ],
+    visibility = [
+        "//src/v/cloud_topics/housekeeper/tests:__subpackages__",
+        "//src/v/cloud_topics/level_one:__subpackages__",
+        "//src/v/cloud_topics/reconciler:__subpackages__",
+    ],
     deps = [
         "//src/v/base",
         "//src/v/utils:named_type",

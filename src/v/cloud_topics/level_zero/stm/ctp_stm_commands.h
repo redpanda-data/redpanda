@@ -43,4 +43,27 @@ struct advance_reconciled_offset_cmd
     kafka::offset last_reconciled_offset;
 };
 
+// This command sets the partition's start offset in the ctp_stm.
+//
+// The command is replicated by the housekeeper and is used to set the start
+// offset in list offset requests to limit the offsets that can be fetched. This
+// value is asynchronously pushed to L1 via the reconciler.
+struct set_start_offset_cmd
+  : public serde::envelope<
+      set_start_offset_cmd,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    static constexpr cmd_key key = cmd_key(
+      std::to_underlying(ctp_stm_key::set_start_offset));
+
+    set_start_offset_cmd() noexcept = default;
+
+    explicit set_start_offset_cmd(kafka::offset start_offset) noexcept
+      : new_start_offset(start_offset) {}
+
+    auto serde_fields() { return std::tie(new_start_offset); }
+
+    kafka::offset new_start_offset;
+};
+
 } // namespace cloud_topics

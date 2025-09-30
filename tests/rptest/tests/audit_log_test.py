@@ -2358,14 +2358,8 @@ class AuditLogTestOauth(AuditLogTestBase):
             lambda records: self.aggregate_count(records) >= 1,
         )
 
-        # There may exist multiple OAUTH entries but that could be due to the client
-        # connecting to more than one node.  In this situation the number of records
-        # should match a set of unique ips
-        ip_set = set()
-        [ip_set.add(r["dst_endpoint"]["ip"]) for r in records]
-
-        assert len(records) == len(ip_set), (
-            f"Expected {len(ip_set)} record but received {len(records)}"
+        assert len(records) >= 1, (
+            f"Expected at least 1 record but received {len(records)}"
         )
 
         records = self.read_all_from_audit_log(

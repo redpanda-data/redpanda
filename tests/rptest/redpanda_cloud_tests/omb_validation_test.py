@@ -25,6 +25,7 @@ from rptest.services.redpanda_cloud import ThroughputTierInfo
 from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 from rptest.tests.write_caching_test import WriteCachingMode
 from rptest.utils.type_utils import rcast
+from rptest.util import not_none
 
 
 KiB = 1024
@@ -36,16 +37,9 @@ GB = 10**9
 minutes = 60
 hours = 60 * minutes
 
-T = TypeVar("T")
 
 REJECTED_METRIC = "vectorized_kafka_rpc_connections_rejected_total"
 ACTIVE_METRIC = "vectorized_kafka_rpc_active_connections"
-
-
-def not_none(value: T | None) -> T:
-    if value is None:
-        raise ValueError(f"value was unexpectedly None")
-    return value
 
 
 class OMBValidationTest(RedpandaCloudTest):

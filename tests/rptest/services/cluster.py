@@ -154,6 +154,8 @@ def cluster(
                         redpanda.cloud_storage_diagnostics()
                     raise
 
+            redpanda.export_cluster_config()
+
             if isinstance(redpanda, RedpandaService):
                 if test_failed:
                     redpanda.cloud_storage_diagnostics()

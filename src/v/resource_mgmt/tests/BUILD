@@ -47,7 +47,6 @@ redpanda_cc_btest(
         "//src/v/crash_tracker",
         "//src/v/resource_mgmt:memory_sampling",
         "//src/v/storage:batch_cache",
-        "//src/v/test_utils:fixture",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
         "@fmt",

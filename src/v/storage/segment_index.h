@@ -36,25 +36,46 @@ using broker_timestamp_t = ss::lowres_system_clock::time_point;
 
 // clang-format off
 // this truth table shows which timestamps gets used as retention_timestamp
+// `validated_batch_timestamps` ensures that the `max_timestamp` of a batch
+// produced to `redpanda` has been validated by properties
+// `message.timestamp.{before/after}.max.ms` and are valid for retention enforcement.
+// Prior to this, the broker timestamp would be used for retention enforcement,
+// and even prior to this, the unvalidated `max_timestamp` would be used.
 //
-// use_broker_ts  has_broker_ts  ignore_future_ts  has_alternative_to_future_ts  retention_ts
+// use_broker_ts  has_broker_ts  ignore_future_ts  has_alternative_to_future_ts  validated_batch_timestamps  retention_ts
 //                               (likely false)
-// TRUE           TRUE           TRUE              TRUE                          broker_timestamp
-// TRUE           TRUE           TRUE              FALSE                         broker_timestamp
-// TRUE           TRUE           FALSE             TRUE                          broker_timestamp
-// TRUE           TRUE           FALSE             FALSE                         broker_timestamp             // new segment, new cluster
-// TRUE           FALSE          TRUE              TRUE                          segment_index::_retention_ms // buggy old segment, new cluster
-// TRUE           FALSE          TRUE              FALSE                         max_timestamp
-// TRUE           FALSE          FALSE             TRUE                          max_timestamp
-// TRUE           FALSE          FALSE             FALSE                         max_timestamp                // old segment, new cluster
-// FALSE          TRUE           TRUE              TRUE                          segment_index::_retention_ms
-// FALSE          TRUE           TRUE              FALSE                         max_timestamp
-// FALSE          TRUE           FALSE             TRUE                          max_timestamp
-// FALSE          TRUE           FALSE             FALSE                         max_timestamp                // new segment, upgraded cluster
-// FALSE          FALSE          TRUE              TRUE                          segment_index::_retention_ms // buggy old segments
-// FALSE          FALSE          TRUE              FALSE                         max_timestamp
-// FALSE          FALSE          FALSE             TRUE                          max_timestamp
-// FALSE          FALSE          FALSE             FALSE                         max_timestamp                // old segment, upgraded cluster
+// TRUE           TRUE           TRUE              TRUE                          TRUE                        max_timestamp
+// TRUE           TRUE           TRUE              FALSE                         TRUE                        max_timestamp
+// TRUE           TRUE           FALSE             TRUE                          TRUE                        max_timestamp
+// TRUE           TRUE           FALSE             FALSE                         TRUE                        max_timestamp
+// TRUE           FALSE          TRUE              TRUE                          TRUE                        max_timestamp
+// TRUE           FALSE          TRUE              FALSE                         TRUE                        max_timestamp
+// TRUE           FALSE          FALSE             TRUE                          TRUE                        max_timestamp
+// TRUE           FALSE          FALSE             FALSE                         TRUE                        max_timestamp
+// TRUE           TRUE           TRUE              TRUE                          FALSE                       broker_timestamp
+// TRUE           TRUE           TRUE              FALSE                         FALSE                       broker_timestamp
+// TRUE           TRUE           FALSE             TRUE                          FALSE                       broker_timestamp
+// TRUE           TRUE           FALSE             FALSE                         FALSE                       broker_timestamp               // new segment, new cluster
+// TRUE           FALSE          TRUE              TRUE                          FALSE                       segment_index::_retention_ms   // buggy old segment, new cluster
+// TRUE           FALSE          TRUE              FALSE                         FALSE                       max_timestamp
+// TRUE           FALSE          FALSE             TRUE                          FALSE                       max_timestamp
+// TRUE           FALSE          FALSE             FALSE                         FALSE                       max_timestamp                  // old segment, new cluster
+// FALSE          TRUE           TRUE              TRUE                          FALSE                       segment_index::_retention_ms
+// FALSE          TRUE           TRUE              FALSE                         FALSE                       max_timestamp
+// FALSE          TRUE           FALSE             TRUE                          FALSE                       max_timestamp
+// FALSE          TRUE           FALSE             FALSE                         FALSE                       max_timestamp                  // new segment, upgraded cluster
+// FALSE          FALSE          TRUE              TRUE                          FALSE                       segment_index::_retention_ms   // buggy old segments
+// FALSE          FALSE          TRUE              FALSE                         FALSE                       max_timestamp
+// FALSE          FALSE          FALSE             TRUE                          FALSE                       max_timestamp
+// FALSE          FALSE          FALSE             FALSE                         FALSE                       max_timestamp                  // old segment, upgraded cluster
+// FALSE          TRUE           TRUE              TRUE                          TRUE                        max_timestamp
+// FALSE          TRUE           TRUE              FALSE                         TRUE                        max_timestamp
+// FALSE          TRUE           FALSE             TRUE                          TRUE                        max_timestamp
+// FALSE          TRUE           FALSE             FALSE                         TRUE                        max_timestamp
+// FALSE          FALSE          TRUE              TRUE                          TRUE                        max_timestamp
+// FALSE          FALSE          TRUE              FALSE                         TRUE                        max_timestamp
+// FALSE          FALSE          FALSE             TRUE                          TRUE                        max_timestamp
+// FALSE          FALSE          FALSE             FALSE                         TRUE                        max_timestamp
 // clang-format on
 
 // this struct is meant to be a local copy of the feature
@@ -62,6 +83,7 @@ using broker_timestamp_t = ss::lowres_system_clock::time_point;
 // storage_ignore_timestamps_in_future_secs
 struct time_based_retention_cfg {
     bool use_broker_time;
+    bool use_validated_batch_time;
     bool use_escape_hatch_for_timestamps_in_the_future;
 
     static auto make(const features::feature_table& ft)
@@ -69,6 +91,8 @@ struct time_based_retention_cfg {
         return {
           .use_broker_time = ft.is_active(
             features::feature::broker_time_based_retention),
+          .use_validated_batch_time = ft.is_active(
+            features::feature::validated_batch_timestamps),
           .use_escape_hatch_for_timestamps_in_the_future
           = config::shard_local_cfg()
               .storage_ignore_timestamps_in_future_sec()
@@ -81,7 +105,14 @@ struct time_based_retention_cfg {
       std::optional<model::timestamp> broker_ts,
       model::timestamp max_ts,
       std::optional<model::timestamp> alternative_retention_ts) const noexcept {
-        // new clusters and new segments should hit this branch
+        // For versions of `redpanda` that have `max_timestamp` in batches
+        // validated by `message.timestamp.{before/after}.max.ms` and
+        // unconditionally set in the produce path (see:
+        // v/kafka/server/handlers/produce_validation.cc)
+        if (use_validated_batch_time) {
+            return max_ts;
+        }
+
         if (likely(use_broker_time && broker_ts.has_value())) {
             return *broker_ts;
         }
@@ -350,8 +381,10 @@ struct fmt::formatter<storage::time_based_retention_cfg>
   : public fmt::formatter<std::string_view> {
     auto format(const storage::time_based_retention_cfg& cfg, auto& ctx) const {
         auto str = ssx::sformat(
-          "[.use_broker_time={}, "
+          "[.use_validated_batch_time={}, "
+          ".use_broker_time={}, "
           ".use_escape_hatch_for_timestamps_in_the_future={}]",
+          cfg.use_validated_batch_time,
           cfg.use_broker_time,
           cfg.use_escape_hatch_for_timestamps_in_the_future);
         return formatter<std::string_view>::format(

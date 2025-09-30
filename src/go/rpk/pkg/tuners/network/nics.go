@@ -67,13 +67,8 @@ func getDefaultMode(
 	return "", fmt.Errorf("virtual device %s is not supported", nic.Name())
 }
 
-func GetRpsCPUMask(
-	nic Nic, mode irq.Mode, cpuMask string, cpuMasks irq.CPUMasks,
-) (string, error) {
-	effectiveCPUMask, err := cpuMasks.BaseCPUMask(cpuMask)
-	if err != nil {
-		return "", err
-	}
+func getEffectiveMode(mode irq.Mode, nic Nic, effectiveCPUMask string, cpuMasks irq.CPUMasks) (irq.Mode, error) {
+	var err error
 	effectiveMode := mode
 	if mode == irq.Default {
 		effectiveMode, err = getDefaultMode(nic, effectiveCPUMask, cpuMasks)
@@ -81,6 +76,36 @@ func GetRpsCPUMask(
 			return "", err
 		}
 	}
+	return effectiveMode, nil
+}
+
+func GetRpsCPUMask(
+	nic Nic, mode irq.Mode, cpuMask string, cpuMasks irq.CPUMasks,
+) (string, error) {
+	effectiveCPUMask, err := cpuMasks.BaseCPUMask(cpuMask)
+	if err != nil {
+		return "", err
+	}
+
+	effectiveMode, err := getEffectiveMode(mode, nic, effectiveCPUMask, cpuMasks)
+	if err != nil {
+		return "", err
+	}
+
+	queueCount, err := nic.GetRxQueueCount()
+	if err != nil {
+		return "", err
+	}
+	puCount, err := cpuMasks.GetNumberOfPUs(effectiveCPUMask)
+	if err != nil {
+		return "", err
+	}
+
+	// In MQ mode, with at least one hardware RX queue per core just disable RPS as it adds no benefit.
+	if queueCount >= int(puCount) && effectiveMode == irq.Mq {
+		return "0x0", nil
+	}
+
 	computationsCPUMask, err := cpuMasks.CPUMaskForComputations(
 		effectiveMode, effectiveCPUMask)
 	if err != nil {
@@ -96,18 +121,17 @@ func GetHwInterfaceIRQsDistribution(
 	if err != nil {
 		return nil, err
 	}
-	effectiveMode := mode
-	if mode == irq.Default {
-		effectiveMode, err = getDefaultMode(nic, effectiveCPUMask, cpuMasks)
-		if err != nil {
-			return nil, err
-		}
+
+	effectiveMode, err := getEffectiveMode(mode, nic, effectiveCPUMask, cpuMasks)
+	if err != nil {
+		return nil, err
 	}
 
 	maxRxQueues, err := nic.GetMaxRxQueueCount()
 	if err != nil {
 		return nil, err
 	}
+
 	allIRQs, err := nic.GetIRQs()
 	if err != nil {
 		return nil, err
@@ -176,6 +200,30 @@ func CollectIRQs(nic Nic) ([]int, error) {
 	return IRQs, nil
 }
 
-func OneRPSQueueLimit(limits []string) int {
-	return RfsTableSize / len(limits)
+func OneRPSQueueLimit(limits []string, nic Nic, mode irq.Mode, cpuMask string, cpuMasks irq.CPUMasks) (int, error) {
+	effectiveCPUMask, err := cpuMasks.BaseCPUMask(cpuMask)
+	if err != nil {
+		return 0, err
+	}
+
+	effectiveMode, err := getEffectiveMode(mode, nic, effectiveCPUMask, cpuMasks)
+	if err != nil {
+		return 0, err
+	}
+
+	queueCount, err := nic.GetRxQueueCount()
+	if err != nil {
+		return 0, err
+	}
+
+	puCount, err := cpuMasks.GetNumberOfPUs(effectiveCPUMask)
+	if err != nil {
+		return 0, err
+	}
+
+	// In MQ mode, with at least one hardware RX queue per core just disable RFS as it adds no benefit.
+	if queueCount >= int(puCount) && effectiveMode == irq.Mq {
+		return 0, nil
+	}
+	return RfsTableSize / len(limits), nil
 }

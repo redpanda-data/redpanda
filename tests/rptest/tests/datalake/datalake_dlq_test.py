@@ -582,7 +582,7 @@ class DatalakeDLQTest(RedpandaTest):
 
     def _invalid_records_metric_sum(
         self, topic: str, cause: IcebergInvalidRecordCause
-    ) -> int:
+    ) -> float:
         metric_name = "redpanda_iceberg_translation_invalid_records_total"
 
         samples = self.redpanda.metrics_sample(

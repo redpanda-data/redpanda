@@ -107,3 +107,24 @@ redpanda_cc_bench(
         "@seastar//:benchmark",
     ],
 )
+
+redpanda_cc_bench(
+    name = "absl_map_rpbench",
+    srcs = [
+        "absl_map_bench.cc",
+    ],
+    deps = [
+        ":bench_utils",
+        "//src/v/base",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
+        "//src/v/container:contiguous_range_map",
+        "//src/v/random:generators",
+        "@abseil-cpp//absl/container:btree",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:node_hash_map",
+        "@boost//:range",
+        "@fmt",
+        "@seastar//:benchmark",
+    ],
+)

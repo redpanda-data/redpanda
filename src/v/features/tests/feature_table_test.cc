@@ -15,7 +15,6 @@
 #include "model/timestamp.h"
 #include "security/license.h"
 #include "security/tests/license_utils.h"
-#include "test_utils/fixture.h"
 
 #include <seastar/core/sleep.hh>
 

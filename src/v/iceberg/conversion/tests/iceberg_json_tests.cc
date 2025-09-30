@@ -24,6 +24,7 @@
 #include <gtest/gtest.h>
 #include <rapidjson/error/en.h>
 
+#include <limits>
 #include <string_view>
 #include <utility>
 #include <variant>
@@ -898,7 +899,24 @@ TEST_CORO(IcebergValues, ValuePrimitives) {
       {"boolean", "true", iceberg::boolean_value(true)},
       {"boolean", "false", iceberg::boolean_value(false)},
       {"integer", "42", iceberg::long_value(42)},
+      {"integer", "42.0", iceberg::long_value(42)},
+      {"integer", "4.2e1", iceberg::long_value(42)},
       {"integer", "-42", iceberg::long_value(-42)},
+      {"integer",
+       "9223372036854775807",
+       iceberg::long_value(std::numeric_limits<int64_t>::max())},
+      {"integer",
+       "-9223372036854775808",
+       iceberg::long_value(std::numeric_limits<int64_t>::min())},
+      // Integer.{MIN,MAX}_SAFE_INTEGER in JavaScript. No guarantees beyond
+      // this range for now because of parser limitations.
+      {"integer",
+       "9.007199254740991e15",
+       iceberg::long_value(9007199254740991)},
+      {"integer",
+       "-9.007199254740991e15",
+       iceberg::long_value(-9007199254740991)},
+      {"number", "42", iceberg::double_value(42)},
       {"number", "3.14", iceberg::double_value(3.14)},
       {"string", R"("foo")", iceberg::string_value(iobuf::from("foo"))},
     });
@@ -920,6 +938,42 @@ TEST_CORO(IcebergValues, ValuePrimitives) {
           std::move(result.value()));
 
         EXPECT_EQ(*result_value->fields[0], expected);
+    }
+}
+
+TEST_CORO(IcebergValues, ValuePrimitivesInvalid) {
+    const auto json_primitives = std::to_array<
+      std::tuple<std::string_view, std::string_view, std::string>>({
+      {"integer",
+       "42.1",
+       "Cannot convert non-integer double value 42.1 to integer without "
+       "precision loss"},
+      {"integer",
+       "42e100",
+       "Cannot convert non-integer double value 4.2e+101 to integer without "
+       "precision loss"},
+      // No support for 2^63 with scientific notation because json parser(s) see
+      // a double.
+      {"integer",
+       "9.223372036854775807e18",
+       "Cannot convert non-integer double value 9.223372036854778e+18 to "
+       "integer without precision loss"},
+    });
+
+    for (const auto& [type, value, err] : json_primitives) {
+        SCOPED_TRACE(fmt::format("Testing type: {}, value: {}", type, value));
+
+        auto schema = fmt::format(
+          R"({{
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "{}"
+          }})",
+          type);
+        auto result = co_await to_iceberg_value(
+          schema, fmt::format("{}", value));
+
+        ASSERT_TRUE_CORO(result.has_error());
+        ASSERT_STREQ_CORO(err.c_str(), result.error().what());
     }
 }
 

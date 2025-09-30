@@ -709,7 +709,6 @@ redpanda_cc_library(
         "//src/v/pandaproxy/schema_registry:config",
         "//src/v/pandaproxy/schema_registry:subject_name_strategy",
         "//src/v/raft",
-        "//src/v/random:fast_prng",
         "//src/v/random:generators",
         "//src/v/random:time_jitter",
         "//src/v/reflection:adl",

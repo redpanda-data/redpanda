@@ -23,6 +23,7 @@
 #include "security/sasl_authentication.h"
 #include "security/scram_authenticator.h"
 #include "security/types.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/util/defer.hh>
 

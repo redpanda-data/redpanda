@@ -160,15 +160,19 @@ raft::replicate_stages local_partition_sink::replicate(
     for (const auto& batch : batches) {
         expected_offsets.push_back(::model::offset_cast(batch.base_offset()));
     }
-    auto new_last_replicated = ::model::offset_cast(
+    auto new_last_replicated_begin = ::model::offset_cast(
+      batches.front().base_offset());
+    auto new_last_replicated_end = ::model::offset_cast(
       batches.back().last_offset());
     vassert(
-      new_last_replicated > _last_replicated_offset,
+      new_last_replicated_begin > _last_replicated_offset
+        && new_last_replicated_end > _last_replicated_offset,
       "[{}] Replicating offsets must be monotonically increasing last "
-      "replicated: {}, attempting to replicate: {}",
+      "replicated: {}, attempting to replicate: [{}, {}]",
       _partition->ntp(),
       _last_replicated_offset,
-      new_last_replicated);
+      new_last_replicated_begin,
+      new_last_replicated_end);
     vlog(
       cllog.trace,
       "[{}] Replicating batches in range [{} - {}], last_replicated: {}, "
@@ -177,14 +181,14 @@ raft::replicate_stages local_partition_sink::replicate(
       batches.front().header(),
       batches.back().header(),
       _last_replicated_offset,
-      new_last_replicated);
+      new_last_replicated_end);
     auto stages = _stm->replicate(
       std::move(batches),
       std::move(expected_offsets),
       _last_replicated_offset,
       timeout,
       as);
-    _last_replicated_offset = new_last_replicated;
+    _last_replicated_offset = new_last_replicated_end;
     return stages;
 }
 

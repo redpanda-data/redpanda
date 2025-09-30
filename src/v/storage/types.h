@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/format_to.h"
+#include "base/units.h"
 #include "compaction/types.h"
 #include "container/chunked_vector.h"
 #include "model/fundamental.h"
@@ -321,7 +322,6 @@ struct local_log_reader_config {
     local_log_reader_config(
       model::offset start_offset,
       model::offset max_offset,
-      size_t min_bytes,
       size_t max_bytes,
       std::optional<model::record_batch_type> type_filter,
       std::optional<model::timestamp> time,
@@ -330,7 +330,6 @@ struct local_log_reader_config {
       bool strict_max_bytes = false)
       : start_offset(start_offset)
       , max_offset(max_offset)
-      , min_bytes(min_bytes)
       , max_bytes(max_bytes)
       , type_filter(type_filter)
       , first_timestamp(time)
@@ -349,7 +348,6 @@ struct local_log_reader_config {
       : local_log_reader_config(
           start_offset,
           max_offset,
-          0,
           std::numeric_limits<size_t>::max(),
           std::nullopt,
           std::nullopt,
@@ -359,7 +357,6 @@ struct local_log_reader_config {
 
     model::offset start_offset;
     model::offset max_offset;
-    size_t min_bytes;
     size_t max_bytes;
 
     // Batch type to filter for (i.e specified type will be the only one
@@ -417,6 +414,10 @@ struct local_log_reader_config {
     std::optional<ss::semaphore::clock::time_point> read_lock_deadline{};
 
     fmt::iterator format_to(fmt::iterator it) const;
+
+    // The amount of data accumulated when reading from a segment before
+    // returning results to the reader.
+    static constexpr size_t segment_reader_max_buffer_size{32_KiB};
 };
 
 // Empty, invalid reader config which is sometimes useful as a placeholder

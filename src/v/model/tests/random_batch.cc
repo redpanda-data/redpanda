@@ -30,6 +30,7 @@
 namespace model::test {
 using namespace tests; // NOLINT
 
+namespace {
 std::vector<model::record_header> make_headers(int n = 2) {
     std::vector<model::record_header> ret;
     ret.reserve(n);
@@ -37,32 +38,37 @@ std::vector<model::record_header> make_headers(int n = 2) {
         int key_len = get_int(i, 10);
         int val_len = get_int(i, 10);
         ret.emplace_back(
-          model::record_header(
-            key_len, random_iobuf(key_len), val_len, random_iobuf(val_len)));
+          key_len, random_iobuf(key_len), val_len, random_iobuf(val_len));
     }
     return ret;
 }
 
-static model::record _make_random_record(
-  int index,
-  std::optional<iobuf> key,
-  std::optional<size_t> rec_size = std::nullopt) {
+struct record_spec {
+    int index;
+    std::optional<iobuf> key;
+    std::optional<size_t> record_size;
+    int num_headers = 2;
+};
+
+model::record make_random_record(record_spec spec) {
     iobuf k;
-    vassert(!key || !rec_size, "Cannot specify both key and record size.");
-    if (key) {
-        k = std::move(*key);
-    } else if (rec_size) {
-        k = random_iobuf(*rec_size);
+    vassert(
+      !spec.key || !spec.record_size,
+      "Cannot specify both key and record size.");
+    if (spec.key) {
+        k = std::move(*spec.key);
+    } else if (spec.record_size) {
+        k = random_iobuf(*spec.record_size);
     } else {
         k = random_iobuf();
     }
     auto k_z = k.size_bytes();
     auto v = random_iobuf();
     auto v_z = v.size_bytes();
-    auto headers = make_headers();
+    auto headers = make_headers(spec.num_headers);
     auto size = sizeof(model::record_attributes::type) // attributes
-                + vint::vint_size(index)               // timestamp delta
-                + vint::vint_size(index)               // offset delta
+                + vint::vint_size(spec.index)          // timestamp delta
+                + vint::vint_size(spec.index)          // offset delta
                 + vint::vint_size(k_z)                 // size of key-len
                 + k.size_bytes()                       // size of key
                 + vint::vint_size(v_z)                 // size of value
@@ -72,25 +78,21 @@ static model::record _make_random_record(
         size += vint::vint_size(h.key_size()) + h.key().size_bytes()
                 + vint::vint_size(h.value_size()) + h.value().size_bytes();
     }
-    return model::record(
-      size,
+    return {
+      static_cast<int32_t>(size),
       model::record_attributes(0),
-      index,
-      index,
-      k_z,
+      spec.index,
+      spec.index,
+      static_cast<int32_t>(k_z),
       std::move(k),
-      v_z,
+      static_cast<int32_t>(v_z),
       std::move(v),
-      std::move(headers));
+      std::move(headers)};
 }
+} // namespace
 
 model::record make_random_record(int index, iobuf key) {
-    return _make_random_record(
-      index, std::make_optional<iobuf>(std::move(key)));
-}
-
-static model::record make_random_record(int index, std::optional<size_t> size) {
-    return _make_random_record(index, std::nullopt, size);
+    return make_random_record({.index = index, .key = std::move(key)});
 }
 
 model::record_batch make_random_batch(
@@ -159,9 +161,17 @@ model::record_batch make_random_batch(record_batch_spec spec) {
         if (spec.max_key_cardinality) {
             auto keystr = gen_alphanum_max_distinct(*spec.max_key_cardinality);
             auto key = iobuf::from(keystr.c_str());
-            rs.emplace_back(make_random_record(i, std::move(key)));
+            rs.emplace_back(make_random_record({
+              .index = i,
+              .key = std::move(key),
+              .num_headers = spec.headers_per_record,
+            }));
         } else {
-            rs.emplace_back(make_random_record(i, sz));
+            rs.emplace_back(make_random_record({
+              .index = i,
+              .record_size = sz,
+              .num_headers = spec.headers_per_record,
+            }));
         }
     }
     iobuf body;

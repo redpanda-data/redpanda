@@ -159,7 +159,7 @@ ss::future<result<bool>> batcher<Clock>::run_once() noexcept {
           10_MiB); // TODO: use configuration parameter
 
         if (list.requests.empty()) {
-            vlog(_logger.debug, "No write requests to process");
+            vlog(_logger.trace, "No write requests to process");
             co_return true;
         }
 

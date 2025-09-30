@@ -67,6 +67,10 @@ public:
     ss::future<rpc::get_first_timestamp_ge_reply> get_first_timestamp_ge(
       rpc::get_first_timestamp_ge_request, local_only = local_only::no);
 
+    ss::future<rpc::get_first_offset_for_bytes_reply>
+      get_first_offset_for_bytes(
+        rpc::get_first_offset_for_bytes_request, local_only = local_only::no);
+
     ss::future<rpc::get_offsets_reply>
       get_offsets(rpc::get_offsets_request, local_only = local_only::no);
 
@@ -84,6 +88,8 @@ public:
 
     std::optional<model::partition_id>
     metastore_partition(const model::topic_id_partition&) const;
+
+    ss::future<bool> ensure_topic_exists();
 
 private:
     using proto_t = cloud_topics::l1::rpc::impl::l1_rpc_client_protocol;
@@ -109,8 +115,6 @@ private:
     }
     ss::future<typename req_t::resp_t> process(req_t req, bool local_only);
 
-    ss::future<bool> ensure_topic_exists();
-
     ss::future<rpc::add_objects_reply> add_objects_locally(
       rpc::add_objects_request, const model::ntp& metastore_ntp, ss::shard_id);
 
@@ -127,6 +131,12 @@ private:
     ss::future<rpc::get_first_timestamp_ge_reply>
     get_first_timestamp_ge_locally(
       rpc::get_first_timestamp_ge_request,
+      const model::ntp& metastore_ntp,
+      ss::shard_id);
+
+    ss::future<rpc::get_first_offset_for_bytes_reply>
+    get_first_offset_for_bytes_locally(
+      rpc::get_first_offset_for_bytes_request,
       const model::ntp& metastore_ntp,
       ss::shard_id);
 

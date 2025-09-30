@@ -8,9 +8,6 @@
 // by the Apache License, Version 2.0
 
 #include "model/fundamental.h"
-#include "model/metadata.h"
-#include "model/record.h"
-#include "model/record_batch_reader.h"
 #include "raft/tests/raft_fixture.h"
 #include "raft/tests/raft_fixture_retry_policy.h"
 #include "test_utils/test.h"

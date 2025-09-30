@@ -14,6 +14,7 @@
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "test_utils/logs.h"
+#include "test_utils/test_env.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -29,18 +30,6 @@ struct log_record_key {
 
     type record_type;
 };
-
-namespace {
-inline ss::sstring random_dir() {
-    char* tmpdir = std::getenv("TEST_TMPDIR");
-    if (!tmpdir) {
-        return ss::format("test.dir_{}", time(nullptr));
-    }
-    return {
-      std::filesystem::path(tmpdir)
-      / fmt::format("test.dir_{}", time(nullptr))};
-}
-} // namespace
 
 cluster::partition_assignment create_test_assignment(uint32_t p, uint16_t rf) {
     std::vector<model::broker_shard> replicas;
@@ -87,7 +76,7 @@ SEASTAR_THREAD_TEST_CASE(round_trip_test) {
             .add_kv(pa_key, create_test_assignment(2, 1)))
           .build();
     int32_t current_crc = batch.header().crc;
-    ss::sstring base_dir = random_dir();
+    ss::sstring base_dir = test_env::random_dir_path();
     model::ntp test_ntp(
       model::ns("test_ns"), model::topic("test_topic"), model::partition_id(0));
     chunked_circular_buffer<model::record_batch> batches;

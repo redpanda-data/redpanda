@@ -12,6 +12,7 @@
 #include "utils/retry_chain_node.h"
 
 #include "base/vassert.h"
+#include "random/generators.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/abort_source.hh>
@@ -486,14 +487,14 @@ retry_permit basic_retry_chain_node<Clock>::retry() {
 template<class Clock>
 typename Clock::duration basic_retry_chain_node<Clock>::get_backoff() const {
     duration backoff(_backoff * (1UL << _retry));
-    duration jitter(fast_prng_source() % backoff.count());
+    duration jitter(random_generators::global().get_int(backoff.count() - 1));
     return backoff + jitter;
 }
 
 template<class Clock>
 typename Clock::duration
 basic_retry_chain_node<Clock>::get_poll_interval() const {
-    duration jitter(fast_prng_source() % _backoff.count());
+    duration jitter(random_generators::global().get_int(_backoff.count() - 1));
     return _backoff + jitter;
 }
 

@@ -19,6 +19,7 @@
 #include "config/validators.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "net/tls.h"
 #include "security/config.h"
 #include "security/oidc_url_parser.h"
 #include "serde/rw/chrono.h"
@@ -735,9 +736,10 @@ configuration::configuration()
   , fetch_read_strategy(
       *this,
       "fetch_read_strategy",
-      "The strategy used to fulfill fetch requests. * `polling`: Repeatedly "
-      "polls every partition in the request for new data. The polling interval "
-      "is set by `fetch_reads_debounce_timeout` (deprecated). * `non_polling`: "
+      "The strategy used to fulfill fetch requests. * `polling`: If "
+      "`fetch_reads_debounce_timeout` is set to its default value, then this "
+      "acts exactly like `non_polling`; otherwise, it acts like "
+      "`non_polling_with_debounce` (deprecated). * `non_polling`: "
       "The backend is signaled when a partition has new data, so Redpanda does "
       "not need to repeatedly read from every partition in the fetch. Redpanda "
       "Data recommends using this value for most workloads, because it can "
@@ -3795,14 +3797,7 @@ configuration::configuration()
       0.5,
       {.min = 0.0, .max = 1.0})
   , kafka_memory_batch_size_estimate_for_fetch(
-      *this,
-      "kafka_memory_batch_size_estimate_for_fetch",
-      "The size of the batch used to estimate memory consumption for fetch "
-      "requests, in bytes. Smaller sizes allow more concurrent fetch requests "
-      "per shard. Larger sizes prevent running out of memory because of too "
-      "many concurrent fetch requests.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      1_MiB)
+      *this, "kafka_memory_batch_size_estimate_for_fetch")
   , cpu_profiler_enabled(
       *this,
       "cpu_profiler_enabled",
@@ -3934,6 +3929,36 @@ configuration::configuration()
       "connections as client-initiated renegotiation was removed.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
       false)
+  , tls_v1_2_cipher_suites(
+      *this,
+      "tls_v1_2_cipher_suites",
+      "Specifies the TLS 1.2 cipher suites available for external client "
+      "connections as a colon-separated OpenSSL-compatible list. Configure "
+      "this property to support legacy clients.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      ss::sstring{net::tls_v1_2_cipher_suites},
+      [](ss::sstring s) -> std::optional<ss::sstring> {
+          if (!validate_tls_v1_2_cipher_suites(s)) {
+              return ssx::sformat("Invalid cipher suites: {}", s);
+          }
+          return std::nullopt;
+      })
+  , tls_v1_3_cipher_suites(
+      *this,
+      "tls_v1_3_cipher_suites",
+      "Specifies the TLS 1.3 cipher suites available for external client "
+      "connections as a colon-separated OpenSSL-compatible list. Most "
+      "deployments don't need to modify this setting. Configure this property "
+      "only for specific organizational security policies.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      ss::sstring{net::tls_v1_3_cipher_suites},
+      [](ss::sstring s) -> std::optional<ss::sstring> {
+          if (!validate_tls_v1_3_cipher_suites(s)) {
+              return ssx::sformat("Invalid cipher suites: {}", s);
+          }
+          return std::nullopt;
+      })
+
   , iceberg_enabled(
       *this,
       true,
@@ -4409,18 +4434,40 @@ configuration::configuration()
       "may affect performance. The change is applied only after the restart.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
       false)
+  , enable_shadow_linking(
+      *this,
+      "enable_shadow_linking",
+      "Enable creating Shadow Links from this cluster to a remote source "
+      "cluster for data replication.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
   , development_enable_cloud_topics(
       *this,
       "development_enable_cloud_topics",
       "Enable cloud topics.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
-  , development_enable_cluster_link(
+  , cloud_topics_produce_batching_size_threshold(
       *this,
-      "development_enable_cluster_link",
-      "Enable cluster linking.",
+      "cloud_topics_produce_batching_size_threshold",
+      "The size limit for the object size in cloud topics. When the "
+      "amount of data on a shard reaches this limit, an upload is triggered.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      false)
+      4_MiB)
+  , cloud_topics_produce_upload_interval(
+      *this,
+      "cloud_topics_produce_upload_interval",
+      "Time interval after which the upload is triggered.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      250ms)
+  , cloud_topics_produce_cardinality_threshold(
+      *this,
+      "cloud_topics_produce_cardinality_threshold",
+      "Threshold for the object cardinality in cloud topics. When the "
+      "number of partitions in waiting for the upload reach this limit, an "
+      "upload is triggered.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      1000)
   , development_feature_property_testing_only(
       *this,
       "development_feature_property_testing_only",
@@ -4470,9 +4517,7 @@ configuration::error_map_t configuration::load(const YAML::Node& root_node) {
         throw std::invalid_argument("'redpanda' root is required");
     }
 
-    auto ignore = node().property_names_and_aliases();
-
-    return config_store::read_yaml(root_node["redpanda"], std::move(ignore));
+    return config_store::read_yaml(root_node["redpanda"]);
 }
 
 std::unique_ptr<configuration> make_config() {

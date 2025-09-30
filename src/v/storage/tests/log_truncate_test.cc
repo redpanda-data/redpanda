@@ -18,7 +18,6 @@
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/types.h"
-#include "test_utils/fixture.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/util/defer.hh>
@@ -279,6 +278,7 @@ TEST_F(storage_test_fixture, test_truncate_last_single_record_batch) {
       log,
       15,
       model::term_id(0),
+      std::nullopt,
       [](std::optional<model::timestamp> ts = std::nullopt) {
           chunked_circular_buffer<model::record_batch> ret;
           ret.push_back(
@@ -544,9 +544,10 @@ TEST_F(storage_test_fixture, test_concurrent_truncate_and_compaction) {
                    storage::ntp_config(
                      ntp, mgr.config().base_dir, std::move(overrides)))
                  .get();
+    auto ts = model::timestamp::now() - model::timestamp(1000);
     for (int seg = 0; seg < 2; seg++) {
         for (int i = 0; i < 5; i++) {
-            append_random_batches(log, 1, model::term_id(0));
+            append_random_batches(log, 1, model::term_id(0), ts);
         }
         log->flush().get();
         log->force_roll().get();
@@ -577,7 +578,6 @@ TEST_F(storage_test_fixture, test_concurrent_truncate_and_compaction) {
     }
 
     // Now race windowed compaction and truncation.
-    auto ts = now();
     auto sleep_ms1 = random_generators::get_int(0, 100);
     housekeeping_config housekeeping_cfg(
       ts,

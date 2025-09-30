@@ -19,6 +19,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "pandaproxy/test/utils.h"
+#include "test_utils/boost_fixture.h"
 #include "utils/unresolved_address.h"
 
 #include <seastar/util/defer.hh>

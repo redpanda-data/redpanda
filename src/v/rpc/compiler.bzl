@@ -36,7 +36,7 @@ def redpanda_cc_rpc_library(name, src, out = None, deps = [], visibility = None)
         "//src/v/metrics",
         "//src/v/rpc",
         "//src/v/finjector",
-        "//src/v/random:fast_prng",
+        "//src/v/random:generators",
     ]
 
     redpanda_cc_library(

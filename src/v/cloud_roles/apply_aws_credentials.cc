@@ -78,16 +78,13 @@ apply_aws_credentials::add_auth(http::client::request_header& header) const {
     }
 
     auto existing_hash = header[aws_header_names::x_amz_content_sha256];
-    std::string_view sha256;
     if (existing_hash.empty()) {
-        sha256 = sha_for_verb(header.method());
+        std::string_view sha256 = sha_for_verb(header.method());
         header.insert(
           aws_header_names::x_amz_content_sha256,
           {sha256.data(), sha256.size()});
-    } else {
-        sha256 = existing_hash;
     }
-    return _signature.sign_header(header, sha256);
+    return _signature.sign_header(header);
 }
 
 void apply_aws_credentials::reset_creds(credentials creds) {

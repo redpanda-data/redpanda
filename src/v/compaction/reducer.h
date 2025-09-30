@@ -62,7 +62,7 @@ public:
 
     public:
         virtual ss::future<ss::stop_iteration>
-        operator()(model::record_batch b, model::compression c) = 0;
+        operator()(model::record_batch, model::compression) = 0;
         virtual ss::future<> finalize() = 0;
     };
 

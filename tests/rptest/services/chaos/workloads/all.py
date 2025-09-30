@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 # ruff: noqa: F401
+# pyright: reportUnusedImport=none
 
 from .list_offsets.service import ListOffsetsWorkload
 from .service_base import WorkloadServiceBase

@@ -50,13 +50,12 @@ std::optional<kafka::offset> stm_manager::lowest_pinned_data_offset() const {
 fmt::iterator local_log_reader_config::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,
-      "start_offset:{}, max_offset:{}, min_bytes:{}, max_bytes:{}, "
+      "start_offset:{}, max_offset:{}, max_bytes:{}, "
       "strict_max_bytes:{}, type_filter: {}, first_timestamp:{}, "
       "bytes_consumed:{}, over_budget:{}, skip_batch_cache:{}, "
       "skip_readers_cache:{}, abortable:{}, client_address:{}",
       start_offset,
       max_offset,
-      min_bytes,
       max_bytes,
       strict_max_bytes,
       type_filter,

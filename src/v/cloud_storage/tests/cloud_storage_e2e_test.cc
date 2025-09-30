@@ -272,10 +272,10 @@ TEST_P(EndToEndFixture, TestProduceConsumeFromCloud) {
                                 model::offset(0))
                               .get();
     auto records = kv_t::sequence(0, 3);
-    BOOST_CHECK_EQUAL(records.size(), consumed_records.size());
+    EXPECT_EQ(records.size(), consumed_records.size());
     for (size_t i = 0; i < records.size(); ++i) {
-        BOOST_CHECK_EQUAL(records[i].key, consumed_records[i].key);
-        BOOST_CHECK_EQUAL(records[i].val, consumed_records[i].val);
+        EXPECT_EQ(records[i].key, consumed_records[i].key);
+        EXPECT_EQ(records[i].val, consumed_records[i].val);
     }
 }
 
@@ -665,7 +665,7 @@ TEST_P(CloudStorageEndToEndManualTest, TestConsumeDuringSpillover) {
 
     g.close().get();
     for (auto& check : checks) {
-        BOOST_CHECK(check.get());
+        EXPECT_TRUE(check.get());
     }
     cleanup.cancel();
 }
@@ -1100,11 +1100,11 @@ TEST_F(ReadReplicaFixture, TestCloudStorageTimequeryReadReplicaMode) {
     rr_rp->wait_for_leader(ntp).get();
     auto rr_partition = rr_rp->app.partition_manager.local().get(ntp).get();
     auto rr_archiver_ref = rr_partition->archiver();
-    BOOST_REQUIRE(rr_archiver_ref.has_value());
+    ASSERT_TRUE(rr_archiver_ref.has_value());
     auto& rr_archiver = rr_partition->archiver()->get();
-    BOOST_REQUIRE(rr_archiver.sync_for_tests().get());
+    ASSERT_TRUE(rr_archiver.sync_for_tests().get());
     rr_archiver.sync_manifest().get();
-    BOOST_REQUIRE_EQUAL(rr_archiver.manifest().size(), 5);
+    ASSERT_EQ(rr_archiver.manifest().size(), 5);
 
     auto make_and_verify_timequery =
       [rr_partition](

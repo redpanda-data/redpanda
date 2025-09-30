@@ -13,6 +13,7 @@ redpanda_cc_library(
         "//src/v/cloud_io:remote",
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics:object_utils",
+        "//src/v/cluster",
     ],
     visibility = ["//visibility:public"],
     deps = [

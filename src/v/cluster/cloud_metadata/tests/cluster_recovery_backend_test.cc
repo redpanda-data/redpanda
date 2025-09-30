@@ -512,8 +512,8 @@ TEST_F(ClusterRecoveryBackendTest, TestRecoverFailedDownload) {
                          .local()
                          .initialize_recovery(bucket)
                          .get();
-    BOOST_REQUIRE(recover_err.has_value());
-    BOOST_REQUIRE_EQUAL(recover_err.value(), cluster::errc::success);
+    ASSERT_TRUE(recover_err.has_value());
+    ASSERT_EQ(recover_err.value(), cluster::errc::success);
     RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
         return !app.controller->get_cluster_recovery_table()
                   .local()

@@ -1080,7 +1080,6 @@ ss::future<> group_manager::handle_partition_leader_change(
                 storage::local_log_reader_config reader_config(
                   p->partition->raft_start_offset(),
                   model::model_limits<model::offset>::max(),
-                  0,
                   std::numeric_limits<size_t>::max(),
                   std::nullopt,
                   std::nullopt,

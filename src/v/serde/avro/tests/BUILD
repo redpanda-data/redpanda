@@ -24,6 +24,7 @@ redpanda_test_cc_library(
     deps = [
         "//src/v/utils:uuid",
         "@avro",
+        "@fmt",
         "@seastar",
     ],
 )

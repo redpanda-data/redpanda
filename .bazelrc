@@ -144,6 +144,14 @@ build:release --@seastar//:stack_guards=False --@seastar//:debug=False
 build:release --//src/v/redpanda:lto=True
 build:release --copt -flto=thin --copt -ffat-lto-objects
 build:release --copt -g --strip=never
+build:release --@rules_rust//rust/settings:lto=fat
+build:release --@rules_rust//rust/settings:extra_rustc_flag=-Ccodegen-units=1
+# I've seen others claim these flags help with LTO and the final binary, but these also
+# require a specific version of clang and I don't really want to tie rustc version with
+# clang version.
+# build:release --@rules_rust//rust/settings:extra_rustc_flag=-Clinker-plugin-lto
+# build:release --@rules_rust//rust/settings:extra_rustc_flag=-Cembed-bitcode=yes
+# build:release --@rules_rust//rust/settings:extra_rustc_flag=-Clink-arg=-fuse-ld=lld
 
 build:stamp --stamp --workspace_status_command=./bazel/stamp_vars.sh
 build:stamp-full --stamp --workspace_status_command='./bazel/stamp_vars.sh full'
@@ -180,5 +188,8 @@ test:lldb --run_under='@current_llvm_toolchain_llvm//:bin/lldb-server g :7654 --
 # Bump timeout to 1h
 test:lldb --test_timeout=3600
 test:lldb --strategy=TestRunner=local
+
+# always pass through the following variables if they are set in the environment
+test --test_env=REDPANDA_RNG_SEEDING_MODE
 
 try-import %workspace%/user.bazelrc

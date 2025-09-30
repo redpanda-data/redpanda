@@ -10,7 +10,7 @@
 #include "http/client.h"
 #include "pandaproxy/test/pandaproxy_fixture.h"
 #include "pandaproxy/test/utils.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <boost/beast/http/field.hpp>
 #include <boost/beast/http/status.hpp>

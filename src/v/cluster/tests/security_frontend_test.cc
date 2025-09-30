@@ -19,7 +19,7 @@
 #include "security/role.h"
 #include "security/role_store.h"
 #include "test_utils/async.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <boost/range/irange.hpp>
 

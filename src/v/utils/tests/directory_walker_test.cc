@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "random/generators.h"
+#include "test_utils/test_env.h"
 #include "utils/directory_walker.h"
 
 #include <seastar/core/file.hh>
@@ -16,18 +16,7 @@
 
 #include <fmt/format.h>
 
-namespace {
-inline ss::sstring test_directory() {
-    char* tmpdir = std::getenv("TEST_TMPDIR");
-    if (!tmpdir) {
-        return ss::format(
-          "test.dir_{}", random_generators::gen_alphanum_string(6));
-    }
-    return {
-      std::filesystem::path(tmpdir)
-      / fmt::format("test.dir_{}", random_generators::gen_alphanum_string(6))};
-}
-} // namespace
+auto test_directory() { return test_env::random_dir_path(); }
 
 SEASTAR_THREAD_TEST_CASE(empty_dir) {
     auto dir = test_directory();

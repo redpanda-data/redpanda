@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 class FaultBase(ABC):
     @property
     @abstractmethod
-    def name(self):
+    def name(self) -> str:
         pass
 
 

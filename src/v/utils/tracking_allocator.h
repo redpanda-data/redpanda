@@ -29,7 +29,7 @@ public:
     explicit mem_tracker(ss::sstring label)
       : _label(std::move(label)) {}
     mem_tracker(mem_tracker&) = delete;
-    mem_tracker(mem_tracker&&) = default;
+    mem_tracker(mem_tracker&&) = delete;
     mem_tracker& operator=(mem_tracker&) = delete;
     mem_tracker& operator=(mem_tracker&&) = delete;
     ~mem_tracker() = default;

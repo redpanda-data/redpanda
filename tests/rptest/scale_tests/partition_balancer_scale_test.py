@@ -264,6 +264,8 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
                 to_restart = n
                 break
 
+        assert to_restart, "didn't find node"
+
         def seed_servers_for(node):
             seeds = map(
                 lambda n: {"address": n.account.hostname, "port": 33145},

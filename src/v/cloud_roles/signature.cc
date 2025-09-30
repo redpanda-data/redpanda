@@ -302,9 +302,10 @@ get_canonical_headers(const http::client::request_header& request) {
 /// <SignedHeaders>\n
 /// <HashedPayload>
 inline result<ss::sstring> create_canonical_request(
-  const canonical_headers& hdr,
-  const http::client::request_header& header,
-  std::string_view hashed_payload) {
+  const canonical_headers& hdr, const http::client::request_header& header) {
+    static constexpr boost::beast::string_view x_amz_content_sha256
+      = "x-amz-content-sha256";
+
     auto method = std::string(header.method_string());
     auto target = std::string(header.target());
     if (target.empty() || target.at(0) != '/') {
@@ -326,7 +327,7 @@ inline result<ss::sstring> create_canonical_request(
       canonical_query,
       hdr.canonical_headers,
       hdr.signed_headers,
-      hashed_payload);
+      header.at(x_amz_content_sha256));
 }
 
 /// Genertes string-to-sign (in spec terms), example:
@@ -383,8 +384,8 @@ ss::sstring redact_headers_from_string(const std::string_view original) {
     return absl::StrJoin(result, "\n");
 }
 
-std::error_code signature_v4::sign_header(
-  http::client::request_header& header, std::string_view sha256) const {
+std::error_code
+signature_v4::sign_header(http::client::request_header& header) const {
     ss::sstring date_str = _sig_time.format_date();
     auto sign_key = gen_sig_key(
       _private_key(), date_str, _region(), _service());
@@ -393,13 +394,12 @@ std::error_code signature_v4::sign_header(
     vlog(clrl_log.trace, "Credentials updated:\n[scope]\n{}\n", cred_scope);
     auto amz_date = _sig_time.format_datetime();
     header.set("x-amz-date", {amz_date.data(), amz_date.size()});
-    header.set("x-amz-content-sha256", {sha256.data(), sha256.size()});
     auto canonical_headers = get_canonical_headers(header);
     if (!canonical_headers) {
         return canonical_headers.error();
     }
     auto canonical_req = create_canonical_request(
-      canonical_headers.value(), header, sha256);
+      canonical_headers.value(), header);
     if (!canonical_req) {
         return canonical_req.error();
     }

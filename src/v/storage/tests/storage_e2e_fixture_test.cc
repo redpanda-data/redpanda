@@ -14,7 +14,7 @@
 #include "storage/disk_log_impl.h"
 #include "storage/segment.h"
 #include "storage/tests/storage_e2e_fixture.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>

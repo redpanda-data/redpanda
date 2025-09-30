@@ -18,7 +18,7 @@
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "test_utils/async.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/testing/thread_test_case.hh>

@@ -148,6 +148,29 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "security_migrator",
+    srcs = [
+        "security_migrator.cc",
+    ],
+    hdrs = [
+        "security_migrator.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        "//src/v/kafka/server:security",
+        "//src/v/security",
+    ],
+    visibility = ["//src/v/cluster_link:__subpackages__"],
+    deps = [
+        ":impl",
+        "//src/v/cluster_link/model",
+        "//src/v/kafka/client:cluster",
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:describe_acls",
+    ],
+)
+
+redpanda_cc_library(
     name = "cluster_link",
     srcs = [
         "service.cc",
@@ -159,6 +182,7 @@ redpanda_cc_library(
         ":group_mirroring_task",
         ":impl",
         ":logger",
+        ":security_migrator",
         ":source_topic_syncer",
         "//src/v/cluster_link/model",
     ],

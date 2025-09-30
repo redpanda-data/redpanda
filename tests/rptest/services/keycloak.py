@@ -333,7 +333,7 @@ class KeycloakService(Service):
             access_token_lifespan_s=access_token_lifespan_s,
         )
 
-    def stop_node(self, node, clean_shutdown=True):
+    def stop_node(self, node, clean_shutdown=True, **_):
         s = "TERM" if clean_shutdown else "KILL"
         self.logger.warn(f"Stopping node {node.name}")
 

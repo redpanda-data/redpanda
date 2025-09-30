@@ -14,7 +14,7 @@
 #include "kafka/server/fetch_session_cache.h"
 #include "model/fundamental.h"
 #include "random/generators.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/sstring.hh>
 

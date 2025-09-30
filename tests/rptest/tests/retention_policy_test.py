@@ -24,13 +24,17 @@ from rptest.services.redpanda import (
     SISettings,
     get_cloud_storage_type,
 )
+from rptest.services.redpanda_installer import InstallOptions, RedpandaVersionLine
+from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
     expect_exception,
+    expect_timeout,
     produce_total_bytes,
     produce_until_segments,
     segments_count,
     wait_for_local_storage_truncate,
+    wait_until,
 )
 from rptest.utils.si_utils import BucketView, quiesce_uploads
 
@@ -207,7 +211,7 @@ class RetentionPolicyToggleTest(RedpandaTest):
             redpanda=self.redpanda, topic=self.topic, target_bytes=local_retention
         )
 
-        self.logger.debug(f"Toggling back to cleanup.policy=compact")
+        self.logger.debug("Toggling back to cleanup.policy=compact")
         self.client().alter_topic_configs(
             self.topic,
             {
@@ -318,7 +322,7 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
                 lambda: self.segments_removed(self.default_retention_segments + 1),
                 timeout_sec=15,
                 backoff_sec=1,
-                err_msg=f"Segments were not removed",
+                err_msg="Segments were not removed",
             )
         else:
             with expect_exception(TimeoutError, lambda e: True):
@@ -363,7 +367,7 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
             lambda: self.segments_removed(self.retention_segments + 1),
             timeout_sec=15,
             backoff_sec=1,
-            err_msg=f"Segments were not removed",
+            err_msg="Segments were not removed",
         )
 
     @cluster(num_nodes=1)
@@ -410,7 +414,7 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
             lambda: self.segments_removed(num_segs - 1),
             timeout_sec=60,
             backoff_sec=2,
-            err_msg=f"Initial segments were not removed",
+            err_msg="Initial segments were not removed",
         )
 
         # the expectation of retention is to remove up to the active segment.
@@ -424,7 +428,7 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
                 lambda: self.segments_removed(num_segs - 1),
                 timeout_sec=30,
                 backoff_sec=5,
-                err_msg=f"Segments were not removed",
+                err_msg="Segments were not removed",
             )
             tmp = len(self.query_segments())
             assert tmp < num_segs
@@ -506,7 +510,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             lambda: 9 <= deleted_segments_count() <= 10,
             timeout_sec=30,
             backoff_sec=1,
-            err_msg=f"Segments were not removed from the cloud",
+            err_msg="Segments were not removed from the cloud",
         )
 
     @cluster(num_nodes=3)
@@ -561,7 +565,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             lambda: cloud_log_size().total() >= total_bytes,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=f"Segments not uploaded",
+            err_msg="Segments not uploaded",
         )
 
         # Alter the topic's retention.bytes config to trigger removal of
@@ -576,7 +580,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             lambda: cloud_log_size().total() <= retention_bytes,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=f"Too many bytes in the cloud",
+            err_msg="Too many bytes in the cloud",
         )
 
     @cluster(num_nodes=3)
@@ -641,7 +645,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             lambda: cloud_log_segment_count() >= local_seg_count - 1,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=f"Segments not uploaded",
+            err_msg="Segments not uploaded",
         )
 
         # Alter the topic's retention.ms config to trigger removal of
@@ -655,7 +659,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             lambda: cloud_log_segment_count() == 0,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=f"Not all segments were removed from the cloud",
+            err_msg="Not all segments were removed from the cloud",
         )
 
     @cluster(num_nodes=1)
@@ -739,7 +743,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             lambda: cloud_log_size().total() >= total_bytes,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=f"Segments not uploaded",
+            err_msg="Segments not uploaded",
         )
 
         # Modify retention settings
@@ -753,7 +757,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             lambda: cloud_log_size().total() <= retention_bytes,
             timeout_sec=30,
             backoff_sec=2,
-            err_msg=f"Too many bytes in the cloud",
+            err_msg="Too many bytes in the cloud",
         )
 
     @cluster(num_nodes=1)
@@ -812,7 +816,16 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
         ), f"recreated topic {topic_name} cfg do not match {pre_cfg=} {post_cfg=}"
 
 
-class BogusTimestampTest(RedpandaTest):
+class TimestampDriftRetentionTest(RedpandaTest):
+    """
+    Tests that timestamps of records that have been allowed into `redpanda` are respected,
+    without any overrides or historical hacks applied. Previously we would fall back
+    to broker time or an adjusted mtime, both of which are deprecated behaviors now that
+    we have proper timestamp validation in the produce path as of v25.3.1
+    (`message.timestamp.{before/after}.max.ms`, as well as ensuring `max_timestamp` is set
+    in `produce_validation.cc`)
+    """
+
     segment_size = 1048576
     topics = (
         TopicSpec(
@@ -833,6 +846,121 @@ class BogusTimestampTest(RedpandaTest):
         )
 
     @cluster(num_nodes=2)
+    def test_future_timestamps(self):
+        """
+        Ensure record timestamps in the future are respected by retention enforcement.
+        """
+
+        # Allow for messages up to a week in the future to be produced.
+        self.client().alter_topic_config(
+            self.topic, "message.timestamp.after.max.ms", 7 * 24 * 3600 * 1000
+        )
+
+        # A fictional artificial timestamp base in milliseconds
+        future_timestamp = (int(time.time()) + 24 * 3600) * 1000
+
+        # Produce a run of messages with CreateTime-style timestamps, each
+        # record having a timestamp 1ms greater than the last.
+        msg_size = 14000
+        segments_count = 10
+        msg_count = (self.segment_size // msg_size) * segments_count
+
+        # Write msg_count messages with timestamps in the future
+        producer = KgoVerifierProducer(
+            context=self.test_context,
+            redpanda=self.redpanda,
+            topic=self.topic,
+            msg_size=msg_size,
+            msg_count=(self.segment_size // msg_size) * segments_count,
+            fake_timestamp_ms=future_timestamp,
+            batch_max_bytes=msg_size * 2,
+        )
+        producer.start()
+        producer.wait()
+
+        def prefix_truncated():
+            segs = self.redpanda.node_storage(self.redpanda.nodes[0]).segments(
+                "kafka", self.topic, 0
+            )
+            self.logger.debug(f"Segments: {segs}")
+            return len(segs) <= 1
+
+        # Don't expect to see any prefix truncation.
+        with expect_timeout():
+            self.redpanda.wait_until(prefix_truncated, timeout_sec=5, backoff_sec=1)
+
+    @cluster(num_nodes=2)
+    def test_past_timestamps(self):
+        """
+        Ensure record timestamps in the past are respected by retention enforcement.
+        """
+
+        # Set `retention.ms` to 25 hours
+        retention_ms = 25 * 3600 * 1000
+        self.client().alter_topic_config(self.topic, "retention.ms", retention_ms)
+
+        # A fictional artificial timestamp base in milliseconds (one day previous)
+        past_timestamp = (int(time.time()) - 24 * 3600) * 1000
+
+        # Produce a run of messages with CreateTime-style timestamps, each
+        # record having a timestamp 1ms greater than the last.
+        msg_size = 14000
+        segments_count = 10
+        msg_count = (self.segment_size // msg_size) * segments_count
+
+        # Write msg_count messages with timestamps in the past
+        producer = KgoVerifierProducer(
+            context=self.test_context,
+            redpanda=self.redpanda,
+            topic=self.topic,
+            msg_size=msg_size,
+            msg_count=(self.segment_size // msg_size) * segments_count,
+            fake_timestamp_ms=past_timestamp,
+            batch_max_bytes=msg_size * 2,
+        )
+        producer.start()
+        producer.wait()
+
+        def prefix_truncated():
+            segs = self.redpanda.node_storage(self.redpanda.nodes[0]).segments(
+                "kafka", self.topic, 0
+            )
+            self.logger.debug(f"Segments: {segs}")
+            return len(segs) <= 1
+
+        # Don't expect to see prefix truncation of day old records with `retention.ms=25h`.
+        with expect_timeout():
+            self.redpanda.wait_until(prefix_truncated, timeout_sec=5, backoff_sec=1)
+
+        # Set `retention.ms` to 23 hours
+        retention_ms = 23 * 3600 * 1000
+        self.client().alter_topic_config(self.topic, "retention.ms", retention_ms)
+
+        # Expect to see prefix truncation of day old records with `retention.ms=23h`.
+        self.redpanda.wait_until(prefix_truncated, timeout_sec=30, backoff_sec=1)
+
+
+class BogusTimestampTest(EndToEndTest):
+    def __init__(self, test_context):
+        self.test_context = test_context
+        super().__init__(
+            test_context=test_context,
+            extra_rp_conf={"log_compaction_interval_ms": 1000},
+        )
+        self.segment_size = 1048576
+        self.topic_spec = TopicSpec(
+            partition_count=1,
+            replication_factor=1,
+            cleanup_policy=TopicSpec.CLEANUP_DELETE,
+            # 1 megabyte segments
+            segment_bytes=self.segment_size,
+            # 10 second retention: in the case of mixed timestamps,
+            # give active segment time to help adjust retention timestamps and show up in log monitor.
+            retention_ms=10000,
+        )
+        self.topic = self.topic_spec.name
+
+    @cluster(num_nodes=2)
     @matrix(mixed_timestamps=[True, False], use_broker_timestamps=[True, False])
     def test_bogus_timestamps(
         self, mixed_timestamps: bool, use_broker_timestamps: bool
@@ -840,8 +968,30 @@ class BogusTimestampTest(RedpandaTest):
         """
         :param mixed_timestamps: if true, test with a mixture of valid and invalid
         timestamps in the same segment (i.e. timestamp adjustment should use the
-        valid timestamps rather than falling back to mtime)
+        valid timestamps rather than falling back to mtime).
+
+        This is a legacy test which depends on the fact that `validated_batch_timestamps`
+        is a feature flag with `available_policy::new_clusters_only` in `v25.3.x`.
+        For that reason, we start with a cluster of version `v25.2.x`, immediately
+        upgrade it, and expect to see the legacy behavior.
         """
+
+        pre_validated_batch_timestamps_version = RedpandaVersionLine((25, 2))
+
+        self.start_redpanda(
+            num_nodes=1,
+            install_opts=InstallOptions(version=pre_validated_batch_timestamps_version),
+        )
+
+        self.client().create_topic(self.topic_spec)
+
+        # Install the latest version of `redpanda` and restart nodes
+        for version in self.redpanda._installer.upgrade_path_to_head(
+            pre_validated_batch_timestamps_version
+        ):
+            self.redpanda._installer.install(self.redpanda.nodes, version)
+            self.redpanda.stop_node(self.redpanda.nodes[0])
+            self.redpanda.start_node(self.redpanda.nodes[0])
 
         # broker_time_based_retention fixes this test case for new segments. (disable it to simulate a legacy condition)
         self.redpanda.set_feature_active(

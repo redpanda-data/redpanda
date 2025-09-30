@@ -60,11 +60,6 @@ public:
         kafka::offset start_offset;
         // last offset of the last translated batch (inclusive)
         kafka::offset last_offset;
-        // vector containing a list of files that were written during
-        // translation.
-        chunked_vector<partitioning_writer::partitioned_file> data_files;
-        // files with invalid records
-        chunked_vector<partitioning_writer::partitioned_file> dlq_files;
         // Total number of kafka bytes processed by the multiplexer
         uint64_t kafka_bytes_processed{0};
     };
@@ -109,12 +104,19 @@ public:
      */
     ss::future<writer_error> flush_writers();
 
+    struct finished_files {
+        // vector containing a list of files that were written during
+        // translation.
+        chunked_vector<partitioning_writer::partitioned_file> data_files;
+        // files with invalid records
+        chunked_vector<partitioning_writer::partitioned_file> dlq_files;
+    };
     /**
      * Cleanup and return the result. Should be the last operation to
      * be called. May not be called in parallel while multiplexing is in
      * progress.
      */
-    ss::future<result<write_result, writer_error>> finish() &&;
+    ss::future<result<write_result, writer_error>> finish(finished_files&) &&;
 
     size_t buffered_bytes() const;
 

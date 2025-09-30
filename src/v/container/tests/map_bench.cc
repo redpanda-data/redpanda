@@ -65,7 +65,7 @@ public:
         auto val = make_value();
         auto keys = make_keys();
         std::shuffle(
-          keys.begin(), keys.end(), random_generators::internal::gen);
+          keys.begin(), keys.end(), random_generators::global().engine());
         perf_tests::start_measuring_time();
         for (auto& k : keys) {
             map.emplace(k, val);

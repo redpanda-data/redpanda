@@ -18,7 +18,7 @@
 #include "http/tests/utils.h"
 #include "net/dns.h"
 #include "net/types.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "utils/base64.h"
 #include "utils/unresolved_address.h"
 

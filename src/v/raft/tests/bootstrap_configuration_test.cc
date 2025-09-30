@@ -15,28 +15,21 @@
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/group_configuration.h"
-#include "random/generators.h"
 #include "storage/api.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
 #include "storage/record_batch_builder.h"
-#include "test_utils/randoms.h"
 // testing
 #include "raft/tests/simple_record_fixture.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
+#include "test_utils/test_env.h"
 
 #include <seastar/core/print.hh>
 #include <seastar/util/log.hh>
 
 using namespace std::chrono_literals; // NOLINT
 
-inline ss::sstring test_directory() {
-    char* tmpdir = std::getenv("TEST_TMPDIR");
-    if (!tmpdir) {
-        return "test.dir";
-    }
-    return {std::filesystem::path(tmpdir) / std::string("test.dir")};
-}
+ss::sstring test_directory() { return test_env::random_dir_path(); }
 
 struct bootstrap_fixture : raft::simple_record_fixture {
     using raft::simple_record_fixture::active_nodes;

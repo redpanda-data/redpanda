@@ -35,7 +35,7 @@ static void fill_response(
      */
     absl::flat_hash_map<
       security::resource_pattern,
-      std::vector<security::acl_entry>>
+      chunked_vector<security::acl_entry>>
       entries;
 
     auto bindings = ctx.authorizer().acls(filter);
@@ -44,35 +44,12 @@ static void fill_response(
         entries[binding.pattern()].push_back(binding.entry());
     }
 
-    for (const auto& entry : entries) {
-        describe_acls_resource resource;
-
-        // resource pattern
-        resource.type
-          = describing_registry_resource
-              ? details::to_kafka_registry_resource_type(entry.first.resource())
-              : details::to_kafka_resource_type(entry.first.resource());
-        resource.name = entry.first.name();
-        resource.pattern_type = details::to_kafka_pattern_type(
-          entry.first.pattern());
-        resource.registry_resource = describing_registry_resource;
-
-        // acl entries
-        for (auto& acl : entry.second) {
-            // ignore ephemeral_users
-            auto ephemeral_user = security::principal_type::ephemeral_user;
-            if (acl.principal().type() == ephemeral_user) {
-                continue;
-            }
-            acl_description desc{
-              .principal = details::to_kafka_principal(acl.principal()),
-              .host = details::to_kafka_host(acl.host()),
-              .operation = details::to_kafka_operation(acl.operation()),
-              .permission_type = details::to_kafka_permission(acl.permission()),
-            };
-            resource.acls.push_back(std::move(desc));
-        }
-        response.resources.push_back(std::move(resource));
+    for (auto& entry : entries) {
+        response.resources.push_back(
+          kafka::details::acl_entry_to_resource(
+            entry.first,
+            std::move(entry.second),
+            describing_registry_resource));
     }
 }
 

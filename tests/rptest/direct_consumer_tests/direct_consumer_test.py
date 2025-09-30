@@ -7,17 +7,19 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from typing import Any
+
 import random
 import threading
 from enum import Enum
-from typing import Any, Callable
+from typing import Callable
 
 from ducktape.tests.test import TestContext
 from ducktape.mark import matrix
+from rptest.services.cluster import cluster
+from rptest.services.admin import Admin
 
 from rptest.clients.types import TopicSpec
-from rptest.services.admin import Admin
-from rptest.services.cluster import cluster
 from rptest.services.direct_consumer_verifier import (
     AssignPartitionsRequest,
     BrokerAddress,
@@ -35,9 +37,6 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_with_progress_check
 from rptest.utils.node_operations import (
     FailureInjectorBackgroundThread,
-    NodeOpsExecutor,
-    generate_random_workload,
-    verify_offset_translator_state_consistent,
 )
 
 
@@ -216,7 +215,7 @@ class DirectConsumerVerifierTest(RedpandaTest):
                 timeout_sec=600,
                 progress_sec=10,
                 backoff_sec=2,
-                err_msg=f"Stopped consuming",
+                err_msg="Stopped consuming",
                 logger=self.logger,
             )
 
@@ -237,6 +236,6 @@ class DirectConsumerVerifierTest(RedpandaTest):
 
         finally:
             troublemaker.stop()
-            producer.stop()
             verifier.stop()
             producer.wait(timeout_sec=600)
+            producer.stop()

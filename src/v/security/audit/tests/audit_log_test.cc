@@ -14,7 +14,6 @@
 #include "security/audit/audit_log_manager.h"
 #include "security/audit/schemas/iam.h"
 #include "security/audit/tests/audit_test_utils.h"
-#include "test_utils/fixture.h"
 #include "test_utils/scoped_config.h"
 
 #include <seastar/util/log.hh>

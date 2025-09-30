@@ -353,11 +353,13 @@ struct service::impl {
         if (is_https) {
             tls_host.emplace(url.host);
             if (!_creds) {
+                const auto& cfg = config::shard_local_cfg();
                 ss::tls::credentials_builder builder;
                 builder.set_client_auth(ss::tls::client_auth::NONE);
                 builder.set_minimum_tls_version(
-                  config::from_config(
-                    config::shard_local_cfg().tls_min_version()));
+                  config::from_config(cfg.tls_min_version()));
+                builder.set_cipher_string(cfg.tls_v1_2_cipher_suites);
+                builder.set_ciphersuites(cfg.tls_v1_3_cipher_suites);
                 co_await builder.set_system_trust();
                 _creds = co_await net::build_reloadable_credentials_with_probe<
                   ss::tls::certificate_credentials>(

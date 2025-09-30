@@ -537,7 +537,7 @@ class NodeWiseRecoveryTest(RedpandaTest):
 
     def collect_topic_partition_states(self, topic):
         states = {}
-        for p in self.rpk.describe_topic(topic):
+        for p in self.rpk.describe_topic(topic, tolerant=True):
             states[p.id] = self.admin.get_partition_state(
                 namespace="kafka",
                 topic=topic,
@@ -568,6 +568,8 @@ class NodeWiseRecoveryTest(RedpandaTest):
 
         def start_offset_advanced():
             states = self.collect_topic_partition_states(topic)
+            if len(states) == 0:
+                return False
 
             return all(
                 r["start_offset"] > 0 for s in states.values() for r in s["replicas"]
@@ -838,7 +840,7 @@ class NodeWiseRecoveryTest(RedpandaTest):
         admin = self.redpanda._admin
         rpk = RpkTool(self.redpanda)
         replicas = []
-        for p in rpk.describe_topic(topic.name):
+        for p in rpk.describe_topic(topic.name, tolerant=True):
             replicas = [int(r) for r in p.replicas]
 
         self.logger.info(f"Test topic {topic.name} replicas: {replicas}")

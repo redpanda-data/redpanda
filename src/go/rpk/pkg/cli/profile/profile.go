@@ -7,6 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+// Package profile implements the rpk profile commands.
+// These allow users to list, manage, and switch between the
+// configurations for multiple environments.
 package profile
 
 import (

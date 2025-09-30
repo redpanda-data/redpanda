@@ -20,6 +20,7 @@
 #include "model/timestamp.h"
 #include "storage/tests/manual_mixin.h"
 #include "test_utils/async.h"
+#include "test_utils/boost_fixture.h"
 #include "test_utils/scoped_config.h"
 
 using namespace tests;

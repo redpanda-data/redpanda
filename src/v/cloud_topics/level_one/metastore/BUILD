@@ -110,6 +110,8 @@ redpanda_cc_library(
         ":state",
         "//src/v/base",
         "//src/v/cloud_topics/level_one/common:object_id",
+        "//src/v/container:chunked_vector",
+        "//src/v/model",
         "@seastar",
     ],
 )

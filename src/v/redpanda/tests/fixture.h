@@ -15,8 +15,8 @@
 #include "cloud_storage_clients/configuration.h"
 #include "cluster/archival/types.h"
 #include "cluster/cluster_utils.h"
-#include "cluster/controller.h"
-#include "cluster/topics_frontend.h"
+#include "cluster/controller.h"      // IWYU pragma: keep; public member devex
+#include "cluster/topics_frontend.h" // IWYU pragma: keep; public member devex
 #include "cluster/types.h"
 #include "config/node_config.h"
 #include "kafka/client/transport.h"
@@ -34,9 +34,7 @@
 #include "security/sasl_authentication.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
-#include "storage/tests/utils/disk_log_builder.h"
-#include "test_utils/async.h"
-#include "test_utils/fixture.h"
+#include "test_utils/async.h" // IWYU pragma: export
 #include "utils/unresolved_address.h"
 
 #include <seastar/core/future.hh>

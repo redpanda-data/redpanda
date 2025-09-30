@@ -42,7 +42,7 @@ func NewNetTuner(
 			factory.NewNICsBalanceServiceTuner(interfaces),
 			factory.NewNICsIRQsAffinityTuner(interfaces, mode, cpuMask),
 			factory.NewNICsRpsTuner(interfaces, mode, cpuMask),
-			factory.NewNICsRfsTuner(interfaces),
+			factory.NewNICsRfsTuner(interfaces, mode, cpuMask),
 			factory.NewNICsNTupleTuner(interfaces),
 			factory.NewNICsXpsTuner(interfaces),
 			factory.NewRfsTableSizeTuner(),
@@ -55,7 +55,7 @@ type NetTunersFactory interface {
 	NewNICsBalanceServiceTuner(interfaces []string) Tunable
 	NewNICsIRQsAffinityTuner(interfaces []string, mode irq.Mode, cpuMask string) Tunable
 	NewNICsRpsTuner(interfaces []string, mode irq.Mode, cpuMask string) Tunable
-	NewNICsRfsTuner(interfaces []string) Tunable
+	NewNICsRfsTuner(interfaces []string, mode irq.Mode, cpuMask string) Tunable
 	NewNICsNTupleTuner(interfaces []string) Tunable
 	NewNICsXpsTuner(interfaces []string) Tunable
 	NewRfsTableSizeTuner() Tunable
@@ -186,11 +186,11 @@ func (f *netTunersFactory) NewNICsRpsTuner(
 	)
 }
 
-func (f *netTunersFactory) NewNICsRfsTuner(interfaces []string) Tunable {
+func (f *netTunersFactory) NewNICsRfsTuner(interfaces []string, mode irq.Mode, cpuMask string) Tunable {
 	return f.tuneNonVirtualInterfaces(
 		interfaces,
 		func(nic network.Nic) Checker {
-			return f.checkersFactory.NewNicRfsChecker(nic)
+			return f.checkersFactory.NewNicRfsChecker(nic, mode, cpuMask)
 		},
 		func(nic network.Nic) TuneResult {
 			zap.L().Sugar().Debugf("Tuning '%s' RFS", nic.Name())
@@ -198,7 +198,10 @@ func (f *netTunersFactory) NewNICsRfsTuner(interfaces []string) Tunable {
 			if err != nil {
 				return NewTuneError(err)
 			}
-			queueLimit := network.OneRPSQueueLimit(limits)
+			queueLimit, err := network.OneRPSQueueLimit(limits, nic, mode, cpuMask, f.cpuMasks)
+			if err != nil {
+				return NewTuneError(err)
+			}
 			for _, limitFile := range limits {
 				err := f.writeIntToFile(limitFile, queueLimit)
 				if err != nil {
@@ -208,6 +211,9 @@ func (f *netTunersFactory) NewNICsRfsTuner(interfaces []string) Tunable {
 			return NewTuneResult(false)
 		},
 		func() (bool, string) {
+			if !f.cpuMasks.IsSupported() {
+				return false, "Tuner is not supported as 'hwloc' is not installed"
+			}
 			return true, ""
 		},
 	)

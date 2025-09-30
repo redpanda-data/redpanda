@@ -12,6 +12,8 @@
 
 #include "model/timestamp.h"
 
+#include <seastar/core/coroutine.hh>
+
 namespace cloud_topics::reconciler {
 
 reconciliation_consumer::reconciliation_consumer(
@@ -21,7 +23,6 @@ reconciliation_consumer::reconciliation_consumer(
   , _metadata{
       .base_offset = kafka::offset::min(),
       .last_offset = kafka::offset::min(),
-      .base_timestamp = model::timestamp::max(),
       .last_timestamp = model::timestamp::min()} {}
 
 ss::future<ss::stop_iteration>
@@ -33,8 +34,6 @@ reconciliation_consumer::operator()(model::record_batch batch) {
 
     // NOTE: Only data batches here. It's safe to use timestamps without
     //       checking the batch type.
-    _metadata.base_timestamp = std::min(
-      batch.header().first_timestamp, _metadata.base_timestamp);
     _metadata.last_timestamp = std::max(
       batch.header().max_timestamp, _metadata.last_timestamp);
     _metadata.last_offset = model::offset_cast(batch.last_offset());
@@ -50,7 +49,7 @@ reconciliation_consumer::operator()(model::record_batch batch) {
     co_return ss::stop_iteration::no;
 }
 
-std::optional<partition_metadata> reconciliation_consumer::end_of_stream() {
+std::optional<consumer_metadata> reconciliation_consumer::end_of_stream() {
     if (_metadata.base_offset != kafka::offset::min()) {
         return _metadata;
     }

@@ -14,6 +14,7 @@
 #include "kafka/client/client.h"
 #include "kafka/protocol/metadata.h"
 #include "redpanda/tests/fixture.h"
+#include "storage/tests/utils/disk_log_builder.h"
 
 namespace kc = kafka::client;
 

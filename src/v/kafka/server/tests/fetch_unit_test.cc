@@ -37,6 +37,8 @@ BOOST_AUTO_TEST_CASE(reserve_memory_units_test) {
     using namespace std::chrono_literals;
     using r = reserve_mem_units_test_result;
 
+    static constexpr size_t batch_size = 1_MiB;
+
     // reserve memory units, return how many memory units have been reserved
     // from each memory semaphore
     ssx::semaphore memory_sem{100_MiB, "test_memory_sem"};
@@ -46,11 +48,13 @@ BOOST_AUTO_TEST_CASE(reserve_memory_units_test) {
         size_t max_bytes,
         bool obligatory_batch_read) -> reserve_mem_units_test_result {
         auto mu = kafka::testing::reserve_memory_units(
-          memory_sem, memory_fetch_sem, max_bytes, obligatory_batch_read);
+          memory_sem,
+          memory_fetch_sem,
+          max_bytes,
+          batch_size,
+          obligatory_batch_read);
         return {mu.kafka.count(), mu.fetch.count()};
     };
-
-    static constexpr size_t batch_size = 1_MiB;
 
     // below are test prerequisites, tests are done based on these assumptions
     // if these are not valid, the test needs a change

@@ -253,7 +253,7 @@ func RedpandaCheckers(
 		NicIRQsAffinitStaticChecker:   {netCheckersFactory.NewNicIRQAffinityStaticChecker(interfaces)},
 		NicIRQsAffinitChecker:         netCheckersFactory.NewNicIRQAffinityCheckers(interfaces, irq.Default, "all"),
 		NicRpsChecker:                 netCheckersFactory.NewNicRpsSetCheckers(interfaces, irq.Default, "all"),
-		NicRfsChecker:                 netCheckersFactory.NewNicRfsCheckers(interfaces),
+		NicRfsChecker:                 netCheckersFactory.NewNicRfsCheckers(interfaces, irq.Default, "all"),
 		NicXpsChecker:                 netCheckersFactory.NewNicXpsCheckers(interfaces),
 		MaxAIOEvents:                  {NewMaxAIOEventsChecker(fs)},
 		ClockSource:                   {NewClockSourceChecker(fs)},

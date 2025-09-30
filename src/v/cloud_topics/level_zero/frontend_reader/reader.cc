@@ -29,11 +29,12 @@ static constexpr size_t L0_max_bytes_per_metadata_fetch = 4_KiB;
 
 level_zero_log_reader_impl::level_zero_log_reader_impl(
   cloud_topic_log_reader_config& cfg,
-  ss::lw_shared_ptr<cluster::partition> underlying,
+  ss::lw_shared_ptr<cluster::partition> ctp,
   data_plane_api* ct_api)
   : _config(cfg)
-  , _underlying(std::move(underlying))
-  , _ct_api(ct_api) {}
+  , _ctp(std::move(ctp))
+  , _ct_api(ct_api)
+  , _log(cd_log, fmt::format("[{}/{}]", fmt::ptr(this), _ctp->ntp())) {}
 
 ss::future<model::record_batch_reader::storage_t>
 level_zero_log_reader_impl::do_load_slice(
@@ -86,7 +87,7 @@ level_zero_log_reader_impl::maybe_load_slices_from_cache() {
     while (materialized_bytes < _config.max_bytes
            && current <= _config.max_offset) {
         auto batch = _ct_api->cache_get(
-          _underlying->ntp(), kafka::offset_cast(current));
+          _ctp->ntp(), kafka::offset_cast(current));
         size_t batch_size = 0;
         if (!batch.has_value()) {
             // We hit a gap in the cache and have to download objects
@@ -97,7 +98,7 @@ level_zero_log_reader_impl::maybe_load_slices_from_cache() {
             break;
         }
         vlog(
-          cd_log.trace,
+          _log.trace,
           "Loaded batch from cache for {}: {} @ term {}",
           current,
           batch.value().base_offset(),
@@ -118,7 +119,7 @@ level_zero_log_reader_impl::maybe_load_slices_from_cache() {
           batch->base_offset() <= kafka::offset_cast(current)
             && kafka::offset_cast(current) <= batch->last_offset(),
           "Unexpected batch for {}, got range: [{},{}] for offset {}",
-          _underlying->ntp(),
+          _ctp->ntp(),
           batch->base_offset(),
           batch->last_offset(),
           current);
@@ -131,7 +132,7 @@ level_zero_log_reader_impl::maybe_load_slices_from_cache() {
     _config.start_offset = current;
     if (_config.start_offset > _config.max_offset) {
         vlog(
-          cd_log.debug,
+          _log.debug,
           "reached end of stream, start offset: {}, max offset: {}, "
           "current: {}",
           _config.start_offset,
@@ -157,8 +158,8 @@ ss::future<> level_zero_log_reader_impl::fetch_metadata(
         co_return;
     }
     try {
-        // Fetch metadata from the _underlying
-        auto ot_state = _underlying->get_offset_translator_state();
+        // Fetch metadata from the _ctp
+        auto ot_state = _ctp->get_offset_translator_state();
         auto start_offset = ot_state->to_log_offset(
           kafka::offset_cast(_config.start_offset));
         auto max_offset = ot_state->to_log_offset(
@@ -166,7 +167,6 @@ ss::future<> level_zero_log_reader_impl::fetch_metadata(
         storage::local_log_reader_config cfg(
           start_offset,
           max_offset,
-          _config.min_bytes,
           _config.max_bytes,
           // We need to fetch both raft data batches for transaction control
           // markers as well as placeholder batches to hydrate from object
@@ -187,7 +187,7 @@ ss::future<> level_zero_log_reader_impl::fetch_metadata(
         // to fetch L0 meta batches first and then parse them.
         cfg.max_bytes = L0_max_bytes_per_metadata_fetch;
 
-        auto reader = co_await _underlying->make_local_reader(cfg);
+        auto reader = co_await _ctp->make_local_reader(cfg);
         auto placeholders = co_await model::consume_reader_to_chunked_vector(
           std::move(reader), deadline);
 
@@ -220,7 +220,7 @@ ss::future<> level_zero_log_reader_impl::fetch_metadata(
         }
         if (!_unhydrated.empty()) {
             vlog(
-              cd_log.debug,
+              _log.debug,
               "Fetched {} L0 meta batches from the underlying "
               "partition, first offset: {}, last offset: {}",
               _unhydrated.size(),
@@ -228,7 +228,7 @@ ss::future<> level_zero_log_reader_impl::fetch_metadata(
               _unhydrated.back().header.last_offset());
         } else {
             vlog(
-              cd_log.debug,
+              _log.debug,
               "No L0 meta batches fetched from the underlying partition, "
               "start offset: {}, max offset: {}",
               cfg.start_offset,
@@ -236,7 +236,7 @@ ss::future<> level_zero_log_reader_impl::fetch_metadata(
         }
     } catch (...) {
         vlog(
-          cd_log.info,
+          _log.info,
           "Failed to fetch metadata from the underlying partition: {}",
           std::current_exception());
         _hydrated.clear();
@@ -252,7 +252,7 @@ ss::future<> level_zero_log_reader_impl::materialize_batches(
   model::timeout_clock::time_point deadline) {
     if (_current == state::end_of_stream_state) {
         _current = state::end_of_stream_state;
-        vlog(cd_log.trace, "Materialize batches called while EOS");
+        vlog(_log.trace, "Materialize batches called while EOS");
         co_return;
     }
     vassert(
@@ -264,7 +264,7 @@ ss::future<> level_zero_log_reader_impl::materialize_batches(
         // We're already materialized.
         _current = state::materialized_state;
         vlog(
-          cd_log.trace,
+          _log.trace,
           "Materialize batches call redundant, already materialized");
         co_return;
     }
@@ -272,7 +272,7 @@ ss::future<> level_zero_log_reader_impl::materialize_batches(
     if (_unhydrated.empty()) {
         // Nothing to materialize.
         _current = state::end_of_stream_state;
-        vlog(cd_log.trace, "Materialize batches without unhydrated batches");
+        vlog(_log.trace, "Materialize batches without unhydrated batches");
         co_return;
     }
 
@@ -299,7 +299,7 @@ ss::future<> level_zero_log_reader_impl::materialize_batches(
                 // limit). In this case we don't want to stall the reader
                 // completely.
                 vlog(
-                  cd_log.trace,
+                  _log.trace,
                   "Materialize batches overshot at {} bytes, config: {}, last "
                   "hydrated batch size: {}",
                   materialize_bytes,
@@ -314,24 +314,21 @@ ss::future<> level_zero_log_reader_impl::materialize_batches(
                 materialize_bytes += meta->byte_range_size;
                 to_materialize.push_back(*meta);
                 vlog(
-                  cd_log.trace,
+                  _log.trace,
                   "Materialize {} bytes total...",
                   materialize_bytes);
             }
         }
         size_t materialize_count = to_materialize.size();
         vlog(
-          cd_log.trace,
+          _log.trace,
           "Invoking 'materialize' for {}: {} bytes, {} batches to materialize",
-          _underlying->ntp(),
+          _ctp->ntp(),
           materialize_bytes,
           materialize_count);
         // Ask data layer to bring data from the cloud storage.
         auto mat_res = co_await _ct_api->materialize(
-          _underlying->ntp(),
-          materialize_bytes,
-          std::move(to_materialize),
-          deadline);
+          _ctp->ntp(), materialize_bytes, std::move(to_materialize), deadline);
         if (mat_res.has_error()) {
             throw std::runtime_error(
               fmt::format(
@@ -361,23 +358,19 @@ ss::future<> level_zero_log_reader_impl::materialize_batches(
                   model::record_batch batch = std::move(*batches_it);
                   ++batches_it;
                   auto size = batch.header().size_bytes;
-                  auto crc = batch.header().crc;
                   batch.header() = local_batch_header;
                   batch.header().type = model::record_batch_type::raft_data;
                   batch.header().size_bytes = size;
-                  batch.header().crc = crc;
-                  // Recalculate the header crc
-                  batch.header().header_crc = model::internal_header_only_crc(
-                    batch.header());
+                  batch.header().reset_size_checksum_metadata(batch.data());
                   // Propagate materialized batches to the record batch cache
                   if (cache_enabled()) {
                       vlog(
-                        cd_log.trace,
+                        _log.trace,
                         "Putting batch for {} to cache: {}, term: {}",
-                        _underlying->ntp(),
+                        _ctp->ntp(),
                         batch.base_offset(),
                         batch.term());
-                      _ct_api->cache_put(_underlying->ntp(), batch.copy());
+                      _ct_api->cache_put(_ctp->ntp(), batch.copy());
                   }
                   return batch;
               },
@@ -397,12 +390,12 @@ ss::future<> level_zero_log_reader_impl::materialize_batches(
         _hydrated = std::move(hydrated);
         // Materialize batches from the L0 meta batches.
         vlog(
-          cd_log.debug,
+          _log.debug,
           "Materialized {} batches from the L0 meta batches",
           _hydrated.size());
     } catch (...) {
         vlog(
-          cd_log.info,
+          _log.info,
           "Failed to materialize batches {}",
           std::current_exception());
         _hydrated.clear();
@@ -419,7 +412,7 @@ bool level_zero_log_reader_impl::cache_enabled() const {
     if (_config.skip_cache) {
         return false;
     }
-    if (!_underlying->log()->config().cache_enabled()) {
+    if (!_ctp->log()->config().cache_enabled()) {
         return false;
     }
     if (config::shard_local_cfg().disable_batch_cache()) {
@@ -431,7 +424,7 @@ bool level_zero_log_reader_impl::cache_enabled() const {
 void level_zero_log_reader_impl::consume_materialized_batches(
   chunked_circular_buffer<model::record_batch>* dest) {
     vlog(
-      cd_log.debug,
+      _log.debug,
       "consuming {} materialized batches, cached {} extents",
       _hydrated.size(),
       _unhydrated.size());

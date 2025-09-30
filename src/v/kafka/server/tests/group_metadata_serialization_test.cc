@@ -19,7 +19,7 @@
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "storage/record_batch_builder.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 #include "test_utils/random_bytes.h"
 
 #include <seastar/core/sstring.hh>

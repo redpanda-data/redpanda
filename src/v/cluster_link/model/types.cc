@@ -128,10 +128,23 @@ consumer_groups_mirroring_config::copy() const {
     return copy;
 }
 
+security_settings_sync_config security_settings_sync_config::copy() const {
+    security_settings_sync_config copy;
+
+    copy.is_enabled = is_enabled;
+    copy.task_interval = task_interval;
+    copy.acl_filters.reserve(acl_filters.size());
+    for (const auto& filter : acl_filters) {
+        copy.acl_filters.emplace_back(filter);
+    }
+    return copy;
+}
+
 link_configuration link_configuration::copy() const {
     link_configuration copy;
     copy.topic_metadata_mirroring_cfg = topic_metadata_mirroring_cfg.copy();
     copy.consumer_groups_mirroring_cfg = consumer_groups_mirroring_cfg.copy();
+    copy.security_settings_sync_cfg = security_settings_sync_cfg.copy();
     return copy;
 }
 
@@ -194,6 +207,11 @@ update_cluster_link_configuration_cmd::copy() const {
 
     return copy;
 }
+
+auto format_as(acl_resource r) { return to_string_view(r); }
+auto format_as(acl_pattern p) { return to_string_view(p); }
+auto format_as(acl_operation o) { return to_string_view(o); }
+auto format_as(acl_permission_type p) { return to_string_view(p); }
 } // namespace cluster_link::model
 
 auto fmt::formatter<cluster_link::model::task_state>::format(
@@ -471,14 +489,60 @@ auto fmt::formatter<cluster_link::model::cluster_link_task_status_report>::
       fmt::join(r.link_reports.begin(), r.link_reports.end(), ","));
 }
 
+auto fmt::formatter<cluster_link::model::acl_resource_filter>::format(
+  const cluster_link::model::acl_resource_filter& f, format_context& ctx) const
+  -> decltype(ctx.out()) {
+    return fmt::format_to(
+      ctx.out(),
+      "{{resource_type: {}, pattern_type: {}, name: {}}}",
+      f.resource_type,
+      f.pattern_type,
+      f.name);
+}
+
+auto fmt::formatter<cluster_link::model::acl_access_filter>::format(
+  const cluster_link::model::acl_access_filter& f, format_context& ctx) const
+  -> decltype(ctx.out()) {
+    return fmt::format_to(
+      ctx.out(),
+      "{{principal: {}, operation: {}, permission_type: {}, host: {}}}",
+      f.principal,
+      f.operation,
+      f.permission_type,
+      f.host);
+}
+
+auto fmt::formatter<cluster_link::model::acl_filter>::format(
+  const cluster_link::model::acl_filter& f, format_context& ctx) const
+  -> decltype(ctx.out()) {
+    return fmt::format_to(
+      ctx.out(),
+      "{{resource_filter: {}, access_filter: {}}}",
+      f.resource_filter,
+      f.access_filter);
+}
+
+auto fmt::formatter<cluster_link::model::security_settings_sync_config>::format(
+  const cluster_link::model::security_settings_sync_config& cfg,
+  format_context& ctx) const -> decltype(ctx.out()) {
+    return fmt::format_to(
+      ctx.out(),
+      "{{enabled: {}, task_interval: {}, acl_filters: {}}}",
+      cfg.is_enabled,
+      cfg.task_interval,
+      cfg.acl_filters);
+}
+
 auto fmt::formatter<cluster_link::model::link_configuration>::format(
   const cluster_link::model::link_configuration& cfg, format_context& ctx) const
   -> decltype(ctx.out()) {
     return fmt::format_to(
       ctx.out(),
-      "{{topic_metadata_mirroring_cfg: {}, consumer_groups_mirroring_cfg: {}}}",
+      "{{topic_metadata_mirroring_cfg: {}, consumer_groups_mirroring_cfg: {}, "
+      "security_settings_sync_cfg: {}}}",
       cfg.topic_metadata_mirroring_cfg,
-      cfg.consumer_groups_mirroring_cfg);
+      cfg.consumer_groups_mirroring_cfg,
+      cfg.security_settings_sync_cfg);
 }
 
 auto fmt::

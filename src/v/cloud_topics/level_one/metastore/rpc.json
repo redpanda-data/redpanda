@@ -26,6 +26,11 @@
             "output_type": "get_first_timestamp_ge_reply"
         },
         {
+            "name": "get_first_offset_for_bytes",
+            "input_type": "get_first_offset_for_bytes_request",
+            "output_type": "get_first_offset_for_bytes_reply"
+        },
+        {
             "name": "get_offsets",
             "input_type": "get_offsets_request",
             "output_type": "get_offsets_reply"

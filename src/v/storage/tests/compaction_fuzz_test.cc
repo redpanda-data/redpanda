@@ -72,10 +72,9 @@ generate_random_record_batches(int num, int cardinality) {
         if (i == 0) {
             keys.emplace_back(std::nullopt);
         } else {
-            keys.emplace_back(
-              random_generators::gen_alphanum_string(20, false));
+            keys.emplace_back(random_generators::gen_alphanum_string(20));
         }
-        values.emplace_back(random_generators::gen_alphanum_string(20, false));
+        values.emplace_back(random_generators::gen_alphanum_string(20));
     }
     // Generate actual batches
     model::offset current{0};

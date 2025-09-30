@@ -38,6 +38,7 @@
 #include "model/metadata.h"
 #include "redpanda/tests/fixture.h"
 #include "ssx/future-util.h"
+#include "test_utils/boost_fixture.h"
 #include "utils/unresolved_address.h"
 
 #include <seastar/core/loop.hh>

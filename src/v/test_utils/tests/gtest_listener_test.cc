@@ -62,6 +62,14 @@ int main(int argc, char** argv) {
     auto& listeners = ::testing::UnitTest::GetInstance()->listeners();
     listeners.Append(new rp_test_listener());
 
+    if (GTEST_FLAG_GET(fail_fast)) {
+        // this test makes assumptions about fail fast behavior not being
+        // on so just short-circuit out if the user has set that (e.g.,
+        // via bazel test --test_runner_fail_fast)
+        fmt::print("Skipping test because --gtest_fail_fast is set\n");
+        return 0;
+    }
+
     // Hide stdout to avoid confusing users.
     testing::internal::CaptureStdout();
     int result = RUN_ALL_TESTS();

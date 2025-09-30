@@ -11,6 +11,10 @@
 
 #pragma once
 
+#if !defined(IS_BTEST)
+#error "boost fixture can be included only from boost test files"
+#endif
+
 #include <seastar/core/future.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>

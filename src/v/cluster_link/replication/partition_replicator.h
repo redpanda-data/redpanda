@@ -58,7 +58,8 @@ public:
       const ::model::ntp& ntp,
       ::model::term_id,
       std::unique_ptr<data_source> source,
-      std::unique_ptr<data_sink> sink);
+      std::unique_ptr<data_sink> sink,
+      ss::scheduling_group sg = ss::default_scheduling_group());
     ss::future<> start();
     ss::future<> stop();
 
@@ -88,6 +89,7 @@ private:
     ss::abort_source _as;
     std::unique_ptr<data_source> _source;
     std::unique_ptr<data_sink> _sink;
+    ss::scheduling_group _scheduling_group;
     // to pipeline multiple replicate requests in parallel
     static constexpr ssize_t max_in_flight_requests = 5;
     ssx::semaphore _max_requests{

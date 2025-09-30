@@ -70,6 +70,11 @@ ss::future<> cluster_link_manager_test_fixture::wire_up_and_start(
       }),
       ss::sharded_parameter([&ftpc]() { return std::move(ftpc); }),
       ss::sharded_parameter([this]() {
+          auto fss = std::make_unique<fake_security_service>();
+          _fss = fss.get();
+          return fss;
+      }),
+      ss::sharded_parameter([this]() {
           return std::make_unique<test_link_registry>(&_table.local());
       }),
       ss::sharded_parameter([&lf]() { return std::move(lf); }),
@@ -87,7 +92,8 @@ ss::future<> cluster_link_manager_test_fixture::wire_up_and_start(
           return provider;
       }),
       1s,
-      _default_topic_replication.bind());
+      _default_topic_replication.bind(),
+      ss::default_scheduling_group());
 
     auto notif_id = _table.local().register_for_updates(
       [this](model::id_t id) { _manager.local().on_link_change(id); });
@@ -101,6 +107,7 @@ ss::future<> cluster_link_manager_test_fixture::reset() {
     _notification_cleanups.clear();
     _lf = nullptr;
     co_await _manager.stop();
+    _fss = nullptr;
     _tmc = nullptr;
     _fpm = nullptr;
     _fplci = nullptr;

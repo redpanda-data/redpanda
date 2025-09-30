@@ -23,6 +23,10 @@ class rp_test_listener : public ::testing::EmptyTestEventListener {
     OnTestIterationStart(const ::testing::UnitTest&, int iteration) override;
 
     void OnTestPartResult(const ::testing::TestPartResult& result) override;
+
+    void OnTestStart(const ::testing::TestInfo& test_info) override;
+
+    void OnTestEnd(const ::testing::TestInfo& test_info) override;
 };
 
 // Returns a pathname that may be used for the currently running test.

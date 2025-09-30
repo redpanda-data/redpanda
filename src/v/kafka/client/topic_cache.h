@@ -32,6 +32,7 @@ class topic_cache {
         kafka::topic_authorized_operations authorized_operations
           = kafka::topic_authorized_operations_not_set;
         int16_t replication_factor;
+        std::optional<model::topic_id> topic_id;
     };
 
     using topics_t = chunked_hash_map<model::topic, topic_data>;
@@ -52,7 +53,10 @@ public:
     std::optional<kafka::leader_epoch>
       leader_epoch(model::topic_partition_view) const;
 
+    /// \brief A view of all known topics
     auto topics() const { return std::views::keys(_topics); }
+
+    std::optional<model::topic_id> topic_id_for_name(model::topic_view) const;
 
     std::optional<kafka::topic_authorized_operations>
     authorized_operations_for_topic(model::topic_view tp) const;

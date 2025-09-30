@@ -16,12 +16,12 @@
 #include "raft/consensus.h"
 #include "raft/group_manager.h"
 #include "raft/types.h"
-#include "random/generators.h"
 #include "rpc/connection_cache.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
 #include "test_utils/async.h"
+#include "test_utils/test_env.h"
 #include "utils/unresolved_address.h"
 
 #include <seastar/core/sharded.hh>
@@ -32,22 +32,11 @@
 #include <chrono>
 #include <memory>
 
-inline ss::sstring test_directory() {
-    char* tmpdir = std::getenv("TEST_TMPDIR");
-    if (!tmpdir) {
-        return ss::format(
-          "test.dir_{}", random_generators::gen_alphanum_string(6));
-    }
-    return {
-      std::filesystem::path(tmpdir)
-      / fmt::format("test.dir_{}", random_generators::gen_alphanum_string(6))};
-}
-
 using namespace std::chrono_literals; // NOLINT
 struct simple_raft_fixture {
     simple_raft_fixture()
       : _self{0}
-      , _data_dir(test_directory()) {}
+      , _data_dir(test_env::random_dir_path()) {}
 
     void create_raft(storage::ntp_config::default_overrides overrides = {}) {
         // configure and start kvstore

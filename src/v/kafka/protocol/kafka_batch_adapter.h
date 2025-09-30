@@ -66,6 +66,7 @@ public:
     bool v2_format;
     bool valid_crc;
     bool legacy_error{false};
+    bool short_read{false};
 
     std::optional<model::record_batch> batch;
 

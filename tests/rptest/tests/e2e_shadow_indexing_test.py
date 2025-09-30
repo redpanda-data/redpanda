@@ -1109,18 +1109,20 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
             )
         finally:
             producer.stop()
-            producer.wait()
 
-        seq_consumer = KgoVerifierSeqConsumer(
-            self.test_context,
-            self.redpanda,
-            self.topic,
-            0,
-            nodes=self.preallocated_nodes,
-        )
-        seq_consumer.start(clean=False)
-        seq_consumer.wait()
-        self.redpanda.stop_node(self.redpanda.nodes[0])
+        try:
+            seq_consumer = KgoVerifierSeqConsumer(
+                self.test_context,
+                self.redpanda,
+                self.topic,
+                0,
+                nodes=self.preallocated_nodes,
+            )
+            seq_consumer.start(clean=False)
+            seq_consumer.wait()
+            self.redpanda.stop_node(self.redpanda.nodes[0])
+        finally:
+            seq_consumer.stop()
 
     @skip_debug_mode
     @cluster(num_nodes=2)
@@ -1147,7 +1149,6 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
             )
         finally:
             producer.stop()
-            producer.wait()
 
         node = self.redpanda.nodes[0]
         self.redpanda.stop()
@@ -1718,7 +1719,6 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
                 )
             finally:
                 producer.stop()
-                producer.wait()
 
         self.logger.debug(
             "Now check that the things return to normal after traffic shaping is switched off"
@@ -1732,7 +1732,6 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
             )
         finally:
             producer.stop()
-            producer.wait()
 
         node = self.redpanda.nodes[0]
         self.redpanda.stop()

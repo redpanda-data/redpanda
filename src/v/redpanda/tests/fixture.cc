@@ -64,7 +64,6 @@
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/util/log.hh>
 
-#include <boost/test/unit_test.hpp>
 #include <fmt/format.h>
 
 #include <chrono>
@@ -73,16 +72,7 @@
 #include <stdexcept>
 #include <vector>
 
-ss::sstring test_directory() {
-    char* tmpdir = std::getenv("TEST_TMPDIR");
-    if (!tmpdir) {
-        return ss::format(
-          "test.dir_{}", random_generators::gen_alphanum_string(6));
-    }
-    return {
-      std::filesystem::path(tmpdir)
-      / fmt::format("test.dir_{}", random_generators::gen_alphanum_string(6))};
-}
+ss::sstring test_directory() { return test_env::random_dir_path(); }
 
 redpanda_thread_fixture::redpanda_thread_fixture(
   model::node_id node_id,
@@ -464,7 +454,7 @@ void redpanda_thread_fixture::configure(
             config.get("development_enable_cloud_topics").set_value(true);
         }
 
-        config.get("development_enable_cluster_link")
+        config.get("enable_shadow_linking")
           .set_value(development_cluster_linking_enabled);
     }).get();
 }
@@ -864,7 +854,10 @@ void redpanda_thread_fixture::enable_sasl() {
                  .local()
                  .patch(r, model::timeout_clock::now() + 1s)
                  .get();
-    BOOST_REQUIRE(!res.errc);
+    if (res.errc) {
+        throw std::runtime_error(
+          fmt::format("failed to enable sasl: {}", res.errc));
+    }
 }
 
 void redpanda_thread_fixture::disable_sasl() {
@@ -873,7 +866,10 @@ void redpanda_thread_fixture::disable_sasl() {
                  .local()
                  .patch(r, model::timeout_clock::now() + 1s)
                  .get();
-    BOOST_REQUIRE(!res.errc);
+    if (res.errc) {
+        throw std::runtime_error(
+          fmt::format("failed to disable sasl: {}", res.errc));
+    }
 }
 
 security::server_first_message redpanda_thread_fixture::send_scram_client_first(
@@ -886,8 +882,12 @@ security::server_first_message redpanda_thread_fixture::send_scram_client_first(
     }
     auto client_first_resp
       = client.dispatch(client_first_req, kafka::api_version{1}).get();
-    BOOST_REQUIRE_EQUAL(
-      client_first_resp.data.error_code, kafka::error_code::none);
+    if (client_first_resp.data.error_code != kafka::error_code::none) {
+        throw std::runtime_error(
+          fmt::format(
+            "failed to send scram client first: {}",
+            client_first_resp.data.error_code));
+    }
     return security::server_first_message(client_first_resp.data.auth_bytes);
 }
 
@@ -902,8 +902,12 @@ security::server_final_message redpanda_thread_fixture::send_scram_client_final(
     auto client_last_resp
       = client.dispatch(client_last_req, kafka::api_version{1}).get();
 
-    BOOST_REQUIRE_EQUAL(
-      client_last_resp.data.error_code, kafka::error_code::none);
+    if (client_last_resp.data.error_code != kafka::error_code::none) {
+        throw std::runtime_error(
+          fmt::format(
+            "failed to send scram client final: {}",
+            client_last_resp.data.error_code));
+    }
     return security::server_final_message(
       std::move(client_last_resp.data.auth_bytes));
 }
@@ -914,7 +918,10 @@ void do_sasl_handshake(kafka::client::transport& client) {
     req.data.mechanism = Authenticator::name;
 
     auto resp = client.dispatch(req, kafka::api_version{1}).get();
-    BOOST_REQUIRE_EQUAL(resp.data.error_code, kafka::error_code::none);
+    if (resp.data.error_code != kafka::error_code::none) {
+        throw std::runtime_error(
+          fmt::format("failed to do sasl handshake: {}", resp.data.error_code));
+    }
 }
 
 template<typename Authenticator>
@@ -928,8 +935,12 @@ void redpanda_thread_fixture::authn_kafka_client(
     const security::client_first_message client_first(username, nonce);
     const auto server_first = send_scram_client_first(client, client_first);
 
-    BOOST_REQUIRE(std::string_view(server_first.nonce()).starts_with(nonce));
-    BOOST_REQUIRE_GE(server_first.iterations(), ScramMech::min_iterations);
+    if (!std::string_view(server_first.nonce()).starts_with(nonce)) {
+        throw std::runtime_error("invalid nonce in server first message");
+    }
+    if (server_first.iterations() < ScramMech::min_iterations) {
+        throw std::runtime_error("insufficient iterations in server first");
+    }
     security::client_final_message client_final(
       bytes::from_string("n,,"), server_first.nonce());
     auto salted_password = ScramMech::hi(
@@ -941,13 +952,19 @@ void redpanda_thread_fixture::authn_kafka_client(
         salted_password, client_first, server_first, client_final));
 
     auto server_final = send_scram_client_final(client, client_final);
-    BOOST_REQUIRE(!server_final.error());
+    if (server_final.error()) {
+        throw std::runtime_error(
+          ssx::sformat(
+            "error in server final message: {}", *server_final.error()));
+    }
 
     auto server_key = ScramMech::server_key(salted_password);
     auto server_sig = ScramMech::server_signature(
       server_key, client_first, server_first, client_final);
 
-    BOOST_REQUIRE_EQUAL(server_final.signature(), server_sig);
+    if (server_final.signature() != server_sig) {
+        throw std::runtime_error("invalid server signature");
+    }
 }
 
 // explicit instantiations of authn_kafka_client

@@ -14,7 +14,7 @@
 #include "kafka/client/test/fixture.h"
 #include "kafka/server/handlers/details/security.h"
 #include "security/acl.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <algorithm>
 

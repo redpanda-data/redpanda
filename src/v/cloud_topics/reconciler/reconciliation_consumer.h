@@ -16,7 +16,6 @@
 #include "model/record.h"
 #include "model/timestamp.h"
 
-#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 
 #include <optional>
@@ -25,15 +24,14 @@ namespace cloud_topics::reconciler {
 
 // Metadata about a range of batches consumed by a reconciliation
 // consumer.
-struct partition_metadata {
+struct consumer_metadata {
     kafka::offset base_offset;
     kafka::offset last_offset;
-    model::timestamp base_timestamp;
     model::timestamp last_timestamp;
     absl::btree_map<model::term_id, kafka::offset> terms;
 };
 
-/// Consumes record batches from a partition and writes them to an L1 object.
+/// Consumes record batches from a reader and writes them to an L1 object.
 /// Produces metadata about the consumed range including offsets, timestamps,
 /// and term transitions.
 class reconciliation_consumer {
@@ -42,12 +40,12 @@ public:
       l1::object_builder* builder, model::topic_id_partition tidp);
 
     ss::future<ss::stop_iteration> operator()(model::record_batch);
-    std::optional<partition_metadata> end_of_stream();
+    std::optional<consumer_metadata> end_of_stream();
 
 private:
     l1::object_builder* _builder;
     model::topic_id_partition _tidp;
-    partition_metadata _metadata;
+    consumer_metadata _metadata;
 };
 
 } // namespace cloud_topics::reconciler

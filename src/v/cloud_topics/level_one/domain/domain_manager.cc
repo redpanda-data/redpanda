@@ -212,6 +212,7 @@ domain_manager::get_first_offset_ge(rpc::get_first_offset_ge_request req) {
             .oid = obj.oid,
             .footer_pos = obj.footer_pos,
             .object_size = obj.object_size,
+            .first_offset = obj.first_offset,
             .last_offset = obj.last_offset,
         },
     };
@@ -246,8 +247,39 @@ domain_manager::get_first_timestamp_ge(
             .oid = obj.oid,
             .footer_pos = obj.footer_pos,
             .object_size = obj.object_size,
+            .first_offset = obj.first_offset,
             .last_offset = obj.last_offset,
         },
+    };
+}
+
+ss::future<rpc::get_first_offset_for_bytes_reply>
+domain_manager::get_first_offset_for_bytes(
+  rpc::get_first_offset_for_bytes_request req) {
+    auto gate = maybe_gate();
+    if (!gate.has_value()) {
+        co_return rpc::get_first_offset_for_bytes_reply{
+          .ec = rpc::errc::not_leader,
+        };
+    }
+    auto sync_res = co_await stm_->sync(10s);
+    if (!sync_res.has_value()) {
+        co_return rpc::get_first_offset_for_bytes_reply{
+          .ec = convert_stm_errc(sync_res.error()),
+        };
+    }
+    auto& stm_state = stm_->state();
+    auto get_res = simple_metastore::get_first_offset_for_bytes(
+      stm_state, req.tp, req.size);
+    if (!get_res.has_value()) {
+        co_return rpc::get_first_offset_for_bytes_reply{
+          .ec = convert_metastore_errc(get_res.error()),
+        };
+    }
+    auto offset = get_res.value();
+    co_return rpc::get_first_offset_for_bytes_reply{
+      .offset = offset,
+      .ec = rpc::errc::ok,
     };
 }
 
