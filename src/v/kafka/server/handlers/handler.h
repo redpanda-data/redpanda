@@ -73,7 +73,7 @@ struct handler_template {
     static void log_request(
       const request_header& header, const typename api::request_type& request) {
         vlog(
-          klog.trace,
+          kwire.trace,
           "[client_id: {}] handling {} v{} request {}",
           header.client_id,
           api::name,
