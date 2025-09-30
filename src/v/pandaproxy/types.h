@@ -14,6 +14,7 @@
 #include "utils/mutex.h"
 
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/rwlock.hh>
 #include <seastar/core/shared_ptr.hh>
 
 namespace pandaproxy {
@@ -22,7 +23,7 @@ using client_ptr = ss::lw_shared_ptr<kafka::client::client>;
 // Mutex as a shared_ptr because the internal semaphore has a deleted
 // copy-constructor and dereferencing the "timestamped_user" calls the
 // copy-constructor
-using client_mu_ptr = ss::lw_shared_ptr<mutex>;
+using client_lock_ptr = ss::lw_shared_ptr<ss::rwlock>;
 
 struct timestamped_user {
     using clock = ss::lowres_clock;
@@ -31,20 +32,20 @@ struct timestamped_user {
     ss::sstring key;
     client_ptr client;
     time_point last_used;
-    client_mu_ptr client_mu;
+    client_lock_ptr client_lock;
 
     timestamped_user(
-      ss::sstring k, client_ptr c, time_point t, client_mu_ptr mu)
+      ss::sstring k, client_ptr c, time_point t, client_lock_ptr lock)
       : key{std::move(k)}
       , client{std::move(c)}
       , last_used{t}
-      , client_mu{mu} {}
+      , client_lock{std::move(lock)} {}
 
-    timestamped_user(ss::sstring k, client_ptr c, client_mu_ptr mu)
+    timestamped_user(ss::sstring k, client_ptr c, client_lock_ptr lock)
       : key{std::move(k)}
       , client{std::move(c)}
       , last_used{clock::now()}
-      , client_mu{mu} {}
+      , client_lock{std::move(lock)} {}
 };
 
 struct credential_t {

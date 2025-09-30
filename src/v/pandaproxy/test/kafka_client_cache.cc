@@ -31,7 +31,7 @@ using namespace std::chrono_literals;
 static constexpr auto clean_timer_period = 10s;
 
 namespace pandaproxy {
-using cache_item = std::pair<client_ptr, client_mu_ptr>;
+using cache_item = std::pair<client_ptr, client_lock_ptr>;
 
 struct test_client_cache : public kafka_client_cache {
     explicit test_client_cache(size_t max_size)
