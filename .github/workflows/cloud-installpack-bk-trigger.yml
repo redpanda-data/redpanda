@@ -1,5 +1,5 @@
 ---
-name: check formatting
+name: Trigger redpanda install-pack bump
 on:
   release:
     types: [published]
