@@ -53,6 +53,8 @@ ss::future<> remote_partition_source::start(kafka::offset offset) {
           "timestamp {}",
           _tp,
           _starting_offset);
+        offset = co_await fetch_starting_offset();
+        vlog(cllog.debug, "[{}] ListOffsets returned offset {}", _tp, offset);
     }
     auto result = _consumer.add(_tp, offset);
     if (!result.has_value()) [[unlikely]] {
@@ -64,13 +66,15 @@ ss::future<> remote_partition_source::start(kafka::offset offset) {
           "[{}] Failed to add remote partition source: {}",
           _tp,
           err);
-        return ss::make_exception_future<>(err);
+        throw std::runtime_error(
+          fmt::format(
+            "[{}] Failed to add remote partition source: {}", _tp, err));
     }
-    return ss::now();
 }
 
 ss::future<> remote_partition_source::stop() noexcept {
     vlog(cllog.trace, "[{}] Stopping remote partition source", _tp);
+    _as.abort_requested();
     auto f = _gate.close();
     co_await _consumer.remove(_tp);
     co_await std::move(f);
@@ -109,6 +113,141 @@ remote_partition_source::fetch_next(ss::abort_source& as) {
     auto [batches, units] = std::move(*result);
     co_return data_source::data{
       .batches = std::move(batches), .units = std::move(units)};
+}
+
+ss::future<kafka::offset> remote_partition_source::fetch_starting_offset() {
+    // This loop will run forever until the _gate is closed
+    // If a user has specified a specific starting offset, then we will wait
+    // until that offset is available on the remote cluster and then return it
+    static constexpr auto backoff_delay = 250ms;
+    while (!_gate.is_closed()) {
+        try {
+            auto resp = co_await do_list_offset();
+            if (resp.error_code != kafka::error_code::none) {
+                throw std::runtime_error(
+                  fmt::format(
+                    "[{}] ListOffsets returned error: {}",
+                    _tp,
+                    resp.error_code));
+            }
+            vlog(
+              cllog.debug, "[{}] Fetched starting offset {}", _tp, resp.offset);
+            co_return ::model::offset_cast(resp.offset);
+        } catch (const std::exception& e) {
+            vlog(cllog.warn, "[{}] ListOffsets attempt failed: {}", _tp, e);
+        }
+        co_await ss::sleep_abortable(backoff_delay, _as);
+    }
+    // Perform a gate check here, in case it closed then it will throw an
+    // exception
+    _gate.check();
+    // We should have only exited the above while loop if the gate has closed,
+    // meaning _gate.check() should have thrown a gate closed exception
+    __builtin_unreachable();
+}
+
+ss::future<kafka::list_offset_partition_response>
+remote_partition_source::do_list_offset() {
+    auto version = co_await get_list_offset_api_version();
+    if (!version) {
+        throw std::runtime_error(
+          fmt::format("[{}] ListOffsets not supported by remote cluster", _tp));
+    }
+    const auto leader_and_epoch = co_await get_leader_and_epoch_for_ntp();
+    if (!leader_and_epoch) {
+        throw std::runtime_error(
+          fmt::format(
+            "[{}] No leader found.  Unable to fetch starting offset", _tp));
+    }
+    auto [leader_id, leader_epoch] = *leader_and_epoch;
+    kafka::list_offsets_request req;
+    req.data.replica_id = ::model::node_id{-1}; // normal consumer
+    req.data.isolation_level = 1;               // read committed only
+    req.data.topics.emplace_back(
+      kafka::list_offset_topic{
+        .name = _tp.topic,
+        .partitions = {{
+          .partition_index = _tp.partition,
+          .current_leader_epoch = leader_epoch,
+          .timestamp = _starting_offset,
+        }},
+      });
+
+    auto resp = co_await _consumer.cluster().dispatch_to(
+      leader_id, std::move(req), *version);
+
+    if (resp.data.topics.empty()) {
+        throw std::runtime_error(
+          fmt::format("[{}] No topics in ListOffsets response", _tp));
+    }
+
+    auto& topic = resp.data.topics[0];
+    if (topic.name != _tp.topic) {
+        throw std::runtime_error(
+          fmt::format(
+            "[{}] Topic name mismatch in ListOffsets response: {}",
+            _tp,
+            topic.name));
+    }
+    if (topic.partitions.empty()) {
+        throw std::runtime_error(
+          fmt::format("[{}] No partitions in ListOffsets response", _tp));
+    }
+    auto& partition = topic.partitions[0];
+    if (partition.partition_index != _tp.partition) {
+        throw std::runtime_error(
+          fmt::format(
+            "[{}] Partition index mismatch in ListOffsets response: {}",
+            _tp,
+            partition.partition_index));
+    }
+
+    co_return std::move(partition);
+}
+
+ss::future<std::optional<std::tuple<::model::node_id, kafka::leader_epoch>>>
+remote_partition_source::get_leader_and_epoch_for_ntp() {
+    auto leader_and_epoch = do_get_leader_and_epoch_for_ntp();
+    if (leader_and_epoch) {
+        co_return leader_and_epoch;
+    }
+    vlog(cllog.debug, "[{}] NTP has no leader, refreshing metadata", _tp);
+    // refresh metadata and try again
+    co_await _consumer.cluster().request_metadata_update();
+    co_return do_get_leader_and_epoch_for_ntp();
+}
+
+std::optional<std::tuple<::model::node_id, kafka::leader_epoch>>
+remote_partition_source::do_get_leader_and_epoch_for_ntp() {
+    const auto& topics = _consumer.cluster().get_topics().cache();
+    auto it = topics.find(_tp.topic);
+    if (it == topics.end()) {
+        vlog(cllog.debug, "[{}] Topic not found in metadata", _tp);
+        return std::nullopt;
+    }
+    auto pit = it->second.partitions.find(_tp.partition);
+    if (pit == it->second.partitions.end()) {
+        vlog(cllog.debug, "[{}] Partition not found in metadata", _tp);
+        return std::nullopt;
+    }
+    return std::make_tuple(pit->second.leader, pit->second.leader_epoch);
+}
+
+ss::future<std::optional<kafka::api_version>>
+remote_partition_source::get_list_offset_api_version() {
+    auto supported_versions
+      = co_await _consumer.cluster().supported_api_versions(
+        kafka::list_offsets_api::key);
+    if (!supported_versions) {
+        co_return std::nullopt;
+    }
+
+    if (supported_versions.value().min > kafka::list_offsets_api::max_valid) {
+        co_return std::nullopt;
+    }
+
+    co_return std::min(
+      supported_versions.value().max, kafka::list_offsets_api::max_valid);
 }
 
 std::unique_ptr<data_sink>

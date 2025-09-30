@@ -10,6 +10,7 @@
 
 #include "cluster/fwd.h"
 #include "cluster_link/replication/deps.h"
+#include "kafka/protocol/list_offset.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
@@ -39,10 +40,23 @@ public:
     ss::future<data_source::data> fetch_next(ss::abort_source&) override;
 
 private:
+    ss::future<kafka::offset> fetch_starting_offset();
+    ss::future<kafka::offset> do_fetch_starting_offset();
+    ss::future<kafka::list_offset_partition_response> do_list_offset();
+    ss::future<std::optional<std::tuple<::model::node_id, kafka::leader_epoch>>>
+    get_leader_and_epoch_for_ntp();
+
+    std::optional<std::tuple<::model::node_id, kafka::leader_epoch>>
+    do_get_leader_and_epoch_for_ntp();
+
+    ss::future<std::optional<kafka::api_version>> get_list_offset_api_version();
+
+private:
     ::model::topic_partition _tp;
     mux_remote_consumer& _consumer;
     ::model::timestamp _starting_offset;
     ss::gate _gate;
+    ss::abort_source _as;
 };
 
 class remote_data_source_factory : public data_source_factory {

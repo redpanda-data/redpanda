@@ -110,6 +110,7 @@ redpanda_cc_library(
         ":mux_remote_consumer",
         "//src/v/cluster",
         "//src/v/cluster_link:logger",
+        "//src/v/kafka/protocol:list_offset",
         "//src/v/kafka/server:write_at_offset_stm",
         "//src/v/ssx:future_util",
         "@seastar",
