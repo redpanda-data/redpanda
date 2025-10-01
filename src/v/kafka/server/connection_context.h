@@ -107,8 +107,8 @@ struct request_data {
 // The resources in particular should be not be destroyed until
 // the request is complete (e.g., all the information written to
 // the socket so that no userspace buffers remain).
-struct session_resources {
-    using pointer = ss::lw_shared_ptr<session_resources>;
+struct request_resources {
+    using pointer = ss::lw_shared_ptr<request_resources>;
 
     ss::lowres_clock::duration backpressure_delay;
     ssx::semaphore_units memlocks;
@@ -252,8 +252,8 @@ private:
     // currently.
     // When the returned future resolves, the throttling period is over and
     // the associated resouces have been obtained and are tracked by the
-    // contained session_resources object.
-    ss::future<session_resources>
+    // contained request_resources object.
+    ss::future<request_resources>
     throttle_request(request_data r_data, size_t sz);
 
     ss::future<> do_process(request_context);
@@ -266,7 +266,7 @@ private:
      */
     struct response_and_resources {
         response_ptr response;
-        session_resources::pointer resources;
+        request_resources::pointer resources;
     };
 
     using sequence_id = named_type<uint64_t, struct kafka_protocol_sequence>;
@@ -354,7 +354,7 @@ private:
         ss::future<> process_request(
           ss::lw_shared_ptr<connection_context>,
           request_context,
-          ss::lw_shared_ptr<session_resources>);
+          ss::lw_shared_ptr<request_resources>);
 
         /**
          * Checks if the request that currently is being processed is the first
@@ -384,7 +384,7 @@ private:
         ss::future<> handle_response(
           ss::lw_shared_ptr<connection_context>,
           ss::future<response_ptr>,
-          ss::lw_shared_ptr<session_resources>,
+          ss::lw_shared_ptr<request_resources>,
           sequence_id,
           correlation_id);
 
@@ -423,7 +423,7 @@ private:
         ss::future<> process_request(
           ss::lw_shared_ptr<connection_context>,
           request_context,
-          ss::lw_shared_ptr<session_resources>);
+          ss::lw_shared_ptr<request_resources>);
 
     private:
         client_protocol_state _state;

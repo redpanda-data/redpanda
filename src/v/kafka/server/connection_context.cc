@@ -541,9 +541,9 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
           },
           std::move(request_buf),
           0s);
-        auto sres = session_resources{};
+        auto rres = request_resources{};
         auto resp = co_await kafka::process_request(
-                      std::move(ctx), _server.smp_group(), sres)
+                      std::move(ctx), _server.smp_group(), rres)
                       .response;
         auto data = std::move(*resp).release();
         response.decode(std::move(data), version);
@@ -650,7 +650,7 @@ connection_context::record_tp_and_calculate_throttle(
     co_return delay_t{.request = delay_request, .enforce = delay_enforce};
 }
 
-ss::future<session_resources> connection_context::throttle_request(
+ss::future<request_resources> connection_context::throttle_request(
   const request_data r_data, size_t request_size) {
     // note that when throttling is first determined, the request is
     // allowed to pass through, and only subsequent requests are
@@ -680,7 +680,7 @@ ss::future<session_resources> connection_context::throttle_request(
     auto& h_probe = _server.handler_probe(r_data.request_key);
     auto tracker = std::make_unique<request_tracker>(_server.probe(), h_probe);
     auto track = track_latency(r_data.request_key);
-    session_resources r{
+    request_resources r{
       .backpressure_delay = delay.request,
       .memlocks = std::move(mem_units),
       .queue_units = std::move(qd_units),
@@ -747,7 +747,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
         co_await ss::coroutine::switch_to(_server.get_request_handler_sg());
     }
 
-    auto sres_in = co_await throttle_request(std::move(r_data), size);
+    auto rres_in = co_await throttle_request(std::move(r_data), size);
     if (abort_requested()) {
         // protect against shutdown behavior
         co_return;
@@ -767,7 +767,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
         }
     }
 
-    auto sres = ss::make_lw_shared(std::move(sres_in));
+    auto rres = ss::make_lw_shared(std::move(rres_in));
 
     auto remaining = size - request_header_size - hdr.client_id_buffer.size()
                      - hdr.tags_size_bytes;
@@ -778,7 +778,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
     }
     auto self = shared_from_this();
     auto rctx = request_context(
-      self, std::move(hdr), std::move(buf), sres->backpressure_delay);
+      self, std::move(hdr), std::move(buf), rres->backpressure_delay);
 
     /**
      * Not virtualized connection, simply forward to protocol state for request
@@ -788,7 +788,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
       !_is_virtualized_connection
       || rctx.header().client_id == multi_proxy_initial_client_id) {
         co_return co_await _protocol_state.process_request(
-          shared_from_this(), std::move(rctx), sres);
+          shared_from_this(), std::move(rctx), rres);
     }
     auto client_connection_id = parse_virtual_connection_id(rctx.header());
     rctx.override_client_id(client_connection_id.client_id);
@@ -807,24 +807,24 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
     }
 
     co_await it->second->process_request(
-      shared_from_this(), std::move(rctx), sres);
+      shared_from_this(), std::move(rctx), rres);
 }
 
 ss::future<> connection_context::virtual_connection_state::process_request(
   ss::lw_shared_ptr<connection_context> connection_ctx,
   request_context rctx,
-  ss::lw_shared_ptr<session_resources> sres) {
+  ss::lw_shared_ptr<request_resources> rres) {
     auto u = co_await _lock.get_units();
     ssx::spawn_with_gate(
       connection_ctx->_gate,
       [this,
        rctx = std::move(rctx),
-       sres,
+       rres,
        u = std::move(u),
        connection_ctx]() mutable {
           _last_request_timestamp = ss::lowres_clock::now();
           return _state
-            .process_request(std::move(connection_ctx), std::move(rctx), sres)
+            .process_request(std::move(connection_ctx), std::move(rctx), rres)
             .finally([u = std::move(u)] {});
       });
 }
@@ -832,7 +832,7 @@ ss::future<> connection_context::virtual_connection_state::process_request(
 ss::future<> connection_context::client_protocol_state::process_request(
   ss::lw_shared_ptr<connection_context> connection_ctx,
   request_context rctx,
-  ss::lw_shared_ptr<session_resources> sres) {
+  ss::lw_shared_ptr<request_resources> rres) {
     /*
      * we process requests in order since all subsequent requests
      * are dependent on authentication having completed.
@@ -856,7 +856,7 @@ ss::future<> connection_context::client_protocol_state::process_request(
     const sequence_id seq = _seq_idx;
     _seq_idx = _seq_idx + sequence_id(1);
     auto res = kafka::process_request(
-      std::move(rctx), connection_ctx->server().smp_group(), *sres);
+      std::move(rctx), connection_ctx->server().smp_group(), *rres);
 
     /*
      * first stage processed in a foreground.
@@ -881,7 +881,7 @@ ss::future<> connection_context::client_protocol_state::process_request(
               std::current_exception());
         }
         connection_ctx->conn->shutdown_input();
-        sres->tracker->mark_errored();
+        rres->tracker->mark_errored();
         co_return;
     }
     /**
@@ -892,7 +892,7 @@ ss::future<> connection_context::client_protocol_state::process_request(
         co_return co_await handle_response(
           std::move(connection_ctx),
           std::move(res.response),
-          sres,
+          rres,
           seq,
           correlation);
     }
@@ -903,26 +903,26 @@ ss::future<> connection_context::client_protocol_state::process_request(
       connection_ctx->_server.conn_gate(),
       [this,
        f = std::move(res.response),
-       sres,
+       rres,
        seq,
        correlation,
        cctx = connection_ctx]() mutable {
           return handle_response(
-            std::move(cctx), std::move(f), sres, seq, correlation);
+            std::move(cctx), std::move(f), rres, seq, correlation);
       });
 }
 
 ss::future<> connection_context::client_protocol_state::handle_response(
   ss::lw_shared_ptr<connection_context> connection_ctx,
   ss::future<response_ptr> f,
-  ss::lw_shared_ptr<session_resources> sres,
+  ss::lw_shared_ptr<request_resources> rres,
   sequence_id seq,
   correlation_id correlation) {
     std::exception_ptr e;
     try {
         auto r = co_await std::move(f);
         r->set_correlation(correlation);
-        response_and_resources randr{std::move(r), sres};
+        response_and_resources randr{std::move(r), rres};
         _responses.insert({seq, std::move(randr)});
         co_return co_await maybe_process_responses(connection_ctx);
     } catch (...) {
@@ -948,7 +948,7 @@ ss::future<> connection_context::client_protocol_state::handle_response(
         vlog(klog.warn, "Error processing request: {}", e);
     }
 
-    sres->tracker->mark_errored();
+    rres->tracker->mark_errored();
     connection_ctx->conn->shutdown_input();
 }
 

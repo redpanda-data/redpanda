@@ -81,7 +81,7 @@ process_result_stages process_generic(
   handler handler,
   request_context&& ctx,
   ss::smp_service_group g,
-  const session_resources& sres) {
+  const request_resources& rres) {
     vlog(
       kwire.trace,
       "[{}:{}] processing name:{}, key:{}, version:{} for {}, mem_units: {}, "
@@ -92,7 +92,7 @@ process_result_stages process_generic(
       ctx.header().key,
       ctx.header().version,
       ctx.header().client_id.value_or(std::string_view("unset-client-id")),
-      sres.memlocks.count(),
+      rres.memlocks.count(),
       ctx.reader().bytes_left());
 
     // We do a version check for most API requests, but for api_version
@@ -274,7 +274,7 @@ bool track_latency(api_key key) {
 process_result_stages process_request(
   request_context&& ctx,
   ss::smp_service_group g,
-  const session_resources& sres) {
+  const request_resources& rres) {
     auto key = ctx.header().key;
 
     if (
@@ -338,7 +338,7 @@ process_result_stages process_request(
     }
 
     if (auto handler = handler_for_key(key)) {
-        return process_generic(*handler, std::move(ctx), g, sres);
+        return process_generic(*handler, std::move(ctx), g, rres);
     }
 
     throw std::runtime_error(
