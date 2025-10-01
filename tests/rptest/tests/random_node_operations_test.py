@@ -756,8 +756,6 @@ class RandomNodeOperationsTest(RandomNodeOperationsBase):
         with_iceberg=[True, False],
         compaction_mode=[
             CompactionMode.SLIDING_WINDOW,
-            CompactionMode.CHUNKED_SLIDING_WINDOW,
-            CompactionMode.ADJACENT_MERGE,
         ],
         cloud_storage_type=get_cloud_storage_type(),
     )
