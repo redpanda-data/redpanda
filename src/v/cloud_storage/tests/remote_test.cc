@@ -173,7 +173,7 @@ public:
 TEST_P(all_types_remote_fixture, test_download_manifest_timeout) { // NOLINT
     partition_manifest actual(manifest_ntp, manifest_revision);
     auto subscription = remote.local().subscribe(allow_all);
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
     auto res = remote.local()
                  .download_manifest(
                    bucket_name, json_manifest_format_path, actual, fib)
@@ -197,7 +197,7 @@ TEST_P(all_types_remote_fixture, test_upload_segment) { // NOLINT
         co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
     auto res = remote.local()
                  .upload_segment(
                    bucket_name, path, clen, reset_stream, fib, always_continue)
@@ -224,7 +224,7 @@ TEST_P(
         co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
     static ss::abort_source never_abort;
     auto lost_leadership = lazy_abort_source{
       []() { return "lost leadership"; }};
@@ -250,7 +250,7 @@ TEST_P(all_types_remote_fixture, test_upload_segment_timeout) { // NOLINT
         co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
     auto res = remote.local()
                  .upload_segment(
                    bucket_name, path, clen, reset_stream, fib, always_continue)
@@ -273,7 +273,7 @@ TEST_P(all_types_remote_fixture, test_download_segment) { // NOLINT
         co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
     auto upl_res
       = remote.local()
           .upload_segment(
@@ -313,7 +313,7 @@ TEST_P(all_types_remote_fixture, test_download_segment_timeout) { // NOLINT
         return ss::make_ready_future<uint64_t>(0);
     };
 
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
 
     auto dnl_res = remote.local()
                      .download_segment(bucket_name, path, try_consume, fib)
@@ -332,7 +332,7 @@ TEST_P(all_types_remote_fixture, test_download_segment_range) {
       segment_name("1-2-v1.log"),
       model::term_id{123})};
 
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
 
     set_expectations_and_listen({}, {{"Range"}});
 
@@ -402,7 +402,7 @@ TEST_P(all_types_remote_fixture, test_segment_exists) { // NOLINT
           make_iobuf_input_stream(std::move(out)));
     };
 
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
 
     auto expected_notfound
       = remote.local().segment_exists(bucket_name, path, fib).get();
@@ -425,7 +425,7 @@ TEST_P(all_types_remote_fixture, test_segment_exists_timeout) { // NOLINT
     auto path = remote_segment_path{prefixed_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123})};
 
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
     auto expect_timeout
       = remote.local().segment_exists(bucket_name, path, fib).get();
     ASSERT_TRUE(expect_timeout == download_result::timedout);
@@ -437,7 +437,7 @@ TEST_P(all_types_remote_fixture, test_segment_delete) { // NOLINT
     auto path = remote_segment_path{prefixed_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{1})};
 
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
     uint64_t clen = manifest_payload.size();
     auto reset_stream = []() -> ss::future<std::unique_ptr<stream_provider>> {
         iobuf out;
@@ -509,7 +509,7 @@ TEST_P(all_types_remote_fixture, test_concat_segment_upload) {
             end_pos));
     };
 
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
     auto upload_size = b.get_disk_log_impl().size_bytes() - 40;
 
     set_expectations_and_listen({});
@@ -731,7 +731,7 @@ TEST_P(all_types_remote_fixture, test_list_bucket_with_max_keys) {
 
 TEST_P(all_types_remote_fixture, test_list_bucket_with_prefix) {
     set_expectations_and_listen({});
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
     for (const char first : {'x', 'y'}) {
         for (const char second : {'a', 'b'}) {
             cloud_storage_clients::object_key path{
@@ -766,7 +766,7 @@ TEST_P(all_types_remote_fixture, test_list_bucket_with_prefix) {
 
 TEST_P(all_types_remote_fixture, test_list_bucket_with_filter) {
     set_expectations_and_listen({});
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
     cloud_storage_clients::object_key path{"b"};
     auto upl_result
       = remote.local()
@@ -798,7 +798,7 @@ TEST_P(all_types_remote_fixture, test_put_string) {
     set_expectations_and_listen({});
     auto conf = get_configuration();
 
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
 
     cloud_storage_clients::object_key path{"p"};
     auto subscription = remote.local().subscribe(allow_all);
@@ -822,7 +822,7 @@ TEST_P(all_types_remote_fixture, test_put_string) {
 TEST_P(all_types_remote_fixture, test_delete_objects) {
     set_expectations_and_listen({});
 
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
 
     std::vector<cloud_storage_clients::object_key> to_delete{
       cloud_storage_clients::object_key{"a"},
@@ -919,7 +919,7 @@ TEST_P(all_types_remote_fixture, test_delete_objects_failure_handling) {
     set_expectations_and_listen({expectation{
       .url = "?delete", .body = ss::sstring(plural_delete_error)}});
 
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
 
     std::vector<cloud_storage_clients::object_key> to_delete{
       cloud_storage_clients::object_key{"0"},
@@ -1016,7 +1016,7 @@ TEST_P(all_types_remote_fixture, test_filter_by_source) { // NOLINT
     set_expectations_and_listen({expectation{
       .url = manifest_url, .body = ss::sstring(manifest_payload)}});
     auto conf = get_configuration();
-    retry_chain_node root_rtc(never_abort, 100ms, 20ms);
+    retry_chain_node root_rtc(never_abort, 1s, 20ms);
     remote::event_filter flt;
     flt.add_source_to_ignore(&root_rtc);
 
@@ -1035,7 +1035,7 @@ TEST_P(all_types_remote_fixture, test_filter_by_source) { // NOLINT
 
     // In this case the caller is different and the manifest download
     // shold trigger notification.
-    retry_chain_node other_rtc(never_abort, 100ms, 20ms);
+    retry_chain_node other_rtc(never_abort, 1s, 20ms);
     res = remote.local()
             .download_manifest(
               bucket_name, json_manifest_format_path, actual, other_rtc)
@@ -1073,7 +1073,7 @@ TEST_P(all_types_remote_fixture, test_filter_by_source) { // NOLINT
 TEST_P(all_types_remote_fixture, test_filter_by_type) { // NOLINT
     set_expectations_and_listen({expectation{
       .url = manifest_url, .body = ss::sstring(manifest_payload)}});
-    retry_chain_node root_rtc(never_abort, 100ms, 20ms);
+    retry_chain_node root_rtc(never_abort, 1s, 20ms);
     partition_manifest actual(manifest_ntp, manifest_revision);
 
     remote::event_filter flt1({api_activity_type::manifest_download});
@@ -1105,7 +1105,7 @@ TEST_P(all_types_remote_fixture, test_filter_by_type) { // NOLINT
 TEST_P(all_types_remote_fixture, test_filter_lifetime_1) { // NOLINT
     set_expectations_and_listen({expectation{
       .url = manifest_url, .body = ss::sstring(manifest_payload)}});
-    retry_chain_node root_rtc(never_abort, 100ms, 20ms);
+    retry_chain_node root_rtc(never_abort, 1s, 20ms);
     partition_manifest actual(manifest_ntp, manifest_revision);
 
     std::optional<remote::event_filter> flt;
@@ -1173,7 +1173,7 @@ TEST_P(
         co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
     auto upl_res
       = remote.local()
           .upload_segment(
@@ -1182,7 +1182,7 @@ TEST_P(
     ASSERT_TRUE(upl_res == upload_result::success);
 
     auto download_one = [](cloud_storage::remote& api, auto path, auto bucket) {
-        retry_chain_node fib(never_abort, 100ms, 20ms);
+        retry_chain_node fib(never_abort, 1s, 20ms);
         iobuf downloaded;
         auto try_consume = [&downloaded](uint64_t, ss::input_stream<char> is) {
             downloaded.clear();
@@ -1440,7 +1440,7 @@ TEST(RemoteTest, TestShutdownOnRetry) {
       [](const auto&) { return true; },
       {.status = ss::http::reply::status_type::service_unavailable});
 
-    retry_chain_node fib(never_abort, 100ms, 20ms);
+    retry_chain_node fib(never_abort, 1s, 20ms);
     partition_manifest dummy_dst_manifest(manifest_ntp, manifest_revision);
     std::vector<ss::future<download_result>> futs;
     futs.reserve(10);
