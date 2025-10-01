@@ -391,7 +391,7 @@ static void fill_fetch_responses(
         // error case
         if (unlikely(resp.error_code != error_code::none)) {
             resp.records = batch_reader();
-            resp_it->set(std::move(resp));
+            resp_it->set(std::move(resp), {});
             continue;
         }
 
@@ -415,6 +415,7 @@ static void fill_fetch_responses(
          * According to KIP-74 we have to return first batch even if it would
          * violate max_bytes fetch parameter
          */
+        fetch_memory_units resp_units{};
         if (
           res.has_data()
           && (octx.bytes_left >= res.data_size_bytes() || octx.response_size == 0)) {
@@ -435,13 +436,14 @@ static void fill_fetch_responses(
                   });
                 resp.aborted_transactions = std::move(aborted);
             }
+            resp_units = std::move(res.memory_units);
             resp.records = batch_reader(std::move(res).release_data());
         } else {
             // TODO: add probe to measure how much of read data is discarded
             resp.records = batch_reader();
         }
 
-        resp_it->set(std::move(resp));
+        resp_it->set(std::move(resp), std::move(resp_units));
 
         if (record_latency) {
             std::chrono::microseconds fetch_latency
@@ -1205,8 +1207,10 @@ class simple_fetch_planner final : public fetch_planner::impl {
 
               auto fail_all_partitions = [&](error_code ec) {
                   for (const auto& fp : partitions) {
-                      resp_it->set(make_partition_response_error(
-                        fp.topic_partition.get_partition(), ec));
+                      resp_it->set(
+                        make_partition_response_error(
+                          fp.topic_partition.get_partition(), ec),
+                        {});
                       ++resp_it;
                   }
               };
@@ -1291,8 +1295,10 @@ class simple_fetch_planner final : public fetch_planner::impl {
 
                   if (unlikely(
                         metadata_cache.is_disabled(tn_view, partition_id))) {
-                      resp_it->set(make_partition_response_error(
-                        partition_id, error_code::replica_not_available));
+                      resp_it->set(
+                        make_partition_response_error(
+                          partition_id, error_code::replica_not_available),
+                        {});
                       ++resp_it;
                       continue;
                   }
@@ -1313,7 +1319,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
                                   ? error_code::not_leader_for_partition
                                   : error_code::unknown_topic_or_partition;
                       resp_it->set(
-                        make_partition_response_error(partition_id, ec));
+                        make_partition_response_error(partition_id, ec), {});
                       ++resp_it;
                       continue;
                   }
@@ -1661,13 +1667,26 @@ op_context::response_placeholder::response_placeholder(
   , _ktp(_it->partition->topic, _it->partition_response->partition_index) {}
 
 void op_context::response_placeholder::set(
-  fetch_response::partition_response&& response) {
+  fetch_response::partition_response&& response,
+  fetch_memory_units&& response_memory_units) {
     vassert(
       response.partition_index == _it->partition_response->partition_index,
       "Response and current partition ids have to be the same. Current "
       "response {}, update {}",
       _it->partition_response->partition_index,
       response.partition_index);
+    dassert(
+      (!response.records && !response_memory_units.has_units())
+        || (response.records->size_bytes() == response_memory_units.num_units()),
+      "Response units should equal the number of bytes in the response its "
+      "self.");
+
+    // Release existing units as the memory usage they represent are released in
+    // this method as well.
+    release_memory_units();
+    if (response_memory_units.has_units()) {
+        replace_or_add_memory_units(std::move(response_memory_units));
+    }
 
     if (response.error_code != error_code::none) {
         _ctx->response_error = true;
