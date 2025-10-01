@@ -351,10 +351,6 @@ void producer_state::reset_with_new_epoch(model::producer_epoch new_epoch) {
 
 result<request_ptr> producer_state::try_emplace_request(
   const model::batch_identity& bid, model::term_id current_term, bool reset) {
-    if (bid.first_seq > bid.last_seq) {
-        // malformed batch
-        return cluster::errc::invalid_request;
-    }
     vlog(
       _logger.trace,
       "[{}] new request, batch meta: {}, term: {}, "
