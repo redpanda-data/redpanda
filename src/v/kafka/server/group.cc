@@ -2209,7 +2209,7 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
     cluster::simple_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
 
-    std::vector<std::pair<model::topic_partition, offset_metadata>>
+    chunked_vector<std::pair<model::topic_partition, offset_metadata>>
       offset_commits;
 
     const auto expiry_timestamp = [&r]() -> std::optional<model::timestamp> {
@@ -2229,6 +2229,7 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
       };
 
     for (const auto& t : r.data.topics) {
+        offset_commits.reserve(offset_commits.size() + t.partitions.size());
         for (const auto& p : t.partitions) {
             const auto commit_timestamp = get_commit_timestamp(p);
             update_store_offset_builder(
@@ -3477,7 +3478,7 @@ void group::update_subscriptions() {
     _subscriptions = std::move(subs);
 }
 
-std::vector<model::topic_partition> group::filter_expired_offsets(
+chunked_vector<model::topic_partition> group::filter_expired_offsets(
   std::chrono::seconds retention_period,
   const std::function<bool(const model::topic&)>& subscribed,
   const std::function<model::timestamp(const offset_metadata&)>&
@@ -3490,7 +3491,7 @@ std::vector<model::topic_partition> group::filter_expired_offsets(
         .count());
 
     const auto now = model::timestamp::now();
-    std::vector<model::topic_partition> offsets;
+    chunked_vector<model::topic_partition> offsets;
     for (const auto& offset : _offsets) {
         if (offset.second->metadata.non_reclaimable) {
             continue;
@@ -3531,7 +3532,7 @@ std::vector<model::topic_partition> group::filter_expired_offsets(
     return offsets;
 }
 
-std::vector<model::topic_partition>
+chunked_vector<model::topic_partition>
 group::get_expired_offsets(std::chrono::seconds retention_period) {
     const auto not_subscribed = [](const auto&) { return false; };
 
@@ -3619,7 +3620,7 @@ bool group::has_offsets() const {
            || has_transactions_in_progress();
 }
 
-std::vector<model::topic_partition>
+chunked_vector<model::topic_partition>
 group::delete_expired_offsets(std::chrono::seconds retention_period) {
     /*
      * collect and delete expired offsets
@@ -3640,9 +3641,9 @@ group::delete_expired_offsets(std::chrono::seconds retention_period) {
     return offsets;
 }
 
-std::vector<model::topic_partition>
-group::delete_offsets(std::vector<model::topic_partition> offsets) {
-    std::vector<model::topic_partition> deleted_offsets;
+chunked_vector<model::topic_partition>
+group::delete_offsets(const chunked_vector<model::topic_partition>& offsets) {
+    chunked_vector<model::topic_partition> deleted_offsets;
     /*
      * Delete the requested offsets, unless there is at least one active
      * subscription for an offset.
