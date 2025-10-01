@@ -14,6 +14,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster_link/logger.h"
 #include "cluster_link/replication/mux_remote_consumer.h"
+#include "kafka/data/partition_proxy.h"
 #include "kafka/server/write_at_offset_stm.h"
 #include "ssx/future-util.h"
 
@@ -363,6 +364,41 @@ void local_partition_sink::notify_replicator_failure(::model::term_id term) {
             return _partition->raft()->step_down(
               fmt::format("Unable to start replicator in term: {}", term));
         });
+    }
+}
+
+ss::future<>
+local_partition_sink::maybe_trim_prefix(kafka::offset source_log_start_offset) {
+    static constexpr auto timeout = 5s;
+    auto source_start = kafka::offset_cast(source_log_start_offset);
+    auto pp = kafka::make_partition_proxy(_partition);
+    auto cur_start = pp.start_offset();
+    auto cur_hwm = pp.high_watermark();
+    vlog(
+      cllog.trace,
+      "[{}] current start offset: {}, source start offset: {}, current hwm: {}",
+      _partition->ntp(),
+      cur_start,
+      source_start,
+      cur_hwm);
+    if (source_start <= cur_start || cur_start == cur_hwm) {
+        // Don't need to trim if source start is before current start or if we
+        // can't trim anything (start == hwm)
+        co_return;
+    }
+    auto target_offset = source_start > cur_hwm ? cur_hwm : source_start;
+    vlog(
+      cllog.info,
+      "[{}] Trimming prefix from {} -> {}",
+      _partition->ntp(),
+      cur_start,
+      target_offset);
+    auto ec = co_await pp.prefix_truncate(
+      target_offset, ss::lowres_clock::now() + timeout);
+    if (ec != kafka::error_code::none) {
+        vlog(cllog.warn, "[{}] Prefix truncate failed: {}", pp.ntp(), ec);
+    } else {
+        vlog(cllog.info, "[{}] Prefix truncate succeeded", pp.ntp());
     }
 }
 } // namespace cluster_link::replication

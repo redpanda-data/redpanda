@@ -104,6 +104,9 @@ redpanda_cc_library(
     hdrs = [
         "deps_impl.h",
     ],
+    implementation_deps = [
+        "//src/v/kafka/data:partition_proxy",
+    ],
     visibility = ["//src/v/cluster_link:__subpackages__"],
     deps = [
         ":deps",

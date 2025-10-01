@@ -138,6 +138,8 @@ public:
 
     void set_fail_replication(bool value) { _fail_replication = value; }
 
+    ss::future<> maybe_trim_prefix(kafka::offset) final { return ss::now(); }
+
 private:
     model::ntp _ntp{"kafka", "test", model::partition_id(0)};
     mutex _replication_mu{"test_replication"};

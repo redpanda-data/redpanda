@@ -85,6 +85,8 @@ public:
 
     void notify_replicator_failure(model::term_id) final {}
 
+    ss::future<> maybe_trim_prefix(kafka::offset) final { return ss::now(); }
+
 private:
     ss::gate _gate;
 };

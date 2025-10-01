@@ -184,6 +184,8 @@ ss::future<> partition_replicator::fetch_and_replicate() {
                .data_units = std::move(data.units)},
               gate,
               as);
+            co_await _sink->maybe_trim_prefix(
+              _source->last_seen_log_start_offset());
         }
     } catch (const ss::sleep_aborted&) {
         // ignore, sleep from fetch was aborted.

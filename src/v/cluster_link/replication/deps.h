@@ -39,6 +39,7 @@ public:
     // Notifies the sink of any terminal failure that can
     // result in replicator not being able to start/progress.
     virtual void notify_replicator_failure(::model::term_id) = 0;
+    virtual ss::future<> maybe_trim_prefix(kafka::offset) = 0;
 };
 
 class data_sink_factory {

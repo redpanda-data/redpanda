@@ -49,6 +49,10 @@ raft::replicate_stages accounting_sink::replicate(
 
 void accounting_sink::notify_replicator_failure(model::term_id) {}
 
+ss::future<> accounting_sink::maybe_trim_prefix(kafka::offset) {
+    return ss::now();
+}
+
 ss::future<> random_data_source::start(kafka::offset offset) noexcept {
     _next = offset;
     return ss::now();
