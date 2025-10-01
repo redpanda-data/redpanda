@@ -207,6 +207,12 @@ server::server(
         cfg->local().max_service_memory_per_core
         * config::shard_local_cfg().kafka_memory_share_for_fetch()),
       "kafka/server-mem-fetch")
+  , _fetch_units_manager(
+      memory(),
+      memory_fetch_sem(),
+      [this] -> fetch_memory_units_manager& {
+          return container().local().fetch_units_manager();
+      })
   , _probe(std::make_unique<class kafka_probe>())
   , _sasl_probe(std::make_unique<class sasl_probe>())
   , _read_dist_probe(std::make_unique<read_distribution_probe>())
@@ -227,6 +233,10 @@ server::server(
 
     _sasl_probe->setup_metrics(cfg->local().name);
     _read_dist_probe->setup_metrics();
+}
+ss::future<> server::stop() {
+    co_await _fetch_units_manager.stop();
+    co_await net::server::stop();
 }
 
 bool server::is_cluster_link_active() const {

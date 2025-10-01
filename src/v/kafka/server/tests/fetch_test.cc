@@ -186,8 +186,7 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
                       true,
                       model::no_timeout,
                       false,
-                      octx.rctx.server().local().memory(),
-                      octx.rctx.server().local().memory_fetch_sem());
+                      octx.rctx.server().local().fetch_units_manager());
                 })
               .get();
         BOOST_TEST_REQUIRE(res.has_data());

@@ -13,6 +13,7 @@
 #include "container/chunked_vector.h"
 #include "container/intrusive_list_helpers.h"
 #include "kafka/protocol/fetch.h"
+#include "kafka/server/fetch_memory_units.h"
 #include "kafka/server/handlers/fetch/replica_selector.h"
 #include "kafka/server/handlers/handler.h"
 #include "model/fundamental.h"
@@ -227,35 +228,6 @@ struct read_result {
     using data_t = std::unique_ptr<iobuf>;
     using variant_t = std::variant<data_t, foreign_data_t>;
 
-    /// Holds semaphore units from memory semaphores. Can be passed across
-    /// shards, semaphore units will be released in the shard where the instance
-    /// of this class has been created.
-    struct memory_units_t {
-        ssx::semaphore_units kafka;
-        ssx::semaphore_units fetch;
-        ss::shard_id shard = ss::this_shard_id();
-
-        ~memory_units_t() noexcept;
-        memory_units_t() noexcept = default;
-        memory_units_t(memory_units_t&&) noexcept = default;
-        memory_units_t& operator=(memory_units_t&&) noexcept = default;
-        memory_units_t(const memory_units_t&) = delete;
-        memory_units_t& operator=(const memory_units_t&) = delete;
-        memory_units_t(
-          ssx::semaphore& memory_sem,
-          ssx::semaphore& memory_fetch_sem) noexcept;
-
-        /*
-         * Adopts another memory_units_t. This requires that both
-         * memory_units_t are from the same shard.
-         */
-        void adopt(memory_units_t&& o);
-
-        bool has_units() const {
-            return fetch.count() > 0 || kafka.count() > 0;
-        }
-    };
-
     explicit read_result(error_code e)
       : start_offset(-1)
       , high_watermark(-1)
@@ -347,7 +319,7 @@ struct read_result {
     error_code error;
     model::partition_id partition;
     std::vector<cluster::tx::tx_range> aborted_transactions;
-    memory_units_t memory_units;
+    fetch_memory_units memory_units;
 };
 // struct aggregating fetch requests and corresponding response iterators for
 // the same shard
@@ -437,8 +409,7 @@ ss::future<read_result> read_from_ntp(
   bool,
   std::optional<model::timeout_clock::time_point>,
   bool obligatory_batch_read,
-  ssx::semaphore& memory_sem,
-  ssx::semaphore& memory_fetch_sem);
+  fetch_memory_units_manager& units_mgr);
 
 /**
  * Create a fetch plan with the simple fetch planner.
@@ -446,13 +417,6 @@ ss::future<read_result> read_from_ntp(
  * Exposed for testing/benchmarking only.
  */
 kafka::fetch_plan make_simple_fetch_plan(op_context& octx);
-
-read_result::memory_units_t reserve_memory_units(
-  ssx::semaphore& memory_sem,
-  ssx::semaphore& memory_fetch_sem,
-  const size_t max_bytes,
-  const size_t max_batch_size,
-  const bool obligatory_batch_read);
 
 ss::future<> do_fetch(op_context& octx);
 

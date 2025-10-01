@@ -17,6 +17,7 @@
 #include "features/feature_table.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/connection_context.h"
+#include "kafka/server/fetch_memory_units.h"
 #include "kafka/server/fetch_metadata_cache.h"
 #include "kafka/server/fetch_pid_controller.h"
 #include "kafka/server/fetch_session_cache.h"
@@ -90,6 +91,8 @@ public:
     server& operator=(const server&) = delete;
     server(server&&) noexcept = delete;
     server& operator=(server&&) noexcept = delete;
+
+    ss::future<> stop();
 
     std::string_view name() const final { return "kafka rpc protocol"; }
     // the lifetime of all references here are guaranteed to live
@@ -228,6 +231,10 @@ public:
 
     ssx::semaphore& memory_fetch_sem() noexcept { return _memory_fetch_sem; }
 
+    fetch_memory_units_manager& fetch_units_manager() noexcept {
+        return _fetch_units_manager;
+    }
+
     ss::future<> revoke_credentials(std::string_view name);
 
     // Returns a default scheduling group that is intended to be used for
@@ -293,6 +300,7 @@ private:
     security::gssapi_principal_mapper _gssapi_principal_mapper;
     security::krb5::configurator _krb_configurator;
     ssx::semaphore _memory_fetch_sem;
+    fetch_memory_units_manager _fetch_units_manager;
 
     handler_probe_manager _handler_probes;
     metrics::internal_metric_groups _metrics;

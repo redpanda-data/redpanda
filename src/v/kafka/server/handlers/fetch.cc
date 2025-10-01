@@ -209,111 +209,6 @@ static ss::future<read_result> read_from_partition(
       std::move(aborted_transactions));
 }
 
-read_result::memory_units_t::memory_units_t(
-  ssx::semaphore& memory_sem, ssx::semaphore& memory_fetch_sem) noexcept
-  : kafka(ss::consume_units(memory_sem, 0))
-  , fetch(ss::consume_units(memory_fetch_sem, 0)) {}
-
-read_result::memory_units_t::~memory_units_t() noexcept {
-    if (shard == ss::this_shard_id() || !has_units()) {
-        return;
-    }
-    auto f = ss::smp::submit_to(
-      shard, [uk = std::move(kafka), uf = std::move(fetch)]() mutable noexcept {
-          uk.return_all();
-          uf.return_all();
-      });
-    if (!f.available()) {
-        ss::engine().run_in_background(std::move(f));
-    }
-}
-
-void read_result::memory_units_t::adopt(memory_units_t&& o) {
-    // Adopts assert internally that the units are from the same semaphore.
-    // So there is no need to assert that they are from the same shard here.
-    kafka.adopt(std::move(o.kafka));
-    fetch.adopt(std::move(o.fetch));
-}
-
-/**
- * Consume proper amounts of units from memory semaphores and return them as
- * semaphore_units. Fetch semaphore units returned are the indication of
- * available resources: if none, there is no memory for the operation;
- * if less than \p max_bytes, the fetch should be capped to that size.
- *
- * \param max_units The maximum number of units the function will attempt to
- * allocate.
- * \param min_units The minimum number of units the function will attempt to
- * allocate. If it can't allocate at least this many units no units will be
- * allocated.
- * \param require_min_units If true then at least \ref min_units will be
- * allocated regardless of the units available in \ref memory_sem and \ref
- * memory_fetch_sem.
- */
-static read_result::memory_units_t reserve_memory_units(
-  ssx::semaphore& memory_sem,
-  ssx::semaphore& memory_fetch_sem,
-  size_t max_units,
-  const size_t min_units,
-  const bool require_min_units) {
-    const size_t available_units = std::min(
-      memory_sem.current(), memory_fetch_sem.current());
-    // Note that it's not currently enforced that max_units >= min_units. Hence
-    // we set max_units to the larger of the two here to ensure that is the
-    // case.
-    max_units = std::max(max_units, min_units);
-
-    size_t units_to_alloc = 0;
-    if (require_min_units) {
-        // if \ref require_min_units is true then we must read at least \ref
-        // min_units. So allocate at least that many even if it causes the
-        // semaphores to become negative.
-        units_to_alloc = std::max(
-          min_units, std::min(max_units, available_units));
-    } else if (available_units >= min_units) {
-        // only reserve memory if we have space for at least \ref min_units,
-        // otherwise allocate none.
-        units_to_alloc = std::min(available_units, max_units);
-    }
-
-    read_result::memory_units_t memory_units;
-    if (units_to_alloc > 0) {
-        memory_units.fetch = ss::consume_units(
-          memory_fetch_sem, units_to_alloc);
-        memory_units.kafka = ss::consume_units(memory_sem, units_to_alloc);
-    }
-
-    return memory_units;
-}
-
-/**
- * Make the \p units hold exactly \p target_bytes, by consuming more units
- * from \p sem or by returning extra units back.
- */
-static void adjust_semaphore_units(
-  ssx::semaphore& sem, ssx::semaphore_units& units, const size_t target_bytes) {
-    if (target_bytes < units.count()) {
-        units.return_units(units.count() - target_bytes);
-    }
-    if (target_bytes > units.count()) {
-        units.adopt(ss::consume_units(sem, target_bytes - units.count()));
-    }
-}
-
-/**
- * Memory units have been reserved before the read op based on an estimation.
- * Now when we know how much data has actually been read, return any extra
- * amount.
- */
-static void adjust_memory_units(
-  ssx::semaphore& memory_sem,
-  ssx::semaphore& memory_fetch_sem,
-  read_result::memory_units_t& memory_units,
-  const size_t read_bytes) {
-    adjust_semaphore_units(memory_sem, memory_units.kafka, read_bytes);
-    adjust_semaphore_units(memory_fetch_sem, memory_units.fetch, read_bytes);
-}
-
 /**
  * Entry point for reading from an ntp. This is executed on NTP home core and
  * build error responses if anything goes wrong.
@@ -326,21 +221,18 @@ static ss::future<read_result> do_read_from_ntp(
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline,
   const bool obligatory_batch_read,
-  ssx::semaphore& memory_sem,
-  ssx::semaphore& memory_fetch_sem) {
+  fetch_memory_units_manager& units_mgr) {
     // control available memory
-    read_result::memory_units_t memory_units(memory_sem, memory_fetch_sem);
+    fetch_memory_units memory_units;
     if (!ntp_config.cfg.skip_read) {
-        memory_units = reserve_memory_units(
-          memory_sem,
-          memory_fetch_sem,
+        memory_units = units_mgr.allocate_memory_units(
           ntp_config.cfg.max_bytes,
           ntp_config.cfg.max_batch_size,
           obligatory_batch_read);
-        if (!memory_units.fetch) {
+        if (!memory_units.has_units()) {
             ntp_config.cfg.skip_read = true;
-        } else if (ntp_config.cfg.max_bytes > memory_units.fetch.count()) {
-            ntp_config.cfg.max_bytes = memory_units.fetch.count();
+        } else if (ntp_config.cfg.max_bytes > memory_units.num_units()) {
+            ntp_config.cfg.max_bytes = memory_units.num_units();
         }
     }
 
@@ -427,8 +319,7 @@ static ss::future<read_result> do_read_from_ntp(
       foreign_read,
       deadline);
 
-    adjust_memory_units(
-      memory_sem, memory_fetch_sem, memory_units, result.data_size_bytes());
+    memory_units.adjust_units(result.data_size_bytes());
     result.memory_units = std::move(memory_units);
     co_return result;
 }
@@ -444,8 +335,7 @@ ss::future<read_result> read_from_ntp(
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline,
   const bool obligatory_batch_read,
-  ssx::semaphore& memory_sem,
-  ssx::semaphore& memory_fetch_sem) {
+  fetch_memory_units_manager& units_mgr) {
     return do_read_from_ntp(
       cluster_pm,
       md_cache,
@@ -454,22 +344,7 @@ ss::future<read_result> read_from_ntp(
       foreign_read,
       deadline,
       obligatory_batch_read,
-      memory_sem,
-      memory_fetch_sem);
-}
-
-read_result::memory_units_t reserve_memory_units(
-  ssx::semaphore& memory_sem,
-  ssx::semaphore& memory_fetch_sem,
-  const size_t max_bytes,
-  const size_t max_batch_size,
-  const bool obligatory_batch_read) {
-    return kafka::reserve_memory_units(
-      memory_sem,
-      memory_fetch_sem,
-      max_bytes,
-      max_batch_size,
-      obligatory_batch_read);
+      units_mgr);
 }
 
 } // namespace testing
@@ -493,9 +368,6 @@ static void fill_fetch_responses(
         range = boost::irange<size_t>(
           0, std::min({results.size(), responses.size()}));
     }
-
-    // Used to aggregate semaphore_units from results.
-    std::optional<read_result::memory_units_t> total_memory_units;
 
     for (auto idx : range) {
         auto& res = results[idx];
@@ -537,20 +409,6 @@ static void fill_fetch_responses(
          */
         if (res.preferred_replica) {
             resp.preferred_read_replica = *res.preferred_replica;
-        }
-
-        // Aggregate memory_units from all results together to avoid
-        // making more than one cross-shard function call to free them.
-        //
-        // Only aggregate non-empty memory_units.
-        if (res.memory_units.has_units()) {
-            if (unlikely(!total_memory_units)) {
-                // Move the first set of semaphore_units to get a copy of the
-                // semaphore pointer and the shard results originates from.
-                total_memory_units = std::move(res.memory_units);
-            } else {
-                total_memory_units->adopt(std::move(res.memory_units));
-            }
         }
 
         /**
@@ -603,8 +461,7 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline,
   const size_t bytes_left,
-  ssx::semaphore& memory_sem,
-  ssx::semaphore& memory_fetch_sem) {
+  fetch_memory_units_manager& units_mgr) {
     size_t total_read_size = 0;
 
     // bytes_left comes from the fetch plan and also accounts for the max_bytes
@@ -640,8 +497,7 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
           foreign_read,
           deadline,
           obligatory_batch_read,
-          memory_sem,
-          memory_fetch_sem);
+          units_mgr);
 
         res.partition = ntp_cfg.ktp().get_partition();
 
@@ -807,8 +663,7 @@ private:
           _ctx.foreign_read,
           _ctx.deadline,
           _ctx.bytes_left,
-          _ctx.srv.memory(),
-          _ctx.srv.memory_fetch_sem());
+          _ctx.srv.fetch_units_manager());
 
         // If we weren't able to read the last_visible_index for a partition
         // before calling `fetch_ntps_in_parallel` then we need to
