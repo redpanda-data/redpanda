@@ -451,13 +451,26 @@ class DisablingPartitionsTest(RedpandaTest):
             ts = topics if topic is None else [topic]
             ret = dict()
             for topic in ts:
-                for p in rpk.describe_topic(topic):
-                    ret[f"{topic}/{p.id}"] = p.high_watermark
+                for p in rpk.describe_topic(topic, tolerant=True):
+                    if p.high_watermark:
+                        ret[f"{topic}/{p.id}"] = p.high_watermark
             self.logger.debug("high watermarks: %s", ret)
             return ret
 
-        orig_hwms = get_hwms()
-        assert len(orig_hwms) == 4
+        def wait_for_hwms(expected, topic=None):
+            def _wait_for_hwms():
+                ret = get_hwms(topic)
+                return len(ret) == expected, ret
+
+            return wait_until_result(
+                lambda: _wait_for_hwms(),
+                timeout_sec=30,
+                backoff_sec=2,
+                err_msg="Never found expected number of high watermarks",
+            )
+
+        orig_hwms = wait_for_hwms(4)
+
         for topic in topics:
             assert (
                 sum(hwm for ntp, hwm in orig_hwms.items() if ntp.startswith(topic))
@@ -480,8 +493,7 @@ class DisablingPartitionsTest(RedpandaTest):
             err_msg="failed to wait until all disabled partitions are shut down",
         )
 
-        hwms2 = get_hwms()
-        assert len(hwms2) == 1
+        hwms2 = wait_for_hwms(1)
         assert hwms2["mytopic1/0"] == orig_hwms["mytopic1/0"]
 
         # test that producing to disabled partitions fails, while producing to
@@ -498,8 +510,7 @@ class DisablingPartitionsTest(RedpandaTest):
             lambda: rpk.produce("mytopic2", "key", "msg"), "producing should fail"
         )
 
-        hwms3 = get_hwms()
-        assert len(hwms2) == 1
+        hwms3 = wait_for_hwms(1)
         assert hwms3["mytopic1/0"] == hwms2["mytopic1/0"] + 1000
 
         # the same with consuming
@@ -580,7 +591,7 @@ class DisablingPartitionsTest(RedpandaTest):
 
         # test that producing and consuming works after re-enabling all partitions
 
-        hwms4 = get_hwms()
+        hwms4 = wait_for_hwms(4)
         assert set(hwms4.keys()) == set(orig_hwms.keys())
         for ntp, hwm in hwms4.items():
             if ntp == "mytopic1/0":
@@ -591,8 +602,8 @@ class DisablingPartitionsTest(RedpandaTest):
         _produce(self, "mytopic1")
         _produce(self, "mytopic2")
 
-        assert sum(hwm for hwm in get_hwms("mytopic1").values()) == 3000
-        assert sum(hwm for hwm in get_hwms("mytopic2").values()) == 2000
+        assert sum(hwm for hwm in wait_for_hwms(2, "mytopic1").values()) == 3000
+        assert sum(hwm for hwm in wait_for_hwms(2, "mytopic2").values()) == 2000
 
         rpk.consume("mytopic1", n=3000, quiet=True)
         rpk.consume("mytopic2", n=2000, quiet=True)
