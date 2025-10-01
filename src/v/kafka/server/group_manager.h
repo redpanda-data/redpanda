@@ -276,7 +276,7 @@ private:
       group_recovery_consumer_state);
 
     ss::future<size_t> delete_offsets(
-      group_ptr group, std::vector<model::topic_partition> offsets);
+      group_ptr group, const chunked_vector<model::topic_partition>& offsets);
 
     ss::future<> do_recover_group(
       model::term_id,
