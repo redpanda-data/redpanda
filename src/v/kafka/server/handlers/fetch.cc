@@ -372,6 +372,7 @@ static void fill_fetch_responses(
     for (auto idx : range) {
         auto& res = results[idx];
         const auto& resp_it = responses[idx];
+        const auto& ktp = resp_it->ktp();
 
         fetch_response::partition_response resp;
         resp.partition_index = res.partition;
@@ -399,10 +400,7 @@ static void fill_fetch_responses(
          * Cache fetch metadata
          */
         octx.rctx.get_fetch_metadata_cache().insert_or_assign(
-          {resp_it->topic(), resp_it->partition_id()},
-          res.start_offset,
-          res.high_watermark,
-          res.last_stable_offset);
+          ktp, res.start_offset, res.high_watermark, res.last_stable_offset);
         /**
          * Over response budget, we will just waste this read, it will cause
          * data to be stored in the cache so next read is fast
