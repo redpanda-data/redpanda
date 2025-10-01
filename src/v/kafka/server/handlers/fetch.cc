@@ -409,14 +409,17 @@ static void fill_fetch_responses(
             resp.preferred_read_replica = *res.preferred_replica;
         }
 
+        fetch_memory_units resp_units{};
+        auto current_response_size = resp_it->response_size();
+        auto bytes_left = octx.bytes_left - current_response_size;
+
         /**
          * According to KIP-74 we have to return first batch even if it would
          * violate max_bytes fetch parameter
          */
-        fetch_memory_units resp_units{};
         if (
           res.has_data()
-          && (octx.bytes_left >= res.data_size_bytes() || octx.response_size == 0)) {
+          && (bytes_left >= res.data_size_bytes() || octx.response_size == 0)) {
             /**
              * set aborted transactions if present
              */
