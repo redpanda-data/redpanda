@@ -224,7 +224,9 @@ struct fetch_response final {
 
         using difference_type = void;
         using pointer = value_type*;
+        using const_pointer = const value_type*;
         using reference = value_type&;
+        using const_reference = const value_type&;
         using iterator_category = std::forward_iterator_tag;
 
         iterator(
@@ -243,8 +245,10 @@ struct fetch_response final {
         }
 
         reference operator*() noexcept { return state_; }
+        const_reference operator*() const noexcept { return state_; }
 
         pointer operator->() noexcept { return &state_; }
+        const_pointer operator->() const noexcept { return &state_; }
 
         iterator& operator++() {
             state_.is_new_topic = false;
