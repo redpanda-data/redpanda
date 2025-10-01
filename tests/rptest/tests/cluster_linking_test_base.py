@@ -312,6 +312,7 @@ class ShadowLinkTestBase(PreallocNodesTest):
                     "cluster_link": "trace",
                     "kafka/client": "trace",
                     "kafka": "trace",
+                    "shadow_link_service": "trace",
                 },
             ),
             *args,
@@ -523,9 +524,19 @@ class ShadowLinkTestBase(PreallocNodesTest):
         topics = RpkTool(self.source_cluster_service).list_topics()
         return topic in topics
 
-    def topic_exists_in_target(self, topic: str) -> bool:
+    def topic_exists_in_target(
+        self, topic: str, partition_count: int | None = None
+    ) -> bool:
         topics = RpkTool(self.target_cluster.service).list_topics()
-        return topic in topics
+        topic_exists = topic in topics
+
+        if partition_count is None:
+            return topic_exists
+
+        partitions = [
+            p for p in RpkTool(self.target_cluster.service).describe_topic(topic)
+        ]
+        return topic_exists and len(partitions) == partition_count
 
     @contextmanager
     def create_source_failure_injector(self, **kwargs):

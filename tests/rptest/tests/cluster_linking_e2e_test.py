@@ -9,9 +9,12 @@
 
 import ducktape.errors
 import google.protobuf.duration_pb2
+import google.protobuf.timestamp_pb2
 import google.protobuf.field_mask_pb2
+import json
 import random
 import re
+import time
 
 from connectrpc.errors import ConnectError, ConnectErrorCode
 from contextlib import nullcontext
@@ -611,6 +614,211 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
             self.create_target_failure_injector(),
         ):
             self.verify()
+
+    earliest_offset = "earliest"
+    latest_offset = "latest"
+    timequery_offset = "timestamp"
+
+    def setup_starting_offset_test(self, topic: TopicSpec) -> tuple[float, float]:
+        self.source_default_client().create_topic(topic)
+        source_producer = KgoVerifierProducer(
+            self.test_context,
+            self.source_cluster.service,
+            topic="source-topic",
+            msg_size=4 * 1024,
+            msg_count=40000,
+            custom_node=self.preallocated_nodes,
+        )
+        start_time = time.time()
+        source_producer.start(clean=False)
+        source_producer.wait_for_acks(count=40000, timeout_sec=30, backoff_sec=1)
+        end_time = time.time()
+
+        source_producer.stop()
+
+        partitions = [
+            p.id for p in self.source_cluster_rpk.describe_topic("source-topic")
+        ]
+        self.logger.info(f"Trimming source topic partitions: {partitions}")
+        self.source_cluster_rpk.trim_prefix(
+            topic="source-topic", offset=1000, partitions=partitions
+        )
+
+        def wait_for_starting_offset_1000(rpk: RpkTool):
+            for part in rpk.describe_topic("source-topic"):
+                if part.start_offset < 1000:
+                    return False
+            return True
+
+        wait_until(
+            lambda: wait_for_starting_offset_1000(self.source_cluster_rpk),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Failed to trim source topic",
+        )
+
+        return (start_time, end_time)
+
+    def find_starting_timestamp(
+        self, topic: TopicSpec, start_time: float, end_time: float
+    ) -> str:
+        self.logger.info(
+            f"Attempting to find a timestamp between {start_time} and {end_time}"
+        )
+        # Start at halfway point and go up 100ms at a time until we get an offset
+        current_time = start_time + 1
+        while current_time <= end_time:
+            iso_timestamp = time.strftime(
+                "%Y-%m-%dT%H:%M:%S", time.gmtime(current_time)
+            )
+            iso_formatted = f"{iso_timestamp}"
+            self.logger.debug(f"Trying timestamp: {iso_formatted}")
+            try:
+                # Query each partition to see if we get a valid offset for this timestamp
+                for part in self.source_cluster_rpk.describe_topic("source-topic"):
+                    self.source_cluster_rpk.consume(
+                        topic=topic.name,
+                        n=1,
+                        offset=f"@{iso_formatted}Z",
+                        partition=part.id,
+                        timeout=2,
+                    )
+
+                self.logger.info(f"Found starting offset: {iso_formatted}")
+                return iso_formatted
+            except Exception as e:
+                self.logger.debug(f"Failed to query timestamp {iso_formatted}: {e}")
+
+            current_time += 1  # Move forward 100ms
+
+        # If no valid timestamp found, return the end time
+        raise RuntimeError(
+            f"Failed to find a valid starting timestamp between {start_time} and {end_time}"
+        )
+
+    @cluster(num_nodes=7)
+    @matrix(
+        source_cluster_spec=[
+            SecondaryClusterSpec(ServiceType.REDPANDA),
+            SecondaryClusterSpec(
+                ServiceType.KAFKA, kafka_version="3.8.0", kafka_quorum="COMBINED_KRAFT"
+            ),
+        ],
+        starting_offset=["earliest", "latest", "timestamp"],
+    )
+    def test_starting_offset(
+        self, source_cluster_spec: SecondaryClusterSpec, starting_offset: str
+    ):
+        """
+        This test will verify the starting offset configuration.
+
+        1. Pre-populate the source cluster with some data
+        2. Prefix-truncate the data
+        3. Create a shadow link with a specified starting offset
+        4. Verify that the shadow topic is starting at the specified starting offset
+        """
+        topic = TopicSpec(name="source-topic", partition_count=5, replication_factor=3)
+
+        (start_time, end_time) = self.setup_starting_offset_test(topic=topic)
+
+        req = self.create_default_link_request("test-link")
+
+        if starting_offset == self.earliest_offset:
+            req.shadow_link.configurations.topic_metadata_sync_options.earliest.CopyFrom(
+                shadow_link_pb2.TopicMetadataSyncOptions.EarliestOffset()
+            )
+        elif starting_offset == self.latest_offset:
+            req.shadow_link.configurations.topic_metadata_sync_options.latest.CopyFrom(
+                shadow_link_pb2.TopicMetadataSyncOptions.LatestOffset()
+            )
+        elif starting_offset == self.timequery_offset:
+            starting_offset = self.find_starting_timestamp(
+                topic=topic, start_time=start_time, end_time=end_time
+            )
+            self.logger.info(f'Using starting offset "{starting_offset}"')
+            timestamp_pb = google.protobuf.timestamp_pb2.Timestamp()
+            timestamp_pb.FromMilliseconds(
+                int(
+                    time.mktime(time.strptime(starting_offset, "%Y-%m-%dT%H:%M:%S"))
+                    * 1000
+                )
+            )
+            req.shadow_link.configurations.topic_metadata_sync_options.timestamp.CopyFrom(
+                timestamp_pb
+            )
+        else:
+            assert False, f"Invalid starting offset value: {starting_offset}"
+
+        self.create_link_with_request(req=req)
+
+        self.target_cluster.service.wait_until(
+            lambda: self.topic_exists_in_target(topic.name, 5),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {topic.name} not found in target cluster",
+        )
+
+        if starting_offset == self.latest_offset:
+            # link should start now at the latest offset and should be empty
+            for part in self.target_cluster_rpk.describe_topic(topic.name):
+                self.logger.debug(f"Partition: {part}")
+                assert part.high_watermark == part.start_offset, (
+                    f"Expected empty topic at partition {part.id}, got {part.high_watermark}, {part.start_offset}"
+                )
+
+            # Now produce a single record to each source partition
+            for part in self.source_cluster_rpk.describe_topic(topic.name):
+                self.source_cluster_rpk.produce(
+                    topic=topic.name, key="key", msg="value", partition=part.id
+                )
+
+        def get_partitions_starting_offset(
+            rpk: RpkTool, offset: str | int
+        ) -> dict[int, int]:
+            offsets: dict[int, int] = {}
+            for part in rpk.describe_topic(topic.name):
+                record = json.loads(
+                    rpk.consume(topic=topic.name, n=1, partition=part.id, offset=offset)
+                )
+                offsets[part.id] = record["offset"]
+
+            return offsets
+
+        source_offset_to_fetch = (
+            "start"
+            if starting_offset == self.earliest_offset
+            else "-1"
+            if starting_offset == self.latest_offset
+            else f"@{starting_offset}Z"
+        )
+        self.logger.info(
+            f"Fetching offset '{source_offset_to_fetch}' from source cluster"
+        )
+        source_offsets = get_partitions_starting_offset(
+            self.source_cluster_rpk, source_offset_to_fetch
+        )
+        self.logger.info(f"Source cluster offsets: {source_offsets}")
+
+        # If testing for earliest or latest offset, use "start", else
+        # use the timequery value.  The batch fetched from the source at
+        # that time query may have records starting before that timestamp
+        target_offset_to_fetch = (
+            "start"
+            if starting_offset == self.earliest_offset
+            or starting_offset == self.latest_offset
+            else f"@{starting_offset}Z"
+        )
+        self.logger.info(
+            f"Fetching offset '{target_offset_to_fetch}' from target cluster"
+        )
+        target_offsets = get_partitions_starting_offset(
+            self.target_cluster_rpk, target_offset_to_fetch
+        )
+        self.logger.info(f"Target cluster starting offsets: {target_offsets}")
+
+        assert source_offsets == target_offsets, (
+            f"Expected source and target offsets to match, got {target_offsets} vs {source_offsets}"
+        )
 
 
 class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
