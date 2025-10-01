@@ -1096,7 +1096,9 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
             }
         }
 
-        if (ss::lowres_clock::now() >= _next_housekeeping) {
+        if (
+          ss::lowres_clock::now() >= _next_housekeeping
+          && !flush_in_progress()) {
             co_await housekeeping();
             _next_housekeeping = _housekeeping_jitter();
         }
@@ -3139,6 +3141,13 @@ flush_result ntp_archiver::flush() {
           "partition, or the node is a read replica");
         return flush_result{
           .response = flush_response::rejected, .offset = std::nullopt};
+    }
+
+    if (_local_segment_merger) {
+        _local_segment_merger->set_enabled(false);
+    }
+    if (_scrubber) {
+        _scrubber->set_enabled(false);
     }
 
     _flush_uploads_offset = model::prev_offset(
