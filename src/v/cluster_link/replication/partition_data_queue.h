@@ -62,6 +62,10 @@ public:
     bool empty() const { return _batches.empty(); }
     bool full() const { return _sem.available_units() <= 0; }
 
+    kafka::offset last_seen_log_start_offset() const {
+        return _last_seen_log_start_offset;
+    }
+
 private:
     void do_reset(kafka::offset next);
     kafka::offset _next{};

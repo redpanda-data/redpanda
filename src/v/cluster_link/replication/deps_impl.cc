@@ -115,6 +115,12 @@ remote_partition_source::fetch_next(ss::abort_source& as) {
       .batches = std::move(batches), .units = std::move(units)};
 }
 
+kafka::offset remote_partition_source::last_seen_log_start_offset() {
+    auto lso = _consumer.last_seen_log_start_offset(_tp);
+    vassert(lso.has_value(), "Partition {} must exist", _tp);
+    return *lso;
+}
+
 ss::future<kafka::offset> remote_partition_source::fetch_starting_offset() {
     // This loop will run forever until the _gate is closed
     // If a user has specified a specific starting offset, then we will wait

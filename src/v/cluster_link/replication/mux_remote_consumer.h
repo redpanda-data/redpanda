@@ -76,6 +76,9 @@ public:
 
     kafka::client::cluster& cluster() { return _consumer->get_cluster(); }
 
+    std::optional<kafka::offset>
+    last_seen_log_start_offset(const ::model::topic_partition&);
+
 private:
     bool can_ignore_partition_data(const ::model::topic_partition&);
     ss::future<> assign_pending_partitions();

@@ -38,6 +38,7 @@ public:
     ss::future<> stop() noexcept override;
     ss::future<> reset(kafka::offset) override;
     ss::future<data_source::data> fetch_next(ss::abort_source&) override;
+    kafka::offset last_seen_log_start_offset() final;
 
 private:
     ss::future<kafka::offset> fetch_starting_offset();

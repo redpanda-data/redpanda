@@ -76,6 +76,10 @@ public:
 
     size_t available_memory() const { return _max_memory.current(); }
 
+    kafka::offset last_seen_log_start_offset() final {
+        return kafka::offset{-1};
+    }
+
 private:
     std::optional<kafka::offset> _start_offset{};
     kafka::offset _next_to_consume;

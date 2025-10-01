@@ -45,6 +45,10 @@ public:
         co_return data_source::data{std::move(batches), ssx::semaphore_units{}};
     }
 
+    kafka::offset last_seen_log_start_offset() final {
+        return kafka::offset{-1};
+    }
+
 private:
     ss::gate _gate;
 };

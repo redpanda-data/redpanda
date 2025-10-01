@@ -101,6 +101,15 @@ mux_remote_consumer::fetch(
     co_return co_await it->second->fetch(as);
 }
 
+std::optional<kafka::offset> mux_remote_consumer::last_seen_log_start_offset(
+  const ::model::topic_partition& tp) {
+    auto it = _partitions.find(tp);
+    if (it == _partitions.end()) {
+        return std::nullopt;
+    }
+    return it->second->last_seen_log_start_offset();
+}
+
 ss::future<> mux_remote_consumer::assign_pending_partitions() {
     if (_pending_assignment.empty()) {
         co_return;

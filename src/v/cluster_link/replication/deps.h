@@ -72,6 +72,11 @@ public:
      * Fetches some data, if any.
      */
     virtual ss::future<data> fetch_next(ss::abort_source&) = 0;
+
+    /**
+     * Returns the last seen log start offset from the data source
+     */
+    virtual kafka::offset last_seen_log_start_offset() = 0;
 };
 
 class data_source_factory {
