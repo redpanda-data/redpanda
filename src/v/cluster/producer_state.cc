@@ -132,15 +132,25 @@ void requests::reset(request_result_t::error_type error) {
     _finished_requests.clear();
 }
 
+namespace {
+/**
+ * Increment sequence number with overflow handling. Wraps around to 0
+ */
+seq_t next_sequence(seq_t sequence) {
+    if (sequence == std::numeric_limits<seq_t>::max()) {
+        return 0;
+    }
+    return sequence + 1;
+}
+} // namespace
+
 bool requests::is_valid_sequence(seq_t incoming) const {
     auto last_req = last_request();
-    return
-      // this is the first request with seq=0
-      (!last_req && incoming == 0)
-      // incoming request forms a sequence with last_request
-      || (last_req && last_req.value()->_last_sequence + 1 == incoming)
-      // sequence numbers got rolled over because they hit int32 max limit.
-      || (last_req && last_req.value()->_last_sequence == std::numeric_limits<seq_t>::max() && incoming == 0);
+    if (!last_req) {
+        // no previous request, expect incoming sequence to be 0
+        return incoming == 0;
+    }
+    return incoming == next_sequence(last_req.value()->_last_sequence);
 }
 
 result<request_ptr> requests::try_emplace(
