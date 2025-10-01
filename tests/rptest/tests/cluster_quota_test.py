@@ -151,7 +151,7 @@ class ClusterRateQuotaTest(RedpandaTest):
         # produce) and response (for fetch) including the header size.
         # Therefore these configurations need to adjust for that overhead.
         self.max_throttle_time = 10
-        self.target_default_quota_byte_rate = 1048576
+        self.target_default_quota_byte_rate = 20480
         self.target_group_quota_byte_rate = 10240
         self.message_size = 1024
         self.under_group_quota_message_amount = 8
@@ -165,6 +165,8 @@ class ClusterRateQuotaTest(RedpandaTest):
         self.max_partition_fetch_bytes = self.message_size * 11
         additional_options = {
             "max_kafka_throttle_delay_ms": self.max_throttle_time,
+            # Enable write caching to avoid occasionally slow log flushes on the produce path
+            "write_caching_default": True,
         }
         super().__init__(
             *args,
@@ -216,11 +218,11 @@ class ClusterRateQuotaTest(RedpandaTest):
         ]
         assert throttle_ms == 0
 
-    def produce(self, producer, amount, message=None, timeout=1):
+    def produce(self, producer, amount, message=None, timeout_sec=10):
         msg = message if message else self.msg
         response_futures = [producer.send(self.topic, msg) for _ in range(amount)]
         for f in response_futures:
-            f.get(timeout=timeout)
+            f.get(timeout=timeout_sec)
 
     def fetch(self, consumer, messages_amount, timeout_sec=300):
         deadline = datetime.datetime.now() + datetime.timedelta(seconds=timeout_sec)
@@ -462,6 +464,9 @@ class ClusterRateQuotaTest(RedpandaTest):
         )
         self.check_consumer_not_throttled(consumer)
 
+        # Drop bufferered data
+        consumer.poll(timeout_ms=0)
+
         # Consume must be throttled
         consumer.poll(timeout_ms=1000)
         self.check_consumer_throttled(consumer)
@@ -579,7 +584,7 @@ class ClusterRateQuotaTest(RedpandaTest):
 
         # Because the python client doesn't seem to enforce the quota
         # client-side, it is going to be enforced broker-side
-        self.produce(producer1, 3, self.large_msg, timeout=10)
+        self.produce(producer1, 10, self.large_msg)
         self.check_producer_throttled(producer1, ignore_max_throttle=True)
         wait_until(
             self._throttling_enforced_broker_side,
@@ -680,10 +685,14 @@ class ClusterRateQuotaTest(RedpandaTest):
                 check_sample(sample, sample.value == 0)
 
         self.redpanda.logger.debug("Produce over the limit")
-        self.produce(producer_with_group, self.break_group_quota_message_amount)
-        self.fetch(consumer_with_group, self.break_group_quota_message_amount)
-        self.produce(unknown_producer, self.break_default_quota_message_amount)
-        self.fetch(unknown_consumer, self.break_default_quota_message_amount)
+        # Send more data than required to ensure that even if some produce
+        # requests end up being slower (due to contention on locks, disk,
+        # etc.), the test doesn't flake
+        n = 3
+        self.produce(producer_with_group, self.break_group_quota_message_amount * n)
+        self.fetch(consumer_with_group, self.break_group_quota_message_amount * n)
+        self.produce(unknown_producer, self.break_default_quota_message_amount * n)
+        self.fetch(unknown_consumer, self.break_default_quota_message_amount * n)
 
         self.redpanda.logger.debug(
             "Assert that throttling time is positive when over the limit"
