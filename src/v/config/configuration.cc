@@ -1634,7 +1634,7 @@ configuration::configuration()
       is_enterprise_sasl_mechanism,
       "sasl_mechanisms",
       "A list of supported SASL mechanisms, if no override is defined in "
-      "`sasl_mechanisms_overrides` for each kafka listener. Accepted values: "
+      "`sasl_mechanisms_overrides` for each Kafka listener. Accepted values: "
       "`SCRAM`, `GSSAPI`, `OAUTHBEARER`, `PLAIN`.  Note that in order to "
       "enable PLAIN, you must also enable SCRAM.",
       meta{
