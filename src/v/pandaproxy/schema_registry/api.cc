@@ -77,9 +77,10 @@ ss::future<> api::start() {
 
 ss::future<> api::stop() {
     vlog(srlog.debug, "Stopping schema registry API...");
-    co_await _client.stop();
+    co_await _client.invoke_on_all(&kafka::client::client::stop);
     co_await _service.stop();
     co_await _sequencer.stop();
+    co_await _client.stop();
     co_await _schema_id_cache.stop();
     co_await _schema_id_validation_probe.stop();
     if (_store) {
