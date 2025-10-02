@@ -326,7 +326,7 @@ ss::future<size_t> group_manager::delete_expired_offsets(
      * delete expired offsets from the group
      */
     auto offsets = group->delete_expired_offsets(retention_period);
-    return delete_offsets(group, std::move(offsets));
+    co_return co_await delete_offsets(group, offsets);
 }
 
 ss::future<size_t> group_manager::delete_offsets(
