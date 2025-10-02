@@ -262,6 +262,8 @@ private:
     /// \brief Wait for retries.
     ss::gate _gate;
 
+    bool _is_stopped{false};
+
     std::optional<external_mitigate> _external_mitigate;
     ss::abort_source _as;
 };
