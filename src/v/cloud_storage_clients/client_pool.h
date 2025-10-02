@@ -154,7 +154,7 @@ public:
     ///              representation of a retry_chain_node.
     ss::future<client_lease> acquire_with_timeout(
       ss::abort_source& as,
-      ss::lowres_clock::time_point deadline,
+      ss::lowres_clock::duration deadline,
       std::optional<ss::sstring> ctx = std::nullopt);
 
     /// \brief Get number of connections
