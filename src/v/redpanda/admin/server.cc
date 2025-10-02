@@ -907,7 +907,7 @@ void admin_server::log_level_timer_handler() {
     rearm_log_level_timer();
 }
 
-ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
+ss::httpd::redirect_exception admin_server::redirect_to_leader(
   ss::http::request& req, const model::ntp& ntp) const {
     auto leader_id_opt = _metadata_cache.local().get_leader_id(ntp);
 
@@ -1081,8 +1081,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
     vlog(
       adminlog.info, "Redirecting admin API call to {} leader at {}", ntp, url);
 
-    co_return ss::httpd::redirect_exception(
-      url, ss::http::reply::status_type::temporary_redirect, retry_after);
+    return {url, ss::http::reply::status_type::temporary_redirect, retry_after};
 }
 
 bool admin_server::need_redirect_to_leader(
@@ -1290,9 +1289,9 @@ ss::future<> admin_server::throw_on_error(
               fmt::format("Service unavailable ({})", ec.message()),
               ss::http::reply::status_type::service_unavailable);
         case cluster::errc::not_leader:
-            throw co_await redirect_to_leader(req, ntp);
+            throw redirect_to_leader(req, ntp);
         case cluster::errc::not_leader_controller:
-            throw co_await redirect_to_leader(req, model::controller_ntp);
+            throw redirect_to_leader(req, model::controller_ntp);
         case cluster::errc::no_update_in_progress:
             throw ss::httpd::bad_request_exception(
               "Cannot cancel partition move operation as there is no move "
@@ -1359,7 +1358,7 @@ ss::future<> admin_server::throw_on_error(
         case raft::errc::transfer_to_current_leader:
             co_return;
         case raft::errc::not_leader:
-            throw co_await redirect_to_leader(req, ntp);
+            throw redirect_to_leader(req, ntp);
         case raft::errc::node_does_not_exists:
         case raft::errc::not_voter:
             // node_does_not_exist is a 400 rather than a 404, because it
@@ -1374,7 +1373,7 @@ ss::future<> admin_server::throw_on_error(
     } else if (ec.category() == cluster::tx::error_category()) {
         switch (cluster::tx::errc(ec.value())) {
         case cluster::tx::errc::leader_not_found:
-            throw co_await redirect_to_leader(req, ntp);
+            throw redirect_to_leader(req, ntp);
         case cluster::tx::errc::pid_not_found:
             throw ss::httpd::not_found_exception(
               fmt_with_ctx(fmt::format, "Can not find pid for ntp:{}", ntp));
@@ -2542,7 +2541,7 @@ admin_server::put_feature_handler(std::unique_ptr<ss::http::request> req) {
     }
 
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
+        throw redirect_to_leader(*req, model::controller_ntp);
     }
 
     auto& fm = _controller->get_feature_manager();
@@ -3292,7 +3291,7 @@ admin_server::self_test_start_handler(std::unique_ptr<ss::http::request> req) {
       make_self_test_start_validator());
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         vlog(adminlog.debug, "Need to redirect self_test_start request");
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
+        throw redirect_to_leader(*req, model::controller_ntp);
     }
     auto doc = co_await parse_json_body(req.get());
     apply_validator(self_test_start_validator, doc);
@@ -3350,7 +3349,7 @@ ss::future<ss::json::json_return_type>
 admin_server::self_test_stop_handler(std::unique_ptr<ss::http::request> req) {
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         vlog(adminlog.info, "Need to redirect self_test_stop request");
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
+        throw redirect_to_leader(*req, model::controller_ntp);
     }
     auto r = co_await _self_test_frontend.invoke_on(
       cluster::self_test_frontend::shard,
@@ -3677,7 +3676,7 @@ admin_server::post_cluster_partitions_topic_handler(
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         // In order that we can do a reliably ordered validation of
         // the request (and drop no-op requests), run on controller leader;
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
+        throw redirect_to_leader(*req, model::controller_ntp);
     }
 
     auto ns_tp = model::topic_namespace{
@@ -3708,7 +3707,7 @@ admin_server::post_cluster_partitions_topic_partition_handler(
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         // In order that we can do a reliably ordered validation of
         // the request (and drop no-op requests), run on controller leader;
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
+        throw redirect_to_leader(*req, model::controller_ntp);
     }
 
     auto ntp = parse_ntp_from_request(req->param);
@@ -4152,7 +4151,7 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
     auto ntp = parse_ntp_from_request(request->param, model::kafka_namespace);
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
         vlog(adminlog.info, "Need to redirect bucket syncup request");
-        throw co_await redirect_to_leader(*request, ntp);
+        throw redirect_to_leader(*request, ntp);
     } else {
         auto result = co_await _partition_manager.map_reduce(
           manifest_reducer(), [ntp](cluster::partition_manager& p) {
@@ -4187,7 +4186,7 @@ admin_server::unsafe_reset_metadata(
     auto ntp = parse_ntp_from_request(request->param, model::kafka_namespace);
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
         vlog(adminlog.info, "Need to redirect unsafe reset metadata request");
-        throw co_await redirect_to_leader(*request, ntp);
+        throw redirect_to_leader(*request, ntp);
     }
     if (request->content_length <= 0) {
         throw ss::httpd::bad_request_exception("Empty request content");
@@ -4239,7 +4238,7 @@ admin_server::initiate_topic_scan_and_recovery(
     reply->set_content_type("json");
 
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*request, model::controller_ntp);
+        throw redirect_to_leader(*request, model::controller_ntp);
     }
 
     if (!_topic_recovery_service.local_is_initialized()) {
@@ -4313,7 +4312,7 @@ admin_server::initialize_cluster_recovery(
           "Cluster restore is not available, recovery mode enabled");
     }
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*request, model::controller_ntp);
+        throw redirect_to_leader(*request, model::controller_ntp);
     }
     auto& bucket_property = cloud_storage::configuration::get_bucket_config();
     if (!bucket_property.is_overriden() || !bucket_property().has_value()) {
@@ -4334,7 +4333,7 @@ admin_server::initialize_cluster_recovery(
     }
     auto err = error_res.value();
     if (err == cluster::errc::not_leader_controller) {
-        throw co_await redirect_to_leader(*request, model::controller_ntp);
+        throw redirect_to_leader(*request, model::controller_ntp);
     }
     if (err == cluster::errc::cluster_already_exists) {
         throw ss::httpd::base_exception{
@@ -4359,7 +4358,7 @@ admin_server::initialize_cluster_recovery(
 ss::future<ss::json::json_return_type>
 admin_server::get_cluster_recovery(std::unique_ptr<ss::http::request> req) {
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
+        throw redirect_to_leader(*req, model::controller_ntp);
     }
     ss::httpd::shadow_indexing_json::cluster_recovery_status ret;
     ret.state = "inactive";
@@ -4666,7 +4665,7 @@ admin_server::get_partition_cloud_storage_status(
       req->param, model::kafka_namespace);
 
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, ntp);
+        throw redirect_to_leader(*req, ntp);
     }
 
     const auto shard = _shard_table.local().shard_for(ntp);
@@ -4791,7 +4790,7 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::get_manifest(
     }
 
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, ntp);
+        throw redirect_to_leader(*req, ntp);
     }
 
     const auto shard = _shard_table.local().shard_for(ntp);
@@ -4851,7 +4850,7 @@ admin_server::get_cloud_storage_anomalies(
     const model::ntp ntp = parse_ntp_from_request(req->param);
 
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, ntp);
+        throw redirect_to_leader(*req, ntp);
     }
 
     const auto& topic_table = _controller->get_topics_state().local();
@@ -4907,7 +4906,7 @@ admin_server::unsafe_reset_metadata_from_cloud(
         vlog(
           adminlog.info,
           "Need to redirect unsafe reset metadata from cloud request");
-        throw co_await redirect_to_leader(*request, ntp);
+        throw redirect_to_leader(*request, ntp);
     }
 
     const auto shard = _shard_table.local().shard_for(ntp);
@@ -4947,7 +4946,7 @@ admin_server::reset_scrubbing_metadata(std::unique_ptr<ss::http::request> req) {
       req->param, model::kafka_namespace);
 
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, ntp);
+        throw redirect_to_leader(*req, ntp);
     }
 
     const auto shard = _shard_table.local().shard_for(ntp);

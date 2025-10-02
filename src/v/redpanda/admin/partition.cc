@@ -37,10 +37,10 @@ using admin::apply_validator;
 
 ss::future<ss::json::json_return_type>
 admin_server::get_transactions_handler(std::unique_ptr<ss::http::request> req) {
-    const model::ntp ntp = parse_ntp_from_request(req->param);
+    model::ntp ntp = parse_ntp_from_request(req->param);
 
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, ntp);
+        throw redirect_to_leader(*req, ntp);
     }
 
     auto shard = _shard_table.local().shard_for(ntp);
@@ -155,7 +155,7 @@ admin_server::mark_transaction_expired_handler(
       pid);
 
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, ntp);
+        throw redirect_to_leader(*req, ntp);
     }
 
     auto shard = _shard_table.local().shard_for(ntp);
@@ -169,7 +169,7 @@ admin_server::mark_transaction_expired_handler(
       *shard,
       [_ntp = std::move(ntp), pid, _req = std::move(req), this](
         cluster::partition_manager& pm) mutable
-        -> ss::future<ss::json::json_return_type> {
+      -> ss::future<ss::json::json_return_type> {
           auto ntp = std::move(_ntp);
           auto req = std::move(_req);
           auto partition = pm.get(ntp);
@@ -468,7 +468,7 @@ admin_server::force_set_partition_replicas_handler(
     }
 
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
+        throw redirect_to_leader(*req, model::controller_ntp);
     }
 
     auto ntp = parse_ntp_from_request(req->param);
@@ -550,7 +550,7 @@ admin_server::toggle_append_entries_error_injection(
     co_return co_await _partition_manager.invoke_on(
       *shard,
       [ntp = std::move(ntp), inject](cluster::partition_manager& pm) mutable
-        -> ss::future<ss::json::json_return_type> {
+      -> ss::future<ss::json::json_return_type> {
           auto partition = pm.get(ntp);
           if (!partition) {
               return ss::make_exception_future<ss::json::json_return_type>(
@@ -687,7 +687,7 @@ admin_server::offset_for_leader_epoch_handler(
   std::unique_ptr<ss::http::request> request) {
     auto ntp = parse_ntp_from_request(request->param, model::kafka_namespace);
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*request, ntp);
+        throw redirect_to_leader(*request, ntp);
     }
     vlog(
       adminlog.debug,
@@ -1102,7 +1102,7 @@ ss::future<ss::json::json_return_type>
 admin_server::get_majority_lost_partitions(
   std::unique_ptr<ss::http::request> request) {
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*request, model::controller_ntp);
+        throw redirect_to_leader(*request, model::controller_ntp);
     }
 
     auto input = request->get_query_param("dead_nodes");
@@ -1385,7 +1385,7 @@ admin_server::force_recover_partitions_from_nodes(
     }
 
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*request, model::controller_ntp);
+        throw redirect_to_leader(*request, model::controller_ntp);
     }
 
     static thread_local json::validator validator(

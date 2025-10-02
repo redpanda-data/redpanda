@@ -732,7 +732,7 @@ private:
       std::error_code ec,
       const model::ntp& ntp,
       model::node_id id = model::node_id{-1}) const;
-    ss::future<ss::httpd::redirect_exception>
+    ss::httpd::redirect_exception
     redirect_to_leader(ss::http::request& req, const model::ntp& ntp) const;
 
     ss::future<ss::json::json_return_type> cancel_node_partition_moves(

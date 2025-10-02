@@ -76,7 +76,7 @@ admin_server::get_all_transactions_handler(
       model::partition_id(coordinator_partition));
 
     if (need_redirect_to_leader(tx_ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, tx_ntp);
+        throw redirect_to_leader(*req, tx_ntp);
     }
 
     if (!_tx_gateway_frontend.local_is_initialized()) {
@@ -185,7 +185,7 @@ admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
         throw ss::httpd::bad_request_exception("Coordinator not available");
     }
     if (need_redirect_to_leader(*r.ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, *r.ntp);
+        throw redirect_to_leader(*req, *r.ntp);
     }
 
     auto tx_ntp = _tx_gateway_frontend.local().ntp_for_tx_id(tid);
