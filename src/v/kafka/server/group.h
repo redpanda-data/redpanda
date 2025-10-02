@@ -706,7 +706,7 @@ public:
      *
      * The set of expired offsets that have been removed is returned.
      */
-    std::vector<model::topic_partition>
+    chunked_vector<model::topic_partition>
     delete_expired_offsets(std::chrono::seconds retention_period);
 
     /*
@@ -714,8 +714,8 @@ public:
      *
      *  Returns the set of offsets that were deleted.
      */
-    std::vector<model::topic_partition>
-    delete_offsets(std::vector<model::topic_partition> offsets);
+    chunked_vector<model::topic_partition>
+    delete_offsets(const chunked_vector<model::topic_partition>& offsets);
 
     void set_lag_metrics(consumer_lag_metrics lag_metrics);
 
@@ -908,12 +908,12 @@ private:
     void update_subscriptions();
     std::optional<absl::node_hash_set<model::topic>> _subscriptions;
 
-    std::vector<model::topic_partition> filter_expired_offsets(
+    chunked_vector<model::topic_partition> filter_expired_offsets(
       std::chrono::seconds retention_period,
       const std::function<bool(const model::topic&)>&,
       const std::function<model::timestamp(const offset_metadata&)>&);
 
-    std::vector<model::topic_partition>
+    chunked_vector<model::topic_partition>
     get_expired_offsets(std::chrono::seconds retention_period);
 
     bool use_dedicated_batch_type_for_fence() const {

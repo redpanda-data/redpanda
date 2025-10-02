@@ -327,7 +327,7 @@ ss::future<size_t> group_manager::delete_expired_offsets(
 }
 
 ss::future<size_t> group_manager::delete_offsets(
-  group_ptr group, std::vector<model::topic_partition> offsets) {
+  group_ptr group, const chunked_vector<model::topic_partition>& offsets) {
     /*
      * build tombstones to persistent offset deletions. the group itself may
      * also be set to dead state in which case we may be able to delete the
@@ -1661,7 +1661,7 @@ group_manager::offset_delete(offset_delete_request&& r) {
         co_return offset_delete_response(error_code::non_empty_group);
     }
 
-    std::vector<model::topic_partition> requested_deletions;
+    chunked_vector<model::topic_partition> requested_deletions;
     for (const auto& topic : r.data.topics) {
         for (const auto& partition : topic.partitions) {
             requested_deletions.emplace_back(
@@ -1672,7 +1672,7 @@ group_manager::offset_delete(offset_delete_request&& r) {
     auto deleted_offsets = group->delete_offsets(requested_deletions);
     co_await delete_offsets(group, deleted_offsets);
 
-    absl::flat_hash_set<model::topic_partition> deleted_offsets_set;
+    chunked_hash_set<model::topic_partition> deleted_offsets_set;
     for (auto& tp : deleted_offsets) {
         deleted_offsets_set.insert(std::move(tp));
     }
