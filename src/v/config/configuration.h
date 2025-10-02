@@ -19,6 +19,7 @@
 #include "config/endpoint_tls_config.h"
 #include "config/leaders_preference.h"
 #include "config/property.h"
+#include "config/sasl_mechanisms.h"
 #include "config/throughput_control_group.h"
 #include "config/tls_config.h"
 #include "config/types.h"
@@ -342,6 +343,8 @@ struct configuration final : public config_store {
     property<int16_t> id_allocator_batch_size;
     property<bool> enable_sasl;
     enterprise<property<std::vector<ss::sstring>>> sasl_mechanisms;
+    enterprise<property<std::vector<config::sasl_mechanisms_override>>>
+      sasl_mechanisms_overrides;
     property<ss::sstring> sasl_kerberos_config;
     property<ss::sstring> sasl_kerberos_keytab;
     property<ss::sstring> sasl_kerberos_principal;

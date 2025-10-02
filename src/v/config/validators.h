@@ -31,6 +31,9 @@ validate_connection_rate(const std::vector<ss::sstring>& ips_with_limit);
 std::optional<ss::sstring>
 validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms);
 
+std::optional<ss::sstring> validate_sasl_mechanisms_overrides(
+  const std::vector<config::sasl_mechanisms_override>& overrides);
+
 std::optional<ss::sstring>
 validate_http_authn_mechanisms(const std::vector<ss::sstring>& mechanisms);
 

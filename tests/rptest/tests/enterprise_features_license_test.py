@@ -43,7 +43,22 @@ class Feature(IntEnum):
     fips = 8
     datalake_iceberg = 9
     leadership_pinning = 10
+    gssapi_override = 11
+    oidc_override = 12
 
+
+def to_enterprise_feature(feature):
+    # These are different ways to enable the same enterprise features
+    mappings = {
+        Feature.gssapi_override: Feature.gssapi,
+        Feature.oidc_override: Feature.oidc,
+    }
+    if feature not in mappings:
+        return feature
+    return mappings[feature]
+
+
+enterprise_features = set([to_enterprise_feature(f) for f in Feature])
 
 FEATURE_DEPENDENT_CONFIG = {
     Feature.audit_logging: "audit_enabled",
@@ -55,6 +70,8 @@ FEATURE_DEPENDENT_CONFIG = {
     Feature.schema_id_validation: "enable_schema_id_validation",
     Feature.datalake_iceberg: "datalake_iceberg",
     Feature.leadership_pinning: "default_leaders_preference",
+    Feature.gssapi_override: "sasl_mechanisms_overrides",
+    Feature.oidc_override: "sasl_mechanisms_overrides",
 }
 
 SKIP_FEATURES = [
@@ -135,7 +152,7 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
             Feature.audit_logging, enabled=False, license_valid=with_license
         )
 
-        assert not any(statuses[f] for f in Feature), (
+        assert not any(statuses[f] for f in enterprise_features), (
             f"Unexpected status: {json.dumps(statuses)}"
         )
 
@@ -159,11 +176,33 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
             self.redpanda.set_cluster_config({"core_balancing_continuous": "true"})
         elif feature == Feature.gssapi:
             self.redpanda.set_cluster_config({"sasl_mechanisms": ["SCRAM", "GSSAPI"]})
+        elif feature == Feature.gssapi_override:
+            self.redpanda.set_cluster_config(
+                {
+                    "sasl_mechanisms_overrides": [
+                        {
+                            "listener": "some_listener",
+                            "sasl_mechanisms": ["SCRAM", "GSSAPI"],
+                        }
+                    ]
+                }
+            )
         elif feature == Feature.oidc:
             # Note: the default OIDC server is flaky in CI, so use `OIDC_UPDATE_FAILURE_LOGS`
             # to ignore the related error logs in the background updater.
             self.redpanda.set_cluster_config(
                 {"sasl_mechanisms": ["SCRAM", "OAUTHBEARER"]}
+            )
+        elif feature == Feature.oidc_override:
+            self.redpanda.set_cluster_config(
+                {
+                    "sasl_mechanisms_overrides": [
+                        {
+                            "listener": "some_listener",
+                            "sasl_mechanisms": ["SCRAM", "OAUTHBEARER"],
+                        }
+                    ]
+                }
             )
         elif feature == Feature.schema_id_validation:
             self.redpanda.set_cluster_config({"enable_schema_id_validation": "compat"})
@@ -249,8 +288,10 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
 
         self.logger.debug(f"Check that {feature.name} has the expected state")
 
+        efeature = to_enterprise_feature(feature)
+
         statuses = self.check_feature(
-            feature,
+            efeature,
             enabled=not expect_rejected,
             license_valid=has_license,
         )
@@ -259,7 +300,7 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
             "Everything else should still be off regardless of license status"
         )
 
-        assert not any([statuses[f] for f in Feature if f != feature]), (
+        assert not any([statuses[f] for f in enterprise_features if f != efeature]), (
             f"Features unexpectedly enabled: {json.dumps(statuses, indent=1)}"
         )
 
