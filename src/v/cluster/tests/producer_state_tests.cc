@@ -148,7 +148,9 @@ FIXTURE_TEST(test_inflight_idem_producer_is_not_evicted, test_fixture) {
       .bt = model::record_batch_type::raft_data,
       .enable_idempotence = true,
       .producer_id = producer->id().id,
-      .producer_epoch = producer->id().epoch};
+      .producer_epoch = producer->id().epoch,
+      .base_sequence = 0,
+    };
     auto batch = model::test::make_random_batch(spec);
     auto bid = model::batch_identity::from(batch.header());
     auto request = producer->try_emplace_request(bid, model::term_id{1}, true);
@@ -188,7 +190,9 @@ FIXTURE_TEST(test_inflight_tx_producer_is_not_evicted, test_fixture) {
       .enable_idempotence = true,
       .producer_id = producer->id().id,
       .producer_epoch = producer->id().epoch,
-      .is_transactional = true};
+      .base_sequence = 0,
+      .is_transactional = true,
+    };
     batch = model::test::make_random_batch(spec);
     auto bid = model::batch_identity::from(batch.header());
     auto request = producer->try_emplace_request(bid, model::term_id{1}, true);
@@ -347,6 +351,35 @@ FIXTURE_TEST(test_state_management_with_multiple_namespaces, test_fixture) {
     }
 }
 
+int32_t calculate_record_count(seq_t first, seq_t last) {
+    // special case, this doesn't make sense
+    if (first < 0 || last < 0) {
+        return 0;
+    }
+    if (last == first) {
+        return 1;
+    }
+    if (last > first) {
+        return last - first + 1;
+    } else {
+        // handle overflow
+        return (std::numeric_limits<seq_t>::max() - first + 1) + (last + 1);
+    }
+}
+
+model::batch_identity make_batch_identity(
+  model::producer_identity pid,
+  seq_t first_seq,
+  seq_t last_seq,
+  bool is_transactional = false) {
+    return model::batch_identity{
+      .pid = pid,
+      .first_seq = first_seq,
+      .last_seq = last_seq,
+      .record_count = calculate_record_count(first_seq, last_seq),
+      .max_timestamp = model::timestamp::now(),
+      .is_transactional = is_transactional};
+}
 FIXTURE_TEST(test_sequence_overflow_handling, test_fixture) {
     create_producer_state_manager(10, 10);
 
@@ -354,22 +387,9 @@ FIXTURE_TEST(test_sequence_overflow_handling, test_fixture) {
     std::vector<producer_ptr> producers;
     producers.push_back(producer);
     auto defer = ss::defer([&] { clean(producers); });
-    auto calculate_record_count = [](seq_t first, seq_t last) {
-        if (last >= first) {
-            return last - first + 1;
-        } else {
-            // handle overflow
-            return (std::numeric_limits<seq_t>::max() - first + 1) + (last + 1);
-        }
-    };
+
     auto make_bid = [&](seq_t first, seq_t last) {
-        return model::batch_identity{
-          .pid = producer->id(),
-          .first_seq = first,
-          .last_seq = last,
-          .record_count = calculate_record_count(first, last),
-          .max_timestamp = model::timestamp::now(),
-          .is_transactional = false};
+        return make_batch_identity(producer->id(), first, last, false);
     };
 
     // initial batch identity, should be accepted
@@ -429,4 +449,33 @@ FIXTURE_TEST(test_sequence_overflow_handling, test_fixture) {
     auto result_reset_max_2 = producer->try_emplace_request(
       make_bid(0, 2), model::term_id(2));
     BOOST_REQUIRE(!result_reset_max_2.has_error());
+}
+
+FIXTURE_TEST(test_negative_sequence_number, test_fixture) {
+    create_producer_state_manager(10, 10);
+
+    auto producer = new_producer([&](model::producer_identity) {});
+    std::vector<producer_ptr> producers;
+    producers.push_back(producer);
+    auto defer = ss::defer([&] { clean(producers); });
+    auto make_bid = [&](seq_t first, seq_t last) {
+        return make_batch_identity(producer->id(), first, last, false);
+    };
+    for (auto tuple : std::vector<std::pair<seq_t, seq_t>>{
+           {-1, -1},
+           {-1, 0},
+           {-1, 1},
+           {-1, 10},
+           {0, -1},
+           {0, -10},
+           {1, -1},
+           {1, -10},
+           {10, -10}}) {
+        auto result = producer->try_emplace_request(
+          make_bid(tuple.first, tuple.second), model::term_id(1), true);
+
+        BOOST_REQUIRE(result.has_error());
+        BOOST_REQUIRE_EQUAL(
+          result.error(), cluster::errc::sequence_out_of_order);
+    }
 }

@@ -361,6 +361,22 @@ void producer_state::reset_with_new_epoch(model::producer_epoch new_epoch) {
 
 result<request_ptr> producer_state::try_emplace_request(
   const model::batch_identity& bid, model::term_id current_term, bool reset) {
+    /**
+     * Sequence numbers are always non negative, negative sequence numbers
+     * indicate a non idempotent producer.
+     */
+    if (bid.first_seq < 0 || bid.last_seq < 0) {
+        vlog(
+          _logger.warn,
+          "[{}] request with non idempotent batch {}, term: {}, reset: {}",
+          *this,
+          bid,
+          current_term,
+          reset,
+          _requests);
+        return cluster::errc::sequence_out_of_order;
+    }
+
     vlog(
       _logger.trace,
       "[{}] new request, batch meta: {}, term: {}, "
