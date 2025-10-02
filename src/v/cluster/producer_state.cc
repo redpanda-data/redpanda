@@ -413,7 +413,7 @@ void producer_state::apply_data(
     }
     _requests.stm_apply(bid, header.ctx.term, offset);
     if (bid.is_transactional) {
-        if (!_transaction_state) {
+        if (!_transaction_state || !_transaction_state->is_in_progress()) {
             // possible if begin batch got truncated.
             _transaction_state
               = std::make_unique<producer_partition_transaction_state>(
