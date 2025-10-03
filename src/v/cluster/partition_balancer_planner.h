@@ -34,12 +34,12 @@ struct ntp_reassignment {
 
 struct planner_config {
     model::partition_autobalancing_mode mode;
-    // If node disk usage goes over this ratio planner will actively move
+    // Used in two places:
+    // - If node disk usage goes over this ratio planner will actively move
     // partitions away from the node.
-    double soft_max_disk_usage_ratio;
-    // Planner won't plan a move that will result in destination node(s) going
+    // - Planner won't plan a move that will result in destination node(s) going
     // over this ratio.
-    double hard_max_disk_usage_ratio;
+    double max_disk_usage_ratio;
     // Max number of actions that can be scheduled in one planning iteration
     size_t max_concurrent_actions;
     std::chrono::seconds node_availability_timeout_sec;

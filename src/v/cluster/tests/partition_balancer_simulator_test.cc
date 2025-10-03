@@ -513,8 +513,7 @@ private:
         return cluster::partition_balancer_planner(
           cluster::planner_config{
             .mode = mode,
-            .soft_max_disk_usage_ratio = 0.8,
-            .hard_max_disk_usage_ratio = 0.95,
+            .max_disk_usage_ratio = 0.8,
             .max_concurrent_actions = 50,
             .node_availability_timeout_sec = std::chrono::minutes(1),
             .segment_fallocation_step = 16_MiB,
