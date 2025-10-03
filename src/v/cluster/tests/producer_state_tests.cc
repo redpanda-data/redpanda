@@ -148,7 +148,9 @@ FIXTURE_TEST(test_inflight_idem_producer_is_not_evicted, test_fixture) {
       .bt = model::record_batch_type::raft_data,
       .enable_idempotence = true,
       .producer_id = producer->id().id,
-      .producer_epoch = producer->id().epoch};
+      .producer_epoch = producer->id().epoch,
+      .base_sequence = 0,
+    };
     auto batch = model::test::make_random_batch(spec);
     auto bid = model::batch_identity::from(batch.header());
     auto request = producer->try_emplace_request(bid, model::term_id{1}, true);
@@ -188,7 +190,9 @@ FIXTURE_TEST(test_inflight_tx_producer_is_not_evicted, test_fixture) {
       .enable_idempotence = true,
       .producer_id = producer->id().id,
       .producer_epoch = producer->id().epoch,
-      .is_transactional = true};
+      .base_sequence = 0,
+      .is_transactional = true,
+    };
     batch = model::test::make_random_batch(spec);
     auto bid = model::batch_identity::from(batch.header());
     auto request = producer->try_emplace_request(bid, model::term_id{1}, true);
@@ -344,5 +348,134 @@ FIXTURE_TEST(test_state_management_with_multiple_namespaces, test_fixture) {
     for (auto vp : producers) {
         manager().deregister_producer(*vp.producer, vp.vcluster);
         vp.producer->shutdown_input();
+    }
+}
+
+int32_t calculate_record_count(seq_t first, seq_t last) {
+    // special case, this doesn't make sense
+    if (first < 0 || last < 0) {
+        return 0;
+    }
+    if (last == first) {
+        return 1;
+    }
+    if (last > first) {
+        return last - first + 1;
+    } else {
+        // handle overflow
+        return (std::numeric_limits<seq_t>::max() - first + 1) + (last + 1);
+    }
+}
+
+model::batch_identity make_batch_identity(
+  model::producer_identity pid,
+  seq_t first_seq,
+  seq_t last_seq,
+  bool is_transactional = false) {
+    return model::batch_identity{
+      .pid = pid,
+      .first_seq = first_seq,
+      .last_seq = last_seq,
+      .record_count = calculate_record_count(first_seq, last_seq),
+      .max_timestamp = model::timestamp::now(),
+      .is_transactional = is_transactional};
+}
+FIXTURE_TEST(test_sequence_overflow_handling, test_fixture) {
+    create_producer_state_manager(10, 10);
+
+    auto producer = new_producer([&](model::producer_identity) {});
+    std::vector<producer_ptr> producers;
+    producers.push_back(producer);
+    auto defer = ss::defer([&] { clean(producers); });
+
+    auto make_bid = [&](seq_t first, seq_t last) {
+        return make_batch_identity(producer->id(), first, last, false);
+    };
+
+    // initial batch identity, should be accepted
+    auto result = producer->try_emplace_request(
+      make_bid(
+        std::numeric_limits<seq_t>::max() - 20,
+        std::numeric_limits<seq_t>::max() - 19),
+      model::term_id(1),
+      true);
+    BOOST_REQUIRE(!result.has_error());
+
+    // invalid sequence, should be rejected
+    auto result_expected_fail = producer->try_emplace_request(
+      make_bid(
+        std::numeric_limits<seq_t>::max() - 15,
+        std::numeric_limits<seq_t>::max() - 10),
+      model::term_id(1));
+    BOOST_REQUIRE(result_expected_fail.has_error());
+    BOOST_REQUIRE_EQUAL(
+      result_expected_fail.error(), cluster::errc::sequence_out_of_order);
+
+    // check if sequence validation accepts a valid sequence
+    auto result_2 = producer->try_emplace_request(
+      make_bid(
+        std::numeric_limits<seq_t>::max() - 18,
+        std::numeric_limits<seq_t>::max() - 10),
+      model::term_id(1));
+    BOOST_REQUIRE(!result_2.has_error());
+
+    // simulate a sequence overflow, this should be accepted as this is the
+    // expected next sequence number
+    auto result_overflow = producer->try_emplace_request(
+      make_bid(std::numeric_limits<seq_t>::max() - 9, 10), model::term_id(1));
+    BOOST_REQUIRE(!result_overflow.has_error());
+
+    // check next sequence after overflow
+    auto result_post_overflow = producer->try_emplace_request(
+      make_bid(11, 50), model::term_id(1));
+    BOOST_REQUIRE(!result_post_overflow.has_error());
+
+    // reset the producer state, expect next sequence to be exactly int32_t max
+    auto result_reset = producer->try_emplace_request(
+      make_bid(
+        std::numeric_limits<seq_t>::max() - 2,
+        std::numeric_limits<seq_t>::max() - 1),
+      model::term_id(2),
+      true);
+    BOOST_REQUIRE(!result_reset.has_error());
+    // try next sequence that should be exactly int32_t max
+    auto result_reset_max = producer->try_emplace_request(
+      make_bid(
+        std::numeric_limits<seq_t>::max(), std::numeric_limits<seq_t>::max()),
+      model::term_id(2));
+    BOOST_REQUIRE(!result_reset_max.has_error());
+
+    // check one more sequence after the overflow
+    auto result_reset_max_2 = producer->try_emplace_request(
+      make_bid(0, 2), model::term_id(2));
+    BOOST_REQUIRE(!result_reset_max_2.has_error());
+}
+
+FIXTURE_TEST(test_negative_sequence_number, test_fixture) {
+    create_producer_state_manager(10, 10);
+
+    auto producer = new_producer([&](model::producer_identity) {});
+    std::vector<producer_ptr> producers;
+    producers.push_back(producer);
+    auto defer = ss::defer([&] { clean(producers); });
+    auto make_bid = [&](seq_t first, seq_t last) {
+        return make_batch_identity(producer->id(), first, last, false);
+    };
+    for (auto tuple : std::vector<std::pair<seq_t, seq_t>>{
+           {-1, -1},
+           {-1, 0},
+           {-1, 1},
+           {-1, 10},
+           {0, -1},
+           {0, -10},
+           {1, -1},
+           {1, -10},
+           {10, -10}}) {
+        auto result = producer->try_emplace_request(
+          make_bid(tuple.first, tuple.second), model::term_id(1), true);
+
+        BOOST_REQUIRE(result.has_error());
+        BOOST_REQUIRE_EQUAL(
+          result.error(), cluster::errc::sequence_out_of_order);
     }
 }
