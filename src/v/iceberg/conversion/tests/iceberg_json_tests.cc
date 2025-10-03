@@ -1204,7 +1204,7 @@ TEST_CORO(IcebergValues, FormatValueTooLong) {
     ASSERT_TRUE_CORO(result.has_error());
     ASSERT_STREQ_CORO(
       result.error().what(),
-      "String value exceeds maximum length of 32 bytes: 69");
+      "String value exceeds maximum length of 64 bytes: 69");
 }
 
 TEST_CORO(IcebergValues, Empty) {
