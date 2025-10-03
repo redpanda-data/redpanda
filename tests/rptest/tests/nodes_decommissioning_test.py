@@ -48,8 +48,24 @@ class NodesDecommissioningTest(PreallocNodesTest):
     def __init__(self, test_context):
         self._topic = None
 
+        si_settings = SISettings(
+            test_context=test_context,
+            cloud_storage_max_connections=10,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+            fast_uploads=True,
+        )
+
+        extra_rp_conf = dict(
+            enable_cluster_metadata_upload_loop=False,
+        )
+
         super(NodesDecommissioningTest, self).__init__(
-            test_context=test_context, num_brokers=5, node_prealloc_count=1
+            test_context=test_context,
+            num_brokers=5,
+            node_prealloc_count=1,
+            si_settings=si_settings,
+            extra_rp_conf=extra_rp_conf,
         )
 
     def setup(self):
@@ -334,6 +350,19 @@ class NodesDecommissioningTest(PreallocNodesTest):
 
         self.redpanda.start(
             auto_assign_node_id=new_bootstrap, omit_seeds_on_idx_one=not new_bootstrap
+        )
+
+        # Enable cloud topics
+        self.redpanda.enable_development_feature_support()
+        self.redpanda.set_cluster_config(
+            values={
+                "development_enable_cloud_topics": True,
+            }
+        )
+        self.redpanda.restart_nodes(
+            nodes=self.redpanda.nodes,
+            auto_assign_node_id=new_bootstrap,
+            omit_seeds_on_idx_one=not new_bootstrap,
         )
 
     @cluster(
