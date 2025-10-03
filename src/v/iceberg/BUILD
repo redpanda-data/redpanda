@@ -753,6 +753,7 @@ redpanda_cc_library(
     implementation_deps = [
         ":table_metadata_json",
         "//src/v/bytes:iobuf_parser",
+        "//src/v/bytes:streambuf",
         "//src/v/json",
     ],
     include_prefix = "iceberg",
