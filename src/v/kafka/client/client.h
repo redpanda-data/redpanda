@@ -225,6 +225,8 @@ private:
     /// \brief Wait for retries.
     ss::gate _gate;
 
+    bool _is_stopped{false};
+
     ss::noncopyable_function<ss::future<>(std::exception_ptr)>
       _external_mitigate;
     ss::abort_source _as;
