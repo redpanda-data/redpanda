@@ -115,6 +115,9 @@ ss::future<> catch_and_log(const prefix_logger& logger, Func&& f) noexcept {
 } // namespace
 
 ss::future<> client::stop() noexcept {
+    if (std::exchange(_is_stopped, true)) {
+        co_return;
+    }
     _as.request_abort();
     co_await catch_and_log(_logger, [this]() { return _producer.stop(); });
     co_await _gate.close();
