@@ -564,7 +564,7 @@ ss::future<> disk_log_impl::adjacent_merge_compact(
             cfg.asrc->check();
         }
 
-        auto is_compactible_segment = !seg->has_appender()
+        auto is_compactible_segment = !seg->is_closed() && !seg->has_appender()
                                       && seg->is_compacted_segment()
                                       && offsets_compactible(*seg);
         // Skip over segments that that being truncated, or are uncompactible.
