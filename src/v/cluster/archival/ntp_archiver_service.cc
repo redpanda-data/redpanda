@@ -294,6 +294,16 @@ ntp_archiver::ntp_archiver(
     }
 }
 
+archival_stm_fence ntp_archiver::emit_rw_fence() {
+    return {
+      .read_write_fence
+      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
+      // Only use the rw-fence if the feature is enabled which requires
+      // major version upgrade.
+      .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
+    };
+}
+
 const cloud_storage::partition_manifest& ntp_archiver::manifest() const {
     vassert(
       _parent.archival_meta_stm(),
@@ -833,12 +843,7 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
         std::optional<batch_result> result;
         auto track_paused = _probe->register_archiver_on_hold(uploads_paused);
         if (!uploads_paused) {
-            result = co_await upload_next_candidates(archival_stm_fence{
-              .read_write_fence = fence,
-              // Only use the rw-fence if the feature is enabled which requires
-              // major version upgrade.
-              .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
-            });
+            result = co_await upload_next_candidates(emit_rw_fence());
         }
         if (result.has_value()) {
             auto [compacted_upload_result, non_compacted_upload_result]
@@ -2552,13 +2557,7 @@ ss::future<> ntp_archiver::apply_archive_retention() {
         co_return;
     }
 
-    archival_stm_fence fence = {
-      .read_write_fence
-      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
-      // Only use the rw-fence if the feature is enabled which requires
-      // major version upgrade.
-      .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
-    };
+    auto fence = emit_rw_fence();
 
     std::optional<size_t> retention_bytes = ntp_conf.retention_bytes();
     std::optional<std::chrono::milliseconds> retention_ms
@@ -2626,13 +2625,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
     if (!may_begin_uploads()) {
         co_return;
     }
-    archival_stm_fence fence = {
-      .read_write_fence
-      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
-      // Only use the rw-fence if the feature is enabled which requires
-      // major version upgrade.
-      .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
-    };
+    auto fence = emit_rw_fence();
     auto backlog = co_await _manifest_view->get_retention_backlog();
     if (backlog.has_failure()) {
         if (backlog.error() == cloud_storage::error_outcome::shutting_down) {
@@ -2860,7 +2853,7 @@ ss::future<> ntp_archiver::apply_spillover() {
     if (!may_begin_uploads()) {
         co_return;
     }
-
+    archival_stm_fence fence = emit_rw_fence();
     const auto manifest_upload_timeout = _conf->manifest_upload_timeout();
     const auto manifest_upload_backoff = _conf->cloud_storage_initial_backoff();
 
@@ -2898,6 +2891,12 @@ ss::future<> ntp_archiver::apply_spillover() {
         auto tail = [&]() {
             cloud_storage::spillover_manifest tail(_ntp, _rev);
             for (const auto& meta : manifest()) {
+                vlog(
+                  _rtclog.trace,
+                  "Adding segment {} to the spillover manifest that starts at "
+                  "{}",
+                  meta,
+                  tail.get_start_offset().value_or(model::offset{}));
                 tail.add(meta);
                 // No performance impact since all writes here are
                 // sequential.
@@ -2957,6 +2956,13 @@ ss::future<> ntp_archiver::apply_spillover() {
         auto deadline = ss::lowres_clock::now() + sync_timeout;
 
         auto batch = _parent.archival_meta_stm()->batch_start(deadline, _as);
+        if (fence.emit_rw_fence_cmd) {
+            vlog(
+              _rtclog.debug,
+              "spillover, read-write fence: {}",
+              fence.read_write_fence);
+            batch.read_write_fence(fence.read_write_fence);
+        }
         batch.spillover(spillover_meta);
         if (manifest().get_archive_start_offset() == model::offset{}) {
             vlog(
@@ -2978,12 +2984,15 @@ ss::future<> ntp_archiver::apply_spillover() {
               _rtclog.warn,
               "Failed to replicate spillover command: {}",
               error.message());
+            break;
         } else {
             vlog(
               _rtclog.info,
               "Uploaded spillover manifest: {}",
               tail.get_manifest_path(remote_path_provider()));
         }
+        // Reset fence for the next iteration
+        fence = emit_rw_fence();
     }
 }
 
@@ -3080,13 +3089,7 @@ ss::future<> ntp_archiver::apply_retention() {
     if (!may_begin_uploads()) {
         co_return;
     }
-    archival_stm_fence fence = {
-      .read_write_fence
-      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
-      // Only use the rw-fence if the feature is enabled which requires
-      // major version upgrade.
-      .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
-    };
+    auto fence = emit_rw_fence();
     auto arch_so = manifest().get_archive_start_offset();
     auto stm_so = manifest().get_start_offset();
     if (arch_so != model::offset{} && arch_so != stm_so) {
@@ -3179,13 +3182,7 @@ ss::future<> ntp_archiver::garbage_collect() {
         co_return;
     }
 
-    archival_stm_fence fence = {
-      .read_write_fence
-      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
-      // Only use the rw-fence if the feature is enabled which requires
-      // major version upgrade.
-      .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
-    };
+    archival_stm_fence fence = emit_rw_fence();
 
     // If we are about to delete segments, we must ensure that the remote
     // manifest is fully up to date, so that it is definitely not referring
@@ -3306,13 +3303,9 @@ ntp_archiver::get_housekeeping_jobs() {
 ss::future<ntp_archiver::find_reupload_candidate_result>
 ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
     ss::gate::holder holder(_gate);
-    archival_stm_fence rw_fence{
-      .read_write_fence
-      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
-      // Only use the rw-fence if the feature is enabled which requires
-      // major version upgrade.
-      .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
-    };
+
+    archival_stm_fence rw_fence = emit_rw_fence();
+
     if (!may_begin_uploads()) {
         co_return find_reupload_candidate_result{
           std::nullopt, std::nullopt, {}};
