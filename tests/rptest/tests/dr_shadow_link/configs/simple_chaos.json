@@ -1,0 +1,19 @@
+{
+  "simple_chaos_config": {
+    "test_duration_sec": 120,
+    "message_count": 1000,
+    "message_size": 512,
+    "rate_limit_kb_per_sec": 10,
+    "replication_timeout_sec": 30,
+    "max_lag_percent": 5,
+    "network_partition_max_lag_percent": 25,
+    "complete_partition_max_lag_percent": 40,
+    "chaos_duration_sec": 30,
+    "recovery_wait_sec": 20,
+    "cluster_config": {
+      "log_segment_size": 16777216,
+      "raft_heartbeat_interval_ms": 300,
+      "controller_snapshot_max_age_sec": 60
+    }
+  }
+}
