@@ -53,7 +53,7 @@ redpanda_test_cc_library(
         "//src/v/config",
         "//src/v/model",
         "//src/v/random:generators",
-        "//src/v/redpanda",
+        "//src/v/redpanda:application",
         "//src/v/redpanda/tests:fixture",
         "//src/v/resource_mgmt:cpu_scheduling",
         "//src/v/test_utils:fixture",
