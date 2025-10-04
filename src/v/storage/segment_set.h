@@ -51,7 +51,6 @@ public:
     ~segment_set() noexcept;
     segment_set(segment_set&&) noexcept = default;
     segment_set& operator=(segment_set&& o) noexcept = default;
-    segment_set(const segment_set&) = delete;
     segment_set& operator=(const segment_set&) = delete;
 
     size_t size() const { return _handles.size(); }
@@ -89,7 +88,11 @@ public:
     const_reverse_iterator rbegin() const { return _handles.rbegin(); }
     const_reverse_iterator rend() const { return _handles.rend(); }
 
+    segment_set copy() const noexcept { return *this; }
+
 private:
+    segment_set(const segment_set&) noexcept = default;
+
     underlying_t _handles;
 
     friend std::ostream& operator<<(std::ostream&, const segment_set&);
