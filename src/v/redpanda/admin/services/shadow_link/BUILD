@@ -17,6 +17,7 @@ redpanda_cc_library(
     hdrs = ["shadow_link.h"],
     implementation_deps = [
         ":converter",
+        "//src/v/cluster",
         "//src/v/cluster_link",
     ],
     visibility = ["//src/v/redpanda:__subpackages__"],

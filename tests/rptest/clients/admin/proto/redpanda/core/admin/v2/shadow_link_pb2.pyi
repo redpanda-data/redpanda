@@ -196,6 +196,23 @@ SHADOW_TOPIC_STATE_PROMOTED: ShadowTopicState.ValueType
 'Shadow topic is promoted successfully'
 global___ShadowTopicState = ShadowTopicState
 
+class _RestoreAction:
+    ValueType = typing.NewType('ValueType', builtins.int)
+    V: typing_extensions.TypeAlias = ValueType
+
+class _RestoreActionEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_RestoreAction.ValueType], builtins.type):
+    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+    RESTORE_ACTION_UNSPECIFIED: _RestoreAction.ValueType
+    RESTORE_ACTION_UNMOUNT_TOPIC: _RestoreAction.ValueType
+    RESTORE_ACTION_MOUNT_AND_TRUNCATE_TOPIC: _RestoreAction.ValueType
+
+class RestoreAction(_RestoreAction, metaclass=_RestoreActionEnumTypeWrapper):
+    ...
+RESTORE_ACTION_UNSPECIFIED: RestoreAction.ValueType
+RESTORE_ACTION_UNMOUNT_TOPIC: RestoreAction.ValueType
+RESTORE_ACTION_MOUNT_AND_TRUNCATE_TOPIC: RestoreAction.ValueType
+global___RestoreAction = RestoreAction
+
 @typing.final
 class ShadowLink(google.protobuf.message.Message):
     """Resources
@@ -442,6 +459,37 @@ class FailOverResponse(google.protobuf.message.Message):
     def ClearField(self, field_name: typing.Literal['shadow_link', b'shadow_link']) -> None:
         ...
 global___FailOverResponse = FailOverResponse
+
+@typing.final
+class TruncateAndRestoreRequest(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    TOPICS_FIELD_NUMBER: builtins.int
+    ACTION_FIELD_NUMBER: builtins.int
+    action: global___RestoreAction.ValueType
+
+    @property
+    def topics(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___RestoreTopic]:
+        ...
+
+    def __init__(self, *, topics: collections.abc.Iterable[global___RestoreTopic] | None=..., action: global___RestoreAction.ValueType=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['action', b'action', 'topics', b'topics']) -> None:
+        ...
+global___TruncateAndRestoreRequest = TruncateAndRestoreRequest
+
+@typing.final
+class TruncateAndRestoreResponse(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    MIGRATION_ID_FIELD_NUMBER: builtins.int
+    migration_id: builtins.int
+
+    def __init__(self, *, migration_id: builtins.int=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['migration_id', b'migration_id']) -> None:
+        ...
+global___TruncateAndRestoreResponse = TruncateAndRestoreResponse
 
 @typing.final
 class ShadowLinkConfigurations(google.protobuf.message.Message):
@@ -975,3 +1023,45 @@ class TopicPartitionInformation(google.protobuf.message.Message):
     def ClearField(self, field_name: typing.Literal['high_watermark', b'high_watermark', 'partition_id', b'partition_id', 'source_high_watermark', b'source_high_watermark', 'source_last_stable_offset', b'source_last_stable_offset']) -> None:
         ...
 global___TopicPartitionInformation = TopicPartitionInformation
+
+@typing.final
+class RestoreTopic(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    NAME_FIELD_NUMBER: builtins.int
+    PARTITIONS_FIELD_NUMBER: builtins.int
+    name: builtins.str
+    'topic name'
+
+    @property
+    def partitions(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___RestoreTopicPartitionInfo]:
+        """must provide an entry for every topic partition"""
+
+    def __init__(self, *, name: builtins.str=..., partitions: collections.abc.Iterable[global___RestoreTopicPartitionInfo] | None=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['name', b'name', 'partitions', b'partitions']) -> None:
+        ...
+global___RestoreTopic = RestoreTopic
+
+@typing.final
+class RestoreTopicPartitionInfo(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    PARTITION_ID_FIELD_NUMBER: builtins.int
+    LAST_OFFSET_FIELD_NUMBER: builtins.int
+    partition_id: builtins.int
+    'ID of target partition'
+    last_offset: builtins.int
+    'truncate to this offset, if present. otherwise restore the whole\n    partition.\n    '
+
+    def __init__(self, *, partition_id: builtins.int=..., last_offset: builtins.int | None=...) -> None:
+        ...
+
+    def HasField(self, field_name: typing.Literal['_last_offset', b'_last_offset', 'last_offset', b'last_offset']) -> builtins.bool:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['_last_offset', b'_last_offset', 'last_offset', b'last_offset', 'partition_id', b'partition_id']) -> None:
+        ...
+
+    def WhichOneof(self, oneof_group: typing.Literal['_last_offset', b'_last_offset']) -> typing.Literal['last_offset'] | None:
+        ...
+global___RestoreTopicPartitionInfo = RestoreTopicPartitionInfo

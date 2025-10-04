@@ -432,6 +432,9 @@ public:
 
     bool is_stopped() const { return _stopped; }
 
+    size_t bytes_consumed() const { return _config.bytes_consumed; }
+    size_t bytes_skipped() const { return _config.bytes_skipped; }
+
 private:
     friend class single_record_consumer;
     ss::future<std::unique_ptr<storage::continuous_batch_parser>> init_parser();
@@ -440,7 +443,7 @@ private:
     do_read_some(
       model::timeout_clock::time_point, storage::offset_translator_state&);
 
-    size_t produce(model::record_batch batch);
+    std::pair<size_t, size_t> produce(model::record_batch batch);
 
     ss::lw_shared_ptr<remote_segment> _seg;
     cloud_storage::cloud_log_reader_config _config;

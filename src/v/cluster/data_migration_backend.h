@@ -28,6 +28,8 @@
 #include <seastar/core/shared_future.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <expected>
+
 namespace cluster::data_migrations {
 
 /*
@@ -45,6 +47,7 @@ public:
       topic_table& topic_table,
       shard_table& shard_table,
       group_proxy& group_proxy,
+      cloud_storage::cache& cloud_cache,
       std::optional<std::reference_wrapper<cloud_storage::remote>>
         _cloud_storage_api,
       std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>
@@ -182,7 +185,8 @@ private:
       const model::topic_namespace& local_nt,
       const std::optional<model::topic_namespace>& original_nt,
       const std::optional<cloud_storage_location>& storage_location,
-      retry_chain_node& rcn);
+      retry_chain_node& rcn,
+      const inbound_topic::restore_to_t& restore_to);
     ss::future<errc> prepare_mount_topic(
       const model::topic_namespace& nt, retry_chain_node& rcn);
     ss::future<errc> confirm_mount_topic(
@@ -292,6 +296,21 @@ private:
     chunked_vector<partition_assignment>
     get_topic_assignments(const model::topic_namespace& nt, const id id);
 
+    ss::future<cluster::errc> maybe_truncate_topic(
+      const ss::sstring& bucket,
+      retry_chain_node& parent_retry,
+      cloud_storage::topic_manifest& manifest,
+      const inbound_topic::restore_to_t& restore_to);
+
+    ss::future<std::expected<cloud_storage::partition_manifest, cluster::errc>>
+    maybe_truncate_partition(
+      const ss::sstring& bucket,
+      const cluster::topic_configuration& topic_cfg,
+      const model::initial_revision_id,
+      const model::partition_id,
+      const kafka::offset,
+      retry_chain_node& parent_retry);
+
     /*
      * Reconciliation-related data.
      *
@@ -367,6 +386,7 @@ private:
     topic_table& _topic_table;
     shard_table& _shard_table;
     group_proxy& _group_proxy;
+    cloud_storage::cache& _cloud_cache;
     std::optional<std::reference_wrapper<cloud_storage::remote>>
       _cloud_storage_api;
     std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>

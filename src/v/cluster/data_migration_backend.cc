@@ -10,10 +10,13 @@
  */
 #include "cluster/data_migration_backend.h"
 
+#include "cloud_storage/partition_manifest_downloader.h"
+#include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/topic_manifest_downloader.h"
 #include "cloud_storage/topic_mount_handler.h"
 #include "cluster/partition_leaders_table.h"
+#include "cluster/segment_truncator.h"
 #include "config/node_config.h"
 #include "container/chunked_vector.h"
 #include "data_migration_frontend.h"
@@ -89,6 +92,7 @@ backend::backend(
   topic_table& topic_table,
   shard_table& shard_table,
   group_proxy& group_proxy,
+  cloud_storage::cache& cloud_cache,
   std::optional<std::reference_wrapper<cloud_storage::remote>>
     cloud_storage_api,
   std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>
@@ -103,6 +107,7 @@ backend::backend(
   , _topic_table(topic_table)
   , _shard_table(shard_table)
   , _group_proxy(group_proxy)
+  , _cloud_cache(cloud_cache)
   , _cloud_storage_api(cloud_storage_api)
   , _topic_mount_handler(topic_mount_handler)
   , _as(as) {}
@@ -542,7 +547,11 @@ ss::future<errc> backend::do_topic_work(
     case state::prepared:
         co_return co_await retry_loop(rcn, [this, &nt, &itwi, &rcn] {
             return create_topic(
-              nt, itwi.source, itwi.cloud_storage_location, rcn);
+              nt,
+              itwi.source,
+              itwi.cloud_storage_location,
+              rcn,
+              itwi.restore_to);
         });
     case state::executed:
         co_return co_await retry_loop(
@@ -619,7 +628,8 @@ ss::future<errc> backend::create_topic(
   const model::topic_namespace& local_nt,
   const std::optional<model::topic_namespace>& original_nt,
   const std::optional<cloud_storage_location>& storage_location,
-  retry_chain_node& rcn) {
+  retry_chain_node& rcn,
+  const inbound_topic::restore_to_t& restore_to) {
     // download manifest
     const auto& bucket_prop = cloud_storage::configuration::get_bucket_config();
     auto maybe_bucket = bucket_prop.value();
@@ -654,6 +664,26 @@ ss::future<errc> backend::create_topic(
     auto maybe_cfg = tm.get_topic_config();
     if (!maybe_cfg) {
         co_return errc::topic_invalid_config;
+    }
+
+    auto truncate_res = co_await ss::coroutine::as_future(
+      maybe_truncate_topic(maybe_bucket.value(), rcn, tm, restore_to));
+
+    if (truncate_res.failed()) {
+        auto exc = truncate_res.get_exception();
+        vlog(
+          dm_log.warn,
+          "Failed to truncate inbound topic {}: {}",
+          original_nt.value_or(local_nt),
+          exc);
+        co_return errc::topic_operation_error;
+    } else if (auto ec = truncate_res.get(); ec != cluster::errc::success) {
+        vlog(
+          dm_log.warn,
+          "Failed to truncate inbound_topic {}: {}",
+          original_nt.value_or(local_nt),
+          ec);
+        co_return ec;
     }
 
     cluster::topic_configuration topic_to_create_cfg(
@@ -1507,12 +1537,16 @@ inbound_topic_work_info backend::get_topic_work_info(
       .source = inbound_topic.alias
                   ? std::make_optional(inbound_topic.source_topic_name)
                   : std::nullopt,
-      .cloud_storage_location = inbound_topic.cloud_storage_location};
+      .cloud_storage_location = inbound_topic.cloud_storage_location,
+      .restore_to = inbound_topic.restore_to,
+    };
 }
 
 outbound_topic_work_info backend::get_topic_work_info(
   const model::topic_namespace&, const outbound_migration& om, id) const {
-    return {om.copy_to};
+    return {
+      .copy_to = om.copy_to,
+    };
 }
 
 topic_work_info backend::get_topic_work_info(
@@ -1828,6 +1862,227 @@ backend::get_topic_assignments(const model::topic_namespace& nt, const id id) {
         return std::move(assignments) | std::views::as_rvalue
                | std::ranges::to<chunked_vector<partition_assignment>>();
     }
+}
+
+ss::future<cluster::errc> backend::maybe_truncate_topic(
+  const ss::sstring& bucket,
+  retry_chain_node& parent_retry,
+  cloud_storage::topic_manifest& manifest,
+  const inbound_topic::restore_to_t& restore_to) {
+    auto& maybe_cfg = manifest.get_topic_config();
+    if (!maybe_cfg.has_value()) {
+        co_return errc::topic_invalid_config;
+    }
+    const auto& cfg = maybe_cfg.value();
+    auto n_partitions = cfg.partition_count;
+    auto rev = manifest.get_revision();
+    model::topic_namespace_view tp_ns{cfg.tp_ns};
+
+    if (n_partitions <= 0) {
+        vlog(
+          dm_log.warn, "{}: Invalid partition count {}", tp_ns, n_partitions);
+        co_return errc::topic_invalid_config;
+    }
+    vlog(
+      dm_log.debug, "{}.{}: Truncating partitions {}", tp_ns, rev, restore_to);
+
+    auto truncate_offsets = std::views::iota(0, n_partitions)
+                            | std::views::transform([&restore_to](int32_t p) {
+                                  model::partition_id pid{p};
+                                  auto it = restore_to.find(pid);
+                                  auto offset = it == restore_to.end()
+                                                  ? kafka::offset::max()
+                                                  : it->second;
+                                  return std::make_pair(pid, offset);
+                              });
+
+    constexpr static size_t concurrency = 64;
+    chunked_vector<cloud_storage::partition_manifest> pms_to_upload;
+    chunked_vector<std::pair<model::partition_id, cluster::errc>> errors;
+    pms_to_upload.reserve(truncate_offsets.size());
+    auto trunc_res = co_await ss::coroutine::as_future(
+      ss::max_concurrent_for_each(
+        truncate_offsets,
+        concurrency,
+        [this, &cfg, &parent_retry, &bucket, rev, &pms_to_upload, &errors](
+          std::pair<model::partition_id, kafka::offset> pr) {
+            auto [pid, offset] = pr;
+            return maybe_truncate_partition(
+                     bucket, cfg, rev, pid, offset, parent_retry)
+              .then([&cfg, pid, &pms_to_upload, &errors](
+                      std::expected<
+                        cloud_storage::partition_manifest,
+                        cluster::errc> result) {
+                  if (result.has_value()) {
+                      pms_to_upload.push_back(std::move(result).value());
+                  } else if (auto ec = result.error();
+                             ec != cluster::errc::success) {
+                      vlog(
+                        dm_log.warn,
+                        "Truncating {}/{} failed with error code {}",
+                        cfg.tp_ns,
+                        pid,
+                        ec);
+                      errors.push_back(std::make_pair(pid, ec));
+                  }
+                  return ss::now();
+              });
+        }));
+
+    if (trunc_res.failed()) {
+        auto exc = trunc_res.get_exception();
+        vlog(
+          dm_log.warn,
+          "Partition truncation failed for {}: {}",
+          cfg.tp_ns,
+          exc);
+        co_return errc::topic_operation_error;
+    }
+    if (!errors.empty()) {
+        vlog(
+          dm_log.warn,
+          "Partition truncation failed for {}: {}",
+          cfg.tp_ns,
+          fmt::join(
+            errors | std::views::transform([](auto pr) {
+                return fmt::format("pid {}, ec: {}", pr.first, pr.second);
+            }),
+            ", "));
+        co_return errc::topic_operation_error;
+    }
+
+    vlog(
+      dm_log.debug,
+      "{}: {} partition manifests to upload",
+      cfg.tp_ns,
+      pms_to_upload.size());
+
+    const cloud_storage::remote_path_provider path_provider{
+      cfg.properties.remote_label,
+      cfg.properties.remote_topic_namespace_override};
+    for (auto& pm : pms_to_upload) {
+        auto permit = parent_retry.retry();
+        int n_retry = 3;
+        while (permit.is_allowed && n_retry > 0) {
+            --n_retry;
+            auto upload_res
+              = co_await _cloud_storage_api->get().upload_manifest(
+                cloud_storage_clients::bucket_name{bucket},
+                pm,
+                pm.get_manifest_path(path_provider),
+                parent_retry);
+
+            if (upload_res != cloud_io::upload_result::success) {
+                vlog(
+                  dm_log.warn,
+                  "{}: Failed to upload truncated manifest: {}",
+                  pm.get_ntp(),
+                  upload_res);
+                permit = parent_retry.retry();
+                if (permit.is_allowed) {
+                    co_await ss::sleep(permit.delay);
+                }
+                continue;
+            }
+
+            vlog(
+              dm_log.debug,
+              "{}: Truncated manifest to {}",
+              pm.get_ntp(),
+              pm.get_last_kafka_offset());
+            break;
+        }
+    }
+
+    co_return errc::success;
+}
+
+ss::future<std::expected<cloud_storage::partition_manifest, cluster::errc>>
+backend::maybe_truncate_partition(
+  const ss::sstring& bucket,
+  const cluster::topic_configuration& topic_cfg,
+  const model::initial_revision_id rev,
+  const model::partition_id pid,
+  const kafka::offset offset,
+  retry_chain_node& parent_retry) {
+    const cloud_storage::remote_path_provider path_provider{
+      topic_cfg.properties.remote_label,
+      topic_cfg.properties.remote_topic_namespace_override};
+
+    auto& remote = _cloud_storage_api->get();
+    model::ntp ntp{topic_cfg.tp_ns.ns, topic_cfg.tp_ns.tp, pid};
+    cloud_storage_clients::bucket_name bucket_name{bucket};
+
+    cloud_storage::partition_manifest_downloader dl{
+      bucket_name, path_provider, ntp, rev, remote};
+
+    cloud_storage::partition_manifest pm;
+
+    auto download_res = co_await dl.download_manifest(parent_retry, &pm);
+
+    if (download_res.has_error()) {
+        vlog(
+          dm_log.warn,
+          "{}: Failed to download partition manifest: {}",
+          ntp,
+          download_res.error());
+        co_return std::unexpected(errc::topic_operation_error);
+    } else if (
+      download_res.value()
+      != cloud_storage::find_partition_manifest_outcome::success) {
+        // no manifest found, nothing to do (we will start from zero)
+        vlog(dm_log.warn, "{}: Partition manifest not found", ntp);
+        co_return std::unexpected(errc::success);
+    }
+
+    vlog(
+      dm_log.warn,
+      "{}: LAST KAFKA OFFSET: {} vs TRUNCATE: {}",
+      ntp,
+      pm.get_last_kafka_offset(),
+      offset);
+
+    auto trunc_res = pm.truncate_suffix(offset);
+
+    if (!trunc_res.has_value()) {
+        vlog(dm_log.warn, "{}: Failed to truncate", ntp);
+        // TODO(oren): when does this happen?
+        co_return std::unexpected(errc::topic_operation_error);
+    }
+    auto [new_manifest, maybe_seg_to_truncate] = std::move(trunc_res).value();
+    vlog(dm_log.debug, "{}: Coarse truncated manifest: {}", ntp, new_manifest);
+
+    if (maybe_seg_to_truncate.has_value()) {
+        if (auto last_seg = co_await truncate_remote_segment(
+              maybe_seg_to_truncate.value(),
+              offset,
+              ntp,
+              new_manifest,
+              bucket_name,
+              path_provider,
+              remote,
+              _cloud_cache,
+              parent_retry);
+            last_seg.has_value()
+            && new_manifest.safe_segment_meta_to_add(last_seg.value())) {
+            new_manifest.add(last_seg.value());
+            vlog(
+              dm_log.debug,
+              "{}: Truncated with last segment: {}",
+              ntp,
+              new_manifest);
+        } else {
+            // this is fine though. new_manifest is still behind the truncation
+            // point
+            vlog(
+              dm_log.debug,
+              "{}: Failed to truncate last segment ec: {}",
+              ntp,
+              last_seg.error());
+        }
+    }
+
+    co_return std::move(new_manifest);
 }
 
 } // namespace cluster::data_migrations

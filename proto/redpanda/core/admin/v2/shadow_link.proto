@@ -64,6 +64,13 @@ service ShadowLinkService {
             authz: SUPERUSER
         };
     }
+
+    rpc TruncateAndRestore(TruncateAndRestoreRequest)
+        returns (TruncateAndRestoreResponse) {
+        option (redpanda.pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
 }
 
 /* Resources */
@@ -158,6 +165,15 @@ message FailOverRequest {
 message FailOverResponse {
     // The shadow link that was failed over
     ShadowLink shadow_link = 1;
+}
+
+message TruncateAndRestoreRequest {
+    repeated RestoreTopic topics = 1;
+    RestoreAction action = 2;
+}
+
+message TruncateAndRestoreResponse {
+    int64 migration_id = 1;
 }
 
 /* Other Messages */
@@ -389,6 +405,21 @@ message TopicPartitionInformation {
     int64 high_watermark = 4;
 }
 
+message RestoreTopic {
+    // topic name
+    string name = 1;
+    // must provide an entry for every topic partition
+    repeated RestoreTopicPartitionInfo partitions = 2;
+}
+
+message RestoreTopicPartitionInfo {
+    // ID of target partition
+    int32 partition_id = 1;
+    // truncate to this offset, if present. otherwise restore the whole
+    // partition.
+    optional int64 last_offset = 2;
+}
+
 /* Enums */
 // State of the shadow link
 enum ShadowLinkState {
@@ -455,4 +486,10 @@ enum ShadowTopicState {
     SHADOW_TOPIC_STATE_PROMOTING = 6;
     // Shadow topic is promoted successfully
     SHADOW_TOPIC_STATE_PROMOTED = 7;
+}
+
+enum RestoreAction {
+    RESTORE_ACTION_UNSPECIFIED = 0;
+    RESTORE_ACTION_UNMOUNT_TOPIC = 1;
+    RESTORE_ACTION_MOUNT_AND_TRUNCATE_TOPIC = 2;
 }

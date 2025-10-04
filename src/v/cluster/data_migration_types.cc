@@ -45,7 +45,8 @@ inbound_migration inbound_migration::copy() const {
     return inbound_migration{
       .topics = topics.copy(),
       .groups = groups.copy(),
-      .auto_advance = auto_advance};
+      .auto_advance = auto_advance,
+    };
 }
 
 const chunked_vector<model::topic_namespace>
@@ -173,9 +174,11 @@ std::ostream& operator<<(std::ostream& o, const topic_work& tw) {
         tw.info,
         [&](const inbound_topic_work_info& itwi) {
             return ssx::sformat(
-              "{{inbound; source: {}, cloud_storage_location: {}}}",
+              "{{inbound; source: {}, cloud_storage_location: {}, restore_to: "
+              "{}}}",
               itwi.source,
-              itwi.cloud_storage_location);
+              itwi.cloud_storage_location,
+              itwi.restore_to);
         },
         [&](const outbound_topic_work_info& otwi) {
             return ssx::sformat("{{outbound; copy_to: {}}}", otwi.copy_to);
