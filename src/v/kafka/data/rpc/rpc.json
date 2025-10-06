@@ -14,6 +14,11 @@
             "name": "get_offsets",
             "input_type": "get_offsets_request",
             "output_type": "get_offsets_reply"
+        },
+        {
+            "name": "delete_records",
+            "input_type": "delete_records_request",
+            "output_type": "delete_records_reply"
         }
     ]
 }

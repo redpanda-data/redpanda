@@ -80,6 +80,9 @@ public:
     ss::future<get_offsets_reply>
     get_offsets(get_offsets_request, ::rpc::streaming_context&) override;
 
+    ss::future<delete_records_reply>
+    delete_records(delete_records_request, ::rpc::streaming_context&) override;
+
 private:
     ss::sharded<local_service>* _service;
 };

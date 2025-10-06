@@ -278,4 +278,14 @@ ss::future<get_offsets_reply> network_service::get_offsets(
     co_return get_offsets_reply(std::move(results));
 }
 
+ss::future<delete_records_reply> network_service::delete_records(
+  delete_records_request req, ::rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
+
+    auto results = co_await _service->local().delete_records(
+      std::move(req.cmds), req.timeout);
+
+    co_return delete_records_reply(std::move(results));
+}
+
 } // namespace kafka::data::rpc
