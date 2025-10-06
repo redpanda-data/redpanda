@@ -3176,9 +3176,11 @@ ss::future<> ntp_archiver::apply_retention() {
         if (error != cluster::errc::success) {
             vlog(
               _rtclog.warn,
-              "Failed to update archival metadata STM start offest according "
+              "Failed to update archival metadata STM start offset according "
               "to retention policy: {}",
               error);
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format, "Failed to update start offset: {}", error));
         }
     } else {
         vlog(
