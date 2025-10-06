@@ -38,6 +38,9 @@ public:
     ss::future<partition_offsets_map>
     get_offsets(chunked_vector<topic_partitions> topics);
 
+    ss::future<delete_records_result_map> delete_records(
+      delete_records_cmd_map cmds, model::timeout_clock::duration timeout);
+
 private:
     ss::future<kafka_topic_data_result>
       produce(kafka_topic_data, model::timeout_clock::duration);
@@ -49,6 +52,11 @@ private:
 
     ss::future<result<partition_offsets, cluster::errc>>
       get_partition_offsets(model::topic, model::partition_id);
+
+    ss::future<result<kafka::offset, error_code>> delete_records(
+      model::any_ntp auto,
+      delete_records_cmd,
+      model::timeout_clock::time_point timeout);
 
     std::unique_ptr<kafka::data::rpc::topic_metadata_cache> _metadata_cache;
     std::unique_ptr<kafka::data::rpc::partition_manager> _partition_manager;

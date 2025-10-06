@@ -78,6 +78,17 @@ public:
           shard_id, ktp, std::move(fn), require_leader);
     }
 
+    ss::future<result<kafka::offset, kafka::error_code>>
+    delete_records_from_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<ss::future<
+        result<kafka::offset, kafka::error_code>>(kafka::partition_proxy*)> fn,
+      kafka::data::rpc::require_leader require_leader) final {
+        return _proxy->invoke_on_shard_impl(
+          shard_id, ktp, std::move(fn), require_leader);
+    }
+
     ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
       ss::shard_id shard,
       const model::ntp& ntp,

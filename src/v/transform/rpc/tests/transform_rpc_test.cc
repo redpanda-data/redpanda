@@ -213,6 +213,16 @@ public:
         return _fake_proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
     }
 
+    ss::future<result<kafka::offset, kafka::error_code>>
+    delete_records_from_shard(
+      ss::shard_id,
+      const model::ktp&,
+      ss::noncopyable_function<ss::future<
+        result<kafka::offset, kafka::error_code>>(kafka::partition_proxy*)>,
+      kafka::data::rpc::require_leader) final {
+        throw std::runtime_error("not implemented");
+    }
+
     ss::future<result<model::wasm_binary_iobuf, cluster::errc>> invoke_on_shard(
       ss::shard_id shard_id,
       const model::ntp& ntp,

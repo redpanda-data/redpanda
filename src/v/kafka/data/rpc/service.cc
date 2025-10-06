@@ -12,6 +12,7 @@
 #include "kafka/data/rpc/service.h"
 
 #include "kafka/data/partition_proxy.h"
+#include "kafka/protocol/errors.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -200,6 +201,62 @@ ss::future<result<model::offset, cluster::errc>> local_service::produce(
                       return map_errc(r.assume_error());
                   }
                   return r.value();
+              });
+      });
+}
+
+ss::future<delete_records_result_map> local_service::delete_records(
+  delete_records_cmd_map cmds, model::timeout_clock::duration timeout) {
+    static constexpr int concurrency_limit = 32;
+    delete_records_result_map results;
+    auto time_point = model::timeout_clock::now() + timeout;
+    results.reserve(cmds.size());
+    for (auto& [topic, partitions] : cmds) {
+        results[topic].reserve(partitions.size());
+        auto& partition_results = results[topic];
+        co_await ss::max_concurrent_for_each(
+          partitions,
+          concurrency_limit,
+          [this, &partition_results, topic, time_point](auto pair) {
+              auto [pid, cmd] = std::move(pair);
+              return delete_records(model::ktp{topic, pid}, cmd, time_point)
+                .then([&partition_results, topic, pid](
+                        result<kafka::offset, error_code> r) {
+                    if (r.has_error()) {
+                        partition_results.emplace(
+                          pid, delete_records_result(r.error()));
+                        return;
+                    }
+                    partition_results.emplace(
+                      pid, delete_records_result(r.value()));
+                });
+          });
+    }
+
+    co_return results;
+}
+
+ss::future<result<kafka::offset, kafka::error_code>>
+local_service::delete_records(
+  model::any_ntp auto ntp,
+  delete_records_cmd cmd,
+  model::timeout_clock::time_point timeout) {
+    auto shard = _partition_manager->shard_owner(ntp);
+    if (!shard) {
+        co_return kafka::error_code::not_leader_for_partition;
+    }
+
+    co_return co_await _partition_manager->delete_records_from_shard(
+      *shard, ntp, [cmd, timeout](kafka::partition_proxy* partition) {
+          return partition
+            ->prefix_truncate(kafka::offset_cast(cmd.offset), timeout)
+            .then(
+              [cmd](kafka::error_code r)
+                -> result<kafka::offset, kafka::error_code> {
+                  if (r != kafka::error_code::none) {
+                      return r;
+                  }
+                  return cmd.offset;
               });
       });
 }

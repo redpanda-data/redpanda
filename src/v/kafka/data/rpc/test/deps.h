@@ -445,6 +445,26 @@ public:
         co_return co_await fn(&pp);
     }
 
+    template<typename R, typename N>
+    ss::future<result<R, kafka::error_code>> invoke_on_shard_kafka_impl(
+      ss::shard_id shard_id,
+      const N& ntp,
+      ss::noncopyable_function<
+        ss::future<result<R, kafka::error_code>>(kafka::partition_proxy*)> fn,
+      require_leader = require_leader::yes) {
+        auto owner = shard_owner(ntp);
+        if (!owner || shard_id != *owner) {
+            co_return kafka::error_code::not_leader_for_partition;
+        }
+        if (_errors_to_inject > 0) {
+            --_errors_to_inject;
+            co_return kafka::error_code::not_leader_for_partition;
+        }
+        auto pp = kafka::partition_proxy(
+          std::make_unique<in_memory_proxy>(ntp, &_produced_batches));
+        co_return co_await fn(&pp);
+    }
+
     bool is_current_shard_leader(const model::ntp& ntp) {
         return shard_owner(ntp) == ss::this_shard_id();
     }
@@ -503,6 +523,17 @@ public:
         result<partition_offsets, cluster::errc>>(kafka::partition_proxy*)> fn,
       require_leader) final {
         return _fake_proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
+    }
+
+    ss::future<result<kafka::offset, kafka::error_code>>
+    delete_records_from_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<ss::future<
+        result<kafka::offset, kafka::error_code>>(kafka::partition_proxy*)> fn,
+      require_leader) final {
+        return _fake_proxy->invoke_on_shard_kafka_impl(
+          shard_id, ktp, std::move(fn));
     }
 
     bool is_current_shard_leader(const model::ntp& ntp) const override {

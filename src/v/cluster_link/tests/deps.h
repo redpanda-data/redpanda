@@ -266,6 +266,16 @@ public:
         throw std::runtime_error("not implemented");
     }
 
+    template<typename R>
+    ss::future<::result<R, kafka::error_code>> invoke_on_shard_impl(
+      ss::shard_id,
+      const ::model::ktp&,
+      ss::noncopyable_function<
+        ss::future<::result<R, kafka::error_code>>(kafka::partition_proxy*)>,
+      kafka::data::rpc::require_leader) {
+        throw std::runtime_error("not implemented");
+    }
+
 private:
     ::model::ntp_map_type<ss::shard_id> _shard_locations;
 };
@@ -324,6 +334,18 @@ public:
       kafka::data::rpc::require_leader require_leader) final {
         return _impl->invoke_on_shard_impl(
           shard_id, ktp, std::move(fn), require_leader);
+    }
+
+    ss::future<result<kafka::offset, kafka::error_code>>
+    delete_records_from_shard(
+      ss::shard_id shard_id,
+      const ::model::ktp& ktp,
+      ss::noncopyable_function<ss::future<
+        result<kafka::offset, kafka::error_code>>(kafka::partition_proxy*)> fn,
+      kafka::data::rpc::require_leader req_leader
+      = kafka::data::rpc::require_leader::yes) final {
+        return _impl->invoke_on_shard_impl(
+          shard_id, ktp, std::move(fn), req_leader);
     }
 
 private:

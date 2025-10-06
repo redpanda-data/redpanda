@@ -185,6 +185,15 @@ public:
         result<partition_offsets, cluster::errc>>(kafka::partition_proxy*)>,
       require_leader req_leader = require_leader::yes)
       = 0;
+
+    virtual ss::future<result<kafka::offset, kafka::error_code>>
+    delete_records_from_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<ss::future<
+        result<kafka::offset, kafka::error_code>>(kafka::partition_proxy*)>,
+      require_leader req_leader = require_leader::yes)
+      = 0;
 };
 
 class partition_manager_proxy {
@@ -219,6 +228,34 @@ public:
               if (req_leader && !pp->is_leader()) {
                   return ss::make_ready_future<result<R, cluster::errc>>(
                     cluster::errc::not_leader);
+              }
+              return ss::do_with(
+                *std::move(pp),
+                [func = std::move(func)](kafka::partition_proxy& pp) {
+                    return func(&pp);
+                });
+          });
+    }
+
+    template<typename R, typename NTP>
+    ss::future<result<R, kafka::error_code>> invoke_on_shard_impl(
+      ss::shard_id shard,
+      const NTP& ntp,
+      ss::noncopyable_function<
+        ss::future<result<R, kafka::error_code>>(kafka::partition_proxy*)> func,
+      require_leader req_leader = require_leader::yes) {
+        return invoke_func_on_shard_impl(
+          shard,
+          [ntp, func = std::move(func), req_leader](
+            cluster::partition_manager& mgr) mutable {
+              auto pp = kafka::make_partition_proxy(ntp, mgr);
+              if (!pp) {
+                  return ss::make_ready_future<result<R, kafka::error_code>>(
+                    kafka::error_code::not_leader_for_partition);
+              }
+              if (req_leader && !pp->is_leader()) {
+                  return ss::make_ready_future<result<R, kafka::error_code>>(
+                    kafka::error_code::not_leader_for_partition);
               }
               return ss::do_with(
                 *std::move(pp),
