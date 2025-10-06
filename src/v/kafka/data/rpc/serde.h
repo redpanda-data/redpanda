@@ -10,9 +10,11 @@
  */
 #pragma once
 
+#include "base/format_to.h"
 #include "cluster/errc.h"
 #include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
+#include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
@@ -154,6 +156,92 @@ struct get_offsets_reply
     auto serde_fields() { return std::tie(partition_offsets); }
 
     partition_offsets_map partition_offsets;
+};
+
+struct delete_records_cmd
+  : serde::envelope<
+      delete_records_cmd,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    kafka::offset offset;
+
+    auto serde_fields() { return std::tie(offset); }
+
+    fmt::iterator format_to(fmt::iterator) const;
+};
+
+using delete_records_cmd_map = chunked_hash_map<
+  model::topic,
+  chunked_hash_map<model::partition_id, delete_records_cmd>>;
+
+/// \brief Result of the delete records operation on a partition
+struct delete_records_result
+  : serde::envelope<
+      delete_records_result,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    delete_records_result() = default;
+
+    explicit delete_records_result(kafka::error_code err)
+      : err(err) {}
+
+    explicit delete_records_result(kafka::offset low_watermark)
+      : low_watermark(low_watermark) {}
+
+    auto serde_fields() { return std::tie(err, low_watermark); }
+
+    // Result of operation
+    kafka::error_code err{kafka::error_code::none};
+    // The low watermark after the delete operation
+    kafka::offset low_watermark{-1};
+
+    fmt::iterator format_to(fmt::iterator it) const;
+};
+
+using delete_records_result_map = chunked_hash_map<
+  model::topic,
+  chunked_hash_map<model::partition_id, delete_records_result>>;
+
+/// \brief Request to perform delete records (prefix-trim) operation on a
+/// partition
+struct delete_records_request
+  : serde::envelope<
+      delete_records_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    delete_records_request() = default;
+
+    delete_records_request(
+      delete_records_cmd_map cmds, model::timeout_clock::duration timeout)
+      : cmds(std::move(cmds))
+      , timeout(timeout) {}
+
+    fmt::iterator format_to(fmt::iterator) const;
+
+    auto serde_fields() { return std::tie(cmds, timeout); }
+
+    // The partitions and offsets to trim
+    delete_records_cmd_map cmds;
+    // Timeout for command
+    model::timeout_clock::duration timeout{};
+};
+
+/// \brief Result of delete records operation
+struct delete_records_reply
+  : serde::envelope<
+      delete_records_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    delete_records_reply() = default;
+
+    explicit delete_records_reply(delete_records_result_map results)
+      : results(std::move(results)) {}
+    fmt::iterator format_to(fmt::iterator) const;
+
+    auto serde_fields() { return std::tie(results); }
+
+    // Map of results
+    delete_records_result_map results;
 };
 } // namespace kafka::data::rpc
 

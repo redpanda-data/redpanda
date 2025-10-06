@@ -43,6 +43,61 @@ produce_request produce_request::share() {
     return {std::move(shared), timeout};
 }
 
+fmt::iterator delete_records_cmd::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{offset: {}}}", offset);
+}
+
+fmt::iterator delete_records_result::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{err: {}, low_watermark: {}}}", err, low_watermark);
+}
+
+fmt::iterator delete_records_request::format_to(fmt::iterator it) const {
+    fmt::format_to(it, "{{cmds: [");
+    bool first_topic = true;
+    for (const auto& [topic, partitions] : cmds) {
+        if (!first_topic) {
+            fmt::format_to(it, ", ");
+        }
+        first_topic = false;
+        fmt::format_to(it, "{{ topic: {}, partitions: [", topic);
+        bool first_partition = true;
+        for (const auto& [partition_id, cmd] : partitions) {
+            if (!first_partition) {
+                fmt::format_to(it, ", ");
+            }
+            first_partition = false;
+            fmt::format_to(
+              it, "{{ partition: {}, cmd: {} }}", partition_id, cmd);
+        }
+        fmt::format_to(it, "] }}");
+    }
+    return fmt::format_to(it, "], timeout: {} }}", timeout);
+}
+
+fmt::iterator delete_records_reply::format_to(fmt::iterator it) const {
+    fmt::format_to(it, "{{ results: [");
+    bool first_topic = true;
+    for (const auto& [topic, partitions] : results) {
+        if (!first_topic) {
+            fmt::format_to(it, ", ");
+        }
+        first_topic = false;
+        fmt::format_to(it, "{{ topic: {}, partitions: [", topic);
+        bool first_partition = true;
+        for (const auto& [partition_id, result] : partitions) {
+            if (!first_partition) {
+                fmt::format_to(it, ", ");
+            }
+            first_partition = false;
+            fmt::format_to(
+              it, "{{ partition: {}, result: {} }}", partition_id, result);
+        }
+        fmt::format_to(it, "] }}");
+    }
+    return fmt::format_to(it, "] }}");
+}
+
 } // namespace kafka::data::rpc
 
 auto fmt::formatter<kafka::data::rpc::produce_request>::format(
