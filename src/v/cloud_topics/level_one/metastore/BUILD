@@ -9,6 +9,28 @@ redpanda_cc_rpc_library(
 )
 
 redpanda_cc_library(
+    name = "garbage_collector",
+    srcs = [
+        "garbage_collector.cc",
+    ],
+    hdrs = [
+        "garbage_collector.h",
+    ],
+    implementation_deps = [
+        ":simple_stm",
+        ":state_update",
+        "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics/level_one/common:abstract_io",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "frontend",
     srcs = [
         "frontend.cc",
@@ -175,6 +197,7 @@ redpanda_cc_library(
     hdrs = [
         "state_update.h",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":state",
         "//src/v/base",

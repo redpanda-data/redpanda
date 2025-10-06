@@ -41,6 +41,9 @@ public:
     // Directly remove an object from storage
     void remove_object(object_id id);
 
+    // Return a list of the object IDs that haven't been removed.
+    chunked_vector<object_id> list_objects() const;
+
 private:
     absl::btree_map<object_id, iobuf> _storage;
 };

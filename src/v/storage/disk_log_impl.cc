@@ -526,7 +526,7 @@ ss::future<compaction_result> disk_log_impl::segment_self_compact(
 }
 
 ss::future<> disk_log_impl::adjacent_merge_compact(
-  segment_set& segments,
+  segment_set segments,
   compaction::compaction_config cfg,
   std::optional<model::offset> new_start_offset) {
     vlog(
@@ -579,7 +579,7 @@ ss::future<> disk_log_impl::adjacent_merge_compact(
             cfg.asrc->check();
         }
 
-        auto is_compactible_segment = !seg->has_appender()
+        auto is_compactible_segment = !seg->is_closed() && !seg->has_appender()
                                       && seg->is_compacted_segment()
                                       && offsets_compactible(*seg);
         // Skip over segments that that being truncated, or are uncompactible.
@@ -1396,8 +1396,10 @@ ss::future<> disk_log_impl::do_compact(
         || (compact_cfg.hash_key_map && compact_cfg.hash_key_map->capacity() == 0);
 
     if (use_adjacent_merge) {
+        // Make a copy of `_segs` to avoid iterator invalidation in
+        // `adjacent_merge_compact`.
         compact_fut = adjacent_merge_compact(
-          _segs, compact_cfg, new_start_offset);
+          _segs.copy(), compact_cfg, new_start_offset);
     } else {
         compact_fut = sliding_window_compact(compact_cfg, new_start_offset)
                         .then([&](bool compacted) {

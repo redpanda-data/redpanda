@@ -339,12 +339,13 @@ auto fmt::formatter<cluster_link::model::connection_config>::format(
   -> decltype(ctx.out()) {
     return fmt::format_to(
       ctx.out(),
-      "{{bootstrap_servers: {}, authn_config: {}, cert: {}, key: {:s}, ca: {}, "
-      "client_id: {}, metadata_max_age_ms: {}, connection_timeout_ms: {}, "
-      "retry_backoff_ms: {}, fetch_wait_max_ms: {}, fetch_min_bytes: {}, "
-      "fetch_max_bytes: {}}}",
+      "{{bootstrap_servers: {}, authn_config: {}, tls_enabled: {}, cert: {}, "
+      "key: {:s}, ca: {}, client_id: {}, metadata_max_age_ms: {}, "
+      "connection_timeout_ms: {}, retry_backoff_ms: {}, fetch_wait_max_ms: {}, "
+      "fetch_min_bytes: {}, fetch_max_bytes: {}}}",
       c.bootstrap_servers,
       c.authn_config,
+      c.tls_enabled,
       c.cert,
       c.key,
       c.ca,

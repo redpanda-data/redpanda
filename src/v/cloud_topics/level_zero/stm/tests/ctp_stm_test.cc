@@ -19,7 +19,7 @@
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "raft/tests/raft_fixture.h"
-#include "test_utils/test.h"
+#include "test_utils/async.h"
 
 #include <optional>
 
@@ -276,7 +276,6 @@ TEST_F_CORO(ctp_stm_fixture, test_truncate_all_epochs) {
     // that the state is consistent. Then it adds more epochs and checks that
     // the state is still consistent.
     co_await start();
-
     co_await wait_for_leader(raft::default_timeout());
 
     auto gc_epoch = co_await api(node(*get_leader())).get_inactive_epoch();
@@ -358,4 +357,36 @@ TEST_F_CORO(ctp_stm_fixture, test_start_offset) {
       kafka::offset{1}, model::no_timeout, as);
     start_offset = leader_api.get_start_offset();
     ASSERT_EQ_CORO(start_offset, kafka::offset{2});
+}
+
+TEST_F_CORO(ctp_stm_fixture, truncates_below_lro) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    EXPECT_EQ(leader.raft()->last_snapshot_index(), model::offset::min());
+    auto& leader_api = api(leader);
+    // Write some data
+    for (int o = 0; o < 1024; ++o) {
+        co_await replicate_record_batch(
+          leader, make_record_batch(ct::cluster_epoch{1}, model::offset{o}, 0));
+    }
+    // Segment roll on all the nodes so we can take a snapshot.
+    for (auto& [vnode, stm] : stm_by_vnode) {
+        co_await node(vnode.id()).raft()->log()->force_roll();
+    }
+    // Write some more data
+    for (int o = 0; o < 1024; ++o) {
+        co_await replicate_record_batch(
+          leader, make_record_batch(ct::cluster_epoch{1}, model::offset{o}, 0));
+    }
+    // Advance the LRO
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{2000}, model::no_timeout, as);
+    // Wait for the snapshot to be created
+    for (auto& [vnode, stm] : stm_by_vnode) {
+        RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [this, &vnode]() {
+            return node(vnode.id()).raft()->last_snapshot_index()
+                   == model::offset{1024};
+        });
+    }
 }

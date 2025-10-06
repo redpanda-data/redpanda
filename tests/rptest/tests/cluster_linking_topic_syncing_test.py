@@ -445,11 +445,12 @@ class ClusterLinkingTopicSyncingWithTlsFiles(ClusterLinkingTopicSyncingTestBase)
 
         shadow_link.configurations.client_options.tls_settings.CopyFrom(
             shadow_link_pb2.TLSSettings(
+                enabled=True,
                 tls_file_settings=shadow_link_pb2.TLSFileSettings(
                     ca_path=self.redpanda.TLS_CA_CRT_FILE,
                     key_path=self.redpanda.TLS_SERVER_KEY_FILE,
                     cert_path=self.redpanda.TLS_SERVER_CRT_FILE,
-                )
+                ),
             )
         )
 
@@ -519,9 +520,10 @@ class ClusterLinkingTopicSyncingWithTlsValues(ClusterLinkingTopicSyncingTestBase
 
         shadow_link.configurations.client_options.tls_settings.CopyFrom(
             shadow_link_pb2.TLSSettings(
+                enabled=True,
                 tls_pem_settings=shadow_link_pb2.TLSPEMSettings(
                     ca=ca_content, key=key_content, cert=cert_content
-                )
+                ),
             )
         )
 

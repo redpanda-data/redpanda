@@ -240,7 +240,7 @@ public:
       bool force_compaction = false);
 
     ss::future<> adjacent_merge_compact(
-      segment_set& segments,
+      segment_set segments,
       compaction::compaction_config,
       std::optional<model::offset> new_start_offset = std::nullopt);
 

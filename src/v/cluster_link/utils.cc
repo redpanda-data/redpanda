@@ -79,9 +79,7 @@ metadata_to_kafka_config(const model::metadata& md) {
 
     config.initial_brokers = link_connection.bootstrap_servers;
 
-    if (
-      link_connection.cert.has_value() || link_connection.key.has_value()
-      || link_connection.ca.has_value()) {
+    if (link_connection.tls_enabled) {
         config.broker_tls = create_tls_configuration(link_connection);
     }
 

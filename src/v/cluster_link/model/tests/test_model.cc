@@ -34,11 +34,11 @@ TEST(test_model, test_no_leak_private_data) {
     EXPECT_EQ(
       "{bootstrap_servers: [{host: localhost, port: 9092}], "
       "authn_config: {username: user, password: ****, mechanism: "
-      "SCRAM-SHA-256}, cert: {file: cert.pem}, key: {file: key.pem}, ca: "
-      "{file: ca.pem}, client_id: client-id, metadata_max_age_ms: {nullopt}, "
-      "connection_timeout_ms: {nullopt}, retry_backoff_ms: {nullopt}, "
-      "fetch_wait_max_ms: {nullopt}, fetch_min_bytes: {nullopt}, "
-      "fetch_max_bytes: {nullopt}}",
+      "SCRAM-SHA-256}, tls_enabled: false, cert: {file: cert.pem}, key: {file: "
+      "key.pem}, ca: {file: ca.pem}, client_id: client-id, "
+      "metadata_max_age_ms: {nullopt}, connection_timeout_ms: {nullopt}, "
+      "retry_backoff_ms: {nullopt}, fetch_wait_max_ms: {nullopt}, "
+      "fetch_min_bytes: {nullopt}, fetch_max_bytes: {nullopt}}",
       fmt::format("{}", config_files));
 
     connection_config config_values{
@@ -51,11 +51,11 @@ TEST(test_model, test_no_leak_private_data) {
     EXPECT_EQ(
       "{bootstrap_servers: [{host: localhost, port: 9092}], "
       "authn_config: {username: user, password: ****, mechanism: "
-      "SCRAM-SHA-256}, cert: {value: cert.pem}, key: {value: ****}, ca: "
-      "{value: ca.pem}, client_id: client-id, metadata_max_age_ms: {nullopt}, "
-      "connection_timeout_ms: {nullopt}, retry_backoff_ms: {nullopt}, "
-      "fetch_wait_max_ms: {nullopt}, fetch_min_bytes: {nullopt}, "
-      "fetch_max_bytes: {nullopt}}",
+      "SCRAM-SHA-256}, tls_enabled: false, cert: {value: cert.pem}, key: "
+      "{value: ****}, ca: {value: ca.pem}, client_id: client-id, "
+      "metadata_max_age_ms: {nullopt}, connection_timeout_ms: {nullopt}, "
+      "retry_backoff_ms: {nullopt}, fetch_wait_max_ms: {nullopt}, "
+      "fetch_min_bytes: {nullopt}, fetch_max_bytes: {nullopt}}",
       fmt::format("{}", config_values));
 }
 } // namespace cluster_link::model::tests

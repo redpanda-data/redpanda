@@ -195,6 +195,9 @@ struct connection_config
     using authn_variant = serde::variant<scram_credentials>;
     /// Authentication configuration for the connection
     std::optional<authn_variant> authn_config;
+    using tls_enabled_t = ss::bool_class<struct tls_enabled_tag>;
+    /// Whether or not TLS is enabled
+    tls_enabled_t tls_enabled{tls_enabled_t::no};
     /// certificate file to use
     std::optional<tls_file_or_value> cert;
     /// key to use (when mTLS is in use)
@@ -274,7 +277,8 @@ struct connection_config
           retry_backoff_ms,
           fetch_wait_max_ms,
           fetch_min_bytes,
-          fetch_max_bytes);
+          fetch_max_bytes,
+          tls_enabled);
     }
 
     friend std::ostream&

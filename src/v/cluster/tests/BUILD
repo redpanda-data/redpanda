@@ -49,7 +49,7 @@ redpanda_test_cc_library(
         "//src/v/config",
         "//src/v/model",
         "//src/v/random:generators",
-        "//src/v/redpanda",
+        "//src/v/redpanda:application",
         "//src/v/redpanda/tests:fixture",
         "//src/v/resource_mgmt:cpu_scheduling",
         "//src/v/test_utils:async",
@@ -65,8 +65,15 @@ redpanda_test_cc_library(
         "partition_balancer_planner_fixture.h",
     ],
     deps = [
-        ":cluster_test_fixture",
+        ":utils",
+        "//src/v/base",
+        "//src/v/cluster",
+        "//src/v/config",
+        "//src/v/features",
+        "//src/v/model",
+        "//src/v/random:generators",
         "@boost//:test",
+        "@seastar",
     ],
 )
 

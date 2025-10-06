@@ -656,8 +656,11 @@ global___SecuritySettingsSyncOptions = SecuritySettingsSyncOptions
 class TLSSettings(google.protobuf.message.Message):
     """TLS settings"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    ENABLED_FIELD_NUMBER: builtins.int
     TLS_FILE_SETTINGS_FIELD_NUMBER: builtins.int
     TLS_PEM_SETTINGS_FIELD_NUMBER: builtins.int
+    enabled: builtins.bool
+    'Whether or not TLS is enabled'
 
     @property
     def tls_file_settings(self) -> global___TLSFileSettings:
@@ -667,13 +670,13 @@ class TLSSettings(google.protobuf.message.Message):
     def tls_pem_settings(self) -> global___TLSPEMSettings:
         """Certificates and keys are provided in PEM format"""
 
-    def __init__(self, *, tls_file_settings: global___TLSFileSettings | None=..., tls_pem_settings: global___TLSPEMSettings | None=...) -> None:
+    def __init__(self, *, enabled: builtins.bool=..., tls_file_settings: global___TLSFileSettings | None=..., tls_pem_settings: global___TLSPEMSettings | None=...) -> None:
         ...
 
     def HasField(self, field_name: typing.Literal['tls_file_settings', b'tls_file_settings', 'tls_pem_settings', b'tls_pem_settings', 'tls_settings', b'tls_settings']) -> builtins.bool:
         ...
 
-    def ClearField(self, field_name: typing.Literal['tls_file_settings', b'tls_file_settings', 'tls_pem_settings', b'tls_pem_settings', 'tls_settings', b'tls_settings']) -> None:
+    def ClearField(self, field_name: typing.Literal['enabled', b'enabled', 'tls_file_settings', b'tls_file_settings', 'tls_pem_settings', b'tls_pem_settings', 'tls_settings', b'tls_settings']) -> None:
         ...
 
     def WhichOneof(self, oneof_group: typing.Literal['tls_settings', b'tls_settings']) -> typing.Literal['tls_file_settings', 'tls_pem_settings'] | None:

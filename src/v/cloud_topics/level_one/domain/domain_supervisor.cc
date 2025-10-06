@@ -10,6 +10,7 @@
 
 #include "cloud_topics/level_one/domain/domain_supervisor.h"
 
+#include "cloud_topics/level_one/common/abstract_io.h"
 #include "cloud_topics/level_one/domain/domain_manager.h"
 #include "cloud_topics/logger.h"
 #include "cluster/controller.h"
@@ -28,8 +29,9 @@ namespace cloud_topics::l1 {
 
 class domain_supervisor::impl {
 public:
-    explicit impl(cluster::controller* controller)
+    explicit impl(cluster::controller* controller, io* io)
       : _controller(controller)
+      , _object_io(io)
       , _queue([](const std::exception_ptr& ex) {
           vlog(cd_log.error, "Unexpected domain supervisor error: {}", ex);
       }) {}
@@ -268,11 +270,13 @@ private:
             co_return;
         }
         auto domain_mgr = ss::make_lw_shared<domain_manager>(
-          (*partition)->raft()->stm_manager()->get<simple_stm>());
+          (*partition)->raft()->stm_manager()->get<simple_stm>(), _object_io);
+        domain_mgr->start();
         _domains.emplace(dm_id, std::move(domain_mgr));
     }
 
     cluster::controller* _controller;
+    io* _object_io;
 
     // Queue to process async work associated with starting and stopping domain
     // managers when handling partition notifications.
@@ -288,8 +292,8 @@ private:
     ss::abort_source _as;
 };
 
-domain_supervisor::domain_supervisor(cluster::controller* controller)
-  : _impl(std::make_unique<impl>(controller)) {}
+domain_supervisor::domain_supervisor(cluster::controller* controller, io* io)
+  : _impl(std::make_unique<impl>(controller, io)) {}
 
 domain_supervisor::~domain_supervisor() = default;
 

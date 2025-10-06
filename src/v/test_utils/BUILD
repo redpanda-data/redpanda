@@ -137,6 +137,7 @@ redpanda_test_cc_library(
     deps = [
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
+        "//src/v/random:generators",
     ],
 )
 

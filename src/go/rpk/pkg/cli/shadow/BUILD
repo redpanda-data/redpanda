@@ -6,6 +6,7 @@ go_library(
         "config.go",
         "create.go",
         "delete.go",
+        "describe.go",
         "list.go",
         "mapper.go",
         "shadow.go",

@@ -101,4 +101,12 @@ void fake_io::put_object(object_id id, iobuf data) {
 
 void fake_io::remove_object(object_id id) { _storage.erase(id); }
 
+chunked_vector<object_id> fake_io::list_objects() const {
+    chunked_vector<object_id> oids;
+    for (const auto& [oid, _] : _storage) {
+        oids.emplace_back(oid);
+    }
+    return oids;
+}
+
 } // namespace cloud_topics::l1

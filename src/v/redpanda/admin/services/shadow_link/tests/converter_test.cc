@@ -193,6 +193,52 @@ TEST(converter_test, create_with_authn_config_scram_unspecified) {
       serde::pb::rpc::invalid_argument_exception);
 }
 
+TEST(converter_test, create_with_tls_flag_only) {
+    const auto name = "test-link";
+    proto::admin::shadow_link shadow_link;
+    proto::admin::create_shadow_link_request req;
+    proto::admin::shadow_link_configurations shadow_link_configurations;
+    proto::admin::shadow_link_client_options shadow_link_client_options;
+    proto::admin::tls_settings tls_settings;
+
+    tls_settings.set_enabled(true);
+    shadow_link_client_options.set_tls_settings(std::move(tls_settings));
+
+    shadow_link_client_options.set_bootstrap_servers({"localhost:9092"});
+    shadow_link_configurations.set_client_options(
+      std::move(shadow_link_client_options));
+
+    shadow_link.set_configurations(std::move(shadow_link_configurations));
+    shadow_link.set_name(ss::sstring{name});
+    req.set_shadow_link(std::move(shadow_link));
+
+    auto md = admin::convert_create_to_metadata(std::move(req));
+
+    EXPECT_TRUE(md.connection.tls_enabled);
+    EXPECT_FALSE(md.connection.ca.has_value());
+    EXPECT_FALSE(md.connection.key.has_value());
+    EXPECT_FALSE(md.connection.cert.has_value());
+
+    auto sl = admin::metadata_to_shadow_link(std::move(md));
+
+    ASSERT_TRUE(
+      sl.get_configurations().get_client_options().has_tls_settings());
+
+    EXPECT_TRUE(sl.get_configurations()
+                  .get_client_options()
+                  .get_tls_settings()
+                  .get_enabled());
+
+    EXPECT_FALSE(sl.get_configurations()
+                   .get_client_options()
+                   .get_tls_settings()
+                   .has_tls_file_settings());
+    EXPECT_FALSE(sl.get_configurations()
+                   .get_client_options()
+                   .get_tls_settings()
+                   .has_tls_pem_settings());
+}
+
 TEST(converter_test, create_with_tls_files) {
     const auto name = "test-link";
     const auto ca_file = "ca_file.pem";
@@ -205,6 +251,7 @@ TEST(converter_test, create_with_tls_files) {
     proto::admin::tls_settings tls_settings;
     proto::admin::tls_file_settings tls_file_settings;
 
+    tls_settings.set_enabled(true);
     tls_file_settings.set_ca_path(ss::sstring{ca_file});
     tls_file_settings.set_key_path(ss::sstring{key_file});
     tls_file_settings.set_cert_path(ss::sstring{cert_file});
@@ -220,6 +267,7 @@ TEST(converter_test, create_with_tls_files) {
     req.set_shadow_link(std::move(shadow_link));
 
     auto md = admin::convert_create_to_metadata(std::move(req));
+    EXPECT_TRUE(md.connection.tls_enabled);
     ASSERT_TRUE(md.connection.ca.has_value());
     ASSERT_TRUE(
       std::holds_alternative<cluster_link::model::tls_file_path>(

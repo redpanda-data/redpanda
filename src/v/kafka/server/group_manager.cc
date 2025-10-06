@@ -11,7 +11,9 @@
 
 #include "cluster/cloud_metadata/error_outcome.h"
 #include "cluster/cluster_utils.h"
+#include "cluster/health_monitor_frontend.h"
 #include "cluster/logger.h"
+#include "cluster/metadata_cache.h"
 #include "cluster/offsets_snapshot.h"
 #include "cluster/partition.h"
 #include "cluster/partition_manager.h"
@@ -26,8 +28,6 @@
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_delete.h"
 #include "kafka/protocol/offset_fetch.h"
-#include "kafka/server/consumer_group_lag_metrics_frontend.h"
-#include "kafka/server/consumer_group_lag_metrics_rpc_types.h"
 #include "kafka/server/group.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_probe.h"
@@ -80,14 +80,14 @@ group_manager::group_manager(
   ss::sharded<cluster::topic_table>& topic_table,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<consumer_group_lag_metrics_frontend>& lag_metrics_frontend)
+  ss::sharded<cluster::health_monitor_frontend>& hm_frontend)
   : _tp_ns(std::move(tp_ns))
   , _gm(gm)
   , _pm(pm)
   , _topic_table(topic_table)
   , _tx_frontend(tx_frontend)
   , _feature_table(feature_table)
-  , _lag_metrics_frontend(lag_metrics_frontend)
+  , _hm_frontend(hm_frontend)
   , _conf(config::shard_local_cfg())
   , _self(cluster::make_self_broker(config::node()))
   , _offset_retention_check(_conf.group_offset_retention_check_ms.bind())
@@ -164,7 +164,7 @@ ss::future<> group_manager::start() {
         }
     });
 
-    {
+    if (ss::this_shard_id() == cluster::health_monitor_backend_shard) {
         constexpr auto set_lag_timer = [](group_manager* me) {
             auto has_lag_metric = enabled_metrics::from_vector(
                                     me->_enabled_metrics())
@@ -2176,59 +2176,94 @@ group_manager::get_group_producers_locally(
 
 ss::future<> group_manager::collect_consumer_lag_metrics() {
     vlog(cg_klog.trace, "group_manager::collect_consumer_lag_metrics");
+    vassert(
+      ss::this_shard_id() == cluster::health_monitor_backend_shard,
+      "collect_consumer_lag_metrics must run on shard {}",
+      cluster::health_monitor_backend_shard);
 
     using lag = size_t;
-    partition_offsets_request request;
-    chunked_hash_map<kafka::group_id, partition_offsets_reply::offsets>
-      group_offsets;
+    using topic_map_t = cluster::partitions_filter::topic_map_t;
 
-    // Get group offsets and partition offset request
-    for (const auto& group : _groups | std::views::values) {
-        const auto& offsets = group->offsets();
-        if (offsets.empty()) {
-            continue;
-        }
-        auto& group_offset = group_offsets[group->id()];
-        for (const auto& [tp, meta] : offsets) {
-            if (!meta) {
-                continue;
+    constexpr auto collect_ntps = [](const auto& gm) {
+        topic_map_t topic_map;
+        for (const auto& group : gm._groups | std::views::values) {
+            for (const auto& tp : group->offsets() | std::views::keys) {
+                topic_map[tp.topic].insert(tp.partition);
             }
-            request.data[tp.topic].insert(tp.partition);
-            group_offset[tp.topic][tp.partition] = offset_cast(
-              meta->metadata.offset);
         }
-    }
+        return topic_map;
+    };
 
-    if (group_offsets.empty()) {
+    constexpr auto reduce_ntps = [](topic_map_t acc, topic_map_t val) {
+        for (auto& [topic, parts] : val) {
+            acc[topic].insert(parts.begin(), parts.end());
+        }
+        return acc;
+    };
+
+    auto ntps = co_await container().map_reduce0(
+      collect_ntps, topic_map_t{}, reduce_ntps);
+
+    if (ntps.empty()) {
         co_return;
     }
 
-    auto part_offsets = co_await _lag_metrics_frontend.local()
-                          .get_partition_offsets(std::move(request));
+    auto report_r = co_await _hm_frontend.local().get_cluster_health(
+      {.node_report_filter{.ntp_filters{
+        .namespaces = {{model::kafka_namespace, std::move(ntps)}}}}},
+      cluster::force_refresh::no,
+      model::timeout_clock::now() + _lag_collection_interval());
+    if (!report_r) {
+        vlog(
+          klog.warn,
+          "group_manager::collect_consumer_lag_metrics: "
+          "failed to get cluster health report: {}",
+          report_r.error());
+        co_return;
+    }
 
-    //  Set metrics
-    for (auto& [group_id, offsets] : group_offsets) {
-        consumer_lag_metrics lag_metrics{};
-        for (auto& [tp, group_topic_offsets] : offsets) {
-            for (auto& [partition, offset] : group_topic_offsets) {
-                auto topic_it = part_offsets.data.find(tp);
-                if (topic_it == part_offsets.data.end()) {
-                    continue;
-                }
-                auto partition_it = topic_it->second.find(partition);
-                if (partition_it == topic_it->second.end()) {
-                    continue;
-                }
-                lag part_lag{static_cast<lag>(
-                  std::max(partition_it->second() - offset(), 0L))};
-                lag_metrics.sum += part_lag;
-                lag_metrics.max = std::max(lag_metrics.max, part_lag);
+    static constexpr auto find_partition_hwm =
+      [](
+        const cluster::cluster_health_report& response,
+        const model::topic_partition& tp) -> std::optional<kafka::offset> {
+        std::optional<kafka::offset> max_hwm;
+        for (const auto& report : response.node_reports) {
+            const model::topic_namespace_view tn{
+              model::kafka_namespace, tp.topic};
+            auto topic_it = report->topics.find(tn);
+            if (topic_it == report->topics.end()) {
+                continue;
             }
-        };
-        if (auto group = get_group(group_id); group != nullptr) {
+            auto partition_it = topic_it->second.find(tp.partition);
+            if (partition_it == topic_it->second.end()) {
+                continue;
+            }
+            auto hwm = partition_it->second.high_watermark;
+            if (!max_hwm || hwm > *max_hwm) {
+                max_hwm = hwm;
+            }
+        }
+        return max_hwm;
+    };
+
+    const auto set_metrics = [&report_r](const group_manager& gm) {
+        for (const auto& group : gm._groups | std::views::values) {
+            consumer_lag_metrics lag_metrics{};
+            for (const auto& [tp, group_topic_offsets] : group->offsets()) {
+                if (auto hwm = find_partition_hwm(report_r.value(), tp); hwm) {
+                    auto committed_offset = offset_cast(
+                      group_topic_offsets->metadata.offset);
+                    lag part_lag{static_cast<lag>(
+                      std::max(*hwm - committed_offset, offset{0}))};
+                    lag_metrics.sum += part_lag;
+                    lag_metrics.max = std::max(lag_metrics.max, part_lag);
+                }
+            }
             group->set_lag_metrics(lag_metrics);
         }
-    }
+    };
+
+    co_await container().invoke_on_all(set_metrics);
 }
 
 } // namespace kafka

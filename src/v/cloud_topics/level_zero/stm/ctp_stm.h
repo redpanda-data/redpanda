@@ -33,6 +33,9 @@ class ctp_stm final : public raft::persisted_stm<> {
 public:
     static constexpr const char* name = "ctp_stm";
 
+    ss::future<> start() override;
+    ss::future<> stop() override;
+
     ctp_stm(ss::logger&, raft::consensus*);
 
     const model::ntp& ntp() const noexcept;
@@ -89,6 +92,12 @@ private:
 
     ss::future<> apply_raft_snapshot(const iobuf&) override;
     ss::future<iobuf> take_raft_snapshot(model::offset) override;
+    model::offset max_removable_local_log_offset() override;
+
+    // A function invoked in a background loop that attempts to truncate the log
+    // below the current start offset.
+    ss::future<> prefix_truncate_below_lro();
+    ss::future<> do_write_raft_snapshot(model::offset truncation_point);
 
 private:
     /// Lock to protect the state from concurrent access.
@@ -101,6 +110,14 @@ private:
     // The last observed epoch to be applied to the state machine. This value is
     // used to check for violations of monotonicity in epoch order.
     cluster_epoch _last_seen_epoch{};
+
+    // An abort source to stop the prefix truncation loop on stop.
+    ss::condition_variable _lro_advanced;
+    ss::abort_source _as;
+
+    // The last point that we truncated to, so we can skip writing a raft
+    // snapshot if needed. This is volatile state (which is fine).
+    model::offset _last_truncation_point;
 };
 
 } // namespace cloud_topics

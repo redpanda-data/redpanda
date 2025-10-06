@@ -30,6 +30,7 @@ TEST(cluster_link_utils_test, test_basic_config) {
 
 TEST(cluster_link_utils_test, test_tls_file_config) {
     model::metadata md;
+    md.connection.tls_enabled = model::connection_config::tls_enabled_t::yes;
     md.connection.ca = model::tls_file_path("/path/to/ca.crt");
     md.connection.cert = model::tls_file_path("/path/to/cert.crt");
     md.connection.key = model::tls_file_path("/path/to/key.key");
@@ -56,6 +57,7 @@ TEST(cluster_link_utils_test, test_tls_file_config) {
 
 TEST(cluster_link_utils_test, test_tls_value_config) {
     model::metadata md;
+    md.connection.tls_enabled = model::connection_config::tls_enabled_t::yes;
     md.connection.ca = model::tls_value("ca-cert");
     md.connection.cert = model::tls_value("cert-value");
     md.connection.key = model::tls_value("key-value");
@@ -80,6 +82,7 @@ TEST(cluster_link_utils_test, test_tls_value_config) {
 
 TEST(cluster_link_utils_test, test_tls_bad_combo) {
     model::metadata md;
+    md.connection.tls_enabled = model::connection_config::tls_enabled_t::yes;
     md.connection.cert = model::tls_file_path("/path/to/cert.crt");
     md.connection.key = model::tls_value("key-value");
     EXPECT_DEATH(

@@ -1689,7 +1689,7 @@ TEST_F(CompactionFixtureParamTest, TestSegmentConcatenation) {
       std::nullopt,
       cardinality);
 
-    disk_log.adjacent_merge_compact(filtered_seg_set, cfg).get();
+    disk_log.adjacent_merge_compact(filtered_seg_set.copy(), cfg).get();
     auto post_compact_batches = model::consume_reader_to_chunked_vector(
                                   log->make_reader(reader_cfg).get(),
                                   model::no_timeout)
@@ -1745,7 +1745,7 @@ TEST_F(CompactionFixtureTest, TestAdjacentCompaction) {
     // All but the active segment
     ASSERT_EQ(filtered_seg_set.size(), segment_count_before);
 
-    disk_log.adjacent_merge_compact(filtered_seg_set, cfg).get();
+    disk_log.adjacent_merge_compact(filtered_seg_set.copy(), cfg).get();
 
     // Another sanity check after compaction.
     ASSERT_EQ(disk_log.segment_count(), 2);
@@ -1834,7 +1834,7 @@ TEST_F(CompactionFixtureTest, TestAdjacentCompactionMultipleRanges) {
     // All but the active segment.
     ASSERT_EQ(filtered_seg_set.size(), disk_log.segment_count() - 1);
 
-    disk_log.adjacent_merge_compact(filtered_seg_set, cfg).get();
+    disk_log.adjacent_merge_compact(filtered_seg_set.copy(), cfg).get();
 
     // Another sanity check after compaction.
     ASSERT_EQ(disk_log.segment_count(), num_raft_terms + 1);
@@ -1893,7 +1893,7 @@ TEST_F(
         }
 
         storage::segment_set filtered_seg_set(std::move(filtered_segs));
-        l->adjacent_merge_compact(filtered_seg_set, cfg).get();
+        l->adjacent_merge_compact(filtered_seg_set.copy(), cfg).get();
         // Including the active segment
         ASSERT_EQ(l->segment_count(), 2);
     };
@@ -2129,7 +2129,7 @@ TEST_F(CompactionFixtureTest, TestBatchCacheResetAfterAdjacentMerge) {
     auto before_merge = consume(reader_cfg);
     ASSERT_EQ(before_merge.size(), cardinality);
 
-    disk_log.adjacent_merge_compact(segs, cfg).get();
+    disk_log.adjacent_merge_compact(segs.copy(), cfg).get();
 
     ASSERT_EQ(disk_log.segment_count(), 2);
 

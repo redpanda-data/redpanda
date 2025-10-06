@@ -114,6 +114,7 @@ redpanda_cc_gtest(
     deps = [
         ":test_deps",
         "//src/v/cluster_link:source_topic_syncer",
+        "//src/v/kafka/server:topic_config_utils",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
     ],

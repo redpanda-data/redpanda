@@ -5417,7 +5417,8 @@ TEST_F(storage_test_fixture, dirty_and_closed_bytes_bookkeeping) {
     };
 
     auto adjacent_merge_func = [&]() {
-        disk_log->adjacent_merge_compact(disk_log->segments(), cfg.compact)
+        disk_log
+          ->adjacent_merge_compact(disk_log->segments().copy(), cfg.compact)
           .get();
     };
 
@@ -6445,7 +6446,7 @@ TEST_F(storage_test_fixture, segment_cached_disk_usage_set_after_compaction) {
 
     // Test adjacent compaction
     {
-        disk_log.adjacent_merge_compact(segs, cfg).get();
+        disk_log.adjacent_merge_compact(segs.copy(), cfg).get();
         for (auto& s : segs) {
             if (s->has_self_compact_timestamp()) {
                 check_cached_sizes(s);
@@ -7088,7 +7089,9 @@ TEST_F(storage_test_fixture, adjacent_merge_compaction_advances_generation_id) {
 
     auto gen_id_before = segs.front()->get_generation_id();
 
-    disk_log.adjacent_merge_compact(segs, cfg).get();
+    {
+        disk_log.adjacent_merge_compact(segs.copy(), cfg).get();
+    }
     ASSERT_EQ(segs.size(), 2);
 
     auto gen_id_after = segs.front()->get_generation_id();

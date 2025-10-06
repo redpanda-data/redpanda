@@ -657,4 +657,54 @@ set_start_offset_update::apply(state& state) {
     return std::monostate{};
 }
 
+std::expected<remove_objects_update, stm_update_error>
+remove_objects_update::build(
+  const state& state, chunked_vector<object_id> objects) {
+    remove_objects_update update{
+      .objects = std::move(objects),
+    };
+    auto allowed = update.can_apply(state);
+    if (!allowed.has_value()) {
+        return std::unexpected(allowed.error());
+    }
+    return update;
+}
+
+std::expected<std::monostate, stm_update_error>
+remove_objects_update::can_apply(const state& state) {
+    for (const auto oid : objects) {
+        auto o_iter = state.objects.find(oid);
+        if (o_iter == state.objects.end()) {
+            continue;
+        }
+        const auto& obj_entry = o_iter->second;
+        if (obj_entry.total_data_size != obj_entry.removed_data_size) {
+            return std::unexpected(
+              stm_update_error{fmt::format(
+                "Object {} is still referenced: removed_data_size: {}, "
+                "total_data_size: {}",
+                oid,
+                obj_entry.removed_data_size,
+                obj_entry.total_data_size)});
+        }
+    }
+    return std::monostate{};
+}
+
+std::expected<std::monostate, stm_update_error>
+remove_objects_update::apply(state& state) {
+    auto allowed = can_apply(state);
+    if (!allowed.has_value()) {
+        return std::unexpected(allowed.error());
+    }
+    for (const auto oid : objects) {
+        auto o_iter = state.objects.find(oid);
+        if (o_iter == state.objects.end()) {
+            continue;
+        }
+        state.objects.erase(o_iter);
+    }
+    return std::monostate{};
+}
+
 } // namespace cloud_topics::l1

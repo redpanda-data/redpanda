@@ -23,6 +23,7 @@ class partition;
 
 namespace cloud_topics::l1 {
 class domain_manager;
+class io;
 
 // Responsible for creating and managing domain managers on the leaders of the
 // L1 topic partitions.
@@ -30,7 +31,7 @@ class domain_supervisor {
     class impl;
 
 public:
-    explicit domain_supervisor(cluster::controller*);
+    explicit domain_supervisor(cluster::controller*, io*);
     domain_supervisor(const domain_supervisor&) = delete;
     domain_supervisor(domain_supervisor&&) = delete;
     domain_supervisor& operator=(const domain_supervisor&) = delete;

@@ -1251,3 +1251,117 @@ TEST(StateUpdateTest, TestSetStartOffsetWithCompactionState) {
       p_state->get().compaction_state->cleaned_ranges_with_tombstones,
       ElementsAre(MatchesRange(10_o, 15_o)));
 }
+
+TEST(StateUpdateTest, TestRemoveObjectsBasic) {
+    state s;
+    auto add = add_objects_builder()
+                 .add(new_obj_builder(oid1, 100, 1100)
+                        .add(tidp_a, 0_o, 10_o, 1999_t, 0, 99)
+                        .build())
+                 .add(new_obj_builder(oid2, 100, 1100)
+                        .add(tidp_b, 0_o, 10_o, 1999_t, 0, 99)
+                        .build())
+                 .add_term_start(tidp_a, 0_tm, 0_o)
+                 .add_term_start(tidp_b, 0_tm, 0_o)
+                 .build();
+    ASSERT_TRUE(add.apply(s).has_value());
+    EXPECT_EQ(2, s.objects.size());
+
+    // Replace objects to mark originals as unreferenced.
+    auto replace = replace_objects_builder()
+                     .add(new_obj_builder(oid3, 100, 1100)
+                            .add(tidp_a, 0_o, 10_o, 1999_t, 0, 99)
+                            .build())
+                     .add(new_obj_builder(oid4, 100, 1100)
+                            .add(tidp_b, 0_o, 10_o, 1999_t, 0, 99)
+                            .build())
+                     .build();
+    ASSERT_TRUE(replace.apply(s).has_value());
+    EXPECT_EQ(4, s.objects.size());
+
+    // Remove the unreferenced objects.
+    auto remove_res = remove_objects_update::build(s, {oid1, oid2});
+    ASSERT_TRUE(remove_res.has_value());
+    ASSERT_TRUE(remove_res->apply(s).has_value());
+
+    EXPECT_FALSE(s.objects.contains(oid1));
+    EXPECT_FALSE(s.objects.contains(oid2));
+    EXPECT_TRUE(s.objects.contains(oid3));
+    EXPECT_TRUE(s.objects.contains(oid4));
+    EXPECT_EQ(2, s.objects.size());
+
+    // Move the start offset such that one of the partition's objects are fully
+    // unreferenced.
+    auto tp = model::topic_id_partition::from(tidp_a);
+    auto set_start_update = set_start_offset_update::build(s, tp, 11_o);
+    ASSERT_TRUE(set_start_update.has_value());
+    auto apply_res = set_start_update->apply(s);
+    ASSERT_TRUE(apply_res.has_value());
+
+    // Remove the unreferenced objects.
+    remove_res = remove_objects_update::build(s, {oid3});
+    ASSERT_TRUE(remove_res.has_value());
+    ASSERT_TRUE(remove_res->apply(s).has_value());
+
+    EXPECT_FALSE(s.objects.contains(oid3));
+    EXPECT_TRUE(s.objects.contains(oid4));
+    EXPECT_EQ(1, s.objects.size());
+}
+
+TEST(StateUpdateTest, TestRemoveObjectsWithReferences) {
+    state s;
+    auto add = add_objects_builder()
+                 .add(new_obj_builder(oid1, 200, 1100)
+                        .add(tidp_a, 0_o, 10_o, 1999_t, 0, 99)
+                        .add(tidp_b, 0_o, 10_o, 1999_t, 100, 199)
+                        .build())
+                 .add_term_start(tidp_a, 0_tm, 0_o)
+                 .add_term_start(tidp_b, 0_tm, 0_o)
+                 .build();
+    ASSERT_TRUE(add.apply(s).has_value());
+    EXPECT_EQ(1, s.objects.size());
+
+    // Move the start offset such that one of the partitions is gone, but the
+    // object is still referenced by the other.
+    auto tp = model::topic_id_partition::from(tidp_a);
+    auto set_start_update = set_start_offset_update::build(s, tp, 11_o);
+    ASSERT_TRUE(set_start_update.has_value());
+    auto apply_res = set_start_update->apply(s);
+    ASSERT_TRUE(apply_res.has_value());
+
+    auto remove_res = remove_objects_update::build(s, {oid1});
+    ASSERT_FALSE(remove_res.has_value());
+    EXPECT_THAT(
+      remove_res.error()(), testing::ContainsRegex("is still referenced"));
+
+    EXPECT_EQ(1, s.objects.size());
+    EXPECT_TRUE(s.objects.contains(oid1));
+}
+
+TEST(StateUpdateTest, TestRemoveMissingObjects) {
+    state s;
+    auto add = add_objects_builder()
+                 .add(new_obj_builder(oid1, 100, 1100)
+                        .add(tidp_a, 0_o, 10_o, 1999_t, 0, 99)
+                        .build())
+                 .add_term_start(tidp_a, 0_tm, 0_o)
+                 .build();
+    ASSERT_TRUE(add.apply(s).has_value());
+    EXPECT_EQ(1, s.objects.size());
+
+    // Remove references to oid1.
+    auto tp = model::topic_id_partition::from(tidp_a);
+    auto set_start_update = set_start_offset_update::build(s, tp, 11_o);
+    ASSERT_TRUE(set_start_update.has_value());
+    auto apply_res = set_start_update->apply(s);
+    ASSERT_TRUE(apply_res.has_value());
+
+    // Remove it, and objects that don't exist.
+    auto remove_res = remove_objects_update::build(s, {oid1, oid2, oid3, oid4});
+    ASSERT_TRUE(remove_res.has_value());
+    apply_res = remove_res->apply(s);
+    EXPECT_TRUE(apply_res.has_value());
+
+    // The operation should have succeeded.
+    EXPECT_EQ(0, s.objects.size());
+}

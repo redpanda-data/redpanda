@@ -620,8 +620,9 @@ configuration::configuration()
   , consumer_group_lag_collection_interval(
       *this,
       "consumer_group_lag_collection_interval_sec",
-      "How often to run the collection loop when enable_consumer_group_metrics "
-      "contains consumer_lag",
+      "How often Redpanda runs the collection loop when "
+      "`enable_consumer_group_metrics` is set to `consumer_lag`. Updates will "
+      "not be more frequent than `health_monitor_max_metadata_age`.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       60s)
   , group_min_session_timeout_ms(

@@ -41,17 +41,26 @@ ss::future<std::optional<ss::sstring>> find_ca_file() {
     }
     co_return std::nullopt;
 }
-const std::string_view tls_v1_2_cipher_suites = "ECDHE-ECDSA-AES256-GCM-SHA384:"
-                                                "ECDHE-RSA-AES256-GCM-SHA384:"
-                                                "ECDHE-ECDSA-CHACHA20-POLY1305:"
-                                                "ECDHE-RSA-CHACHA20-POLY1305:"
+const std::string_view tls_v1_2_cipher_suites = "ECDHE-RSA-AES128-GCM-SHA256:"
                                                 "ECDHE-ECDSA-AES128-GCM-SHA256:"
-                                                "ECDHE-RSA-AES128-GCM-SHA256";
+                                                "AES128-GCM-SHA256:"
+                                                "ECDHE-RSA-AES256-GCM-SHA384:"
+                                                "ECDHE-ECDSA-AES256-GCM-SHA384:"
+                                                "AES256-GCM-SHA384:"
+                                                "ECDHE-RSA-CHACHA20-POLY1305:"
+                                                "ECDHE-ECDSA-CHACHA20-POLY1305:"
+                                                "ECDHE-RSA-AES128-SHA:"
+                                                "ECDHE-ECDSA-AES128-SHA:"
+                                                "AES128-SHA:"
+                                                "AES128-CCM:"
+                                                "ECDHE-RSA-AES256-SHA:"
+                                                "ECDHE-ECDSA-AES256-SHA:"
+                                                "AES256-SHA:"
+                                                "AES256-CCM";
 
-const std::string_view tls_v1_3_cipher_suites = "TLS_AES_256_GCM_SHA384:"
+const std::string_view tls_v1_3_cipher_suites = "TLS_AES_128_GCM_SHA256:"
+                                                "TLS_AES_256_GCM_SHA384:"
                                                 "TLS_CHACHA20_POLY1305_SHA256:"
-                                                "TLS_AES_128_GCM_SHA256:"
-                                                "TLS_AES_128_CCM_8_SHA256:"
                                                 "TLS_AES_128_CCM_SHA256";
 
 const std::string_view tls_v1_3_cipher_suites_strict

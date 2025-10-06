@@ -15,6 +15,31 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "garbage_collector_test",
+    timeout = "short",
+    srcs = [
+        "garbage_collector_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_storage_clients",
+        "//src/v/cloud_topics:app",
+        "//src/v/cloud_topics/level_one/common:fake_io",
+        "//src/v/cloud_topics/level_one/metastore:garbage_collector",
+        "//src/v/cloud_topics/level_one/metastore:simple_stm",
+        "//src/v/cloud_topics/level_one/metastore:state_update",
+        "//src/v/cloud_topics/tests:cluster_fixture",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/raft/tests:raft_fixture",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "replicated_metastore_test",
     timeout = "short",
     srcs = [

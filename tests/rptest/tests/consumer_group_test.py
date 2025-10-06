@@ -909,6 +909,10 @@ class ConsumerGroupTest(RedpandaTest):
         Test validating the behavior of group lag metrics
         """
         lag_collection_interval = 5
+        health_monitor_max_metadata_age = 5
+        wait_for_lag_secs = (
+            max(lag_collection_interval, health_monitor_max_metadata_age) + 1
+        )
         topic_count = 1
         partition_count = 20
         consumer_count = 4
@@ -924,6 +928,7 @@ class ConsumerGroupTest(RedpandaTest):
             {
                 "enable_consumer_group_metrics": ["group", "partition", "consumer_lag"],
                 "consumer_group_lag_collection_interval_sec": lag_collection_interval,
+                "health_monitor_max_metadata_age": health_monitor_max_metadata_age,
             }
         )
 
@@ -1008,7 +1013,7 @@ class ConsumerGroupTest(RedpandaTest):
             self.logger.debug("  Consumed")
 
         self.logger.info("Waiting for lag_metrics")
-        time.sleep(lag_collection_interval + 1)
+        time.sleep(wait_for_lag_secs)
 
         def get_group_metrics_from_nodes():
             metrics = [
@@ -1083,7 +1088,7 @@ class ConsumerGroupTest(RedpandaTest):
             )
 
         self.logger.info("Waiting for lag_metrics")
-        time.sleep(lag_collection_interval + 1)
+        time.sleep(wait_for_lag_secs)
 
         expected_committed_sum = sum(
             max(0, tp.offset)
@@ -1177,14 +1182,14 @@ class ConsumerGroupTest(RedpandaTest):
         assert get_coordinator() != coordinator, "Coordinator did not change"
 
         self.logger.info("Waiting for lag_metrics after coordinator move")
-        time.sleep(lag_collection_interval + 1)
+        time.sleep(wait_for_lag_secs)
         check_metrics()
 
         moved = move_partition(topic=topics[0], partition=0)
         assert moved, "Failed to move partition leader"
 
         self.logger.info("Waiting for lag_metrics after partition leader move")
-        time.sleep(lag_collection_interval + 1)
+        time.sleep(wait_for_lag_secs)
         check_metrics()
 
         for consumer in consumers:

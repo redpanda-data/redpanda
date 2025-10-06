@@ -11,6 +11,7 @@
 
 #include "cluster_link/source_topic_syncer.h"
 #include "cluster_link/tests/deps.h"
+#include "kafka/server/handlers/topics/types.h"
 #include "test_utils/async.h"
 #include "test_utils/test.h"
 
@@ -54,6 +55,13 @@ model::metadata get_default_metadata() {
 
     return metadata;
 }
+
+const absl::flat_hash_set<ss::sstring> expected_properties_to_be_present{
+  ss::sstring{kafka::topic_property_max_message_bytes},
+  ss::sstring{kafka::topic_property_cleanup_policy},
+  ss::sstring{kafka::topic_property_timestamp_type},
+  ss::sstring{kafka::topic_property_remote_allow_gaps},
+};
 } // namespace
 
 class topic_properties_syncer_test : public seastar_test {
@@ -74,6 +82,22 @@ public:
         co_await fixture()->upsert_link(get_default_metadata());
         fixture()->get_cluster_mock().add_topic(
           test_topic, 1, 1, kafka::topic_authorized_operations(0x508));
+
+        // Wait for all expected topic properties to be present in the mirror
+        // topic
+        RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
+            auto link = fixture()->find_link_by_name(test_link_name);
+            const auto& mirror_topics = link->get().state.mirror_topics;
+            auto mirror_topic_it = mirror_topics.find(test_topic);
+            if (mirror_topic_it == mirror_topics.end()) {
+                return false;
+            }
+            return std::ranges::all_of(
+              expected_properties_to_be_present, [&](const auto& property) {
+                  return mirror_topic_it->second.topic_configs.contains(
+                    property);
+              });
+        });
     }
     ss::future<> TearDownAsync() override {
         co_await _clmtf->reset();

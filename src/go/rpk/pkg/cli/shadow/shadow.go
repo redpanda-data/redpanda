@@ -25,6 +25,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		newShadowConfigCommand(fs, p),
 		newCreateCommand(fs, p),
 		newDeleteCommand(fs, p),
+		newDescribeCommand(fs, p),
 		newStatusCommand(fs, p),
 		newListCommand(fs, p),
 	)

@@ -13,6 +13,7 @@ redpanda_cc_library(
     implementation_deps = [
         ":domain_manager",
         "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics/level_one/common:abstract_io",
         "//src/v/cluster",
         "//src/v/model",
         "//src/v/ssx:when_all",
@@ -36,6 +37,9 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics/level_one/metastore:garbage_collector",
+        "//src/v/ssx:future_util",
+        "//src/v/ssx:sleep_abortable",
     ],
     visibility = ["//visibility:public"],
     deps = [

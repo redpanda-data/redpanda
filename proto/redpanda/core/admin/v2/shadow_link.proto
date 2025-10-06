@@ -249,6 +249,8 @@ message SecuritySettingsSyncOptions {
 }
 // TLS settings
 message TLSSettings {
+    // Whether or not TLS is enabled
+    bool enabled = 3;
     // May provide TLS as a set of files or PEM values
     oneof tls_settings {
         // Certificates and keys are provided as files

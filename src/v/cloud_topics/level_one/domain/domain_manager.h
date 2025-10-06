@@ -13,6 +13,7 @@
 #include "cloud_topics/level_one/metastore/simple_stm.h"
 
 namespace cloud_topics::l1 {
+class io;
 
 // Encapsulates management of a given L1 metastore domain by wrapping a STM.
 // Expected to be running on the leader replicas of the partition that backs
@@ -24,9 +25,9 @@ namespace cloud_topics::l1 {
 // 2. TODO: reconciles the STM state with cloud-recoverable state.
 class domain_manager {
 public:
-    explicit domain_manager(ss::shared_ptr<simple_stm> stm)
-      : stm_(std::move(stm)) {}
+    explicit domain_manager(ss::shared_ptr<simple_stm> stm, io* io);
 
+    void start();
     ss::future<> stop_and_wait();
 
     ss::future<rpc::add_objects_reply> add_objects(rpc::add_objects_request);
@@ -59,10 +60,12 @@ public:
 
 private:
     std::optional<ss::gate::holder> maybe_gate();
+    ss::future<> gc_loop();
 
     ss::gate gate_;
     ss::abort_source as_;
     ss::shared_ptr<simple_stm> stm_;
+    io* object_io_;
 };
 
 } // namespace cloud_topics::l1

@@ -24,6 +24,7 @@ enum class update_key : uint8_t {
     add_objects = 0,
     replace_objects = 1,
     set_start_offset = 2,
+    remove_objects = 3,
 };
 
 using stm_update_error = named_type<ss::sstring, struct update_error_tag>;
@@ -184,6 +185,29 @@ struct set_start_offset_update
     kafka::offset new_start_offset;
 };
 
+struct remove_objects_update
+  : public serde::envelope<
+      remove_objects_update,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    friend bool
+    operator==(const remove_objects_update&, const remove_objects_update&)
+      = default;
+    auto serde_fields() { return std::tie(objects); }
+    static constexpr auto key{update_key::remove_objects};
+
+    static std::expected<remove_objects_update, stm_update_error>
+    build(const state&, chunked_vector<object_id>);
+
+    std::expected<std::monostate, stm_update_error> can_apply(const state&);
+    std::expected<std::monostate, stm_update_error> apply(state&);
+
+    // The set of objects to remove. Can be applied only if all the objects in
+    // the list no longer have any extents that reference it, as indicated by
+    // the object's removed_data_size.
+    chunked_vector<object_id> objects;
+};
+
 } // namespace cloud_topics::l1
 
 template<>
@@ -199,6 +223,8 @@ struct fmt::formatter<cloud_topics::l1::update_key> final
             return formatter<string_view>::format("replace_objects", ctx);
         case cloud_topics::l1::update_key::set_start_offset:
             return formatter<string_view>::format("set_start_offset", ctx);
+        case cloud_topics::l1::update_key::remove_objects:
+            return formatter<string_view>::format("remove_objects", ctx);
         }
     }
 };

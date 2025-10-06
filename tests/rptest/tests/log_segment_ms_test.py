@@ -2,6 +2,7 @@ import typing
 
 from ducktape.mark import defaults, parametrize
 from ducktape.utils.util import wait_until
+import time
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -11,6 +12,7 @@ from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.services.verifiable_producer import VerifiableProducer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import segments_count
+from rptest.services.redpanda import RedpandaService
 
 # NOTE this value could be read from redpanda
 # for example this should be a reasonable way
@@ -30,12 +32,61 @@ TEST_LOG_SEGMENT_MIN = 60000
 TEST_LOG_SEGMENT_MAX = 150000
 
 
+class TopicManager:
+    """
+    A helper to manage the testing context of a topic.
+    """
+
+    def __init__(
+        self,
+        redpanda: RedpandaService,
+        topic_segment_sec: None | int,
+        segment_sec: int,
+        use_alter_config: bool,
+    ):
+        self.redpanda = redpanda
+        self.rpk = RpkTool(self.redpanda)
+        self.topic_segment_ms = (
+            None if topic_segment_sec is None else topic_segment_sec * 1000
+        )
+        self._segment_ms = segment_sec * 1000
+        self.use_alter_config = use_alter_config
+        self.topic = TopicSpec()
+
+    def create(self):
+        # set the config at topic creation time?
+        create_config = None
+        if self.topic_segment_ms and not self.use_alter_config:
+            create_config = {TopicSpec.PROPERTY_SEGMENT_MS: self.topic_segment_ms}
+
+        self.rpk.create_topic(self.topic.name, config=create_config)
+
+        # or after creation, with alter topic config rpc
+        if self.topic_segment_ms and self.use_alter_config:
+            self.rpk.alter_topic_config(
+                self.topic.name, TopicSpec.PROPERTY_SEGMENT_MS, self.topic_segment_ms
+            )
+
+    def produce(self):
+        self.rpk.produce(self.topic.name, "hello", "world")
+
+    def num_segments(self):
+        return next(segments_count(self.redpanda, self.topic.name, 0))
+
+    def segment_ms(self):
+        return self._segment_ms
+
+
 class SegmentMsTest(RedpandaTest):
     def __init__(self, test_context):
         super().__init__(
             test_context=test_context,
             num_brokers=1,
-            extra_rp_conf={"enable_leader_balancer": False},
+            environment={"__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"},
+            extra_rp_conf={
+                "enable_leader_balancer": False,
+                "log_compaction_interval_ms": 1000,
+            },
         )
 
     def _total_segments_count(self, topic_spec: TopicSpec, partition=0):
@@ -137,47 +188,72 @@ class SegmentMsTest(RedpandaTest):
         )
         assert start_count == stop_count, f"{start_count=} != {stop_count=}"
 
-    @cluster(num_nodes=3)
-    @defaults(use_alter_cfg=[False, True])
-    # these are outside TEST_LOG_SEGMENT_MIN/MAX range, they will be clamped
-    @parametrize(server_cfg=None, topic_cfg=int(TEST_LOG_SEGMENT_MIN / 2))
-    @parametrize(server_cfg=int(TEST_LOG_SEGMENT_MAX * 2), topic_cfg=None)
-    @parametrize(server_cfg=None, topic_cfg=int(TEST_LOG_SEGMENT_MAX * 2))
-    # topic_cfg will be used
-    @parametrize(server_cfg=None, topic_cfg=90000)
-    @parametrize(server_cfg=SERVER_SEGMENT_MS, topic_cfg=120000)
-    # server_cfg will be used as a fallback
-    @parametrize(server_cfg=SERVER_SEGMENT_MS, topic_cfg=None)
-    def test_segment_rolling(self, server_cfg, topic_cfg, use_alter_cfg):
-        """
-        Tests under several conditions that a segment will roll,
-        either for the topic config or if none, for the server config.
-        Tests also that the number of rolls is congruent (within an error margin) with the configuration.
-        The topic is created with the configuration or an alter config is issued to configure it
-        """
-
-        # rolling is clamped by redpanda in the [log_segment_ms_min, log_segment_ms_max] range, so it's replicated here
-        rolling_period = sorted(
-            (
-                TEST_LOG_SEGMENT_MIN,
-                topic_cfg if topic_cfg else server_cfg,
-                TEST_LOG_SEGMENT_MAX,
+    @cluster(num_nodes=1)
+    def test_segment_rolling(self):
+        # Setup the cluster configs min=5s, max=50s, default=20s
+        self.redpanda.set_cluster_config(
+            dict(
+                log_segment_ms_min=5000, log_segment_ms_max=45000, log_segment_ms=20000
             )
-        )[1]
-        num_messages = messages_to_generate_segments(TEST_NUM_SEGMENTS, rolling_period)
-        start_count, stop_count = self.generate_workload(
-            server_cfg,
-            topic_cfg,
-            use_alter_cfg,
-            num_messages,
-            extra_cluster_cfg={
-                "log_segment_ms_min": TEST_LOG_SEGMENT_MIN,
-                "log_segment_ms_max": TEST_LOG_SEGMENT_MAX,
-            },
         )
-        assert abs((stop_count - start_count) - TEST_NUM_SEGMENTS) <= ERROR_MARGIN, (
-            f"{stop_count=}-{start_count=} != {TEST_NUM_SEGMENTS=} +-{ERROR_MARGIN=}"
-        )
+
+        topics: list[TopicManager] = []
+        start_segment_counts: list[int] = []
+
+        # define topics with segment_ms configs. each one is repeated with
+        # use_alter_config true/false controlling if segment_ms is set via
+        # craete topic property or post-create with alter topic config rpc.
+
+        # 20s (default)
+        topics.append(TopicManager(self.redpanda, None, 20, False))
+        topics.append(TopicManager(self.redpanda, None, 20, True))
+        # 5s (1s clamped to min of 5s)
+        topics.append(TopicManager(self.redpanda, 1, 5, False))
+        topics.append(TopicManager(self.redpanda, 1, 5, True))
+        # 35s (no clamping)
+        topics.append(TopicManager(self.redpanda, 35, 35, False))
+        topics.append(TopicManager(self.redpanda, 35, 35, True))
+        # 50s (100s clamped to max of 50s)
+        topics.append(TopicManager(self.redpanda, 100, 45, False))
+        topics.append(TopicManager(self.redpanda, 100, 45, True))
+
+        # initialize topics and initial segment counts
+        for topic in topics:
+            topic.create()
+            start_segment_counts.append(topic.num_segments())
+
+        # run for some time, producing a little bit
+        runtime_sec = 5 * 60
+        start_sec = time.time()
+        while time.time() - start_sec < runtime_sec:
+            for topic in topics:
+                topic.produce()
+            time.sleep(1)
+
+        failures: list[str] = []
+        for topic, start_segment_count in zip(topics, start_segment_counts):
+            end_segment_count = topic.num_segments()
+            created_segments = end_segment_count - start_segment_count
+
+            # add on a couple to account for the initial segment and if there
+            # were any triggers other than time
+            max_expected_segments = 2 + runtime_sec * 1000 // topic.segment_ms()
+
+            # calculate the expected as if the segment roll was always 1.5s too
+            # late. in reality its certainly not going to be exactly on time,
+            # and 2 seconds should be plenty of grace period.
+            min_expected_segments = runtime_sec * 1000 // (2000 + topic.segment_ms())
+
+            failed = (
+                created_segments < min_expected_segments
+                or created_segments > max_expected_segments
+            )
+            if failed:
+                failures.append(
+                    f"failed segment_ms {topic.segment_ms()} min={min_expected_segments} actual={created_segments} max={max_expected_segments}"
+                )
+
+        assert len(failures) == 0, f"{failures}"
 
     @cluster(num_nodes=2)
     def test_segment_timely_rolling_after_change(self):

@@ -12,17 +12,25 @@
 
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
+#include "random/generators.h"
 
 #include <cstdlib>
 
 namespace tests {
 
-bytes random_bytes(size_t n = 128 * 1024);
+using rng_t = random_generators::rng;
+
+// generate n random bytes with the the given generator
+bytes random_bytes(
+  size_t n = 128 * 1024, rng_t& rng = random_generators::global());
 
 // use limited set of printable ascii chars only
-iobuf random_iobuf(size_t n = 128);
+iobuf random_iobuf(size_t n = 128, rng_t& rng = random_generators::global());
 
 // copy data from string into a randomly split iobuf
-iobuf fragmented_iobuf(std::string_view str, int n_fragments);
+iobuf fragmented_iobuf(
+  std::string_view str,
+  int n_fragments,
+  rng_t& rng = random_generators::global());
 
 } // namespace tests

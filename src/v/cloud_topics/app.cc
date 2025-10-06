@@ -62,7 +62,11 @@ ss::future<> app::construct(
       bucket,
       ss::sharded_parameter([&cloud_cache] { return &cloud_cache->local(); }));
 
-    co_await construct_service(domain_supervisor, controller);
+    co_await construct_service(
+      domain_supervisor, controller, ss::sharded_parameter([this] {
+          return &l1_io.local();
+      }));
+
     co_await construct_service(
       l1_metastore_fe,
       self,

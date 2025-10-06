@@ -32,6 +32,7 @@ using namespace std::chrono_literals;
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define RPTEST_REQUIRE_EVENTUALLY_CORO(...)                                    \
+    /* NOLINTNEXTLINE(*do-while*) */                                           \
     do {                                                                       \
         try {                                                                  \
             co_await ::tests::cooperative_spin_wait_with_timeout(__VA_ARGS__); \
@@ -43,6 +44,7 @@ using namespace std::chrono_literals;
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define RPTEST_REQUIRE_EVENTUALLY(...)                                         \
+    /* NOLINTNEXTLINE(*do-while*) */                                           \
     do {                                                                       \
         try {                                                                  \
             ::tests::cooperative_spin_wait_with_timeout(__VA_ARGS__).get();    \

@@ -132,6 +132,13 @@ ss::future<> simple_stm::do_apply(const model::record_batch& batch) {
             auto update = serde::read<set_start_offset_update>(value_parser);
             auto result = update.apply(state_);
             maybe_log_update_error(_log, key, o, result);
+            break;
+        }
+        case update_key::remove_objects: {
+            auto update = serde::read<remove_objects_update>(value_parser);
+            auto result = update.apply(state_);
+            maybe_log_update_error(_log, key, o, result);
+            break;
         }
         }
     }

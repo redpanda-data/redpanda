@@ -363,6 +363,8 @@ create_authn_settings(const authentication_configuration& authn_config) {
 /// \throws std::invalid_argument If key and cert are inconsistent
 void set_tls_settings(
   cluster_link::model::connection_config& config, const tls_settings& tls) {
+    config.tls_enabled = cluster_link::model::connection_config::tls_enabled_t{
+      tls.get_enabled()};
     tls.visit_tls_settings(
       [&config](const tls_file_settings& file) {
           if (!file.get_ca_path().empty()) {
@@ -538,6 +540,7 @@ struct tls_visitor {
 
 tls_settings create_tls_settings(const cluster_link::model::metadata& md) {
     tls_settings tls;
+    tls.set_enabled(bool(md.connection.tls_enabled));
     if (md.connection.ca.has_value()) {
         ss::visit(
           md.connection.ca.value(),
@@ -580,8 +583,8 @@ create_shadow_link_client_options(const cluster_link::model::metadata& md) {
     options.set_client_id(ss::sstring{md.connection.client_id});
 
     if (
-      md.connection.ca.has_value() || md.connection.cert.has_value()
-      || md.connection.key.has_value()) {
+      md.connection.tls_enabled || md.connection.ca.has_value()
+      || md.connection.cert.has_value() || md.connection.key.has_value()) {
         options.set_tls_settings(create_tls_settings(md));
     }
 

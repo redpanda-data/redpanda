@@ -9,9 +9,14 @@
  */
 #include "cloud_topics/level_one/domain/domain_manager.h"
 
+#include "cloud_topics/level_one/metastore/garbage_collector.h"
 #include "cloud_topics/level_one/metastore/rpc_types.h"
 #include "cloud_topics/level_one/metastore/simple_metastore.h"
 #include "cloud_topics/logger.h"
+#include "ssx/future-util.h"
+#include "ssx/sleep_abortable.h"
+
+#include <seastar/core/sleep.hh>
 
 namespace cloud_topics::l1 {
 namespace {
@@ -39,6 +44,14 @@ rpc::errc convert_metastore_errc(metastore::errc e) {
     }
 }
 } // namespace
+
+domain_manager::domain_manager(ss::shared_ptr<simple_stm> stm, io* io)
+  : stm_(std::move(stm))
+  , object_io_(io) {}
+
+void domain_manager::start() {
+    ssx::spawn_with_gate(gate_, [this] { return gc_loop(); });
+}
 
 ss::future<> domain_manager::stop_and_wait() {
     vlog(cd_log.debug, "Domain manager stopping...");
@@ -443,6 +456,39 @@ domain_manager::set_start_offset(rpc::set_start_offset_request req) {
     }
 
     co_return rpc::set_start_offset_reply{.ec = rpc::errc::ok};
+}
+
+ss::future<> domain_manager::gc_loop() {
+    auto gate = maybe_gate();
+    if (!gate.has_value()) {
+        co_return;
+    }
+    // TODO: make configurable.
+    auto gc_interval = 5min;
+    garbage_collector gc(stm_.get(), object_io_);
+    while (!as_.abort_requested()) {
+        vlog(cd_log.debug, "Running garbage collection now...");
+        auto gc_res = co_await gc.remove_unreferenced_objects(&as_);
+        if (!gc_res.has_value()) {
+            vlog(cd_log.warn, "Garbage collection failed: {}", gc_res.error());
+        }
+        vlog(
+          cd_log.debug, "Re-running garbage collection in {}...", gc_interval);
+        auto sleep_res = co_await ss::coroutine::as_future(
+          ssx::sleep_abortable(gc_interval, as_));
+        if (sleep_res.failed()) {
+            auto eptr = sleep_res.get_exception();
+            auto log_lvl = ssx::is_shutdown_exception(eptr)
+                             ? ss::log_level::debug
+                             : ss::log_level::warn;
+            vlogl(
+              cd_log,
+              log_lvl,
+              "Garbage collection loop hit exception while sleeping: {}",
+              eptr);
+        }
+    }
+    vlog(cd_log.debug, "Garbage collection loop stopped...");
 }
 
 } // namespace cloud_topics::l1
