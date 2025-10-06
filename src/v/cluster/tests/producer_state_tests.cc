@@ -479,3 +479,82 @@ FIXTURE_TEST(test_negative_sequence_number, test_fixture) {
           result.error(), cluster::errc::sequence_out_of_order);
     }
 }
+
+FIXTURE_TEST(test_transaction_start_without_fence, test_fixture) {
+    create_producer_state_manager(1, 1);
+    auto producer = new_producer();
+    auto defer = ss::defer(
+      [&] { manager().deregister_producer(*producer, std::nullopt); });
+    validate_producer_count(1);
+
+    // begin a transaction with fence batch
+    auto fence = make_fence_batch(
+      producer->id(),
+      model::tx_seq{0},
+      std::chrono::milliseconds{10000},
+      model::partition_id{0});
+
+    auto begin_header = fence.header();
+    producer->apply_transaction_begin(
+      begin_header, read_fence_batch(std::move(fence)));
+    BOOST_REQUIRE(producer->has_transaction_in_progress());
+
+    auto num_records = random_generators::get_int(1, 10);
+    // add data to transaction
+    auto batch = model::test::make_random_batch(
+      {.offset = model::offset{1},
+       .allow_compression = true,
+       .count = num_records,
+       .bt = model::record_batch_type::raft_data,
+       .enable_idempotence = true,
+       .producer_id = producer->id().id,
+       .producer_epoch = producer->id().epoch,
+       .base_sequence = 0,
+       .is_transactional = true});
+    auto last_offset = batch.last_offset();
+    auto bid = model::batch_identity::from(batch.header());
+    auto request = producer->try_emplace_request(bid, model::term_id{1}, true);
+
+    BOOST_REQUIRE(!request.has_error());
+    // producer has an inflight request
+    BOOST_REQUIRE(!producer->can_evict());
+    producer->apply_data(batch.header(), kafka::offset{10});
+
+    // commit the transaction.
+    producer->apply_transaction_end(model::control_record_type::tx_commit);
+
+    // verify the begin and end of transaction
+    const auto& tx_state = producer->transaction_state();
+    BOOST_REQUIRE(bool(tx_state));
+    BOOST_REQUIRE_EQUAL(
+      tx_state->status, partition_transaction_status::committed);
+    BOOST_REQUIRE_EQUAL(tx_state->first, model::offset{0}); // fence
+    BOOST_REQUIRE_EQUAL(tx_state->last, last_offset); // last offset of batch
+
+    // Now start another transaction without a fence batch
+    // This simulates a prefix truncated fence batch
+    // it should still be possible to start a transaction
+    auto another_batch = model::test::make_random_batch(
+      {.offset = model::offset{last_offset + model::offset{10}},
+       .allow_compression = true,
+       .count = num_records,
+       .bt = model::record_batch_type::raft_data,
+       .enable_idempotence = true,
+       .producer_id = producer->id().id,
+       .producer_epoch = producer->id().epoch,
+       .base_sequence = 10,
+       .is_transactional = true});
+
+    auto another_bid = model::batch_identity::from(another_batch.header());
+    auto another_request = producer->try_emplace_request(
+      another_bid, model::term_id{1}, true);
+    BOOST_REQUIRE(!another_request.has_error());
+    producer->apply_data(another_batch.header(), kafka::offset{10});
+    BOOST_REQUIRE(producer->has_transaction_in_progress());
+    BOOST_REQUIRE(!producer->can_evict());
+    const auto& another_tx_state = producer->transaction_state();
+    BOOST_REQUIRE(bool(another_tx_state));
+    BOOST_REQUIRE_EQUAL(
+      another_tx_state->status, partition_transaction_status::ongoing);
+    BOOST_REQUIRE_EQUAL(another_tx_state->first, another_batch.base_offset());
+}
