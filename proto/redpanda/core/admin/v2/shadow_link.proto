@@ -232,6 +232,8 @@ message ShadowLinkConfigurations {
     ConsumerOffsetSyncOptions consumer_offset_sync_options = 3;
     // Security settings sync options
     SecuritySettingsSyncOptions security_sync_options = 4;
+    // Partition prefix trimming options
+    PartitionPrefixTrimmingOptions partition_prefix_trimming_options = 5;
 }
 // Options for the client link
 message ShadowLinkClientOptions {
@@ -337,6 +339,18 @@ message SecuritySettingsSyncOptions {
     bool enabled = 2;
     // ACL filters
     repeated ACLFilter acl_filters = 5;
+}
+// The following options are for the partition prefix trimmer task.  This task
+// is used to keep the log starting offset of shadow partitions in sync with the
+// partitions on the source cluster.  If the task detects that the starting
+// offset has changed, then this task will issue a prefix-trim operation against
+// the mirror partition to keep it in sync.
+message PartitionPrefixTrimmingOptions {
+    // Whether or not the prefix trimmer is enabled
+    bool enabled = 1;
+    // How often to run the prefix trimmer
+    // If 0 provided, defaults to 5 seconds
+    google.protobuf.Duration interval = 2;
 }
 // TLS settings
 message TLSSettings {

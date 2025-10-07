@@ -558,6 +558,7 @@ class ShadowLinkConfigurations(google.protobuf.message.Message):
     TOPIC_METADATA_SYNC_OPTIONS_FIELD_NUMBER: builtins.int
     CONSUMER_OFFSET_SYNC_OPTIONS_FIELD_NUMBER: builtins.int
     SECURITY_SYNC_OPTIONS_FIELD_NUMBER: builtins.int
+    PARTITION_PREFIX_TRIMMING_OPTIONS_FIELD_NUMBER: builtins.int
 
     @property
     def client_options(self) -> global___ShadowLinkClientOptions:
@@ -575,13 +576,17 @@ class ShadowLinkConfigurations(google.protobuf.message.Message):
     def security_sync_options(self) -> global___SecuritySettingsSyncOptions:
         """Security settings sync options"""
 
-    def __init__(self, *, client_options: global___ShadowLinkClientOptions | None=..., topic_metadata_sync_options: global___TopicMetadataSyncOptions | None=..., consumer_offset_sync_options: global___ConsumerOffsetSyncOptions | None=..., security_sync_options: global___SecuritySettingsSyncOptions | None=...) -> None:
+    @property
+    def partition_prefix_trimming_options(self) -> global___PartitionPrefixTrimmingOptions:
+        """Partition prefix trimming options"""
+
+    def __init__(self, *, client_options: global___ShadowLinkClientOptions | None=..., topic_metadata_sync_options: global___TopicMetadataSyncOptions | None=..., consumer_offset_sync_options: global___ConsumerOffsetSyncOptions | None=..., security_sync_options: global___SecuritySettingsSyncOptions | None=..., partition_prefix_trimming_options: global___PartitionPrefixTrimmingOptions | None=...) -> None:
         ...
 
-    def HasField(self, field_name: typing.Literal['client_options', b'client_options', 'consumer_offset_sync_options', b'consumer_offset_sync_options', 'security_sync_options', b'security_sync_options', 'topic_metadata_sync_options', b'topic_metadata_sync_options']) -> builtins.bool:
+    def HasField(self, field_name: typing.Literal['client_options', b'client_options', 'consumer_offset_sync_options', b'consumer_offset_sync_options', 'partition_prefix_trimming_options', b'partition_prefix_trimming_options', 'security_sync_options', b'security_sync_options', 'topic_metadata_sync_options', b'topic_metadata_sync_options']) -> builtins.bool:
         ...
 
-    def ClearField(self, field_name: typing.Literal['client_options', b'client_options', 'consumer_offset_sync_options', b'consumer_offset_sync_options', 'security_sync_options', b'security_sync_options', 'topic_metadata_sync_options', b'topic_metadata_sync_options']) -> None:
+    def ClearField(self, field_name: typing.Literal['client_options', b'client_options', 'consumer_offset_sync_options', b'consumer_offset_sync_options', 'partition_prefix_trimming_options', b'partition_prefix_trimming_options', 'security_sync_options', b'security_sync_options', 'topic_metadata_sync_options', b'topic_metadata_sync_options']) -> None:
         ...
 global___ShadowLinkConfigurations = ShadowLinkConfigurations
 
@@ -770,6 +775,36 @@ class SecuritySettingsSyncOptions(google.protobuf.message.Message):
     def ClearField(self, field_name: typing.Literal['acl_filters', b'acl_filters', 'enabled', b'enabled', 'interval', b'interval']) -> None:
         ...
 global___SecuritySettingsSyncOptions = SecuritySettingsSyncOptions
+
+@typing.final
+class PartitionPrefixTrimmingOptions(google.protobuf.message.Message):
+    """The following options are for the partition prefix trimmer task.  This task
+    is used to keep the log starting offset of shadow partitions in sync with the
+    partitions on the source cluster.  If the task detects that the starting
+    offset has changed, then this task will issue a prefix-trim operation against
+    the mirror partition to keep it in sync.
+    """
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    ENABLED_FIELD_NUMBER: builtins.int
+    INTERVAL_FIELD_NUMBER: builtins.int
+    enabled: builtins.bool
+    'Whether or not the prefix trimmer is enabled'
+
+    @property
+    def interval(self) -> google.protobuf.duration_pb2.Duration:
+        """How often to run the prefix trimmer
+        If 0 provided, defaults to 5 seconds
+        """
+
+    def __init__(self, *, enabled: builtins.bool=..., interval: google.protobuf.duration_pb2.Duration | None=...) -> None:
+        ...
+
+    def HasField(self, field_name: typing.Literal['interval', b'interval']) -> builtins.bool:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['enabled', b'enabled', 'interval', b'interval']) -> None:
+        ...
+global___PartitionPrefixTrimmingOptions = PartitionPrefixTrimmingOptions
 
 @typing.final
 class TLSSettings(google.protobuf.message.Message):
