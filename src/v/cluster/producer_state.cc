@@ -368,7 +368,8 @@ result<request_ptr> producer_state::try_emplace_request(
     if (bid.first_seq < 0 || bid.last_seq < 0) {
         vlog(
           _logger.warn,
-          "[{}] request with non idempotent batch {}, term: {}, reset: {}",
+          "[{}] request with non idempotent batch {}, term: {}, reset: {}, "
+          "request_state: {}",
           *this,
           bid,
           current_term,
