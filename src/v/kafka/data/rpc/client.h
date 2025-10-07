@@ -79,6 +79,9 @@ public:
     ss::future<result<partition_offsets_map, cluster::errc>>
       get_partition_offsets(chunked_vector<topic_partitions>);
 
+    ss::future<result<delete_records_result_map, cluster::errc>>
+      delete_records(delete_records_cmd_map);
+
 private:
     ss::future<cluster::errc> do_produce_once(produce_request);
     ss::future<produce_reply> do_local_produce(produce_request);
@@ -88,6 +91,9 @@ private:
     ss::future<result<partition_offsets_map, cluster::errc>>
     get_remote_partition_offsets(
       model::node_id, chunked_vector<topic_partitions> topics);
+
+    ss::future<result<delete_records_result_map, cluster::errc>>
+      remote_delete_records(model::node_id, delete_records_cmd_map);
 
     template<typename Func>
     std::invoke_result_t<Func> retry(Func&&);

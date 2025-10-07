@@ -12,6 +12,7 @@
 #include "kafka/data/rpc/client.h"
 
 #include "kafka/data/rpc/rpc_service.h"
+#include "kafka/server/errors.h"
 #include "logger.h"
 #include "rpc/connection_cache.h"
 #include "ssx/async_algorithm.h"
@@ -428,5 +429,128 @@ client::get_remote_partition_offsets(
         co_return ret_t(map_errc(result.assume_error()));
     }
     co_return ret_t(std::move(result.value().partition_offsets));
+}
+
+namespace {
+void join_maps(
+  delete_records_result_map& aggregate, delete_records_result_map&& element) {
+    for (auto& [topic, partition_result] : element) {
+        for (auto& [partition, result] : partition_result) {
+            aggregate[topic][partition] = std::move(result);
+        }
+    }
+}
+
+delete_records_result_map
+make_error_results(const delete_records_cmd_map& cmds, kafka::error_code errc) {
+    delete_records_result_map results;
+    results.reserve(cmds.size());
+    for (const auto& [topic, partitions] : cmds) {
+        results[topic].reserve(partitions.size());
+        for (const auto& [partition, _] : partitions) {
+            results[topic][partition] = delete_records_result(errc);
+        }
+    }
+
+    return results;
+}
+delete_records_cmd_map make_copy(const delete_records_cmd_map& cmds) {
+    delete_records_cmd_map result;
+    result.reserve(cmds.size());
+    for (const auto& [topic, partitions] : cmds) {
+        auto& part_copy = result[topic];
+        part_copy.reserve(partitions.size());
+        for (const auto& [partition, cmd] : partitions) {
+            part_copy[partition] = cmd;
+        }
+    }
+    return result;
+}
+} // namespace
+
+ss::future<result<delete_records_result_map, cluster::errc>>
+client::delete_records(delete_records_cmd_map cmds) {
+    delete_records_result_map results;
+    ssx::async_counter cnt;
+    chunked_hash_map<model::node_id, delete_records_cmd_map> per_node_cmds;
+
+    for (auto& [topic, partitions] : cmds) {
+        co_await ssx::async_for_each_counter(
+          cnt,
+          partitions,
+          [this, &topic, &per_node_cmds, &results](auto& pair) {
+              auto [pid, cmd] = std::move(pair);
+              model::topic_namespace_view tp_ns(model::kafka_namespace, topic);
+              auto tp_cfg = _metadata_cache->find_topic_cfg(tp_ns);
+              if (!tp_cfg) {
+                  results[topic][pid] = delete_records_result(
+                    kafka::error_code::unknown_topic_or_partition);
+                  return;
+              }
+              auto leader = _leaders->get_leader_node(tp_ns, pid);
+              if (!leader) {
+                  results[topic][pid] = delete_records_result(
+                    kafka::error_code::not_leader_for_partition);
+                  return;
+              }
+              per_node_cmds[*leader][topic].emplace(pid, std::move(cmd));
+          });
+    }
+
+    co_await ss::parallel_for_each(per_node_cmds, [this, &results](auto& pair) {
+        auto [node_id, cmds] = std::move(pair);
+        if (node_id == _self) {
+            return _local_service->local()
+              .delete_records(std::move(cmds), timeout)
+              .then([&results](delete_records_result_map rmap) {
+                  join_maps(results, std::move(rmap));
+              });
+        }
+        return remote_delete_records(node_id, make_copy(cmds))
+          .then([node_id, cmds = std::move(cmds)](
+                  result<delete_records_result_map, cluster::errc> res) {
+              if (res.has_error()) {
+                  vlog(
+                    log.warn,
+                    "Failed to delete records on node {}: {}",
+                    node_id,
+                    res.error());
+                  return make_error_results(
+                    cmds, map_topic_error_code(res.error()));
+              }
+              return std::move(res.value());
+          })
+          .then([&results](delete_records_result_map rmap) {
+              join_maps(results, std::move(rmap));
+          });
+    });
+    co_return results;
+}
+
+ss::future<result<delete_records_result_map, cluster::errc>>
+client::remote_delete_records(
+  model::node_id leader, delete_records_cmd_map cmds) {
+    using ret_t = result<delete_records_result_map, cluster::errc>;
+    auto result
+      = co_await _connections->local()
+          .with_node_client<
+            kafka::data::rpc::impl::kafka_data_rpc_client_protocol>(
+            _self,
+            ss::this_shard_id(),
+            leader,
+            timeout,
+            [cmds = std::move(cmds)](
+              impl::kafka_data_rpc_client_protocol proto) mutable {
+                return proto.delete_records(
+                  delete_records_request(std::move(cmds), timeout),
+                  ::rpc::client_opts(model::timeout_clock::now() + timeout));
+            })
+          .then([](auto ctx) {
+              return ::rpc::get_ctx_data<delete_records_reply>(std::move(ctx));
+          });
+    if (result.has_error()) {
+        co_return ret_t(map_errc(result.assume_error()));
+    }
+    co_return ret_t(std::move(result.value().results));
 }
 } // namespace kafka::data::rpc

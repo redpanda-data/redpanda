@@ -85,13 +85,9 @@ public:
     sync_effective_start(model::timeout_clock::duration) final {
         throw std::runtime_error("unimplemented");
     }
-    model::offset local_start_offset() const final {
-        throw std::runtime_error("unimplemented");
-    }
-    model::offset start_offset() const final {
-        throw std::runtime_error("unimplemented");
-    }
-    model::offset high_watermark() const final { return model::offset(102); }
+    model::offset local_start_offset() const final { return _log_start_offset; }
+    model::offset start_offset() const final { return _log_start_offset; }
+    model::offset high_watermark() const final { return _high_watermark; }
     checked<model::offset, kafka::error_code> last_stable_offset() const final {
         return model::offset(101);
     }
@@ -107,8 +103,17 @@ public:
         throw std::runtime_error("unimplemented");
     }
     ss::future<kafka::error_code>
-    prefix_truncate(model::offset, ss::lowres_clock::time_point) final {
-        throw std::runtime_error("unimplemented");
+    prefix_truncate(model::offset o, ss::lowres_clock::time_point) final {
+        if (o <= _log_start_offset) {
+            // short circuit
+            co_return kafka::error_code::none;
+        }
+
+        if (o >= _high_watermark) {
+            co_return kafka::error_code::offset_out_of_range;
+        }
+        _log_start_offset = o;
+        co_return kafka::error_code::none;
     }
     ss::future<storage::translating_reader> make_reader(
       kafka::log_reader_config config,
@@ -195,6 +200,8 @@ private:
 
     model::ntp _ntp;
     ss::chunked_fifo<produced_batch>* _produced_batches;
+    model::offset _high_watermark{102};
+    model::offset _log_start_offset{0};
 };
 
 class fake_partition_leader_cache : public partition_leader_cache {

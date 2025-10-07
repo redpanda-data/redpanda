@@ -154,6 +154,11 @@ public:
           .get();
     }
 
+    result<delete_records_result_map, cluster::errc>
+    delete_records(delete_records_cmd_map cmds) {
+        return _kd->client().local().delete_records(std::move(cmds)).get();
+    }
+
 private:
     record_batches batches_for(model::node_id node, const model::ntp& ntp) {
         auto manager = node == self_node ? _kd->local_partition_manager()
@@ -249,6 +254,43 @@ TEST_P(KafkaDataRpcTest, ClientCanRequestPartitionOffsets) {
     auto p_offsets_2
       = offsets_2[not_existing.tp.topic][not_existing.tp.partition];
     EXPECT_EQ(p_offsets_2.err, cluster::errc::topic_not_exists);
+}
+
+TEST_P(KafkaDataRpcTest, ClientCanTrimPrefixes) {
+    auto ntp = make_ntp("foo");
+    create_topic(model::topic_namespace{ntp.ns, ntp.tp.topic});
+    {
+        delete_records_cmd_map cmds;
+        cmds[ntp.tp.topic][ntp.tp.partition] = delete_records_cmd{
+          .offset = kafka::offset(50)};
+        auto res = delete_records(std::move(cmds));
+        ASSERT_TRUE(res.has_value());
+        auto results = std::move(res.value());
+        ASSERT_EQ(results.size(), 1);
+        ASSERT_TRUE(results.contains(ntp.tp.topic));
+        auto& part_results = results[ntp.tp.topic];
+        ASSERT_EQ(part_results.size(), 1);
+        ASSERT_TRUE(part_results.contains(ntp.tp.partition));
+        EXPECT_EQ(part_results[ntp.tp.partition].err, kafka::error_code::none);
+        EXPECT_EQ(
+          part_results[ntp.tp.partition].low_watermark, kafka::offset(50));
+    }
+    {
+        delete_records_cmd_map cmds;
+        cmds[ntp.tp.topic][ntp.tp.partition] = delete_records_cmd{
+          .offset = kafka::offset(103)};
+        auto res = delete_records(std::move(cmds));
+        ASSERT_TRUE(res.has_value());
+        auto results = std::move(res.value());
+        ASSERT_EQ(results.size(), 1);
+        ASSERT_TRUE(results.contains(ntp.tp.topic));
+        auto& part_results = results[ntp.tp.topic];
+        ASSERT_EQ(part_results.size(), 1);
+        ASSERT_TRUE(part_results.contains(ntp.tp.partition));
+        EXPECT_EQ(
+          part_results[ntp.tp.partition].err,
+          kafka::error_code::offset_out_of_range);
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(

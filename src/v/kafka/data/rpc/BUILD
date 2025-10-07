@@ -23,6 +23,9 @@ redpanda_cc_library(
         "serde.h",
         "service.h",
     ],
+    implementation_deps = [
+        "//src/v/kafka/server:errors",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":kafka_data_rpc",
