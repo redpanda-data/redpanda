@@ -360,6 +360,7 @@ service::service(
   ss::sharded<kafka::snc_quota_manager>* snc_quota_mgr,
   ss::sharded<cluster::health_monitor_frontend>* hm_frontend,
   ss::sharded<cluster::security_frontend>* security_fe,
+  ss::sharded<kafka::data::rpc::client>* kafka_data_rpc_client,
   ss::smp_service_group smp_group,
   ss::scheduling_group scheduling_group)
   : _self(self)
@@ -376,6 +377,7 @@ service::service(
   , _snc_quota_mgr(snc_quota_mgr)
   , _hm_frontend(hm_frontend)
   , _security_fe(security_fe)
+  , _kafka_data_rpc_client(kafka_data_rpc_client)
   , _smp_group(smp_group)
   , _scheduling_group(scheduling_group)
   , _queue(_scheduling_group, [](const std::exception_ptr& ex) {

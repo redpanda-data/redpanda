@@ -208,6 +208,7 @@ redpanda_cc_library(
         "//src/v/cluster_link/replication:deps_impl",
         "//src/v/cluster_link/replication:mux_remote_consumer",
         "//src/v/kafka/client/direct_consumer",
+        "//src/v/kafka/data/rpc",
         "//src/v/kafka/server",
         "//src/v/model",
         "//src/v/raft",

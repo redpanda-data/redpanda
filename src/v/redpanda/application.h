@@ -262,8 +262,6 @@ private:
 
     bool datalake_enabled();
 
-    bool kafka_data_rpc_enabled();
-
     ss::shared_ptr<kafka::datalake_usage_api> make_datalake_usage_aggregator();
 
     void setup_metrics();

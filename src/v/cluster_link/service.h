@@ -18,6 +18,7 @@
 #include "cluster_link/errc.h"
 #include "cluster_link/fwd.h"
 #include "cluster_link/model/types.h"
+#include "kafka/data/rpc/fwd.h"
 #include "kafka/server/fwd.h"
 #include "model/fundamental.h"
 #include "rpc/fwd.h"
@@ -49,6 +50,7 @@ public:
       ss::sharded<kafka::snc_quota_manager>* snc_quota_mgr,
       ss::sharded<cluster::health_monitor_frontend>* hm_frontend,
       ss::sharded<cluster::security_frontend>* security_fe,
+      ss::sharded<kafka::data::rpc::client>* kafka_data_rpc_client,
       ss::smp_service_group smp_group,
       ss::scheduling_group scheduling_group);
 
@@ -206,6 +208,7 @@ private:
     ss::sharded<kafka::snc_quota_manager>* _snc_quota_mgr;
     ss::sharded<cluster::health_monitor_frontend>* _hm_frontend;
     ss::sharded<cluster::security_frontend>* _security_fe;
+    ss::sharded<kafka::data::rpc::client>* _kafka_data_rpc_client;
     ss::smp_service_group _smp_group;
     ss::scheduling_group _scheduling_group;
     std::unique_ptr<manager> _manager;
