@@ -1284,6 +1284,110 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
         consumer.start()
         consumer.wait_total_reads(count=9000, timeout_sec=60, backoff_sec=5)
 
+    def _maybe_failure_injector(self, with_failures: bool):
+        if with_failures:
+            return self.create_source_failure_injector()
+        else:
+            return self._nop_context_manager()
+
+    def _perform_auto_prefix_trimming(self, topic_name: str):
+        self.start_producer_consumer(topic=topic_name, msg_size=128, msg_cnt=100000)
+        offsets = [1000, 1001, 1200, 1500, 2000, 2500]
+
+        def wait_for_records(rpk: RpkTool, offset: int):
+            num_parts = 0
+            for part in rpk.describe_topic("source-topic"):
+                num_parts += 1
+                if (part.high_watermark or 0) < offset:
+                    return False
+            return num_parts == 5 and True
+
+        partitions = list(range(5))
+
+        for o in offsets:
+            self.source_cluster.service.wait_until(
+                lambda: wait_for_records(self.source_cluster_rpk, offset=o),
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg=f"Timed out waiting for {o} records in each partition",
+            )
+
+            self.logger.info(f"Trimming source topic prefixes to {o}")
+            self.source_cluster_rpk.trim_prefix(
+                topic="source-topic", partitions=partitions, offset=o
+            )
+
+            def wait_for_start_offset(rpk: RpkTool, offset: int):
+                num_parts = 0
+                for part in rpk.describe_topic("source-topic"):
+                    num_parts += 1
+                    self.logger.info(
+                        f"Offset for source-topic/{part.id} is {part.start_offset}"
+                    )
+                    if (part.start_offset or 0) != offset:
+                        return False
+                return num_parts == 5 and True
+
+            self.source_cluster.service.wait_until(
+                lambda: wait_for_start_offset(self.source_cluster_rpk, offset=o),
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg=f"Timed out waiting for start offset to be {o} in each partition",
+            )
+
+            # Produce a single message to ensure cluster linking picks up the trim
+            for part in range(0, 5):
+                self.logger.info(f"Producing trim-trigger message to partition {part}")
+                self.source_cluster_rpk.produce(
+                    topic="source-topic",
+                    key="trim-trigger",
+                    msg="trim-trigger",
+                    partition=part,
+                )
+
+            self.logger.info(
+                f"Now waiting for target cluster to get to {o} starting offset"
+            )
+
+            self.target_cluster.service.wait_until(
+                lambda: wait_for_start_offset(self.target_cluster_rpk, offset=o),
+                timeout_sec=60,
+                backoff_sec=1,
+                err_msg=f"Timed out waiting for target to get start offset to be {o} in each partition",
+            )
+
+    @cluster(num_nodes=8)
+    @ignore(
+        with_failures=True,
+        source_cluster_spec=SecondaryClusterSpec(
+            ServiceType.KAFKA, kafka_version="3.8.0", kafka_quorum="COMBINED_KRAFT"
+        ),
+    )
+    @matrix(
+        with_failures=[True, False],
+        source_cluster_spec=[
+            SecondaryClusterSpec(ServiceType.REDPANDA),
+            SecondaryClusterSpec(
+                ServiceType.KAFKA, kafka_version="3.8.0", kafka_quorum="COMBINED_KRAFT"
+            ),
+        ],
+    )
+    def test_auto_prefix_trimming(self, with_failures, source_cluster_spec):
+        topic = TopicSpec(name="source-topic", partition_count=5, replication_factor=3)
+
+        self.source_default_client().create_topic(topic)
+        self.create_link("test-link")
+
+        self.target_cluster.service.wait_until(
+            lambda: self.topic_exists_in_target(topic.name),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {topic.name} not found in target cluster",
+        )
+
+        with self._maybe_failure_injector(with_failures):
+            self._perform_auto_prefix_trimming(topic.name)
+
 
 class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
     def create_source_consumer(self, topic, group_name="test_group", consumer_count=1):
