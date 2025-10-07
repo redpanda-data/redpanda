@@ -174,6 +174,12 @@ topic_metadata_mirroring_config topic_metadata_mirroring_config::copy() const {
     return copy;
 }
 
+fmt::iterator
+partition_prefix_trimming_config::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{ is_enabled: {}, task_interval: {} }}", is_enabled, task_interval);
+}
+
 consumer_groups_mirroring_config
 consumer_groups_mirroring_config::copy() const {
     consumer_groups_mirroring_config copy;
@@ -201,6 +207,7 @@ link_configuration link_configuration::copy() const {
     copy.topic_metadata_mirroring_cfg = topic_metadata_mirroring_cfg.copy();
     copy.consumer_groups_mirroring_cfg = consumer_groups_mirroring_cfg.copy();
     copy.security_settings_sync_cfg = security_settings_sync_cfg.copy();
+    copy.partition_prefix_trimming_cfg = partition_prefix_trimming_cfg;
     return copy;
 }
 
@@ -692,10 +699,11 @@ auto fmt::formatter<cluster_link::model::link_configuration>::format(
     return fmt::format_to(
       ctx.out(),
       "{{topic_metadata_mirroring_cfg: {}, consumer_groups_mirroring_cfg: {}, "
-      "security_settings_sync_cfg: {}}}",
+      "security_settings_sync_cfg: {}, partition_prefix_trimming_cfg: {}}}",
       cfg.topic_metadata_mirroring_cfg,
       cfg.consumer_groups_mirroring_cfg,
-      cfg.security_settings_sync_cfg);
+      cfg.security_settings_sync_cfg,
+      cfg.partition_prefix_trimming_cfg);
 }
 
 auto fmt::

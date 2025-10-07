@@ -466,6 +466,33 @@ struct topic_metadata_mirroring_config
     operator<<(std::ostream& os, const topic_metadata_mirroring_config& cfg);
 };
 
+/// \brief Configuration for the prefix trimming task
+struct partition_prefix_trimming_config
+  : serde::envelope<
+      partition_prefix_trimming_config,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    /// Whether or not the task is enabled
+    enabled_t is_enabled{enabled_t::yes};
+    /// Interval for the prefix trimming task
+    std::optional<ss::lowres_clock::duration> task_interval;
+    // Default interval (5 seconds)
+    static constexpr auto task_interval_default = std::chrono::seconds(5);
+
+    ss::lowres_clock::duration get_task_interval() const {
+        return task_interval.value_or(task_interval_default);
+    }
+
+    friend bool operator==(
+      const partition_prefix_trimming_config&,
+      const partition_prefix_trimming_config&)
+      = default;
+
+    auto serde_fields() { return std::tie(is_enabled, task_interval); }
+
+    fmt::iterator format_to(fmt::iterator) const;
+};
+
 struct consumer_groups_mirroring_config
   : serde::envelope<
       consumer_groups_mirroring_config,
@@ -694,7 +721,10 @@ struct link_configuration
     topic_metadata_mirroring_config topic_metadata_mirroring_cfg;
     /// Configuration for the consumer groups mirroring task
     consumer_groups_mirroring_config consumer_groups_mirroring_cfg;
+    /// Configuration for security settings syncing
     security_settings_sync_config security_settings_sync_cfg;
+    /// Configuration for partition prefix trimming
+    partition_prefix_trimming_config partition_prefix_trimming_cfg;
 
     friend bool operator==(const link_configuration&, const link_configuration&)
       = default;
@@ -703,7 +733,8 @@ struct link_configuration
         return std::tie(
           topic_metadata_mirroring_cfg,
           consumer_groups_mirroring_cfg,
-          security_settings_sync_cfg);
+          security_settings_sync_cfg,
+          partition_prefix_trimming_cfg);
     }
 
     link_configuration copy() const;
