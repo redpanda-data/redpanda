@@ -112,6 +112,8 @@ public:
 
     partition_metadata_provider& get_partition_metadata_provider();
 
+    kafka_rpc_client_service& get_kafka_rpc_client_service();
+
     std::optional<
       chunked_hash_map<::model::topic, model::mirror_topic_metadata>>
     get_mirror_topics_for_link() const;

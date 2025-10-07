@@ -11,6 +11,7 @@
 
 #include "cluster_link/link.h"
 
+#include "cluster_link/deps.h"
 #include "cluster_link/logger.h"
 #include "cluster_link/manager.h"
 #include "cluster_link/model/types.h"
@@ -372,6 +373,10 @@ consumer_groups_router& link::get_group_router() {
 
 partition_metadata_provider& link::get_partition_metadata_provider() {
     return _manager->get_partition_metadata_provider();
+}
+
+kafka_rpc_client_service& link::get_kafka_rpc_client_service() {
+    return _manager->get_kafka_rpc_client_service();
 }
 
 std::optional<chunked_hash_map<::model::topic, model::mirror_topic_metadata>>
