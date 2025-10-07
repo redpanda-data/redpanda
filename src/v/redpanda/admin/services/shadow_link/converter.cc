@@ -29,6 +29,7 @@ using proto::admin::acl_resource_filter;
 using proto::admin::authentication_configuration;
 using proto::admin::create_shadow_link_request;
 using proto::admin::name_filter;
+using proto::admin::partition_prefix_trimming_options;
 using proto::admin::scram_config;
 using proto::admin::scram_mechanism;
 using proto::admin::security_settings_sync_options;
@@ -44,6 +45,7 @@ using proto::admin::tlspem_settings;
 using proto::admin::topic_metadata_sync_options;
 using proto::admin::topic_partition_information;
 using proto::admin::update_shadow_link_request;
+
 namespace {
 
 constexpr auto to_filter_pattern_type(proto::admin::pattern_type p) {
@@ -286,6 +288,19 @@ to_acl_filters(const chunked_vector<acl_filter>& proto_filters) {
     return filters;
 }
 
+cluster_link::model::partition_prefix_trimming_config
+create_partition_prefix_trimming_config(
+  const partition_prefix_trimming_options& options) {
+    cluster_link::model::partition_prefix_trimming_config config;
+
+    if (options.get_interval() > absl::ZeroDuration()) {
+        config.task_interval = absl::ToChronoNanoseconds(
+          options.get_interval());
+    }
+
+    return config;
+}
+
 cluster_link::model::security_settings_sync_config
 create_security_settings_sync_config(
   const security_settings_sync_options& options) {
@@ -314,6 +329,10 @@ create_link_configuration(const shadow_link& sl) {
     config.consumer_groups_mirroring_cfg
       = create_consumer_groups_mirroring_config(
         sl.get_configurations().get_consumer_offset_sync_options());
+
+    config.partition_prefix_trimming_cfg
+      = create_partition_prefix_trimming_config(
+        sl.get_configurations().get_partition_prefix_trimming_options());
 
     return config;
 }
@@ -650,6 +669,15 @@ chunked_vector<name_filter> to_name_filters(
     return filters;
 }
 
+partition_prefix_trimming_options create_partition_prefix_trimming_options(
+  const cluster_link::model::partition_prefix_trimming_config& cfg) {
+    partition_prefix_trimming_options options;
+    options.set_interval(
+      absl::FromChrono(
+        cfg.task_interval.value_or(ss::lowres_clock::duration::zero())));
+    return options;
+}
+
 acl_resource to_acl_resource(cluster_link::model::acl_resource r) {
     switch (r) {
     case cluster_link::model::acl_resource::any:
@@ -827,6 +855,9 @@ create_shadow_link_configuration(const cluster_link::model::metadata& md) {
     configurations.set_security_sync_options(
       create_security_settings_sync_options(
         md.configuration.security_settings_sync_cfg));
+    configurations.set_partition_prefix_trimming_options(
+      create_partition_prefix_trimming_options(
+        md.configuration.partition_prefix_trimming_cfg));
 
     return configurations;
 }
