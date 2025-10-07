@@ -213,6 +213,7 @@ redpanda_cc_library(
         ":group_mirroring_task",
         ":impl",
         ":logger",
+        ":prefix_trimmer",
         ":security_migrator",
         ":source_topic_syncer",
         "//src/v/cluster_link/model",

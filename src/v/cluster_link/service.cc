@@ -21,6 +21,7 @@
 #include "cluster_link/logger.h"
 #include "cluster_link/manager.h"
 #include "cluster_link/model/types.h"
+#include "cluster_link/prefix_trimmer.h"
 #include "cluster_link/replication/deps_impl.h"
 #include "cluster_link/replication/mux_remote_consumer.h"
 #include "cluster_link/security_migrator.h"
@@ -569,6 +570,7 @@ ss::future<> service::maybe_start_manager() {
     co_await _manager->register_task_factory<source_topic_syncer_factory>();
     co_await _manager->register_task_factory<group_mirroring_task_factory>();
     co_await _manager->register_task_factory<security_migrator_factory>();
+    co_await _manager->register_task_factory<prefix_trimmer_factory>();
 
     // Register notifications before the manager starts.  The manager will
     // have a constructed the underlying workqueue to start in a paused
