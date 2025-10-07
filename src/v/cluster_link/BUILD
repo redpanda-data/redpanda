@@ -181,6 +181,27 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "prefix_trimmer",
+    srcs = [
+        "prefix_trimmer.cc",
+    ],
+    hdrs = [
+        "prefix_trimmer.h",
+    ],
+    implementation_deps = [
+        ":logger",
+    ],
+    visibility = ["//src/v/cluster_link:__subpackages__"],
+    deps = [
+        ":impl",
+        "//src/v/cluster_link/model",
+        "//src/v/kafka/client:cluster",
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:list_offset",
+    ],
+)
+
+redpanda_cc_library(
     name = "cluster_link",
     srcs = [
         "service.cc",
