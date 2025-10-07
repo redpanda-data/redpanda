@@ -16,6 +16,8 @@
 #include "cluster_link/model/types.h"
 #include "kafka/client/cluster.h"
 #include "kafka/data/rpc/deps.h"
+#include "kafka/data/rpc/fwd.h"
+#include "kafka/data/rpc/serde.h"
 #include "model/fundamental.h"
 
 #include <expected>
@@ -193,6 +195,29 @@ public:
 
     virtual ss::future<std::vector<cluster::errc>> create_acls(
       std::vector<security::acl_binding>, ::model::timeout_clock::duration)
+      = 0;
+};
+
+class kafka_rpc_client_service {
+public:
+    kafka_rpc_client_service() = default;
+    kafka_rpc_client_service(const kafka_rpc_client_service&) = delete;
+    kafka_rpc_client_service(kafka_rpc_client_service&&) = delete;
+    kafka_rpc_client_service& operator=(const kafka_rpc_client_service&)
+      = delete;
+    kafka_rpc_client_service& operator=(kafka_rpc_client_service&&) = delete;
+    virtual ~kafka_rpc_client_service() = default;
+
+    static std::unique_ptr<kafka_rpc_client_service>
+    make_default(ss::sharded<kafka::data::rpc::client>*);
+
+    virtual ss::future<
+      result<kafka::data::rpc::delete_records_result_map, cluster::errc>>
+      delete_records(kafka::data::rpc::delete_records_cmd_map) = 0;
+
+    virtual ss::future<
+      result<kafka::data::rpc::partition_offsets_map, cluster::errc>>
+      get_partition_offsets(chunked_vector<kafka::data::rpc::topic_partitions>)
       = 0;
 };
 } // namespace cluster_link

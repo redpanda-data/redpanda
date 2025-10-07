@@ -512,6 +512,16 @@ struct test_partition_metadata_provider : public partition_metadata_provider {
     chunked_hash_map<::model::topic_partition, kafka::offset> hwms;
 };
 
+struct test_kafka_rpc_client_service : public kafka_rpc_client_service {
+    ss::future<
+      result<kafka::data::rpc::delete_records_result_map, cluster::errc>>
+      delete_records(kafka::data::rpc::delete_records_cmd_map) final;
+
+    ss::future<result<kafka::data::rpc::partition_offsets_map, cluster::errc>>
+      get_partition_offsets(
+        chunked_vector<kafka::data::rpc::topic_partitions>) final;
+};
+
 class fake_security_service : public security_service {
 public:
     ss::future<std::vector<cluster::errc>> create_acls(
@@ -618,6 +628,10 @@ public:
 
     fake_security_service& security_service() { return *_fss; }
 
+    test_kafka_rpc_client_service& kafka_rpc_client_service() {
+        return *_tkrcs;
+    }
+
 private:
     void setup_cluster_mock();
 
@@ -636,6 +650,7 @@ private:
     link_factory* _lf{nullptr};
     test_consumer_group_router* _consumer_group_router{nullptr};
     test_partition_metadata_provider* _partition_metadata_provider{nullptr};
+    test_kafka_rpc_client_service* _tkrcs{nullptr};
     ss::sharded<manager> _manager;
     config::mock_property<int16_t> _default_topic_replication{1};
 

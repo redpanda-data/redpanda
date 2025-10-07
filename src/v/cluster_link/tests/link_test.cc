@@ -187,6 +187,7 @@ public:
           std::make_unique<cluster_mock_factory>(&_cluster_mock),
           std::make_unique<test_consumer_group_router>(),
           std::make_unique<test_partition_metadata_provider>(),
+          std::make_unique<test_kafka_rpc_client_service>(),
           task_reconciler_interval,
           _default_topic_replication.bind(),
           ss::default_scheduling_group());
@@ -425,6 +426,7 @@ public:
           std::make_unique<cluster_mock_factory>(&_cluster_mock),
           std::make_unique<test_consumer_group_router>(),
           std::make_unique<test_partition_metadata_provider>(),
+          std::make_unique<test_kafka_rpc_client_service>(),
           task_reconciler_interval,
           _default_topic_replication.bind(),
           ss::default_scheduling_group());

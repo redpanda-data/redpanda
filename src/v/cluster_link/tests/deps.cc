@@ -91,6 +91,11 @@ ss::future<> cluster_link_manager_test_fixture::wire_up_and_start(
           _partition_metadata_provider = provider.get();
           return provider;
       }),
+      ss::sharded_parameter([this]() {
+          auto rpc = std::make_unique<test_kafka_rpc_client_service>();
+          _tkrcs = rpc.get();
+          return rpc;
+      }),
       1s,
       _default_topic_replication.bind(),
       ss::default_scheduling_group());
@@ -265,4 +270,17 @@ test_partition_metadata_provider::get_partition_high_watermark(
     }
     co_return std::nullopt;
 };
+
+ss::future<result<kafka::data::rpc::delete_records_result_map, cluster::errc>>
+test_kafka_rpc_client_service::delete_records(
+  kafka::data::rpc::delete_records_cmd_map) {
+    throw std::runtime_error("Not implemented");
+}
+
+ss::future<result<kafka::data::rpc::partition_offsets_map, cluster::errc>>
+test_kafka_rpc_client_service::get_partition_offsets(
+  chunked_vector<kafka::data::rpc::topic_partitions>) {
+    throw std::runtime_error("Not implemented");
+}
+
 } // namespace cluster_link::tests

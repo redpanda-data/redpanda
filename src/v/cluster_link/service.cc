@@ -562,6 +562,7 @@ ss::future<> service::maybe_start_manager() {
       std::make_unique<kafka_consumer_groups_router>(_group_router),
       std::make_unique<health_monitor_based_partition_metadata_provider>(
         _hm_frontend),
+      kafka_rpc_client_service::make_default(_kafka_data_rpc_client),
       30s, // Temporary until we have a proper configuration for this
       config::shard_local_cfg().default_topic_replication.bind(),
       _scheduling_group);

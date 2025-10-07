@@ -22,6 +22,7 @@
 #include "cluster_link/types.h"
 #include "container/chunked_vector.h"
 #include "kafka/data/rpc/deps.h"
+#include "kafka/data/rpc/fwd.h"
 #include "model/fundamental.h"
 #include "ssx/work_queue.h"
 #include "utils/mutex.h"
@@ -50,6 +51,7 @@ public:
       std::unique_ptr<cluster_factory> cluster_factory,
       std::unique_ptr<consumer_groups_router> group_router,
       std::unique_ptr<partition_metadata_provider> partition_metadata_provider,
+      std::unique_ptr<kafka_rpc_client_service> kafka_rpc_client_service,
       ss::lowres_clock::duration task_reconciler_interval,
       config::binding<int16_t> default_topic_replication,
       ss::scheduling_group scheduling_group);
@@ -175,6 +177,8 @@ public:
 
     partition_metadata_provider& get_partition_metadata_provider() noexcept;
 
+    kafka_rpc_client_service& get_kafka_rpc_client_service() noexcept;
+
     ss::scheduling_group scheduling_group() const noexcept {
         return _scheduling_group;
     }
@@ -211,6 +215,7 @@ private:
     std::unique_ptr<link_status_reconciler> _link_status_reconciler;
     std::unique_ptr<consumer_groups_router> _group_router;
     std::unique_ptr<partition_metadata_provider> _partition_metadata_provider;
+    std::unique_ptr<kafka_rpc_client_service> _kafka_rpc_client_service;
     ssx::work_queue _queue;
 
     chunked_vector<std::unique_ptr<task_factory>> _task_factories;

@@ -13,6 +13,7 @@
 
 #include "cluster_link/deps.h"
 #include "cluster_link/logger.h"
+#include "kafka/data/rpc/client.h"
 #include "kafka/data/rpc/deps.h"
 #include "model/namespace.h"
 
@@ -89,6 +90,7 @@ manager::manager(
   std::unique_ptr<cluster_factory> cluster_factory,
   std::unique_ptr<consumer_groups_router> group_router,
   std::unique_ptr<partition_metadata_provider> partition_metadata_provider,
+  std::unique_ptr<kafka_rpc_client_service> kafka_rpc_client_service,
   ss::lowres_clock::duration task_reconciler_interval,
   config::binding<int16_t> default_topic_replication,
   ss::scheduling_group scheduling_group)
@@ -103,6 +105,7 @@ manager::manager(
   , _cluster_factory(std::move(cluster_factory))
   , _group_router(std::move(group_router))
   , _partition_metadata_provider(std::move(partition_metadata_provider))
+  , _kafka_rpc_client_service(std::move(kafka_rpc_client_service))
   , _queue(
       scheduling_group,
       [](const std::exception_ptr& ex) {
@@ -789,5 +792,9 @@ consumer_groups_router& manager::get_group_router() noexcept {
 partition_metadata_provider&
 manager::get_partition_metadata_provider() noexcept {
     return *_partition_metadata_provider;
+}
+
+kafka_rpc_client_service& manager::get_kafka_rpc_client_service() noexcept {
+    return *_kafka_rpc_client_service;
 }
 } // namespace cluster_link
