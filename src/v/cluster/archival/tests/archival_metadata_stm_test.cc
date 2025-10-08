@@ -905,14 +905,17 @@ FIXTURE_TEST(
       kafka::offset(1200));
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(1000));
 
-    // Advancing the start offset past the override resets the override.
+    // This does reset the override as archive is not truncated yet.
     archival_stm
       ->truncate(
         model::offset(2000), ss::lowres_clock::now() + 10s, never_abort)
       .get();
     BOOST_REQUIRE_EQUAL(
       archival_stm->manifest().get_start_kafka_offset_override(),
-      kafka::offset{});
+      kafka::offset{1200});
+
+    // This is STM start offset. Previous truncate truncated as-if applied by
+    // spillover.
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(2000));
 }
 
