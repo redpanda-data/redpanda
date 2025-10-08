@@ -19,6 +19,7 @@
 #include "cluster/health_monitor_frontend.h"
 #include "kafka/data/replicated_partition.h"
 #include "kafka/protocol/find_coordinator.h"
+#include "kafka/server/tests/delete_records_utils.h"
 #include "kafka/server/tests/list_offsets_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
@@ -1265,6 +1266,90 @@ TEST_P(EndToEndFixture, TestConsumerOffsetsNoTieredStorage) {
     ASSERT_FALSE(partition->archiver().has_value());
     ASSERT_EQ(nullptr, partition->archival_meta_stm().get());
     ASSERT_FALSE(partition->cloud_data_available());
+}
+
+TEST_F(ManualFixture, TestSpilloverWithTruncationRetainsStartOffset) {
+    test_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
+      .set_value(true);
+    test_local_cfg.get("cloud_storage_spillover_manifest_max_segments")
+      .set_value(std::make_optional<size_t>(2));
+    test_local_cfg.get("cloud_storage_spillover_manifest_size")
+      .set_value(std::optional<size_t>{});
+
+    const model::topic topic_name("spillover_truncate_test");
+    model::ntp ntp(model::kafka_namespace, topic_name, 0);
+
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.cleanup_policy_bitflags = model::cleanup_policy_bitflags::deletion;
+    props.retention_bytes = tristate<size_t>(disable_tristate_t{});
+    props.retention_duration = tristate<std::chrono::milliseconds>(
+      disable_tristate_t{});
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+    wait_for_leader(ntp).get();
+
+    auto partition = app.partition_manager.local().get(ntp);
+    auto& archiver = partition->archiver().value().get();
+
+    SCOPED_TRACE("Seeding partition data");
+
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+
+    auto first_batch = gen.num_segments(6)
+                         .batches_per_segment(5)
+                         .records_per_batch(1)
+                         .produce()
+                         .get();
+    ASSERT_GE(first_batch, 30);
+
+    // Sync and upload segments
+    ASSERT_TRUE(archiver.sync_for_tests().get());
+
+    // Step 2: Apply spillover
+    vlog(e2e_test_log.info, "Applying first spillover");
+    archiver.apply_spillover().get();
+
+    // Capture start offset before truncation
+    auto start_kafka_offset_before
+      = archiver.manifest().full_log_start_kafka_offset();
+    vlog(
+      e2e_test_log.info,
+      "Start kafka offset before truncation: {}",
+      start_kafka_offset_before);
+
+    SCOPED_TRACE("Truncating via DeleteRecords");
+    const auto timeout = 10s;
+
+    tests::kafka_delete_records_transport deleter(make_kafka_client().get());
+    auto deferred_d_close = ss::defer([&deleter] { deleter.stop().get(); });
+    deleter.start().get();
+
+    // Delete offset from second segment of the first spillover manifest.
+    deleter
+      .delete_records_from_partition(
+        topic_name, ntp.tp.partition, model::offset{8}, timeout)
+      .get();
+
+    ASSERT_EQ(
+      archiver.manifest().full_log_start_kafka_offset(), kafka::offset{0});
+    ASSERT_EQ(
+      archiver.manifest().get_start_kafka_offset_override(), kafka::offset{8});
+
+    // Additional segments to trigger another spillover round.
+    gen.num_segments(6)
+      .batches_per_segment(5)
+      .records_per_batch(1)
+      .produce()
+      .get();
+
+    archiver.housekeeping().get();
+
+    // This assertion validates an existing bug in redpanda.
+    // TODO: Fix the bug and update expectations.
+    ASSERT_EQ(
+      archiver.manifest().full_log_start_kafka_offset(), kafka::offset{0});
+    ASSERT_EQ(
+      archiver.manifest().get_start_kafka_offset_override(), kafka::offset{});
 }
 
 INSTANTIATE_TEST_SUITE_P(WithOverride, EndToEndFixture, ::testing::Bool());
