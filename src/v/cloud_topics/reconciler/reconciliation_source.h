@@ -56,6 +56,9 @@ public:
     // if none.
     virtual kafka::offset last_reconciled_offset() = 0;
 
+    // Estimate the size of the backlog to be reconciled, in bytes.
+    virtual uint64_t get_backlog_size_estimate() const = 0;
+
     // Set the last reconciled offset for this source.
     //
     // This operation is idempotent, the last reconciled offset never moves

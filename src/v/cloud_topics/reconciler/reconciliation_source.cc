@@ -64,6 +64,13 @@ public:
         return api.get_last_reconciled_offset();
     }
 
+    uint64_t get_backlog_size_estimate() const override {
+        return _partition->raft()
+          ->stm_manager()
+          ->get<ctp_stm>()
+          ->estimate_backlog_size();
+    }
+
     ss::future<std::expected<void, errc>> set_last_reconciled_offset(
       kafka::offset offset, ss::abort_source& as) override {
         ctp_stm_api api(_partition->raft()->stm_manager()->get<ctp_stm>());

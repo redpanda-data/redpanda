@@ -115,6 +115,11 @@ std::optional<uint64_t> get_rounds_failed() {
       "cloud_topics_reconciler_rounds_failed");
 }
 
+std::optional<uint64_t> get_backlog_size() {
+    return test_utils::find_metric_value<uint64_t>(
+      "cloud_topics_reconciler_backlog_size");
+}
+
 } // namespace
 
 TEST_F(ReconcilerMetricsTest, ThroughputCounters) {
@@ -217,6 +222,9 @@ TEST_F(ReconcilerMetricsTest, ObjectMetrics) {
     auto src1 = add_source();
     auto src2 = add_source();
 
+    // Set to 0 initially
+    EXPECT_TRUE(get_backlog_size().value() == 0);
+
     src1->add_batch({.count = 10});
     src2->add_batch({.count = 5});
 
@@ -236,6 +244,7 @@ TEST_F(ReconcilerMetricsTest, ObjectMetrics) {
 
     object_size = probe.get_object_size_bytes_for_tests();
     EXPECT_EQ(object_size.sample_count, 2);
+    EXPECT_TRUE(get_backlog_size().value() > 0);
 
     sources_per_object = probe.get_sources_per_object_for_tests();
     EXPECT_EQ(sources_per_object.sample_count, 2);

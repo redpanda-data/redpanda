@@ -44,6 +44,17 @@ public:
         _source_log.push_back(std::move(batch));
     }
 
+    uint64_t get_backlog_size_estimate() const override {
+        uint64_t size = 0;
+        for (const auto& batch : _source_log) {
+            if (model::offset_cast(batch.base_offset()) < _lro) {
+                continue;
+            }
+            size += batch.size_bytes();
+        }
+        return size;
+    }
+
     kafka::offset last_reconciled_offset() override { return _lro; }
 
     ss::future<std::expected<void, errc>>

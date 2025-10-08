@@ -199,9 +199,13 @@ ss::future<> reconciler::reconcile() {
 
     chunked_vector<ss::shared_ptr<source>> sources;
     // Make a copy of the sources to not worry about concurrent modification.
+    uint64_t total_backlog_size = 0;
     for (auto& [_, src] : _sources) {
+        total_backlog_size += src->get_backlog_size_estimate();
         sources.push_back(src);
     }
+    _probe.record_backlog_size(total_backlog_size);
+
     if (sources.empty()) {
         vlog(lg.trace, "No leader partitions to reconcile");
         co_return;
