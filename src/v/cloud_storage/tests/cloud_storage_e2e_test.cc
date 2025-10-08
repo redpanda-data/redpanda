@@ -1344,12 +1344,12 @@ TEST_F(ManualFixture, TestSpilloverWithTruncationRetainsStartOffset) {
 
     archiver.housekeeping().get();
 
-    // This assertion validates an existing bug in redpanda.
-    // TODO: Fix the bug and update expectations.
+    // Due to implementation deficiencies truncation doesn't advance start
+    // offset but at least the override should not regress.
     ASSERT_EQ(
       archiver.manifest().full_log_start_kafka_offset(), kafka::offset{0});
     ASSERT_EQ(
-      archiver.manifest().get_start_kafka_offset_override(), kafka::offset{});
+      archiver.manifest().get_start_kafka_offset_override(), kafka::offset{8});
 }
 
 INSTANTIATE_TEST_SUITE_P(WithOverride, EndToEndFixture, ::testing::Bool());
