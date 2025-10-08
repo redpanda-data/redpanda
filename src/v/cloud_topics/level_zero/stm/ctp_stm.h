@@ -17,6 +17,31 @@
 #include <seastar/core/rwlock.hh>
 
 namespace cloud_topics {
+namespace detail {
+
+constexpr double default_simple_ewma_alpha = 0.2;
+/// Simple Exponentially Weighted Moving Average
+/// which is supposed to be used to estimate the sizes of offset ranges.
+class simple_ewma {
+public:
+    explicit simple_ewma(double alpha = default_simple_ewma_alpha);
+
+    void update(double avg_rec_size, size_t num_records); // NOLINT
+
+    uint64_t size_estimate(int64_t num_records) const;
+
+    auto serde_fields() {
+        return std::tie(_alpha, _value, _num_samples, _min_samples);
+    }
+
+private:
+    double _alpha{0};
+    double _value{0};
+    size_t _num_samples{0};
+    size_t _min_samples{1};
+};
+
+} // namespace detail
 
 class ctp_stm_api;
 
@@ -78,6 +103,17 @@ public:
     ss::future<bool> sync_in_term(
       model::timeout_clock::time_point deadline, ss::abort_source& as);
 
+    /// Estimate the size of data between the LRO and the end of the log.
+    ///
+    /// The returned value is initially zero and then it converges
+    /// to something close to the real value (with some error).
+    /// The value is updated when new placeholders are applied.
+    /// It shouldn't be used for exact accounting because it's an estimate.
+    /// However, it should be good enough for metrics and logging.
+    /// The estimate could diverge on different replicas and after restarts.
+    /// Currently, it's not snapshotted.
+    uint64_t estimate_backlog_size() const noexcept;
+
 private:
     ss::future<> do_apply(const model::record_batch&) override;
     void apply_placeholder(const model::record_batch&);
@@ -118,6 +154,9 @@ private:
     // The last point that we truncated to, so we can skip writing a raft
     // snapshot if needed. This is volatile state (which is fine).
     model::offset _last_truncation_point;
+
+    // Simple EWMA to estimate the size of offset ranges in bytes.
+    detail::simple_ewma _size_estimator;
 };
 
 } // namespace cloud_topics

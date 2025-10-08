@@ -58,6 +58,34 @@ private:
 };
 } // namespace
 
+namespace detail {
+
+simple_ewma::simple_ewma(double alpha)
+  : _alpha(alpha)
+  // We should collect enough samples to reliably estimate the size
+  // of offset ranges. This formula (2 / alpha) is quite optimistic
+  // and will allow us to use the estimate early (after 10 records
+  // if the default alpha is used). In practice, the estimate will
+  // be more reliable after 50-100 samples. But this is OK given that
+  // the estimate is only a hint and is not used for correctness.
+  , _min_samples(alpha > 0 ? static_cast<size_t>(2 / alpha) : 1) {}
+
+void simple_ewma::update(double avg_rec_size, size_t num_records) { // NOLINT
+    if (num_records == 0) {
+        return;
+    }
+    _value = _alpha * avg_rec_size + (1 - _alpha) * _value;
+    _num_samples += num_records;
+}
+
+uint64_t simple_ewma::size_estimate(int64_t num_records) const {
+    if (_num_samples < _min_samples) {
+        return 0;
+    }
+    return std::ceil(static_cast<double>(num_records) * _value);
+}
+} // namespace detail
+
 ctp_stm::ctp_stm(ss::logger& logger, raft::consensus* raft)
   : raft::persisted_stm<>(name, logger, raft) {}
 
@@ -377,6 +405,20 @@ void ctp_stm::apply_placeholder(const model::record_batch& batch) {
       _last_seen_epoch);
     _last_seen_epoch = id.epoch;
     _state.advance_epoch(id.epoch, batch.header().base_offset);
+    _size_estimator.update(
+      static_cast<double>(batch.size_bytes()) / batch.record_count(),
+      batch.record_count());
+}
+
+uint64_t ctp_stm::estimate_backlog_size() const noexcept {
+    auto lro = _state.get_last_reconciled_log_offset().value_or(
+      model::offset{0});
+    auto committed_offset = _raft->committed_offset();
+    if (committed_offset <= lro) {
+        return 0;
+    }
+    auto num_records = committed_offset - lro;
+    return _size_estimator.size_estimate(num_records);
 }
 
 ss::future<raft::local_snapshot_applied>

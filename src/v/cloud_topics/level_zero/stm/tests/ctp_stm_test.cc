@@ -408,3 +408,20 @@ TEST_F_CORO(ctp_stm_fixture, can_replay_truncated_log) {
     co_await follower_stm->wait(dirty_offset, model::no_timeout);
     vlog(ct::cd_log.info, "recovery done: {}", follower_id);
 }
+
+TEST(test_ewma, smoke_test) {
+    cloud_topics::detail::simple_ewma ewma;
+
+    ewma.update(10, 1);
+    ASSERT_EQ(ewma.size_estimate(1), 0);
+
+    for (int i = 0; i < 20; i++) {
+        ewma.update(10, 1);
+    }
+
+    // The estimate is expected to be slightly
+    // below 10 but the 'size_estimate()' rounds up.
+    ASSERT_EQ(ewma.size_estimate(1), 10);
+    ASSERT_LT(ewma.size_estimate(100), 1000);
+    ASSERT_GT(ewma.size_estimate(100), 990);
+}
