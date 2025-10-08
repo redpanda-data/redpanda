@@ -54,6 +54,7 @@ public:
     void record_sources_per_object(uint64_t count) {
         _sources_per_object.record(count);
     }
+    void record_backlog_size(uint64_t size) { _backlog_size = size; }
 
     std::unique_ptr<hist_t::measurement> measure_object_upload_duration() {
         return _object_upload_duration.auto_measure();
@@ -91,6 +92,7 @@ private:
     uint64_t _empty_objects_skipped{0};
     uint64_t _metastore_retries{0};
     uint64_t _offset_corrections{0};
+    uint64_t _backlog_size{0};
 
     // Histograms.
     hist_t _object_upload_duration;

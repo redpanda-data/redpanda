@@ -76,6 +76,13 @@ void reconciler_probe::setup_metrics() {
           sm::description(
             "Total times the metastore returned a corrected offset")),
 
+        // Gauges.
+        sm::make_gauge(
+          "backlog_size",
+          [this] { return _backlog_size; },
+          sm::description(
+            "Current size of the reconciliation backlog in bytes")),
+
         // Histograms.
         sm::make_histogram(
           "object_upload_duration_seconds",
