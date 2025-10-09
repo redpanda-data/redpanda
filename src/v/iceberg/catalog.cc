@@ -65,8 +65,11 @@ catalog::load_or_create_table(
     if (!resolved_spec) {
         vlog(
           log.warn,
-          "Iceberg table {} failed to resolve partition spec",
-          table_ident);
+          "Iceberg table {} failed to resolve partition spec {} against schema "
+          "{}",
+          table_ident,
+          spec,
+          schema.schema_struct);
         co_return errc::unexpected_state;
     }
     auto create_res = co_await create_table(
