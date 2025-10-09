@@ -714,12 +714,19 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
             subtract_from_cloud_log_size(it->size_bytes);
         }
 
-        // The new start offset has moved past the user-requested start offset,
-        // so there's no point in tracking it further.
-        if (
-          highest_removed_offset != kafka::offset{}
-          && highest_removed_offset >= _start_kafka_offset_override) {
-            _start_kafka_offset_override = kafka::offset{};
+        if (_archive_start_offset == model::offset{}) {
+            // This method is used by spillover (archive) mechanism to advance
+            // the start offset of the manifest and by STM retention mechanism.
+            // We should touch _start_kafka_offset_override only if the archive
+            // is not used. Otherwise, the override should be managed by the
+            // archive logic (apply_archive_retention, etc).
+            if (
+              highest_removed_offset != kafka::offset{}
+              && highest_removed_offset >= _start_kafka_offset_override) {
+                // The new start offset has moved past the user-requested start
+                // offset, so there's no point in tracking it further.
+                _start_kafka_offset_override = kafka::offset{};
+            }
         }
         return true;
     }
