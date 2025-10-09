@@ -821,7 +821,9 @@ public:
           _partition->ntp(),
           translated_offset,
           _translation_target);
-        if (translated_offset >= _translation_target->offset) {
+        if (
+          _translation_target.has_value()
+          && translated_offset >= _translation_target->offset) {
             _translation_target.reset();
         }
         // Reset inflight translation lto. The lag tracker is notified about
