@@ -221,7 +221,14 @@ FIXTURE_TEST(
     auto plan_data = planner.plan_actions(hr, as).get();
 
     check_violations(plan_data, unavailable_nodes, {});
+    // No nodes within the max disk usage ratio.
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
 
+    // Bump the max disk usage ratio and try again
+    auto new_planner = make_planner(
+      model::partition_autobalancing_mode::continuous, 2, false, 0.95);
+    plan_data = new_planner.plan_actions(hr, as).get();
+    check_violations(plan_data, unavailable_nodes, {});
     BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 1);
 
     std::unordered_set<model::node_id> expected_nodes(
