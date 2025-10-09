@@ -21,7 +21,10 @@ namespace cluster {
 
 topic_table_probe::topic_table_probe(const topic_table& topic_table)
   : _topic_table(topic_table)
-  , _node_id(config::node().node_id().value()) {
+  , _node_id(config::node().node_id().value_or(model::node_id{})) {
+    vassert(
+      config::node().node_id().has_value(),
+      "Must initialize node_id before topic_table_probe");
     setup_metrics();
 }
 
