@@ -93,6 +93,17 @@ auto compare_field_variant(
           } else if constexpr (std::is_same_v<A, serde::pb::raw_enum_value>) {
               // Compare enums by their variant number
               return a.number <=> b.number;
+          } else if constexpr (std::is_floating_point_v<A>) {
+              // Handle NaNs with strict weak ordering guarantees
+              auto a_isnan = std::isnan(a);
+              auto b_isnan = std::isnan(b);
+              if (a_isnan || b_isnan) {
+                  return a_isnan == b_isnan
+                           ? std::partial_ordering::equivalent
+                           : (a_isnan ? std::partial_ordering::less
+                                      : std::partial_ordering::greater);
+              }
+              return a <=> b;
           } else {
               return a <=> b;
           }
