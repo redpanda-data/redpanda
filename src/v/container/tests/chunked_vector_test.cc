@@ -33,8 +33,10 @@ using testing::AssertionResult;
 using testing::AssertionSuccess;
 using vec = chunked_vector<int>;
 
-static_assert(std::forward_iterator<vec::iterator>);
-static_assert(std::forward_iterator<vec::const_iterator>);
+static_assert(std::random_access_iterator<vec::iterator>);
+static_assert(std::random_access_iterator<vec::const_iterator>);
+static_assert(std::ranges::random_access_range<vec>);
+static_assert(std::ranges::random_access_range<const vec>);
 
 class chunked_vector_validator {
 public:
@@ -358,6 +360,12 @@ TEST(Vector, Sort) {
     std::sort(v.begin(), v.end());
 
     EXPECT_THAT(v, ElementsAre(1, 2, 3));
+}
+
+TEST(Vector, Heap) {
+    vec v{1, 2, 3};
+    std::ranges::make_heap(v);
+    EXPECT_TRUE(std::ranges::is_heap(v));
 }
 
 TEST(Vector, Clear) {

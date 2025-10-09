@@ -342,12 +342,17 @@ public:
     class iter {
     public:
         using iterator_category = std::random_access_iterator_tag;
-        using value_type = typename std::conditional_t<C, const T, T>;
+        using iterator_concept = std::random_access_iterator_tag;
+        using value_type = T;
         using difference_type = std::ptrdiff_t;
-        using pointer
-          = std::conditional_t<std::is_same_v<T, bool>, bool, value_type*>;
-        using reference
-          = std::conditional_t<std::is_same_v<T, bool>, bool, value_type&>;
+        using pointer = std::conditional_t<
+          std::is_same_v<T, bool>,
+          bool,
+          std::conditional_t<C, const T*, T*>>;
+        using reference = std::conditional_t<
+          std::is_same_v<T, bool>,
+          bool,
+          std::conditional_t<C, const T&, T&>>;
 
         iter() = default;
 
