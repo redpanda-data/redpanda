@@ -188,6 +188,7 @@ redpanda_cc_library(
         ":committing_policy",
         ":logger",
         ":meta",
+        "//src/v/base",
         "//src/v/cloud_topics/level_one/common:abstract_io",
         "//src/v/cloud_topics/level_one/common:object_id",
         "//src/v/cloud_topics/level_one/metastore",

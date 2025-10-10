@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "cloud_topics/level_one/common/abstract_io.h"
 #include "cloud_topics/level_one/common/object_id.h"
 #include "cloud_topics/level_one/compaction/committing_policy.h"
@@ -27,6 +28,7 @@ class compaction_committer {
 public:
     compaction_committer(std::unique_ptr<committing_policy>, io*, metastore*);
 
+    // Launches background committing loop.
     ss::future<> start();
 
     // Shuts down concurrency primitives, thereby stopping the backgrounded
@@ -36,36 +38,74 @@ public:
     // Pushes an update to the queue to be committed.
     void push_update(object_output_t);
 
+    // The `compaction_committer` is a sharded object within the
+    // `compaction_scheduler`, which means calling `stop()` on it destructs the
+    // underlying instances. Because `compaction_worker`s depend on the
+    // `committer`, the `committer` is the last object to be `stop()`'ed during
+    // shutdown. When the inflight workers/compaction jobs are stopped, a number
+    // of updates to the committer may be pushed at shutdown. `notify_stopped()`
+    // provides a way to let the `committer` know that it should not attempt to
+    // commit any more updates before `stop()` is called to avoid this stampede
+    // of last minute updates.
+    void notify_stopped() { _stopped = true; }
+
 private:
     friend class ::ReducerTestFixture;
     using updates_t = chunked_circular_buffer<object_output_t>;
 
-    struct built_object {
-        model::topic_id_partition tp;
-        object_id oid;
-        object_builder::object_info info;
-        std::unique_ptr<staging_file> staging_file;
-        std::unique_ptr<metastore::object_metadata_builder> builder;
-        metastore::compaction_map_t compaction_map;
+    struct built_update_context {
+        std::unique_ptr<metastore::object_metadata_builder> metadata_builder;
+        metastore::compaction_map_t compact_map;
     };
 
+    struct inflight_update_context {
+        model::topic_id_partition tidp;
+        chunked_vector<staging_file_ref_and_md_info>
+          staging_file_refs_and_md_infos;
+        metastore::compaction_update compact_update;
+    };
+
+    struct error {
+        enum class type : uint8_t { build_or_put_failure, commit_failure } t;
+        ss::sstring msg;
+
+        fmt::iterator format_to(fmt::iterator it) const {
+            return fmt::format_to(
+              it, "type:{}, msg:{}", static_cast<int>(t), msg);
+        }
+    };
+
+private:
     // Starts the backgrounded committing loop.
-    void start_bg_loop();
+    void start_committing_loop();
+
+    // Returns `true` if the committer is currently active and a shutdown has
+    // not been requested.
+    bool is_active() const;
 
     // The main committing loop. Invoked in a background fiber until `_as` has
     // an abort requested or the `_gate` is closed.
     ss::future<> committing_loop();
 
-    // Builds objects to be committed from the provided updates.
-    ss::future<chunked_vector<built_object>> build_objects(updates_t);
+    // Builds update context to be committed from the provided updates.
+    ss::future<std::expected<built_update_context, error>>
+      build_and_put_update(inflight_update_context);
+
+    ss::future<std::expected<void, error>>
+      try_build_and_commit_update(inflight_update_context);
 
     // Attempts to commit all updates in the provided container to the metastore
     // and cloud storage.
     ss::future<> commit_some(updates_t);
 
+    // Removes all staging files in an compaction update.
+    // Should be called after successfully or unsuccessfully uploading &
+    // committing a compaction update, or during clean-up of uncommitted
+    // compaction updates during shutdown.
+    ss::future<> remove_staging_files(object_output_t);
+
 private:
     // A queue of updates to be committed.
-    // TODO: add clean-up safety to built staging files.
     updates_t _updates;
 
     // The committing policy. Controls pre-emption and scheduling of commits
@@ -74,14 +114,18 @@ private:
 
     ssx::semaphore _sem{0, "cloud_topics::compaction::committing_loop"};
 
+    // Used as a flag to notify committer that a shutdown has been triggered,
+    // and commits should no longer occur.
+    bool _stopped{false};
+
     ss::abort_source _as;
     ss::gate _gate;
 
     // Newly compacted objects are uploaded using `io`.
-    [[maybe_unused]] io* _io;
+    io* _io;
 
     // Commits of newly compacted objects go to the `metastore`.
-    [[maybe_unused]] metastore* _metastore;
+    metastore* _metastore;
 };
 
 } // namespace cloud_topics::l1

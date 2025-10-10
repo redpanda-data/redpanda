@@ -28,6 +28,8 @@ redpanda_cc_gtest(
     ],
     deps = [
         ":in_memory_sink",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/bytes:iostream",
         "//src/v/cloud_topics/level_one/common:object",
         "//src/v/cloud_topics/level_one/common:object_id",
@@ -43,6 +45,7 @@ redpanda_cc_gtest(
         "//src/v/compaction/tests:simple_reducer",
         "//src/v/container:chunked_circular_buffer",
         "//src/v/container:chunked_vector",
+        "//src/v/kafka/server/tests:kafka_test_utils",
         "//src/v/model",
         "//src/v/model:batch_compression",
         "//src/v/model/tests:random",
