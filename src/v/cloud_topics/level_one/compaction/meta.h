@@ -110,4 +110,31 @@ using log_compaction_queue = std::priority_queue<
   chunked_vector<log_compaction_meta_ptr>,
   cmp_t>;
 
+enum class compaction_job_state {
+    // No compaction job is currently inflight.
+    idle,
+    // A compaction job is currently inflight.
+    running,
+    // A graceful stop has been requested of an inflight compaction job.
+    // The user should try to commit as much useful data as possible while still
+    // shutting down in a prompt manner.
+    soft_stop,
+    // A forceful stop has been requested of an inflight compaction job.
+    // The user should abandon any work and shutdown immediately.
+    hard_stop
+};
+
+inline std::ostream& operator<<(std::ostream& o, compaction_job_state s) {
+    switch (s) {
+    case compaction_job_state::idle:
+        return o << "idle";
+    case compaction_job_state::running:
+        return o << "running";
+    case compaction_job_state::soft_stop:
+        return o << "soft_stop";
+    case compaction_job_state::hard_stop:
+        return o << "hard_stop";
+    }
+}
+
 } // namespace cloud_topics::l1

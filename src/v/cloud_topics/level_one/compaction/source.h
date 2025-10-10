@@ -18,19 +18,6 @@
 
 namespace cloud_topics::l1 {
 
-enum class compaction_job_state {
-    // No compaction job is currently inflight.
-    idle,
-    // A compaction job is currently inflight.
-    running,
-    // A graceful stop has been requested of an inflight compaction job.
-    // The user should try to commit as much useful data as possible while still
-    // shutting down in a prompt manner.
-    soft_stop,
-    // A forceful stop has been requested of an inflight compaction job.
-    // The user should abandon any work and shutdown immediately.
-    hard_stop
-};
 
 class compaction_source : public compaction::sliding_window_reducer::source {
 public:
