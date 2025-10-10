@@ -43,6 +43,8 @@ namespace compaction {
 // co_await std::move(reducer).run();
 class sliding_window_reducer {
 public:
+    class source;
+
     // The sink for the data to be written by this round of compaction.
     // This class needs to implement two functions:
     // 1. `operator()(record_batch)`: This operator accepts a record batch
@@ -61,6 +63,7 @@ public:
         virtual ~sink() noexcept = default;
 
     public:
+        virtual ss::future<> initialize(source&) = 0;
         virtual ss::future<ss::stop_iteration>
         operator()(model::record_batch, model::compression) = 0;
         virtual ss::future<> finalize() = 0;
