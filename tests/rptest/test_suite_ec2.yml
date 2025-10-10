@@ -4,6 +4,7 @@ ec2:
     - tests
     - transactions
     - scale_tests
+    - fuzz
     - tuner_integration_tests/net_tuner_test.py::AwsNetTunerTest
 
   excluded:

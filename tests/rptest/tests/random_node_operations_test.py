@@ -797,30 +797,6 @@ class RandomNodeOperationsBase(PreallocNodesTest):
         return f"<RandomNodeOperationsBase {', '.join(fields)}>"
 
 
-class RandomNodeOperationsTest(RandomNodeOperationsBase):
-    """
-    Main test for RNOT test with all the parameterization.
-    """
-
-    # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
-    @skip_fips_mode
-    @skip_debug_mode
-    @cluster(num_nodes=9, log_allow_list=RNOT_ALLOW_LIST)
-    @matrix(
-        enable_failures=[True, False],
-        mixed_versions=[True, False],
-        with_iceberg=[True, False],
-        compaction_mode=[
-            CompactionMode.SLIDING_WINDOW,
-            CompactionMode.CHUNKED_SLIDING_WINDOW,
-            CompactionMode.ADJACENT_MERGE,
-        ],
-        cloud_storage_type=get_cloud_storage_type(),
-    )
-    def test_node_operations(self, **kwargs: Any):
-        self._do_test_node_operations(**kwargs)
-
-
 class RedpandaNodeOperationsSmokeTest(RandomNodeOperationsBase):
     """
     Smoke test for RNOT.

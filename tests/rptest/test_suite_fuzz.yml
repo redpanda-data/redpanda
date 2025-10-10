@@ -1,0 +1,24 @@
+# Copyright 2025 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+# Fuzz tests have at least two key characteristics:
+#
+# 1. the use random inputs, i.e., different runs of the test
+# effectively explore different parts of the input domain
+#
+# 2. the longer you run them, the more coverage you get
+# https://redpandadata.atlassian.net/wiki/x/CoBvV
+#
+# We isolate these test in their own suite as the above means they
+# should get a special run and not run on per-change like other
+# ducktape tests.
+
+fuzz:
+  included:
+  - fuzz/
