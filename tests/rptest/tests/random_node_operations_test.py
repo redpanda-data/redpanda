@@ -461,7 +461,9 @@ class RandomNodeOperationsBase(PreallocNodesTest):
                     "Skipping test with iceberg and unsupported cloud storage type"
                 )
 
-        with_cloud_topics = True
+        # CT disabled due to:
+        # https://redpandadata.slack.com/archives/C07HD9U0EHL/p1760107603876269
+        with_cloud_topics = False
         if mixed_versions:
             with_cloud_topics = False
             self.logger.info("Disabling cloud topics in mixed version test")
