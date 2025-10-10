@@ -156,9 +156,10 @@ auto fmt::formatter<kafka::data::rpc::partition_offsets>::format(
   -> format_context::iterator {
     return fmt::format_to(
       ctx.out(),
-      "{{ high_watermark: {}, last_stable_offset: {} }}",
+      "{{ high_watermark: {}, last_stable_offset: {}, log_start_offset: {} }}",
       po.high_watermark,
-      po.last_stable_offset);
+      po.last_stable_offset,
+      po.log_start_offset);
 }
 
 auto fmt::formatter<kafka::data::rpc::partition_offset_result>::format(

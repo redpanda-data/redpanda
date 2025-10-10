@@ -104,10 +104,13 @@ struct topic_partitions
 struct partition_offsets
   : serde::
       envelope<partition_offsets, serde::version<0>, serde::compat_version<0>> {
-    auto serde_fields() { return std::tie(high_watermark, last_stable_offset); }
+    auto serde_fields() {
+        return std::tie(high_watermark, last_stable_offset, log_start_offset);
+    }
 
     kafka::offset high_watermark;
     kafka::offset last_stable_offset;
+    kafka::offset log_start_offset;
 };
 struct partition_offset_result
   : serde::envelope<

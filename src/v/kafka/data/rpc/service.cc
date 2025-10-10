@@ -150,6 +150,7 @@ local_service::get_partition_offsets(
           return ssx::now<ret_t>(partition_offsets{
             .high_watermark = model::offset_cast(partition->high_watermark()),
             .last_stable_offset = model::offset_cast(lso_r.value()),
+            .log_start_offset = model::offset_cast(partition->start_offset()),
           });
       });
 }
