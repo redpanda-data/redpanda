@@ -142,6 +142,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":metastore",
+        ":offset_interval_set",
         ":state",
         "//src/v/base",
         "//src/v/cloud_topics/level_one/common:object_id",

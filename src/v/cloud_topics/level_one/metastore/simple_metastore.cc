@@ -10,6 +10,7 @@
 #include "cloud_topics/level_one/metastore/simple_metastore.h"
 
 #include "cloud_topics/level_one/common/object_id.h"
+#include "cloud_topics/level_one/metastore/offset_interval_set.h"
 #include "cloud_topics/level_one/metastore/state.h"
 #include "cloud_topics/level_one/metastore/state_update.h"
 #include "cloud_topics/logger.h"
@@ -532,6 +533,15 @@ simple_metastore::get_compaction_offsets(
     }
     auto& prt = prt_ref->get();
     compaction_offsets_response resp;
+
+    resp.extents.reserve(prt.extents.size());
+    for (const auto& extent : prt.extents) {
+        resp.extents.push_back(
+          offset_interval_set::interval{
+            .base_offset = extent.base_offset,
+            .last_offset = extent.last_offset});
+    }
+
     if (prt.start_offset >= prt.next_offset) {
         // The log is empty, nothing to compact.
         return resp;

@@ -165,7 +165,7 @@ log_info_collector::get_logs_to_collect(
 }
 
 void log_info_collector::populate_log_infos(
-  const metastore::compaction_info_map& compaction_infos,
+  metastore::compaction_info_map& compaction_infos,
   log_set_t& logs_set,
   log_list_t& logs_list,
   log_compaction_queue& compaction_queue,

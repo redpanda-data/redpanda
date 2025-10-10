@@ -274,6 +274,8 @@ public:
     };
     using compaction_map_t
       = chunked_hash_map<model::topic_id_partition, compaction_update>;
+
+    using extent_offsets_t = chunked_vector<offset_interval_set::interval>;
     struct compaction_offsets_response {
         // Offset ranges whose keys have not been fully deduplicated from the
         // start of the log.
@@ -285,6 +287,8 @@ public:
         // A compaction method, when iterating over a tombstone record, may
         // consult this to determine if the tombstone should be removed.
         offset_interval_set removable_tombstone_ranges;
+
+        extent_offsets_t extents;
     };
     // Similar to replace_objects(), but with additional constraints based on
     // compaction metadata. See get_compaction_info() for more details on

@@ -355,7 +355,8 @@ domain_manager::get_compaction_info(rpc::get_compaction_info_request req) {
       .removable_tombstone_ranges = std::move(
         get_res->offsets_response.removable_tombstone_ranges),
       .dirty_ratio = get_res->dirty_ratio,
-      .earliest_dirty_ts = get_res->earliest_dirty_ts};
+      .earliest_dirty_ts = get_res->earliest_dirty_ts,
+      .extents = std::move(get_res->offsets_response.extents)};
 }
 
 ss::future<rpc::get_term_for_offset_reply>

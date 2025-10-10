@@ -69,7 +69,7 @@ private:
     // `compaction_info_map` collected from the metastore and pushes logs
     // eligible for compaction to the provided `log_compaction_queue`.
     void populate_log_infos(
-      const metastore::compaction_info_map&,
+      metastore::compaction_info_map&,
       log_set_t&,
       log_list_t&,
       log_compaction_queue&,

@@ -30,7 +30,11 @@ public:
     using iset_t = interval_set<kafka::offset::type>;
     bool operator==(const offset_interval_set&) const = default;
     auto serde_fields() { return std::tie(iset_); }
-    struct interval {
+    struct interval
+      : public serde::
+          envelope<interval, serde::version<0>, serde::compat_version<0>> {
+        auto serde_fields() { return std::tie(base_offset, last_offset); }
+
         kafka::offset base_offset;
         kafka::offset last_offset;
         friend std::ostream& operator<<(std::ostream&, const interval&);
