@@ -38,6 +38,32 @@ std::ostream& operator<<(std::ostream& o, const kv_t& kv) {
     return o;
 }
 
+model::record_batch batch_from_kvs(
+  const std::vector<kv_t>& records,
+  model::offset base_offset,
+  std::optional<model::timestamp> ts,
+  model::compression compression_type) {
+    storage::record_batch_builder builder(
+      model::record_batch_type::raft_data, base_offset);
+    builder.set_compression(compression_type);
+    for (auto& kv : records) {
+        const auto& k = kv.key;
+        const auto& v_opt = kv.val;
+        iobuf key_buf;
+        key_buf.append(k.data(), k.size());
+        std::optional<iobuf> val_buf;
+        if (v_opt.has_value()) {
+            const auto& v = v_opt.value();
+            val_buf = iobuf::from({v.data(), v.size()});
+        }
+        builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    }
+    if (ts.has_value()) {
+        builder.set_timestamp(ts.value());
+    }
+    return std::move(builder).build();
+}
+
 // Produces the given records per partition to the given topic.
 // NOTE: inputs must remain valid for the duration of the call.
 ss::future<kafka_produce_transport::pid_to_offset_map_t>
@@ -110,27 +136,11 @@ kafka_produce_transport::produce_partition_requests(
     chunked_vector<kafka::partition_produce_data> ret;
     ret.reserve(records_per_partition.size());
     for (const auto& [pid, records] : records_per_partition) {
-        storage::record_batch_builder builder(
-          model::record_batch_type::raft_data, model::offset(0));
-        builder.set_compression(compression_type);
-        for (auto& kv : records) {
-            const auto& k = kv.key;
-            const auto& v_opt = kv.val;
-            iobuf key_buf;
-            key_buf.append(k.data(), k.size());
-            std::optional<iobuf> val_buf;
-            if (v_opt.has_value()) {
-                const auto& v = v_opt.value();
-                val_buf = iobuf::from({v.data(), v.size()});
-            }
-            builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
-        }
-        if (ts.has_value()) {
-            builder.set_timestamp(ts.value());
-        }
+        auto batch = batch_from_kvs(
+          records, model::offset(0), ts, compression_type);
         kafka::produce_request::partition partition;
         partition.partition_index = pid;
-        partition.records.emplace(std::move(builder).build());
+        partition.records.emplace(std::move(batch));
         ret.emplace_back(std::move(partition));
     }
     return ret;
