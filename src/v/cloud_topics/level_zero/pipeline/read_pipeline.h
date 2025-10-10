@@ -110,6 +110,8 @@ public:
 
     event trigger_event(pipeline_stage stage);
 
+    uint64_t total_size_at_stage(pipeline_stage stage) const noexcept;
+
 private:
     ss::abort_source& get_abort_source() {
         return this->get_root_rtc().root_abort_source();

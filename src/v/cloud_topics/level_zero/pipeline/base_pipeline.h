@@ -119,14 +119,9 @@ public:
     ss::future<event> subscribe(event_filter<Clock>& flt) noexcept {
         // If the pipeline already has some requests we need to set the future
         // eagerly
-        bool found = false;
-        for (auto& wr : _pending) {
-            if (wr.stage == flt.get_stage()) {
-                found = true;
-                break;
-            }
-        }
-        if (found) {
+        auto bytes_acc = static_cast<Derived*>(this)->total_size_at_stage(
+          flt.get_stage());
+        if (bytes_acc > flt.get_size_threshold()) {
             // Trigger event immediately without waiting for the future
             co_return static_cast<Derived*>(this)->trigger_event(
               flt.get_stage());
@@ -259,8 +254,12 @@ protected:
             ev.pending_write_bytes = pending_bytes;
             ev.total_write_bytes = total_bytes;
         }
+        auto stage_bytes = static_cast<Derived*>(this)->total_size_at_stage(
+          stage);
         for (auto& f : _filters) {
-            if (f.get_type() == ev_type && f.get_stage() == stage) {
+            if (
+              f.get_type() == ev_type && f.get_stage() == stage
+              && f.get_size_threshold() < stage_bytes) {
                 vlog(
                   _logger.debug,
                   "{}.signal, pending_write_bytes: {}, "

@@ -222,6 +222,18 @@ void read_pipeline<Clock>::signal(pipeline_stage stage) {
 }
 
 template<class Clock>
+uint64_t
+read_pipeline<Clock>::total_size_at_stage(pipeline_stage stage) const noexcept {
+    uint64_t total = 0;
+    for (auto& r : this->get_pending()) {
+        if (r.stage == stage) {
+            total += r.query.output_size_estimate;
+        }
+    }
+    return total;
+}
+
+template<class Clock>
 event read_pipeline<Clock>::trigger_event(pipeline_stage stage) {
     return event{
       .stage = stage,

@@ -208,6 +208,18 @@ void write_pipeline<Clock>::signal(pipeline_stage stage) {
 }
 
 template<class Clock>
+uint64_t write_pipeline<Clock>::total_size_at_stage(
+  pipeline_stage stage) const noexcept {
+    uint64_t total = 0;
+    for (auto& r : this->get_pending()) {
+        if (r.stage == stage) {
+            total += r.size_bytes();
+        }
+    }
+    return total;
+}
+
+template<class Clock>
 event write_pipeline<Clock>::trigger_event(pipeline_stage stage) {
     return event{
       .stage = stage,
@@ -243,6 +255,7 @@ ss::future<checked<event, errc>> write_pipeline<Clock>::stage::wait_until(
     while (true) {
         l0::event_filter<Clock> filter(
           l0::event_type::new_write_request, _ps, deadline);
+        filter.set_size_threshold(max_bytes);
         auto event_fut = co_await ss::coroutine::as_future(
           _parent->subscribe(filter, *as));
         if (event_fut.failed()) {

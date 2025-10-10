@@ -164,6 +164,9 @@ public:
 
     event trigger_event(pipeline_stage stage);
 
+    /// Get total size of all write requests at certain stage
+    uint64_t total_size_at_stage(pipeline_stage stage) const noexcept;
+
 private:
     /// Get write requests atomically.
     /// The total size of returned write requests and the stage to which they

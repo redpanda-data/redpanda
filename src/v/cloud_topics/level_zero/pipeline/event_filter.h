@@ -94,6 +94,10 @@ public:
 
     pipeline_stage get_stage() const noexcept { return _stage; }
 
+    void set_size_threshold(uint64_t size) { _size_threshold = size; }
+
+    uint64_t get_size_threshold() const { return _size_threshold; }
+
     void trigger(const event& e) {
         if (e.type != _type) {
             return;
@@ -115,6 +119,7 @@ private:
     pipeline_stage _stage;
     std::optional<ss::promise<event>> _promise;
     std::optional<ss::timer<Clock>> _expiry;
+    uint64_t _size_threshold{0};
 
 public:
     template<class TT, class... Options>
