@@ -33,8 +33,13 @@ namespace compaction {
 // `record_batch`.
 class filter {
 public:
-    filter(sliding_window_reducer::sink& sink, model::ntp ntp)
-      : _sink(sink)
+    filter(
+      sliding_window_reducer::sink& sink,
+      model::ntp ntp,
+      std::optional<model::offset> start_offset = std::nullopt,
+      std::optional<model::offset> last_offset = std::nullopt)
+      : _stats(start_offset, last_offset)
+      , _sink(sink)
       , _ntp(std::move(ntp)) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch b);
@@ -45,6 +50,8 @@ protected:
     // indicated.
     ss::future<std::optional<model::record_batch>> do_filter_batch(
       model::record_batch b, std::vector<int32_t> offset_deltas) const;
+
+    mutable stats _stats;
 
 private:
     // For a given batch, this function should return a vector containing offset
@@ -75,8 +82,6 @@ private:
 
     sliding_window_reducer::sink& _sink;
     model::ntp _ntp;
-
-    stats _stats;
 };
 
 } // namespace compaction
