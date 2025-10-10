@@ -10,7 +10,9 @@
 
 #include "cloud_topics/level_one/compaction/filter.h"
 
+#include "cloud_topics/level_one/compaction/sink.h"
 #include "compaction/utils.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 
 #include <seastar/core/coroutine.hh>
@@ -22,17 +24,46 @@
 namespace cloud_topics::l1 {
 
 compaction_filter::compaction_filter(
-  compaction::sliding_window_reducer::sink& sink,
+  compaction_sink& sink,
   const compaction::key_offset_map& map,
-  model::ntp ntp)
-  : filter(sink, std::move(ntp))
-  , _map(map) {}
+  model::ntp ntp,
+  const offset_interval_set& removable_tombstone_ranges,
+  kafka::offset start_offset,
+  kafka::offset last_offset)
+  : filter(
+      sink,
+      std::move(ntp),
+      kafka::offset_cast(start_offset),
+      kafka::offset_cast(last_offset))
+  , _ct_sink(sink)
+  , _map(map)
+  , _removable_tombstone_ranges(removable_tombstone_ranges) {}
+
+ss::future<bool> compaction_filter::should_keep(
+  const model::record_batch& b, const model::record& r) const {
+    if (r.is_tombstone()) {
+        auto o = model::offset_cast(
+          b.base_offset() + model::offset_delta(r.offset_delta()));
+        if (_removable_tombstone_ranges.contains(o)) {
+            ++_stats.expired_tombstones_discarded;
+            co_return false;
+        }
+    }
+
+    auto keep = co_await compaction::is_latest_record_for_key(_map, b, r);
+
+    if (r.is_tombstone() && keep) {
+        _ct_sink.set_range_has_tombstones();
+    }
+
+    co_return keep;
+}
 
 ss::future<> compaction_filter::maybe_index_offset_delta(
   const model::record_batch& b,
   const model::record& r,
   std::vector<int32_t>& offset_deltas) const {
-    if (co_await compaction::is_latest_record_for_key(_map, b, r)) {
+    if (co_await should_keep(b, r)) {
         offset_deltas.push_back(r.offset_delta());
     }
 }

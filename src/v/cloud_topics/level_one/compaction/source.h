@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_topics/level_one/common/abstract_io.h"
+#include "cloud_topics/level_one/compaction/filter.h"
 #include "cloud_topics/level_one/metastore/metastore.h"
 #include "cloud_topics/level_one/metastore/offset_interval_set.h"
 #include "compaction/key_offset_map.h"
@@ -18,13 +19,16 @@
 
 namespace cloud_topics::l1 {
 
+class compaction_sink;
 
 class compaction_source : public compaction::sliding_window_reducer::source {
 public:
     compaction_source(
       model::ntp,
       model::topic_id_partition,
-      metastore::compaction_offsets_response,
+      const chunked_vector<offset_interval_set::interval>&,
+      const offset_interval_set&,
+      metastore::extent_offsets_t,
       compaction::key_offset_map*,
       metastore*,
       io*,
@@ -40,13 +44,32 @@ private:
     bool preempted() const;
 
 private:
+    friend compaction_sink;
+
     const model::ntp _ntp;
     const model::topic_id_partition _tp;
 
     // Offset ranges for the contained `topic_id_partition` obtained from the
     // metastore.
-    const offset_interval_set _dirty_ranges;
-    const offset_interval_set _removable_tombstone_ranges;
+    using interval_vec = chunked_vector<offset_interval_set::interval>;
+    const interval_vec& _dirty_range_intervals;
+    const offset_interval_set& _removable_tombstone_ranges;
+
+    // Iterator used during `map_building_iteration()` which points into the
+    // above vector `_dirty_range_intervals`.
+    interval_vec::const_iterator _dirty_range_it;
+
+    metastore::extent_offsets_t _extents;
+    metastore::extent_offsets_t::const_iterator _extents_it;
+    metastore::extent_offsets_t::const_iterator _extents_end_it;
+
+    // The base offset of the currently referenced extent. Set _before_ batches
+    // in the current extent are processed by the `filter` & `sink`.
+    kafka::offset _extent_base_offset{0};
+
+    // The last offset of the previously referenced extent. Set _after_ batches
+    // in the previous extent are processed by the `filter` & `sink`.
+    kafka::offset _extent_last_offset;
 
     // The key-offset map for this run of compaction. Built up from existing
     // data during `map_building_iteration()` by iterating over `_dirty_ranges`
@@ -59,19 +82,9 @@ private:
     ss::abort_source& _as;
     compaction_job_state& _state;
 
-    // Container representation of above `_dirty_ranges`.
-    using interval_vec = chunked_vector<offset_interval_set::interval>;
-    const interval_vec _dirty_range_intervals;
-
-    // Iterator used during `map_building_iteration()` which points into the
-    // above vector `_dirty_range_intervals`.
-    interval_vec::const_iterator _map_building_it;
-
-    // The offset intervals that were indexed during
-    // `map_building_iteration()`s.
-    // TODO: could potentially be represented using only one offset for the
-    // highest indexed record.
-    offset_interval_set _indexed_intervals;
+    // The start offset (inclusive) for the next round of
+    // `deduplication_iteration()`.
+    kafka::offset _next_deduplication_start_offset;
 };
 
 } // namespace cloud_topics::l1

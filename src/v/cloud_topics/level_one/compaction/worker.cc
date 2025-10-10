@@ -155,24 +155,39 @@ ss::future<> compaction_worker::compact_log(log_compaction_meta* log) {
     _job_state = compaction_job_state::running;
     _inflight_ntp = ntp;
 
-    // Copy
-    auto compaction_offsets = log->info_and_ts->info.offsets_response;
+    auto compaction_offsets = metastore::compaction_offsets_response{
+      .dirty_ranges = log->info_and_ts->info.offsets_response.dirty_ranges,
+      .removable_tombstone_ranges
+      = log->info_and_ts->info.offsets_response.removable_tombstone_ranges,
+      .extents = log->info_and_ts->info.offsets_response.extents.copy()};
 
     // Lazy initialization of offset map.
     if (!_map) {
         co_await initialize_map();
+    } else {
+        co_await _map->reset();
     }
+
+    auto dirty_range_intervals = compaction_offsets.dirty_ranges.to_vec();
 
     auto src = std::make_unique<compaction_source>(
       std::move(ntp),
       tidp,
-      compaction_offsets,
+      dirty_range_intervals,
+      compaction_offsets.removable_tombstone_ranges,
+      std::move(compaction_offsets.extents),
       _map.get(),
       _metastore,
       _io,
       _as,
       _job_state);
-    auto sink = std::make_unique<compaction_sink>(_io, _committer, tidp);
+    auto sink = std::make_unique<compaction_sink>(
+      tidp,
+      dirty_range_intervals,
+      compaction_offsets.removable_tombstone_ranges,
+      _map.get(),
+      _io,
+      _committer);
     auto reducer = compaction::sliding_window_reducer(
       std::move(src), std::move(sink));
 

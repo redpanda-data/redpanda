@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "cloud_topics/level_one/compaction/sink.h"
+#include "cloud_topics/level_one/metastore/offset_interval_set.h"
 #include "compaction/filter.h"
 #include "compaction/key_offset_map.h"
 
@@ -18,11 +20,17 @@ namespace cloud_topics::l1 {
 class compaction_filter : public compaction::filter {
 public:
     compaction_filter(
-      compaction::sliding_window_reducer::sink&,
+      compaction_sink&,
       const compaction::key_offset_map&,
-      model::ntp);
+      model::ntp,
+      const offset_interval_set&,
+      kafka::offset,
+      kafka::offset);
 
 private:
+    ss::future<bool>
+    should_keep(const model::record_batch&, const model::record&) const;
+
     ss::future<> maybe_index_offset_delta(
       const model::record_batch&,
       const model::record&,
@@ -36,7 +44,9 @@ private:
         model::record_batch, std::vector<int32_t>) const final;
 
 private:
+    compaction_sink& _ct_sink;
     const compaction::key_offset_map& _map;
+    const offset_interval_set& _removable_tombstone_ranges;
 };
 
 } // namespace cloud_topics::l1
