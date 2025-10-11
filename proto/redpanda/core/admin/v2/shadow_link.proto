@@ -28,37 +28,44 @@ import "google/protobuf/field_mask.proto";
 
 option (redpanda.pbgen.cpp_namespace) = "proto::admin";
 
+// Manage shadow links between clusters for disaster recovery.
+// Shadow links replicate topics from a source cluster to a shadow cluster.
 service ShadowLinkService {
+    // Create a new shadow link between clusters
     rpc CreateShadowLink(CreateShadowLinkRequest)
         returns (CreateShadowLinkResponse) {
         option (redpanda.pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
+    // Delete an existing shadow link
     rpc DeleteShadowLink(DeleteShadowLinkRequest)
         returns (DeleteShadowLinkResponse) {
         option (redpanda.pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
+    // Get information about a specific shadow link
     rpc GetShadowLink(GetShadowLinkRequest) returns (GetShadowLinkResponse) {
         option (redpanda.pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
+    // List all shadow links in the cluster
     rpc ListShadowLinks(ListShadowLinksRequest)
         returns (ListShadowLinksResponse) {
         option (redpanda.pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
+    // Update an existing shadow link configuration
     rpc UpdateShadowLink(UpdateShadowLinkRequest)
         returns (UpdateShadowLinkResponse) {
         option (redpanda.pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
-    // Fails over a shadow link or a single shadow topic
+    // Fail over a shadow link or single shadow topic for disaster recovery
     rpc FailOver(FailOverRequest) returns (FailOverResponse) {
         option (redpanda.pbgen.rpc) = {
             authz: SUPERUSER
@@ -67,11 +74,12 @@ service ShadowLinkService {
 }
 
 /* Resources */
-// A ShadowLink resource
+// Shadow link for disaster recovery between clusters.
+// Manages topic and metadata replication from source to shadow cluster.
 message ShadowLink {
-    // The name of the shadow link
+    // Name of the shadow link
     string name = 1 [(google.api.field_behavior) = REQUIRED];
-    // The UUID of the shadow link
+    // UUID of the shadow link
     string uid = 2 [
         (google.api.field_behavior) = OUTPUT_ONLY,
         (google.api.field_info).format = UUID4
@@ -83,35 +91,35 @@ message ShadowLink {
 }
 
 /* RPC Requests and Responses */
-// Create a new shadow link
+// `CreateShadowLinkRequest` contains parameters to create a new shadow link
 message CreateShadowLinkRequest {
-    // The shadow link to create
+    // Shadow link to create
     ShadowLink shadow_link = 1;
 }
-// Response to creating a shadow link
+// `CreateShadowLinkResponse` contains the created shadow link
 message CreateShadowLinkResponse {
-    // The shadow link that was created
+    // Created shadow link
     ShadowLink shadow_link = 1;
 }
-// Request to delete a shadow link
+// `DeleteShadowLinkRequest` specifies the shadow link to delete
 message DeleteShadowLinkRequest {
-    // The name of the link to delete
+    // Name of the link to delete
     string name = 1 [
         (google.api.field_behavior) = REQUIRED,
         (google.api.resource_reference) = {
             type: "redpanda.core.admin.ShadowLinkService/ShadowLink"
         }
     ];
-    // By default, `DeleteShadowLink` will fail if there are any active Shadow
-    // Topics.  Set this flag to `true` if you wish to delete the link while
-    // there are active shadow topics.
+    // By default, `DeleteShadowLink` fails if active shadow
+    // topics exist. Set this flag to `true` to force deletion of the link with
+    // active shadow topics.
     bool force = 2;
 }
-// Response to deleting a shadow link
+// `DeleteShadowLinkResponse` confirms shadow link deletion
 message DeleteShadowLinkResponse {}
-// Request to get the information about a shadow link
+// `GetShadowLinkRequest` specifies the shadow link to retrieve
 message GetShadowLinkRequest {
-    // The name of the shadow link to get
+    // Name of the shadow link to retrieve
     string name = 1 [
         (google.api.field_behavior) = REQUIRED,
         (google.api.resource_reference) = {
@@ -119,53 +127,53 @@ message GetShadowLinkRequest {
         }
     ];
 }
-// Response to getting a shadow link
+// `GetShadowLinkResponse` contains shadow link details
 message GetShadowLinkResponse {
-    // The shadow link that was retrieved
+    // Retrieved shadow link
     ShadowLink shadow_link = 1;
 }
-// Request to list all shadow links
+// `ListShadowLinksRequest` contains parameters for listing shadow links
 message ListShadowLinksRequest {}
-// All shadow links on the cluster
+// `ListShadowLinksResponse` contains all shadow links in the cluster
 message ListShadowLinksResponse {
-    // The shadow links
+    // List of shadow links
     repeated ShadowLink shadow_links = 1;
 }
-// Updates a shadow link
+// `UpdateShadowLinkRequest` contains parameters to update a shadow link
 message UpdateShadowLinkRequest {
-    // The shadow link to update
+    // Shadow link to update
     ShadowLink shadow_link = 1;
 
-    // The list of fields to update
-    // See [AIP-134](https://google.aip.dev/134) for how to use `field_mask`
+    // List of fields to update
+    // For `field_mask` usage, see [AIP-134](https://google.aip.dev/134)
     google.protobuf.FieldMask update_mask = 2;
 }
-// Response to the update shadow link request
+// `UpdateShadowLinkResponse` contains the updated shadow link
 message UpdateShadowLinkResponse {
-    // The shadow link that was updated
+    // Updated shadow link
     ShadowLink shadow_link = 1;
 }
-// Request to fail over a shadow link or a single shadow topic
+// `FailOverRequest` specifies the shadow link or topic to fail over
 message FailOverRequest {
-    // The name of the shadow link to fail over
+    // Name of the shadow link to fail over
     string name = 1 [
         (google.api.field_behavior) = REQUIRED,
         (google.api.resource_reference) = {
             type: "redpanda.core.admin.ShadowLinkService/ShadowLink"
         }
     ];
-    // The name of the shadow topic to fail over, if not set will fail over
+    // Shadow topic name to fail over. If not set, Redpanda fails over
     // the entire shadow link
     string shadow_topic_name = 2 [(google.api.field_behavior) = OPTIONAL];
 }
-// The response to the FailOverRequest
+// `FailOverResponse` contains the failed over shadow link
 message FailOverResponse {
-    // The shadow link that was failed over
+    // Failed over shadow link
     ShadowLink shadow_link = 1;
 }
 
 /* Other Messages */
-// ShadowLink options
+// `ShadowLinkConfigurations` contains client, sync, and security settings
 message ShadowLinkConfigurations {
     // Configuration for the internal kafka client
     ShadowLinkClientOptions client_options = 1;
@@ -176,68 +184,67 @@ message ShadowLinkConfigurations {
     // Security settings sync options
     SecuritySettingsSyncOptions security_sync_options = 4;
 }
-// Options for the client link
+// `ShadowLinkClientOptions` configures the Kafka client for source cluster
+// replication
 message ShadowLinkClientOptions {
-    // The bootstrap servers to use
+    // List of bootstrap servers to use
     repeated string bootstrap_servers = 1
         [(google.api.field_behavior) = REQUIRED];
-    // The Client ID for the Kafka RPC requests setn by this cluster to the
+    // Client ID for Kafka RPC requests sent by this cluster to the
     // source cluster
     string client_id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
-    // If provided, this is the expected ID of the source cluster.  If it does
-    // not match then the connection will be rejected.  If provided, this value
-    // must match the `ClusterId` field returned in the Kafka Metadata response
-    // message
+    // Expected ID of the source cluster. Redpanda rejects the connection if
+    // this ID does not match the actual source cluster ID. When you provide
+    // this value, it must match the `ClusterId` field in the Kafka Metadata
+    // response message
     string source_cluster_id = 3;
     // TLS settings
     optional TLSSettings tls_settings = 4;
     // Authentication settings
     optional AuthenticationConfiguration authentication_configuration = 5;
-    // Max metadata age
-    // If `0` is provided, defaults to 10 seconds
+    // Maximum metadata age
+    // Defaults to 10 seconds when you provide `0`
     int32 metadata_max_age_ms = 6;
     // Connection timeout
-    // If `0` is provided, defaults to 1 second
+    // Defaults to 1 second when you provide `0`
     int32 connection_timeout_ms = 7;
     // Retry base backoff
-    // If `0` is provided, defaults to 100ms
+    // Defaults to 100ms when you provide `0`
     int32 retry_backoff_ms = 8;
     // Fetch request timeout
-    // If `0` is provided, defaults to 100ms
+    // Defaults to 100ms when you provide `0`
     int32 fetch_wait_max_ms = 9;
-    // Fetch min bytes
-    // If `0` is provided, defaults to 1 byte
+    // Fetch minimum bytes
+    // Defaults to 1 byte when you provide `0`
     int32 fetch_min_bytes = 10;
-    // Fetch max bytes
-    // If `0` is provided, defaults to 1MiB
+    // Fetch maximum bytes
+    // Defaults to 1MiB when you provide `0`
     int32 fetch_max_bytes = 11;
 }
-// Options for syncing topic metadata
+// `TopicMetadataSyncOptions` defines configuration for syncing topic metadata
 message TopicMetadataSyncOptions {
-    // How often to sync metadata
-    // If `0` provided, defaults to 30 seconds
+    // Metadata sync frequency
+    // Defaults to 30 seconds when you provide `0`
     google.protobuf.Duration interval = 1;
-    // List of filters that indicate which topics should be automatically
-    // created as shadow topics on the shadow cluster.  This only controls
-    // automatic creation of shadow topics and does not effect the state of the
-    // mirror topic once it is created.
-    // Literal filters for `__consumer_offsets` and `_redpanda.audit_log` will be
-    // rejected as well as prefix filters to match topics prefixed with
-    // `_redpanda` or `__redpanda`.
-    // Wildcard `*` is permitted only for literal filters and will _not_ match
-    // any topics that start with `_redpanda` or `__redpanda`.  If users wish to
-    // shadow topics that start with `_redpanda` or `__redpanda`, they should
-    // provide a literal filter for those topics.
+    // List of filters that determine which topics Redpanda automatically
+    // creates as shadow topics on the shadow cluster. These filters control
+    // only automatic creation and do not affect the shadow topic state after
+    // creation. Redpanda rejects literal filters for `__consumer_offsets` and
+    // `_redpanda.audit_log`, as well as prefix filters that match topics with
+    // `_redpanda` or `__redpanda` prefixes.
+    // The wildcard `*` works only for literal filters and does not match
+    // topics starting with `_redpanda` or `__redpanda`. To shadow topics
+    // starting with `_redpanda` or `__redpanda`, provide a literal filter.
     repeated NameFilter auto_create_shadow_topic_filters = 2;
-    // List of topic properties that should be synced from the source topic.
-    // The following properties will always be replicated
+    // List of topic properties that Redpanda syncs from the source topic.
+    // Redpanda always replicates the following properties:
     // - Partition count
     // - `max.message.bytes`
     // - `cleanup.policy`
     // - `timestamp.type`
     //
-    // The following properties are not allowed to be replicated and adding them
-    // to this list will result in an error:
+    // Redpanda does not allow the following properties to be replicated. Adding
+    // them to this list results in an error:
     // - `redpanda.remote.readreplica`
     // - `redpanda.remote.recovery`
     // - `redpanda.remote.allowgaps`
@@ -245,10 +252,10 @@ message TopicMetadataSyncOptions {
     // - `redpanda.leaders.preference`
     // - `redpanda.cloud_topic.enabled`
     //
-    // This list is a list of properties in addition to the default properties
-    // that will be synced.  See `exclude_default`.
+    // This list contains properties in addition to the default properties
+    // that Redpanda syncs. See `exclude_default`.
     repeated string synced_shadow_topic_properties = 3;
-    // If false, then the following topic properties will be synced by default:
+    // When false, Redpanda syncs the following topic properties by default:
     // - `compression.type`
     // - `retention.bytes`
     // - `retention.ms`
@@ -257,152 +264,158 @@ message TopicMetadataSyncOptions {
     // - `min.compaction.lag.ms`
     // - `max.compaction.lag.ms`
     //
-    // If this is true, then only the properties listed in
-    // `synced_shadow_topic_properties` will be synced.
+    // When true, Redpanda syncs only the properties listed in
+    // `synced_shadow_topic_properties`.
     bool exclude_default = 4;
 }
-// Options for syncing consumer offsets
+// `ConsumerOffsetSyncOptions` defines configuration for syncing consumer
+// offsets
 message ConsumerOffsetSyncOptions {
     // Sync interval
-    // If `0` provided, defaults to 30 seconds
+    // Defaults to 30 seconds when you provide `0`
     google.protobuf.Duration interval = 1;
-    // Whether it's enabled
+    // Whether sync is enabled
     bool enabled = 2;
-    // The filters
+    // List of consumer group name filters
     repeated NameFilter group_filters = 3;
 }
-// Options for syncing security settings
+// `SecuritySettingsSyncOptions` defines configuration for syncing security
+// settings
 message SecuritySettingsSyncOptions {
     // Sync interval
-    // If `0` provided, defaults to 30 seconds
+    // Defaults to 30 seconds when you provide `0`
     google.protobuf.Duration interval = 1;
-    // Whether or not it's enabled
+    // Whether sync is enabled
     bool enabled = 2;
-    // ACL filters
+    // List of role name filters
+    repeated NameFilter role_filters = 3;
+    // List of SCRAM credential filters
+    repeated NameFilter scram_cred_filters = 4;
+    // List of ACL filters
     repeated ACLFilter acl_filters = 5;
 }
-// TLS settings
+// `TLSSettings` configures TLS security for source cluster connections
 message TLSSettings {
-    // Whether or not TLS is enabled
+    // Whether TLS is enabled
     bool enabled = 3;
-    // May provide TLS as a set of files or PEM values
+    // Provide TLS as a set of files or PEM values
     oneof tls_settings {
-        // Certificates and keys are provided as files
+        // Provide certificates and keys as files
         TLSFileSettings tls_file_settings = 1;
-        // Certificates and keys are provided in PEM format
+        // Provide certificates and keys in PEM format
         TLSPEMSettings tls_pem_settings = 2;
     }
 }
-// Authentication config.  Currently only supporting SASL/SCRAM,
-// however made as a oneof for expansion
+// Authentication configuration. Currently supports only SASL/SCRAM
+// but uses oneof for future expansion
 message AuthenticationConfiguration {
     oneof authentication {
         // SASL/SCRAM configuration
         ScramConfig scram_configuration = 1;
     }
 }
-// TLS file settings
+// `TLSFileSettings` provides TLS certificates and keys via file paths
 message TLSFileSettings {
     // Path to the CA
     string ca_path = 1;
-    // `Key` and `Cert` are optional but if one is provided, then both must be
-    // Path to the key
+    // `key_path` and `cert_path` are optional. If you provide one, you must
+    // provide both. Path to the private key
     string key_path = 2;
-    // Path to the cert
+    // Path to the certificate
     string cert_path = 3;
 }
-// Used when providing the TLS information in PEM format
+// `TLSPEMSettings` provides TLS certificates and keys in PEM format
 message TLSPEMSettings {
-    // The CA
+    // Certificate authority
     string ca = 1;
-    // `Key` and `Cert` are optional but if one is provided, then both must be
-    // The key
+    // `key` and `cert` are optional. If you provide one, you must provide both
+    // Private key
     string key = 2 [(google.api.field_behavior) = INPUT_ONLY];
-    // The SHA-256 of the key, in base64 format
+    // SHA-256 hash of the key in base64 format
     string key_fingerprint = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
-    // The cert
+    // Certificate
     string cert = 4;
 }
-// SCRAM settings
+// `ScramConfig` configures SASL/SCRAM authentication credentials
 message ScramConfig {
     // SCRAM username
     string username = 1;
     // Password
     string password = 2 [(google.api.field_behavior) = INPUT_ONLY];
-    // Indicates that the password has been set
+    // Indicates whether you set the password
     bool password_set = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
-    // Timestamp of when the password was last set - only valid if `password_set`
-    // is `true`
+    // Timestamp when you last set the password. Redpanda populates this field
+    // only when `password_set` is `true`
     google.protobuf.Timestamp password_set_at = 4
         [(google.api.field_behavior) = OUTPUT_ONLY];
-    // The SCRAM mechanism to use
+    // SCRAM mechanism to use
     ScramMechanism scram_mechanism = 5;
 }
-// A filter based on the name of a resource
+// `NameFilter` defines filtering rules based on resource names
 message NameFilter {
     // Literal or prefix
     PatternType pattern_type = 1;
     // Include or exclude
     FilterType filter_type = 2;
-    // The resource name, or `*`
-    // Note if `*`, must be the _only_ character
+    // Resource name or `*`
+    // If you use `*`, it must be the only character
     // and `pattern_type` must be `PATTERN_TYPE_LITERAL`
     string name = 3;
 }
-// A filter for ACLs
+// `ACLFilter` defines filtering rules for access control lists
 message ACLFilter {
-    // The resource filter
+    // Resource filter
     ACLResourceFilter resource_filter = 1;
-    // The access filter
+    // Access filter
     ACLAccessFilter access_filter = 2;
 }
-// A filter to match ACLs for resources
+// `ACLResourceFilter` defines filtering rules for ACL resources
 message ACLResourceFilter {
-    // The ACL resource type to match
+    // ACL resource type to match
     common.ACLResource resource_type = 1;
-    // The pattern to apply to name
+    // Pattern to apply to name
     common.ACLPattern pattern_type = 2;
-    // Name, if not given will default to match all items in `resource_type`.
-    // Note that asterisk `*` is literal and matches resource ACLs
-    // that are named `*`
+    // Resource name to match. When not provided, Redpanda matches all items in
+    // `resource_type`. The asterisk `*` is not a wildcard but literal text that
+    // matches resources specifically named `*`
     string name = 3;
 }
-// Filter an ACL based on its access
+// `ACLAccessFilter` defines filtering rules for ACL access permissions
 message ACLAccessFilter {
-    // The name of the principal, if not set will default to match
-    // all principals with the specified `operation` and `permission_type`
+    // Principal name. When not set, Redpanda matches all principals with the
+    // specified `operation` and `permission_type`
     string principal = 1;
-    // The ACL operation to match
+    // ACL operation to match
     common.ACLOperation operation = 2;
-    // The permission type
+    // Permission type
     common.ACLPermissionType permission_type = 3;
-    // The host to match.  If not set, will default to match all hosts
-    // with the specified `operation` and `permission_type`. Note that
-    // the asterisk `*` is literal and matches hosts that are set to `*`
+    // Host to match. When not set, Redpanda matches all hosts with the
+    // specified `operation` and `permission_type`. The asterisk `*` is not a
+    // wildcard but literal text that matches hosts set to `*`
     string host = 4;
 }
-// Status of the shadow link
+// `ShadowLinkStatus` reports the operational status of a shadow link
 message ShadowLinkStatus {
     ShadowLinkState state = 1;
-    // Statuses of the running tasks
+    // List of running task statuses
     repeated ShadowLinkTaskStatus task_statuses = 2;
-    // Status of shadow topics
+    // List of shadow topic statuses
     repeated ShadowTopicStatus shadow_topic_statuses = 3;
-    // List of topic properties that are being synced
+    // List of topic properties that Redpanda syncs
     repeated string synced_shadow_topic_properties = 4;
 }
-// Status of a task
+// `ShadowLinkTaskStatus` reports the status of a shadow link task
 message ShadowLinkTaskStatus {
     // Name of the task
     string name = 1;
     // State of the task
     TaskState state = 2;
-    // Reason for task being in state
+    // Reason for the task state
     string reason = 3;
-    // The broker the task is running on
+    // Broker running the task
     int32 broker_id = 4;
 }
-// Status of a ShadowTopic
+// `ShadowTopicStatus` reports the operational status of a shadow topic
 message ShadowTopicStatus {
     // Name of the shadow topic
     string name = 1;
@@ -413,29 +426,29 @@ message ShadowTopicStatus {
     // List of partition information for the shadow topic
     repeated TopicPartitionInformation partition_information = 4;
 }
-// Topic partition information
+// `TopicPartitionInformation` provides status details for topic partitions
 message TopicPartitionInformation {
     // Partition ID
     int64 partition_id = 1;
-    // Source partition's LSO
+    // Source partition last stable offset (LSO)
     int64 source_last_stable_offset = 2;
-    // Source partition's HWM
+    // Source partition high watermark (HWM)
     int64 source_high_watermark = 3;
-    // Shadowed partition's HWM
+    // Shadowed partition high watermark (HWM)
     int64 high_watermark = 4;
 }
 
 /* Enums */
-// State of the shadow link
+// `ShadowLinkState` represents the operational state of a shadow link.
 enum ShadowLinkState {
     // Unspecified
     SHADOW_LINK_STATE_UNSPECIFIED = 0;
     // Shadow link is active
     SHADOW_LINK_STATE_ACTIVE = 1;
-    // Shadow link was paused
+    // Redpanda paused the shadow link
     SHADOW_LINK_STATE_PAUSED = 2;
 }
-// Valid SCRAM mechanisms
+// `ScramMechanism` specifies the SASL SCRAM authentication mechanism.
 enum ScramMechanism {
     SCRAM_MECHANISM_UNSPECIFIED = 0;
     // SCRAM-SHA-256
@@ -443,52 +456,52 @@ enum ScramMechanism {
     // SCRAM-SHA-512
     SCRAM_MECHANISM_SCRAM_SHA_512 = 2;
 }
-// The matching pattern type
+// `PatternType` defines how name patterns are matched in filters.
 enum PatternType {
     PATTERN_TYPE_UNSPECIFIED = 0;
-    // Must match the filter exactly
+    // Matches the filter exactly
     PATTERN_TYPE_LITERAL = 1;
-    // Will match anything that starts with filter
+    // Matches anything that starts with the filter
     PATTERN_TYPE_PREFIX = 2;
 }
-// What type of filter this is, include or exclude
+// `FilterType` determines whether a filter includes or excludes matches.
 enum FilterType {
     FILTER_TYPE_UNSPECIFIED = 0;
-    // Include the items that match the filter
+    // Includes items that match the filter
     FILTER_TYPE_INCLUDE = 1;
-    // Exclude the items that match the filter
+    // Excludes items that match the filter
     FILTER_TYPE_EXCLUDE = 2;
 }
 
-// Task states
+// `TaskState` represents the operational state of a shadow link task.
 enum TaskState {
     TASK_STATE_UNSPECIFIED = 0;
     // Task is active
     TASK_STATE_ACTIVE = 1;
-    // Task was paused
+    // Redpanda paused the task
     TASK_STATE_PAUSED = 2;
-    // Task is unable to communicate with source cluster
+    // Task cannot communicate with the source cluster
     TASK_STATE_LINK_UNAVAILABLE = 3;
     // Task is not running
     TASK_STATE_NOT_RUNNING = 4;
     // Task is faulted
     TASK_STATE_FAULTED = 5;
 }
-// State of a shadow topic
+// `ShadowTopicState` represents the operational state of a shadow topic.
 enum ShadowTopicState {
     SHADOW_TOPIC_STATE_UNSPECIFIED = 0;
     // Shadow topic is active
     SHADOW_TOPIC_STATE_ACTIVE = 1;
-    // Shadow topic has faulted
+    // Shadow topic encountered a fault
     SHADOW_TOPIC_STATE_FAULTED = 2;
-    // Shadow topic has been paused
+    // Redpanda paused the shadow topic
     SHADOW_TOPIC_STATE_PAUSED = 3;
     // Shadow topic is in the process of failing over
     SHADOW_TOPIC_STATE_FAILING_OVER = 4;
-    // Shadow topic has failed over successfully
+    // Shadow topic completed failover successfully
     SHADOW_TOPIC_STATE_FAILED_OVER = 5;
-    // Shadow topic is in the process of being promoted
+    // Redpanda is promoting the shadow topic
     SHADOW_TOPIC_STATE_PROMOTING = 6;
-    // Shadow topic is promoted successfully
+    // Redpanda promoted the shadow topic successfully
     SHADOW_TOPIC_STATE_PROMOTED = 7;
 }

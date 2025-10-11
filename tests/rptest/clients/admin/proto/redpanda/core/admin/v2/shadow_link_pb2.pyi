@@ -44,19 +44,19 @@ class _ShadowLinkStateEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper
     SHADOW_LINK_STATE_ACTIVE: _ShadowLinkState.ValueType
     'Shadow link is active'
     SHADOW_LINK_STATE_PAUSED: _ShadowLinkState.ValueType
-    'Shadow link was paused'
+    'Redpanda paused the shadow link'
 
 class ShadowLinkState(_ShadowLinkState, metaclass=_ShadowLinkStateEnumTypeWrapper):
     """Enums
 
-    State of the shadow link
+    `ShadowLinkState` represents the operational state of a shadow link.
     """
 SHADOW_LINK_STATE_UNSPECIFIED: ShadowLinkState.ValueType
 'Unspecified'
 SHADOW_LINK_STATE_ACTIVE: ShadowLinkState.ValueType
 'Shadow link is active'
 SHADOW_LINK_STATE_PAUSED: ShadowLinkState.ValueType
-'Shadow link was paused'
+'Redpanda paused the shadow link'
 global___ShadowLinkState = ShadowLinkState
 
 class _ScramMechanism:
@@ -72,7 +72,7 @@ class _ScramMechanismEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper.
     'SCRAM-SHA-512'
 
 class ScramMechanism(_ScramMechanism, metaclass=_ScramMechanismEnumTypeWrapper):
-    """Valid SCRAM mechanisms"""
+    """`ScramMechanism` specifies the SASL SCRAM authentication mechanism."""
 SCRAM_MECHANISM_UNSPECIFIED: ScramMechanism.ValueType
 SCRAM_MECHANISM_SCRAM_SHA_256: ScramMechanism.ValueType
 'SCRAM-SHA-256'
@@ -88,17 +88,17 @@ class _PatternTypeEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._En
     DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
     PATTERN_TYPE_UNSPECIFIED: _PatternType.ValueType
     PATTERN_TYPE_LITERAL: _PatternType.ValueType
-    'Must match the filter exactly'
+    'Matches the filter exactly'
     PATTERN_TYPE_PREFIX: _PatternType.ValueType
-    'Will match anything that starts with filter'
+    'Matches anything that starts with the filter'
 
 class PatternType(_PatternType, metaclass=_PatternTypeEnumTypeWrapper):
-    """The matching pattern type"""
+    """`PatternType` defines how name patterns are matched in filters."""
 PATTERN_TYPE_UNSPECIFIED: PatternType.ValueType
 PATTERN_TYPE_LITERAL: PatternType.ValueType
-'Must match the filter exactly'
+'Matches the filter exactly'
 PATTERN_TYPE_PREFIX: PatternType.ValueType
-'Will match anything that starts with filter'
+'Matches anything that starts with the filter'
 global___PatternType = PatternType
 
 class _FilterType:
@@ -109,17 +109,17 @@ class _FilterTypeEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._Enu
     DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
     FILTER_TYPE_UNSPECIFIED: _FilterType.ValueType
     FILTER_TYPE_INCLUDE: _FilterType.ValueType
-    'Include the items that match the filter'
+    'Includes items that match the filter'
     FILTER_TYPE_EXCLUDE: _FilterType.ValueType
-    'Exclude the items that match the filter'
+    'Excludes items that match the filter'
 
 class FilterType(_FilterType, metaclass=_FilterTypeEnumTypeWrapper):
-    """What type of filter this is, include or exclude"""
+    """`FilterType` determines whether a filter includes or excludes matches."""
 FILTER_TYPE_UNSPECIFIED: FilterType.ValueType
 FILTER_TYPE_INCLUDE: FilterType.ValueType
-'Include the items that match the filter'
+'Includes items that match the filter'
 FILTER_TYPE_EXCLUDE: FilterType.ValueType
-'Exclude the items that match the filter'
+'Excludes items that match the filter'
 global___FilterType = FilterType
 
 class _TaskState:
@@ -132,23 +132,23 @@ class _TaskStateEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._Enum
     TASK_STATE_ACTIVE: _TaskState.ValueType
     'Task is active'
     TASK_STATE_PAUSED: _TaskState.ValueType
-    'Task was paused'
+    'Redpanda paused the task'
     TASK_STATE_LINK_UNAVAILABLE: _TaskState.ValueType
-    'Task is unable to communicate with source cluster'
+    'Task cannot communicate with the source cluster'
     TASK_STATE_NOT_RUNNING: _TaskState.ValueType
     'Task is not running'
     TASK_STATE_FAULTED: _TaskState.ValueType
     'Task is faulted'
 
 class TaskState(_TaskState, metaclass=_TaskStateEnumTypeWrapper):
-    """Task states"""
+    """`TaskState` represents the operational state of a shadow link task."""
 TASK_STATE_UNSPECIFIED: TaskState.ValueType
 TASK_STATE_ACTIVE: TaskState.ValueType
 'Task is active'
 TASK_STATE_PAUSED: TaskState.ValueType
-'Task was paused'
+'Redpanda paused the task'
 TASK_STATE_LINK_UNAVAILABLE: TaskState.ValueType
-'Task is unable to communicate with source cluster'
+'Task cannot communicate with the source cluster'
 TASK_STATE_NOT_RUNNING: TaskState.ValueType
 'Task is not running'
 TASK_STATE_FAULTED: TaskState.ValueType
@@ -165,42 +165,43 @@ class _ShadowTopicStateEnumTypeWrapper(google.protobuf.internal.enum_type_wrappe
     SHADOW_TOPIC_STATE_ACTIVE: _ShadowTopicState.ValueType
     'Shadow topic is active'
     SHADOW_TOPIC_STATE_FAULTED: _ShadowTopicState.ValueType
-    'Shadow topic has faulted'
+    'Shadow topic encountered a fault'
     SHADOW_TOPIC_STATE_PAUSED: _ShadowTopicState.ValueType
-    'Shadow topic has been paused'
+    'Redpanda paused the shadow topic'
     SHADOW_TOPIC_STATE_FAILING_OVER: _ShadowTopicState.ValueType
     'Shadow topic is in the process of failing over'
     SHADOW_TOPIC_STATE_FAILED_OVER: _ShadowTopicState.ValueType
-    'Shadow topic has failed over successfully'
+    'Shadow topic completed failover successfully'
     SHADOW_TOPIC_STATE_PROMOTING: _ShadowTopicState.ValueType
-    'Shadow topic is in the process of being promoted'
+    'Redpanda is promoting the shadow topic'
     SHADOW_TOPIC_STATE_PROMOTED: _ShadowTopicState.ValueType
-    'Shadow topic is promoted successfully'
+    'Redpanda promoted the shadow topic successfully'
 
 class ShadowTopicState(_ShadowTopicState, metaclass=_ShadowTopicStateEnumTypeWrapper):
-    """State of a shadow topic"""
+    """`ShadowTopicState` represents the operational state of a shadow topic."""
 SHADOW_TOPIC_STATE_UNSPECIFIED: ShadowTopicState.ValueType
 SHADOW_TOPIC_STATE_ACTIVE: ShadowTopicState.ValueType
 'Shadow topic is active'
 SHADOW_TOPIC_STATE_FAULTED: ShadowTopicState.ValueType
-'Shadow topic has faulted'
+'Shadow topic encountered a fault'
 SHADOW_TOPIC_STATE_PAUSED: ShadowTopicState.ValueType
-'Shadow topic has been paused'
+'Redpanda paused the shadow topic'
 SHADOW_TOPIC_STATE_FAILING_OVER: ShadowTopicState.ValueType
 'Shadow topic is in the process of failing over'
 SHADOW_TOPIC_STATE_FAILED_OVER: ShadowTopicState.ValueType
-'Shadow topic has failed over successfully'
+'Shadow topic completed failover successfully'
 SHADOW_TOPIC_STATE_PROMOTING: ShadowTopicState.ValueType
-'Shadow topic is in the process of being promoted'
+'Redpanda is promoting the shadow topic'
 SHADOW_TOPIC_STATE_PROMOTED: ShadowTopicState.ValueType
-'Shadow topic is promoted successfully'
+'Redpanda promoted the shadow topic successfully'
 global___ShadowTopicState = ShadowTopicState
 
 @typing.final
 class ShadowLink(google.protobuf.message.Message):
     """Resources
 
-    A ShadowLink resource
+    Shadow link for disaster recovery between clusters.
+    Manages topic and metadata replication from source to shadow cluster.
     """
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     NAME_FIELD_NUMBER: builtins.int
@@ -208,9 +209,9 @@ class ShadowLink(google.protobuf.message.Message):
     CONFIGURATIONS_FIELD_NUMBER: builtins.int
     STATUS_FIELD_NUMBER: builtins.int
     name: builtins.str
-    'The name of the shadow link'
+    'Name of the shadow link'
     uid: builtins.str
-    'The UUID of the shadow link'
+    'UUID of the shadow link'
 
     @property
     def configurations(self) -> global___ShadowLinkConfigurations:
@@ -234,14 +235,14 @@ global___ShadowLink = ShadowLink
 class CreateShadowLinkRequest(google.protobuf.message.Message):
     """RPC Requests and Responses
 
-    Create a new shadow link
+    `CreateShadowLinkRequest` contains parameters to create a new shadow link
     """
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     SHADOW_LINK_FIELD_NUMBER: builtins.int
 
     @property
     def shadow_link(self) -> global___ShadowLink:
-        """The shadow link to create"""
+        """Shadow link to create"""
 
     def __init__(self, *, shadow_link: global___ShadowLink | None=...) -> None:
         ...
@@ -255,13 +256,13 @@ global___CreateShadowLinkRequest = CreateShadowLinkRequest
 
 @typing.final
 class CreateShadowLinkResponse(google.protobuf.message.Message):
-    """Response to creating a shadow link"""
+    """`CreateShadowLinkResponse` contains the created shadow link"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     SHADOW_LINK_FIELD_NUMBER: builtins.int
 
     @property
     def shadow_link(self) -> global___ShadowLink:
-        """The shadow link that was created"""
+        """Created shadow link"""
 
     def __init__(self, *, shadow_link: global___ShadowLink | None=...) -> None:
         ...
@@ -275,14 +276,14 @@ global___CreateShadowLinkResponse = CreateShadowLinkResponse
 
 @typing.final
 class DeleteShadowLinkRequest(google.protobuf.message.Message):
-    """Request to delete a shadow link"""
+    """`DeleteShadowLinkRequest` specifies the shadow link to delete"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     NAME_FIELD_NUMBER: builtins.int
     FORCE_FIELD_NUMBER: builtins.int
     name: builtins.str
-    'The name of the link to delete'
+    'Name of the link to delete'
     force: builtins.bool
-    "By default, DeleteShadowLink will fail if there are any active Shadow\n    Topics.  Set this flag to 'true' if you wish to delete the link while\n    there are active shadow topics.\n    "
+    'By default, `DeleteShadowLink` fails if active shadow\n    topics exist. Set this flag to `true` to force deletion of the link with\n    active shadow topics.\n    '
 
     def __init__(self, *, name: builtins.str=..., force: builtins.bool=...) -> None:
         ...
@@ -293,7 +294,7 @@ global___DeleteShadowLinkRequest = DeleteShadowLinkRequest
 
 @typing.final
 class DeleteShadowLinkResponse(google.protobuf.message.Message):
-    """Response to deleting a shadow link"""
+    """`DeleteShadowLinkResponse` confirms shadow link deletion"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     def __init__(self) -> None:
@@ -302,11 +303,11 @@ global___DeleteShadowLinkResponse = DeleteShadowLinkResponse
 
 @typing.final
 class GetShadowLinkRequest(google.protobuf.message.Message):
-    """Request to get the information about a shadow link"""
+    """`GetShadowLinkRequest` specifies the shadow link to retrieve"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     NAME_FIELD_NUMBER: builtins.int
     name: builtins.str
-    'The name of the shadow link to get'
+    'Name of the shadow link to retrieve'
 
     def __init__(self, *, name: builtins.str=...) -> None:
         ...
@@ -317,13 +318,13 @@ global___GetShadowLinkRequest = GetShadowLinkRequest
 
 @typing.final
 class GetShadowLinkResponse(google.protobuf.message.Message):
-    """Response to getting a shadow link"""
+    """`GetShadowLinkResponse` contains shadow link details"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     SHADOW_LINK_FIELD_NUMBER: builtins.int
 
     @property
     def shadow_link(self) -> global___ShadowLink:
-        """The shadow link that was retrieved"""
+        """Retrieved shadow link"""
 
     def __init__(self, *, shadow_link: global___ShadowLink | None=...) -> None:
         ...
@@ -337,7 +338,7 @@ global___GetShadowLinkResponse = GetShadowLinkResponse
 
 @typing.final
 class ListShadowLinksRequest(google.protobuf.message.Message):
-    """Request to list all shadow links"""
+    """`ListShadowLinksRequest` contains parameters for listing shadow links"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     def __init__(self) -> None:
@@ -346,13 +347,13 @@ global___ListShadowLinksRequest = ListShadowLinksRequest
 
 @typing.final
 class ListShadowLinksResponse(google.protobuf.message.Message):
-    """All shadow links on the cluster"""
+    """`ListShadowLinksResponse` contains all shadow links in the cluster"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     SHADOW_LINKS_FIELD_NUMBER: builtins.int
 
     @property
     def shadow_links(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___ShadowLink]:
-        """The shadow links"""
+        """List of shadow links"""
 
     def __init__(self, *, shadow_links: collections.abc.Iterable[global___ShadowLink] | None=...) -> None:
         ...
@@ -363,19 +364,19 @@ global___ListShadowLinksResponse = ListShadowLinksResponse
 
 @typing.final
 class UpdateShadowLinkRequest(google.protobuf.message.Message):
-    """Updates a shadow link"""
+    """`UpdateShadowLinkRequest` contains parameters to update a shadow link"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     SHADOW_LINK_FIELD_NUMBER: builtins.int
     UPDATE_MASK_FIELD_NUMBER: builtins.int
 
     @property
     def shadow_link(self) -> global___ShadowLink:
-        """The shadow link to update"""
+        """Shadow link to update"""
 
     @property
     def update_mask(self) -> google.protobuf.field_mask_pb2.FieldMask:
-        """The list of fields to update
-        See [AIP-134](https://google.aip.dev/134) for how to use `field_mask`
+        """List of fields to update
+        For `field_mask` usage, see [AIP-134](https://google.aip.dev/134)
         """
 
     def __init__(self, *, shadow_link: global___ShadowLink | None=..., update_mask: google.protobuf.field_mask_pb2.FieldMask | None=...) -> None:
@@ -390,13 +391,13 @@ global___UpdateShadowLinkRequest = UpdateShadowLinkRequest
 
 @typing.final
 class UpdateShadowLinkResponse(google.protobuf.message.Message):
-    """Response to the update shadow link request"""
+    """`UpdateShadowLinkResponse` contains the updated shadow link"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     SHADOW_LINK_FIELD_NUMBER: builtins.int
 
     @property
     def shadow_link(self) -> global___ShadowLink:
-        """The shadow link that was updated"""
+        """Updated shadow link"""
 
     def __init__(self, *, shadow_link: global___ShadowLink | None=...) -> None:
         ...
@@ -410,14 +411,14 @@ global___UpdateShadowLinkResponse = UpdateShadowLinkResponse
 
 @typing.final
 class FailOverRequest(google.protobuf.message.Message):
-    """Request to fail over a shadow link or a single shadow topic"""
+    """`FailOverRequest` specifies the shadow link or topic to fail over"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     NAME_FIELD_NUMBER: builtins.int
     SHADOW_TOPIC_NAME_FIELD_NUMBER: builtins.int
     name: builtins.str
-    'The name of the shadow link to fail over'
+    'Name of the shadow link to fail over'
     shadow_topic_name: builtins.str
-    'The name of the shadow topic to fail over, if not set will fail over\n    the entire shadow link\n    '
+    'Shadow topic name to fail over. If not set, Redpanda fails over\n    the entire shadow link\n    '
 
     def __init__(self, *, name: builtins.str=..., shadow_topic_name: builtins.str=...) -> None:
         ...
@@ -428,13 +429,13 @@ global___FailOverRequest = FailOverRequest
 
 @typing.final
 class FailOverResponse(google.protobuf.message.Message):
-    """The response to the FailOverRequest"""
+    """`FailOverResponse` contains the failed over shadow link"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     SHADOW_LINK_FIELD_NUMBER: builtins.int
 
     @property
     def shadow_link(self) -> global___ShadowLink:
-        """The shadow link that was failed over"""
+        """Failed over shadow link"""
 
     def __init__(self, *, shadow_link: global___ShadowLink | None=...) -> None:
         ...
@@ -450,7 +451,7 @@ global___FailOverResponse = FailOverResponse
 class ShadowLinkConfigurations(google.protobuf.message.Message):
     """Other Messages
 
-    ShadowLink options
+    `ShadowLinkConfigurations` contains client, sync, and security settings
     """
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     CLIENT_OPTIONS_FIELD_NUMBER: builtins.int
@@ -486,7 +487,9 @@ global___ShadowLinkConfigurations = ShadowLinkConfigurations
 
 @typing.final
 class ShadowLinkClientOptions(google.protobuf.message.Message):
-    """Options for the client link"""
+    """`ShadowLinkClientOptions` configures the Kafka client for source cluster
+    replication
+    """
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     BOOTSTRAP_SERVERS_FIELD_NUMBER: builtins.int
     CLIENT_ID_FIELD_NUMBER: builtins.int
@@ -500,25 +503,25 @@ class ShadowLinkClientOptions(google.protobuf.message.Message):
     FETCH_MIN_BYTES_FIELD_NUMBER: builtins.int
     FETCH_MAX_BYTES_FIELD_NUMBER: builtins.int
     client_id: builtins.str
-    'The Client ID for the Kafka RPC requests setn by this cluster to the\n    source cluster\n    '
+    'Client ID for Kafka RPC requests sent by this cluster to the\n    source cluster\n    '
     source_cluster_id: builtins.str
-    'If provided, this is the expected ID of the source cluster.  If it does\n    not match then the connection will be rejected.  If provided, this value\n    must match the `ClusterId` field returned in the Kafka Metadata response\n    message\n    '
+    'Expected ID of the source cluster. Redpanda rejects the connection if\n    this ID does not match the actual source cluster ID. When you provide\n    this value, it must match the `ClusterId` field in the Kafka Metadata\n    response message\n    '
     metadata_max_age_ms: builtins.int
-    'Max metadata age\n    If 0 is provided, defaults to 10 seconds\n    '
+    'Maximum metadata age\n    Defaults to 10 seconds when you provide `0`\n    '
     connection_timeout_ms: builtins.int
-    'Connection timeout\n    If 0 is provided, defaults to 1 second\n    '
+    'Connection timeout\n    Defaults to 1 second when you provide `0`\n    '
     retry_backoff_ms: builtins.int
-    'Retry base backoff\n    If 0 is provided, defaults to 100ms\n    '
+    'Retry base backoff\n    Defaults to 100ms when you provide `0`\n    '
     fetch_wait_max_ms: builtins.int
-    'Fetch request timeout\n    If 0 is provided, defaults to 100ms\n    '
+    'Fetch request timeout\n    Defaults to 100ms when you provide `0`\n    '
     fetch_min_bytes: builtins.int
-    'Fetch min bytes\n    If 0 is provided, defaults to 1 byte\n    '
+    'Fetch minimum bytes\n    Defaults to 1 byte when you provide `0`\n    '
     fetch_max_bytes: builtins.int
-    'Fetch max bytes\n    If 0 is provided, defaults to 1MiB\n    '
+    'Fetch maximum bytes\n    Defaults to 1MiB when you provide `0`\n    '
 
     @property
     def bootstrap_servers(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
-        """The bootstrap servers to use"""
+        """List of bootstrap servers to use"""
 
     @property
     def tls_settings(self) -> global___TLSSettings:
@@ -548,47 +551,45 @@ global___ShadowLinkClientOptions = ShadowLinkClientOptions
 
 @typing.final
 class TopicMetadataSyncOptions(google.protobuf.message.Message):
-    """Options for syncing topic metadata"""
+    """`TopicMetadataSyncOptions` defines configuration for syncing topic metadata"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     INTERVAL_FIELD_NUMBER: builtins.int
     AUTO_CREATE_SHADOW_TOPIC_FILTERS_FIELD_NUMBER: builtins.int
     SYNCED_SHADOW_TOPIC_PROPERTIES_FIELD_NUMBER: builtins.int
     EXCLUDE_DEFAULT_FIELD_NUMBER: builtins.int
     exclude_default: builtins.bool
-    'If false, then the following topic properties will be synced by default:\n    - `compression.type`\n    - `retention.bytes`\n    - `retention.ms`\n    - `delete.retention.ms`\n    - Replication Factor\n    - `min.compaction.lag.ms`\n    - `max.compaction.lag.ms`\n\n    If this is true, then only the properties listed in\n    `synced_shadow_topic_properties` will be synced.\n    '
+    'When false, Redpanda syncs the following topic properties by default:\n    - `compression.type`\n    - `retention.bytes`\n    - `retention.ms`\n    - `delete.retention.ms`\n    - Replication Factor\n    - `min.compaction.lag.ms`\n    - `max.compaction.lag.ms`\n\n    When true, Redpanda syncs only the properties listed in\n    `synced_shadow_topic_properties`.\n    '
 
     @property
     def interval(self) -> google.protobuf.duration_pb2.Duration:
-        """How often to sync metadata
-        If 0 provided, defaults to 30 seconds
+        """Metadata sync frequency
+        Defaults to 30 seconds when you provide `0`
         """
 
     @property
     def auto_create_shadow_topic_filters(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___NameFilter]:
-        """List of filters that indicate which topics should be automatically
-        created as shadow topics on the shadow cluster.  This only controls
-        automatic creation of shadow topics and does not effect the state of the
-        mirror topic once it is created.
-        Literal filters for __consumer_offsets and _redpanda.audit_log will be
-        rejected as well as prefix filters to match topics prefixed with
-        _redpanda or __redpanda.
-        Wildcard `*` is permitted only for literal filters and will _not_ match
-        any topics that start with _redpanda or __redpanda.  If users wish to
-        shadow topics that start with _redpanda or __redpanda, they should
-        provide a literal filter for those topics.
+        """List of filters that determine which topics Redpanda automatically
+        creates as shadow topics on the shadow cluster. These filters control
+        only automatic creation and do not affect the shadow topic state after
+        creation. Redpanda rejects literal filters for `__consumer_offsets` and
+        `_redpanda.audit_log`, as well as prefix filters that match topics with
+        `_redpanda` or `__redpanda` prefixes.
+        The wildcard `*` works only for literal filters and does not match
+        topics starting with `_redpanda` or `__redpanda`. To shadow topics
+        starting with `_redpanda` or `__redpanda`, provide a literal filter.
         """
 
     @property
     def synced_shadow_topic_properties(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
-        """List of topic properties that should be synced from the source topic.
-        The following properties will always be replicated
+        """List of topic properties that Redpanda syncs from the source topic.
+        Redpanda always replicates the following properties:
         - Partition count
         - `max.message.bytes`
         - `cleanup.policy`
         - `timestamp.type`
 
-        The following properties are not allowed to be replicated and adding them
-        to this list will result in an error:
+        Redpanda does not allow the following properties to be replicated. Adding
+        them to this list results in an error:
         - `redpanda.remote.readreplica`
         - `redpanda.remote.recovery`
         - `redpanda.remote.allowgaps`
@@ -596,8 +597,8 @@ class TopicMetadataSyncOptions(google.protobuf.message.Message):
         - `redpanda.leaders.preference`
         - `redpanda.cloud_topic.enabled`
 
-        This list is a list of properties in addition to the default properties
-        that will be synced.  See `exclude_default`.
+        This list contains properties in addition to the default properties
+        that Redpanda syncs. See `exclude_default`.
         """
 
     def __init__(self, *, interval: google.protobuf.duration_pb2.Duration | None=..., auto_create_shadow_topic_filters: collections.abc.Iterable[global___NameFilter] | None=..., synced_shadow_topic_properties: collections.abc.Iterable[builtins.str] | None=..., exclude_default: builtins.bool=...) -> None:
@@ -612,23 +613,25 @@ global___TopicMetadataSyncOptions = TopicMetadataSyncOptions
 
 @typing.final
 class ConsumerOffsetSyncOptions(google.protobuf.message.Message):
-    """Options for syncing consumer offsets"""
+    """`ConsumerOffsetSyncOptions` defines configuration for syncing consumer
+    offsets
+    """
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     INTERVAL_FIELD_NUMBER: builtins.int
     ENABLED_FIELD_NUMBER: builtins.int
     GROUP_FILTERS_FIELD_NUMBER: builtins.int
     enabled: builtins.bool
-    "Whether it's enabled"
+    'Whether sync is enabled'
 
     @property
     def interval(self) -> google.protobuf.duration_pb2.Duration:
         """Sync interval
-        If 0 provided, defaults to 30 seconds
+        Defaults to 30 seconds when you provide `0`
         """
 
     @property
     def group_filters(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___NameFilter]:
-        """The filters"""
+        """List of consumer group name filters"""
 
     def __init__(self, *, interval: google.protobuf.duration_pb2.Duration | None=..., enabled: builtins.bool=..., group_filters: collections.abc.Iterable[global___NameFilter] | None=...) -> None:
         ...
@@ -642,51 +645,63 @@ global___ConsumerOffsetSyncOptions = ConsumerOffsetSyncOptions
 
 @typing.final
 class SecuritySettingsSyncOptions(google.protobuf.message.Message):
-    """Options for syncing security settings"""
+    """`SecuritySettingsSyncOptions` defines configuration for syncing security
+    settings
+    """
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     INTERVAL_FIELD_NUMBER: builtins.int
     ENABLED_FIELD_NUMBER: builtins.int
+    ROLE_FILTERS_FIELD_NUMBER: builtins.int
+    SCRAM_CRED_FILTERS_FIELD_NUMBER: builtins.int
     ACL_FILTERS_FIELD_NUMBER: builtins.int
     enabled: builtins.bool
-    "Whether or not it's enabled"
+    'Whether sync is enabled'
 
     @property
     def interval(self) -> google.protobuf.duration_pb2.Duration:
         """Sync interval
-        If 0 provided, defaults to 30 seconds
+        Defaults to 30 seconds when you provide `0`
         """
 
     @property
-    def acl_filters(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___ACLFilter]:
-        """ACL filters"""
+    def role_filters(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___NameFilter]:
+        """List of role name filters"""
 
-    def __init__(self, *, interval: google.protobuf.duration_pb2.Duration | None=..., enabled: builtins.bool=..., acl_filters: collections.abc.Iterable[global___ACLFilter] | None=...) -> None:
+    @property
+    def scram_cred_filters(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___NameFilter]:
+        """List of SCRAM credential filters"""
+
+    @property
+    def acl_filters(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___ACLFilter]:
+        """List of ACL filters"""
+
+    def __init__(self, *, interval: google.protobuf.duration_pb2.Duration | None=..., enabled: builtins.bool=..., role_filters: collections.abc.Iterable[global___NameFilter] | None=..., scram_cred_filters: collections.abc.Iterable[global___NameFilter] | None=..., acl_filters: collections.abc.Iterable[global___ACLFilter] | None=...) -> None:
         ...
 
     def HasField(self, field_name: typing.Literal['interval', b'interval']) -> builtins.bool:
         ...
 
-    def ClearField(self, field_name: typing.Literal['acl_filters', b'acl_filters', 'enabled', b'enabled', 'interval', b'interval']) -> None:
+    def ClearField(self, field_name: typing.Literal['acl_filters', b'acl_filters', 'enabled', b'enabled', 'interval', b'interval', 'role_filters', b'role_filters', 'scram_cred_filters', b'scram_cred_filters']) -> None:
         ...
 global___SecuritySettingsSyncOptions = SecuritySettingsSyncOptions
 
 @typing.final
 class TLSSettings(google.protobuf.message.Message):
-    """TLS settings"""
+    """`TLSSettings` configures TLS security for source cluster connections"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     ENABLED_FIELD_NUMBER: builtins.int
     TLS_FILE_SETTINGS_FIELD_NUMBER: builtins.int
     TLS_PEM_SETTINGS_FIELD_NUMBER: builtins.int
     enabled: builtins.bool
-    'Whether or not TLS is enabled'
+    'Whether TLS is enabled'
 
     @property
     def tls_file_settings(self) -> global___TLSFileSettings:
-        """Certificates and keys are provided as files"""
+        """Provide certificates and keys as files"""
 
     @property
     def tls_pem_settings(self) -> global___TLSPEMSettings:
-        """Certificates and keys are provided in PEM format"""
+        """Provide certificates and keys in PEM format"""
 
     def __init__(self, *, enabled: builtins.bool=..., tls_file_settings: global___TLSFileSettings | None=..., tls_pem_settings: global___TLSPEMSettings | None=...) -> None:
         ...
@@ -703,8 +718,8 @@ global___TLSSettings = TLSSettings
 
 @typing.final
 class AuthenticationConfiguration(google.protobuf.message.Message):
-    """Authentication config.  Currently only supporting SASL/SCRAM,
-    however made as a oneof for expansion
+    """Authentication configuration. Currently supports only SASL/SCRAM
+    but uses oneof for future expansion
     """
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     SCRAM_CONFIGURATION_FIELD_NUMBER: builtins.int
@@ -728,7 +743,7 @@ global___AuthenticationConfiguration = AuthenticationConfiguration
 
 @typing.final
 class TLSFileSettings(google.protobuf.message.Message):
-    """TLS file settings"""
+    """`TLSFileSettings` provides TLS certificates and keys via file paths"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     CA_PATH_FIELD_NUMBER: builtins.int
     KEY_PATH_FIELD_NUMBER: builtins.int
@@ -736,9 +751,9 @@ class TLSFileSettings(google.protobuf.message.Message):
     ca_path: builtins.str
     'Path to the CA'
     key_path: builtins.str
-    'Key and Cert are optional but if one is provided, then both must be\n    Path to the key\n    '
+    '`key_path` and `cert_path` are optional. If you provide one, you must\n    provide both. Path to the private key\n    '
     cert_path: builtins.str
-    'Path to the cert'
+    'Path to the certificate'
 
     def __init__(self, *, ca_path: builtins.str=..., key_path: builtins.str=..., cert_path: builtins.str=...) -> None:
         ...
@@ -749,20 +764,20 @@ global___TLSFileSettings = TLSFileSettings
 
 @typing.final
 class TLSPEMSettings(google.protobuf.message.Message):
-    """Used when providing the TLS information in PEM format"""
+    """`TLSPEMSettings` provides TLS certificates and keys in PEM format"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     CA_FIELD_NUMBER: builtins.int
     KEY_FIELD_NUMBER: builtins.int
     KEY_FINGERPRINT_FIELD_NUMBER: builtins.int
     CERT_FIELD_NUMBER: builtins.int
     ca: builtins.str
-    'The CA'
+    'Certificate authority'
     key: builtins.str
-    'Key and Cert are optional but if one is provided, then both must be\n    The key\n    '
+    '`key` and `cert` are optional. If you provide one, you must provide both\n    Private key\n    '
     key_fingerprint: builtins.str
-    'The SHA-256 of the key, in base64 format'
+    'SHA-256 hash of the key in base64 format'
     cert: builtins.str
-    'The cert'
+    'Certificate'
 
     def __init__(self, *, ca: builtins.str=..., key: builtins.str=..., key_fingerprint: builtins.str=..., cert: builtins.str=...) -> None:
         ...
@@ -773,7 +788,7 @@ global___TLSPEMSettings = TLSPEMSettings
 
 @typing.final
 class ScramConfig(google.protobuf.message.Message):
-    """SCRAM settings"""
+    """`ScramConfig` configures SASL/SCRAM authentication credentials"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     USERNAME_FIELD_NUMBER: builtins.int
     PASSWORD_FIELD_NUMBER: builtins.int
@@ -785,14 +800,14 @@ class ScramConfig(google.protobuf.message.Message):
     password: builtins.str
     'Password'
     password_set: builtins.bool
-    'Indicates that the password has been set'
+    'Indicates whether you set the password'
     scram_mechanism: global___ScramMechanism.ValueType
-    'The SCRAM mechanism to use'
+    'SCRAM mechanism to use'
 
     @property
     def password_set_at(self) -> google.protobuf.timestamp_pb2.Timestamp:
-        """Timestamp of when the password was last set - only valid if password_set
-        is true
+        """Timestamp when you last set the password. Redpanda populates this field
+        only when `password_set` is `true`
         """
 
     def __init__(self, *, username: builtins.str=..., password: builtins.str=..., password_set: builtins.bool=..., password_set_at: google.protobuf.timestamp_pb2.Timestamp | None=..., scram_mechanism: global___ScramMechanism.ValueType=...) -> None:
@@ -807,7 +822,7 @@ global___ScramConfig = ScramConfig
 
 @typing.final
 class NameFilter(google.protobuf.message.Message):
-    """A filter based on the name of a resource"""
+    """`NameFilter` defines filtering rules based on resource names"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     PATTERN_TYPE_FIELD_NUMBER: builtins.int
     FILTER_TYPE_FIELD_NUMBER: builtins.int
@@ -817,7 +832,7 @@ class NameFilter(google.protobuf.message.Message):
     filter_type: global___FilterType.ValueType
     'Include or exclude'
     name: builtins.str
-    'The resource name, or "*"\n    Note if "*", must be the _only_ character\n    and `pattern_type` must be `PATTERN_TYPE_LITERAL`\n    '
+    'Resource name or `*`\n    If you use `*`, it must be the only character\n    and `pattern_type` must be `PATTERN_TYPE_LITERAL`\n    '
 
     def __init__(self, *, pattern_type: global___PatternType.ValueType=..., filter_type: global___FilterType.ValueType=..., name: builtins.str=...) -> None:
         ...
@@ -828,18 +843,18 @@ global___NameFilter = NameFilter
 
 @typing.final
 class ACLFilter(google.protobuf.message.Message):
-    """A filter for ACLs"""
+    """`ACLFilter` defines filtering rules for access control lists"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     RESOURCE_FILTER_FIELD_NUMBER: builtins.int
     ACCESS_FILTER_FIELD_NUMBER: builtins.int
 
     @property
     def resource_filter(self) -> global___ACLResourceFilter:
-        """The resource filter"""
+        """Resource filter"""
 
     @property
     def access_filter(self) -> global___ACLAccessFilter:
-        """The access filter"""
+        """Access filter"""
 
     def __init__(self, *, resource_filter: global___ACLResourceFilter | None=..., access_filter: global___ACLAccessFilter | None=...) -> None:
         ...
@@ -853,17 +868,17 @@ global___ACLFilter = ACLFilter
 
 @typing.final
 class ACLResourceFilter(google.protobuf.message.Message):
-    """A filter to match ACLs for resources"""
+    """`ACLResourceFilter` defines filtering rules for ACL resources"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     RESOURCE_TYPE_FIELD_NUMBER: builtins.int
     PATTERN_TYPE_FIELD_NUMBER: builtins.int
     NAME_FIELD_NUMBER: builtins.int
     resource_type: proto.redpanda.core.common.acl_pb2.ACLResource.ValueType
-    'The ACL resource type to match'
+    'ACL resource type to match'
     pattern_type: proto.redpanda.core.common.acl_pb2.ACLPattern.ValueType
-    'The pattern to apply to name'
+    'Pattern to apply to name'
     name: builtins.str
-    'Name, if not given will default to match all items in `resource_type`.\n    Note that asterisk `*` is literal and matches resource ACLs\n    that are named `*`\n    '
+    'Resource name to match. When not provided, Redpanda matches all items in\n    `resource_type`. The asterisk `*` is not a wildcard but literal text that\n    matches resources specifically named `*`\n    '
 
     def __init__(self, *, resource_type: proto.redpanda.core.common.acl_pb2.ACLResource.ValueType=..., pattern_type: proto.redpanda.core.common.acl_pb2.ACLPattern.ValueType=..., name: builtins.str=...) -> None:
         ...
@@ -874,20 +889,20 @@ global___ACLResourceFilter = ACLResourceFilter
 
 @typing.final
 class ACLAccessFilter(google.protobuf.message.Message):
-    """Filter an ACL based on its access"""
+    """`ACLAccessFilter` defines filtering rules for ACL access permissions"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     PRINCIPAL_FIELD_NUMBER: builtins.int
     OPERATION_FIELD_NUMBER: builtins.int
     PERMISSION_TYPE_FIELD_NUMBER: builtins.int
     HOST_FIELD_NUMBER: builtins.int
     principal: builtins.str
-    'The name of the principal, if not set will default to match\n    all principals with the specified `operation` and `permission_type`\n    '
+    'Principal name. When not set, Redpanda matches all principals with the\n    specified `operation` and `permission_type`\n    '
     operation: proto.redpanda.core.common.acl_pb2.ACLOperation.ValueType
-    'The ACL operation to match'
+    'ACL operation to match'
     permission_type: proto.redpanda.core.common.acl_pb2.ACLPermissionType.ValueType
-    'The permission type'
+    'Permission type'
     host: builtins.str
-    'The host to match.  If not set, will default to match all hosts\n    with the specified `operation` and `permission_type`. Note that\n    the asterisk `*` is literal and matches hosts that are set to `*`\n    '
+    'Host to match. When not set, Redpanda matches all hosts with the\n    specified `operation` and `permission_type`. The asterisk `*` is not a\n    wildcard but literal text that matches hosts set to `*`\n    '
 
     def __init__(self, *, principal: builtins.str=..., operation: proto.redpanda.core.common.acl_pb2.ACLOperation.ValueType=..., permission_type: proto.redpanda.core.common.acl_pb2.ACLPermissionType.ValueType=..., host: builtins.str=...) -> None:
         ...
@@ -898,7 +913,7 @@ global___ACLAccessFilter = ACLAccessFilter
 
 @typing.final
 class ShadowLinkStatus(google.protobuf.message.Message):
-    """Status of the shadow link"""
+    """`ShadowLinkStatus` reports the operational status of a shadow link"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     STATE_FIELD_NUMBER: builtins.int
     TASK_STATUSES_FIELD_NUMBER: builtins.int
@@ -908,15 +923,15 @@ class ShadowLinkStatus(google.protobuf.message.Message):
 
     @property
     def task_statuses(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___ShadowLinkTaskStatus]:
-        """Statuses of the running tasks"""
+        """List of running task statuses"""
 
     @property
     def shadow_topic_statuses(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___ShadowTopicStatus]:
-        """Status of shadow topics"""
+        """List of shadow topic statuses"""
 
     @property
     def synced_shadow_topic_properties(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
-        """List of topic properties that are being synced"""
+        """List of topic properties that Redpanda syncs"""
 
     def __init__(self, *, state: global___ShadowLinkState.ValueType=..., task_statuses: collections.abc.Iterable[global___ShadowLinkTaskStatus] | None=..., shadow_topic_statuses: collections.abc.Iterable[global___ShadowTopicStatus] | None=..., synced_shadow_topic_properties: collections.abc.Iterable[builtins.str] | None=...) -> None:
         ...
@@ -927,7 +942,7 @@ global___ShadowLinkStatus = ShadowLinkStatus
 
 @typing.final
 class ShadowLinkTaskStatus(google.protobuf.message.Message):
-    """Status of a task"""
+    """`ShadowLinkTaskStatus` reports the status of a shadow link task"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     NAME_FIELD_NUMBER: builtins.int
     STATE_FIELD_NUMBER: builtins.int
@@ -938,9 +953,9 @@ class ShadowLinkTaskStatus(google.protobuf.message.Message):
     state: global___TaskState.ValueType
     'State of the task'
     reason: builtins.str
-    'Reason for task being in state'
+    'Reason for the task state'
     broker_id: builtins.int
-    'The broker the task is running on'
+    'Broker running the task'
 
     def __init__(self, *, name: builtins.str=..., state: global___TaskState.ValueType=..., reason: builtins.str=..., broker_id: builtins.int=...) -> None:
         ...
@@ -951,7 +966,7 @@ global___ShadowLinkTaskStatus = ShadowLinkTaskStatus
 
 @typing.final
 class ShadowTopicStatus(google.protobuf.message.Message):
-    """Status of a ShadowTopic"""
+    """`ShadowTopicStatus` reports the operational status of a shadow topic"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     NAME_FIELD_NUMBER: builtins.int
     TOPIC_ID_FIELD_NUMBER: builtins.int
@@ -977,7 +992,7 @@ global___ShadowTopicStatus = ShadowTopicStatus
 
 @typing.final
 class TopicPartitionInformation(google.protobuf.message.Message):
-    """Topic partition information"""
+    """`TopicPartitionInformation` provides status details for topic partitions"""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     PARTITION_ID_FIELD_NUMBER: builtins.int
     SOURCE_LAST_STABLE_OFFSET_FIELD_NUMBER: builtins.int
@@ -986,11 +1001,11 @@ class TopicPartitionInformation(google.protobuf.message.Message):
     partition_id: builtins.int
     'Partition ID'
     source_last_stable_offset: builtins.int
-    "Source partition's LSO"
+    'Source partition last stable offset (LSO)'
     source_high_watermark: builtins.int
-    "Source partition's HWM"
+    'Source partition high watermark (HWM)'
     high_watermark: builtins.int
-    "Shadowed partition's HWM"
+    'Shadowed partition high watermark (HWM)'
 
     def __init__(self, *, partition_id: builtins.int=..., source_last_stable_offset: builtins.int=..., source_high_watermark: builtins.int=..., high_watermark: builtins.int=...) -> None:
         ...
