@@ -102,8 +102,8 @@ message DeleteShadowLinkRequest {
             type: "redpanda.core.admin.ShadowLinkService/ShadowLink"
         }
     ];
-    // By default, DeleteShadowLink will fail if there are any active Shadow
-    // Topics.  Set this flag to 'true' if you wish to delete the link while
+    // By default, `DeleteShadowLink` will fail if there are any active Shadow
+    // Topics.  Set this flag to `true` if you wish to delete the link while
     // there are active shadow topics.
     bool force = 2;
 }
@@ -194,39 +194,39 @@ message ShadowLinkClientOptions {
     // Authentication settings
     optional AuthenticationConfiguration authentication_configuration = 5;
     // Max metadata age
-    // If 0 is provided, defaults to 10 seconds
+    // If `0` is provided, defaults to 10 seconds
     int32 metadata_max_age_ms = 6;
     // Connection timeout
-    // If 0 is provided, defaults to 1 second
+    // If `0` is provided, defaults to 1 second
     int32 connection_timeout_ms = 7;
     // Retry base backoff
-    // If 0 is provided, defaults to 100ms
+    // If `0` is provided, defaults to 100ms
     int32 retry_backoff_ms = 8;
     // Fetch request timeout
-    // If 0 is provided, defaults to 100ms
+    // If `0` is provided, defaults to 100ms
     int32 fetch_wait_max_ms = 9;
     // Fetch min bytes
-    // If 0 is provided, defaults to 1 byte
+    // If `0` is provided, defaults to 1 byte
     int32 fetch_min_bytes = 10;
     // Fetch max bytes
-    // If 0 is provided, defaults to 1MiB
+    // If `0` is provided, defaults to 1MiB
     int32 fetch_max_bytes = 11;
 }
 // Options for syncing topic metadata
 message TopicMetadataSyncOptions {
     // How often to sync metadata
-    // If 0 provided, defaults to 30 seconds
+    // If `0` provided, defaults to 30 seconds
     google.protobuf.Duration interval = 1;
     // List of filters that indicate which topics should be automatically
     // created as shadow topics on the shadow cluster.  This only controls
     // automatic creation of shadow topics and does not effect the state of the
     // mirror topic once it is created.
-    // Literal filters for __consumer_offsets and _redpanda.audit_log will be
+    // Literal filters for `__consumer_offsets` and `_redpanda.audit_log` will be
     // rejected as well as prefix filters to match topics prefixed with
-    // _redpanda or __redpanda.
+    // `_redpanda` or `__redpanda`.
     // Wildcard `*` is permitted only for literal filters and will _not_ match
-    // any topics that start with _redpanda or __redpanda.  If users wish to
-    // shadow topics that start with _redpanda or __redpanda, they should
+    // any topics that start with `_redpanda` or `__redpanda`.  If users wish to
+    // shadow topics that start with `_redpanda` or `__redpanda`, they should
     // provide a literal filter for those topics.
     repeated NameFilter auto_create_shadow_topic_filters = 2;
     // List of topic properties that should be synced from the source topic.
@@ -264,7 +264,7 @@ message TopicMetadataSyncOptions {
 // Options for syncing consumer offsets
 message ConsumerOffsetSyncOptions {
     // Sync interval
-    // If 0 provided, defaults to 30 seconds
+    // If `0` provided, defaults to 30 seconds
     google.protobuf.Duration interval = 1;
     // Whether it's enabled
     bool enabled = 2;
@@ -274,7 +274,7 @@ message ConsumerOffsetSyncOptions {
 // Options for syncing security settings
 message SecuritySettingsSyncOptions {
     // Sync interval
-    // If 0 provided, defaults to 30 seconds
+    // If `0` provided, defaults to 30 seconds
     google.protobuf.Duration interval = 1;
     // Whether or not it's enabled
     bool enabled = 2;
@@ -305,7 +305,7 @@ message AuthenticationConfiguration {
 message TLSFileSettings {
     // Path to the CA
     string ca_path = 1;
-    // Key and Cert are optional but if one is provided, then both must be
+    // `Key` and `Cert` are optional but if one is provided, then both must be
     // Path to the key
     string key_path = 2;
     // Path to the cert
@@ -315,7 +315,7 @@ message TLSFileSettings {
 message TLSPEMSettings {
     // The CA
     string ca = 1;
-    // Key and Cert are optional but if one is provided, then both must be
+    // `Key` and `Cert` are optional but if one is provided, then both must be
     // The key
     string key = 2 [(google.api.field_behavior) = INPUT_ONLY];
     // The SHA-256 of the key, in base64 format
@@ -331,8 +331,8 @@ message ScramConfig {
     string password = 2 [(google.api.field_behavior) = INPUT_ONLY];
     // Indicates that the password has been set
     bool password_set = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
-    // Timestamp of when the password was last set - only valid if password_set
-    // is true
+    // Timestamp of when the password was last set - only valid if `password_set`
+    // is `true`
     google.protobuf.Timestamp password_set_at = 4
         [(google.api.field_behavior) = OUTPUT_ONLY];
     // The SCRAM mechanism to use
@@ -344,8 +344,8 @@ message NameFilter {
     PatternType pattern_type = 1;
     // Include or exclude
     FilterType filter_type = 2;
-    // The resource name, or "*"
-    // Note if "*", must be the _only_ character
+    // The resource name, or `*`
+    // Note if `*`, must be the _only_ character
     // and `pattern_type` must be `PATTERN_TYPE_LITERAL`
     string name = 3;
 }
