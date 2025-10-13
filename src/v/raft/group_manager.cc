@@ -129,13 +129,14 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
   const std::vector<raft::vnode>& nodes,
   ss::shared_ptr<storage::log> log,
   with_learner_recovery_throttle enable_learner_recovery_throttle,
-  keep_snapshotted_log keep_snapshotted_log) {
+  keep_snapshotted_log keep_snapshotted_log,
+  std::vector<raft::vnode> learners) {
     auto revision = log->config().get_revision();
 
     auto raft = ss::make_lw_shared<raft::consensus>(
       _self,
       id,
-      raft::group_configuration(nodes, revision),
+      raft::group_configuration(nodes, std::move(learners), revision),
       raft::timeout_jitter(_configuration.election_timeout_ms),
       log,
       scheduling_config(_raft_recv_sg, _raft_send_sg),

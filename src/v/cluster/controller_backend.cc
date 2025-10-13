@@ -1526,6 +1526,47 @@ ss::future<std::error_code> controller_backend::create_partition(
               ntp);
             rtp.reset();
         }
+        std::vector<raft::vnode> initial_learners;
+        if (
+          !initial_nodes.empty() && rtp.has_value()
+          && ntp_config.get_overrides().recovery_enabled) {
+            // NOTE: initial_nodes being non-empty implies this is the first
+            // bootstrap of this partition following topic creation.
+
+            // If we're going to be recovering, only keep the first node as a
+            // voter, and keep the rest as learners.
+            auto first_node = *initial_nodes.begin();
+            std::move(
+              std::next(initial_nodes.begin()),
+              initial_nodes.end(),
+              std::back_inserter(initial_learners));
+            initial_nodes = {first_node};
+            if (first_node.id() == _self) {
+                vlog(
+                  clusterlog.info,
+                  "[{}] Initializing Raft group for restored partition with "
+                  "this node {} as a voter and nodes {} as learners.",
+                  ntp,
+                  first_node,
+                  initial_learners);
+            } else {
+                vlog(
+                  clusterlog.info,
+                  "[{}] Disabling remote recovery while creating partition "
+                  "replica. Recovery will proceed on node {}. Current node {} "
+                  "is added to the replica set as a learner: {}",
+                  ntp,
+                  first_node,
+                  _self,
+                  initial_learners);
+                rtp.reset();
+
+                // Reset the nodes: Raft expects learners to just start up with
+                // an empty set of nodes in the group.
+                initial_nodes.clear();
+                initial_learners.clear();
+            }
+        }
         // we use offset as an rev as it is always increasing and it
         // increases while ntp is being created again
         try {
@@ -1538,7 +1579,8 @@ ss::future<std::error_code> controller_backend::create_partition(
               std::move(xst_state),
               rtp,
               read_replica_bucket,
-              &cfg);
+              &cfg,
+              std::move(initial_learners));
 
             _xst_states.erase(ntp);
 

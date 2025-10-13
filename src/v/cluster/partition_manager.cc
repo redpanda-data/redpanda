@@ -122,7 +122,8 @@ ss::future<consensus_ptr> partition_manager::manage(
   std::optional<xshard_transfer_state> xst_state,
   std::optional<remote_topic_properties> rtp,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket,
-  const topic_configuration* topic_cfg) {
+  const topic_configuration* topic_cfg,
+  std::vector<raft::vnode> initial_learners) {
     auto remote_label = topic_cfg ? topic_cfg->properties.remote_label
                                   : std::nullopt;
     auto remote_topic_namespace_override
@@ -132,13 +133,14 @@ ss::future<consensus_ptr> partition_manager::manage(
       clusterlog.trace,
       "Creating partition with configuration: {}, raft group_id: {}, "
       "initial_nodes: {}, remote topic properties: {}, remote label: {}, "
-      "topic_namespace_override: {}",
+      "topic_namespace_override: {}, initial_learners: {}",
       ntp_cfg,
       group,
       initial_nodes,
       rtp,
       remote_label,
-      remote_topic_namespace_override);
+      remote_topic_namespace_override,
+      initial_learners);
 
     auto guard = _gate.hold();
     // topic_namespace_override is used in case of a cluster migration.
@@ -247,7 +249,8 @@ ss::future<consensus_ptr> partition_manager::manage(
               max_offset,
               last_included_term,
               initial_nodes,
-              dl_result.ot_state);
+              dl_result.ot_state,
+              initial_learners);
 
             // Initialize archival snapshot
             /*
@@ -292,7 +295,8 @@ ss::future<consensus_ptr> partition_manager::manage(
         std::move(initial_nodes),
         log,
         enable_learner_recovery_throttle,
-        keep_snapshotted_log);
+        keep_snapshotted_log,
+        std::move(initial_learners));
 
     auto p = ss::make_lw_shared<partition>(
       c,

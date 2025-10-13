@@ -209,6 +209,7 @@ ss::future<> bootstrap_pre_existing_partition(
   model::offset min_rp_offset,
   model::offset max_rp_offset,
   model::term_id last_included_term,
-  std::vector<raft::vnode> initial_nodes,
-  ss::lw_shared_ptr<storage::offset_translator_state> ot_state);
+  std::vector<raft::vnode> initial_voters,
+  ss::lw_shared_ptr<storage::offset_translator_state> ot_state,
+  std::vector<raft::vnode> initial_learners = {});
 } // namespace raft::details
