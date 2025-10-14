@@ -32,7 +32,11 @@ coordinators_on_current_shard(link& link, ss::shard_id, ::model::node_id) {
     auto topic_cfg = link.topic_metadata_cache().find_topic_cfg(
       ::model::kafka_consumer_offsets_nt);
     chunked_hash_set<::model::partition_id> ret;
+
     if (!topic_cfg.has_value()) {
+        fmt::print(
+          ">>> [shard: {}]  __consumer_offsets configuration not found \n",
+          ss::this_shard_id());
         return ret;
     }
     for (::model::partition_id p_id{0};
@@ -41,6 +45,13 @@ coordinators_on_current_shard(link& link, ss::shard_id, ::model::node_id) {
         ::model::ktp ktp(::model::kafka_consumer_offsets_topic, p_id);
         const auto is_leader = link.partition_manager().is_current_shard_leader(
           ktp);
+        fmt::print(
+          ">>> [shard: {}] checking partition __consumer_offsets/{} - "
+          "is_leader: {}\n",
+          ss::this_shard_id(),
+          p_id,
+          is_leader);
+
         if (is_leader) {
             ret.insert(p_id);
         }
@@ -202,6 +213,12 @@ bool group_mirroring_task::should_group_be_mirrored(
     if (!maybe_partition.has_value()) {
         return false;
     }
+    vlog(
+      logger().trace,
+      "Group {} is mapped to partition {}, current shard coordinators: {}",
+      group_id,
+      *maybe_partition,
+      fmt::join(current_shard_coordinators, ", "));
     return current_shard_coordinators.contains(*maybe_partition);
 }
 
