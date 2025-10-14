@@ -286,7 +286,6 @@ class RandomNodeOperationsBase(PreallocNodesTest):
             self.redpanda.set_cluster_config(
                 values={
                     "cloud_topics_enabled": True,
-                    "cloud_topics_disable_reconciliation_loop": True,
                 }
             )
             self.redpanda.restart_nodes(
