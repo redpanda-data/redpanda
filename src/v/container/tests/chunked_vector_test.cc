@@ -615,4 +615,39 @@ TEST(ChunkedVector, InPlaceSingleElement) {
     ASSERT_THAT(v, ElementsAre(std::make_pair("a2", 3)));
 }
 
+struct explicit_copy_t {
+    explicit explicit_copy_t(int v)
+      : _v(v) {};
+
+    explicit_copy_t& operator=(const explicit_copy_t&) = delete;
+    explicit_copy_t(explicit_copy_t&&) = default;
+    explicit_copy_t& operator=(explicit_copy_t&&) = default;
+    ~explicit_copy_t() = default;
+
+    explicit_copy_t copy() const { return *this; }
+
+    friend bool operator==(const explicit_copy_t&, const explicit_copy_t&)
+      = default;
+
+private:
+    explicit_copy_t(const explicit_copy_t&) = default;
+
+    int _v;
+};
+
+TEST(ChunkedVector, TransitiveApplyCopyFn) {
+    using inner_t = copyable_chunked_vector<explicit_copy_t>;
+    using nested_t = copyable_chunked_vector<inner_t>;
+    static_assert(
+      !std::is_copy_constructible_v<nested_t>
+      && !std::is_copy_assignable_v<nested_t>);
+    inner_t inner;
+    inner.push_back(explicit_copy_t{1});
+    nested_t vec;
+    vec.push_back(std::move(inner));
+
+    auto cpy = vec.copy();
+    ASSERT_EQ(cpy, vec);
+}
+
 } // namespace

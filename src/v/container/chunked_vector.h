@@ -26,6 +26,80 @@
 #include <utility>
 #include <vector>
 
+namespace detail {
+template<typename T>
+concept HasCopyFunction = requires(const T t) {
+    { t.copy() } -> std::same_as<T>;
+};
+
+template<typename T>
+struct CopyableHelper {
+    static constexpr bool value = std::is_copy_constructible_v<T>
+                                  || HasCopyFunction<T>;
+    static_assert(
+      value,
+      "Value type must either be copy constructible or implement a copy "
+      "function");
+};
+
+template<typename T>
+concept Copyable = CopyableHelper<T>::value;
+
+template<
+  detail::Copyable T,
+  bool constructible = std::is_copy_constructible_v<T>>
+struct MakeCopyableImpl;
+
+template<Copyable T>
+struct MakeCopyableImpl<T, true /* copy constructible */> {
+    T value;
+
+    explicit MakeCopyableImpl(T t)
+      : value(std::move(t)) {}
+    MakeCopyableImpl(const MakeCopyableImpl& other) = default;
+    MakeCopyableImpl(MakeCopyableImpl&&) noexcept = default;
+    MakeCopyableImpl& operator=(const MakeCopyableImpl&) = delete;
+    MakeCopyableImpl& operator=(MakeCopyableImpl&&) noexcept = default;
+    ~MakeCopyableImpl() = default;
+
+    // NOLINTNEXTLINE(hicpp-explicit-conversions)
+    operator const T&() const { return std::cref(value); }
+
+    // NOLINTNEXTLINE(hicpp-explicit-conversions)
+    operator T&() { return std::ref(value); }
+
+    friend auto operator<=>(const MakeCopyableImpl&, const MakeCopyableImpl&)
+      = default;
+};
+
+template<Copyable T>
+struct MakeCopyableImpl<T, false /* copy constructible? */> {
+    T value;
+
+    explicit MakeCopyableImpl(T t)
+      : value(std::move(t)) {}
+    MakeCopyableImpl(const MakeCopyableImpl& other)
+      : value(other.value.copy()) {}
+    MakeCopyableImpl(MakeCopyableImpl&&) noexcept = default;
+    MakeCopyableImpl& operator=(const MakeCopyableImpl&) = delete;
+    MakeCopyableImpl& operator=(MakeCopyableImpl&&) noexcept = default;
+    ~MakeCopyableImpl() = default;
+
+    // NOLINTNEXTLINE(hicpp-explicit-conversions)
+    operator const T&() const { return std::cref(value); }
+
+    // NOLINTNEXTLINE(hicpp-explicit-conversions)
+    operator T&() { return std::ref(value); }
+
+    friend auto operator<=>(const MakeCopyableImpl&, const MakeCopyableImpl&)
+      = default;
+};
+
+} // namespace detail
+
+template<detail::Copyable T>
+using MakeCopyable = detail::MakeCopyableImpl<T>;
+
 /**
  * A chunked vector is a container that provides random access like a
  * vector, but does not store its data in contiguous memory.
@@ -39,7 +113,9 @@
  * The iterator implementation works for a few things like std::lower_bound,
  * upper_bound, distance, etc... see chunked_vector_test.
  */
-template<typename T>
+template<
+  typename T,
+  template<typename> class copy_protocol = std::type_identity_t>
 class chunked_vector {
     static constexpr size_t max_allocation_size = 128UL * 1024;
 
@@ -62,8 +138,8 @@ class chunked_vector {
     }
 
 public:
-    using this_type = chunked_vector<T>;
-    using backing_type = std::vector<std::vector<T>>;
+    using this_type = chunked_vector<T, copy_protocol>;
+    using backing_type = std::vector<std::vector<copy_protocol<T>>>;
     using value_type = T;
     using reference = std::conditional_t<std::is_same_v<T, bool>, bool, T&>;
     using const_reference
@@ -167,7 +243,7 @@ public:
     template<class E = T>
     void push_back(E&& elem) {
         maybe_add_capacity();
-        _frags.back().push_back(std::forward<E>(elem));
+        _frags.back().emplace_back(std::forward<E>(elem));
         ++_size;
         update_generation();
     }
@@ -504,7 +580,7 @@ public:
     }
 
     friend std::ostream&
-    operator<<(std::ostream& os, const chunked_vector<T>& v) {
+    operator<<(std::ostream& os, const chunked_vector<T, copy_protocol>& v) {
         fmt::print(os, "[{}]", fmt::join(v, ","));
         return os;
     }
@@ -552,11 +628,11 @@ private:
 
     template<typename TT>
     friend seastar::future<void>
-    chunked_vector_fill_async(chunked_vector<TT>&, const TT&);
+    chunked_vector_fill_async(chunked_vector<TT, copy_protocol>&, const TT&);
 
     template<typename TT>
     friend seastar::future<void>
-    chunked_vector_clear_async(chunked_vector<TT>&);
+    chunked_vector_clear_async(chunked_vector<TT, copy_protocol>&);
 
     size_t _size{0};
     size_t _capacity{0};
@@ -567,3 +643,6 @@ private:
     size_t _generation{0};
 #endif
 };
+
+template<typename T>
+using copyable_chunked_vector = chunked_vector<T, MakeCopyable>;
