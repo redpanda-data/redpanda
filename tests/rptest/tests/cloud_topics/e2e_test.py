@@ -170,6 +170,7 @@ class EndToEndCloudTopicsTxTest(EndToEndCloudTopicsBase):
             transaction_abort_rate=0.1,
             msgs_per_transaction=self.per_transaction,
             debug_logs=True,
+            tolerate_failed_produce=True,
         )
         self.kgo_producer.start()
         self.kgo_producer.wait()

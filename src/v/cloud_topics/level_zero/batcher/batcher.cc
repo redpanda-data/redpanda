@@ -28,6 +28,7 @@
 
 #include <chrono>
 #include <exception>
+#include <variant>
 
 using namespace std::chrono_literals;
 
@@ -44,6 +45,9 @@ batcher<Clock>::batcher(
   , _bucket(std::move(bucket))
   , _upload_timeout(
       config::shard_local_cfg().cloud_storage_segment_upload_timeout_ms.bind())
+  , _upload_backoff_interval(
+      config::shard_local_cfg()
+        .cloud_storage_upload_loop_initial_backoff_ms.bind())
   , _upload_interval(
       config::shard_local_cfg()
         .cloud_storage_upload_loop_initial_backoff_ms
@@ -68,22 +72,22 @@ ss::future<> batcher<Clock>::stop() {
 }
 
 template<class Clock>
-ss::future<result<size_t>>
+ss::future<std::expected<size_t, errc>>
 batcher<Clock>::upload_object(object_id id, iobuf payload) {
     auto content_length = payload.size_bytes();
     vlog(
       _logger.trace,
-      "upload_object is called, upload size: {}",
-      human::bytes(content_length));
+      "upload_object is called, upload size: {} ({} bytes)",
+      human::bytes(content_length),
+      content_length);
 
     auto err = errc::success;
     try {
         // Clock type is not parametrized further down the call chain.
         basic_retry_chain_node<Clock> local_rtc(
           Clock::now() + _upload_timeout(),
-          // Backoff doesn't matter, the operation never retries
-          100ms,
-          retry_strategy::disallow,
+          _upload_backoff_interval(),
+          retry_strategy::backoff,
           &_rtc);
 
         auto path = object_path_factory::level_zero_path(id);
@@ -115,24 +119,25 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
     } catch (...) {
         auto e = std::current_exception();
         if (ssx::is_shutdown_exception(e)) {
-            err = errc::shutting_down;
+            co_return std::unexpected{errc::shutting_down};
         } else {
             vlog(_logger.error, "Unexpected L0 upload error {}", e);
             // Return early to prevent the double logging below
-            co_return errc::unexpected_failure;
+            co_return std::unexpected{errc::unexpected_failure};
         }
     }
 
     if (err != errc::success) {
         vlog(_logger.warn, "L0 upload error: {}", err);
-        co_return err;
+        co_return std::unexpected{err};
     }
 
     co_return content_length;
 }
 
 template<class Clock>
-ss::future<result<bool>> batcher<Clock>::run_once() noexcept {
+ss::future<std::expected<std::monostate, errc>> batcher<Clock>::run_once(
+  write_pipeline<Clock>::write_requests_list list) noexcept {
     try {
         // NOTE: the main workflow looks like this:
         // - remove expired write requests
@@ -155,12 +160,10 @@ ss::future<result<bool>> batcher<Clock>::run_once() noexcept {
         // collecting the write requests. The second invariant is enforced
         // by the strict order in which the ack() method is called
         // explicitly after the operation is either committed or failed.
-        auto list = _stage.pull_write_requests(
-          10_MiB); // TODO: use configuration parameter
 
         if (list.requests.empty()) {
             vlog(_logger.trace, "No write requests to process");
-            co_return true;
+            co_return std::monostate{};
         }
 
         auto epoch_fut = co_await ss::coroutine::as_future<cluster_epoch>(
@@ -177,7 +180,7 @@ ss::future<result<bool>> batcher<Clock>::run_once() noexcept {
                 list.requests.pop_back();
             }
             _probe.register_epoch_error();
-            co_return errc::failed_to_get_epoch;
+            co_return std::unexpected(errc::failed_to_get_epoch);
         }
 
         aggregator<Clock> aggregator{object_id::create(epoch_fut.get())};
@@ -191,7 +194,7 @@ ss::future<result<bool>> batcher<Clock>::run_once() noexcept {
         auto size_bytes = payload.size_bytes();
         auto result = co_await upload_object(
           aggregator.get_object_id(), std::move(payload));
-        if (result.has_error()) {
+        if (!result) {
             // TODO: fix the error
             // NOTE: it should be possible to translate the
             // error to kafka error at the call site but I
@@ -199,19 +202,19 @@ ss::future<result<bool>> batcher<Clock>::run_once() noexcept {
             // Timeout should work well at this point.
             aggregator.ack_error(errc::timeout);
             _probe.register_error();
-            co_return result.error();
+            co_return std::unexpected{result.error()};
         }
         aggregator.ack();
         _probe.register_upload(size_bytes);
-        co_return list.complete;
+        co_return std::monostate{};
     } catch (...) {
         auto err = std::current_exception();
         if (ssx::is_shutdown_exception(err)) {
             vlog(_logger.debug, "Batcher shutdown error: {}", err);
-            co_return errc::shutting_down;
+            co_return std::unexpected{errc::shutting_down};
         }
         vlog(_logger.error, "Unexpected batcher error: {}", err);
-        co_return errc::unexpected_failure;
+        co_return std::unexpected{errc::unexpected_failure};
     }
 }
 
@@ -236,20 +239,30 @@ ss::future<> batcher<Clock>::bg_controller_loop() {
             vlog(_logger.info, "Batcher upload loop is shutting down");
             co_return;
         }
-        auto res = co_await run_once();
-        if (res.has_error()) {
-            if (res.error() == errc::shutting_down) {
-                vlog(_logger.info, "Batcher upload loop is shutting down");
-                co_return;
-            } else {
-                // Some other (most likely upload) error
-                vlog(
-                  _logger.info, "Batcher upload loop error: {}", res.error());
-                more_work = true;
-            }
-        } else {
-            more_work = !res.value();
-        }
+
+        auto list = _stage.pull_write_requests(
+          10_MiB); // TODO: use configuration parameter
+
+        // We can spawn the work in the background without worrying about memory
+        // usage because the pipeline tracks the memory usage for us and will
+        // stop accepting new write requests if we go over the limit.
+        ssx::spawn_with_gate(_gate, [this, list = std::move(list)]() mutable {
+            return run_once(std::move(list))
+              .then([this](std::expected<std::monostate, errc> res) {
+                  if (!res.has_value()) {
+                      if (res.error() == errc::shutting_down) {
+                          vlog(
+                            _logger.info,
+                            "Batcher upload loop is shutting down");
+                      } else {
+                          vlog(
+                            _logger.info,
+                            "Batcher upload loop error: {}",
+                            res.error());
+                      }
+                  }
+              });
+        });
     }
 }
 

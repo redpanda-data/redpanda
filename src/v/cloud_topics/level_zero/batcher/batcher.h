@@ -84,8 +84,9 @@ private:
     /// - uploads L0 object
     /// - generates placeholders and propagates them
     ///
-    /// \returns false if the method should be called again, true otherwise
-    ss::future<result<bool>> run_once() noexcept;
+    /// \returns error code
+    ss::future<std::expected<std::monostate, errc>>
+      run_once(write_pipeline<Clock>::write_requests_list) noexcept;
 
     /// Background fiber responsible for merging
     /// aggregated log data and sending it to the
@@ -99,12 +100,14 @@ private:
     /// Collect data from every shard and upload stream of data to S3.
     ///
     /// \return size of the uploaded object or error code
-    ss::future<result<size_t>> upload_object(object_id id, iobuf payload);
+    ss::future<std::expected<size_t, errc>>
+    upload_object(object_id id, iobuf payload);
 
     cloud_topics::cluster_services* _cluster_services;
     cloud_io::remote_api<Clock>& _remote;
     cloud_storage_clients::bucket_name _bucket;
     config::binding<std::chrono::milliseconds> _upload_timeout;
+    config::binding<std::chrono::milliseconds> _upload_backoff_interval;
     config::binding<std::chrono::milliseconds> _upload_interval;
 
     ss::gate _gate;

@@ -134,11 +134,19 @@ ss::future<client::request_response_t> client::make_request(
     if (is_valid()) {
         if (age < _max_idle_time) {
             // Reuse connection
-            vlog(ctxlog.debug, "reusing connection, age {}", age.count());
+            vlog(
+              ctxlog.debug,
+              "reusing connection, age {}, max idle time {}",
+              age.count(),
+              _max_idle_time.count());
             return ss::make_ready_future<request_response_t>(
               std::make_tuple(req, res));
         } else {
-            vlog(ctxlog.debug, "shutdown connection, age {}", age.count());
+            vlog(
+              ctxlog.debug,
+              "shutdown connection, age {}, max idle time {}",
+              age.count(),
+              _max_idle_time.count());
             // Connection is too old and likeley already received
             // RST packet from the server. If we will try to use
             // it the broken pipe (32) error will be triggered.
