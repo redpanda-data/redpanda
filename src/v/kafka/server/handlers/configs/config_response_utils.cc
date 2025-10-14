@@ -882,7 +882,7 @@ config_response_container_t make_topic_configs(
               include_synonyms,
               maybe_make_documentation(
                 include_documentation,
-                "Cloud topic enabled on this topic if ture."),
+                "Cloud topic enabled on this topic if true."),
               [](const bool& b) { return b ? "true" : "false"; });
         }
     }

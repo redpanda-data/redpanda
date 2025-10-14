@@ -351,6 +351,12 @@ ss::future<response_ptr> create_topics_handler::handle(
         }
     }
 
+    /*
+     * TODO the validators{} don't support injecting context like feature table.
+     * either we add support for that to the validators or we do a one-off
+     * validation here just for cloud topoics.
+     */
+
     if (request.data.validate_only) {
         // We do not actually create the topics, only validate the
         // request

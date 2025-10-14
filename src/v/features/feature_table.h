@@ -47,6 +47,7 @@ enum class feature : std::uint64_t {
     topic_ids_api = 1ULL << 4U,
     consumer_groups_migrations = 1ULL << 7U,
     shadow_linking = 1ULL << 8U,
+    cloud_topics = 1ULL << 9U,
     cloud_retention = 1ULL << 11U,
     node_isolation = 1ULL << 19U,
     group_offset_retention = 1ULL << 20U,
@@ -502,6 +503,14 @@ inline constexpr std::array feature_schema{
     release_version::v25_3_1,
     "validated_batch_timestamps",
     feature::validated_batch_timestamps,
+    feature_spec::available_policy::new_clusters_only,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    release_version::v25_3_1,
+    "cloud_topics",
+    feature::cloud_topics,
+    // this can be changed to ::always before 26.1 and for 25.3 provides
+    // some protection against enabling in existing clusters
     feature_spec::available_policy::new_clusters_only,
     feature_spec::prepare_policy::always},
 };

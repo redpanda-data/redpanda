@@ -40,6 +40,8 @@ std::string_view to_string_view(feature f) {
         return "iceberg_schema_merging";
     case feature::validated_batch_timestamps:
         return "validated_batch_timestamps";
+    case feature::cloud_topics:
+        return "cloud_topics";
     case feature::consumer_groups_migrations:
         return "consumer_groups_migrations";
     case feature::shadow_linking:
