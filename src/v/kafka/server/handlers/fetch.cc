@@ -215,24 +215,22 @@ static ss::future<read_result> do_read_from_ntp(
   ntp_fetch_config ntp_config,
   std::optional<model::timeout_clock::time_point> deadline,
   const bool obligatory_batch_read,
-  fetch_memory_units_manager& units_mgr) {
+  fetch_memory_units_manager& units_mgr,
+  ss::abort_source& as) {
     // control available memory
-    fetch_memory_units memory_units = [&] {
-        if (!ntp_config.cfg.skip_read) {
-            auto memory_units = units_mgr.allocate_memory_units(
-              ntp_config.cfg.max_bytes,
-              ntp_config.cfg.max_batch_size,
-              obligatory_batch_read);
-            if (!memory_units.has_units()) {
-                ntp_config.cfg.skip_read = true;
-            } else if (ntp_config.cfg.max_bytes > memory_units.num_units()) {
-                ntp_config.cfg.max_bytes = memory_units.num_units();
-            }
-            return memory_units;
-        } else {
-            return units_mgr.allocate_memory_units(0, 0, false);
+    auto memory_units = units_mgr.zero_units();
+    if (!ntp_config.cfg.skip_read) {
+        memory_units = co_await units_mgr.allocate_memory_units(
+          ntp_config.cfg.max_bytes,
+          ntp_config.cfg.max_batch_size,
+          obligatory_batch_read,
+          as);
+        if (!memory_units.has_units()) {
+            ntp_config.cfg.skip_read = true;
+        } else if (ntp_config.cfg.max_bytes > memory_units.num_units()) {
+            ntp_config.cfg.max_bytes = memory_units.num_units();
         }
-    }();
+    }
 
     /*
      * lookup the ntp's partition
@@ -332,14 +330,17 @@ ss::future<read_result> read_from_ntp(
   std::optional<model::timeout_clock::time_point> deadline,
   const bool obligatory_batch_read,
   fetch_memory_units_manager& units_mgr) {
-    return do_read_from_ntp(
+    ss::abort_source as{};
+    as.request_abort();
+    co_return co_await do_read_from_ntp(
       cluster_pm,
       md_cache,
       replica_selector,
       {{ktp.get_topic(), ktp.get_partition()}, std::move(config)},
       deadline,
       obligatory_batch_read,
-      units_mgr);
+      units_mgr,
+      as);
 }
 
 } // namespace testing
@@ -463,7 +464,8 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
   read_distribution_probe& read_probe,
   std::optional<model::timeout_clock::time_point> deadline,
   const size_t bytes_left,
-  fetch_memory_units_manager& units_mgr) {
+  fetch_memory_units_manager& units_mgr,
+  ss::abort_source& as) {
     size_t total_read_size = 0;
 
     // bytes_left comes from the fetch plan and also accounts for the max_bytes
@@ -498,7 +500,8 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
           ntp_cfg,
           deadline,
           obligatory_batch_read,
-          units_mgr);
+          units_mgr,
+          as);
 
         res.partition = ntp_cfg.ktp().get_partition();
 
@@ -661,7 +664,8 @@ private:
           _ctx.srv.read_probe(),
           _ctx.deadline,
           _ctx.bytes_left,
-          _ctx.srv.fetch_units_manager());
+          _ctx.srv.fetch_units_manager(),
+          _as);
 
         // If we weren't able to read the last_visible_index for a partition
         // before calling `fetch_ntps_in_parallel` then we need to
