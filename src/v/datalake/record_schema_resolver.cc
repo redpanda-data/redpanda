@@ -79,6 +79,10 @@ checked<resolved_type, type_resolver::errc> translate_protobuf_schema(
     // TODO: maybe there's another caching opportunity here.
     auto d_res = descriptor(pb_def, protobuf_offsets);
     if (d_res.has_error()) {
+        vlog(
+          datalake_log.error,
+          "Failed to resolve Protobuf descriptor (missing offsets?): {}",
+          d_res.error());
         return type_resolver::errc::bad_input;
     }
     const auto* d = &d_res.value().get();
