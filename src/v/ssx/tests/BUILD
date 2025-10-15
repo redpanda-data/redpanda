@@ -265,6 +265,7 @@ redpanda_cc_gtest(
         "rate_limited_function_test.cc",
     ],
     deps = [
+        "//src/v/config",
         "//src/v/ssx:rate_limited_function",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",

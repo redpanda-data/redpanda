@@ -15,19 +15,23 @@
 
 #include <functional>
 #include <optional>
+#include <type_traits>
 
 namespace ssx {
 
 /// A rate-limited function that caches the result of the function call
 /// for a specified duration.
-template<typename Signature, typename Clock = seastar::lowres_clock>
+template<
+  typename Signature,
+  typename Clock = seastar::lowres_clock,
+  typename Rate = Clock::duration>
 class rate_limited_function;
 
-template<typename Ret, bool Noexcept, typename Clock>
-class rate_limited_function<Ret() noexcept(Noexcept), Clock> {
+template<typename Ret, bool Noexcept, typename Clock, typename Rate>
+class rate_limited_function<Ret() noexcept(Noexcept), Clock, Rate> {
 public:
     template<class Fn>
-    rate_limited_function(Fn&& func, Clock::duration rate)
+    rate_limited_function(Fn&& func, Rate rate)
       : _func(std::forward<Fn>(func))
       , _result(std::nullopt)
       , _rate(rate)
@@ -47,12 +51,27 @@ public:
 private:
     // Returns true if the cached value is ready to be used.
     bool is_ready(Clock::time_point now = Clock::now()) const {
-        return _result.has_value() && now <= (_last_call + _rate);
+        auto rate = [](
+                      this auto&& self,
+                      auto&& rate) -> std::optional<typename Clock::duration> {
+            if constexpr (std::is_invocable_v<decltype(rate)>) {
+                return self(rate());
+            } else {
+                return rate;
+            }
+        }(_rate);
+
+        if (!rate.has_value()) {
+            // If rate is unset, use originally computed value.
+            return _result.has_value();
+        }
+
+        return _result.has_value() && now <= (_last_call + rate.value());
     }
 
     std::function<Ret() noexcept(Noexcept)> _func;
     mutable std::optional<Ret> _result;
-    Clock::duration _rate;
+    Rate _rate;
     mutable Clock::time_point _last_call;
 };
 
