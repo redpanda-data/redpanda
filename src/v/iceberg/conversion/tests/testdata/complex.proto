@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
 
 enum State {
     ACTIVE = 0;
@@ -59,4 +60,16 @@ message StructWithOneOf {
 
 message StructWithTimestamp {
     google.protobuf.Timestamp timestamp = 1;
+}
+
+message StructWithStruct {
+    google.protobuf.Struct struct_field = 1;
+}
+
+message StructWithValue {
+    google.protobuf.Value value_field = 1;
+}
+
+message StructWithListValue {
+    google.protobuf.ListValue list_value_field = 1;
 }

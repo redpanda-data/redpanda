@@ -130,6 +130,7 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf",
         "//src/v/container:chunked_vector",
         "//src/v/iceberg:values",
+        "//src/v/serde/json:writer",
         "//src/v/serde/protobuf",
         "//src/v/ssx:future_util",
         "@abseil-cpp//absl/time",

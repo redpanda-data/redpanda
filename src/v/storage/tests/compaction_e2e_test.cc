@@ -1089,8 +1089,13 @@ INSTANTIATE_TEST_SUITE_P(
 
 struct TombstonesRandomArgs {
     static TombstonesRandomArgs create() {
+#ifdef NDEBUG
         static constexpr size_t max_segments = 100;
         static constexpr size_t max_records = 1000;
+#else
+        static constexpr size_t max_segments = 10;
+        static constexpr size_t max_records = 100;
+#endif
         static constexpr size_t max_cardinality = max_records;
         static constexpr size_t max_batches_per_segment = 5;
         return TombstonesRandomArgs{

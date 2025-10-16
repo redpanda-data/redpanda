@@ -8,10 +8,10 @@ buf.build/gen/go/redpandadata/cloud/protocolbuffers/go v1.36.7-20250806153840-18
 buf.build/gen/go/redpandadata/cloud/protocolbuffers/go v1.36.7-20250806153840-184e270a51f5.1/go.mod h1:J6+tKG3WghdUGXXD5lYp/G15vFpzMRvAsbF6+L+YZBQ=
 buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.36.7-20250718021421-04f2daa29ad9.1 h1:mE9lPhqy3ghMKY6fAot31NySa8aI22sUjKbJuMlmDGA=
 buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.36.7-20250718021421-04f2daa29ad9.1/go.mod h1:pUNfu5CqCYitRtXrJ69rHyB7SXdTkDuqqnNwQYI2H1Q=
-buf.build/gen/go/redpandadata/core/connectrpc/go v1.19.0-20251003220015-a1e818380921.1 h1:+bBkTuaJtXW9irz6gDCCFHK17BNxjUPB0qIvNOiXSXE=
-buf.build/gen/go/redpandadata/core/connectrpc/go v1.19.0-20251003220015-a1e818380921.1/go.mod h1:vJABXSPxk+Oeds+LifrwLGPUkbl7ftBHqNpLAfPcTRA=
-buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.10-20251007130208-16fea41f579f.1 h1:j01H0tQztIy/1GV6/ZdwGT2OJp105ymmmP1SZNMryEA=
-buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.10-20251007130208-16fea41f579f.1/go.mod h1:QenSPzqxZpyo9hHIpRzTetvDchelVDzimnmaggHKenc=
+buf.build/gen/go/redpandadata/core/connectrpc/go v1.19.1-20251014201443-fb6b4019204e.2 h1:Xa24Vx+bjlbCNoLWqZYoG/GmTl2wlNYdaTqYGWyjmeo=
+buf.build/gen/go/redpandadata/core/connectrpc/go v1.19.1-20251014201443-fb6b4019204e.2/go.mod h1:QLiZyAutqeut+igpx0oY139aKk2iITbxnguMlTBNNSg=
+buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.10-20251014201443-fb6b4019204e.1 h1:WbEB6JEGDLcWkIEa9eZ10irey+NGZahhLYhaEh25K2U=
+buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.10-20251014201443-fb6b4019204e.1/go.mod h1:QenSPzqxZpyo9hHIpRzTetvDchelVDzimnmaggHKenc=
 buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.18.1-20250819145731-621dc775ffe4.1 h1:CiTv2Rme+0H/2IQpyZFK8SQYRWgRWEvFNxZIfDMYOQQ=
 buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.18.1-20250819145731-621dc775ffe4.1/go.mod h1:HJnvbiwx2qZN8HcD30Dijm5Aamjcrk/8/ffTOFrF5Go=
 buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.7-20250819145731-621dc775ffe4.1 h1:31r1Sv/BoVyGzzBfBHcUcyQJz/+4i/fr8wc7gQVihEM=
@@ -22,8 +22,8 @@ buf.build/gen/go/redpandadata/gatekeeper/protocolbuffers/go v1.36.7-202508131922
 buf.build/gen/go/redpandadata/gatekeeper/protocolbuffers/go v1.36.7-20250813192242-efcc93bcd794.1/go.mod h1:6dMZEth9vdnAuW0dV/OVjTJYnVLq5pzi7F6b0L+2uyg=
 cloud.google.com/go/compute/metadata v0.7.0 h1:PBWF+iiAerVNe8UCHxdOt6eHLVc3ydFeOCw78U8ytSU=
 cloud.google.com/go/compute/metadata v0.7.0/go.mod h1:j5MvL9PprKL39t166CoB1uVHfQMs4tFQZZcKwksXUjo=
-connectrpc.com/connect v1.19.0 h1:LuqUbq01PqbtL0o7vn0WMRXzR2nNsiINe5zfcJ24pJM=
-connectrpc.com/connect v1.19.0/go.mod h1:tN20fjdGlewnSFeZxLKb0xwIZ6ozc3OQs2hTXy4du9w=
+connectrpc.com/connect v1.19.1 h1:R5M57z05+90EfEvCY1b7hBxDVOUl45PrtXtAV2fOC14=
+connectrpc.com/connect v1.19.1/go.mod h1:tN20fjdGlewnSFeZxLKb0xwIZ6ozc3OQs2hTXy4du9w=
 github.com/AlecAivazis/survey/v2 v2.3.7 h1:6I/u8FvytdGsgonrYsVn2t8t4QiRnh6QSTqkkhIiSjQ=
 github.com/AlecAivazis/survey/v2 v2.3.7/go.mod h1:xUTIdE4KCOIjsBAE1JYsUPoCqYdZ1reCfTwbto0Fduo=
 github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c h1:udKWzYgxTojEKWjV8V+WSxDXJ4NFATAsZjh8iIbsQIg=

@@ -43,6 +43,8 @@ std::ostream& operator<<(std::ostream& os, license_required_feature f) {
         return os << "leadership_pinning";
     case license_required_feature::shadow_linking:
         return os << "shadow_linking";
+    case license_required_feature::cloud_topics:
+        return os << "cloud_topics";
     }
     __builtin_unreachable();
 }

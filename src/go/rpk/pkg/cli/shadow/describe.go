@@ -223,9 +223,9 @@ func printTopicSync(opts *adminv2.TopicMetadataSyncOptions) {
 		}
 	}
 
-	if len(opts.GetShadowedTopicProperties()) > 0 {
+	if props := opts.GetSyncedShadowTopicProperties(); len(props) > 0 {
 		tw.Print("PROPERTIES:", "")
-		for _, prop := range opts.GetShadowedTopicProperties() {
+		for _, prop := range props {
 			tw.Print("", fmt.Sprintf("- %s", prop))
 		}
 	}
@@ -266,20 +266,6 @@ func printSecuritySync(opts *adminv2.SecuritySettingsSyncOptions) {
 		return
 	}
 	tw.Print("INTERVAL", opts.GetInterval().AsDuration().String())
-
-	if len(opts.GetRoleFilters()) > 0 {
-		tw.Print("ROLE FILTERS:", "")
-		for _, filter := range opts.GetRoleFilters() {
-			tw.Print("", fmt.Sprintf("- %s %s %q", formatFilterType(filter.GetFilterType()), formatPatternType(filter.GetPatternType()), filter.GetName()))
-		}
-	}
-
-	if len(opts.GetScramCredFilters()) > 0 {
-		tw.Print("SCRAM FILTERS:", "")
-		for _, filter := range opts.GetScramCredFilters() {
-			tw.Print("", fmt.Sprintf("- %s %s %q", formatFilterType(filter.GetFilterType()), formatPatternType(filter.GetPatternType()), filter.GetName()))
-		}
-	}
 
 	if len(opts.GetAclFilters()) > 0 {
 		tw.Print("ACL FILTERS:")

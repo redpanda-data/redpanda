@@ -11,8 +11,8 @@ import (
 	"slices"
 	"strings"
 
-	pbgen "github.com/redpanda-data/redpanda/proto/redpanda/pbgen/options"
-	rpcgen "github.com/redpanda-data/redpanda/proto/redpanda/pbgen/rpc"
+	pbgen "github.com/redpanda-data/redpanda/proto/redpanda/core/pbgen/options"
+	rpcgen "github.com/redpanda-data/redpanda/proto/redpanda/core/pbgen/rpc"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -2355,7 +2355,7 @@ func nameToCppNamespace(file protoreflect.FileDescriptor) string {
 }
 
 func mapImport(path string) string {
-	if strings.HasPrefix(path, "proto/redpanda/pbgen") {
+	if strings.HasPrefix(path, "proto/redpanda/core/pbgen") {
 		return ""
 	}
 	if strings.HasPrefix(path, "google/api") {

@@ -67,7 +67,11 @@ class delete_records_e2e_fixture
   , public redpanda_thread_fixture
   , public enable_cloud_storage_fixture {
 public:
+#ifdef NDEBUG
     static constexpr auto segs_per_spill = 10;
+#else
+    static constexpr auto segs_per_spill = 2;
+#endif
     delete_records_e2e_fixture()
       : redpanda_thread_fixture(
           redpanda_thread_fixture::init_cloud_storage_tag{},
@@ -351,14 +355,20 @@ FIXTURE_TEST(test_delete_from_archive_consume, delete_records_e2e_fixture) {
 // DeleteRecords request lands in local storage.
 FIXTURE_TEST(
   test_delete_from_local_storage_truncation, delete_records_e2e_fixture) {
+    static constexpr size_t records_per_seg = 5;
+    static constexpr size_t num_segments = segs_per_spill * 4;
+    static constexpr size_t additional_local_segments = segs_per_spill;
+
+    static constexpr size_t expected_records
+      = (num_segments + additional_local_segments) * records_per_seg;
+
     tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
     auto deferred_g_close = ss::defer([&gen] { gen.stop().get(); });
-    size_t records_per_seg = 5;
     BOOST_REQUIRE_GE(
-      250,
+      expected_records,
       gen.batches_per_segment(records_per_seg)
-        .num_segments(40)
-        .additional_local_segments(10)
+        .num_segments(num_segments)
+        .additional_local_segments(additional_local_segments)
         .produce()
         .get());
     BOOST_REQUIRE(archiver->sync_for_tests().get());
@@ -371,7 +381,7 @@ FIXTURE_TEST(
     kafka_delete_records_transport deleter(make_kafka_client().get());
     deleter.start().get();
     auto deferred_d_close = ss::defer([&deleter] { deleter.stop().get(); });
-    auto new_start_offset = kafka::offset(245);
+    auto new_start_offset = kafka::offset(expected_records - 5);
     BOOST_REQUIRE_EQUAL(
       new_start_offset,
       model::offset_cast(deleter
@@ -393,7 +403,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_archive_clean_offset(), model::offset{});
     BOOST_REQUIRE(stm_manifest.get_spillover_map().empty());
-    BOOST_REQUIRE_EQUAL(10, archiver->manifest().size());
+    BOOST_REQUIRE_EQUAL(segs_per_spill, archiver->manifest().size());
     BOOST_REQUIRE_EQUAL(stm_start_before, stm_manifest.get_start_offset());
     BOOST_REQUIRE_NE(
       stm_manifest.get_start_kafka_offset_override(), kafka::offset{});
@@ -438,7 +448,8 @@ FIXTURE_TEST(
       archiver->upload_manifest("test").get());
     BOOST_REQUIRE(stm_manifest.get_start_kafka_offset().has_value());
     BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_start_kafka_offset().value(), kafka::offset(200));
+      stm_manifest.get_start_kafka_offset().value(),
+      kafka::offset(num_segments * records_per_seg));
 
     // When truncating the STM, we should still honor the requested start.
     archiver->housekeeping().get();
@@ -446,24 +457,31 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_start_kafka_offset().value(), new_start_offset);
     BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_start_kafka_offset_override(), kafka::offset(245));
+      stm_manifest.get_start_kafka_offset_override(),
+      kafka::offset(expected_records - records_per_seg));
 
     auto size_above_override = segment_bytes_above_offset(
-      stm_manifest, kafka::offset(245));
+      stm_manifest, kafka::offset(expected_records - records_per_seg));
     check_truncate_removes_override(size_above_override);
 }
 
 // Test that truncation is applied to cloud storage as expected when a
 // DeleteRecords request lands in the STM manifest.
 FIXTURE_TEST(test_delete_from_stm_truncation, delete_records_e2e_fixture) {
+    static constexpr size_t records_per_seg = 5;
+    static constexpr size_t num_segments = segs_per_spill * 4;
+    static constexpr size_t additional_local_segments = segs_per_spill;
+
+    static constexpr size_t expected_records
+      = (num_segments + additional_local_segments) * records_per_seg;
+
     tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
     auto deferred_g_close = ss::defer([&gen] { gen.stop().get(); });
-    size_t records_per_seg = 5;
     BOOST_REQUIRE_GE(
-      250,
+      expected_records,
       gen.batches_per_segment(records_per_seg)
-        .num_segments(40)
-        .additional_local_segments(10)
+        .num_segments(num_segments)
+        .additional_local_segments(additional_local_segments)
         .produce()
         .get());
     BOOST_REQUIRE(archiver->sync_for_tests().get());
@@ -488,7 +506,7 @@ FIXTURE_TEST(test_delete_from_stm_truncation, delete_records_e2e_fixture) {
     // The first housekeeping will cleanup the archive.
     BOOST_REQUIRE(archiver->sync_for_tests().get());
     archiver->housekeeping().get();
-    BOOST_REQUIRE_EQUAL(10, archiver->manifest().size());
+    BOOST_REQUIRE_EQUAL(segs_per_spill, archiver->manifest().size());
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_archive_start_offset(), model::offset{});
     BOOST_REQUIRE_EQUAL(
@@ -526,14 +544,20 @@ FIXTURE_TEST(test_delete_from_stm_truncation, delete_records_e2e_fixture) {
 // Test that truncation is applied to cloud storage as expected when a
 // DeleteRecords request lands in the archive.
 FIXTURE_TEST(test_delete_from_archive_truncation, delete_records_e2e_fixture) {
+    static constexpr size_t records_per_seg = 5;
+    static constexpr size_t num_segments = segs_per_spill * 4;
+    static constexpr size_t additional_local_segments = segs_per_spill;
+
+    static constexpr size_t expected_records
+      = (num_segments + additional_local_segments) * records_per_seg;
+
     tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
     auto deferred_g_close = ss::defer([&gen] { gen.stop().get(); });
-    size_t records_per_seg = 5;
     BOOST_REQUIRE_GE(
-      250,
+      expected_records,
       gen.batches_per_segment(records_per_seg)
-        .num_segments(40)
-        .additional_local_segments(10)
+        .num_segments(num_segments)
+        .additional_local_segments(additional_local_segments)
         .produce()
         .get());
     BOOST_REQUIRE(archiver->sync_for_tests().get());

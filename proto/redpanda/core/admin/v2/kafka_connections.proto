@@ -17,11 +17,11 @@ syntax = "proto3";
 package redpanda.core.admin.v2;
 
 import "google/api/field_info.proto";
-import "proto/redpanda/pbgen/options.proto";
+import "proto/redpanda/core/pbgen/options.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 
-option (redpanda.pbgen.cpp_namespace) = "proto::admin";
+option (redpanda.core.pbgen.cpp_namespace) = "proto::admin";
 
 /* Resources */
 // Kafka connection details for a broker

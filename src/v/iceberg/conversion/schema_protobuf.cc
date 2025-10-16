@@ -32,8 +32,6 @@ namespace pb = google::protobuf;
 using field_outcome = conversion_outcome<iceberg::nested_field_ptr>;
 using struct_outcome = conversion_outcome<iceberg::struct_type>;
 
-static constexpr int max_recursion_depth = 100;
-
 field_outcome from_protobuf(
   const pb::FieldDescriptor& fd, bool is_repeated, proto_descriptors_stack&);
 
@@ -62,7 +60,7 @@ struct_outcome struct_from_protobuf(
         return conversion_exception(
           fmt::format(
             "Protocol buffer field {} not supported - max nested depth of {} "
-            "reached",
+            "exceeded",
             msg.DebugString(),
             max_recursion_depth));
     }
@@ -160,6 +158,18 @@ field_outcome from_protobuf(
         if (
           msg_t->well_known_type() == pb::Descriptor::WELLKNOWNTYPE_TIMESTAMP) {
             return success(fd, iceberg::timestamp_type{});
+        }
+        // special case for handling google.protobuf.Struct, Value, and
+        // ListValue - all serialize as JSON strings
+        if (msg_t->well_known_type() == pb::Descriptor::WELLKNOWNTYPE_STRUCT) {
+            return success(fd, iceberg::string_type{});
+        }
+        if (msg_t->well_known_type() == pb::Descriptor::WELLKNOWNTYPE_VALUE) {
+            return success(fd, iceberg::string_type{});
+        }
+        if (
+          msg_t->well_known_type() == pb::Descriptor::WELLKNOWNTYPE_LISTVALUE) {
+            return success(fd, iceberg::string_type{});
         }
         auto st_result = struct_from_protobuf(*msg_t, stack);
         if (st_result.has_error()) {

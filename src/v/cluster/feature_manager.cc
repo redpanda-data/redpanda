@@ -275,6 +275,9 @@ feature_manager::report_enterprise_features() const {
     report.set(
       features::license_required_feature::shadow_linking,
       cfg.enable_shadow_linking());
+    report.set(
+      features::license_required_feature::cloud_topics,
+      cfg.cloud_topics_enabled());
     return report;
 }
 

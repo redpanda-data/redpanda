@@ -1046,7 +1046,7 @@ class Admin:
     def get_cluster_health_overview(self, node=None):
         return self._request("get", "cluster/health_overview", node=node).json()
 
-    def decommission_broker(self, id, node=None):
+    def decommission_broker(self, id: int, node: ClusterNode | None = None):
         """
         Decommission broker
         """
@@ -1054,7 +1054,7 @@ class Admin:
         self.redpanda.logger.debug(f"decommissioning {path}")
         return self._request("put", path, node=node)
 
-    def get_decommission_status(self, id, node=None):
+    def get_decommission_status(self, id: int, node: ClusterNode | None = None):
         """
         Get broker decommission status
         """

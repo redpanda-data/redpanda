@@ -20,6 +20,8 @@ on:
       - '.buildkite/hooks/*'
       - 'tests/docker/ducktape-deps/*'
       - 'tools/*'
+  merge_group:
+    types: [checks_requested]
 jobs:
   sh:
     name: Lint shell scripts

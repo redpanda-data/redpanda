@@ -96,7 +96,8 @@ func generateSampleConfig() *ShadowLinkConfig {
 			FetchMaxBytes:       1048576,
 		},
 		TopicMetadataSyncOptions: &TopicMetadataSyncOptions{
-			Interval: 30 * time.Second,
+			ExcludeDefault: true,
+			Interval:       30 * time.Second,
 			AutoCreateShadowTopicFilters: []*NameFilter{
 				{
 					PatternType: PatternTypeLiteral,
@@ -109,7 +110,7 @@ func generateSampleConfig() *ShadowLinkConfig {
 					Name:        "foo-",
 				},
 			},
-			ShadowedTopicProperties: []string{"retention.ms", "segment.ms"},
+			SyncedShadowTopicProperties: []string{"retention.ms", "segment.ms"},
 		},
 		ConsumerOffsetSyncOptions: &ConsumerOffsetSyncOptions{
 			Interval: 30 * time.Second,
@@ -125,20 +126,6 @@ func generateSampleConfig() *ShadowLinkConfig {
 		SecuritySyncOptions: &SecuritySettingsSyncOptions{
 			Interval: 30 * time.Second,
 			Enabled:  false,
-			RoleFilters: []*NameFilter{
-				{
-					PatternType: PatternTypeLiteral,
-					FilterType:  FilterTypeInclude,
-					Name:        "*",
-				},
-			},
-			ScramCredFilters: []*NameFilter{
-				{
-					PatternType: PatternTypePrefix,
-					FilterType:  FilterTypeExclude,
-					Name:        "admin-",
-				},
-			},
 			ACLFilters: []*ACLFilter{
 				{
 					ResourceFilter: &ACLResourceFilter{

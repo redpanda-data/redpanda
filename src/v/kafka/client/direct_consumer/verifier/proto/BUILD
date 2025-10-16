@@ -6,8 +6,8 @@ proto_library(
     srcs = ["verifier.proto"],
     visibility = ["//visibility:public"],
     deps = [
-        "//proto/redpanda/pbgen:options_proto",
-        "//proto/redpanda/pbgen:rpc_proto",
+        "//proto/redpanda/core/pbgen:options_proto",
+        "//proto/redpanda/core/pbgen:rpc_proto",
     ],
 )
 

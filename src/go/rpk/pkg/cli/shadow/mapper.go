@@ -135,7 +135,8 @@ func mapTopicMetadataSyncOptions(opts *TopicMetadataSyncOptions) *adminv2.TopicM
 	}
 
 	pbOpts := &adminv2.TopicMetadataSyncOptions{
-		ShadowedTopicProperties: opts.ShadowedTopicProperties,
+		SyncedShadowTopicProperties: opts.SyncedShadowTopicProperties,
+		ExcludeDefault:              opts.ExcludeDefault,
 	}
 
 	if opts.Interval > 0 {
@@ -180,14 +181,6 @@ func mapSecuritySyncOptions(opts *SecuritySettingsSyncOptions) *adminv2.Security
 
 	if opts.Interval > 0 {
 		pbOpts.Interval = durationpb.New(opts.Interval)
-	}
-
-	for _, filter := range opts.RoleFilters {
-		pbOpts.RoleFilters = append(pbOpts.RoleFilters, mapNameFilter(filter))
-	}
-
-	for _, filter := range opts.ScramCredFilters {
-		pbOpts.ScramCredFilters = append(pbOpts.ScramCredFilters, mapNameFilter(filter))
 	}
 
 	for _, filter := range opts.ACLFilters {

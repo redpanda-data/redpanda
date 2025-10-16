@@ -285,7 +285,7 @@ TEST_P(EndToEndFixture, TestProduceConsumeFromCloud) {
 }
 
 TEST_P(EndToEndFixture, TestProduceConsumeFromCloudWithSpillover) {
-#ifndef _NDEBUG
+#ifdef NDEBUG
     test_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
       .set_value(true);
     test_local_cfg.get("cloud_storage_spillover_manifest_size")

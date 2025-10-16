@@ -46,6 +46,9 @@ class TopicSpec:
     PROPERTY_MIN_COMPACTION_LAG_MS = "min.compaction.lag.ms"
     PROPERTY_MAX_COMPACTION_LAG_MS = "max.compaction.lag.ms"
 
+    # requires dev features enabled. only valid at topic create time
+    PROPERTY_CLOUD_TOPIC_ENABLE = "redpanda.cloud_topic.enabled"
+
     class CompressionTypes(str, Enum):
         """
         compression types
@@ -140,6 +143,7 @@ class TopicSpec:
         min_cleanable_dirty_ratio: float | None = None,
         min_compaction_lag_ms: int | None = None,
         max_compaction_lag_ms: int | None = None,
+        cloud_topics_enabled: bool | None = None,
     ):
         self.name = name or f"topic-{self._random_topic_suffix()}"
         self.partition_count = partition_count
@@ -178,6 +182,7 @@ class TopicSpec:
         self.min_cleanable_dirty_ratio = min_cleanable_dirty_ratio
         self.min_compaction_lag_ms = min_compaction_lag_ms
         self.max_compaction_lag_ms = max_compaction_lag_ms
+        self.cloud_topics_enabled = cloud_topics_enabled
 
     def __str__(self):
         return self.name

@@ -28,7 +28,7 @@ proto_library(
     name = "test_messages_edition2023_proto",
     srcs = ["test_messages_edition2023.proto"],
     deps = [
-        "//proto/redpanda/pbgen:options_proto",
+        "//proto/redpanda/core/pbgen:options_proto",
     ],
 )
 
@@ -46,8 +46,8 @@ proto_library(
     name = "codegen_test_proto",
     srcs = ["codegen_test.proto"],
     deps = [
-        "//proto/redpanda/pbgen:options_proto",
-        "//proto/redpanda/pbgen:rpc_proto",
+        "//proto/redpanda/core/pbgen:options_proto",
+        "//proto/redpanda/core/pbgen:rpc_proto",
         "@protobuf//:duration_proto",
         "@protobuf//:field_mask_proto",
         "@protobuf//:timestamp_proto",

@@ -2,18 +2,6 @@
 
 This directory contains Protocol Buffer definitions for Redpanda services and APIs. These protobuf files are used to generate C++ code for internal services and external APIs.
 
-## Directory Structure
-
-```
-proto/redpanda/
-├── core/           # Core Redpanda messages and types go here
-│   ├── admin/      # Admin service definitions
-│   └── testing/    # Example and test protobuf definitions
-└── pbgen/          # Protobuf generation options and RPC configurations
-    ├── options.proto # Custom field and file options for C++ generation
-    └── rpc.proto    # RPC method options and authentication levels
-```
-
 ## Writing Redpanda Protobufs
 
 ### Basic Structure
@@ -26,10 +14,10 @@ syntax = "proto3";
 
 package redpanda.your.package;
 
-import "proto/redpanda/pbgen/options.proto";
+import "proto/redpanda/core/pbgen/options.proto";
 // Other imports as needed
 
-option (redpanda.pbgen.cpp_namespace) = "proto::your_namespace";
+option (redpanda.core.pbgen.cpp_namespace) = "proto::your_namespace";
 
 // Your message and service definitions
 ```
@@ -44,9 +32,9 @@ There are a number of [Well Known](https://protobuf.dev/reference/protobuf/googl
 
 ### Required Imports and Options
 
-1. **Always import the options file**: `import "proto/redpanda/pbgen/options.proto";`
+1. **Always import the options file**: `import "proto/redpanda/core/pbgen/options.proto";`
 
-2. **Set the C++ namespace**: Use `option (redpanda.pbgen.cpp_namespace) = "proto::your_namespace";` to control the generated C++ namespace.
+2. **Set the C++ namespace**: Use `option (redpanda.core.pbgen.cpp_namespace) = "proto::your_namespace";` to control the generated C++ namespace.
 
 ### Supported Field Options
 
@@ -66,22 +54,22 @@ message SuperDuperSecret {
 Redpanda provides several custom field options for C++ code generation:
 
 #### `ptr` Option
-Use `[(redpanda.pbgen.ptr) = true]` for message fields that need indirection (e.g., recursive structures) or you want to know if it's unset:
+Use `[(redpanda.core.pbgen.ptr) = true]` for message fields that need indirection (e.g., recursive structures) or you want to know if it's unset:
 
 ```proto
 message Company {
     message Department {
-        optional Budget budget = 3 [(redpanda.pbgen.ptr) = true];
+        optional Budget budget = 3 [(redpanda.core.pbgen.ptr) = true];
     }
 }
 ```
 
-#### `iobuf` Option  
-Use `[(redpanda.pbgen.iobuf) = true]` for string fields that may be larger than 128KiB (bytes fields are already iobufs by default):
+#### `iobuf` Option
+Use `[(redpanda.core.pbgen.iobuf) = true]` for string fields that may be larger than 128KiB (bytes fields are already iobufs by default):
 
 ```proto
 message LargeData {
-    string content = 1 [(redpanda.pbgen.iobuf) = true];
+    string content = 1 [(redpanda.core.pbgen.iobuf) = true];
 }
 ```
 
@@ -90,11 +78,11 @@ message LargeData {
 When defining RPC services, you must import the RPC options and specify authentication requirements:
 
 ```proto
-import "proto/redpanda/pbgen/rpc.proto";
+import "proto/redpanda/core/pbgen/rpc.proto";
 
 service YourService {
     rpc YourMethod(YourRequest) returns (YourResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: SUPERUSER,              // Required: Authorization level
             http_route: "/your-endpoint";  // Optional: Custom HTTP route
         };
@@ -127,10 +115,10 @@ syntax = "proto3";
 
 package redpanda.example.api;
 
-import "proto/redpanda/pbgen/options.proto";
-import "proto/redpanda/pbgen/rpc.proto";
+import "proto/redpanda/core/pbgen/options.proto";
+import "proto/redpanda/core/pbgen/rpc.proto";
 
-option (redpanda.pbgen.cpp_namespace) = "proto::example";
+option (redpanda.core.pbgen.cpp_namespace) = "proto::example";
 
 message GetConfigRequest {
     string config_key = 1;
@@ -143,7 +131,7 @@ message GetConfigResponse {
 
 service ConfigService {
     rpc GetConfig(GetConfigRequest) returns (GetConfigResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authn: SUPERUSER,
             http_route: "/config";
         };

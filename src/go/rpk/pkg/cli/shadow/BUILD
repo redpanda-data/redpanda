@@ -33,11 +33,16 @@ go_library(
 
 go_test(
     name = "shadow_test",
-    srcs = ["types_test.go"],
+    srcs = [
+        "mapper_test.go",
+        "types_test.go",
+    ],
     embed = [":shadow"],
     deps = [
         "@build_buf_gen_go_redpandadata_core_protocolbuffers_go//redpanda/core/admin/v2:admin",
+        "@build_buf_gen_go_redpandadata_core_protocolbuffers_go//redpanda/core/common",
         "@com_github_stretchr_testify//require",
         "@in_gopkg_yaml_v2//:yaml_v2",
+        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )

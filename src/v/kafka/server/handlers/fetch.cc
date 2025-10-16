@@ -1580,7 +1580,6 @@ bool update_fetch_partition(
 
 ss::future<response_ptr> op_context::send_response() && {
     auto fetched_data_size = uint64_t{0};
-    auto internal_topic_bytes = size_t{0};
     for (const auto& topic : response.data.responses) {
         const bool bytes_to_exclude = std::find(
                                         usage_excluded_topics.cbegin(),
@@ -1595,7 +1594,7 @@ ss::future<response_ptr> op_context::send_response() && {
 
                 /// Account for special internal topic bytes for usage
                 if (bytes_to_exclude) {
-                    internal_topic_bytes += part_size;
+                    response.internal_topic_bytes += part_size;
                 }
             }
         }
@@ -1617,7 +1616,7 @@ ss::future<response_ptr> op_context::send_response() && {
     fetch_response final_response;
     final_response.data.error_code = response.data.error_code;
     final_response.data.session_id = response.data.session_id;
-    final_response.internal_topic_bytes = internal_topic_bytes;
+    final_response.internal_topic_bytes = response.internal_topic_bytes;
 
     for (auto it = response.begin(true); it != response.end(); ++it) {
         if (it->is_new_topic) {

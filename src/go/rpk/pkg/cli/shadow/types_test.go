@@ -57,7 +57,7 @@ topic_metadata_sync_options:
     - pattern_type: "LITERAL"
       filter_type: "INCLUDE"
       name: "test-topic"
-  shadowed_topic_properties:
+  synced_shadow_topic_properties:
     - "retention.ms"
 consumer_offset_sync_options:
   interval: "30s"
@@ -90,7 +90,8 @@ security_sync_options:
 					ConnectionTimeoutMs: 1000,
 				},
 				TopicMetadataSyncOptions: &TopicMetadataSyncOptions{
-					Interval: 30 * time.Second,
+					Interval:       30 * time.Second,
+					ExcludeDefault: false,
 					AutoCreateShadowTopicFilters: []*NameFilter{
 						{
 							PatternType: "LITERAL",
@@ -98,7 +99,7 @@ security_sync_options:
 							Name:        "test-topic",
 						},
 					},
-					ShadowedTopicProperties: []string{"retention.ms"},
+					SyncedShadowTopicProperties: []string{"retention.ms"},
 				},
 				ConsumerOffsetSyncOptions: &ConsumerOffsetSyncOptions{
 					Interval: 30 * time.Second,
@@ -373,13 +374,14 @@ func TestShadowLinkConfigUnmarshalJSON(t *testing.T) {
 					"connection_timeout_ms": 1000
 				},
 				"topic_metadata_sync_options": {
+					"exclude_default": true,
 					"interval": 30000000000,
 					"auto_create_shadow_topic_filters": [{
 						"pattern_type": "LITERAL",
 						"filter_type": "INCLUDE",
 						"name": "test-topic"
 					}],
-					"shadowed_topic_properties": ["retention.ms"]
+					"synced_shadow_topic_properties": ["retention.ms"]
 				},
 				"consumer_offset_sync_options": {
 					"interval": 30000000000,
@@ -415,7 +417,8 @@ func TestShadowLinkConfigUnmarshalJSON(t *testing.T) {
 					ConnectionTimeoutMs: 1000,
 				},
 				TopicMetadataSyncOptions: &TopicMetadataSyncOptions{
-					Interval: 30 * time.Second,
+					ExcludeDefault: true,
+					Interval:       30 * time.Second,
 					AutoCreateShadowTopicFilters: []*NameFilter{
 						{
 							PatternType: "LITERAL",
@@ -423,7 +426,7 @@ func TestShadowLinkConfigUnmarshalJSON(t *testing.T) {
 							Name:        "test-topic",
 						},
 					},
-					ShadowedTopicProperties: []string{"retention.ms"},
+					SyncedShadowTopicProperties: []string{"retention.ms"},
 				},
 				ConsumerOffsetSyncOptions: &ConsumerOffsetSyncOptions{
 					Interval: 30 * time.Second,

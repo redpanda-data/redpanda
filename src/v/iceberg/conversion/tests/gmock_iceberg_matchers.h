@@ -13,6 +13,8 @@
 #include "iceberg/values.h"
 
 #include <gmock/gmock.h>
+#include <rapidjson/document.h>
+#include <rapidjson/error/en.h>
 
 namespace iceberg::testing {
 
@@ -55,6 +57,46 @@ auto IcebergMap(MatcherT matcher) {
 template<typename KeyMatcherT, typename ValueMatcherT>
 auto IcebergKeyValue(KeyMatcherT k_matcher, ValueMatcherT v_matcher) {
     return FieldsAre(k_matcher, v_matcher);
+}
+
+// Compares a JSON string to JSON in an iceberg::string_value.
+MATCHER_P(IsJSON, expected_json_str, "") {
+    // Parse expected.
+    rapidjson::Document expected_doc;
+    expected_doc.Parse(expected_json_str);
+    if (expected_doc.HasParseError()) {
+        *result_listener << "Expected JSON parse error at offset "
+                         << expected_doc.GetErrorOffset() << ": "
+                         << rapidjson::GetParseError_En(
+                              expected_doc.GetParseError());
+        return false;
+    }
+
+    // Parse actual.
+    std::string actual_str;
+    for (const auto& frag : arg.val) {
+        actual_str.append(frag.get(), frag.size());
+    }
+
+    rapidjson::Document actual_doc;
+    actual_doc.Parse(actual_str.c_str());
+    if (actual_doc.HasParseError()) {
+        *result_listener << "Actual JSON parse error at offset "
+                         << actual_doc.GetErrorOffset() << ": "
+                         << rapidjson::GetParseError_En(
+                              actual_doc.GetParseError())
+                         << "\nActual string: " << actual_str;
+        return false;
+    }
+
+    // Compare.
+    if (expected_doc != actual_doc) {
+        *result_listener << "JSON documents differ.\nExpected: "
+                         << expected_json_str << "\nActual: " << actual_str;
+        return false;
+    }
+
+    return true;
 }
 
 }; // namespace iceberg::testing

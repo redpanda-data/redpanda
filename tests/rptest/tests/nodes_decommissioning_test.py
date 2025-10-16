@@ -15,6 +15,7 @@ import requests
 from ducktape.mark import matrix, parametrize
 from ducktape.utils.util import wait_until
 
+from ducktape.cluster.cluster import ClusterNode
 from rptest.clients.default import DefaultClient
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool
@@ -47,8 +48,24 @@ class NodesDecommissioningTest(PreallocNodesTest):
     def __init__(self, test_context):
         self._topic = None
 
+        si_settings = SISettings(
+            test_context=test_context,
+            cloud_storage_max_connections=10,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+            fast_uploads=True,
+        )
+
+        extra_rp_conf = dict(
+            enable_cluster_metadata_upload_loop=False,
+        )
+
         super(NodesDecommissioningTest, self).__init__(
-            test_context=test_context, num_brokers=5, node_prealloc_count=1
+            test_context=test_context,
+            num_brokers=5,
+            node_prealloc_count=1,
+            si_settings=si_settings,
+            extra_rp_conf=extra_rp_conf,
         )
 
     def setup(self):
@@ -60,23 +77,43 @@ class NodesDecommissioningTest(PreallocNodesTest):
         # retry on timeout and service unavailable
         return Admin(self.redpanda, retry_codes=[503, 504])
 
-    def _create_topics(self, replication_factors=[1, 3]):
+    def _create_topics(
+        self, replication_factors: list[int] = [1, 3], cloud_topic: bool = False
+    ):
         """
         :return: total number of partitions in all topics
         """
         total_partitions = 0
-        topics = []
-        for i in range(10):
+        topics: list[TopicSpec] = []
+        for _ in range(10):
             partitions = random.randint(1, 10)
             spec = TopicSpec(
                 partition_count=partitions,
                 replication_factor=random.choice(replication_factors),
+                cloud_topics_enabled=cloud_topic,
             )
             topics.append(spec)
             total_partitions += partitions
 
         for spec in topics:
-            self.client().create_topic(spec)
+            config = {
+                "cleanup.policy": "delete",
+                "redpanda.remote.read": "false",
+                "redpanda.remote.write": "false",
+            }
+            if spec.cloud_topics_enabled:
+                config.update(
+                    {
+                        "redpanda.cloud_topic.enabled": "true",
+                    }
+                )
+            rpk = RpkTool(self.redpanda)
+            rpk.create_topic(
+                topic=spec.name,
+                partitions=spec.partition_count,
+                replicas=spec.replication_factor,
+                config=config,
+            )
 
         self._topic = random.choice(topics).name
 
@@ -154,7 +191,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
         wait_for_recovery_throttle_rate(redpanda=self.redpanda, new_rate=new_rate)
 
     # after node was removed the state should be consistent on all other not removed nodes
-    def _check_state_consistent(self, decommissioned_id):
+    def _check_state_consistent(self, decommissioned_id: int):
         not_decommissioned = [
             n
             for n in self.redpanda.started_nodes()
@@ -184,7 +221,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
             err_msg="Timeout waiting for nodes reported from configuration and cluster state to be consistent",
         )
 
-    def _wait_for_node_removed(self, decommissioned_id):
+    def _wait_for_node_removed(self, decommissioned_id: int):
         waiter = NodeDecommissionWaiter(
             self.redpanda, decommissioned_id, self.logger, progress_timeout=60
         )
@@ -192,7 +229,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
 
         self._check_state_consistent(decommissioned_id)
 
-    def _wait_for_allocation_failures_to_be_reported(self, decommissioned_id):
+    def _wait_for_allocation_failures_to_be_reported(self, decommissioned_id: int):
         def _failures_are_present():
             status = self.admin.get_decommission_status(decommissioned_id)
             failed_to_reallocate_topics = {
@@ -210,10 +247,10 @@ class NodesDecommissioningTest(PreallocNodesTest):
             err_msg="Timeout waiting for allocation failures to be reported",
         )
 
-    def _decommission(self, node_id, node=None):
+    def _decommission(self, node_id: int, node: ClusterNode | None = None):
         def decommissioned():
             try:
-                results = []
+                results: list[bool] = []
                 for n in self.redpanda.nodes:
                     if self.redpanda.node_id(n) == node_id:
                         continue
@@ -327,12 +364,26 @@ class NodesDecommissioningTest(PreallocNodesTest):
             f"Invalid reads in topic: {self._topic}, invalid reads count: {self.consumer.consumer_status.validator.invalid_reads}"
         )
 
-    def start_redpanda(self, new_bootstrap=True):
+    def start_redpanda(self, new_bootstrap: bool = True):
         if new_bootstrap:
             self.redpanda.set_seed_servers(self.redpanda.nodes)
 
         self.redpanda.start(
             auto_assign_node_id=new_bootstrap, omit_seeds_on_idx_one=not new_bootstrap
+        )
+
+        # Enable cloud topics
+        self.redpanda.enable_development_feature_support()
+        self.redpanda.set_cluster_config(
+            values={
+                "cloud_topics_enabled": True,
+                "cloud_topics_disable_reconciliation_loop": True,
+            }
+        )
+        self.redpanda.restart_nodes(
+            nodes=self.redpanda.nodes,
+            auto_assign_node_id=new_bootstrap,
+            omit_seeds_on_idx_one=not new_bootstrap,
         )
 
     @cluster(
@@ -341,8 +392,14 @@ class NodesDecommissioningTest(PreallocNodesTest):
         # connections with it
         log_allow_list=RESTART_LOG_ALLOW_LIST,
     )
-    @matrix(delete_topic=[True, False], tick_interval=[5000, 3600000])
-    def test_decommissioning_working_node(self, delete_topic, tick_interval):
+    @matrix(
+        delete_topic=[True, False],
+        tick_interval=[5000, 3600000],
+        cloud_topic=[True, False],
+    )
+    def test_decommissioning_working_node(
+        self, delete_topic: bool, tick_interval: int, cloud_topic: bool
+    ):
         self.start_redpanda()
         self.redpanda.set_cluster_config(
             {
@@ -350,7 +407,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
                 "partition_autobalancing_concurrent_moves": 2,
             }
         )
-        self._create_topics()
+        self._create_topics(cloud_topic=cloud_topic)
 
         self.start_producer()
         self.start_consumer()
@@ -400,9 +457,10 @@ class NodesDecommissioningTest(PreallocNodesTest):
         self.verify()
 
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
-    def test_decommissioning_crashed_node(self):
+    @matrix(cloud_topic=[True, False])
+    def test_decommissioning_crashed_node(self, cloud_topic: bool):
         self.start_redpanda()
-        self._create_topics(replication_factors=[3])
+        self._create_topics(replication_factors=[3], cloud_topic=cloud_topic)
 
         self.start_producer()
         self.start_consumer()
@@ -425,9 +483,10 @@ class NodesDecommissioningTest(PreallocNodesTest):
         # connections with it
         log_allow_list=RESTART_LOG_ALLOW_LIST,
     )
-    def test_decommissioning_cancel_ongoing_movements(self):
+    @matrix(cloud_topic=[True, False])
+    def test_decommissioning_cancel_ongoing_movements(self, cloud_topic: bool):
         self.start_redpanda()
-        self._create_topics()
+        self._create_topics(cloud_topic=cloud_topic)
 
         self.start_producer()
         self.start_consumer()
@@ -546,9 +605,10 @@ class NodesDecommissioningTest(PreallocNodesTest):
         self.verify()
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_recommissioning_node(self):
+    @matrix(cloud_topic=[True, False])
+    def test_recommissioning_node(self, cloud_topic: bool):
         self.start_redpanda()
-        self._create_topics()
+        self._create_topics(cloud_topic=cloud_topic)
 
         self.start_producer()
         self.start_consumer()
@@ -577,9 +637,10 @@ class NodesDecommissioningTest(PreallocNodesTest):
         self.verify()
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_recommissioning_node_finishes(self):
+    @matrix(cloud_topic=[True, False])
+    def test_recommissioning_node_finishes(self, cloud_topic: bool):
         self.start_redpanda()
-        self._create_topics()
+        self._create_topics(cloud_topic=cloud_topic)
 
         self.start_producer()
         self.start_consumer()
@@ -614,9 +675,10 @@ class NodesDecommissioningTest(PreallocNodesTest):
         self.verify()
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_recommissioning_do_not_stop_all_moves_node(self):
+    @matrix(cloud_topic=[True, False])
+    def test_recommissioning_do_not_stop_all_moves_node(self, cloud_topic: bool):
         self.start_redpanda()
-        self._create_topics()
+        self._create_topics(cloud_topic=cloud_topic)
 
         self.start_producer()
         self.start_consumer()
@@ -666,9 +728,10 @@ class NodesDecommissioningTest(PreallocNodesTest):
         self.verify()
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_recommissioning_one_of_decommissioned_nodes(self):
+    @matrix(cloud_topic=[True, False])
+    def test_recommissioning_one_of_decommissioned_nodes(self, cloud_topic: bool):
         self.start_redpanda()
-        self._create_topics()
+        self._create_topics(cloud_topic=cloud_topic)
 
         self.start_producer()
         self.start_consumer()
@@ -773,11 +836,12 @@ class NodesDecommissioningTest(PreallocNodesTest):
         self.verify()
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @parametrize(delete_topic=True)
-    @parametrize(delete_topic=False)
-    def test_decommissioning_finishes_after_manual_cancellation(self, delete_topic):
+    @matrix(delete_topic=[True, False], cloud_topic=[True, False])
+    def test_decommissioning_finishes_after_manual_cancellation(
+        self, delete_topic: bool, cloud_topic: bool
+    ):
         self.start_redpanda()
-        self._create_topics(replication_factors=[3])
+        self._create_topics(replication_factors=[3], cloud_topic=cloud_topic)
 
         self.start_producer()
         self.start_consumer()
@@ -813,11 +877,12 @@ class NodesDecommissioningTest(PreallocNodesTest):
             self.verify()
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @parametrize(node_is_alive=True)
-    @parametrize(node_is_alive=False)
-    def test_flipping_decommission_recommission(self, node_is_alive):
+    @matrix(node_is_alive=[True, False], cloud_topic=[True, False])
+    def test_flipping_decommission_recommission(
+        self, node_is_alive: bool, cloud_topic: bool
+    ):
         self.start_redpanda()
-        self._create_topics(replication_factors=[3])
+        self._create_topics(replication_factors=[3], cloud_topic=cloud_topic)
 
         self.start_producer()
         self.start_consumer()
@@ -878,10 +943,11 @@ class NodesDecommissioningTest(PreallocNodesTest):
 
     @skip_debug_mode
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_multiple_decommissions(self):
+    @matrix(cloud_topic=[True, False])
+    def test_multiple_decommissions(self, cloud_topic: bool):
         self._extra_node_conf = {"empty_seed_starts_cluster": False}
         self.start_redpanda()
-        total_partitions = self._create_topics()
+        total_partitions = self._create_topics(cloud_topic=cloud_topic)
 
         self.start_producer()
         self.start_consumer()
@@ -930,11 +996,12 @@ class NodesDecommissioningTest(PreallocNodesTest):
         self.verify()
 
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @parametrize(new_bootstrap=True)
-    @parametrize(new_bootstrap=False)
-    def test_node_is_not_allowed_to_join_after_restart(self, new_bootstrap):
+    @matrix(new_bootstrap=[True, False], cloud_topic=[True, False])
+    def test_node_is_not_allowed_to_join_after_restart(
+        self, new_bootstrap: bool, cloud_topic: bool
+    ):
         self.start_redpanda(new_bootstrap=new_bootstrap)
-        self._create_topics()
+        self._create_topics(cloud_topic=cloud_topic)
 
         to_decommission = self.redpanda.nodes[-1]
         to_decommission_id = self.redpanda.node_id(to_decommission)

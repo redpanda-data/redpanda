@@ -34,6 +34,7 @@ enum class license_required_feature {
     datalake_iceberg,
     leadership_pinning,
     shadow_linking,
+    cloud_topics,
 };
 
 std::ostream& operator<<(std::ostream&, license_required_feature);

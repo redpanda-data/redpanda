@@ -5,7 +5,7 @@ proto_library(
     name = "common_proto",
     srcs = ["acl.proto"],
     visibility = ["//visibility:public"],
-    deps = ["//proto/redpanda/pbgen:options_proto"],
+    deps = ["//proto/redpanda/core/pbgen:options_proto"],
 )
 
 redpanda_proto_library(

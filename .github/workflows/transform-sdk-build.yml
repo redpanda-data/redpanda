@@ -20,6 +20,8 @@ on:
     paths:
       - 'src/transform-sdk/**'
       - '.github/workflows/transform-sdk-build.yml'
+  merge_group:
+    types: [checks_requested]
 env:
   RUST_VERSION: '1.80'
   GO_VERSION: '1.22'

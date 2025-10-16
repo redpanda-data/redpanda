@@ -15,6 +15,7 @@
 #include "iceberg/conversion/conversion_outcome.h"
 #include "iceberg/conversion/protobuf_utils.h"
 #include "iceberg/values.h"
+#include "serde/json/writer.h"
 #include "ssx/future-util.h"
 
 #include <seastar/util/defer.hh>
@@ -22,6 +23,8 @@
 #include <seastar/util/variant_utils.hh>
 
 #include <fmt/core.h>
+
+#include <cmath>
 
 namespace iceberg {
 namespace pb = google::protobuf;
@@ -34,6 +37,15 @@ type_conversion_error(const pb::FieldDescriptor& fd) {
       fmt::format(
         "Protocol buffers type '{}' conversion is not supported",
         fd.type_name()));
+}
+
+std::optional<value_conversion_exception> check_recursion_depth(int depth) {
+    if (depth > max_recursion_depth) {
+        return value_conversion_exception(
+          fmt::format(
+            "Maximum recursion depth {} exceeded", max_recursion_depth));
+    }
+    return std::nullopt;
 }
 
 template<typename BaseT, typename IcebergT, typename DefaultF>
@@ -232,6 +244,158 @@ convert_timestamp(std::unique_ptr<parsed::message> message) {
     co_return value_outcome{iceberg::timestamp_value{absl::ToUnixMicros(ts)}};
 }
 
+// Forward declaration for recursive calls
+ss::future<result<std::monostate, value_conversion_exception>>
+serialize_protobuf_value_to_json(
+  serde::json::writer& writer, const parsed::message& value_msg, int depth);
+
+ss::future<result<std::monostate, value_conversion_exception>>
+serialize_protobuf_list_to_json(
+  serde::json::writer& writer, const parsed::message& list, int depth) {
+    if (auto err = check_recursion_depth(depth); err.has_value()) {
+        co_return *err;
+    }
+
+    writer.begin_array();
+    if (auto it = list.fields.find(1); it != list.fields.end()) {
+        const auto& repeated_data = std::get<parsed::repeated>(it->second);
+        const auto& messages
+          = std::get<chunked_vector<std::unique_ptr<parsed::message>>>(
+            repeated_data.elements);
+
+        for (const auto& msg_ptr : messages) {
+            auto result = co_await serialize_protobuf_value_to_json(
+              writer, *msg_ptr, depth + 1);
+            if (result.has_error()) {
+                co_return result.error();
+            }
+        }
+    }
+    writer.end_array();
+    co_return std::monostate{};
+}
+
+ss::future<result<std::monostate, value_conversion_exception>>
+serialize_protobuf_map_to_json(
+  serde::json::writer& writer, const parsed::message& map, int depth) {
+    if (auto err = check_recursion_depth(depth); err.has_value()) {
+        co_return *err;
+    }
+
+    writer.begin_object();
+    if (auto it = map.fields.find(1); it != map.fields.end()) {
+        const auto& map_data = std::get<parsed::map>(it->second);
+        for (const auto& [key, value] : map_data.entries) {
+            // google.protobuf.Struct maps always have string keys
+            writer.key(std::get<iobuf>(key));
+            // Convert value
+            const auto& value_msg_ptr
+              = std::get<std::unique_ptr<parsed::message>>(value);
+            auto result = co_await serialize_protobuf_value_to_json(
+              writer, *value_msg_ptr, depth + 1);
+            if (result.has_error()) {
+                co_return result.error();
+            }
+        }
+    }
+    writer.end_object();
+    co_return std::monostate{};
+}
+
+ss::future<result<std::monostate, value_conversion_exception>>
+serialize_protobuf_value_to_json(
+  serde::json::writer& writer, const parsed::message& value_msg, int depth) {
+    if (auto err = check_recursion_depth(depth); err.has_value()) {
+        co_return *err;
+    }
+
+    for (const auto& [field_num, field_value] : value_msg.fields) {
+        switch (field_num) {
+        case 1: // null
+            writer.null();
+            co_return std::monostate{};
+        case 2: { // number
+            auto d = std::get<double>(field_value);
+            if (std::isnan(d) || std::isinf(d)) {
+                co_return value_conversion_exception(
+                  "NaN and Infinity are not supported in JSON");
+            }
+            writer.number(d);
+            co_return std::monostate{};
+        }
+        case 3: // string
+            writer.string(std::get<iobuf>(field_value));
+            co_return std::monostate{};
+        case 4: // bool
+            writer.boolean(std::get<bool>(field_value));
+            co_return std::monostate{};
+        case 5: { // struct
+            const auto& map = std::get<std::unique_ptr<parsed::message>>(
+              field_value);
+            co_return co_await serialize_protobuf_map_to_json(
+              writer, *map, depth + 1);
+        }
+        case 6: { // list
+            const auto& list = std::get<std::unique_ptr<parsed::message>>(
+              field_value);
+            co_return co_await serialize_protobuf_list_to_json(
+              writer, *list, depth + 1);
+        }
+        }
+    }
+    // If no field is set, default to null (per libprotobuf behavior)
+    writer.null();
+    co_return std::monostate{};
+}
+
+ss::future<optional_value_outcome> convert_struct_to_json(
+  std::unique_ptr<parsed::message> message,
+  const proto_descriptors_stack& stack) {
+    if (message == nullptr) {
+        co_return std::nullopt;
+    }
+
+    serde::json::writer writer;
+    auto result = co_await serialize_protobuf_map_to_json(
+      writer, *message, stack.size());
+    if (result.has_error()) {
+        co_return result.error();
+    }
+    co_return value_outcome{iceberg::string_value{std::move(writer).finish()}};
+}
+
+ss::future<optional_value_outcome> convert_value_to_json(
+  std::unique_ptr<parsed::message> message,
+  const proto_descriptors_stack& stack) {
+    if (message == nullptr) {
+        co_return std::nullopt;
+    }
+
+    serde::json::writer writer;
+    auto result = co_await serialize_protobuf_value_to_json(
+      writer, *message, stack.size());
+    if (result.has_error()) {
+        co_return result.error();
+    }
+    co_return value_outcome{iceberg::string_value{std::move(writer).finish()}};
+}
+
+ss::future<optional_value_outcome> convert_list_value_to_json(
+  std::unique_ptr<parsed::message> message,
+  const proto_descriptors_stack& stack) {
+    if (message == nullptr) {
+        co_return std::nullopt;
+    }
+
+    serde::json::writer writer;
+    auto result = co_await serialize_protobuf_list_to_json(
+      writer, *message, stack.size());
+    if (result.has_error()) {
+        co_return result.error();
+    }
+    co_return value_outcome{iceberg::string_value{std::move(writer).finish()}};
+}
+
 ss::future<optional_value_outcome> message_field_to_value(
   std::optional<parsed::message::field> field,
   const pb::FieldDescriptor& field_descriptor,
@@ -323,6 +487,24 @@ ss::future<optional_value_outcome> single_field_to_value(
           == pb::Descriptor::WELLKNOWNTYPE_TIMESTAMP) {
             co_return co_await convert_timestamp(std::move(msg_field));
         }
+        if (
+          field_descriptor.message_type()->well_known_type()
+          == pb::Descriptor::WELLKNOWNTYPE_STRUCT) {
+            co_return co_await convert_struct_to_json(
+              std::move(msg_field), stack);
+        }
+        if (
+          field_descriptor.message_type()->well_known_type()
+          == pb::Descriptor::WELLKNOWNTYPE_VALUE) {
+            co_return co_await convert_value_to_json(
+              std::move(msg_field), stack);
+        }
+        if (
+          field_descriptor.message_type()->well_known_type()
+          == pb::Descriptor::WELLKNOWNTYPE_LISTVALUE) {
+            co_return co_await convert_list_value_to_json(
+              std::move(msg_field), stack);
+        }
         co_return co_await message_to_value(
           std::move(msg_field), *field_descriptor.message_type(), stack);
     }
@@ -352,10 +534,10 @@ ss::future<optional_value_outcome> message_to_value(
             "Recursive message types are not supported. Descriptor: {}",
             descriptor.DebugString()));
     }
-    if (stack.size() >= max_recursion_depth) {
+    if (stack.size() > max_recursion_depth) {
         co_return value_conversion_exception(
           fmt::format(
-            "Reached maximum recursion depth. Descriptor: {}",
+            "Exceeded maximum recursion depth. Descriptor: {}",
             descriptor.DebugString()));
     }
 

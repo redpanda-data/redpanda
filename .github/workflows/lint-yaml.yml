@@ -10,6 +10,8 @@ on:
     paths:
       - '.yamllint'
       - '.github/workflows/*.yml'
+  merge_group:
+    types: [checks_requested]
 jobs:
   yamllint:
     runs-on: ubuntu-latest

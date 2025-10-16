@@ -3595,16 +3595,9 @@ void application::load_feature_table_snapshot() {
           "indicates that all nodes in cluster were previously >= that version",
           my_version,
           snap.version);
-        // From this point, it is undefined to whether this process will be able
-        // to decode anything it sees on the network or on disk.
-        //
-        // This case will have stricter enforcement in future, to protect the
-        // user from acccidentally getting a cluster into a broken state by
-        // downgrading too far:
-        // https://github.com/redpanda-data/redpanda/issues/7018
-#ifndef NDEBUG
-        vassert(my_version >= snap.version, "Incompatible downgrade detected");
-#endif
+        vassert(
+          config::node().upgrade_override_checks || my_version >= snap.version,
+          "Incompatible downgrade detected");
     } else {
         vlog(
           _log.debug,

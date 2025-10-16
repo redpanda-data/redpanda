@@ -12,6 +12,8 @@ on:
     paths:
       - 'tests/models/**'
       - '.github/workflows/p.yml'
+  merge_group:
+    types: [checks_requested]
 jobs:
   cpp:
     name: Compile and check P models

@@ -16,10 +16,10 @@ syntax = "proto3";
 
 package rich.example;
 
-import "proto/redpanda/pbgen/options.proto";
-import "proto/redpanda/pbgen/rpc.proto";
+import "proto/redpanda/core/pbgen/options.proto";
+import "proto/redpanda/core/pbgen/rpc.proto";
 
-option (redpanda.pbgen.cpp_namespace) = "proto::example";
+option (redpanda.core.pbgen.cpp_namespace) = "proto::example";
 
 // File-level comment
 // This proto exercises core Protobuf features, excluding RPCs and extensions.
@@ -89,7 +89,7 @@ message Company {
             string currency = 2;
         }
 
-        optional Budget budget = 3 [(redpanda.pbgen.ptr) = true];
+        optional Budget budget = 3 [(redpanda.core.pbgen.ptr) = true];
     }
 
     repeated Department departments = 3;
@@ -121,13 +121,13 @@ message ListPersonsResponse {
 service ExampleService {
     // A get RPC method
     rpc GetPerson(GetPersonRequest) returns (GetPersonResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: USER,
         };
     }
     // A list RPC method
     rpc ListPersons(ListPersonsRequest) returns (ListPersonsResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: SUPERUSER,
             http_route: "/api/v1/persons",
         };

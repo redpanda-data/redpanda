@@ -8,6 +8,7 @@ redpanda_test_cc_library(
     deps = [
         "//src/v/iceberg:values",
         "@googletest//:gtest",
+        "@rapidjson",
     ],
 )
 
@@ -19,7 +20,10 @@ proto_library(
 proto_library(
     name = "complex_proto",
     srcs = ["testdata/complex.proto"],
-    deps = ["@protobuf//:timestamp_proto"],
+    deps = [
+        "@protobuf//:struct_proto",
+        "@protobuf//:timestamp_proto",
+    ],
 )
 
 proto_library(
@@ -130,6 +134,7 @@ redpanda_cc_gtest(
         ":proto_definitions_wrapper",
         ":test_messages_cc_proto",
         "//src/v/iceberg:datatypes",
+        "//src/v/iceberg/conversion:protobuf_utils",
         "//src/v/iceberg/conversion:schema_protobuf",
         "//src/v/iceberg/conversion:values_protobuf",
         "//src/v/serde/protobuf",
@@ -140,6 +145,7 @@ redpanda_cc_gtest(
         "@protobuf",
         "@protobuf//src/google/protobuf/compiler:importer",
         "@protobuf//src/google/protobuf/io:tokenizer",
+        "@rapidjson",
         "@seastar",
     ],
 )

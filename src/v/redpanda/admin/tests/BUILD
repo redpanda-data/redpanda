@@ -6,7 +6,7 @@ proto_library(
     name = "aip_test_message_proto",
     srcs = ["aip_test_message.proto"],
     deps = [
-        "//proto/redpanda/pbgen:options_proto",
+        "//proto/redpanda/core/pbgen:options_proto",
         "@protobuf//:duration_proto",
         "@protobuf//:timestamp_proto",
     ],

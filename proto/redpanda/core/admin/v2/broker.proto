@@ -16,24 +16,24 @@ syntax = "proto3";
 
 package redpanda.core.admin.v2;
 
-import "proto/redpanda/pbgen/options.proto";
-import "proto/redpanda/pbgen/rpc.proto";
+import "proto/redpanda/core/pbgen/options.proto";
+import "proto/redpanda/core/pbgen/rpc.proto";
 import "proto/redpanda/core/admin/v2/kafka_connections.proto";
 
-option (redpanda.pbgen.cpp_namespace) = "proto::admin";
+option (redpanda.core.pbgen.cpp_namespace) = "proto::admin";
 
 // The BrokerService gives information about individual brokers within the
 // cluster.
 service BrokerService {
     // GetBroker returns information about a single broker in the cluster.
     rpc GetBroker(GetBrokerRequest) returns (GetBrokerResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
     // ListBrokers returns information about all brokers in the cluster.
     rpc ListBrokers(ListBrokersRequest) returns (ListBrokersResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
@@ -42,7 +42,7 @@ service BrokerService {
     // connections.
     rpc ListKafkaConnections(ListKafkaConnectionsRequest)
         returns (ListKafkaConnectionsResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: SUPERUSER
         };
     }

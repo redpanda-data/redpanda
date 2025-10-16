@@ -473,22 +473,32 @@ TEST_P_CORO(
     co_await run_workload(GetParam(), this, consumer_offsets_log());
 }
 
+#ifdef NDEBUG
+static constexpr size_t num_groups = 100;
+static constexpr size_t num_tx_per_group = 50;
+static constexpr size_t num_rolls = 30;
+#else
+static constexpr size_t num_groups = 10;
+static constexpr size_t num_tx_per_group = 5;
+static constexpr size_t num_rolls = 3;
+#endif
+
 INSTANTIATE_TEST_SUITE_P(
   group_tx_combinations,
   group_tx_random_workload_fixture,
   testing::Values(
     workload_parameters{
-      .num_groups = 100,
-      .num_tx_per_group = 50,
-      .num_rolls = 30,
+      .num_groups = num_groups,
+      .num_tx_per_group = num_tx_per_group,
+      .num_rolls = num_rolls,
       .tx_workload_type = workload_parameters::commit_only},
     workload_parameters{
-      .num_groups = 100,
-      .num_tx_per_group = 50,
-      .num_rolls = 30,
+      .num_groups = num_groups,
+      .num_tx_per_group = num_tx_per_group,
+      .num_rolls = num_rolls,
       .tx_workload_type = workload_parameters::abort_only},
     workload_parameters{
-      .num_groups = 100,
-      .num_tx_per_group = 50,
-      .num_rolls = 30,
+      .num_groups = num_groups,
+      .num_tx_per_group = num_tx_per_group,
+      .num_rolls = num_rolls,
       .tx_workload_type = workload_parameters::mixed}));

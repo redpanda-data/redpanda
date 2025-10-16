@@ -16,8 +16,8 @@ syntax = "proto3";
 
 package redpanda.core.admin.v2;
 
-import "proto/redpanda/pbgen/options.proto";
-import "proto/redpanda/pbgen/rpc.proto";
+import "proto/redpanda/core/pbgen/options.proto";
+import "proto/redpanda/core/pbgen/rpc.proto";
 import "proto/redpanda/core/common/acl.proto";
 import "google/api/field_behavior.proto";
 import "google/api/field_info.proto";
@@ -26,41 +26,41 @@ import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/field_mask.proto";
 
-option (redpanda.pbgen.cpp_namespace) = "proto::admin";
+option (redpanda.core.pbgen.cpp_namespace) = "proto::admin";
 
 service ShadowLinkService {
     rpc CreateShadowLink(CreateShadowLinkRequest)
         returns (CreateShadowLinkResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
     rpc DeleteShadowLink(DeleteShadowLinkRequest)
         returns (DeleteShadowLinkResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
     rpc GetShadowLink(GetShadowLinkRequest) returns (GetShadowLinkResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
     rpc ListShadowLinks(ListShadowLinksRequest)
         returns (ListShadowLinksResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
     rpc UpdateShadowLink(UpdateShadowLinkRequest)
         returns (UpdateShadowLinkResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
     // Fails over a shadow link or a single shadow topic
     rpc FailOver(FailOverRequest) returns (FailOverResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: SUPERUSER
         };
     }

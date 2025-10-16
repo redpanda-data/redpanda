@@ -20,6 +20,8 @@ on:
       - 'src/go/rpk/**'
       - 'src/v/pandaproxy/schema_registry/protobuf/**'
       - '.github/workflows/rpk-build.yml'
+  merge_group:
+    types: [checks_requested]
 jobs:
   build:
     strategy:

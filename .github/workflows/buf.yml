@@ -2,7 +2,7 @@
 # ---------------------------------------------------------------------------
 # Buf CI
 # ---------------------------------------------------------------------------
-# 1. validate -> lint + breaking checks (runs on both push & pull_request)
+# 1. validate -> lint + breaking checks (runs on push, merge_group, & pull_request)
 # 2. push-to-registry -> push to Buf registry only (runs after validation passes)
 # 3. archive-label -> archive label in registry when branch/tag deleted (with error handling)
 # ---------------------------------------------------------------------------
@@ -29,16 +29,18 @@ on:
       - '**/buf.lock'
       - '.github/workflows/buf.yml'
   delete:
+  merge_group:
+    types: [checks_requested]
 permissions:
   contents: read  # checkout + annotations
   pull-requests: write  # inline lint / breaking comments
   id-token: write  # OIDC to assume AWS role (push job)
 # ===========================================================================
-# Job: validate (both push and pull_request - comprehensive validation)
+# Job: validate (push, merge_group, and pull_request - comprehensive validation)
 # ===========================================================================
 jobs:
   validate:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: github.event_name == 'push' || github.event_name == 'merge_group' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,7 +50,7 @@ jobs:
           paths: proto
           lint: true
           format: false  # We use clang-tidy
-          breaking: false # flip to true when we have a release
+          breaking: false  # flip to true when we have a release
           push: false  # Only validate, don't push to registry
   # ===========================================================================
   # Job: push-to-registry (push events only - registry operations only)

@@ -66,4 +66,4 @@ class RPCOptions(google.protobuf.message.Message):
 global___RPCOptions = RPCOptions
 RPC_FIELD_NUMBER: builtins.int
 rpc: google.protobuf.internal.extension_dict._ExtensionFieldDescriptor[google.protobuf.descriptor_pb2.MethodOptions, global___RPCOptions]
-'A RPC method option for the authentication required to invoke\nthe handler. Must be specified.\n\nExample:\n\n```proto\nservice Foo {\n\n  rpc GetFoo(GetFooRequest) returns (GetFooResponse) {\n    option (redpanda.pbgen.rpc) = {\n      authz: USER,\n      http_route: "/v2/myapi/foo",\n  }\n\n}\n```\n'
+'A RPC method option for the authentication required to invoke\nthe handler. Must be specified.\n\nExample:\n\n```proto\nservice Foo {\n\n  rpc GetFoo(GetFooRequest) returns (GetFooResponse) {\n    option (redpanda.core.pbgen.rpc) = {\n      authz: USER,\n      http_route: "/v2/myapi/foo",\n  }\n\n}\n```\n'

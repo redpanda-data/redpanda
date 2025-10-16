@@ -14,9 +14,9 @@
 
 syntax = "proto3";
 
-package redpanda.pbgen;
+package redpanda.core.pbgen;
 
-option go_package = "github.com/redpanda-data/redpanda/proto/redpanda/pbgen";
+option go_package = "github.com/redpanda-data/redpanda/proto/redpanda/core/pbgen";
 
 import "google/protobuf/descriptor.proto";
 
@@ -28,7 +28,7 @@ extend google.protobuf.FileOptions {
     // ```proto
     // syntax "proto3";
     //
-    // option (redpanda.pbgen.cpp_namespace) = "proto::bar";
+    // option (redpanda.core.pbgen.cpp_namespace) = "proto::bar";
     // ```
     string cpp_namespace = 51501;
 }
@@ -45,7 +45,7 @@ extend google.protobuf.FieldOptions {
     //
     // ```proto
     // message Foo {
-    //   Bar bar = 1 [(redpanda.pbgen.ptr) = true];
+    //   Bar bar = 1 [(redpanda.core.pbgen.ptr) = true];
     // }
     // ```
     bool ptr = 51500;
@@ -61,7 +61,7 @@ extend google.protobuf.FieldOptions {
     //
     // ```proto
     // message Foo {
-    //   string bar = 1 [(redpanda.pbgen.iobuf) = true];
+    //   string bar = 1 [(redpanda.core.pbgen.iobuf) = true];
     // }
     // ```
     bool iobuf = 51501;

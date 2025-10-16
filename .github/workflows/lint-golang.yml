@@ -12,6 +12,8 @@ on:
     paths:
       - 'src/go/**'
       - '.github/workflows/lint-golang.yml'
+  merge_group:
+    types: [checks_requested]
 jobs:
   go:
     name: Lint go files

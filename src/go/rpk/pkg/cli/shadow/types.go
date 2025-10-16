@@ -142,7 +142,19 @@ type TopicMetadataSyncOptions struct {
 	// Additional topic properties to shadow
 	// Partition count, `max.message.bytes`, `cleanup.policy` and
 	// `timestamp.type` will always be replicated
-	ShadowedTopicProperties []string `json:"shadowed_topic_properties,omitempty" yaml:"shadowed_topic_properties,omitempty"`
+	SyncedShadowTopicProperties []string `json:"synced_shadow_topic_properties,omitempty" yaml:"synced_shadow_topic_properties,omitempty"`
+	// If false, then the following topic properties will be synced by default:
+	// - compression.type
+	// - retention.bytes
+	// - retention.ms
+	// - delete.retention.ms
+	// - Replication Factor
+	// - min.compaction.lag.ms
+	// - max.compaction.lag.ms
+	//
+	// If this is true, then only the properties listed in
+	// `synced_shadow_topic_properties` will be synced.
+	ExcludeDefault bool `json:"exclude_default,omitempty" yaml:"exclude_default,omitempty"`
 }
 
 type ConsumerOffsetSyncOptions struct {
@@ -161,10 +173,6 @@ type SecuritySettingsSyncOptions struct {
 	Interval time.Duration `json:"interval,omitempty" yaml:"interval,omitempty"`
 	// Whether or not it's enabled
 	Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-	// Role filters
-	RoleFilters []*NameFilter `json:"role_filters,omitempty" yaml:"role_filters,omitempty"`
-	// SCRAM credential filters
-	ScramCredFilters []*NameFilter `json:"scram_cred_filters,omitempty" yaml:"scram_cred_filters,omitempty"`
 	// ACL filters
 	ACLFilters []*ACLFilter `json:"acl_filters,omitempty" yaml:"acl_filters,omitempty"`
 }

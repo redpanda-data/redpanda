@@ -12,6 +12,8 @@ on:
     paths:
       - '**.py'
       - '.github/workflows/lint-python.yml'
+  merge_group:
+    types: [checks_requested]
 jobs:
   py:
     name: Lint python files

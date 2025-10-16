@@ -16,10 +16,10 @@ syntax = "proto3";
 
 package redpanda.kafka.client;
 
-import "proto/redpanda/pbgen/options.proto";
-import "proto/redpanda/pbgen/rpc.proto";
+import "proto/redpanda/core/pbgen/options.proto";
+import "proto/redpanda/core/pbgen/rpc.proto";
 
-option (redpanda.pbgen.cpp_namespace) = "kafka::client::verifier";
+option (redpanda.core.pbgen.cpp_namespace) = "kafka::client::verifier";
 
 message BrokerAddress {
     string host = 1;
@@ -115,32 +115,32 @@ message ApiResponse {}
 
 service VerifierService {
     rpc Status(StatusRequest) returns (ApiResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: PUBLIC,
             http_route: "/status",
         };
     }
     rpc CreateConsumer(CreateDirectConsumerRequest) returns (ApiResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: PUBLIC,
             http_route: "/consumers",
         };
     }
     rpc AssignPartitions(AssignPartitionsRequest) returns (ApiResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: PUBLIC,
             http_route: "/consumers/partitions/assign",
         };
     }
     rpc UnassignPartitions(UnassignPartitionsRequest) returns (ApiResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: PUBLIC,
             http_route: "/consumers/partitions/unassign",
         };
     }
     rpc GetConsumerState(GetConsumerStateRequest)
         returns (ConsumerStateResponse) {
-        option (redpanda.pbgen.rpc) = {
+        option (redpanda.core.pbgen.rpc) = {
             authz: PUBLIC,
             http_route: "/consumers/state",
         };

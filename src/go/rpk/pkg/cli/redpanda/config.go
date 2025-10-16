@@ -80,8 +80,8 @@ func printCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 func set(fs afero.Fs, p *config.Params) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "set [KEY] [VALUE]",
-		Short: "Set configuration values, such as the redpanda node ID or the list of seed servers",
-		Long: `Set configuration values, such as the redpanda node ID or the list of seed servers
+		Short: "Set node configuration values",
+		Long: `Set node configuration values, such as the list of seed servers or the ports that various APIs listen on
 
 This command modifies the redpanda.yaml you have locally on disk. The first
 argument is the key within the yaml representing a property / field that you

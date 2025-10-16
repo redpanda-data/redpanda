@@ -9,6 +9,7 @@
  */
 
 #include "gtest/gtest.h"
+#include "iceberg/conversion/protobuf_utils.h"
 #include "iceberg/conversion/schema_protobuf.h"
 #include "iceberg/conversion/tests/gmock_iceberg_matchers.h"
 #include "iceberg/conversion/tests/proto_definitions.h"
@@ -27,6 +28,7 @@
 #include <google/protobuf/io/tokenizer.h>
 #include <google/protobuf/message.h>
 #include <gtest/gtest.h>
+#include <rapidjson/document.h>
 
 #include <memory>
 #include <optional>
@@ -188,6 +190,33 @@ TEST_CORO(SchemaProtobuf, TestMessageWithTimestamp) {
     auto field = std::move(result.value());
     EXPECT_THAT(
       field.fields, ElementsAre(IsField(1, "timestamp", timestamp_type{})));
+}
+
+TEST_CORO(SchemaProtobuf, TestMessageWithStruct) {
+    auto d = StructWithStruct::GetDescriptor();
+    auto result = iceberg::type_to_iceberg(*d);
+    ASSERT_FALSE_CORO(result.has_error());
+    auto field = std::move(result.value());
+    EXPECT_THAT(
+      field.fields, ElementsAre(IsField(1, "struct_field", string_type{})));
+}
+
+TEST_CORO(SchemaProtobuf, TestMessageWithValue) {
+    auto d = StructWithValue::GetDescriptor();
+    auto result = iceberg::type_to_iceberg(*d);
+    ASSERT_FALSE_CORO(result.has_error());
+    auto field = std::move(result.value());
+    EXPECT_THAT(
+      field.fields, ElementsAre(IsField(1, "value_field", string_type{})));
+}
+
+TEST_CORO(SchemaProtobuf, TestMessageWithListValue) {
+    auto d = StructWithListValue::GetDescriptor();
+    auto result = iceberg::type_to_iceberg(*d);
+    ASSERT_FALSE_CORO(result.has_error());
+    auto field = std::move(result.value());
+    EXPECT_THAT(
+      field.fields, ElementsAre(IsField(1, "list_value_field", string_type{})));
 }
 
 TEST_CORO(SchemaProtobuf, TestProtoTestMessages) {
@@ -545,6 +574,151 @@ TEST(values_protobuf, TestTimestamp) {
       ElementsAre(OptionalIcebergPrimitive<timestamp_value>(1743540027001635)));
 }
 
+TEST(values_protobuf, TestStruct) {
+    StructWithStruct s;
+
+    // Look at the EXPECT_THAT below to see the structure.
+    auto* struct_field = s.mutable_struct_field();
+    (*struct_field->mutable_fields())["string"].set_string_value("test_string");
+    (*struct_field->mutable_fields())["number"].set_number_value(12.04);
+    (*struct_field->mutable_fields())["bool"].set_bool_value(true);
+    (*struct_field->mutable_fields())["null"].set_null_value(
+      google::protobuf::NullValue::NULL_VALUE);
+
+    auto* nested
+      = (*struct_field->mutable_fields())["nested"].mutable_struct_value();
+    (*nested->mutable_fields())["name"].set_string_value("nested");
+
+    auto* array = (*nested->mutable_fields())["items"].mutable_list_value();
+    array->add_values()->set_string_value("array_string");
+    array->add_values()->set_number_value(42.5);
+
+    auto* array_struct = array->add_values()->mutable_struct_value();
+    (*array_struct->mutable_fields())["name"].set_string_value("taco");
+    (*array_struct->mutable_fields())["value"].set_number_value(99.9);
+
+    auto* nested_list = array->add_values()->mutable_list_value();
+    nested_list->add_values()->set_string_value("nested1");
+    nested_list->add_values()->set_string_value("nested2");
+
+    auto result = serialize_and_convert(s).get();
+    ASSERT_TRUE(result.has_value());
+    auto r_opt = std::move(result.value());
+    ASSERT_TRUE(r_opt.has_value());
+    auto struct_v = std::get<std::unique_ptr<iceberg::struct_value>>(
+      std::move(r_opt.value()));
+
+    ASSERT_EQ(struct_v->fields.size(), 1);
+    ASSERT_TRUE(struct_v->fields[0].has_value());
+
+    const auto& struct_json = std::get<iceberg::string_value>(
+      std::get<iceberg::primitive_value>(struct_v->fields[0].value()));
+
+    EXPECT_THAT(struct_json, IsJSON(R"({
+        "string": "test_string",
+        "number": 12.04,
+        "bool": true,
+        "null": null,
+        "nested": {
+          "name": "nested",
+          "items": [
+            "array_string",
+            42.5,
+            {"name": "taco", "value": 99.9},
+            ["nested1", "nested2"]
+          ]
+        }
+      })"));
+}
+
+TEST(values_protobuf, TestStructWithEmptyStructAndArray) {
+    StructWithStruct s;
+
+    // Look at the EXPECT_THAT below to see the structure.
+    auto* struct_field = s.mutable_struct_field();
+    (*struct_field->mutable_fields())["empty_struct"].mutable_struct_value();
+    (*struct_field->mutable_fields())["empty_array"].mutable_list_value();
+
+    auto result = serialize_and_convert(s).get();
+    ASSERT_TRUE(result.has_value());
+    auto r_opt = std::move(result.value());
+    ASSERT_TRUE(r_opt.has_value());
+    auto struct_v = std::get<std::unique_ptr<iceberg::struct_value>>(
+      std::move(r_opt.value()));
+
+    ASSERT_EQ(struct_v->fields.size(), 1);
+    ASSERT_TRUE(struct_v->fields[0].has_value());
+
+    const auto& struct_json = std::get<iceberg::string_value>(
+      std::get<iceberg::primitive_value>(struct_v->fields[0].value()));
+
+    EXPECT_THAT(struct_json, IsJSON(R"({
+        "empty_struct": {},
+        "empty_array": []
+      })"));
+}
+
+TEST(values_protobuf, TestEmptyStruct) {
+    // Leave struct_field empty.
+    StructWithStruct s;
+
+    auto result = serialize_and_convert(s).get();
+    ASSERT_TRUE(result.has_value());
+    auto r_opt = std::move(result.value());
+    ASSERT_TRUE(r_opt.has_value());
+    auto struct_v = std::get<std::unique_ptr<iceberg::struct_value>>(
+      std::move(r_opt.value()));
+
+    ASSERT_EQ(struct_v->fields.size(), 1);
+    EXPECT_FALSE(struct_v->fields[0].has_value());
+}
+
+// NB: We test serializing all Value variants in TestStruct.
+//     This tests that Value is convertible, not that all variants of
+//     Value are serializable to JSON.
+TEST(values_protobuf, TestValue) {
+    StructWithValue s;
+    s.mutable_value_field()->set_string_value("test");
+
+    auto result = serialize_and_convert(s).get();
+    ASSERT_TRUE(result.has_value());
+    auto r_opt = std::move(result.value());
+    ASSERT_TRUE(r_opt.has_value());
+    auto struct_v = std::get<std::unique_ptr<iceberg::struct_value>>(
+      std::move(r_opt.value()));
+
+    ASSERT_EQ(struct_v->fields.size(), 1);
+    ASSERT_TRUE(struct_v->fields[0].has_value());
+
+    const auto& value_json = std::get<iceberg::string_value>(
+      std::get<iceberg::primitive_value>(struct_v->fields[0].value()));
+
+    EXPECT_THAT(value_json, IsJSON(R"("test")"));
+}
+
+// See also TestStruct for ListValue values with all value Variants.
+TEST(values_protobuf, TestListValue) {
+    StructWithListValue s;
+    auto* list = s.mutable_list_value_field();
+    list->add_values()->set_string_value("first");
+    list->add_values()->set_number_value(2);
+
+    auto result = serialize_and_convert(s).get();
+    ASSERT_TRUE(result.has_value());
+    auto r_opt = std::move(result.value());
+    ASSERT_TRUE(r_opt.has_value());
+    auto struct_v = std::get<std::unique_ptr<iceberg::struct_value>>(
+      std::move(r_opt.value()));
+
+    ASSERT_EQ(struct_v->fields.size(), 1);
+    ASSERT_TRUE(struct_v->fields[0].has_value());
+
+    const auto& list_json = std::get<iceberg::string_value>(
+      std::get<iceberg::primitive_value>(struct_v->fields[0].value()));
+
+    EXPECT_THAT(list_json, IsJSON(R"(["first", 2])"));
+}
+
 TEST_CORO(values_protobuf, TestNotSupportedMessageType) {
     RecursiveMessage recursive;
     recursive.set_field(10);
@@ -670,4 +844,49 @@ TEST_CORO(values_protobuf, TestProtoNumbers) {
         OptionalIcebergPrimitive<string_value>("4234234"),
         OptionalIcebergPrimitive<int_value>(-234234),
         OptionalIcebergPrimitive<long_value>(-234234342)));
+}
+
+TEST(values_protobuf, TestValueWithNaN) {
+    StructWithStruct s;
+    auto* struct_field = s.mutable_struct_field();
+    (*struct_field->mutable_fields())["nan_value"].set_number_value(
+      std::numeric_limits<double>::quiet_NaN());
+
+    auto result = serialize_and_convert(s).get();
+    ASSERT_TRUE(result.has_error());
+    EXPECT_THAT(
+      result.error().what(),
+      HasSubstr("NaN and Infinity are not supported in JSON"));
+}
+
+TEST(values_protobuf, TestValueWithInfinity) {
+    StructWithStruct s;
+    auto* struct_field = s.mutable_struct_field();
+    (*struct_field->mutable_fields())["inf_value"].set_number_value(
+      std::numeric_limits<double>::infinity());
+
+    auto result = serialize_and_convert(s).get();
+    ASSERT_TRUE(result.has_error());
+    EXPECT_THAT(
+      result.error().what(),
+      HasSubstr("NaN and Infinity are not supported in JSON"));
+}
+
+TEST(values_protobuf, TestStructDepthLimit) {
+    StructWithStruct s;
+
+    // Create a deeply nested structure exceeding max_recursion_depth
+    auto* current = s.mutable_struct_field();
+    for (int i = 0; i < max_recursion_depth + 1; ++i) {
+        current = (*current->mutable_fields())[fmt::format("nested_{}", i)]
+                    .mutable_struct_value();
+    }
+
+    auto result = serialize_and_convert(s).get();
+    ASSERT_TRUE(result.has_error());
+    EXPECT_THAT(
+      result.error().what(),
+      HasSubstr(
+        fmt::format(
+          "Maximum recursion depth {} exceeded", max_recursion_depth)));
 }

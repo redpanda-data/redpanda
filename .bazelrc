@@ -51,6 +51,13 @@ build --action_env=CFLAGS=-Wno-int-conversion
 
 build --keep_going
 
+# Enable a hardened libc++ for our debug and fastbuilds. Maybe someday we can enable
+# the fast mode in production as well.
+#
+# https://libcxx.llvm.org/Hardening.html
+build --cxxopt=-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
+build --host_cxxopt=-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
+
 # prevent actions and tests from using the network. anything that needs to
 # opt-out (e.g. a network test) can use `tags=["requires-network"]`.
 build --sandbox_default_allow_network=false
@@ -152,6 +159,12 @@ build:release --@rules_rust//rust/settings:extra_rustc_flag=-Ccodegen-units=1
 # build:release --@rules_rust//rust/settings:extra_rustc_flag=-Clinker-plugin-lto
 # build:release --@rules_rust//rust/settings:extra_rustc_flag=-Cembed-bitcode=yes
 # build:release --@rules_rust//rust/settings:extra_rustc_flag=-Clink-arg=-fuse-ld=lld
+# For now, disable the hardened libc++ for release builds for maximum perf 🚀
+build:release --cxxopt=-U_LIBCPP_ASSERTION_SEMANTIC
+build:release --cxxopt=-U_LIBCPP_HARDENING_MODE
+build:release --host_cxxopt=-U_LIBCPP_HARDENING_MODE
+build:release --cxxopt=-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE
+build:release --host_cxxopt=-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE
 
 build:stamp --stamp --workspace_status_command=./bazel/stamp_vars.sh
 build:stamp-full --stamp --workspace_status_command='./bazel/stamp_vars.sh full'

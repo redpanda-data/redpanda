@@ -12,6 +12,8 @@ on:
     paths:
       - 'tools/rp_storage_tool/**'
       - '.github/workflows/rp-storage-tool-checks.yml'
+  merge_group:
+    types: [checks_requested]
 jobs:
   check:
     name: Compile check

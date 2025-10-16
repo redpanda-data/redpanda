@@ -27,7 +27,7 @@ lint:
     # This is an annotation, we want
     # it to be easy to write.
     ENUM_VALUE_PREFIX:
-      - proto/redpanda/pbgen
+      - proto/redpanda/core/pbgen
 breaking:
   use:
     - FILE

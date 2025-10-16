@@ -20,6 +20,8 @@ on:
       - '**.proto'
       - '**.java'
       - '.github/workflows/lint-cpp.yml'
+  merge_group:
+    types: [checks_requested]
 jobs:
   cpp:
     name: Lint files with clang-format

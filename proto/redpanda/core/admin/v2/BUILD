@@ -10,8 +10,8 @@ proto_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto/redpanda/core/common:common_proto",
-        "//proto/redpanda/pbgen:options_proto",
-        "//proto/redpanda/pbgen:rpc_proto",
+        "//proto/redpanda/core/pbgen:options_proto",
+        "//proto/redpanda/core/pbgen:rpc_proto",
         "@googleapis//google/api:field_info_proto",
         "@protobuf//:duration_proto",
         "@protobuf//:timestamp_proto",
@@ -33,8 +33,8 @@ proto_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto/redpanda/core/common:common_proto",
-        "//proto/redpanda/pbgen:options_proto",
-        "//proto/redpanda/pbgen:rpc_proto",
+        "//proto/redpanda/core/pbgen:options_proto",
+        "//proto/redpanda/core/pbgen:rpc_proto",
         "@googleapis//google/api:field_behavior_proto",
         "@googleapis//google/api:field_info_proto",
         "@googleapis//google/api:resource_proto",

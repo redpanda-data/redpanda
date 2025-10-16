@@ -13,7 +13,7 @@ proto_library(
 
 go_proto_library(
     name = "options_go_proto",
-    importpath = "github.com/redpanda-data/redpanda/proto/redpanda/pbgen/options",
+    importpath = "github.com/redpanda-data/redpanda/proto/redpanda/core/pbgen/options",
     protos = [":options_proto"],
     visibility = ["//visibility:public"],
 )
@@ -35,7 +35,7 @@ proto_library(
 
 go_proto_library(
     name = "rpc_go_proto",
-    importpath = "github.com/redpanda-data/redpanda/proto/redpanda/pbgen/rpc",
+    importpath = "github.com/redpanda-data/redpanda/proto/redpanda/core/pbgen/rpc",
     protos = [":rpc_proto"],
     visibility = ["//visibility:public"],
 )

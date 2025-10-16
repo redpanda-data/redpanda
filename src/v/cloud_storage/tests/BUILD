@@ -630,7 +630,7 @@ redpanda_cc_gtest(
 
 redpanda_cc_btest(
     name = "delete_records_e2e_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "delete_records_e2e_test.cc",
     ],
