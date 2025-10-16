@@ -193,4 +193,22 @@ datalake_service_impl::get_coordinator_state(
     co_return response;
 }
 
+ss::future<proto::admin::coordinator_reset_pending_state_response>
+datalake_service_impl::coordinator_reset_pending_state(
+  serde::pb::rpc::context,
+  proto::admin::coordinator_reset_pending_state_request req) {
+    datalake::coordinator::reset_pending_state_request fe_req;
+    fe_req.topic = model::topic{req.get_topic_name()};
+    if (!_coordinator_fe->local_is_initialized()) {
+        throw serde::pb::rpc::unavailable_exception(
+          "Datalake coordinator frontend not initialized");
+    }
+    auto fe_res = co_await _coordinator_fe->local().reset_pending_state(fe_req);
+    if (fe_res.errc != datalake::coordinator::errc::ok) {
+        throw serde::pb::rpc::internal_exception(
+          fmt::format("Datalake coordinator error: {}", fe_res.errc));
+    }
+    co_return proto::admin::coordinator_reset_pending_state_response{};
+}
+
 } // namespace admin
