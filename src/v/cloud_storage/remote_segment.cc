@@ -1456,7 +1456,7 @@ remote_segment_batch_reader::remote_segment_batch_reader(
 
 ss::future<result<ss::circular_buffer<model::record_batch>>>
 remote_segment_batch_reader::read_some(
-  model::timeout_clock::time_point,
+  model::timeout_clock::time_point deadline,
   storage::offset_translator_state& ot_state) {
     ss::gate::holder h(_gate);
     if (_ringbuf.empty()) {
