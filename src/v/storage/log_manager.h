@@ -32,6 +32,7 @@
 #include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
+#include "utils/hdr_hist.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
@@ -259,6 +260,19 @@ public:
 
     std::optional<batch_cache_index> create_cache(with_cache);
 
+    // Attempts to retrieve a value from `_segment_size_hist_fut`, if it has
+    // one (set by an earlier call to `schedule_calc_segment_size_histogram()`).
+    // If it does not, or if it contains an exceptional future, `std::nullopt`
+    // is returned.
+    std::optional<hdr_hist> try_get_segment_size_histogram();
+
+    // Schedules computation for a new segment size histogram across all
+    // logs & their segments on this shard (via
+    // `compute_segment_size_histogram()`), if `_segment_size_hist_fut` does not
+    // currently have a backgrounded computation running.
+    // Returns `true` if a new computation was scheduled, otherwise `false`.
+    bool schedule_calc_segment_size_histogram();
+
 private:
     using logs_type
       = chunked_hash_map<model::ntp, std::unique_ptr<log_housekeeping_meta>>;
@@ -302,6 +316,15 @@ private:
 
     void update_log_count();
 
+    // Computes a histogram of segment sizes across all logs managed on this
+    // shard by iterating over segments. This is a potentially expensive
+    // operation- it should only be invoked periodically, and is made
+    // asynchronous to allow yielding to the reactor.
+    // TODO: Uniform random sampling of segments to reduce cost? Could
+    // potentially avoid any asychronicity if the calculation had a clear upper
+    // bound.
+    ss::future<hdr_hist> compute_segment_size_histogram() const;
+
     log_config _config;
     kvstore& _kvstore;
     storage_resources& _resources;
@@ -321,6 +344,12 @@ private:
 
     ss::gate _gate;
     ss::abort_source _abort_source;
+
+    // May contain a backgrounded future that returns a segment size histogram
+    // for use in the `log_manager_probe` (see
+    // `compute_segment_size_histogram()`). May contain an exception due to use
+    // of `_abort_source.check()` which must be handled.
+    std::optional<ss::future<hdr_hist>> _segment_size_hist_fut;
 
     friend std::ostream& operator<<(std::ostream&, const log_manager&);
 

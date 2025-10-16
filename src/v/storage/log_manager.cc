@@ -220,6 +220,15 @@ ss::future<> log_manager::stop() {
     }
 
     _probe->clear_metrics();
+
+    // Important to co_await and clear `_segment_size_hist_fut`.
+    if (_segment_size_hist_fut.has_value()) {
+        auto hist_fut
+          = std::exchange(_segment_size_hist_fut, std::nullopt).value();
+        auto hist_fut_res = co_await ss::coroutine::as_future(
+          std::move(hist_fut));
+        hist_fut_res.ignore_ready_future();
+    }
 }
 
 /**
@@ -1119,6 +1128,53 @@ void log_manager::update_log_count() {
 
     _resources.update_partition_count(count);
     _probe->set_log_count(count);
+}
+
+std::optional<hdr_hist> log_manager::try_get_segment_size_histogram() {
+    std::optional<hdr_hist> hist{std::nullopt};
+    if (
+      _segment_size_hist_fut.has_value()
+      && _segment_size_hist_fut->available()) {
+        auto hist_fut
+          = std::exchange(_segment_size_hist_fut, std::nullopt).value();
+        if (hist_fut.failed()) {
+            hist_fut.ignore_ready_future();
+        } else {
+            hist = hist_fut.get();
+        }
+    }
+
+    return hist;
+}
+
+bool log_manager::schedule_calc_segment_size_histogram() {
+    if (_segment_size_hist_fut.has_value()) {
+        return false;
+    }
+
+    // Schedule a new computation for the next segment size histogram.
+    _segment_size_hist_fut = ss::try_with_gate(
+      _gate, [this] { return compute_segment_size_histogram(); });
+
+    return true;
+}
+
+ss::future<hdr_hist> log_manager::compute_segment_size_histogram() const {
+    hdr_hist hist;
+    for (const auto& log : _logs_list) {
+        if (!log.link.is_linked()) {
+            continue;
+        }
+
+        for (const auto& segment : log.handle->segments()) {
+            _abort_source.check();
+            hist.record(segment->size_bytes());
+        }
+
+        co_await ss::maybe_yield();
+    }
+
+    co_return hist;
 }
 
 } // namespace storage

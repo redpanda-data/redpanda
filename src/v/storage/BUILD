@@ -385,6 +385,7 @@ redpanda_cc_library(
         "//src/v/utils:file_io",
         "//src/v/utils:filtered_lower_bound",
         "//src/v/utils:functional",
+        "//src/v/utils:hdr_hist",
         "//src/v/utils:human",
         "//src/v/utils:moving_average",
         "//src/v/utils:mutex",
@@ -461,6 +462,8 @@ redpanda_cc_library(
     ],
     deps = [
         "//src/v/metrics",
+        "//src/v/ssx:rate_limited_function",
+        "//src/v/utils:hdr_hist",
     ],
 )
 
