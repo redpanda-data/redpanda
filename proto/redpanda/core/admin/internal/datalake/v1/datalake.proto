@@ -32,6 +32,14 @@ service DatalakeService {
             authz: SUPERUSER
         };
     }
+    // Sends a request to the coordinator to reset the pending state of a given
+    // Iceberg topic.
+    rpc CoordinatorResetPendingState(CoordinatorResetPendingStateRequest)
+        returns (CoordinatorResetPendingStateResponse) {
+        option (redpanda.pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
 }
 
 message GetCoordinatorStateRequest {
@@ -39,6 +47,11 @@ message GetCoordinatorStateRequest {
     // topics.
     repeated string topics_filter = 1;
 }
+message CoordinatorResetPendingStateRequest {
+    string topic_name = 1;
+}
+
+message CoordinatorResetPendingStateResponse {}
 
 message GetCoordinatorStateResponse {
     CoordinatorState state = 1;
