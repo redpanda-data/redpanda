@@ -381,11 +381,13 @@ public:
                   "empty");
                 co_return storage_t{};
             }
-            if (_seg_reader->config().over_budget) {
+            auto now = model::timeout_clock::now();
+            if (_seg_reader->config().over_budget || now > deadline) {
                 vlog(
                   _ctxlog.debug,
-                  "We're over-budget, stopping, config: {}",
-                  _seg_reader->config());
+                  "We're over-budget, stopping, config: {}{}",
+                  _seg_reader->config(),
+                  now > deadline ? ", deadline exceeded." : ".");
                 // We need to stop in such way that will keep the
                 // reader in the reusable state, so we could reuse
                 // it on next iteration
