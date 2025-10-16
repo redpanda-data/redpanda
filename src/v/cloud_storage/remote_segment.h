@@ -21,6 +21,7 @@
 #include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/timeout_clock.h"
 #include "storage/parser.h"
 #include "storage/segment_reader.h"
 #include "storage/translating_reader.h"
@@ -429,7 +430,8 @@ public:
 
 private:
     friend class single_record_consumer;
-    ss::future<std::unique_ptr<storage::continuous_batch_parser>> init_parser();
+    ss::future<std::unique_ptr<storage::continuous_batch_parser>>
+    init_parser(model::timeout_clock::time_point deadline);
 
     size_t produce(model::record_batch batch);
 
