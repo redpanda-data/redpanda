@@ -332,6 +332,46 @@ struct usage_stats_request
     auto serde_fields() { return std::tie(coordinator_partition); }
 };
 
+struct reset_pending_state_reply
+  : serde::envelope<
+      reset_pending_state_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    reset_pending_state_reply() = default;
+    explicit reset_pending_state_reply(errc err)
+      : errc(err) {}
+
+    friend std::ostream&
+    operator<<(std::ostream&, const reset_pending_state_reply&);
+
+    errc errc;
+
+    auto serde_fields() { return std::tie(errc); }
+};
+
+struct reset_pending_state_request
+  : serde::envelope<
+      reset_pending_state_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using resp_t = reset_pending_state_reply;
+
+    model::topic topic;
+    model::revision_id topic_revision;
+
+    reset_pending_state_request() = default;
+    explicit reset_pending_state_request(
+      const model::topic& topic, model::revision_id rev)
+      : topic(topic)
+      , topic_revision(rev) {}
+    friend std::ostream&
+    operator<<(std::ostream&, const reset_pending_state_request&);
+
+    const model::topic& get_topic() const { return topic; }
+
+    auto serde_fields() { return std::tie(topic, topic_revision); }
+};
+
 struct get_topic_state_reply
   : serde::envelope<
       get_topic_state_reply,

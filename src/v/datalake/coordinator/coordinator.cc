@@ -857,6 +857,54 @@ coordinator::sync_get_usage_stats() {
     co_return result;
 }
 
+ss::future<checked<std::nullopt_t, coordinator::errc>>
+coordinator::sync_reset_pending_state(
+  model::topic topic, model::revision_id topic_revision) {
+    auto gate = maybe_gate();
+    if (gate.has_error()) {
+        co_return gate.error();
+    }
+    auto sync_res = co_await stm_->sync(10s);
+    if (sync_res.has_error()) {
+        co_return convert_stm_errc(sync_res.error());
+    }
+
+    auto reset_res = reset_pending_state_update::build(
+      stm_->state(), topic, topic_revision);
+    if (reset_res.has_error()) {
+        vlog(
+          datalake_log.info,
+          "Rejecting reset_pending_state request (topic: {}, rev: {}): {}",
+          topic,
+          topic_revision,
+          reset_res.error());
+        co_return errc::stm_apply_error;
+    }
+    storage::record_batch_builder builder(
+      model::record_batch_type::datalake_coordinator, model::offset{0});
+    builder.add_raw_kv(
+      serde::to_iobuf(reset_pending_state_update::key),
+      serde::to_iobuf(std::move(reset_res.value())));
+    auto repl_res = co_await stm_->replicate_and_wait(
+      sync_res.value(), std::move(builder).build(), as_);
+    if (repl_res.has_error()) {
+        co_return convert_stm_errc(repl_res.error());
+    }
+    const auto t_it = stm_->state().topic_to_state.find(topic);
+    if (
+      t_it != stm_->state().topic_to_state.end()
+      && t_it->second.has_pending_entries()) {
+        vlog(
+          datalake_log.info,
+          "Failed reset_pending_state request (topic: {}, rev: {}): "
+          "pending entries still remain",
+          topic,
+          topic_revision);
+        co_return errc::stm_apply_error;
+    }
+    co_return std::nullopt;
+}
+
 ss::future<
   checked<chunked_hash_map<model::topic, topic_state>, coordinator::errc>>
 coordinator::sync_get_topic_state(chunked_vector<model::topic> topics_filter) {

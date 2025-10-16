@@ -25,6 +25,7 @@ enum class update_key : uint8_t {
     add_files = 0,
     mark_files_committed = 1,
     topic_lifecycle_update = 2,
+    reset_pending_state = 3,
 };
 std::ostream& operator<<(std::ostream&, const update_key&);
 
@@ -86,6 +87,28 @@ struct mark_files_committed_update
     // Number of Kafka bytes processed to translate the files included in this
     // update.
     uint64_t kafka_bytes_processed{0};
+};
+
+struct reset_pending_state_update
+  : public serde::envelope<
+      reset_pending_state_update,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    static constexpr auto key{update_key::reset_pending_state};
+    static checked<reset_pending_state_update, stm_update_error> build(
+      const topics_state&,
+      const model::topic&,
+      model::revision_id topic_revision);
+
+    auto serde_fields() { return std::tie(topic, topic_revision); }
+
+    checked<std::nullopt_t, stm_update_error> can_apply(const topics_state&);
+    checked<std::nullopt_t, stm_update_error> apply(topics_state&);
+    friend std::ostream&
+    operator<<(std::ostream&, const reset_pending_state_update&);
+
+    model::topic topic;
+    model::revision_id topic_revision;
 };
 
 // An update to change topic lifecycle state after it has been deleted.

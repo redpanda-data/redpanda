@@ -58,4 +58,10 @@ ss::future<get_topic_state_reply> service::get_topic_state(
       std::move(request), frontend::local_only::yes);
 }
 
+ss::future<reset_pending_state_reply> service::reset_pending_state(
+  reset_pending_state_request request, ::rpc::streaming_context&) {
+    return _frontend->local().reset_pending_state(
+      std::move(request), frontend::local_only::yes);
+}
+
 }; // namespace datalake::coordinator::rpc

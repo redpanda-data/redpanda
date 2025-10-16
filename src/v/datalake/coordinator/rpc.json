@@ -31,6 +31,11 @@
             "output_type": "usage_stats_reply"
         },
         {
+            "name": "reset_pending_state",
+            "input_type": "reset_pending_state_request",
+            "output_type": "reset_pending_state_reply"
+        },
+        {
             "name": "get_topic_state",
             "input_type": "get_topic_state_request",
             "output_type": "get_topic_state_reply"

@@ -86,6 +86,9 @@ public:
 
     ss::future<checked<datalake_usage_stats, errc>> sync_get_usage_stats();
 
+    ss::future<checked<std::nullopt_t, errc>> sync_reset_pending_state(
+      model::topic topic, model::revision_id topic_revision);
+
     ss::future<checked<chunked_hash_map<model::topic, topic_state>, errc>>
     sync_get_topic_state(chunked_vector<model::topic> topics);
 

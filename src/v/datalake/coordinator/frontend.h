@@ -74,6 +74,9 @@ public:
     ss::future<usage_stats_reply>
       get_usage_stats(usage_stats_request, local_only = local_only::no);
 
+    ss::future<reset_pending_state_reply> reset_pending_state(
+      reset_pending_state_request, local_only = local_only::no);
+
     ss::future<get_topic_state_reply>
       get_topic_state(get_topic_state_request, local_only = local_only::no);
 
@@ -136,6 +139,11 @@ private:
 
     ss::future<usage_stats_reply> get_usage_stats_locally(
       usage_stats_request,
+      const model::ntp& coordinator_partition,
+      ss::shard_id);
+
+    ss::future<reset_pending_state_reply> reset_pending_state_locally(
+      reset_pending_state_request,
       const model::ntp& coordinator_partition,
       ss::shard_id);
 

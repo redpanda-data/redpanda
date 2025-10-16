@@ -24,6 +24,8 @@ std::ostream& operator<<(std::ostream& o, const update_key& u) {
         return o << "update_key::mark_files_committed";
     case update_key::topic_lifecycle_update:
         return o << "update_key::topic_lifecycle_update";
+    case update_key::reset_pending_state:
+        return o << "update_key::reset_pending_state";
     }
 }
 
@@ -214,6 +216,58 @@ mark_files_committed_update::apply(topics_state& state) {
     return std::nullopt;
 }
 
+checked<reset_pending_state_update, stm_update_error>
+reset_pending_state_update::build(
+  const topics_state& state,
+  const model::topic& topic,
+  model::revision_id topic_revision) {
+    reset_pending_state_update update{
+      .topic = topic,
+      .topic_revision = topic_revision,
+    };
+    auto allowed = update.can_apply(state);
+    if (allowed.has_error()) {
+        return allowed.error();
+    }
+    return update;
+}
+
+checked<std::nullopt_t, stm_update_error>
+reset_pending_state_update::can_apply(const topics_state& state) {
+    auto topic_it = state.topic_to_state.find(topic);
+    if (topic_it == state.topic_to_state.end()) {
+        // No topic at all, the reset is a no-op.
+        return std::nullopt;
+    }
+    const auto& cur_topic = topic_it->second;
+    if (topic_revision != cur_topic.revision) {
+        return stm_update_error{fmt::format(
+          "topic {} revision mismatch: got {}, current rev {}",
+          topic,
+          topic_revision,
+          cur_topic.revision)};
+    }
+    return std::nullopt;
+}
+
+checked<std::nullopt_t, stm_update_error>
+reset_pending_state_update::apply(topics_state& state) {
+    auto allowed = can_apply(state);
+    if (allowed.has_error()) {
+        return allowed.error();
+    }
+    auto topic_it = state.topic_to_state.find(topic);
+    if (topic_it == state.topic_to_state.end()) {
+        // No topic at all, the reset is a no-op.
+        return std::nullopt;
+    }
+    auto& tp_state = topic_it->second;
+    for (auto& [pid, p_state] : tp_state.pid_to_pending_files) {
+        p_state.pending_entries.clear();
+    }
+    return std::nullopt;
+}
+
 checked<bool, stm_update_error>
 topic_lifecycle_update::can_apply(const topics_state& state) {
     auto topic_it = state.topic_to_state.find(topic);
@@ -325,6 +379,11 @@ std::ostream& operator<<(std::ostream& o, const topic_lifecycle_update& u) {
       u.topic,
       u.revision,
       u.new_state);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const reset_pending_state_update& u) {
+    fmt::print(o, "{{topic: {}, revision: {}}}", u.topic, u.topic_revision);
     return o;
 }
 

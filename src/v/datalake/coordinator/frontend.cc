@@ -459,6 +459,40 @@ ss::future<usage_stats_reply> frontend::get_usage_stats(
       &client::get_usage_stats>(std::move(request), bool(local_only_exec));
 }
 
+ss::future<reset_pending_state_reply> frontend::reset_pending_state_locally(
+  reset_pending_state_request request,
+  const model::ntp& coordinator_partition,
+  ss::shard_id shard) {
+    auto holder = _gate.hold();
+    co_return co_await _coordinator_mgr->invoke_on(
+      shard,
+      [coordinator_partition, &request](coordinator_manager& mgr) mutable {
+          auto partition = mgr.get(coordinator_partition);
+          if (!partition) {
+              return ssx::now(reset_pending_state_reply{errc::not_leader});
+          }
+          return partition
+            ->sync_reset_pending_state(request.topic, request.topic_revision)
+            .then([](auto result) {
+                reset_pending_state_reply resp{};
+                if (result.has_error()) {
+                    resp.errc = to_rpc_errc(result.error());
+                } else {
+                    resp.errc = errc::ok;
+                }
+                return ssx::now(std::move(resp));
+            });
+      });
+}
+
+ss::future<reset_pending_state_reply> frontend::reset_pending_state(
+  reset_pending_state_request request, local_only local_only_exec) {
+    auto holder = _gate.hold();
+    co_return co_await process<
+      &frontend::reset_pending_state_locally,
+      &client::reset_pending_state>(std::move(request), bool(local_only_exec));
+}
+
 ss::future<get_topic_state_reply> frontend::get_topic_state_locally(
   get_topic_state_request request,
   const model::ntp& coordinator_partition,
