@@ -146,7 +146,10 @@ log_manager::log_manager(
   , _housekeeping_jitter(_config.compaction_interval())
   , _trigger_gc_jitter(0s, 5s)
   , _batch_cache(_config.reclaim_opts)
-  , _probe(std::make_unique<log_manager_probe>()) {
+  , _probe(
+      std::make_unique<log_manager_probe>(
+        [this] { return try_get_segment_size_histogram(); },
+        [this] { return schedule_calc_segment_size_histogram(); })) {
     _config.compaction_interval.watch([this]() {
         _housekeeping_jitter = simple_time_jitter<ss::lowres_clock>{
           _config.compaction_interval()};

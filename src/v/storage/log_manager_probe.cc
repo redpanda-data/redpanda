@@ -11,6 +11,7 @@
 
 #include "config/configuration.h"
 #include "metrics/prometheus_sanitize.h"
+#include "ssx/rate_limited_function.h"
 
 #include <seastar/core/metrics.hh>
 
@@ -43,6 +44,35 @@ void log_manager_probe::setup_metrics() {
       },
       {},
       {});
+
+    _metrics.add_group(
+      group_name,
+      {
+        sm::make_histogram(
+          "segment_size",
+          [this] {
+              auto segment_size_collection_enabled
+                = config::shard_local_cfg()
+                    .storage_segment_size_refresh_rate_ms()
+                    .has_value();
+
+              if (segment_size_collection_enabled) {
+                  auto new_segment_size_histogram
+                    = _try_get_segment_histogram_cb();
+                  if (new_segment_size_histogram.has_value()) {
+                      _segment_size_histogram
+                        = std::move(new_segment_size_histogram).value();
+                  }
+
+                  _rate_limited_calc_segment_histogram_cb();
+              }
+
+              return _segment_size_histogram.seastar_histogram_logform();
+          },
+          sm::description("Local segment size histogram in bytes.")),
+      },
+      {},
+      {sm::shard_label});
 }
 
 void log_manager_probe::clear_metrics() { _metrics.clear(); }
