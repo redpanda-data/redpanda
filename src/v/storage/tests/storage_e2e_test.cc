@@ -7147,3 +7147,77 @@ TEST_F(storage_test_fixture, adjacent_merge_compaction_advances_generation_id) {
 
     ASSERT_EQ(gen_id_after(), gen_id_before() + 1);
 }
+
+TEST_F(storage_test_fixture, log_manager_segment_size_histogram) {
+    storage::log_manager mgr = make_log_manager();
+    auto ntp = model::ntp("kafka", "tapioca", 0);
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get();
+
+    auto add_segment = [log](size_t size, model::term_id term) {
+        do {
+            append_single_record_batch(log, 1, term, 16_KiB, true);
+        } while (log->segments().back()->size_bytes() < size);
+    };
+
+    auto add_segment_func = [&]() {
+        auto size = random_generators::get_int(4_KiB, 10_MiB);
+        add_segment(size, model::term_id(0));
+        log->force_roll().get();
+    };
+
+    add_segment_func();
+
+    auto hist = mgr.try_get_segment_size_histogram();
+    // First time this is called, no histogram is available.
+    ASSERT_TRUE(!hist.has_value());
+
+    // Schedule a histogram calculation.
+    mgr.schedule_calc_segment_size_histogram();
+
+    // Eventually the future will become available and provide a histogram
+    // result.
+    RPTEST_REQUIRE_EVENTUALLY(60s, [&] {
+        auto hist = mgr.try_get_segment_size_histogram();
+        return hist.has_value();
+    });
+}
+
+TEST_F(
+  storage_test_fixture,
+  log_manager_segment_size_histogram_exception_during_shutdown) {
+    storage::log_manager mgr = make_log_manager();
+    auto ntp = model::ntp("kafka", "tapioca", 0);
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get();
+
+    auto add_segment = [log](size_t size, model::term_id term) {
+        do {
+            append_single_record_batch(log, 1, term, 16_KiB, true);
+        } while (log->segments().back()->size_bytes() < size);
+    };
+
+    auto add_segment_func = [&]() {
+        auto size = random_generators::get_int(4_KiB, 10_MiB);
+        add_segment(size, model::term_id(0));
+        log->force_roll().get();
+    };
+
+    add_segment_func();
+
+    auto& mgr_as = storage::testing_details::log_manager_accessor::abort_source(
+      mgr);
+    mgr_as.request_abort();
+    mgr.schedule_calc_segment_size_histogram();
+    // Attempting to get this will return `std::nullopt` due to requested abort.
+    auto hist = mgr.try_get_segment_size_histogram();
+    ASSERT_TRUE(!hist.has_value());
+
+    // Check that scheduling and leaving `_segment_size_hist_fut` in an
+    // exceptional state during shutdown is properly handled.
+    mgr.schedule_calc_segment_size_histogram();
+}

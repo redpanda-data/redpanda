@@ -30,6 +30,10 @@ public:
     logs_list(storage::log_manager& m) {
         return m._logs_list;
     }
+
+    static ss::abort_source& abort_source(storage::log_manager& m) {
+        return m._abort_source;
+    }
 };
 
 class offset_tracker_accessor {
