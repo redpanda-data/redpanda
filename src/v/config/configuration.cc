@@ -1620,6 +1620,15 @@ configuration::configuration()
       "for the log reader.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
+  , storage_segment_size_refresh_rate_ms(
+      *this,
+      "storage_segment_size_refresh_rate_ms",
+      "The interval, in milliseconds, for recalculating the "
+      "`storage_manager_segment_size` histogram metric. This metric provides "
+      "visibility into segment size distribution per shard. Set to `null` to "
+      "disable histogram recalculation.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::chrono::minutes(60))
   , tx_registry_log_capacity(*this, "tx_registry_log_capacity")
   , id_allocator_log_capacity(
       *this,
