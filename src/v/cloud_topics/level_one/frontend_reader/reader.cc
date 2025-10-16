@@ -71,15 +71,6 @@ level_one_log_reader_impl::do_load_slice(
         break;
     }
 
-    if (is_over_limit(0)) {
-        vlog(
-          cd_log.debug,
-          "XXX L1 reader over byte budget for {} ({}): ending stream",
-          _ntp,
-          _tidp);
-        _state = state::end_of_stream;
-    }
-
     // Second switch: enforces that the reader has materialized batches
     // or reached end-of-stream.
     switch (_state) {
@@ -297,13 +288,19 @@ level_one_log_reader_impl::read_batches(l1::object_reader& reader) {
 
             // Check if adding this batch would exceed our byte limit.
             size_t batch_size = batch.size_bytes();
-            _config.bytes_consumed += batch_size;
-            if (is_over_limit(0)) {
+
+            if (is_over_limit(batch_size)) {
+                _config.bytes_consumed += batch_size;
                 break;
             }
 
             // If we make it past all that, emit the batch.
             _batches.push_back(std::move(batch));
+
+            _config.bytes_consumed += batch_size;
+            if (is_over_limit(0)) {
+                break;
+            }
         } else {
             // End of data.
             break;
@@ -434,6 +431,16 @@ void level_one_log_reader_impl::consume_materialized_batches(
     // actually want the next offset to be where it was
 
     dest->swap(_batches);
+
+    if (is_over_limit(0)) {
+        vlog(
+          cd_log.debug,
+          "XXX L1 reader over byte budget for {} ({}): ending stream",
+          _ntp,
+          _tidp);
+        _state = state::end_of_stream;
+        return;
+    }
 
     // Increment the next offset for the next metastore query.
     // The offset is always incremented so the reader makes
