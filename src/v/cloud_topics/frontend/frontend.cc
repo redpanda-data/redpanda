@@ -241,6 +241,7 @@ ss::future<storage::translating_reader> frontend::make_reader(
     if (lro > kafka::offset::min() && cfg.start_offset <= lro) {
         // Read from L1 if some reconciliation has happened (lro > min) and the
         // range overlaps L1.
+        // TODO: useless log message without context
         vlog(
           cd_log.debug,
           "Start offset {} <= LRO {}: using L1 reader",
@@ -252,6 +253,7 @@ ss::future<storage::translating_reader> frontend::make_reader(
           model::record_batch_reader(std::move(impl)), std::move(ot_state)};
     }
 
+    // TODO: useless log message without context
     vlog(
       cd_log.debug,
       "Start offset {} > LRO {}: using L0 reader",

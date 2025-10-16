@@ -50,6 +50,7 @@ level_one_log_reader_impl::level_one_log_reader_impl(
   , _metastore(metastore)
   , _io(io_interface) {}
 
+// prefetch?
 ss::future<model::record_batch_reader::storage_t>
 level_one_log_reader_impl::do_load_slice(
   model::timeout_clock::time_point deadline) {
@@ -68,6 +69,15 @@ level_one_log_reader_impl::do_load_slice(
     case state::end_of_stream:
         // Handled in the next switch statement.
         break;
+    }
+
+    if (is_over_limit(0)) {
+        vlog(
+          cd_log.debug,
+          "XXX L1 reader over byte budget for {} ({}): ending stream",
+          _ntp,
+          _tidp);
+        _state = state::end_of_stream;
     }
 
     // Second switch: enforces that the reader has materialized batches
@@ -90,6 +100,7 @@ level_one_log_reader_impl::do_load_slice(
     co_return res;
 }
 
+// L1 reader logs need context!
 ss::future<> level_one_log_reader_impl::fetch_metadata(
   model::timeout_clock::time_point /*deadline*/) {
     vassert(
@@ -123,6 +134,8 @@ ss::future<> level_one_log_reader_impl::fetch_metadata(
         _state = state::end_of_stream;
         co_return;
     }
+
+    // L1 reader should be announcing the RPC its making here
 
     ss::abort_source default_abort_source;
     auto* abort_source = _config.abort_source
@@ -174,6 +187,7 @@ ss::future<> level_one_log_reader_impl::fetch_metadata(
         }
     }
 
+    // L1 should probably say more about this object... like its offset range
     auto& obj = response.value();
     vlog(
       cd_log.debug,
@@ -283,10 +297,10 @@ level_one_log_reader_impl::read_batches(l1::object_reader& reader) {
 
             // Check if adding this batch would exceed our byte limit.
             size_t batch_size = batch.size_bytes();
-            if (is_over_limit(batch_size)) {
+            _config.bytes_consumed += batch_size;
+            if (is_over_limit(0)) {
                 break;
             }
-            _config.bytes_consumed += batch_size;
 
             // If we make it past all that, emit the batch.
             _batches.push_back(std::move(batch));
@@ -413,6 +427,11 @@ void level_one_log_reader_impl::consume_materialized_batches(
       _batches.size(),
       _ntp,
       _tidp);
+
+    // so if for some reason we didn't materialize any batches for reasons that
+    // are unrelated to there being a hole in the log (e.g. over budget) then we
+    // bump the next offset here, but that isn't what we want to do... we
+    // actually want the next offset to be where it was
 
     dest->swap(_batches);
 
