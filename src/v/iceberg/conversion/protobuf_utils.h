@@ -22,4 +22,13 @@ bool is_recursive_type(
   const google::protobuf::Descriptor& msg,
   const proto_descriptors_stack& stack);
 
+namespace protobuf {
+
+/// Redpanda datalake well-known protobuf types namespace.
+constexpr std::string_view datalake_well_known_type_prefix
+  = "redpanda.datalake.";
+
+constexpr std::string_view datalake_date_type = "redpanda.datalake.Date";
+} // namespace protobuf
+
 } // namespace iceberg

@@ -228,6 +228,22 @@ convert_timestamp(std::unique_ptr<parsed::message> message) {
     }
     co_return value_outcome{iceberg::timestamp_value{absl::ToUnixMicros(ts)}};
 }
+ss::future<optional_value_outcome>
+convert_date(std::unique_ptr<parsed::message> message) {
+    if (message == nullptr) {
+        co_return std::nullopt;
+    }
+
+    constexpr int date_tag = 1;
+    auto it = message->fields.find(date_tag);
+    if (it == message->fields.end()) {
+        co_return value_conversion_exception(
+          fmt::format("Date message missing 'date' field"));
+    }
+    int32_t date = std::get<int32_t>(std::move(it->second));
+
+    co_return value_outcome{iceberg::date_value{date}};
+}
 
 ss::future<optional_value_outcome> message_field_to_value(
   std::optional<parsed::message::field> field,
@@ -319,6 +335,23 @@ ss::future<optional_value_outcome> single_field_to_value(
           field_descriptor.message_type()->well_known_type()
           == pb::Descriptor::WELLKNOWNTYPE_TIMESTAMP) {
             co_return co_await convert_timestamp(std::move(msg_field));
+        }
+        if (
+          field_descriptor.message_type()->full_name()
+          == protobuf::datalake_date_type) {
+            co_return co_await convert_date(std::move(msg_field));
+        }
+        // Fail on any other redpanda.datalake.* types. This ensures that we
+        // don't fallback to struct type for any custom types that we may add in
+        // the future and break compatibility. We reserve the right to add
+        // support for specific types under redpanda.datalake.* as needed.
+        if (field_descriptor.message_type()->full_name().starts_with(
+              protobuf::datalake_well_known_type_prefix)) {
+            co_return value_conversion_exception(fmt::format(
+              "Protocol buffer field {} not supported - unhandled "
+              "redpanda.datalake type {}",
+              field_descriptor.DebugString(),
+              field_descriptor.message_type()->full_name()));
         }
         co_return co_await message_to_value(
           std::move(msg_field), *field_descriptor.message_type(), stack);
