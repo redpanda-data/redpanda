@@ -491,7 +491,11 @@ seq_writer::do_delete_subject_impermanent(subject sub, model::offset write_at) {
     co_await check_mutable(sub);
 
     // Grab the versions before they're gone.
-    auto versions = co_await _store.get_versions(sub, include_deleted::no);
+    // TODO: Temporarily convert chunked_vector to vector. Will remove.
+    auto chunked_versions = co_await _store.get_versions(
+      sub, include_deleted::no);
+    auto versions = std::vector(
+      chunked_versions.begin(), chunked_versions.end());
 
     // Inspect the subject to see if its already deleted
     if (co_await _store.is_subject_deleted(sub)) {
@@ -578,7 +582,11 @@ seq_writer::delete_subject_permanent_inner(
     }
 
     // Stash the list of versions to return at end
-    auto versions = co_await _store.get_versions(sub, include_deleted::yes);
+    // TODO: Temporarily convert chunked_vector to vector. Will remove.
+    auto chunked_versions = co_await _store.get_versions(
+      sub, include_deleted::yes);
+    auto versions = std::vector(
+      chunked_versions.begin(), chunked_versions.end());
 
     // Deleting the subject, or the last version, deletes the subject
     if (!version.has_value() || versions.size() == 1) {

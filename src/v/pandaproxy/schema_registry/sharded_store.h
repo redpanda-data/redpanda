@@ -112,7 +112,7 @@ public:
     ss::future<bool> has_subjects(include_deleted inc_del);
 
     ///\brief Return a list of versions and associated schema_id.
-    ss::future<std::vector<schema_version>>
+    ss::future<chunked_vector<schema_version>>
     get_versions(subject sub, include_deleted inc_del);
 
     ///\brief Return whether there are any references to a subject version.

@@ -65,7 +65,7 @@ inline model::record_batch make_delete_subject_batch(pps::subject sub) {
 }
 
 inline model::record_batch make_delete_subject_permanently_batch(
-  pps::subject sub, const std::vector<pps::schema_version>& versions) {
+  pps::subject sub, const chunked_vector<pps::schema_version>& versions) {
     storage::record_batch_builder rb{
       model::record_batch_type::raft_data, model::offset{0}};
 

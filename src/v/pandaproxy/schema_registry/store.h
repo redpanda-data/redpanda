@@ -214,14 +214,14 @@ public:
     }
 
     ///\brief Return a list of versions and associated schema_id.
-    result<std::vector<schema_version>>
+    result<chunked_vector<schema_version>>
     get_versions(const subject& sub, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         const auto& versions = sub_it->second.versions;
         if (versions.empty()) {
             return not_found(sub);
         }
-        std::vector<schema_version> res;
+        chunked_vector<schema_version> res;
         res.reserve(versions.size());
         for (const auto& ver : versions) {
             if (inc_del || !ver.deleted) {
