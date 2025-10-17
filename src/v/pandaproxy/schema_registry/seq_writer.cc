@@ -94,7 +94,9 @@ struct batch_builder : public storage::record_batch_builder {
         }
     }
 
-    void operator()(const std::vector<seq_marker>& sequences) {
+    template<typename Container>
+    requires std::same_as<std::ranges::range_value_t<Container>, seq_marker>
+    void operator()(const Container& sequences) {
         for (const seq_marker& s : sequences) {
             (*this)(s);
         }

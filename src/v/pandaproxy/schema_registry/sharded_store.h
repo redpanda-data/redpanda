@@ -132,7 +132,7 @@ public:
     is_subject_version_deleted(subject sub, schema_version version);
 
     ///\brief Get sequence number history (errors out if not soft-deleted)
-    ss::future<std::vector<seq_marker>> get_subject_written_at(subject sub);
+    ss::future<chunked_vector<seq_marker>> get_subject_written_at(subject sub);
 
     ///\brief Get sequence number history of subject config. Subject need
     /// not be soft-deleted first

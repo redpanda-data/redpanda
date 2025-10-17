@@ -251,7 +251,7 @@ public:
     /// \brief Return the seq_marker write history of a subject
     ///
     /// \return A vector with at least one element
-    result<std::vector<seq_marker>>
+    result<chunked_vector<seq_marker>>
     get_subject_written_at(const subject& sub) const {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
@@ -269,7 +269,7 @@ public:
                 return not_found(sub);
             }
 
-            return sub_it->second.written_at;
+            return sub_it->second.written_at.copy();
         }
     }
 
@@ -519,12 +519,8 @@ public:
         // that when we later hard-delete the subject, we do not
         // emit more tombstones for versions already tombstoned
         auto& markers = sub_it->second.written_at;
-        markers.erase(
-          std::remove_if(
-            markers.begin(),
-            markers.end(),
-            [&version](auto sm) { return sm.version == version; }),
-          markers.end());
+        markers.erase_to_end(
+          std::ranges::remove(markers, version, &seq_marker::version).begin());
 
         if (versions.empty()) {
             _subjects.erase(sub_it);
@@ -569,7 +565,8 @@ public:
         BOOST_OUTCOME_TRYX(check_mode_mutability(f));
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
-        std::erase(sub_it->second.written_at, marker);
+        auto& vec = sub_it->second.written_at;
+        vec.erase_to_end(std::ranges::remove(vec, marker).begin());
         return std::exchange(sub_it->second.mode, std::nullopt) != std::nullopt;
     }
 
@@ -615,7 +612,8 @@ public:
     clear_compatibility(const seq_marker& marker, const subject& sub) {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
-        std::erase(sub_it->second.written_at, marker);
+        auto& vec = sub_it->second.written_at;
+        vec.erase_to_end(std::ranges::remove(vec, marker).begin());
         return std::exchange(sub_it->second.compatibility, std::nullopt)
                != std::nullopt;
     }
@@ -805,7 +803,7 @@ private:
         std::vector<subject_version_entry> versions;
         is_deleted deleted{false};
 
-        std::vector<seq_marker> written_at;
+        chunked_vector<seq_marker> written_at;
 
     private:
         metrics::internal_metric_groups _metrics;

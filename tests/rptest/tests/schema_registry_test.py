@@ -29,7 +29,7 @@ from confluent_kafka.schema_registry import (
     topic_subject_name_strategy,
 )
 from confluent_kafka.serialization import MessageField, SerializationContext
-from ducktape.mark import matrix, parametrize, ignore
+from ducktape.mark import matrix, parametrize
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.utils.util import wait_until
 
@@ -1656,7 +1656,6 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             assert result_raw.status_code == requests.codes.ok
             assert result_raw.json()["id"] == 1
 
-    @ignore  # Ignore failing test
     @cluster(num_nodes=1)
     def test_post_subjects_subject_versions_and_delete_repeated(self):
         """
