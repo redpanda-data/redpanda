@@ -4354,6 +4354,16 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::nullopt,
       &validate_iceberg_topic_name_dot_replacement)
+  , iceberg_schema_case_insensitive(
+      *this,
+      "iceberg_schema_case_insensitive",
+      "Whether Iceberg schema field name matching should be case insensitive. "
+      "If true, Redpanda will perform case insensitive matching of schema "
+      "field names when translating records/applying schema evolution. This is "
+      "important i.e. for Glue, which forces lowercase field names in its "
+      "tables.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
   , enable_host_metrics(
       *this,
       "enable_host_metrics",

@@ -143,8 +143,13 @@ std::ostream& operator<<(std::ostream& o, const schema_manager::errc& e) {
 }
 
 bool schema_manager::table_info::fill_registered_ids(
-  iceberg::struct_type& type) {
-    return iceberg::try_fill_field_ids(schema.schema_struct, type)
+  iceberg::struct_type& type,
+  const schema_case_sensitive_matching case_sensitive) {
+    return iceberg::try_fill_field_ids(
+             schema.schema_struct,
+             type,
+             case_sensitive ? iceberg::schema_case_sensitive_matching::yes
+                            : iceberg::schema_case_sensitive_matching::no)
            == iceberg::ids_filled::yes;
 }
 
@@ -244,13 +249,19 @@ catalog_schema_manager::ensure_table_schema(
     if (use_schema_merging) {
         auto writer_struct_type_with_ids = writer_struct_type.copy();
         auto fill_res = iceberg::try_fill_field_ids(
-          current_schema->schema_struct, writer_struct_type_with_ids);
+          current_schema->schema_struct,
+          writer_struct_type_with_ids,
+          case_sensitive_ ? iceberg::schema_case_sensitive_matching::yes
+                          : iceberg::schema_case_sensitive_matching::no);
 
         if (fill_res == iceberg::ids_filled::no) {
             auto merged_schema_struct_type
               = current_schema->schema_struct.copy();
             auto merge_res = iceberg::merge_struct_types(
-              writer_struct_type, merged_schema_struct_type);
+              writer_struct_type,
+              merged_schema_struct_type,
+              case_sensitive_ ? iceberg::schema_case_sensitive_matching::yes
+                              : iceberg::schema_case_sensitive_matching::no);
             if (merge_res.has_error()) {
                 vlog(
                   datalake_log.warn,
@@ -272,8 +283,9 @@ catalog_schema_manager::ensure_table_schema(
                   datalake_log.error,
                   "Applying evolution rules on merged schema resulted in a "
                   "no-op. This means there is a bug in one of: filling field "
-                  "ids, merging, or applying evolution rules. desired_type={}, "
-                  "merged_schema={}, merged_schema_with_evo={}",
+                  "ids, merging, or applying evolution rules. Table={} "
+                  "desired_type={}, merged_schema={}, "
+                  "merged_schema_with_evo={}",
                   table_id,
                   writer_struct_type,
                   merged_schema_struct_type,

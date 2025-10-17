@@ -10,9 +10,12 @@
 
 #include "iceberg/compatibility.h"
 
+#include "base/vassert.h"
 #include "iceberg/compatibility_types.h"
 #include "iceberg/compatibility_utils.h"
 #include "iceberg/datatypes.h"
+
+#include <boost/locale.hpp>
 
 #include <ranges>
 #include <stdexcept>
@@ -218,6 +221,9 @@ public:
     schema_transform_result operator()(
       const struct_type& source_parent, const nested_field& dest_field) const {
         // Note that column renaming is NOT supported
+
+        // TODO(nv): support case-insensitive matching based on config
+
         auto matches = source_parent.fields
                        | std::views::filter(
                          [&dest_field](const nested_field_ptr& nf) {
@@ -519,6 +525,49 @@ get_exactly_one_field_by_name(const struct_type& s, const ss::sstring& name) {
           "Ambiguous field name: {}. Matches: {}.", name, n_matches));
     }
 }
+
+std::locale make_case_fold_locale() noexcept {
+    try {
+        boost::locale::generator g;
+        g.characters(boost::locale::char_facet_t::char_f);
+        g.categories(boost::locale::category_t::convert);
+        g.locale_cache_enabled(true);
+        return g.generate("en_US.UTF-8");
+    } catch (...) {
+        vunreachable("Failed to create case normalization locale");
+    }
+}
+
+static const std::locale case_fold_locale = make_case_fold_locale();
+
+std::string normalized_lc_name(const ss::sstring& name) {
+    return boost::locale::fold_case(name.begin(), name.end(), case_fold_locale);
+}
+
+nested_field* get_exactly_one_field_by_name_case_insensitive(
+  const struct_type& s, const ss::sstring& name) {
+    const auto nname = normalized_lc_name(name);
+
+    auto host_matches
+      = s.fields | std::views::filter([&nname](const nested_field_ptr& f) {
+            return f != nullptr && normalized_lc_name(f->name) == nname;
+        });
+
+    auto host_match_it = host_matches.begin();
+    auto n_matches = std::distance(host_match_it, host_matches.end());
+
+    switch (n_matches) {
+    case 0:
+        return nullptr;
+    case 1:
+        return host_match_it->get();
+    default:
+        // This should never happen and we can't handle it anyway.
+        ss::throw_with_backtrace<std::runtime_error>(fmt::format(
+          "Ambiguous field name: {}. Matches: {}.", name, n_matches));
+    }
+}
+
 } // namespace
 
 namespace {
@@ -540,11 +589,20 @@ namespace {
 /// IDs. On failure, writer struct is in an undefined state and should be
 /// thrown away.
 struct ids_filling_visitor {
+public:
+    explicit ids_filling_visitor(schema_case_sensitive_matching case_sensitive)
+      : case_sensitive_(case_sensitive) {}
+
+public:
     ids_filled operator()(
       const struct_type& host_struct, const struct_type& writer_struct) const {
         for (const auto& writer_field : writer_struct.fields) {
-            auto host_field = get_exactly_one_field_by_name(
-              host_struct, writer_field->name);
+            auto host_field =
+            (case_sensitive_
+               ? get_exactly_one_field_by_name(
+                 host_struct, writer_field->name)
+               : get_exactly_one_field_by_name_case_insensitive(
+                 host_struct, writer_field->name));
 
             if (!host_field) {
                 return ids_filled::no;
@@ -664,24 +722,41 @@ struct ids_filling_visitor {
     ids_filled operator()(const S&, const D&) const {
         return ids_filled::no;
     }
+
+private:
+    schema_case_sensitive_matching case_sensitive_;
 };
 
 } // namespace
 
 ids_filled try_fill_field_ids(
-  const struct_type& host_struct_type, struct_type& writer_struct_type) {
+  const struct_type& host_struct_type,
+  struct_type& writer_struct_type,
+  const schema_case_sensitive_matching case_sensitive) {
     return std::invoke(
-      ids_filling_visitor{}, host_struct_type, writer_struct_type);
+      ids_filling_visitor{case_sensitive},
+      host_struct_type,
+      writer_struct_type);
 }
 
 namespace {
-struct merging_schema_visitor {
+class merging_schema_visitor {
+public:
+    explicit merging_schema_visitor(
+      schema_case_sensitive_matching case_sensitive)
+      : case_sensitive_(case_sensitive) {}
+
+public:
     schema_merge_result operator()(
       const struct_type& writer_struct_type,
       struct_type& host_struct_type) const {
         for (const auto& writer_field : writer_struct_type.fields) {
-            auto host_field = get_exactly_one_field_by_name(
-              host_struct_type, writer_field->name);
+            auto host_field
+              = case_sensitive_
+                  ? get_exactly_one_field_by_name(
+                      host_struct_type, writer_field->name)
+                  : get_exactly_one_field_by_name_case_insensitive(
+                      host_struct_type, writer_field->name);
 
             if (!host_field) {
                 // Add the field to the host struct since no matching field was
@@ -830,14 +905,21 @@ struct merging_schema_visitor {
     schema_merge_result operator()(const S&, const D&) const {
         return schema_evolution_errc::incompatible;
     }
+
+private:
+    schema_case_sensitive_matching case_sensitive_;
 };
 
 } // namespace
 
 schema_merge_result merge_struct_types(
-  const struct_type& writer_struct_type, struct_type& host_struct_type) {
+  const struct_type& writer_struct_type,
+  struct_type& host_struct_type,
+  schema_case_sensitive_matching case_sensitive) {
     return std::invoke(
-      merging_schema_visitor{}, writer_struct_type, host_struct_type);
+      merging_schema_visitor{case_sensitive},
+      writer_struct_type,
+      host_struct_type);
 }
 
 } // namespace iceberg

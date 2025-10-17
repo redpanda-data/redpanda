@@ -70,6 +70,7 @@ std::optional<partition_spec> partition_spec::resolve(
     };
 }
 
+// TODO(nv): make case sensitivity configurable
 const partition_field*
 partition_spec::get_field(nested_field::id_t source_id) const {
     auto it = std::ranges::find(fields, source_id, &partition_field::source_id);

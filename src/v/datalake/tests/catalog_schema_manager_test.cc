@@ -17,6 +17,7 @@
 #include "iceberg/filesystem_catalog.h"
 #include "iceberg/table_identifier.h"
 #include "iceberg/tests/test_schemas.h"
+#include "test_utils/scoped_config.h"
 
 #include <gtest/gtest.h>
 
@@ -33,10 +34,12 @@ class CatalogSchemaManagerTest
   , public ::testing::Test {
 public:
     static constexpr std::string_view base_location{"test"};
-    CatalogSchemaManagerTest()
+    CatalogSchemaManagerTest(
+      schema_case_sensitive_matching case_sensitive
+      = schema_case_sensitive_matching::yes)
       : sr(cloud_io::scoped_remote::create(10, conf))
       , catalog(remote(), bucket_name, ss::sstring(base_location))
-      , schema_mgr(catalog, &features) {
+      , schema_mgr(catalog, &features, case_sensitive) {
         features.testing_activate_all();
         set_expectations_and_listen({});
     }
@@ -108,7 +111,8 @@ TEST_F(CatalogSchemaManagerTest, TestCreateTable) {
     // Fill the field IDs in `type`.
     auto load_res = schema_mgr.get_table_info(table_ident).get();
     ASSERT_FALSE(load_res.has_error());
-    ASSERT_TRUE(load_res.value().fill_registered_ids(type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      type, schema_case_sensitive_matching::yes));
 
     auto schema = load_table_schema(table_ident).get();
     ASSERT_TRUE(schema.has_value());
@@ -127,7 +131,8 @@ TEST_F(CatalogSchemaManagerTest, TestFillFromExistingTable) {
 
     auto type = std::get<struct_type>(test_nested_schema_type());
     reset_field_ids(type);
-    ASSERT_TRUE(load_res.value().fill_registered_ids(type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      type, schema_case_sensitive_matching::yes));
     EXPECT_EQ(type, schema.value().schema_struct);
 }
 
@@ -143,7 +148,8 @@ TEST_F(CatalogSchemaManagerTest, TestFillSubset) {
 
     auto load_res = schema_mgr.get_table_info(table_ident).get();
     ASSERT_FALSE(load_res.has_error());
-    ASSERT_TRUE(load_res.value().fill_registered_ids(type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      type, schema_case_sensitive_matching::yes));
 
     schema.value().schema_struct.fields.pop_back();
     EXPECT_EQ(type, schema.value().schema_struct);
@@ -161,7 +167,8 @@ TEST_F(CatalogSchemaManagerTest, TestFillNestedSubset) {
 
     auto load_res = schema_mgr.get_table_info(table_ident).get();
     ASSERT_FALSE(load_res.has_error());
-    ASSERT_TRUE(load_res.value().fill_registered_ids(type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      type, schema_case_sensitive_matching::yes));
 
     std::get<struct_type>(schema.value().schema_struct.fields.back()->type)
       .fields.pop_back();
@@ -199,7 +206,8 @@ TEST_F(CatalogSchemaManagerTest, TestFillSuperset) {
     // Fill the ids in `type`
     auto load_res = schema_mgr.get_table_info(table_ident).get();
     ASSERT_FALSE(load_res.has_error());
-    ASSERT_TRUE(load_res.value().fill_registered_ids(type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      type, schema_case_sensitive_matching::yes));
 
     // Check the resulting schema.
     schema s{
@@ -238,7 +246,8 @@ TEST_F(CatalogSchemaManagerTest, TestFillSupersetSubtype) {
     // Fill the ids
     auto load_res = schema_mgr.get_table_info(table_ident).get();
     ASSERT_FALSE(load_res.has_error());
-    ASSERT_TRUE(load_res.value().fill_registered_ids(type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      type, schema_case_sensitive_matching::yes));
 
     // Check the resulting schema.
     schema s{
@@ -328,7 +337,8 @@ TEST_F(CatalogSchemaManagerTest, AcceptsValidTypePromotion) {
 
     auto load_res = schema_mgr.get_table_info(table_ident).get();
     ASSERT_FALSE(load_res.has_error());
-    ASSERT_TRUE(load_res.value().fill_registered_ids(type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      type, schema_case_sensitive_matching::yes));
 
     auto loaded_table = load_table_schema(table_ident).get();
     ASSERT_TRUE(loaded_table.has_value());
@@ -373,12 +383,14 @@ TEST_F(CatalogSchemaManagerTest, RejectsInvalidTypePromotion) {
     auto load_res = schema_mgr.get_table_info(table_ident).get();
     ASSERT_FALSE(load_res.has_error());
 
-    ASSERT_FALSE(load_res.value().fill_registered_ids(type));
+    ASSERT_FALSE(load_res.value().fill_registered_ids(
+      type, schema_case_sensitive_matching::yes));
 
     // check that the table still holds the original schema
     load_res = schema_mgr.get_table_info(table_ident).get();
     reset_field_ids(original_type);
-    ASSERT_TRUE(load_res.value().fill_registered_ids(original_type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      original_type, schema_case_sensitive_matching::yes));
 
     auto loaded_table = load_table_schema(table_ident).get();
     ASSERT_TRUE(loaded_table.has_value());
@@ -478,4 +490,88 @@ TEST_F(CatalogSchemaManagerTest, GetTableInfo) {
           return s;
       }())
       << "Expect merged schema";
+}
+
+namespace {
+
+struct_type create_case_sensitivity_test_type(bool alternative) {
+    struct_type s{};
+    s.fields.emplace_back(
+      nested_field::create(
+        1, (alternative ? "Foo" : "fOO"), field_required::no, int_type{}));
+    s.fields.emplace_back(
+      nested_field::create(
+        2, (alternative ? "Bar" : "bAR"), field_required::no, string_type{}));
+    return s;
+};
+
+} // namespace
+
+TEST_F(CatalogSchemaManagerTest, CaseSensitiveFieldMatching) {
+    create_table(create_case_sensitivity_test_type(true));
+
+    auto schema_with_mixed_case = create_case_sensitivity_test_type(false);
+    reset_field_ids(schema_with_mixed_case);
+
+    auto ensure_res = schema_mgr
+                        .ensure_table_schema(
+                          table_ident, schema_with_mixed_case, empty_pspec)
+                        .get();
+    ASSERT_FALSE(ensure_res.has_error());
+
+    auto info_res = schema_mgr.get_table_info(table_ident).get();
+    ASSERT_FALSE(info_res.has_error());
+    ASSERT_EQ(info_res.value().schema.schema_struct.fields.size(), 4);
+}
+
+class CatalogSchemaManagerCaseInsensitiveTest
+  : public CatalogSchemaManagerTest {
+public:
+    CatalogSchemaManagerCaseInsensitiveTest()
+      : CatalogSchemaManagerTest(schema_case_sensitive_matching::no) {}
+};
+
+TEST_F(CatalogSchemaManagerCaseInsensitiveTest, CaseInsensitiveFieldMatching) {
+    create_table(create_case_sensitivity_test_type(true));
+
+    auto schema_with_mixed_case = create_case_sensitivity_test_type(false);
+    reset_field_ids(schema_with_mixed_case);
+
+    auto ensure_res = schema_mgr
+                        .ensure_table_schema(
+                          table_ident, schema_with_mixed_case, empty_pspec)
+                        .get();
+    ASSERT_FALSE(ensure_res.has_error());
+
+    auto info_res = schema_mgr.get_table_info(table_ident).get();
+    ASSERT_FALSE(info_res.has_error());
+    ASSERT_EQ(info_res.value().schema.schema_struct.fields.size(), 2);
+
+    // Add new field and make sure only it is added.
+    schema_with_mixed_case.fields.push_back(
+      nested_field::create(4, "baz", field_required::no, int_type{}));
+    reset_field_ids(schema_with_mixed_case);
+    ensure_res = schema_mgr
+                   .ensure_table_schema(
+                     table_ident, schema_with_mixed_case, empty_pspec)
+                   .get();
+    ASSERT_FALSE(ensure_res.has_error());
+
+    info_res = schema_mgr.get_table_info(table_ident).get();
+    ASSERT_FALSE(info_res.has_error());
+    ASSERT_EQ(info_res.value().schema.schema_struct.fields.size(), 3);
+
+    // Promote baz and uppercase it.
+    schema_with_mixed_case.fields.back()->type = long_type{};
+    schema_with_mixed_case.fields.back()->name = "BAZ";
+    reset_field_ids(schema_with_mixed_case);
+    ensure_res = schema_mgr
+                   .ensure_table_schema(
+                     table_ident, schema_with_mixed_case, empty_pspec)
+                   .get();
+    ASSERT_FALSE(ensure_res.has_error());
+
+    info_res = schema_mgr.get_table_info(table_ident).get();
+    ASSERT_FALSE(info_res.has_error());
+    ASSERT_EQ(info_res.value().schema.schema_struct.fields.size(), 3);
 }

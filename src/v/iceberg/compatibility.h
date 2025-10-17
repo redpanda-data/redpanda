@@ -17,6 +17,10 @@
 
 namespace iceberg {
 
+/// Schema case sensitivity matching flag.
+using schema_case_sensitive_matching
+  = ss::bool_class<struct schema_case_sensitive_matching_tag>;
+
 /**
    check_types - Performs a basic type check between two Iceberg field types,
    enforcing the Primitive Type Promotion policy laid out in
@@ -161,7 +165,9 @@ schema_evolution_result evolve_schema(
  * thrown away.
  */
 ids_filled try_fill_field_ids(
-  const struct_type& host_struct_type, struct_type& writer_struct_type);
+  const struct_type& host_struct_type,
+  struct_type& writer_struct_type,
+  const schema_case_sensitive_matching case_sensitive);
 
 using schema_merge_result = checked<void, schema_evolution_errc>;
 
@@ -184,6 +190,8 @@ using schema_merge_result = checked<void, schema_evolution_errc>;
  * case.
  */
 schema_merge_result merge_struct_types(
-  const struct_type& writer_struct_type, struct_type& host_struct_type);
+  const struct_type& writer_struct_type,
+  struct_type& host_struct_type,
+  const schema_case_sensitive_matching case_sensitivity);
 
 } // namespace iceberg

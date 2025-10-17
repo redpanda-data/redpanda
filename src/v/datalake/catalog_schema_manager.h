@@ -21,6 +21,9 @@ class feature_table;
 
 namespace datalake {
 
+using schema_case_sensitive_matching
+  = ss::bool_class<struct schema_case_sensitive_matching_tag>;
+
 class schema_manager {
 public:
     enum class errc {
@@ -49,7 +52,9 @@ public:
 
         // Fills the field IDs of the given type with those in the current
         // schema. Returns true on success.
-        bool fill_registered_ids(iceberg::struct_type&);
+        bool fill_registered_ids(
+          iceberg::struct_type&,
+          const schema_case_sensitive_matching case_sensitive);
     };
 
     virtual ss::future<checked<table_info, errc>> get_table_info(
@@ -92,9 +97,12 @@ private:
 class catalog_schema_manager : public schema_manager {
 public:
     explicit catalog_schema_manager(
-      iceberg::catalog& catalog, features::feature_table* features)
+      iceberg::catalog& catalog,
+      features::feature_table* features,
+      schema_case_sensitive_matching case_sensitive)
       : catalog_(catalog)
-      , features_(features) {}
+      , features_(features)
+      , case_sensitive_(case_sensitive) {}
 
     // Ensure the table schema is compatible with the writer struct. If the
     // table does not exist it is created, or, if the table exists and its
@@ -122,6 +130,7 @@ private:
     checked<ss::gate::holder, errc> maybe_gate();
     iceberg::catalog& catalog_;
     features::feature_table* features_;
+    schema_case_sensitive_matching case_sensitive_;
     ss::gate gate_;
 };
 

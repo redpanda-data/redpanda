@@ -109,6 +109,7 @@ redpanda_cc_gtest(
         "//src/v/iceberg:table_identifier",
         "//src/v/iceberg/tests:test_schemas",
         "//src/v/test_utils:gtest",
+        "//src/v/test_utils:scoped_config",
         "@googletest//:gtest",
     ],
 )

@@ -166,6 +166,7 @@ redpanda_cc_library(
         ":partition",
         ":values",
         "//src/v/base",
+        "@boost//:locale",
     ],
 )
 
