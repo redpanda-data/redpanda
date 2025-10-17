@@ -1511,6 +1511,7 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
     TRIM_LOGS_KEY = "trim_logs"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
+    CRASH_REPORTS = os.path.join(DATA_DIR, "crash_reports")
     NODE_CONFIG_FILE = "/etc/redpanda/redpanda.yaml"
     RPK_CONFIG_FILE = "/root/.config/rpk/rpk.yaml"
     CLUSTER_BOOTSTRAP_CONFIG_FILE = "/etc/redpanda/.bootstrap.yaml"
@@ -1588,6 +1589,7 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         },
         "executable": {"path": EXECUTABLE_SAVE_PATH, "collect_default": False},
         "backtraces": {"path": BACKTRACE_CAPTURE, "collect_default": True},
+        "crash_reports": {"path": CRASH_REPORTS, "collect_default": True},
     }
 
     # Thread name of shards to be used with redpanda_tid()
