@@ -151,11 +151,11 @@ public:
 
         if (!version.has_value()) {
             const auto& versions = sub_it->second.versions;
-            auto it = std::find_if(
-              versions.rbegin(), versions.rend(), [inc_del](const auto& ver) {
-                  return inc_del || !ver.deleted;
-              });
-            if (it == versions.rend()) {
+            auto reversed = versions | std::views::reverse;
+            auto it = std::ranges::find_if(
+              reversed,
+              [inc_del](const auto& ver) { return inc_del || !ver.deleted; });
+            if (it == std::ranges::end(reversed)) {
                 return not_found(sub);
             }
             return *it;
@@ -513,7 +513,10 @@ public:
             return not_deleted(sub, version);
         }
 
-        versions.erase(v_it);
+        // chunked_vector doesn't support erase(), so we need to
+        // manually erase
+        std::shift_left(v_it, versions.end(), 1);
+        versions.pop_back();
 
         // Trim any seq_markers referring to this version, so
         // that when we later hard-delete the subject, we do not
@@ -698,7 +701,12 @@ public:
         if (found) {
             *v_it = subject_version_entry(version, id, deleted);
         } else {
-            versions.emplace(v_it, version, id, deleted);
+            // chunked_vector doesn't support emplace(), so we need to manually
+            // emplace at the back and rotate it into position
+            auto idx = v_it - versions.begin();
+            versions.emplace_back(version, id, deleted);
+            std::rotate(
+              versions.begin() + idx, versions.end() - 1, versions.end());
         }
 
         const auto all_deleted = is_deleted(
@@ -800,7 +808,7 @@ private:
         explicit subject_entry(const subject& sub) { setup_metrics(sub); }
         std::optional<compatibility_level> compatibility;
         std::optional<mode> mode;
-        std::vector<subject_version_entry> versions;
+        chunked_vector<subject_version_entry> versions;
         is_deleted deleted{false};
 
         chunked_vector<seq_marker> written_at;
@@ -874,18 +882,20 @@ private:
         return sub_it;
     }
 
-    static result<std::vector<subject_version_entry>::iterator>
+    static result<chunked_vector<subject_version_entry>::iterator>
     get_version_iter(
       subject_map::value_type& sub_entry,
       schema_version version,
       include_deleted inc_del) {
         const subject_map::value_type& const_entry = sub_entry;
-        return detail::make_non_const_iterator(
-          sub_entry.second.versions,
+        // Get equivalent non-const iterator
+        auto& v = sub_entry.second.versions;
+        auto cit = BOOST_OUTCOME_TRYX(
           get_version_iter(const_entry, version, inc_del));
+        return v.begin() + std::distance(v.cbegin(), cit);
     }
 
-    static result<std::vector<subject_version_entry>::const_iterator>
+    static result<chunked_vector<subject_version_entry>::const_iterator>
     get_version_iter(
       const subject_map::value_type& sub_entry,
       schema_version version,
