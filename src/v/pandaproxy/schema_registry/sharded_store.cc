@@ -200,14 +200,14 @@ sharded_store::get_schema_version(stored_schema schema) {
     const auto versions = co_await _store.invoke_on(
       shard_for(sub),
       _smp_opts,
-      [sub](auto& s) -> std::vector<subject_version_entry> {
+      [sub](auto& s) -> chunked_vector<subject_version_entry> {
           auto res = s.get_version_ids(sub, include_deleted::no);
           if (
             res.has_error()
             && res.assume_error().code() == error_code::subject_not_found) {
               return {};
           }
-          return res.value();
+          return res.value().copy();
       });
 
     std::optional<schema_version> v_id;

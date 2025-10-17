@@ -398,11 +398,11 @@ public:
     }
 
     ///\brief Return a list of versions and associated schema_id.
-    result<std::vector<subject_version_entry>>
+    result<chunked_vector<subject_version_entry>>
     get_version_ids(const subject& sub, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
-        std::vector<subject_version_entry> res;
-        absl::c_copy_if(
+        chunked_vector<subject_version_entry> res;
+        std::ranges::copy_if(
           sub_it->second.versions,
           std::back_inserter(res),
           [inc_del](const subject_version_entry& e) {
