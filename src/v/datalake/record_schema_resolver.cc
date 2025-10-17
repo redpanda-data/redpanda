@@ -472,7 +472,10 @@ latest_subject_schema_resolver::resolve_buf_type(std::optional<iobuf> b) const {
       = co_await ss::coroutine::as_future<ppsr::stored_schema>(
         sr_->get_subject_schema(subject_, /*subject_version=*/std::nullopt));
     if (latest_schema_fut.failed()) {
-        latest_schema_fut.ignore_ready_future();
+        vlog(
+          datalake_log.warn,
+          "Error getting subject schema from registry: {}",
+          latest_schema_fut.get_exception());
         co_return type_resolver::errc::registry_error;
     }
     auto latest_schema = std::move(latest_schema_fut.get());
