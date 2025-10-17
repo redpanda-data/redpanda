@@ -1718,6 +1718,11 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         assert result_raw.status_code == requests.codes.ok
         assert len(result_raw.json()) == iterations
 
+        self.logger.debug("Deleting the subject")
+        result_raw = self.sr_client.delete_subject(subject=subject)
+        self.logger.debug(result_raw.json())
+        assert result_raw.status_code == requests.codes.ok
+
     @cluster(num_nodes=3)
     def test_post_subjects_subject_versions_metadata_ruleset(self):
         """
