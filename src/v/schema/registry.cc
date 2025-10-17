@@ -46,6 +46,7 @@ public:
     ss::future<ppsr::schema_getter*> synced_getter() const override {
         auto [reader, writer] = co_await service();
         co_await writer->read_sync();
+        _last_sync_time = ss::lowres_clock::now();
         co_return reader;
     }
 
@@ -80,6 +81,7 @@ public:
     create_schema(ppsr::subject_schema schema) override {
         auto [reader, writer] = co_await service();
         co_await writer->read_sync();
+        _last_sync_time = ss::lowres_clock::now();
         auto parsed = co_await reader->make_canonical_schema(std::move(schema));
         co_return co_await writer->write_subject_version(
           {.schema = std::move(parsed)});
@@ -94,7 +96,7 @@ private:
     }
 
     ss::sharded<ppsr::service>* _service;
-    ss::lowres_clock::time_point _last_sync_time{};
+    mutable ss::lowres_clock::time_point _last_sync_time{};
 };
 
 class disabled_schema_registry : public registry {
