@@ -219,7 +219,8 @@ class DatalakeServices:
         replicas=1,
         iceberg_mode: Literal["key_value"]
         | Literal["value_schema_id_prefix"]
-        | Literal["value_schema_latest"] = "key_value",
+        | Literal["value_schema_latest"]
+        | str = "key_value",
         target_lag_ms: Optional[int] = None,
         config: dict[str, Any] = dict(),
     ):
