@@ -1684,14 +1684,16 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             )
             self.logger.debug(result_raw)
             assert result_raw.status_code == requests.codes.ok
-    
-    @ignore
+
     @cluster(num_nodes=1)
+    @ignore(iterations=8194)
     @parametrize(iterations=8194)  # oversized alloc for store::get_version_ids.
+    @ignore(iterations=32769)
+    @parametrize(iterations=32769)  # oversized alloc for store::get_versions.
     def test_post_subjects_subject_versions_unique(self, iterations: int):
         """
         Verify repeatedly posting a unique version of a schema to trigger
-        oversized allocation warnings in store::get_version_ids.
+        oversized allocation warnings.
         """
 
         topic = create_topic_names(1)[0]
@@ -1710,6 +1712,11 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             self.logger.debug(result_raw.json())
             assert result_raw.status_code == requests.codes.ok
             assert result_raw.json()["id"] == i + 1
+
+        result_raw = self.sr_client.get_subjects_subject_versions(subject=subject)
+        self.logger.debug(result_raw.json())
+        assert result_raw.status_code == requests.codes.ok
+        assert len(result_raw.json()) == iterations
 
     @cluster(num_nodes=3)
     def test_post_subjects_subject_versions_metadata_ruleset(self):
