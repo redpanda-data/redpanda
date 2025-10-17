@@ -227,6 +227,11 @@ model::task_status_report task::get_status_report() const {
     return report;
 }
 
+void task::handle_partition_leadership_change(
+  ::model::ntp, ntp_leader, std::optional<::model::term_id>) {
+    // default implementation does nothing
+}
+
 cl_result<model::task_state>
 task::change_state(model::task_state new_state, ss::sstring reason) {
     vlog(

@@ -15,6 +15,7 @@
 #include "cluster_link/errc.h"
 #include "cluster_link/fwd.h"
 #include "cluster_link/model/types.h"
+#include "cluster_link/types.h"
 #include "utils/notification_list.h"
 #include "utils/prefix_logger.h"
 
@@ -85,6 +86,11 @@ public:
 
     /// Returns the status report for this task
     model::task_status_report get_status_report() const;
+
+    virtual void handle_partition_leadership_change(
+      ::model::ntp ntp,
+      ntp_leader is_ntp_leader,
+      std::optional<::model::term_id> term);
 
 protected:
     /// Returns true if the task should be started on the current node shard,
