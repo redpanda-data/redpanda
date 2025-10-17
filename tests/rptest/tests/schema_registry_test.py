@@ -29,7 +29,7 @@ from confluent_kafka.schema_registry import (
     topic_subject_name_strategy,
 )
 from confluent_kafka.serialization import MessageField, SerializationContext
-from ducktape.mark import matrix, parametrize
+from ducktape.mark import matrix, parametrize, ignore
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.utils.util import wait_until
 
@@ -1657,19 +1657,20 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             assert result_raw.json()["id"] == 1
 
     @cluster(num_nodes=1)
-    def test_post_subjects_subject_versions_and_delete_repeated(self):
+    @ignore(iterations=4097)
+    @parametrize(iterations=2049)  # oversized alloc for subject_entry::written_at.
+    @parametrize(iterations=4097)  # oversized alloc for subject_entry::versions.
+    def test_post_subjects_subject_versions_and_delete_repeated(self, iterations: int):
         """
         Verify posting a schema and deleting it many times to trigger
-        oversized allocation warnings for subject_entry::written_at.
+        oversized allocation warnings.
         """
 
         topic = create_topic_names(1)[0]
         subject = f"{topic}-key"
         schema_1_data = json.dumps({"schema": schema1_def})
 
-        # 2049 is the number of times we need to repeat this to trigger
-        # the oversized allocation warning.
-        for _ in range(2048 + 1):
+        for _ in range(iterations):
             result_raw = self.sr_client.post_subjects_subject_versions(
                 subject=subject, data=schema_1_data
             )
