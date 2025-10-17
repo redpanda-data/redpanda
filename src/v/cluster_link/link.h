@@ -132,6 +132,11 @@ private:
       const std::optional<model::connection_config::authn_variant>&
         authn_config);
 
+    void notify_tasks_of_partition_leadership_changes(
+      ::model::ntp ntp,
+      ntp_leader is_ntp_leader,
+      std::optional<::model::term_id> term);
+
 private:
     ::model::node_id _self;
     model::id_t _link_id;

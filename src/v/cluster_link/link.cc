@@ -286,9 +286,15 @@ ss::future<> link::handle_on_leadership_change(
         } else {
             _replication_mgr.stop_replicator(ntp, term);
         }
+
+        // Tasks should only be notified if the leadership change of shadowed
+        // topics
+        notify_tasks_of_partition_leadership_changes(ntp, is_ntp_leader, term);
     }
+
     // todo: add debouncing here so that we do not trigger multiple
     // reconciliation loops at once.
+
     co_await run_task_reconciler();
 }
 
@@ -527,6 +533,15 @@ void link::maybe_update_sasl_configuration(
           authn_config);
         _cluster_connection->set_sasl_configuration(
           authn_config.transform(transform_func));
+    }
+}
+
+void link::notify_tasks_of_partition_leadership_changes(
+  ::model::ntp ntp,
+  ntp_leader is_ntp_leader,
+  std::optional<::model::term_id> term) {
+    for (auto& [_, t] : _tasks) {
+        t->handle_partition_leadership_change(ntp, is_ntp_leader, term);
     }
 }
 } // namespace cluster_link
