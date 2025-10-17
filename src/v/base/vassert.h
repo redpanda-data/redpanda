@@ -119,7 +119,9 @@ inline void assert_failed_thunk0(
 /// enable certain compiler optimizations like std::unreachable() would.
 #define vunreachable(msg, args...)                                             \
     /* NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) */                     \
-    do {                                                                       \
-        ::detail::assert_failed_thunk0(                                        \
-          "(" __FILE__ ":" STR_VASSERT(__LINE__) ")", msg, ##args);            \
-    } while (0)
+    do                                                                         \
+        [[unlikely]] {                                                         \
+            ::detail::assert_failed_thunk0(                                    \
+              "(" __FILE__ ":" STR_VASSERT(__LINE__) ")", msg, ##args);        \
+        }                                                                      \
+    while (0)
