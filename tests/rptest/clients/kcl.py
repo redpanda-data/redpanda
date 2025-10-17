@@ -489,9 +489,6 @@ class RawKCL(KCL):
     Callers should expect raw kafka responses json encoded with franz-go key naming scheme
     """
 
-    def _controller_id(self) -> int:
-        return self._redpanda.node_id(self._redpanda.controller())
-
     def create_topics(
         self,
         version: int,
@@ -544,7 +541,7 @@ class RawKCL(KCL):
             ],
         }
         return self._cmd(
-            ["misc", "raw-req", "-b", str(self._controller_id()), "-k", "19"],
+            ["misc", "raw-req", "-k", "19"],
             input=json.dumps(create_topics_request),
         )
 
@@ -558,7 +555,7 @@ class RawKCL(KCL):
             "TopicNames": topics,
         }
         return self._cmd(
-            ["misc", "raw-req", "-b", str(self._controller_id()), "-k", "20"],
+            ["misc", "raw-req", "-k", "20"],
             input=json.dumps(delete_topics_request),
         )
 
@@ -575,7 +572,7 @@ class RawKCL(KCL):
             "Topics": [{"Topic": t.name, "Count": t.num_partitions} for t in topics],
         }
         return self._cmd(
-            ["misc", "raw-req", "-b", str(self._controller_id()), "-k", "37"],
+            ["misc", "raw-req", "-k", "37"],
             input=json.dumps(create_partitions_request),
         )
 
@@ -600,35 +597,27 @@ class RawKCL(KCL):
 
         self._redpanda.logger.info(f"DBG: {json.dumps(alter_configs_request)}")
         return self._cmd(
-            ["misc", "raw-req", "-b", str(self._controller_id()), "-k", "33"],
+            ["misc", "raw-req", "-k", "33"],
             input=json.dumps(alter_configs_request),
         )
 
     def raw_alter_quotas(self, body: dict[str, Any]) -> dict[str, Any]:
         res = self._cmd(
-            ["misc", "raw-req", "-b", str(self._controller_id()), "-k", "49"],
+            ["misc", "raw-req", "-k", "49"],
             input=json.dumps(body),
         )
         return json.loads(res)
 
     def raw_describe_quotas(self, body: dict[str, Any]) -> dict[str, Any]:
         res = self._cmd(
-            ["misc", "raw-req", "-b", str(self._controller_id()), "-k", "48"],
+            ["misc", "raw-req", "-k", "48"],
             input=json.dumps(body),
         )
         return json.loads(res)
 
-    def raw_find_coordinator(self, body: dict[str, Any]) -> dict[str, Any]:
-        res = self._cmd(["misc", "raw-req", "-k", "10"], input=json.dumps(body))
-        return json.loads(res)
-
     def raw_join_group(self, body: dict[str, Any]) -> dict[str, Any]:
-        res = self.raw_find_coordinator(
-            {"Version": 3, "CoordinatorKey": body["Group"], "CoordinatorType": 0}
-        )
-
         res = self._cmd(
-            ["misc", "raw-req", "-b", str(res["NodeID"]), "-k", "11"],
+            ["misc", "raw-req", "-k", "11"],
             input=json.dumps(body),
         )
         return json.loads(res)
