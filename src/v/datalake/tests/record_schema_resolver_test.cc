@@ -565,6 +565,10 @@ public:
     synced_getter() const override {
         co_return &_store;
     }
+    ss::future<ss::lowres_clock::time_point>
+    sync(ss::lowres_clock::duration) override {
+        co_return ss::lowres_clock::now();
+    }
     ss::future<pandaproxy::schema_registry::schema_definition>
     get_schema_definition(
       pandaproxy::schema_registry::schema_id id) const override {

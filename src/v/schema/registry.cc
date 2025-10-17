@@ -49,6 +49,21 @@ public:
         co_return reader;
     }
 
+    ss::future<ss::lowres_clock::time_point>
+    sync(ss::lowres_clock::duration max_age) override {
+        auto now = ss::lowres_clock::now();
+
+        if (
+          now - _last_sync_time > max_age
+          || max_age == ss::lowres_clock::duration{}) {
+            auto [reader, writer] = co_await service();
+            co_await writer->read_sync();
+            _last_sync_time = now;
+        }
+
+        co_return _last_sync_time;
+    }
+
     ss::future<ppsr::schema_definition>
     get_schema_definition(ppsr::schema_id id) const override {
         auto [reader, _] = co_await service();
@@ -79,6 +94,7 @@ private:
     }
 
     ss::sharded<ppsr::service>* _service;
+    ss::lowres_clock::time_point _last_sync_time{};
 };
 
 class disabled_schema_registry : public registry {
@@ -90,6 +106,11 @@ public:
           "invalid attempted usage of a disabled schema registry");
     }
     ss::future<ppsr::schema_getter*> synced_getter() const override {
+        throw std::logic_error(
+          "invalid attempted usage of a disabled schema registry");
+    }
+    ss::future<ss::lowres_clock::time_point>
+    sync(ss::lowres_clock::duration) override {
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
     }
