@@ -422,11 +422,12 @@ public:
         });
     }
 
-    schema_id_set referenced_by(const subject& sub, schema_version ver) {
+    schema_id_set
+    referenced_by(const subject& sub, std::optional<schema_version> ver) {
         schema_id_set references;
         for (const auto& s : _schemas) {
             for (const auto& r : s.second.definition.refs()) {
-                if (r.sub == sub && r.version == ver) {
+                if (r.sub == sub && (!ver.has_value() || r.version == *ver)) {
                     references.insert(s.first);
                 }
             }

@@ -28,6 +28,7 @@
 #include <seastar/coroutine/as_future.hh>
 
 #include <exception>
+#include <optional>
 
 using namespace std::chrono_literals;
 
@@ -498,13 +499,8 @@ seq_writer::do_delete_subject_impermanent(subject sub, model::offset write_at) {
         co_return std::make_optional(std::move(versions));
     }
 
-    auto is_referenced = co_await ssx::parallel_transform(
-      versions.begin(), versions.end(), [this, &sub](const auto& ver) {
-          return _store.is_referenced(sub, ver);
-      });
-    if (std::any_of(is_referenced.begin(), is_referenced.end(), [](auto v) {
-            return v;
-        })) {
+    // Check that the subject is not referenced
+    if (co_await _store.is_referenced(sub, std::nullopt)) {
         throw as_exception(has_references(sub, versions.back()));
     }
 

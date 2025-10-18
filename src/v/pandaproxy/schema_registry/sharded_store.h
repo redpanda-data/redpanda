@@ -116,7 +116,8 @@ public:
     get_versions(subject sub, include_deleted inc_del);
 
     ///\brief Return whether there are any references to a subject version.
-    ss::future<bool> is_referenced(subject sub, schema_version ver);
+    ss::future<bool>
+    is_referenced(subject sub, std::optional<schema_version> ver);
 
     ///\brief Return the schema_ids that reference a subject version.
     ss::future<std::vector<schema_id>>

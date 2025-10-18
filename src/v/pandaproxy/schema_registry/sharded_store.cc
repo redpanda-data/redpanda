@@ -486,7 +486,8 @@ sharded_store::get_versions(subject sub, include_deleted inc_del) {
       });
 }
 
-ss::future<bool> sharded_store::is_referenced(subject sub, schema_version ver) {
+ss::future<bool>
+sharded_store::is_referenced(subject sub, std::optional<schema_version> ver) {
     // Find all the schema that reference this sub-ver
     auto references = co_await _store.map_reduce0(
       [sub{std::move(sub)}, ver](store& s) {
