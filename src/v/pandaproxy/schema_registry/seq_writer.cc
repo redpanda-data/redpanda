@@ -486,20 +486,16 @@ seq_writer::delete_subject_version(subject sub, schema_version version) {
       });
 }
 
-ss::future<std::optional<std::vector<schema_version>>>
+ss::future<std::optional<chunked_vector<schema_version>>>
 seq_writer::do_delete_subject_impermanent(subject sub, model::offset write_at) {
     co_await check_mutable(sub);
 
     // Grab the versions before they're gone.
-    // TODO: Temporarily convert chunked_vector to vector. Will remove.
-    auto chunked_versions = co_await _store.get_versions(
-      sub, include_deleted::no);
-    auto versions = std::vector(
-      chunked_versions.begin(), chunked_versions.end());
+    auto versions = co_await _store.get_versions(sub, include_deleted::no);
 
     // Inspect the subject to see if its already deleted
     if (co_await _store.is_subject_deleted(sub)) {
-        co_return std::make_optional(versions);
+        co_return std::make_optional(std::move(versions));
     }
 
     auto is_referenced = co_await ssx::parallel_transform(
@@ -542,7 +538,7 @@ seq_writer::do_delete_subject_impermanent(subject sub, model::offset write_at) {
     }
 }
 
-ss::future<std::vector<schema_version>>
+ss::future<chunked_vector<schema_version>>
 seq_writer::delete_subject_impermanent(subject sub) {
     vlog(srlog.debug, "delete_subject_impermanent sub={}", sub);
     return sequenced_write(
@@ -555,7 +551,7 @@ seq_writer::delete_subject_impermanent(subject sub) {
 /// records) do not themselves need sequence numbers.
 /// Include a version if we are only to hard delete that version, otherwise
 /// will hard-delete the whole subject.
-ss::future<std::vector<schema_version>> seq_writer::delete_subject_permanent(
+ss::future<chunked_vector<schema_version>> seq_writer::delete_subject_permanent(
   subject sub, std::optional<schema_version> version) {
     return sequenced_write(
       [sub{std::move(sub)}, version](model::offset, seq_writer& seq) {
@@ -563,7 +559,7 @@ ss::future<std::vector<schema_version>> seq_writer::delete_subject_permanent(
       });
 }
 
-ss::future<std::optional<std::vector<schema_version>>>
+ss::future<std::optional<chunked_vector<schema_version>>>
 seq_writer::delete_subject_permanent_inner(
   subject sub, std::optional<schema_version> version) {
     std::vector<seq_marker> sequences;
@@ -582,11 +578,7 @@ seq_writer::delete_subject_permanent_inner(
     }
 
     // Stash the list of versions to return at end
-    // TODO: Temporarily convert chunked_vector to vector. Will remove.
-    auto chunked_versions = co_await _store.get_versions(
-      sub, include_deleted::yes);
-    auto versions = std::vector(
-      chunked_versions.begin(), chunked_versions.end());
+    auto versions = co_await _store.get_versions(sub, include_deleted::yes);
 
     // Deleting the subject, or the last version, deletes the subject
     if (!version.has_value() || versions.size() == 1) {

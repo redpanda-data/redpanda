@@ -543,7 +543,7 @@ ss::future<std::vector<schema_id>> sharded_store::referenced_by(
     co_return std::vector<schema_id>{references.begin(), references.end()};
 }
 
-ss::future<std::vector<schema_version>> sharded_store::delete_subject(
+ss::future<chunked_vector<schema_version>> sharded_store::delete_subject(
   seq_marker marker, subject sub, permanent_delete permanent) {
     auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(

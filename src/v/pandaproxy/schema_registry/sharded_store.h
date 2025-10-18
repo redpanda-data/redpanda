@@ -123,7 +123,7 @@ public:
     referenced_by(subject sub, std::optional<schema_version> ver);
 
     ///\brief Delete a subject.
-    ss::future<std::vector<schema_version>>
+    ss::future<chunked_vector<schema_version>>
     delete_subject(seq_marker marker, subject sub, permanent_delete permanent);
 
     ss::future<is_deleted> is_subject_deleted(subject sub);
