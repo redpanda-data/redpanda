@@ -1062,7 +1062,9 @@ ss::future<> ntp_archiver::stop() {
     _leader_cond.broken();
     _flush_cond.broken();
     _wakeup_event.broken();
+
     co_await _gate.close();
+    _probe.reset();
 }
 
 const model::ntp& ntp_archiver::get_ntp() const { return _ntp; }
