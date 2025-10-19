@@ -579,7 +579,7 @@ sharded_store::get_subject_written_at(subject sub) {
       });
 }
 
-ss::future<std::vector<seq_marker>>
+ss::future<chunked_vector<seq_marker>>
 sharded_store::get_subject_config_written_at(subject sub) {
     auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(

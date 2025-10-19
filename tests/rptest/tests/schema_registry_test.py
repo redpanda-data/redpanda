@@ -1724,7 +1724,6 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         assert result_raw.status_code == requests.codes.ok
 
     @cluster(num_nodes=1)
-    @ignore(iterations=4097)
     @parametrize(
         iterations=4097
     )  # oversized alloc for store::get_subject_config_written_at.
