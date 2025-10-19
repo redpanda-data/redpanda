@@ -505,7 +505,7 @@ sharded_store::is_referenced(subject sub, std::optional<schema_version> ver) {
       std::logical_or<>{});
 }
 
-ss::future<std::vector<schema_id>> sharded_store::referenced_by(
+ss::future<chunked_vector<schema_id>> sharded_store::referenced_by(
   subject sub, std::optional<schema_version> opt_ver) {
     schema_version ver;
     // Ensure the subject exists
@@ -541,7 +541,7 @@ ss::future<std::vector<schema_id>> sharded_store::referenced_by(
       store::schema_id_set{},
       set_accumulator);
 
-    co_return std::vector<schema_id>{references.begin(), references.end()};
+    co_return chunked_vector<schema_id>{references.begin(), references.end()};
 }
 
 ss::future<chunked_vector<schema_version>> sharded_store::delete_subject(

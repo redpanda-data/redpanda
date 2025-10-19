@@ -120,7 +120,7 @@ public:
     is_referenced(subject sub, std::optional<schema_version> ver);
 
     ///\brief Return the schema_ids that reference a subject version.
-    ss::future<std::vector<schema_id>>
+    ss::future<chunked_vector<schema_id>>
     referenced_by(subject sub, std::optional<schema_version> ver);
 
     ///\brief Delete a subject.
