@@ -4256,6 +4256,35 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
         result_raw = self.sr_client.get_schemas_ids_id_versions(id=1)
         assert result_raw.status_code == 200
 
+    @cluster(num_nodes=1)
+    @ignore(iterations=4097)
+    @parametrize(
+        iterations=4097
+    )  # oversized alloc for store::get_subject_mode_written_at.
+    def test_set_subject_mode_repeated(self, iterations: int):
+        """
+        Verify repeatedly setting subject mode and then deleting it to trigger
+        oversized allocation warnings.
+        """
+
+        topic = create_topic_names(1)[0]
+        subject = f"{topic}-key"
+
+        modes = ["READWRITE", "READONLY"]
+
+        for i in range(iterations):
+            mode = modes[i % len(modes)]
+            result_raw = self.sr_client.set_mode_subject(
+                subject=subject,
+                data=json.dumps({"mode": mode}),
+            )
+            assert result_raw.status_code == requests.codes.ok
+            assert result_raw.json()["mode"] == mode
+
+        result_raw = self.sr_client.delete_mode_subject(subject=subject)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["mode"] == mode
+
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     """
