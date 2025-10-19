@@ -332,7 +332,7 @@ public:
     /// \brief Return the seq_marker write history of a version.
     ///
     /// \return A vector with at least one element
-    result<std::vector<seq_marker>> get_subject_version_written_at(
+    result<chunked_vector<seq_marker>> get_subject_version_written_at(
       const subject& sub, schema_version version) const {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
@@ -347,7 +347,7 @@ public:
             return not_deleted(sub, version);
         }
 
-        std::vector<seq_marker> result;
+        chunked_vector<seq_marker> result;
         for (auto s : sub_it->second.written_at) {
             if (s.version == version) {
                 result.push_back(s);

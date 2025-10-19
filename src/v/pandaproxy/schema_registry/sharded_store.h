@@ -146,7 +146,7 @@ public:
     get_subject_mode_written_at(subject sub);
 
     ///\brief Get sequence number history (errors out if not soft-deleted)
-    ss::future<std::vector<seq_marker>>
+    ss::future<chunked_vector<seq_marker>>
     get_subject_version_written_at(subject sub, schema_version version);
 
     ///\brief Delete a subject version

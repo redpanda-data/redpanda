@@ -95,9 +95,7 @@ struct batch_builder : public storage::record_batch_builder {
         }
     }
 
-    template<typename Container>
-    requires std::same_as<std::ranges::range_value_t<Container>, seq_marker>
-    void operator()(const Container& sequences) {
+    void operator()(const chunked_vector<seq_marker>& sequences) {
         for (const seq_marker& s : sequences) {
             (*this)(s);
         }
@@ -558,7 +556,7 @@ ss::future<chunked_vector<schema_version>> seq_writer::delete_subject_permanent(
 ss::future<std::optional<chunked_vector<schema_version>>>
 seq_writer::delete_subject_permanent_inner(
   subject sub, std::optional<schema_version> version) {
-    std::vector<seq_marker> sequences;
+    chunked_vector<seq_marker> sequences;
     batch_builder rb{model::offset{0}, sub};
 
     /// Check for whether our victim is already soft-deleted happens
