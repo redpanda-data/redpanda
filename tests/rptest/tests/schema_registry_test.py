@@ -1751,6 +1751,54 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json()["compatibilityLevel"] == mode
 
+    @cluster(num_nodes=1)
+    @ignore(iterations=32769)
+    @parametrize(iterations=32769)  # oversized alloc for sharded_store::referenced_by.
+    def test_many_references(self, iterations: int):
+        """
+        Create many schemas referencing the same base schema to trigger
+        oversized allocation warnings.
+        """
+
+        topic = create_topic_names(1)[0]
+        base_subject = f"{topic}-key"
+        base_version = 1
+        schema_dict = json.loads(schema1_def)
+
+        schema_data = json.dumps({"schema": json.dumps(schema_dict)})
+        result_raw = self.sr_client.post_subjects_subject_versions(
+            subject=base_subject, data=schema_data
+        )
+
+        assert result_raw.status_code == requests.codes.ok
+
+        for i in range(iterations):
+            # Change the doc field to make the schema unique
+            schema_dict["doc"] = str(i)
+            schema_data = json.dumps(
+                {
+                    "schema": json.dumps(schema_dict),
+                    "references": [
+                        {
+                            "name": "test-ref",
+                            "subject": base_subject,
+                            "version": base_version,
+                        }
+                    ],
+                }
+            )
+            result_raw = self.sr_client.post_subjects_subject_versions(
+                subject=base_subject, data=schema_data
+            )
+
+            assert result_raw.status_code == requests.codes.ok
+
+        result_raw = self.sr_client.get_subjects_subject_versions_version_referenced_by(
+            subject=base_subject, version=base_version
+        )
+        assert result_raw.status_code == requests.codes.ok
+        assert len(result_raw.json()) == iterations
+
     @cluster(num_nodes=3)
     def test_post_subjects_subject_versions_metadata_ruleset(self):
         """
