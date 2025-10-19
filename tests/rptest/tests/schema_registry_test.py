@@ -1723,6 +1723,35 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         self.logger.debug(result_raw.json())
         assert result_raw.status_code == requests.codes.ok
 
+    @cluster(num_nodes=1)
+    @ignore(iterations=4097)
+    @parametrize(
+        iterations=4097
+    )  # oversized alloc for store::get_subject_config_written_at.
+    def test_set_subject_config_repeated(self, iterations: int):
+        """
+        Verify repeatedly setting subject config and then deleting it to trigger
+        oversized allocation warnings.
+        """
+
+        topic = create_topic_names(1)[0]
+        subject = f"{topic}-key"
+
+        modes = ["NONE", "BACKWARD"]
+
+        for i in range(iterations):
+            mode = modes[i % len(modes)]
+            result_raw = self.sr_client.set_config_subject(
+                subject=subject,
+                data=json.dumps({"compatibility": mode}),
+            )
+            assert result_raw.status_code == requests.codes.ok
+            assert result_raw.json()["compatibility"] == mode
+
+        result_raw = self.sr_client.delete_config_subject(subject=subject)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["compatibilityLevel"] == mode
+
     @cluster(num_nodes=3)
     def test_post_subjects_subject_versions_metadata_ruleset(self):
         """
