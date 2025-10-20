@@ -118,7 +118,7 @@ record_generator::add_random_protobuf_record(
                             },
                             [](const protobuf_schema_definition& pb_def)
                               -> std::optional<protobuf_schema_definition> {
-                                return {pb_def};
+                                return {pb_def.copy()};
                             },
                             [](const json_schema_definition&)
                               -> std::optional<protobuf_schema_definition> {

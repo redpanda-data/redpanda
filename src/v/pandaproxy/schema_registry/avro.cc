@@ -584,7 +584,7 @@ make_avro_schema_definition(schema_getter& store, subject_schema schema) {
     std::optional<avro::Exception> ex;
     try {
         auto name = schema.sub()();
-        auto schema_refs = schema.def().refs();
+        auto schema_refs = schema.def().refs().copy();
         auto refs = co_await collect_schema(store, {}, name, std::move(schema));
         iobuf_istream sis{std::move(refs).flatten()()};
         auto is = avro::istreamInputStream(sis.istream());
@@ -641,7 +641,7 @@ sanitize_avro_schema_definition(schema_definition def) {
     return schema_definition{
       schema_definition::raw_string{std::move(buf).as_iobuf()},
       schema_type::avro,
-      def.refs()};
+      std::move(def).refs()};
 }
 
 ss::future<subject_schema> make_canonical_avro_schema(
@@ -650,7 +650,7 @@ ss::future<subject_schema> make_canonical_avro_schema(
     auto [def, type, refs] = std::move(unparsed).destructure();
     if (norm) {
         std::sort(refs.begin(), refs.end());
-        refs.erase(std::unique(refs.begin(), refs.end()), refs.end());
+        refs.erase_to_end(std::unique(refs.begin(), refs.end()));
     }
     schema_definition schema{std::move(def), type, std::move(refs)};
     // TODO: Check references

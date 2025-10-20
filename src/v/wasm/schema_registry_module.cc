@@ -84,7 +84,7 @@ read_encoded_schema_def(ffi::reader* r) {
         auto v = int(r->read_varint());
         refs.emplace_back(name, subject(sub), schema_version(v));
     }
-    return {def, *type, refs};
+    return {std::move(def), *type, std::move(refs)};
 }
 
 template<typename T>
