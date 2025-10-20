@@ -13,6 +13,7 @@
 
 #include "base/outcome.h"
 #include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "json/iobuf_writer.h"
 #include "kafka/protocol/errors.h"
 #include "model/metadata.h"
@@ -542,7 +543,7 @@ struct compatibility_result {
     friend std::ostream& operator<<(std::ostream&, const compatibility_result&);
 
     bool is_compat;
-    std::vector<ss::sstring> messages;
+    chunked_vector<ss::sstring> messages;
 };
 
 } // namespace pandaproxy::schema_registry

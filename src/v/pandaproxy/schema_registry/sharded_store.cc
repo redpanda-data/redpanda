@@ -880,7 +880,7 @@ ss::future<compatibility_result> sharded_store::do_is_compatible(
         auto old_valid = co_await make_valid_schema(
           std::move(old_schema.schema));
 
-        std::vector<ss::sstring> version_messages;
+        chunked_vector<ss::sstring> version_messages;
 
         if (
           compat == compatibility_level::backward
