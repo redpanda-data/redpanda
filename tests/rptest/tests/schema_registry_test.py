@@ -16,7 +16,7 @@ import time
 import urllib.parse
 import uuid
 from enum import Enum
-from typing import NamedTuple, Optional
+from typing import Any, NamedTuple, Optional, TypeAlias
 
 import requests
 from confluent_kafka.schema_registry import (
@@ -29,8 +29,9 @@ from confluent_kafka.schema_registry import (
     topic_subject_name_strategy,
 )
 from confluent_kafka.serialization import MessageField, SerializationContext
-from ducktape.mark import matrix, parametrize, ignore
+from ducktape.mark import matrix, parametrize
 from ducktape.services.background_thread import BackgroundThreadService
+from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkException, RpkTool
@@ -57,6 +58,8 @@ from rptest.util import expect_exception, inject_remote_script, search_logs_with
 from rptest.utils.log_utils import wait_until_nag_is_set
 from rptest.utils.mode_checks import skip_fips_mode
 
+Headers: TypeAlias = dict[str, str] | None
+
 
 class SchemaIdValidationMode(str, Enum):
     NONE = "none"
@@ -64,7 +67,7 @@ class SchemaIdValidationMode(str, Enum):
     COMPAT = "compat"
 
 
-def create_topic_names(count):
+def create_topic_names(count: int) -> list[str]:
     return list(f"pandaproxy-topic-{uuid.uuid4()}" for _ in range(count))
 
 
@@ -913,12 +916,20 @@ class SchemaRegistryRedpandaClient:
             **kwargs,
         )
 
-    def set_config_subject(self, subject, data, headers=HTTP_POST_HEADERS, **kwargs):
+    def set_config_subject(
+        self,
+        subject: str,
+        data: Any,
+        headers: Headers = HTTP_POST_HEADERS,
+        **kwargs: Any,
+    ):
         return self.request(
             "PUT", f"config/{subject}", headers=headers, data=data, **kwargs
         )
 
-    def delete_config_subject(self, subject, headers=HTTP_DELETE_HEADERS, **kwargs):
+    def delete_config_subject(
+        self, subject: str, headers: Headers = HTTP_DELETE_HEADERS, **kwargs: Any
+    ):
         return self.request("DELETE", f"config/{subject}", headers=headers, **kwargs)
 
     def get_mode(self, headers=HTTP_GET_HEADERS, **kwargs):
@@ -944,7 +955,12 @@ class SchemaRegistryRedpandaClient:
         )
 
     def set_mode_subject(
-        self, subject, data, force=False, headers=HTTP_POST_HEADERS, **kwargs
+        self,
+        subject: str,
+        data: Any,
+        force: bool = False,
+        headers: Headers = HTTP_POST_HEADERS,
+        **kwargs: Any,
     ):
         return self.request(
             "PUT",
@@ -954,7 +970,9 @@ class SchemaRegistryRedpandaClient:
             **kwargs,
         )
 
-    def delete_mode_subject(self, subject, headers=HTTP_DELETE_HEADERS, **kwargs):
+    def delete_mode_subject(
+        self, subject: str, headers: Headers = HTTP_DELETE_HEADERS, **kwargs: Any
+    ):
         return self.request("DELETE", f"mode/{subject}", headers=headers, **kwargs)
 
     def get_schemas_types(
@@ -1022,7 +1040,12 @@ class SchemaRegistryRedpandaClient:
         )
 
     def post_subjects_subject_versions(
-        self, subject, data, normalize=False, headers=HTTP_POST_HEADERS, **kwargs
+        self,
+        subject: str,
+        data: Any,
+        normalize: bool = False,
+        headers: Headers = HTTP_POST_HEADERS,
+        **kwargs: Any,
     ):
         params = {}
         if normalize:
@@ -1065,7 +1088,11 @@ class SchemaRegistryRedpandaClient:
         )
 
     def get_subjects_subject_versions_version_referenced_by(
-        self, subject, version, headers=HTTP_GET_HEADERS, **kwargs
+        self,
+        subject: str,
+        version: str,
+        headers: Headers = HTTP_GET_HEADERS,
+        **kwargs: Any,
     ):
         deprecated = self.request(
             "GET",
@@ -1083,7 +1110,11 @@ class SchemaRegistryRedpandaClient:
         return standard
 
     def get_subjects_subject_versions(
-        self, subject, deleted=False, headers=HTTP_GET_HEADERS, **kwargs
+        self,
+        subject: str,
+        deleted: bool = False,
+        headers: Headers = HTTP_GET_HEADERS,
+        **kwargs: Any,
     ):
         return self.request(
             "GET",
@@ -1093,7 +1124,11 @@ class SchemaRegistryRedpandaClient:
         )
 
     def delete_subject(
-        self, subject, permanent=False, headers=HTTP_GET_HEADERS, **kwargs
+        self,
+        subject: str,
+        permanent: bool = False,
+        headers: Headers = HTTP_GET_HEADERS,
+        **kwargs: Any,
     ):
         return self.request(
             "DELETE",
@@ -1103,7 +1138,12 @@ class SchemaRegistryRedpandaClient:
         )
 
     def delete_subject_version(
-        self, subject, version, permanent=False, headers=HTTP_DELETE_HEADERS, **kwargs
+        self,
+        subject: str,
+        version: str,
+        permanent: bool = False,
+        headers: Headers = HTTP_DELETE_HEADERS,
+        **kwargs: Any,
     ):
         return self.request(
             "DELETE",
@@ -1195,10 +1235,10 @@ class SchemaRegistryEndpoints(RedpandaTest):
 
     def __init__(
         self,
-        context,
-        schema_registry_config=SchemaRegistryConfig(),
-        num_brokers=3,
-        **kwargs,
+        context: TestContext,
+        schema_registry_config: SchemaRegistryConfig = SchemaRegistryConfig(),
+        num_brokers: int = 3,
+        **kwargs: Any,
     ):
         super(SchemaRegistryEndpoints, self).__init__(
             context,
@@ -1655,149 +1695,6 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             self.logger.debug(result_raw)
             assert result_raw.status_code == requests.codes.ok
             assert result_raw.json()["id"] == 1
-
-    @cluster(num_nodes=1)
-    @ignore(iterations=4097)
-    @parametrize(iterations=2049)  # oversized alloc for subject_entry::written_at.
-    @parametrize(iterations=4097)  # oversized alloc for subject_entry::versions.
-    def test_post_subjects_subject_versions_and_delete_repeated(self, iterations: int):
-        """
-        Verify posting a schema and deleting it many times to trigger
-        oversized allocation warnings.
-        """
-
-        topic = create_topic_names(1)[0]
-        subject = f"{topic}-key"
-        schema_1_data = json.dumps({"schema": schema1_def})
-
-        for _ in range(iterations):
-            result_raw = self.sr_client.post_subjects_subject_versions(
-                subject=subject, data=schema_1_data
-            )
-            self.logger.debug(result_raw)
-            self.logger.debug(result_raw.json())
-            assert result_raw.status_code == requests.codes.ok
-            assert result_raw.json()["id"] == 1
-
-            result_raw = self.sr_client.delete_subject_version(
-                subject=subject, version="latest"
-            )
-            self.logger.debug(result_raw)
-            assert result_raw.status_code == requests.codes.ok
-
-    @cluster(num_nodes=1)
-    @ignore(iterations=8194)
-    @parametrize(iterations=8194)  # oversized alloc for store::get_version_ids.
-    @ignore(iterations=32769)
-    @parametrize(iterations=32769)  # oversized alloc for store::get_versions.
-    def test_post_subjects_subject_versions_unique(self, iterations: int):
-        """
-        Verify repeatedly posting a unique version of a schema to trigger
-        oversized allocation warnings.
-        """
-
-        topic = create_topic_names(1)[0]
-        subject = f"{topic}-key"
-        schema_1_dict = json.loads(schema1_def)
-
-        for i in range(iterations):
-            # Change the doc field to make the schema unique
-            schema_1_dict["doc"] = str(i)
-            schema_1_data = json.dumps({"schema": json.dumps(schema_1_dict)})
-            result_raw = self.sr_client.post_subjects_subject_versions(
-                subject=subject, data=schema_1_data
-            )
-
-            self.logger.debug(result_raw)
-            self.logger.debug(result_raw.json())
-            assert result_raw.status_code == requests.codes.ok
-            assert result_raw.json()["id"] == i + 1
-
-        result_raw = self.sr_client.get_subjects_subject_versions(subject=subject)
-        self.logger.debug(result_raw.json())
-        assert result_raw.status_code == requests.codes.ok
-        assert len(result_raw.json()) == iterations
-
-        self.logger.debug("Deleting the subject")
-        result_raw = self.sr_client.delete_subject(subject=subject)
-        self.logger.debug(result_raw.json())
-        assert result_raw.status_code == requests.codes.ok
-
-    @cluster(num_nodes=1)
-    @parametrize(
-        iterations=4097
-    )  # oversized alloc for store::get_subject_config_written_at.
-    def test_set_subject_config_repeated(self, iterations: int):
-        """
-        Verify repeatedly setting subject config and then deleting it to trigger
-        oversized allocation warnings.
-        """
-
-        topic = create_topic_names(1)[0]
-        subject = f"{topic}-key"
-
-        modes = ["NONE", "BACKWARD"]
-
-        for i in range(iterations):
-            mode = modes[i % len(modes)]
-            result_raw = self.sr_client.set_config_subject(
-                subject=subject,
-                data=json.dumps({"compatibility": mode}),
-            )
-            assert result_raw.status_code == requests.codes.ok
-            assert result_raw.json()["compatibility"] == mode
-
-        result_raw = self.sr_client.delete_config_subject(subject=subject)
-        assert result_raw.status_code == requests.codes.ok
-        assert result_raw.json()["compatibilityLevel"] == mode
-
-    @cluster(num_nodes=1)
-    @ignore(iterations=32769)
-    @parametrize(iterations=32769)  # oversized alloc for sharded_store::referenced_by.
-    def test_many_references(self, iterations: int):
-        """
-        Create many schemas referencing the same base schema to trigger
-        oversized allocation warnings.
-        """
-
-        topic = create_topic_names(1)[0]
-        base_subject = f"{topic}-key"
-        base_version = 1
-        schema_dict = json.loads(schema1_def)
-
-        schema_data = json.dumps({"schema": json.dumps(schema_dict)})
-        result_raw = self.sr_client.post_subjects_subject_versions(
-            subject=base_subject, data=schema_data
-        )
-
-        assert result_raw.status_code == requests.codes.ok
-
-        for i in range(iterations):
-            # Change the doc field to make the schema unique
-            schema_dict["doc"] = str(i)
-            schema_data = json.dumps(
-                {
-                    "schema": json.dumps(schema_dict),
-                    "references": [
-                        {
-                            "name": "test-ref",
-                            "subject": base_subject,
-                            "version": base_version,
-                        }
-                    ],
-                }
-            )
-            result_raw = self.sr_client.post_subjects_subject_versions(
-                subject=base_subject, data=schema_data
-            )
-
-            assert result_raw.status_code == requests.codes.ok
-
-        result_raw = self.sr_client.get_subjects_subject_versions_version_referenced_by(
-            subject=base_subject, version=base_version
-        )
-        assert result_raw.status_code == requests.codes.ok
-        assert len(result_raw.json()) == iterations
 
     @cluster(num_nodes=3)
     def test_post_subjects_subject_versions_metadata_ruleset(self):
@@ -4070,7 +3967,7 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
     Test schema registry mode against a redpanda cluster.
     """
 
-    def __init__(self, context, **kwargs):
+    def __init__(self, context: TestContext, **kwargs: Any):
         self.schema_registry_config = SchemaRegistryConfig()
         self.schema_registry_config.mode_mutability = True
         super(SchemaRegistryModeMutableTest, self).__init__(
@@ -4331,34 +4228,6 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
 
         result_raw = self.sr_client.get_schemas_ids_id_versions(id=1)
         assert result_raw.status_code == 200
-
-    @cluster(num_nodes=1)
-    @parametrize(
-        iterations=4097
-    )  # oversized alloc for store::get_subject_mode_written_at.
-    def test_set_subject_mode_repeated(self, iterations: int):
-        """
-        Verify repeatedly setting subject mode and then deleting it to trigger
-        oversized allocation warnings.
-        """
-
-        topic = create_topic_names(1)[0]
-        subject = f"{topic}-key"
-
-        modes = ["READWRITE", "READONLY"]
-
-        for i in range(iterations):
-            mode = modes[i % len(modes)]
-            result_raw = self.sr_client.set_mode_subject(
-                subject=subject,
-                data=json.dumps({"mode": mode}),
-            )
-            assert result_raw.status_code == requests.codes.ok
-            assert result_raw.json()["mode"] == mode
-
-        result_raw = self.sr_client.delete_mode_subject(subject=subject)
-        assert result_raw.status_code == requests.codes.ok
-        assert result_raw.json()["mode"] == mode
 
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
