@@ -198,10 +198,16 @@ void record_backtrace(crash_description& cd) {
     });
 }
 
-void print_skipping() {
-    constexpr static std::string_view skipping
-      = "Skipping recording crash reason to crash file.\n";
-    ss::print_safe(skipping.data(), skipping.size());
+void print_skipping(std::string_view context) {
+    ss::print_safe("Skipping recording crash reason to crash file on shard ");
+    ss::print_decimal_safe(ss::this_shard_id());
+    ss::print_safe(" (");
+    ss::print_safe(context.data(), context.size());
+    ss::print_safe(")\n");
+}
+
+void print_skipping_already_consumed() {
+    print_skipping("the writer has already been consumed by another crash");
 }
 
 void print_write_outcome(bool success, std::string_view context) {
@@ -234,8 +240,7 @@ void record_message(crash_description& cd, std::string_view msg) {
 void recorder::record_crash_sighandler(recorded_signo signo) {
     auto* cd_opt = _writer.fill();
     if (!cd_opt) {
-        // The writer has already been consumed by another crash
-        print_skipping();
+        print_skipping_already_consumed();
         return;
     }
     auto& cd = *cd_opt;
@@ -279,14 +284,13 @@ void recorder::record_crash_exception(std::exception_ptr eptr) {
     if (!_writer.initialized()) {
         // We are unable to record any exceptions that happen before the writer
         // has been initialized
-        print_skipping();
+        print_skipping("the writer is not yet initialized");
         return;
     }
 
     auto* cd_opt = _writer.fill();
     if (!cd_opt) {
-        // The writer has already been consumed by another crash
-        print_skipping();
+        print_skipping_already_consumed();
         return;
     }
     auto& cd = *cd_opt;
@@ -308,8 +312,7 @@ void recorder::record_crash_exception(std::exception_ptr eptr) {
 void recorder::record_crash_vassert(std::string_view msg) {
     auto* cd_opt = _writer.fill();
     if (!cd_opt) {
-        // The writer has already been consumed by another crash
-        print_skipping();
+        print_skipping_already_consumed();
         return;
     }
     auto& cd = *cd_opt;
