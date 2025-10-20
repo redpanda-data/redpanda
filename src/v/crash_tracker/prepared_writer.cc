@@ -111,7 +111,7 @@ crash_description* prepared_writer::fill() {
     return &_prepared_cd;
 }
 
-void prepared_writer::write() {
+bool prepared_writer::write() {
     auto before = state::filled;
     auto success = _state.compare_exchange_strong(before, state::written);
     vassert(
@@ -120,15 +120,7 @@ void prepared_writer::write() {
       "Unexpected state: {}",
       before);
 
-    if (try_write_crash()) {
-        constexpr static std::string_view success
-          = "Recorded crash reason to crash file.\n";
-        ss::print_safe(success.data(), success.size());
-    } else {
-        constexpr static std::string_view failure
-          = "Failed to record crash reason to crash file.\n";
-        ss::print_safe(failure.data(), failure.size());
-    }
+    return try_write_crash();
 }
 
 bool prepared_writer::try_write_crash() {
