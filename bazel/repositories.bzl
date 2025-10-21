@@ -117,12 +117,12 @@ def data_dependency():
     # ** IMPORTANT - OpenSSL and FIPS **
     #
     # Below there are two OpenSSL archives that are retrieved. The first, named
-    # simply "openssl", may reference any desired version of OpenSSL 3.0.0 and above.
+    # simply "openssl", may reference any desired version of OpenSSL 3.5 (OpenSSL's LTS)
     #
     # The second archive retrieved is named "openssl-fips", and *MUST* reference
-    # the specific version of OpenSSL, 3.0.9, which is the latest FIPS approved
-    # version as of 2/26/24. Do not change this version. For more info visit:
-    # https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/4282
+    # the specific version of OpenSSL, 3.1.2, which is the latest FIPS approved
+    # version as of 3/11/2025. Do not change this version. For more info visit:
+    # https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/4985
     #
     # This 2 build approach is described in more detail in the FIPS README here:
     # https://github.com/openssl/openssl/blob/master/README-FIPS.md
@@ -130,17 +130,17 @@ def data_dependency():
     http_archive(
         name = "openssl",
         build_file = "//bazel/thirdparty:openssl.BUILD",
-        sha256 = "d80c34f5cf902dccf1f1b5df5ebb86d0392e37049e5d73df1b3abae72e4ffe8b",
-        strip_prefix = "openssl-3.0.18",
-        url = "https://github.com/openssl/openssl/releases/download/openssl-3.0.18/openssl-3.0.18.tar.gz",
+        sha256 = "967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99",
+        strip_prefix = "openssl-3.5.4",
+        url = "https://github.com/openssl/openssl/releases/download/openssl-3.5.4/openssl-3.5.4.tar.gz",
     )
 
     http_archive(
         name = "openssl-fips",
         build_file = "//bazel/thirdparty:openssl-fips.BUILD",
-        sha256 = "eb1ab04781474360f77c318ab89d8c5a03abc38e63d65a603cabbf1b00a1dc90",
-        strip_prefix = "openssl-3.0.9",
-        url = "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/openssl-3.0.9.tar.gz",
+        sha256 = "a0ce69b8b97ea6a35b96875235aa453b966ba3cba8af2de23657d8b6767d6539",
+        strip_prefix = "openssl-3.1.2",
+        url = "https://github.com/openssl/openssl/releases/download/openssl-3.1.2/openssl-3.1.2.tar.gz",
     )
 
     http_archive(
