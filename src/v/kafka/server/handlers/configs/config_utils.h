@@ -225,6 +225,22 @@ ss::future<chunked_vector<R>> do_alter_topics_configuration(
           error_code::invalid_config,
           "duplicated topic {} alter config request"));
     }
+
+    // Constructing a map of requested changes for logging
+    chunked_hash_map<model::topic, chunked_vector<ss::sstring>>
+      requested_kv_map;
+    requested_kv_map.reserve(std::distance(resources.begin(), valid_end));
+    for (auto& r : boost::make_iterator_range(resources.begin(), valid_end)) {
+        chunked_vector<ss::sstring> kvs;
+        kvs.reserve(r.configs.size());
+        for (auto& c : r.configs) {
+            const auto& key = c.name;
+            kvs.emplace_back(ssx::sformat(
+              "{}={}", key, c.value.value_or(ss::sstring("<null>"))));
+        }
+        requested_kv_map.emplace(model::topic(r.resource_name), std::move(kvs));
+    }
+
     cluster::topic_properties_update_vector updates;
     for (auto& r : boost::make_iterator_range(resources.begin(), valid_end)) {
         auto res = f(r);
@@ -275,10 +291,22 @@ ss::future<chunked_vector<R>> do_alter_topics_configuration(
     // Log success case
     auto found = err_map.find(cluster::errc::success);
     if (found != err_map.end()) {
-        vlog(
-          klog.info,
-          "Altered topic properties of topic(s) {{{}}} successfully",
-          fmt::join(found->second, ", "));
+        for (const auto& tpv : found->second) {
+            const auto& topic = tpv.tp;
+            if (auto it = requested_kv_map.find(topic);
+                it != requested_kv_map.end()) {
+                vlog(
+                  klog.info,
+                  "Successfully altered topic properties for {}: [{}]",
+                  topic,
+                  fmt::join(it->second, ", "));
+            } else {
+                vlog(
+                  klog.info,
+                  "Successfully altered topic properties for {}",
+                  topic);
+            }
+        }
         err_map.erase(found);
     }
 
