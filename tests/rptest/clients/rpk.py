@@ -17,7 +17,7 @@ import time
 import typing
 from collections import namedtuple
 from dataclasses import dataclass, field
-from typing import Any, Iterator, Literal, overload
+from typing import Any, Iterator, Literal, Optional, overload
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.errors import TimeoutError
@@ -816,7 +816,7 @@ class RpkTool:
             )
 
     def describe_topic(
-        self, topic: str, tolerant: bool = False, timeout=None
+        self, topic: str, tolerant: bool = False, timeout: Optional[int] = None
     ) -> Iterator[RpkPartition]:
         """
         By default this will omit any partitions which do not have full
