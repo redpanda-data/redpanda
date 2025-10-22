@@ -54,7 +54,7 @@ PERMITTED_ERROR_MESSAGE = [
     "seastar::tls::verification_error",
     "SSL routines::no shared cipher",
     "SSL routines::unsupported protocol",
-    "sslv3 alert handshake failure",
+    "ssl/tls alert handshake failure",
 ]
 
 
