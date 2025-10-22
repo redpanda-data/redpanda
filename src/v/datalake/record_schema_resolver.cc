@@ -428,7 +428,7 @@ latest_subject_schema_resolver::latest_subject_schema_resolver(
   : sr_(&sr)
   , subject_(std::move(subject))
   , protobuf_message_name_(std::move(protobuf_message_name))
-  , cache_duration_(std::move(cache_duration))
+  , cache_ttl_(std::move(cache_duration))
   , cache_(sc) {}
 
 namespace {
@@ -455,29 +455,63 @@ checked<std::vector<int32_t>, type_resolver::errc> compute_message_offsets(
 
 ss::future<checked<type_and_buf, type_resolver::errc>>
 latest_subject_schema_resolver::resolve_buf_type(std::optional<iobuf> b) const {
-    auto duration = std::chrono::duration_cast<ss::lowres_clock::duration>(
-      cache_duration_());
-    if (
-      latest_cached_schema_
-      && latest_cached_schema_->created_time + duration
-           > ss::lowres_clock::now()) {
-        co_return type_and_buf{
-          .type = std::make_optional(latest_cached_schema_->type.copy()),
-          .parsable_buf = std::move(b),
-        };
-    } else {
-        latest_cached_schema_ = std::nullopt;
+    const auto now = ss::lowres_clock::now();
+    const auto cache_ttl
+      = std::chrono::duration_cast<ss::lowres_clock::duration>(cache_ttl_());
+
+    if (schema_lookup_cache_.age(now) < cache_ttl) {
+        if (schema_lookup_cache_.entry().has_value()) {
+            co_return type_and_buf{
+              .type = std::make_optional(
+                schema_lookup_cache_.entry().value().copy()),
+              .parsable_buf = std::move(b),
+            };
+        } else {
+            if (datalake_log.is_enabled(ss::log_level::trace)) {
+                vlog(
+                  datalake_log.trace,
+                  "Using negative schema lookup cache for subject {}. "
+                  "Refreshing "
+                  "in {}s",
+                  subject_,
+                  std::chrono::duration_cast<std::chrono::seconds>(
+                    schema_lookup_cache_.time_until_expiry(now, cache_ttl))
+                    .count());
+            }
+            co_return schema_lookup_cache_.entry().error();
+        }
     }
+
+    auto last_sync_time_fut
+      = co_await ss::coroutine::as_future<ss::lowres_clock::time_point>(
+        sr_->sync(cache_ttl));
+    if (last_sync_time_fut.failed()) {
+        vlog(
+          datalake_log.warn,
+          "Error syncing schema registry: {}",
+          last_sync_time_fut.get_exception());
+        co_return type_resolver::errc::registry_error;
+    }
+    const auto last_sync_time = last_sync_time_fut.get();
+
     auto latest_schema_fut
       = co_await ss::coroutine::as_future<ppsr::stored_schema>(
         sr_->get_subject_schema(subject_, /*subject_version=*/std::nullopt));
     if (latest_schema_fut.failed()) {
-        latest_schema_fut.ignore_ready_future();
+        vlog(
+          datalake_log.warn,
+          "Error getting subject schema ({}) from registry: {}.",
+          subject_,
+          latest_schema_fut.get_exception());
+        schema_lookup_cache_ = schema_lookup_cache(
+          type_resolver::errc::registry_error, last_sync_time);
         co_return type_resolver::errc::registry_error;
     }
     auto latest_schema = std::move(latest_schema_fut.get());
     auto schema_res = co_await get_schema(sr_, cache_, latest_schema.id);
     if (schema_res.has_error()) {
+        schema_lookup_cache_ = schema_lookup_cache(
+          schema_res.error(), last_sync_time);
         co_return schema_res.error();
     }
     auto shared_schema = schema_res.value();
@@ -508,10 +542,20 @@ latest_subject_schema_resolver::resolve_buf_type(std::optional<iobuf> b) const {
           return translate_json_schema(def, latest_schema.id);
       }));
     if (resolve_res.has_error()) {
+        schema_lookup_cache_ = schema_lookup_cache(
+          resolve_res.error(), last_sync_time);
         co_return resolve_res.error();
     }
+
     auto resolved = std::move(resolve_res.value());
-    latest_cached_schema_.emplace(resolved.copy(), ss::lowres_clock::now());
+
+    vlog(
+      datalake_log.trace,
+      "Updated latest schema cache for subject {} and schema ID {}",
+      subject_,
+      latest_schema.id);
+    schema_lookup_cache_ = schema_lookup_cache(resolved.copy(), last_sync_time);
+
     co_return type_and_buf{
       .type = std::move(resolved),
       .parsable_buf = std::move(b),

@@ -47,6 +47,16 @@ public:
     virtual ss::future<pandaproxy::schema_registry::schema_getter*>
     synced_getter() const = 0;
 
+    /// Synchronizes the underlying store if the time since the last sync
+    /// exceeds the specified threshold.
+    ///
+    /// \param max_age maximum duration allowed since last sync before forcing
+    ///                a new sync. If zero (default), always forces a sync.
+    /// \return time point of the last sync (either current time if sync was
+    ///         performed, or the previous sync time if no sync was needed).
+    virtual ss::future<ss::lowres_clock::time_point>
+    sync(ss::lowres_clock::duration max_age = {}) = 0;
+
     ss::future<std::optional<pandaproxy::schema_registry::valid_schema>>
     get_valid_schema(pandaproxy::schema_registry::schema_id schema_id) const;
 

@@ -205,7 +205,7 @@ public:
       schema::registry& sr,
       pandaproxy::schema_registry::subject subject,
       std::optional<ss::sstring> protobuf_message_name,
-      config::binding<std::chrono::milliseconds> cache_duration,
+      config::binding<std::chrono::milliseconds> cache_ttl,
       std::optional<std::reference_wrapper<schema_cache>> sc);
     latest_subject_schema_resolver(const latest_subject_schema_resolver&)
       = delete;
@@ -227,13 +227,41 @@ private:
     schema::registry* sr_;
     pandaproxy::schema_registry::subject subject_;
     std::optional<ss::sstring> protobuf_message_name_;
-    config::binding<std::chrono::milliseconds> cache_duration_;
+    config::binding<std::chrono::milliseconds> cache_ttl_;
     std::optional<std::reference_wrapper<schema_cache>> cache_;
-    struct cached_schema {
-        resolved_type type;
-        ss::lowres_clock::time_point created_time;
+
+    class schema_lookup_cache {
+    public:
+        schema_lookup_cache() = default;
+
+        schema_lookup_cache(
+          checked<resolved_type, type_resolver::errc> entry,
+          ss::lowres_clock::time_point timestamp)
+          : entry_(std::move(entry))
+          , last_update_(timestamp) {}
+
+    public:
+        ss::lowres_clock::duration time_until_expiry(
+          ss::lowres_clock::time_point timestamp,
+          ss::lowres_clock::duration ttl) const {
+            return ttl - age(timestamp);
+        }
+
+        ss::lowres_clock::duration
+        age(ss::lowres_clock::time_point timestamp) const {
+            return timestamp - last_update_;
+        }
+
+        const checked<resolved_type, type_resolver::errc>& entry() const {
+            return entry_;
+        }
+
+    private:
+        checked<resolved_type, type_resolver::errc> entry_
+          = errc::registry_error;
+        ss::lowres_clock::time_point last_update_;
     };
-    mutable std::optional<cached_schema> latest_cached_schema_;
+    mutable schema_lookup_cache schema_lookup_cache_;
 };
 
 } // namespace datalake

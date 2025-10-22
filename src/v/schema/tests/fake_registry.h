@@ -44,6 +44,13 @@ public:
     synced_getter() const override {
         return getter();
     }
+
+    ss::future<ss::lowres_clock::time_point>
+    sync(ss::lowres_clock::duration) override {
+        return ss::make_ready_future<ss::lowres_clock::time_point>(
+          ss::lowres_clock::now());
+    }
+
     ss::future<pandaproxy::schema_registry::schema_definition>
     get_schema_definition(
       pandaproxy::schema_registry::schema_id id) const override;
