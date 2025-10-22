@@ -42,6 +42,7 @@ public:
       cluster::members_table&,
       features::feature_table&,
       security::credential_store&,
+      security::role_store&,
       cluster::topic_table&,
       cluster::controller_api&,
       cluster::feature_manager&,
@@ -106,6 +107,7 @@ private:
     cluster::members_table& _members_table;
     features::feature_table& _features;
     security::credential_store& _creds;
+    security::role_store& _roles;
     cluster::topic_table& _topics;
     cluster::controller_api& _controller_api;
 
