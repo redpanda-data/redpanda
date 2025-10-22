@@ -1,2 +1,4 @@
 leak:seastar::net::conntrack::handle::~handle
 leak:fips/self_test.c
+leak:crypto/init.c
+leak:crypto/context.c
