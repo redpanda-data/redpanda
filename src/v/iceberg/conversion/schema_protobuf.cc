@@ -154,6 +154,21 @@ field_outcome from_protobuf(
           msg_t->well_known_type() == pb::Descriptor::WELLKNOWNTYPE_TIMESTAMP) {
             return success(fd, iceberg::timestamp_type{});
         }
+        if (msg_t->full_name() == protobuf::datalake_date_type) {
+            return success(fd, iceberg::date_type{});
+        }
+        // Fail on any other redpanda.datalake.* types. This ensures that we
+        // don't fallback to struct type for any custom types that we may add in
+        // the future and break compatibility. We reserve the right to add
+        // support for specific types under redpanda.datalake.* as needed.
+        if (msg_t->full_name().starts_with(
+              protobuf::datalake_well_known_type_prefix)) {
+            return conversion_exception(fmt::format(
+              "Protocol buffer field {} not supported - unhandled "
+              "redpanda.datalake type {}",
+              fd.DebugString(),
+              msg_t->full_name()));
+        }
         auto st_result = struct_from_protobuf(*msg_t, stack);
         if (st_result.has_error()) {
             return st_result.error();

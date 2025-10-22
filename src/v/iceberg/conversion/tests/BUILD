@@ -13,14 +13,36 @@ redpanda_test_cc_library(
 )
 
 proto_library(
+    name = "unsupported_rp_type_proto",
+    srcs = ["testdata/unsupported_rp_type.proto"],
+    import_prefix = "testdata",
+    strip_import_prefix = "testdata",
+)
+
+cc_proto_library(
+    name = "unsupported_rp_type_cc_proto",
+    deps = [":unsupported_rp_type_proto"],
+)
+
+cc_proto_library(
+    name = "date_cc_proto",
+    deps = ["//proto/redpanda/datalake:date_proto"],
+)
+
+proto_library(
     name = "person_proto",
     srcs = ["testdata/person.proto"],
+    deps = ["//proto/redpanda/datalake:date_proto"],
 )
 
 proto_library(
     name = "complex_proto",
     srcs = ["testdata/complex.proto"],
-    deps = ["@protobuf//:timestamp_proto"],
+    deps = [
+        ":unsupported_rp_type_proto",
+        "//proto/redpanda/datalake:date_proto",
+        "@protobuf//:timestamp_proto",
+    ],
 )
 
 proto_library(
