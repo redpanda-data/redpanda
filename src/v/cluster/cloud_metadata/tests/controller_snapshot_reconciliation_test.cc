@@ -52,6 +52,7 @@ public:
           app.controller->get_cluster_recovery_table().local(),
           app.feature_table.local(),
           app.controller->get_credential_store().local(),
+          app.controller->get_role_store().local(),
           app.controller->get_topics_state().local()) {}
 
     void SetUp() override {

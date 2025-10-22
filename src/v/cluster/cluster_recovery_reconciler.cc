@@ -99,7 +99,20 @@ controller_snapshot_reconciler::get_actions(
             // since this is idempotent.
             actions.acls.emplace_back(binding);
         }
-        if (!actions.acls.empty()) {
+
+        // Role recovery is bundled within ACL recovery stage in order to
+        // avoid adding a new recovery stage enum that isn't backportable.
+        for (const auto& snap_role : snap.security.roles) {
+            if (!_roles.contains(snap_role.name)) {
+                vlog(
+                  clusterlog.debug,
+                  "Role {} does not exist, creating from snapshot",
+                  snap_role.name);
+                actions.roles.emplace_back(snap_role.name, snap_role.role);
+            }
+        }
+
+        if (!actions.acls.empty() || !actions.roles.empty()) {
             actions.stages.emplace_back(recovery_stage::recovered_acls);
         }
     }

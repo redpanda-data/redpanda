@@ -16,11 +16,17 @@
 #include "cluster/types.h"
 #include "features/feature_table.h"
 #include "security/credential_store.h"
+#include "security/role_store.h"
 
 namespace cluster {
 struct user_credential {
     security::credential_user user;
     security::scram_credential cred;
+};
+
+struct role_recovery {
+    security::role_name name;
+    security::role role;
 };
 } // namespace cluster
 
@@ -40,6 +46,7 @@ public:
         config_update_request config;
         fragmented_vector<cluster::user_credential> users;
         fragmented_vector<security::acl_binding> acls;
+        fragmented_vector<cluster::role_recovery> roles;
         fragmented_vector<topic_configuration> remote_topics;
         fragmented_vector<topic_configuration> local_topics;
         // TODO: restore wasm plugins/transforms
@@ -59,10 +66,12 @@ public:
       cluster::cluster_recovery_table& recovery,
       features::feature_table& features,
       security::credential_store& creds,
+      security::role_store& roles,
       cluster::topic_table& topics)
       : _recovery_table(recovery)
       , _feature_table(features)
       , _creds(creds)
+      , _roles(roles)
       , _topic_table(topics) {}
 
     // Returns a list of properties that are explicitly not recovered, since
@@ -81,6 +90,7 @@ private:
     cluster::cluster_recovery_table& _recovery_table;
     features::feature_table& _feature_table;
     security::credential_store& _creds;
+    security::role_store& _roles;
     cluster::topic_table& _topic_table;
 };
 

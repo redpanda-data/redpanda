@@ -58,6 +58,7 @@ cluster_recovery_backend::cluster_recovery_backend(
   cluster::members_table& members_table,
   features::feature_table& features,
   security::credential_store& creds,
+  security::role_store& roles,
   cluster::topic_table& topics,
   cluster::controller_api& api,
   cluster::feature_manager& feature_manager,
@@ -75,6 +76,7 @@ cluster_recovery_backend::cluster_recovery_backend(
   , _members_table(members_table)
   , _features(features)
   , _creds(creds)
+  , _roles(roles)
   , _topics(topics)
   , _controller_api(api)
   , _feature_manager(feature_manager)
@@ -221,6 +223,19 @@ ss::future<cluster::errc> cluster_recovery_backend::do_action(
         auto errs = co_await _security_frontend.create_acls(
           std::move(acls), acls_retry.get_timeout());
         for (const auto err : errs) {
+            if (err != make_error_code(errc::success)) {
+                co_return cluster::errc::replication_error;
+            }
+        }
+
+        // Role recovery is bundled within ACL recovery stage in order to
+        // avoid adding a new recovery stage enum that isn't backportable.
+        retry_chain_node roles_retry(&parent_retry);
+        for (auto& role : actions.roles) {
+            std::error_code err = co_await _security_frontend.create_role(
+              std::move(role.name),
+              std::move(role.role),
+              roles_retry.get_deadline());
             if (err != make_error_code(errc::success)) {
                 co_return cluster::errc::replication_error;
             }
@@ -499,7 +514,7 @@ ss::future<> cluster_recovery_backend::recover_until_term_change() {
 
         // We may need to restore state from the controller snapshot.
         cloud_metadata::controller_snapshot_reconciler reconciler(
-          _recovery_table.local(), _features, _creds, _topics);
+          _recovery_table.local(), _features, _creds, _roles, _topics);
         auto controller_actions = reconciler.get_actions(
           controller_snap.value());
         vlog(
