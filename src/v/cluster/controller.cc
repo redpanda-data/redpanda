@@ -775,6 +775,7 @@ ss::future<> controller::start(
                 _members_table.local(),
                 _feature_table.local(),
                 _credentials.local(),
+                _roles.local(),
                 _tp_state.local(),
                 _api.local(),
                 _feature_manager.local(),
