@@ -105,7 +105,7 @@ void validate_actions(
       actions_contain(actions, cluster::recovery_stage::recovered_users));
 
     ASSERT_EQ(
-      !actions.acls.empty(),
+      !actions.acls.empty() || !actions.roles.empty(),
       actions_contain(actions, cluster::recovery_stage::recovered_acls));
 
     ASSERT_EQ(
@@ -236,6 +236,19 @@ TEST_F(controller_snapshot_reconciliation_fixture, test_reconciler_acls) {
       .create_acls({binding}, 5s)
       .get();
     actions = reconciler.get_actions(snap);
+    ASSERT_TRUE(
+      actions_contain(actions, cluster::recovery_stage::recovered_acls));
+    validate_actions(actions);
+}
+
+TEST_F(controller_snapshot_reconciliation_fixture, test_reconciler_roles) {
+    cluster::controller_snapshot snap;
+    auto& security_snap = snap.security;
+    security_snap.roles.emplace_back(
+      security::role_name("role_name"),
+      security::role({{security::role_member_type::user, "test_user"}}));
+
+    auto actions = reconciler.get_actions(snap);
     ASSERT_TRUE(
       actions_contain(actions, cluster::recovery_stage::recovered_acls));
     validate_actions(actions);
