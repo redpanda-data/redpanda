@@ -20,6 +20,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 CRASH_LOOP_LOG = [
     "Crash loop detected. Too many consecutive crashes.*",
     ".*Failure during startup: crash_tracker::crash_loop_limit_reached \(Crash loop detected, aborting startup.\).*",
+    ".*crash reason to crash file.*",
 ]
 
 SIGNAL_CRASH_LOG = [
