@@ -762,8 +762,8 @@ func findResourceGroupByID(rgs []*controlplanev1.ResourceGroup, id string) *cont
 // determineNetworkingType determines whether to use private networking based on
 // the cluster's NetworkingConfig. It only prompts if both private and public are enabled.
 func determineNetworkingType(sc *controlplanev1.ServerlessCluster) (bool, error) {
-	if sc.NetworkingConfig == nil {
-		// No networking config means use default public
+	if sc == nil || sc.NetworkingConfig == nil {
+		// No cluster or no networking config means use default public
 		return false, nil
 	}
 
