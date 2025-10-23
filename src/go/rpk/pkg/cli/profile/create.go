@@ -590,13 +590,29 @@ func fromVirtualCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1.ResourceG
 	)
 
 	if usePrivate {
-		seedBrokers = sc.KafkaApi.PrivateSeedBrokers
+		if sc.KafkaApi != nil {
+			seedBrokers = sc.KafkaApi.PrivateSeedBrokers
+		} else {
+			seedBrokers = []string{}
+		}
 		consoleURL = sc.ConsolePrivateUrl
-		schemaURL = sc.SchemaRegistry.PrivateUrl
+		if sc.SchemaRegistry != nil {
+			schemaURL = sc.SchemaRegistry.PrivateUrl
+		} else {
+			schemaURL = ""
+		}
 	} else {
-		seedBrokers = sc.KafkaApi.SeedBrokers
+		if sc.KafkaApi != nil {
+			seedBrokers = sc.KafkaApi.SeedBrokers
+		} else {
+			seedBrokers = []string{}
+		}
 		consoleURL = sc.ConsoleUrl
-		schemaURL = sc.SchemaRegistry.Url
+		if sc.SchemaRegistry != nil {
+			schemaURL = sc.SchemaRegistry.Url
+		} else {
+			schemaURL = ""
+		}
 	}
 
 	p := config.RpkProfile{
