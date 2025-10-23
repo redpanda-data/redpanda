@@ -464,7 +464,11 @@ nameLookup:
 	if err != nil {
 		return CloudClusterOutputs{}, err
 	}
-	return fromVirtualCluster(yAuthVir, rg, sc), nil
+	usePrivate, err := determineNetworkingType(sc)
+	if err != nil {
+		return CloudClusterOutputs{}, err
+	}
+	return fromVirtualCluster(yAuthVir, rg, sc, usePrivate), nil
 }
 
 func clusterNameToID(ctx context.Context, cl *publicapi.CloudClientSet, name string) (string, error) {
@@ -577,23 +581,40 @@ func fromCloudCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1.ResourceGro
 	}
 }
 
-func fromVirtualCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1.ResourceGroup, sc *controlplanev1.ServerlessCluster) CloudClusterOutputs {
+func fromVirtualCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1.ResourceGroup, sc *controlplanev1.ServerlessCluster, usePrivate bool) CloudClusterOutputs {
+	// Determine which URLs to use based on usePrivate flag
+	var (
+		seedBrokers []string
+		consoleURL  string
+		schemaURL   string
+	)
+
+	if usePrivate {
+		seedBrokers = sc.KafkaApi.PrivateSeedBrokers
+		consoleURL = sc.ConsolePrivateUrl
+		schemaURL = sc.SchemaRegistry.PrivateUrl
+	} else {
+		seedBrokers = sc.KafkaApi.SeedBrokers
+		consoleURL = sc.ConsoleUrl
+		schemaURL = sc.SchemaRegistry.Url
+	}
+
 	p := config.RpkProfile{
 		Name:      sc.Name,
 		FromCloud: true,
 		KafkaAPI: config.RpkKafkaAPI{
-			Brokers: sc.KafkaApi.SeedBrokers,
+			Brokers: seedBrokers,
 			TLS:     new(config.TLS),
 			SASL: &config.SASL{
 				Mechanism: adminapi.CloudOIDC,
 			},
 		},
 		AdminAPI: config.RpkAdminAPI{
-			Addresses: []string{sc.ConsoleUrl},
+			Addresses: []string{consoleURL},
 			TLS:       new(config.TLS),
 		},
 		SR: config.RpkSchemaRegistryAPI{
-			Addresses: []string{sc.SchemaRegistry.Url},
+			Addresses: []string{schemaURL},
 			TLS:       new(config.TLS),
 		},
 		CloudCluster: config.RpkCloudCluster{
@@ -719,7 +740,11 @@ func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, 
 		if rg == nil {
 			return CloudClusterOutputs{}, fmt.Errorf("unable to find resource group %q", selected.sc.GetResourceGroupId())
 		}
-		o = fromVirtualCluster(yAuth, rg, selected.sc)
+		usePrivate, err := determineNetworkingType(selected.sc)
+		if err != nil {
+			return CloudClusterOutputs{}, err
+		}
+		o = fromVirtualCluster(yAuth, rg, selected.sc, usePrivate)
 	}
 	o.Profile.Description = fmt.Sprintf("%s %q", org.Name, selected.name)
 	return o, nil
@@ -732,6 +757,37 @@ func findResourceGroupByID(rgs []*controlplanev1.ResourceGroup, id string) *cont
 		}
 	}
 	return nil
+}
+
+// determineNetworkingType determines whether to use private networking based on
+// the cluster's NetworkingConfig. It only prompts if both private and public are enabled.
+func determineNetworkingType(sc *controlplanev1.ServerlessCluster) (bool, error) {
+	if sc.NetworkingConfig == nil {
+		// No networking config means use default public
+		return false, nil
+	}
+
+	privateEnabled := sc.NetworkingConfig.Private == controlplanev1.ServerlessNetworkingConfig_STATE_ENABLED
+	publicEnabled := sc.NetworkingConfig.Public == controlplanev1.ServerlessNetworkingConfig_STATE_ENABLED ||
+		sc.NetworkingConfig.Public == controlplanev1.ServerlessNetworkingConfig_STATE_UNSPECIFIED
+
+	// If both are enabled, prompt the user
+	if privateEnabled && publicEnabled {
+		options := []string{"Public", "Private"}
+		idx, err := out.PickIndex(options, "This cluster supports both public and private networking. Which would you like to use?")
+		if err != nil {
+			return false, err
+		}
+		return idx == 1, nil // 1 = Private
+	}
+
+	// If only private is enabled, use private
+	if privateEnabled {
+		return true, nil
+	}
+
+	// Otherwise use public (default)
+	return false, nil
 }
 
 // nameAndCluster describes a cluster name in the form of
