@@ -631,7 +631,47 @@ class RedpandaServiceSelfTest(RedpandaTest):
         """
         start = time.time()
         try:
-            time.sleep(60)
+            for i in range(60):
+                self.logger.error(f"Slept for {i} minutes")
+                time.sleep(60)
+        finally:
+            elapsed = time.time() - start
+            self.logger.error(f"Sleep finished after {elapsed:.1f}s\n", exc_info=True)
+
+    @cluster(num_nodes=1)
+    def test_60_minute_solid_sleep(self):
+        """Sleep for up to 60 minutes. If interrupted, log exception + traceback.
+        This exercises long-running test timeout/backtrace plumbing.
+        """
+        start = time.time()
+        try:
+            time.sleep(60 * 60)
+        finally:
+            elapsed = time.time() - start
+            self.logger.error(f"Sleep finished after {elapsed:.1f}s\n", exc_info=True)
+
+    @cluster(num_nodes=1)
+    def test_60_minute_wait_until(self):
+        """Sleep for up to 60 minutes. If interrupted, log exception + traceback.
+        This exercises long-running test timeout/backtrace plumbing.
+        """
+        start = time.time()
+        try:
+            self.redpanda.wait_until(lambda: False, timeout_sec=60 * 60, backoff_sec=10)
+        finally:
+            elapsed = time.time() - start
+            self.logger.error(f"Sleep finished after {elapsed:.1f}s\n", exc_info=True)
+
+    @cluster(num_nodes=1)
+    def test_60_minute_wait_until_retry_exec(self):
+        """Sleep for up to 60 minutes. If interrupted, log exception + traceback.
+        This exercises long-running test timeout/backtrace plumbing.
+        """
+        start = time.time()
+        try:
+            self.redpanda.wait_until(
+                lambda: False, timeout_sec=60 * 60, backoff_sec=10, retry_on_exc=True
+            )
         finally:
             elapsed = time.time() - start
             self.logger.error(f"Sleep finished after {elapsed:.1f}s\n", exc_info=True)
