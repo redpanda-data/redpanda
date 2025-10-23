@@ -12,7 +12,8 @@ import time
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RPKACLInput, RpkTool
+from rptest.services.admin import RoleMember
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
@@ -89,12 +90,25 @@ class ClusterRecoveryTest(RedpandaTest):
         algorithm = "SCRAM-SHA-256"
         users = dict()
         users["admin"] = None  # Created by the RedpandaService.
+        roles: dict[str, set[RoleMember]] = dict()
         for _ in range(3):
             user = f"user-{random_string(6)}"
             password = f"user-{random_string(6)}"
             users[user] = password
             self.redpanda._admin.create_user(user, password, algorithm)
             rpk.acl_create_allow_cluster(user, op="describe")
+
+            role_name: str = f"role-{random_string(6)}"
+            role_members = [RoleMember.User(user)]
+            roles[role_name] = set(role_members)
+            self.redpanda._admin.create_role(role_name)
+            self.redpanda._admin.update_role_members(role_name, add=role_members)
+
+            role_acl = RPKACLInput()
+            role_acl.allow_role = [role_name]
+            role_acl.cluster = True
+            role_acl.operation = ["ALL"]
+            rpk.acl_create(role_acl)
         rpk.acl_create_allow_cluster("admin", op="describe")
 
         time.sleep(5)
@@ -108,6 +122,20 @@ class ClusterRecoveryTest(RedpandaTest):
         self.redpanda._admin.await_stable_leader(
             "controller", partition=0, namespace="redpanda", timeout_s=60, backoff_s=2
         )
+
+        self.logger.info("Verifying that no data is present before recovery")
+
+        assert len(rpk.list_topics()) == 0, "Expected no topics before recovery"
+        assert len(self.redpanda._admin.list_users()) == 0, (
+            "Expected no users before recovery"
+        )
+        # Expecting 1 line for the header only.
+        assert len(rpk.acl_list().splitlines()) == 1, "Expected no ACLs before recovery"
+        assert len(rpk.list_roles().get("roles", [])) == 0, (
+            "Expected no roles before recovery"
+        )
+
+        self.logger.info("Initializing cluster recovery")
 
         self.redpanda._admin.initialize_cluster_recovery()
 
@@ -137,6 +165,31 @@ class ClusterRecoveryTest(RedpandaTest):
                 if u in l and "ALLOW" in l and "DESCRIBE" in l:
                     found = True
             assert found, f"Couldn't find {u} in {acls_lines}"
+
+        self.logger.info("Verifying roles")
+
+        restored_roles = rpk.list_roles().get("roles", [])
+        assert set(restored_roles) == set(roles.keys()), (
+            f"{restored_roles} vs {roles.keys()}"
+        )
+
+        for role_name, members in roles.items():
+            res = rpk.describe_role(role_name)
+            restored_role_members = set(
+                RoleMember.User(member["name"])
+                for member in res.get("members", [])
+                if member["principal_type"] == RoleMember.PrincipalType.USER.value
+            )
+
+            assert restored_role_members == members, (
+                f"Role {role_name} members mismatch: {restored_role_members} vs {members}"
+            )
+
+            found_role_acl = False
+            for l in acls_lines:
+                if role_name in l and "ALLOW" in l and "ALL" in l:
+                    found_role_acl = True
+            assert found_role_acl, f"Couldn't find {role_name} in {acls_lines}"
 
     @cluster(num_nodes=4)
     def test_bootstrap_with_recovery(self):
