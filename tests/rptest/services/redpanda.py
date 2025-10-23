@@ -4137,8 +4137,11 @@ class RedpandaService(Service, RedpandaServiceABC):
         if not crashes:
             # Even if there is no assertion or segfault, look for unexpectedly
             # not-running processes
-            for node in self._started:
-                if not self.redpanda_pid(node):
+            unexpected_not_running = [
+                node for node in self._started if not self.redpanda_pid(node)
+            ]
+            if len(unexpected_not_running) > self.tolerate_not_running:
+                for node in unexpected_not_running:
                     crashes.append((node, "Redpanda process unexpectedly stopped"))
 
         if crashes:
