@@ -123,6 +123,7 @@ func Execute() {
 		topic.NewCommand(fs, p),
 		transform.NewCommand(fs, p, osExec),
 		versioncmd.NewCommand(fs, p),
+		newOxlaCommand(),
 
 		newStatusCommand(), // deprecated
 	)
@@ -217,6 +218,20 @@ func wrappedGlobalFlagUsages(cmd *cobra.Command) string {
 		width = int(ws.Width)
 	}
 	return cmd.InheritedFlags().FlagUsagesWrapped(width)
+}
+
+func newOxlaCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "oxla",
+		Short: "Redpanda Oxla - Coming Soon",
+		Run: func(_ *cobra.Command, _ []string) {
+			title := color.New(color.FgHiRed, color.Bold).Sprint("🚀 Redpanda Oxla")
+			url := color.New(color.Underline).Sprint("https://www.redpanda.com/oxla-early-access ")
+
+			fmt.Printf("\n%s is coming soon!\n\nRegister for early access here: %s\n\n", title, url)
+		},
+	}
+	return cmd
 }
 
 // This is the same Cobra usage template but using the wrapped flag usages.
