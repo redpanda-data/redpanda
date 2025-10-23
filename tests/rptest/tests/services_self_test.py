@@ -9,6 +9,7 @@
 
 from subprocess import CalledProcessError
 from typing import Any
+import time
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.cluster.remoteaccount import RemoteCommandError
@@ -311,7 +312,7 @@ class BucketScrubSelfTest(RedpandaTest):
         )
 
         # Initially a bucket scrub should pass
-        self.logger.info(f"Running baseline scrub")
+        self.logger.info("Running baseline scrub")
         self.redpanda.stop_and_scrub_object_storage()
         self.redpanda.for_nodes(
             self.redpanda.nodes,
@@ -340,7 +341,7 @@ class BucketScrubSelfTest(RedpandaTest):
             validate=True,
         )
 
-        self.logger.info(f"Running scrub that should discover issue")
+        self.logger.info("Running scrub that should discover issue")
         with expect_exception(RuntimeError, lambda e: "fatal" in str(e)):
             self.redpanda.stop_and_scrub_object_storage()
 
@@ -622,6 +623,18 @@ class RedpandaServiceSelfTest(RedpandaTest):
     @cluster(num_nodes=1)
     def test_start(self):
         pass
+
+    @cluster(num_nodes=1)
+    def test_60_minute_sleep(self):
+        """Sleep for up to 60 minutes. If interrupted, log exception + traceback.
+        This exercises long-running test timeout/backtrace plumbing.
+        """
+        start = time.time()
+        try:
+            time.sleep(60)
+        finally:
+            elapsed = time.time() - start
+            self.logger.error(f"Sleep finished after {elapsed:.1f}s\n", exc_info=True)
 
 
 class RedpandaServiceSelfRawTest(Test):
