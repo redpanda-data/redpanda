@@ -224,8 +224,10 @@ static ss::future<read_result> do_read_from_ntp(
     auto memory_units = units_mgr.zero_units();
     if (!ntp_config.cfg.skip_read) {
         memory_units = co_await units_mgr.allocate_memory_units(
+          ntp_config.ktp(),
           ntp_config.cfg.max_bytes,
           ntp_config.cfg.max_batch_size,
+          ntp_config.cfg.avg_batch_size,
           obligatory_batch_read,
           as);
         if (!memory_units.has_units()) {

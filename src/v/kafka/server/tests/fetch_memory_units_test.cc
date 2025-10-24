@@ -39,8 +39,8 @@ void set_units(ssx::semaphore& sem, size_t target_units) {
 class fetch_memory_units_test_fixture : public seastar_test {
 public:
     ss::future<> SetUpAsync() override {
-        co_await _kafka_sem.start(0, ss::sstring("kafka_sem"));
-        co_await _fetch_sem.start(0, ss::sstring("fetch_sem"));
+        co_await _kafka_sem.start(100_MiB, ss::sstring("kafka_sem"));
+        co_await _fetch_sem.start(50_MiB, ss::sstring("fetch_sem"));
         co_await _manager.start(
           ss::sharded_parameter(
             [this] { return std::reference_wrapper(_kafka_sem.local()); }),
@@ -124,7 +124,8 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_cross_shard_free) {
           .invoke_on(
             other_shard_id,
             [this, n](auto& mgr) {
-                return mgr.allocate_memory_units(n, n, false, aas());
+                return mgr.allocate_memory_units(
+                  model::ktp{}, n, n, n, false, aas());
             })
           .then([](auto u) { return std::make_optional(std::move(u)); });
     };
@@ -164,7 +165,8 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_adjust_units) {
     co_await set_kafka_units(10);
     co_await set_fetch_units(10);
 
-    auto units = co_await mgr.allocate_memory_units(10, 10, false, aas());
+    auto units = co_await mgr.allocate_memory_units(
+      model::ktp{}, 10, 10, 10, false, aas());
     EXPECT_EQ(units.num_units(), 10);
     units.adjust_units(5);
     EXPECT_EQ(units.num_units(), 5);
@@ -178,7 +180,8 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_oblig_reads_succ_wait) {
     co_await set_kafka_units(10);
     co_await set_fetch_units(10);
 
-    auto units_fut = mgr.allocate_memory_units(100, 100, true, as());
+    auto units_fut = mgr.allocate_memory_units(
+      model::ktp{}, 100, 100, 100, true, as());
     EXPECT_TRUE(!units_fut.available());
 
     co_await set_kafka_units(100);
@@ -194,7 +197,8 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_oblig_reads_failed_wait) {
     co_await set_kafka_units(10);
     co_await set_fetch_units(10);
 
-    auto units = co_await mgr.allocate_memory_units(100, 100, true, aas());
+    auto units = co_await mgr.allocate_memory_units(
+      model::ktp{}, 100, 100, 100, true, aas());
     EXPECT_EQ(units.num_units(), 0);
 }
 
@@ -211,7 +215,12 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_allocate_memory_units) {
                              bool obligatory_batch_read) -> ss::future<size_t> {
         return mgr
           .allocate_memory_units(
-            max_bytes, batch_size, obligatory_batch_read, aas())
+            model::ktp{},
+            max_bytes,
+            batch_size,
+            batch_size,
+            obligatory_batch_read,
+            aas())
           .then([](auto mu) { return mu.num_units(); });
     };
 

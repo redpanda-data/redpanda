@@ -28,6 +28,7 @@ fetch_memory_units_manager::fetch_memory_units_manager(
   local_instance_fn&& local_fn)
   : _kafka_units(kafka_units)
   , _fetch_units(fetch_units)
+  , _max_fetch_units(fetch_units.current())
   , _release_units_timer([this] { release_all_units_to_semaphore(); })
   , _local_instance_fn(std::move(local_fn)) {
     _release_units_timer.arm_periodic(max_release_period);
@@ -86,30 +87,60 @@ fetch_memory_units_manager::units::~units() noexcept {
 
 ss::future<fetch_memory_units>
 fetch_memory_units_manager::allocate_memory_units(
-  size_t max_units,
-  const size_t min_units,
-  const bool require_min_units,
+  const model::ktp& ktp,
+  size_t max_bytes,
+  size_t max_batch_size,
+  const size_t avg_batch_size,
+  const bool require_max_batch_size,
   ss::abort_source& as) {
     vassert(!_gate.is_closed(), "fetch_memory_units_manager is stopped");
 
+    static constexpr auto rate = 5min;
+    thread_local static ss::logger::rate_limit rate_limit(rate);
+
+    if (max_bytes > _max_fetch_units) {
+        klog.log(
+          ss::log_level::debug,
+          rate_limit,
+          "{}: max_bytes({}) exceeds available fetch memory({}). Check client "
+          "configuration.",
+          ktp,
+          max_bytes,
+          _max_fetch_units);
+        max_bytes = _max_fetch_units;
+    }
+
+    if (max_batch_size > _max_fetch_units) {
+        klog.log(
+          ss::log_level::error,
+          rate_limit,
+          "{}: max_batch_size({}) exceeds available fetch memory({}). Check "
+          "topic configuration.",
+          ktp,
+          max_bytes,
+          _max_fetch_units);
+        max_batch_size = _max_fetch_units;
+    }
+
     const size_t available_units = std::min(
       _kafka_units.current(), _fetch_units.current());
-    // Note that it's not currently enforced that max_units >= min_units. Hence
-    // we set max_units to the larger of the two here to ensure that is the
+
+    // There is no relation enforced for \ref max_bytes and \ref max_batch_size.
+    // Normally max_bytes >= max_batch_size, however, that is not always the
     // case.
-    max_units = std::max(max_units, min_units);
+    const auto max_units = std::max(max_bytes, max_batch_size);
 
     size_t units_to_alloc = 0;
-    if (require_min_units) {
-        // if \ref require_min_units is true then we must read at least \ref
-        // min_units. So allocate at least that many even if it causes the
-        // semaphores to become negative.
+    if (require_max_batch_size) {
+        // If \ref require_max_batch_size is true then we must read at least
+        // \ref max_batch_size. Hence, we'll wait until either that is true or
+        // the read is aborted.
         units_to_alloc = std::max(
-          min_units, std::min(max_units, available_units));
+          max_batch_size, std::min(max_units, available_units));
         return get_units(units_to_alloc, as);
-    } else if (available_units >= min_units) {
-        // only reserve memory if we have space for at least \ref min_units,
-        // otherwise allocate none.
+    } else if (available_units >= avg_batch_size) {
+        // Only reserve memory if we have space for at least \ref
+        // avg_batch_size, otherwise allocate none.
         units_to_alloc = std::min(available_units, max_units);
         return ss::make_ready_future<fetch_memory_units>(
           try_get_units(units_to_alloc));
