@@ -11,9 +11,13 @@
 
 #include "kafka/server/fetch_memory_units.h"
 
+#include "config/configuration.h"
+#include "kafka/protocol/logger.h"
+#include "metrics/prometheus_sanitize.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/reactor.hh>
+#include <seastar/util/defer.hh>
 #include <seastar/util/later.hh>
 
 namespace kafka {
@@ -33,6 +37,22 @@ ss::future<> fetch_memory_units_manager::stop() {
     _release_units_timer.cancel();
     release_all_units_to_semaphore();
     co_await _gate.close();
+}
+
+void fetch_memory_units_manager::setup_metrics() {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+
+    namespace sm = ss::metrics;
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("kafka:fetch_memory_units"),
+      {sm::make_gauge(
+        "get_unit_wait_time_ms",
+        [this] { return _total_wait_time / 1ms; },
+        sm::description("Total time spent waiting for memory units."))},
+      {},
+      {sm::shard_label});
 }
 
 void fetch_memory_units_manager::units::adopt(
@@ -138,12 +158,17 @@ fetch_memory_units_manager::consume_units(const size_t target) {
 
 ss::future<fetch_memory_units> fetch_memory_units_manager::get_units(
   const size_t target, ss::abort_source& as) {
+    auto measure_wait = ss::defer([this, start = ss::lowres_clock::now()] {
+        _total_wait_time += (ss::lowres_clock::now() - start);
+    });
+
     try {
         // Try to get the fetch units first. They should normally be the lesser
         // of the two and holding them won't block other request types on
         // this shard.
         auto fetch_units = co_await ss::get_units(_fetch_units, target, as);
         auto kafka_units = co_await ss::get_units(_kafka_units, target, as);
+
         co_return fetch_memory_units{
           {std::move(kafka_units), std::move(fetch_units)}, _local_instance_fn};
     } catch (...) {

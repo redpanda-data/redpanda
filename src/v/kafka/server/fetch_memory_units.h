@@ -12,6 +12,8 @@
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "container/chunked_hash_map.h"
+#include "metrics/metrics.h"
+#include "model/ktp.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/gate.hh>
@@ -49,6 +51,7 @@ public:
       local_instance_fn&& local_fn);
 
     ss::future<> stop();
+    void setup_metrics();
 
     /** Consume proper amounts of units from memory semaphores and return them
      * as semaphore_units. Fetch semaphore units returned are the indication of
@@ -128,6 +131,9 @@ private:
     chunked_hash_map<ss::shard_id, units> _units_to_release;
 
     local_instance_fn _local_instance_fn;
+
+    metrics::internal_metric_groups _metrics;
+    ss::lowres_clock::duration _total_wait_time{0};
 };
 
 /***
