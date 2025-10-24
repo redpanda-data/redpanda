@@ -230,6 +230,7 @@ func CreateFlow(
 	set []string,
 	name string,
 	description string,
+	serverlessNetworking string,
 ) error {
 	if p := yAct.Profile(name); name != "" && p != nil {
 		return &ProfileExistsError{name}
@@ -267,7 +268,7 @@ func CreateFlow(
 
 	case fromCloud != "":
 		var err error
-		o, err = createCloudProfile(ctx, yAuthVir, cfg, fromCloud)
+		o, err = createCloudProfile(ctx, yAuthVir, cfg, fromCloud, serverlessNetworking)
 		if err != nil {
 			if errors.Is(err, ErrNoCloudClusters) {
 				fmt.Println("Your cloud account has no clusters available to select, avoiding creating a cloud profile.")
@@ -397,7 +398,7 @@ func CreateFlow(
 	return nil
 }
 
-func createCloudProfile(ctx context.Context, yAuthVir *config.RpkCloudAuth, cfg *config.Config, clusterIDOrName string) (CloudClusterOutputs, error) {
+func createCloudProfile(ctx context.Context, yAuthVir *config.RpkCloudAuth, cfg *config.Config, clusterIDOrName string, serverlessNetworking string) (CloudClusterOutputs, error) {
 	if yAuthVir == nil {
 		return CloudClusterOutputs{}, errors.New("missing current cloud auth, please login with 'rpk cloud login'")
 	}
@@ -414,7 +415,7 @@ func createCloudProfile(ctx context.Context, yAuthVir *config.RpkCloudAuth, cfg 
 
 	cpCl := publicapi.NewCloudClientSet(cfg.DevOverrides().PublicAPIURL, yAuthVir.AuthToken)
 	if clusterIDOrName == "prompt" {
-		return PromptCloudClusterProfile(ctx, yAuthVir, cpCl)
+		return PromptCloudClusterProfile(ctx, yAuthVir, cpCl, serverlessNetworking)
 	}
 
 	var (
@@ -620,18 +621,18 @@ func fromVirtualCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1.ResourceG
 		Name:      sc.Name,
 		FromCloud: true,
 		KafkaAPI: config.RpkKafkaAPI{
-			Brokers: sc.KafkaApi.SeedBrokers,
+			Brokers: seedBrokers,
 			TLS:     new(config.TLS),
 			SASL: &config.SASL{
 				Mechanism: adminapi.CloudOIDC,
 			},
 		},
 		AdminAPI: config.RpkAdminAPI{
-			Addresses: []string{sc.ConsoleUrl},
+			Addresses: []string{consoleURL},
 			TLS:       new(config.TLS),
 		},
 		SR: config.RpkSchemaRegistryAPI{
-			Addresses: []string{sc.SchemaRegistry.Url},
+			Addresses: []string{schemaURL},
 			TLS:       new(config.TLS),
 		},
 		CloudCluster: config.RpkCloudCluster{
@@ -718,7 +719,7 @@ func (o CloudClusterOutputs) FullName() string {
 // user. If their cloud account has only one cluster, a profile is created for
 // it automatically. This returns ErrNoCloudClusters if the user has no cloud
 // clusters.
-func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, cl *publicapi.CloudClientSet) (CloudClusterOutputs, error) {
+func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, cl *publicapi.CloudClientSet, serverlessNetworking string) (CloudClusterOutputs, error) {
 	org, rgs, scs, cs, err := cl.OrgResourceGroupsClusters(ctx)
 	if err != nil {
 		return CloudClusterOutputs{}, err
@@ -741,6 +742,10 @@ func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, 
 
 	var o CloudClusterOutputs
 	if selected.c != nil {
+		// Validate serverless networking flags aren't used with non-serverless clusters
+		if serverlessNetworking != "" {
+			return CloudClusterOutputs{}, fmt.Errorf("--serverless-network flag can only be used with serverless clusters")
+		}
 		// We have a selected cluster, but the list response does not return
 		// all the information we need.
 		c, err := cl.ClusterForID(ctx, selected.c.Id)
@@ -757,11 +762,11 @@ func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, 
 		if rg == nil {
 			return CloudClusterOutputs{}, fmt.Errorf("unable to find resource group %q", selected.sc.GetResourceGroupId())
 		}
-		usePrivate, err := isPrivateNetwork(sc, serverlessNetworking)
+		usePrivate, err := isPrivateNetwork(selected.sc, serverlessNetworking)
 		if err != nil {
 			return CloudClusterOutputs{}, err
 		}
-		o = fromVirtualCluster(yAuth, rg, sc, usePrivate)
+		o = fromVirtualCluster(yAuth, rg, selected.sc, usePrivate)
 	}
 	o.Profile.Description = fmt.Sprintf("%s %q", org.Name, selected.name)
 	return o, nil
