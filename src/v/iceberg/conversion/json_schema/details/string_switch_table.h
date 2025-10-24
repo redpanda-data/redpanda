@@ -44,10 +44,10 @@ constexpr auto string_switch_table(
 
     if constexpr (!std::
                     is_same_v<default_t, string_switch_table_no_default_t>) {
-        matcher.default_match(Default);
+        return matcher.default_match(Default);
     }
 
-    return matcher;
+    return ret_t{std::move(matcher)};
 }
 
 }; // namespace iceberg::conversion::json_schema::details

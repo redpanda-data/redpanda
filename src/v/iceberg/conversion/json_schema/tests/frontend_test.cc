@@ -132,6 +132,34 @@ TEST(frontend_test, compile_valid_schema) {
     ASSERT_EQ(expected, ir_tree_printer::to_string(schema));
 }
 
+TEST(frontend_test, recognized_format) {
+    auto schema = frontend{}.compile(
+      parse_json(R"(
+{
+  "$id": "https://example.com/root.json",
+  "type": "string",
+  "format": "date-time"
+})"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    ASSERT_EQ(schema.root().format(), format::date_time);
+}
+
+TEST(frontend_test, unsupported_format) {
+    auto schema = frontend{}.compile(
+      parse_json(R"(
+{
+  "$id": "https://example.com/root.json",
+  "type": "string",
+  "format": "unsupported-format-name-123"
+})"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    ASSERT_EQ(schema.root().format(), std::nullopt);
+}
+
 TEST(frontend_test, boolean_schema_true) {
     frontend f;
     auto schema = f.compile(
