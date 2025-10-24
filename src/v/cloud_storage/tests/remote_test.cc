@@ -45,6 +45,7 @@
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
+#include <seastar/util/later.hh>
 
 #include <boost/range/irange.hpp>
 
@@ -1410,3 +1411,67 @@ INSTANTIATE_TEST_SUITE_P(
       .url_style = cloud_storage_clients::s3_url_style::virtual_host},
     remote_test_parameters{
       .url_style = cloud_storage_clients::s3_url_style::path}));
+
+TEST(RemoteTest, TestShutdownOnRetry) {
+    ss::sharded<cloud_storage_clients::client_pool> pool;
+    ss::sharded<cloud_io::remote> io;
+    ss::sharded<remote> remote;
+
+    s3_imposter_fixture s3;
+    bool stopped_remote = false;
+    auto shutdown = ss::defer([&] {
+        if (stopped_remote) {
+            pool.local().shutdown_connections();
+            io.local().request_stop();
+            remote.stop().get();
+        }
+        io.stop().get();
+        pool.stop().get();
+    });
+
+    pool.start(10, ss::sharded_parameter([&s3] { return s3.conf; })).get();
+    io.start(
+        std::ref(pool),
+        ss::sharded_parameter([&s3] { return s3.conf; }),
+        ss::sharded_parameter([&] { return config_file; }),
+        ss::sharded_parameter([] { return ss::default_scheduling_group(); }))
+      .get();
+    remote.start(std::ref(io), ss::sharded_parameter([&s3] { return s3.conf; }))
+      .get();
+
+    s3.fail_request_if(
+      [](const auto&) { return true; },
+      {.status = ss::http::reply::status_type::service_unavailable});
+
+    retry_chain_node fib(never_abort, 100ms, 20ms);
+    partition_manifest dummy_dst_manifest(manifest_ntp, manifest_revision);
+    std::vector<ss::future<download_result>> futs;
+    futs.reserve(10);
+    for (int i = 0; i < 10; ++i) {
+        futs.emplace_back(remote.local().download_manifest(
+          s3.bucket_name, json_manifest_format_path, dummy_dst_manifest, fib));
+    }
+
+    // Give some time for the downloads to start.
+    ss::sleep(30ms).get();
+
+    // Now simulate the broker shutting down, but don't get to the point where
+    // cloud_io::remote is shut down.
+    pool.local().shutdown_connections();
+    io.local().request_stop();
+    remote.stop().get();
+    stopped_remote = true;
+
+    // Regression test for CORE-10019. Previously the downloads could result in
+    // a heap-use-after-free.
+    auto results = ss::when_all(futs.begin(), futs.end()).get();
+    for (auto& res_fut : results) {
+        if (res_fut.failed()) {
+            if (ssx::is_shutdown_exception(res_fut.get_exception())) {
+                continue;
+            }
+            FAIL() << "Expected shutdown exception";
+        }
+        EXPECT_EQ(res_fut.get(), download_result::timedout);
+    }
+}

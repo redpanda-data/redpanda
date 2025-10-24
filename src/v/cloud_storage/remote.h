@@ -477,8 +477,8 @@ public:
 
     // If you need to spawn a background task that relies on
     // this object staying alive, spawn it with this gate.
-    seastar::gate& gate() { return io().gate(); };
-    ss::abort_source& as() { return io().as(); }
+    seastar::gate& gate() { return _gate; };
+    ss::abort_source& as() { return _as; }
 
     remote_probe& get_probe() { return _probe; }
 
@@ -491,6 +491,9 @@ private:
       api_activity_notification, const retry_chain_node& caller);
     std::function<void(size_t)>
     make_notify_cb(api_activity_type t, retry_chain_node& retry);
+
+    ss::gate _gate;
+    ss::abort_source _as;
 
     ss::sharded<cloud_io::remote>& _io;
     std::unique_ptr<materialized_resources> _materialized;
