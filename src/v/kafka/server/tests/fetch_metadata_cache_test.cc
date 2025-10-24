@@ -25,7 +25,7 @@ TEST_CORO(fetch_metadata_cache_tests, test_avg_bytes_per_offset) {
       model::topic{"test_topic"}, model::partition_id{1}};
 
     mdc.insert_or_assign(
-      ktp, model::offset(0), model::offset(10), model::offset(10), 0, 0);
+      ktp, model::offset(0), model::offset(10), model::offset(10), 0, 0, 0);
     auto res = mdc.get(ktp).value();
     EXPECT_EQ(res.avg_bytes_per_offset, 0);
     EXPECT_EQ(mdc.size(), 1);
@@ -36,13 +36,16 @@ TEST_CORO(fetch_metadata_cache_tests, test_avg_bytes_per_offset) {
       model::offset(15),
       model::offset(15),
       5,
+      1,
       5 * 1_MiB);
     res = mdc.get(ktp).value();
     EXPECT_EQ(res.avg_bytes_per_offset, 1_MiB);
+    EXPECT_EQ(res.avg_bytes_per_batch, 5_MiB);
 
     mdc.insert_or_assign(
-      ktp, model::offset(0), model::offset(15), model::offset(15), 1, 2_MiB);
+      ktp, model::offset(0), model::offset(15), model::offset(15), 1, 1, 2_MiB);
     res = mdc.get(ktp).value();
     EXPECT_GE(res.avg_bytes_per_offset, 1_MiB);
+    EXPECT_LT(res.avg_bytes_per_batch, 5_MiB);
     co_return;
 }
