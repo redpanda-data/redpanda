@@ -39,12 +39,14 @@ const (
 
 func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		set           []string
-		fromRedpanda  string
-		fromProfile   string
-		fromCloud     string
-		fromContainer bool
-		description   string
+		set               []string
+		fromRedpanda      string
+		fromProfile       string
+		fromCloud         string
+		fromContainer     bool
+		description       string
+		serverlessPrivate bool
+		serverlessPublic  bool
 	)
 
 	cmd := &cobra.Command{
@@ -120,7 +122,19 @@ rpk always switches to the newly created profile.
 				out.Die("profile name cannot be empty unless using %v or %v", fromCloudFlag, fromContainerFlag)
 			}
 
-			err = CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, fromRedpanda, fromProfile, fromCloud, fromContainer, set, name, description)
+			// Validate mutual exclusivity of serverless networking flags
+			if serverlessPrivate && serverlessPublic {
+				out.Die("--serverless-private and --serverless-public are mutually exclusive")
+			}
+
+			var serverlessNetworking string
+			if serverlessPrivate {
+				serverlessNetworking = "private"
+			} else if serverlessPublic {
+				serverlessNetworking = "public"
+			}
+
+			err = CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, fromRedpanda, fromProfile, fromCloud, fromContainer, set, name, description, serverlessNetworking)
 			if ee := (*ProfileExistsError)(nil); errors.As(err, &ee) {
 				fmt.Printf(`Unable to automatically create profile %q due to a name conflict with
 an existing self-hosted profile, please rename that profile or use a different
@@ -145,12 +159,15 @@ Or:
 	cmd.Flags().StringVar(&fromCloud, fromCloudFlag, "", "Create and switch to a new profile generated from a Redpanda Cloud cluster ID")
 	cmd.Flags().BoolVar(&fromContainer, fromContainerFlag, false, "Create and switch to a new profile generated from a running cluster created with rpk container")
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Optional description of the profile")
+	cmd.Flags().BoolVar(&serverlessPrivate, "serverless-private", false, "Use private networking for serverless clusters (if cluster supports it)")
+	cmd.Flags().BoolVar(&serverlessPublic, "serverless-public", false, "Use public networking for serverless clusters (if cluster supports it)")
 
 	cmd.Flags().Lookup(fromCloudFlag).NoOptDefVal = "prompt"
 
 	cmd.RegisterFlagCompletionFunc("set", validSetArgs)
 
 	cmd.MarkFlagsMutuallyExclusive("from-redpanda", "from-cloud", "from-profile")
+	cmd.MarkFlagsMutuallyExclusive("serverless-private", "serverless-public")
 
 	return cmd
 }
@@ -221,6 +238,7 @@ func CreateFlow(
 	set []string,
 	name string,
 	description string,
+	serverlessNetworking string,
 ) error {
 	if p := yAct.Profile(name); name != "" && p != nil {
 		return &ProfileExistsError{name}
@@ -258,7 +276,7 @@ func CreateFlow(
 
 	case fromCloud != "":
 		var err error
-		o, err = createCloudProfile(ctx, yAuthVir, cfg, fromCloud)
+		o, err = createCloudProfile(ctx, yAuthVir, cfg, fromCloud, serverlessNetworking)
 		if err != nil {
 			if errors.Is(err, ErrNoCloudClusters) {
 				fmt.Println("Your cloud account has no clusters available to select, avoiding creating a cloud profile.")
@@ -388,7 +406,7 @@ func CreateFlow(
 	return nil
 }
 
-func createCloudProfile(ctx context.Context, yAuthVir *config.RpkCloudAuth, cfg *config.Config, clusterIDOrName string) (CloudClusterOutputs, error) {
+func createCloudProfile(ctx context.Context, yAuthVir *config.RpkCloudAuth, cfg *config.Config, clusterIDOrName string, serverlessNetworking string) (CloudClusterOutputs, error) {
 	if yAuthVir == nil {
 		return CloudClusterOutputs{}, errors.New("missing current cloud auth, please login with 'rpk cloud login'")
 	}
@@ -405,7 +423,7 @@ func createCloudProfile(ctx context.Context, yAuthVir *config.RpkCloudAuth, cfg 
 
 	cpCl := publicapi.NewCloudClientSet(cfg.DevOverrides().PublicAPIURL, yAuthVir.AuthToken)
 	if clusterIDOrName == "prompt" {
-		return PromptCloudClusterProfile(ctx, yAuthVir, cpCl)
+		return PromptCloudClusterProfile(ctx, yAuthVir, cpCl, serverlessNetworking)
 	}
 
 	var (
@@ -451,6 +469,10 @@ nameLookup:
 			}
 			return CloudClusterOutputs{}, fmt.Errorf("unable to request details for cluster %q: %w", clusterID, err)
 		}
+		// Validate serverless networking flags aren't used with non-serverless clusters
+		if serverlessNetworking != "" {
+			return CloudClusterOutputs{}, fmt.Errorf("--serverless-private and --serverless-public flags can only be used with serverless clusters")
+		}
 		if cluster.State != controlplanev1.Cluster_STATE_READY {
 			return CloudClusterOutputs{}, fmt.Errorf("selected cluster %q is not ready for profile creation yet; you may run this command again once the cluster is running", clusterID)
 		}
@@ -464,7 +486,7 @@ nameLookup:
 	if err != nil {
 		return CloudClusterOutputs{}, err
 	}
-	usePrivate, err := determineNetworkingType(sc)
+	usePrivate, err := determineNetworkingType(sc, serverlessNetworking)
 	if err != nil {
 		return CloudClusterOutputs{}, err
 	}
@@ -717,7 +739,7 @@ func (o CloudClusterOutputs) FullName() string {
 // user. If their cloud account has only one cluster, a profile is created for
 // it automatically. This returns ErrNoCloudClusters if the user has no cloud
 // clusters.
-func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, cl *publicapi.CloudClientSet) (CloudClusterOutputs, error) {
+func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, cl *publicapi.CloudClientSet, serverlessNetworking string) (CloudClusterOutputs, error) {
 	org, rgs, scs, cs, err := cl.OrgResourceGroupsClusters(ctx)
 	if err != nil {
 		return CloudClusterOutputs{}, err
@@ -740,6 +762,10 @@ func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, 
 
 	var o CloudClusterOutputs
 	if selected.c != nil {
+		// Validate serverless networking flags aren't used with non-serverless clusters
+		if serverlessNetworking != "" {
+			return CloudClusterOutputs{}, fmt.Errorf("--serverless-private and --serverless-public flags can only be used with serverless clusters")
+		}
 		// We have a selected cluster, but the list response does not return
 		// all the information we need.
 		c, err := cl.ClusterForID(ctx, selected.c.Id)
@@ -752,15 +778,20 @@ func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, 
 		}
 		o = fromCloudCluster(yAuth, rg, c)
 	} else {
-		rg := findResourceGroupByID(rgs, selected.sc.GetResourceGroupId())
-		if rg == nil {
-			return CloudClusterOutputs{}, fmt.Errorf("unable to find resource group %q", selected.sc.GetResourceGroupId())
-		}
-		usePrivate, err := determineNetworkingType(selected.sc)
+		// Fetch full serverless cluster details to get NetworkingConfig
+		sc, err := cl.ServerlessClusterForID(ctx, selected.sc.Id)
 		if err != nil {
 			return CloudClusterOutputs{}, err
 		}
-		o = fromVirtualCluster(yAuth, rg, selected.sc, usePrivate)
+		rg := findResourceGroupByID(rgs, sc.GetResourceGroupId())
+		if rg == nil {
+			return CloudClusterOutputs{}, fmt.Errorf("unable to find resource group %q", sc.GetResourceGroupId())
+		}
+		usePrivate, err := determineNetworkingType(sc, serverlessNetworking)
+		if err != nil {
+			return CloudClusterOutputs{}, err
+		}
+		o = fromVirtualCluster(yAuth, rg, sc, usePrivate)
 	}
 	o.Profile.Description = fmt.Sprintf("%s %q", org.Name, selected.name)
 	return o, nil
@@ -776,16 +807,37 @@ func findResourceGroupByID(rgs []*controlplanev1.ResourceGroup, id string) *cont
 }
 
 // determineNetworkingType determines whether to use private networking based on
-// the cluster's NetworkingConfig. It only prompts if both private and public are enabled.
-func determineNetworkingType(sc *controlplanev1.ServerlessCluster) (bool, error) {
+// the cluster's NetworkingConfig. It only prompts if both private and public are enabled
+// and no override is specified. The override parameter can be: "" (no override), "private", or "public".
+func determineNetworkingType(sc *controlplanev1.ServerlessCluster, override string) (bool, error) {
 	if sc == nil || sc.NetworkingConfig == nil {
 		// No cluster or no networking config means use default public
+		if override == "private" {
+			return false, fmt.Errorf("cluster does not support private networking")
+		}
 		return false, nil
 	}
 
 	privateEnabled := sc.NetworkingConfig.Private == controlplanev1.ServerlessNetworkingConfig_STATE_ENABLED
 	publicEnabled := sc.NetworkingConfig.Public == controlplanev1.ServerlessNetworkingConfig_STATE_ENABLED ||
 		sc.NetworkingConfig.Public == controlplanev1.ServerlessNetworkingConfig_STATE_UNSPECIFIED
+
+	// If an override is specified, validate and use it
+	if override != "" {
+		if override == "private" {
+			if !privateEnabled {
+				return false, fmt.Errorf("cluster does not have private networking enabled")
+			}
+			return true, nil
+		}
+		if override == "public" {
+			if !publicEnabled {
+				return false, fmt.Errorf("cluster does not have public networking enabled")
+			}
+			return false, nil
+		}
+		return false, fmt.Errorf("invalid networking override: %q", override)
+	}
 
 	// If both are enabled, prompt the user
 	if privateEnabled && publicEnabled {
