@@ -392,15 +392,17 @@ public:
         if (
           const auto format_node = find_keyword(
             node, "format", {json_value_type::string})) {
-            auto format_str = format_node->GetString();
-            std::optional<format> value_format
-              = details::string_switch_table<std::nullopt>(
-                format_str, format_by_name);
-            if (!value_format) {
-                throw std::runtime_error(
-                  fmt::format("Unsupported format: {}", format_str));
+            if (unlikely(ctx.dialect() != dialect::draft7)) {
+                // When support for more dialects is added format parsing should
+                // be revisited. We should explicitly handle all known formats
+                // before defaulting to string conversion in Iceberg.
+                throw unsupported_feature_error(
+                  "The format keyword is only supported in draft-07 dialect");
             }
-            sub->format_ = *value_format;
+
+            auto format_str = format_node->GetString();
+            sub->format_ = details::string_switch_table<std::nullopt>(
+              format_str, format_by_name);
         }
 
         if (new_ctx) {

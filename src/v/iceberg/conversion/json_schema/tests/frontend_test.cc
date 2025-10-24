@@ -132,22 +132,32 @@ TEST(frontend_test, compile_valid_schema) {
     ASSERT_EQ(expected, ir_tree_printer::to_string(schema));
 }
 
+TEST(frontend_test, recognized_format) {
+    auto schema = frontend{}.compile(
+      parse_json(R"(
+{
+  "$id": "https://example.com/root.json",
+  "type": "string",
+  "format": "date-time"
+})"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    ASSERT_EQ(schema.root().format(), format::date_time);
+}
+
 TEST(frontend_test, unsupported_format) {
-    EXPECT_THAT(
-      []() {
-          frontend f;
-          auto schema = f.compile(
-            parse_json(R"(
+    auto schema = frontend{}.compile(
+      parse_json(R"(
 {
   "$id": "https://example.com/root.json",
   "type": "string",
   "format": "unsupported-format-name-123"
 })"),
-            "https://example.com/irrelevant-base.json",
-            dialect::draft7);
-      },
-      ThrowsMessage<std::runtime_error>(
-        StrEq("Unsupported format: unsupported-format-name-123")));
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    ASSERT_EQ(schema.root().format(), std::nullopt);
 }
 
 TEST(frontend_test, boolean_schema_true) {
