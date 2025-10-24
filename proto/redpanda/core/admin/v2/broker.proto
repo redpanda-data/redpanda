@@ -33,7 +33,7 @@ service BrokerService {
         };
     }
     // ListBrokers 
-    // 
+    //
     // Returns information about all brokers in the cluster.
     rpc ListBrokers(ListBrokersRequest) returns (ListBrokersResponse) {
         option (pbgen.rpc) = {
