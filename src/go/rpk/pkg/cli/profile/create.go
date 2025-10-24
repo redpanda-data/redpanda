@@ -39,12 +39,13 @@ const (
 
 func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		set           []string
-		fromRedpanda  string
-		fromProfile   string
-		fromCloud     string
-		fromContainer bool
-		description   string
+		set               []string
+		fromRedpanda      string
+		fromProfile       string
+		fromCloud         string
+		fromContainer     bool
+		description       string
+		serverlessNetwork string
 	)
 
 	cmd := &cobra.Command{
@@ -68,6 +69,10 @@ using --from-cloud or --from-rpk-container.
 * You can use --from-cloud to generate a profile from an existing cloud cluster
   id. Note that you must be logged in with 'rpk cloud login' first. The special
   value "prompt" will prompt to select a cloud cluster to create a profile for.
+  For serverless clusters that support both public and private networking, you
+  will be prompted to select a network type unless you specify --serverless-network.
+  To avoid prompts in automation, explicitly set --serverless-network to 'public'
+  or 'private'.
 
 * You can use --from-rpk-container to generate a profile from an existing
   cluster created using 'rpk container start' command. The name is not needed
@@ -120,7 +125,7 @@ rpk always switches to the newly created profile.
 				out.Die("profile name cannot be empty unless using %v or %v", fromCloudFlag, fromContainerFlag)
 			}
 
-			err = CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, fromRedpanda, fromProfile, fromCloud, fromContainer, set, name, description)
+			err = CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, fromRedpanda, fromProfile, fromCloud, fromContainer, set, name, description, serverlessNetwork)
 			if ee := (*ProfileExistsError)(nil); errors.As(err, &ee) {
 				fmt.Printf(`Unable to automatically create profile %q due to a name conflict with
 an existing self-hosted profile, please rename that profile or use a different
@@ -145,10 +150,14 @@ Or:
 	cmd.Flags().StringVar(&fromCloud, fromCloudFlag, "", "Create and switch to a new profile generated from a Redpanda Cloud cluster ID")
 	cmd.Flags().BoolVar(&fromContainer, fromContainerFlag, false, "Create and switch to a new profile generated from a running cluster created with rpk container")
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Optional description of the profile")
+	cmd.Flags().StringVar(&serverlessNetwork, "serverless-network", "", "Networking type for serverless clusters: 'public' or 'private' (if not specified, will prompt if both are available)")
 
 	cmd.Flags().Lookup(fromCloudFlag).NoOptDefVal = "prompt"
 
 	cmd.RegisterFlagCompletionFunc("set", validSetArgs)
+	cmd.RegisterFlagCompletionFunc("serverless-network", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{"public", "private"}, cobra.ShellCompDirectiveNoFileComp
+	})
 
 	cmd.MarkFlagsMutuallyExclusive("from-redpanda", "from-cloud", "from-profile")
 
@@ -464,7 +473,11 @@ nameLookup:
 	if err != nil {
 		return CloudClusterOutputs{}, err
 	}
-	return fromVirtualCluster(yAuthVir, rg, sc), nil
+	usePrivate, err := isPrivateNetwork(sc, serverlessNetworking)
+	if err != nil {
+		return CloudClusterOutputs{}, err
+	}
+	return fromVirtualCluster(yAuthVir, rg, sc, usePrivate), nil
 }
 
 func clusterNameToID(ctx context.Context, cl *publicapi.CloudClientSet, name string) (string, error) {
@@ -577,7 +590,32 @@ func fromCloudCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1.ResourceGro
 	}
 }
 
-func fromVirtualCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1.ResourceGroup, sc *controlplanev1.ServerlessCluster) CloudClusterOutputs {
+func fromVirtualCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1.ResourceGroup, sc *controlplanev1.ServerlessCluster, usePrivate bool) CloudClusterOutputs {
+	// Determine which URLs to use based on usePrivate flag
+	var (
+		seedBrokers []string
+		consoleURL  string
+		schemaURL   string
+	)
+
+	if usePrivate {
+		if sc.KafkaApi != nil {
+			seedBrokers = sc.KafkaApi.PrivateSeedBrokers
+		}
+		consoleURL = sc.ConsolePrivateUrl
+		if sc.SchemaRegistry != nil {
+			schemaURL = sc.SchemaRegistry.PrivateUrl
+		}
+	} else {
+		if sc.KafkaApi != nil {
+			seedBrokers = sc.KafkaApi.SeedBrokers
+		}
+		consoleURL = sc.ConsoleUrl
+		if sc.SchemaRegistry != nil {
+			schemaURL = sc.SchemaRegistry.Url
+		}
+	}
+
 	p := config.RpkProfile{
 		Name:      sc.Name,
 		FromCloud: true,
@@ -719,7 +757,11 @@ func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, 
 		if rg == nil {
 			return CloudClusterOutputs{}, fmt.Errorf("unable to find resource group %q", selected.sc.GetResourceGroupId())
 		}
-		o = fromVirtualCluster(yAuth, rg, selected.sc)
+		usePrivate, err := isPrivateNetwork(sc, serverlessNetworking)
+		if err != nil {
+			return CloudClusterOutputs{}, err
+		}
+		o = fromVirtualCluster(yAuth, rg, sc, usePrivate)
 	}
 	o.Profile.Description = fmt.Sprintf("%s %q", org.Name, selected.name)
 	return o, nil
@@ -732,6 +774,60 @@ func findResourceGroupByID(rgs []*controlplanev1.ResourceGroup, id string) *cont
 		}
 	}
 	return nil
+}
+
+// isPrivateNetwork determines whether to use private networking based on
+// the cluster's NetworkingConfig. It returns true if private networking should be used.
+// It only prompts if both private and public are enabled and no override is specified.
+// The override parameter can be: "" (no override), "private", or "public".
+func isPrivateNetwork(sc *controlplanev1.ServerlessCluster, override string) (bool, error) {
+	if sc == nil || sc.NetworkingConfig == nil {
+		// No cluster or no networking config means use default public
+		if override == "private" {
+			return false, fmt.Errorf("cluster does not support private networking")
+		}
+		return false, nil
+	}
+
+	privateEnabled := sc.NetworkingConfig.Private == controlplanev1.ServerlessNetworkingConfig_STATE_ENABLED
+	publicEnabled := sc.NetworkingConfig.Public == controlplanev1.ServerlessNetworkingConfig_STATE_ENABLED ||
+		sc.NetworkingConfig.Public == controlplanev1.ServerlessNetworkingConfig_STATE_UNSPECIFIED
+
+	// If an override is specified, validate and use it
+	if override != "" {
+		switch override {
+		case "private":
+			if !privateEnabled {
+				return false, fmt.Errorf("cluster does not have private networking enabled")
+			}
+			return true, nil
+		case "public":
+			if !publicEnabled {
+				return false, fmt.Errorf("cluster does not have public networking enabled")
+			}
+			return false, nil
+		default:
+			return false, fmt.Errorf("invalid networking override: %q", override)
+		}
+	}
+
+	// If both are enabled, prompt the user
+	if privateEnabled && publicEnabled {
+		options := []string{"Public", "Private"}
+		idx, err := out.PickIndex(options, "This cluster supports both public and private networking. Which would you like to use?")
+		if err != nil {
+			return false, err
+		}
+		return idx == 1, nil // 1 = Private
+	}
+
+	// If only private is enabled, use private
+	if privateEnabled {
+		return true, nil
+	}
+
+	// Otherwise use public (default)
+	return false, nil
 }
 
 // nameAndCluster describes a cluster name in the form of
