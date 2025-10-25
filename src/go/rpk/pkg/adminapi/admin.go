@@ -117,7 +117,7 @@ func NewHostClient(fs afero.Fs, p *config.RpkProfile, host string) (*rpadmin.Adm
 		if i < 0 || i >= len(addrs) {
 			return nil, fmt.Errorf("admin host %d is out of allowed range [0, %d)", i, len(addrs))
 		}
-		addrs = []string{addrs[0]}
+		addrs = []string{addrs[i]}
 	} else {
 		addrs = []string{host} // trust input is hostname (validate below)
 	}
