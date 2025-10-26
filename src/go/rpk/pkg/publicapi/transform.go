@@ -112,5 +112,5 @@ type ConnectError struct {
 }
 
 func (e *ConnectError) Error() string {
-	return fmt.Sprintf("unexpected status code %d: %v", e.StatusCode, e.Message)
+	return fmt.Sprintf("unexpected status code %d: %v", e.StatusCode, e.ExternalError)
 }
