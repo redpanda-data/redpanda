@@ -758,15 +758,20 @@ func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, 
 		}
 		o = fromCloudCluster(yAuth, rg, c)
 	} else {
-		rg := findResourceGroupByID(rgs, selected.sc.GetResourceGroupId())
-		if rg == nil {
-			return CloudClusterOutputs{}, fmt.Errorf("unable to find resource group %q", selected.sc.GetResourceGroupId())
-		}
-		usePrivate, err := isPrivateNetwork(selected.sc, serverlessNetworking)
+		// Fetch full cluster details to get NetworkingConfig
+		sc, err := cl.ServerlessClusterForID(ctx, selected.sc.Id)
 		if err != nil {
 			return CloudClusterOutputs{}, err
 		}
-		o = fromVirtualCluster(yAuth, rg, selected.sc, usePrivate)
+		rg := findResourceGroupByID(rgs, sc.GetResourceGroupId())
+		if rg == nil {
+			return CloudClusterOutputs{}, fmt.Errorf("unable to find resource group %q", sc.GetResourceGroupId())
+		}
+		usePrivate, err := isPrivateNetwork(sc, serverlessNetworking)
+		if err != nil {
+			return CloudClusterOutputs{}, err
+		}
+		o = fromVirtualCluster(yAuth, rg, sc, usePrivate)
 	}
 	o.Profile.Description = fmt.Sprintf("%s %q", org.Name, selected.name)
 	return o, nil
