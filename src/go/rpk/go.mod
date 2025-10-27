@@ -47,7 +47,7 @@ require (
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.65.0
 	github.com/redpanda-data/common-go/proto v0.0.0-20250820120127-9b518fca5ecf
-	github.com/redpanda-data/common-go/rpadmin v0.1.17-0.20251020144719-b6a2aa280c0b
+	github.com/redpanda-data/common-go/rpadmin v0.1.17-0.20251027222924-1d7bc6181411
 	github.com/redpanda-data/common-go/rpsr v0.1.2
 	github.com/redpanda-data/protoc-gen-go-mcp v0.0.0-20250812151819-7e5d5fef8241
 	github.com/rs/xid v1.6.0
@@ -86,7 +86,7 @@ require (
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.10-20250912141014-52f32327d4b0.1 // indirect
 	buf.build/gen/go/grpc-ecosystem/grpc-gateway/protocolbuffers/go v1.36.10-20221127060915-a1ecdc58eccd.1 // indirect
-	buf.build/gen/go/redpandadata/core/connectrpc/go v1.19.1-20251021160320-d44d783528c8.2 // indirect
+	buf.build/gen/go/redpandadata/core/connectrpc/go v1.19.1-20251025023032-d04cd59f0958.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/BurntSushi/toml v1.1.0 // indirect
 	github.com/Microsoft/go-winio v0.4.14 // indirect
