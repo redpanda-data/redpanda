@@ -14,6 +14,7 @@
 #include "cloud_topics/level_one/compaction/committer.h"
 #include "cloud_topics/level_one/compaction/meta.h"
 #include "cloud_topics/level_one/compaction/source.h"
+#include "cloud_topics/level_one/compaction/worker_probe.h"
 #include "cloud_topics/level_one/metastore/metastore.h"
 #include "compaction/key_offset_map.h"
 #include "ssx/work_queue.h"
@@ -181,6 +182,8 @@ private:
 
     // Owned by `scheduler`.
     compaction_committer* _committer;
+
+    compaction_worker_probe _probe;
 };
 
 } // namespace cloud_topics::l1
