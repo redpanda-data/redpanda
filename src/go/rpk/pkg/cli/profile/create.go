@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 
+	controlplanev1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1"
 	controlplanev1beta2 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1beta2"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	container "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
@@ -380,7 +381,7 @@ nameLookup:
 	// cluster ID, we do a final namespace lookup and map the cluster's
 	// namespace UUID to the namespace name.
 
-	sc, err := cpCl.ServerlessClusterForID(ctx, clusterID)
+	sc, err := cpCl.ServerlessClusterV1ForID(ctx, clusterID)
 	if err != nil { // if we fail for a vcluster, we try again for a normal cluster
 		cluster, err := cpCl.ClusterForID(ctx, clusterID)
 		if err != nil {
@@ -693,7 +694,7 @@ func PromptCloudClusterProfile(ctx context.Context, yAuth *config.RpkCloudAuth, 
 		o = fromCloudCluster(yAuth, rg, c)
 	} else {
 		// Fetch full cluster details to get NetworkingConfig
-		sc, err := cl.ServerlessClusterForID(ctx, selected.sc.Id)
+		sc, err := cl.ServerlessClusterV1ForID(ctx, selected.sc.Id)
 		if err != nil {
 			return CloudClusterOutputs{}, err
 		}
