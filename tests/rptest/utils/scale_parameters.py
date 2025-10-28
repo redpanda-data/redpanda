@@ -53,11 +53,13 @@ class ScaleParameters:
         mib_per_partition: float = DEFAULT_MIB_PER_PARTITION,
         topic_replicas_per_shard: int = DEFAULT_PARTITIONS_PER_SHARD,
         tiered_storage_enabled: bool = False,
+        cloud_topics_enabled: bool = False,
         partition_memory_reserve_percentage: int = DEFAULT_PARTITIONS_MEMORY_ALLOCATION_PERCENT,
     ):
         self.partition_limit: int
         self.redpanda = redpanda
         self.tiered_storage_enabled = tiered_storage_enabled
+        self.cloud_topics_enabled = cloud_topics_enabled
         self.partition_memory_reserve_percentage = partition_memory_reserve_percentage
 
         self.node_count = node_count = len(self.redpanda.nodes)
@@ -215,6 +217,14 @@ class ScaleParameters:
                 use_bucket_cleanup_policy=True,
                 skip_end_of_test_scrubbing=True,
             )
+        elif cloud_topics_enabled:
+            # Don't change any local storage properties, but set the cloud
+            # properties.
+            self.si_settings = SISettings(
+                redpanda._context,
+                use_bucket_cleanup_policy=True,
+                skip_end_of_test_scrubbing=True,
+            )
         else:
             self.si_settings = None
 
@@ -233,7 +243,7 @@ class ScaleParameters:
             # client side.
             self.expect_single_bandwidth = 200e6
 
-            if tiered_storage_enabled:
+            if tiered_storage_enabled or cloud_topics_enabled:
                 # We read very tiny segments 32KiB over high latency link
                 # (10ms to 100ms) with a concurrency limit of cloud_storage_max_connections=20`.
                 # Using Little's Law we can derive the arrival rate as `20/0.1`
