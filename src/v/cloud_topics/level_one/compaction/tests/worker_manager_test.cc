@@ -9,6 +9,7 @@
  */
 
 #include "cloud_topics/level_one/compaction/meta.h"
+#include "cloud_topics/level_one/compaction/scheduler_probe.h"
 #include "cloud_topics/level_one/compaction/worker.h"
 #include "cloud_topics/level_one/compaction/worker_manager.h"
 #include "model/fundamental.h"
@@ -47,8 +48,9 @@ public:
 };
 
 TEST_F(WorkerManagerTestFixture, PauseAndResumeWorkers) {
+    l1::compaction_scheduler_probe probe;
     l1::log_compaction_queue pq;
-    l1::worker_manager manager(pq, nullptr, nullptr, nullptr);
+    l1::worker_manager manager(pq, nullptr, nullptr, nullptr, probe);
     start_workers(manager).get();
     auto stop_manager = ss::defer([&manager] { manager.stop().get(); });
     using worker_state = l1::compaction_worker::worker_state;
@@ -75,9 +77,11 @@ TEST_F(WorkerManagerTestFixture, AcquireWork) {
                       const l1::log_compaction_meta_ptr& b) {
         return a->ntp < b->ntp;
     };
+
+    l1::compaction_scheduler_probe probe;
     l1::log_compaction_queue pq(std::move(cmp_func));
     l1::log_list_t list;
-    l1::worker_manager manager(pq, nullptr, nullptr, nullptr);
+    l1::worker_manager manager(pq, nullptr, nullptr, nullptr, probe);
     auto stop_manager = ss::defer([&manager] { manager.stop().get(); });
 
     const auto test_ntp = model::ntp(

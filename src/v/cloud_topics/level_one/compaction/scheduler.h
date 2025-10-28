@@ -15,6 +15,7 @@
 #include "cloud_topics/level_one/compaction/log_collector.h"
 #include "cloud_topics/level_one/compaction/log_info_collector.h"
 #include "cloud_topics/level_one/compaction/meta.h"
+#include "cloud_topics/level_one/compaction/scheduler_probe.h"
 #include "cloud_topics/level_one/compaction/scheduling_policies.h"
 #include "cloud_topics/level_one/compaction/worker_manager.h"
 #include "cloud_topics/level_one/metastore/replicated_metastore.h"
@@ -142,6 +143,8 @@ private:
     chunked_hash_map<model::ntp, model::topic_id_partition> _ntp_to_tidp;
 
 private:
+    compaction_scheduler_probe _probe;
+
     friend class ::SchedulerTestFixture;
 
     // Testing c-tor

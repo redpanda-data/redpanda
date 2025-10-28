@@ -64,6 +64,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         "//src/v/cloud_topics/level_one/compaction:meta",
+        "//src/v/cloud_topics/level_one/compaction:scheduler_probe",
         "//src/v/cloud_topics/level_one/compaction:worker",
         "//src/v/model",
         "//src/v/ssx:semaphore",

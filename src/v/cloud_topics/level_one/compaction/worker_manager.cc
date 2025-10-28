@@ -23,11 +23,13 @@ worker_manager::worker_manager(
   log_compaction_queue& work_queue,
   ss::sharded<file_io>* io,
   ss::sharded<replicated_metastore>* metastore,
-  ss::sharded<compaction_committer>* committer)
+  ss::sharded<compaction_committer>* committer,
+  compaction_scheduler_probe& probe)
   : _work_queue(work_queue)
   , _io(io)
   , _metastore(metastore)
-  , _committer(committer) {}
+  , _committer(committer)
+  , _probe(probe) {}
 
 ss::future<> worker_manager::start() {
     co_await _workers.start(
@@ -74,6 +76,7 @@ void worker_manager::complete_work(log_compaction_meta* log) {
       "shard {}",
       worker_manager_shard);
     log->inflight.reset();
+    _probe.log_compacted();
 }
 
 ss::future<>
