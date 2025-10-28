@@ -53,7 +53,8 @@ public:
 
     /// Async-signal safe
     /// Must be called after a fill() that returned a non-null value
-    void write();
+    /// Returns true if writing the crash file succeeded
+    [[nodiscard]] bool write();
 
     /// Only to be used under testing situations.  Must be called _after_
     /// release()

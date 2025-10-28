@@ -252,6 +252,7 @@ FAILURE_INJECTION_LOG_ALLOW_LIST = [
     ),
     re.compile("assert - Backtrace:"),
     re.compile("finject - .* flush called concurrently with other operations"),
+    re.compile("crash reason to crash file.*(vassert)"),
 ]
 
 # Log errors that are acceptable for tests that hit the OIDC endpoint but don't
@@ -4069,7 +4070,7 @@ class RedpandaService(RedpandaServiceBase):
 
             crash_log = None
             for line in node.account.ssh_capture(
-                f"grep -e SEGV -e Segmentation\\ fault -e [Aa]ssert -e Sanitizer -e 'Aborting on shard' {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
+                f"grep -e SEGV -e Segmentation\\ fault -e [Aa]ssert -e Sanitizer -e 'Aborting on shard' -e 'crash reason to crash file' {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
                 timeout_sec=30,
             ):
                 if "SEGV" in line and any(

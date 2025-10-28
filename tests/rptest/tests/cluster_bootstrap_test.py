@@ -18,6 +18,7 @@ from rptest.clients.rpk import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RpkTool
 from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.services.utils import NodeCrash
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
 
@@ -61,8 +62,12 @@ class ClusterBootstrapNew(RedpandaTest):
         try:
             self.redpanda.start(omit_seeds_on_idx_one=True)
             assert False, "Should have been unable to start"
-        except ducktape.errors.TimeoutError:
-            # The cluster should be unable to start.
+        except NodeCrash as e:
+            # The cluster should be unable to start, and node 0 should shut down during startup
+            assert len(e.crashes) == 1, f"Unexpected crashes: {e.crashes}"
+            assert e.crashes[0][0] == self.redpanda.nodes[0], (
+                f"Unexpected crashes: {e.crashes}"
+            )
             pass
 
         for node in self.redpanda.nodes:

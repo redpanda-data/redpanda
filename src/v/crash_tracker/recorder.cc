@@ -198,10 +198,30 @@ void record_backtrace(crash_description& cd) {
     });
 }
 
-void print_skipping() {
-    constexpr static std::string_view skipping
-      = "Skipping recording crash reason to crash file.\n";
-    ss::print_safe(skipping.data(), skipping.size());
+void print_skipping(std::string_view context) {
+    ss::print_safe("Skipping recording crash reason to crash file on shard ");
+    ss::print_decimal_safe(ss::this_shard_id());
+    ss::print_safe(" (");
+    ss::print_safe(context.data(), context.size());
+    ss::print_safe(")\n");
+}
+
+void print_skipping_already_consumed() {
+    print_skipping("the writer has already been consumed by another crash");
+}
+
+void print_write_outcome(bool success, std::string_view context) {
+    if (success) {
+        ss::print_safe("Recorded crash reason to crash file");
+
+    } else {
+        ss::print_safe("Failed to record crash reason to crash file");
+    }
+    ss::print_safe(" on shard ");
+    ss::print_decimal_safe(ss::this_shard_id());
+    ss::print_safe(" (");
+    ss::print_safe(context.data(), context.size());
+    ss::print_safe(")\n");
 }
 
 void record_message(crash_description& cd, std::string_view msg) {
@@ -220,33 +240,37 @@ void record_message(crash_description& cd, std::string_view msg) {
 void recorder::record_crash_sighandler(recorded_signo signo) {
     auto* cd_opt = _writer.fill();
     if (!cd_opt) {
-        // The writer has already been consumed by another crash
-        print_skipping();
+        print_skipping_already_consumed();
         return;
     }
     auto& cd = *cd_opt;
 
     record_backtrace(cd);
 
+    auto print_ctx = std::string_view{"[unknown]"};
     switch (signo) {
     case recorded_signo::sigsegv: {
+        print_ctx = "SIGSEGV";
         cd.type = crash_type::segfault;
         record_message(cd, "Segmentation fault");
         break;
     }
     case recorded_signo::sigabrt: {
+        print_ctx = "SIGABRT";
         cd.type = crash_type::abort;
         record_message(cd, "Aborting");
         break;
     }
     case recorded_signo::sigill: {
+        print_ctx = "SIGILL";
         cd.type = crash_type::illegal_instruction;
         record_message(cd, "Illegal instruction");
         break;
     }
     }
 
-    _writer.write();
+    auto success = _writer.write();
+    print_write_outcome(success, print_ctx);
 }
 
 void recorder::record_crash_exception(std::exception_ptr eptr) {
@@ -260,14 +284,13 @@ void recorder::record_crash_exception(std::exception_ptr eptr) {
     if (!_writer.initialized()) {
         // We are unable to record any exceptions that happen before the writer
         // has been initialized
-        print_skipping();
+        print_skipping("the writer is not yet initialized");
         return;
     }
 
     auto* cd_opt = _writer.fill();
     if (!cd_opt) {
-        // The writer has already been consumed by another crash
-        print_skipping();
+        print_skipping_already_consumed();
         return;
     }
     auto& cd = *cd_opt;
@@ -282,14 +305,14 @@ void recorder::record_crash_exception(std::exception_ptr eptr) {
       "Failure during startup: {}",
       eptr);
 
-    _writer.write();
+    auto success = _writer.write();
+    print_write_outcome(success, "startup exception");
 }
 
 void recorder::record_crash_vassert(std::string_view msg) {
     auto* cd_opt = _writer.fill();
     if (!cd_opt) {
-        // The writer has already been consumed by another crash
-        print_skipping();
+        print_skipping_already_consumed();
         return;
     }
     auto& cd = *cd_opt;
@@ -298,7 +321,8 @@ void recorder::record_crash_vassert(std::string_view msg) {
     cd.type = crash_type::assertion;
     record_message(cd, msg);
 
-    _writer.write();
+    auto success = _writer.write();
+    print_write_outcome(success, "vassert");
 }
 
 std::optional<recorder::oom_recorder> recorder::begin_oom_recording() {
@@ -322,7 +346,8 @@ std::optional<recorder::oom_recorder> recorder::begin_oom_recording() {
 void recorder::finish_oom_recording() {
     vassert(_oom_writer.has_value(), "No OOM recording in progress");
     _oom_writer.reset();
-    _writer.write();
+    auto success = _writer.write();
+    print_write_outcome(success, "OOM");
 }
 
 ss::future<bool> recorder::recorded_crash::is_uploaded() const {
