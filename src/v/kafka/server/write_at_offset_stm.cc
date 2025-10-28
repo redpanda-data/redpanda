@@ -312,6 +312,11 @@ ss::future<iobuf> write_at_offset_stm::take_raft_snapshot(model::offset) {
 
 ss::future<> write_at_offset_stm::apply_raft_snapshot(const iobuf&) {
     auto start_k_offset = _raft->log()->from_log_offset(_raft->start_offset());
+    vlog(
+      _log.info,
+      "Applying raft snapshot, setting last offset to {}, raft start offset {}",
+      start_k_offset,
+      _raft->start_offset());
     _last_offset = kafka::prev_offset(model::offset_cast(start_k_offset));
     co_return;
 }
@@ -324,6 +329,11 @@ ss::future<> write_at_offset_stm::do_apply(const model::record_batch& b) {
 
     _last_offset = model::offset_cast(
       _raft->log()->from_log_offset(b.last_offset()));
+    vlog(
+      _log.trace,
+      "Applied batch with last offset: {}, updated stm last offset to: {}",
+      b.last_offset(),
+      _last_offset);
 
     if (_inflight_last_offset.has_value()) {
         if (
@@ -342,9 +352,14 @@ operator<<(std::ostream& o, const write_at_offset_stm::term_offset& to) {
 }
 ss::future<raft::local_snapshot_applied>
 write_at_offset_stm::apply_local_snapshot(
-  raft::stm_snapshot_header, iobuf&& data) {
+  raft::stm_snapshot_header hdr, iobuf&& data) {
     _last_offset
       = serde::from_iobuf<local_snapshot>(std::move(data)).last_offset;
+    vlog(
+      _log.info,
+      "Applied local snapshot at offset: {}, set last offset to: {}",
+      hdr.offset,
+      _last_offset);
     co_return raft::local_snapshot_applied::yes;
 }
 
