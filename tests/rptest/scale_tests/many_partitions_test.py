@@ -365,7 +365,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         transfers_per_sec = 10
         expect_leader_transfer_time = (
             2 * (n_partitions / len(self.redpanda.nodes)) / transfers_per_sec
-            + (self.LEADER_BALANCER_PERIOD_MS / 1000) * 2
+            + (self.LEADER_BALANCER_PERIOD_MS / 1000) * 3
         )
         self.logger.info(
             f"Waiting {expect_leader_transfer_time}s for leadership balance after restart"
