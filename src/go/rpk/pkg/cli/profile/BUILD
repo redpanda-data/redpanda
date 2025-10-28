@@ -49,8 +49,10 @@ go_test(
     ],
     embed = [":profile"],
     deps = [
+        "//src/go/rpk/pkg/config",
         "@build_buf_gen_go_redpandadata_cloud_protocolbuffers_go//redpanda/api/controlplane/v1:controlplane",
         "@com_github_fatih_color//:color",
+        "@com_github_spf13_afero//:afero",
         "@com_github_stretchr_testify//require",
     ],
 )
