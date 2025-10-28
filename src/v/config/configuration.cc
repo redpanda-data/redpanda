@@ -4530,6 +4530,12 @@ configuration::configuration()
       "negatively impact performance and stability of the cluster.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
+  , cloud_topics_reconciliation_interval(
+      *this,
+      "cloud_topics_reconciliation_interval",
+      "Time interval after which data is moved from L0 to L1.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10s)
   , development_feature_property_testing_only(
       *this,
       "development_feature_property_testing_only",
