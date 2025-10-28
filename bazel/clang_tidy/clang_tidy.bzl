@@ -63,6 +63,9 @@ def _run_tidy(
     outfile = ctx.actions.declare_file(
         "bazel_clang_tidy_" + infile.path + "." + discriminator + ".clang-tidy.yaml",
     )
+    fix_file = ctx.actions.declare_file(
+        "bazel_clang_tidy_" + infile.path + "." + discriminator + ".clang-tidy.fixes.yaml",
+    )
 
     args = ctx.actions.args()
 
@@ -74,12 +77,14 @@ def _run_tidy(
     # add source to check
     args.add(infile.path)
 
+    args.add("--export-fixes=" + fix_file.path)
+
     # start args passed to the compiler
     args.add("--")
 
     ctx.actions.run(
         inputs = inputs,
-        outputs = [outfile],
+        outputs = [outfile, fix_file],
         tools = [py_toolchain.py3_runtime.interpreter],
         executable = wrapper,
         arguments = [args] + flags,
