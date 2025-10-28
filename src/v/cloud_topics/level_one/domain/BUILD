@@ -38,6 +38,7 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics/level_one/metastore:garbage_collector",
+        "//src/v/config",
         "//src/v/model:batch_builder",
         "//src/v/ssx:future_util",
         "//src/v/ssx:sleep_abortable",

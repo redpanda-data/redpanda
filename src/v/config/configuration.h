@@ -815,6 +815,8 @@ public:
     property<size_t> cloud_topics_produce_cardinality_threshold;
     property<bool> cloud_topics_disable_reconciliation_loop;
     property<std::chrono::milliseconds> cloud_topics_reconciliation_interval;
+    property<std::chrono::milliseconds>
+      cloud_topics_level_one_garbage_collection_interval;
 
     development_feature_property<int> development_feature_property_testing_only;
 
