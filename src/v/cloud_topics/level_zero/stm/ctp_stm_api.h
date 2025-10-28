@@ -22,6 +22,7 @@
 #include <ostream>
 
 struct ctp_stm_api_accessor;
+class prefix_logger;
 
 namespace cloud_topics {
 
@@ -105,6 +106,7 @@ private:
 
 private:
     ss::shared_ptr<ctp_stm> _stm;
+    const prefix_logger& _log;
 };
 
 } // namespace cloud_topics

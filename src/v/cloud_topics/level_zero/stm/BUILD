@@ -124,11 +124,11 @@ redpanda_cc_library(
         ":ctp_stm",
         ":ctp_stm_commands",
         ":types",
-        "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics:types",
         "//src/v/raft",
         "//src/v/serde:uuid",
         "//src/v/storage:record_batch_builder",
+        "//src/v/utils:prefix_logger",
     ],
     visibility = ["//visibility:public"],
     deps = [
