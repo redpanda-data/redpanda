@@ -22,6 +22,7 @@ from rptest.services.kgo_verifier_services import (
 from rptest.services.redpanda import (
     SISettings,
     make_redpanda_service,
+    MetricsEndpoint,
     CLOUD_TOPICS_CONFIG_STR,
 )
 from rptest.tests.end_to_end import EndToEndTest
@@ -92,6 +93,7 @@ class EndToEndCloudTopicsBase(EndToEndTest):
                 replicas=topic.replication_factor,
                 config={
                     "redpanda.cloud_topic.enabled": "true",
+                    "cleanup.policy": topic.cleanup_policy,
                 },
             )
 
@@ -261,3 +263,124 @@ class EndToEndCloudTopicsTxTest(EndToEndCloudTopicsBase):
         assert cstatus.validator.invalid_reads == 0
         assert cstatus.validator.out_of_scope_invalid_reads == 0
         self.wait_until_all_reconciled(self.topics, transactions=True)
+
+
+class EndToEndCloudTopicsCompactionTest(EndToEndCloudTopicsBase):
+    """Cloud topics end-to-end test with a compacted topic."""
+
+    topics = (
+        TopicSpec(
+            name=EndToEndCloudTopicsBase.s3_topic_name,
+            partition_count=1,
+            replication_factor=3,
+            cleanup_policy=TopicSpec.CLEANUP_COMPACT,
+        ),
+    )
+    kgo_producer: KgoVerifierProducer
+    kgo_consumer: KgoVerifierSeqConsumer
+
+    def __init__(self, test_context):
+        extra_rp_conf = {"log_compaction_interval_ms": 4000}
+        super(EndToEndCloudTopicsCompactionTest, self).__init__(
+            test_context, extra_rp_conf
+        )
+        self.msg_size = 4096
+        # Use a smaller message count to prevent timeouts
+        self.msg_count = 1000
+        self.key_set_cardinality = 100
+        self.tombstone_probability = 0.5
+
+    def _metric_sum(self, metric_name):
+        assert self.redpanda
+        return self.redpanda.metric_sum(
+            metric_name=metric_name,
+            metrics_endpoint=MetricsEndpoint.METRICS,
+        )
+
+    def get_removed_batches(self):
+        return self._metric_sum(
+            "vectorized_cloud_topics_compaction_worker_batches_removed"
+        )
+
+    def get_log_compactions(self):
+        return self._metric_sum(
+            "vectorized_cloud_topics_compaction_scheduler_log_compactions"
+        )
+
+    def get_managed_logs(self):
+        return self._metric_sum(
+            "vectorized_cloud_topics_compaction_scheduler_managed_log_count"
+        )
+
+    def produce(self):
+        assert self.redpanda
+        assert self.topic
+        self.producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=self.msg_size,
+            msg_count=self.msg_count,
+            key_set_cardinality=self.key_set_cardinality,
+            tombstone_probability=self.tombstone_probability,
+            validate_latest_values=True,
+            tolerate_failed_produce=True,
+        )
+        self.producer.start()
+        self.producer.wait_for_latest_value_map()
+        self.producer.wait()
+        self.producer.stop()
+
+    def consume(self):
+        assert self.redpanda
+        assert self.topic
+        traffic_node = self.producer.nodes[0]
+        self.consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            self.msg_size,
+            loop=False,
+            compacted=True,
+            validate_latest_values=True,
+            nodes=[traffic_node],
+        )
+        self.consumer.start(clean=False)
+        self.consumer.wait()
+        self.consumer.stop()
+
+    @cluster(num_nodes=4)
+    def test_compact(self):
+        def seen_managed_logs():
+            return self.get_managed_logs() > 0
+
+        wait_until(
+            seen_managed_logs,
+            timeout_sec=120,
+            backoff_sec=1,
+            err_msg="Did not see management of compact-enabled CTPs.",
+        )
+
+        self.produce()
+
+        def seen_compaction():
+            return self.get_log_compactions() > 0
+
+        wait_until(
+            seen_compaction,
+            timeout_sec=120,
+            backoff_sec=1,
+            err_msg="Did not see compaction of managed CTPs.",
+        )
+
+        def seen_removed_batches():
+            return self.get_removed_batches() > 0
+
+        wait_until(
+            seen_removed_batches,
+            timeout_sec=120,
+            backoff_sec=1,
+            err_msg="Did not see compaction of managed CTPs.",
+        )
+
+        self.consume()
