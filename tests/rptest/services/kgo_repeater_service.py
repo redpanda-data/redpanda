@@ -137,6 +137,8 @@ class KgoRepeaterService(Service):
             f"-group {self.group_name} -remote -remote-port {self._remote_ports[node]} "
         )
 
+        cmd += " -debug"
+
         if self.sasl_options is not None:
             cmd += f" -username {self.sasl_options.username} -password {self.sasl_options.password}"
 

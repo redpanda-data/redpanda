@@ -142,6 +142,9 @@ class ManyPartitionsTest(PreallocNodesTest):
                     "storage-gc": "warn",
                     "raft": "warn",
                     "offset_translator": "warn",
+                    "reconciler": "debug",
+                    "cloud_topics": "trace",
+                    "kafka": "trace",
                 },
             ),
             **kwargs,
@@ -579,6 +582,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                 msg_size,
                 msg_count_per_topic,
                 custom_node=[self.preallocated_nodes[0]],
+                debug_logs=True,
             )
             producer.start()
             producer.wait(timeout_sec=expect_transmit_time)
@@ -602,6 +606,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             stress_msg_size,
             stress_msg_count,
             custom_node=[self.preallocated_nodes[0]],
+            debug_logs=True,
         )
         fast_producer.start()
 
