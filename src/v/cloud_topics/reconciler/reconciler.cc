@@ -199,6 +199,7 @@ ss::future<> reconciler::reconciliation_loop() {
           reconciliation_interval() - round_duration,
           ss::lowres_clock::duration(0));
     }
+    vlog(lg.debug, "Reconciliation loop exiting");
 }
 
 ss::future<> reconciler::reconcile() {
