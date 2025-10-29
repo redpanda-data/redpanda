@@ -698,6 +698,15 @@ set_start_offset_update::apply(state& state) {
     return std::monostate{};
 }
 
+bool set_start_offset_update::is_no_op(const state& state) const {
+    auto prt_ref = state.partition_state(tp);
+    if (!prt_ref.has_value()) {
+        return false;
+    }
+    const auto& prt = prt_ref->get();
+    return prt.start_offset == new_start_offset;
+}
+
 std::expected<remove_objects_update, stm_update_error>
 remove_objects_update::build(
   const state& state, chunked_vector<object_id> objects) {

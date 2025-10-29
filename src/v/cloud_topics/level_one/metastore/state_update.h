@@ -181,6 +181,7 @@ struct set_start_offset_update
 
     std::expected<std::monostate, stm_update_error> can_apply(const state&);
     std::expected<std::monostate, stm_update_error> apply(state&);
+    bool is_no_op(const state&) const;
 
     model::topic_id_partition tp;
     kafka::offset new_start_offset;

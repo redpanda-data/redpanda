@@ -438,6 +438,14 @@ domain_manager::set_start_offset(rpc::set_start_offset_request req) {
           .ec = rpc::errc::concurrent_requests,
         };
     }
+    if (update_res.value().is_no_op(stm_->state())) {
+        vlog(
+          cd_log.debug,
+          "Request to set {} start offset to {} is no-op",
+          req.tp,
+          req.start_offset);
+        co_return rpc::set_start_offset_reply{.ec = rpc::errc::ok};
+    }
     storage::record_batch_builder builder(
       model::record_batch_type::l1_stm, model::offset{0});
     builder.add_raw_kv(
