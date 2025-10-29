@@ -60,23 +60,63 @@ private:
     ss::future<> do_start_replicator(::model::ntp, ::model::term_id);
     ss::future<>
       do_stop_replicator(::model::ntp, std::optional<::model::term_id>);
-    bool has_pending_actions();
+    bool can_reconcile_now();
     ss::future<> reconcile();
+    ss::future<> reconcile_ntp_once(::model::ntp ntp, ssx::semaphore_units);
 
-    void run_start_actions();
-    void run_stop_actions();
+    // Allowed operations on a replicator
+    enum class op_type : uint8_t { start, stop };
+    friend std::ostream& operator<<(std::ostream& os, op_type);
+    struct ntp_target_state {
+        op_type op;
+        std::optional<::model::term_id> term;
+        fmt::iterator format_to(fmt::iterator) const;
+        // merges new_desired into this. Returns true if successful, false if
+        // new_desired is stale and rejected.
+        bool merge(const ::model::ntp&, ntp_target_state new_desired);
+        bool operator==(const ntp_target_state& other) const = default;
+    };
 
-private:
+    struct ntp_reconciliation_state {
+        //  Only set when a reconciliation is in progress and is set
+        // to the state being reconciled to.
+        std::optional<ntp_target_state> in_progress;
+        // Desired state to reconcile to. This is updated when new requests
+        // appear. If there is a desired state already, we attempt to merge the
+        // new desired state into the existing one if possible.
+        std::optional<ntp_target_state> desired;
+
+        // Sets the desired state. Returns true if successful, false if the
+        // new desired state is stale and rejected.
+        bool
+        set_desired(const ::model::ntp& ntp, ntp_target_state new_desired) {
+            if (desired) {
+                return desired->merge(ntp, new_desired);
+            }
+            desired = new_desired;
+            return true;
+        }
+
+        // Returns true if reconciliation is needed.
+        bool needs_reconciliation() const { return desired && !in_progress; }
+        bool reconciliation_complete() const {
+            return !desired && !in_progress;
+        }
+    };
+
+    // List of pending reconciliations. Each ntp maintains a desired target
+    // state to reconcile to, and an in-progress state if a reconciliation is
+    // ongoing. Multiple desired state updates can be merged while a
+    // reconciliation is in progress.
+    chunked_hash_map<::model::ntp, ntp_reconciliation_state> _pending;
+    ss::condition_variable _pending_cv;
+    ssx::semaphore _max_reconciliations{32, "link-replicator-mgr"};
+
     ss::scheduling_group _sg;
     std::unique_ptr<link_configuration_provider> _config_provider;
     std::unique_ptr<data_source_factory> _source_factory;
     std::unique_ptr<data_sink_factory> _sink_factory;
     ss::future<> maybe_sync_start_offsets();
-    ssx::work_queue _queue;
-    chunked_hash_map<::model::ntp, ::model::term_id> _pending_starts;
-    chunked_hash_map<::model::ntp, std::optional<::model::term_id>>
-      _pending_stops;
-    ss::condition_variable _pending_changes_cv;
     chunked_hash_map<::model::ntp, std::unique_ptr<partition_replicator>>
       _replicators;
     std::optional<replication_probe::configuration> _cfg_probe;
