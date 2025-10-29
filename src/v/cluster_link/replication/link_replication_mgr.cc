@@ -314,6 +314,33 @@ void link_replication_manager::run_stop_actions() {
     for (auto& [ntp, term] : _pending_stops) {
         vlog(cllog.trace, "Stopping {} term {}", ntp, term);
         _queue.submit([this, ntp = std::move(ntp), term]() mutable {
+            auto it = _replicators.find(ntp);
+            if (it != _replicators.end()) {
+                auto replicator_term = it->second->term();
+                if (!term || term == replicator_term) {
+                    vlog(
+                      cllog.trace,
+                      "Initiating stop for {} at term {}",
+                      ntp,
+                      term);
+                    it->second->initiate_shutdown();
+                } else {
+                    vlog(
+                      cllog.trace,
+                      "Not initiating stop for {} at term {} as replicator is "
+                      "at term {}, enqueuing stop request",
+                      ntp,
+                      term,
+                      replicator_term);
+                }
+            } else {
+                vlog(
+                  cllog.trace,
+                  "No replicator found for {} at term {}, enqueing stop "
+                  "request",
+                  ntp,
+                  term);
+            }
             return do_stop_replicator(ntp, term).handle_exception(
               [ntp = std::move(ntp),
                term](const std::exception_ptr& e) mutable {
