@@ -13,14 +13,14 @@
 #include "cloud_topics/level_one/metastore/metastore.h"
 
 namespace cloud_topics::l1 {
-class frontend;
+class leader_router;
 
 // Implementation of the `metastore` interface that routes metadata requests
 // with the provided frontend (e.g. sending to the leader of a given metastore
 // topic partition).
 class replicated_metastore : public metastore {
 public:
-    explicit replicated_metastore(frontend& fe);
+    explicit replicated_metastore(leader_router& fe);
 
     ss::future<std::expected<std::unique_ptr<object_metadata_builder>, errc>>
     object_builder() override;
@@ -69,7 +69,7 @@ public:
     get_compaction_info(const compaction_info_spec&) override;
 
 private:
-    frontend& fe_;
+    leader_router& fe_;
 };
 
 } // namespace cloud_topics::l1

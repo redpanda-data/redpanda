@@ -122,7 +122,7 @@ public:
 
 TEST_F(ReplicatedMetastoreTest, TestMissingMetastore) {
     auto& app = get_ct_app(model::node_id{0});
-    replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
+    replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
     auto obj_builder = meta.object_builder().get().value();
     auto& tp_fe = get_node_application(model::node_id{0})
                     ->controller->get_topics_frontend()
@@ -158,7 +158,7 @@ TEST_F(ReplicatedMetastoreTest, TestMissingMetastore) {
 
 TEST_F(ReplicatedMetastoreTest, TestAddNotFinished) {
     auto& app = get_ct_app(model::node_id{0});
-    replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
+    replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
     auto tp = make_tp(0);
     auto obj_builder = meta.object_builder().get().value();
     auto oid = obj_builder->get_or_create_object_for(tp).value();
@@ -180,7 +180,7 @@ TEST_F(ReplicatedMetastoreTest, TestAddNotFinished) {
 
 TEST_F(ReplicatedMetastoreTest, TestBuilderRemovedObjects) {
     auto& app = get_ct_app(model::node_id{0});
-    replicated_metastore m(app.get_sharded_l1_metastore_fe()->local());
+    replicated_metastore m(app.get_sharded_l1_metastore_router()->local());
     auto tp = make_tp(0);
     auto ob = m.object_builder().get().value();
 
@@ -219,7 +219,7 @@ TEST_F(ReplicatedMetastoreTest, TestBuilderRemovedObjects) {
 // metadata behind, which would result in a failure.
 TEST_F(ReplicatedMetastoreTest, TestBuilderRemoveObjectRemovesPartition) {
     auto& app = get_ct_app(model::node_id{0});
-    replicated_metastore m(app.get_sharded_l1_metastore_fe()->local());
+    replicated_metastore m(app.get_sharded_l1_metastore_router()->local());
     auto tp1 = make_tp(0);
     auto tp2 = make_tp(1);
     auto ob = m.object_builder().get().value();
@@ -256,7 +256,7 @@ TEST_F(ReplicatedMetastoreTest, TestBuilderRemoveObjectRemovesPartition) {
 
 TEST_F(ReplicatedMetastoreTest, TestBasicAdd) {
     auto& app = get_ct_app(model::node_id{0});
-    replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
+    replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
     constexpr auto partitions_count = 100;
     ASSERT_NO_FATAL_FAILURE(
@@ -331,7 +331,7 @@ TEST_F(ReplicatedMetastoreTest, TestBasicAdd) {
 
 TEST_F(ReplicatedMetastoreTest, TestBasicCompact) {
     auto& app = get_ct_app(model::node_id{0});
-    replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
+    replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
     constexpr auto partitions_count = 100;
     ASSERT_NO_FATAL_FAILURE(
@@ -422,7 +422,7 @@ TEST_F(ReplicatedMetastoreTest, TestBasicCompact) {
 
 TEST_F(ReplicatedMetastoreTest, TestMissingNTP) {
     auto& app = get_ct_app(model::node_id{0});
-    replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
+    replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
     auto offsets = meta.get_offsets(make_tp(0)).get();
     ASSERT_FALSE(offsets.has_value());
     ASSERT_EQ(offsets.error(), metastore::errc::missing_ntp);
@@ -430,11 +430,11 @@ TEST_F(ReplicatedMetastoreTest, TestMissingNTP) {
 
 TEST_F(ReplicatedMetastoreTest, TestNotLeader) {
     auto& app = get_ct_app(model::node_id{0});
-    replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
+    replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
     auto tp = make_tp(0);
 
     auto meta_pid
-      = app.get_sharded_l1_metastore_fe()->local().metastore_partition(tp);
+      = app.get_sharded_l1_metastore_router()->local().metastore_partition(tp);
     auto meta_ntp = model::ntp{
       model::kafka_internal_namespace,
       model::l1_metastore_topic,
@@ -530,7 +530,7 @@ TEST_F(ReplicatedMetastoreTest, TestNotLeader) {
 
 TEST_F(ReplicatedMetastoreTest, TestInvalidTermRequest) {
     auto& app = get_ct_app(model::node_id{0});
-    replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
+    replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
     std::unique_ptr<metastore::object_metadata_builder> objs;
     ASSERT_NO_FATAL_FAILURE(create_initial_objects(meta, 100, o{99}, &objs));
@@ -553,7 +553,7 @@ TEST_F(ReplicatedMetastoreTest, TestInvalidTermRequest) {
 
 TEST_F(ReplicatedMetastoreTest, TestGetTermForOffset) {
     auto& app = get_ct_app(model::node_id{0});
-    replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
+    replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
     auto tp = make_tp(0);
 
@@ -611,7 +611,7 @@ TEST_F(ReplicatedMetastoreTest, TestGetTermForOffset) {
 
 TEST_F(ReplicatedMetastoreTest, TestGetEndOffsetForTerm) {
     auto& app = get_ct_app(model::node_id{0});
-    replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
+    replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
     auto tp = make_tp(0);
 
@@ -669,7 +669,7 @@ TEST_F(ReplicatedMetastoreTest, TestGetEndOffsetForTerm) {
 
 TEST_F(ReplicatedMetastoreTest, TestSetStartOffset) {
     auto& app = get_ct_app(model::node_id{0});
-    replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
+    replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
     // Create initial objects for testing
     ASSERT_NO_FATAL_FAILURE(add_initial_objects(meta, 3, 99).get());
@@ -717,7 +717,7 @@ TEST_F(ReplicatedMetastoreTest, TestSetStartOffset) {
 
 TEST_F(ReplicatedMetastoreTest, TestBasicRemoveTopics) {
     auto& app = get_ct_app(model::node_id{0});
-    replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
+    replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
     static constexpr auto topics_count = 10000;
     add_objects_for_topics(meta, topics_count, 99).get();
@@ -760,7 +760,7 @@ TEST_F(ReplicatedMetastoreTest, TestBasicRemoveTopics) {
 
 TEST_F(ReplicatedMetastoreTest, TestRemoveTopicsWithShuffleLoop) {
     auto& app = get_ct_app(model::node_id{0});
-    replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
+    replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
     static constexpr auto topics_count = 1000;
     add_objects_for_topics(meta, topics_count, 99).get();

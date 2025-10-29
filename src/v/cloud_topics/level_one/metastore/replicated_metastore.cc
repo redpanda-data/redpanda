@@ -82,7 +82,7 @@ meta_to_rpc_compact_update(const metastore::compaction_update& update) {
 // objects up by the appropriate metastore topic partition.
 class replicated_object_builder : public metastore::object_metadata_builder {
 public:
-    replicated_object_builder(frontend& fe)
+    replicated_object_builder(leader_router& fe)
       : object_metadata_builder()
       , fe_(fe) {}
     ~replicated_object_builder() override {}
@@ -110,7 +110,7 @@ private:
           pending_objects_;
         chunked_vector<metastore::object_metadata> finished_objects_;
     };
-    frontend& fe_;
+    leader_router& fe_;
     chunked_hash_map<model::partition_id, partitioned_objects> partitions_;
 };
 
@@ -205,7 +205,7 @@ replicated_object_builder::finish(
 
 } // anonymous namespace
 
-replicated_metastore::replicated_metastore(frontend& fe)
+replicated_metastore::replicated_metastore(leader_router& fe)
   : fe_(fe) {}
 
 ss::future<std::expected<

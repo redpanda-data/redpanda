@@ -69,7 +69,7 @@ public:
     // Call stop on each sharded service and call their destructors.
     ss::future<> stop();
 
-    ss::sharded<l1::frontend>* get_sharded_l1_metastore_fe();
+    ss::sharded<l1::leader_router>* get_sharded_l1_metastore_router();
     ss::sharded<state_accessors>* get_state();
     ss::sharded<l1::domain_supervisor>* get_sharded_l1_domain_supervisor();
     ss::sharded<reconciler::reconciler>* get_reconciler();
@@ -87,7 +87,7 @@ private:
     ss::sharded<l1::replicated_metastore> replicated_metastore;
     ss::sharded<reconciler::reconciler> reconciler;
     ss::sharded<l1::domain_supervisor> domain_supervisor;
-    ss::sharded<l1::frontend> l1_metastore_fe;
+    ss::sharded<l1::leader_router> l1_metastore_router;
     ss::sharded<l1::topic_purger_manager> topic_purge_manager;
     ss::sharded<cloud_topics_manager> manager;
     ss::sharded<level_zero_gc> l0_gc;

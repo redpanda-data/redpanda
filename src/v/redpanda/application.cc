@@ -3441,7 +3441,7 @@ void application::start_runtime_services(
                 std::make_unique<cloud_topics::l1::rpc::service>(
                   sched_groups.datalake_sg(),
                   smp_service_groups.datalake_sg(),
-                  cloud_topics_app->get_sharded_l1_metastore_fe()));
+                  cloud_topics_app->get_sharded_l1_metastore_router()));
           }
           runtime_services.push_back(
             std::make_unique<admin::proxy::service_impl>(

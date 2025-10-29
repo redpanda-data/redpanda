@@ -152,11 +152,12 @@ ss::future<rpc::remove_topics_reply> do_remove_topics(
 } // namespace
 
 template<auto Func, typename req_t>
-requires requires(frontend::proto_t f, req_t req, ::rpc::client_opts opts) {
+requires requires(
+  leader_router::proto_t f, req_t req, ::rpc::client_opts opts) {
     (f.*Func)(std::move(req), std::move(opts));
 }
 ss::future<typename req_t::resp_t>
-frontend::remote_dispatch(req_t request, model::node_id leader_id) {
+leader_router::remote_dispatch(req_t request, model::node_id leader_id) {
     using resp_t = req_t::resp_t;
     auto res = co_await _connection_cache->local()
                  .with_node_client<proto_t>(
@@ -185,13 +186,13 @@ frontend::remote_dispatch(req_t request, model::node_id leader_id) {
 
 template<auto LocalFunc, auto RemoteFunc, typename req_t>
 requires requires(
-  cloud_topics::l1::frontend f, const model::ntp& ntp, req_t req) {
+  cloud_topics::l1::leader_router f, const model::ntp& ntp, req_t req) {
     (f.*LocalFunc)(std::move(req), ntp, ss::shard_id{0});
     request_has_metastore_partition<req_t>
       || request_has_topic_id_partition<req_t>;
 }
 ss::future<typename req_t::resp_t>
-frontend::process(req_t req, bool local_only) {
+leader_router::process(req_t req, bool local_only) {
     using resp_t = req_t::resp_t;
     auto exists = co_await ensure_topic_exists();
     if (!exists) {
@@ -227,74 +228,77 @@ frontend::process(req_t req, bool local_only) {
 }
 
 template ss::future<rpc::add_objects_reply>
-  frontend::remote_dispatch<&frontend::client::add_objects>(
+  leader_router::remote_dispatch<&leader_router::client::add_objects>(
     rpc::add_objects_request, model::node_id);
-template ss::future<rpc::add_objects_reply> frontend::process<
-  &frontend::add_objects_locally,
-  &frontend::client::add_objects>(rpc::add_objects_request, bool);
+template ss::future<rpc::add_objects_reply> leader_router::process<
+  &leader_router::add_objects_locally,
+  &leader_router::client::add_objects>(rpc::add_objects_request, bool);
 
 template ss::future<rpc::replace_objects_reply>
-  frontend::remote_dispatch<&frontend::client::replace_objects>(
+  leader_router::remote_dispatch<&leader_router::client::replace_objects>(
     rpc::replace_objects_request, model::node_id);
-template ss::future<rpc::replace_objects_reply> frontend::process<
-  &frontend::replace_objects_locally,
-  &frontend::client::replace_objects>(rpc::replace_objects_request, bool);
+template ss::future<rpc::replace_objects_reply> leader_router::process<
+  &leader_router::replace_objects_locally,
+  &leader_router::client::replace_objects>(rpc::replace_objects_request, bool);
 
 template ss::future<rpc::get_first_offset_ge_reply>
-  frontend::remote_dispatch<&frontend::client::get_first_offset_ge>(
+  leader_router::remote_dispatch<&leader_router::client::get_first_offset_ge>(
     rpc::get_first_offset_ge_request, model::node_id);
-template ss::future<rpc::get_first_offset_ge_reply> frontend::process<
-  &frontend::get_first_offset_ge_locally,
-  &frontend::client::get_first_offset_ge>(
+template ss::future<rpc::get_first_offset_ge_reply> leader_router::process<
+  &leader_router::get_first_offset_ge_locally,
+  &leader_router::client::get_first_offset_ge>(
   rpc::get_first_offset_ge_request, bool);
 
 template ss::future<rpc::get_first_timestamp_ge_reply>
-  frontend::remote_dispatch<&frontend::client::get_first_timestamp_ge>(
+  leader_router::remote_dispatch<
+    &leader_router::client::get_first_timestamp_ge>(
     rpc::get_first_timestamp_ge_request, model::node_id);
-template ss::future<rpc::get_first_timestamp_ge_reply> frontend::process<
-  &frontend::get_first_timestamp_ge_locally,
-  &frontend::client::get_first_timestamp_ge>(
+template ss::future<rpc::get_first_timestamp_ge_reply> leader_router::process<
+  &leader_router::get_first_timestamp_ge_locally,
+  &leader_router::client::get_first_timestamp_ge>(
   rpc::get_first_timestamp_ge_request, bool);
 
 template ss::future<rpc::get_offsets_reply>
-  frontend::remote_dispatch<&frontend::client::get_offsets>(
+  leader_router::remote_dispatch<&leader_router::client::get_offsets>(
     rpc::get_offsets_request, model::node_id);
-template ss::future<rpc::get_offsets_reply> frontend::process<
-  &frontend::get_offsets_locally,
-  &frontend::client::get_offsets>(rpc::get_offsets_request, bool);
+template ss::future<rpc::get_offsets_reply> leader_router::process<
+  &leader_router::get_offsets_locally,
+  &leader_router::client::get_offsets>(rpc::get_offsets_request, bool);
 
 template ss::future<rpc::get_compaction_info_reply>
-  frontend::remote_dispatch<&frontend::client::get_compaction_info>(
+  leader_router::remote_dispatch<&leader_router::client::get_compaction_info>(
     rpc::get_compaction_info_request, model::node_id);
-template ss::future<rpc::get_compaction_info_reply> frontend::process<
-  &frontend::get_compaction_info_locally,
-  &frontend::client::get_compaction_info>(
+template ss::future<rpc::get_compaction_info_reply> leader_router::process<
+  &leader_router::get_compaction_info_locally,
+  &leader_router::client::get_compaction_info>(
   rpc::get_compaction_info_request, bool);
 
 template ss::future<rpc::get_term_for_offset_reply>
-  frontend::remote_dispatch<&frontend::client::get_term_for_offset>(
+  leader_router::remote_dispatch<&leader_router::client::get_term_for_offset>(
     rpc::get_term_for_offset_request, model::node_id);
-template ss::future<rpc::get_term_for_offset_reply> frontend::process<
-  &frontend::get_term_for_offset_locally,
-  &frontend::client::get_term_for_offset>(
+template ss::future<rpc::get_term_for_offset_reply> leader_router::process<
+  &leader_router::get_term_for_offset_locally,
+  &leader_router::client::get_term_for_offset>(
   rpc::get_term_for_offset_request, bool);
 
 template ss::future<rpc::get_end_offset_for_term_reply>
-  frontend::remote_dispatch<&frontend::client::get_end_offset_for_term>(
+  leader_router::remote_dispatch<
+    &leader_router::client::get_end_offset_for_term>(
     rpc::get_end_offset_for_term_request, model::node_id);
-template ss::future<rpc::get_end_offset_for_term_reply> frontend::process<
-  &frontend::get_end_offset_for_term_locally,
-  &frontend::client::get_end_offset_for_term>(
+template ss::future<rpc::get_end_offset_for_term_reply> leader_router::process<
+  &leader_router::get_end_offset_for_term_locally,
+  &leader_router::client::get_end_offset_for_term>(
   rpc::get_end_offset_for_term_request, bool);
 
 template ss::future<rpc::set_start_offset_reply>
-  frontend::remote_dispatch<&frontend::client::set_start_offset>(
+  leader_router::remote_dispatch<&leader_router::client::set_start_offset>(
     rpc::set_start_offset_request, model::node_id);
-template ss::future<rpc::set_start_offset_reply> frontend::process<
-  &frontend::set_start_offset_locally,
-  &frontend::client::set_start_offset>(rpc::set_start_offset_request, bool);
+template ss::future<rpc::set_start_offset_reply> leader_router::process<
+  &leader_router::set_start_offset_locally,
+  &leader_router::client::set_start_offset>(
+  rpc::set_start_offset_request, bool);
 
-frontend::frontend(
+leader_router::leader_router(
   model::node_id self,
   ss::sharded<cluster::metadata_cache>* metadata,
   ss::sharded<cluster::partition_leaders_table>* leaders,
@@ -308,14 +312,14 @@ frontend::frontend(
   , _connection_cache(connections)
   , _domain_supervisor(&domain_supervisor->local()) {}
 
-ss::future<> frontend::stop() { return _gate.close(); }
+ss::future<> leader_router::stop() { return _gate.close(); }
 
-ss::future<bool> frontend::ensure_topic_exists() {
+ss::future<bool> leader_router::ensure_topic_exists() {
     return _domain_supervisor->maybe_create_metastore_topic();
 }
 
 std::optional<model::partition_id>
-frontend::metastore_partition(const model::topic_id_partition& tp) const {
+leader_router::metastore_partition(const model::topic_id_partition& tp) const {
     const auto md = _metadata->local().get_topic_metadata_ref(
       model::l1_metastore_nt);
     if (!md) {
@@ -329,7 +333,7 @@ frontend::metastore_partition(const model::topic_id_partition& tp) const {
     return model::partition_id{static_cast<int32_t>(partition)};
 }
 
-std::optional<int> frontend::num_metastore_partitions() const {
+std::optional<int> leader_router::num_metastore_partitions() const {
     const auto md = _metadata->local().get_topic_metadata_ref(
       model::l1_metastore_nt);
     if (!md) {
@@ -338,223 +342,235 @@ std::optional<int> frontend::num_metastore_partitions() const {
     return md->get().get_configuration().partition_count;
 }
 
-ss::future<rpc::add_objects_reply> frontend::add_objects_locally(
+ss::future<rpc::add_objects_reply> leader_router::add_objects_locally(
   rpc::add_objects_request request,
   const model::ntp& metastore_ntp,
   ss::shard_id shard) {
     co_return co_await container().invoke_on(
-      shard, [metastore_ntp, req = std::move(request)](frontend& fe) mutable {
+      shard,
+      [metastore_ntp, req = std::move(request)](leader_router& fe) mutable {
           return do_add_objects(
             *(fe._domain_supervisor), metastore_ntp, std::move(req));
       });
 }
 
-ss::future<rpc::add_objects_reply> frontend::add_objects(
+ss::future<rpc::add_objects_reply> leader_router::add_objects(
   rpc::add_objects_request request, local_only local_only_exec) {
     auto holder = _gate.hold();
     co_return co_await process<
-      &frontend::add_objects_locally,
+      &leader_router::add_objects_locally,
       &client::add_objects>(std::move(request), bool(local_only_exec));
 }
 
-ss::future<rpc::replace_objects_reply> frontend::replace_objects_locally(
+ss::future<rpc::replace_objects_reply> leader_router::replace_objects_locally(
   rpc::replace_objects_request request,
   const model::ntp& metastore_ntp,
   ss::shard_id shard) {
     co_return co_await container().invoke_on(
-      shard, [metastore_ntp, req = std::move(request)](frontend& fe) mutable {
+      shard,
+      [metastore_ntp, req = std::move(request)](leader_router& fe) mutable {
           return do_replace_objects(
             *(fe._domain_supervisor), metastore_ntp, std::move(req));
       });
 }
 
-ss::future<rpc::replace_objects_reply> frontend::replace_objects(
+ss::future<rpc::replace_objects_reply> leader_router::replace_objects(
   rpc::replace_objects_request request, local_only local_only_exec) {
     auto holder = _gate.hold();
     co_return co_await process<
-      &frontend::replace_objects_locally,
+      &leader_router::replace_objects_locally,
       &client::replace_objects>(std::move(request), bool(local_only_exec));
 }
 
 ss::future<rpc::get_first_offset_ge_reply>
-frontend::get_first_offset_ge_locally(
+leader_router::get_first_offset_ge_locally(
   rpc::get_first_offset_ge_request request,
   const model::ntp& metastore_ntp,
   ss::shard_id shard) {
     co_return co_await container().invoke_on(
-      shard, [metastore_ntp, req = std::move(request)](frontend& fe) mutable {
+      shard,
+      [metastore_ntp, req = std::move(request)](leader_router& fe) mutable {
           return do_get_first_offset_ge(
             *(fe._domain_supervisor), metastore_ntp, std::move(req));
       });
 }
 
-ss::future<rpc::get_first_offset_ge_reply> frontend::get_first_offset_ge(
+ss::future<rpc::get_first_offset_ge_reply> leader_router::get_first_offset_ge(
   rpc::get_first_offset_ge_request request, local_only local_only_exec) {
     auto holder = _gate.hold();
     co_return co_await process<
-      &frontend::get_first_offset_ge_locally,
+      &leader_router::get_first_offset_ge_locally,
       &client::get_first_offset_ge>(std::move(request), bool(local_only_exec));
 }
 
 ss::future<rpc::get_first_timestamp_ge_reply>
-frontend::get_first_timestamp_ge_locally(
+leader_router::get_first_timestamp_ge_locally(
   rpc::get_first_timestamp_ge_request request,
   const model::ntp& metastore_ntp,
   ss::shard_id shard) {
     co_return co_await container().invoke_on(
-      shard, [metastore_ntp, req = std::move(request)](frontend& fe) mutable {
+      shard,
+      [metastore_ntp, req = std::move(request)](leader_router& fe) mutable {
           return do_get_first_timestamp_ge(
             *(fe._domain_supervisor), metastore_ntp, std::move(req));
       });
 }
 
 ss::future<rpc::get_first_offset_for_bytes_reply>
-frontend::get_first_offset_for_bytes_locally(
+leader_router::get_first_offset_for_bytes_locally(
   rpc::get_first_offset_for_bytes_request request,
   const model::ntp& metastore_ntp,
   ss::shard_id shard) {
     co_return co_await container().invoke_on(
-      shard, [metastore_ntp, req = std::move(request)](frontend& fe) mutable {
+      shard,
+      [metastore_ntp, req = std::move(request)](leader_router& fe) mutable {
           return do_get_first_offset_for_bytes(
             *(fe._domain_supervisor), metastore_ntp, std::move(req));
       });
 }
 
-ss::future<rpc::get_first_timestamp_ge_reply> frontend::get_first_timestamp_ge(
+ss::future<rpc::get_first_timestamp_ge_reply>
+leader_router::get_first_timestamp_ge(
   rpc::get_first_timestamp_ge_request request, local_only local_only_exec) {
     auto holder = _gate.hold();
     co_return co_await process<
-      &frontend::get_first_timestamp_ge_locally,
+      &leader_router::get_first_timestamp_ge_locally,
       &client::get_first_timestamp_ge>(
       std::move(request), bool(local_only_exec));
 }
 
 ss::future<rpc::get_first_offset_for_bytes_reply>
-frontend::get_first_offset_for_bytes(
+leader_router::get_first_offset_for_bytes(
   rpc::get_first_offset_for_bytes_request request, local_only local_only_exec) {
     auto holder = _gate.hold();
     co_return co_await process<
-      &frontend::get_first_offset_for_bytes_locally,
+      &leader_router::get_first_offset_for_bytes_locally,
       &client::get_first_offset_for_bytes>(
       std::move(request), bool(local_only_exec));
 }
 
-ss::future<rpc::get_offsets_reply> frontend::get_offsets_locally(
+ss::future<rpc::get_offsets_reply> leader_router::get_offsets_locally(
   rpc::get_offsets_request request,
   const model::ntp& metastore_ntp,
   ss::shard_id shard) {
     co_return co_await container().invoke_on(
-      shard, [metastore_ntp, req = std::move(request)](frontend& fe) mutable {
+      shard,
+      [metastore_ntp, req = std::move(request)](leader_router& fe) mutable {
           return do_get_offsets(
             *(fe._domain_supervisor), metastore_ntp, std::move(req));
       });
 }
 
-ss::future<rpc::get_offsets_reply> frontend::get_offsets(
+ss::future<rpc::get_offsets_reply> leader_router::get_offsets(
   rpc::get_offsets_request request, local_only local_only_exec) {
     auto holder = _gate.hold();
     co_return co_await process<
-      &frontend::get_offsets_locally,
+      &leader_router::get_offsets_locally,
       &client::get_offsets>(std::move(request), bool(local_only_exec));
 }
 
 ss::future<rpc::get_compaction_info_reply>
-frontend::get_compaction_info_locally(
+leader_router::get_compaction_info_locally(
   rpc::get_compaction_info_request request,
   const model::ntp& metastore_ntp,
   ss::shard_id shard) {
     co_return co_await container().invoke_on(
-      shard, [metastore_ntp, req = std::move(request)](frontend& fe) mutable {
+      shard,
+      [metastore_ntp, req = std::move(request)](leader_router& fe) mutable {
           return do_get_compaction_info(
             *(fe._domain_supervisor), metastore_ntp, std::move(req));
       });
 }
 
-ss::future<rpc::get_compaction_info_reply> frontend::get_compaction_info(
+ss::future<rpc::get_compaction_info_reply> leader_router::get_compaction_info(
   rpc::get_compaction_info_request request, local_only local_only_exec) {
     auto holder = _gate.hold();
     co_return co_await process<
-      &frontend::get_compaction_info_locally,
+      &leader_router::get_compaction_info_locally,
       &client::get_compaction_info>(std::move(request), bool(local_only_exec));
 }
 
 ss::future<rpc::get_term_for_offset_reply>
-frontend::get_term_for_offset_locally(
+leader_router::get_term_for_offset_locally(
   rpc::get_term_for_offset_request request,
   const model::ntp& metastore_ntp,
   ss::shard_id shard) {
     co_return co_await container().invoke_on(
-      shard, [metastore_ntp, req = std::move(request)](frontend& fe) mutable {
+      shard,
+      [metastore_ntp, req = std::move(request)](leader_router& fe) mutable {
           return do_get_term_for_offset(
             *(fe._domain_supervisor), metastore_ntp, std::move(req));
       });
 }
 
-ss::future<rpc::get_term_for_offset_reply> frontend::get_term_for_offset(
+ss::future<rpc::get_term_for_offset_reply> leader_router::get_term_for_offset(
   rpc::get_term_for_offset_request request, local_only local_only_exec) {
     auto holder = _gate.hold();
     co_return co_await process<
-      &frontend::get_term_for_offset_locally,
+      &leader_router::get_term_for_offset_locally,
       &client::get_term_for_offset>(std::move(request), bool(local_only_exec));
 }
 
 ss::future<rpc::get_end_offset_for_term_reply>
-frontend::get_end_offset_for_term_locally(
+leader_router::get_end_offset_for_term_locally(
   rpc::get_end_offset_for_term_request request,
   const model::ntp& metastore_ntp,
   ss::shard_id shard) {
     co_return co_await container().invoke_on(
-      shard, [metastore_ntp, req = std::move(request)](frontend& fe) mutable {
+      shard,
+      [metastore_ntp, req = std::move(request)](leader_router& fe) mutable {
           return do_get_end_offset_for_term(
             *(fe._domain_supervisor), metastore_ntp, std::move(req));
       });
 }
 
 ss::future<rpc::get_end_offset_for_term_reply>
-frontend::get_end_offset_for_term(
+leader_router::get_end_offset_for_term(
   rpc::get_end_offset_for_term_request request, local_only local_only_exec) {
     auto holder = _gate.hold();
     co_return co_await process<
-      &frontend::get_end_offset_for_term_locally,
+      &leader_router::get_end_offset_for_term_locally,
       &client::get_end_offset_for_term>(
       std::move(request), bool(local_only_exec));
 }
 
-ss::future<rpc::set_start_offset_reply> frontend::set_start_offset_locally(
+ss::future<rpc::set_start_offset_reply> leader_router::set_start_offset_locally(
   rpc::set_start_offset_request request,
   const model::ntp& metastore_ntp,
   ss::shard_id shard) {
     co_return co_await container().invoke_on(
-      shard, [metastore_ntp, req = std::move(request)](frontend& fe) mutable {
+      shard,
+      [metastore_ntp, req = std::move(request)](leader_router& fe) mutable {
           return do_set_start_offset(
             *(fe._domain_supervisor), metastore_ntp, std::move(req));
       });
 }
 
-ss::future<rpc::set_start_offset_reply> frontend::set_start_offset(
+ss::future<rpc::set_start_offset_reply> leader_router::set_start_offset(
   rpc::set_start_offset_request request, local_only local_only_exec) {
     auto holder = _gate.hold();
     co_return co_await process<
-      &frontend::set_start_offset_locally,
+      &leader_router::set_start_offset_locally,
       &client::set_start_offset>(std::move(request), bool(local_only_exec));
 }
 
-ss::future<rpc::remove_topics_reply> frontend::remove_topics_locally(
+ss::future<rpc::remove_topics_reply> leader_router::remove_topics_locally(
   rpc::remove_topics_request request,
   const model::ntp& metastore_ntp,
   ss::shard_id shard) {
     co_return co_await container().invoke_on(
-      shard, [metastore_ntp, req = std::move(request)](frontend& fe) mutable {
+      shard,
+      [metastore_ntp, req = std::move(request)](leader_router& fe) mutable {
           return do_remove_topics(
             *(fe._domain_supervisor), metastore_ntp, std::move(req));
       });
 }
 
-ss::future<rpc::remove_topics_reply> frontend::remove_topics(
+ss::future<rpc::remove_topics_reply> leader_router::remove_topics(
   rpc::remove_topics_request request, local_only local_only_exec) {
     auto holder = _gate.hold();
     co_return co_await process<
-      &frontend::remove_topics_locally,
+      &leader_router::remove_topics_locally,
       &client::remove_topics>(std::move(request), bool(local_only_exec));
 }
 

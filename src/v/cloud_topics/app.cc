@@ -69,7 +69,7 @@ ss::future<> app::construct(
       }));
 
     co_await construct_service(
-      l1_metastore_fe,
+      l1_metastore_router,
       self,
       metadata_cache,
       leaders_table,
@@ -79,7 +79,7 @@ ss::future<> app::construct(
 
     co_await construct_service(
       replicated_metastore, ss::sharded_parameter([this] {
-          return std::ref(l1_metastore_fe.local());
+          return std::ref(l1_metastore_router.local());
       }));
 
     co_await construct_service(
@@ -208,8 +208,8 @@ ss::future<> app::stop() {
     co_await data_plane->stop();
 }
 
-ss::sharded<l1::frontend>* app::get_sharded_l1_metastore_fe() {
-    return &l1_metastore_fe;
+ss::sharded<l1::leader_router>* app::get_sharded_l1_metastore_router() {
+    return &l1_metastore_router;
 }
 
 ss::sharded<l1::domain_supervisor>* app::get_sharded_l1_domain_supervisor() {
