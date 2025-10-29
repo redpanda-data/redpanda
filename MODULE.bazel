@@ -365,6 +365,7 @@ crate.from_cargo(
     ],
 )
 use_repo(crate, "crates")
+
 crate.annotation(
     additive_build_file = "//bazel/thirdparty:wasmtime.BUILD",
     crate = "wasmtime-c-api-impl",
