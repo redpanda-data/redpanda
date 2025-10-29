@@ -138,8 +138,9 @@ class ManyPartitionsTest(PreallocNodesTest):
             # very many partitions: set logs with per-partition messages
             # to warn instead of info.
             log_config=LoggingConfig(
-                "info",
+                "debug",
                 logger_levels={
+                    "cluster": "info",
                     "storage": "warn",
                     "storage-gc": "warn",
                     "raft": "warn",
