@@ -29,6 +29,7 @@ struct partition_metadata {
     model::offset high_watermark;
     model::offset last_stable_offset;
     size_t avg_bytes_per_offset;
+    size_t avg_bytes_per_batch;
 };
 
 using namespace std::chrono_literals;
@@ -53,25 +54,40 @@ public:
       model::offset hw,
       model::offset lso,
       size_t offset_count,
+      size_t batch_count,
       size_t total_size_bytes) {
         auto& e = _cache[ktp];
         e.reset_ts();
-        if (offset_count > 0) {
-            if (e.bytes_per_offset.has_samples()) {
-                auto avg_bytes_per_offset = static_cast<double>(
-                  e.bytes_per_offset.get());
-                auto bytes_per_offset = static_cast<double>(total_size_bytes)
-                                        / static_cast<double>(offset_count);
-                auto abs_err = std::abs(
-                  bytes_per_offset - avg_bytes_per_offset);
-                const auto epsilon = 1e-6; // prevent division by zero
-                auto re = abs_err / (bytes_per_offset + epsilon);
-                _error.update(re, e.timestamp);
-            }
 
+        auto rel_err = [](size_t sum, size_t count, auto& mov_avg) {
+            if (mov_avg.has_samples()) {
+                auto actual = static_cast<double>(sum)
+                              / static_cast<double>(count);
+                auto avg = static_cast<double>(mov_avg.get());
+                auto abs_err = std::abs(actual - avg);
+                const auto epsilon = 1e-6; // prevent division by zero
+                auto re = abs_err / (actual + epsilon);
+                return re;
+            }
+            return 0.0;
+        };
+
+        if (offset_count > 0) {
+            auto bytes_per_offset_error = rel_err(
+              total_size_bytes, offset_count, e.bytes_per_offset);
+            _bytes_per_offset_error.update(bytes_per_offset_error, e.timestamp);
             e.bytes_per_offset.update(
               total_size_bytes, e.timestamp, offset_count);
         }
+
+        if (batch_count > 0) {
+            auto bytes_per_batch_error = rel_err(
+              total_size_bytes, batch_count, e.bytes_per_batch);
+            _bytes_per_batch_error.update(bytes_per_batch_error, e.timestamp);
+            e.bytes_per_batch.update(
+              total_size_bytes, e.timestamp, batch_count);
+        }
+
         e.md = {
           .start_offset = start_offset,
           .high_watermark = hw,
@@ -79,6 +95,9 @@ public:
           .avg_bytes_per_offset = e.bytes_per_offset.has_samples()
                                     ? e.bytes_per_offset.get()
                                     : 0,
+          .avg_bytes_per_batch = e.bytes_per_batch.has_samples()
+                                   ? e.bytes_per_batch.get()
+                                   : 0,
         };
     }
 
@@ -103,10 +122,23 @@ public:
         _metrics.add_group(
           prometheus_sanitize::metrics_name("kafka:fetch_metadata_cache"),
           {sm::make_gauge(
-            "error",
-            [this] { return _error.has_samples() ? _error.get() : 0.0; },
-            sm::description(
-              "A moving average of the relative error for bytes per offset."))},
+             "bytes_per_offset_error",
+             [this] {
+                 return _bytes_per_offset_error.has_samples()
+                          ? _bytes_per_offset_error.get()
+                          : 0.0;
+             },
+             sm::description(
+               "A moving average of the relative error for bytes per offset.")),
+           sm::make_gauge(
+             "bytes_per_batch_error",
+             [this] {
+                 return _bytes_per_batch_error.has_samples()
+                          ? _bytes_per_batch_error.get()
+                          : 0.0;
+             },
+             sm::description(
+               "A moving average of the relative error for bytes per batch."))},
           {},
           {sm::shard_label});
     }
@@ -118,14 +150,16 @@ private:
       = timed_moving_average<double, ss::lowres_clock>;
 
     constexpr static std::chrono::seconds eviction_timeout{60};
-    constexpr static auto bytes_per_offset_window{1h};
-    constexpr static auto bytes_per_offset_resolution{20min};
+    constexpr static auto moving_avg_window{1h};
+    constexpr static auto moving_avg_resolution{20min};
 
     struct entry {
         partition_metadata md;
         ss::lowres_clock::time_point timestamp;
         entry_sliding_window_t bytes_per_offset{
-          bytes_per_offset_window, bytes_per_offset_resolution};
+          moving_avg_window, moving_avg_resolution};
+        entry_sliding_window_t bytes_per_batch{
+          moving_avg_window, moving_avg_resolution};
 
         void reset_ts() { timestamp = ss::lowres_clock::now(); }
     };
@@ -139,8 +173,10 @@ private:
 
     chunked_hash_map<model::ktp_with_hash, entry> _cache;
     ss::timer<> _eviction_timer;
-    error_sliding_window_t _error{
-      bytes_per_offset_window, bytes_per_offset_resolution};
+    error_sliding_window_t _bytes_per_offset_error{
+      moving_avg_window, moving_avg_resolution};
+    error_sliding_window_t _bytes_per_batch_error{
+      moving_avg_window, moving_avg_resolution};
     metrics::internal_metric_groups _metrics;
 };
 } // namespace kafka

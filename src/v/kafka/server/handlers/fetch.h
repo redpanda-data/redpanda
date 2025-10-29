@@ -215,6 +215,7 @@ struct fetch_config {
     model::offset max_offset;
     size_t max_bytes;
     size_t max_batch_size;
+    size_t avg_batch_size;
     model::timeout_clock::time_point timeout;
     kafka::leader_epoch current_leader_epoch;
     model::isolation_level isolation_level;
@@ -300,6 +301,7 @@ struct read_result {
       model::offset start_offset,
       model::offset data_base_offset,
       model::offset data_last_offset,
+      size_t batch_count,
       model::offset hw,
       model::offset lso,
       std::optional<std::chrono::milliseconds> delta,
@@ -308,6 +310,7 @@ struct read_result {
       , start_offset(start_offset)
       , data_base_offset(data_base_offset)
       , data_last_offset(data_last_offset)
+      , batch_count(batch_count)
       , high_watermark(hw)
       , last_stable_offset(lso)
       , delta_from_tip_ms(delta)
@@ -346,6 +349,7 @@ struct read_result {
     model::offset start_offset;
     model::offset data_base_offset;
     model::offset data_last_offset;
+    size_t batch_count{0};
     model::offset high_watermark;
     model::offset last_stable_offset;
     std::optional<std::chrono::milliseconds> delta_from_tip_ms;

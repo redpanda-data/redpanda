@@ -39,8 +39,8 @@ void set_units(ssx::semaphore& sem, size_t target_units) {
 class fetch_memory_units_test_fixture : public seastar_test {
 public:
     ss::future<> SetUpAsync() override {
-        co_await _kafka_sem.start(0, ss::sstring("kafka_sem"));
-        co_await _fetch_sem.start(0, ss::sstring("fetch_sem"));
+        co_await _kafka_sem.start(100_MiB, ss::sstring("kafka_sem"));
+        co_await _fetch_sem.start(50_MiB, ss::sstring("fetch_sem"));
         co_await _manager.start(
           ss::sharded_parameter(
             [this] { return std::reference_wrapper(_kafka_sem.local()); }),
@@ -49,6 +49,7 @@ public:
           [this] -> kafka::fetch_memory_units_manager& {
               return _manager.local();
           });
+        _aas.request_abort();
     }
 
     ss::future<> TearDownAsync() override {
@@ -83,11 +84,16 @@ public:
           [target_units](auto& fs) { set_units(fs, target_units); });
     }
 
+    ss::abort_source& aas() { return _aas; }
+    ss::abort_source& as() { return _as; }
+
 private:
     ss::sharded<ssx::semaphore> _kafka_sem;
     ss::sharded<ssx::semaphore> _fetch_sem;
     ss::sharded<kafka::fetch_memory_units_manager> _manager;
     ss::sharded<ssx::semaphore> _sem;
+    ss::abort_source _as;
+    ss::abort_source _aas; // aborted abort_source
 };
 
 TEST_F_CORO(fetch_memory_units_test_fixture, test_cross_shard_free) {
@@ -114,9 +120,14 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_cross_shard_free) {
         });
     };
     auto get_remote_units = [&](size_t n) {
-        return sharded_manager().invoke_on(other_shard_id, [n](auto& mgr) {
-            return std::make_optional(mgr.allocate_memory_units(n, n, false));
-        });
+        return sharded_manager()
+          .invoke_on(
+            other_shard_id,
+            [this, n](auto& mgr) {
+                return mgr.allocate_memory_units(
+                  model::ktp{}, n, n, n, false, aas());
+            })
+          .then([](auto u) { return std::make_optional(std::move(u)); });
     };
 
     auto remote_units = co_await get_remote_units(max_release_size);
@@ -154,12 +165,41 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_adjust_units) {
     co_await set_kafka_units(10);
     co_await set_fetch_units(10);
 
-    auto units = mgr.allocate_memory_units(10, 10, false);
+    auto units = co_await mgr.allocate_memory_units(
+      model::ktp{}, 10, 10, 10, false, aas());
     EXPECT_EQ(units.num_units(), 10);
     units.adjust_units(5);
     EXPECT_EQ(units.num_units(), 5);
     units.adjust_units(10);
     EXPECT_EQ(units.num_units(), 10);
+}
+
+TEST_F_CORO(fetch_memory_units_test_fixture, test_oblig_reads_succ_wait) {
+    kafka::fetch_memory_units_manager& mgr = local_manager();
+
+    co_await set_kafka_units(10);
+    co_await set_fetch_units(10);
+
+    auto units_fut = mgr.allocate_memory_units(
+      model::ktp{}, 100, 100, 100, true, as());
+    EXPECT_TRUE(!units_fut.available());
+
+    co_await set_kafka_units(100);
+    co_await set_fetch_units(100);
+
+    auto units = co_await std::move(units_fut);
+    EXPECT_EQ(units.num_units(), 100);
+}
+
+TEST_F_CORO(fetch_memory_units_test_fixture, test_oblig_reads_failed_wait) {
+    kafka::fetch_memory_units_manager& mgr = local_manager();
+
+    co_await set_kafka_units(10);
+    co_await set_fetch_units(10);
+
+    auto units = co_await mgr.allocate_memory_units(
+      model::ktp{}, 100, 100, 100, true, aas());
+    EXPECT_EQ(units.num_units(), 0);
 }
 
 TEST_F_CORO(fetch_memory_units_test_fixture, test_allocate_memory_units) {
@@ -170,11 +210,18 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_allocate_memory_units) {
     co_await set_kafka_units(100_MiB);
     co_await set_fetch_units(50_MiB);
 
-    const auto test_case =
-      [&mgr](size_t max_bytes, bool obligatory_batch_read) -> size_t {
-        auto mu = mgr.allocate_memory_units(
-          max_bytes, batch_size, obligatory_batch_read);
-        return mu.num_units();
+    const auto test_case = [&mgr, this](
+                             size_t max_bytes,
+                             bool obligatory_batch_read) -> ss::future<size_t> {
+        return mgr
+          .allocate_memory_units(
+            model::ktp{},
+            max_bytes,
+            batch_size,
+            batch_size,
+            obligatory_batch_read,
+            aas())
+          .then([](auto mu) { return mu.num_units(); });
     };
 
     // below are test prerequisites, tests are done based on these assumptions
@@ -188,18 +235,18 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_allocate_memory_units) {
     // *** plenty of memory cases
     // kafka_mem > fetch_mem > batch_size
     // Reserved memory is limited by the fetch memory semaphore
-    EXPECT_EQ(test_case(batch_size / 100, false), batch_size);
-    EXPECT_EQ(test_case(batch_size / 100, true), batch_size);
-    EXPECT_EQ(test_case(batch_size, false), batch_size);
-    EXPECT_EQ(test_case(batch_size, true), batch_size);
-    EXPECT_EQ(test_case(batch_size * 3, false), batch_size * 3);
-    EXPECT_EQ(test_case(batch_size * 3, true), batch_size * 3);
-    EXPECT_EQ(test_case(fetch_mem, false), fetch_mem);
-    EXPECT_EQ(test_case(fetch_mem, true), fetch_mem);
-    EXPECT_EQ(test_case(fetch_mem + 1, false), fetch_mem);
-    EXPECT_EQ(test_case(fetch_mem + 1, true), fetch_mem);
-    EXPECT_EQ(test_case(kafka_mem, false), fetch_mem);
-    EXPECT_EQ(test_case(kafka_mem, true), fetch_mem);
+    EXPECT_EQ(co_await test_case(batch_size / 100, false), batch_size);
+    EXPECT_EQ(co_await test_case(batch_size / 100, true), batch_size);
+    EXPECT_EQ(co_await test_case(batch_size, false), batch_size);
+    EXPECT_EQ(co_await test_case(batch_size, true), batch_size);
+    EXPECT_EQ(co_await test_case(batch_size * 3, false), batch_size * 3);
+    EXPECT_EQ(co_await test_case(batch_size * 3, true), batch_size * 3);
+    EXPECT_EQ(co_await test_case(fetch_mem, false), fetch_mem);
+    EXPECT_EQ(co_await test_case(fetch_mem, true), fetch_mem);
+    EXPECT_EQ(co_await test_case(fetch_mem + 1, false), fetch_mem);
+    EXPECT_EQ(co_await test_case(fetch_mem + 1, true), fetch_mem);
+    EXPECT_EQ(co_await test_case(kafka_mem, false), fetch_mem);
+    EXPECT_EQ(co_await test_case(kafka_mem, true), fetch_mem);
 
     // *** still a lot of mem but kafka mem somewhat used:
     // fetch_mem > kafka_mem > batch_size (fetch_mem - kafka_mem < batch_size)
@@ -212,61 +259,14 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_allocate_memory_units) {
     EXPECT_TRUE(kafka_mem < fetch_mem);
     EXPECT_TRUE(kafka_mem > batch_size + 1000);
 
-    EXPECT_EQ(test_case(batch_size, false), batch_size);
-    EXPECT_EQ(test_case(batch_size, true), batch_size);
-    EXPECT_EQ(test_case(kafka_mem - 100, false), kafka_mem - 100);
-    EXPECT_EQ(test_case(kafka_mem - 100, true), kafka_mem - 100);
-    EXPECT_EQ(test_case(kafka_mem + 100, false), kafka_mem);
-    EXPECT_EQ(test_case(kafka_mem + 100, true), kafka_mem);
-    EXPECT_EQ(test_case(fetch_mem + 100, false), kafka_mem);
-    EXPECT_EQ(test_case(fetch_mem + 100, true), kafka_mem);
-
-    memsemunits.return_all();
-    kafka_mem = local_kafka_semaphore().available_units();
-
-    // *** low on fetch memory tests
-    // kafka_mem > batch_size > fetch_mem
-    // Under this condition, unless obligatory_batch_read, we cannot reserve
-    // memory as it's not enough for at least a single batch.
-    // If obligatory_batch_read, the reserved amount will always be a single
-    // batch.
-    memsemunits = ss::consume_units(
-      local_fetch_semaphore(), fetch_mem - batch_size + 1000);
-    fetch_mem = local_fetch_semaphore().available_units();
-    EXPECT_TRUE(kafka_mem > batch_size);
-    EXPECT_TRUE(fetch_mem < batch_size);
-
-    EXPECT_EQ(test_case(fetch_mem - 100, false), 0);
-    EXPECT_EQ(test_case(fetch_mem - 100, true), batch_size);
-    EXPECT_EQ(test_case(batch_size - 100, false), 0);
-    EXPECT_EQ(test_case(batch_size - 100, true), batch_size);
-    EXPECT_EQ(test_case(kafka_mem - 100, false), 0);
-    EXPECT_EQ(test_case(kafka_mem - 100, true), batch_size);
-    EXPECT_EQ(test_case(kafka_mem + 100, false), 0);
-    EXPECT_EQ(test_case(kafka_mem + 100, true), batch_size);
-
-    memsemunits.return_all();
-    fetch_mem = local_fetch_semaphore().available_units();
-
-    // *** low on kafka memory tests
-    // fetch_mem > batch_size > kafka_mem
-    // Essentially the same behaviour as in low fetch memory cases
-    memsemunits = ss::consume_units(
-      local_kafka_semaphore(), kafka_mem - batch_size + 1000);
-    kafka_mem = local_kafka_semaphore().available_units();
-    EXPECT_TRUE(kafka_mem < batch_size);
-    EXPECT_TRUE(fetch_mem > batch_size);
-
-    EXPECT_EQ(test_case(kafka_mem - 100, false), 0);
-    EXPECT_EQ(test_case(kafka_mem - 100, true), batch_size);
-    EXPECT_EQ(test_case(batch_size - 100, false), 0);
-    EXPECT_EQ(test_case(batch_size - 100, true), batch_size);
-    EXPECT_EQ(test_case(batch_size + 100, false), 0);
-    EXPECT_EQ(test_case(batch_size + 100, true), batch_size);
-    EXPECT_EQ(test_case(fetch_mem - 100, false), 0);
-    EXPECT_EQ(test_case(fetch_mem - 100, true), batch_size);
-    EXPECT_EQ(test_case(fetch_mem + 100, false), 0);
-    EXPECT_EQ(test_case(fetch_mem + 100, true), batch_size);
+    EXPECT_EQ(co_await test_case(batch_size, false), batch_size);
+    EXPECT_EQ(co_await test_case(batch_size, true), batch_size);
+    EXPECT_EQ(co_await test_case(kafka_mem - 100, false), kafka_mem - 100);
+    EXPECT_EQ(co_await test_case(kafka_mem - 100, true), kafka_mem - 100);
+    EXPECT_EQ(co_await test_case(kafka_mem + 100, false), kafka_mem);
+    EXPECT_EQ(co_await test_case(kafka_mem + 100, true), kafka_mem);
+    EXPECT_EQ(co_await test_case(fetch_mem + 100, false), kafka_mem);
+    EXPECT_EQ(co_await test_case(fetch_mem + 100, true), kafka_mem);
 
     memsemunits.return_all();
     kafka_mem = local_kafka_semaphore().available_units();

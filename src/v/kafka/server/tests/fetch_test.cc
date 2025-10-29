@@ -1209,3 +1209,102 @@ FIXTURE_TEST(fetch_response_bytes_eq_units, redpanda_thread_fixture) {
     BOOST_REQUIRE(octx.response_size > 0);
     BOOST_REQUIRE(octx.response_size == octx.total_response_memory_units());
 }
+
+FIXTURE_TEST(fetch_oblig_read_no_units, redpanda_thread_fixture) {
+    const size_t batch_size = 1251; // 1KiB message + headers
+
+    // Create topic with single partition.
+    model::topic topic("foo");
+    model::partition_id pid(0);
+    auto ntp = make_default_ntp(topic, pid);
+    wait_for_controller_leadership().get();
+    cluster::topic_properties props;
+    props.batch_max_bytes = batch_size;
+    add_topic(model::topic_namespace_view(ntp), 1, props).get();
+
+    wait_for_partition_offset(ntp, model::offset(0)).get();
+
+    // Append exactly `batches_size` to the ntp.
+    auto shard = app.shard_table.local().shard_for(ntp);
+    app.partition_manager
+      .invoke_on(
+        *shard,
+        [ntp](cluster::partition_manager& mgr) {
+            auto rb = model::test::make_random_batch(
+              model::offset(0),
+              1,
+              false,
+              model::record_batch_type::raft_data,
+              std::vector<size_t>{1_KiB});
+            chunked_vector<model::record_batch> batches;
+            batches.push_back(std::move(rb));
+            auto partition = mgr.get(ntp);
+            return partition->raft()->replicate(
+              std::move(batches),
+              raft::replicate_options(raft::consistency_level::quorum_ack));
+        })
+      .get();
+
+    wait_for_partition_offset(ntp, model::offset(1)).get();
+
+    auto conn_context = make_connection_context();
+    conn_context->start().get();
+    auto _ = ss::defer([&] { conn_context->stop().get(); });
+
+    // Reduce available fetch units to be `batch_size`.
+    auto& fetch_sem = conn_context->server().memory_fetch_sem();
+    BOOST_REQUIRE(fetch_sem.current() >= batch_size);
+    fetch_sem.consume(fetch_sem.current() - batch_size);
+
+    auto make_rctx = [&] {
+        auto fetch_topics = chunked_vector<kafka::fetch_topic>{};
+
+        fetch_topics.push_back(
+          kafka::fetch_topic{
+            .topic = topic,
+            .partitions = {kafka::fetch_partition{
+              .partition = pid,
+              .current_leader_epoch = kafka::leader_epoch(-1),
+              .fetch_offset = model::offset(0),
+              .log_start_offset = model::offset(-1),
+              .partition_max_bytes = batch_size,
+            }}});
+
+        // create a request
+        kafka::fetch_request_data frq_data{
+          .replica_id = kafka::client::consumer_replica_id,
+          .max_wait_ms = 1ms, // just to reduce test runtime
+          .min_bytes = 1,
+          .max_bytes = batch_size,
+          .isolation_level = model::isolation_level::read_uncommitted,
+          .session_id = kafka::invalid_fetch_session_id,
+          .session_epoch = kafka::final_fetch_session_epoch,
+          .topics = std::move(fetch_topics),
+        };
+
+        auto request = kafka::fetch_request{.data = std::move(frq_data)};
+
+        kafka::request_header header{
+          .key = kafka::fetch_handler::api::key,
+          .version = kafka::api_version{12}};
+
+        return make_request_context(std::move(request), header, conn_context);
+    };
+
+    // For the first request there is just enough fetch memory units to read the
+    // one produced batch. Hence it should be returned in the response.
+    auto octx_1 = kafka::op_context(
+      make_rctx(), ss::default_smp_service_group());
+    kafka::testing::do_fetch(octx_1).get();
+    BOOST_REQUIRE(octx_1.response_size == batch_size);
+
+    BOOST_REQUIRE(fetch_sem.available_units() == 0);
+
+    // The first response is in a state where it hasn't been sent to the client
+    // yet. Hence it is still holding all available fetch semaphore units.
+    // Therefore this response should contain no data.
+    auto octx_2 = kafka::op_context(
+      make_rctx(), ss::default_smp_service_group());
+    kafka::testing::do_fetch(octx_2).get();
+    BOOST_REQUIRE(octx_2.response_size == 0);
+}

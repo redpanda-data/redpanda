@@ -190,6 +190,7 @@ struct fetch_plan : redpanda_thread_fixture {
                   model::offset(100),
                   model::offset(100),
                   0,
+                  0,
                   0);
             }
         }

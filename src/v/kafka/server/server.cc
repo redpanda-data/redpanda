@@ -237,6 +237,7 @@ server::server(
     _sasl_probe->setup_metrics(cfg->local().name);
     _read_dist_probe->setup_metrics();
     _fetch_metadata_cache.setup_metrics();
+    _fetch_units_manager.setup_metrics();
 }
 ss::future<> server::stop() {
     co_await net::server::stop();

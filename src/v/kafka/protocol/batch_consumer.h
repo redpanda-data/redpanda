@@ -29,6 +29,7 @@ public:
     struct result {
         iobuf data;
         uint32_t record_count;
+        uint32_t batch_count;
         model::offset base_offset;
         model::offset last_offset;
         model::timestamp first_timestamp;
@@ -69,6 +70,7 @@ public:
         }
         _last_offset = batch.last_offset();
         record_count_ += batch.record_count();
+        batch_count_++;
         write_batch(std::move(batch));
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
@@ -78,6 +80,7 @@ public:
         return result{
           .data = std::move(_buf),
           .record_count = record_count_,
+          .batch_count = batch_count_,
           .base_offset = _base_offset,
           .last_offset = _last_offset,
           .first_timestamp = _first_timestamp,
@@ -98,6 +101,7 @@ private:
     model::timestamp _first_timestamp;
     std::optional<model::offset> _first_tx_batch_offset;
     uint32_t record_count_ = 0;
+    uint32_t batch_count_ = 0;
 };
 
 } // namespace kafka

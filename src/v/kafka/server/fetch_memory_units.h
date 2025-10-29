@@ -12,6 +12,8 @@
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "container/chunked_hash_map.h"
+#include "metrics/metrics.h"
+#include "model/ktp.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/gate.hh>
@@ -49,6 +51,7 @@ public:
       local_instance_fn&& local_fn);
 
     ss::future<> stop();
+    void setup_metrics();
 
     /** Consume proper amounts of units from memory semaphores and return them
      * as semaphore_units. Fetch semaphore units returned are the indication of
@@ -60,12 +63,23 @@ public:
      * \param min_units The minimum number of units the function will attempt to
      * allocate. If it can't allocate at least this many units no units will be
      * allocated.
-     * \param require_min_units If true then at least \ref min_units will be
-     * allocated regardless of the units available in \ref memory_sem and \ref
-     * memory_fetch_sem.
+     * \param require_min_units If true then the function will wait on at least
+     * min_units to become available. If \p as is aborted before then zero units
+     * will be returned.
+     * \param as Can be used to abort waiting on semaphore units when \p
+     * require_min_units is true.
      */
-    fetch_memory_units allocate_memory_units(
-      size_t max_units, const size_t min_units, const bool require_min_units);
+    ss::future<fetch_memory_units> allocate_memory_units(
+      const model::ktp& ktp,
+      size_t max_bytes,
+      size_t max_batch_size,
+      const size_t avg_batch_size,
+      const bool require_max_batch_size,
+      ss::abort_source& as);
+
+    /** Returns a fetch_memory_units object with zero units.
+     */
+    fetch_memory_units zero_units();
 
 private:
     friend fetch_memory_units;
@@ -96,7 +110,15 @@ private:
         ss::shard_id shard = ss::this_shard_id();
     };
 
-    units allocate_units(const size_t);
+    // Waits until enough units are availabe. Returns zero units if aborted.
+    ss::future<fetch_memory_units> get_units(const size_t, ss::abort_source&);
+    // Tries to get requested number of units. Returns zero units if enough are
+    // not availabe.
+    fetch_memory_units try_get_units(const size_t);
+    // Consumes requested number of units regardless of how many are available.
+    // Can cause the semaphores to have negative units.
+    units consume_units(const size_t);
+
     void release_units_to_manager(units&& u);
     void release_units_to_semaphore(units&& u);
     void release_all_units_to_semaphore();
@@ -104,6 +126,7 @@ private:
     ss::gate _gate;
     ssx::semaphore& _kafka_units;
     ssx::semaphore& _fetch_units;
+    size_t _max_fetch_units;
 
     ss::timer<> _release_units_timer;
     // Collected units are aggregated together by shard in order to ensure there
@@ -111,6 +134,9 @@ private:
     chunked_hash_map<ss::shard_id, units> _units_to_release;
 
     local_instance_fn _local_instance_fn;
+
+    metrics::internal_metric_groups _metrics;
+    ss::lowres_clock::duration _total_wait_time{0};
 };
 
 /***
