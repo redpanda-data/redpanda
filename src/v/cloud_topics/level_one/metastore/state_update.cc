@@ -9,6 +9,8 @@
  */
 #include "cloud_topics/level_one/metastore/state_update.h"
 
+#include "base/vlog.h"
+#include "cloud_topics/logger.h"
 #include "model/fundamental.h"
 
 namespace cloud_topics::l1 {
@@ -252,6 +254,13 @@ add_objects_update::apply(state& state) {
               p_state.extents.rbegin()->last_offset);
             for (const auto& extent : extents) {
                 state.objects[extent.oid].total_data_size += extent.len;
+                vlog(
+                  cd_log.debug,
+                  "Object {} added to {} [{}, {}]",
+                  extent.oid,
+                  tidp,
+                  extent.base_offset,
+                  extent.last_offset);
             }
 
             // Also append the terms.
@@ -281,6 +290,16 @@ add_objects_update::apply(state& state) {
                 auto& obj_entry = state.objects[extent.oid];
                 obj_entry.removed_data_size += extent.len;
                 obj_entry.total_data_size += extent.len;
+                vlog(
+                  cd_log.debug,
+                  "Extent of {} in {} [{}, {}] rejected, {} != expected next: "
+                  "{}",
+                  tidp,
+                  extent.oid,
+                  extent.base_offset,
+                  extent.last_offset,
+                  extents.begin()->base_offset,
+                  expected_next);
             }
         }
     }
@@ -479,11 +498,25 @@ replace_objects_update::apply(state& state) {
         for (auto iter = base_it; iter != end_it; ++iter) {
             auto& old_extent = *iter;
             state.objects[old_extent.oid].removed_data_size += old_extent.len;
+            vlog(
+              cd_log.debug,
+              "Removing extent of {} in {} [{}, {}]",
+              tidp,
+              old_extent.oid,
+              old_extent.base_offset,
+              old_extent.last_offset);
         }
 
         p_state.extents.erase(base_it, end_it);
         for (const auto& e : new_extents) {
             p_state.extents.emplace(e);
+            vlog(
+              cd_log.debug,
+              "Adding replacement extent of {} in {} [{}, {}]",
+              tidp,
+              e.oid,
+              e.base_offset,
+              e.last_offset);
         }
         // NOTE: we don't need to update the start or next offsets since we've
         // validated that the new extents replace exact ranges.
@@ -640,6 +673,14 @@ set_start_offset_update::apply(state& state) {
             continue;
         }
         obj_it->second.removed_data_size += begin_it->len;
+        vlog(
+          cd_log.debug,
+          "New offset for {}: {}, removing extent {} [{}, {}]",
+          tp,
+          new_start_offset,
+          begin_it->oid,
+          begin_it->base_offset,
+          begin_it->last_offset);
         p_state.extents.erase(begin_it);
     }
     // Now remove terms. Note that the removal should always leave at least one

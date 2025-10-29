@@ -137,6 +137,7 @@ housekeeper::do_time_retention(std::chrono::milliseconds duration) {
 
 ss::future<> housekeeper::sync_start_offset() {
     auto start_offset = _l0_metastore->get_start_offset(_tidp);
+    vlog(cd_log.debug, "Setting {} start offset to {}", _tidp, start_offset);
     auto result = co_await _l1_metastore->set_start_offset(_tidp, start_offset);
     if (!result.has_value()) {
         vlog(
