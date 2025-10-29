@@ -83,7 +83,7 @@ ss::future<> partition_replicator::start() {
 ss::future<> partition_replicator::stop() {
     co_await ss::coroutine::switch_to(_scheduling_group);
     vlog(_log.trace, "Stopping replicator");
-    _as.request_abort();
+    initiate_shutdown();
     // closing the gate first ensures all the units are returned to the
     // semaphores before the source is stopped.
     co_await _gate.close();
@@ -241,6 +241,11 @@ kafka::offset partition_replicator::get_partition_lag() const {
 
     auto hwm = _sink->high_watermark();
     return lso - hwm;
+}
+
+void partition_replicator::initiate_shutdown() noexcept { _as.request_abort(); }
+bool partition_replicator::shutdown_initiated() noexcept {
+    return _as.abort_requested();
 }
 
 ss::future<> partition_replicator::fetch_and_replicate() {
