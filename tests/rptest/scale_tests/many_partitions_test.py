@@ -944,7 +944,8 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         if scale.cloud_topics_enabled:
             extra_conf[CLOUD_TOPICS_CONFIG_STR] = True
-            extra_conf["cloud_topics_disable_reconciliation_loop"] = True
+            extra_conf["cloud_topics_reconciliation_interval"] = 1000
+            extra_conf["cloud_topics_level_one_garbage_collection_interval"] = 5000
 
         self.redpanda.add_extra_rp_conf(extra_conf)
 
