@@ -106,11 +106,23 @@ ss::future<> link_replication_manager::do_start_replicator(
     auto holder = _gate.hold();
     vlog(cllog.debug, "Starting replicator for {}", ntp);
     auto it = _replicators.find(ntp);
-    vassert(
-      it == _replicators.end(),
-      "Replicator for {} already exists, an instance should be stopped before "
-      "starting a new one",
-      ntp);
+    if (it != _replicators.end()) {
+        if (term == it->second->term()) {
+            // duplicate start requests are possible when starting replicators
+            // outside of leader notifications (eg: unpausing a link)
+            co_return;
+        }
+        // Mismatching terms for the same ntp should never happen
+        // it means we are trying to start a replicator for an ntp that
+        // that has not been stopped yet.
+        vassert(
+          false,
+          "Attempting to start replicator for {} in term {} but it "
+          "already exists in term {}",
+          ntp,
+          term,
+          it->second->term());
+    }
     auto source = _source_factory->make_source(ntp);
     auto sink = _sink_factory->make_sink(ntp);
     auto replicator = std::make_unique<partition_replicator>(
