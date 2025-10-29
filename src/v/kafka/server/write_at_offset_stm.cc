@@ -14,6 +14,7 @@
 #include "kafka/server/logger.h"
 #include "model/batch_utils.h"
 #include "ssx/future-util.h"
+#include "storage/offset_translator_state.h"
 
 #include <seastar/coroutine/as_future.hh>
 
@@ -312,11 +313,14 @@ ss::future<iobuf> write_at_offset_stm::take_raft_snapshot(model::offset) {
 
 ss::future<> write_at_offset_stm::apply_raft_snapshot(const iobuf&) {
     auto start_k_offset = _raft->log()->from_log_offset(_raft->start_offset());
+    auto ots = _raft->log()->get_offset_translator_state();
     vlog(
       _log.info,
-      "Applying raft snapshot, setting last offset to {}, raft start offset {}",
+      "Applying raft snapshot, setting last offset to {}, raft start offset "
+      "{}, ots: {}",
       start_k_offset,
-      _raft->start_offset());
+      _raft->start_offset(),
+      ots ? fmt::format("{}", *ots) : "empty ots");
     _last_offset = kafka::prev_offset(model::offset_cast(start_k_offset));
     co_return;
 }
@@ -330,7 +334,7 @@ ss::future<> write_at_offset_stm::do_apply(const model::record_batch& b) {
     _last_offset = model::offset_cast(
       _raft->log()->from_log_offset(b.last_offset()));
     vlog(
-      _log.trace,
+      _log.info,
       "Applied batch with last offset: {}, updated stm last offset to: {}",
       b.last_offset(),
       _last_offset);

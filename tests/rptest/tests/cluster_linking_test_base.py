@@ -391,7 +391,6 @@ class ShadowLinkTestBase(PreallocNodesTest):
                     "archival": "trace",
                     "tx": "trace",
                     "shadow_link_service": "trace",
-                    "raft": "trace",
                 },
             ),
         )
