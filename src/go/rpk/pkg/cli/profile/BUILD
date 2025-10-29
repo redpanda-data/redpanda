@@ -44,7 +44,6 @@ go_test(
     size = "small",
     srcs = [
         "create_test.go",
-        "print_test.go",
         "prompt_test.go",
     ],
     embed = [":profile"],
