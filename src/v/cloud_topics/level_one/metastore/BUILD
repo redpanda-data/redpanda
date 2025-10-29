@@ -31,13 +31,13 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "frontend",
+    name = "leader_router",
     srcs = [
-        "frontend.cc",
+        "leader_router.cc",
         "service.cc",
     ],
     hdrs = [
-        "frontend.h",
+        "leader_router.h",
         "service.h",
     ],
     implementation_deps = [
@@ -98,7 +98,7 @@ redpanda_cc_library(
         "replicated_metastore.h",
     ],
     implementation_deps = [
-        ":frontend",
+        ":leader_router",
         ":rpc_types",
         ":state_update",
         "//src/v/cloud_topics:logger",

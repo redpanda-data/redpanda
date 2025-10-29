@@ -9,7 +9,7 @@
  */
 #include "cloud_topics/level_one/metastore/replicated_metastore.h"
 
-#include "cloud_topics/level_one/metastore/frontend.h"
+#include "cloud_topics/level_one/metastore/leader_router.h"
 #include "cloud_topics/level_one/metastore/rpc_types.h"
 #include "cloud_topics/level_one/metastore/state_update.h"
 #include "cloud_topics/logger.h"

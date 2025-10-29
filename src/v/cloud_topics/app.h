@@ -12,7 +12,7 @@
 
 #include "cloud_topics/level_one/common/file_io.h"
 #include "cloud_topics/level_one/domain/domain_supervisor.h"
-#include "cloud_topics/level_one/metastore/frontend.h"
+#include "cloud_topics/level_one/metastore/leader_router.h"
 #include "cloud_topics/level_one/metastore/replicated_metastore.h"
 #include "cloud_topics/reconciler/reconciler.h"
 #include "cloud_topics/state_accessors.h"

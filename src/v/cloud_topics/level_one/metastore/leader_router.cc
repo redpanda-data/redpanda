@@ -7,7 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-#include "cloud_topics/level_one/metastore/frontend.h"
+#include "cloud_topics/level_one/metastore/leader_router.h"
 
 #include "cloud_topics/level_one/domain/domain_manager.h"
 #include "cloud_topics/level_one/domain/domain_supervisor.h"

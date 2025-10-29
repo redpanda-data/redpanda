@@ -10,7 +10,7 @@
 
 #include "cloud_topics/level_one/metastore/service.h"
 
-#include "cloud_topics/level_one/metastore/frontend.h"
+#include "cloud_topics/level_one/metastore/leader_router.h"
 
 namespace cloud_topics::l1::rpc {
 

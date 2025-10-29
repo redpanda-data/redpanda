@@ -99,7 +99,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics:state_accessors",
         "//src/v/cloud_topics/level_one/common:file_io",
         "//src/v/cloud_topics/level_one/domain:domain_supervisor",
-        "//src/v/cloud_topics/level_one/metastore:frontend",
+        "//src/v/cloud_topics/level_one/metastore:leader_router",
         "//src/v/cloud_topics/level_one/metastore:replicated_metastore",
         "//src/v/cloud_topics/level_zero/common:extent_meta",
         "//src/v/cloud_topics/reconciler",
