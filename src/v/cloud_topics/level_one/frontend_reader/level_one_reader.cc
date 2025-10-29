@@ -196,7 +196,7 @@ ss::future<l1::footer> level_one_log_reader_impl::read_footer(
     auto read_result = read_fut.get();
     if (!read_result.has_value()) {
         vlog(
-          _log.error,
+          _log.warn,
           "Failed to read footer from object {} (pos {} object size {}): {}",
           oid,
           extent.position,
@@ -310,9 +310,10 @@ level_one_log_reader_impl::materialize_batches_from_object_offset(
     auto stream_result = stream_fut.get();
     if (!stream_result.has_value()) {
         vlog(
-          _log.error,
-          "Failed to open stream for L1 object {}: {}",
+          _log.warn,
+          "Failed to open stream for L1 object {} reading offset {}: {}",
           object.oid,
+          offset,
           std::to_underlying(stream_result.error()));
         throw std::runtime_error(_log.format(
           "Failed to open stream for L1 object {}: {}",
