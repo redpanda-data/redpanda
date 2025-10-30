@@ -2393,13 +2393,16 @@ ss::future<> consensus::hydrate_snapshot() {
     if (!metadata.has_value()) {
         co_return;
     }
-    update_offset_from_snapshot(metadata.value());
-    co_await _configuration_manager.add(
-      _last_snapshot_index, std::move(metadata->latest_configuration));
-    _probe->configuration_update();
-    auto truncate_cfg = truncation_cfg_for_snapshot(metadata.value());
-    if (truncate_cfg.has_value()) {
-        co_await truncate_to_latest_snapshot(truncate_cfg.value());
+    {
+        auto update_offsets = ss::defer(
+          [this, &metadata] { update_offset_from_snapshot(metadata.value()); });
+        co_await _configuration_manager.add(
+          _last_snapshot_index, std::move(metadata->latest_configuration));
+        _probe->configuration_update();
+        auto truncate_cfg = truncation_cfg_for_snapshot(metadata.value());
+        if (truncate_cfg.has_value()) {
+            co_await truncate_to_latest_snapshot(truncate_cfg.value());
+        }
     }
     _snapshot_size = co_await _snapshot_mgr.get_snapshot_size();
     update_follower_stats(_configuration_manager.get_latest());
