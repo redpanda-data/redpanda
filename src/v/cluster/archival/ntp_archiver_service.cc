@@ -2857,7 +2857,7 @@ ss::future<> ntp_archiver::apply_spillover() {
         auto fo = manifest().begin()->base_offset;
         if (fo != so.value()) {
             vlog(
-              _rtclog.error,
+              _rtclog.warn,
               "Spillover invariant violated: manifest start_offset {}, first "
               "segment base_offset {}",
               so.value(),
