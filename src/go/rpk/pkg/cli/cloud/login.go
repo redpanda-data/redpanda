@@ -99,7 +99,7 @@ To learn more about profiles, check 'rpk profile --help'.
 You are not currently in a profile; rpk talks to a localhost:9092 cluster by default.`)
 				} else {
 					fmt.Println("rpk will switch to a cloud cluster profile automatically, if you want to interrupt this process, you can ctrl+c now.")
-					err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, "", "", "prompt", false, nil, "", "")
+					err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, "", "", "prompt", false, nil, "", "", "")
 					profile.MaybeDieExistingName(err)
 				}
 				return
@@ -122,7 +122,7 @@ rpk will talk to a localhost:9092 cluster until you swap to a different profile.
 `)
 				} else {
 					fmt.Println("rpk will switch to a cloud cluster profile automatically, if you want to interrupt this process, you can ctrl+c now.")
-					err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, "", "", "prompt", false, nil, "", "")
+					err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, "", "", "prompt", false, nil, "", "", "")
 					profile.MaybeDieExistingName(err)
 				}
 				return
@@ -150,7 +150,7 @@ rpk will talk to a localhost:9092 cluster until you swap to a different profile.
 			if p.FromCloud {
 				fmt.Printf("You are talking to a cloud cluster %q (rpk profile name: %q)\n", p.CloudCluster.FullName(), p.Name)
 				fmt.Println("Select a different cluster to talk to (or ctrl+c to keep the current cluster)?")
-				err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, "", "", "prompt", false, nil, "", "")
+				err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, "", "", "prompt", false, nil, "", "", "")
 				profile.MaybeDieExistingName(err)
 				return
 			}
@@ -163,7 +163,7 @@ rpk will talk to a localhost:9092 cluster until you swap to a different profile.
 			fmt.Println("rpk will switch to a cloud cluster profile automatically, if you want to interrupt this process and keep your current profile, you can ctrl+c now.")
 
 			// Prompt and switch.
-			err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, "", "", "prompt", false, nil, "", "")
+			err = profile.CreateFlow(cmd.Context(), fs, cfg, yAct, authVir, "", "", "prompt", false, nil, "", "", "")
 			profile.MaybeDieExistingName(err)
 		},
 	}
