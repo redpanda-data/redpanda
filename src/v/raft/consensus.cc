@@ -1489,26 +1489,31 @@ consensus::do_start(std::optional<xshard_transfer_state> xst_state) {
           "Configuration manager started: {}",
           _configuration_manager);
 
-        std::optional<storage::truncate_prefix_config> start_truncate_cfg;
-        auto snapshot_units = co_await _snapshot_lock.get_units();
-        auto metadata = co_await read_snapshot_metadata();
-        if (metadata.has_value()) {
-            update_offset_from_snapshot(metadata.value());
-            co_await _configuration_manager.add(
-              _last_snapshot_index, std::move(metadata->latest_configuration));
-            _probe->configuration_update();
+        {
+            std::optional<storage::truncate_prefix_config> start_truncate_cfg;
+            auto snapshot_units = co_await _snapshot_lock.get_units();
+            auto metadata = co_await read_snapshot_metadata();
+            if (metadata.has_value()) {
+                co_await _configuration_manager.add(
+                  _last_snapshot_index,
+                  std::move(metadata->latest_configuration));
+                _probe->configuration_update();
 
-            start_truncate_cfg = truncation_cfg_for_snapshot(metadata.value());
-            if (start_truncate_cfg.has_value()) {
-                _flushed_offset = std::max(
-                  _last_snapshot_index, _flushed_offset);
-                co_await _configuration_manager.prefix_truncate(
-                  _last_snapshot_index);
+                start_truncate_cfg = truncation_cfg_for_snapshot(
+                  metadata.value());
+                if (start_truncate_cfg.has_value()) {
+                    _flushed_offset = std::max(
+                      _last_snapshot_index, _flushed_offset);
+                    co_await _configuration_manager.prefix_truncate(
+                      _last_snapshot_index);
+                }
+                _snapshot_size = co_await _snapshot_mgr.get_snapshot_size();
+                co_await _log->start(start_truncate_cfg, _as);
+                update_offset_from_snapshot(metadata.value());
+            } else {
+                co_await _log->start(start_truncate_cfg, _as);
             }
-            _snapshot_size = co_await _snapshot_mgr.get_snapshot_size();
         }
-        co_await _log->start(start_truncate_cfg, _as);
-        snapshot_units.return_all();
 
         vlog(
           _ctxlog.debug,
