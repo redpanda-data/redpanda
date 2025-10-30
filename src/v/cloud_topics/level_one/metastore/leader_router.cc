@@ -193,15 +193,21 @@ requires requires(
 }
 ss::future<typename req_t::resp_t>
 leader_router::process(req_t req, bool local_only) {
+    static const auto req_name = ss::pretty_type_name(typeid(req_t));
     using resp_t = req_t::resp_t;
     auto exists = co_await ensure_topic_exists();
     if (!exists) {
+        vlog(cd_log.debug, "Topic failed to create in processing {}", req_name);
         co_return resp_t{.ec = rpc::errc::not_leader};
     }
     model::partition_id metastore_pid;
     if constexpr (request_has_topic_id_partition<req_t>) {
         auto pid_opt = metastore_partition(req.tp);
         if (!pid_opt.has_value()) {
+            vlog(
+              cd_log.debug,
+              "Failed to get metastore partition in processing {}",
+              req_name);
             co_return resp_t{.ec = rpc::errc::not_leader};
         }
         metastore_pid = *pid_opt;
@@ -217,13 +223,36 @@ leader_router::process(req_t req, bool local_only) {
     if (leader == _self) {
         auto shard = _shard_table->local().shard_for(l1_ntp);
         if (shard.has_value()) {
-            co_return co_await (this->*LocalFunc)(
+            vlog(
+              cd_log.debug,
+              "Processing local request for {} as leader of {}",
+              req_name,
+              l1_ntp);
+            auto ret = co_await (this->*LocalFunc)(
               std::move(req), std::move(l1_ntp), shard.value());
+            vlog(
+              cd_log.debug,
+              "Processed local request for {} as leader of {}",
+              req_name,
+              l1_ntp);
+            co_return ret;
         }
     } else if (leader.has_value() && !local_only) {
-        co_return co_await remote_dispatch<RemoteFunc>(
+        vlog(
+          cd_log.debug,
+          "Sending remote request for {} as leader of {}",
+          req_name,
+          l1_ntp);
+        auto ret = co_await remote_dispatch<RemoteFunc>(
           std::move(req), leader.value());
+        vlog(
+          cd_log.debug,
+          "Sent remote request for {} as leader of {}",
+          req_name,
+          l1_ntp);
+        co_return ret;
     }
+    vlog(cd_log.debug, "Not leader in processing {} for {}", req_name, l1_ntp);
     co_return resp_t{.ec = rpc::errc::not_leader};
 }
 
