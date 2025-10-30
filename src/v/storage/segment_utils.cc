@@ -812,6 +812,11 @@ ss::future<compaction_result> self_compact_segment(
     auto segment_needs_compaction
       = s->is_compactible(cfg)
         && (!s->has_self_compact_timestamp() || should_force_compaction);
+    vlog(
+      gclog.trace,
+      "Considering {} for self compaction: {}",
+      s->filename(),
+      segment_needs_compaction);
     if (!segment_needs_compaction) {
         co_return compaction_result{s->size_bytes()};
     }

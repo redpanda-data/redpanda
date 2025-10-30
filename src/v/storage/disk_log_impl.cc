@@ -671,6 +671,13 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
           gclog.debug, "[{}] no segments in range to compact", config().ntp());
         co_return false;
     }
+    vlog(
+      gclog.trace,
+      "[{}] Initial sliding window contains {} segments in interval [{}, {}]",
+      config().ntp(),
+      segs.size(),
+      segs.front()->filename(),
+      segs.back()->filename());
     bool has_self_compacted = false;
     for (auto& seg : segs) {
         if (cfg.asrc) {
