@@ -14,10 +14,64 @@ import (
 	"time"
 
 	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
+	dataplanev1 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+var (
+	closeTime = "2025-10-23T01:02:05Z"
+	expected  = &Connection{
+		NodeID:             2,
+		ShardID:            4,
+		UID:                "36338ca5-86b7-4478-ad23-32d49cfaef61",
+		State:              "KAFKA_CONNECTION_STATE_OPEN",
+		OpenTime:           "2025-10-23T01:02:03Z",
+		CloseTime:          &closeTime,
+		ConnectionDuration: "2s",
+		TLSEnabled:         true,
+		IdleDuration:       "100ms",
+		ListenerName:       "external",
+		TransactionalID:    "trans-id",
+		Group: &GroupInfo{
+			ID:         "group-a",
+			MemberID:   "group-member",
+			InstanceID: "group-instance",
+		},
+		Authentication: &Authentication{
+			State:         "AUTHENTICATION_STATE_SUCCESS",
+			Mechanism:     "AUTHENTICATION_MECHANISM_MTLS",
+			UserPrincipal: "someone",
+		},
+		Client: &Client{
+			IP:              "4.2.2.1",
+			Port:            49722,
+			ID:              "a-unique-client-id",
+			SoftwareName:    "some-library",
+			SoftwareVersion: "v0.0.1",
+		},
+		APIVersions: []APIVersion{{API: dataplanev1.KafkaAPI_KAFKA_API_PRODUCE.String(), Version: 4}},
+		ActiveRequests: &ActiveRequests{
+			SampledRequests: []SampledRequest{
+				{API: dataplanev1.KafkaAPI_KAFKA_API_PRODUCE.String(), Duration: "40ms"},
+			},
+			HasMoreRequests: true,
+		},
+		RequestStatisticsAll: &RequestStatistics{
+			ProduceBytes:      10000,
+			FetchBytes:        2000,
+			RequestCount:      200,
+			ProduceBatchCount: 10,
+		},
+		RequestStatistics1m: &RequestStatistics{
+			ProduceBytes:      1000,
+			FetchBytes:        200,
+			RequestCount:      20,
+			ProduceBatchCount: 1,
+		},
+	}
 )
 
 func TestParseConnection(t *testing.T) {
@@ -27,7 +81,7 @@ func TestParseConnection(t *testing.T) {
 		Uid:       "36338ca5-86b7-4478-ad23-32d49cfaef61",
 		State:     adminv2.KafkaConnectionState_KAFKA_CONNECTION_STATE_OPEN,
 		OpenTime:  timestamppb.New(time.Date(2025, 10, 23, 1, 2, 3, 0, time.UTC)),
-		CloseTime: nil,
+		CloseTime: timestamppb.New(time.Date(2025, 10, 23, 1, 2, 5, 0, time.UTC)),
 		AuthenticationInfo: &adminv2.AuthenticationInfo{
 			State:         adminv2.AuthenticationState_AUTHENTICATION_STATE_SUCCESS,
 			Mechanism:     adminv2.AuthenticationMechanism_AUTHENTICATION_MECHANISM_MTLS,
@@ -47,7 +101,7 @@ func TestParseConnection(t *testing.T) {
 		GroupId:               "group-a",
 		GroupInstanceId:       "group-instance",
 		GroupMemberId:         "group-member",
-		ApiVersions:           map[int32]int32{0: 4, 9: 11},
+		ApiVersions:           map[int32]int32{0: 4},
 		IdleDuration:          durationpb.New(100 * time.Millisecond),
 		TransactionalId:       "trans-id",
 		InFlightRequests: &adminv2.InFlightRequests{
@@ -73,66 +127,58 @@ func TestParseConnection(t *testing.T) {
 		},
 	}
 
-	out := parseConnection(protoConn)
+	require.Equal(t, expected, parseConnection(protoConn))
+}
 
-	// Verify basic fields
-	require.Equal(t, int32(2), out.NodeID)
-	require.Equal(t, uint32(4), out.ShardID)
-	require.Equal(t, "36338ca5-86b7-4478-ad23-32d49cfaef61", out.UID)
-	require.Equal(t, "OPEN", out.State)
-	require.Equal(t, "2025-10-23T01:02:03Z", out.OpenTime)
-	require.Nil(t, out.CloseTime)
-	require.NotEmpty(t, out.ConnectionDuration)
-	require.True(t, out.TLSEnabled)
-	require.Equal(t, "group-a", out.GroupID)
-	require.Equal(t, "group-instance", out.GroupInstanceID)
-	require.Equal(t, "group-member", out.GroupMemberID)
-	require.Equal(t, "100ms", out.IdleDuration)
-	require.Equal(t, "external", out.ListenerName)
-	require.Equal(t, "trans-id", out.TransactionalID)
-
-	// Verify authentication
-	require.Equal(t, &Authentication{
-		State:         "SUCCESS",
-		Mechanism:     "MTLS",
-		UserPrincipal: "someone",
-	}, out.Authentication)
-
-	// Verify client
-	require.Equal(t, &Client{
-		IP:              "4.2.2.1",
-		Port:            49722,
-		ID:              "a-unique-client-id",
-		SoftwareName:    "some-library",
-		SoftwareVersion: "v0.0.1",
-	}, out.Client)
-
-	// Verify API versions (order-independent check)
-	require.ElementsMatch(t, []APIVersion{
-		{API: "PRODUCE", Version: 4},
-		{API: "OFFSET_FETCH", Version: 11},
-	}, out.APIVersions)
-
-	// Verify active requests
-	require.Equal(t, &ActiveRequests{
-		SampledRequests: []SampledRequest{
-			{API: "PRODUCE", Duration: "40ms"},
+func TestParseDataplaneConnection(t *testing.T) {
+	require.Equal(t, expected, parseDataplaneConnection(&dataplanev1.Connection{
+		NodeId:    2,
+		ShardId:   4,
+		Uid:       "36338ca5-86b7-4478-ad23-32d49cfaef61",
+		State:     adminv2.KafkaConnectionState_KAFKA_CONNECTION_STATE_OPEN,
+		OpenTime:  timestamppb.New(time.Date(2025, 10, 23, 1, 2, 3, 0, time.UTC)),
+		CloseTime: timestamppb.New(time.Date(2025, 10, 23, 1, 2, 5, 0, time.UTC)),
+		Authentication: &adminv2.AuthenticationInfo{
+			State:         adminv2.AuthenticationState_AUTHENTICATION_STATE_SUCCESS,
+			Mechanism:     adminv2.AuthenticationMechanism_AUTHENTICATION_MECHANISM_MTLS,
+			UserPrincipal: "someone",
 		},
-		HasMoreRequests: true,
-	}, out.ActiveRequests)
-
-	// Verify statistics
-	require.Equal(t, &RequestStatistics{
-		ProduceBytes:      10000,
-		FetchBytes:        2000,
-		RequestCount:      200,
-		ProduceBatchCount: 10,
-	}, out.RequestStatisticsAll)
-
-	require.Equal(t, &RequestStatistics{
-		ProduceBytes:      1000,
-		FetchBytes:        200,
-		RequestCount:      20,
-		ProduceBatchCount: 1,
-	}, out.RequestStatistics1m)
+		TlsEnabled:   true,
+		ListenerName: "external",
+		Client: &dataplanev1.ConnectionClient{
+			Ip:              "4.2.2.1",
+			Port:            49722,
+			Id:              "a-unique-client-id",
+			SoftwareName:    "some-library",
+			SoftwareVersion: "v0.0.1",
+		},
+		Group: &dataplanev1.GroupInfo{
+			Id:         "group-a",
+			InstanceId: "group-instance",
+			MemberId:   "group-member",
+		},
+		ApiVersions: []*dataplanev1.APIVersion{
+			{Api: dataplanev1.KafkaAPI_KAFKA_API_PRODUCE, Version: 4},
+		},
+		IdleDuration:    durationpb.New(100 * time.Millisecond),
+		TransactionalId: "trans-id",
+		ActiveRequests: &dataplanev1.ActiveRequests{
+			Requests: []*dataplanev1.ActiveRequests_Request{
+				{Api: dataplanev1.KafkaAPI_KAFKA_API_PRODUCE, Duration: durationpb.New(40 * time.Millisecond)},
+			},
+			HasMoreRequests: true,
+		},
+		RequestStatisticsAll: &adminv2.RequestStatistics{
+			ProduceBytes:      10000,
+			FetchBytes:        2000,
+			RequestCount:      200,
+			ProduceBatchCount: 10,
+		},
+		RequestStatistics_1M: &adminv2.RequestStatistics{
+			ProduceBytes:      1000,
+			FetchBytes:        200,
+			RequestCount:      20,
+			ProduceBatchCount: 1,
+		},
+	}))
 }

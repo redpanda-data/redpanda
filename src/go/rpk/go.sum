@@ -12,10 +12,10 @@ buf.build/gen/go/redpandadata/core/connectrpc/go v1.19.1-20251031041656-b5652b54
 buf.build/gen/go/redpandadata/core/connectrpc/go v1.19.1-20251031041656-b5652b54ce76.2/go.mod h1:DzxK2flGZATOVQYj2Yr2Vxgw6gA3S2O1gr1jxquVZBk=
 buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.10-20251031041656-b5652b54ce76.1 h1:sieB4fNFl0YhNthhlvByeBOtI67FNxlKjg3wNDbFm2U=
 buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.10-20251031041656-b5652b54ce76.1/go.mod h1:QenSPzqxZpyo9hHIpRzTetvDchelVDzimnmaggHKenc=
-buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.19.1-20251027225853-643acf04839f.2 h1:lleqpbHhE/SYEI/oeW2RVLZghkfhnAtIL1xk+ioTCos=
-buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.19.1-20251027225853-643acf04839f.2/go.mod h1:lhAYzpdAM94nEirXzLwymBud3CxFzmHGPTdMGSEM79U=
-buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.10-20251027225853-643acf04839f.1 h1:+QCxgPzEelsR15FWSky3nurPjPh7PfelmNZmgvD7nRA=
-buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.10-20251027225853-643acf04839f.1/go.mod h1:971HJnUM/0fTBc/LowaoI2ybuR8s+LLlQDpCkPxMwN8=
+buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.19.1-00000000000000-6032d9405263.2 h1:GrWApmnb66kg/di/eOCY3XeSqYSWUZEpLVQutZMSpQ4=
+buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.19.1-00000000000000-6032d9405263.2/go.mod h1:MDDsL64h613XunKObJwZ6yCKk4ousejC+y0NU+nmYp4=
+buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.10-00000000000000-6032d9405263.1 h1:qvvllwcFnR0fNCt3J+7NlblUK6dEV/xVZkv4KLHSgEc=
+buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.10-00000000000000-6032d9405263.1/go.mod h1:971HJnUM/0fTBc/LowaoI2ybuR8s+LLlQDpCkPxMwN8=
 buf.build/gen/go/redpandadata/gatekeeper/connectrpc/go v1.19.1-20251022210437-a5dd600d04b6.2 h1:TpeR1/FQQjGM6AjB3c/+AklMivMEsWNcJYZeipcmMGU=
 buf.build/gen/go/redpandadata/gatekeeper/connectrpc/go v1.19.1-20251022210437-a5dd600d04b6.2/go.mod h1:2PhIGolYdEsQckSpa7ZjVNWn+Z6BeLpSZBb20w1oWlw=
 buf.build/gen/go/redpandadata/gatekeeper/protocolbuffers/go v1.36.10-20251022210437-a5dd600d04b6.1 h1:buRXwBZNRhjymido98wvND0dtS3D/Ww5VmlDYwEKfvU=

@@ -37,6 +37,7 @@ type DataPlaneClientSet struct {
 	Quota         dataplanev1connect.QuotaServiceClient
 	Secret        dataplanev1connect.SecretServiceClient
 	Security      dataplanev1connect.SecurityServiceClient
+	Monitoring    dataplanev1connect.MonitoringServiceClient
 	KnowledgeBase dataplanev1alpha3connect.KnowledgeBaseServiceClient
 
 	m         sync.RWMutex
@@ -117,6 +118,7 @@ func NewDataPlaneClientSet(host, authToken string, opts ...connect.ClientOption)
 	dpCl.Quota = dataplanev1connect.NewQuotaServiceClient(httpCl, host, opts...)
 	dpCl.Secret = dataplanev1connect.NewSecretServiceClient(httpCl, host, opts...)
 	dpCl.Security = dataplanev1connect.NewSecurityServiceClient(httpCl, host, opts...)
+	dpCl.Monitoring = dataplanev1connect.NewMonitoringServiceClient(httpCl, host, opts...)
 	dpCl.KnowledgeBase = dataplanev1alpha3connect.NewKnowledgeBaseServiceClient(httpCl, host, opts...)
 
 	return dpCl, nil

@@ -18,11 +18,13 @@ import (
 	"time"
 
 	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
+	dataplanev1 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1"
 	"connectrpc.com/connect"
 	"github.com/docker/go-units"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -51,10 +53,7 @@ var tableHeaders = []string{
 	"REQS/MIN",
 }
 
-func getConnectionDuration(conn *adminv2.KafkaConnection) string {
-	opened := conn.OpenTime.AsTime()
-	closed := conn.CloseTime.AsTime()
-
+func getConnectionDuration(opened time.Time, closed time.Time) string {
 	duration := closed.Sub(opened)
 	if opened.After(closed) {
 		duration = time.Since(opened)
@@ -186,43 +185,50 @@ List extended output for open connections in json format:
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			// This doesn't support using the public API yet
-			config.CheckExitCloudAdmin(prof)
+			conns := []*Connection{}
 
-			cl, err := adminapi.NewClient(cmd.Context(), fs, prof)
-			out.MaybeDie(err, "unable to initialize admin client: %v", err)
+			if prof.CloudCluster.IsServerless() {
+				out.Die("Serverless clusters aren't yet supported")
+			} else if prof.FromCloud {
+				cl, err := publicapi.DataplaneClientFromRpkProfile(prof)
+				out.MaybeDie(err, "unable to initialize cloud API client: %v", err)
 
-			// Build the filters based on the current flag set
-			filterClauses, err := filters.buildFilterClauses()
-			out.MaybeDie(err, "invalid filters: %v", err)
+				resp, err := cl.Monitoring.ListConnections(cmd.Context(), &connect.Request[dataplanev1.ListConnectionsRequest]{})
+				out.MaybeDie(err, "error listing connections: %v", err)
 
-			filterString := filterRaw
-			if len(filterClauses) > 0 {
-				filterString = strings.Join(filterClauses, " AND ")
-			}
+				for _, conn := range resp.Msg.Connections {
+					conns = append(conns, parseDataplaneConnection(conn))
+				}
+			} else {
+				cl, err := adminapi.NewClient(cmd.Context(), fs, prof)
+				out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			req := adminv2.ListKafkaConnectionsRequest{
-				Filter:   filterString,
-				OrderBy:  orderBy,
-				PageSize: limit,
-			}
+				// Build the filters based on the current flag set
+				filterClauses, err := filters.buildFilterClauses()
+				out.MaybeDie(err, "invalid filters: %v", err)
 
-			resp, err := cl.ClusterService().ListKafkaConnections(cmd.Context(), &connect.Request[adminv2.ListKafkaConnectionsRequest]{Msg: &req})
-			out.MaybeDie(err, "error listing connections: %v", err)
+				filterString := filterRaw
+				if len(filterClauses) > 0 {
+					filterString = strings.Join(filterClauses, " AND ")
+				}
 
-			conns := make([]*Connection, len(resp.Msg.Connections))
-			for i, conn := range resp.Msg.Connections {
-				conns[i] = parseConnection(conn)
+				req := adminv2.ListKafkaConnectionsRequest{
+					Filter:   filterString,
+					OrderBy:  orderBy,
+					PageSize: limit,
+				}
+
+				resp, err := cl.ClusterService().ListKafkaConnections(cmd.Context(), &connect.Request[adminv2.ListKafkaConnectionsRequest]{Msg: &req})
+				out.MaybeDie(err, "error listing connections: %v", err)
+
+				for _, conn := range resp.Msg.Connections {
+					conns = append(conns, parseConnection(conn))
+				}
 			}
 
 			if p.Formatter.IsText() {
 				fmt.Println(printConnectionListTable(conns))
 			} else {
-				// Convert from the core format to ours
-				conns := make([]*Connection, len(resp.Msg.Connections))
-				for i, conn := range resp.Msg.Connections {
-					conns[i] = parseConnection(conn)
-				}
-
 				_, _, output, err := p.Formatter.Format(conns)
 				out.MaybeDie(err, "unable to print in the required format %q: %v", p.Formatter.Kind, err)
 				out.Exit(output)

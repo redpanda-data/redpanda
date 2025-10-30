@@ -10,8 +10,8 @@ require (
 	buf.build/gen/go/redpandadata/cloud/protocolbuffers/go v1.36.10-20251022210436-bbacedafcd60.1
 	buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.36.10-20250904135917-9feeb2588236.1
 	buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.10-20251031041656-b5652b54ce76.1
-	buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.19.1-20251027225853-643acf04839f.2
-	buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.10-20251027225853-643acf04839f.1
+	buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.19.1-00000000000000-6032d9405263.2
+	buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.10-00000000000000-6032d9405263.1
 	buf.build/gen/go/redpandadata/gatekeeper/connectrpc/go v1.19.1-20251022210437-a5dd600d04b6.2
 	buf.build/gen/go/redpandadata/gatekeeper/protocolbuffers/go v1.36.10-20251022210437-a5dd600d04b6.1
 	cloud.google.com/go/compute/metadata v0.9.0

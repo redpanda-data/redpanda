@@ -11,11 +11,17 @@
 package connections
 
 import (
-	"strings"
 	"time"
 
 	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
+	dataplanev1 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1"
 )
+
+type GroupInfo struct {
+	ID         string `json:"id" yaml:"id"`
+	InstanceID string `json:"instance_id" yaml:"instance_id"`
+	MemberID   string `json:"member_id" yaml:"member_id"`
+}
 
 // Connection represents a Kafka connection with custom formatting for output.
 type Connection struct {
@@ -29,9 +35,7 @@ type Connection struct {
 	Authentication       *Authentication    `json:"authentication,omitempty" yaml:"authentication,omitempty"`
 	TLSEnabled           bool               `json:"tls_enabled" yaml:"tls_enabled"`
 	Client               *Client            `json:"client,omitempty" yaml:"client,omitempty"`
-	GroupID              string             `json:"group_id,omitempty" yaml:"group_id,omitempty"`
-	GroupInstanceID      string             `json:"group_instance_id,omitempty" yaml:"group_instance_id,omitempty"`
-	GroupMemberID        string             `json:"group_member_id,omitempty" yaml:"group_member_id,omitempty"`
+	Group                *GroupInfo         `json:"group" yaml:"group"`
 	ListenerName         string             `json:"listener_name,omitempty" yaml:"listener_name,omitempty"`
 	TransactionalID      string             `json:"transactional_id,omitempty" yaml:"transactional_id,omitempty"`
 	APIVersions          []APIVersion       `json:"api_versions" yaml:"api_versions"`
@@ -83,12 +87,78 @@ type RequestStatistics struct {
 	ProduceBatchCount uint64 `json:"produce_batch_count" yaml:"produce_batch_count"`
 }
 
+func parseDataplaneConnection(conn *dataplanev1.Connection) *Connection {
+	opened := conn.OpenTime.AsTime().Format(time.RFC3339)
+	closed := ""
+	if conn.CloseTime != nil {
+		closed = conn.CloseTime.AsTime().Format(time.RFC3339)
+	}
+
+	versions := make([]APIVersion, len(conn.ApiVersions))
+	for i, ver := range conn.ApiVersions {
+		versions[i] = APIVersion{API: ver.Api.String(), Version: ver.Version}
+	}
+
+	requests := make([]SampledRequest, len(conn.ActiveRequests.Requests))
+	for i, req := range conn.ActiveRequests.Requests {
+		requests[i] = SampledRequest{API: req.Api.String(), Duration: req.Duration.AsDuration().String()}
+	}
+
+	return &Connection{
+		NodeID:             conn.NodeId,
+		ShardID:            conn.ShardId,
+		UID:                conn.Uid,
+		OpenTime:           opened,
+		CloseTime:          &closed,
+		ConnectionDuration: getConnectionDuration(conn.OpenTime.AsTime(), conn.CloseTime.AsTime()),
+		IdleDuration:       conn.IdleDuration.AsDuration().String(),
+		State:              conn.State.String(),
+		TLSEnabled:         conn.TlsEnabled,
+		ListenerName:       conn.ListenerName,
+		TransactionalID:    conn.TransactionalId,
+		Authentication: &Authentication{
+			State:         conn.Authentication.State.String(),
+			Mechanism:     conn.Authentication.Mechanism.String(),
+			UserPrincipal: conn.Authentication.UserPrincipal,
+		},
+		APIVersions: versions,
+		Group: &GroupInfo{
+			ID:         conn.Group.Id,
+			MemberID:   conn.Group.MemberId,
+			InstanceID: conn.Group.InstanceId,
+		},
+		Client: &Client{
+			IP:              conn.Client.Ip,
+			Port:            conn.Client.Port,
+			ID:              conn.Client.Id,
+			SoftwareName:    conn.Client.SoftwareName,
+			SoftwareVersion: conn.Client.SoftwareVersion,
+		},
+		ActiveRequests: &ActiveRequests{
+			SampledRequests: requests,
+			HasMoreRequests: conn.ActiveRequests.HasMoreRequests,
+		},
+		RequestStatisticsAll: &RequestStatistics{
+			ProduceBytes:      conn.RequestStatisticsAll.ProduceBytes,
+			FetchBytes:        conn.RequestStatisticsAll.FetchBytes,
+			RequestCount:      conn.RequestStatisticsAll.RequestCount,
+			ProduceBatchCount: conn.RequestStatisticsAll.ProduceBatchCount,
+		},
+		RequestStatistics1m: &RequestStatistics{
+			ProduceBytes:      conn.RequestStatistics_1M.ProduceBytes,
+			FetchBytes:        conn.RequestStatistics_1M.FetchBytes,
+			RequestCount:      conn.RequestStatistics_1M.RequestCount,
+			ProduceBatchCount: conn.RequestStatistics_1M.ProduceBatchCount,
+		},
+	}
+}
+
 func parseConnection(conn *adminv2.KafkaConnection) *Connection {
 	c := &Connection{
 		NodeID:  conn.NodeId,
 		ShardID: conn.ShardId,
 		UID:     conn.Uid,
-		State:   strings.TrimPrefix(conn.State.String(), "KAFKA_CONNECTION_STATE_"),
+		State:   conn.State.String(),
 	}
 
 	// Add timestamps and duration
@@ -98,14 +168,14 @@ func parseConnection(conn *adminv2.KafkaConnection) *Connection {
 			closeTime := conn.CloseTime.AsTime().Format(time.RFC3339)
 			c.CloseTime = &closeTime
 		}
-		c.ConnectionDuration = getConnectionDuration(conn)
+		c.ConnectionDuration = getConnectionDuration(conn.OpenTime.AsTime(), conn.CloseTime.AsTime())
 	}
 
 	// Parse authentication info
 	if conn.AuthenticationInfo != nil {
 		c.Authentication = &Authentication{
-			State:         strings.TrimPrefix(conn.AuthenticationInfo.State.String(), "AUTHENTICATION_STATE_"),
-			Mechanism:     strings.TrimPrefix(conn.AuthenticationInfo.Mechanism.String(), "AUTHENTICATION_MECHANISM_"),
+			State:         conn.AuthenticationInfo.State.String(),
+			Mechanism:     conn.AuthenticationInfo.Mechanism.String(),
 			UserPrincipal: conn.AuthenticationInfo.UserPrincipal,
 		}
 	}
@@ -126,15 +196,17 @@ func parseConnection(conn *adminv2.KafkaConnection) *Connection {
 	}
 
 	// Parse group ID
-	c.GroupID = conn.GroupId
-	c.GroupInstanceID = conn.GroupInstanceId
-	c.GroupMemberID = conn.GroupMemberId
+	c.Group = &GroupInfo{
+		ID:         conn.GroupId,
+		InstanceID: conn.GroupInstanceId,
+		MemberID:   conn.GroupMemberId,
+	}
 
 	// Parse API versions
 	c.APIVersions = []APIVersion{}
 	for apiKey, version := range conn.ApiVersions {
 		c.APIVersions = append(c.APIVersions, APIVersion{
-			API:     formatAPIKey(apiKey),
+			API:     mapAPIKey(apiKey).String(),
 			Version: version,
 		})
 	}
@@ -154,7 +226,7 @@ func parseConnection(conn *adminv2.KafkaConnection) *Connection {
 			c.ActiveRequests.SampledRequests = make([]SampledRequest, len(conn.InFlightRequests.SampledInFlightRequests))
 			for i, req := range conn.InFlightRequests.SampledInFlightRequests {
 				c.ActiveRequests.SampledRequests[i] = SampledRequest{
-					API:      formatAPIKey(req.ApiKey),
+					API:      mapAPIKey(req.ApiKey).String(),
 					Duration: req.InFlightDuration.AsDuration().String(),
 				}
 			}
@@ -184,81 +256,35 @@ func parseConnection(conn *adminv2.KafkaConnection) *Connection {
 	return c
 }
 
-// formatAPIKey converts a Kafka API key to its string name.
-func formatAPIKey(apiKey int32) string {
+// mapAPIKey converts a Kafka API key to its enum value.
+func mapAPIKey(apiKey int32) dataplanev1.KafkaAPI {
 	// Kafka API keys: https://kafka.apache.org/protocol.html#protocol_api_keys
-	names := map[int32]string{
-		0:  "PRODUCE",
-		1:  "FETCH",
-		2:  "LIST_OFFSETS",
-		3:  "METADATA",
-		4:  "LEADER_AND_ISR",
-		5:  "STOP_REPLICA",
-		6:  "UPDATE_METADATA",
-		7:  "CONTROLLED_SHUTDOWN",
-		8:  "OFFSET_COMMIT",
-		9:  "OFFSET_FETCH",
-		10: "FIND_COORDINATOR",
-		11: "JOIN_GROUP",
-		12: "HEARTBEAT",
-		13: "LEAVE_GROUP",
-		14: "SYNC_GROUP",
-		15: "DESCRIBE_GROUPS",
-		16: "LIST_GROUPS",
-		17: "SASL_HANDSHAKE",
-		18: "API_VERSIONS",
-		19: "CREATE_TOPICS",
-		20: "DELETE_TOPICS",
-		21: "DELETE_RECORDS",
-		22: "INIT_PRODUCER_ID",
-		23: "OFFSET_FOR_LEADER_EPOCH",
-		24: "ADD_PARTITIONS_TO_TXN",
-		25: "ADD_OFFSETS_TO_TXN",
-		26: "END_TXN",
-		27: "WRITE_TXN_MARKERS",
-		28: "TXN_OFFSET_COMMIT",
-		29: "DESCRIBE_ACLS",
-		30: "CREATE_ACLS",
-		31: "DELETE_ACLS",
-		32: "DESCRIBE_CONFIGS",
-		33: "ALTER_CONFIGS",
-		34: "ALTER_REPLICA_LOG_DIRS",
-		35: "DESCRIBE_LOG_DIRS",
-		36: "SASL_AUTHENTICATE",
-		37: "CREATE_PARTITIONS",
-		38: "CREATE_DELEGATION_TOKEN",
-		39: "RENEW_DELEGATION_TOKEN",
-		40: "EXPIRE_DELEGATION_TOKEN",
-		41: "DESCRIBE_DELEGATION_TOKEN",
-		42: "DELETE_GROUPS",
-		43: "ELECT_LEADERS",
-		44: "INCREMENTAL_ALTER_CONFIGS",
-		45: "ALTER_PARTITION_REASSIGNMENTS",
-		46: "LIST_PARTITION_REASSIGNMENTS",
-		47: "OFFSET_DELETE",
-		48: "DESCRIBE_CLIENT_QUOTAS",
-		49: "ALTER_CLIENT_QUOTAS",
-		50: "DESCRIBE_USER_SCRAM_CREDENTIALS",
-		51: "ALTER_USER_SCRAM_CREDENTIALS",
-		52: "VOTE",
-		53: "BEGIN_QUORUM_EPOCH",
-		54: "END_QUORUM_EPOCH",
-		55: "DESCRIBE_QUORUM",
-		56: "ALTER_PARTITION",
-		57: "UPDATE_FEATURES",
-		58: "ENVELOPE",
-		59: "FETCH_SNAPSHOT",
-		60: "DESCRIBE_CLUSTER",
-		61: "DESCRIBE_PRODUCERS",
-		62: "BROKER_REGISTRATION",
-		63: "BROKER_HEARTBEAT",
-		64: "UNREGISTER_BROKER",
-		65: "DESCRIBE_TRANSACTIONS",
-		66: "LIST_TRANSACTIONS",
-		67: "ALLOCATE_PRODUCER_IDS",
+	vals := map[int32]dataplanev1.KafkaAPI{
+		0:  dataplanev1.KafkaAPI_KAFKA_API_PRODUCE,
+		1:  dataplanev1.KafkaAPI_KAFKA_API_FETCH,
+		2:  dataplanev1.KafkaAPI_KAFKA_API_OFFSETS,
+		3:  dataplanev1.KafkaAPI_KAFKA_API_METADATA,
+		4:  dataplanev1.KafkaAPI_KAFKA_API_LEADER_AND_ISR,
+		5:  dataplanev1.KafkaAPI_KAFKA_API_STOP_REPLICA,
+		6:  dataplanev1.KafkaAPI_KAFKA_API_UPDATE_METADATA,
+		7:  dataplanev1.KafkaAPI_KAFKA_API_CONTROLLED_SHUTDOWN,
+		8:  dataplanev1.KafkaAPI_KAFKA_API_OFFSET_COMMIT,
+		9:  dataplanev1.KafkaAPI_KAFKA_API_OFFSET_FETCH,
+		10: dataplanev1.KafkaAPI_KAFKA_API_GROUP_COORDINATOR,
+		11: dataplanev1.KafkaAPI_KAFKA_API_JOIN_GROUP,
+		12: dataplanev1.KafkaAPI_KAFKA_API_HEARTBEAT,
+		13: dataplanev1.KafkaAPI_KAFKA_API_LEAVE_GROUP,
+		14: dataplanev1.KafkaAPI_KAFKA_API_SYNC_GROUP,
+		15: dataplanev1.KafkaAPI_KAFKA_API_DESCRIBE_GROUPS,
+		16: dataplanev1.KafkaAPI_KAFKA_API_LIST_GROUPS,
+		17: dataplanev1.KafkaAPI_KAFKA_API_SASL_HANDSHAKE,
+		18: dataplanev1.KafkaAPI_KAFKA_API_API_VERSIONS,
+		19: dataplanev1.KafkaAPI_KAFKA_API_CREATE_TOPICS,
+		20: dataplanev1.KafkaAPI_KAFKA_API_DELETE_TOPICS,
 	}
-	if name, ok := names[apiKey]; ok {
-		return name
+
+	if val, ok := vals[apiKey]; ok {
+		return val
 	}
-	return "UNKNOWN"
+	return dataplanev1.KafkaAPI_KAFKA_API_UNSPECIFIED
 }

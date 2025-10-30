@@ -13,25 +13,21 @@ import (
 	"testing"
 	"time"
 
-	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestGetConnectionDuration(t *testing.T) {
 	now := time.Now().UTC()
-	closed := timestamppb.New(now)
+	closed := timestamppb.New(now.Add(-5 * time.Second))
 	opened := timestamppb.New(now.Add(-10 * time.Second))
 
 	t.Run("open", func(t *testing.T) {
-		require.Equal(t, "10s", getConnectionDuration(&adminv2.KafkaConnection{OpenTime: opened}))
+		require.Equal(t, "10s", getConnectionDuration(opened.AsTime(), time.Time{}))
 	})
 
 	t.Run("closed", func(t *testing.T) {
-		require.Equal(t, "10s", getConnectionDuration(&adminv2.KafkaConnection{
-			OpenTime:  opened,
-			CloseTime: closed,
-		}))
+		require.Equal(t, "5s", getConnectionDuration(opened.AsTime(), closed.AsTime()))
 	})
 }
 
@@ -138,7 +134,7 @@ func TestConnectionsList(t *testing.T) {
 			UserPrincipal: "principal",
 		},
 		Client:             &Client{IP: "127.0.0.1", Port: 1234, ID: "client-id", SoftwareName: "client software name", SoftwareVersion: "v0.0.1"},
-		GroupID:            "group id",
+		Group:              &GroupInfo{ID: "group id"},
 		ConnectionDuration: "10s",
 		IdleDuration:       "100ms",
 		RequestStatisticsAll: &RequestStatistics{
