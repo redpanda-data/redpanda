@@ -28,13 +28,13 @@ enum class recovery_error_code {
     unknown_error,
 };
 
-class recovery_error_category : public std::error_category {
+class recovery_error_category_type : public std::error_category {
 public:
     const char* name() const noexcept final;
     std::string message(int c) const final;
 };
 
-const std::error_category& error_category() noexcept;
+const std::error_category& recovery_error_category() noexcept;
 
 std::error_code make_error_code(recovery_error_code e) noexcept;
 

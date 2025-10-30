@@ -14,11 +14,11 @@
 
 namespace cloud_storage {
 
-const char* recovery_error_category::name() const noexcept {
+const char* recovery_error_category_type::name() const noexcept {
     return "recovery_error_code";
 }
 
-std::string recovery_error_category::message(int c) const {
+std::string recovery_error_category_type::message(int c) const {
     switch (static_cast<recovery_error_code>(c)) {
     case recovery_error_code::success:
         return "recovery successful";
@@ -37,13 +37,13 @@ std::string recovery_error_category::message(int c) const {
     }
 }
 
-const std::error_category& error_category() noexcept {
-    static const recovery_error_category e;
+const std::error_category& recovery_error_category() noexcept {
+    static const recovery_error_category_type e;
     return e;
 }
 
 std::error_code make_error_code(recovery_error_code e) noexcept {
-    return {static_cast<int>(e), error_category()};
+    return {static_cast<int>(e), recovery_error_category()};
 }
 
 recovery_error_ctx
