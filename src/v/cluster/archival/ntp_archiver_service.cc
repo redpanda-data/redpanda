@@ -2604,6 +2604,9 @@ ss::future<> ntp_archiver::apply_archive_retention() {
           _rtclog.warn,
           "Failed to replicate archive truncation command: {}",
           error.message());
+
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format, "Failed to apply archive retention: {}", error));
     } else {
         vlog(
           _rtclog.info,
