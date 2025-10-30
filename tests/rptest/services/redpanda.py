@@ -4507,6 +4507,10 @@ class RedpandaService(RedpandaServiceBase):
         if timeout is None:
             timeout = 30
 
+        self.logger.info(
+            "Waiting up to %d seconds for node %s to stop" % (timeout, node.name)
+        )
+
         try:
             wait_until(
                 lambda: self.redpanda_pid(node) == None,
