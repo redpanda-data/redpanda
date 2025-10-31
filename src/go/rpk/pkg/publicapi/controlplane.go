@@ -17,8 +17,10 @@ import (
 	"sync"
 	"time"
 
+	"buf.build/gen/go/redpandadata/cloud/connectrpc/go/redpanda/api/controlplane/v1/controlplanev1connect"
 	"buf.build/gen/go/redpandadata/cloud/connectrpc/go/redpanda/api/controlplane/v1beta2/controlplanev1beta2connect"
 	"buf.build/gen/go/redpandadata/cloud/connectrpc/go/redpanda/api/iam/v1beta2/iamv1beta2connect"
+	controlplanev1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1"
 	controlplanev1beta2 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1beta2"
 	iamv1beta2 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/iam/v1beta2"
 	"connectrpc.com/connect"
@@ -31,6 +33,7 @@ type CloudClientSet struct {
 	Organization  iamv1beta2connect.OrganizationServiceClient
 	ResourceGroup controlplanev1beta2connect.ResourceGroupServiceClient
 	Serverless    controlplanev1beta2connect.ServerlessClusterServiceClient
+	ServerlessV1  controlplanev1connect.ServerlessClusterServiceClient
 }
 
 // NewCloudClientSet creates a Public API client set with the service
@@ -53,6 +56,7 @@ func NewCloudClientSet(host, authToken string, opts ...connect.ClientOption) *Cl
 		Organization:  iamv1beta2connect.NewOrganizationServiceClient(httpCl, host, opts...),
 		ResourceGroup: controlplanev1beta2connect.NewResourceGroupServiceClient(httpCl, host, opts...),
 		Serverless:    controlplanev1beta2connect.NewServerlessClusterServiceClient(httpCl, host, opts...),
+		ServerlessV1:  controlplanev1connect.NewServerlessClusterServiceClient(httpCl, host, opts...),
 	}
 }
 
@@ -105,6 +109,19 @@ func (cpCl *CloudClientSet) ServerlessClusters(ctx context.Context) ([]*controlp
 
 func (cpCl *CloudClientSet) ServerlessClusterForID(ctx context.Context, ID string) (*controlplanev1beta2.ServerlessCluster, error) {
 	c, err := cpCl.Serverless.GetServerlessCluster(ctx, connect.NewRequest(&controlplanev1beta2.GetServerlessClusterRequest{
+		Id: ID,
+	}))
+	if err != nil {
+		return nil, fmt.Errorf("unable to request serverless cluster %q information: %w", ID, err)
+	}
+	if c.Msg.ServerlessCluster == nil {
+		return nil, fmt.Errorf("unable to find serverless cluster %q; please report this bug to Redpanda Support", ID)
+	}
+	return c.Msg.ServerlessCluster, nil
+}
+
+func (cpCl *CloudClientSet) ServerlessClusterV1ForID(ctx context.Context, ID string) (*controlplanev1.ServerlessCluster, error) {
+	c, err := cpCl.ServerlessV1.GetServerlessCluster(ctx, connect.NewRequest(&controlplanev1.GetServerlessClusterRequest{
 		Id: ID,
 	}))
 	if err != nil {
