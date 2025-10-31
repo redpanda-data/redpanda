@@ -524,7 +524,7 @@ async def main():
         "--use-prometheus",
         action=argparse.BooleanOptionalAction,
         help="whether to spin up an instance of prometheus",
-        default=True,
+        default=False,
     )
     parser.add_argument(
         "--grafana",
@@ -536,7 +536,7 @@ async def main():
         "--use-grafana",
         action=argparse.BooleanOptionalAction,
         help="whether to spin up an instance of grafana",
-        default=True,
+        default=False,
     )
     parser.add_argument(
         "--config-overrides",
