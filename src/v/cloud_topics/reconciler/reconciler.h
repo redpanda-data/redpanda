@@ -172,6 +172,7 @@ private:
 
     // Top-level background worker that drives reconciliation.
     ss::future<> reconciliation_loop();
+    ss::lowres_clock::duration reconciliation_interval() const;
     ssx::semaphore _control_sem{0, "reconciler::semaphore"};
 
     /*

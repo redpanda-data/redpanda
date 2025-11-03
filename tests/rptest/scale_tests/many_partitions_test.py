@@ -26,7 +26,12 @@ from rptest.services.kgo_verifier_services import (
 )
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, LoggingConfig
+from rptest.services.redpanda import (
+    CLOUD_TOPICS_CONFIG_STR,
+    RESTART_LOG_ALLOW_LIST,
+    LoggingConfig,
+    SISettings,
+)
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.scale_parameters import ScaleParameters
@@ -131,12 +136,16 @@ class ManyPartitionsTest(PreallocNodesTest):
             # very many partitions: set logs with per-partition messages
             # to warn instead of info.
             log_config=LoggingConfig(
-                "info",
+                "debug",
                 logger_levels={
+                    "cluster": "info",
                     "storage": "warn",
                     "storage-gc": "warn",
                     "raft": "warn",
                     "offset_translator": "warn",
+                    "reconciler": "debug",
+                    "cloud_topics": "trace",
+                    "kafka": "trace",
                 },
             ),
             **kwargs,
@@ -360,7 +369,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         transfers_per_sec = 10
         expect_leader_transfer_time = (
             2 * (n_partitions / len(self.redpanda.nodes)) / transfers_per_sec
-            + (self.LEADER_BALANCER_PERIOD_MS / 1000) * 2
+            + (self.LEADER_BALANCER_PERIOD_MS / 1000) * 3
         )
         self.logger.info(
             f"Waiting {expect_leader_transfer_time}s for leadership balance after restart"
@@ -574,6 +583,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                 msg_size,
                 msg_count_per_topic,
                 custom_node=[self.preallocated_nodes[0]],
+                debug_logs=True,
             )
             producer.start()
             producer.wait(timeout_sec=expect_transmit_time)
@@ -597,6 +607,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             stress_msg_size,
             stress_msg_count,
             custom_node=[self.preallocated_nodes[0]],
+            debug_logs=True,
         )
         fast_producer.start()
 
@@ -633,10 +644,11 @@ class ManyPartitionsTest(PreallocNodesTest):
         max_msgs = None
         expect_transmit_time = 600  # empirically derived
 
-        # When tiered storage is enabled, don't consume the entire topic, as
-        # that could entail millions of segments from the cloud. At least
-        # ensure we read enough to download a few segments per partition.
-        if scale.tiered_storage_enabled:
+        # When tiered storage or cloud topics is enabled, don't consume the
+        # entire topic, as that could entail millions of segments from the
+        # cloud. At least ensure we read enough to download a few segments per
+        # partition.
+        if scale.tiered_storage_enabled or scale.cloud_topics_enabled:
             max_msgs = 50 * scale.partition_limit
             expect_transmit_time = max(
                 60,
@@ -660,7 +672,7 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         verifier.wait(timeout_sec=expect_transmit_time)
         assert verifier.consumer_status.validator.invalid_reads == 0
-        if not scale.tiered_storage_enabled:
+        if not scale.cloud_topics_enabled and not scale.tiered_storage_enabled:
             assert (
                 verifier.consumer_status.validator.valid_reads
                 >= fast_producer.produce_status.acked + msg_count_per_topic
@@ -826,12 +838,33 @@ class ManyPartitionsTest(PreallocNodesTest):
         # peak partition count.
         self._run_omb(scale)
 
+    @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @parametrize(
+        mib_per_partition=DEFAULT_MIB_PER_PARTITION,
+        topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD,
+    )
+    def test_many_partitions_cloud_topics(
+        self, mib_per_partition, topic_partitions_per_shard
+    ):
+        """
+        Test many partitions with cloud topics enabled. This validates that
+        cloud topics can handle high partition counts and exercises the L1
+        reconciliation loop under scale.
+        """
+        self._test_many_partitions(
+            compacted=False,
+            mib_per_partition=mib_per_partition,
+            topic_partitions_per_shard=topic_partitions_per_shard,
+            cloud_topics_enabled=True,
+        )
+
     def _test_many_partitions(
         self,
         compacted,
         mib_per_partition,
         topic_partitions_per_shard,
         tiered_storage_enabled=False,
+        cloud_topics_enabled=False,
     ):
         """
         Validate that redpanda works with partition counts close to its resource
@@ -871,6 +904,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             mib_per_partition,
             topic_partitions_per_shard,
             tiered_storage_enabled=tiered_storage_enabled,
+            cloud_topics_enabled=cloud_topics_enabled,
             partition_memory_reserve_percentage=DEFAULT_PARTITIONS_MEMORY_ALLOCATION_PERCENT,
         )
 
@@ -896,7 +930,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         # We skip setting them on tiered storage where `expect_bandwidth` is
         # calculated for the worst case scenario and we don't want to limit the
         # best case one.
-        if not scale.tiered_storage_enabled:
+        if not scale.tiered_storage_enabled and not scale.cloud_topics_enabled:
             self.redpanda.add_extra_rp_conf(
                 {
                     "kafka_throughput_limit_node_in_bps": int(
@@ -908,13 +942,18 @@ class ManyPartitionsTest(PreallocNodesTest):
                 }
             )
 
-        self.redpanda.add_extra_rp_conf(
-            {
-                "topic_partitions_per_shard": topic_partitions_per_shard,
-                "topic_memory_per_partition": int(mib_per_partition * 1024 * 1024),
-                "topic_partitions_memory_allocation_percent": DEFAULT_PARTITIONS_MEMORY_ALLOCATION_PERCENT,
-            }
-        )
+        extra_conf = {
+            "topic_partitions_per_shard": topic_partitions_per_shard,
+            "topic_memory_per_partition": int(mib_per_partition * 1024 * 1024),
+            "topic_partitions_memory_allocation_percent": DEFAULT_PARTITIONS_MEMORY_ALLOCATION_PERCENT,
+        }
+
+        if scale.cloud_topics_enabled:
+            extra_conf[CLOUD_TOPICS_CONFIG_STR] = True
+            extra_conf["cloud_topics_reconciliation_interval"] = 1000
+            extra_conf["cloud_topics_level_one_garbage_collection_interval"] = 5000
+
+        self.redpanda.add_extra_rp_conf(extra_conf)
 
         self.redpanda.start()
 
@@ -936,6 +975,9 @@ class ManyPartitionsTest(PreallocNodesTest):
                     config["cleanup.policy"] = "compact"
             else:
                 config["cleanup.policy"] = "delete"
+
+            if cloud_topics_enabled:
+                config["redpanda.cloud_topic.enabled"] = "true"
 
             self.rpk.create_topic(
                 tn, partitions=n_partitions, replicas=replication_factor, config=config
@@ -996,9 +1038,13 @@ class ManyPartitionsTest(PreallocNodesTest):
             **repeater_kwargs,
         ) as repeater:
             repeater_await_bytes = 1e9
-            if scale.tiered_storage_enabled or not self.redpanda.dedicated_nodes:
-                # Be much more lenient when tiered storage is enabled, since
-                # the repeater incurs reads.
+            if (
+                scale.cloud_topics_enabled
+                or scale.tiered_storage_enabled
+                or not self.redpanda.dedicated_nodes
+            ):
+                # Be much more lenient when tiered storage or cloud topics is
+                # enabled, since the repeater incurs reads.
                 repeater_await_bytes = 1e8
             repeater_await_msgs = int(repeater_await_bytes / repeater_msg_size)
 

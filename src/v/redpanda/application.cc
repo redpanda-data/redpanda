@@ -396,10 +396,6 @@ void application::shutdown() {
             return mgr.invoke_on_all(&datalake::credential_manager::stop);
         });
     }
-    if (cloud_topics_app) {
-        shutdown_with_watchdog(
-          cloud_topics_app, [](auto& app) { return app->stop(); });
-    }
     // Stop all partitions before destructing the subsystems (transaction
     // coordinator, etc). This interrupts ongoing replication requests,
     // allowing higher level state machines to shutdown cleanly.
@@ -410,6 +406,12 @@ void application::shutdown() {
         });
     }
 
+    // NOTE: we must shut down the partitions first above to ensure in-flight
+    // replication is stopped, as it may cause cloud topics shutdown to hang.
+    if (cloud_topics_app) {
+        shutdown_with_watchdog(
+          cloud_topics_app, [](auto& app) { return app->stop(); });
+    }
     // Wait for all requests to finish before destructing services that may be
     // used by pending requests.
     if (_kafka_server.ref().local_is_initialized()) {
@@ -3442,7 +3444,7 @@ void application::start_runtime_services(
                 std::make_unique<cloud_topics::l1::rpc::service>(
                   sched_groups.datalake_sg(),
                   smp_service_groups.datalake_sg(),
-                  cloud_topics_app->get_sharded_l1_metastore_fe()));
+                  cloud_topics_app->get_sharded_l1_metastore_router()));
           }
           runtime_services.push_back(
             std::make_unique<admin::proxy::service_impl>(

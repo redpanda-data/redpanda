@@ -13,6 +13,7 @@
 #include "cloud_topics/level_one/metastore/rpc_types.h"
 #include "cloud_topics/level_one/metastore/simple_metastore.h"
 #include "cloud_topics/logger.h"
+#include "config/configuration.h"
 #include "model/batch_builder.h"
 #include "ssx/future-util.h"
 #include "ssx/sleep_abortable.h"
@@ -437,6 +438,14 @@ domain_manager::set_start_offset(rpc::set_start_offset_request req) {
           .ec = rpc::errc::concurrent_requests,
         };
     }
+    if (update_res.value().is_no_op(stm_->state())) {
+        vlog(
+          cd_log.debug,
+          "Request to set {} start offset to {} is no-op",
+          req.tp,
+          req.start_offset);
+        co_return rpc::set_start_offset_reply{.ec = rpc::errc::ok};
+    }
     storage::record_batch_builder builder(
       model::record_batch_type::l1_stm, model::offset{0});
     builder.add_raw_kv(
@@ -521,13 +530,17 @@ domain_manager::remove_topics(rpc::remove_topics_request req) {
     };
 }
 
+ss::lowres_clock::duration domain_manager::gc_interval() const {
+    return config::shard_local_cfg()
+      .cloud_topics_level_one_garbage_collection_interval();
+}
+
 ss::future<> domain_manager::gc_loop() {
     auto gate = maybe_gate();
     if (!gate.has_value()) {
         co_return;
     }
     // TODO: make configurable.
-    auto gc_interval = 5min;
     garbage_collector gc(stm_.get(), object_io_);
     while (!as_.abort_requested()) {
         vlog(cd_log.debug, "Running garbage collection now...");
@@ -535,10 +548,13 @@ ss::future<> domain_manager::gc_loop() {
         if (!gc_res.has_value()) {
             vlog(cd_log.warn, "Garbage collection failed: {}", gc_res.error());
         }
+        auto sleep_interval = gc_interval();
         vlog(
-          cd_log.debug, "Re-running garbage collection in {}...", gc_interval);
+          cd_log.debug,
+          "Re-running garbage collection in {}...",
+          sleep_interval);
         auto sleep_res = co_await ss::coroutine::as_future(
-          ssx::sleep_abortable(gc_interval, as_));
+          ssx::sleep_abortable(sleep_interval, as_));
         if (sleep_res.failed()) {
             auto eptr = sleep_res.get_exception();
             auto log_lvl = ssx::is_shutdown_exception(eptr)

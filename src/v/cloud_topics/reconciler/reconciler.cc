@@ -104,6 +104,10 @@ void reconciler::detach(const model::ntp& ntp) {
     }
 }
 
+ss::lowres_clock::duration reconciler::reconciliation_interval() const {
+    return config::shard_local_cfg().cloud_topics_reconciliation_interval();
+}
+
 ss::future<> reconciler::reconciliation_loop() {
     /*
      * Polling is not particularly efficient, and in practice, we'll probably
@@ -111,9 +115,8 @@ ss::future<> reconciler::reconciliation_loop() {
      * data is available.
      * TODO: Investigate performance of polling and alternatives to polling.
      */
-    constexpr std::chrono::seconds poll_frequency(10);
 
-    ss::lowres_clock::duration next_wait = poll_frequency;
+    ss::lowres_clock::duration next_wait = reconciliation_interval();
     while (!_gate.is_closed()) {
         try {
             co_await _control_sem.wait(
@@ -130,7 +133,7 @@ ss::future<> reconciler::reconciliation_loop() {
         if (config::shard_local_cfg()
               .cloud_topics_disable_reconciliation_loop()) {
             vlog(lg.debug, "Reconciliation loop disabled, skipping iteration");
-            next_wait = poll_frequency;
+            next_wait = reconciliation_interval();
             continue;
         }
 
@@ -188,18 +191,20 @@ ss::future<> reconciler::reconciliation_loop() {
         try {
             co_await reconcile();
         } catch (...) {
-            const auto is_shutdown = ssx::is_shutdown_exception(
-              std::current_exception());
+            auto ex = std::current_exception();
+            const auto is_shutdown = ssx::is_shutdown_exception(ex);
             vlogl(
               lg,
               is_shutdown ? ss::log_level::debug : ss::log_level::info,
               "Recoverable error during reconciliation: {}",
-              std::current_exception());
+              ex);
         }
         auto round_duration = ss::lowres_clock::now() - round_start;
         next_wait = std::max(
-          poll_frequency - round_duration, ss::lowres_clock::duration(0));
+          reconciliation_interval() - round_duration,
+          ss::lowres_clock::duration(0));
     }
+    vlog(lg.debug, "Reconciliation loop exiting");
 }
 
 ss::future<> reconciler::reconcile() {

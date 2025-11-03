@@ -12,7 +12,6 @@
 
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "cloud_topics/level_zero/stm/ctp_stm_commands.h"
-#include "cloud_topics/logger.h"
 #include "cloud_topics/types.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
@@ -40,7 +39,8 @@ std::ostream& operator<<(std::ostream& o, ctp_stm_api_errc errc) {
 }
 
 ctp_stm_api::ctp_stm_api(ss::shared_ptr<ctp_stm> stm)
-  : _stm(std::move(stm)) {}
+  : _stm(std::move(stm))
+  , _log(_stm->log()) {}
 
 ss::future<std::expected<model::offset, ctp_stm_api_errc>>
 ctp_stm_api::replicated_apply(
@@ -49,7 +49,7 @@ ctp_stm_api::replicated_apply(
   ss::abort_source& as) {
     model::term_id term = _stm->_raft->term();
 
-    vlog(cd_log.debug, "Replicating batch {} in term {}", batch.header(), term);
+    vlog(_log.debug, "Replicating batch {} in term {}", batch.header(), term);
 
     auto opts = raft::replicate_options(
       raft::consistency_level::quorum_ack,
@@ -60,7 +60,7 @@ ctp_stm_api::replicated_apply(
     auto res = co_await _stm->_raft->replicate(std::move(batch), opts);
 
     if (res.has_error()) {
-        vlog(cd_log.debug, "Failed to replicate batch: {}", res.error());
+        vlog(_log.debug, "Failed to replicate batch: {}", res.error());
         if (res.error() == raft::errc::not_leader) {
             co_return std::unexpected(ctp_stm_api_errc::not_leader);
         }
@@ -71,7 +71,7 @@ ctp_stm_api::replicated_apply(
         co_await _stm->wait(res.value().last_offset, deadline, as);
     } catch (...) {
         vlog(
-          cd_log.warn,
+          _log.warn,
           "Failed to wait for replicated command to to be applied: {}",
           std::current_exception());
         co_return std::unexpected(ctp_stm_api_errc::timeout);
@@ -88,7 +88,7 @@ ctp_stm_api::advance_reconciled_offset(
     if (lro <= get_last_reconciled_offset()) {
         co_return std::monostate{};
     }
-    vlog(cd_log.debug, "Replicating ctp_stm_cmd::advance_reconciled_offset");
+    vlog(_log.debug, "Replicating ctp_stm_cmd::advance_reconciled_offset");
 
     storage::record_batch_builder builder(
       model::record_batch_type::ctp_stm_command, model::offset(0));
@@ -119,7 +119,7 @@ ctp_stm_api::set_start_offset(
     }
 
     vlog(
-      cd_log.debug,
+      _log.debug,
       "Replicating ctp_stm_cmd::set_new_start_offset{{{}}}",
       start_offset);
 
@@ -157,7 +157,7 @@ ctp_stm_api::get_inactive_epoch() const {
         if (ssx::is_shutdown_exception(e)) {
             co_return std::unexpected(ctp_stm_api_errc::shutdown);
         }
-        vlog(cd_log.error, "Failed to get minimum epoch from ctp_stm: {}", e);
+        vlog(_log.error, "Failed to get minimum epoch from ctp_stm: {}", e);
         co_return std::unexpected(ctp_stm_api_errc::failure);
     }
     co_return res.get();
@@ -170,15 +170,15 @@ ctp_stm_api::estimate_inactive_epoch() const noexcept {
 
 ss::future<bool> ctp_stm_api::sync_in_term(
   model::timeout_clock::time_point deadline, ss::abort_source& as) {
-    vlog(cd_log.debug, "Syncing ctp_stm in term {}", _stm->_raft->term());
+    vlog(_log.debug, "Syncing ctp_stm in term {}", _stm->_raft->term());
     co_return co_await _stm->sync_in_term(deadline, as);
 }
 
 ss::future<cluster_epoch_fence> ctp_stm_api::fence_epoch(cluster_epoch e) {
-    vlog(cd_log.debug, "Fencing epoch {} in term {}", e, _stm->_raft->term());
+    vlog(_log.debug, "Fencing epoch {} in term {}", e, _stm->_raft->term());
     auto res = co_await _stm->fence_epoch(e);
     vlog(
-      cd_log.debug,
+      _log.debug,
       "Fence acquired = {} in term {}",
       res.unit.has_value(),
       res.term);

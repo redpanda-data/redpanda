@@ -9,9 +9,11 @@
  */
 #include "cloud_topics/level_one/metastore/garbage_collector.h"
 
+#include "base/vlog.h"
 #include "cloud_topics/level_one/common/abstract_io.h"
 #include "cloud_topics/level_one/metastore/simple_stm.h"
 #include "cloud_topics/level_one/metastore/state_update.h"
+#include "cloud_topics/logger.h"
 
 namespace cloud_topics::l1 {
 
@@ -38,6 +40,7 @@ garbage_collector::remove_unreferenced_objects(ss::abort_source* as) {
         // TODO: split these into multiple updates in case we've got a lot of
         // objects to remove.
         to_remove.emplace_back(oid);
+        vlog(cd_log.debug, "Deleting L1 object: {}", oid);
     }
     if (to_remove.empty()) {
         co_return std::expected<void, error>{};

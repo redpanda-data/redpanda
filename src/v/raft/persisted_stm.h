@@ -221,6 +221,8 @@ public:
       const model::record_batch&,
       const ssx::semaphore_units& apply_units) final;
 
+    const prefix_logger& log() const { return _log; }
+
 protected:
     ss::future<> start() override;
 

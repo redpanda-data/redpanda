@@ -17,14 +17,14 @@
 #include <seastar/core/future.hh>
 
 namespace cloud_topics::l1 {
-class frontend;
+class leader_router;
 } // namespace cloud_topics::l1
 
 namespace cloud_topics::l1::rpc {
 class service final : public impl::l1_rpc_service {
 public:
     service(
-      ss::scheduling_group, ss::smp_service_group, ss::sharded<frontend>*);
+      ss::scheduling_group, ss::smp_service_group, ss::sharded<leader_router>*);
 
     ss::future<add_objects_reply>
     add_objects(add_objects_request, ::rpc::streaming_context&) override;
@@ -60,6 +60,6 @@ public:
       get_compaction_info_request, ::rpc::streaming_context&) override;
 
 private:
-    ss::sharded<frontend>* _frontend;
+    ss::sharded<leader_router>* _leader_router;
 };
 } // namespace cloud_topics::l1::rpc

@@ -64,6 +64,7 @@ public:
 private:
     std::optional<ss::gate::holder> maybe_gate();
     ss::future<> gc_loop();
+    ss::lowres_clock::duration gc_interval() const;
 
     ss::gate gate_;
     ss::abort_source as_;

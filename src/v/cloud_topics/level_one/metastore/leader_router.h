@@ -39,13 +39,13 @@ class domain_supervisor;
  * Frontend is the gateway into a partition of a partitioned metastore on a
  * given shard.
  *
- * One frontend instance per shard.
+ * One leader_router instance per shard.
  */
-class frontend : public ss::peering_sharded_service<frontend> {
+class leader_router : public ss::peering_sharded_service<leader_router> {
 public:
     using local_only = ss::bool_class<struct local_only>;
 
-    frontend(
+    leader_router(
       model::node_id self,
       ss::sharded<cluster::metadata_cache>*,
       ss::sharded<cluster::partition_leaders_table>*,
@@ -113,7 +113,7 @@ private:
 
     template<auto LocalFunc, auto RemoteFunc, typename req_t>
     requires requires(
-      cloud_topics::l1::frontend f, const model::ntp& ntp, req_t req) {
+      cloud_topics::l1::leader_router f, const model::ntp& ntp, req_t req) {
         (f.*LocalFunc)(std::move(req), ntp, ss::shard_id{0});
         request_has_metastore_partition<req_t>
           || request_has_topic_id_partition<req_t>;
