@@ -108,6 +108,7 @@ void fill_raft_state(
         state.last_applied_offset = stm.last_applied_offset;
         state.max_removable_local_log_offset
           = stm.max_removable_local_log_offset;
+        state.last_local_snapshot_offset = stm.last_local_snapshot_offset;
         raft_state.stms.push(std::move(state));
     }
     if (src.recovery_state) {
@@ -922,6 +923,8 @@ admin_server::get_partition_state_handler(
         replica.revision_id = state.revision_id;
         replica.log_size_bytes = state.log_size_bytes;
         replica.non_log_disk_size_bytes = state.non_log_disk_size_bytes;
+        replica.max_tombstone_removable_offset
+          = state.max_tombstone_removable_offset;
         replica.is_read_replica_mode_enabled
           = state.is_read_replica_mode_enabled;
         replica.read_replica_bucket = state.read_replica_bucket;

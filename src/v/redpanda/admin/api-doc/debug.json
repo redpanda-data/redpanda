@@ -1193,6 +1193,10 @@
                 "max_removable_local_log_offset": {
                     "type": "long",
                     "description": "Max removable offset"
+                },
+                "last_local_snapshot_offset": {
+                    "type": "long",
+                    "description": "Last local snapshot offset"
                 }
             }
         },
@@ -1389,6 +1393,10 @@
                 "iceberg_mode": {
                     "type": "string",
                     "description": "Iceberg enablement mode for the topic"
+                },
+                "max_tombstone_removable_offset": {
+                    "type": "long",
+                    "description": "Maximum offset up to which tombstones/transaction end markers can be removed."
                 },
                 "raft_state": {
                     "type": "raft_replica_state",

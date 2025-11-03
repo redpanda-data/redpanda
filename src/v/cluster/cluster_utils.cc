@@ -257,7 +257,8 @@ std::optional<shard_placement_target> placement_target_on_node(
 
 partition_state get_partition_state(ss::lw_shared_ptr<partition> partition) {
     partition_state state{};
-    if (unlikely(!partition)) {
+    if (!partition || !partition->log() || !partition->log()->stm_manager())
+      [[unlikely]] {
         return state;
     }
     state.start_offset = partition->raft_start_offset();
@@ -270,6 +271,8 @@ partition_state get_partition_state(ss::lw_shared_ptr<partition> partition) {
     state.revision_id = partition->get_revision_id();
     state.log_size_bytes = partition->size_bytes();
     state.non_log_disk_size_bytes = partition->non_log_disk_size_bytes();
+    state.max_tombstone_removable_offset
+      = partition->log()->stm_manager()->max_removable_local_log_offset();
     state.is_read_replica_mode_enabled
       = partition->is_read_replica_mode_enabled();
     state.is_remote_fetch_enabled = partition->is_remote_fetch_enabled();
@@ -379,6 +382,7 @@ std::vector<partition_stm_state> get_partition_stm_state(consensus_ptr ptr) {
         state.last_applied_offset = stm->last_applied();
         state.max_removable_local_log_offset
           = stm->max_removable_local_log_offset();
+        state.last_local_snapshot_offset = stm->last_snapshotted_offset();
         result.push_back(std::move(state));
     }
     return result;
