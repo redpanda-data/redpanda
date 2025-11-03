@@ -36,6 +36,13 @@ model::offset stm_manager::max_removable_local_log_offset() {
     return result;
 }
 
+model::offset stm_manager::tx_snapshot_offset() const {
+    if (_tx_stm) {
+        return _tx_stm->last_snapshotted_offset();
+    }
+    return model::offset::max();
+}
+
 std::optional<kafka::offset> stm_manager::lowest_pinned_data_offset() const {
     std::optional<kafka::offset> result;
     for (const auto& stm : _stms) {

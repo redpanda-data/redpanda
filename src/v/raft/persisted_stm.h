@@ -221,6 +221,10 @@ public:
       const model::record_batch&,
       const ssx::semaphore_units& apply_units) final;
 
+    model::offset last_snapshotted_offset() const override {
+        return _last_snapshot_offset;
+    }
+
 protected:
     ss::future<> start() override;
 

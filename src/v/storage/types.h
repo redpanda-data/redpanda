@@ -76,6 +76,8 @@ public:
     // equal to the high watermark.
     virtual std::optional<kafka::offset> lowest_pinned_data_offset() const = 0;
 
+    virtual model::offset last_snapshotted_offset() const = 0;
+
     virtual model::offset last_applied() const = 0;
 
     virtual const ss::sstring& name() = 0;
@@ -181,6 +183,12 @@ public:
     const ss::shared_ptr<snapshotable_stm> transactional_stm() const {
         return _tx_stm;
     }
+
+    /**
+     * Returns the offset of the last snapshot taken by the transactional state
+     * machine. if no transactional stm is registered, returns max offset.
+     */
+    model::offset tx_snapshot_offset() const;
 
 private:
     ss::shared_ptr<snapshotable_stm> _tx_stm;
