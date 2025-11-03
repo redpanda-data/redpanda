@@ -431,6 +431,20 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
           = current_log.handle->stm_manager()->max_removable_local_log_offset();
         model::offset max_tombstone_remove_offset
           = current_log.handle->stm_manager()->max_tombstone_remove_offset();
+        model::offset tx_snapshot_offset
+          = current_log.handle->stm_manager()->tx_snapshot_offset();
+        // We clamp the offset up to which we can remove tombstones to the
+        // last snapshot taken by the transactional stm. This ensures that we
+        // do not remove tombstones that may be needed to reconstruct the
+        // state machine during recovery.
+        vlog(
+          gclog.trace,
+          "{}: max tombstone remove offset: {}, tx snapshot offset: {}",
+          ntp,
+          max_tombstone_remove_offset,
+          tx_snapshot_offset);
+        max_tombstone_remove_offset = std::min(
+          max_tombstone_remove_offset, tx_snapshot_offset);
         if (
           max_unpinned_offset
           && *max_unpinned_offset < max_compactible_offset) {
