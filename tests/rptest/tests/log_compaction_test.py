@@ -29,6 +29,7 @@ from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
+from rptest.util import wait_until_result
 
 
 class LogCompactionTestBase(PartitionMovementMixin):
@@ -678,6 +679,9 @@ class LogCompactionTxRemovalTestBase(LogCompactionTestBase, PreallocNodesTest):
             "log_compaction_interval_ms": 1000,
             "log_segment_size": 2 * 1024**2,  # 2 MiB
             "compacted_log_segment_size": 1024**2,  # 1 MiB
+            # Trigger tombstone removal quickly
+            "storage_target_replay_bytes": 100,
+            "log_segment_ms": 60,
         }
         self.transaction_timeout_ms = 2000
 
@@ -711,12 +715,14 @@ class LogCompactionTxRemovalTestBase(LogCompactionTestBase, PreallocNodesTest):
         producer.wait(timeout_sec=180)
         producer.stop()
 
-    def check_tx_batches(self):
+    def all_tx_batches_removed(self):
         viewer = OfflineLogViewer(self.redpanda)
+        node_results = []
         for node in self.redpanda.nodes:
             num_control_batches = 0
             num_fence_batches = 0
             partitions = viewer.read_kafka_records(node, self.topic_spec.name)
+            partition_results = []
             for partition in partitions:
                 for record_or_batch in partition:
                     if "expanded_attrs" not in record_or_batch:
@@ -726,12 +732,104 @@ class LogCompactionTxRemovalTestBase(LogCompactionTestBase, PreallocNodesTest):
                     if record_or_batch["type_name"] == "tx_fence":
                         num_fence_batches += 1
 
-                assert num_control_batches == 0, (
-                    f"expected 0 control batches (abort/commit batches), saw {num_control_batches} on node {node.name}"
+                partition_results.append((num_control_batches, num_fence_batches))
+            self.redpanda.logger.debug(
+                f"Node {node.name} compaction results {partition_results}"
+            )
+            node_results.append(
+                all(
+                    [
+                        num_control_batches == 0 and num_fence_batches == 0
+                        for num_control_batches, num_fence_batches in partition_results
+                    ]
                 )
-                assert num_fence_batches == 0, (
-                    f"expected 0 tx_fence batches, saw {num_fence_batches}  on node {node.name}"
+            )
+        return all(node_results)
+
+    def wait_until_stms_caught_up(self):
+        # grab the debug partition dump for each partition ensure
+        # committed index matches last applied offset
+        def stms_caught_up(partition_id: int):
+            state = self.redpanda._admin.get_partition_state(
+                namespace="kafka", topic=self.topic_spec.name, partition=partition_id
+            )
+            raft_states = [r["raft_state"] for r in state["replicas"]]
+            commit_indexes = []
+            commit_and_applied = []
+            for s in raft_states:
+                commit_index = s["commit_index"]
+                commit_indexes.append(commit_index)
+                last_applied = -1
+                for stm in s["stms"]:
+                    if stm["name"] == "tx.snapshot":
+                        last_applied = stm["last_applied_offset"]
+                commit_and_applied.append(commit_index == last_applied)
+            synced = all(commit_and_applied) and len(set(commit_indexes)) == 1
+            # Returns whether all STMs are caught up, and the commit index
+            # at which they are caught up.
+            return (synced, commit_indexes[0])
+
+        def all_partition_stms_caught_up():
+            stm_results = [
+                stms_caught_up(partition_id)
+                for partition_id in range(self.partition_count)
+            ]
+            synced, commit_indexes = map(list, zip(*stm_results))
+            return all(synced), commit_indexes
+
+        return wait_until_result(
+            all_partition_stms_caught_up,
+            timeout_sec=120,
+            backoff_sec=5,
+            err_msg="STMs did not catch up for all partitions.",
+            retry_on_exc=True,
+        )
+
+    def wait_for_local_snaphot_catchup(self, offsets: list[int]):
+        def stms_snaphotted(partition_id: int, target_offset: int):
+            state = self.redpanda._admin.get_partition_state(
+                namespace="kafka", topic=self.topic_spec.name, partition=partition_id
+            )
+            raft_states = [r["raft_state"] for r in state["replicas"]]
+            snapshotted = []
+            for s in raft_states:
+                for stm in s["stms"]:
+                    if stm["name"] == "tx.snapshot":
+                        last_snapshot = stm["last_local_snapshot_offset"]
+                        snapshotted.append(last_snapshot >= target_offset)
+            return all(snapshotted) and len(snapshotted) == len(raft_states)
+
+        def all_partition_stms_snaphotted():
+            return all(
+                [
+                    stms_snaphotted(partition_id, offsets[partition_id])
+                    for partition_id in range(self.partition_count)
+                ]
+            )
+
+        deadline = time.time() + 120
+        while True:
+            if time.time() > deadline:
+                raise TimeoutError(
+                    "Not all STMs have local snapshots at target offsets."
                 )
+            try:
+                if all_partition_stms_snaphotted():
+                    return
+                # Produce some garbage to force snapshots
+                KgoVerifierProducer.oneshot(
+                    context=self.test_context,
+                    redpanda=self.redpanda,
+                    topic=self.topic_spec.name,
+                    msg_size=1024,
+                    msg_count=10000,
+                    custom_node=self.preallocated_nodes,
+                )
+            except Exception as e:
+                self.redpanda.logger.warning(
+                    f"Exception while checking STM snapshots, retrying... {e}"
+                )
+            time.sleep(5)
 
     def do_test_tx_control_batch_removal(self, test_case_name, test_case):
         self.logger.info(
@@ -751,8 +849,19 @@ class LogCompactionTxRemovalTestBase(LogCompactionTestBase, PreallocNodesTest):
 
         self.stop_partition_movement()
 
+        commit_idxs = self.wait_until_stms_caught_up()
+        self.logger.debug(
+            f"STMs caught up at commit indexes {commit_idxs}, waiting for local snapshots to catchup"
+        )
+        self.wait_for_local_snaphot_catchup(commit_idxs)
         # Check that no tx batches are seen after compaction settles
-        self.check_tx_batches()
+        self.redpanda.wait_until(
+            self.all_tx_batches_removed,
+            timeout_sec=240,
+            backoff_sec=5,
+            err_msg="Transactional batches were not removed after compaction.",
+            retry_on_exc=True,
+        )
 
 
 class LogCompactionTxRemovalTest(LogCompactionTxRemovalTestBase):
