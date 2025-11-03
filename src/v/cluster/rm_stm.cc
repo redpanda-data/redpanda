@@ -235,8 +235,8 @@ void rm_stm::cleanup_producer_state(model::producer_identity pid) noexcept {
     _producers_pending_cleanup.push(std::move(pid));
 };
 
-ss::future<> rm_stm::reset_producers() {
-    vlog(_ctx_log.trace, "reseting producers");
+ss::future<> rm_stm::reset_producers(std::string_view reason) {
+    vlog(_ctx_log.trace, "reseting producers {}", reason);
     // note: must always be called under exlusive write lock to
     // avoid concurrrent state changes to _producers.
     co_await ss::max_concurrent_for_each(
@@ -873,7 +873,7 @@ ss::future<> rm_stm::stop() {
       std::make_exception_ptr(ss::abort_requested_exception{}));
     auto_abort_timer.cancel();
     co_await _gate.close();
-    co_await reset_producers();
+    co_await reset_producers("state machine stopping");
     _metrics.clear();
     co_await raft::persisted_stm<>::stop();
 }
@@ -1264,6 +1264,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_msg(
 }
 
 model::offset rm_stm::last_stable_offset() {
+    _as.check();
     // There are two main scenarios we deal with here.
     // 1. stm is still bootstrapping
     // 2. stm is past bootstrapping.
@@ -1294,6 +1295,11 @@ model::offset rm_stm::last_stable_offset() {
         const auto& tx_state = earliest_open_tx_producer->transaction_state();
         if (tx_state) {
             first_tx_start = tx_state->first;
+            vlog(
+              _ctx_log.trace,
+              "[{}] Earliest open transaction starts at offset {}",
+              *earliest_open_tx_producer,
+              first_tx_start);
         } else {
             vlog(
               _ctx_log.error,
@@ -1322,6 +1328,15 @@ model::offset rm_stm::last_stable_offset() {
         lso = next_to_apply;
     }
     _last_known_lso = std::max(_last_known_lso, lso);
+    vlog(
+      _ctx_log.trace,
+      "calculated lso: {}, last_applied: {}, new_last_known_lso: {}, "
+      "synced_leader: {}, last_visible_index: {}",
+      lso,
+      last_applied,
+      _last_known_lso,
+      synced_leader,
+      last_visible_index);
     return _last_known_lso;
 }
 
@@ -1431,7 +1446,13 @@ rm_stm::get_expired_producers() const {
     chunked_vector<tx::producer_ptr> result;
     std::chrono::milliseconds min_pending_expiration
       = std::chrono::milliseconds::max();
+    vlog(
+      _ctx_log.trace,
+      "checking {} active producers for expiration, _producers size: {}",
+      _active_tx_producers.size(),
+      _producers.size());
     for (const auto& producer : _active_tx_producers) {
+        vlog(_ctx_log.trace, "checking producer for expiration: {}", producer);
         auto it = _producers.find(producer.id().get_id());
         if (it == _producers.end()) {
             vlog(
@@ -1439,6 +1460,7 @@ rm_stm::get_expired_producers() const {
             continue;
         }
         if (producer.has_transaction_expired()) {
+            vlog(_ctx_log.trace, "producer has expired: {}", producer);
             result.push_back(it->second);
         } else {
             const auto& tx_state = producer.transaction_state();
@@ -1471,11 +1493,18 @@ ss::future<std::chrono::milliseconds> rm_stm::do_abort_old_txes() {
     if (!_is_autoabort_enabled) {
         co_return std::chrono::milliseconds::max();
     }
+    vlog(_ctx_log.trace, "checking for expired transactions");
     const auto [expired, next_expiration_ms] = get_expired_producers();
+    vlog(
+      _ctx_log.trace, "found {} expired transactions to abort", expired.size());
     co_await ss::max_concurrent_for_each(
       expired, 5, [this](const tx::producer_ptr& producer) {
           return try_abort_old_tx(producer).discard_result();
       });
+    vlog(
+      _ctx_log.trace,
+      "aborted expired transactions, next expiration in ms: {}",
+      next_expiration_ms.count());
     co_return next_expiration_ms;
 }
 
@@ -1499,6 +1528,8 @@ ss::future<tx::errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
         vlog(_ctx_log.debug, "[{}] no transaction to expire", *producer);
         co_return tx::errc::stale;
     }
+
+    vlog(_ctx_log.trace, "[{}] expiring transaction", *producer);
 
     auto pid = producer->id();
     model::tx_seq tx_seq = tx_state->sequence;
@@ -1639,11 +1670,26 @@ ss::future<tx::errc> rm_stm::do_try_abort_old_tx(producer_ptr producer) {
 }
 
 void rm_stm::maybe_rearm_autoabort_timer(time_point_type deadline) {
+    auto timer_expire_ms
+      = std::chrono::duration_cast<std::chrono::milliseconds>(
+        deadline - clock_type::now());
+    vlog(
+      _ctx_log.trace,
+      "attempt to rearm autoabort timer to fire in {} ms",
+      timer_expire_ms.count());
     if (auto_abort_timer.armed() && auto_abort_timer.get_timeout() > deadline) {
         auto_abort_timer.cancel();
         auto_abort_timer.arm(deadline);
     } else if (!auto_abort_timer.armed()) {
         auto_abort_timer.arm(deadline);
+    } else {
+        auto timer_expire
+          = std::chrono::duration_cast<std::chrono::milliseconds>(
+            auto_abort_timer.get_timeout() - clock_type::now());
+        vlog(
+          _ctx_log.trace,
+          "autoabort timer already armed to fire earlier, {} ms",
+          timer_expire.count());
     }
 }
 
@@ -1872,7 +1918,7 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
       });
     _aborted_tx_state.abort_indexes = std::move(data.abort_indexes);
 
-    co_await reset_producers();
+    co_await reset_producers("applying local snapshot");
 
     vlog(_ctx_log.debug, "Loading snapshot: {}", data);
     chunked_vector<producer_ptr> transactional_producers;
@@ -1939,6 +1985,14 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
             _aborted_tx_state.last_abort_snapshot = std::move(
               snapshot_opt.value());
         }
+    }
+    if (!_active_tx_producers.empty()) {
+        vlog(
+          _ctx_log.trace,
+          "After applying snapshot, there are {} active transactions, first "
+          "open: {}",
+          _active_tx_producers.size(),
+          _active_tx_producers.front());
     }
     co_return raft::local_snapshot_applied::yes;
 }
@@ -2224,7 +2278,7 @@ ss::future<> rm_stm::apply_raft_snapshot(const iobuf&) {
       "Resetting all state, reason: log eviction, offset: {}",
       _raft->start_offset());
     _aborted_tx_state = {};
-    co_await reset_producers();
+    co_await reset_producers("applying raft snapshot");
     set_next(_raft->start_offset());
     co_return;
 }

@@ -102,7 +102,8 @@ struct rm_stm_test_fixture : simple_raft_fixture {
 
     auto reset_producers() {
         return _stm->_state_lock.hold_write_lock().then([this](auto units) {
-            return _stm->reset_producers().then([units = std::move(units)] {});
+            return _stm->reset_producers("fixture_test")
+              .then([units = std::move(units)] {});
         });
     }
 

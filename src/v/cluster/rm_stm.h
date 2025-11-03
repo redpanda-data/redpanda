@@ -245,7 +245,7 @@ private:
       maybe_create_producer(model::producer_identity);
     void cleanup_producer_state(model::producer_identity) noexcept;
     ss::future<> cleanup_evicted_producers();
-    ss::future<> reset_producers();
+    ss::future<> reset_producers(std::string_view reason);
     ss::future<checked<model::term_id, tx::errc>> do_begin_tx(
       model::term_id,
       model::producer_identity pid,
