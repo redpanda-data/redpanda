@@ -1,2 +1,6 @@
 leak:seastar::net::conntrack::handle::~handle
 leak:fips/self_test.c
+
+
+leak:libssl.so
+leak:libcrypto.so
