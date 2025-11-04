@@ -1852,6 +1852,7 @@ model::offset rm_stm::to_log_offset(kafka::offset k_offset) const {
 
 ss::future<raft::local_snapshot_applied>
 rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
+    auto data_buf = std::move(tx_ss_buf);
     auto units = co_await _state_lock.hold_write_lock();
 
     vlog(
@@ -1859,7 +1860,7 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
       "applying snapshot with last included offset: {}",
       hdr.offset);
     tx_snapshot_v6 data;
-    iobuf_parser data_parser(std::move(tx_ss_buf));
+    iobuf_parser data_parser(std::move(data_buf));
     if (hdr.version == tx_snapshot_v4::version) {
         tx_snapshot_v4 data_v4
           = co_await reflection::async_adl<tx_snapshot_v4>{}.from(data_parser);
