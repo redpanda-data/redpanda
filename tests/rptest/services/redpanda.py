@@ -3761,12 +3761,13 @@ class RedpandaService(Service, RedpandaServiceABC):
         node: ClusterNode,
         pid: int,
         seconds: int = 5,
-        trace_expr: str = None,
+        trace_expr: str | None = None,
         follow_forks: bool = True,
         sudo: bool = True,
     ):
         """
         Yields strace lines for `seconds` seconds from a running process.
+        This is a generator that yields each line as it's captured.
         """
         parts = []
         if sudo:
@@ -3783,7 +3784,7 @@ class RedpandaService(Service, RedpandaServiceABC):
 
         # allow_fail=True => don't raise on the expected 124 from timeout
         for line in node.account.ssh_capture(cmd, allow_fail=True, combine_stderr=True):
-            self.logger.debug(line.strip())
+            yield line.strip()
 
     # Check if pid is core dumping
     def _is_core_dumping(self, node: ClusterNode, pid: int) -> bool:
@@ -4627,6 +4628,8 @@ class RedpandaService(Service, RedpandaServiceABC):
         if pid is None:
             return
 
+        strace_gen = self._log_node_process_strace(node, pid)
+
         node.account.signal(
             pid, signal.SIGKILL if forced else signal.SIGTERM, allow_fail=False
         )
@@ -4642,13 +4645,15 @@ class RedpandaService(Service, RedpandaServiceABC):
             if self._is_core_dumping(node, pid):
                 self.logger.warn(f"Node {node.name} is core dumping")
 
+            for line in strace_gen:
+                self.logger.debug(line)
+
             sleep_sec = 10
             self.logger.warn(
                 f"Timed out waiting for stop on {node.name}, setting log_level to 'trace' and sleeping for {sleep_sec}s"
             )
             self._set_trace_loggers_and_sleep(node, time_sec=sleep_sec)
             self.logger.warn(f"Node {node.name} status:")
-            self._log_node_process_strace(node, pid)
             self._log_node_process_state(node)
             self._log_node_shutdown_analysis(node)
             self._log_node_tail_file(node, RedpandaService.STDOUT_STDERR_CAPTURE, 50)
