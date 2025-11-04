@@ -3785,6 +3785,24 @@ class RedpandaService(Service, RedpandaServiceABC):
         for line in node.account.ssh_capture(cmd, allow_fail=True, combine_stderr=True):
             self.logger.debug(line.strip())
 
+    # Check if pid is core dumping
+    def _is_core_dumping(self, node: ClusterNode, pid: int) -> bool:
+        """
+        Check if the given pid is in the process of generating a core dump.
+
+        :param node: ClusterNode instance
+        :param pid: Process ID to check
+        :return: True if the process is core dumping, False otherwise
+        """
+        cmd = f"grep ^CoreDumping: /proc/{pid}/status"
+        try:
+            output = node.account.ssh_output(cmd, timeout_sec=10).strip()
+            # If CoreDumping is non-zero, the process is core dumping
+            return output != b"0"
+        except Exception as e:
+            self.logger.debug(f"Failed to check CoreDumping for pid {pid}: {e}")
+            return False
+
     def _log_node_tail_file(self, node: ClusterNode, path: str, n: int = 20) -> str:
         """
         Return the last `n` lines of a remote file.
@@ -4621,6 +4639,9 @@ class RedpandaService(Service, RedpandaServiceABC):
                 err_msg=f"Redpanda node {node.account.hostname} failed to stop in {stop_timeout} seconds",
             )
         except TimeoutError:
+            if self._is_core_dumping(node, pid):
+                self.logger.warn(f"Node {node.name} is core dumping")
+
             sleep_sec = 10
             self.logger.warn(
                 f"Timed out waiting for stop on {node.name}, setting log_level to 'trace' and sleeping for {sleep_sec}s"
