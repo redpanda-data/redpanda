@@ -10,12 +10,39 @@
 #include "cloud_topics/level_zero/read_fanout/read_fanout.h"
 
 #include "cloud_topics/level_zero/pipeline/read_request.h"
+#include "config/configuration.h"
 #include "container/chunked_vector.h"
 #include "ssx/future-util.h"
+
+#include <algorithm>
 
 namespace cloud_topics::l0 {
 
 constexpr size_t max_bytes_per_iter = 10_MiB;
+
+namespace {
+
+// Calculate memory estimate based on unique object IDs. This accounts
+// for the fact that we download entire L0 objects which contain data
+// from multiple partitions.
+size_t estimate_memory_for_extents(const chunked_vector<extent_meta>& extents) {
+    chunked_vector<object_id> ids;
+    ids.reserve(extents.size());
+    for (const auto& extent : extents) {
+        ids.push_back(extent.id);
+    }
+    std::ranges::sort(ids);
+    auto [first, last] = std::ranges::unique(ids);
+    auto unique_count = std::distance(ids.begin(), first);
+
+    // Use configured L0 object size target as estimate.
+    auto estimated_object_size
+      = config::shard_local_cfg()
+          .cloud_topics_produce_batching_size_threshold();
+    return unique_count * estimated_object_size;
+}
+
+} // namespace
 
 read_fanout::read_fanout(l0::read_pipeline<>::stage s)
   : _pipeline_stage(s) {}
@@ -82,6 +109,14 @@ ss::future<> read_fanout::process_single_request(l0::read_request<>* req) {
         _stats.requests_in++;
         if (req->query.meta.size() <= 1) {
             // Fast path
+            if (!req->query.meta.empty()) {
+                // Set estimate directly to save work.
+                // See estimate_memory_for_extents.
+                auto estimated_object_size
+                  = config::shard_local_cfg()
+                      .cloud_topics_produce_batching_size_threshold();
+                req->query.output_size_estimate = estimated_object_size;
+            }
             _stats.requests_out++;
             _pipeline_stage.push_next_stage(*req);
             co_return;
@@ -97,7 +132,6 @@ ss::future<> read_fanout::process_single_request(l0::read_request<>* req) {
             if (
               curr_query->meta.empty()
               || curr_query->meta.back().id == meta.id) {
-                curr_query->output_size_estimate += meta.byte_range_size();
                 curr_query->meta.push_back(meta);
                 continue;
             }
@@ -118,10 +152,12 @@ ss::future<> read_fanout::process_single_request(l0::read_request<>* req) {
 
             futures.emplace_back(std::move(fut));
             curr_query.emplace();
-            curr_query->output_size_estimate = meta.byte_range_size();
             curr_query->meta.push_back(meta);
         }
         if (!curr_query->meta.empty()) {
+            curr_query->output_size_estimate = estimate_memory_for_extents(
+              curr_query->meta);
+
             auto proxy = ss::make_lw_shared<l0::read_request<>>(
               req->ntp,
               std::move(curr_query.value()),
