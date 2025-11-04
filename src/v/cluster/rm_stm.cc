@@ -1264,6 +1264,9 @@ ss::future<result<kafka_result>> rm_stm::replicate_msg(
 }
 
 model::offset rm_stm::last_stable_offset() {
+    if (_as.abort_requested()) [[unlikely]] {
+        return model::invalid_lso;
+    }
     // There are two main scenarios we deal with here.
     // 1. stm is still bootstrapping
     // 2. stm is past bootstrapping.
