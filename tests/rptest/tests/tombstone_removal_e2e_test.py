@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 import time
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
@@ -24,6 +24,7 @@ from ducktape.tests.test import TestContext
 from ducktape.cluster.cluster import ClusterNode
 from rptest.clients.offline_log_viewer import OfflineLogViewer
 from ducktape.cluster.remoteaccount import RemoteCommandError
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class TombstoneRemovalTest(RedpandaTest):
@@ -44,6 +45,8 @@ class TombstoneRemovalTest(RedpandaTest):
             test_context=test_context,
             extra_rp_conf=extra_rp_conf,
         )
+        self.admin = Admin(self.redpanda)
+        self.rpk = RpkTool(self.redpanda)
 
     def produce_data(self, key_set_cardinality: int):
         # keys produced by KgoVerifierProducer are
@@ -145,8 +148,6 @@ class TombstoneRemovalTest(RedpandaTest):
         Make sure it prevents the leader from compacting away tombstones until it catches up.
         Once it catches up, make sure tombstones are removed from both replicas.
         """
-        self.admin = Admin(self.redpanda)
-        self.rpk = RpkTool(self.redpanda)
         node1 = self.redpanda.get_node_by_id(1)
         node4 = self.redpanda.get_node_by_id(4)
         assert node1 is not None and node4 is not None, "node not found"
@@ -285,4 +286,68 @@ class TombstoneRemovalTest(RedpandaTest):
 
         assert not tombstones_incorrectly_removed, (
             "abnormal compaction detected, see error in logs above"
+        )
+
+    def check_node_debug_offsets(
+        self, node: ClusterNode, predicate: Callable[[int], bool]
+    ):
+        state = self.admin.get_partition_state("kafka", self.topic_name, 0, node)
+        rs = state["replicas"]
+        if len(rs) != 5:
+            self.redpanda.logger.debug(
+                f"Node {node.name} has {len(rs)} replicas, expected 5"
+            )
+            return False
+        d = [
+            (
+                r["max_cleanly_compacted_offset"],
+                r["max_tombstone_removal_offset"],
+            )
+            for r in rs
+        ]
+        self.redpanda.logger.debug(f"Node {node.name} replica states: {d}")
+        return all(
+            predicate(r["max_cleanly_compacted_offset"])
+            and predicate(r["max_tombstone_removal_offset"])
+            for r in rs
+        )
+
+    def check_debug_offsets(self, predicate: Callable[[int], bool]):
+        return all(
+            self.check_node_debug_offsets(node, predicate)
+            for node in self.redpanda.started_nodes()
+        )
+
+    @skip_debug_mode
+    @cluster(num_nodes=6)  # 5 for cluster + 1 for producer
+    def test_debug_endpoint(self):
+        # create topic on nodes 1,2,3,4,5
+        self.client().create_topic_with_assignment(self.topic_name, [[1, 2, 3, 4, 5]])
+
+        # turn off compaction and prefix-truncation
+        self.client().alter_topic_config(self.topic_name, "cleanup.policy", "delete")
+        self.client().alter_topic_config(self.topic_name, "retention.ms", "-1")
+        self.client().alter_topic_config(self.topic_name, "retention.bytes", "-1")
+
+        # produce a lot of data records for keys 0-9
+        self.produce_data(10)
+
+        # make sure MCCO and MTRO are zero initially
+        wait_until(
+            lambda: self.check_debug_offsets(lambda offset: offset <= 0),
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg="timed out waiting for offsets to appear as zero in debug endpoint",
+        )
+
+        # turn on compaction
+        self.rpk.alter_topic_config(self.topic_name, "cleanup.policy", "compact")
+        self.rpk.alter_topic_config(self.topic_name, "min.cleanable.dirty.ratio", "0.0")
+
+        # make sure MCCO and MTRO become non-zero after compaction
+        wait_until(
+            lambda: self.check_debug_offsets(lambda offset: offset >= 1),
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="timed out waiting for offsets to become non-zero in debug endpoint",
         )
