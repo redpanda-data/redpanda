@@ -42,6 +42,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":aggregator",
+        "//src/v/cloud_io:basic_cache_service_api",
         "//src/v/cloud_io:remote",
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics:object_utils",
@@ -54,6 +55,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
+        "//src/v/bytes:iostream",
         "//src/v/cloud_topics:cluster_services_interface",
         "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/level_zero/cluster_services_impl",

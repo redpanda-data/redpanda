@@ -64,6 +64,7 @@ public:
           }),
           ss::sharded_parameter([bucket] { return bucket; }),
           ss::sharded_parameter([io] { return std::ref(io->local()); }),
+          ss::sharded_parameter([cache] { return std::ref(cache->local()); }),
           ss::sharded_parameter([this] { return &_cluster_services.local(); }));
 
         co_await construct_service(_read_pipeline);

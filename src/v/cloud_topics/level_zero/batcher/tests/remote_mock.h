@@ -11,6 +11,7 @@
 #include "base/vlog.h"
 #include "bytes/bytes.h"
 #include "bytes/iostream.h"
+#include "cloud_io/basic_cache_service_api.h"
 #include "cloud_io/io_result.h"
 #include "cloud_io/remote.h"
 #include "cloud_storage_clients/types.h"
@@ -137,4 +138,68 @@ public:
     bool disable_request_collection{false};
     std::vector<cloud_storage_clients::object_key> keys;
     std::vector<bytes> payloads;
+};
+
+class cache_mock : public cloud_io::basic_cache_service_api<ss::manual_clock> {
+public:
+    MOCK_METHOD(
+      ss::future<std::optional<cloud_io::cache_item_stream>>,
+      get_stream,
+      (std::filesystem::path key,
+       size_t read_buffer_size,
+       unsigned int read_ahead),
+      ());
+
+    MOCK_METHOD(
+      ss::future<>,
+      put,
+      (std::filesystem::path key,
+       ss::input_stream<char>& data,
+       cloud_io::basic_space_reservation_guard<ss::manual_clock>& reservation,
+       size_t write_buffer_size,
+       unsigned int write_behind),
+      ());
+
+    MOCK_METHOD(
+      ss::future<cloud_io::cache_element_status>,
+      is_cached,
+      (const std::filesystem::path&),
+      ());
+
+    MOCK_METHOD(
+      ss::future<cloud_io::basic_space_reservation_guard<ss::manual_clock>>,
+      reserve_space,
+      (uint64_t, size_t),
+      ());
+
+    MOCK_METHOD(
+      void, reserve_space_release, (uint64_t, size_t, uint64_t, size_t), ());
+
+    void expect_put(std::exception_ptr e = nullptr) {
+        ss::future<> result = ss::now();
+        if (e != nullptr) {
+            result = ss::make_exception_future<>(e);
+        }
+        EXPECT_CALL(
+          *this,
+          put(
+            ::testing::_,
+            ::testing::_,
+            ::testing::_,
+            ::testing::_,
+            ::testing::_))
+          .Times(1)
+          .WillOnce(::testing::Return(std::move(result)));
+    }
+
+    void expect_reserve_space() {
+        cloud_io::basic_space_reservation_guard<ss::manual_clock> guard(
+          *this, 1, 1);
+        auto result = ss::make_ready_future<
+          cloud_io::basic_space_reservation_guard<ss::manual_clock>>(
+          std::move(guard));
+        EXPECT_CALL(*this, reserve_space(::testing::_, 1))
+          .Times(1)
+          .WillOnce(::testing::Return(std::move(result)));
+    }
 };

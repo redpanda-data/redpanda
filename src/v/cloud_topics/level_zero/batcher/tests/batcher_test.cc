@@ -137,14 +137,16 @@ sleep_until(std::chrono::milliseconds delta, Fn&& fn, int retry_limit = 100) {
 }
 
 TEST_CORO(batcher_test, single_write_request) {
-    remote_mock mock;
+    remote_mock remote;
+    cache_mock cache;
     cloud_storage_clients::bucket_name bucket("foo");
     cloud_topics::l0::write_pipeline<ss::manual_clock> pipeline;
     static_cluster_services cluster_services;
     cloud_topics::l0::batcher<ss::manual_clock> batcher(
       pipeline.register_write_pipeline_stage(),
       bucket,
-      mock,
+      remote,
+      cache,
       &cluster_services);
     cloud_topics::l0::batcher_accessor batcher_accessor{
       .batcher = &batcher,
@@ -155,7 +157,9 @@ TEST_CORO(batcher_test, single_write_request) {
     int num_batches = 10;
     auto [_, records, reader] = get_random_batches(num_batches, 10);
     // Expect single upload to be made
-    mock.expect_upload_object(records);
+    remote.expect_upload_object(records);
+    cache.expect_reserve_space();
+    cache.expect_put();
 
     const auto timeout = 1s;
     auto deadline = ss::manual_clock::now() + timeout;
@@ -173,8 +177,8 @@ TEST_CORO(batcher_test, single_write_request) {
     ASSERT_TRUE_CORO(write_res.has_value());
 
     // Expect single L0 upload
-    ASSERT_EQ_CORO(mock.keys.size(), 1);
-    auto id = mock.keys.back();
+    ASSERT_EQ_CORO(remote.keys.size(), 1);
+    auto id = remote.keys.back();
 
     // Check that uuid in the placeholder can be used to
     // access the data in S3.
@@ -187,14 +191,16 @@ TEST_CORO(batcher_test, single_write_request) {
 }
 
 TEST_CORO(batcher_test, many_write_requests) {
-    remote_mock mock;
+    remote_mock remote;
+    cache_mock cache;
     cloud_storage_clients::bucket_name bucket("foo");
     cloud_topics::l0::write_pipeline<ss::manual_clock> pipeline;
     static_cluster_services cluster_services;
     cloud_topics::l0::batcher<ss::manual_clock> batcher(
       pipeline.register_write_pipeline_stage(),
       bucket,
-      mock,
+      remote,
+      cache,
       &cluster_services);
     cloud_topics::l0::batcher_accessor batcher_accessor{
       .batcher = &batcher,
@@ -223,7 +229,9 @@ TEST_CORO(batcher_test, many_write_requests) {
       std::back_inserter(all_records));
 
     // Expect single upload to be made
-    mock.expect_upload_object(all_records);
+    remote.expect_upload_object(all_records);
+    cache.expect_reserve_space();
+    cache.expect_put();
 
     const auto timeout = 1s;
     auto deadline = ss::manual_clock::now() + timeout;
@@ -245,8 +253,8 @@ TEST_CORO(batcher_test, many_write_requests) {
     auto res = co_await batcher_accessor.run_once();
 
     // Expect single L0 upload
-    ASSERT_EQ_CORO(mock.keys.size(), 1);
-    auto id = mock.keys.back();
+    ASSERT_EQ_CORO(remote.keys.size(), 1);
+    auto id = remote.keys.back();
 
     ASSERT_TRUE_CORO(res.has_value());
 
@@ -272,14 +280,16 @@ TEST_CORO(batcher_test, expired_write_request) {
     // The test starts two write request but one of which is expected to
     // timeout. The expectation is that uploaded L0 object will not contain any
     // data from the expired write request.
-    remote_mock mock;
+    remote_mock remote;
+    cache_mock cache;
     cloud_storage_clients::bucket_name bucket("foo");
     cloud_topics::l0::write_pipeline<ss::manual_clock> pipeline;
     static_cluster_services cluster_services;
     cloud_topics::l0::batcher<ss::manual_clock> batcher(
       pipeline.register_write_pipeline_stage(),
       bucket,
-      mock,
+      remote,
+      cache,
       &cluster_services);
     cloud_topics::l0::batcher_accessor batcher_accessor{
       .batcher = &batcher,
@@ -305,7 +315,9 @@ TEST_CORO(batcher_test, expired_write_request) {
       std::back_inserter(all_records));
 
     // Expect single upload to be made
-    mock.expect_upload_object(all_records);
+    remote.expect_upload_object(all_records);
+    cache.expect_reserve_space();
+    cache.expect_put();
 
     const auto timeout = 1s;
     auto deadline = ss::manual_clock::now() + timeout;
@@ -330,8 +342,8 @@ TEST_CORO(batcher_test, expired_write_request) {
     auto res = co_await batcher_accessor.run_once();
 
     // Expect single L0 upload
-    ASSERT_EQ_CORO(mock.keys.size(), 1);
-    auto id = mock.keys.back();
+    ASSERT_EQ_CORO(remote.keys.size(), 1);
+    auto id = remote.keys.back();
 
     ASSERT_TRUE_CORO(res.has_value());
 

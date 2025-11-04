@@ -15,6 +15,7 @@
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "bytes/iobuf.h"
+#include "cloud_io/basic_cache_service_api.h"
 #include "cloud_topics/cluster_services.h"
 #include "cloud_topics/level_zero/cluster_services_impl/cluster_services.h"
 #include "cloud_topics/level_zero/common/level_zero_probe.h"
@@ -70,6 +71,7 @@ public:
       write_pipeline<Clock>::stage stage,
       cloud_storage_clients::bucket_name bucket,
       cloud_io::remote_api<Clock>& remote_api,
+      cloud_io::basic_cache_service_api<Clock>& cache_api,
       cloud_topics::cluster_services* cluster_services);
 
     ss::future<> start();
@@ -95,16 +97,21 @@ private:
     /// The method should only be invoked on shard 0
     ss::future<> bg_controller_loop();
 
-    /// Upload L0 object based on placeholders
-    ///
-    /// Collect data from every shard and upload stream of data to S3.
+    /// Upload L0 object
     ///
     /// \return size of the uploaded object or error code
     ss::future<std::expected<size_t, errc>>
     upload_object(object_id id, iobuf payload);
 
+    /// Put L0 object to the cloud storage cache
+    ///
+    /// \return size of the uploaded object or error code
+    ss::future<std::expected<size_t, errc>>
+    cache_object(object_id id, iobuf payload);
+
     cloud_topics::cluster_services* _cluster_services;
     cloud_io::remote_api<Clock>& _remote;
+    cloud_io::basic_cache_service_api<Clock>& _cache_api;
     cloud_storage_clients::bucket_name _bucket;
     config::binding<std::chrono::milliseconds> _upload_timeout;
     config::binding<std::chrono::milliseconds> _upload_backoff_interval;

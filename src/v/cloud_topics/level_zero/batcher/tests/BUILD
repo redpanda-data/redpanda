@@ -33,6 +33,7 @@ redpanda_cc_gtest(
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iostream",
+        "//src/v/cloud_io:basic_cache_service_api",
         "//src/v/cloud_io:io_result",
         "//src/v/cloud_io:remote",
         "//src/v/cloud_storage_clients",

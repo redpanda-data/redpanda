@@ -10,6 +10,7 @@
 
 #include "cloud_topics/level_zero/batcher/batcher.h"
 
+#include "bytes/iostream.h"
 #include "cloud_io/remote.h"
 #include "cloud_topics/errc.h"
 #include "cloud_topics/level_zero/batcher/aggregator.h"
@@ -39,9 +40,11 @@ batcher<Clock>::batcher(
   write_pipeline<Clock>::stage stage,
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote_api<Clock>& remote_api,
+  cloud_io::basic_cache_service_api<Clock>& cache_api,
   cloud_topics::cluster_services* cluster_services)
   : _cluster_services(cluster_services)
   , _remote(remote_api)
+  , _cache_api(cache_api)
   , _bucket(std::move(bucket))
   , _upload_timeout(
       config::shard_local_cfg().cloud_storage_segment_upload_timeout_ms.bind())
@@ -132,6 +135,37 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
 }
 
 template<class Clock>
+ss::future<std::expected<size_t, errc>>
+batcher<Clock>::cache_object(object_id id, iobuf payload) {
+    auto path = object_path_factory::level_zero_path(id);
+    auto size = payload.size_bytes();
+    auto guard = co_await _cache_api.reserve_space(size, 1);
+    auto stream = make_iobuf_input_stream(std::move(payload));
+    constexpr uint64_t default_write_buffer_size = 128_KiB;
+    constexpr uint32_t default_write_behind = 2;
+    uint64_t write_buffer_size = default_write_buffer_size;
+    uint32_t write_behind = default_write_behind;
+    if (write_buffer_size * write_behind > size) {
+        write_behind = 1;
+        write_buffer_size = size;
+    }
+    auto units = co_await _stage.acquire_mem_units(
+      write_behind * write_buffer_size);
+    auto fut = co_await ss::coroutine::as_future(
+      _cache_api.put(path(), stream, guard, write_buffer_size, write_behind));
+    if (fut.failed()) {
+        auto e = fut.get_exception();
+        vlog(
+          _logger.warn,
+          "Failed to put object {} into the cloud storage cache: {}",
+          path,
+          e);
+        co_return std::unexpected(errc::cache_write_error);
+    }
+    co_return size;
+}
+
+template<class Clock>
 ss::future<std::expected<std::monostate, errc>> batcher<Clock>::run_once(
   write_pipeline<Clock>::write_requests_list list) noexcept {
     try {
@@ -198,8 +232,7 @@ ss::future<std::expected<std::monostate, errc>> batcher<Clock>::run_once(
         // TODO: skip waiting if list.completed is not true
         auto object = aggregator.prepare(object_id::create(object_epoch));
         auto size_bytes = object.payload.size_bytes();
-        auto result = co_await upload_object(
-          object.id, std::move(object.payload));
+        auto result = co_await upload_object(object.id, object.payload.share());
         if (!result) {
             // TODO: fix the error
             // NOTE: it should be possible to translate the
@@ -210,8 +243,11 @@ ss::future<std::expected<std::monostate, errc>> batcher<Clock>::run_once(
             _probe.register_error();
             co_return std::unexpected{result.error()};
         }
+        // Unblock requests
         aggregator.ack();
         _probe.register_upload(size_bytes);
+        std::ignore = co_await cache_object(
+          object.id, std::move(object.payload));
         co_return std::monostate{};
     } catch (...) {
         auto err = std::current_exception();
