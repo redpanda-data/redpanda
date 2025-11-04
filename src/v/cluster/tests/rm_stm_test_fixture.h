@@ -20,11 +20,13 @@
 static ss::logger logger{"rm_stm-test"};
 static prefix_logger ctx_logger{logger, ""};
 
+static constexpr auto large_timeout = std::chrono::minutes(30);
+
 struct rm_stm_test_fixture : simple_raft_fixture {
     void create_stm_and_start_raft(
       storage::ntp_config::default_overrides overrides = {}) {
         max_concurent_producers.start(std::numeric_limits<size_t>::max()).get();
-        producer_expiration_ms.start(std::chrono::milliseconds::max()).get();
+        producer_expiration_ms.start(large_timeout).get();
         producer_state_manager
           .start(
             ss::sharded_parameter(

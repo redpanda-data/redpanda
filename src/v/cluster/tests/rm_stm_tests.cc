@@ -37,6 +37,8 @@ using namespace std::chrono_literals;
 static const failure_type<cluster::errc>
   invalid_producer_epoch(cluster::errc::invalid_producer_epoch);
 
+static constexpr auto timeout = 30min;
+
 struct batches_with_identity {
     model::batch_identity id;
     chunked_vector<model::record_batch> batches;
@@ -141,14 +143,8 @@ FIXTURE_TEST(test_tx_happy_tx, rm_stm_test_fixture) {
     }).get();
 
     auto pid2 = model::producer_identity{2, 0};
-    auto term_op = stm
-                     .begin_tx(
-                       pid2,
-                       tx_seq,
-                       std::chrono::milliseconds(
-                         std::numeric_limits<int32_t>::max()),
-                       model::partition_id(0))
-                     .get();
+    auto term_op
+      = stm.begin_tx(pid2, tx_seq, timeout, model::partition_id(0)).get();
     BOOST_REQUIRE((bool)term_op);
     BOOST_REQUIRE_EQUAL(stm.highest_producer_id(), pid2.get_id());
 
@@ -208,14 +204,8 @@ FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
     }).get();
 
     auto pid2 = model::producer_identity{2, 0};
-    auto term_op = stm
-                     .begin_tx(
-                       pid2,
-                       tx_seq,
-                       std::chrono::milliseconds(
-                         std::numeric_limits<int32_t>::max()),
-                       model::partition_id(0))
-                     .get();
+    auto term_op
+      = stm.begin_tx(pid2, tx_seq, timeout, model::partition_id(0)).get();
     BOOST_REQUIRE((bool)term_op);
     BOOST_REQUIRE_EQUAL(stm.highest_producer_id(), pid2.get_id());
 
@@ -284,14 +274,8 @@ FIXTURE_TEST(test_tx_aborted_tx_2, rm_stm_test_fixture) {
     }).get();
 
     auto pid2 = model::producer_identity{2, 0};
-    auto term_op = stm
-                     .begin_tx(
-                       pid2,
-                       tx_seq,
-                       std::chrono::milliseconds(
-                         std::numeric_limits<int32_t>::max()),
-                       model::partition_id(0))
-                     .get();
+    auto term_op
+      = stm.begin_tx(pid2, tx_seq, timeout, model::partition_id(0)).get();
     BOOST_REQUIRE_EQUAL(stm.highest_producer_id(), pid2.get_id());
     BOOST_REQUIRE((bool)term_op);
 
@@ -370,14 +354,12 @@ FIXTURE_TEST(test_stale_begin_tx_fenced, rm_stm_test_fixture) {
     auto tx_seq_old = model::tx_seq(9);
     auto tx_seq_new = model::tx_seq(11);
     auto pid1 = model::producer_identity{1, 0};
-    auto timeout = std::chrono::milliseconds(
-      std::numeric_limits<int32_t>::max());
 
-    auto begin_tx = [&stm, &pid1, timeout](model::tx_seq seq) {
+    auto begin_tx = [&stm, &pid1](model::tx_seq seq) {
         return stm.begin_tx(pid1, seq, timeout, model::partition_id(0)).get();
     };
 
-    auto commit_tx = [&stm, &pid1, timeout](model::tx_seq seq) {
+    auto commit_tx = [&stm, &pid1](model::tx_seq seq) {
         return stm.commit_tx(pid1, seq, timeout).get();
     };
 
@@ -421,25 +403,13 @@ FIXTURE_TEST(test_tx_begin_fences_produce, rm_stm_test_fixture) {
     BOOST_REQUIRE((bool)offset_r);
 
     auto pid20 = model::producer_identity{2, 0};
-    auto term_op = stm
-                     .begin_tx(
-                       pid20,
-                       tx_seq,
-                       std::chrono::milliseconds(
-                         std::numeric_limits<int32_t>::max()),
-                       model::partition_id(0))
-                     .get();
+    auto term_op
+      = stm.begin_tx(pid20, tx_seq, timeout, model::partition_id(0)).get();
     BOOST_REQUIRE((bool)term_op);
 
     auto pid21 = model::producer_identity{2, 1};
-    term_op = stm
-                .begin_tx(
-                  pid21,
-                  tx_seq,
-                  std::chrono::milliseconds(
-                    std::numeric_limits<int32_t>::max()),
-                  model::partition_id(0))
-                .get();
+    term_op
+      = stm.begin_tx(pid21, tx_seq, timeout, model::partition_id(0)).get();
     BOOST_REQUIRE((bool)term_op);
 
     rreader = make_batches(pid20, 0, 5, true);
@@ -468,14 +438,8 @@ FIXTURE_TEST(test_tx_post_aborted_produce, rm_stm_test_fixture) {
     BOOST_REQUIRE((bool)offset_r);
 
     auto pid20 = model::producer_identity{2, 0};
-    auto term_op = stm
-                     .begin_tx(
-                       pid20,
-                       tx_seq,
-                       std::chrono::milliseconds(
-                         std::numeric_limits<int32_t>::max()),
-                       model::partition_id(0))
-                     .get();
+    auto term_op
+      = stm.begin_tx(pid20, tx_seq, timeout, model::partition_id(0)).get();
     BOOST_REQUIRE((bool)term_op);
 
     rreader = make_batches(pid20, 0, 5, true);
@@ -512,8 +476,6 @@ FIXTURE_TEST(test_aborted_transactions, rm_stm_test_fixture) {
 
     static int64_t pid_counter = 0;
     const auto tx_seq = model::tx_seq(0);
-    const auto timeout = std::chrono::milliseconds(
-      std::numeric_limits<int32_t>::max());
     size_t segment_count = 1;
 
     auto& segments = disk_log->segments();
@@ -1014,8 +976,6 @@ FIXTURE_TEST(test_lso_bound_by_open_tx, rm_stm_test_fixture) {
 
     std::optional<model::offset> earliest_open_tx;
     auto tx_and_snapshot = [&](model::tx_seq tx_seq) {
-        auto timeout = std::chrono::milliseconds(
-          std::numeric_limits<int32_t>::max());
         // begin tx
         BOOST_REQUIRE(
           stm.begin_tx(pid, tx_seq, timeout, model::partition_id(0)).get());
