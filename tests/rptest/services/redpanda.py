@@ -33,6 +33,7 @@ from logging import Logger
 from typing import (
     Any,
     Callable,
+    Dict,
     List,
     Literal,
     Mapping,
@@ -2381,6 +2382,52 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         return {}
 
 
+class ProcessState(Enum):
+    ALIVE = "Alive"
+    DUMPING = "Dumping"
+    GONE = "Gone"  # terminating
+
+
+class ProcessStateMachine:
+    # Allowed transitions (including self-loops)
+    TRANSITIONS: Dict[ProcessState, Set[ProcessState]] = {
+        ProcessState.ALIVE: {
+            ProcessState.ALIVE,
+            ProcessState.DUMPING,
+            ProcessState.GONE,
+        },
+        ProcessState.DUMPING: {ProcessState.DUMPING, ProcessState.GONE},
+        ProcessState.GONE: {ProcessState.GONE},  # terminal
+    }
+
+    def __init__(self, initial: ProcessState) -> None:
+        if initial not in self.TRANSITIONS:
+            raise ValueError(f"Unknown initial state: {initial}")
+        self._state = initial
+        self._core_dumped = initial == ProcessState.DUMPING
+
+    @property
+    def state(self) -> ProcessState:
+        """Read the current state (you can compare this later yourself)."""
+        return self._state
+
+    @property
+    def core_dumped(self) -> bool:
+        """Whether a core dump has been produced."""
+        return self._core_dumped
+
+    def can_transition(self, to: ProcessState) -> bool:
+        return to in self.TRANSITIONS[self._state]
+
+    def transition(self, to: ProcessState):
+        if not self.can_transition(to):
+            raise ValueError(f"Invalid transition: {self._state.value} -> {to.value}")
+        self._state = to
+
+        if to == ProcessState.DUMPING:
+            self._core_dumped = True
+
+
 class RedpandaService(Service, RedpandaServiceABC):
     PERSISTENT_ROOT = "/var/lib/redpanda"
     TRIM_LOGS_KEY = "trim_logs"
@@ -3783,11 +3830,10 @@ class RedpandaService(Service, RedpandaServiceABC):
         cmd = " ".join(parts)
 
         # allow_fail=True => don't raise on the expected 124 from timeout
-        for line in node.account.ssh_capture(cmd, allow_fail=True, combine_stderr=True):
-            yield line.strip()
+        return node.account.ssh_capture(cmd, allow_fail=True, combine_stderr=True)
 
     # Check if pid is core dumping
-    def _is_core_dumping(self, node: ClusterNode, pid: int) -> bool:
+    def _is_core_dumping(self, node: ClusterNode, pid: int) -> bool | None:
         """
         Check if the given pid is in the process of generating a core dump.
 
@@ -3799,14 +3845,26 @@ class RedpandaService(Service, RedpandaServiceABC):
         try:
             output = node.account.ssh_output(cmd, timeout_sec=10).strip()
             # If CoreDumping is non-zero, the process is core dumping
-            self.logger.debug(f"CoreDumping output for pid {pid}: {output}")
+            self.logger.debug(
+                f"CoreDumping output for node {node.name} (pid {pid}): {output}"
+            )
             value = output.split(b":")[1].strip()
             is_core_dumping = value == b"1"
-            self.logger.debug(f"Process {pid} core dumping status: {is_core_dumping}")
+            self.logger.debug(
+                f"Node {node.name} (pid {pid}) core dumping status: {is_core_dumping}"
+            )
             return is_core_dumping
-        except Exception as e:
-            self.logger.debug(f"Failed to check CoreDumping for pid {pid}: {e}")
-            return False
+        except RemoteCommandError as e:
+            if e.exit_status == 1:
+                # grep returns exit status 1 if no lines were matched. This means that the
+                # read was ok, but there's no matching line (i.e. process is not dumping core)
+                self.logger.debug(f"Node {node.name} (pid {pid}) is not core dumping.")
+                return False
+            else:
+                self.logger.warn(
+                    f"Failed to check CoreDumping for node {node.name} (pid {pid}): {e}"
+                )
+                return None
 
     def _log_node_tail_file(self, node: ClusterNode, path: str, n: int = 20) -> str:
         """
@@ -4608,6 +4666,32 @@ class RedpandaService(Service, RedpandaServiceABC):
         except Exception as e:
             self.logger.warning(f"Cannot check metrics on shutdown - {e}")
 
+    def _get_process_state(self, node: ClusterNode) -> ProcessState:
+        pid = self.redpanda_pid(node)
+        if pid is None:
+            return ProcessState.GONE
+        else:
+            is_core_dumping = self._is_core_dumping(node, pid)
+            if is_core_dumping is None:
+                self.logger.info(
+                    f"{node.name} (pid {pid}) failed to check if core dumping. Checking if process still exists."
+                )
+                pid = self.redpanda_pid(node)
+                if pid is None:
+                    self.logger.info(
+                        f"{node.name} process no longer exists after core dumping check failure."
+                    )
+                    return ProcessState.GONE
+                else:
+                    self.logger.error(
+                        f"{node.name} (pid {pid}) process still exists after core dumping check failure."
+                    )
+                    raise RuntimeError(
+                        f"{node.name} (pid {pid}) unexpected state: core dumping check returned None but process still exists"
+                    )
+            else:
+                return ProcessState.DUMPING if is_core_dumping else ProcessState.ALIVE
+
     def stop_node(
         self,
         node: ClusterNode,
@@ -4632,33 +4716,64 @@ class RedpandaService(Service, RedpandaServiceABC):
         if pid is None:
             return
 
+        state_machine = ProcessStateMachine(self._get_process_state(node))
+        self.logger.debug(
+            f"{node.name} (pid {pid}) initial process state: {state_machine.state}"
+        )
+
+        def is_process_gone() -> bool:
+            old_state = state_machine.state
+            new_state = self._get_process_state(node)
+            state_machine.transition(new_state)
+            if old_state != new_state:
+                self.logger.info(
+                    f"{node.name} (pid {pid}) process state changed from {old_state} to {new_state}"
+                )
+
+            return new_state == ProcessState.GONE
+
         strace_gen = self._log_node_process_strace(node, pid, seconds=300)
 
+        try:
+            wait_until(lambda: strace_gen.has_next(timeout_sec=1), timeout_sec=5)
+        except TimeoutError as e:
+            self.logger.warn(
+                f"Strace did not start capturing for node {node.name}: {e}"
+            )
+
+        self.logger.info(f"Stopping redpanda on node {node.name} (pid {pid})")
         node.account.signal(
             pid, signal.SIGKILL if forced else signal.SIGTERM, allow_fail=False
         )
 
-        stop_timeout = timeout or 30
-
+        stop_timeout = timeout or 300
         try:
             wait_until(
-                lambda: self._is_core_dumping(node, pid) is False,
-                timeout_sec=300,
-                err_msg=f"Redpanda node {node.name} is still core dumping",
-            )
-        except TimeoutError as e:
-            self.logger.warn(f"Node {node.name} is still core dumping: {e}")
-
-        for line in strace_gen:
-            self.logger.debug(line)
-
-        try:
-            wait_until(
-                lambda: self.redpanda_pid(node) is None,
+                is_process_gone,
                 timeout_sec=stop_timeout,
+                backoff_sec=0.5,
                 err_msg=f"Redpanda node {node.account.hostname} failed to stop in {stop_timeout} seconds",
             )
+
+            self.logger.info(
+                f"Redpanda node {node.name} (pid {pid}) stopped successfully."
+            )
+
+            if state_machine.core_dumped:
+                self.logger.info(
+                    f"{node.name} (pid {pid}) core dumped during shutdown. Printing strace output:"
+                )
+                for line in strace_gen:
+                    self.logger.debug(f"{node.name} ({pid}): {line}")
         except TimeoutError:
+            self.logger.error(
+                f"Redpanda node {node.name} (pid {pid}) did not stop in time."
+            )
+
+            self.logger.debug(f"Strace output for node {node.name} (pid {pid}):")
+            for line in strace_gen:
+                self.logger.debug(f"{node.name} ({pid}): {line}")
+
             sleep_sec = 10
             self.logger.warn(
                 f"Timed out waiting for stop on {node.name}, setting log_level to 'trace' and sleeping for {sleep_sec}s"
