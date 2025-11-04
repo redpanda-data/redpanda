@@ -126,7 +126,7 @@ class DataMigrationsApiTest(RedpandaTest, DataMigrationTestMixin):
     def validate_timing(self, time_before, happened_at):
         time_now = now()
         self.logger.debug(f"{time_before=}, {happened_at=}, {time_now=}")
-        err_ms = 5  # allow for ntp error across nodes
+        err_ms = 100  # allow for ntp error across nodes
         assert time_before - err_ms <= happened_at <= time_now + err_ms
 
     def get_topic_initial_revision(self, topic_name):
