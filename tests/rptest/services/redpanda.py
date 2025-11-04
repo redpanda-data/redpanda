@@ -3799,7 +3799,11 @@ class RedpandaService(Service, RedpandaServiceABC):
         try:
             output = node.account.ssh_output(cmd, timeout_sec=10).strip()
             # If CoreDumping is non-zero, the process is core dumping
-            return output != b"0"
+            self.logger.debug(f"CoreDumping output for pid {pid}: {output}")
+            value = output.split(b":")[1].strip()
+            is_core_dumping = value == b"1"
+            self.logger.debug(f"Process {pid} core dumping status: {is_core_dumping}")
+            return is_core_dumping
         except Exception as e:
             self.logger.debug(f"Failed to check CoreDumping for pid {pid}: {e}")
             return False
@@ -4642,8 +4646,11 @@ class RedpandaService(Service, RedpandaServiceABC):
                 err_msg=f"Redpanda node {node.account.hostname} failed to stop in {stop_timeout} seconds",
             )
         except TimeoutError:
-            if self._is_core_dumping(node, pid):
-                self.logger.warn(f"Node {node.name} is core dumping")
+            wait_until(
+                lambda: self._is_core_dumping(node, pid) is False,
+                timeout_sec=300,
+                err_msg=f"Redpanda node {node.name} is still core dumping",
+            )
 
             for line in strace_gen:
                 self.logger.debug(line)
