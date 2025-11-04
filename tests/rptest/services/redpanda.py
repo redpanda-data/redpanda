@@ -3756,6 +3756,48 @@ class RedpandaService(Service, RedpandaServiceABC):
         for line in node.account.ssh_capture("netstat -panelot", timeout_sec=30):
             self.logger.debug(line.strip())
 
+    def _log_node_process_strace(
+        self,
+        node: ClusterNode,
+        pid: int,
+        seconds: int = 5,
+        trace_expr: str = None,
+        follow_forks: bool = True,
+        sudo: bool = True,
+    ):
+        """
+        Yields strace lines for `seconds` seconds from a running process.
+        """
+        parts = []
+        if sudo:
+            # -n = non-interactive; avoids sudo asking for a TTY/password and hanging
+            parts += ["sudo -n"]
+        parts += [f"timeout {seconds}s", "strace", "-p", str(pid)]
+        if follow_forks:
+            parts.append("-f")
+        parts += ["-tt", "-T", "-s", "128"]  # timestamps, durations, string size
+        if trace_expr:
+            parts += ["-e", f"trace={trace_expr}"]
+        # strace writes to stderr; combine_stderr=True makes it appear in the iterator
+        cmd = " ".join(parts)
+
+        # allow_fail=True => don't raise on the expected 124 from timeout
+        for line in node.account.ssh_capture(cmd, allow_fail=True, combine_stderr=True):
+            self.logger.debug(line.strip())
+
+    def _log_node_tail_file(self, node: ClusterNode, path: str, n: int = 20) -> str:
+        """
+        Return the last `n` lines of a remote file.
+
+        :param account: RemoteAccount instance
+        :param path: Path to the remote file
+        :param n: Number of lines to tail (default 20)
+        :return: String containing the last n lines
+        """
+        cmd = f"tail -n {n} {path}"
+        for line in node.account.ssh_capture(cmd, allow_fail=True, combine_stderr=True):
+            self.logger.debug(line.strip())
+
     def start_service(self, node, start):
         # Maybe the service collides with something that wasn't cleaned up
         # properly: let's peek at what's going on on the node before starting it.
@@ -4585,8 +4627,10 @@ class RedpandaService(Service, RedpandaServiceABC):
             )
             self._set_trace_loggers_and_sleep(node, time_sec=sleep_sec)
             self.logger.warn(f"Node {node.name} status:")
+            self._log_node_process_strace(node, pid)
             self._log_node_process_state(node)
             self._log_node_shutdown_analysis(node)
+            self._log_node_tail_file(node, RedpandaService.STDOUT_STDERR_CAPTURE, 50)
             # Kill the process if it's still running. If redpanda still runs we
             # might fail to collect logs as the file will be modified while we
             # (ducktape) are reading/compressing it.
