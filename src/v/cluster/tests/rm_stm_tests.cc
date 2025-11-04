@@ -981,3 +981,89 @@ FIXTURE_TEST(test_concurrent_producer_evictions, rm_stm_test_fixture) {
     ss::when_all_succeed(std::move(replicate_f), std::move(reset_f)).get();
     gate.close().get();
 }
+
+FIXTURE_TEST(test_lso_bound_by_open_tx, rm_stm_test_fixture) {
+    create_stm_and_start_raft();
+    auto& stm = *_stm;
+    auto raft = _raft;
+    stm.start().get();
+    stm.testing_only_disable_auto_abort();
+
+    wait_for_confirmed_leader();
+    wait_for_meta_initialized();
+
+    auto pid = model::producer_identity{0, 0};
+
+    auto random_sleep = []() {
+        auto sleep_ms = std::chrono::milliseconds{
+          random_generators::get_int(0, 5)};
+        return ss::sleep(sleep_ms);
+    };
+
+    auto snapshot_and_apply = [&] {
+        return local_snapshot(cluster::tx::tx_snapshot::version)
+          .then([&](auto snapshot) {
+              return random_sleep().then(
+                [this, snapshot = std::move(snapshot)]() mutable {
+                    return apply_snapshot(
+                             snapshot.header, std::move(snapshot.data))
+                      .discard_result();
+                });
+          });
+    };
+
+    std::optional<model::offset> earliest_open_tx;
+    auto tx_and_snapshot = [&](model::tx_seq tx_seq) {
+        auto timeout = std::chrono::milliseconds(
+          std::numeric_limits<int32_t>::max());
+        // begin tx
+        BOOST_REQUIRE(
+          stm.begin_tx(pid, tx_seq, timeout, model::partition_id(0)).get());
+
+        earliest_open_tx = raft->committed_offset();
+
+        if (tests::random_bool()) {
+            // snapshot
+            snapshot_and_apply().get();
+        }
+        // replicate some batches
+        random_sleep().get();
+        auto result = replicate_all(stm, make_batches(pid, 0, 5, true)).get();
+        BOOST_REQUIRE(result.has_value());
+        // commit
+        if (tests::random_bool()) {
+            // snapshot
+            snapshot_and_apply().get();
+        }
+        random_sleep().get();
+
+        earliest_open_tx.reset();
+        BOOST_REQUIRE_EQUAL(
+          stm.commit_tx(pid, tx_seq, timeout).get(), cluster::tx::errc::none);
+    };
+
+    ss::abort_source as;
+    auto lso_bound_checker_f = ss::do_until(
+      [&as] { return as.abort_requested(); },
+      [&] {
+          auto current_lso = stm.last_stable_offset();
+          auto lso_bound = !earliest_open_tx || current_lso == earliest_open_tx;
+          if (!lso_bound) {
+              vlog(
+                logger.error,
+                "LSO {} exceeded earliest open tx offset {}",
+                current_lso,
+                earliest_open_tx);
+          }
+          BOOST_REQUIRE(lso_bound);
+          return ss::now();
+      });
+
+    auto deadline = ss::lowres_clock::now() + 10s;
+    model::tx_seq tx_seq{0};
+    while (ss::lowres_clock::now() < deadline) {
+        tx_and_snapshot(tx_seq++);
+    }
+    as.request_abort();
+    std::move(lso_bound_checker_f).get();
+}
