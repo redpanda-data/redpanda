@@ -254,7 +254,7 @@ ss::future<result<iobuf>> materialize_from_cloud_storage(
         co_return conv(dl_result.value());
     }
 
-    auto buf_str = make_iobuf_input_stream(payload.copy());
+    auto buf_str = make_iobuf_input_stream(payload.share());
     // TODO: use circuit-breaker here, if the operation fails
     // repeatedly it can be temporarily short-circuited to avoid
     // burning cycles.
