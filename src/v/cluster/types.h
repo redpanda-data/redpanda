@@ -2905,7 +2905,7 @@ struct partition_raft_state
 
 struct partition_state
   : serde::
-      envelope<partition_state, serde::version<2>, serde::compat_version<0>> {
+      envelope<partition_state, serde::version<3>, serde::compat_version<0>> {
     model::offset start_offset;
     model::offset committed_offset;
     model::offset last_stable_offset;
@@ -2924,6 +2924,7 @@ struct partition_state
     ss::sstring iceberg_mode;
     partition_raft_state raft_state;
     model::offset max_tombstone_removable_offset;
+    model::offset max_cleanly_compacted_offset;
 
     auto serde_fields() {
         return std::tie(
@@ -2944,7 +2945,8 @@ struct partition_state
           read_replica_bucket,
           raft_state,
           iceberg_mode,
-          max_tombstone_removable_offset);
+          max_tombstone_removable_offset,
+          max_cleanly_compacted_offset);
     }
 
     friend bool operator==(const partition_state&, const partition_state&)

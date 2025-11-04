@@ -1398,6 +1398,10 @@
                     "type": "long",
                     "description": "Maximum offset up to which tombstones/transaction end markers can be removed."
                 },
+                "max_cleanly_compacted_offset": {
+                    "type": "long",
+                    "description": "Max cleanly compacted offset"
+                },
                 "raft_state": {
                     "type": "raft_replica_state",
                     "description": "Underlying raft replica state of the partition instance"

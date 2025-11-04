@@ -270,8 +270,12 @@ partition_state get_partition_state(ss::lw_shared_ptr<partition> partition) {
     state.revision_id = partition->get_revision_id();
     state.log_size_bytes = partition->size_bytes();
     state.non_log_disk_size_bytes = partition->non_log_disk_size_bytes();
+    const auto& coco = partition->raft()->get_compaction_coordinator();
+    state.max_cleanly_compacted_offset
+      = coco.get_local_max_cleanly_compacted_offset();
     state.max_tombstone_removable_offset
-      = partition->log()->stm_manager()->max_tombstone_remove_offset();
+      = coco.get_max_tombstone_remove_offset();
+
     state.is_read_replica_mode_enabled
       = partition->is_read_replica_mode_enabled();
     state.is_remote_fetch_enabled = partition->is_remote_fetch_enabled();
@@ -288,6 +292,7 @@ partition_state get_partition_state(ss::lw_shared_ptr<partition> partition) {
     state.iceberg_mode = fmt::format(
       "{}", partition->get_ntp_config().iceberg_mode());
     state.raft_state = get_partition_raft_state(partition->raft());
+
     return state;
 }
 
