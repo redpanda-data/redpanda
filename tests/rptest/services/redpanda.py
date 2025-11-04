@@ -4632,13 +4632,26 @@ class RedpandaService(Service, RedpandaServiceABC):
         if pid is None:
             return
 
-        strace_gen = self._log_node_process_strace(node, pid)
+        strace_gen = self._log_node_process_strace(node, pid, seconds=300)
 
         node.account.signal(
             pid, signal.SIGKILL if forced else signal.SIGTERM, allow_fail=False
         )
 
         stop_timeout = timeout or 30
+
+        try:
+            wait_until(
+                lambda: self._is_core_dumping(node, pid) is False,
+                timeout_sec=300,
+                err_msg=f"Redpanda node {node.name} is still core dumping",
+            )
+        except TimeoutError as e:
+            self.logger.warn(f"Node {node.name} is still core dumping: {e}")
+
+        for line in strace_gen:
+            self.logger.debug(line)
+
         try:
             wait_until(
                 lambda: self.redpanda_pid(node) is None,
@@ -4646,15 +4659,6 @@ class RedpandaService(Service, RedpandaServiceABC):
                 err_msg=f"Redpanda node {node.account.hostname} failed to stop in {stop_timeout} seconds",
             )
         except TimeoutError:
-            wait_until(
-                lambda: self._is_core_dumping(node, pid) is False,
-                timeout_sec=300,
-                err_msg=f"Redpanda node {node.name} is still core dumping",
-            )
-
-            for line in strace_gen:
-                self.logger.debug(line)
-
             sleep_sec = 10
             self.logger.warn(
                 f"Timed out waiting for stop on {node.name}, setting log_level to 'trace' and sleeping for {sleep_sec}s"
