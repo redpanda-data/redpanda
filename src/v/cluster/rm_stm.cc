@@ -1293,6 +1293,18 @@ model::offset rm_stm::last_stable_offset() {
     }
 
     // scenario 2: past bootstrapping
+    auto read_units = _state_lock.try_hold_read_lock();
+    if (!read_units) {
+        // A reset in progress means the stm may not be in a consistent state
+        // for LSO calculation. In this case we return the last known LSO to be
+        // conservative.
+        vlog(
+          _ctx_log.trace,
+          "state machine is resetting, last_known_lso: {}, last_applied: {}",
+          _last_known_lso,
+          last_applied);
+        return _last_known_lso;
+    }
     // Check for any in-flight transactions.
     auto first_tx_start = model::offset::max();
     if (_is_tx_enabled && !_active_tx_producers.empty()) {
