@@ -117,7 +117,7 @@ namespace cluster {
  * This stm periodically checks if there is any pending transaction for
  * expiration. The expiration kicks in the transaction is not committed/aborted
  * within the user set transaction timeout. A producer with an active
- * transaction cannot be evicted, so exipration ensures that with timely
+ * transaction cannot be evicted, so expiration ensures that with timely
  * expiration of open transactions, the producer states are candidates for
  * eviction.
  */

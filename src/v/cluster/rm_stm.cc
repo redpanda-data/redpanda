@@ -738,7 +738,7 @@ ss::future<tx::errc> rm_stm::do_abort_tx(
             // Or it may mean that a tx coordinator
             //   - lost its state
             //   - rolled back to previous op
-            //   - the previous op happend to be an abort
+            //   - the previous op happened to be an abort
             //   - the coordinator retried it
             //
             // In the first case the least impactful way to reject the request.
@@ -1281,6 +1281,8 @@ model::offset rm_stm::last_stable_offset() {
     // We optimize for the case where there are no inflight transactional
     // batch to return the high water mark.
     auto last_applied = last_applied_offset();
+
+    // scenario 1: still bootstrapping
     if (unlikely(
           !_bootstrap_committed_offset
           || last_applied < _bootstrap_committed_offset.value())) {
@@ -1290,6 +1292,7 @@ model::offset rm_stm::last_stable_offset() {
         return model::invalid_lso;
     }
 
+    // scenario 2: past bootstrapping
     // Check for any in-flight transactions.
     auto first_tx_start = model::offset::max();
     if (_is_tx_enabled && !_active_tx_producers.empty()) {
