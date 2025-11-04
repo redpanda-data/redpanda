@@ -1167,7 +1167,6 @@ ss::future<std::optional<cloud_io::cache_item_stream>> cache::get(
 ss::future<std::optional<cache_item>> cache::_get(std::filesystem::path key) {
     auto guard = _gate.hold();
     vlog(cst_log.debug, "Trying to get {} from archival cache.", key.native());
-    probe.get();
     ss::file cache_file;
 
     size_t data_size{0};
@@ -1190,14 +1189,12 @@ ss::future<std::optional<cache_item>> cache::_get(std::filesystem::path key) {
         }
     } catch (const std::filesystem::filesystem_error& e) {
         if (e.code() == std::errc::no_such_file_or_directory) {
-            probe.miss_get();
             co_return std::nullopt;
         } else {
             throw;
         }
     }
 
-    probe.cached_get();
     co_return std::optional(cache_item{std::move(cache_file), data_size});
 }
 
