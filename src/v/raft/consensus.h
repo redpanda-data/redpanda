@@ -617,7 +617,7 @@ private:
      */
     ss::future<> hydrate_snapshot();
 
-    void update_snapshot_offset(const snapshot_metadata&);
+    void update_offset_from_snapshot(const snapshot_metadata&);
     ss::future<std::optional<snapshot_metadata>> read_snapshot_metadata();
 
     /**
