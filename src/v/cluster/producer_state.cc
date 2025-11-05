@@ -333,7 +333,7 @@ bool producer_state::can_evict() {
       // Check if there are operations pending state machine sync
       || !_requests._inflight_requests.empty()
       //  Check if there are any open transactions on this producer.
-      || has_transaction_in_progress()) {
+      || has_transaction_in_progress() || _in_flight_begin_hook.is_linked()) {
         vlog(_logger.debug, "[{}] cannot evict producer.", *this);
         return false;
     }
@@ -341,6 +341,33 @@ bool producer_state::can_evict() {
     _evicted = true;
     shutdown_input();
     return true;
+}
+
+void producer_state::gc_old_inflight_begin(model::term_id current_term) {
+    if (!_inflight_tx_term_offset) {
+        return;
+    }
+
+    if (_inflight_tx_term_offset->term < current_term) {
+        vlog(
+          _logger.debug,
+          "[{}] gc'ing inflight begin tx at term {} due to term bump to {}",
+          *this,
+          _inflight_tx_term_offset->term,
+          current_term);
+        reset_inflight_begin();
+    }
+}
+
+void producer_state::reset_inflight_begin() {
+    _inflight_tx_term_offset.reset();
+    _in_flight_begin_hook.unlink();
+}
+std::optional<model::offset> producer_state::inflight_begin_estimate() const {
+    if (_inflight_tx_term_offset) {
+        return _inflight_tx_term_offset->committed_offset;
+    }
+    return std::nullopt;
 }
 
 void producer_state::reset_with_new_epoch(model::producer_epoch new_epoch) {
@@ -408,11 +435,15 @@ result<request_ptr> producer_state::try_emplace_request(
 void producer_state::apply_data(
   const model::record_batch_header& header, kafka::offset offset) {
     auto bid = model::batch_identity::from(header);
+    gc_old_inflight_begin(header.ctx.term);
     if (!bid.is_idempotent() || _evicted) {
         return;
     }
     if (!bid.is_transactional && bid.pid.epoch > _id.epoch) {
         reset_with_new_epoch(bid.pid.epoch);
+    }
+    if (bid.is_transactional) {
+        reset_inflight_begin();
     }
     _requests.stm_apply(bid, header.ctx.term, offset);
     if (bid.is_transactional) {
@@ -453,6 +484,7 @@ void producer_state::apply_transaction_begin(
           header);
         return;
     }
+    reset_inflight_begin();
     if (has_transaction_in_progress() || _active_transaction_hook.is_linked()) {
         // We have checks in place in the stm so this does not happen. If it
         // still does it could be a bug or the log has been truncated and some
@@ -485,7 +517,7 @@ producer_state::apply_transaction_end(model::control_record_type crt) {
       && crt != model::control_record_type::tx_commit) {
         return std::nullopt;
     }
-
+    reset_inflight_begin();
     if (!_transaction_state) {
         vlog(
           _logger.debug,
@@ -590,6 +622,27 @@ std::optional<expiration_info> producer_state::get_expiration_info() const {
       .timeout = timeout,
       .last_update = tx::clock_type::now() - duration,
       .is_expiration_requested = has_transaction_expired()};
+}
+
+void producer_state::mark_tx_inflight(
+  model::term_id term, model::offset committed_offset) {
+    vassert(
+      !_inflight_tx_term_offset,
+      "There is already an inflight transaction begin batch for producer: {}",
+      *this);
+    vassert(
+      !has_transaction_in_progress(),
+      "Cannot mark transaction begin inflight for producer with active "
+      "transaction: {}",
+      *this);
+    // should be set first before marking the begin batch as inflight
+    vassert(
+      _in_flight_begin_hook.is_linked(),
+      "In flight begin hook must be linked when marking tx inflight for "
+      "producer: {}",
+      *this);
+    _inflight_tx_term_offset = std::make_unique<inflight_term_offset>(
+      inflight_term_offset{.term = term, .committed_offset = committed_offset});
 }
 
 } // namespace cluster::tx

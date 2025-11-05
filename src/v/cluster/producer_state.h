@@ -276,6 +276,9 @@ public:
     // on the partition using this producer.
     safe_intrusive_list_hook _active_transaction_hook;
 
+    // Used to track all the begin transaction batches that are in-flight
+    intrusive_list_hook _in_flight_begin_hook;
+
     std::chrono::milliseconds ms_since_last_update() const {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
           ss::lowres_system_clock::now() - _last_updated_ts);
@@ -290,6 +293,21 @@ public:
     void reset_with_new_epoch(model::producer_epoch new_epoch);
 
     const requests& idempotent_request_state() const { return _requests; }
+
+    std::optional<model::offset> inflight_begin_estimate() const;
+
+private:
+    struct inflight_term_offset {
+        model::term_id term;
+        model::offset committed_offset;
+    };
+
+    // GCs any inflight begin requests from older terms.
+    void gc_old_inflight_begin(model::term_id current_term);
+    void reset_inflight_begin();
+
+public:
+    void mark_tx_inflight(model::term_id term, model::offset committed_offset);
 
 private:
     prefix_logger& _logger;
@@ -334,6 +352,9 @@ private:
     // Used to implement force eviction via admin APIs for forcing an eviction
     // of this producer.
     bool _force_transaction_expiry{false};
+
+    // Only set if there is an inflight transaction begin batch.
+    std::unique_ptr<inflight_term_offset> _inflight_tx_term_offset;
     friend class producer_state_manager;
     friend struct ::test_fixture;
 };

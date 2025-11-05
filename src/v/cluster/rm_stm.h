@@ -428,6 +428,17 @@ private:
       &tx::producer_state::_active_transaction_hook>;
     active_transactional_producers_t _active_tx_producers;
 
+    // This list tracks all producers that have an inflight begin requet.
+    // we do this to clamp the LSO correctly if there is a racy request
+    // to compute LSO while there are inflight begin requests. This list
+    // clamps the LSO to the committed offset at the time of the begin requset
+    // and is removed when the begin request / any subsequent batch from the
+    // transaction is applied.
+    using inflight_begin_producers_t = intrusive_list<
+      tx::producer_state,
+      &tx::producer_state::_in_flight_begin_hook>;
+    inflight_begin_producers_t _inflight_begin_producers;
+
     metrics::internal_metric_groups _metrics;
     ss::abort_source _as;
     ss::gate _gate;
