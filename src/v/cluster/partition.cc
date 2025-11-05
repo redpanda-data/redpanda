@@ -1649,7 +1649,14 @@ model::offset partition::committed_offset() const {
     return _raft->committed_offset();
 }
 model::offset partition::high_watermark() const {
-    return model::next_offset(_raft->last_visible_index());
+    auto lsi = _raft->last_visible_index();
+    auto start_offset = _raft->start_offset();
+    if (lsi < start_offset) {
+        // Doesn't need next_offset since start_offset is already
+        // the first offset that can be produced to.
+        return start_offset;
+    }
+    return model::next_offset(lsi);
 }
 model::offset partition::leader_high_watermark() const {
     return model::next_offset(_raft->last_leader_visible_index());
