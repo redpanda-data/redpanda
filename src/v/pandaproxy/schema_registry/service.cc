@@ -451,9 +451,21 @@ ss::future<> service::mitigate_error(std::exception_ptr eptr) {
             return ss::make_exception_future<>(eptr);
         })
       .handle_exception_type([this,
+                              eptr](const kafka::client::partition_error& ex) {
+          if (
+            (ex.error == kafka::error_code::topic_authorization_failed
+             || ex.error == kafka::error_code::unknown_topic_or_partition)
+            && _has_ephemeral_credentials) {
+              return create_acls(_controller->get_security_frontend().local());
+          }
+
+          return ss::make_exception_future<>(eptr);
+      })
+      .handle_exception_type([this,
                               eptr](const kafka::client::topic_error& ex) {
           if (
-            ex.error == kafka::error_code::topic_authorization_failed
+            (ex.error == kafka::error_code::topic_authorization_failed
+             || ex.error == kafka::error_code::unknown_topic_or_partition)
             && _has_ephemeral_credentials) {
               return create_acls(_controller->get_security_frontend().local());
           }
