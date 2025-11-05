@@ -33,7 +33,6 @@ from logging import Logger
 from typing import (
     Any,
     Callable,
-    Dict,
     List,
     Literal,
     Mapping,
@@ -2630,17 +2629,13 @@ class RedpandaService(Service, RedpandaServiceABC):
 
         # enable asan abort / core dumps by default
         self._environment = dict(
-            ASAN_OPTIONS="verbosity=1:abort_on_error=1:disable_coredump=0:unmap_shadow_on_exit=1"
+            ASAN_OPTIONS="abort_on_error=1:disable_coredump=0:unmap_shadow_on_exit=1"
         )
-
-        self._environment["LSAN_OPTIONS"] = "verbosity=1"
 
         # If lsan_suppressions.txt exists, then include it
         if os.path.exists(LSAN_SUPPRESSIONS_FILE):
             self.logger.debug(f"{LSAN_SUPPRESSIONS_FILE} exists")
-            self._environment["LSAN_OPTIONS"] += (
-                f":suppressions={LSAN_SUPPRESSIONS_FILE}"
-            )
+            self._environment["LSAN_OPTIONS"] = f"suppressions={LSAN_SUPPRESSIONS_FILE}"
         else:
             self.logger.debug(f"{LSAN_SUPPRESSIONS_FILE} does not exist")
 
@@ -3779,82 +3774,6 @@ class RedpandaService(Service, RedpandaServiceABC):
 
         output_str = "\n".join(lines)
         self.logger.debug(f"{node.name}: /proc/{pid}/status:\n{output_str}")
-
-    def _log_node_process_strace(
-        self,
-        node: ClusterNode,
-        pid: int,
-        seconds: int = 5,
-        trace_expr: str | None = None,
-        follow_forks: bool = True,
-        sudo: bool = True,
-    ):
-        """
-        Yields strace lines for `seconds` seconds from a running process.
-        This is a generator that yields each line as it's captured.
-        """
-        parts = []
-        if sudo:
-            # -n = non-interactive; avoids sudo asking for a TTY/password and hanging
-            parts += ["sudo -n"]
-        parts += [f"timeout {seconds}s", "strace", "-p", str(pid)]
-        if follow_forks:
-            parts.append("-f")
-        parts += ["-tt", "-T", "-s", "128"]  # timestamps, durations, string size
-        if trace_expr:
-            parts += ["-e", f"trace={trace_expr}"]
-        # strace writes to stderr; combine_stderr=True makes it appear in the iterator
-        cmd = " ".join(parts)
-
-        # allow_fail=True => don't raise on the expected 124 from timeout
-        return node.account.ssh_capture(cmd, allow_fail=True, combine_stderr=True)
-
-    # Check if pid is core dumping
-    def _is_core_dumping(self, node: ClusterNode, pid: int) -> bool | None:
-        """
-        Check if the given pid is in the process of generating a core dump.
-
-        :param node: ClusterNode instance
-        :param pid: Process ID to check
-        :return: True if the process is core dumping, False otherwise
-        """
-        cmd = f"grep ^CoreDumping: /proc/{pid}/status"
-        try:
-            output = node.account.ssh_output(cmd, timeout_sec=10).strip()
-            # If CoreDumping is non-zero, the process is core dumping
-            self.logger.debug(
-                f"CoreDumping output for node {node.name} (pid {pid}): {output}"
-            )
-            value = output.split(b":")[1].strip()
-            is_core_dumping = value == b"1"
-            self.logger.debug(
-                f"Node {node.name} (pid {pid}) core dumping status: {is_core_dumping}"
-            )
-            return is_core_dumping
-        except RemoteCommandError as e:
-            if e.exit_status == 1:
-                # grep returns exit status 1 if no lines were matched. This means that the
-                # read was ok, but there's no matching line (i.e. process is not dumping core)
-                self.logger.debug(f"Node {node.name} (pid {pid}) is not core dumping.")
-                return False
-            else:
-                self.logger.warn(
-                    f"Failed to check CoreDumping for node {node.name} (pid {pid}): {e}"
-                )
-                return None
-
-    def _log_node_tail_file(self, node: ClusterNode, path: str, n: int = 20) -> str:
-        """
-        Return the last `n` lines of a remote file.
-
-        :param account: RemoteAccount instance
-        :param path: Path to the remote file
-        :param n: Number of lines to tail (default 20)
-        :return: String containing the last n lines
-        """
-        cmd = f"tail -n {n} {path}"
-        for line in node.account.ssh_capture(cmd, allow_fail=True, combine_stderr=True):
-            self.logger.debug(line.strip())
 
     def start_service(self, node, start):
         # Maybe the service collides with something that wasn't cleaned up
