@@ -4648,18 +4648,30 @@ class RedpandaService(Service, RedpandaServiceABC):
         if pid is None:
             return
 
-        self.logger.info(f"Stopping redpanda on node {node.name} (pid {pid})")
+        self.logger.info(f"{node.name}: Stopping redpanda (pid {pid})")
         node.account.signal(
             pid, signal.SIGKILL if forced else signal.SIGTERM, allow_fail=False
         )
 
         stop_timeout = timeout or 30
+
         try:
+            with self.monitor_log(node) as log_monitor:
+                log_monitor.wait_until(
+                    "application.*Shutdown complete",
+                    timeout_sec=stop_timeout,
+                    err_msg=f"{node.name}: Timed out waiting for Redpanda shutdown log line after {stop_timeout} seconds",
+                )
+            self.logger.info(
+                f"{node.name}: Redpanda shutdown log line found. Waiting for process to exit."
+            )
             wait_until(
                 lambda: self.redpanda_pid(node) is None,
                 timeout_sec=stop_timeout,
                 err_msg=f"Redpanda node {node.account.hostname} failed to stop in {stop_timeout} seconds",
             )
+
+            self.logger.info(f"{node.name}: Redpanda process has exited.")
         except TimeoutError:
             sleep_sec = 10
             self.logger.warn(
