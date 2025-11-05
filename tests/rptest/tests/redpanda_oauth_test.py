@@ -32,6 +32,7 @@ from rptest.services.redpanda import (
     LoggingConfig,
     MetricsEndpoint,
     PandaproxyConfig,
+    ResourceSettings,
     SchemaRegistryConfig,
     SecurityConfig,
     make_redpanda_service,
@@ -111,6 +112,8 @@ class RedpandaOIDCTestBase(Test):
         schema_reg_config = SchemaRegistryConfig()
         schema_reg_config.authn_method = "http_basic"
 
+        resource_settings = ResourceSettings(core_dump_limit="0")
+
         self.redpanda = make_redpanda_service(
             test_context,
             num_brokers,
@@ -126,6 +129,7 @@ class RedpandaOIDCTestBase(Test):
             pandaproxy_config=pandaproxy_config,
             schema_registry_config=schema_reg_config,
             log_config=log_config,
+            resource_settings=resource_settings,
         )
 
         self.client_cert = None
