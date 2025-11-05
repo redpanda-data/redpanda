@@ -3755,24 +3755,30 @@ class RedpandaService(Service, RedpandaServiceABC):
         process_lines = []
         for line in node.account.ssh_capture("ps aux --sort=-%mem", timeout_sec=30):
             process_lines.append(line.strip())
-            self.logger.debug(line.strip())
+
+        output_str = "\n".join(process_lines)
+        self.logger.debug(f"{node.name}: ps aux output:\n{output_str}")
 
         # Capture network information
+        netstat_lines = []
         for line in node.account.ssh_capture("netstat -panelot", timeout_sec=30):
-            self.logger.debug(line.strip())
+            netstat_lines.append(line.strip())
+
+        output_str = "\n".join(netstat_lines)
+        self.logger.debug(f"{node.name}: netstat -panelot output:\n{output_str}")
 
     def _log_process_status(self, node: ClusterNode, pid: int):
         """
         Log the status of a process from /proc/[pid]/status
         """
-        self.logger.debug(f"Gathering /proc/{pid}/status for node {node.name}...")
+        self.logger.debug(f"{node.name}: Gathering /proc/{pid}/status for node...")
         cmd = f"cat /proc/{pid}/status"
         lines = []
         for line in node.account.ssh_capture(cmd, allow_fail=True, timeout_sec=10):
             lines.append(line.strip())
 
         output_str = "\n".join(lines)
-        self.logger.debug(f"/proc/{pid}/status for node {node.name}:\n{output_str}")
+        self.logger.debug(f"{node.name}: /proc/{pid}/status:\n{output_str}")
 
     def _log_node_process_strace(
         self,
@@ -4692,7 +4698,7 @@ class RedpandaService(Service, RedpandaServiceABC):
             wait_until(
                 check_redpanda_process_stopped,
                 timeout_sec=300,
-                backoff_sec=1,
+                backoff_sec=0.5,
                 err_msg=f"Redpanda node {node.account.hostname} failed to stop in {stop_timeout} seconds",
             )
 
@@ -4801,7 +4807,7 @@ class RedpandaService(Service, RedpandaServiceABC):
                 if "--version" in line:
                     continue
 
-                self.logger.debug(f"pgrep output: {line}")
+                self.logger.debug(f"{node.name}: pgrep output: {line}")
 
                 # The pid is listed first, that's all we need
                 return int(line.split()[0])
@@ -4809,7 +4815,10 @@ class RedpandaService(Service, RedpandaServiceABC):
         except RemoteCommandError as e:
             # 1 - No processes matched or none of them could be signalled.
             if e.exit_status == 1:
+                self.logger.debug(f"{node.name}: redpanda process not found")
                 return None
+
+            self.logger.error(f"{node.name}: error checking redpanda pid: {e}")
 
             raise e
 
