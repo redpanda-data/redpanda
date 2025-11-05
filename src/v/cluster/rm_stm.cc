@@ -1331,6 +1331,37 @@ model::offset rm_stm::last_stable_offset() {
         // transactions.
         lso = std::min(first_tx_start, next_to_apply);
     } else if (synced_leader) {
+        ////////////////  WARNING ///////////
+        // there is a real bug lurking here that overestimates the LSO beyond
+        // an open transaction.
+        //
+        // The issue here if a begin_tx is replicated but not yet applied
+        // in the stm and a caller queries LSO, we return LSO beyond the
+        // begin_tx which is incorrect. The problem is _active_tx_producers
+        // is only updated on apply, so it is not yet up to date.
+
+        // Another problem is we do not let lso move backwards once
+        // computed (see _last_known_lso update below), So even if the
+        // stm has applied the begin_tx later, we will not correct
+        // the LSO to reflect the begin_tx presence.
+
+        // There is a test that caught this issue in rm_stm_tests which
+        // is disabled for now until we can fix the underlying problem.
+
+        // The impact of this overestimation is that compaction may compact
+        // away open transaction begin marker as it relies on LSO. The
+        // chances are rare but not impossible :(. if at that point the replica
+        // restarts and there are no furher updates in the transaction, the
+        // transaction has no record of ever beginning.
+
+        // We need a better way to track in-flight transactions for the purposes
+        // of LSO calculation.
+
+        // An obvious solution is to clamp LSO to next_to_apply in all cases
+        // but it was tried in the past and caused performance regressions
+        // in non transaction workloads like write_caching, acks=0/1. So that
+        // is not a viable solution.
+
         // no inflight transactions in (last_applied, last_visible_index]
         lso = model::next_offset(last_visible_index);
     } else {
