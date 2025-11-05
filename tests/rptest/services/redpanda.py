@@ -4678,8 +4678,19 @@ class RedpandaService(Service, RedpandaServiceABC):
             self.logger.info(
                 f"{node.name}: Redpanda shutdown log line found. Waiting for process to exit."
             )
+
+            def check_redpanda_process_stopped():
+                result = self.redpanda_pid(node) is None
+                if not result:
+                    self.logger.debug(
+                        f"{node.name}: Redpanda process (pid {pid}) still running."
+                    )
+                    self._log_process_status(node, pid)
+
+                return result
+
             wait_until(
-                lambda: self.redpanda_pid(node) is None,
+                check_redpanda_process_stopped,
                 timeout_sec=300,
                 backoff_sec=1,
                 err_msg=f"Redpanda node {node.account.hostname} failed to stop in {stop_timeout} seconds",
