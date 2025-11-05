@@ -18,6 +18,7 @@ from rptest.clients.serde_client_utils import SchemaType, SerdeClientType
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
+    CloudStorageType,
     MetricsEndpoint,
     PandaproxyConfig,
     SISettings,
@@ -339,7 +340,8 @@ class DatalakeDLQTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     @matrix(
-        cloud_storage_type=supported_storage_types(),
+        # TODO: make our DuckDB query service support more than just S3.
+        cloud_storage_type=[CloudStorageType.S3],
         # Lightweight matrix as we only care about custom suffix behavior here.
         query_engine=[QueryEngineType.DUCKDB_PY],
         catalog_type=[filesystem_catalog_type()],
