@@ -3761,6 +3761,19 @@ class RedpandaService(Service, RedpandaServiceABC):
         for line in node.account.ssh_capture("netstat -panelot", timeout_sec=30):
             self.logger.debug(line.strip())
 
+    def _log_process_status(self, node: ClusterNode, pid: int):
+        """
+        Log the status of a process from /proc/[pid]/status
+        """
+        self.logger.debug(f"Gathering /proc/{pid}/status for node {node.name}...")
+        cmd = f"cat /proc/{pid}/status"
+        lines = []
+        for line in node.account.ssh_capture(cmd, allow_fail=True, timeout_sec=10):
+            lines.append(line.strip())
+
+        output_str = "\n".join(lines)
+        self.logger.debug(f"/proc/{pid}/status for node {node.name}:\n{output_str}")
+
     def _log_node_process_strace(
         self,
         node: ClusterNode,
@@ -4680,6 +4693,7 @@ class RedpandaService(Service, RedpandaServiceABC):
             self._set_trace_loggers_and_sleep(node, time_sec=sleep_sec)
             self.logger.warn(f"Node {node.name} status:")
             self._log_node_process_state(node)
+            self._log_process_status(node, pid)
             self._log_node_shutdown_analysis(node)
             # Kill the process if it's still running. If redpanda still runs we
             # might fail to collect logs as the file will be modified while we
