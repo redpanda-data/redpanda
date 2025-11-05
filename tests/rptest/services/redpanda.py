@@ -2676,13 +2676,17 @@ class RedpandaService(Service, RedpandaServiceABC):
 
         # enable asan abort / core dumps by default
         self._environment = dict(
-            ASAN_OPTIONS="abort_on_error=1:disable_coredump=0:unmap_shadow_on_exit=1"
+            ASAN_OPTIONS="verbosity=1:abort_on_error=1:disable_coredump=0:unmap_shadow_on_exit=1"
         )
+
+        self._environment["LSAN_OPTIONS"] = "verbosity=1"
 
         # If lsan_suppressions.txt exists, then include it
         if os.path.exists(LSAN_SUPPRESSIONS_FILE):
             self.logger.debug(f"{LSAN_SUPPRESSIONS_FILE} exists")
-            self._environment["LSAN_OPTIONS"] = f"suppressions={LSAN_SUPPRESSIONS_FILE}"
+            self._environment["LSAN_OPTIONS"] += (
+                f":suppressions={LSAN_SUPPRESSIONS_FILE}"
+            )
         else:
             self.logger.debug(f"{LSAN_SUPPRESSIONS_FILE} does not exist")
 
@@ -4734,6 +4738,16 @@ class RedpandaService(Service, RedpandaServiceABC):
 
         strace_gen = self._log_node_process_strace(node, pid, seconds=300)
 
+        # def log_next_strace_line():
+        #     if strace_gen.has_next(timeout_sec=1):
+        #         line = strace_gen.next()
+        #         self.logger.debug(f"{node.name} ({pid}): {line}")
+        #         return line
+
+        # def next_strace_line_contains(substr: str) -> bool:
+        #     line = log_next_strace_line()
+        #     return line is not None and substr in line
+
         try:
             wait_until(lambda: strace_gen.has_next(timeout_sec=1), timeout_sec=5)
         except TimeoutError as e:
@@ -4745,6 +4759,18 @@ class RedpandaService(Service, RedpandaServiceABC):
         node.account.signal(
             pid, signal.SIGKILL if forced else signal.SIGTERM, allow_fail=False
         )
+
+        # shutdown_signal = "SIGKILL" if forced else "SIGTERM"
+        # shutdown_strace_log = f"--- {shutdown_signal} si_signo={shutdown_signal}"
+        # try:
+        #     wait_until(
+        #         lambda: next_strace_line_contains(shutdown_strace_log),
+        #         timeout_sec=5,
+        #     )
+        # except TimeoutError:
+        #     self.logger.warn(
+        #         f"Didn't find '{shutdown_strace_log}' in strace output for node {node.name}"
+        #     )
 
         stop_timeout = timeout or 300
         try:
