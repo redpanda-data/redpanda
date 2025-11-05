@@ -4680,7 +4680,8 @@ class RedpandaService(Service, RedpandaServiceABC):
             )
             wait_until(
                 lambda: self.redpanda_pid(node) is None,
-                timeout_sec=stop_timeout,
+                timeout_sec=300,
+                backoff_sec=1,
                 err_msg=f"Redpanda node {node.account.hostname} failed to stop in {stop_timeout} seconds",
             )
 
