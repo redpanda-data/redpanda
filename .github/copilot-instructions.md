@@ -169,6 +169,7 @@ src/v/base/format_to.h.
 
 - Avoid catching bare `except:` as this can hide system exceptions, including exceptions
   raised by a signal when a test is being forcibly timed out. Instead use `except Exception:`.
+- When using the `requests` library make sure to always specify a sensible timeout
 
 ### Instructions for type hints
 
