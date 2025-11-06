@@ -3770,6 +3770,10 @@ class RedpandaService(Service, RedpandaServiceABC):
         cmd = f"cat /proc/{pid}/status"
         lines = []
         for line in node.account.ssh_capture(cmd, allow_fail=True, timeout_sec=10):
+            if re.search(r"CoreDumping:\s*1", line):
+                self.logger.warn(
+                    f"{node.name}: Detected core dumping in process {pid} status."
+                )
             lines.append(line.strip())
 
         output_str = "\n".join(lines)
