@@ -7,11 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from functools import wraps
 import os
 import pprint
 import threading
 from contextlib import contextmanager
 from logging import Logger
+import time
 from typing import Any, Callable, ContextManager, Optional, Type, TypeVar
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
@@ -642,3 +644,26 @@ def not_none(value: T | None) -> T:
     if value is None:
         raise ValueError("value was unexpectedly None")
     return value
+
+
+def debounce(wait_sec: float):
+    """
+    Decorator that prevents a function from being called more than once
+    every `wait_sec` seconds. Subsequent calls within the wait period are ignored.
+    """
+
+    def decorator(func):
+        last_call_time = 0.0
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            nonlocal last_call_time
+            now = time.monotonic()
+            if now - last_call_time >= wait_sec:
+                last_call_time = now
+                return func(*args, **kwargs)
+            # else: ignore
+
+        return wrapper
+
+    return decorator

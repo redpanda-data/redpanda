@@ -101,6 +101,7 @@ from rptest.util import (
     ssh_output_stderr,
     wait_until_result,
     wait_until_with_progress_check,
+    debounce,
 )
 from rptest.utils.mode_checks import in_fips_environment
 from rptest.utils.rpenv import sample_license
@@ -4598,20 +4599,17 @@ class RedpandaService(Service, RedpandaServiceABC):
 
         stop_timeout = timeout or 30
 
-        last_print_status_time = 0
+        @debounce(0.5)
+        def debounced_log_process_status():
+            self._log_process_status(node, pid)
 
         def check_redpanda_process_stopped():
             is_stopped = self.redpanda_pid(node) is None
             if not is_stopped:
-                nonlocal last_print_status_time
-                now = time.perf_counter()
-                # Sparsely log the process status to avoid log spam
-                if now - last_print_status_time >= 0.5:
-                    self.logger.debug(
-                        f"{node.name}: Redpanda process (pid {pid}) still running."
-                    )
-                    self._log_process_status(node, pid)
-                    last_print_status_time = now
+                self.logger.debug(
+                    f"{node.name}: Redpanda process (pid {pid}) still running."
+                )
+                debounced_log_process_status()
 
             return is_stopped
 
