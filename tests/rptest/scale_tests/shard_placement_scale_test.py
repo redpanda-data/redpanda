@@ -19,6 +19,15 @@ from rptest.services.redpanda import LoggingConfig, SISettings
 from rptest.tests.prealloc_nodes import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
 
+# Empirically this test gets the expected throughput, but this is not an
+# exact measurement given sampling intervals, clients which start and stop
+# and operated in a batched manner, so we can't really just compare that
+# the observed throughput is == or >= the target throughput, since this
+# will flake, rather we check that is above the given fraction of the
+# nominal/expected throughput. The observed throughput in the cases I
+# looked at was much closer, e.g., between 99 and 101% of the target.
+ACTUAL_TO_EXPECTED_TPUT_THRESHOLD = 0.9
+
 
 class ShardPlacementScaleTest(RedpandaTest):
     def __init__(self, ctx, *args, **kwargs):
@@ -80,7 +89,9 @@ class ShardPlacementScaleTest(RedpandaTest):
         }
         validator = {
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
-                OMBSampleConfigurations.gte(producer_rate_mbps)
+                OMBSampleConfigurations.gte(
+                    producer_rate_mbps * ACTUAL_TO_EXPECTED_TPUT_THRESHOLD
+                )
             ]
         }
 
