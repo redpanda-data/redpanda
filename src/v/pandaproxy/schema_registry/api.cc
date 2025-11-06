@@ -112,6 +112,10 @@ ss::future<> api::start() {
     co_await _service.invoke_on_all(&service::start);
 }
 
+ss::future<> api::stop_clients() {
+    co_await _client.invoke_on_all(&kafka::client::client::stop);
+}
+
 ss::future<> api::stop() {
     vlog(srlog.debug, "Stopping schema registry API...");
     co_await _client.invoke_on_all(&kafka::client::client::stop);
