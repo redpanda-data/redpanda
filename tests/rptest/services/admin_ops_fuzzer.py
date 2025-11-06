@@ -470,6 +470,9 @@ class ProduceToTopic(Operation):
             )
             return True
 
+        if self.topic is None:  # `execute` failed to assign it
+            return False
+
         partitions = ctx.rpk().describe_topic(self.topic)
         for p in partitions:
             if p.id in self.delivery_offsets:
