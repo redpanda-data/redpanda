@@ -438,7 +438,7 @@ partition_manager::remove(const model::ntp& ntp, partition_removal_mode mode) {
     // remove partition from ntp & raft tables
     _ntp_table.erase(ntp);
     _raft_table.erase(group_id);
-    shutdown_state.update(partition_shutdown_stage::stopping_raft);
+    shutdown_state.update(partition_shutdown_stage::removing_raft);
     co_await _raft_manager.local().remove(partition->raft());
     _unmanage_watchers.notify(
       ntp, model::topic_partition_view(partition->ntp().tp));
