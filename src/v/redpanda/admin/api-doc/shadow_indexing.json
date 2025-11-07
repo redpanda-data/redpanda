@@ -517,7 +517,7 @@
       "description": "Response body of GET to the cloud_storage/lifecycle endpoint",
       "properties": {
         "markers": {
-          "type": "array",
+          "type": "chunked_array",
           "items": {
             "type": "lifecycle_marker"
           }
