@@ -17,5 +17,4 @@ quick:
   - tests/rpk_tuner_test.py
   - tests/rpk_cloud_test.py
   - tests/workload_upgrade_runner_test.py # Excluded until CORE-13748 is fixed. 
-  - tests/redpanda_oauth_test.py::RedpandaOIDCTlsTest # exclude until CORE-13761 is fixed
   - tests/redpanda_kerberos_test.py::RedpandaKerberosConfigTest # exclude until CORE-13787 is fixed
