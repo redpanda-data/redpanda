@@ -1,0 +1,24 @@
+---
+name: trigger-snyk
+on:
+  push:
+    branches: [dev, 'v*', '!v24.*']
+    paths:
+      - 'MODULE.bazel'
+      - 'bazel/repositories.bzl'
+jobs:
+  gh:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
+      - uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/actions_bot_token
+          parse-json-secrets: true
+      - run: gh workflow run --repo redpanda-data/vtools --raw-field redpanda-branches='["${{ github.ref_name }}"]' snyk-redpanda.yml
+        env:
+          GH_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
