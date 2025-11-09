@@ -255,33 +255,32 @@ void client::fail_outstanding_futures() noexcept { shutdown(); }
 ss::future<ss::temporary_buffer<char>> client::receive() {
     // Protect the receive operation with the dispatch gate to prevent
     // the input stream from being invalidated while reads are in flight
-    return ss::with_gate(_dispatch_gate, [this] {
-        return _in.read()
-          .then([this](ss::temporary_buffer<char>&& tmpbuf) {
-              _probe->add_inbound_bytes(tmpbuf.size());
-              return std::move(tmpbuf);
-          })
-          .handle_exception([this](std::exception_ptr e) {
-              _probe->register_transport_error();
-              return ss::make_exception_future<ss::temporary_buffer<char>>(e);
-          })
-          .finally([this] { _last_response = ss::lowres_clock::now(); });
-    });
+    auto holder = _dispatch_gate.hold();
+    return _in.read()
+      .then([this](ss::temporary_buffer<char>&& tmpbuf) {
+          _probe->add_inbound_bytes(tmpbuf.size());
+          return std::move(tmpbuf);
+      })
+      .handle_exception([this](std::exception_ptr e) {
+          _probe->register_transport_error();
+          return ss::make_exception_future<ss::temporary_buffer<char>>(e);
+      })
+      .finally([this, holder = std::move(holder)] {
+          _last_response = ss::lowres_clock::now();
+      });
 }
 
 ss::future<> client::send(ss::scattered_message<char> msg) {
     _probe->add_outbound_bytes(msg.size());
     // Protect the send operation with the dispatch gate to prevent
     // the output stream from being invalidated while writes are in flight
-    return ss::with_gate(
-      _dispatch_gate, [this, msg = std::move(msg)]() mutable {
-          return _out.write(std::move(msg))
-            .discard_result()
-            .handle_exception([this](std::exception_ptr e) {
-                _probe->register_transport_error();
-                return ss::make_exception_future<>(e);
-            });
-      });
+    auto holder = _dispatch_gate.hold();
+    try {
+        co_await _out.write(std::move(msg));
+    } catch (...) {
+        _probe->register_transport_error();
+        throw;
+    }
 }
 
 // response_stream implementation //
