@@ -998,3 +998,78 @@ SEASTAR_THREAD_TEST_CASE(post_method) {
 
     server->stop().get();
 }
+
+struct staged_input_stream : public ss::data_source_impl {
+    ss::future<ss::temporary_buffer<char>> get() override {
+        co_await semaphore.wait();
+        if (buffers.empty()) {
+            co_return ss::temporary_buffer<char>{};
+        }
+        auto buf = std::move(buffers.front());
+        buffers.pop_front();
+        cond_var.broadcast();
+        co_return buf;
+    }
+
+    ss::future<> wait_for_buffers(size_t n) {
+        return cond_var.wait([this, n] { return buffers.size() <= n; });
+    }
+
+    ss::semaphore semaphore{0};
+    ss::condition_variable cond_var;
+    std::list<ss::temporary_buffer<char>> buffers;
+};
+
+// Test for race condition between send and shutdown via abort source
+// This reproduces the UB where batched_output_stream::write() captures
+// 'this' in a lambda, then abort source triggers shutdown, which invalidates
+// _out by assigning a default-constructed object, leaving _write_sem as nullptr
+SEASTAR_THREAD_TEST_CASE(test_send_abort_race) {
+    auto config = transport_configuration();
+    auto [server, client_base] = started_client_and_server(config);
+
+    // We need to control the abort source, so create a new client
+    ss::abort_source as;
+    auto client = ss::make_shared<http::client>(config, as);
+
+    // Prepare a request with some data to send
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::post);
+    header.target("/echo");
+
+    static constexpr size_t large_size = 256_KiB;
+    ss::sstring large_data(large_size, 'x');
+
+    header.insert(
+      boost::beast::http::field::content_length,
+      fmt::format("{}", large_size * 11));
+    header_set_host(header, config.server_addr);
+
+    auto data_src_impl = std::make_unique<staged_input_stream>();
+    data_src_impl->buffers.emplace_back(large_data.data(), large_data.size());
+    for (int i = 0; i < 10; ++i) {
+        data_src_impl->buffers.emplace_back(
+          large_data.data(), large_data.size());
+    }
+    data_src_impl->semaphore.signal();
+    auto* staged_input_stream = data_src_impl.get();
+    // Start the request - this will initiate send operations
+
+    ss::input_stream<char> body_stream(
+      ss::data_source(std::move(data_src_impl)));
+    auto req_fut = client->request(std::move(header), body_stream);
+
+    // Stop the client concurrently
+    auto stop_fut = client->stop();
+
+    staged_input_stream->wait_for_buffers(10).get();
+    staged_input_stream->semaphore.signal(10);
+
+    auto [fut1, fut2]
+      = ss::when_all(std::move(req_fut), std::move(stop_fut)).get();
+    fut1.ignore_ready_future();
+    fut2.ignore_ready_future();
+
+    // Clean up
+    server->stop().get();
+}
