@@ -186,6 +186,9 @@ ss::future<> connection_context::start() {
     if (conn) {
         ssx::background
           = conn->wait_for_input_shutdown()
+              .handle_exception([](std::exception_ptr) {
+                  // ignore
+              })
               .finally([this]() {
                   vlog(
                     klog.debug,
