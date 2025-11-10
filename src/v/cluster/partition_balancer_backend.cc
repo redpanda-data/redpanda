@@ -271,6 +271,13 @@ void partition_balancer_backend::tick() {
       = ssx::spawn_with_gate_then(
           _gate,
           [this] {
+              if (_tick_in_progress) {
+                  vlog(
+                    clusterlog.debug,
+                    "skipping tick, tick already in progress");
+                  return ss::now();
+              }
+
               _tick_in_progress = ss::abort_source{};
               return do_tick().finally([this] {
                   _tick_in_progress = {};
