@@ -271,6 +271,7 @@ void partition_balancer_backend::tick() {
       = ssx::spawn_with_gate_then(
           _gate,
           [this] {
+              _tick_in_progress = ss::abort_source{};
               return do_tick().finally([this] {
                   _tick_in_progress = {};
                   maybe_rearm_timer(
@@ -343,8 +344,6 @@ ss::future<> partition_balancer_backend::do_tick() {
         // TODO: add term checks to planner
         co_return;
     }
-
-    _tick_in_progress = ss::abort_source{};
 
     const bool force_refresh_this_tick
       = _cur_term->_force_health_report_refresh;
