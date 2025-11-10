@@ -44,11 +44,7 @@ setup(
         "hypothesis==6.82",
         "jsonschema==4.10.0",
         "redpanda-polaris-catalog-python==1.0.0.post3",  # See: .github/workflows/publish-apache-polaris-python-client.yml
-        # PyIceberg: Use an official release once the next major (1.0) is out.
-        #   Using a hash to unreleased version because we depend on new
-        #   pluggable authentication mechanism.
-        # "pyiceberg==0.9.1",
-        "pyiceberg@git+https://github.com/apache/iceberg-python@76a6451cd6863fe3d0e10d33da9b78af12e50111",
+        "pyiceberg==0.10.0",
         "adlfs==2024.7.0",
         "pyarrow",
         "pandas",
