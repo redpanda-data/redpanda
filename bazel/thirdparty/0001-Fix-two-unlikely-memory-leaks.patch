@@ -200,6 +200,21 @@ index 8c7e30c21..149de98b0 100644
  	return (FALSE);
  }
  
+diff --git a/src/lib/gssapi/krb5/acquire_cred.c b/src/lib/gssapi/krb5/acquire_cred.c
+index 006eba114..b91de7cc1 100644
+--- a/src/lib/gssapi/krb5/acquire_cred.c
++++ b/src/lib/gssapi/krb5/acquire_cred.c
+@@ -242,6 +242,10 @@ cleanup:
+         krb5_kt_close(context, kt);
+     if (rc != NULL)
+         k5_rc_close(context, rc);
++    if (cred->acceptor_mprinc != NULL) {
++        krb5_free_principal(context, cred->acceptor_mprinc);
++        cred->acceptor_mprinc = NULL;
++    }
+     *minor_status = code;
+     return major;
+ }
 -- 
 2.34.1
 
