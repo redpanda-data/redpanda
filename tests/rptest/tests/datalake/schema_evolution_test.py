@@ -639,6 +639,7 @@ class SchemaEvolutionE2ETests(RedpandaTest):
         Test that changing the order of columns doesn't change the values
         associated with a column or field name.
         """
+        # TODO: Bunko
         with self.setup_services(query_engine, catalog_type=catalog_type) as dl:
             count = 10
             ctx = TranslationContext()
