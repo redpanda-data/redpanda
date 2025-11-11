@@ -1493,11 +1493,14 @@ admin_server::get_security_report(std::unique_ptr<ss::http::request>) {
             ephemeral_credentials{
               _schema_registry->has_ephemeral_credentials()});
     }
-    interfaces_report.audit_log_client = generate_kafka_client_interface_report(
-      alerts,
-      affected_interface::audit_log_client,
-      _audit_mgr.local().get_client_config(),
-      ephemeral_credentials::yes);
+    if (config::shard_local_cfg().audit_enabled()) {
+        interfaces_report.audit_log_client
+          = generate_kafka_client_interface_report(
+            alerts,
+            affected_interface::audit_log_client,
+            _audit_mgr.local().get_client_config(),
+            ephemeral_credentials::yes);
+    }
     report.interfaces = std::move(interfaces_report);
 
     const auto min_secure_tls = config::tls_version::v1_2;
