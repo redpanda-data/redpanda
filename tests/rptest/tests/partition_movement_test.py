@@ -44,7 +44,9 @@ from rptest.utils.mode_checks import skip_debug_mode, skip_fips_mode
 # Errors we should tolerate when moving partitions around
 PARTITION_MOVEMENT_LOG_ERRORS = [
     # e.g.  raft - [follower: {id: {1}, revision: {10}}] [group_id:3, {kafka/topic/2}] - recovery_stm.cc:422 - recovery append entries error: raft group does not exist on target broker
-    "raft - .*raft group does not exist on target broker"
+    "raft - .*raft group does not exist on target broker",
+    # this could happen because the log truncation is happening concurrently on a source broker
+    "Service handler for method .*threw an exception",
 ]
 
 
@@ -995,7 +997,10 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
     # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
     @skip_fips_mode
     @skip_debug_mode  # rolling restarts require more reliable recovery that a slow debug mode cluster can provide
-    @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
+    @cluster(
+        num_nodes=5,
+        log_allow_list=PREV_VERSION_LOG_ALLOW_LIST + PARTITION_MOVEMENT_LOG_ERRORS,
+    )
     @matrix(
         num_to_upgrade=[0, 2],
         cloud_storage_type=get_cloud_storage_type(),
@@ -1063,7 +1068,10 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         self._finish_upgrade(num_to_upgrade)
 
-    @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
+    @cluster(
+        num_nodes=5,
+        log_allow_list=PREV_VERSION_LOG_ALLOW_LIST + PARTITION_MOVEMENT_LOG_ERRORS,
+    )
     @skip_debug_mode  # rolling restarts require more reliable recovery that a slow debug mode cluster can provide
     # Redpandas before v23.1 did not have support for ABS.
     @matrix(
