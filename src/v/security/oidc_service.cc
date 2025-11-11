@@ -378,7 +378,9 @@ struct service::impl {
         http::client client{net::base_transport::configuration{
           .server_addr = {url.host, url.port},
           .credentials = is_https ? _creds : nullptr,
-          .tls_sni_hostname = tls_host}};
+          .tls_sni_hostname = tls_host,
+          .wait_for_tls_server_eof = false,
+        }};
 
         http::client::request_header req_hdr;
         req_hdr.method(boost::beast::http::verb::get);
