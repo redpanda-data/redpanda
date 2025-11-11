@@ -94,7 +94,7 @@ public:
         _num_adjacent_segments_compacted += num_segments_compacted;
     }
 
-    void batch_write_error(const std::exception_ptr& e);
+    void batch_write_error();
 
     void add_batches_read(uint32_t batches) { _batches_read += batches; }
     void add_cached_batches_read(uint32_t batches) {

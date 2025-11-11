@@ -268,10 +268,7 @@ void probe::delete_segment(const segment& s) {
     _partition_bytes -= s.file_size();
 }
 
-void probe::batch_write_error(const std::exception_ptr& e) {
-    stlog.error("Error writing record batch {}", e);
-    ++_batch_write_errors;
-}
+void probe::batch_write_error() { ++_batch_write_errors; }
 
 void readers_cache_probe::setup_metrics(const model::ntp& ntp) {
     if (config::shard_local_cfg().disable_metrics()) {

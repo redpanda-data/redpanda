@@ -114,12 +114,9 @@ disk_log_appender::operator()(model::record_batch& batch) {
         co_return stop;
     } catch (...) {
         release_lock();
-        vlog(
-          stlog.info,
-          "Could not append batch: {} - {}",
-          std::current_exception(),
-          *this);
-        _log.get_probe().batch_write_error(std::current_exception());
+        auto e = std::current_exception();
+        vlog(stlog.error, "Could not append batch: {} - {}", e, *this);
+        _log.get_probe().batch_write_error();
         throw;
     }
 }
