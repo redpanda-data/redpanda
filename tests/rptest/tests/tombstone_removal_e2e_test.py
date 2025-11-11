@@ -140,6 +140,7 @@ class TombstoneRemovalTest(RedpandaTest):
         self.redpanda.logger.debug("partition is empty")
         return -1
 
+    @skip_debug_mode
     @cluster(num_nodes=6)  # 5 for cluster + 1 for producer
     def test_single_slow_follower(self):
         """
