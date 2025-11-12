@@ -2859,6 +2859,23 @@ ss::future<> ntp_archiver::apply_spillover() {
     const auto manifest_upload_timeout = _conf->manifest_upload_timeout();
     const auto manifest_upload_backoff = _conf->cloud_storage_initial_backoff();
 
+    // Check the spillover invariant.
+    // The start_offset of the manifest must be equal to the begin_offset of
+    // the first segment in the manifest.
+    if (auto so = manifest().get_start_offset();
+        so.has_value() && !manifest().empty()) {
+        auto fo = manifest().begin()->base_offset;
+        if (fo != so.value()) {
+            vlog(
+              _rtclog.error,
+              "Spillover invariant violated: manifest start_offset {}, first "
+              "segment base_offset {}",
+              so.value(),
+              fo);
+            co_return;
+        }
+    }
+
     if (manifest_size_limit.has_value()) {
         vlog(
           _rtclog.debug,
@@ -3159,9 +3176,11 @@ ss::future<> ntp_archiver::apply_retention() {
         if (error != cluster::errc::success) {
             vlog(
               _rtclog.warn,
-              "Failed to update archival metadata STM start offest according "
+              "Failed to update archival metadata STM start offset according "
               "to retention policy: {}",
               error);
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format, "Failed to update start offset: {}", error));
         }
     } else {
         vlog(

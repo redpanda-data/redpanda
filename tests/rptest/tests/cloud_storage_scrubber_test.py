@@ -54,6 +54,10 @@ SCRUBBER_LOG_ALLOW_LIST = [
     # manifest will refuse to apply the command and log the error below.
     r"cloud_storage - .* New replacement segment does not line up with previous segment",
     r"cluster - .* Can't add segment:",
+    # The same could happen with spillover. Spillover assumes that the start offset is
+    # aligned with the first segment in the manifest but this may not be the case after
+    # after the manifest reset.
+    r"archival - .* Spillover invariant violated",
 ]
 
 
