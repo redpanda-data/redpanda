@@ -609,6 +609,20 @@ partition::timequery(storage::timequery_config cfg) {
         && cfg.min_offset < kafka::offset_cast(
              _cloud_storage_partition->next_kafka_offset());
 
+    vlog(
+      clusterlog.debug,
+      "[{}] timequery: cfg={{min={}, max={}, time={}}}, "
+      "may_read_from_cloud={}, may_answer_from_cloud={}, "
+      "start_timestamp={}, raft_start_offset={}",
+      _raft->ntp(),
+      cfg.min_offset,
+      cfg.max_offset,
+      cfg.time,
+      may_read_from_cloud(),
+      may_answer_from_cloud,
+      _raft->log()->start_timestamp(),
+      _raft->start_offset());
+
     if (_raft->log()->start_timestamp() <= cfg.time) {
         // The query is ahead of the local data's start_timestamp: this
         // means it _might_ hit on local data: start_timestamp is not
@@ -625,6 +639,15 @@ partition::timequery(storage::timequery_config cfg) {
         // If the min_offset is ahead of max_offset, the local log is empty
         // or was truncated since the timequery_config was created.
         if (local_query_cfg.min_offset > local_query_cfg.max_offset) {
+            vlog(
+              clusterlog.debug,
+              "[{}] timequery: early return (nullopt) - "
+              "adjusted_min={} > max={}, raft_start_offset={} (kafka={})",
+              _raft->ntp(),
+              local_query_cfg.min_offset,
+              local_query_cfg.max_offset,
+              _raft->start_offset(),
+              log()->from_log_offset(_raft->start_offset()));
             co_return std::nullopt;
         }
 
@@ -655,6 +678,15 @@ partition::timequery(storage::timequery_config cfg) {
             // If the min_offset is ahead of max_offset, the local log is empty
             // or was truncated since the timequery_config was created.
             if (local_query_cfg.min_offset > local_query_cfg.max_offset) {
+                vlog(
+                  clusterlog.debug,
+                  "[{}] timequery: early return (nullopt) - "
+                  "adjusted_min={} > max={}, raft_start_offset={} (kafka={})",
+                  _raft->ntp(),
+                  local_query_cfg.min_offset,
+                  local_query_cfg.max_offset,
+                  _raft->start_offset(),
+                  log()->from_log_offset(_raft->start_offset()));
                 co_return std::nullopt;
             }
 
