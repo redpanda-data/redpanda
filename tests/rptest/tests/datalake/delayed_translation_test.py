@@ -54,6 +54,7 @@ class DatalakeDelayedTranslationTest(RedpandaTest):
                 cloud_storage_max_connections=5,
                 cloud_storage_enable_remote_read=True,
                 cloud_storage_enable_remote_write=True,
+                fast_uploads=True,
             ),
             extra_rp_conf={"iceberg_enabled": False},
             schema_registry_config=SchemaRegistryConfig(),
@@ -95,13 +96,14 @@ class DatalakeDelayedTranslationTest(RedpandaTest):
 
     def produce_until_result(self, *args, **kwargs):
         try:
+            count = 50000 if self.redpanda.dedicated_nodes else 10000
             self._connect.start_stream(
                 name="ducky_stream",
                 config=counter_stream_config(
                     self.redpanda,
                     self.TOPIC_NAME,
                     self.SCHEMA_NAME,
-                    {"weight": "range(0, 10000)"},
+                    {"weight": f"range(0, {count})"},
                     0,
                 ),
             )
