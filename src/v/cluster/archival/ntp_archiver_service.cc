@@ -2604,6 +2604,9 @@ ss::future<> ntp_archiver::apply_archive_retention() {
           _rtclog.warn,
           "Failed to replicate archive truncation command: {}",
           error.message());
+
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format, "Failed to apply archive retention: {}", error));
     } else {
         vlog(
           _rtclog.info,
@@ -2816,6 +2819,10 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
               _rtclog.info,
               "Failed to clean up metadata after garbage collection: {}",
               error);
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Failed to clean up metadata after archive GC: {}",
+              error));
         } else {
             std::ignore = co_await _remote.delete_objects(
               get_bucket_name(), manifests_to_remove, fib);
@@ -2857,7 +2864,7 @@ ss::future<> ntp_archiver::apply_spillover() {
         auto fo = manifest().begin()->base_offset;
         if (fo != so.value()) {
             vlog(
-              _rtclog.error,
+              _rtclog.warn,
               "Spillover invariant violated: manifest start_offset {}, first "
               "segment base_offset {}",
               so.value(),
@@ -3268,6 +3275,9 @@ ss::future<> ntp_archiver::garbage_collect() {
               _rtclog.info,
               "Failed to clean up metadata after garbage collection: {}",
               error);
+
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format, "Failed to clean up metadata after GC: {}", error));
         }
     } else {
         vlog(
