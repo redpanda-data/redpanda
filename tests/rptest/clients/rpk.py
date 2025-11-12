@@ -2303,28 +2303,28 @@ class RpkTool:
     def _tls_enabled(self):
         return self._security.tls_enabled
 
-    def create_role(self, role_name):
+    def create_role(self, role_name) -> dict[str, Any]:
         return self._run_role(["create", role_name])
 
-    def list_roles(self):
+    def list_roles(self) -> dict[str, Any]:
         return self._run_role(["list"])
 
-    def delete_role(self, role_name):
+    def delete_role(self, role_name) -> dict[str, Any]:
         cmd = ["delete", role_name, "--no-confirm"] + self._kafka_conn_settings()
         return self._run_role(cmd)
 
-    def assign_role(self, role_name, principals):
+    def assign_role(self, role_name, principals) -> dict[str, Any]:
         cmd = ["assign", role_name, "--principal", ",".join(principals)]
         return self._run_role(cmd)
 
-    def unassign_role(self, role_name, principals):
+    def unassign_role(self, role_name, principals) -> dict[str, Any]:
         cmd = ["unassign", role_name, "--principal", ",".join(principals)]
         return self._run_role(cmd)
 
-    def describe_role(self, role_name):
+    def describe_role(self, role_name) -> dict[str, Any]:
         return self._run_role(["describe", role_name] + self._kafka_conn_settings())
 
-    def _run_role(self, cmd, output_format="json"):
+    def _run_role(self, cmd, output_format="json") -> dict[str, Any] | str:
         cmd = [
             self._rpk_binary(),
             "security",
