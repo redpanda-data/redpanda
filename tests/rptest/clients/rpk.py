@@ -16,7 +16,7 @@ import tempfile
 import time
 import typing
 from collections import namedtuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Iterator, Optional
 
 from ducktape.cluster.cluster import ClusterNode
@@ -215,6 +215,26 @@ class RpkColumnHeader:
 class RpkTable:
     columns: list[RpkColumnHeader]
     rows: list[list[str]]
+
+
+@dataclass
+class RPKACLInput:
+    # Can't use mutables in defaults of dataclass
+    # https://docs.python.org/3/library/dataclasses.html#dataclasses.field
+    allow_principal: list[str] = field(default_factory=list[str])
+    deny_principal: list[str] = field(default_factory=list[str])
+    allow_role: list[str] = field(default_factory=list[str])
+    deny_role: list[str] = field(default_factory=list[str])
+    allow_host: list[str] = field(default_factory=list[str])
+    deny_host: list[str] = field(default_factory=list[str])
+    topic: list[str] = field(default_factory=list[str])
+    group: list[str] = field(default_factory=list[str])
+    operation: list[str] = field(default_factory=list[str])
+    txn_id: list[str] = field(default_factory=list[str])
+    cluster: bool = False
+    resource_pattern_type: str = ""
+    registry_subject: list[str] = field(default_factory=list[str])
+    registry_global: bool = False
 
 
 def parse_rpk_table(out):
@@ -1619,6 +1639,85 @@ class RpkTool:
             )
 
         return output
+
+    def acl_create(self, acl: RPKACLInput):
+        cmd = (
+            [
+                self._rpk_binary(),
+                "security",
+                "acl",
+                "create",
+            ]
+            + self._schema_registry_conn_settings()
+            + self._kafka_conn_settings()
+        )
+
+        def append_flag(flag: str, values: list[str]):
+            if values:
+                cmd.extend([flag, ",".join(values)])
+
+        def append_bool_flag(flag: str, value: bool):
+            if value:
+                cmd.append(flag)
+
+        append_flag("--allow-principal", acl.allow_principal)
+        append_flag("--deny-principal", acl.deny_principal)
+        append_flag("--allow-role", acl.allow_role)
+        append_flag("--deny-role", acl.deny_role)
+        append_flag("--allow-host", acl.allow_host)
+        append_flag("--deny-host", acl.deny_host)
+        append_flag("--topic", acl.topic)
+        append_flag("--group", acl.group)
+        append_flag("--operation", acl.operation)
+        append_flag("--transactional-id", acl.txn_id)
+        append_bool_flag("--cluster", acl.cluster)
+        append_flag("--registry-subject", acl.registry_subject)
+        append_bool_flag("--registry-global", acl.registry_global)
+
+        if acl.resource_pattern_type:
+            cmd += ["--resource-pattern-type", acl.resource_pattern_type]
+
+        return self._execute(cmd)
+
+    def acl_delete(self, acl: RPKACLInput):
+        cmd = (
+            [
+                self._rpk_binary(),
+                "security",
+                "acl",
+                "delete",
+                "--no-confirm",
+            ]
+            + self._schema_registry_conn_settings()
+            + self._kafka_conn_settings()
+        )
+
+        def append_flag(flag: str, values: list[str]):
+            if values:
+                cmd.extend([flag, ",".join(values)])
+
+        def append_bool_flag(flag: str, value: bool):
+            if value:
+                cmd.append(flag)
+
+        append_flag("--allow-principal", acl.allow_principal)
+        append_flag("--deny-principal", acl.deny_principal)
+        append_flag("--allow-role", acl.allow_role)
+        append_flag("--deny-role", acl.deny_role)
+        append_flag("--allow-host", acl.allow_host)
+        append_flag("--deny-host", acl.deny_host)
+        append_flag("--topic", acl.topic)
+        append_flag("--group", acl.group)
+        append_flag("--operation", acl.operation)
+        append_flag("--transactional-id", acl.txn_id)
+        append_bool_flag("--cluster", acl.cluster)
+        append_flag("--registry-subject", acl.registry_subject)
+        append_bool_flag("--registry-global", acl.registry_global)
+
+        if acl.resource_pattern_type:
+            cmd += ["--resource-pattern-type", acl.resource_pattern_type]
+
+        return self._execute(cmd)
 
     def cluster_metadata_id(self):
         """
