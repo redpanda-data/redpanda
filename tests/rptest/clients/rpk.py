@@ -233,8 +233,6 @@ class RPKACLInput:
     txn_id: list[str] = field(default_factory=list[str])
     cluster: bool = False
     resource_pattern_type: str = ""
-    registry_subject: list[str] = field(default_factory=list[str])
-    registry_global: bool = False
 
 
 def parse_rpk_table(out):
@@ -1671,8 +1669,6 @@ class RpkTool:
         append_flag("--operation", acl.operation)
         append_flag("--transactional-id", acl.txn_id)
         append_bool_flag("--cluster", acl.cluster)
-        append_flag("--registry-subject", acl.registry_subject)
-        append_bool_flag("--registry-global", acl.registry_global)
 
         if acl.resource_pattern_type:
             cmd += ["--resource-pattern-type", acl.resource_pattern_type]
@@ -1711,8 +1707,6 @@ class RpkTool:
         append_flag("--operation", acl.operation)
         append_flag("--transactional-id", acl.txn_id)
         append_bool_flag("--cluster", acl.cluster)
-        append_flag("--registry-subject", acl.registry_subject)
-        append_bool_flag("--registry-global", acl.registry_global)
 
         if acl.resource_pattern_type:
             cmd += ["--resource-pattern-type", acl.resource_pattern_type]
