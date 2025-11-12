@@ -49,6 +49,7 @@ public:
           app.controller->get_cluster_recovery_table().local(),
           app.feature_table.local(),
           app.controller->get_credential_store().local(),
+          app.controller->get_role_store().local(),
           app.controller->get_topics_state().local()) {
         set_expectations_and_listen({});
         wait_for_controller_leadership().get();
@@ -99,7 +100,7 @@ void validate_actions(
       actions_contain(actions, cluster::recovery_stage::recovered_users));
 
     BOOST_REQUIRE_EQUAL(
-      !actions.acls.empty(),
+      !actions.acls.empty() || !actions.roles.empty(),
       actions_contain(actions, cluster::recovery_stage::recovered_acls));
 
     BOOST_REQUIRE_EQUAL(
@@ -204,6 +205,20 @@ FIXTURE_TEST(test_reconcile_acls, controller_snapshot_reconciliation_fixture) {
       .create_acls({binding}, 5s)
       .get();
     actions = reconciler.get_actions(snap);
+    BOOST_REQUIRE(
+      actions_contain(actions, cluster::recovery_stage::recovered_acls));
+    validate_actions(actions);
+}
+
+FIXTURE_TEST(
+  test_reconciler_roles, controller_snapshot_reconciliation_fixture) {
+    cluster::controller_snapshot snap;
+    auto& security_snap = snap.security;
+    security_snap.roles.emplace_back(
+      security::role_name("role_name"),
+      security::role({{security::role_member_type::user, "test_user"}}));
+
+    auto actions = reconciler.get_actions(snap);
     BOOST_REQUIRE(
       actions_contain(actions, cluster::recovery_stage::recovered_acls));
     validate_actions(actions);
