@@ -352,6 +352,8 @@ private:
 
     ss::future<> do_truncate_prefix(truncate_prefix_config);
     ss::future<> remove_prefix_full_segments(truncate_prefix_config);
+    ss::future<>
+      do_remove_prefix_full_segment(ss::lw_shared_ptr<segment>, model::offset);
 
     // Propagate a request to the Raft layer to evict segments up until the
     // specified offest.

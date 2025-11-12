@@ -21,6 +21,7 @@
 #include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "ssx/future-util.h"
+#include "ssx/semaphore.h"
 #include "storage/api.h"
 #include "storage/chunk_cache.h"
 #include "storage/compacted_offset_list.h"
@@ -3152,37 +3153,48 @@ disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
           // guaranteed that no other operation will remove the segment from the
           // segment list head (front).
           auto ptr = _segs.front();
-          return _readers_cache->evict_segment_readers(ptr).then(
-            [this, ptr, prefix_truncate_offset](
-              readers_cache::range_lock_holder cache_lock) {
-                return ptr->write_lock().then(
-                  [this,
-                   ptr,
-                   prefix_truncate_offset,
-                   cache_lock = std::move(cache_lock)](
-                    ss::rwlock::holder lock_holder) {
-                      // after the lock is acquired, check if the segment is
-                      // still eligible for deletion as there might have been
-                      // concurrent appends. If segments collection is empty we
-                      // can skip prefix truncation as the segments were removed
-                      if (
-                        keep_segment_after_prefix_truncate(
-                          ptr, prefix_truncate_offset)
-                        || _segs.empty()) {
-                          return ss::make_ready_future<>();
-                      }
-                      _segs.pop_front();
-                      _probe->add_bytes_prefix_truncated(ptr->file_size());
-                      // first call the remove segments, then release the lock
-                      // before waiting for future to finish
-                      auto f = remove_segment_permanently(
-                        ptr, "remove_prefix_full_segments");
-                      lock_holder.return_all();
-
-                      return f;
-                  });
-            });
+          return do_remove_prefix_full_segment(
+            std::move(ptr), prefix_truncate_offset);
       });
+}
+
+ss::future<> disk_log_impl::do_remove_prefix_full_segment(
+  ss::lw_shared_ptr<segment> ptr, model::offset prefix_truncate_offset) {
+    auto cache_lock = co_await _readers_cache->evict_segment_readers(ptr);
+
+    // We will be calling `remove_segment_permanently()` below on what is
+    // potentially the active segment. If there is a concurrent append occuring,
+    // we may get into a race with the `disk_log_appender` since we return the
+    // units in `lock_holder` (i.e the segment's write lock) while the future
+    // for `remove_segment_permanently()` is still unresolved. In this case, we
+    // need to obtain units from `_segments_rolling_lock` to prevent any
+    // concurrency issues.
+    std::optional<ssx::semaphore_units> seg_rolling_units;
+    if (ptr->has_appender()) {
+        // This cannot throw due to a broken semaphore, as we are already
+        // holding `_segment_rewrite_lock`.
+        seg_rolling_units = co_await _segments_rolling_lock.get_units();
+    }
+
+    auto lock_holder = co_await ptr->write_lock();
+
+    // after the locks are acquired, check if the segment is
+    // still eligible for deletion as there might have been
+    // concurrent appends. If segments collection is empty we
+    // can skip prefix truncation as the segments were removed
+    if (
+      keep_segment_after_prefix_truncate(ptr, prefix_truncate_offset)
+      || _segs.empty()) {
+        co_return;
+    }
+    _segs.pop_front();
+    _probe->add_bytes_prefix_truncated(ptr->file_size());
+    // first call the remove segments, then release the lock
+    // before waiting for future to finish
+    auto f = remove_segment_permanently(ptr, "remove_prefix_full_segments");
+    lock_holder.return_all();
+
+    co_return co_await std::move(f);
 }
 
 ss::future<> disk_log_impl::truncate_prefix(truncate_prefix_config cfg) {
