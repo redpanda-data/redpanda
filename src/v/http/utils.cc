@@ -12,6 +12,7 @@
 #include "http/utils.h"
 
 #include <boost/algorithm/string/join.hpp>
+
 namespace {
 /**
  * Each URI encoded byte is formed by a '%' and the two-digit hexadecimal
@@ -46,6 +47,36 @@ ss::sstring uri_encode(std::string_view input, uri_encode_slash encode_slash) {
             }
         } else {
             append_hex_utf8(result, ch);
+        }
+    }
+    return result;
+}
+
+ss::sstring uri_decode(std::string_view input) {
+    ss::sstring result;
+    // Reset errno before starting decoding
+    errno = 0;
+    for (size_t i = 0; i < input.size(); ++i) {
+        char ch = input[i];
+        bool is_hex_code = ch == '%' && i + 2 < input.size()
+                           && std::isxdigit(input[i + 1]);
+        if (is_hex_code) {
+            std::array<char, 3> hex_str = {input[i + 1], input[i + 2], '\0'};
+            char decoded_char = static_cast<char>(
+              std::strtol(hex_str.data(), nullptr, 16));
+            if (errno == ERANGE) {
+                // Should never happen as we already checked the input is
+                // valid hex digits, but just in case.
+                // Not a vassert since it's hard to cover all edge cases in
+                // tests.
+                throw std::invalid_argument(
+                  "Invalid percent-encoding input passed to "
+                  "uri_decode");
+            }
+            result.append(&decoded_char, 1);
+            i += 2; // Skip the next two hex characters
+        } else {
+            result.append(&ch, 1);
         }
     }
     return result;
