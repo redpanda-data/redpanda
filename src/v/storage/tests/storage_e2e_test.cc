@@ -1300,7 +1300,7 @@ TEST_F(storage_test_fixture, test_compaction_preserve_state) {
     ASSERT_EQ(log->offsets().dirty_offset, model::offset(2));
 }
 
-void append_single_record_batch(
+ss::future<> append_single_record_batch_coro(
   ss::shared_ptr<storage::log> log,
   int cnt,
   model::term_id term,
@@ -1335,10 +1335,18 @@ void append_single_record_batch(
           .timeout = model::no_timeout,
         };
 
-        std::move(reader)
-          .for_each_ref(log->make_appender(cfg), cfg.timeout)
-          .get();
+        co_await std::move(reader).for_each_ref(
+          log->make_appender(cfg), cfg.timeout);
     }
+}
+
+void append_single_record_batch(
+  ss::shared_ptr<storage::log> log,
+  int cnt,
+  model::term_id term,
+  size_t val_size = 0,
+  bool rand_key = false) {
+    append_single_record_batch_coro(log, cnt, term, val_size, rand_key).get();
 }
 
 /**
