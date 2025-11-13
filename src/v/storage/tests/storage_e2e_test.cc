@@ -6509,3 +6509,87 @@ TEST_F(storage_test_fixture, adjacent_merge_compaction_advances_generation_id) {
 
     ASSERT_EQ(gen_id_after(), gen_id_before() + 1);
 }
+
+TEST_F(storage_test_fixture, truncate_prefix_append_and_close) {
+    using namespace storage;
+    disk_log_builder b;
+    b | start();
+    auto log = b.get_log();
+    auto& disk_log = b.get_disk_log_impl();
+    const auto num_segs = 5;
+    const auto start_offset = 0;
+    const auto records_per_seg = 150;
+    for (int i = 0; i < num_segs; ++i) {
+        auto offset = start_offset + i * records_per_seg;
+        b | add_segment(offset)
+          | add_random_batch(
+            offset, records_per_seg, maybe_compress_batches::yes);
+        disk_log.force_roll().get();
+    }
+
+    ss::abort_source as;
+    mutex log_mutex{"e2e_test::log_mutex"};
+    auto random_sleep = [](int min, int max) {
+        return ss::sleep(
+          std::chrono::milliseconds(random_generators::get_int(min, max)));
+    };
+    static constexpr auto append_sleep_min = 5;
+    static constexpr auto append_sleep_max = 20;
+    auto append_fut = ss::do_until(
+      [&]() { return as.abort_requested(); },
+      [&]() {
+          auto maybe_u = log_mutex.try_get_units();
+          if (!maybe_u.has_value()) {
+              return ss::now();
+          }
+          auto u = std::move(maybe_u).value();
+          return append_single_record_batch_coro(log, 10, model::term_id{0})
+            .then([&, u = std::move(u)]() mutable {
+                u.return_all();
+                return random_sleep(append_sleep_min, append_sleep_max);
+            });
+      });
+
+    static constexpr auto close_sleep_min = 150;
+    static constexpr auto close_sleep_max = 200;
+    auto close_fut = random_sleep(close_sleep_min, close_sleep_max).then([&]() {
+        return log_mutex.get_units().then([&](ssx::semaphore_units u) {
+            (void)u;
+            log_mutex.broken();
+            // Calling `builder.stop()` will stop the log_manager and therefore
+            // close the log.
+            return b.stop();
+        });
+    });
+    static constexpr auto prefix_truncate_sleep_min = 100;
+    static constexpr auto prefix_truncate_sleep_max = 149;
+    // Expect 0 segments after prefix truncation in the happy path.
+    size_t expected_segment_count = 0;
+    auto prefix_truncate_fut
+      = random_sleep(prefix_truncate_sleep_min, prefix_truncate_sleep_max)
+          .then([&]() {
+              return log_mutex.get_units().then([&](ssx::semaphore_units u) {
+                  as.request_abort();
+                  u.return_all();
+                  return log
+                    ->truncate_prefix(truncate_prefix_config(
+                      model::next_offset(log->offsets().dirty_offset)))
+                    .handle_exception([&](const std::exception_ptr&) {
+                        // We may have raced with a close() operation when
+                        // attempting to obtain locks within
+                        // `truncate_prefix()`. In this case, we should expect
+                        // that no segments were removed from the log.
+                        expected_segment_count = log->segment_count();
+                        return ss::now();
+                    });
+              });
+          });
+
+    ss::when_all(
+      std::move(append_fut),
+      std::move(close_fut),
+      std::move(prefix_truncate_fut))
+      .get();
+
+    ASSERT_EQ(log->segment_count(), expected_segment_count);
+}
