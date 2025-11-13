@@ -659,60 +659,70 @@ class SchemaEvolutionE2ETests(RedpandaTest):
             test_cases=self.all_cases,
         ) as dl:
             for label, tc, produce_mode in self.cases_by_modes(self.all_cases):
-                topic, table = self.topic_and_table(label, produce_mode)
-                count = 10
-                ctx = TranslationContext()
-                tc.initial_schema.produce(dl, topic, count, ctx, mode=produce_mode)
-
-                tc.initial_schema.check_table_schema(dl, table, query_engine)
-                tc.next_schema.produce(
-                    dl, topic, count, ctx, mode=produce_mode, should_translate=tc.valid
-                )
-                if tc.valid:
-                    tc.next_schema.check_table_schema(dl, table, query_engine)
-
-                    select_out = self.select(
-                        dl,
-                        table,
-                        query_engine,
-                        tc.next_schema.field_names,
-                    )
-                    assert len(select_out) == count * 2, (
-                        f"Expected {count * 2} rows, got {select_out}"
-                    )
-
-                    # check that we can still produce with the original schema and that
-                    # the current table schema doesn't change back as a result
+                try:
+                    topic, table = self.topic_and_table(label, produce_mode)
+                    count = 10
+                    ctx = TranslationContext()
                     tc.initial_schema.produce(dl, topic, count, ctx, mode=produce_mode)
-                    tc.next_schema.check_table_schema(dl, table, query_engine)
-                    select_out = self.select(
-                        dl, table, query_engine, tc.next_schema.field_names
-                    )
-                    assert len(select_out) == count * 3, (
-                        f"Expected {count * 3} rows, got {len(select_out)}"
-                    )
 
-                    # and finally check that producing with latest schema still works
-                    tc.next_schema.produce(dl, topic, count, ctx, mode=produce_mode)
-                    select_out = self.select(
-                        dl, table, query_engine, tc.next_schema.field_names
-                    )
-                    assert len(select_out) == count * 4, (
-                        f"Expected {count * 4} rows, got {len(select_out)}"
-                    )
-
-                else:
                     tc.initial_schema.check_table_schema(dl, table, query_engine)
+                    tc.next_schema.produce(
+                        dl,
+                        topic,
+                        count,
+                        ctx,
+                        mode=produce_mode,
+                        should_translate=tc.valid,
+                    )
+                    if tc.valid:
+                        tc.next_schema.check_table_schema(dl, table, query_engine)
 
-                    select_out = self.select(
-                        dl, table, query_engine, tc.next_schema.field_names
-                    )
-                    assert len(select_out) == count, (
-                        f"Expected {count} rows, got {select_out}"
-                    )
-                    assert ctx.dlq == count, (
-                        f"Expected {count} records were dlq'ed, got {ctx.dlq}"
-                    )
+                        select_out = self.select(
+                            dl,
+                            table,
+                            query_engine,
+                            tc.next_schema.field_names,
+                        )
+                        assert len(select_out) == count * 2, (
+                            f"Expected {count * 2} rows, got {select_out}"
+                        )
+
+                        # check that we can still produce with the original schema and that
+                        # the current table schema doesn't change back as a result
+                        tc.initial_schema.produce(
+                            dl, topic, count, ctx, mode=produce_mode
+                        )
+                        tc.next_schema.check_table_schema(dl, table, query_engine)
+                        select_out = self.select(
+                            dl, table, query_engine, tc.next_schema.field_names
+                        )
+                        assert len(select_out) == count * 3, (
+                            f"Expected {count * 3} rows, got {len(select_out)}"
+                        )
+
+                        # and finally check that producing with latest schema still works
+                        tc.next_schema.produce(dl, topic, count, ctx, mode=produce_mode)
+                        select_out = self.select(
+                            dl, table, query_engine, tc.next_schema.field_names
+                        )
+                        assert len(select_out) == count * 4, (
+                            f"Expected {count * 4} rows, got {len(select_out)}"
+                        )
+
+                    else:
+                        tc.initial_schema.check_table_schema(dl, table, query_engine)
+
+                        select_out = self.select(
+                            dl, table, query_engine, tc.next_schema.field_names
+                        )
+                        assert len(select_out) == count, (
+                            f"Expected {count} rows, got {select_out}"
+                        )
+                        assert ctx.dlq == count, (
+                            f"Expected {count} records were dlq'ed, got {ctx.dlq}"
+                        )
+                except Exception as e:
+                    raise Exception(f"Test failed for {label=}, {produce_mode=}") from e
 
     @cluster(num_nodes=3)
     @matrix(
@@ -854,20 +864,24 @@ class SchemaEvolutionE2ETests(RedpandaTest):
             },
         ) as dl:
             for produce_mode in PRODUCER_MODES:
-                topic, table = self.topic_and_table(label, produce_mode)
-                count = 10
-                ctx = TranslationContext()
-                initial_schema = tc.initial_schema
-                next_schema = tc.next_schema
-                for schema in [initial_schema, next_schema]:
-                    schema.produce(dl, topic, count, ctx, mode=produce_mode)
-                    schema.check_table_schema(dl, table, query_engine)
+                try:
+                    topic, table = self.topic_and_table(label, produce_mode)
+                    count = 10
+                    ctx = TranslationContext()
+                    initial_schema = tc.initial_schema
+                    next_schema = tc.next_schema
+                    for schema in [initial_schema, next_schema]:
+                        schema.produce(dl, topic, count, ctx, mode=produce_mode)
+                        schema.check_table_schema(dl, table, query_engine)
 
-                for field in initial_schema.field_names:
-                    select_out = self.select(dl, table, query_engine, [field])
-                    assert len(select_out) == count * 2, (
-                        f"Expected {count * 2} rows, got {len(select_out)}"
-                    )
-                    assert all(r[1] == field for r in select_out), (
-                        f"{field} column mangled: {select_out}"
-                    )
+                    for field in initial_schema.field_names:
+                        select_out = self.select(dl, table, query_engine, [field])
+                        assert len(select_out) == count * 2, (
+                            f"Expected {count * 2} rows, got {len(select_out)}"
+                        )
+                        assert all(r[1] == field for r in select_out), (
+                            f"{field} column mangled: {select_out}"
+                        )
+
+                except Exception as e:
+                    raise Exception(f"Test failed for {produce_mode=}") from e
