@@ -230,10 +230,14 @@ static ss::sstring get_canonical_query_string(
         if (cnt++ > 0) {
             result.append("&", 1);
         }
+
+        // Decode the params first so that we don't double encode them.
+        ss::sstring decoded_value = http::uri_decode(pvalue);
+
         result += ssx::sformat(
           "{}={}",
           http::uri_encode(pname, http::uri_encode_slash::yes),
-          http::uri_encode(pvalue, http::uri_encode_slash::yes));
+          http::uri_encode(decoded_value, http::uri_encode_slash::yes));
     }
     return result;
 }

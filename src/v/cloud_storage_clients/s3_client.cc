@@ -213,19 +213,37 @@ request_creator::make_list_objects_v2_request(
     auto host = make_host(name);
     auto key = fmt::format("?list-type=2");
     if (prefix.has_value()) {
-        key = fmt::format("{}&prefix={}", key, (*prefix)().string());
+        key = fmt::format(
+          "{}&prefix={}",
+          key,
+
+          http::uri_encode((*prefix)().string(), http::uri_encode_slash::yes));
     }
     if (start_after.has_value()) {
-        key = fmt::format("{}&start-after={}", key, *start_after);
+        key = fmt::format(
+          "{}&start-after={}",
+          key,
+
+          http::uri_encode(
+            (*start_after)().string(), http::uri_encode_slash::yes));
     }
     if (max_keys.has_value()) {
         key = fmt::format("{}&max-keys={}", key, *max_keys);
     }
     if (continuation_token.has_value()) {
-        key = fmt::format("{}&continuation-token={}", key, *continuation_token);
+        key = fmt::format(
+          "{}&continuation-token={}",
+          key,
+          http::uri_encode(
+            std::string_view(*continuation_token),
+            http::uri_encode_slash::yes));
     }
     if (delimiter.has_value()) {
-        key = fmt::format("{}&delimiter={}", key, *delimiter);
+        key = fmt::format(
+          "{}&delimiter={}",
+          key,
+          http::uri_encode(
+            std::string_view{&*delimiter, 1}, http::uri_encode_slash::yes));
     }
     auto target = make_target(name, object_key{key});
     header.method(boost::beast::http::verb::get);
