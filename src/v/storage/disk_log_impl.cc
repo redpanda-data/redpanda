@@ -222,6 +222,14 @@ size_t disk_log_impl::compute_max_segment_size() {
 ss::future<> disk_log_impl::remove() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
 
+    // Request abort of compaction before obtaining rewrite lock holder.
+    _compaction_as.request_abort();
+
+    // To prevent a race between prefix truncation and closing, obtain the
+    // rewrite lock here and indicate it as broken for any future waiters.
+    auto rewrite_lock_holder = co_await _segment_rewrite_lock.get_units();
+    _segment_rewrite_lock.broken();
+
     // To prevent racing with a new segment being rolled, obtain the mutex here,
     // and indicate it as broken for any future waiters.
     auto roll_lock_holder = co_await _segments_rolling_lock.get_units();
@@ -229,7 +237,6 @@ ss::future<> disk_log_impl::remove() {
 
     _closed = true;
     // wait for compaction to finish
-    _compaction_as.request_abort();
     co_await _compaction_housekeeping_gate.close();
     // gets all the futures started in the background
     std::vector<ss::future<>> permanent_delete;
@@ -275,6 +282,14 @@ ss::future<> disk_log_impl::start(
 ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
 
+    // Request abort of compaction before obtaining rewrite lock holder.
+    _compaction_as.request_abort();
+
+    // To prevent a race between prefix truncation and closing, obtain the
+    // rewrite lock here and indicate it as broken for any future waiters.
+    auto rewrite_lock_holder = co_await _segment_rewrite_lock.get_units();
+    _segment_rewrite_lock.broken();
+
     // To prevent racing with a new segment being rolled, obtain the mutex here,
     // and indicate it as broken for any future waiters.
     auto roll_lock_holder = co_await _segments_rolling_lock.get_units();
@@ -287,10 +302,11 @@ ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
       && !_eviction_monitor->promise.get_future().available()) {
         _eviction_monitor->promise.set_exception(segment_closed_exception());
     }
+
     // wait for compaction to finish
     vlog(stlog.trace, "waiting for {} compaction to finish", config().ntp());
-    _compaction_as.request_abort();
     co_await _compaction_housekeeping_gate.close();
+
     vlog(stlog.trace, "stopping {} readers cache", config().ntp());
 
     // close() on the segments is not expected to fail, but it might
