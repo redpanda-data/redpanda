@@ -241,13 +241,20 @@ class ExactlyOnceVerifier:
                         in_transaction = True
                     msg_cnt += 1
                     t_key, t_value = self._transform_func(msg.key(), msg.value())
-
-                    producer.produce(
-                        self._dst_topic,
-                        value=t_value,
-                        key=t_key,
-                        partition=msg.partition(),
-                    )
+                    try:
+                        producer.produce(
+                            self._dst_topic,
+                            value=t_value,
+                            key=t_key,
+                            partition=msg.partition(),
+                        )
+                    except Exception as e:
+                        self._logger.error(
+                            f"[{tx_id}] Error producing message to {self._dst_topic}: {e}"
+                        )
+                        producer.abort_transaction()
+                        in_transaction = False
+                        continue
 
                     if msg_cnt % self._commit_every == 0:
                         self._logger.info(
