@@ -230,10 +230,9 @@ static ss::sstring get_canonical_query_string(
         if (cnt++ > 0) {
             result.append("&", 1);
         }
-        result += ssx::sformat(
-          "{}={}",
-          http::uri_encode(pname, http::uri_encode_slash::yes),
-          http::uri_encode(pvalue, http::uri_encode_slash::yes));
+
+        // We expect the URI encode the parameters in canonical way.
+        result += ssx::sformat("{}={}", pname, pvalue);
     }
     return result;
 }

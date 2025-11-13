@@ -19,6 +19,7 @@
 #include "cloud_storage_clients/util.h"
 #include "cloud_storage_clients/xml_sax_parser.h"
 #include "config/configuration.h"
+#include "http/utils.h"
 #include "json/document.h"
 #include "json/istreamwrapper.h"
 
@@ -290,7 +291,10 @@ abs_request_creator::make_list_blobs_request(
     // Authorization:{signature}           # added by 'add_auth'
     auto target = fmt::format("/{}?restype=container&comp=list", name());
     if (prefix) {
-        target += fmt::format("&prefix={}", prefix.value()().string());
+        target += fmt::format(
+          "&prefix={}",
+          http::uri_encode(
+            prefix.value()().string(), http::uri_encode_slash::yes));
     }
 
     if (max_results) {
@@ -298,11 +302,16 @@ abs_request_creator::make_list_blobs_request(
     }
 
     if (delimiter) {
-        target += fmt::format("&delimiter={}", delimiter.value());
+        target += fmt::format(
+          "&delimiter={}",
+          http::uri_encode(
+            std::string_view{&*delimiter, 1}, http::uri_encode_slash::yes));
     }
 
     if (marker.has_value()) {
-        target += fmt::format("&marker={}", marker.value());
+        target += fmt::format(
+          "&marker={}",
+          http::uri_encode(marker.value(), http::uri_encode_slash::yes));
     }
 
     if (files_only) {

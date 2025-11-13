@@ -80,12 +80,12 @@ const ss::sstring topic_manifest_json = R"JSON({
 const model::topic_namespace tp_ns{model::ns{"kafka"}, model::topic{"test"}};
 
 const s3_imposter_fixture::expectation root_level{
-  .url = "?list-type=2&delimiter=/",
+  .url = "?list-type=2&delimiter=%2F",
   .body = top_level_result,
 };
 
 const s3_imposter_fixture::expectation meta_level{
-  .url = "?list-type=2&prefix=b0000000/",
+  .url = "?list-type=2&prefix=b0000000%2F",
   .body = valid_manifest_list,
 };
 
@@ -109,19 +109,20 @@ generate_no_manifests_expectations(
     for (int i = 0; i < 16; ++i) {
         expectations.emplace_back(
           s3_imposter_fixture::expectation{
-            .url = fmt::format("?list-type=2&prefix={}0000000/", hex_chars[i]),
+            .url = fmt::format(
+              "?list-type=2&prefix={}0000000%2F", hex_chars[i]),
             .body = no_manifests,
           });
     }
     expectations.emplace_back(
       s3_imposter_fixture::expectation{
         .url = fmt::format(
-          "?list-type=2&prefix=meta/{}/{}/", tp_ns.ns(), tp_ns.tp()),
+          "?list-type=2&prefix=meta%2F{}%2F{}%2F", tp_ns.ns(), tp_ns.tp()),
         .body = no_manifests,
       });
     expectations.emplace_back(
       s3_imposter_fixture::expectation{
-        .url = "?list-type=2&prefix=meta/",
+        .url = "?list-type=2&prefix=meta%2F",
         .body = no_manifests,
       });
     for (auto& e : additional_expectations) {
@@ -132,7 +133,7 @@ generate_no_manifests_expectations(
 
 bool is_manifest_list_request(const http_test_utils::request_info& req) {
     return req.method == "GET" && req.url.contains("?list-type=2&prefix=")
-           && req.url.ends_with("0000000/");
+           && req.url.ends_with("0000000%2F");
 }
 
 } // namespace
@@ -240,7 +241,7 @@ FIXTURE_TEST(recovery_with_no_topics_exits_early, fixture) {
 
     const auto& list_topics_req = get_requests()[0];
     BOOST_REQUIRE_EQUAL(
-      list_topics_req.url, "/" + url_base() + "?list-type=2&prefix=meta/");
+      list_topics_req.url, "/" + url_base() + "?list-type=2&prefix=meta%2F");
 
     // Wait until recovery exits after finding no topics to create
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
