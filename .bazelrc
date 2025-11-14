@@ -8,6 +8,9 @@ build --linkopt -stdlib=libc++
 
 common:clang-19 --extra_toolchains=@previous_llvm_toolchain//:all
 
+# Enable absl integration for googletest with this flag
+common --define=absl=1
+
 # Use Bash instead of system python for finding the hermetic interpreter
 # within Bazel due to the `python3` binary not being present on CI
 # (it has `python` version 3 but Bazel uses the `python3` executable).
