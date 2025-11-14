@@ -6,6 +6,9 @@ common --@toolchains_llvm//toolchain/config:compiler-rt=False
 build --linkopt --unwindlib=libgcc
 build --linkopt -stdlib=libc++
 
+# Enable absl integration for googletest with this fla
+build --define=absl=1
+
 common:clang-19 --extra_toolchains=@previous_llvm_toolchain//:all
 
 # Use Bash instead of system python for finding the hermetic interpreter
