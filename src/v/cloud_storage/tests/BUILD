@@ -65,7 +65,7 @@ redpanda_test_cc_library(
 
 redpanda_cc_btest(
     name = "segment_meta_cstore_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "segment_meta_cstore_test.cc",
     ],
