@@ -8,14 +8,35 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "absl/debugging/failure_signal_handler.h"
 #include "test_utils/gtest_utils.h"
 
+#include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/testing/test_runner.hh>
+
+#include <csignal>
+
+namespace {
+
+seastar::future<> unblock_sigill() {
+    // A workaround until https://github.com/scylladb/seastar/pull/3102 lands
+    return seastar::smp::invoke_on_all([] {
+        ::sigset_t set;
+        ::sigemptyset(&set);
+        ::sigaddset(&set, SIGILL);
+        auto r = ::pthread_sigmask(SIG_UNBLOCK, &set, nullptr);
+        ss::throw_pthread_error(r);
+    });
+}
+
+} // namespace
 
 int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);
     GTEST_FLAG_SET(death_test_style, "threadsafe");
+    // Fall back signal handlers if our crash tracker isn't registered
+    absl::InstallFailureSignalHandler({});
 
     auto& listeners = ::testing::UnitTest::GetInstance()->listeners();
     listeners.Append(new rp_test_listener());
@@ -34,8 +55,10 @@ int main(int argc, char** argv) {
     seastar::testing::global_test_runner().start(argc, argv);
 
     int ret = 0;
-    seastar::testing::global_test_runner().run_sync(
-      [&ret] { return seastar::async([&ret] { ret = RUN_ALL_TESTS(); }); });
+    seastar::testing::global_test_runner().run_sync([&ret] {
+        return unblock_sigill().then(
+          [&ret] { return seastar::async([&ret] { ret = RUN_ALL_TESTS(); }); });
+    });
 
     int ss_ret = seastar::testing::global_test_runner().finalize();
     if (ret) {

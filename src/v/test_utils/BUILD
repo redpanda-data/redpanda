@@ -22,6 +22,7 @@ redpanda_test_cc_library(
         "//src/v/base",
         "//src/v/model:timeout_clock",
         "//src/v/ssx:sformat",
+        "@abseil-cpp//absl/debugging:failure_signal_handler",
         "@fmt",
         "@googletest//:gtest",
         "@seastar",
