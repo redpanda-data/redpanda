@@ -254,13 +254,13 @@ checked<ss::sstring, partition_key_error> format_field_value(
     if (!value) {
         return "null";
     }
-    if (!std::holds_alternative<iceberg::primitive_value>(*value)) {
+    if (!std::holds_alternative<iceberg::primitive_value>(value.value())) {
         return partition_key_error(
           "non primitive iceberg partition values are not supported");
     }
     auto res = std::visit(
       transform_value_formatting_visitor{
-        std::get<iceberg::primitive_value>(*value)},
+        std::get<iceberg::primitive_value>(value.value())},
       transform);
     if (res.has_error()) {
         return res.error();

@@ -64,10 +64,10 @@ bool compaction_state::erase_contiguous_range_with_tombstones(
     cleaned_ranges_with_tombstones.erase(
       tombstone_ranges->begin, std::next(tombstone_ranges->last));
     if (replacement_begin.has_value()) {
-        cleaned_ranges_with_tombstones.insert(*replacement_begin);
+        cleaned_ranges_with_tombstones.insert(replacement_begin.value());
     }
     if (replacement_last.has_value()) {
-        cleaned_ranges_with_tombstones.insert(*replacement_last);
+        cleaned_ranges_with_tombstones.insert(replacement_last.value());
     }
     return true;
 }

@@ -78,7 +78,7 @@ struct usage
           "datalake_usage: {} }}",
           u.bytes_sent,
           u.bytes_received,
-          u.bytes_cloud_storage ? std::to_string(*u.bytes_cloud_storage)
+          u.bytes_cloud_storage ? std::to_string(u.bytes_cloud_storage.value())
                                 : "n/a",
           u.datalake_usage);
         return os;

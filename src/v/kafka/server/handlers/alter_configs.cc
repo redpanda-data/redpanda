@@ -54,7 +54,7 @@ static void parse_and_set_shadow_indexing_mode(
         property_update.value = model::shadow_indexing_mode::disabled;
     }
     property_update.value
-      = string_switch<model::shadow_indexing_mode>(*value)
+      = string_switch<model::shadow_indexing_mode>(value.value())
           .match("no", model::shadow_indexing_mode::disabled)
           .match("false", model::shadow_indexing_mode::disabled)
           .match("yes", enabled_value)
@@ -200,7 +200,7 @@ create_topic_properties_update(
                     auto set_value
                       = update_properties_shadow_indexing.value
                           ? model::add_shadow_indexing_flag(
-                              *update_properties_shadow_indexing.value,
+                              update_properties_shadow_indexing.value.value(),
                               model::shadow_indexing_mode::fetch)
                           : model::shadow_indexing_mode::fetch;
                     parse_and_set_shadow_indexing_mode(
@@ -222,7 +222,7 @@ create_topic_properties_update(
                     auto set_value
                       = update_properties_shadow_indexing.value
                           ? model::add_shadow_indexing_flag(
-                              *update_properties_shadow_indexing.value,
+                              update_properties_shadow_indexing.value.value(),
                               model::shadow_indexing_mode::archival)
                           : model::shadow_indexing_mode::archival;
                     parse_and_set_shadow_indexing_mode(

@@ -394,7 +394,7 @@ FIXTURE_TEST(block_test, consumer_offsets_fixture) {
     model::ntp gntp(
       model::kafka_namespace,
       model::kafka_consumer_offsets_topic,
-      *g_partition);
+      g_partition.value());
 
     auto can_commit_offset = [&] {
         for (int _ : std::views::iota(0, 5)) {

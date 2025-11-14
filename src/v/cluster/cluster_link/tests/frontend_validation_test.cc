@@ -1173,10 +1173,10 @@ TEST_F_CORO(frontend_validation_test, update_cluster_link_configuration) {
     update_cmd.link_config.topic_metadata_mirroring_cfg.task_interval = 60s;
 
     ASSERT_EQ_CORO(
-      co_await update_cluster_link_configuration(*id, update_cmd.copy()),
+      co_await update_cluster_link_configuration(id.value(), update_cmd.copy()),
       errc::success);
 
-    auto meta = _table.local().find_link_by_id(*id);
+    auto meta = _table.local().find_link_by_id(id.value());
     ASSERT_TRUE_CORO(meta.has_value());
     EXPECT_EQ(meta->get().connection, update_cmd.connection);
     EXPECT_EQ(meta->get().configuration, update_cmd.link_config);
@@ -1208,7 +1208,8 @@ TEST_F_CORO(
 
         update_cmd.link_config.topic_metadata_mirroring_cfg.task_interval = 60s;
         EXPECT_EQ(
-          co_await update_cluster_link_configuration(*id, update_cmd.copy()),
+          co_await update_cluster_link_configuration(
+            id.value(), update_cmd.copy()),
           errc::bootstrap_servers_empty);
     }
     // Update with invalid topic properties
@@ -1223,7 +1224,8 @@ TEST_F_CORO(
             properties_set{"redpanda.remote.readreplica"};
 
         EXPECT_EQ(
-          co_await update_cluster_link_configuration(*id, update_cmd.copy()),
+          co_await update_cluster_link_configuration(
+            id.value(), update_cmd.copy()),
           errc::topic_property_excluded_from_mirroring);
     }
 }

@@ -56,9 +56,9 @@ model::record make_random_record(record_spec spec) {
       !spec.key || !spec.record_size,
       "Cannot specify both key and record size.");
     if (spec.key) {
-        k = std::move(*spec.key);
+        k = std::move(spec.key.value());
     } else if (spec.record_size) {
-        k = random_iobuf(*spec.record_size);
+        k = random_iobuf(spec.record_size.value());
     } else {
         k = random_iobuf();
     }
@@ -162,7 +162,8 @@ model::record_batch make_random_batch(record_batch_spec spec) {
             sz = spec.record_sizes->at(i);
         }
         if (spec.max_key_cardinality) {
-            auto keystr = gen_alphanum_max_distinct(*spec.max_key_cardinality);
+            auto keystr = gen_alphanum_max_distinct(
+              spec.max_key_cardinality.value());
             auto key = iobuf::from(keystr.c_str());
             rs.emplace_back(make_random_record({
               .index = i,
@@ -251,7 +252,7 @@ make_random_batches(record_batch_spec spec) {
     int32_t base_sequence = spec.base_sequence;
     model::timestamp ts = spec.timestamp.value_or(model::timestamp::now());
     for (int i = 0; i < spec.count; i++) {
-        auto num_records = spec.records ? *spec.records : get_int(2, 30);
+        auto num_records = spec.records ? spec.records.value() : get_int(2, 30);
         auto batch_spec = spec;
         batch_spec.timestamp = ts;
         if (!batch_spec.all_records_have_same_timestamp) {

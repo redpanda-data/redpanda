@@ -230,7 +230,7 @@ TEST_F_CORO(source_topic_syncer_test, schema_registry_test) {
       = model::schema_registry_sync_config::shadow_entire_schema_registry{};
     auto link_id = fixture()->find_link_id_by_name(model::name_t("test_link"));
     ASSERT_TRUE_CORO(link_id.has_value());
-    co_await fixture()->update_link(*link_id, std::move(update));
+    co_await fixture()->update_link(link_id.value(), std::move(update));
 
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
         auto link_metadata = fixture()->find_link_by_name(

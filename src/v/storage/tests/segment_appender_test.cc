@@ -119,7 +119,7 @@ public:
     ss::future<> do_write(const write_op& w) {
         vlog(tst_log.debug, "[write] {} bytes", w.size);
         if (w.data) {
-            co_await append_data(*w.data);
+            co_await append_data(w.data.value());
         } else {
             co_await append_data(tests::random_iobuf(w.size));
         }

@@ -556,7 +556,7 @@ std::istream& operator>>(std::istream& i, write_caching_mode& mode) {
         i.setstate(std::ios::failbit);
         return i;
     }
-    mode = *value;
+    mode = value.value();
     return i;
 }
 
@@ -839,7 +839,7 @@ std::istream& operator>>(std::istream& i, kafka_batch_validation_mode& mode) {
         i.setstate(std::ios::failbit);
         return i;
     }
-    mode = *value;
+    mode = value.value();
     return i;
 }
 

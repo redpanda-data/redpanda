@@ -308,7 +308,7 @@ bool group::supports_protocols(const join_group_request& r) const {
         return !r.data.protocol_type().empty() && !r.data.protocols.empty();
     }
 
-    if (!_protocol_type || *_protocol_type != r.data.protocol_type) {
+    if (!_protocol_type || _protocol_type.value() != r.data.protocol_type) {
         return false;
     }
 
@@ -327,7 +327,7 @@ bool group::supports_protocols(const join_group_request& r) const {
 void group::add_member_no_join(member_ptr member) {
     if (member->group_instance_id()) {
         auto [_, success] = _static_members.emplace(
-          *member->group_instance_id(), member->id());
+          member->group_instance_id().value(), member->id());
         if (!success) {
             throw std::runtime_error(
               fmt::format(
@@ -403,7 +403,7 @@ void group::update_member_no_join(
     }
 
     if (new_client_id) {
-        member->replace_client_id(*new_client_id);
+        member->replace_client_id(new_client_id.value());
     }
     member->replace_client_host(new_client_host);
     member->replace_session_timeout(new_session_timeout);
@@ -598,7 +598,7 @@ bool group::leader_rejoined() {
         return false;
     }
 
-    auto leader = get_member(*_leader);
+    auto leader = get_member(_leader.value());
     if (leader->is_joining()) {
         vlog(_ctxlog.trace, "Leader {} has rejoined", *_leader);
         return true;
@@ -722,7 +722,7 @@ group::add_new_static_member(member_id new_member_id, join_group_request&& r) {
 group::join_group_stages group::update_static_member_and_rebalance(
   member_id old_member_id, member_id new_member_id, join_group_request&& r) {
     auto member = replace_static_member(
-      *r.data.group_instance_id, old_member_id, new_member_id);
+      r.data.group_instance_id.value(), old_member_id, new_member_id);
     /*
      * <kafka> Heartbeat of old member id will expire without effect since the
      * group no longer contains that member id. New heartbeat shall be scheduled
@@ -761,7 +761,7 @@ group::join_group_stages group::update_static_member_and_rebalance(
               = store_group(checkpoint())
                   .then([this,
                          member,
-                         instance_id = *r.data.group_instance_id,
+                         instance_id = r.data.group_instance_id.value(),
                          new_member_id = std::move(new_member_id),
                          old_member_id = std::move(old_member_id),
                          old_protocols = std::move(old_protocols),
@@ -1756,7 +1756,7 @@ kafka::error_code group::member_leave_group(
             return error_code::unknown_member_id;
         }
 
-        auto it = _static_members.find(*group_instance_id);
+        auto it = _static_members.find(group_instance_id.value());
         if (it == _static_members.end()) {
             return error_code::unknown_member_id;
         }
@@ -2541,7 +2541,7 @@ group::handle_offset_fetch(offset_fetch_request_group r, bool require_stable) {
     }
 
     // retrieve for the topics specified in the request
-    for (const auto& topic : *r.topics) {
+    for (const auto& topic : r.topics.value()) {
         offset_fetch_response_topics t;
         t.name = topic.name;
         for (auto id : topic.partition_indexes) {
@@ -2575,8 +2575,9 @@ group::handle_offset_fetch(offset_fetch_request_group r, bool require_stable) {
 }
 
 kafka::member_id group::generate_member_id(const join_group_request& r) {
-    auto cid = r.client_id ? *r.client_id : kafka::client_id("");
-    auto id = r.data.group_instance_id ? (*r.data.group_instance_id)() : cid();
+    auto cid = r.client_id ? r.client_id.value() : kafka::client_id("");
+    auto id = r.data.group_instance_id ? (r.data.group_instance_id.value())()
+                                       : cid();
     boost::uuids::uuid uuid = boost::uuids::random_generator()();
     return kafka::member_id(ssx::sformat("{}-{}", id, to_string(uuid)));
 }
@@ -2594,9 +2595,9 @@ described_group group::describe() const {
             throw std::runtime_error(
               fmt::format("Stable group {} has no protocol", _id));
         }
-        desc.protocol_data = *_protocol;
+        desc.protocol_data = _protocol.value();
         for (const auto& it : _members) {
-            desc.members.push_back(it.second->describe(*_protocol));
+            desc.members.push_back(it.second->describe(_protocol.value()));
         }
     } else {
         for (const auto& it : _members) {
@@ -2798,7 +2799,7 @@ error_code group::validate_existing_member(
   const std::optional<group_instance_id>& instance_id,
   const ss::sstring& ctx) const {
     if (instance_id) {
-        auto it = _static_members.find(*instance_id);
+        auto it = _static_members.find(instance_id.value());
         if (it == _static_members.end()) {
             return error_code::unknown_member_id;
         } else if (it->second != member_id) {

@@ -32,7 +32,7 @@ FIXTURE_TEST(test_replicated_partition_end_offset, redpanda_thread_fixture) {
 
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, &ntp] {
         return app.partition_manager.invoke_on(
-          *shard, [&ntp](cluster::partition_manager& pm) {
+          shard.value(), [&ntp](cluster::partition_manager& pm) {
               auto p = pm.get(ntp);
               return p->is_leader();
           });
@@ -40,7 +40,7 @@ FIXTURE_TEST(test_replicated_partition_end_offset, redpanda_thread_fixture) {
 
     app.partition_manager
       .invoke_on(
-        *shard,
+        shard.value(),
         [&ntp](cluster::partition_manager& pm) {
             auto p = pm.get(ntp);
             kafka::replicated_partition rp(p);

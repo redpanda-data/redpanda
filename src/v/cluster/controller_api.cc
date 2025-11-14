@@ -208,7 +208,7 @@ controller_api::get_reconciliation_state(model::ntp ntp) {
     for (auto shard : shards) {
         auto shard_op = co_await get_current_op(ntp, shard);
         if (shard_op) {
-            ops.push_back(std::move(*shard_op));
+            ops.push_back(std::move(shard_op.value()));
         }
     }
 
@@ -229,7 +229,7 @@ controller_api::get_reconciliation_state(model::ntp ntp) {
     // expected cluster state
 
     auto has_local_replicas = has_node_local_replicas(
-      _self, *target_assignment);
+      _self, target_assignment.value());
 
     auto shard = _shard_table.local().shard_for(ntp);
 

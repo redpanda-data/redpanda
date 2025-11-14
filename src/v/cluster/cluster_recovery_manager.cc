@@ -89,7 +89,7 @@ ss::future<checked<void, cluster_recovery_manager::errc>> check_can_use_uuid(
     if (cluster_name.has_value()) {
         auto uses_cluster_id_res
           = co_await cluster::cloud_metadata::check_cluster_name_owns_uuid(
-            _remote, bucket, *cluster_name, cluster_uuid_override, fib);
+            _remote, bucket, cluster_name.value(), cluster_uuid_override, fib);
         if (!uses_cluster_id_res.has_value()) {
             vlog(
               clusterlog.warn,
@@ -174,7 +174,7 @@ download_manifest_for_recovery(
       cluster_name);
 
     auto can_use_res = co_await check_can_use_uuid(
-      _remote, bucket, cluster_name, *cluster_uuid_override, fib);
+      _remote, bucket, cluster_name, cluster_uuid_override.value(), fib);
     if (can_use_res.has_error()) {
         co_return can_use_res.error();
     }

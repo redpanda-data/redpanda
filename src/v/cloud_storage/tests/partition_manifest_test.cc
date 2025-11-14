@@ -1346,7 +1346,7 @@ SEASTAR_THREAD_TEST_CASE(test_partition_manifest_start_kafka_offset_advance) {
         .committed_offset = model::offset{99},
         .delta_offset = model::offset_delta{0},
       });
-    BOOST_REQUIRE(*m.get_start_kafka_offset() == kafka::offset(0));
+    BOOST_REQUIRE(m.get_start_kafka_offset().value() == kafka::offset(0));
     m.add(
       segment_name("100-1-v1.log"),
       partition_manifest::segment_meta{

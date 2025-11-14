@@ -53,7 +53,7 @@ private:
             return tristate<bool>();
         }
         auto res = std::invoke(
-          mem_func, *_json_writer, std::forward<Args>(args)...);
+          mem_func, _json_writer.value(), std::forward<Args>(args)...);
         if (_json_writer->IsComplete()) {
             iobuf buf = std::move(_buf).as_iobuf();
             switch (state) {

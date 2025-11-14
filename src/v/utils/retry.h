@@ -101,7 +101,8 @@ ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
                              auto next = backoff_policy.next_backoff();
                              auto sleep_dur = base_backoff * next;
                              auto f = (as.has_value())
-                                        ? ss::sleep_abortable(sleep_dur, *as)
+                                        ? ss::sleep_abortable(
+                                            sleep_dur, as.value())
                                         : ss::sleep(sleep_dur * next);
                              return f.then([] { return stop_iteration::no; })
                                .handle_exception(

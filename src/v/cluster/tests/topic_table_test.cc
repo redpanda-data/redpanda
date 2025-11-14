@@ -60,7 +60,7 @@ static void validate_topic_id_mapping(const cluster::topic_table& table) {
     for (const auto& [tp, md] : table.topics_map()) {
         auto& tp_id = md.get_configuration().tp_id;
         BOOST_REQUIRE(tp_id.has_value());
-        BOOST_REQUIRE_EQUAL(table.get_name_by_id(*tp_id), tp);
+        BOOST_REQUIRE_EQUAL(table.get_name_by_id(tp_id.value()), tp);
     }
 }
 
@@ -635,7 +635,7 @@ FIXTURE_TEST(test_topic_id_assignment, topic_table_fixture) {
     ec = topics.apply(create2, offset++).get();
     BOOST_REQUIRE_EQUAL(ec, cluster::errc::success);
     BOOST_REQUIRE_EQUAL(topics.get_topic_id_mapping().size(), 1);
-    BOOST_REQUIRE_EQUAL(topics.get_name_by_id(*tp_id2), tp_ns2);
+    BOOST_REQUIRE_EQUAL(topics.get_name_by_id(tp_id2.value()), tp_ns2);
 
     info("Assign a topic id to the old topic");
     auto tp_1_new_id = model::create_topic_id();
@@ -650,7 +650,7 @@ FIXTURE_TEST(test_topic_id_assignment, topic_table_fixture) {
     auto check_final_state = [&] {
         BOOST_REQUIRE_EQUAL(topics.get_topic_id_mapping().size(), 2);
         BOOST_REQUIRE_EQUAL(topics.get_name_by_id(tp_1_new_id), tp_ns1);
-        BOOST_REQUIRE_EQUAL(topics.get_name_by_id(*tp_id2), tp_ns2);
+        BOOST_REQUIRE_EQUAL(topics.get_name_by_id(tp_id2.value()), tp_ns2);
     };
     check_final_state();
 

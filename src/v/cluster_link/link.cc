@@ -313,7 +313,7 @@ ss::future<> link::handle_on_leadership_change(
         if (is_ntp_leader && needs_replicators) {
             vassert(
               term, "Term must be set when leadership is assumed: {}", ntp);
-            _replication_mgr.start_replicator(ntp, *term);
+            _replication_mgr.start_replicator(ntp, term.value());
         } else {
             _replication_mgr.stop_replicator(ntp, term);
         }
@@ -617,7 +617,7 @@ void link::handle_new_topics_to_replicate(
                   part_id);
                 continue;
             }
-            if (*leader_node != _self) {
+            if (leader_node.value() != _self) {
                 vlog(cllog.trace, "Not the leader for {}. Skipping", ntp);
                 continue;
             }
@@ -642,7 +642,7 @@ void link::handle_new_topics_to_replicate(
 
             vlog(cllog.debug, "Starting replicator for {}", ntp);
             _replication_mgr.start_replicator(
-              {::model::kafka_namespace, topic, part_id}, *term);
+              {::model::kafka_namespace, topic, part_id}, term.value());
         }
     }
 }

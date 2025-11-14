@@ -111,7 +111,8 @@ topic_purger::purge_tombstoned_topics(ss::abort_source* as) {
         }
         if (first_error.has_value()) {
             co_return std::unexpected(
-              error{fmt::format("Error purging tombstones: {}", *first_error)});
+              error{fmt::format(
+                "Error purging tombstones: {}", first_error.value())});
         }
     }
 }

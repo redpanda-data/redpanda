@@ -388,13 +388,13 @@ tls_configuration::build_credentials() const {
 fmt::iterator tls_configuration::format_to(fmt::iterator it) const {
     fmt::format_to(it, "{{truststore: ");
     if (truststore) {
-        net::format_cert(it, *truststore);
+        net::format_cert(it, truststore.value());
     } else {
         fmt::format_to(it, "null");
     }
     fmt::format_to(it, ", k_store: ");
     if (k_store) {
-        net::format_keystore(it, *k_store);
+        net::format_keystore(it, k_store.value());
     } else {
         fmt::format_to(it, "null");
     }

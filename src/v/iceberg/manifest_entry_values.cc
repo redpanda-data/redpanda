@@ -47,7 +47,7 @@ auto get_required_primitive(std::optional<value> v, std::string_view name) {
         throw std::invalid_argument(
           fmt::format("Expected primitive value '{}' is null", name));
     }
-    return get_required_primitive<PrimitiveV>(std::move(*v), name);
+    return get_required_primitive<PrimitiveV>(std::move(v.value()), name);
 }
 
 template<typename T, typename PrimitiveV>
@@ -56,7 +56,7 @@ get_optional_primitive(std::optional<value> v, std::string_view name) {
     if (!v.has_value()) {
         return std::nullopt;
     }
-    return T{get_required_primitive<PrimitiveV>(std::move(*v), name)};
+    return T{get_required_primitive<PrimitiveV>(std::move(v.value()), name)};
 }
 
 std::unique_ptr<struct_value>
@@ -65,11 +65,11 @@ get_required_struct(std::optional<value> v, std::string_view name) {
         throw std::invalid_argument(
           fmt::format("Expected struct value {} is null", name));
     }
-    if (!std::holds_alternative<std::unique_ptr<struct_value>>(*v)) {
+    if (!std::holds_alternative<std::unique_ptr<struct_value>>(v.value())) {
         throw std::invalid_argument(
-          fmt::format("Value of {} is not a struct: {}", name, *v));
+          fmt::format("Value of {} is not a struct: {}", name, v.value()));
     }
-    auto ret = std::get<std::unique_ptr<struct_value>>(std::move(*v));
+    auto ret = std::get<std::unique_ptr<struct_value>>(std::move(v.value()));
     if (!ret) {
         throw std::invalid_argument(
           fmt::format("Struct {} value is nullptr", name));
@@ -82,11 +82,11 @@ get_counts_map(std::optional<value> v, std::string_view name) {
     if (!v.has_value()) {
         return {};
     }
-    if (!holds_alternative<std::unique_ptr<map_value>>(*v)) {
+    if (!holds_alternative<std::unique_ptr<map_value>>(v.value())) {
         throw std::invalid_argument(
-          fmt::format("Value for {} is not a map: {}", name, *v));
+          fmt::format("Value for {} is not a map: {}", name, v.value()));
     }
-    auto& as_map = std::get<std::unique_ptr<map_value>>(*v);
+    auto& as_map = std::get<std::unique_ptr<map_value>>(v.value());
     chunked_hash_map<nested_field::id_t, size_t> ret;
     for (auto& kv : as_map->kvs) {
         try {
@@ -108,7 +108,7 @@ std::optional<value> to_optional_value(std::optional<T> v) {
     if (!v.has_value()) {
         return std::nullopt;
     }
-    return ValueT{*v};
+    return ValueT{v.value()};
 }
 
 int status_to_int(manifest_entry_status s) {

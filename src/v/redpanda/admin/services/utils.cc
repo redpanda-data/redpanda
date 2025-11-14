@@ -40,11 +40,11 @@ std::optional<model::node_id> redirect_to_leader(
           ssx::sformat("Partition {} does not have a leader", ntp)};
     }
 
-    if (*leader_node == self) {
+    if (leader_node.value() == self) {
         return std::nullopt;
     }
 
-    return *leader_node;
+    return leader_node.value();
 }
 
 } // namespace admin::utils

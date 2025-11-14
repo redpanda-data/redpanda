@@ -86,15 +86,16 @@ fetch_session_cache::maybe_get_session(const fetch_request& req) {
             return fetch_session_ctx();
         }
 
-        auto new_session = ss::make_lw_shared<fetch_session>(*new_id);
+        auto new_session = ss::make_lw_shared<fetch_session>(new_id.value());
         // initialize fetch session partitions
         update_fetch_session(*new_session, req);
 
-        auto [it, success] = _sessions.emplace(*new_id, std::move(new_session));
+        auto [it, success] = _sessions.emplace(
+          new_id.value(), std::move(new_session));
         vassert(
           success,
           "fetch session {} already exists, can not insert the session",
-          *new_id);
+          new_id.value());
 
         vlog(klog.debug, "fetch session created: {}", *new_id);
         _sessions_mem_usage += it->second->mem_usage();

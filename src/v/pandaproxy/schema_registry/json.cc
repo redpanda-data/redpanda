@@ -551,7 +551,7 @@ constexpr auto parse_json_type(const json::Value& v) {
             error_code::schema_invalid,
             fmt::format("Invalid JSON Schema type: '{}'", sv)});
     }
-    return *type;
+    return type.value();
 }
 
 json::Value::ConstObject get_true_schema() {
@@ -1002,13 +1002,15 @@ json_compatibility_result is_numeric_property_value_superset(
     if (older_value.has_value() && newer_value.has_value()) {
         if (!std::invoke(
               std::forward<VPred>(value_predicate),
-              *older_value,
-              *newer_value)) {
+              older_value.value(),
+              newer_value.value())) {
             return json_compatibility_result::of<json_incompatibility>(
               changed_err);
         }
     } else if (older_value.has_value()) {
-        if (!default_value.has_value() || *older_value != *default_value) {
+        if (
+          !default_value.has_value()
+          || older_value.value() != default_value.value()) {
             // Non-default value was removed
             return json_compatibility_result::of<json_incompatibility>(
               added_err);

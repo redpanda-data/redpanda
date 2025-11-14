@@ -270,7 +270,7 @@ ss::future<error_outcome> uploader::maybe_upload_controller_snapshot(
     auto reader = storage::snapshot_reader(
       controller_snap_file.value(),
       ss::make_file_input_stream(
-        *controller_snap_file, 0, co_await controller_snap_file->size()),
+        controller_snap_file.value(), 0, co_await controller_snap_file->size()),
       _raft0->get_snapshot_path());
     model::offset local_last_included_offset;
     std::exception_ptr err;

@@ -28,8 +28,9 @@ TEST(StructAccessorTest, TestGetAccessorsNestedSchema) {
         auto& acc = accessors.at(nested_field::id_t{id});
         const auto& val = acc->get(*random_struct);
         EXPECT_TRUE(val.has_value());
-        EXPECT_TRUE(std::holds_alternative<primitive_value>(*val));
-        EXPECT_TRUE(value_matches_type(std::get<primitive_value>(*val), t));
+        EXPECT_TRUE(std::holds_alternative<primitive_value>(val.value()));
+        EXPECT_TRUE(
+          value_matches_type(std::get<primitive_value>(val.value()), t));
     };
     // In the test schema, only a few fields are not a part of a list or map.
     // We should only have accessors for those fields.
@@ -55,8 +56,9 @@ TEST(StructAccessorTest, TestGetAccessorsNestedSchemaNull) {
         auto& acc = accessors.at(nested_field::id_t{id});
         const auto& val = acc->get(*null_struct);
         ASSERT_TRUE(val.has_value());
-        ASSERT_TRUE(std::holds_alternative<primitive_value>(*val));
-        ASSERT_TRUE(value_matches_type(std::get<primitive_value>(*val), t));
+        ASSERT_TRUE(std::holds_alternative<primitive_value>(val.value()));
+        ASSERT_TRUE(
+          value_matches_type(std::get<primitive_value>(val.value()), t));
     };
     // Ensures that the values in the generated struct are null.
     auto check_null_val = [&](int32_t id) {

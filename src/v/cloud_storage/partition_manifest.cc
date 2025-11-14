@@ -179,11 +179,11 @@ model::offset partition_manifest::get_last_offset() const {
 
 std::optional<kafka::offset> partition_manifest::get_last_kafka_offset() const {
     const auto next_kafka_offset = get_next_kafka_offset();
-    if (!next_kafka_offset || *next_kafka_offset == kafka::offset{0}) {
+    if (!next_kafka_offset || next_kafka_offset.value() == kafka::offset{0}) {
         return std::nullopt;
     }
 
-    return *next_kafka_offset - kafka::offset{1};
+    return next_kafka_offset.value() - kafka::offset{1};
 }
 
 std::optional<kafka::offset> partition_manifest::get_next_kafka_offset() const {
@@ -627,14 +627,14 @@ void partition_manifest::set_archive_clean_offset(
 
         if (truncation_point) {
             vassert(
-              _archive_clean_offset >= *truncation_point,
+              _archive_clean_offset >= truncation_point.value(),
               "[{}] Attempt to prefix truncate the spillover manifest list "
               "above "
               "the archive clean offest: {} > {}",
               display_name(),
-              *truncation_point,
+              truncation_point.value(),
               _archive_clean_offset);
-            _spillover_manifests.prefix_truncate(*truncation_point);
+            _spillover_manifests.prefix_truncate(truncation_point.value());
         }
     }
 
@@ -2017,7 +2017,7 @@ void partition_manifest::do_update(partition_manifest_handler&& handler) {
     }
 
     if (handler._archive_size_bytes) {
-        _archive_size_bytes = *handler._archive_size_bytes;
+        _archive_size_bytes = handler._archive_size_bytes.value();
     }
 
     if (handler._spillover) {
@@ -2178,7 +2178,7 @@ void partition_manifest::serialize_begin(
     }
     if (_last_scrubbed_offset != std::nullopt) {
         w.Key("last_scrubbed_offset");
-        w.Int64(static_cast<int64_t>(*_last_scrubbed_offset));
+        w.Int64(static_cast<int64_t>(_last_scrubbed_offset.value()));
     }
     if (_highest_producer_id != model::producer_id{}) {
         w.Key("highest_producer_id");
@@ -2546,7 +2546,7 @@ size_t partition_manifest::estimate_size_between(
         return 0;
     }
     size_t spillover_sz = 0;
-    if (begin < *stm_start_offset) {
+    if (begin < stm_start_offset.value()) {
         // 'begin' falls below the STM manifest, meaning the range includes
         // part of the spillover region: aggregate them.
         for (const auto& m : _spillover_manifests) {
@@ -2556,7 +2556,7 @@ size_t partition_manifest::estimate_size_between(
             }
         }
     }
-    if (end < *stm_start_offset) {
+    if (end < stm_start_offset.value()) {
         // 'end' falls below the STM manifest, mening the entire range was in
         // the spillover region and we can just return what we have.
         return spillover_sz;
@@ -2565,8 +2565,8 @@ size_t partition_manifest::estimate_size_between(
     // the STM manifest.
 
     size_t stm_sz = 0;
-    auto stm_end_offset = kafka::prev_offset(*stm_next_offset);
-    if (begin <= *stm_start_offset && end >= stm_end_offset) {
+    auto stm_end_offset = kafka::prev_offset(stm_next_offset.value());
+    if (begin <= stm_start_offset.value() && end >= stm_end_offset) {
         // The range covers the entire STM manifest -- no need to iterate.
         stm_sz = stm_region_size_bytes();
     } else {

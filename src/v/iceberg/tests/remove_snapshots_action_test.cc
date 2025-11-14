@@ -122,7 +122,7 @@ public:
         if (!table->snapshots.has_value()) {
             table->snapshots.emplace();
         }
-        auto& table_snaps = *table->snapshots;
+        auto& table_snaps = table->snapshots.value();
         std::optional<snapshot_id> parent;
         for (size_t i = 0; i < num_snapshots; ++i) {
             const auto id = use_next_snap_id();

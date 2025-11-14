@@ -61,7 +61,7 @@ config_manager::config_manager(
   ss::sharded<partition_leaders_table>& pl,
   ss::sharded<cluster::members_table>& mt,
   ss::sharded<ss::abort_source>& as)
-  : _self(*config::node().node_id())
+  : _self(config::node().node_id().value())
   , _frontend(cf)
   , _connection_cache(cc)
   , _leaders(pl)
@@ -557,7 +557,7 @@ ss::future<> config_manager::reconcile_status() {
               clusterlog.trace,
               "reconcile_status: sending status update to leader: {}",
               my_latest_status);
-            if (_self == *leader) {
+            if (_self == leader.value()) {
                 auto err = co_await _frontend.local().set_status(
                   my_latest_status, model::timeout_clock::now() + timeout);
                 if (err) {
@@ -574,7 +574,7 @@ ss::future<> config_manager::reconcile_status() {
                       .with_node_client<cluster::controller_client_protocol>(
                         _self,
                         ss::this_shard_id(),
-                        *leader,
+                        leader.value(),
                         timeout,
                         [this, timeout](controller_client_protocol cp) mutable {
                             return cp.config_status(

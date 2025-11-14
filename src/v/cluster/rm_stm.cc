@@ -647,10 +647,10 @@ abort_origin rm_stm::get_abort_origin(
         return abort_origin::present;
     }
 
-    if (expected_tx_seq < *current_tx_seq) {
+    if (expected_tx_seq < current_tx_seq.value()) {
         return abort_origin::past;
     }
-    if (*current_tx_seq < expected_tx_seq) {
+    if (current_tx_seq.value() < expected_tx_seq) {
         return abort_origin::future;
     }
     return abort_origin::present;

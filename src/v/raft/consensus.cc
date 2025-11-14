@@ -917,7 +917,7 @@ ss::future<model::record_batch_reader> consensus::make_reader(
         return _consumable_offset_monitor
           .wait(
             model::next_offset(_majority_replicated_index),
-            *debounce_timeout,
+            debounce_timeout.value(),
             _as)
           .then([this, config]() mutable { return do_make_reader(config); });
     });
@@ -1248,7 +1248,7 @@ std::optional<model::offset> consensus::adjust_learner_initial_offset(
      * adjusted_offset <= last_included_offset
      */
     auto adjusted_learner_initial_offset
-      = _log->index_batch_base_offset_lower_bound(*learner_start_offset);
+      = _log->index_batch_base_offset_lower_bound(learner_start_offset.value());
     if (!adjusted_learner_initial_offset) {
         vlog(
           _ctxlog.warn,
@@ -1513,7 +1513,8 @@ consensus::do_start(std::optional<xshard_transfer_state> xst_state) {
         co_await _log->start(start_truncate_cfg, _as);
         if (last_snapshot_index) {
             auto prev_commit_index = _commit_index;
-            _commit_index = std::max(_commit_index, *last_snapshot_index);
+            _commit_index = std::max(
+              _commit_index, last_snapshot_index.value());
             maybe_update_last_visible_index(_commit_index);
             if (prev_commit_index != _commit_index) {
                 _commit_index_updated.broadcast();
@@ -1725,7 +1726,7 @@ model::offset consensus::read_last_applied() const {
       storage::kvstore::key_space::consensus, key);
 
     if (value) {
-        return reflection::adl<model::offset>{}.from(std::move(*value));
+        return reflection::adl<model::offset>{}.from(std::move(value.value()));
     }
 
     return model::offset{};
@@ -1748,7 +1749,7 @@ void consensus::read_voted_for() {
     if (value) {
         try {
             auto config = reflection::adl<consensus::voted_for_configuration>{}
-                            .from(std::move(*value));
+                            .from(std::move(value.value()));
             _voted_for = config.voted_for;
             _term = config.term;
         } catch (...) {
@@ -1767,7 +1768,7 @@ void consensus::read_voted_for() {
             // fallback to old version
             auto config
               = reflection::adl<consensus::voted_for_configuration_old>{}.from(
-                std::move(*value));
+                std::move(value.value()));
             _voted_for = vnode(config.voted_for, model::revision_id(0));
             _term = config.term;
         }
@@ -2715,7 +2716,7 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
     snapshot_metadata md{
       .last_included_index = last_included_index,
       .last_included_term = last_included_term.value(),
-      .latest_configuration = *config,
+      .latest_configuration = config.value(),
       .cluster_time = clock_type::time_point::min(),
       .log_start_delta = offset_translator_delta(
         _log->offset_delta(model::next_offset(last_included_index))()),
@@ -2723,7 +2724,9 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
 
     return details::persist_snapshot(
              _snapshot_mgr, std::move(md), std::move(data))
-      .then([this, last_included_index, term = *last_included_term]() mutable {
+      .then([this,
+             last_included_index,
+             term = last_included_term.value()]() mutable {
           // update consensus state
           _last_snapshot_index = last_included_index;
           _last_snapshot_term = term;
@@ -2756,7 +2759,7 @@ consensus::open_snapshot() {
 
     co_return opened_snapshot{
       .metadata = metadata,
-      .reader = std::move(*reader),
+      .reader = std::move(reader.value()),
     };
 }
 
@@ -3582,7 +3585,7 @@ consensus::do_transfer_leadership(transfer_leadership_request req) {
         target = it->first.id();
     }
 
-    if (*target == _self.id()) {
+    if (target.value() == _self.id()) {
         vlog(_ctxlog.warn, "Cannot transfer leadership to self");
         return seastar::make_ready_future<std::error_code>(
           make_error_code(errc::transfer_to_current_leader));
@@ -3598,7 +3601,7 @@ consensus::do_transfer_leadership(transfer_leadership_request req) {
         return ss::make_ready_future<std::error_code>(
           make_error_code(errc::configuration_change_in_progress));
     }
-    auto target_rni = conf.current_config().find(*target);
+    auto target_rni = conf.current_config().find(target.value());
 
     if (!target_rni) {
         vlog(
@@ -3609,7 +3612,7 @@ consensus::do_transfer_leadership(transfer_leadership_request req) {
           make_error_code(errc::node_does_not_exists));
     }
 
-    if (!conf.is_voter(*target_rni)) {
+    if (!conf.is_voter(target_rni.value())) {
         vlog(
           _ctxlog.warn,
           "Cannot transfer leadership to node {} which is a learner",
@@ -3625,7 +3628,7 @@ consensus::do_transfer_leadership(transfer_leadership_request req) {
       *target_rni,
       _term);
 
-    auto f = ss::with_gate(_bg, [this, target_rni = *target_rni, opts] {
+    auto f = ss::with_gate(_bg, [this, target_rni = target_rni.value(), opts] {
         if (_transferring_leadership) {
             vlog(
               _ctxlog.warn,
@@ -4395,7 +4398,7 @@ consensus::snapshot_and_truncate_log(model::offset eviction_point) {
       "Calculated boundary {} must be <= eviction offset {} ",
       truncation_point,
       eviction_point);
-    co_await do_snapshot_and_truncate_log(*truncation_point);
+    co_await do_snapshot_and_truncate_log(truncation_point.value());
     co_return _last_snapshot_index >= truncation_point;
 }
 

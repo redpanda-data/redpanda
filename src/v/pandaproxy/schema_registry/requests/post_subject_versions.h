@@ -157,7 +157,7 @@ public:
         case state::schema_type: {
             auto type = from_string_view<schema_type>(sv);
             if (type.has_value()) {
-                _schema.type = *type;
+                _schema.type = type.value();
                 _state = state::record;
             }
             return type.has_value();

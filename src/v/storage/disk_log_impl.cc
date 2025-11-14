@@ -562,7 +562,7 @@ ss::future<> disk_log_impl::adjacent_merge_compact(
     auto offsets_compactible = [&cfg, &new_start_offset, this](segment& s) {
         if (
           new_start_offset
-          && s.offsets().get_base_offset() < *new_start_offset) {
+          && s.offsets().get_base_offset() < new_start_offset.value()) {
             vlog(
               gclog.trace,
               "[{}] segment {} base offs {}, new start offset {}, "
@@ -1063,7 +1063,7 @@ disk_log_impl::compact_adjacent_segment_ranges(
         using vec_t = chunked_vector<ss::lw_shared_ptr<segment>>;
         chunked_vector<vec_t> seg_ranges;
         seg_ranges.reserve(ranges->size());
-        for (auto& range : *ranges) {
+        for (auto& range : ranges.value()) {
             seg_ranges.emplace_back(range.first, range.second);
         }
         for (auto& range : seg_ranges) {
@@ -1177,7 +1177,7 @@ ss::future<compaction_result> disk_log_impl::do_compact_adjacent_segments(
     }
 
     // This is guaranteed to have a value.
-    auto ret = *opt_ret;
+    auto ret = opt_ret.value();
 
     // remove the now redundant segments, if they haven't already been removed.
     // this could occur if racing with functions like truncate which manipulate
@@ -1808,7 +1808,7 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
     auto max_offset = co_await maybe_adjusted_retention_offset(cfg);
 
     if (max_offset) {
-        co_return request_eviction_until_offset(*max_offset);
+        co_return request_eviction_until_offset(max_offset.value());
     }
 
     co_return std::nullopt;
@@ -2117,7 +2117,7 @@ size_t disk_log_impl::max_segment_size() const {
     // override for segment size
     size_t result;
     if (config().has_overrides() && config().get_overrides().segment_size) {
-        result = *config().get_overrides().segment_size;
+        result = config().get_overrides().segment_size.value();
     } else {
         // no overrides use defaults
         result = config().is_locally_compacted()
@@ -2131,10 +2131,10 @@ size_t disk_log_impl::max_segment_size() const {
     auto min_limit = config::shard_local_cfg().log_segment_size_min();
     auto max_limit = config::shard_local_cfg().log_segment_size_max();
     if (min_limit) {
-        result = std::max(*min_limit, result);
+        result = std::max(min_limit.value(), result);
     }
     if (max_limit) {
-        result = std::min(*max_limit, result);
+        result = std::min(max_limit.value(), result);
     }
 
     return result;
@@ -2373,7 +2373,7 @@ disk_log_impl::make_cached_reader(local_log_reader_config config) {
     auto rdr = _readers_cache->get_reader(config);
     if (rdr) {
         return ss::make_ready_future<model::record_batch_reader>(
-          std::move(*rdr));
+          std::move(rdr.value()));
     }
     return _lock_mngr.range_lock(config)
       .then([this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
@@ -3660,7 +3660,8 @@ model::offset disk_log_impl::read_start_offset() const {
     auto value = _kvstore.get(
       kvstore::key_space::storage, internal::start_offset_key(config().ntp()));
     if (value) {
-        auto offset = reflection::adl<model::offset>{}.from(std::move(*value));
+        auto offset = reflection::adl<model::offset>{}.from(
+          std::move(value.value()));
         return offset;
     }
     return model::offset{};

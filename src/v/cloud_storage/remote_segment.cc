@@ -273,7 +273,7 @@ remote_segment::offset_data_stream(
         // scan is comparatively small.
 
         prefetch_override = 0;
-        indexed_pos = maybe_get_offsets(*first_timestamp);
+        indexed_pos = maybe_get_offsets(first_timestamp.value());
     } else {
         indexed_pos = maybe_get_offsets(start);
     }
@@ -1151,7 +1151,7 @@ remote_segment::aborted_transactions(model::offset from, model::offset to) {
         vlog(_ctxlog.debug, "no tx-metadata available");
         co_return result;
     }
-    for (const auto& it : *_tx_range) {
+    for (const auto& it : _tx_range.value()) {
         if (it.last < from) {
             continue;
         }

@@ -134,7 +134,7 @@ public:
                 break;
             }
 
-            auto reassignment = *reassignment_opt;
+            auto reassignment = reassignment_opt.value();
             if (
               skip.contains(static_cast<uint64_t>(reassignment.group))
               || _mi->muted_nodes().contains(reassignment.from.node_id)

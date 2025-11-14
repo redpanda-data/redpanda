@@ -131,7 +131,7 @@ struct tx_range_manifest_json_handler {
                 .match("ranges", state::expect_ranges_value)
                 .default_match(std::nullopt)};
             if (s.has_value()) {
-                _state = *s;
+                _state = s.value();
             }
             return s.has_value();
         }
@@ -143,7 +143,7 @@ struct tx_range_manifest_json_handler {
                      .match("last", state::expect_range_last_value)
                      .default_match(std::nullopt)};
             if (s.has_value()) {
-                _state = *s;
+                _state = s.value();
             }
             return s.has_value();
         }

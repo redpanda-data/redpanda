@@ -35,7 +35,7 @@ void topic_cache::apply(
           api_version_for(metadata_request::api_type::key) < api_version(12),
           "topic::name is nullable in v12+");
         auto& cache_t
-          = cache_update.emplace(*t.name, topic_data{}).first->second;
+          = cache_update.emplace(t.name.value(), topic_data{}).first->second;
         cache_t.last_seen_time = now;
         cache_t.authorized_operations = t.topic_authorized_operations;
         if (t.topic_id != model::topic_id{}) {

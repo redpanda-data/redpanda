@@ -226,7 +226,7 @@ TEST_F(e2e_fixture, timequery) {
         // Expect eventually we don't get a missing ntp error.
         return state->local()
           .get_l1_metastore()
-          ->get_offsets({*topic_id, ntp.tp.partition})
+          ->get_offsets({topic_id.value(), ntp.tp.partition})
           .then([](auto result) { return result.has_value(); });
     });
     // Retry now that the data is in L1

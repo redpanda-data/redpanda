@@ -138,7 +138,8 @@ BOOST_AUTO_TEST_CASE(
         BOOST_TEST(
           (int8_t)e.error_code
           == (int8_t)kafka::error_code::invalid_partitions);
-        BOOST_REQUIRE_EQUAL(*(e.error_message), "Partitions count is invalid");
+        BOOST_REQUIRE_EQUAL(
+          (e.error_message).value(), "Partitions count is invalid");
     }
 
     BOOST_REQUIRE_EQUAL(std::distance(requests.begin(), valid_range_end), 3);

@@ -285,7 +285,7 @@ topic_reconciler::maybe_create_update_mirror_topic(
 
     if (
       mirror_topic_config.replication_factor.has_value()
-      && *mirror_topic_config.replication_factor
+      && mirror_topic_config.replication_factor.value()
            != local_topic_config.replication_factor) {
         vlog(
           cllog.debug,

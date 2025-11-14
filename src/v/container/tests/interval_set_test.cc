@@ -325,7 +325,7 @@ TEST_P(RandomizedIntervalSetTest, RandomInsertsSequentialErase) {
     while (!filled_intervals.empty()) {
         auto it = filled_intervals.begin();
         if (highest_so_far) {
-            EXPECT_GT(it->first, *highest_so_far);
+            EXPECT_GT(it->first, highest_so_far.value());
         }
         highest_so_far = it->second;
         interval_filled_size += it->second - it->first;

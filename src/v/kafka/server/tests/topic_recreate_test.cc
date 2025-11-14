@@ -257,7 +257,7 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
             return ss::make_ready_future<bool>(false);
         }
         return app.partition_manager.invoke_on(
-          *shard_id, [ntp](cluster::partition_manager& pm) {
+          shard_id.value(), [ntp](cluster::partition_manager& pm) {
               if (pm.get(ntp)) {
                   return pm.get(ntp)->is_elected_leader();
               }
@@ -269,7 +269,7 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
     model::offset committed_offset
       = app.partition_manager
           .invoke_on(
-            *shard_id,
+            shard_id.value(),
             [ntp](cluster::partition_manager& pm) {
                 return model::test::make_random_batches(model::offset(0), 5)
                   .then([&pm, ntp](auto batches) {
@@ -301,7 +301,7 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
             }
 
             return app.partition_manager.invoke_on(
-              *shard_id, [ntp](cluster::partition_manager& pm) {
+              shard_id.value(), [ntp](cluster::partition_manager& pm) {
                   auto partition = pm.get(ntp);
                   return partition
                          && partition->committed_offset() >= model::offset(0);
@@ -310,7 +310,7 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
         auto shard_id = app.shard_table.local().shard_for(ntp);
         app.partition_manager
           .invoke_on(
-            *shard_id,
+            shard_id.value(),
             [ntp, committed_offset](cluster::partition_manager& pm) {
                 BOOST_REQUIRE(
                   pm.get(ntp)->committed_offset() >= committed_offset);

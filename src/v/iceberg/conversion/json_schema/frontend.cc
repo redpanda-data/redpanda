@@ -177,7 +177,7 @@ public:
                 throw std::runtime_error(
                   "Schema dialect is not set (missing $schema keyword?)");
             }
-            return *default_dialect_;
+            return default_dialect_.value();
         } else {
             return top().dialect_;
         }

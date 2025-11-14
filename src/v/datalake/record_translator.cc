@@ -109,7 +109,7 @@ std::unique_ptr<iceberg::struct_value> build_rp_struct(
 
     system_data->fields.emplace_back(
       key ? std::make_optional<iceberg::value>(
-              iceberg::binary_value(std::move(*key)))
+              iceberg::binary_value(std::move(key.value())))
           : std::nullopt);
 
     system_data->fields.emplace_back(
@@ -208,7 +208,7 @@ key_value_translator::translate_data(
     ret_data.fields.emplace_back(std::move(system_data));
     ret_data.fields.emplace_back(
       parsable_val ? std::make_optional<iceberg::value>(
-                       iceberg::binary_value(std::move(*parsable_val)))
+                       iceberg::binary_value(std::move(parsable_val.value())))
                    : std::nullopt);
     co_return ret_data;
 }
@@ -297,7 +297,8 @@ structured_data_translator::translate_data(
     ret_data.fields.emplace_back(std::move(system_data));
 
     auto translated_val = co_await std::visit(
-      value_translating_visitor{std::move(*parsable_val), val_type->type},
+      value_translating_visitor{
+        std::move(parsable_val.value()), val_type->type},
       val_type->schema.get_schema_ref());
     if (translated_val.has_error()) {
         vlog(

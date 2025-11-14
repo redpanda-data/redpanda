@@ -228,7 +228,7 @@ upload_files(
               "error deleting remote data files - {}",
               remote_del_result.error());
         }
-        co_return *upload_error;
+        co_return upload_error.value();
     }
 
     co_return ret;

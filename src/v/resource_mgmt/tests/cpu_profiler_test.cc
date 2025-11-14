@@ -39,7 +39,7 @@ ss::future<> busy_loop(
   std::chrono::milliseconds duration,
   std::optional<ss::scheduling_group> sg = {}) {
     if (sg) {
-        co_await ss::coroutine::switch_to(*sg);
+        co_await ss::coroutine::switch_to(sg.value());
     }
 
     auto end_time = ss::lowres_clock::now() + duration;

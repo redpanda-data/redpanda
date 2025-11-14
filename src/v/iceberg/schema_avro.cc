@@ -398,7 +398,7 @@ field_type type_from_avro(const avro::NodePtr& n, with_field_ids with_ids) {
         type_and_required parsed_child = maybe_optional_from_avro(
           n->leafAt(0), with_ids);
         return list_type::create(
-          static_cast<int32_t>(with_ids ? *node.elementId_ : 0),
+          static_cast<int32_t>(with_ids ? node.elementId_.value() : 0),
           parsed_child.required,
           std::move(parsed_child.type));
     }

@@ -57,7 +57,7 @@ static void parse_and_set_shadow_indexing_mode(
     case config_resource_operation::set:
         simode.op = cluster::incremental_update_operation::set;
         simode.value
-          = string_switch<model::shadow_indexing_mode>(*value)
+          = string_switch<model::shadow_indexing_mode>(value.value())
               .match("no", model::negate_shadow_indexing_flag(enabled_value))
               .match("false", model::negate_shadow_indexing_flag(enabled_value))
               .match("yes", enabled_value)
@@ -168,7 +168,7 @@ create_topic_properties_update(
 
         if (err) {
             // error case
-            return *err;
+            return err.value();
         }
         try {
             if (cfg.name == topic_property_cleanup_policy) {

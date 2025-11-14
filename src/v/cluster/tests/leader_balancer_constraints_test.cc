@@ -330,10 +330,10 @@ BOOST_AUTO_TEST_CASE(topic_skew_error) {
         if (!movement_opt) {
             break;
         }
-        rhc.apply_movement(*movement_opt);
-        even_shard_con.update_index(*movement_opt);
-        even_topic_con.update_index(*movement_opt);
-        shard_index.update_index(*movement_opt);
+        rhc.apply_movement(movement_opt.value());
+        even_shard_con.update_index(movement_opt.value());
+        even_topic_con.update_index(movement_opt.value());
+        shard_index.update_index(movement_opt.value());
         muted_groups.add(static_cast<uint64_t>(movement_opt->group));
 
         auto new_error = rhc.error();
@@ -404,8 +404,8 @@ BOOST_AUTO_TEST_CASE(even_shard_uneven_node_load) {
     // that the balancing strategy fixes this.
 
     while (auto movement_opt = strategy.find_movement({})) {
-        strategy.apply_movement(*movement_opt);
-        shard_idx.update_index(*movement_opt);
+        strategy.apply_movement(movement_opt.value());
+        shard_idx.update_index(movement_opt.value());
     }
 
     std::map<model::node_id, size_t> node_stats;

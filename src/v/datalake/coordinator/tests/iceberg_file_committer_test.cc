@@ -144,7 +144,7 @@ public:
         const auto& table = load_res.value();
         ASSERT_TRUE(table.current_snapshot_id.has_value());
         auto cur_snap = table.get_snapshots_by_id().at(
-          *table.current_snapshot_id);
+          table.current_snapshot_id.value());
         ASSERT_NO_FATAL_FAILURE(get_snap_data_files(cur_snap, uris));
     }
 
@@ -658,7 +658,7 @@ TEST_F(FileCommitterTest, TestDeduplicateConcurrently) {
 
     // Check that each snapshot does not contain duplicates.
     size_t max_num_files = 0;
-    for (const auto& snap : *table.snapshots) {
+    for (const auto& snap : table.snapshots.value()) {
         chunked_vector<ss::sstring> uris;
         ASSERT_NO_FATAL_FAILURE(get_snap_data_files(snap, &uris));
 

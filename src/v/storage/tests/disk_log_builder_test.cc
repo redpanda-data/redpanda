@@ -273,15 +273,16 @@ TEST_F(log_builder_fixture, test_skipping_compaction_below_start_offset) {
     // Grab the new start offset from the notification and
     // update the removable offset and start offsets.
     auto evict_at_offset = eviction_future.get();
-    ASSERT_EQ(*new_start_offset, model::next_offset(evict_at_offset));
-    ASSERT_TRUE(b.update_start_offset(*new_start_offset).get());
+    ASSERT_EQ(new_start_offset.value(), model::next_offset(evict_at_offset));
+    ASSERT_TRUE(b.update_start_offset(new_start_offset.value()).get());
 
     // Call into `disk_log_impl::compact`. The only segment eligible for
     // compaction is the below the start offset and it should be ignored.
     auto& first_seg = log.segments().front();
     ASSERT_EQ(first_seg->has_self_compact_timestamp(), false);
 
-    b.apply_adjacent_merge_compaction(cfg.compact, *new_start_offset).get();
+    b.apply_adjacent_merge_compaction(cfg.compact, new_start_offset.value())
+      .get();
 
     ASSERT_EQ(first_seg->has_self_compact_timestamp(), false);
 

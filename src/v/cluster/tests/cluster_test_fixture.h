@@ -376,7 +376,7 @@ public:
         if (!current_leader) {
             co_return;
         }
-        auto& leader_app = _instances.at(*current_leader).get()->app;
+        auto& leader_app = _instances.at(current_leader.value()).get()->app;
         auto partition = leader_app.partition_manager.local().get(ntp);
         RPTEST_REQUIRE_CORO(partition);
         auto current_leader_id = current_leader.value()();

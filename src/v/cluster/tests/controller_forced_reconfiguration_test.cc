@@ -358,7 +358,7 @@ public:
           maybe_controller_leader.has_value(),
           "failed to get controller leader");
 
-        auto controller_leader = *maybe_controller_leader;
+        auto controller_leader = maybe_controller_leader.value();
         auto controller_rp = instance(controller_leader);
 
         vassert(

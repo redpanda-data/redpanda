@@ -139,7 +139,7 @@ test_context make_identity_partitions_spec() {
     key.val->fields.push_back(
       iceberg::binary_value{.val = iobuf::from("PandasAreCuties")});
 
-    return test_context{.spec = std::move(*spec), .key = std::move(key)};
+    return test_context{.spec = std::move(spec.value()), .key = std::move(key)};
 }
 /**
  * Test validating conversion of PartitionSpec containing only identity
@@ -263,7 +263,7 @@ TEST(PartitionKeyPathConversionTest, TestTimestampTransform) {
       iceberg::time_value{
         .val = (std::chrono::hours(11) + 11min + 11s + 789us) / 1us});
 
-    auto res = partition_key_to_path(*spec, key);
+    auto res = partition_key_to_path(spec.value(), key);
 
     ASSERT_FALSE(res.has_error());
 
@@ -333,7 +333,7 @@ TEST(PartitionKeyPathConversionTest, TimeTransformsTest) {
                    .time_since_epoch())
                  .count()});
 
-    auto res = partition_key_to_path(*spec, key);
+    auto res = partition_key_to_path(spec.value(), key);
 
     ASSERT_FALSE(res.has_error());
 
@@ -360,7 +360,7 @@ TEST(PartitionKeyPathConversionTest, VoidTransformTest) {
     key.val = std::make_unique<iceberg::struct_value>();
     key.val->fields.push_back(iceberg::value{});
 
-    auto res = partition_key_to_path(*spec, key);
+    auto res = partition_key_to_path(spec.value(), key);
 
     ASSERT_FALSE(res.has_error());
 
@@ -382,7 +382,7 @@ TEST(PartitionKeyPathConversionTest, BucketTransformTest) {
     key.val = std::make_unique<iceberg::struct_value>();
     key.val->fields.push_back(iceberg::int_value{.val = 32});
 
-    auto res = partition_key_to_path(*spec, key);
+    auto res = partition_key_to_path(spec.value(), key);
 
     ASSERT_FALSE(res.has_error());
 
@@ -422,7 +422,7 @@ TEST(PartitionKeyPathConversionTest, TestElementSizeLimiting) {
           "Pellentesque "
           "ipsum magna, pellentesque quis nisl eu, congue aliquam id.")});
 
-    auto res = partition_key_to_path(*spec, key);
+    auto res = partition_key_to_path(spec.value(), key);
 
     ASSERT_FALSE(res.has_error());
 
@@ -456,7 +456,7 @@ TEST(PartitionKeyPathConversionTest, TestPathSizeLimitting) {
         key.val->fields.push_back(iceberg::int_value{.val = i});
     }
 
-    auto res = partition_key_to_path(*spec, key);
+    auto res = partition_key_to_path(spec.value(), key);
 
     ASSERT_FALSE(res.has_error());
     // make sure the path is truncated

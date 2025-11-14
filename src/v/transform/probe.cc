@@ -94,10 +94,10 @@ void probe::increment_read_bytes(uint64_t bytes) { _read_bytes += bytes; }
 void probe::increment_failure() { ++_failures; }
 void probe::state_change(processor_state_change change) {
     if (change.from) {
-        _processor_state[*change.from] -= 1;
+        _processor_state[change.from.value()] -= 1;
     }
     if (change.to) {
-        _processor_state[*change.to] += 1;
+        _processor_state[change.to.value()] += 1;
     }
 }
 void probe::report_lag(model::output_topic_index idx, int64_t delta) {

@@ -395,9 +395,9 @@ void redpanda_thread_fixture::configure(
             config.get("cloud_storage_region")
               .set_value(std::make_optional(s3_config->region()));
             config.get("cloud_storage_access_key")
-              .set_value(std::make_optional((*s3_config->access_key)()));
+              .set_value(std::make_optional((s3_config->access_key.value())()));
             config.get("cloud_storage_secret_key")
-              .set_value(std::make_optional((*s3_config->secret_key)()));
+              .set_value(std::make_optional((s3_config->secret_key.value())()));
             config.get("cloud_storage_api_endpoint")
               .set_value(std::make_optional(s3_config->server_addr.host()));
             config.get("cloud_storage_url_style")
@@ -546,7 +546,7 @@ ss::future<> redpanda_thread_fixture::wait_for_leader(
             return ss::make_ready_future<bool>(false);
         }
         return app.partition_manager.invoke_on(
-          *shard, [ntp](cluster::partition_manager& mgr) {
+          shard.value(), [ntp](cluster::partition_manager& mgr) {
               auto partition = mgr.get(ntp);
               return partition && partition->raft()->term() != model::term_id{}
                      && partition->raft()->is_leader();
@@ -659,7 +659,7 @@ ss::future<> redpanda_thread_fixture::wait_for_partition_offset(
               return ss::make_ready_future<bool>(false);
           }
           return app.partition_manager.invoke_on(
-            *shard, [ntp, o](cluster::partition_manager& mgr) {
+            shard.value(), [ntp, o](cluster::partition_manager& mgr) {
                 auto partition = mgr.get(ntp);
                 return partition && partition->committed_offset() >= o;
             });
@@ -713,7 +713,8 @@ redpanda_thread_fixture::get_next_partition_revision_id() {
     co_await wait_for_quiescent_controller_committed_offset();
 
     co_return co_await app.partition_manager.invoke_on(
-      *shard, [ntp](cluster::partition_manager& mgr) -> model::revision_id {
+      shard.value(),
+      [ntp](cluster::partition_manager& mgr) -> model::revision_id {
           auto partition = mgr.get(ntp);
           assert(partition);
           return model::revision_id{
@@ -967,7 +968,7 @@ void redpanda_thread_fixture::authn_kafka_client(
     if (server_final.error()) {
         throw std::runtime_error(
           ssx::sformat(
-            "error in server final message: {}", *server_final.error()));
+            "error in server final message: {}", server_final.error().value()));
     }
 
     auto server_key = ScramMech::server_key(salted_password);

@@ -116,7 +116,7 @@ partitions_request_iterator validate_partitions(
       [](const reassignable_partition& partition) {
           if (partition.replicas.has_value()) {
               absl::flat_hash_set<model::node_id> replicas_set;
-              for (const auto& node_id : *partition.replicas) {
+              for (const auto& node_id : partition.replicas.value()) {
                   auto res = replicas_set.insert(node_id);
                   if (!res.second) {
                       return false;

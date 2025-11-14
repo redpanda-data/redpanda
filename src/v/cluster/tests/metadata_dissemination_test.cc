@@ -53,7 +53,7 @@ wait_for_leaders_updates(int id, cluster::metadata_cache& cache) {
             if (!leader_id) {
                 return false;
             }
-            leaders.push_back(*leader_id);
+            leaders.push_back(leader_id.value());
         }
         return true;
     }).get();

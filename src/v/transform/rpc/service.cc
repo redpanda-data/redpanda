@@ -172,7 +172,7 @@ ss::future<result<model::offset, cluster::errc>> local_service::produce(
     }
     // TODO: schema validation
     co_return co_await _partition_manager->invoke_on_shard(
-      *shard,
+      shard.value(),
       ntp,
       [timeout,
        batches = chunked_vector<model::record_batch>(
@@ -248,7 +248,7 @@ local_service::load_wasm_binary(
         co_return cluster::errc::not_leader;
     }
     co_return co_await _partition_manager->invoke_on_shard(
-      *shard,
+      shard.value(),
       model::wasm_binaries_internal_ntp,
       [this, offset, timeout](kafka::partition_proxy* partition) mutable {
           kafka::log_reader_config reader_config(
@@ -309,7 +309,7 @@ local_service::find_coordinator(find_coordinator_request request) {
         co_return response;
     }
     co_return co_await _partition_manager->invoke_on_shard(
-      *shard, ntp, std::move(request));
+      shard.value(), ntp, std::move(request));
 }
 
 ss::future<offset_commit_response>
@@ -325,7 +325,7 @@ local_service::offset_commit(offset_commit_request request) {
         co_return response;
     }
     co_return co_await _partition_manager->invoke_on_shard(
-      *shard, ntp, std::move(request));
+      shard.value(), ntp, std::move(request));
 }
 
 ss::future<offset_fetch_response>
@@ -343,7 +343,7 @@ local_service::offset_fetch(offset_fetch_request request) {
         co_return response;
     }
     co_return co_await _partition_manager->invoke_on_shard(
-      *shard, ntp, request);
+      shard.value(), ntp, request);
 }
 
 ss::future<result<model::transform_offsets_map, cluster::errc>>
@@ -357,7 +357,7 @@ local_service::list_committed_offsets(list_commits_request req) {
         co_return cluster::errc::not_leader;
     }
     co_return co_await _partition_manager->list_committed_offsets_on_shard(
-      *shard, ntp);
+      shard.value(), ntp);
 }
 
 ss::future<cluster::errc> local_service::delete_committed_offsets(
@@ -371,7 +371,7 @@ ss::future<cluster::errc> local_service::delete_committed_offsets(
         co_return cluster::errc::not_leader;
     }
     co_return co_await _partition_manager->delete_committed_offsets_on_shard(
-      *shard, ntp, std::move(ids));
+      shard.value(), ntp, std::move(ids));
 }
 
 ss::future<produce_reply>

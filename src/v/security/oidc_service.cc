@@ -259,9 +259,10 @@ struct service::impl {
               _discovery_url());
         }
 
-        auto measure = get_probe_for(*_parsed_discovery_url).measure_request();
+        auto measure
+          = get_probe_for(_parsed_discovery_url.value()).measure_request();
         auto response_body = co_await ss::coroutine::as_future(
-          make_request(*_parsed_discovery_url));
+          make_request(_parsed_discovery_url.value()));
         if (response_body.failed()) {
             measure.failed();
             co_await return_exception(
@@ -308,15 +309,16 @@ struct service::impl {
               errc::metadata_invalid, "jwks_uri is not set");
         }
 
-        auto measure = get_probe_for(*_parsed_jwks_url).measure_request();
+        auto measure
+          = get_probe_for(_parsed_jwks_url.value()).measure_request();
         auto response_body = co_await ss::coroutine::as_future(
-          make_request(*_parsed_jwks_url));
+          make_request(_parsed_jwks_url.value()));
         if (response_body.failed()) {
             measure.failed();
             co_await return_exception(
               errc::metadata_invalid,
               "Failed to retrieve jwks: {}, error: {}",
-              *_parsed_jwks_url,
+              _parsed_jwks_url.value(),
               response_body.get_exception());
         }
 
@@ -326,7 +328,7 @@ struct service::impl {
             co_await return_exception(
               jwks.assume_error(),
               "Invalid response from jwks_uri: {}",
-              *_parsed_jwks_url);
+              _parsed_jwks_url.value());
         }
         measure.success();
 

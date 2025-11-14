@@ -253,7 +253,7 @@ ss::future<> members_backend::calculate_reallocations_after_recommissioned(
         }
         partition_reallocation reallocation(
           std::move(current_assignment->replicas),
-          std::move(*previous_replica_set),
+          std::move(previous_replica_set.value()),
           cancellation_state::request_cancel);
 
         meta.partition_reallocations.emplace(

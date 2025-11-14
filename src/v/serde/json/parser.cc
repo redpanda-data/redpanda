@@ -229,7 +229,7 @@ public:
             }
         }
 
-        switch (*_current_token) {
+        switch (_current_token.value()) {
         case token::start_object:
         case token::start_array: {
             auto stack_size = _suspension_stack.size();
@@ -259,10 +259,10 @@ public:
               _suspension_stack.size());
 
             dassert(
-              *_current_token == token::end_object
-                || *_current_token == token::end_array,
+              _current_token.value() == token::end_object
+                || _current_token.value() == token::end_array,
               "expected end of object or array but got {}",
-              *_current_token);
+              _current_token.value());
 
             co_return;
         }
@@ -300,7 +300,7 @@ public:
             throw std::runtime_error(
               fmt::format(
                 "skip_value called with unexpected token: {}",
-                *_current_token));
+                _current_token.value()));
         }
 
         dassert(false, "Unreachable. All cases should be handled.");

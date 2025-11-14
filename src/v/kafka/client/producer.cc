@@ -147,7 +147,7 @@ producer::do_send(model::topic_partition tp, model::record_batch batch) {
     if (!leader) {
         throw partition_error(tp, error_code::unknown_topic_or_partition);
     }
-    auto broker = _brokers.find(*leader);
+    auto broker = _brokers.find(leader.value());
     auto res_v = co_await broker->dispatch(
       make_produce_request(std::move(tp), std::move(batch), _config.ack_level),
       api_version_for(produce_api::key));

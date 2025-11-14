@@ -89,7 +89,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
      * validate leader epoch. for more details see KIP-320
      */
     auto leader_epoch_err = details::check_leader_epoch(
-      current_leader_epoch, *kafka_partition);
+      current_leader_epoch, kafka_partition.value());
     if (leader_epoch_err != error_code::none) {
         co_return list_offsets_response::make_partition(
           ktp.get_partition(), leader_epoch_err);
@@ -183,7 +183,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
     }
 
     return octx.rctx.partition_manager().invoke_on(
-      *shard,
+      shard.value(),
       octx.ssg,
       [timestamp,
        &octx,

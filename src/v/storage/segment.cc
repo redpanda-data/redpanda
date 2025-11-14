@@ -760,13 +760,13 @@ std::ostream& operator<<(std::ostream& o, const segment& h) {
     }
     o << ", cache=";
     if (h._cache) {
-        o << *h._cache;
+        o << h._cache.value();
     } else {
         o << "nullptr";
     }
     o << ", compaction_index:";
     if (h._compaction_index) {
-        o << *h._compaction_index;
+        o << h._compaction_index.value();
     } else {
         o << "nullopt";
     }

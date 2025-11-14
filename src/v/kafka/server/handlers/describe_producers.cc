@@ -101,13 +101,15 @@ get_producers_for_partition(request_context& ctx, model::ktp ntp) {
 
     if (ntp.get_topic() == model::kafka_consumer_offsets_topic) {
         co_return co_await ctx.groups().get_group_manager().invoke_on(
-          *shard, [ktp = std::move(ntp)](kafka::group_manager& gm) mutable {
+          shard.value(),
+          [ktp = std::move(ntp)](kafka::group_manager& gm) mutable {
               return gm.describe_partition_producers(ktp.to_ntp());
           });
     }
 
     co_return co_await ctx.partition_manager().invoke_on(
-      *shard, [ntp = std::move(ntp)](cluster::partition_manager& pm) mutable {
+      shard.value(),
+      [ntp = std::move(ntp)](cluster::partition_manager& pm) mutable {
           return do_get_producers_for_data_partition(pm, std::move(ntp));
       });
 }

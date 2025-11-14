@@ -208,7 +208,7 @@ bool group_mirroring_task::should_group_be_mirrored(
     if (!maybe_partition.has_value()) {
         return false;
     }
-    return current_shard_coordinators.contains(*maybe_partition);
+    return current_shard_coordinators.contains(maybe_partition.value());
 }
 
 task::state_transition
@@ -237,7 +237,7 @@ group_mirroring_task::synchronize_consumer_groups_offsets() {
         if (!metadata.coordinator_id.has_value()) {
             continue;
         }
-        groups_by_coordinator[*metadata.coordinator_id].push_back(g_id);
+        groups_by_coordinator[metadata.coordinator_id.value()].push_back(g_id);
     }
     // no groups, do nothing
     if (groups_by_coordinator.empty()) {
@@ -422,7 +422,7 @@ group_mirroring_task::trim_to_partition_highwatermark(
                   partition_committed_offset{
                     .partition = po.partition,
                     .committed_offset = std::min(
-                      *maybe_hw, po.committed_offset),
+                      maybe_hw.value(), po.committed_offset),
                   });
             }
             if (!trimmed_t_offsets.partition_offsets.empty()) {
@@ -467,7 +467,7 @@ group_mirroring_task::get_partition_high_watermark(
           p_id,
           *owning_shard);
         auto hw = co_await partition_manager.invoke_on_shard(
-          *owning_shard,
+          owning_shard.value(),
           ktp,
           [](kafka::partition_proxy* pp) {
               return ssx::now<::result<::model::offset, cluster::errc>>(
@@ -507,7 +507,7 @@ group_mirroring_task::fetch_offsets(
     }
 
     ret.reserve(groups.size());
-    auto version = get_max_supported<kafka::offset_fetch_api>(*versions);
+    auto version = get_max_supported<kafka::offset_fetch_api>(versions.value());
     // TODO: handle new version where we can fetch offsets for multiple groups
     // at once.
     const auto group_count = groups.size();
@@ -638,7 +638,7 @@ group_mirroring_task::list_groups_from_broker(::model::node_id broker_id) {
         auto reply = co_await c_connection.dispatch_to(
           broker_id,
           make_list_groups_request(),
-          get_max_supported<kafka::list_groups_api>(*versions));
+          get_max_supported<kafka::list_groups_api>(versions.value()));
 
         if (reply.data.error_code != kafka::error_code::none) {
             vlog(
@@ -685,7 +685,7 @@ group_mirroring_task::update_group_coordinators() {
     }
     bool errored = false;
     const auto max_supported_v = get_max_supported<kafka::find_coordinator_api>(
-      *versions);
+      versions.value());
     if (max_supported_v >= batched_find_coordinator_v) {
         chunked_vector<ss::sstring> group_ids;
         group_ids.reserve(_groups_to_mirror.size());

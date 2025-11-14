@@ -540,7 +540,7 @@ simple_metastore::get_compaction_offsets(
     }
 
     // Iterate through the clean ranges to produce the dirty ranges.
-    const auto& cmp_state = *prt.compaction_state;
+    const auto& cmp_state = prt.compaction_state.value();
     auto offsets_stream = cmp_state.cleaned_ranges.make_stream();
     auto dirty_base_candidate = prt.start_offset;
     while (offsets_stream.has_next()) {

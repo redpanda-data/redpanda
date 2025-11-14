@@ -109,7 +109,7 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
 
     for (unsigned ix = 0; ix < rp_offsets.size(); ix++) {
         auto opt = index.find_rp_offset(rp_offsets[ix] + model::offset(1));
-        auto [rp, kaf, fpos] = *opt;
+        auto [rp, kaf, fpos] = opt.value();
         BOOST_REQUIRE_EQUAL(rp, rp_offsets[ix]);
         BOOST_REQUIRE_EQUAL(kaf, kaf_offsets[ix]);
         BOOST_REQUIRE_EQUAL(fpos, file_offsets[ix]);
@@ -122,7 +122,7 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
 
     // Query after the last element
     auto opt_last = index.find_rp_offset(last + model::offset(1));
-    auto [rp_last, kaf_last, file_last] = *opt_last;
+    auto [rp_last, kaf_last, file_last] = opt_last.value();
     BOOST_REQUIRE_EQUAL(rp_last, last);
     BOOST_REQUIRE_EQUAL(kaf_last, klast);
     BOOST_REQUIRE_EQUAL(file_last, flast);

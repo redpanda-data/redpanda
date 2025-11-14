@@ -107,7 +107,7 @@ frontend::process_or_dispatch(
       = co_await _connections.with_node_client<data_migrations_client_protocol>(
         _self,
         ss::this_shard_id(),
-        *controller_leader,
+        controller_leader.value(),
         _operation_timeout,
         [req = std::move(req), dispatch = std::forward<DispatchFunc>(dispatch)](
           data_migrations_client_protocol client) mutable {

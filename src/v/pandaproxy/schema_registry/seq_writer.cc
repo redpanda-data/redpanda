@@ -73,12 +73,15 @@ struct batch_builder : public storage::record_batch_builder {
         switch (s.key_type) {
         case seq_marker_key_type::schema: {
             auto key = schema_key{
-              .seq{s.seq}, .node{s.node}, .sub{*sub}, .version{s.version}};
+              .seq{s.seq},
+              .node{s.node},
+              .sub{sub.value()},
+              .version{s.version}};
             add_raw_kv(to_json_iobuf(std::move(key)), std::nullopt);
         } break;
         case seq_marker_key_type::delete_subject: {
             auto key = delete_subject_key{
-              .seq{s.seq}, .node{s.node}, .sub{*sub}};
+              .seq{s.seq}, .node{s.node}, .sub{sub.value()}};
             add_raw_kv(to_json_iobuf(std::move(key)), std::nullopt);
         } break;
         case seq_marker_key_type::config: {
@@ -126,7 +129,8 @@ ss::future<> seq_writer::read_sync() {
 }
 
 ss::future<> seq_writer::check_mutable(const std::optional<subject>& sub) {
-    auto mode = sub ? co_await _store.get_mode(*sub, default_to_global::yes)
+    auto mode = sub ? co_await _store.get_mode(
+                        sub.value(), default_to_global::yes)
                     : co_await _store.get_mode();
     if (mode == mode::read_only) {
         throw as_exception(mode_is_readonly(sub));
@@ -406,7 +410,7 @@ ss::future<std::optional<bool>> seq_writer::do_write_mode(
         if (sub) {
             try {
                 auto versions = co_await _store.get_versions(
-                  *sub, include_deleted::yes);
+                  sub.value(), include_deleted::yes);
                 if (!versions.empty()) {
                     throw make_exception();
                 }

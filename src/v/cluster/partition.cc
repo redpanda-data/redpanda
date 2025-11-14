@@ -264,7 +264,7 @@ partition_cloud_storage_status partition::get_cloud_storage_status() const {
             const auto last_sync_at = _archiver->get_last_sync_time();
             if (last_sync_at) {
                 status.since_last_manifest_sync = time_point_to_delta(
-                  *last_sync_at);
+                  last_sync_at.value());
             } else {
                 status.since_last_manifest_sync = std::nullopt;
             }
@@ -509,7 +509,7 @@ ss::future<> partition::start(
             _cloud_storage_api,
             _cloud_storage_cache,
             _archival_meta_stm->manifest(),
-            cloud_storage_clients::bucket_name{*bucket},
+            cloud_storage_clients::bucket_name{bucket.value()},
             _archival_meta_stm->path_provider());
 
         _cloud_storage_partition
@@ -517,7 +517,7 @@ ss::future<> partition::start(
             _cloud_storage_manifest_view,
             _cloud_storage_api.local(),
             _cloud_storage_cache.local(),
-            cloud_storage_clients::bucket_name{*bucket},
+            cloud_storage_clients::bucket_name{bucket.value()},
             *_cloud_storage_probe);
     }
     if (_cloud_storage_manifest_view) {
@@ -966,7 +966,7 @@ partition::get_term_last_offset(model::term_id term) const {
     }
     // Kafka defines leader epoch last offset as a first offset of next
     // leader epoch
-    return model::next_offset(*o);
+    return model::next_offset(o.value());
 }
 
 ss::future<std::optional<model::offset>>
@@ -977,7 +977,7 @@ partition::get_cloud_term_last_offset(model::term_id term) const {
     }
     // Kafka defines leader epoch last offset as a first offset of next
     // leader epoch
-    co_return model::next_offset(kafka::offset_cast(*o));
+    co_return model::next_offset(kafka::offset_cast(o.value()));
 }
 
 ss::future<> partition::remove_persistent_state() {
@@ -1817,7 +1817,7 @@ ss::future<errc> partition::flush_archiver() {
     if (flush_res.response != archival::flush_response::accepted) {
         co_return errc::partition_operation_failed;
     }
-    auto res = co_await _archiver->wait(*flush_res.offset);
+    auto res = co_await _archiver->wait(flush_res.offset.value());
     vlog(clusterlog.debug, "[{}] flushed archiver: {}", ntp(), res);
     switch (res) {
     case archival::wait_result::not_in_progress:
@@ -1849,7 +1849,7 @@ ss::future<result<ss::rwlock::holder>> partition::hold_writes_enabled() {
         co_return errc::resource_is_being_migrated;
     }
 
-    co_return *std::move(maybe_units);
+    co_return std::move(maybe_units).value();
 }
 
 std::optional<int64_t> partition::cloud_topic_max_gc_eligible_epoch() const {

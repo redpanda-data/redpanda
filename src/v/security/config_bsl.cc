@@ -80,7 +80,8 @@ parse_rules(std::optional<std::vector<ss::sstring>> unparsed_rules) {
         const auto& rule{rules_match[1]};
 
         std::cmatch components_match;
-        if (!regex_search(*make_sv(rule), components_match, rule_parser)) {
+        if (!regex_search(
+              make_sv(rule).value(), components_match, rule_parser)) {
             throw std::runtime_error("Invalid rule: " + rule.str());
         }
         if (components_match.prefix().matched) {
@@ -97,7 +98,7 @@ parse_rules(std::optional<std::vector<ss::sstring>> unparsed_rules) {
         } else if (components_match[2].matched) {
             const auto adjust_case = make_sv(components_match[6]);
             result.emplace_back(
-              *make_sv(components_match[2]),
+              make_sv(components_match[2]).value(),
               make_sv(components_match[4]),
               rule::make_lower{adjust_case == "L"},
               rule::make_upper{adjust_case == "U"});

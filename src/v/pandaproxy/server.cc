@@ -155,7 +155,7 @@ struct handler_adaptor : ss::httpd::handler_base {
             auto er = exception_reply(_log, ex);
             auto& erb = er.get_json_body();
             if (_req_log.is_enabled(ss::log_level::trace) && erb.has_value()) {
-                iobuf_parser parser{rjson_serialize_iobuf(*erb)};
+                iobuf_parser parser{rjson_serialize_iobuf(erb.value())};
                 vlog(
                   _req_log.trace,
                   "{} sending response {} {}: {:?}",

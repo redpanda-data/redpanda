@@ -71,7 +71,8 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
                                return ss::make_ready_future<bool>(false);
                            }
                            return app.partition_manager.invoke_on(
-                             *shard, [ntp](cluster::partition_manager& pm) {
+                             shard.value(),
+                             [ntp](cluster::partition_manager& pm) {
                                  return pm.get(ntp)->is_leader();
                              });
                        }))
@@ -645,7 +646,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
         // Refresh leadership.
         app.partition_manager
           .invoke_on(
-            *shard,
+            shard.value(),
             [ntp](cluster::partition_manager& mgr) {
                 auto raft = mgr.get(ntp)->raft();
                 raft->step_down("force_step_down").get();
@@ -656,7 +657,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
           .get();
         app.partition_manager
           .invoke_on(
-            *shard,
+            shard.value(),
             [this, ntp](cluster::partition_manager& mgr) {
                 auto partition = mgr.get(ntp);
                 produce([this](size_t cnt) {
@@ -668,7 +669,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
     // Prefix truncate the log so the beginning of the log moves forward.
     app.partition_manager
       .invoke_on(
-        *shard,
+        shard.value(),
         [ntp](cluster::partition_manager& mgr) {
             auto partition = mgr.get(ntp);
             auto local_kafka_start_offset = partition->log()->from_log_offset(
@@ -687,7 +688,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
     auto& client = consumers.front();
     auto current_term = app.partition_manager
                           .invoke_on(
-                            *shard,
+                            shard.value(),
                             [ntp](cluster::partition_manager& mgr) {
                                 return mgr.get(ntp)->raft()->term();
                             })
@@ -714,7 +715,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
     auto earliest_kafka_offset
       = app.partition_manager
           .invoke_on(
-            *shard,
+            shard.value(),
             [ntp](cluster::partition_manager& mgr) {
                 auto partition = mgr.get(ntp);
                 auto start_offset = partition->log()->offsets().start_offset;

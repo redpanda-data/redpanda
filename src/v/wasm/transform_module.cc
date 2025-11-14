@@ -231,7 +231,7 @@ ss::future<int32_t> transform_module::write_record(ffi::array<uint8_t> buf) {
         co_return INVALID_BUFFER;
     }
     auto success = co_await _call_ctx->callback->emit(
-      std::nullopt, *std::move(d));
+      std::nullopt, std::move(d).value());
     co_return success ? int32_t(buf.size()) : INVALID_WRITE;
 }
 
@@ -253,7 +253,7 @@ ss::future<int32_t> transform_module::write_record_with_options(
         co_return INVALID_BUFFER;
     }
     auto success = co_await _call_ctx->callback->emit(
-      options->topic, *std::move(d));
+      options->topic, std::move(d).value());
     co_return success ? int32_t(buf.size()) : INVALID_WRITE;
 }
 

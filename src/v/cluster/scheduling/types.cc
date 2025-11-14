@@ -176,11 +176,11 @@ errc allocated_partition::try_revert(const reallocation_step& step) {
 
     if (step.previous()) {
         auto prev_it = std::find(
-          _replicas.begin(), _replicas.end(), *step.previous());
+          _replicas.begin(), _replicas.end(), step.previous().value());
         if (prev_it != _replicas.end()) {
             return errc::invalid_request;
         }
-        *it = *step.previous();
+        *it = step.previous().value();
     } else {
         std::swap(*it, _replicas.back());
         _replicas.pop_back();
@@ -192,9 +192,9 @@ errc allocated_partition::try_revert(const reallocation_step& step) {
     }
 
     if (step.previous()) {
-        _state->add_final_count(*step.previous());
+        _state->add_final_count(step.previous().value());
         if (!_original_node2shard->contains(step.previous()->node_id)) {
-            _state->add_allocation(*step.previous());
+            _state->add_allocation(step.previous().value());
         }
     }
 
@@ -222,7 +222,7 @@ allocated_partition::~allocated_partition() {
         }
     }
 
-    for (const auto& kv : *_original_node2shard) {
+    for (const auto& kv : _original_node2shard.value()) {
         model::broker_shard bs{kv.first, kv.second};
         _state->add_final_count(bs);
     }

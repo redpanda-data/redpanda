@@ -464,7 +464,7 @@ ss::future<errc> health_monitor_backend::walk_local_and_remote_reports(
                     nt.tp,
                     partition_status.id,
                     *fs);
-                  local_leader_handler(*fs, nt, partition_status.id);
+                  local_leader_handler(fs.value(), nt, partition_status.id);
               } else {
                   unclaimed_partitions[nt].insert(partition_status.id);
               }
@@ -507,7 +507,8 @@ ss::future<errc> health_monitor_backend::walk_local_and_remote_reports(
                         nt.tp,
                         partition_status.id,
                         *fs);
-                      remote_leader_handler(*fs, nt, partition_status.id);
+                      remote_leader_handler(
+                        fs.value(), nt, partition_status.id);
 
                       // to ignore other leaders, should there be more than one
                       nt_it->second.erase(p_it);
@@ -744,7 +745,7 @@ result<node_health_report> map_reply_result(
     if (reply.value().report->id != target_node_id) {
         return {errc::invalid_target_node_id};
     }
-    return {std::move(*reply.value().report).to_in_memory()};
+    return {std::move(reply.value().report.value()).to_in_memory()};
 }
 
 result<node_health_report> health_monitor_backend::process_node_reply(
@@ -968,14 +969,14 @@ partition_status build_partition_status(const partition& p) {
             if (fm.is_live) {
                 if (fm.under_replicated) {
                     status.followers_stats->out_of_sync.push_back(fm.id);
-                    ++*status.under_replicated_replicas;
+                    ++status.under_replicated_replicas.value();
                 } else {
                     ++status.followers_stats->in_sync;
                 }
             } else {
                 status.followers_stats->down.push_back(fm.id);
                 if (fm.under_replicated) {
-                    ++*status.under_replicated_replicas;
+                    ++status.under_replicated_replicas.value();
                 }
             }
         }

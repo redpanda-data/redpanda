@@ -219,7 +219,8 @@ public:
             if (_begin_t) {
                 return _total_latency
                        + std::chrono::duration_cast<duration_t>(
-                         latency_log_hist::clock_type::now() - *_begin_t);
+                         latency_log_hist::clock_type::now()
+                         - _begin_t.value());
             } else {
                 return _total_latency;
             }

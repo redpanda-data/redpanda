@@ -146,7 +146,7 @@ void directory_must_exist(
     };
     if (!data_dir_type) {
         throw_bad_dir("did not exist");
-    } else if (*data_dir_type != ss::directory_entry_type::directory) {
+    } else if (data_dir_type.value() != ss::directory_entry_type::directory) {
         throw_bad_dir("is not a directory");
     }
 }

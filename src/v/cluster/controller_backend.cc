@@ -229,7 +229,7 @@ struct controller_backend::ntp_reconciliation_state {
     }
 
     void mark_properties_reconciled(model::revision_id rev) {
-        if (properties_changed_at && *properties_changed_at <= rev) {
+        if (properties_changed_at && properties_changed_at.value() <= rev) {
             properties_changed_at = std::nullopt;
         }
     }
@@ -287,7 +287,7 @@ controller_backend::controller_backend(
   , _topics_frontend(frontend)
   , _storage(storage)
   , _features(features)
-  , _self(*config::node().node_id())
+  , _self(config::node().node_id().value())
   , _data_directory(config::node().data_directory().as_sstring())
   , _housekeeping_interval(std::move(housekeeping_interval))
   , _housekeeping_jitter(_housekeeping_interval())
@@ -378,7 +378,8 @@ create_topic_table_snapshot(
               ntp);
             if (
               target_replica_set
-              && cluster::contains_node(*target_replica_set, current_node)) {
+              && cluster::contains_node(
+                target_replica_set.value(), current_node)) {
                 snapshot.emplace(ntp, revision_id);
                 continue;
             }
@@ -386,7 +387,8 @@ create_topic_table_snapshot(
               ntp);
             if (
               previous_replica_set
-              && cluster::contains_node(*previous_replica_set, current_node)) {
+              && cluster::contains_node(
+                previous_replica_set.value(), current_node)) {
                 snapshot.emplace(ntp, revision_id);
                 continue;
             }
@@ -654,7 +656,7 @@ controller_backend::calculate_learner_initial_offset(
       max_removable_local_log_offset);
 
     return model::next_offset(
-      std::min(max_removable_local_log_offset, *retention_offset));
+      std::min(max_removable_local_log_offset, retention_offset.value()));
 }
 
 void controller_backend::process_delta(const topic_table::ntp_delta& d) {
@@ -1085,9 +1087,13 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
             co_return ss::stop_iteration::yes;
         }
 
-        rs.set_cur_operation(*rs.removed_at, partition_operation_type::remove);
+        rs.set_cur_operation(
+          rs.removed_at.value(), partition_operation_type::remove);
         auto ec = co_await delete_partition(
-          ntp, maybe_placement, *rs.removed_at, partition_removal_mode::global);
+          ntp,
+          maybe_placement,
+          rs.removed_at.value(),
+          partition_removal_mode::global);
         if (ec) {
             co_return ec;
         }
@@ -1103,7 +1109,7 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
     raft::group_id group_id = replicas_view.assignment.group;
     vlog(clusterlog.trace, "[{}] replicas view: {}", ntp, maybe_replicas_view);
 
-    auto placement = *maybe_placement;
+    auto placement = maybe_placement.value();
     vlog(
       clusterlog.trace,
       "[{}] placement state on this shard: {}",
@@ -1262,7 +1268,7 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
 
     if (rs.properties_changed_at) {
         rs.set_cur_operation(
-          *rs.properties_changed_at,
+          rs.properties_changed_at.value(),
           partition_operation_type::update_properties);
 
         auto tt_prop_revision = _topics.local().last_applied_revision();
@@ -1869,7 +1875,7 @@ ss::future<std::error_code> controller_backend::transfer_partition(
     if (xst_state) {
         co_await container().invoke_on(
           destination, [&ntp, &xst_state](controller_backend& dest) {
-              dest._xst_states[ntp] = *xst_state;
+              dest._xst_states[ntp] = xst_state.value();
           });
     }
 
@@ -1958,7 +1964,7 @@ ss::future<> controller_backend::transfer_partition_from_extra_shard(
                     false,
                     "[{}] unexpected reconciliation action, placement: {}",
                     ntp,
-                    *dest_placement);
+                    dest_placement.value());
               case reconciliation_action::remove_partition:
                   // TODO: remove obsolete log directory
               case reconciliation_action::remove_kvstore_state:

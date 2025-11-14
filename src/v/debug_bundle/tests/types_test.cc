@@ -85,10 +85,10 @@ TEST(types_test, convert_string_to_partition_selection) {
     partition_selection foo_bar_1{
       {model::ns{"foo"}, model::topic{"bar"}}, {{model::partition_id{1}}}};
 
-    EXPECT_EQ(*make("foo/bar/1"), foo_bar_1);
+    EXPECT_EQ(make("foo/bar/1").value(), foo_bar_1);
 
     partition_selection bar_1_2{
       {model::kafka_namespace, model::topic{"bar"}},
       {{model::partition_id{1}, model::partition_id{2}}}};
-    EXPECT_EQ(*make("bar/1,2"), bar_1_2);
+    EXPECT_EQ(make("bar/1,2").value(), bar_1_2);
 }

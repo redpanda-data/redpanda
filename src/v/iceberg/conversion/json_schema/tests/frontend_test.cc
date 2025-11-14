@@ -592,7 +592,7 @@ TEST(frontend_test, supported_dialects) {
 )",
           d);
 
-        ASSERT_EQ(expected, ir_tree_printer::to_string(*schema));
+        ASSERT_EQ(expected, ir_tree_printer::to_string(schema.value()));
         ASSERT_EQ(schema->root().dialect(), d);
     }
 }

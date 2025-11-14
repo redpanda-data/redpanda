@@ -465,7 +465,7 @@ coordinator::sync_ensure_table_exists(
       .topic = topic, .topic_revision = topic_revision, .record_comps = comps};
     auto waiter_fut = maybe_add_waiter(key, in_flight_main_);
     if (waiter_fut.has_value()) {
-        co_return co_await std::move(*waiter_fut);
+        co_return co_await std::move(waiter_fut.value());
     }
     auto res_fut = co_await ss::coroutine::as_future(do_ensure_table_exists(
       topic,
@@ -513,7 +513,7 @@ coordinator::sync_ensure_dlq_table_exists(
       .topic = topic, .topic_revision = topic_revision, .record_comps = {}};
     auto waiter_fut = maybe_add_waiter(key, in_flight_dlq_);
     if (waiter_fut.has_value()) {
-        co_return co_await std::move(*waiter_fut);
+        co_return co_await std::move(waiter_fut.value());
     }
     auto res_fut = co_await ss::coroutine::as_future(do_ensure_table_exists(
       topic,
@@ -690,7 +690,8 @@ coordinator::sync_get_last_added_offsets(
 
 void coordinator::notify_leadership(std::optional<model::node_id> leader_id) {
     auto node_id = stm_->raft()->self().id();
-    bool is_leader = leader_id && *leader_id == stm_->raft()->self().id();
+    bool is_leader = leader_id
+                     && leader_id.value() == stm_->raft()->self().id();
     vlog(
       datalake_log.debug,
       "Coordinator leadership notification: is_leader: {}, leader_id: {}, self "

@@ -366,10 +366,10 @@ configuration_manager::start(bool reset, model::revision_id initial_revision) {
         _next_index = configuration_idx(0);
         if (idx_buf) {
             _next_index = reflection::from_iobuf<configuration_idx>(
-              std::move(*idx_buf));
+              std::move(idx_buf.value()));
         }
         _configurations = co_await deserialize_configurations(
-          _next_index, std::move(*map_buf));
+          _next_index, std::move(map_buf.value()));
 
         if (!_configurations.empty()) {
             _highest_known_offset = _configurations.rbegin()->first;
@@ -382,7 +382,7 @@ configuration_manager::start(bool reset, model::revision_id initial_revision) {
       storage::kvstore::key_space::consensus, highest_known_offset_key());
     if (offset_buf) {
         auto offset = reflection::from_iobuf<model::offset>(
-          std::move(*offset_buf));
+          std::move(offset_buf.value()));
 
         _highest_known_offset = std::max(_highest_known_offset, offset);
     }

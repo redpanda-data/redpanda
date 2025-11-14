@@ -588,7 +588,8 @@ async_manifest_view::get_term_last_offset(model::term_id term) noexcept {
           *spill_index,
           term());
 
-        auto spill = stm_manifest().get_spillover_map().at_index(*spill_index);
+        auto spill = stm_manifest().get_spillover_map().at_index(
+          spill_index.value());
         if (spill.is_end()) {
             vlog(
               _ctxlog.error,
@@ -841,13 +842,13 @@ async_manifest_view::compute_retention(
           "Found offset {} to advance start offset to",
           result.offset);
     }
-    if (pinned_offset && result.offset - result.delta > *pinned_offset) {
+    if (pinned_offset && result.offset - result.delta > pinned_offset.value()) {
         vlog(
           _ctxlog.debug,
           "Computed retention Kafka offset {} is above the pinned offset {}",
           result.offset - result.delta,
           *pinned_offset);
-        auto r = co_await next_possible_start_offset_le(*pinned_offset);
+        auto r = co_await next_possible_start_offset_le(pinned_offset.value());
         if (r.has_error()) {
             co_return r;
         }
@@ -1284,7 +1285,7 @@ async_manifest_view::get_manifest(async_view_search_query_t q) noexcept {
             co_return error_outcome::out_of_range;
         }
         vlog(_ctxlog.debug, "Found spillover manifest meta: {}", meta);
-        auto m = co_await _materializer.materialize_manifest(*meta);
+        auto m = co_await _materializer.materialize_manifest(meta.value());
         if (m.has_failure()) {
             vlogl(
               _ctxlog,

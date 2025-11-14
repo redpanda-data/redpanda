@@ -228,7 +228,7 @@ server::server(
       "Starting kafka server with {} byte limit on fetch requests",
       _memory_fetch_sem.available_units());
     if (qdc_config) {
-        _qdc_mon.emplace(*qdc_config);
+        _qdc_mon.emplace(qdc_config.value());
     }
     setup_metrics();
     _probe->setup_metrics();
@@ -338,7 +338,7 @@ ss::future<security::tls::mtls_state> get_mtls_principal_state(
             "got principal: {}, from distinguished name: {}",
             *principal,
             dn->subject);
-          return security::tls::mtls_state{*principal, dn->subject};
+          return security::tls::mtls_state{principal.value(), dn->subject};
       });
 }
 
@@ -348,7 +348,7 @@ ss::future<security::tls::mtls_state> get_mtls_principal_state(
     res.resize(max_api_key() + 1);
     for (const ss::sstring& api_name : api_names) {
         if (const auto api_key = api_name_to_key(api_name); api_key) {
-            res.at(*api_key) = true;
+            res.at(api_key.value()) = true;
             continue;
         }
         vlog(klog.warn, "Unrecognized Kafka API name: {}", api_name);
@@ -704,7 +704,7 @@ ss::future<response_ptr> list_groups_handler::handle(
             if (!parsed) {
                 return std::make_pair(true, list_groups_filter_data{});
             } else {
-                filter.states_filter.insert(*parsed);
+                filter.states_filter.insert(parsed.value());
             }
         }
         return std::make_pair(false, std::move(filter));
@@ -854,7 +854,7 @@ process_result_stages join_group_handler::handle(
     request.version = ctx.header().version;
     if (ctx.header().client_id) {
         request.client_id = kafka::client_id(
-          ss::sstring(*ctx.header().client_id));
+          ss::sstring(ctx.header().client_id.value()));
     }
     request.client_host = kafka::client_host(
       fmt::format("{}", ctx.connection()->client_host()));
@@ -1170,7 +1170,7 @@ void convert_to_latest(offset_fetch_request& req, api_version current_version) {
     if (req.data.topics.has_value()) {
         group.topics = chunked_vector<offset_fetch_request_topics>{};
         group.topics->reserve(req.data.topics->size());
-        for (auto& topic : *req.data.topics) {
+        for (auto& topic : req.data.topics.value()) {
             group.topics->push_back(
               offset_fetch_request_topics{
                 .name = std::move(topic.name),
@@ -1591,14 +1591,15 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
                .error_message
                = "This server does not host this topic-partition."});
         } else if (ctx.authorized(security::acl_operation::remove, name)) {
-            auto failed = duplicate_provided_ids.contains(*id)
-                          || !id_to_name.insert_or_assign(*id, name).second;
+            auto failed
+              = duplicate_provided_ids.contains(id.value())
+                || !id_to_name.insert_or_assign(id.value(), name).second;
             if (failed) {
-                duplicate_provided_ids.emplace(*id);
-                id_to_name.erase(*id);
+                duplicate_provided_ids.emplace(id.value());
+                id_to_name.erase(id.value());
                 resp.data.responses.push_back(
                   {.name = name,
-                   .topic_id = *id,
+                   .topic_id = id.value(),
                    .error_code = error_code::invalid_request,
                    .error_message = "The provided topic name maps to an ID "
                                     "that was already supplied."});
@@ -1815,7 +1816,7 @@ ss::future<response_ptr> init_producer_id_handler::handle(
         if (request.data.transactional_id) {
             if (!ctx.authorized(
                   security::acl_operation::write,
-                  transactional_id(*request.data.transactional_id))) {
+                  transactional_id(request.data.transactional_id.value()))) {
                 init_producer_id_response reply;
                 if (!ctx.audit()) {
                     reply.data.error_code = error_code::broker_not_available;

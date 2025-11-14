@@ -148,7 +148,7 @@ ss::future<purger::purge_result> purger::purge_partition(
           *legacy_manifest_path);
         const auto manifest_delete_result = co_await _api.delete_object(
           bucket,
-          cloud_storage_clients::object_key(*legacy_manifest_path),
+          cloud_storage_clients::object_key(legacy_manifest_path.value()),
           partition_purge_rtc);
         if (manifest_delete_result != upload_result::success) {
             vlog(
@@ -517,7 +517,7 @@ ss::future<housekeeping_job::run_result> purger::run(run_quota_t quota) {
             cloud_storage_clients::object_key topic_manifest_path_json{};
             if (topic_manifest_path_json_opt.has_value()) {
                 topic_manifest_path_json = cloud_storage_clients::object_key{
-                  *topic_manifest_path_json_opt};
+                  topic_manifest_path_json_opt.value()};
                 delete_result_json = _api.delete_object(
                   bucket, topic_manifest_path_json, topic_manifest_rtc);
             }

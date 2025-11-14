@@ -59,7 +59,7 @@ shard_balancer::shard_balancer(
   , _storage(storage.local())
   , _topics(topics)
   , _controller_backend(cb)
-  , _self(*config::node().node_id())
+  , _self(config::node().node_id().value())
   , _balancing_on_core_count_change(std::move(balancing_on_core_count_change))
   , _balancing_continuous(
       features::make_sanctioning_binding<
@@ -118,7 +118,7 @@ ss::future<> shard_balancer::start(size_t kvstore_shard_count) {
               auto log_rev = log_revision_on_node(replicas_view, _self);
               if (log_rev) {
                   local_group2ntp.emplace(replicas_view.assignment.group, ntp);
-                  local_ntp2log_revision.emplace(ntp, *log_rev);
+                  local_ntp2log_revision.emplace(ntp, log_rev.value());
               }
           });
     }
@@ -334,13 +334,13 @@ shard_balancer::reassign_shard(model::ntp ntp, ss::shard_id shard) {
     if (!replicas_view) {
         co_return errc::partition_not_exists;
     }
-    auto log_revision = log_revision_on_node(*replicas_view, _self);
+    auto log_revision = log_revision_on_node(replicas_view.value(), _self);
     if (!log_revision) {
         co_return errc::replica_does_not_exist;
     }
 
     auto target = shard_placement_target{
-      replicas_view->assignment.group, *log_revision, shard};
+      replicas_view->assignment.group, log_revision.value(), shard};
     vlog(
       clusterlog.info,
       "[{}] manually setting placement target to {}",
@@ -431,7 +431,7 @@ void shard_balancer::maybe_assign(
     std::optional<model::revision_id> log_revision;
     auto replicas_view = _topics.local().get_replicas_view(ntp);
     if (replicas_view) {
-        log_revision = log_revision_on_node(*replicas_view, _self);
+        log_revision = log_revision_on_node(replicas_view.value(), _self);
     }
 
     if (!log_revision && !prev_target) {
@@ -520,7 +520,7 @@ ss::future<> shard_balancer::balance_on_core_count_change(
       storage::kvstore::key_space::shard_placement, state_kvstore_key());
     if (state_buf) {
         last_rebalance_core_count = serde::from_iobuf<persisted_state>(
-                                      std::move(*state_buf))
+                                      std::move(state_buf.value()))
                                       .last_rebalance_core_count;
     }
 
@@ -650,7 +650,7 @@ ss::shard_id shard_balancer::choose_shard(
         std::optional<decltype(get_shard_score(0))> min_score;
         for (ss::shard_id shard : candidates_range) {
             auto score = get_shard_score(shard);
-            if (!min_score || *min_score >= score) {
+            if (!min_score || min_score.value() >= score) {
                 if (min_score != score) {
                     min_score = score;
                     next_candidates.clear();

@@ -54,25 +54,25 @@ static const auto match_none = kc::record_essence{
 BOOST_AUTO_TEST_CASE(test_identity_partitioner) {
     auto partitioner{kc::identity_partitioner()};
     BOOST_REQUIRE(partitioner(match_none, 6) == std::nullopt);
-    BOOST_REQUIRE_EQUAL(*partitioner(match_partition, 6), a_partition);
+    BOOST_REQUIRE_EQUAL(partitioner(match_partition, 6).value(), a_partition);
 }
 
 BOOST_AUTO_TEST_CASE(test_murmur2_key_partitioner) {
     auto partitioner{kc::murmur2_key_partitioner()};
     BOOST_REQUIRE(partitioner(match_none, 6) == std::nullopt);
-    BOOST_REQUIRE_EQUAL(*partitioner(match_key, 6), murmur2(a_key(), 6));
+    BOOST_REQUIRE_EQUAL(partitioner(match_key, 6).value(), murmur2(a_key(), 6));
 }
 
 BOOST_AUTO_TEST_CASE(test_roundrobin_partitioner) {
     auto partitioner{kc::roundrobin_partitioner(initial_partition)};
-    BOOST_REQUIRE_EQUAL(*partitioner(match_none, 6), initial_partition);
+    BOOST_REQUIRE_EQUAL(partitioner(match_none, 6).value(), initial_partition);
     BOOST_REQUIRE_EQUAL(
-      *partitioner(match_none, 6), (initial_partition + 1) % 6);
+      partitioner(match_none, 6).value(), (initial_partition + 1) % 6);
 }
 
 BOOST_AUTO_TEST_CASE(test_default_partitioner) {
     auto partitioner{kc::default_partitioner(initial_partition)};
-    BOOST_REQUIRE_EQUAL(*partitioner(match_partition, 6), a_partition);
-    BOOST_REQUIRE_EQUAL(*partitioner(match_key, 6), murmur2(a_key(), 6));
-    BOOST_REQUIRE_EQUAL(*partitioner(match_none, 6), initial_partition);
+    BOOST_REQUIRE_EQUAL(partitioner(match_partition, 6).value(), a_partition);
+    BOOST_REQUIRE_EQUAL(partitioner(match_key, 6).value(), murmur2(a_key(), 6));
+    BOOST_REQUIRE_EQUAL(partitioner(match_none, 6).value(), initial_partition);
 }

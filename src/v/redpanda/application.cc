@@ -622,7 +622,7 @@ void application::initialize(
       = config::shard_local_cfg().memory_abort_on_alloc_failure.bind();
 
     auto oom_config_watch = [this]() {
-        const bool value = (*_abort_on_oom)();
+        const bool value = (_abort_on_oom.value())();
         vlog(
           _log.info,
           "Setting abort_on_allocation_failure (abort on OOM): {}",
@@ -693,7 +693,7 @@ void application::initialize(
       [this] { smp_service_groups.destroy_groups().get(); });
 
     if (groups) {
-        sched_groups = *groups;
+        sched_groups = groups.value();
         return;
     }
 
@@ -707,7 +707,7 @@ void application::initialize(
       .get();
 
     if (proxy_cfg) {
-        _proxy_config.emplace(*proxy_cfg);
+        _proxy_config.emplace(proxy_cfg.value());
         for (const auto& e : _proxy_config->errors()) {
             vlog(
               _log.warn,
@@ -722,17 +722,17 @@ void application::initialize(
     }
 
     if (proxy_client_cfg) {
-        _proxy_client_config.emplace(*proxy_client_cfg);
+        _proxy_client_config.emplace(proxy_client_cfg.value());
     }
     if (schema_reg_cfg) {
-        _schema_reg_config.emplace(*schema_reg_cfg);
+        _schema_reg_config.emplace(schema_reg_cfg.value());
     }
 
     if (schema_reg_client_cfg) {
-        _schema_reg_client_config.emplace(*schema_reg_client_cfg);
+        _schema_reg_client_config.emplace(schema_reg_client_cfg.value());
     }
     if (audit_log_client_cfg) {
-        _audit_log_client_config.emplace(*audit_log_client_cfg);
+        _audit_log_client_config.emplace(audit_log_client_cfg.value());
     }
 }
 
@@ -938,7 +938,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
     /// alternative to using validation in node config to stop Redpanda from
     /// starting if rack is supplied with an empty string.
     auto& rack_id = config::node().rack.value();
-    if (rack_id.has_value() && *rack_id == model::rack_id{""}) {
+    if (rack_id.has_value() && rack_id.value() == model::rack_id{""}) {
         vlog(
           _log.warn,
           "redpanda.rack specified as empty string.  Please remove "
@@ -986,9 +986,10 @@ void application::hydrate_config(const po::variables_map& cfg) {
         } else {
             set_local_kafka_client_config(_proxy_client_config, config::node());
         }
-        set_pp_kafka_client_defaults(*_proxy_config, *_proxy_client_config);
-        config_printer("pandaproxy", *_proxy_config);
-        config_printer("pandaproxy_client", *_proxy_client_config);
+        set_pp_kafka_client_defaults(
+          _proxy_config.value(), _proxy_client_config.value());
+        config_printer("pandaproxy", _proxy_config.value());
+        config_printer("pandaproxy_client", _proxy_client_config.value());
     }
     if (config["schema_registry"]) {
         _schema_reg_config.emplace(config["schema_registry"]);
@@ -998,9 +999,10 @@ void application::hydrate_config(const po::variables_map& cfg) {
             set_local_kafka_client_config(
               _schema_reg_client_config, config::node());
         }
-        set_sr_kafka_client_defaults(*_schema_reg_client_config);
-        config_printer("schema_registry", *_schema_reg_config);
-        config_printer("schema_registry_client", *_schema_reg_client_config);
+        set_sr_kafka_client_defaults(_schema_reg_client_config.value());
+        config_printer("schema_registry", _schema_reg_config.value());
+        config_printer(
+          "schema_registry_client", _schema_reg_client_config.value());
     }
     /// Auditing will be toggled via cluster config settings, internal audit
     /// client options can be configured via local config properties
@@ -1009,8 +1011,8 @@ void application::hydrate_config(const po::variables_map& cfg) {
     } else {
         set_local_kafka_client_config(_audit_log_client_config, config::node());
     }
-    set_auditing_kafka_client_defaults(*_audit_log_client_config);
-    config_printer("audit_log_client", *_audit_log_client_config);
+    set_auditing_kafka_client_defaults(_audit_log_client_config.value());
+    config_printer("audit_log_client", _audit_log_client_config.value());
 }
 
 void application::check_environment() {
@@ -1347,8 +1349,8 @@ void application::wire_up_runtime_services(
           // TODO: Improve memory budget for services
           // https://github.com/redpanda-data/redpanda/issues/1392
           memory_groups().kafka_total_memory(),
-          *_proxy_client_config,
-          *_proxy_config,
+          _proxy_client_config.value(),
+          _proxy_config.value(),
           controller.get());
     }
     if (_schema_reg_config) {
@@ -1359,8 +1361,8 @@ void application::wire_up_runtime_services(
           // TODO: Improve memory budget for services
           // https://github.com/redpanda-data/redpanda/issues/1392
           memory_groups().kafka_total_memory(),
-          *_schema_reg_client_config,
-          *_schema_reg_config,
+          _schema_reg_client_config.value(),
+          _schema_reg_config.value(),
           &metadata_cache,
           std::reference_wrapper(controller),
           std::ref(audit_mgr));
@@ -1463,14 +1465,14 @@ void application::wire_up_runtime_services(
                 return datalake::coordinator::get_catalog_factory(
                   config::shard_local_cfg(),
                   remote,
-                  *bucket,
+                  bucket.value(),
                   ss::metrics::label_instance{"role", "coordinator"},
                   cred_mgr);
             },
             std::ref(cloud_io),
             std::ref(_datalake_credential_mgr)),
           std::ref(cloud_io),
-          std::ref(*bucket),
+          std::ref(bucket.value()),
           ss::sharded_parameter([this] { return &feature_table.local(); }))
           .get();
         construct_service(
@@ -1507,7 +1509,7 @@ void application::wire_up_runtime_services(
                 return datalake::coordinator::get_catalog_factory(
                   config::shard_local_cfg(),
                   remote,
-                  *bucket,
+                  bucket.value(),
                   ss::metrics::label_instance{"role", "translator"},
                   cred_mgr);
             },
@@ -1515,7 +1517,7 @@ void application::wire_up_runtime_services(
             std::ref(_datalake_credential_mgr)),
           _schema_registry.get(),
           &_as,
-          *bucket,
+          bucket.value(),
           sched_groups.datalake_sg(),
           memory_groups().datalake_max_memory())
           .get();
@@ -2807,7 +2809,7 @@ void application::start_bootstrap_services() {
           bytes::from_string(cluster::cluster_uuid_key));
         cluster_uuid_buf) {
         const auto cluster_uuid = model::cluster_uuid{
-          serde::from_iobuf<uuid_t>(std::move(*cluster_uuid_buf))};
+          serde::from_iobuf<uuid_t>(std::move(cluster_uuid_buf.value()))};
         storage
           .invoke_on_all([&cluster_uuid](storage::api& storage) {
               storage.set_cluster_uuid(cluster_uuid);
@@ -2867,16 +2869,16 @@ void application::start_bootstrap_services() {
         invariants_buf) {
         auto invariants
           = reflection::from_iobuf<cluster::configuration_invariants>(
-            std::move(*invariants_buf));
+            std::move(invariants_buf.value()));
         const auto& stored_node_id = invariants.node_id;
         vlog(_log.info, "Loaded stored node ID for node: {}", stored_node_id);
         if (
           configured_node_id != std::nullopt
-          && *configured_node_id != stored_node_id) {
+          && configured_node_id.value() != stored_node_id) {
             throw std::invalid_argument(
               ssx::sformat(
                 "Configured node ID {} doesn't match stored node ID {}",
-                *configured_node_id,
+                configured_node_id.value(),
                 stored_node_id));
         }
         ss::smp::invoke_on_all([stored_node_id] {
@@ -2893,7 +2895,7 @@ void application::start_bootstrap_services() {
       storage::kvstore::key_space::controller, node_uuid_key);
     if (node_uuid_buf) {
         node_uuid = serde::from_iobuf<model::node_uuid>(
-          std::move(*node_uuid_buf));
+          std::move(node_uuid_buf.value()));
         vlog(
           _log.info,
           "Loaded existing UUID for node: {}",
@@ -3599,7 +3601,7 @@ void application::load_feature_table_snapshot() {
     features::feature_table_snapshot snap;
     try {
         snap = serde::from_iobuf<features::feature_table_snapshot>(
-          std::move(*val_bytes_opt));
+          std::move(val_bytes_opt.value()));
     } catch (...) {
         // Do not block redpanda from starting if there is something invalid
         // here: the feature table should get replayed eventually via

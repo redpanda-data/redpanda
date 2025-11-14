@@ -96,7 +96,8 @@ void check_partition(
     const auto& prt_state = prt_state_opt.value().get();
     if (expected_committed.has_value()) {
         ASSERT_TRUE(prt_state.last_committed.has_value());
-        EXPECT_EQ(prt_state.last_committed.value()(), *expected_committed);
+        EXPECT_EQ(
+          prt_state.last_committed.value()(), expected_committed.value());
     } else {
         EXPECT_FALSE(prt_state.last_committed.has_value());
     }

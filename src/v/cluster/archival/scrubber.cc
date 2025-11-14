@@ -212,7 +212,8 @@ std::pair<bool, std::optional<ss::sstring>> scrubber::should_skip() const {
           true,
           ssx::sformat(
             "next scrub in {}",
-            std::chrono::duration_cast<std::chrono::minutes>(*until_next))};
+            std::chrono::duration_cast<std::chrono::minutes>(
+              until_next.value()))};
     }
 
     return {false, std::nullopt};

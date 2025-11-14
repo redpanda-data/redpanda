@@ -75,7 +75,9 @@ void check_snapshot_sizes(cluster::rm_stm& stm, raft::consensus* c) {
     directory_walker::walk(
       work_dir,
       [&snapshot_files](ss::directory_entry ent) {
-          if (!ent.type || *ent.type != ss::directory_entry_type::regular) {
+          if (
+            !ent.type
+            || ent.type.value() != ss::directory_entry_type::regular) {
               return ss::now();
           }
 

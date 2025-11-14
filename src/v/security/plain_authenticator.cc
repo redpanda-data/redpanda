@@ -87,7 +87,7 @@ ss::future<result<bytes>> plain_authenticator::authenticate(bytes auth_bytes) {
         co_return errc::invalid_credentials;
     }
 
-    if (!validate_scram_credential(*cred, password).has_value()) {
+    if (!validate_scram_credential(cred.value(), password).has_value()) {
         vlog(seclog.warn, "scram authentication failed");
         co_return errc::invalid_credentials;
     }

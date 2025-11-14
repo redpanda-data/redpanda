@@ -575,7 +575,7 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
     std::optional<schema_version> v_id;
     if (s_id.has_value()) {
         auto v_it = std::ranges::find(
-          undeleted_versions, *s_id, &subject_version_entry::id);
+          undeleted_versions, s_id.value(), &subject_version_entry::id);
         if (v_it != undeleted_versions.end()) {
             v_id.emplace(v_it->version);
         }
@@ -918,7 +918,7 @@ get_security_acls(server::request_t rq, server::reply_t rp) {
                                const std::string& param_name, auto converter) {
         auto str_value = parse::query_param<std::optional<ss::sstring>>(
           *rq.req, param_name);
-        return str_value ? std::make_optional(converter(*str_value))
+        return str_value ? std::make_optional(converter(str_value.value()))
                          : std::nullopt;
     };
 
@@ -976,9 +976,14 @@ post_security_acls(server::request_t rq, server::reply_t rp) {
 
         bindings.emplace_back(
           security::resource_pattern{
-            *acl.resource_type, *acl.resource, *acl.pattern_type},
+            acl.resource_type.value(),
+            acl.resource.value(),
+            acl.pattern_type.value()},
           security::acl_entry{
-            *acl.principal, *acl.host, *acl.operation, *acl.permission});
+            acl.principal.value(),
+            acl.host.value(),
+            acl.operation.value(),
+            acl.permission.value()});
     }
 
     check_feature_ready(rq);

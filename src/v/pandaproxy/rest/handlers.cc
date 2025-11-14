@@ -116,7 +116,7 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
                       kafka::metadata_request::api_type::key)
                       < kafka::api_version(12),
                     "topic::name is nullable in v12+");
-                  names.emplace_back(*topic.name);
+                  names.emplace_back(topic.name.value());
               }
           }
 

@@ -198,7 +198,8 @@ struct connection_attributes {
 
         proto::admin::in_flight_requests to_proto(clock::time_point now) const;
         clock::duration get_idle_duration(clock::time_point now) const {
-            return _idle_since ? (now - *_idle_since) : clock::duration::zero();
+            return _idle_since ? (now - _idle_since.value())
+                               : clock::duration::zero();
         }
 
     private:

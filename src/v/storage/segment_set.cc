@@ -514,7 +514,8 @@ static ss::future<segment_set::underlying_t> open_segments(
                  * Skip non-regular files (including links)
                  */
                 if (
-                  !seg.type || *seg.type != ss::directory_entry_type::regular) {
+                  !seg.type
+                  || seg.type.value() != ss::directory_entry_type::regular) {
                     return ss::make_ready_future<>();
                 }
 
@@ -525,7 +526,7 @@ static ss::future<segment_set::underlying_t> open_segments(
                 }
 
                 return open_segment(
-                         *path,
+                         path.value(),
                          cache_factory(),
                          buf_size,
                          read_ahead,

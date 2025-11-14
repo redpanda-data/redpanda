@@ -294,7 +294,7 @@ bool index_state::maybe_index(
         last_timestamp = std::max(first_timestamp, last_timestamp);
         max_timestamp = std::max(max_timestamp, last_timestamp);
         if (new_broker_timestamp.has_value()) {
-            broker_timestamp = *new_broker_timestamp;
+            broker_timestamp = new_broker_timestamp.value();
         }
     }
     if (compactible_records > 0) {
@@ -748,7 +748,7 @@ index_state::find_nearest(model::timestamp t) {
         return std::nullopt;
     }
 
-    return translate_index_entry(*entry);
+    return translate_index_entry(entry.value());
 }
 
 std::optional<index_state::entry>

@@ -88,7 +88,7 @@ TEST(ValuesAvroTest, TestDecimal) {
 
         ASSERT_TRUE(roundtrip_val.has_value());
         auto roundtrip_struct = std::get<std::unique_ptr<struct_value>>(
-          std::move(*roundtrip_val));
+          std::move(roundtrip_val.value()));
         ASSERT_EQ(*roundtrip_struct, v);
     }
 }

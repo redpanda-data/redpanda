@@ -62,7 +62,7 @@ transport::request_entry::request_entry(
         timeout_timer.set_callback([parent_transport, correlation] {
             parent_transport->on_timeout(correlation);
         });
-        timeout_timer.arm(*timeout);
+        timeout_timer.arm(timeout.value());
     }
 }
 void transport::request_entry::set_response(

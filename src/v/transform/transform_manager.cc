@@ -356,7 +356,7 @@ ss::future<> manager<ClockType>::handle_plugin_change(model::transform_id id) {
           transform->input_topic.ns, transform->input_topic.tp, partition);
         // It's safe to directly create processors, because we deleted them
         // for a full restart from this deploy
-        co_await create_processor(std::move(ntp), id, *transform);
+        co_await create_processor(std::move(ntp), id, transform.value());
     }
 }
 
@@ -418,7 +418,7 @@ manager<ClockType>::start_processor(model::ntp ntp, model::transform_id id) {
         entry->mark_start_attempt();
         co_await entry->processor()->start();
     } else {
-        co_await create_processor(ntp, id, *std::move(transform));
+        co_await create_processor(ntp, id, std::move(transform).value());
     }
 }
 

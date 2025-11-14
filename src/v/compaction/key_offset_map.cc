@@ -20,7 +20,7 @@ simple_key_offset_map::simple_key_offset_map(std::optional<size_t> max_keys)
       util::mem_tracked::
         map<absl::btree_map, compaction::compaction_key, model::offset>(
           _memory_tracker))
-  , _max_keys(max_keys ? *max_keys : default_key_limit) {}
+  , _max_keys(max_keys ? max_keys.value() : default_key_limit) {}
 
 seastar::future<bool> simple_key_offset_map::put(
   const compaction::compaction_key& key, model::offset o) {

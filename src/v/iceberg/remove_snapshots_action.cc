@@ -43,7 +43,7 @@ std::optional<long> get_long_property(
         return std::nullopt;
     }
     try {
-        return std::stol(*p_str);
+        return std::stol(p_str.value());
     } catch (...) {
         vlog(logger.warn, "Invalid long for property '{}': '{}'", prop, *p_str);
         return std::nullopt;
@@ -107,7 +107,7 @@ chunked_hash_set<snapshot_id> collect_snap_ancestors(
                 break;
             }
         }
-        ret.emplace(*next_snap);
+        ret.emplace(next_snap.value());
         next_snap = snap_it->second.parent_snapshot_id;
     }
     return ret;
@@ -164,7 +164,7 @@ void collect_retained_unreferenced_snaps(
     vlog(logger.debug, "{} snapshots are referenced", referenced_snaps.size());
     size_t count = 0;
     auto table_min_timestamp_to_keep_ms = now.value() - table_max_snap_age_ms;
-    for (const auto& s : *table.snapshots) {
+    for (const auto& s : table.snapshots.value()) {
         if (referenced_snaps.contains(s.id)) {
             // Not an unreferenced snapshot.
             continue;
@@ -232,7 +232,7 @@ void remove_snapshots_action::compute_removed_snapshots(
         };
         // Collect references to retain. We'll use this list to determine the
         // full set of snapshots to retain below.
-        for (const auto& [ref_name, ref] : *table_.refs) {
+        for (const auto& [ref_name, ref] : table_.refs.value()) {
             if (should_keep_ref(ref_name, ref)) {
                 retained_refs.emplace(ref_name, ref);
                 retained_snaps.emplace(ref.snapshot_id);
@@ -245,7 +245,7 @@ void remove_snapshots_action::compute_removed_snapshots(
         retained_refs.emplace(
           "main",
           snapshot_reference{
-            .snapshot_id = *cur_snap_id,
+            .snapshot_id = cur_snap_id.value(),
             .type = snapshot_ref_type::branch,
           });
     }
@@ -272,7 +272,7 @@ void remove_snapshots_action::compute_removed_snapshots(
         }
     }
     if (table_.refs.has_value()) {
-        for (const auto& [ref_name, ref] : *table_.refs) {
+        for (const auto& [ref_name, ref] : table_.refs.value()) {
             if (!retained_refs.contains(ref_name)) {
                 refs_to_remove->emplace_back(ref_name);
             }

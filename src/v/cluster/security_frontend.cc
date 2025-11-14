@@ -434,7 +434,7 @@ ss::future<result<model::offset>> security_frontend::get_leader_committed(
       .with_node_client<cluster::controller_client_protocol>(
         _self,
         ss::this_shard_id(),
-        *leader,
+        leader.value(),
         timeout,
         [timeout](controller_client_protocol cp) mutable {
             return cp.get_controller_committed_offset(

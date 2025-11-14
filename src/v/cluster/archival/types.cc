@@ -65,7 +65,7 @@ static ss::sstring get_value_or_throw(
         throw std::runtime_error(
           fmt::format("configuration property {} is not set", name));
     }
-    return *opt;
+    return opt.value();
 }
 
 archival::configuration get_archival_service_config(ss::scheduling_group sg) {
@@ -84,7 +84,7 @@ archival::configuration get_archival_service_config(ss::scheduling_group sg) {
           "cloud_storage_segment_max_upload_interval_sec is invalid");
     }
     auto time_limit_opt = time_limit ? std::make_optional(
-                                         segment_time_limit(*time_limit))
+                                         segment_time_limit(time_limit.value()))
                                      : std::nullopt;
 
     const auto& bucket_config

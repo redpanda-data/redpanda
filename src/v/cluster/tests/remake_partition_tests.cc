@@ -41,7 +41,7 @@ public:
                 return false;
             }
             auto marker = serde::from_iobuf<cluster::current_state_marker>(
-              std::move(*marker_opt));
+              std::move(marker_opt.value()));
             if (
               marker.remake_state
               != cluster::shard_placement_table::remake_partition_state::none) {

@@ -372,7 +372,7 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
 
 ss::future<writer_error> record_multiplexer::flush_writers() {
     if (_error && !is_recoverable_error(_error.value())) {
-        co_return *_error;
+        co_return _error.value();
     }
     auto result = co_await ss::coroutine::as_future(
       ss::max_concurrent_for_each(
@@ -430,7 +430,7 @@ record_multiplexer::finish(
         }
     }
     if (_error && !is_recoverable_error(_error.value())) {
-        co_return *_error;
+        co_return _error.value();
     }
     if (!_result) {
         // no batches were processed.
@@ -447,7 +447,7 @@ record_multiplexer::finish(
       _result->last_offset() - _result->start_offset() + 1,
       _result->kafka_bytes_processed);
 
-    co_return std::move(*_result);
+    co_return std::move(_result.value());
 }
 
 size_t record_multiplexer::buffered_bytes() const {

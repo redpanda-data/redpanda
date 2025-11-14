@@ -90,7 +90,7 @@ get_credentials_builder(credentials_configuration cfg) {
 
     if (cfg.truststore) {
         co_await ss::visit(
-          *cfg.truststore,
+          cfg.truststore.value(),
           [&builder](const std::filesystem::path& path) {
               return builder.set_x509_trust_file(
                 path.string(), ss::tls::x509_crt_format::PEM);
@@ -105,7 +105,7 @@ get_credentials_builder(credentials_configuration cfg) {
         if (ca_file) {
             vlog(tlslog.info, "Found system CA trust file at {}", *ca_file);
             co_await builder.set_x509_trust_file(
-              *ca_file, ss::tls::x509_crt_format::PEM);
+              ca_file.value(), ss::tls::x509_crt_format::PEM);
         } else {
             vlog(
               tlslog.info, "No system CA trust file found, using system trust");
@@ -115,7 +115,7 @@ get_credentials_builder(credentials_configuration cfg) {
 
     if (cfg.crl) {
         co_await ss::visit(
-          *cfg.crl,
+          cfg.crl.value(),
           [&builder](const std::filesystem::path& path) {
               return builder.set_x509_crl_file(
                 path.string(), ss::tls::x509_crt_format::PEM);
@@ -128,7 +128,7 @@ get_credentials_builder(credentials_configuration cfg) {
 
     if (cfg.k_store) {
         co_await ss::visit(
-          *cfg.k_store,
+          cfg.k_store.value(),
           [&builder](const key_cert_path& kc) {
               return builder.set_x509_key_file(
                 kc.cert.string(),
@@ -200,19 +200,19 @@ fmt::iterator pkcs12::format_to(fmt::iterator it) const {
 fmt::iterator credentials_configuration::format_to(fmt::iterator it) const {
     fmt::format_to(it, "{{truststore: ");
     if (truststore) {
-        format_cert(it, *truststore);
+        format_cert(it, truststore.value());
     } else {
         fmt::format_to(it, "null");
     }
     fmt::format_to(it, ", k_store: ");
     if (k_store) {
-        format_keystore(it, *k_store);
+        format_keystore(it, k_store.value());
     } else {
         fmt::format_to(it, "null");
     }
     fmt::format_to(it, ", crl: ");
     if (crl) {
-        format_cert(it, *crl);
+        format_cert(it, crl.value());
     } else {
         fmt::format_to(it, "null");
     }

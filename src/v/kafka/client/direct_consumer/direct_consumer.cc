@@ -143,7 +143,8 @@ ss::future<> direct_consumer::update_fetchers(
     for (auto& [topic, partitions] : removals) {
         for (auto& [p_id, subscription] : partitions) {
             if (subscription.current_fetcher) {
-                auto& current = get_fetcher(*subscription.current_fetcher);
+                auto& current = get_fetcher(
+                  subscription.current_fetcher.value());
                 co_await current.unassign_partition(
                   model::topic_partition_view(topic, p_id));
             }
@@ -159,7 +160,7 @@ ss::future<> direct_consumer::update_fetchers(
                 needs_metadata_update = true;
                 if (sub.current_fetcher) {
                     // If there is a current fetcher, unassign the partition
-                    auto& current = get_fetcher(*sub.current_fetcher);
+                    auto& current = get_fetcher(sub.current_fetcher.value());
                     auto offset = co_await current.unassign_partition(
                       model::topic_partition_view(topic, p_id));
                     // preserve the fetch offset for the next fetcher to use
@@ -173,14 +174,14 @@ ss::future<> direct_consumer::update_fetchers(
                 // If the fetcher is not the same as the current one, we need to
                 // assign it
                 if (sub.current_fetcher) {
-                    auto& current = get_fetcher(*sub.current_fetcher);
+                    auto& current = get_fetcher(sub.current_fetcher.value());
                     // If there was a previous fetcher, unassign it
                     auto offset = co_await current.unassign_partition(
                       model::topic_partition_view(topic, p_id));
                     sub.fetch_offset = offset;
                 }
-                sub.current_fetcher = *leader_id;
-                auto& new_fetcher = get_fetcher(*leader_id);
+                sub.current_fetcher = leader_id.value();
+                auto& new_fetcher = get_fetcher(leader_id.value());
                 co_await new_fetcher.assign_partition(
                   model::topic_partition_view(topic, p_id),
                   sub.fetch_offset,
@@ -188,7 +189,7 @@ ss::future<> direct_consumer::update_fetchers(
 
             } else if (sub.fetch_offset) {
                 // If the fetch offset is set, update it
-                auto& current = get_fetcher(*sub.current_fetcher);
+                auto& current = get_fetcher(sub.current_fetcher.value());
                 co_await current.assign_partition(
                   model::topic_partition_view(topic, p_id),
                   sub.fetch_offset,

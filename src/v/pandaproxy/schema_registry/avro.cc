@@ -420,7 +420,7 @@ result<void> sanitize(json::Value::Object& o, sanitize_context& ctx) {
         }
 
         if (new_namespace.has_value() && ctx.ns.top() != new_namespace) {
-            ctx.ns.emplace(*new_namespace);
+            ctx.ns.emplace(new_namespace.value());
             pop_ns.emplace(std::move(pop_ns_impl));
             if (auto it = o.FindMember("namespace"); it != o.MemberEnd()) {
                 if (!it->value.IsString()) {

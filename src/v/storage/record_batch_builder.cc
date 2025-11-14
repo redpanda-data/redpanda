@@ -93,8 +93,8 @@ model::record_batch_header record_batch_builder::build_header() const {
       .crc = 0, // crc computed later
       .attrs = model::record_batch_attributes{},
       .last_offset_delta = _offset_delta - 1,
-      .first_timestamp = *_timestamp,
-      .max_timestamp = *_timestamp,
+      .first_timestamp = _timestamp.value(),
+      .max_timestamp = _timestamp.value(),
       .producer_id = _producer_id,
       .producer_epoch = _producer_epoch,
       .base_sequence = -1,

@@ -137,7 +137,7 @@ TEST_F(controller_snapshot_reconciliation_fixture, test_reocnciler_license) {
     // Once we have a license, we shouldn't need to action it anymore.
     auto err = app.controller->get_feature_manager()
                  .local()
-                 .update_license(std::move(*opt_license))
+                 .update_license(std::move(opt_license.value()))
                  .get();
     ASSERT_TRUE(!err);
     actions = reconciler.get_actions(snap);

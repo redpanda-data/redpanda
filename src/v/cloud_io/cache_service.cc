@@ -281,7 +281,7 @@ ss::future<> cache::trim_throttled_unlocked(
           "Cache trimming throttled, waiting {}ms",
           std::chrono::duration_cast<std::chrono::milliseconds>(*trim_delay)
             .count());
-        co_await ss::sleep_abortable(*trim_delay, _as);
+        co_await ss::sleep_abortable(trim_delay.value(), _as);
     }
 
     co_await trim(size_limit_override, object_limit_override);
@@ -1840,7 +1840,7 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
                           "Free space information must be available by the "
                           "time we execute this code path");
                     }
-                    *_free_space -= bytes;
+                    _free_space.value() -= bytes;
                     break;
                 } else {
                     // No allowance, and the disk does not have a lot of

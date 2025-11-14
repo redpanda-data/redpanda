@@ -508,7 +508,7 @@ archival::remote_segment_path get_segment_path(
     BOOST_REQUIRE(meta);
     auto key = cloud_storage::parse_segment_name(name);
     BOOST_REQUIRE(key);
-    return manifest.generate_segment_path(*meta, path_provider);
+    return manifest.generate_segment_path(meta.value(), path_provider);
 }
 
 archival::remote_segment_path get_segment_index_path(

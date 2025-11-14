@@ -35,9 +35,9 @@ admin_server::kafka_transfer_leadership_handler(
             throw ss::httpd::bad_param_exception(
               fmt::format("Target node id must be an integer: {}", node));
         }
-        if (*target < 0) {
+        if (target.value() < 0) {
             throw ss::httpd::bad_param_exception(
-              fmt::format("Invalid target node id {}", *target));
+              fmt::format("Invalid target node id {}", target.value()));
         }
     }
 
@@ -54,7 +54,7 @@ admin_server::kafka_transfer_leadership_handler(
     }
 
     co_return co_await _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       [ntp = std::move(ntp), target, this, req = std::move(req)](
         cluster::partition_manager& pm) mutable {
           auto partition = pm.get(ntp);

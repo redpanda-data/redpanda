@@ -92,7 +92,7 @@ partition_manager::partition_manager(
 partition_manager::~partition_manager() {
     if (_leader_notify_handle) {
         _raft_manager.local().unregister_leadership_notification(
-          *_leader_notify_handle);
+          _leader_notify_handle.value());
     }
 }
 
@@ -368,7 +368,7 @@ ss::future<> partition_manager::stop_partitions() {
     _as.request_abort();
 
     _raft_manager.local().unregister_leadership_notification(
-      *_leader_notify_handle);
+      _leader_notify_handle.value());
     _leader_notify_handle.reset();
 
     co_await _gate.close();

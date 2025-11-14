@@ -235,10 +235,10 @@ void kvstore::apply_op(
         if (found) {
             _probe.dec_cached_bytes(it->second.size_bytes());
             _probe.add_cached_bytes(value->size_bytes());
-            it->second = std::move(*value);
+            it->second = std::move(value.value());
         } else {
             _probe.add_cached_bytes(key.size() + value->size_bytes());
-            _db.emplace(std::move(key), std::move(*value));
+            _db.emplace(std::move(key), std::move(value.value()));
         }
     } else {
         if (!found) {

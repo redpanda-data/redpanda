@@ -416,10 +416,10 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
             auto local_log_start = log->offsets().start_offset;
             auto kafka_local_start = model::offset_cast(
               log->from_log_offset(local_log_start));
-            if (*pinned_kafka_offset >= kafka_local_start) {
+            if (pinned_kafka_offset.value() >= kafka_local_start) {
                 // Translate the pinned Kafka offset.
-                max_unpinned_offset = model::prev_offset(
-                  log->to_log_offset(kafka::offset_cast(*pinned_kafka_offset)));
+                max_unpinned_offset = model::prev_offset(log->to_log_offset(
+                  kafka::offset_cast(pinned_kafka_offset.value())));
             } else {
                 // The pin falls below the log start, in which case the entire
                 // local log is pinned.
@@ -448,7 +448,7 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
           max_tx_remove_offset);
         if (
           max_unpinned_offset
-          && *max_unpinned_offset < max_compactible_offset) {
+          && max_unpinned_offset.value() < max_compactible_offset) {
             vlog(
               gclog.debug,
               "{}: Compaction is pinned by offset: pinned Kafka offset: {}, "
@@ -457,7 +457,7 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
               *pinned_kafka_offset,
               *max_unpinned_offset,
               max_compactible_offset);
-            max_compactible_offset = *max_unpinned_offset;
+            max_compactible_offset = max_unpinned_offset.value();
         }
         co_await current_log.handle->housekeeping(
           housekeeping_config::make_config(
@@ -892,7 +892,7 @@ ss::future<> remove_orphan_partition_files(
           }
 
           auto ntp = model::ntp(nt.ns, nt.tp, ntp_directory_data->partition_id);
-          if (orphan_filter(ntp, *ntp_directory_data)) {
+          if (orphan_filter(ntp, ntp_directory_data.value())) {
               auto ntp_directory = std::filesystem::path(topic_directory_path)
                                    / std::filesystem::path(entry.name);
               vlog(stlog.info, "Cleaning up ntp directory {} ", ntp_directory);
@@ -1030,7 +1030,7 @@ std::ostream& operator<<(std::ostream& o, const log_config& c) {
       << ", max_segment.size:" << c.max_segment_size()
       << ", file_sanitize_config:" << c.file_config << ", retention_bytes:";
     if (c.retention_bytes()) {
-        o << *(c.retention_bytes());
+        o << (c.retention_bytes()).value();
     } else {
         o << "nullopt";
     }

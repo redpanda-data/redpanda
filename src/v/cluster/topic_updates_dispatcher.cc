@@ -57,7 +57,7 @@ ss::future<std::error_code> topic_updates_dispatcher::do_topic_delete(
           transition.topic.nt);
         if (topic_assignments) {
             in_progress = collect_in_progress(
-              transition.topic.nt, *topic_assignments);
+              transition.topic.nt, topic_assignments.value());
         }
     }
 
@@ -81,9 +81,9 @@ ss::future<std::error_code> topic_updates_dispatcher::do_topic_delete(
                 "Deallocating ntp: {}, in_progress ops: {}",
                 tp_ns,
                 in_progress);
-              deallocate_topic(tp_ns, *topic_assignments, in_progress);
+              deallocate_topic(tp_ns, topic_assignments.value(), in_progress);
 
-              for (const auto& [_, p_as] : *topic_assignments) {
+              for (const auto& [_, p_as] : topic_assignments.value()) {
                   _partition_balancer_state.local()
                     .handle_ntp_move_begin_or_cancel(
                       tp_ns.ns, tp_ns.tp, p_as.id, p_as.replicas, {});
@@ -217,14 +217,14 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
             ntp);
 
           update_final_counts(
-            current_assignment->replicas, *new_target_replicas);
+            current_assignment->replicas, new_target_replicas.value());
 
           _partition_balancer_state.local().handle_ntp_move_begin_or_cancel(
             ntp.ns,
             ntp.tp.topic,
             ntp.tp.partition,
             current_assignment->replicas,
-            *new_target_replicas);
+            new_target_replicas.value());
           return ec;
       });
 }
@@ -277,7 +277,7 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
           std::vector<model::broker_shard> to_delete;
           // move was successful, not cancelled
           if (target_replicas == command_replicas) {
-              to_delete = subtract(*previous_replicas, command_replicas);
+              to_delete = subtract(previous_replicas.value(), command_replicas);
           } else {
               vassert(
                 previous_replicas == command_replicas,
@@ -288,7 +288,7 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
                 ntp,
                 command_replicas,
                 previous_replicas);
-              to_delete = subtract(*target_replicas, command_replicas);
+              to_delete = subtract(target_replicas.value(), command_replicas);
           }
           _partition_allocator.local().remove_allocations(to_delete);
 
@@ -397,17 +397,19 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
             "currently being cancelled",
             ntp);
 
-          update_final_counts(*previous_replicas, *target_replicas);
+          update_final_counts(
+            previous_replicas.value(), target_replicas.value());
 
-          auto to_delete = subtract(*previous_replicas, *target_replicas);
+          auto to_delete = subtract(
+            previous_replicas.value(), target_replicas.value());
           _partition_allocator.local().remove_allocations(to_delete);
 
           _partition_balancer_state.local().handle_ntp_move_begin_or_cancel(
             ntp.ns,
             ntp.tp.topic,
             ntp.tp.partition,
-            *previous_replicas,
-            *target_replicas);
+            previous_replicas.value(),
+            target_replicas.value());
           return ec;
       });
 }

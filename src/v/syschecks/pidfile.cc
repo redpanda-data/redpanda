@@ -136,8 +136,8 @@ void pid_file::create() {
     while (left) {
         auto written = fd->write(buf + offset, left);
         vassert(written, "fd is not open as non-blocking");
-        offset += *written;
-        left -= *written;
+        offset += written.value();
+        left -= written.value();
     }
 }
 

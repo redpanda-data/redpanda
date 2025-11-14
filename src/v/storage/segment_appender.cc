@@ -431,10 +431,10 @@ ss::future<> segment_appender::maybe_advance_stable_offset(
     // if we advanced the committed offset, do the callbacks and
     // trigger any flush operations
     if (_committed_offset_clb) {
-        _committed_offset_clb(*committed);
+        _committed_offset_clb(committed.value());
     }
-    _stable_offset = *committed;
-    return process_flush_ops(*committed);
+    _stable_offset = committed.value();
+    return process_flush_ops(committed.value());
 }
 
 ss::future<> segment_appender::process_flush_ops(size_t committed) {

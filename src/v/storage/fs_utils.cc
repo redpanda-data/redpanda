@@ -18,7 +18,7 @@ namespace storage {
 
 ss::sstring segment_full_path::string() const {
     if (unlikely(override_path.has_value())) {
-        return *override_path;
+        return override_path.value();
     }
 
     return ss::format(
@@ -69,7 +69,7 @@ std::optional<segment_full_path> segment_full_path::parse(
     }
 
     return segment_full_path(
-      partition_path(dir_part), std::move(*file_part_opt));
+      partition_path(dir_part), std::move(file_part_opt.value()));
 }
 
 segment_full_path segment_full_path::mock(ss::sstring str_path) {

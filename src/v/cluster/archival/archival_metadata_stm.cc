@@ -1165,7 +1165,7 @@ ss::future<> archival_metadata_stm::apply_raft_snapshot(const iobuf&) {
 
     retry_chain_node rc_node(_download_as, timeout, backoff);
     cloud_storage::partition_manifest_downloader dl(
-      cloud_storage_clients::bucket_name{*bucket},
+      cloud_storage_clients::bucket_name{bucket.value()},
       _remote_path_provider,
       _manifest->get_ntp(),
       _manifest->get_revision_id(),

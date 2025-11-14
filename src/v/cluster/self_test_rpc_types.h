@@ -303,8 +303,8 @@ struct self_test_result
           r.end_time,
           std::chrono::duration_cast<std::chrono::milliseconds>(r.duration)
             .count(),
-          r.warning ? *r.warning : "<no_value>",
-          r.error ? *r.error : "<no_value>");
+          r.warning ? r.warning.value() : "<no_value>",
+          r.error ? r.error.value() : "<no_value>");
         return o;
     }
 

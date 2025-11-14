@@ -102,9 +102,10 @@ public:
             ret.emplace_back(
               file_to_append{
                 .file = std::move(file),
-                .schema_id = (schema_id ? *schema_id : md.current_schema_id),
+                .schema_id
+                = (schema_id ? schema_id.value() : md.current_schema_id),
                 .partition_spec_id
-                = (partition_spec_id ? *partition_spec_id : md.default_spec_id),
+                = (partition_spec_id ? partition_spec_id.value() : md.default_spec_id),
               });
         }
         ret[0].file.record_count += leftover_records;
@@ -393,7 +394,8 @@ TEST_F(MergeAppendActionTest, TestUniqueSnapshotIds) {
         ASSERT_TRUE(table.snapshots.has_value());
         ASSERT_TRUE(table.current_snapshot_id.has_value());
         ASSERT_EQ(table.snapshots.value().size(), expected_snapshots);
-        ASSERT_EQ(table.snapshots->back().id, *table.current_snapshot_id);
+        ASSERT_EQ(
+          table.snapshots->back().id, table.current_snapshot_id.value());
 
         // Each snapshot should get a unique snapshot id.
         ASSERT_TRUE(snap_ids.emplace(table.current_snapshot_id.value()).second);

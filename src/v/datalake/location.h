@@ -32,7 +32,7 @@ public:
             return std::nullopt;
         }
 
-        return remote_path(std::move(*maybe_path));
+        return remote_path(std::move(maybe_path.value()));
     }
 
 private:

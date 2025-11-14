@@ -318,8 +318,8 @@ SEASTAR_THREAD_TEST_CASE(test_retention_after_truncation) {
         BOOST_REQUIRE(retention_calculator.has_value());
         auto next_start_offset = retention_calculator->next_start_offset();
         BOOST_REQUIRE(next_start_offset.has_value());
-        BOOST_REQUIRE_NE(*next_start_offset, model::offset{});
-        return *next_start_offset;
+        BOOST_REQUIRE_NE(next_start_offset.value(), model::offset{});
+        return next_start_offset.value();
     };
 
     // Go through the motion of truncating.

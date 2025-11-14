@@ -219,8 +219,10 @@ ss::future<result<std::monostate>> credential_manager::maybe_sign(
 
         request.set(
           gcp_project_header,
-          std::string_view(*config::shard_local_cfg()
-                              .iceberg_rest_catalog_gcp_user_project()));
+          std::string_view(
+            config::shard_local_cfg()
+              .iceberg_rest_catalog_gcp_user_project()
+              .value()));
     }
 
     auto ec = apply_credentials_->add_auth(request);

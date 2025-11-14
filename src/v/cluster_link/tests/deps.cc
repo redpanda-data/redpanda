@@ -327,7 +327,7 @@ ss::future<result<kafka::data::rpc::partition_offsets_map, cluster::errc>>
 test_kafka_rpc_client_service::get_partition_offsets(
   chunked_vector<kafka::data::rpc::topic_partitions> tps) {
     if (inserted_get_partition_offsets_error.has_value()) {
-        auto err = *inserted_get_partition_offsets_error;
+        auto err = inserted_get_partition_offsets_error.value();
         inserted_get_partition_offsets_error.reset();
         co_return err;
     }

@@ -89,7 +89,7 @@ struct produce_request_record_data {
     explicit produce_request_record_data(
       std::optional<iobuf>&& data, api_version version) {
         if (data) {
-            adapter.adapt_with_version(std::move(*data), version);
+            adapter.adapt_with_version(std::move(data.value()), version);
         }
     }
 

@@ -188,7 +188,7 @@ TEST_P(task_manager_integration_test, create_task_no_controller) {
     ASSERT_TRUE(report.has_value()) << "Never received a task report";
 
     validate_report(
-      *report,
+      report.value(),
       link_name,
       test_task::name,
       GetParam().is_locked_to_controller ? model::task_state::stopped
@@ -222,7 +222,7 @@ TEST_P(task_manager_integration_test, create_task_with_controller) {
     ASSERT_TRUE(report.has_value()) << "Never received a task report";
 
     validate_report(
-      *report, link_name, test_task::name, model::task_state::active);
+      report.value(), link_name, test_task::name, model::task_state::active);
 }
 
 TEST_P(task_manager_integration_test, controller_leadership_moved_on) {
@@ -257,7 +257,7 @@ TEST_P(task_manager_integration_test, controller_leadership_moved_on) {
     ASSERT_TRUE(report.has_value()) << "Never received a task report";
 
     validate_report(
-      *report,
+      report.value(),
       link_name,
       test_task::name,
       GetParam().is_locked_to_controller ? model::task_state::stopped
@@ -342,7 +342,7 @@ TEST_P(task_manager_integration_test, controller_leadership_move_off) {
     ASSERT_TRUE(report.has_value()) << "Never received a task report";
 
     validate_report(
-      *report, link_name, test_task::name, model::task_state::active);
+      report.value(), link_name, test_task::name, model::task_state::active);
 
     // Register for a callback from the task to alert us if the task changes
     // state.  If the task is not locked to the controller, then no state change
@@ -509,7 +509,7 @@ TEST_F_CORO(
 
     // Expect that the status report should not be running yet
     validate_report(
-      *report, link_name, evil_task::name, model::task_state::stopped);
+      report.value(), link_name, evil_task::name, model::task_state::stopped);
 
     // Await the task reconciler interval time (plus a fudge) to allow the loop
     // to run to start the task
@@ -522,7 +522,7 @@ TEST_F_CORO(
 
     // Expect that the status report should be running now
     validate_report(
-      *report, link_name, evil_task::name, model::task_state::active);
+      report.value(), link_name, evil_task::name, model::task_state::active);
 
     // Now move the controller leadership off this shard
     fixture()->elect_leader(::model::controller_ntp, self() + 1, std::nullopt);
@@ -534,7 +534,7 @@ TEST_F_CORO(
 
     // Expect that the status report should be running now
     validate_report(
-      *report, link_name, evil_task::name, model::task_state::active);
+      report.value(), link_name, evil_task::name, model::task_state::active);
 
     // Await the task reconciler interval time (plus a fudge) to allow the loop
     // to run to stop the task
@@ -547,7 +547,7 @@ TEST_F_CORO(
 
     // Expect that the status report should be running now
     validate_report(
-      *report, link_name, evil_task::name, model::task_state::stopped);
+      report.value(), link_name, evil_task::name, model::task_state::stopped);
 }
 
 TEST_F_CORO(
@@ -574,7 +574,7 @@ TEST_F_CORO(
 
     // Expect that the status report should not be running yet
     validate_report(
-      *report, link_name, evil_task::name, model::task_state::stopped);
+      report.value(), link_name, evil_task::name, model::task_state::stopped);
 
     fixture()->elect_leader(::model::controller_ntp, self(), std::nullopt);
 
@@ -589,7 +589,7 @@ TEST_F_CORO(
 
     // Expect that the status report should be running now
     validate_report(
-      *report, link_name, evil_task::name, model::task_state::active);
+      report.value(), link_name, evil_task::name, model::task_state::active);
 }
 
 TEST_F_CORO(
@@ -621,7 +621,7 @@ TEST_F_CORO(
 
     // Expect that the status report should not be running yet
     validate_report(
-      *report, link_name, evil_task::name, model::task_state::stopped);
+      report.value(), link_name, evil_task::name, model::task_state::stopped);
 
     // Await the task reconciler interval time (plus a fudge) to allow the loop
     // to run to start the task
@@ -638,7 +638,7 @@ TEST_F_CORO(
 
     // Expect that the status report should be running now
     validate_report(
-      *report, link_name, evil_task::name, model::task_state::active);
+      report.value(), link_name, evil_task::name, model::task_state::active);
 }
 
 } // namespace cluster_link::tests

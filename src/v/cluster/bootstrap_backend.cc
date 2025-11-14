@@ -121,21 +121,21 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd, model::offset offset) {
     // Reconcile with the cluster_uuid value in kvstore
     if (
       _storage.local().get_cluster_uuid()
-      && *_storage.local().get_cluster_uuid() != cmd.value.uuid) {
+      && _storage.local().get_cluster_uuid().value() != cmd.value.uuid) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "Cluster UUID mismatch. Controller log value: {}, kvstore "
           "value: {}. Possible reasons: local controller log storage "
           "wiped while kvstore storage is not, or vice versa",
           cmd.value.uuid,
-          *_storage.local().get_cluster_uuid()));
+          _storage.local().get_cluster_uuid().value()));
     }
 
     // Apply bootstrap user
     if (cmd.value.bootstrap_user_cred) {
         const std::error_code errc
           = co_await dispatch_updates_to_cores<user_and_credential>(
-            *cmd.value.bootstrap_user_cred, _credentials);
+            cmd.value.bootstrap_user_cred.value(), _credentials);
         if (errc == errc::user_exists) {
             vlog(
               clusterlog.warn,
@@ -266,14 +266,14 @@ ss::future<> bootstrap_backend::apply_snapshot(
 
     if (
       _storage.local().get_cluster_uuid()
-      && *_storage.local().get_cluster_uuid() != snap_cluster_uuid) {
+      && _storage.local().get_cluster_uuid().value() != snap_cluster_uuid) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "Cluster UUID mismatch. Controller snapshot value: {}, kvstore "
           "value: {}. Possible reasons: local controller log storage "
           "wiped while kvstore storage is not, or vice versa",
           snap_cluster_uuid,
-          *_storage.local().get_cluster_uuid()));
+          _storage.local().get_cluster_uuid().value()));
     }
 
     if (_cluster_uuid_applied) {

@@ -101,7 +101,7 @@ std::optional<cluster::leader_term> get_leader_term(
         const auto previous = md_cache.get_previous_leader_id(tp_ns, p_id);
         leader_term->leader = previous;
 
-        if (previous == *config::node().node_id()) {
+        if (previous == config::node().node_id().value()) {
             auto idx = random_generators::global().get_int(replicas.size() - 1);
             leader_term->leader = replicas[idx];
         }
@@ -320,14 +320,14 @@ static ss::future<chunked_vector<metadata_response::topic>> get_topic_metadata(
     std::vector<ss::future<metadata_response::topic>> new_topics;
 
     bool use_topic_ids = std::ranges::any_of(
-      *request.data.topics,
+      request.data.topics.value(),
       [](const auto& topic) { return topic.topic_id != model::topic_id{}; });
 
     auto superuser_required_to_create = ctx.is_cluster_link_active()
                                           ? superuser_required::yes
                                           : superuser_required::no;
 
-    for (auto& topic : *request.data.topics) {
+    for (auto& topic : request.data.topics.value()) {
         const auto move_topic_name = [&topic]() {
             return std::move(topic.name).value_or(model::topic{});
         };
@@ -366,10 +366,10 @@ static ss::future<chunked_vector<metadata_response::topic>> get_topic_metadata(
             }
             if (auto md = ctx.metadata_cache().get_topic_metadata(
                   model::topic_namespace_view(
-                    model::kafka_namespace, *topic.name));
+                    model::kafka_namespace, topic.name.value()));
                 md) {
                 auto src_topic_response = make_topic_response(
-                  ctx, request, *md, is_node_isolated);
+                  ctx, request, md.value(), is_node_isolated);
                 src_topic_response.name = move_topic_name();
                 res.push_back(std::move(src_topic_response));
                 continue;
@@ -381,7 +381,7 @@ static ss::future<chunked_vector<metadata_response::topic>> get_topic_metadata(
           || !request.data.allow_auto_topic_creation) {
             if (!use_topic_ids) {
                 bool valid = topic.name.has_value()
-                             && validate_kafka_topic_name(*topic.name)
+                             && validate_kafka_topic_name(topic.name.value())
                                   == model::errc::success;
                 res.push_back(make_error_topic_response(
                   move_topic_name(),
@@ -399,7 +399,7 @@ static ss::future<chunked_vector<metadata_response::topic>> get_topic_metadata(
          */
         if (!ctx.authorized(
               security::acl_operation::create,
-              *topic.name,
+              topic.name.value(),
               authz_quiet::no,
               audit_authz_check::yes,
               superuser_required_to_create)) {
@@ -491,7 +491,7 @@ guess_peer_listener(request_context& ctx, const cluster::node_metadata& nm) {
             // is not yet consistent with what's in members_table,
             // because a node configuration update didn't propagate
             // via raft0 yet
-            if (nm.broker.id() == *config::node().node_id()) {
+            if (nm.broker.id() == config::node().node_id().value()) {
                 return l;
             }
         }
@@ -613,7 +613,7 @@ ss::future<typename T::api::response_type> handle_metadata(
           !request.list_all_topics && version > api_version{9}
           && version < api_version{12}) {
             auto err = kafka::error_code::none;
-            for (auto& topic : *request.data.topics) {
+            for (auto& topic : request.data.topics.value()) {
                 // Check request validity
                 if (!topic.name.has_value()) {
                     err = kafka::error_code::invalid_request;
@@ -634,7 +634,7 @@ ss::future<typename T::api::response_type> handle_metadata(
             if (err != kafka::error_code::none) {
                 // Don't include any other information in the response
                 metadata_response reply;
-                for (auto& topic : *request.data.topics) {
+                for (auto& topic : request.data.topics.value()) {
                     reply.data.topics.push_back(
                       metadata_response::topic{
                         .error_code = err,

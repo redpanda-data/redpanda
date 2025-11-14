@@ -33,7 +33,7 @@ struct lazy_abort_source {
     bool abort_requested() {
         auto maybe_abort = _predicate();
         if (maybe_abort.has_value()) {
-            _abort_reason = *maybe_abort;
+            _abort_reason = maybe_abort.value();
             return true;
         } else {
             return false;

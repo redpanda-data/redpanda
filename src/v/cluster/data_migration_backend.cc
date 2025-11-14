@@ -96,7 +96,7 @@ backend::backend(
   std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>
     topic_mount_handler,
   ss::abort_source& as)
-  : _self(*config::node().node_id())
+  : _self(config::node().node_id().value())
   , _table(table)
   , _frontend(frontend)
   , _worker(worker)
@@ -142,7 +142,7 @@ ss::future<> backend::start() {
             }
             if (
               new_term_if_leader && _raft0_leader_term
-              && ((*new_term_if_leader)() - (*_raft0_leader_term)() == 1)) {
+              && ((new_term_if_leader.value())() - (_raft0_leader_term.value())() == 1)) {
                 // remaining a leader, no other leaders between our terms
                 _raft0_leader_term = _coordinator_term = new_term_if_leader;
                 return;
@@ -380,7 +380,8 @@ backend::set_entities_status(id migration_id, entities_status status) {
                 // required groups rather than for lookup
                 chunked_hash_map<kafka::group_id, model::partition_id> rev_map;
                 rev_map.reserve(migration.groups.size());
-                for (const auto& [pid, groups] : *mrstate.partition_group_map) {
+                for (const auto& [pid, groups] :
+                     mrstate.partition_group_map.value()) {
                     co_await ssx::async_for_each(
                       groups, [&rev_map, pid](const kafka::group_id& group) {
                           rev_map[group] = pid;
@@ -390,7 +391,8 @@ backend::set_entities_status(id migration_id, entities_status status) {
                 chunked_hash_map<model::partition_id, group_offsets_snapshot>
                   requests;
                 requests.reserve(mrstate.partition_group_map->size());
-                for (auto p : *mrstate.partition_group_map | std::views::keys) {
+                for (auto p :
+                     mrstate.partition_group_map.value() | std::views::keys) {
                     requests[p].offsets_topic_pid = p;
                 };
                 co_await ssx::async_for_each(
@@ -413,7 +415,7 @@ backend::set_entities_status(id migration_id, entities_status status) {
 
                 errc last_error = errc::success;
                 co_await ss::parallel_for_each(
-                  *mrstate.partition_group_map,
+                  mrstate.partition_group_map.value(),
                   [&requests, this, &last_error](const auto& pair) {
                       auto& [pid, groups] = pair;
                       auto& request = requests.at(pid);
@@ -520,7 +522,7 @@ ss::future<> backend::work_once() {
         co_await ssx::async_for_each(
           response.actual_states, [this](const auto& ntp_resp) {
               if (auto rs_it = get_rstate(ntp_resp.migration, ntp_resp.state)) {
-                  auto& mr_state = (*rs_it)->second;
+                  auto& mr_state = (rs_it.value())->second;
                   mark_migration_step_done_for_ntp(mr_state, ntp_resp.ntp);
                   schedule_topic_work_if_partitions_ready(
                     model::topic_namespace(
@@ -528,7 +530,7 @@ ss::future<> backend::work_once() {
                     mr_state);
                   // advance if done as a last step as it may invalidate the
                   // reconciliation state iterator.
-                  to_advance_if_done(*rs_it);
+                  to_advance_if_done(rs_it.value());
               }
           });
     }
@@ -541,8 +543,9 @@ ss::future<> backend::work_once() {
           if (auto rs_it = get_rstate(result.migration, result.sought_state)) {
               switch (result.ec) {
               case errc::success:
-                  mark_migration_step_done_for_nt((*rs_it)->second, result.nt);
-                  to_advance_if_done(*rs_it);
+                  mark_migration_step_done_for_nt(
+                    (rs_it.value())->second, result.nt);
+                  to_advance_if_done(rs_it.value());
                   break;
               case errc::shutting_down:
                   break;
@@ -701,8 +704,8 @@ ss::future<> backend::send_rpc(model::node_id node_id) {
           req.sought_states.push_back(
             {.ntp = ntp,
              .migration = migration_id,
-             .state = *_migration_states.find(migration_id)
-                         ->second.scope.sought_state});
+             .state = _migration_states.find(migration_id)
+                        ->second.scope.sought_state.value()});
       });
 
     ssx::spawn_with_gate(
@@ -762,7 +765,7 @@ void backend::schedule_topic_work(model::topic_namespace nt) {
     }
     topic_work tw{
       .migration_id = migration_id,
-      .sought_state = *mrstate.scope.sought_state,
+      .sought_state = mrstate.scope.sought_state.value(),
       .info = get_topic_work_info(nt, maybe_migration->get())};
 
     ssx::spawn_with_gate(
@@ -1001,7 +1004,7 @@ backend::maybe_download_topic_manifest(
           "using cached topic manifest for topic {} (location {})",
           original_nt.value_or(nt),
           storage_location);
-        co_return *tsws->cached_topic_manifest();
+        co_return tsws->cached_topic_manifest().value();
     }
     vlog(
       dm_log.debug,
@@ -1015,7 +1018,7 @@ backend::maybe_download_topic_manifest(
         co_return errc::topic_operation_error;
     }
     cloud_storage::topic_manifest_downloader tmd(
-      cloud_storage_clients::bucket_name{*maybe_bucket},
+      cloud_storage_clients::bucket_name{maybe_bucket.value()},
       storage_location ? std::make_optional(storage_location->hint)
                        : std::nullopt,
       original_nt.value_or(nt),
@@ -1160,7 +1163,7 @@ ss::future<errc> backend::confirm_mount_topic(
       manifest.get_topic_config(),
       manifest.get_revision());
     auto mnt_res = co_await _topic_mount_handler->get().confirm_mount_topic(
-      *cfg, manifest.get_revision(), rcn);
+      cfg.value(), manifest.get_revision(), rcn);
     if (
       mnt_res
       != cloud_storage::topic_mount_result::mount_manifest_not_deleted) {
@@ -1210,7 +1213,7 @@ ss::future<errc> backend::do_unmount_not_existing_topic(
     auto rev_id = manifest.get_revision();
 
     auto umnt_res = co_await _topic_mount_handler->get().unmount_topic(
-      *cfg, rev_id, rcn);
+      cfg.value(), rev_id, rcn);
     if (umnt_res == cloud_storage::topic_unmount_result::success) {
         co_return errc::success;
     }
@@ -1240,7 +1243,7 @@ ss::future<errc> backend::do_unmount_topic(
     }
 
     auto umnt_res = co_await _topic_mount_handler->get().unmount_topic(
-      *cfg, *rev_id, rcn);
+      cfg.value(), rev_id.value(), rcn);
     if (umnt_res == cloud_storage::topic_unmount_result::success) {
         co_return errc::success;
     }
@@ -1252,7 +1255,7 @@ void backend::to_advance_if_done(
   migration_reconciliation_states_t::const_iterator it) {
     auto& rs = it->second;
     if (rs.outstanding_topics.empty()) {
-        auto sought_state = *rs.scope.sought_state;
+        auto sought_state = rs.scope.sought_state.value();
         auto [ar_it, ins] = _advance_requests.try_emplace(
           it->first, sought_state);
         if (!ins && ar_it->second.sought_state < sought_state) {
@@ -1375,7 +1378,7 @@ ss::future<> backend::handle_migration_update(id id) {
 
     work_scope new_scope;
     if (new_metadata) {
-        new_scope = get_work_scope(*new_metadata);
+        new_scope = get_work_scope(new_metadata.value());
     }
 
     std::optional<partition_consumer_group_map_t> group_map;
@@ -1396,7 +1399,8 @@ ss::future<> backend::handle_migration_update(id id) {
           old_mrstate.scope.sought_state,
           new_state);
         vlog(dm_log.debug, "dropping migration {} reconciliation state", id);
-        group_map.emplace(std::move(*old_it->second.partition_group_map));
+        group_map.emplace(
+          std::move(old_it->second.partition_group_map.value()));
         co_await drop_migration_reconciliation_rstate(old_it);
     }
     // delete old advance requests
@@ -1413,9 +1417,10 @@ ss::future<> backend::handle_migration_update(id id) {
           new_scope.topic_work_needed
           || new_scope.any_partition_work_needed()) {
             if (group_map) {
-                new_it->second.partition_group_map = std::move(*group_map);
+                new_it->second.partition_group_map = std::move(
+                  group_map.value());
             }
-            co_await reconcile_migration(new_it->second, *new_metadata);
+            co_await reconcile_migration(new_it->second, new_metadata.value());
         } else {
             // yes it is done as there is nothing to do
             to_advance_if_done(new_it);
@@ -1472,7 +1477,8 @@ ss::future<> backend::process_delta(cluster::topic_table_ntp_delta&& delta) {
         _local_work_states[nt].try_emplace(
           delta.ntp.tp.partition,
           migration_id,
-          *_migration_states.find(migration_id)->second.scope.sought_state,
+          _migration_states.find(migration_id)
+            ->second.scope.sought_state.value(),
           migrated_replica_status::waiting_for_rpc);
     } else {
         auto topic_work_it = _local_work_states.find(nt);
@@ -1767,21 +1773,21 @@ ss::future<> backend::reconcile_existing_topic(
                       auto [it, _] = topic_work_state.try_emplace(
                         assignment.id,
                         migration,
-                        *scope.sought_state,
+                        scope.sought_state.value(),
                         migrated_replica_status::waiting_for_rpc);
                       auto& rwstate = it->second;
                       if (
                         rwstate.migration_id != migration
-                        || rwstate.sought_state < *scope.sought_state) {
+                        || rwstate.sought_state < scope.sought_state.value()) {
                           if (it->second.shard) {
                               stop_partition_work(ntp, rwstate);
                           }
                           rwstate = replica_work_state{
                             migration,
-                            *scope.sought_state,
+                            scope.sought_state.value(),
                             migrated_replica_status::waiting_for_rpc};
                       }
-                      if (rwstate.sought_state == *scope.sought_state) {
+                      if (rwstate.sought_state == scope.sought_state.value()) {
                           switch (rwstate.status) {
                           case migrated_replica_status::
                             waiting_for_controller_update:
@@ -1826,7 +1832,7 @@ backend::build_migration_group_map(const migration_metadata& metadata) const {
               metadata.id);
             return errc::partition_not_exists;
         }
-        auto [it, ins] = ret.try_emplace(*partition);
+        auto [it, ins] = ret.try_emplace(partition.value());
         it->second.push_back(group);
     }
     return ret;
@@ -2015,7 +2021,7 @@ void backend::start_partition_work(
       _gate, [this, &ntp, &rwstate, work = std::move(work)]() mutable {
           return _worker
             .invoke_on(
-              *rwstate.shard,
+              rwstate.shard.value(),
               &worker::perform_partition_work,
               model::ntp{ntp},
               std::move(work))
@@ -2302,7 +2308,7 @@ backend::get_topic_assignments(const model::topic_namespace& nt, const id id) {
           id);
         return {};
     }
-    auto assignments = std::views::values(std::move(*maybe_assignments));
+    auto assignments = std::views::values(std::move(maybe_assignments.value()));
 
     if (nt == model::kafka_consumer_offsets_nt) {
         const auto& mrstate = _migration_states.find(id)->second;
@@ -2313,7 +2319,7 @@ backend::get_topic_assignments(const model::topic_namespace& nt, const id id) {
 
         auto filtered = std::move(assignments)
                         | std::views::filter(
-                          [&group_map = *mrstate.partition_group_map](
+                          [&group_map = mrstate.partition_group_map.value()](
                             const auto& assignment) {
                               return group_map.contains(assignment.id);
                           });

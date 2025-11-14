@@ -118,7 +118,7 @@ public:
                 auto rjs = rjson_serialize_impl<model::record>(
                   _fmt, tpv, adapter.batch->base_offset());
 
-                auto batch = std::move(*adapter.batch);
+                auto batch = std::move(adapter.batch.value());
 
                 if (batch.compressed()) {
                     batch = model::decompress_batch_sync(batch);

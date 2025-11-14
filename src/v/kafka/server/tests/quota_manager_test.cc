@@ -242,11 +242,12 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         BOOST_REQUIRE(has_fetch_quota(franz_go_values));
         BOOST_REQUIRE(has_fetch_quota(not_franz_go_values));
 
-        *franz_go_values->consumer_byte_rate += 1;
-        *not_franz_go_values->consumer_byte_rate += 1;
+        franz_go_values->consumer_byte_rate.value() += 1;
+        not_franz_go_values->consumer_byte_rate.value() += 1;
 
-        f.quota_store.local().set_quota(franz_go_key, *franz_go_values);
-        f.quota_store.local().set_quota(not_franz_go_key, *not_franz_go_values);
+        f.quota_store.local().set_quota(franz_go_key, franz_go_values.value());
+        f.quota_store.local().set_quota(
+          not_franz_go_key, not_franz_go_values.value());
 
         // Wait for the quota update to propagate
         ss::sleep(std::chrono::milliseconds(1)).get();
@@ -278,7 +279,7 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
           franz_go_values.has_value()
           && franz_go_values->producer_byte_rate.has_value());
         franz_go_values->producer_byte_rate = std::nullopt;
-        f.quota_store.local().set_quota(franz_go_key, *franz_go_values);
+        f.quota_store.local().set_quota(franz_go_key, franz_go_values.value());
 
         // Wait for the quota update to propagate
         ss::sleep(std::chrono::milliseconds(1)).get();

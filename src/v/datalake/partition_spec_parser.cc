@@ -91,7 +91,7 @@ protected:
 
         T value() && {
             vassert(res, "attempted to treat error as success");
-            return std::move(*res).val;
+            return std::move(res.value()).val;
         }
 
         T& mutable_value() & {

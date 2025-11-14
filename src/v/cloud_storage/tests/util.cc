@@ -435,7 +435,7 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
     std::vector<cloud_storage_fixture::expectation> results;
     for (const auto& s : segments) {
         auto url = m.generate_segment_path(
-          *m.get(s.base_offset), path_provider);
+          m.get(s.base_offset).value(), path_provider);
         results.push_back(
           cloud_storage_fixture::expectation{
             .url = url().string(), .body = s.bytes});
@@ -499,7 +499,7 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
         delta = delta
                 + model::offset(s.num_config_records - s.delta_offset_overlap);
         auto url = m.generate_segment_path(
-          *m.get(meta.base_offset), path_provider);
+          m.get(meta.base_offset).value(), path_provider);
         results.push_back(
           cloud_storage_fixture::expectation{
             .url = url().string(), .body = body});
@@ -986,7 +986,7 @@ void reupload_compacted_segments(
             m.add(s.sname, meta);
 
             auto url = m.generate_segment_path(
-              *m.get(meta.base_offset), path_provider);
+              m.get(meta.base_offset).value(), path_provider);
             vlog(test_util_log.debug, "reuploading segment {}", url);
             retry_chain_node rtc(never_abort, 60s, 1s);
             bytes bb;
@@ -1039,7 +1039,7 @@ void topic_manifest_serialize_v1_json(
     if (m._topic_config->properties.compression.has_value()) {
         w.String(
           boost::lexical_cast<std::string>(
-            *m._topic_config->properties.compression));
+            m._topic_config->properties.compression.value()));
     } else {
         w.Null();
     }
@@ -1047,7 +1047,7 @@ void topic_manifest_serialize_v1_json(
     if (m._topic_config->properties.cleanup_policy_bitflags.has_value()) {
         w.String(
           boost::lexical_cast<std::string>(
-            *m._topic_config->properties.cleanup_policy_bitflags));
+            m._topic_config->properties.cleanup_policy_bitflags.value()));
     } else {
         w.Null();
     }
@@ -1055,7 +1055,7 @@ void topic_manifest_serialize_v1_json(
     if (m._topic_config->properties.compaction_strategy.has_value()) {
         w.String(
           boost::lexical_cast<std::string>(
-            *m._topic_config->properties.compaction_strategy));
+            m._topic_config->properties.compaction_strategy.value()));
     } else {
         w.Null();
     }
@@ -1063,13 +1063,13 @@ void topic_manifest_serialize_v1_json(
     if (m._topic_config->properties.timestamp_type.has_value()) {
         w.String(
           boost::lexical_cast<std::string>(
-            *m._topic_config->properties.timestamp_type));
+            m._topic_config->properties.timestamp_type.value()));
     } else {
         w.Null();
     }
     w.Key("segment_size");
     if (m._topic_config->properties.segment_size.has_value()) {
-        w.Uint64(*m._topic_config->properties.segment_size);
+        w.Uint64(m._topic_config->properties.segment_size.value());
     } else {
         w.Null();
     }

@@ -347,7 +347,7 @@ public:
                 auto& tp_id = r.first->second.get_configuration().tp_id;
                 if (tp_id) {
                     auto [_, inserted] = _by_id.insert_or_assign(
-                      *tp_id, r.first->first);
+                      tp_id.value(), r.first->first);
                     vassert(
                       inserted,
                       "must not reassign the same id to multiple topics");
@@ -367,7 +367,7 @@ public:
             if (it != _by_tp.end()) {
                 auto& tp_id = it->second.get_configuration().tp_id;
                 if (tp_id) {
-                    _by_id.erase(*tp_id);
+                    _by_id.erase(tp_id.value());
                 } else {
                     // Should be unreachable once the topic_ids feature is
                     // active and all topics have a topic id assigned
@@ -400,11 +400,11 @@ public:
             auto& new_id = it->second.get_configuration().tp_id;
             if (old_id != new_id) {
                 if (old_id) {
-                    _by_id.erase(*old_id);
+                    _by_id.erase(old_id.value());
                 }
                 if (new_id) {
                     auto [_, inserted] = _by_id.insert_or_assign(
-                      *new_id, it->first);
+                      new_id.value(), it->first);
                     vassert(
                       inserted,
                       "must not reassign the same id to multiple topics");

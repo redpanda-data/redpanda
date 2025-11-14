@@ -458,7 +458,8 @@ TEST_CORO(values_protobuf, TestEmptyMessage) {
                 case google::protobuf::FieldDescriptor::TYPE_BYTES: {
                     EXPECT_TRUE(field_value.has_value());
                     EXPECT_TRUE(
-                      std::holds_alternative<primitive_value>(*field_value));
+                      std::holds_alternative<primitive_value>(
+                        field_value.value()));
                     auto pv = std::get<primitive_value>(
                       std::move(field_value.value()));
                     EXPECT_TRUE(std::holds_alternative<binary_value>(pv));

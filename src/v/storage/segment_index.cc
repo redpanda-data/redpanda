@@ -262,7 +262,7 @@ std::ostream& operator<<(std::ostream& o, const segment_index_ptr& i) {
 std::ostream&
 operator<<(std::ostream& o, const std::optional<segment_index::entry>& e) {
     if (e) {
-        return o << *e;
+        return o << e.value();
     }
     return o << "{empty segment_index::entry}";
 }

@@ -61,7 +61,7 @@ public:
         if (_state == state::compatibility) {
             auto s = from_string_view<compatibility_level>(sv);
             if (s.has_value()) {
-                result.compat = *s;
+                result.compat = s.value();
                 _state = state::object;
             } else {
                 auto code = error_code::compatibility_level_invalid;

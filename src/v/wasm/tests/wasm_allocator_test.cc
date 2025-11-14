@@ -110,13 +110,13 @@ TEST(HeapAllocatorTest, CanReturnMemoryToThePool) {
     for (int i = 0; i < 3; ++i) {
         auto mem = allocator.allocate(req).get();
         ASSERT_TRUE(mem.has_value());
-        allocated.push_back(std::move(*mem));
+        allocated.push_back(std::move(mem.value()));
     }
     auto mem = allocator.allocate(req).get();
     EXPECT_FALSE(mem.has_value());
     mem = std::move(allocated.back());
     allocated.pop_back();
-    allocator.deallocate(std::move(*mem), /*used_amount=*/0);
+    allocator.deallocate(std::move(mem.value()), /*used_amount=*/0);
     mem = allocator.allocate(req).get();
     EXPECT_TRUE(mem.has_value());
     mem = allocator.allocate(req).get();
@@ -212,7 +212,7 @@ TEST(HeapAllocatorTest, MemoryIsZeroFilled) {
     ASSERT_TRUE(allocated.has_value());
     EXPECT_THAT(allocated, Optional(HeapIsZeroed()));
     std::fill_n(allocated->data.get(), 4, 1);
-    allocator.deallocate(*std::move(allocated), 4);
+    allocator.deallocate(std::move(allocated).value(), 4);
 
     allocated = allocator.allocate(req).get();
     ASSERT_TRUE(allocated.has_value());

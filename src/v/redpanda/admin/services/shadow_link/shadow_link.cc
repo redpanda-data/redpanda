@@ -42,7 +42,7 @@ shadow_link_service_impl::create_shadow_link(
           *redirect_node);
         co_return co_await _proxy_client
           .make_client_for_node<proto::admin::shadow_link_service_client>(
-            *redirect_node)
+            redirect_node.value())
           .create_shadow_link(serde::pb::rpc::context{}, std::move(req));
     }
 
@@ -75,7 +75,7 @@ shadow_link_service_impl::delete_shadow_link(
           *redirect_node);
         co_return co_await _proxy_client
           .make_client_for_node<proto::admin::shadow_link_service_client>(
-            *redirect_node)
+            redirect_node.value())
           .delete_shadow_link(ctx, std::move(req));
     }
 
@@ -100,7 +100,7 @@ shadow_link_service_impl::get_shadow_link(
           *redirect_node);
         co_return co_await _proxy_client
           .make_client_for_node<proto::admin::shadow_link_service_client>(
-            *redirect_node)
+            redirect_node.value())
           .get_shadow_link(ctx, std::move(req));
     }
 
@@ -123,7 +123,7 @@ shadow_link_service_impl::list_shadow_links(
           *redirect_node);
         co_return co_await _proxy_client
           .make_client_for_node<proto::admin::shadow_link_service_client>(
-            *redirect_node)
+            redirect_node.value())
           .list_shadow_links(serde::pb::rpc::context{}, std::move(req));
     }
 
@@ -157,7 +157,7 @@ shadow_link_service_impl::update_shadow_link(
           *redirect_node);
         co_return co_await _proxy_client
           .make_client_for_node<proto::admin::shadow_link_service_client>(
-            *redirect_node)
+            redirect_node.value())
           .update_shadow_link(ctx, std::move(req));
     }
 
@@ -197,7 +197,7 @@ shadow_link_service_impl::fail_over(
           *redirect_node);
         co_return co_await _proxy_client
           .make_client_for_node<proto::admin::shadow_link_service_client>(
-            *redirect_node)
+            redirect_node.value())
           .fail_over(ctx, std::move(req));
     }
     auto link_name = cluster_link::model::name_t{req.get_name()};
@@ -241,7 +241,7 @@ shadow_link_service_impl::get_shadow_topic(
           *redirect_node);
         co_return co_await _proxy_client
           .make_client_for_node<proto::admin::shadow_link_service_client>(
-            *redirect_node)
+            redirect_node.value())
           .get_shadow_topic(ctx, std::move(req));
     }
     auto resp = handle_error(_service->local().get_cluster_link(
@@ -284,7 +284,7 @@ shadow_link_service_impl::list_shadow_topics(
           *redirect_node);
         co_return co_await _proxy_client
           .make_client_for_node<proto::admin::shadow_link_service_client>(
-            *redirect_node)
+            redirect_node.value())
           .list_shadow_topics(ctx, std::move(req));
     }
 

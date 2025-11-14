@@ -424,7 +424,7 @@ ss::future<> write_request_scheduler::roundtrip(
       });
     for (auto& r : results) {
         vassert(r.response.has_value(), "Should have response after invoke_on");
-        ack_write_response(r.request, std::move(*r.response));
+        ack_write_response(r.request, std::move(r.response.value()));
     }
 }
 

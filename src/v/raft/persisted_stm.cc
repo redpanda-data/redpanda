@@ -121,7 +121,7 @@ file_backed_stm_snapshot::load_snapshot() {
         co_return std::nullopt;
     }
 
-    storage::snapshot_reader& reader = *maybe_reader;
+    storage::snapshot_reader& reader = maybe_reader.value();
     stm_snapshot snapshot;
     std::exception_ptr ex{nullptr};
     try {
@@ -139,7 +139,7 @@ file_backed_stm_snapshot::load_snapshot() {
             co_await reader.close();
             co_return std::nullopt;
         }
-        snapshot.header = *header;
+        snapshot.header = header.value();
         snapshot.data = co_await read_iobuf_exactly(
           reader.input(), snapshot.header.snapshot_size);
 
@@ -276,7 +276,7 @@ kvstore_backed_stm_snapshot::load_snapshot() {
     }
     try {
         auto thin_snapshot = serde::from_iobuf<stm_thin_snapshot>(
-          std::move(*snapshot_blob));
+          std::move(snapshot_blob.value()));
         stm_snapshot snapshot;
         snapshot.header = raft::stm_snapshot_header{
           .version = stm_snapshot_version,
@@ -582,7 +582,7 @@ ss::future<> persisted_stm_base<BaseT, T>::start() {
     }
 
     if (maybe_snapshot) {
-        stm_snapshot& snapshot = *maybe_snapshot;
+        stm_snapshot& snapshot = maybe_snapshot.value();
         auto next_offset = model::next_offset(snapshot.header.offset);
         if (next_offset >= _raft->start_offset()) {
             auto snapshot_applied = co_await apply_local_snapshot(

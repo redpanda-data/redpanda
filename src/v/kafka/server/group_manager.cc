@@ -852,7 +852,7 @@ group_manager::do_snapshot_groups(
     };
     if (group_filter) {
         groups.reserve(group_filter->size());
-        for (const auto& gid : *group_filter) {
+        for (const auto& gid : group_filter.value()) {
             auto it = _groups.find(gid);
             if (it != _groups.end() && predicate(*it)) {
                 groups.push_back(*it);
@@ -1557,7 +1557,7 @@ group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
     }
 
     return group->handle_txn_offset_commit(std::move(r))
-      .finally([unit = std::move(*maybe_holder), group] {});
+      .finally([unit = std::move(maybe_holder.value()), group] {});
 }
 
 ss::future<cluster::commit_group_tx_reply>
@@ -1597,7 +1597,7 @@ group_manager::commit_tx(cluster::commit_group_tx_request&& r) {
     }
 
     return group->handle_commit_tx(std::move(r))
-      .finally([unit = std::move(*maybe_holder), group] {});
+      .finally([unit = std::move(maybe_holder.value()), group] {});
 }
 
 ss::future<cluster::begin_group_tx_reply>
@@ -1644,7 +1644,7 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
     }
 
     return group->handle_begin_tx(std::move(r))
-      .finally([unit = std::move(*maybe_holder), group] {});
+      .finally([unit = std::move(maybe_holder.value()), group] {});
 }
 
 ss::future<cluster::abort_group_tx_reply>
@@ -1682,7 +1682,7 @@ group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
     }
 
     return group->handle_abort_tx(std::move(r))
-      .finally([unit = std::move(*maybe_holder), group] {});
+      .finally([unit = std::move(maybe_holder.value()), group] {});
 }
 
 group::offset_commit_stages
@@ -2246,7 +2246,7 @@ ss::future<> group_manager::collect_consumer_lag_metrics() {
                 continue;
             }
             auto hwm = partition_it->second.high_watermark;
-            if (!max_hwm || hwm > *max_hwm) {
+            if (!max_hwm || hwm > max_hwm.value()) {
                 max_hwm = hwm;
             }
         }
@@ -2261,7 +2261,7 @@ ss::future<> group_manager::collect_consumer_lag_metrics() {
                     auto committed_offset = offset_cast(
                       group_topic_offsets->metadata.offset);
                     lag part_lag{static_cast<lag>(
-                      std::max(*hwm - committed_offset, offset{0}))};
+                      std::max(hwm.value() - committed_offset, offset{0}))};
                     lag_metrics.sum += part_lag;
                     lag_metrics.max = std::max(lag_metrics.max, part_lag);
                 }

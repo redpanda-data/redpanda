@@ -565,7 +565,7 @@ FIXTURE_TEST(
     auto name = cloud_storage::generate_local_segment_name(
       backlog[0].base_offset, backlog[0].segment_term);
     BOOST_REQUIRE(pm.get(name).has_value());
-    BOOST_REQUIRE(backlog[0] == lw_segment_meta::convert(*pm.get(name)));
+    BOOST_REQUIRE(backlog[0] == lw_segment_meta::convert(pm.get(name).value()));
 
     // Truncate the STM, next segment should be added to the backlog
     archival_stm
@@ -579,7 +579,7 @@ FIXTURE_TEST(
         auto name = cloud_storage::generate_local_segment_name(
           it.base_offset, it.segment_term);
         BOOST_REQUIRE(pm.get(name).has_value());
-        BOOST_REQUIRE(it == lw_segment_meta::convert(*pm.get(name)));
+        BOOST_REQUIRE(it == lw_segment_meta::convert(pm.get(name).value()));
     }
 }
 

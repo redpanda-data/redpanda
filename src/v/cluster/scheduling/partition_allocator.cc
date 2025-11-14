@@ -375,7 +375,7 @@ ss::future<result<allocation_units::pointer>>
 partition_allocator::do_allocate(allocation_request request) {
     std::optional<node2count_t> node2count;
     if (request.existing_replica_counts) {
-        node2count = std::move(*request.existing_replica_counts);
+        node2count = std::move(request.existing_replica_counts.value());
     }
 
     const auto& nt = request._nt;
@@ -402,7 +402,7 @@ partition_allocator::do_allocate(allocation_request request) {
         if (node2count) {
             effective_constraints.ensure_new_level();
             effective_constraints.add(
-              min_count_in_map("min topic-wise count", *node2count));
+              min_count_in_map("min topic-wise count", node2count.value()));
         }
         effective_constraints.ensure_new_level();
         effective_constraints.add(max_final_capacity());
@@ -454,7 +454,7 @@ partition_allocator::do_allocate(allocation_request request) {
         }
 
         if (node2count) {
-            (*node2count)[replica.value().current().node_id] += 1;
+            (node2count.value())[replica.value().current().node_id] += 1;
         }
 
         if (
@@ -471,7 +471,7 @@ partition_allocator::do_allocate(allocation_request request) {
     units._assignments.reserve(allocations.size());
     co_await ssx::async_for_each(
       allocations.begin(), allocations.end(), [&](allocation_info& p) {
-          raft::group_id group = p.existing_group ? *p.existing_group
+          raft::group_id group = p.existing_group ? p.existing_group.value()
                                                   : _state->next_group_id();
           units._assignments.emplace_back(
             group,
@@ -513,7 +513,7 @@ result<allocated_partition> partition_allocator::reallocate_partition(
     if (node2count) {
         effective_constraints.ensure_new_level();
         effective_constraints.add(
-          min_count_in_map("min topic-wise count", *node2count));
+          min_count_in_map("min topic-wise count", node2count.value()));
     }
     effective_constraints.ensure_new_level();
     effective_constraints.add(max_final_capacity());
@@ -571,7 +571,7 @@ result<reallocation_step> partition_allocator::do_allocate_replica(
   const allocation_constraints& effective_constraints) {
     std::optional<allocated_partition::previous_replica> prev;
     if (prev_node) {
-        prev = partition.prepare_move(*prev_node);
+        prev = partition.prepare_move(prev_node.value());
         if (!prev) {
             return errc::node_does_not_exists;
         }

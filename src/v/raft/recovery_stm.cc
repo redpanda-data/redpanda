@@ -155,8 +155,8 @@ ss::future<> recovery_stm::do_recover() {
     if (!tuple) {
         co_return;
     }
-    auto reader = std::move(std::get<0>(*tuple));
-    auto range_size = std::get<1>(*tuple);
+    auto reader = std::move(std::get<0>(tuple.value()));
+    auto range_size = std::get<1>(tuple.value());
 
     if (is_recovery_finished()) {
         _stop_requested = true;
@@ -225,10 +225,13 @@ recovery_stm::required_snapshot_type recovery_stm::get_required_snapshot_type(
     if (
       is_snapshot_at_offset_supported() && follower_metadata.is_learner
       && _ptr->get_learner_start_offset()
-      && follower_metadata.next_index < *_ptr->get_learner_start_offset()) {
+      && follower_metadata.next_index
+           < _ptr->get_learner_start_offset().value()) {
         // current snapshot moved beyond configured learner start offset, we can
         // use current snapshot instead creating a new on demand one
-        if (*_ptr->get_learner_start_offset() <= _ptr->last_snapshot_index()) {
+        if (
+          _ptr->get_learner_start_offset().value()
+          <= _ptr->last_snapshot_index()) {
             return required_snapshot_type::current;
         }
         return required_snapshot_type::on_demand;
@@ -321,7 +324,7 @@ ss::future<> recovery_stm::open_current_snapshot() {
       [this](std::optional<storage::snapshot_reader> rdr) {
           if (rdr) {
               _snapshot_reader = std::make_unique<snapshot_reader_t>(
-                std::move(*rdr));
+                std::move(rdr.value()));
               _inflight_snapshot_last_included_index
                 = _ptr->_last_snapshot_index;
               return std::get<storage::snapshot_reader>(*_snapshot_reader)
@@ -363,7 +366,7 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
                 _stop_requested = true;
                 return ss::make_ready_future<>();
             }
-            (*meta)->expected_log_end_offset
+            (meta.value())->expected_log_end_offset
               = _inflight_snapshot_last_included_index;
         }
         vlog(_ctxlog.trace, "sending install_snapshot request: {}", req);
@@ -425,8 +428,8 @@ ss::future<> recovery_stm::handle_install_snapshot_reply(
     }
 
     // snapshot received by the follower, continue with recovery
-    (*meta)->match_index = _inflight_snapshot_last_included_index;
-    (*meta)->next_index = model::next_offset(
+    (meta.value())->match_index = _inflight_snapshot_last_included_index;
+    (meta.value())->next_index = model::next_offset(
       _inflight_snapshot_last_included_index);
     return close_snapshot_reader();
 }
@@ -439,7 +442,7 @@ ss::future<> recovery_stm::install_snapshot(required_snapshot_type s_type) {
           s_type == required_snapshot_type::on_demand
           && learner_start_offset > _ptr->start_offset()) {
             co_await take_on_demand_snapshot(
-              model::prev_offset(*learner_start_offset));
+              model::prev_offset(learner_start_offset.value()));
         } else {
             co_await open_current_snapshot();
         }
@@ -496,8 +499,8 @@ recovery_stm::take_on_demand_snapshot(model::offset last_included_offset) {
 
     snapshot_metadata metadata{
       .last_included_index = last_included_offset,
-      .last_included_term = *term,
-      .latest_configuration = std::move(*cfg),
+      .last_included_term = term.value(),
+      .latest_configuration = std::move(cfg.value()),
       .log_start_delta = offset_translator_delta(
         _ptr->log()->offset_delta(model::next_offset(last_included_offset))),
     };
@@ -527,7 +530,7 @@ ss::future<> recovery_stm::replicate(
 
     // get term for prev_log_idx batch
     if (prev_log_idx > _ptr->_last_snapshot_index) {
-        prev_log_term = *_ptr->_log->get_term(prev_log_idx);
+        prev_log_term = _ptr->_log->get_term(prev_log_idx).value();
     } else if (prev_log_idx < model::offset(0)) {
         prev_log_term = model::term_id{};
     } else if (prev_log_idx == _ptr->_last_snapshot_index) {

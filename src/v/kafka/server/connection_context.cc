@@ -458,7 +458,7 @@ ss::future<> connection_context::process_one_request() {
           && sasl()->state() == security::sasl_server::sasl_state::authenticate
           && sasl()->handshake_v0())) {
         try {
-            co_return co_await handle_auth_v0(*sz);
+            co_return co_await handle_auth_v0(sz.value());
         } catch (...) {
             vlog(
               klog.info,
@@ -737,8 +737,9 @@ connection_context::reserve_request_units(api_key key, size_t size) {
     // case the request is likely for an API we don't support or malformed, so
     // it is likely to fail shortly anyway).
     auto handler = handler_for_key(key);
-    auto mem_estimate = handler ? (*handler)->memory_estimate(size, *this)
-                                : default_memory_estimate(size);
+    auto mem_estimate = handler
+                          ? (handler.value())->memory_estimate(size, *this)
+                          : default_memory_estimate(size);
     if (unlikely(mem_estimate >= (size_t)std::numeric_limits<int32_t>::max())) {
         // TODO: Create error response using the specific API?
         throw std::runtime_error(
@@ -746,7 +747,7 @@ connection_context::reserve_request_units(api_key key, size_t size) {
             "request too large > 1GB (size: {}, estimate: {}, API: {})",
             size,
             mem_estimate,
-            handler ? (*handler)->name() : "<bad key>"));
+            handler ? (handler.value())->name() : "<bad key>"));
     }
     auto fut = ss::get_units(_server.memory(), mem_estimate);
     if (_server.memory().waiters()) {
@@ -762,7 +763,7 @@ connection_context::get_scheduling_group_override(api_key api_key) const {
         return std::nullopt;
     }
 
-    return (*handler)->scheduling_group_override(*this);
+    return (handler.value())->scheduling_group_override(*this);
 }
 
 ss::future<>
@@ -770,14 +771,14 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
     auto r_data = request_data{
       .request_key = hdr.key,
       .client_id = hdr.client_id
-                     ? std::make_optional<ss::sstring>(*hdr.client_id)
+                     ? std::make_optional<ss::sstring>(hdr.client_id.value())
                      : std::nullopt,
     };
 
     auto sg_override = get_scheduling_group_override(hdr.key);
     // If handler provides an override, swith scheduling group
     if (sg_override) {
-        co_await ss::coroutine::switch_to(*sg_override);
+        co_await ss::coroutine::switch_to(sg_override.value());
     } else if (!_server.get_request_handler_sg().active()) {
         // if a handler does not provide an override, check if the default
         // scheduling group is active, and switch the group if needed
@@ -1219,8 +1220,8 @@ std::ostream& operator<<(std::ostream& o, const virtual_connection_id& id) {
 }
 
 void last_value::update(std::optional<std::string_view> new_value) {
-    if (new_value && value != *new_value) {
-        value = ss::sstring{*new_value};
+    if (new_value && value != new_value.value()) {
+        value = ss::sstring{new_value.value()};
     }
 }
 

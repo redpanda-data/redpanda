@@ -135,10 +135,10 @@ public:
             throw std::runtime_error{"No leader"};
         }
 
-        auto ptr = _archival_stm_nodes.at(*leader).archival_stm;
+        auto ptr = _archival_stm_nodes.at(leader.value()).archival_stm;
         if (!ptr) {
-            throw std::runtime_error{
-              ssx::sformat("Achival stm for node {} not initialised", *leader)};
+            throw std::runtime_error{ssx::sformat(
+              "Achival stm for node {} not initialised", leader.value())};
         }
 
         return *ptr;

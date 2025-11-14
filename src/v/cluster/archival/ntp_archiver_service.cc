@@ -564,7 +564,8 @@ ss::future<> ntp_archiver::start() {
 }
 
 void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
-    bool is_leader = leader_id && *leader_id == _parent.raft()->self().id();
+    bool is_leader = leader_id
+                     && leader_id.value() == _parent.raft()->self().id();
     vlog(
       _rtclog.debug,
       "notify_leadership: is_leader={}, leader_id={}, raft group id={}",
@@ -846,7 +847,7 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
         co_return;
     }
 
-    auto& topic_cfg = *topic_cfg_opt;
+    auto& topic_cfg = topic_cfg_opt.value();
 
     vlog(
       _rtclog.debug,
@@ -2119,7 +2120,7 @@ ntp_archiver::wait_uploads_complete(
     std::vector<size_t> ixupload;
     for (size_t ix = 0; ix < scheduled.size(); ix++) {
         if (scheduled[ix].result) {
-            flist.emplace_back(std::move(*scheduled[ix].result));
+            flist.emplace_back(std::move(scheduled[ix].result.value()));
             ixupload.push_back(ix);
         }
     }
@@ -2265,7 +2266,7 @@ ntp_archiver::wait_uploads_complete(
               upload.upload_kind == segment_upload_kind::non_compacted
               && upload.meta.has_value()) {
                 if (!segment_meta_matches_stats(
-                      *upload.meta,
+                      upload.meta.value(),
                       stats,
                       _rtclog,
                       _parent.get_ntp_config()
@@ -2276,7 +2277,7 @@ ntp_archiver::wait_uploads_complete(
         }
 
         if (segment_kind == segment_upload_kind::non_compacted) {
-            _probe.value().uploaded(*upload.delta);
+            _probe.value().uploaded(upload.delta.value());
             _probe.value().uploaded_bytes(upload.meta->size_bytes);
 
             model::offset expected_base_offset;
@@ -2288,7 +2289,7 @@ ntp_archiver::wait_uploads_complete(
             }
         }
 
-        result.meta.push_back(*upload.meta);
+        result.meta.push_back(upload.meta.value());
     }
     if (result.num_succeeded > result.meta.size()) {
         vlog(
@@ -2523,7 +2524,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
   archival_stm_fence fence,
   std::optional<model::offset> unsafe_max_offset_override_exclusive) {
     auto max_offset_exclusive = unsafe_max_offset_override_exclusive
-                                  ? *unsafe_max_offset_override_exclusive
+                                  ? unsafe_max_offset_override_exclusive.value()
                                   : max_uploadable_offset_exclusive();
     vlog(
       _rtclog.debug,
@@ -3333,7 +3334,7 @@ ss::future<> ntp_archiver::apply_retention() {
               fence.read_write_fence);
             builder.read_write_fence(fence.read_write_fence);
         }
-        builder.truncate(*next_start_offset);
+        builder.truncate(next_start_offset.value());
 
         auto error = co_await builder.replicate();
 
@@ -3468,7 +3469,7 @@ ss::future<> ntp_archiver::garbage_collect() {
 const cloud_storage_clients::bucket_name&
 ntp_archiver::get_bucket_name() const {
     if (_bucket_override) {
-        return *_bucket_override;
+        return _bucket_override.value();
     } else {
         return _conf->bucket_name;
     }

@@ -265,7 +265,7 @@ metrics_reporter::build_metrics_snapshot() {
         metrics.disks.push_back(transform_disk(report->local_state.data_disk));
         if (!report->local_state.shared_disk()) {
             metrics.disks.push_back(
-              transform_disk(*(report->local_state.cache_disk)));
+              transform_disk((report->local_state.cache_disk).value()));
         }
 
         metrics.uptime_ms = report->local_state.uptime / 1ms;

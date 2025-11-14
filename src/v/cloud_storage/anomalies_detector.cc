@@ -139,13 +139,13 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
             if (auto last_in_spill = spill->last_segment();
                 last_in_spill && first_seg_previous_manifest) {
                 scrub_segment_meta(
-                  *first_seg_previous_manifest,
+                  first_seg_previous_manifest.value(),
                   last_in_spill,
                   _result.detected.segment_metadata_anomalies);
             }
 
             const auto stop_at_spill = co_await check_manifest(
-              *spill, scrub_from, rtc_node, query_ctx);
+              spill.value(), scrub_from, rtc_node, query_ctx);
             if (stop_at_spill == stop_detector::yes) {
                 _result.status = scrub_status::partial;
                 co_return _result;
@@ -206,7 +206,7 @@ anomalies_detector::check_manifest(
       manifest.get_manifest_path(_remote_path_provider));
     if (
       scrub_from
-      && (manifest.get_start_offset() > *scrub_from || manifest.get_last_offset() == scrub_from)) {
+      && (manifest.get_start_offset() > scrub_from.value() || manifest.get_last_offset() == scrub_from)) {
         vlog(
           _logger.debug,
           "Manifest with offset range [{}, {}] ({}) is above the scrub "
@@ -246,7 +246,7 @@ anomalies_detector::check_manifest(
     std::optional<segment_meta> previous_seg_meta;
     auto manifest_end = manifest.end();
     if (scrub_from && manifest.get_last_offset() > scrub_from) {
-        if (auto iter = manifest.segment_containing(*scrub_from);
+        if (auto iter = manifest.segment_containing(scrub_from.value());
             iter != manifest_end) {
             previous_seg_meta = *iter;
             seg_iter = std::move(++iter);

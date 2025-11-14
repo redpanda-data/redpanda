@@ -87,7 +87,7 @@ snapshot_id generate_unused_snap_id(const table_metadata& m) {
         return sid;
     }
     // Repeatedly try to generate a new snapshot id that isn't used already.
-    const auto& snaps = *m.snapshots;
+    const auto& snaps = m.snapshots.value();
     while (std::ranges::find(snaps, sid, &snapshot::id) != snaps.end()) {
         sid = random_snap_id();
     }
@@ -223,8 +223,8 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
             co_return action::errc::unexpected_state;
         }
         // Look for the current snapshot.
-        const auto table_cur_snap_id = *table_.current_snapshot_id;
-        const auto& snaps = *table_.snapshots;
+        const auto table_cur_snap_id = table_.current_snapshot_id.value();
+        const auto& snaps = table_.snapshots.value();
         auto snap_it = std::ranges::find(
           snaps, table_cur_snap_id, &snapshot::id);
         if (snap_it == snaps.end()) {
@@ -300,16 +300,16 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
         // Only update existing total metrics; otherwise we wouldn't have an
         // accurate starting point.
         if (old_summary->total_data_files.has_value()) {
-            new_summary.total_data_files = added_data_files
-                                           + *old_summary->total_data_files;
+            new_summary.total_data_files
+              = added_data_files + old_summary->total_data_files.value();
         }
         if (old_summary->total_records.has_value()) {
             new_summary.total_records = added_records
-                                        + *old_summary->total_records;
+                                        + old_summary->total_records.value();
         }
         if (old_summary->total_files_size.has_value()) {
-            new_summary.total_files_size = added_files_size
-                                           + *old_summary->total_files_size;
+            new_summary.total_files_size
+              = added_files_size + old_summary->total_files_size.value();
         }
     } else {
         // This is the first summary. The totals are just what we're adding in
@@ -405,7 +405,7 @@ void promote_partition_key_type(
             const auto& type = std::get<primitive_type>(
               pk_type.type.fields[i]->type);
             field = promote_primitive_value_type(
-              std::move(std::get<primitive_value>(*field)), type);
+              std::move(std::get<primitive_value>(field.value())), type);
         }
     }
 }

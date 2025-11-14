@@ -94,7 +94,7 @@ public:
      * Only safe to call if you have generated some batches: this gives you
      * a timestamp ahead of the most recently appended batch
      */
-    model::timestamp now() { return *ts_cursor; }
+    model::timestamp now() { return ts_cursor.value(); }
 
     void configure_unit_test_logging() { std::cout.setf(std::ios::unitbuf); }
 

@@ -44,7 +44,8 @@ void topic_metrics_watcher::maybe_aggregate_topic_label() {
 
     const auto total_topics = _tt.all_topics_count();
     if (
-      ((total_topics * hysteresis_coeff) <= *agg_limit_opt) && is_aggregated) {
+      ((total_topics * hysteresis_coeff) <= agg_limit_opt.value())
+      && is_aggregated) {
         vlog(
           clusterlog.info,
           "topic count({}) is below the aggregation limit({}); "
@@ -54,7 +55,7 @@ void topic_metrics_watcher::maybe_aggregate_topic_label() {
         metrics_registry::local().disable_topic_label_aggregation();
         is_aggregated = false;
 
-    } else if ((total_topics > *agg_limit_opt) && !is_aggregated) {
+    } else if ((total_topics > agg_limit_opt.value()) && !is_aggregated) {
         vlog(
           clusterlog.info,
           "topic count({}) exceeded aggregation limit({}); aggregating the "

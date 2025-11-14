@@ -946,7 +946,7 @@ ss::future<> shard_placement_table::for_each_ntp(
             entry && entry->target && entry->mtx.ready(),
             "[{}]: unexpected concurrent set_target()",
             ntp);
-          func(ntp, *entry->target);
+          func(ntp, entry->target.value());
       });
 }
 
@@ -973,7 +973,7 @@ ss::future<std::error_code> shard_placement_table::prepare_create(
     }
 
     // copy assigned as it may change while we are updating kvstore
-    auto assigned = *state.assigned();
+    auto assigned = state.assigned().value();
 
     if (!state.current()) {
         if (state._is_initial_for == expected_log_rev) {

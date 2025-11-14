@@ -228,7 +228,7 @@ void group_recovery_consumer::handle_group_metadata(group_metadata_kv md) {
 
         auto [group_it, _] = _state.groups.try_emplace(
           md.key.group_id, md.key.group_id);
-        group_it->second.overwrite_metadata(std::move(*md.value));
+        group_it->second.overwrite_metadata(std::move(md.value.value()));
     } else {
         // tombstone
         vlog(cg_klog.trace, "[group: {}] recovered tombstone", md.key.group_id);
@@ -257,7 +257,7 @@ void group_recovery_consumer::handle_offset_metadata(offset_metadata_kv md) {
             md.value->non_reclaimable = false;
         }
         group_it->second.update_offset(
-          tp, _batch_base_offset, std::move(*md.value));
+          tp, _batch_base_offset, std::move(md.value.value()));
     } else {
         vlog(
           cg_klog.trace,

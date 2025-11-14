@@ -169,7 +169,7 @@ inner_field_type_from_avro(const avro::NodePtr& node, state& state) {
         return iceberg::list_type::create(
           placeholder_field_id,
           iceberg::field_required::yes,
-          std::move(*field_res.value()));
+          std::move(field_res.value().value()));
     }
     case avro::AVRO_MAP: {
         if (node->leaves() != 2) {
@@ -200,7 +200,7 @@ inner_field_type_from_avro(const avro::NodePtr& node, state& state) {
           iceberg::string_type{},
           placeholder_field_id,
           iceberg::field_required::yes,
-          std::move(*value_t_result.value()));
+          std::move(value_t_result.value().value()));
     }
     case avro::AVRO_UNION: {
         // Avro union is flattened as a struct with fields that are not

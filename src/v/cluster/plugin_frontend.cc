@@ -123,9 +123,9 @@ ss::future<mutation_result> plugin_frontend::do_mutation(
     if (!cluster_leader) {
         co_return mutation_result{.ec = errc::no_leader_controller};
     }
-    if (*cluster_leader != _self) {
+    if (cluster_leader.value() != _self) {
         co_return co_await dispatch_mutation_to_remote(
-          *cluster_leader,
+          cluster_leader.value(),
           std::move(cmd),
           timeout - model::timeout_clock::now());
     }

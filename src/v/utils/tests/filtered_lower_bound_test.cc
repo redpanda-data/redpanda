@@ -34,13 +34,13 @@ struct optional_compare {
         BOOST_CHECK(lhs.has_value());
         BOOST_CHECK(rhs.has_value());
 
-        return *lhs < *rhs;
+        return lhs.value() < rhs.value();
     }
 
     bool operator()(const std::optional<int>& lhs, int rhs) const {
         BOOST_CHECK(lhs.has_value());
 
-        return *lhs < rhs;
+        return lhs.value() < rhs;
     }
 };
 

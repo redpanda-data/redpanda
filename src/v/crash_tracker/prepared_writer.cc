@@ -76,7 +76,7 @@ prepared_writer::initialize(std::filesystem::path crash_file_path) {
           std::system_category(),
           fmt::format(
             "Failed to open {} to record crash reason",
-            *_crash_report_file_name));
+            _crash_report_file_name.value()));
     }
 
     _prepared_cd.app_version = ss::sstring{redpanda_version()};

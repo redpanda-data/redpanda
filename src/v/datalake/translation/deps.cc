@@ -846,7 +846,7 @@ public:
               : kafka::next_offset(checkpointed_lto);
         if (_inflight_translation_lto) {
             next_to_translate = std::max(
-              kafka::next_offset(*_inflight_translation_lto),
+              kafka::next_offset(_inflight_translation_lto.value()),
               next_to_translate);
         }
         return _partition_proxy->estimate_size_between(

@@ -1017,7 +1017,7 @@ struct adl<security::acl_host> {
         auto opt_data = adl<std::optional<iobuf>>{}.from(in);
 
         if (opt_data) {
-            auto data = iobuf_to_bytes(*opt_data);
+            auto data = iobuf_to_bytes(opt_data.value());
             if (ipv4) {
                 ::in_addr addr{};
                 vassert(data.size() == sizeof(addr), "Unexpected ipv4 size");
@@ -1107,11 +1107,11 @@ struct adl<security::resource_pattern_filter> {
         if (b.pattern()) {
             if (std::holds_alternative<
                   security::resource_pattern_filter::pattern_match>(
-                  *b.pattern())) {
+                  b.pattern().value())) {
                 pattern = pattern_type::match;
             } else {
                 auto source_pattern = std::get<security::pattern_type>(
-                  *b.pattern());
+                  b.pattern().value());
                 pattern = to_pattern(source_pattern);
             }
         }
@@ -1128,7 +1128,7 @@ struct adl<security::resource_pattern_filter> {
               resource, std::move(name), std::nullopt);
         }
 
-        switch (*pattern) {
+        switch (pattern.value()) {
         case pattern_type::literal:
             return security::resource_pattern_filter(
               resource, std::move(name), security::pattern_type::literal);

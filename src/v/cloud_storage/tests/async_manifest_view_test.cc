@@ -786,7 +786,7 @@ FIXTURE_TEST(test_async_manifest_view_retention, async_manifest_view_fixture) {
     // Check case when the start offset in the archive is advanced past
     // start kafka offset override.
     auto cur_res
-      = view.get_cursor(*view.stm_manifest().get_start_offset()).get();
+      = view.get_cursor(view.stm_manifest().get_start_offset().value()).get();
     BOOST_REQUIRE(!cur_res.has_error());
     auto cur = std::move(cur_res.value());
     // Set expected offset to the start of the second segment

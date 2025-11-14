@@ -396,13 +396,14 @@ FIXTURE_TEST(metadata_non_empty_topic_id, metadata_fixture) {
         auto resp = client
                       .dispatch(
                         kafka::metadata_request{
-                          .data{.topics{{{.topic_id{*test_topic_id}}}}}},
+                          .data{.topics{{{.topic_id{test_topic_id.value()}}}}}},
                         ver)
                       .get();
 
         BOOST_REQUIRE(!resp.data.errored());
         BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
-        BOOST_REQUIRE_EQUAL(resp.data.topics.front().topic_id, *test_topic_id);
+        BOOST_REQUIRE_EQUAL(
+          resp.data.topics.front().topic_id, test_topic_id.value());
         BOOST_REQUIRE_EQUAL(resp.data.topics.front().name, test_topic_name);
     }
 }
@@ -476,7 +477,7 @@ FIXTURE_TEST(metadata_v12_mixed, metadata_fixture) {
           .dispatch(
             kafka::metadata_request{
               .data{.topics{
-                {{.name{test_topic_name_0}}, {.topic_id{*topic_1_id}}}}},
+                {{.name{test_topic_name_0}}, {.topic_id{topic_1_id.value()}}}}},
             },
             api_version{12})
           .get();
@@ -536,7 +537,7 @@ FIXTURE_TEST(metadata_autocreate, metadata_fixture) {
         auto new_topic = ssx::sformat(
           "{}_{}_{}", test_topic_create, "by_id", ver);
         auto req = kafka::metadata_request{.data{
-          .topics = {{{.name{new_topic}}, {.topic_id{*query_topic_id}}}},
+          .topics = {{{.name{new_topic}}, {.topic_id{query_topic_id.value()}}}},
           .allow_auto_topic_creation = true,
           .include_cluster_authorized_operations = false,
           .include_topic_authorized_operations = false}};
@@ -560,7 +561,7 @@ FIXTURE_TEST(metadata_v12_unauthorized, metadata_fixture) {
 
     const auto make_request = [&topic_id]() {
         return kafka::metadata_request{.data{
-          .topics = {{{.topic_id{*topic_id}}}},
+          .topics = {{{.topic_id{topic_id.value()}}}},
           .allow_auto_topic_creation = false,
           .include_cluster_authorized_operations = false,
           .include_topic_authorized_operations = false}};

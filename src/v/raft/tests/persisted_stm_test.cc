@@ -60,10 +60,11 @@ struct kv_state
     bool apply(const kv_operation& op) {
         if (op.expected_value) {
             // CAS
-            return compare_and_swap(op.key, *op.expected_value, op.value);
+            return compare_and_swap(
+              op.key, op.expected_value.value(), op.value);
         } else {
             if (op.value) {
-                put(op.key, *op.value);
+                put(op.key, op.value.value());
             } else {
                 remove(op.key);
             }
@@ -100,7 +101,7 @@ struct kv_state
 
         if (it->second.value == expected_value) {
             if (new_value) {
-                it->second.value = std::move(*new_value);
+                it->second.value = std::move(new_value.value());
                 it->second.update_cnt++;
             } else {
                 kv_map.erase(it);
@@ -208,14 +209,14 @@ public:
                   it->second.value,
                   op.expected_value);
                 if (op.value) {
-                    it->second.value = *op.value;
+                    it->second.value = op.value.value();
                     it->second.update_cnt++;
                 } else {
                     state.kv_map.erase(it);
                 }
             } else {
                 if (op.value) {
-                    state.put(op.key, *op.value);
+                    state.put(op.key, op.value.value());
                 } else {
                     state.remove(op.key);
                 }
@@ -232,7 +233,7 @@ public:
         auto last_op = apply_to_state(batch, state);
         if (last_op) {
             apply_count++;
-            last_operation = std::move(*last_op);
+            last_operation = std::move(last_op.value());
         }
         co_return;
     }

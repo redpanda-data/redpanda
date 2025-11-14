@@ -491,13 +491,15 @@ inline ss::future<> segment::reset_batch_cache_index() {
 inline std::optional<std::reference_wrapper<batch_cache_index>>
 segment::cache() {
     using ret_t = std::optional<std::reference_wrapper<batch_cache_index>>;
-    return _cache.has_value() ? ret_t(std::ref(*_cache)) : ret_t(std::nullopt);
+    return _cache.has_value() ? ret_t(std::ref(_cache.value()))
+                              : ret_t(std::nullopt);
 }
 inline std::optional<std::reference_wrapper<const batch_cache_index>>
 segment::cache() const {
     using ret_t
       = std::optional<std::reference_wrapper<const batch_cache_index>>;
-    return _cache.has_value() ? ret_t(std::cref(*_cache)) : ret_t(std::nullopt);
+    return _cache.has_value() ? ret_t(std::cref(_cache.value()))
+                              : ret_t(std::nullopt);
 }
 inline bool segment::has_cache() const { return _cache != std::nullopt; }
 inline batch_cache_index::read_result segment::cache_get(

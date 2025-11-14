@@ -858,7 +858,7 @@ FIXTURE_TEST(test_metadata_anomalies, bucket_view_fixture) {
     expected.segment_metadata_anomalies.insert(
       cloud_storage::anomaly_meta{
         .type = cloud_storage::anomaly_type::non_monotonical_delta,
-        .at = *get_stm_manifest().last_segment(),
+        .at = get_stm_manifest().last_segment().value(),
         .previous = *get_stm_manifest().begin()});
 
     // Overlap between spillover and STM manifest

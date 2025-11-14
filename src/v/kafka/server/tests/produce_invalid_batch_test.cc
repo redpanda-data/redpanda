@@ -43,7 +43,7 @@ struct test_fixture : public redpanda_thread_fixture {
                 return ss::make_ready_future<bool>(false);
             }
             return app.partition_manager.invoke_on(
-              *shard, [ntp](cluster::partition_manager& pm) {
+              shard.value(), [ntp](cluster::partition_manager& pm) {
                   return pm.get(ntp)->is_leader();
               });
         }).get();
@@ -54,7 +54,7 @@ struct test_fixture : public redpanda_thread_fixture {
         auto shard = app.shard_table.local().shard_for(ntp);
         return app.partition_manager
           .invoke_on(
-            *shard,
+            shard.value(),
             [ntp](cluster::partition_manager& mgr) {
                 auto partition = mgr.get(ntp);
                 return partition->high_watermark();

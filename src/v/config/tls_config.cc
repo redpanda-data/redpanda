@@ -96,7 +96,7 @@ std::optional<ss::sstring> tls_config::validate(const tls_config& c) {
     const auto contains_p12_file = [&c]() {
         if (c.get_key_cert_files()) {
             return std::holds_alternative<config::p12_container>(
-              (*c.get_key_cert_files()));
+              (c.get_key_cert_files().value()));
         }
         return false;
     };
@@ -158,7 +158,7 @@ inline ss::sstring to_absolute(const ss::sstring& path) {
 inline std::optional<ss::sstring>
 to_absolute(const std::optional<ss::sstring>& path) {
     if (path) {
-        return to_absolute(*path);
+        return to_absolute(path.value());
     }
     return std::nullopt;
 }
@@ -183,23 +183,25 @@ Node convert<config::tls_config>::encode(const config::tls_config& rhs) {
     }
 
     if (rhs.get_truststore_file()) {
-        node["truststore_file"] = *rhs.get_truststore_file();
+        node["truststore_file"] = rhs.get_truststore_file().value();
     }
 
     if (rhs.get_tls_v1_2_cipher_suites()) {
-        node["tls_v1_2_cipher_suites"] = *rhs.get_tls_v1_2_cipher_suites();
+        node["tls_v1_2_cipher_suites"]
+          = rhs.get_tls_v1_2_cipher_suites().value();
     }
 
     if (rhs.get_tls_v1_3_cipher_suites()) {
-        node["tls_v1_3_cipher_suites"] = *rhs.get_tls_v1_3_cipher_suites();
+        node["tls_v1_3_cipher_suites"]
+          = rhs.get_tls_v1_3_cipher_suites().value();
     }
 
     if (rhs.get_min_tls_version()) {
-        node["min_tls_version"] = *rhs.get_min_tls_version();
+        node["min_tls_version"] = rhs.get_min_tls_version().value();
     }
 
     if (rhs.get_enable_renegotiation()) {
-        node["enable_renegotiation"] = *rhs.get_enable_renegotiation();
+        node["enable_renegotiation"] = rhs.get_enable_renegotiation().value();
     }
 
     return node;

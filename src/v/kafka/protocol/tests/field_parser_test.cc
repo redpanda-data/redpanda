@@ -238,6 +238,6 @@ SEASTAR_THREAD_TEST_CASE(serde_flex_types) {
         kafka::protocol::decoder reader(std::move(writers_buf));
         auto result = reader.read_fragmented_nullable_flex_bytes();
         BOOST_REQUIRE(result.has_value());
-        BOOST_CHECK_EQUAL(iobuf_to_bytes(*result), iobuf_to_bytes(copy));
+        BOOST_CHECK_EQUAL(iobuf_to_bytes(result.value()), iobuf_to_bytes(copy));
     }
 }

@@ -316,7 +316,7 @@ TEST(table_requests, parsing_load_table_result) {
     ASSERT_EQ(result.config->size(), 3);
     ASSERT_TRUE(result.storage_credentials.has_value());
     ASSERT_THAT(
-      *result.storage_credentials,
+      result.storage_credentials.value(),
       ElementsAre(AllOf(
         Field(&iceberg::storage_credentials::prefix, Eq("string")),
         Field(

@@ -51,7 +51,7 @@ cluster_discovery::register_with_cluster() {
           config::node().node_id().has_value(),
           "initializing founder state should have set the local node ID");
         co_return registration_result{
-          .assigned_node_id = *config::node().node_id()};
+          .assigned_node_id = config::node().node_id().value()};
     }
 
     // All non-founder nodes must register before their first start of
@@ -73,7 +73,7 @@ cluster_discovery::brokers cluster_discovery::founding_brokers() const {
     vassert(
       _is_cluster_founder.has_value(), "must call discover_founding_brokers()");
     vassert(
-      _founding_brokers.empty() == !*_is_cluster_founder,
+      _founding_brokers.empty() == !_is_cluster_founder.value(),
       "Should return broker(s) if and only if this node is founding a new "
       "cluster");
     return _founding_brokers;
@@ -81,7 +81,7 @@ cluster_discovery::brokers cluster_discovery::founding_brokers() const {
 
 ss::future<bool> cluster_discovery::is_cluster_founder() {
     if (_is_cluster_founder.has_value()) {
-        co_return *_is_cluster_founder;
+        co_return _is_cluster_founder.value();
     }
     // If there's anything in the controller directory, assume this node has
     // previously joined a cluster.
@@ -99,7 +99,7 @@ ss::future<bool> cluster_discovery::is_cluster_founder() {
               "exists",
               controller_dir);
             _is_cluster_founder = false;
-            co_return *_is_cluster_founder;
+            co_return _is_cluster_founder.value();
         }
     }
 
@@ -117,17 +117,17 @@ ss::future<bool> cluster_discovery::is_cluster_founder() {
         _node_ids_by_uuid = node_ids_by_uuid{
           {_storage.node_uuid(), _founding_brokers.front().id()}};
         _is_cluster_founder = true;
-        co_return *_is_cluster_founder;
+        co_return _is_cluster_founder.value();
     }
     co_await discover_founding_brokers();
     vassert(_is_cluster_founder.has_value(), "must initialize founder state");
-    co_return *_is_cluster_founder;
+    co_return _is_cluster_founder.value();
 }
 
 cluster_discovery::node_ids_by_uuid& cluster_discovery::get_node_ids_by_uuid() {
     vassert(
       _is_cluster_founder.has_value(), "must call discover_founding_brokers()");
-    vassert(*_is_cluster_founder, "must be a founder");
+    vassert(_is_cluster_founder.value(), "must be a founder");
     vassert(!_node_ids_by_uuid.empty(), "result has been consumed");
     return _node_ids_by_uuid;
 }
@@ -222,7 +222,7 @@ cluster_discovery::request_cluster_bootstrap_info_single(
             // Another fiber detected the presence of a cluster. Just exit
             // early.
             vassert(
-              !*_is_cluster_founder,
+              !_is_cluster_founder.value(),
               "We can only detect the presence of a cluster (indicating we are "
               "not a founder) early, not the absence");
             co_return cluster_bootstrap_info_reply{};
@@ -416,7 +416,7 @@ ss::future<> cluster_discovery::discover_founding_brokers() {
       });
     if (_is_cluster_founder.has_value()) {
         vassert(
-          !*_is_cluster_founder,
+          !_is_cluster_founder.value(),
           "We can only detect the presence of a cluster (indicating we are "
           "not a founder) early, not the absence");
         co_return;

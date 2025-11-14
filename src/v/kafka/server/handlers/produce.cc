@@ -246,14 +246,14 @@ ss::future<produce_response::partition> do_produce_topic_partition(
     }
 
     if (auto& validator = req.schema_id_validator) {
-        auto ec = co_await (*validator)(*req.batch);
+        auto ec = co_await (validator.value())(*req.batch);
         if (ec != error_code::none) {
             // TODO: It's a bit much to post this to the partition probe for
             // this metric. We should probably move the metric.
             auto shard = octx.rctx.shards().shard_for(req.ntp);
             if (shard) {
                 co_await octx.rctx.partition_manager().invoke_on(
-                  *shard,
+                  shard.value(),
                   [](cluster::partition_manager& pm, const model::ntp& ntp) {
                       if (auto p = pm.get(ntp)) {
                           p->probe().add_schema_id_validation_failed();
@@ -293,7 +293,7 @@ ss::future<produce_response::partition> do_produce_topic_partition(
     }
 
     auto p = co_await octx.rctx.partition_manager().invoke_on(
-      *shard,
+      shard.value(),
       octx.ssg,
       [batch = std::move(req.batch),
        ntp = std::move(req.ntp),
@@ -316,7 +316,7 @@ ss::future<produce_response::partition> do_produce_topic_partition(
           auto batch_size = batch->size_bytes();
           auto stages = partition_append(
             ntp.tp.partition,
-            std::move(*partition),
+            std::move(partition.value()),
             bid,
             std::move(batch),
             acks,
@@ -704,7 +704,7 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           !request.data.transactional_id
           || !ctx.authorized(
             security::acl_operation::write,
-            transactional_id(*request.data.transactional_id))) {
+            transactional_id(request.data.transactional_id.value()))) {
             auto ec = error_code::transactional_id_authorization_failed;
 
             if (!ctx.audit()) [[unlikely]] {

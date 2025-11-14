@@ -119,7 +119,7 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
     }
     auto err = app.controller->get_feature_manager()
                  .local()
-                 .update_license(std::move(*opt_license))
+                 .update_license(std::move(opt_license.value()))
                  .get();
     ASSERT_TRUE(!err);
 

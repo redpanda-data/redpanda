@@ -38,7 +38,7 @@ kafka::coordinator_response leader_to_coordinator(
   request_context* ctx, const KeyType& key, model::node_id leader) {
     auto broker = ctx->metadata_cache().get_node_metadata(leader);
     if (broker) {
-        auto& b = *broker;
+        auto& b = broker.value();
         for (const auto& listener : b.broker.kafka_advertised_listeners()) {
             if (listener.name == ctx->listener()) {
                 return kafka::coordinator_response{
@@ -72,7 +72,7 @@ ss::future<kafka::coordinator_response> partition_to_coordinator(
     model::ntp consumer_offsets_ntp{
       model::kafka_namespace,
       model::kafka_consumer_offsets_topic,
-      *maybe_partition};
+      maybe_partition.value()};
 
     auto leader_future = co_await ss::coroutine::as_future(
       ctx->metadata_cache().get_leader(consumer_offsets_ntp, timeout));
@@ -166,7 +166,7 @@ ss::future<chunked_vector<kafka::coordinator>> handle_authorized_txn_id(
                 auto maybe_leader = response.coordinator;
                 if (maybe_leader) {
                     response_element = leader_to_coordinator(
-                      ctx, authorized_key, *maybe_leader);
+                      ctx, authorized_key, maybe_leader.value());
                 }
                 out_vector.emplace_back(std::move(response_element));
             });

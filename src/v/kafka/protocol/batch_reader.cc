@@ -132,7 +132,7 @@ batch_reader::do_load_slice(model::timeout_clock::time_point tp) {
                 return ss::now();
             }
             if (likely(kba.v2_format && kba.valid_crc && kba.batch)) {
-                batches.push_back(std::move(*kba.batch));
+                batches.push_back(std::move(kba.batch.value()));
                 return ss::now();
             } else {
                 _do_load_slice_failed = true;

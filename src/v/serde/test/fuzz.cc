@@ -77,7 +77,7 @@ void init(
           && gen.get<std::uint8_t>()
                > std::numeric_limits<std::uint8_t>::max() / 2) {
             t = std::make_optional<typename std::decay_t<T>::value_type>();
-            init(*t, gen, generations, depth + 1);
+            init(t.value(), gen, generations, depth + 1);
         } else {
             t = std::nullopt;
         }

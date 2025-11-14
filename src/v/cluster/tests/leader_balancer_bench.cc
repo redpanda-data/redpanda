@@ -60,10 +60,10 @@ void random_search_eval_bench(bool measure_all) {
         auto reassignment = rt.generate_reassignment();
         vassert(reassignment.has_value(), "movemement");
 
-        double eval = tdc.evaluate(*reassignment);
+        double eval = tdc.evaluate(reassignment.value());
         vassert(eval <= 0.001, "eval != 0");
 
-        eval = slc.evaluate(*reassignment);
+        eval = slc.evaluate(reassignment.value());
         vassert(eval <= 0.001, "eval != 0");
 
         perf_tests::do_not_optimize(eval);

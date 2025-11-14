@@ -53,7 +53,7 @@ public:
         topic.name = model::topic(name);
 
         if (num_partitions) {
-            topic.num_partitions = *num_partitions;
+            topic.num_partitions = num_partitions.value();
         } else if (assignment) {
             topic.num_partitions = -1;
         } else {
@@ -61,7 +61,7 @@ public:
         }
 
         if (replication_factor) {
-            topic.replication_factor = *replication_factor;
+            topic.replication_factor = replication_factor.value();
         } else if (assignment) {
             topic.replication_factor = -1;
         } else {
@@ -69,13 +69,13 @@ public:
         }
 
         if (config) {
-            for (auto& c : *config) {
+            for (auto& c : config.value()) {
                 topic.configs.push_back({c.first, c.second});
             }
         }
 
         if (assignment) {
-            for (auto& a : *assignment) {
+            for (auto& a : assignment.value()) {
                 kafka::creatable_replica_assignment pa;
                 pa.partition_index = model::partition_id(a.first);
                 for (auto& b : a.second) {
@@ -141,7 +141,7 @@ public:
         if (validate_only) {
             /// Server should return default configs
             BOOST_TEST(topic_res.configs, "empty config response");
-            auto cfg_map = config_map(*topic_res.configs);
+            auto cfg_map = config_map(topic_res.configs.value());
             const auto default_topic_properties = config_map(
               kafka::report_topic_configs(
                 app.metadata_cache.local(),
@@ -158,7 +158,7 @@ public:
             return;
         }
         BOOST_TEST(topic_res.configs, "Expecting configs");
-        auto resp_cfgs = kafka::config_map(*topic_res.configs);
+        auto resp_cfgs = kafka::config_map(topic_res.configs.value());
         auto cfg = app.metadata_cache.local().get_topic_cfg(
           model::topic_namespace_view{model::kafka_namespace, topic_res.name});
         BOOST_TEST(cfg, "missing topic config");
@@ -689,5 +689,5 @@ FIXTURE_TEST(create_topic_assigns_topic_id, create_topic_fixture) {
     BOOST_REQUIRE(md.has_value());
     auto tp_id = md->get_configuration().tp_id;
     BOOST_REQUIRE(tp_id.has_value());
-    BOOST_REQUIRE_EQUAL(resp.data.topics[0].topic_id, *tp_id);
+    BOOST_REQUIRE_EQUAL(resp.data.topics[0].topic_id, tp_id.value());
 }

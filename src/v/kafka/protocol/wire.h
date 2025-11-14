@@ -186,7 +186,8 @@ public:
             return std::nullopt;
         }
         return batch_reader(
-          std::move(*io), batch_reader::tolerate_partial_last_batch::yes);
+          std::move(io.value()),
+          batch_reader::tolerate_partial_last_batch::yes);
     }
 
     std::optional<batch_reader> read_nullable_flex_batch_reader() {
@@ -195,7 +196,8 @@ public:
             return std::nullopt;
         }
         return batch_reader(
-          std::move(*io), batch_reader::tolerate_partial_last_batch::yes);
+          std::move(io.value()),
+          batch_reader::tolerate_partial_last_batch::yes);
     }
 
     template<
@@ -433,28 +435,28 @@ public:
         if (!v) {
             return write_unsigned_varint(0);
         }
-        return write_flex(*v);
+        return write_flex(v.value());
     }
 
     uint32_t write_flex(const std::optional<ss::sstring>& v) {
         if (!v) {
             return write_unsigned_varint(0);
         }
-        return write_flex(std::string_view(*v));
+        return write_flex(std::string_view(v.value()));
     }
 
     uint32_t write(std::optional<std::string_view> v) {
         if (!v) {
             return serialize_int<int16_t>(-1);
         }
-        return write(*v);
+        return write(v.value());
     }
 
     uint32_t write(const std::optional<ss::sstring>& v) {
         if (!v) {
             return serialize_int<int16_t>(-1);
         }
-        return write(std::string_view(*v));
+        return write(std::string_view(v.value()));
     }
 
     uint32_t write(uuid_t id) {
@@ -490,7 +492,7 @@ public:
         }
         auto size = serialize_int<int32_t>(data->size_bytes())
                     + data->size_bytes();
-        _out->append(std::move(*data));
+        _out->append(std::move(data.value()));
         return size;
     }
 
@@ -500,7 +502,7 @@ public:
         }
         auto size = write_unsigned_varint(data->size_bytes() + 1)
                     + data->size_bytes();
-        _out->append(std::move(*data));
+        _out->append(std::move(data.value()));
         return size;
     }
 
@@ -508,28 +510,28 @@ public:
         if (!rdr) {
             return write(std::optional<iobuf>());
         }
-        return write(std::move(*rdr).release());
+        return write(std::move(rdr.value()).release());
     }
 
     uint32_t write(std::optional<batch_reader>& rdr) {
         if (!rdr) {
             return write(std::optional<iobuf>());
         }
-        return write(std::move(*rdr).release());
+        return write(std::move(rdr.value()).release());
     }
 
     uint32_t write_flex(std::optional<batch_reader>&& rdr) {
         if (!rdr) {
             return write_flex(std::optional<iobuf>());
         }
-        return write_flex(std::move(*rdr).release());
+        return write_flex(std::move(rdr.value()).release());
     }
 
     uint32_t write_flex(std::optional<batch_reader>& rdr) {
         if (!rdr) {
             return write_flex(std::optional<iobuf>());
         }
-        return write_flex(std::move(*rdr).release());
+        return write_flex(std::move(rdr.value()).release());
     }
 
     // write bytes directly to output without a length prefix

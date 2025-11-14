@@ -257,7 +257,7 @@ void kafka_batch_adapter::convert_message_set(
         }
 
         if (batch->timestamp) {
-            builder.set_timestamp(*batch->timestamp);
+            builder.set_timestamp(batch->timestamp.value());
         }
 
         /*
@@ -298,7 +298,7 @@ void kafka_batch_adapter::convert_message_set(
         }
 
         auto batch_data = compression::compressor::uncompress(
-          *batch->value, to_compression_type(batch->compression()));
+          batch->value.value(), to_compression_type(batch->compression()));
 
         convert_message_set(builder, std::move(batch_data), true);
     }

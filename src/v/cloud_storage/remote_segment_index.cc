@@ -109,14 +109,14 @@ std::
         // we can't find anything inside the buffer.
         // maybe_ix will be null if the compressed chunk is empty.
         if (candidate) {
-            return *candidate;
+            return candidate.value();
         }
         if (!maybe_ix) {
             return std::monostate();
         }
     }
     // Invariant: maybe_ix here can't be nullopt
-    return *maybe_ix;
+    return maybe_ix.value();
 }
 
 std::optional<offset_index::find_result>
@@ -139,14 +139,14 @@ offset_index::find_rp_offset(model::offset upper_bound) {
             _kaf_index.copy());
           auto kaf_offset = _fetch_ix(std::move(kaf_dec), ix);
           vassert(kaf_offset.has_value(), "Inconsistent index state");
-          res.kaf_offset = kafka::offset(*kaf_offset);
+          res.kaf_offset = kafka::offset(kaf_offset.value());
           foffset_decoder_t file_dec(
             _file_index.get_initial_value(),
             _file_index.get_row_count(),
             _file_index.copy(),
             delta_delta_t(_min_file_pos_step));
           auto file_pos = _fetch_ix(std::move(file_dec), ix);
-          res.file_pos = *file_pos;
+          res.file_pos = file_pos.value();
           return res;
       });
 }
@@ -171,14 +171,14 @@ offset_index::find_kaf_offset(kafka::offset upper_bound) {
             _rp_index.copy());
           auto rp_offset = _fetch_ix(std::move(rp_dec), ix);
           vassert(rp_offset.has_value(), "Inconsistent index state");
-          res.rp_offset = model::offset(*rp_offset);
+          res.rp_offset = model::offset(rp_offset.value());
           foffset_decoder_t file_dec(
             _file_index.get_initial_value(),
             _file_index.get_row_count(),
             _file_index.copy(),
             delta_delta_t(_min_file_pos_step));
           auto file_pos = _fetch_ix(std::move(file_dec), ix);
-          res.file_pos = *file_pos;
+          res.file_pos = file_pos.value();
           return res;
       });
 }
@@ -225,9 +225,9 @@ offset_index::find_timestamp(model::timestamp upper_bound) {
           vassert(file_pos.has_value(), "Inconsistent index state");
 
           return offset_index::find_result{
-            .rp_offset = model::offset(*rp_offset),
-            .kaf_offset = kafka::offset(*kaf_offset),
-            .file_pos = *file_pos};
+            .rp_offset = model::offset(rp_offset.value()),
+            .kaf_offset = kafka::offset(kaf_offset.value()),
+            .file_pos = file_pos.value()};
       });
 }
 

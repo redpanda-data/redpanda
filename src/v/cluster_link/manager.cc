@@ -127,7 +127,7 @@ ss::future<> manager::start() {
     for (const auto& id : ids) {
         auto rev = _registry->get_last_update_revision(id);
         vassert(rev.has_value(), "Link {} does not have a update revision", id);
-        id_to_revision.emplace(id, *rev);
+        id_to_revision.emplace(id, rev.value());
     }
     for (const auto& id : ids) {
         co_await handle_on_link_change(id, id_to_revision.at(id));
@@ -453,7 +453,9 @@ ss::future<cl_result<model::metadata>> manager::update_cluster_link(
     }
 
     auto ec = co_await _registry->update_cluster_link_configuration(
-      *id, std::move(cmd), ::model::timeout_clock::now() + model_timeout);
+      id.value(),
+      std::move(cmd),
+      ::model::timeout_clock::now() + model_timeout);
     auto err = map_cluster_errc(ec);
     if (err != errc::success) {
         co_return err_info(
@@ -464,7 +466,7 @@ ss::future<cl_result<model::metadata>> manager::update_cluster_link(
         co_await _group_router->assure_topic_exists();
     }
 
-    auto metadata_resp = _registry->find_link_by_id(*id);
+    auto metadata_resp = _registry->find_link_by_id(id.value());
     if (!metadata_resp) {
         co_return err_info(
           errc::link_id_not_found,
@@ -501,7 +503,9 @@ ss::future<cl_result<model::metadata>> manager::update_mirror_topic_status(
     cmd.force_update = model::update_mirror_topic_status_cmd::force_update_t{
       force_update};
     auto ec = co_await _registry->update_mirror_topic_state(
-      *link_id, std::move(cmd), ::model::timeout_clock::now() + model_timeout);
+      link_id.value(),
+      std::move(cmd),
+      ::model::timeout_clock::now() + model_timeout);
     auto err = map_cluster_errc(ec);
     if (err != errc::success) {
         co_return err_info(
@@ -509,14 +513,15 @@ ss::future<cl_result<model::metadata>> manager::update_mirror_topic_status(
           fmt::format(
             "Failed to update mirror topic '{}' status on link '{}': {}",
             topic,
-            *link_id,
+            link_id.value(),
             ec));
     }
-    auto metadata_resp = _registry->find_link_by_id(*link_id);
+    auto metadata_resp = _registry->find_link_by_id(link_id.value());
     if (!metadata_resp) {
         co_return err_info(
           errc::link_id_not_found,
-          fmt::format("Failed to find cluster link with id '{}'", *link_id));
+          fmt::format(
+            "Failed to find cluster link with id '{}'", link_id.value()));
     }
     co_return metadata_resp->get().copy();
 }
@@ -536,21 +541,22 @@ manager::failover_link_topics(model::name_t link_name) {
           ssx::sformat("Unable to find link by name '{}'", link_name)};
     }
     auto ec = co_await _registry->failover_link_topics(
-      *link_id, ::model::timeout_clock::now() + model_timeout);
+      link_id.value(), ::model::timeout_clock::now() + model_timeout);
     auto err = map_cluster_errc(ec);
     if (err != errc::success) {
         co_return err_info(
           err,
           fmt::format(
             "Failed to failover all mirror topics on link '{}': {}",
-            *link_id,
+            link_id.value(),
             ec));
     }
-    auto metadata_resp = _registry->find_link_by_id(*link_id);
+    auto metadata_resp = _registry->find_link_by_id(link_id.value());
     if (!metadata_resp) {
         co_return err_info(
           errc::link_id_not_found,
-          fmt::format("Failed to find cluster link with id '{}'", *link_id));
+          fmt::format(
+            "Failed to find cluster link with id '{}'", link_id.value()));
     }
     co_return metadata_resp->get().copy();
 }
@@ -631,7 +637,7 @@ ss::future<cl_result<model::metadata>> manager::remove_shadow_topic_from_link(
     cmd.topic = shadow_topic;
 
     auto ec = co_await _registry->delete_shadow_topic(
-      *link_id, std::move(cmd), ::model::timeout_clock::now() + 30s);
+      link_id.value(), std::move(cmd), ::model::timeout_clock::now() + 30s);
 
     auto err = map_cluster_errc(ec);
     if (err != errc::success) {
@@ -838,7 +844,7 @@ manager::get_partition_offsets_report_for_link(
           errc::link_id_not_found,
           ssx::sformat("Unable to find link by name '{}'", name));
     }
-    return get_partition_offsets_report_for_link(*link_id);
+    return get_partition_offsets_report_for_link(link_id.value());
 }
 
 cl_result<chunked_hash_map<::model::ntp, replication::partition_offsets_report>>

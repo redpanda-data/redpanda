@@ -339,7 +339,7 @@ std::optional<recorder::oom_recorder> recorder::begin_oom_recording() {
     cd.type = crash_type::oom;
     return [this](std::string_view ms) {
         vassert(_oom_writer.has_value(), "OOM message already recorded");
-        (*_oom_writer)(ms);
+        (_oom_writer.value())(ms);
     };
 }
 

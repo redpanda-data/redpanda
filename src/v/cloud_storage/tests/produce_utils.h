@@ -80,7 +80,7 @@ public:
                   cur_timestamp);
                 if (cur_timestamp.has_value()) {
                     cur_timestamp = model::timestamp(
-                      (*cur_timestamp)() + _batch_time_delta_ms);
+                      (cur_timestamp.value())() + _batch_time_delta_ms);
                 }
             }
             co_await log->flush();
@@ -123,7 +123,7 @@ public:
                   cur_timestamp);
                 if (cur_timestamp.has_value()) {
                     cur_timestamp = model::timestamp(
-                      (*cur_timestamp)() + _batch_time_delta_ms);
+                      (cur_timestamp.value())() + _batch_time_delta_ms);
                 }
             }
             co_await log->flush();

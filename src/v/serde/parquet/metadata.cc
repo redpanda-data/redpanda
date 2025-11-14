@@ -34,7 +34,7 @@ iobuf encode_kv(std::string_view key, std::optional<std::string_view> val) {
         kv_encoder.write_field(
           value_field_id,
           thrift::field_type::binary,
-          thrift::encode_string(*val));
+          thrift::encode_string(val.value()));
     }
     return std::move(kv_encoder).write_stop();
 }
@@ -59,7 +59,7 @@ iobuf encode(const statistics& stats) {
         encoder.write_field(
           null_count_field_id,
           thrift::field_type::i64,
-          vint::to_bytes(*stats.null_count));
+          vint::to_bytes(stats.null_count.value()));
     }
     if (stats.max) {
         encoder.write_field(
@@ -596,19 +596,19 @@ iobuf encode(const column_meta_data& metadata) {
         encoder.write_field(
           index_page_offset_field_id,
           thrift::field_type::i64,
-          vint::to_bytes(*metadata.index_page_offset));
+          vint::to_bytes(metadata.index_page_offset.value()));
     }
     if (metadata.dictionary_page_offset) {
         encoder.write_field(
           dictionary_page_offset_field_id,
           thrift::field_type::i64,
-          vint::to_bytes(*metadata.dictionary_page_offset));
+          vint::to_bytes(metadata.dictionary_page_offset.value()));
     }
     if (metadata.stats) {
         encoder.write_field(
           stats_field_id,
           thrift::field_type::structure,
-          encode(*metadata.stats));
+          encode(metadata.stats.value()));
     }
     return std::move(encoder).write_stop();
 }
@@ -622,7 +622,7 @@ iobuf encode(const column_chunk& chunk) {
         encoder.write_field(
           file_path_field_id,
           thrift::field_type::binary,
-          thrift::encode_string(*chunk.file_path));
+          thrift::encode_string(chunk.file_path.value()));
     }
     // Deprecated, but required. Always write 0
     encoder.write_field(
@@ -833,7 +833,9 @@ iobuf encode(const data_page_header& header) {
       bytes());
     if (header.stats) {
         encoder.write_field(
-          stats_field_id, thrift::field_type::structure, encode(*header.stats));
+          stats_field_id,
+          thrift::field_type::structure,
+          encode(header.stats.value()));
     }
     return std::move(encoder).write_stop();
 }

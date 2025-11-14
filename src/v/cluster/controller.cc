@@ -658,7 +658,7 @@ ss::future<> controller::start(
         // that all partition info from extra kvstores has been copied and we
         // can finally update the configuration invariants.
         auto new_invariants = configuration_invariants(
-          *config::node().node_id(), ss::smp::count);
+          config::node().node_id().value(), ss::smp::count);
         co_await _storage.local().kvs().put(
           storage::kvstore::key_space::controller,
           invariants_key(),
@@ -1196,7 +1196,7 @@ controller::get_controller_partition_state() {
               res.error_code);
             continue;
         }
-        results.push_back(std::move(*res.state));
+        results.push_back(std::move(res.state.value()));
     }
     co_return results;
 }
@@ -1259,7 +1259,7 @@ controller::validate_configuration_invariants() {
       "Node id must be set before checking configuration invariants");
 
     auto current = configuration_invariants(
-      *config::node().node_id(), ss::smp::count);
+      config::node().node_id().value(), ss::smp::count);
 
     if (!invariants_buf) {
         // store configuration invariants
@@ -1274,7 +1274,7 @@ controller::validate_configuration_invariants() {
         co_return current;
     }
     auto invariants = reflection::from_iobuf<configuration_invariants>(
-      std::move(*invariants_buf));
+      std::move(invariants_buf.value()));
     // node id changed
 
     if (invariants.node_id != current.node_id) {

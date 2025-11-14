@@ -108,7 +108,7 @@ std::optional<security::acl_match> acl_matches::find(
         if (auto entry = entries.acl_entry_set.get().find(
               operation, principal, host, perm);
             entry.has_value()) {
-            return {{entries.resource, *entry}};
+            return {{entries.resource, entry.value()}};
         }
     }
 
@@ -116,7 +116,7 @@ std::optional<security::acl_match> acl_matches::find(
         if (auto entry = wildcards->acl_entry_set.get().find(
               operation, principal, host, perm);
             entry.has_value()) {
-            return {{wildcards->resource, *entry}};
+            return {{wildcards->resource, entry.value()}};
         }
     }
 
@@ -124,7 +124,7 @@ std::optional<security::acl_match> acl_matches::find(
         if (auto entry = literals->acl_entry_set.get().find(
               operation, principal, host, perm);
             entry.has_value()) {
-            return {{literals->resource, *entry}};
+            return {{literals->resource, entry.value()}};
         }
     }
 
@@ -423,7 +423,7 @@ std::ostream& operator<<(std::ostream& os, const resource_pattern& r) {
 
 std::ostream& operator<<(std::ostream& os, const acl_host& host) {
     if (host._addr) {
-        fmt::print(os, "{{{}}}", *host._addr);
+        fmt::print(os, "{{{}}}", host._addr.value());
     } else {
         // we can log whatever representation we want for a wildcard host,
         // but kafka expects "*" as the wildcard representation.
@@ -516,11 +516,11 @@ bool acl_entry_filter::matches(const acl_entry& other) const {
         return false;
     }
 
-    if (_operation && *_operation != other.operation()) {
+    if (_operation && _operation.value() != other.operation()) {
         return false;
     }
 
-    return !_permission || *_permission == other.permission();
+    return !_permission || _permission.value() == other.permission();
 }
 
 std::vector<resource_pattern>
@@ -532,29 +532,33 @@ resource_pattern_filter::to_resource_patterns() const {
     if (
       _pattern
       && std::holds_alternative<resource_pattern_filter::pattern_match>(
-        *_pattern)) {
+        _pattern.value())) {
         return {};
     }
 
     if (_pattern) {
         if (std::holds_alternative<resource_pattern_filter::pattern_match>(
-              *_pattern)) {
+              _pattern.value())) {
             return {};
         }
         return {
           resource_pattern(
-            *_resource, *_name, std::get<pattern_type>(*_pattern)),
+            _resource.value(),
+            _name.value(),
+            std::get<pattern_type>(_pattern.value())),
         };
     } else {
         return {
-          resource_pattern(*_resource, *_name, pattern_type::literal),
-          resource_pattern(*_resource, *_name, pattern_type::prefixed),
+          resource_pattern(
+            _resource.value(), _name.value(), pattern_type::literal),
+          resource_pattern(
+            _resource.value(), _name.value(), pattern_type::prefixed),
         };
     }
 }
 
 bool resource_pattern_filter::matches(const resource_pattern& pattern) const {
-    if (_resource && *_resource != pattern.resource()) {
+    if (_resource && _resource.value() != pattern.resource()) {
         return false;
     }
 
@@ -572,8 +576,8 @@ bool resource_pattern_filter::matches(const resource_pattern& pattern) const {
     }
 
     if (
-      _pattern && std::holds_alternative<pattern_type>(*_pattern)
-      && std::get<pattern_type>(*_pattern) != pattern.pattern()) {
+      _pattern && std::holds_alternative<pattern_type>(_pattern.value())
+      && std::get<pattern_type>(_pattern.value()) != pattern.pattern()) {
         return false;
     }
 
@@ -582,8 +586,8 @@ bool resource_pattern_filter::matches(const resource_pattern& pattern) const {
     }
 
     if (
-      !_pattern || (std::holds_alternative<pattern_type>(*_pattern)
-      && std::get<pattern_type>(*_pattern) == pattern.pattern())) {
+      !_pattern || (std::holds_alternative<pattern_type>(_pattern.value())
+      && std::get<pattern_type>(_pattern.value()) == pattern.pattern())) {
         return _name == pattern.name();
     }
 
@@ -593,7 +597,7 @@ bool resource_pattern_filter::matches(const resource_pattern& pattern) const {
                || pattern.name() == resource_pattern::wildcard;
 
     case pattern_type::prefixed:
-        return std::string_view(*_name).starts_with(pattern.name());
+        return std::string_view(_name.value()).starts_with(pattern.name());
     }
 
     __builtin_unreachable();
@@ -619,7 +623,7 @@ void read_nested_v0(
         return;
     }
 
-    switch (*pattern) {
+    switch (pattern.value()) {
     case serialized_pattern_type::literal:
         filter._pattern = security::pattern_type::literal;
         break;
@@ -643,11 +647,11 @@ void write_v0(iobuf& out, resource_pattern_filter filter) {
     if (filter.pattern()) {
         if (std::holds_alternative<
               security::resource_pattern_filter::pattern_match>(
-              *filter.pattern())) {
+              filter.pattern().value())) {
             pattern = serialized_pattern_type::match;
         } else {
             auto source_pattern = std::get<security::pattern_type>(
-              *filter.pattern());
+              filter.pattern().value());
             pattern = resource_pattern_filter::to_pattern(source_pattern);
         }
     }

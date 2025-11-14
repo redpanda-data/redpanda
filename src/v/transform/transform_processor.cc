@@ -252,8 +252,8 @@ processor::load_latest_committed() {
                   _logger.debug, "resolved start offset: {}", *initial_offset);
             }
             co_await _offset_tracker->commit_offset(
-              output.index, *initial_offset);
-            latest_committed[output.index] = *initial_offset;
+              output.index, initial_offset.value());
+            latest_committed[output.index] = initial_offset.value();
             continue;
         }
         // The latest record is inclusive of the last record, so we want to
@@ -300,7 +300,7 @@ ss::future<> processor::run_consumer_loop(kafka::offset offset) {
             co_await poll_sleep();
             continue;
         }
-        offset = kafka::next_offset(*last_offset);
+        offset = kafka::next_offset(last_offset.value());
         vlog(_logger.trace, "consumed up to offset {}", offset);
     }
 }
@@ -315,7 +315,7 @@ ss::future<> processor::run_transform_loop() {
         ss::chunked_fifo<model::transformed_data> transformed;
         vlog(_logger.trace, "transforming offset {}", offset);
         co_await _engine->transform(
-          std::move(*batch),
+          std::move(batch.value()),
           _probe,
           [this](
             std::optional<model::topic_view> topic,

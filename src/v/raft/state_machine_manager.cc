@@ -366,7 +366,7 @@ ss::future<> state_machine_manager::apply_initial_recovery_policy() {
       snapshot->initial_recovery_next_offsets,
       [this](const auto& pair) { return !_machines.contains(pair.first); });
 
-    co_await write_initial_recovery_snapshot(std::move(*snapshot));
+    co_await write_initial_recovery_snapshot(std::move(snapshot.value()));
 }
 
 std::vector<state_machine_manager::entry_ptr>

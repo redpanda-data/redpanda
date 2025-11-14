@@ -69,7 +69,7 @@ model::broker make_self_broker(const config::node_config& node_cfg) {
     // that needs to be assigned a node ID when it first starts up.
     model::node_id node_id = node_cfg.node_id() == std::nullopt
                                ? model::unassigned_node_id
-                               : *node_cfg.node_id();
+                               : node_cfg.node_id().value();
     return model::broker(
       node_id,
       kafka_addr,

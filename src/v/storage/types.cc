@@ -48,7 +48,8 @@ std::optional<kafka::offset> stm_manager::lowest_pinned_data_offset() const {
     for (const auto& stm : _stms) {
         auto pinned = stm->lowest_pinned_data_offset();
         if (pinned) {
-            result = std::min(*pinned, result.value_or(kafka::offset::max()));
+            result = std::min(
+              pinned.value(), result.value_or(kafka::offset::max()));
         }
     }
     return result;
@@ -106,7 +107,7 @@ std::ostream& operator<<(std::ostream& o, const timequery_config& a) {
     o << "{min_offset: " << a.min_offset << ", max_offset: " << a.max_offset
       << ", time:" << a.time << ", type_filter:";
     if (a.type_filter) {
-        o << *a.type_filter;
+        o << a.type_filter.value();
     } else {
         o << "nullopt";
     }

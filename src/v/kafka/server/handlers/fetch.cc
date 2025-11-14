@@ -64,7 +64,7 @@ std::optional<kafka::leader_id_and_epoch> get_leader_id_and_epoch(
     auto lt = md_cache.get_leader_term(ktp.as_tn_view(), ktp.get_partition());
     if (lt && lt->leader) {
         return kafka::leader_id_and_epoch{
-          .leader_id = *lt->leader,
+          .leader_id = lt->leader.value(),
           .leader_epoch = kafka::leader_epoch_from_term(lt->term)};
     }
     return std::nullopt;
@@ -79,7 +79,7 @@ kafka::read_result make_errored_read_result(
         if (err == kafka::error_code::unknown_topic_or_partition) {
             err = kafka::error_code::not_leader_for_partition;
         }
-        return {err, std::move(*l)};
+        return {err, std::move(l.value())};
     }
     return kafka::read_result(err);
 }
@@ -141,7 +141,8 @@ static ss::future<read_result> read_from_partition(
 
     try {
         auto result = co_await rdr.reader.consume(
-          kafka_batch_serializer(), deadline ? *deadline : model::no_timeout);
+          kafka_batch_serializer(),
+          deadline ? deadline.value() : model::no_timeout);
         data = std::make_unique<iobuf>(std::move(result.data));
         data_base_offset = result.base_offset;
         data_last_offset = result.last_offset;
@@ -253,7 +254,7 @@ static ss::future<read_result> do_read_from_ntp(
      * validate leader epoch. for more details see KIP-320
      */
     auto leader_epoch_err = details::check_leader_epoch(
-      ntp_config.cfg.current_leader_epoch, *kafka_partition);
+      ntp_config.cfg.current_leader_epoch, kafka_partition.value());
     if (leader_epoch_err != error_code::none) {
         co_return make_errored_read_result(
           md_cache, ntp_config.ktp(), leader_epoch_err);
@@ -313,7 +314,7 @@ static ss::future<read_result> do_read_from_ntp(
         }
     }
     auto res_fut = co_await ss::coroutine::as_future(read_from_partition(
-      std::move(*kafka_partition),
+      std::move(kafka_partition.value()),
       maybe_lso.value(),
       ntp_config.cfg,
       deadline));
@@ -387,7 +388,7 @@ static void fill_fetch_responses(
         resp.partition_index = res.partition;
         resp.error_code = res.error;
         if (res.current_leader) {
-            resp.current_leader = *res.current_leader;
+            resp.current_leader = res.current_leader.value();
         }
 
         // These are set to -1 in the general error case.
@@ -421,7 +422,7 @@ static void fill_fetch_responses(
          * data to be stored in the cache so next read is fast
          */
         if (res.preferred_replica) {
-            resp.preferred_read_replica = *res.preferred_replica;
+            resp.preferred_read_replica = res.preferred_replica.value();
         }
 
         std::optional<fetch_memory_units> resp_units{};
@@ -784,7 +785,7 @@ private:
                   q_results.last_visible_indexes);
                 first_run_latency_result
                   = std::chrono::duration_cast<std::chrono::microseconds>(
-                    op_context::latency_clock::now() - *start_time);
+                    op_context::latency_clock::now() - start_time.value());
             } else {
                 // Override the older results of the partitions with the newly
                 // queried results.
@@ -1358,7 +1359,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
                       }
                   }
 
-                  plan.fetches_per_shard[*shard].push_back(
+                  plan.fetches_per_shard[shard.value()].push_back(
                     std::move(ktp),
                     fetch_config{
                       .start_offset = fp.fetch_offset,

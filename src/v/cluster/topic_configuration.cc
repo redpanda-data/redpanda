@@ -42,7 +42,7 @@ storage::ntp_config topic_configuration::make_ntp_config(
             .cache_enabled = storage::with_cache(
               !is_internal() || tp_ns.tp == model::tx_manager_topic),
             .recovery_enabled = storage::topic_recovery_enabled(
-              properties.recovery ? *properties.recovery : false),
+              properties.recovery ? properties.recovery.value() : false),
             .shadow_indexing_mode = properties.shadow_indexing,
             .read_replica = properties.read_replica,
             .retention_local_target_bytes

@@ -49,7 +49,7 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     }
 
     auto& tp_id = cmd.value.cfg.tp_id;
-    if (tp_id && _topics.get_name(*tp_id)) {
+    if (tp_id && _topics.get_name(tp_id.value())) {
         co_return errc::topic_id_already_exists;
     }
 
@@ -232,7 +232,7 @@ topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
             auto tp_id = topic_cfg.tp_id;
             if (tp_id.has_value()) {
                 auto tombstone = nt_cloud_topic_tombstone{
-                  .topic_id = *tp_id,
+                  .topic_id = tp_id.value(),
                 };
                 _cloud_topic_tombstones.emplace(soft_del.topic, tombstone);
                 vlog(
@@ -810,7 +810,7 @@ topic_table::apply(set_topic_partitions_disabled_cmd cmd, model::offset o) {
     const auto& assignments = topic_it->second.get_assignments();
 
     if (cmd.value.partition_id) {
-        auto assignment_it = assignments.find(*cmd.value.partition_id);
+        auto assignment_it = assignments.find(cmd.value.partition_id.value());
         if (assignment_it == assignments.end()) {
             co_return errc::partition_not_exists;
         }
@@ -820,9 +820,9 @@ topic_table::apply(set_topic_partitions_disabled_cmd cmd, model::offset o) {
         auto& disabled_set = disabled_it->second;
 
         if (cmd.value.disabled) {
-            disabled_set.add(*cmd.value.partition_id);
+            disabled_set.add(cmd.value.partition_id.value());
         } else {
-            disabled_set.remove(*cmd.value.partition_id, assignments);
+            disabled_set.remove(cmd.value.partition_id.value(), assignments);
         }
 
         if (disabled_set.is_fully_enabled()) {
@@ -831,7 +831,9 @@ topic_table::apply(set_topic_partitions_disabled_cmd cmd, model::offset o) {
 
         _pending_ntp_deltas.emplace_back(
           model::ntp{
-            cmd.value.ns_tp.ns, cmd.value.ns_tp.tp, *cmd.value.partition_id},
+            cmd.value.ns_tp.ns,
+            cmd.value.ns_tp.tp,
+            cmd.value.partition_id.value()},
           assignment_it->second.group,
           model::revision_id{o},
           topic_table_ntp_delta_type::disabled_flag_updated);
@@ -969,8 +971,9 @@ void incremental_update(
         }
         // It's guaranteed that the remove operation will only be
         // used with one of the 'drop_' flags.
-        property = model::add_shadow_indexing_flag(*property, *override.value);
-        if (*property == model::shadow_indexing_mode::disabled) {
+        property = model::add_shadow_indexing_flag(
+          property.value(), override.value.value());
+        if (property.value() == model::shadow_indexing_mode::disabled) {
             property = std::nullopt;
         }
         return;
@@ -980,8 +983,8 @@ void incremental_update(
             break;
         }
         property = model::add_shadow_indexing_flag(
-          property ? *property : model::shadow_indexing_mode::disabled,
-          *override.value);
+          property ? property.value() : model::shadow_indexing_mode::disabled,
+          override.value.value());
         return;
     case incremental_update_operation::none:
         // do nothing
@@ -1226,7 +1229,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
 
     if (cmd.value.topic_id.op == incremental_update_operation::set) {
         auto& tp_id = cmd.value.topic_id.value;
-        if (tp_id && _topics.get_name(*tp_id)) {
+        if (tp_id && _topics.get_name(tp_id.value())) {
             co_return errc::topic_id_already_exists;
         }
 
@@ -1567,7 +1570,7 @@ public:
       const controller_snapshot_parts::topics_t::topic_t& topic) {
         topic_metadata_item ret{topic_metadata{topic.metadata, {}}};
         if (topic.disabled_set) {
-            _disabled_partitions[ns_tp] = *topic.disabled_set;
+            _disabled_partitions[ns_tp] = topic.disabled_set.value();
             _topics_map_revision++;
         }
 
@@ -1639,7 +1642,7 @@ ss::future<> topic_table::apply_snapshot(
                 if (topic_snapshot.disabled_set) {
                     old_disabled_set = std::exchange(
                       _disabled_partitions[ns_tp],
-                      *topic_snapshot.disabled_set);
+                      topic_snapshot.disabled_set.value());
                     _topics_map_revision++;
                 } else if (auto it = _disabled_partitions.find(ns_tp);
                            it != _disabled_partitions.end()) {

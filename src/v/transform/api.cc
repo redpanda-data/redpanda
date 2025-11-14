@@ -397,7 +397,8 @@ public:
         if (!partition) {
             throw std::runtime_error("unable to create transform source");
         }
-        auto src = std::make_unique<partition_source>(*std::move(partition));
+        auto src = std::make_unique<partition_source>(
+          std::move(partition).value());
 
         std::vector<std::unique_ptr<sink>> sinks;
         sinks.reserve(meta.output_topics.size());

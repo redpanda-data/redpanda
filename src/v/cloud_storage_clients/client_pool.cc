@@ -91,7 +91,7 @@ ss::future<> client_pool::client_self_configure(
             co_return;
         }
 
-        self_config_output = *result;
+        self_config_output = result.value();
         vlog(
           pool_log.info,
           "Client self configuration completed with result {}",
@@ -159,7 +159,7 @@ ss::future<> client_pool::accept_self_configure_result(
 
     if (result) {
         cloud_storage_clients::apply_self_configuration_result(
-          _config, *result);
+          _config, result.value());
     }
 
     populate_client_pool();

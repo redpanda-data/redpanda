@@ -86,7 +86,7 @@ to_admin_type(const cluster::data_migrations::inbound_migration& idm) {
         inbound_tp.source_topic_reference = to_admin_type(
           inbound_t.source_topic_name, inbound_t.cloud_storage_location);
         if (inbound_t.alias) {
-            inbound_tp.alias = to_admin_type(*inbound_t.alias);
+            inbound_tp.alias = to_admin_type(inbound_t.alias.value());
         }
         migration.topics.push(inbound_tp);
     }

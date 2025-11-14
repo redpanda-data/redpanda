@@ -225,7 +225,7 @@ bool frontend::is_topic_mutable_for_kafka_api(const model::topic& topic) const {
         // topic does not belong to any cluster link
         return true;
     }
-    return is_topic_mutable(*status);
+    return is_topic_mutable(status.value());
 }
 
 std::optional<chunked_hash_map<
@@ -344,9 +344,9 @@ ss::future<errc> frontend::do_mutation(
     if (!cluster_leader) {
         co_return errc::not_leader_controller;
     }
-    if (*cluster_leader != _self) {
+    if (cluster_leader.value() != _self) {
         co_return co_await dispatch_mutation_to_remote(
-          *cluster_leader,
+          cluster_leader.value(),
           std::move(cmd),
           timeout - model::timeout_clock::now());
     }
@@ -827,7 +827,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
           if (
             !cmd.value.force_update
             && !::cluster_link::model::is_valid_status_transition(
-              *status, cmd.value.status)) {
+              status.value(), cmd.value.status)) {
               vlog(
                 cluster::clusterlog.warn,
                 "Attempting to change state of mirror topic {} from {} to "

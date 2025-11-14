@@ -65,7 +65,7 @@ validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
             return true;
         }
         const auto& bitflags = cfg.properties.cleanup_policy_bitflags;
-        return model::is_deletion_enabled(*bitflags);
+        return model::is_deletion_enabled(bitflags.value());
     };
     const auto is_nodelete_topic = [](const delete_records_topic& t) {
         const auto& nodelete_topics
@@ -81,7 +81,7 @@ validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
       model::topic_namespace_view(model::kafka_namespace, t.name));
     if (!cfg) {
         return make_partition_errors(t, error_code::unknown_topic_or_partition);
-    } else if (!is_deletable(*cfg)) {
+    } else if (!is_deletable(cfg.value())) {
         return make_partition_errors(t, error_code::policy_violation);
     } else if (is_nodelete_topic(t)) {
         vlog(
@@ -261,7 +261,7 @@ delete_records_handler::handle(request_context ctx, ss::smp_service_group) {
               auto f
                 = ctx.partition_manager()
                     .invoke_on(
-                      *shard,
+                      shard.value(),
                       [ktp,
                        timeout = request.data.timeout_ms,
                        o = partition.offset](cluster::partition_manager& pm) {

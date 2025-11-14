@@ -231,7 +231,7 @@ parse_optional_string_map(const json::Value& v, std::string_view member_name) {
     if (!map_json) {
         return std::nullopt;
     }
-    return parse_string_map(*map_json, member_name);
+    return parse_string_map(map_json.value(), member_name);
 }
 
 } // namespace iceberg

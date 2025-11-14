@@ -69,11 +69,11 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_parser) {
     BOOST_REQUIRE_EQUAL(expected.def, result.def);
     BOOST_REQUIRE_EQUAL(expected.id.has_value(), result.id.has_value());
     if (expected.id.has_value()) {
-        BOOST_REQUIRE_EQUAL(*expected.id, *result.id);
+        BOOST_REQUIRE_EQUAL(expected.id.value(), result.id.value());
     }
     BOOST_REQUIRE_EQUAL(
       expected.version.has_value(), result.version.has_value());
     if (expected.version.has_value()) {
-        BOOST_REQUIRE_EQUAL(*expected.version, *result.version);
+        BOOST_REQUIRE_EQUAL(expected.version.value(), result.version.value());
     }
 }

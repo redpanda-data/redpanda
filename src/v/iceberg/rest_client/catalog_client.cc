@@ -188,7 +188,7 @@ catalog_client::maybe_configure(retry_chain_node& rtc) {
         }
     }
     if (!prefix && _warehouse) {
-        prefix = prefix_path{*_warehouse};
+        prefix = prefix_path{_warehouse.value()};
     }
     // TODO: use the config for more than just prefix setting.
     _path_components.reset_prefix(std::move(prefix));
@@ -234,7 +234,7 @@ catalog_client::acquire_token(retry_chain_node& rtc) {
     auto req_res = co_await perform_request(
       rtc,
       token_request,
-      custom_oauth2_server ? *creds.oauth2_server_uri : _endpoint,
+      custom_oauth2_server ? creds.oauth2_server_uri.value() : _endpoint,
       client_probe::endpoint::oauth_token,
       std::move(payload));
     if (!req_res.has_value()) {
@@ -548,7 +548,8 @@ ss::future<expected<std::monostate>> catalog_client::drop_table(
     http::rest_client::rest_entity::optional_query_params params;
     if (purge_requested.has_value()) {
         params.emplace();
-        params.value()["purgeRequested"] = *purge_requested ? "true" : "false";
+        params.value()["purgeRequested"] = purge_requested.value() ? "true"
+                                                                   : "false";
     }
 
     auto http_request = table(root_path(), ns)

@@ -160,7 +160,8 @@ remote::remote(
 
         auto& abs_config = std::get<cloud_storage_clients::abs_configuration>(
           current_config);
-        abs_config.shared_key = cloud_roles::private_key_str{*new_shared_key};
+        abs_config.shared_key = cloud_roles::private_key_str{
+          new_shared_key.value()};
         _auth_refresh_bg_op.set_client_config(std::move(current_config));
 
         _pool.local().load_credentials(
@@ -354,7 +355,7 @@ ss::future<upload_result> remote::upload_stream(
           *result,
           stream_label);
     }
-    co_return *result;
+    co_return result.value();
 }
 
 ss::future<download_result> remote::download_stream(
@@ -481,7 +482,7 @@ ss::future<download_result> remote::download_stream(
           *result,
           path);
     }
-    co_return *result;
+    co_return result.value();
 }
 
 ss::future<download_result>
@@ -575,7 +576,7 @@ remote::download_object(download_request download_request) {
           object_type,
           path);
     }
-    co_return *result;
+    co_return result.value();
 }
 
 ss::future<download_result> remote::object_exists(
@@ -652,7 +653,7 @@ ss::future<download_result> remote::object_exists(
           object_type,
           path);
     }
-    co_return *result;
+    co_return result.value();
 }
 
 ss::future<upload_result>
@@ -731,7 +732,7 @@ remote::delete_object(transfer_details transfer_details) {
           bucket,
           *result);
     }
-    co_return *result;
+    co_return result.value();
 }
 
 template<typename R>
@@ -900,7 +901,7 @@ ss::future<upload_result> remote::delete_object_batch(
           bucket,
           *result);
     }
-    co_return *result;
+    co_return result.value();
 }
 
 template ss::future<upload_result>
@@ -1127,7 +1128,7 @@ ss::future<list_result> remote::list_objects(
           bucket,
           result->error());
     }
-    co_return std::move(*result);
+    co_return std::move(result.value());
 }
 
 ss::future<upload_result> remote::upload_object(upload_request upload_request) {
@@ -1221,7 +1222,7 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
           *result,
           upload_type);
     }
-    co_return *result;
+    co_return result.value();
 }
 
 ss::future<>

@@ -240,7 +240,7 @@ ss::future<fetch_request> fetcher::make_fetch_request(
                   fetch_partition f_partition;
                   f_partition.partition = f_state.partition_id;
                   f_partition.fetch_offset = kafka::offset_cast(
-                    *f_state.fetch_offset);
+                    f_state.fetch_offset.value());
                   f_partition.last_fetched_epoch = f_state.current_leader_epoch;
                   f_partition.partition_max_bytes
                     = _parent->_config.partition_max_bytes;
@@ -998,7 +998,7 @@ bool fetcher::is_consistent_fetcher_epoch(
     if (!maybe_epoch_set) {
         return false;
     }
-    auto epoch_set = *maybe_epoch_set;
+    auto epoch_set = maybe_epoch_set.value();
 
     auto maybe_fetch_state = find_fetcher_state(topic, partition_id);
     if (!maybe_fetch_state) {

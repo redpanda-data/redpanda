@@ -894,7 +894,7 @@ ss::future<storage::append_result> append_exactly(
     iobuf key_buf{};
 
     if (key) {
-        key_buf = bytes_to_iobuf(*key);
+        key_buf = bytes_to_iobuf(key.value());
     }
 
     auto real_batch_size = sizeof(model::record_attributes::type) // attributes
@@ -4140,7 +4140,7 @@ struct record_batch_reader_accessor {
     static private_flags get_flags(model::record_batch_reader& r) {
         auto flags = r._impl->get_flags();
         EXPECT_TRUE(flags.has_value()) << "private flags unset";
-        return *flags;
+        return flags.value();
     };
 };
 } // namespace model
@@ -6387,13 +6387,13 @@ TEST_F(storage_test_fixture, find_sliding_ranges) {
                 // Override the dirty offset of the segment, if specified
                 ot.set_offset(
                   storage::segment::offset_tracker::dirty_offset_t{
-                    *segment_fields[i].dirty_offset_override});
+                    segment_fields[i].dirty_offset_override.value()});
             }
             if (segment_fields[i].base_offset_override.has_value()) {
                 // Override the base offset of the segment, if specified
                 storage::testing_details::offset_tracker_accessor::base_offset(
                   ot)
-                  = *segment_fields[i].base_offset_override;
+                  = segment_fields[i].base_offset_override.value();
             }
         }
 
@@ -6408,7 +6408,7 @@ TEST_F(storage_test_fixture, find_sliding_ranges) {
             ASSERT_TRUE(adjacent_ranges.has_value());
             ASSERT_EQ(adjacent_ranges->size(), expected_ranges.size());
             for (size_t expected_ranges_index = 0;
-                 const auto& seg_it : *adjacent_ranges) {
+                 const auto& seg_it : adjacent_ranges.value()) {
                 auto first_index = segment_filename_index_map.at(
                   (*seg_it.first)->filename());
                 ASSERT_EQ(

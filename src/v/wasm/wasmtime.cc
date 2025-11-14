@@ -1603,7 +1603,7 @@ wasmtime_error_t* wasmtime_runtime::allocate_heap_memory(
           req.minimum,
           req.maximum);
         // return the memory we used back to the allocator
-        _heap_allocator.local().deallocate(std::move(*memory), 0);
+        _heap_allocator.local().deallocate(std::move(memory.value()), 0);
         return wasmtime_error_new(msg.c_str());
     }
     struct linear_memory {
@@ -1613,7 +1613,7 @@ wasmtime_error_t* wasmtime_runtime::allocate_heap_memory(
     };
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     memory_ret->env = new linear_memory{
-      .underlying = *std::move(memory),
+      .underlying = std::move(memory).value(),
       .used_memory = req.minimum,
       .allocator = &_heap_allocator.local(),
     };

@@ -210,7 +210,7 @@ leader_router::process(req_t req, bool local_only) {
               req_name);
             co_return resp_t{.ec = rpc::errc::not_leader};
         }
-        metastore_pid = *pid_opt;
+        metastore_pid = pid_opt.value();
     } else {
         metastore_pid = req.metastore_partition;
     }

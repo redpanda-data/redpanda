@@ -26,7 +26,7 @@ static constexpr std::chrono::milliseconds no_throttling{0};
 std::string_view
 get_effective_client_id(const std::optional<std::string_view>& client_id) {
     if (client_id.has_value()) {
-        return *client_id;
+        return client_id.value();
     }
     return anonymous_client_id;
 }

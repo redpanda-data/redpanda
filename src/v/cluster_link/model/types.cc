@@ -290,7 +290,7 @@ schema_registry_sync_config::shadow_entire_schema_registry::format_to(
 fmt::iterator schema_registry_sync_config::format_to(fmt::iterator it) const {
     if (sync_schema_registry_topic_mode.has_value()) {
         return ss::visit(
-          *sync_schema_registry_topic_mode, [&it](const auto& mode) {
+          sync_schema_registry_topic_mode.value(), [&it](const auto& mode) {
               return fmt::format_to(
                 it, "{{ sync_schema_registry_topic_mode: {} }}", mode);
           });
@@ -426,7 +426,7 @@ auto fmt::formatter<
     if (!m) {
         return fmt::format_to(ctx.out(), "none");
     }
-    return ss::visit(*m, [&ctx](const auto& authn) {
+    return ss::visit(m.value(), [&ctx](const auto& authn) {
         return fmt::format_to(ctx.out(), "{}", authn);
     });
 }
@@ -457,9 +457,9 @@ auto fmt::formatter<std::optional<cluster_link::model::tls_file_or_value>>::
         return fmt::format_to(ctx.out(), "not-set");
     }
     if (_is_sensitive) {
-        return fmt::format_to(ctx.out(), "{:s}", *m);
+        return fmt::format_to(ctx.out(), "{:s}", m.value());
     }
-    return fmt::format_to(ctx.out(), "{}", *m);
+    return fmt::format_to(ctx.out(), "{}", m.value());
 }
 
 auto fmt::formatter<cluster_link::model::connection_config>::format(
@@ -493,7 +493,7 @@ auto fmt::formatter<std::optional<model::topic_id>>::format(
     if (!m) {
         return fmt::format_to(ctx.out(), "none");
     }
-    return fmt::format_to(ctx.out(), "{}", *m);
+    return fmt::format_to(ctx.out(), "{}", m.value());
 }
 
 auto fmt::formatter<cluster_link::model::mirror_topic_metadata>::format(

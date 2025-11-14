@@ -98,7 +98,7 @@ plugin_table::map_t plugin_table::find_by_topic(
           "inconsistent topic index for {} expected id {}",
           tn,
           id);
-        output.emplace(id, *meta);
+        output.emplace(id, meta.value());
     }
     return output;
 }

@@ -314,7 +314,7 @@ static void add_topic_config(
             synonyms.push_back(
               describe_configs_synonym{
                 .name = ss::sstring(override_name),
-                .value = describe_f(*overrides),
+                .value = describe_f(overrides.value()),
                 .source = static_cast<int8_t>(describe_configs_source::topic),
               });
         }
@@ -360,7 +360,7 @@ static void add_topic_config(
             synonyms.push_back(
               describe_configs_synonym{
                 .name = ss::sstring(override_name),
-                .value = describe_f(*overrides),
+                .value = describe_f(overrides.value()),
                 .source = static_cast<int8_t>(describe_configs_source::topic),
               });
         }
@@ -750,7 +750,7 @@ config_response_container_t make_topic_configs(
       topic_property_remote_read,
       topic_properties.shadow_indexing.has_value()
         ? std::make_optional(
-            model::is_fetch_enabled(*topic_properties.shadow_indexing))
+            model::is_fetch_enabled(topic_properties.shadow_indexing.value()))
         : std::nullopt,
       include_synonyms,
       maybe_make_documentation(
@@ -768,7 +768,8 @@ config_response_container_t make_topic_configs(
       topic_property_remote_write,
       topic_properties.shadow_indexing.has_value()
         ? std::make_optional(
-            model::is_archival_enabled(*topic_properties.shadow_indexing))
+            model::is_archival_enabled(
+              topic_properties.shadow_indexing.value()))
         : std::nullopt,
       include_synonyms,
       maybe_make_documentation(
@@ -846,7 +847,7 @@ config_response_container_t make_topic_configs(
               if (!property) {
                   return ss::sstring("-");
               }
-              return ssx::sformat("{}", (*property)());
+              return ssx::sformat("{}", (property.value())());
           });
     }
 

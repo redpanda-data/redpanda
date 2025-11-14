@@ -49,7 +49,8 @@ metastore_service_impl::get_offsets(
     }
     proto::admin::metastore::get_offsets_response response;
     auto result = co_await _metastore->local().get_offsets(
-      {*topic_id, model::partition_id{req.get_partition().get_partition()}});
+      {topic_id.value(),
+       model::partition_id{req.get_partition().get_partition()}});
     if (!result) {
         check_errc(result.error());
     }

@@ -16,7 +16,7 @@ FIXTURE_TEST(test_single_node_decomissioning, rebalancing_tests_fixture) {
     create_topic(create_topic_cfg("test-4", 2, 3));
     populate_all_topics_with_data();
     // decomission single-node
-    auto res = (*get_leader_node_application())
+    auto res = (get_leader_node_application().value())
                  ->controller->get_members_frontend()
                  .local()
                  .decommission_node(model::node_id(0))

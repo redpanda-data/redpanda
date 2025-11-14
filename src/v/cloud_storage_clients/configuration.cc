@@ -128,7 +128,7 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
     // for S3 FIPS endpoints: <bucket>.s3-fips.<region>.amazonaws.com
     client_cfg.server_addr = net::unresolved_address(
       complete_endpoint_uri,
-      overrides.port ? *overrides.port : default_port,
+      overrides.port ? overrides.port.value() : default_port,
       ss::net::inet_address::family::INET);
     client_cfg.disable_metrics = disable_metrics;
     client_cfg.disable_public_metrics = disable_public_metrics;
@@ -138,7 +138,7 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
       region,
       endpoint_url{complete_endpoint_uri});
     client_cfg.max_idle_time = overrides.max_idle_time
-                                 ? *overrides.max_idle_time
+                                 ? overrides.max_idle_time.value()
                                  : default_max_idle_time;
     co_return client_cfg;
 }
@@ -189,7 +189,7 @@ ss::future<abs_configuration> abs_configuration::make_configuration(
 
     client_cfg.server_addr = net::unresolved_address(
       client_cfg.uri(),
-      overrides.port ? *overrides.port : default_port,
+      overrides.port ? overrides.port.value() : default_port,
       ss::net::inet_address::family::INET);
     client_cfg.disable_metrics = disable_metrics;
     client_cfg.disable_public_metrics = disable_public_metrics;
@@ -199,7 +199,7 @@ ss::future<abs_configuration> abs_configuration::make_configuration(
       storage_account_name,
       endpoint_url{endpoint_uri});
     client_cfg.max_idle_time = overrides.max_idle_time
-                                 ? *overrides.max_idle_time
+                                 ? overrides.max_idle_time.value()
                                  : default_max_idle_time;
     co_return client_cfg;
 }
@@ -223,7 +223,8 @@ abs_configuration abs_configuration::make_adls_configuration() const {
       = config::shard_local_cfg().cloud_storage_azure_adls_port();
     adls_config.server_addr = net::unresolved_address{
       endpoint_uri,
-      adls_port_override.has_value() ? *adls_port_override : default_port};
+      adls_port_override.has_value() ? adls_port_override.value()
+                                     : default_port};
 
     return adls_config;
 }

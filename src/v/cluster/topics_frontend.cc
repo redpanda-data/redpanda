@@ -508,7 +508,7 @@ topics_frontend::update_topic_properties(
       .with_node_client<controller_client_protocol>(
         _self,
         ss::this_shard_id(),
-        *cluster_leader,
+        cluster_leader.value(),
         timeout,
         [updates{std::move(updates)},
          timeout](controller_client_protocol client) mutable {
@@ -693,7 +693,7 @@ ss::future<topic_result> topics_frontend::do_create_topic(
                                   model::non_user_topics.size())
                                 - model::non_user_topics.size();
         if (
-          user_topic_count >= *max_user_topics_opt
+          user_topic_count >= max_user_topics_opt.value()
           && model::is_user_topic(tp_ns)) {
             vlog(
               clusterlog.warn,
@@ -950,7 +950,7 @@ ss::future<std::vector<topic_result>> topics_frontend::dispatch_delete_topics(
               .with_node_client<cluster::controller_client_protocol>(
                 _self,
                 ss::this_shard_id(),
-                *controller_leader,
+                controller_leader.value(),
                 timeout,
                 [topics, timeout](controller_client_protocol cp) mutable {
                     return cp.delete_topics(
@@ -1546,7 +1546,7 @@ ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
       .with_node_client<controller_client_protocol>(
         _self,
         ss::this_shard_id(),
-        *leader,
+        leader.value(),
         tout,
         [ntp = std::move(ntp), replicas = std::move(new_replica_set), tout](
           controller_client_protocol client) mutable {
@@ -1588,7 +1588,7 @@ ss::future<std::error_code> topics_frontend::revert_cancel_partition_move(
       .with_node_client<controller_client_protocol>(
         _self,
         ss::this_shard_id(),
-        *leader,
+        leader.value(),
         tout,
         [ntp = std::move(ntp),
          tout](controller_client_protocol client) mutable {
@@ -1664,10 +1664,10 @@ ss::future<std::error_code> topics_frontend::set_topic_partitions_disabled(
     // pre-replicate checks
 
     if (p_id) {
-        if (!_topics.local().contains(ns_tp, *p_id)) {
+        if (!_topics.local().contains(ns_tp, p_id.value())) {
             co_return errc::partition_not_exists;
         }
-        if (_topics.local().is_disabled(ns_tp, *p_id) == disabled) {
+        if (_topics.local().is_disabled(ns_tp, p_id.value()) == disabled) {
             // no-op
             co_return errc::success;
         }
@@ -1736,7 +1736,7 @@ ss::future<topic_result> topics_frontend::do_create_partition(
     }
 
     if (_features.local().should_sanction() && is_user_topic(tp_cfg->tp_ns)) {
-        if (auto f = get_enterprise_features(*tp_cfg); !f.empty()) {
+        if (auto f = get_enterprise_features(tp_cfg.value()); !f.empty()) {
             auto msg = features::enterprise_error_message::create_partition(f);
             vlog(clusterlog.warn, "{}", msg);
             co_return make_error_result(
@@ -1832,7 +1832,7 @@ topics_frontend::cancel_moving_partition_replicas_node(
       .with_node_client<controller_client_protocol>(
         _self,
         ss::this_shard_id(),
-        *leader,
+        leader.value(),
         timeout,
         [timeout, node_id, dir](controller_client_protocol client) mutable {
             return client
@@ -1867,7 +1867,7 @@ topics_frontend::cancel_moving_all_partition_replicas(
       .with_node_client<controller_client_protocol>(
         _self,
         ss::this_shard_id(),
-        *leader,
+        leader.value(),
         timeout,
         [timeout](controller_client_protocol client) mutable {
             return client
@@ -2237,7 +2237,7 @@ topics_frontend::do_get_partition_state(model::node_id node, model::ntp ntp) {
             return ss::make_ready_future<result<partition_state_reply>>(reply);
         }
         return _pm.invoke_on(
-          *shard,
+          shard.value(),
           [ntp = std::move(ntp),
            reply = std::move(reply)](partition_manager& pm) mutable {
               auto partition = pm.get(ntp);
@@ -2337,7 +2337,7 @@ topics_frontend::get_partition_state(model::ntp ntp) {
               res.error_code);
             continue;
         }
-        results.push_back(std::move(*res.state));
+        results.push_back(std::move(res.state.value()));
     }
     co_return results;
 }

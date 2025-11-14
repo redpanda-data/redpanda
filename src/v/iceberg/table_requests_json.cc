@@ -28,7 +28,7 @@ load_table_result parse_load_table_result(const json::Value& value) {
       value, "storage-credentials");
     if (storage_credentials) {
         ret.storage_credentials.emplace();
-        for (auto& sc_value : *storage_credentials) {
+        for (auto& sc_value : storage_credentials.value()) {
             iceberg::storage_credentials sc;
             sc.prefix = parse_required_str(sc_value, "prefix");
             sc.config = parse_required_string_map(sc_value, "config");
@@ -152,7 +152,7 @@ void rjson_serialize(
     if (req.properties.has_value()) {
         w.Key("properties");
         w.StartObject();
-        for (const auto& [k, v] : *req.properties) {
+        for (const auto& [k, v] : req.properties.value()) {
             w.Key(k);
             w.String(v);
         }

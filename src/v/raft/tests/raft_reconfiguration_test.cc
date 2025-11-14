@@ -276,7 +276,7 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
                 });
           });
         if (learner_start_offset != model::offset{}) {
-            start_offset = *learner_start_offset;
+            start_offset = learner_start_offset.value();
         }
     }
 

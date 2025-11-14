@@ -69,7 +69,8 @@ static ss::future<std::vector<epoch_end_offset>> fetch_offsets(
             continue;
         }
 
-        auto l_epoch_error = details::check_leader_epoch(r.current_epoch, *p);
+        auto l_epoch_error = details::check_leader_epoch(
+          r.current_epoch, p.value());
         if (l_epoch_error != error_code::none) {
             ret.push_back(
               response_t::make_epoch_end_offset(
@@ -80,7 +81,7 @@ static ss::future<std::vector<epoch_end_offset>> fetch_offsets(
         ret.push_back(
           response_t::make_epoch_end_offset(
             r.ktp.get_partition(),
-            co_await get_epoch_end_offset(r.requested_epoch, *p),
+            co_await get_epoch_end_offset(r.requested_epoch, p.value()),
             r.requested_epoch));
     }
     co_return ret;
@@ -180,7 +181,7 @@ get_offsets_for_leader_epochs(
               .requested_epoch = request_partition.leader_epoch,
               .current_epoch = request_partition.current_leader_epoch,
             };
-            auto& per_shard = requests_per_shard[*shard];
+            auto& per_shard = requests_per_shard[shard.value()];
             per_shard.requests.push_back(std::move(req));
             per_shard.responses.push_back(std::ref(partition_response));
         }

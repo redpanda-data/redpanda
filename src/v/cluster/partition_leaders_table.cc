@@ -264,7 +264,7 @@ void partition_leaders_table::do_update_partition_leader(
           p_id,
           model::ntp(t_it->first.ns, t_it->first.tp, p_id),
           term,
-          *leader_id);
+          leader_id.value());
     }
 }
 
@@ -310,7 +310,7 @@ ss::future<model::node_id> partition_leaders_table::wait_for_leader(
   ss::lowres_clock::time_point timeout,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
     if (auto leader = get_leader(ntp); leader.has_value()) {
-        return ss::make_ready_future<model::node_id>(*leader);
+        return ss::make_ready_future<model::node_id>(leader.value());
     }
     auto holder = _gate.hold();
     auto promise = ss::make_lw_shared<expiring_promise<model::node_id>>();

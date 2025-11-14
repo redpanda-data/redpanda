@@ -1092,10 +1092,11 @@ auto partition_balancer_planner::request_context::do_with_partition(
         // insert or return part._reallocated to reassignments
         if (reassignable.has_changes()) {
             if (reassignment_it != _reassignments.end()) {
-                reassignment_it->second = std::move(*reassignable._reallocated);
+                reassignment_it->second = std::move(
+                  reassignable._reallocated.value());
             } else {
                 _reassignments.emplace(
-                  ntp, std::move(*reassignable._reallocated));
+                  ntp, std::move(reassignable._reallocated.value()));
             }
         } else if (reassignment_it != _reassignments.end()) {
             // We no longer need to reassign this partition (presumably due to
@@ -1625,7 +1626,7 @@ ss::future<> partition_balancer_planner::get_rack_constraint_repair_actions(
         if (!ctx.timed_out_unavailable_nodes.contains(node_id)) {
             auto rack = ctx.state().members().get_node_rack_id(node_id);
             if (rack) {
-                available_racks.insert(*rack);
+                available_racks.insert(rack.value());
             }
         }
     }
@@ -1642,7 +1643,7 @@ ss::future<> partition_balancer_planner::get_rack_constraint_repair_actions(
             for (const auto& bs : part.replicas()) {
                 auto rack = ctx.state().members().get_node_rack_id(bs.node_id);
                 if (rack) {
-                    auto [it, inserted] = cur_racks.insert(*rack);
+                    auto [it, inserted] = cur_racks.insert(rack.value());
                     if (!inserted) {
                         to_move.push_back(bs.node_id);
                     }

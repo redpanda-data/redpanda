@@ -149,7 +149,7 @@ void test_wrapper(
 
     const auto m = chunk_read_baseline(
       f, fib, segment_bytes.copy(), index_upload);
-    const auto meta = *m.get(key);
+    const auto meta = m.get(key).value();
     partition_probe probe(manifest_ntp);
     auto& ts_probe = f.api.local().materialized().get_read_path_probe();
     remote_segment segment(
@@ -413,7 +413,7 @@ FIXTURE_TEST(test_chunk_multiple_readers, cloud_storage_fixture) {
     iobuf segment_bytes = generate_segment(model::offset(1), 300);
 
     auto m = chunk_read_baseline(*this, fib, segment_bytes.copy());
-    auto meta = *m.get(key);
+    auto meta = m.get(key).value();
 
     partition_probe probe(manifest_ntp);
     auto& ts_probe = api.local().materialized().get_read_path_probe();

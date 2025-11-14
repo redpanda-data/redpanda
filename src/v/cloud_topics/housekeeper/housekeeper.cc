@@ -49,10 +49,10 @@ ss::future<> housekeeper::stop() {
 ss::future<> housekeeper::do_housekeeping() {
     kafka::offset new_start_offset = kafka::offset::min();
     if (auto retention_bytes = _config->retention_bytes(_tidp)) {
-        new_start_offset = co_await do_bytes_retention(*retention_bytes);
+        new_start_offset = co_await do_bytes_retention(retention_bytes.value());
     }
     if (auto retention_duration = _config->retention_duration(_tidp)) {
-        auto offset = co_await do_time_retention(*retention_duration);
+        auto offset = co_await do_time_retention(retention_duration.value());
         new_start_offset = std::max(new_start_offset, offset);
     }
     if (new_start_offset != kafka::offset::min()) {

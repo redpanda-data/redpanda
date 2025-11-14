@@ -126,7 +126,7 @@ request_auth_result request_authenticator::do_authenticate(
               std::move(username), "Unauthorized");
         } else {
             auto sasl_mechanism = validate_scram_credential(
-              *cred_opt, password);
+              cred_opt.value(), password);
             if (!sasl_mechanism.has_value()) {
                 // User found, password doesn't match
                 vlog(
@@ -144,7 +144,7 @@ request_auth_result request_authenticator::do_authenticate(
                 return request_auth_result(
                   std::move(username),
                   std::move(password),
-                  ss::sstring{*sasl_mechanism},
+                  ss::sstring{sasl_mechanism.value()},
                   request_auth_result::superuser(superuser));
             }
         }

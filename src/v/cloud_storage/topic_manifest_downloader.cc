@@ -235,8 +235,8 @@ topic_manifest_downloader::find_manifests(
           if (!topic.has_value()) {
               return;
           }
-          if (!tp_filter.has_value() || tp_filter.value()(*topic)) {
-              topics.emplace(*topic);
+          if (!tp_filter.has_value() || tp_filter.value()(topic.value())) {
+              topics.emplace(topic.value());
           }
       };
     {

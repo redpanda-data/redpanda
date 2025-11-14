@@ -316,7 +316,7 @@ ss::future<> log_reader::find_next_valid_iterator() {
 bool log_reader::log_load_slice_depth_warning() const {
     const auto& depth
       = config::shard_local_cfg().debug_load_slice_warning_depth();
-    return depth.has_value() && _load_slice_depth >= *depth;
+    return depth.has_value() && _load_slice_depth >= depth.value();
 }
 
 void log_reader::maybe_log_load_slice_depth_warning(

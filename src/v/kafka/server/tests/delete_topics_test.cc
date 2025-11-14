@@ -86,7 +86,7 @@ public:
         // topics are deleted
         for (const auto& r : resp.data.responses) {
             BOOST_REQUIRE(r.name.has_value());
-            validate_topic_is_deleteted(*r.name);
+            validate_topic_is_deleteted(r.name.value());
         }
     }
 
@@ -157,7 +157,8 @@ public:
         for (const auto& tp_r : resp.data.responses) {
             BOOST_REQUIRE(tp_r.name.has_value());
             BOOST_REQUIRE_EQUAL(
-              tp_r.error_code, expected_response.find(*tp_r.name)->second);
+              tp_r.error_code,
+              expected_response.find(tp_r.name.value())->second);
         }
     }
 
@@ -250,7 +251,7 @@ FIXTURE_TEST(delete_valid_topics_v6_id, delete_topics_request_fixture) {
     // Single topic
     validate_valid_delete_topics_request(
       kafka::delete_topics_request{
-        .data = {.topics = {{.topic_id{*tp_1_id}}}, .timeout_ms = 10s}},
+        .data = {.topics = {{.topic_id{tp_1_id.value()}}}, .timeout_ms = 10s}},
       kafka::api_version{6});
 
     // Multi topic
@@ -262,7 +263,7 @@ FIXTURE_TEST(delete_valid_topics_v6_id, delete_topics_request_fixture) {
     validate_valid_delete_topics_request(
       kafka::delete_topics_request{
         .data
-        = {.topics = {{.topic_id{*tp_2_id}}, {.topic_id{*tp_3_id}}}, .timeout_ms = 10s}},
+        = {.topics = {{.topic_id{tp_2_id.value()}}, {.topic_id{tp_3_id.value()}}}, .timeout_ms = 10s}},
       kafka::api_version{6});
 }
 
@@ -297,8 +298,8 @@ FIXTURE_TEST(
     BOOST_REQUIRE(tp_1_id);
     validate_error_delete_topic_id_request(
       kafka::delete_topics_request{
-        .data = {.topics = {{.topic_id{*tp_1_id}}}, .timeout_ms = 30s}},
-      {{*tp_1_id, kafka::error_code::topic_authorization_failed}},
+        .data = {.topics = {{.topic_id{tp_1_id.value()}}}, .timeout_ms = 30s}},
+      {{tp_1_id.value(), kafka::error_code::topic_authorization_failed}},
       kafka::api_version{6},
       scram_user{.username = user_name_256, .password = password_256});
 
@@ -315,11 +316,11 @@ FIXTURE_TEST(
     validate_error_delete_topic_id_request(
       kafka::delete_topics_request{
         .data
-        = {.topics = {{.topic_id{*tp_2_id}}, {.topic_id{*tp_3_id}}, {.topic_id{*tp_4_id}}, {.topic_id{*tp_5_id}}}, .timeout_ms = 30s}},
-      {{*tp_2_id, kafka::error_code::topic_authorization_failed},
-       {*tp_3_id, kafka::error_code::topic_authorization_failed},
-       {*tp_4_id, kafka::error_code::topic_authorization_failed},
-       {*tp_5_id, kafka::error_code::topic_authorization_failed}},
+        = {.topics = {{.topic_id{tp_2_id.value()}}, {.topic_id{tp_3_id.value()}}, {.topic_id{tp_4_id.value()}}, {.topic_id{tp_5_id.value()}}}, .timeout_ms = 30s}},
+      {{tp_2_id.value(), kafka::error_code::topic_authorization_failed},
+       {tp_3_id.value(), kafka::error_code::topic_authorization_failed},
+       {tp_4_id.value(), kafka::error_code::topic_authorization_failed},
+       {tp_5_id.value(), kafka::error_code::topic_authorization_failed}},
       kafka::api_version{6},
       scram_user{.username = user_name_256, .password = password_256});
 }
@@ -456,7 +457,7 @@ FIXTURE_TEST(
     auto resp = send_delete_topics_request(
       kafka::delete_topics_request{
         .data
-        = {.topics = {{.topic_id{*topic_id}}, {.name{"topic-1"}}}, .timeout_ms = 10s}},
+        = {.topics = {{.topic_id{topic_id.value()}}, {.name{"topic-1"}}}, .timeout_ms = 10s}},
       kafka::api_version{6});
 
     BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);

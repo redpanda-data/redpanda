@@ -78,7 +78,7 @@ validate_and_get_configs_from_response(
     configs.reserve(resp.configs.size());
     for (const auto& c : resp.configs) {
         if (c.value.has_value()) {
-            configs.emplace(c.name, *c.value);
+            configs.emplace(c.name, c.value.value());
         }
     }
 
@@ -194,7 +194,7 @@ bool shadowing_entire_sr(const model::schema_registry_sync_config& cfg) {
            && std::holds_alternative<
              ::cluster_link::model::schema_registry_sync_config::
                shadow_entire_schema_registry>(
-             *cfg.sync_schema_registry_topic_mode);
+             cfg.sync_schema_registry_topic_mode.value());
 }
 
 bool select_topic(
@@ -423,7 +423,7 @@ void source_topic_syncer::enqueue_create_mirror_topic_commands(
               .source_topic_name = it->first,
               .partition_count = it->second.partition_count,
               .replication_factor = it->second.rf,
-              .topic_configs = std::move(*configs),
+              .topic_configs = std::move(configs.value()),
               .start_offset_ts = _config.get_start_offset_ts(),
             }});
     }
@@ -531,7 +531,7 @@ void source_topic_syncer::enqueue_update_mirror_topic_commands(
 
         if (configs.has_value()) {
             // Now check to see if the the properties on the topic have differed
-            for (const auto& [key, val] : *configs) {
+            for (const auto& [key, val] : configs.value()) {
                 auto cached_config_it = mirror_topic_cache.topic_configs.find(
                   key);
                 if (
@@ -619,7 +619,7 @@ source_topic_syncer::find_candidate_topics_for_update(
     candidate_update_map candidate_topics;
     candidate_topics.reserve(mirror_topics->size());
 
-    for (auto& [topic, mirror_metadata] : *mirror_topics) {
+    for (auto& [topic, mirror_metadata] : mirror_topics.value()) {
         vlog(logger().trace, "Checking metadata cache for topic {}", topic);
         auto metadata_value = validate_topic_cache_entry(
           logger(), cluster.get_topics(), topic);

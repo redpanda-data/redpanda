@@ -143,7 +143,7 @@ bool throughput_control_group::match_client_id(
     // missing client_id never matches a re
     return client_id
            && re2::RE2::FullMatch(
-             re2::StringPiece(*client_id), *client_id_matcher->v);
+             re2::StringPiece(client_id.value()), client_id_matcher->v.value());
 }
 
 bool throughput_control_group::is_noname() const noexcept {

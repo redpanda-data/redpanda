@@ -56,7 +56,8 @@ static std::unique_ptr<type_resolver> make_type_resolver(
         auto subject = pandaproxy::schema_registry::subject(
           fmt::format("{}-value", topic_name));
         if (auto explicit_subject = mode.subject_name()) {
-            subject = pandaproxy::schema_registry::subject(*explicit_subject);
+            subject = pandaproxy::schema_registry::subject(
+              explicit_subject.value());
         }
         return std::make_unique<latest_subject_schema_resolver>(
           sr,

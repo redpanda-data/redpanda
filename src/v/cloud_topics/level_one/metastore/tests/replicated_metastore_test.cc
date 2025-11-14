@@ -438,7 +438,7 @@ TEST_F(ReplicatedMetastoreTest, TestNotLeader) {
     auto meta_ntp = model::ntp{
       model::kafka_internal_namespace,
       model::l1_metastore_topic,
-      *meta_pid,
+      meta_pid.value(),
     };
 
     // Shuffle leadership of the metastore partition around.
@@ -509,7 +509,7 @@ TEST_F(ReplicatedMetastoreTest, TestNotLeader) {
 
     // Check the validity of the resulting state -- that it's contiguous with
     // no gaps or overlap.
-    auto l1_stm = get_l1_stm(*meta_pid);
+    auto l1_stm = get_l1_stm(meta_pid.value());
     ASSERT_TRUE(l1_stm != nullptr);
     auto& l1_state = l1_stm->state();
     ASSERT_EQ(l1_state.topic_to_state.size(), 1);

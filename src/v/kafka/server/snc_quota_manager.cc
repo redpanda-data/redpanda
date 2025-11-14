@@ -129,7 +129,7 @@ auto update_node_bucket(
     if (!cfg().has_value()) {
         return b.reset();
     }
-    uint64_t rate = *cfg();
+    uint64_t rate = cfg().value();
     if (b && b->rate() == rate) {
         return ss::make_ready_future();
     }

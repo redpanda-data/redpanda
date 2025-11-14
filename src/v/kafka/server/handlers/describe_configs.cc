@@ -74,12 +74,12 @@ static void report_broker_config(
           result.resource_name.data() + result.resource_name.size(), // NOLINT
           broker_id);
         if (res.ec == std::errc()) {
-            if (broker_id != *config::node().node_id()) {
+            if (broker_id != config::node().node_id().value()) {
                 result.error_code = error_code::invalid_request;
                 result.error_message = ssx::sformat(
                   "Unexpected broker id {} expected {}",
                   broker_id,
-                  *config::node().node_id());
+                  config::node().node_id().value());
                 return;
             }
         } else {

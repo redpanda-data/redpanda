@@ -118,7 +118,7 @@ public:
           std::unique_ptr<impl> impl, timeout_clock::time_point timeout) {
             auto gen = slice_generator(std::move(impl), timeout);
             while (auto slice = co_await gen()) {
-                for (auto& batch : *slice) {
+                for (auto& batch : slice.value()) {
                     co_yield std::move(batch);
                 }
             }

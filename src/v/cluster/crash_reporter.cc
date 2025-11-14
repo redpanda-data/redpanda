@@ -111,7 +111,7 @@ crash_reporter::rate_limiter::wait_time() {
     }
     try {
         auto md = serde::from_iobuf<crash_reporter_rate_limiting_metadata>(
-          std::move(*buf));
+          std::move(buf.value()));
         auto rate_limit_time = model::to_time_point(md.last_upload_time)
                                + upload_rate;
         auto remaining = rate_limit_time - clock::now();

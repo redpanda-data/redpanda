@@ -168,7 +168,8 @@ partition_translator::fetch_translation_offsets(retry_chain_node& rcn) {
     }
 
     auto next_start_offset = result.last_added_offset
-                               ? kafka::next_offset(*result.last_added_offset)
+                               ? kafka::next_offset(
+                                   result.last_added_offset.value())
                                : _data_source->min_offset_for_translation();
 
     // Replicate an initialized last translated offset to unblock the max

@@ -249,17 +249,17 @@ struct comparison_node : public ast_node {
         }
         switch (op) {
         case comparison_op::EQ:
-            return *typed_val == literal_value;
+            return typed_val.value() == literal_value;
         case comparison_op::NE:
-            return *typed_val != literal_value;
+            return typed_val.value() != literal_value;
         case comparison_op::LT:
-            return *typed_val < literal_value;
+            return typed_val.value() < literal_value;
         case comparison_op::GT:
-            return *typed_val > literal_value;
+            return typed_val.value() > literal_value;
         case comparison_op::LE:
-            return *typed_val <= literal_value;
+            return typed_val.value() <= literal_value;
         case comparison_op::GE:
-            return *typed_val >= literal_value;
+            return typed_val.value() >= literal_value;
         }
     }
 };
@@ -427,7 +427,7 @@ build_comparison(const aip_filter_config& config, const comparison& comp) {
     }
 
     serde::pb::field::value_t field_type = config.field_type_getter(
-      *field_numbers);
+      field_numbers.value());
 
     return ss::visit(
       field_type,
@@ -448,7 +448,7 @@ build_comparison(const aip_filter_config& config, const comparison& comp) {
           auto value = convert_literal<serde_type>(
             comp.value.value, comp.value.is_quoted, comp.field_path);
           return std::make_unique<comparison_node<serde_type, literal_type>>(
-            *field_numbers, comp.op, std::move(value));
+            field_numbers.value(), comp.op, std::move(value));
       },
       [&](const auto&) -> std::unique_ptr<ast_node> {
           throw serde::pb::rpc::invalid_argument_exception(

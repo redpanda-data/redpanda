@@ -243,7 +243,7 @@ build_reloadable_server_credentials_with_probe(
     }
     co_return co_await build_reloadable_credentials_with_probe<
       ss::tls::server_credentials>(
-      std::move(*builder),
+      std::move(builder.value()),
       std::move(service),
       std::move(listener_name),
       std::move(cb));

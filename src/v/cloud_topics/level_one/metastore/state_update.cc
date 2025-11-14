@@ -345,7 +345,7 @@ replace_objects_update::can_apply(const state& state) {
 
         // Check that the new range of extents is contiguous, which in turn
         // ensures the resulting total set of extents will be contiguous.
-        const auto& [base_it, last_it] = *iters;
+        const auto& [base_it, last_it] = iters.value();
         auto expected_next = base_it->base_offset;
         for (const auto& new_extent : new_prt_extents) {
             if (new_extent.base_offset != expected_next) {
@@ -382,7 +382,7 @@ replace_objects_update::can_apply(const state& state) {
             }
             if (compaction_update.new_cleaned_range.has_value()) {
                 const auto& req_cleaned_range
-                  = *compaction_update.new_cleaned_range;
+                  = compaction_update.new_cleaned_range.value();
 
                 // Check that the new extents span the start of the log to the
                 // end of the new clean range.
@@ -493,7 +493,7 @@ replace_objects_update::apply(state& state) {
         auto requested_base = new_extents.begin()->base_offset;
         auto requested_last = new_extents.rbegin()->last_offset;
         auto iters = get_range(p_state.extents, requested_base, requested_last);
-        auto [base_it, last_it] = *iters;
+        auto [base_it, last_it] = iters.value();
         auto end_it = std::next(last_it);
         for (auto iter = base_it; iter != end_it; ++iter) {
             auto& old_extent = *iter;
@@ -535,7 +535,7 @@ replace_objects_update::apply(state& state) {
             }
             if (compaction_update.new_cleaned_range.has_value()) {
                 const auto& req_cleaned_range
-                  = *compaction_update.new_cleaned_range;
+                  = compaction_update.new_cleaned_range.value();
                 [[maybe_unused]] auto inserted
                   = p_state.compaction_state->cleaned_ranges.insert(
                     req_cleaned_range.base_offset,
@@ -563,7 +563,7 @@ replace_objects_update::apply(state& state) {
                 }
             }
 
-            auto& cstate = *p_state.compaction_state;
+            auto& cstate = p_state.compaction_state.value();
             auto req_range_removed_tombstones
               = compaction_update.removed_tombstones_ranges.make_stream();
             while (req_range_removed_tombstones.has_next()) {
@@ -692,7 +692,7 @@ set_start_offset_update::apply(state& state) {
     }
     // Finally, remove any compaction state that falls below the start offset.
     if (p_state.compaction_state.has_value()) {
-        auto& c_state = *p_state.compaction_state;
+        auto& c_state = p_state.compaction_state.value();
         c_state.truncate_with_new_start_offset(new_start_offset);
     }
     return std::monostate{};

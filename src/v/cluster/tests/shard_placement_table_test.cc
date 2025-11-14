@@ -243,7 +243,7 @@ private:
         if (!maybe_placement) {
             co_return ss::stop_iteration::yes;
         }
-        auto placement = *maybe_placement;
+        auto placement = maybe_placement.value();
 
         std::optional<model::revision_id> expected_log_revision;
         if (auto it = _ntpt.ntp2meta.find(ntp); it != _ntpt.ntp2meta.end()) {

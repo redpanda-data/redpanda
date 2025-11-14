@@ -37,7 +37,7 @@ FIXTURE_TEST(test_successful_generation, topic_table_fixture) {
         next_batch = gen.next_batch().get();
         if (next_batch) {
             BOOST_REQUIRE(next_batch->size() <= 5);
-            for (auto& p_replicas : *next_batch) {
+            for (auto& p_replicas : next_batch.value()) {
                 vlog(test_log.debug, "{}", p_replicas.partition);
                 result[p_replicas.partition] = std::move(p_replicas.replicas);
             }

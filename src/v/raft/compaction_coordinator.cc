@@ -63,7 +63,7 @@ compaction_coordinator::compaction_coordinator(
 
 void compaction_coordinator::on_leadership_change(
   std::optional<vnode> new_leader_id) {
-    bool new_is_leader = (new_leader_id && *new_leader_id == _self);
+    bool new_is_leader = (new_leader_id && new_leader_id.value() == _self);
     if (new_is_leader != _is_leader) {
         _is_leader = new_is_leader;
         if (_is_leader) {
@@ -144,9 +144,9 @@ compaction_coordinator::base_interval() const {
     // Typically retention is 24h, set update interval to 1h
     // (up to 1.5h due to jitter).
     // Using half-max for disabled to avoid overflow in jitter.
-    clock_t::duration base_interval = retention
-                                        ? clock_t::duration(*retention / 24)
-                                        : clock_t::duration::max() / 2;
+    clock_t::duration base_interval = retention ? clock_t::duration(
+                                                    retention.value() / 24)
+                                                : clock_t::duration::max() / 2;
     vlog(_logger.debug, "calculated base_interval as {}", base_interval);
     return base_interval;
 }
@@ -215,7 +215,7 @@ ss::future<> compaction_coordinator::get_and_process_compaction_mcco(
           *maybe_mcco);
         co_return;
     }
-    fs_it->second.max_cleanly_compacted_offset = *maybe_mcco;
+    fs_it->second.max_cleanly_compacted_offset = maybe_mcco.value();
     if (_is_leader) [[likely]] {
         recalculate_mtro();
     }

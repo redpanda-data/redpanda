@@ -144,7 +144,8 @@ ss::future<api_response> aws_refresh_impl::fetch_credentials() {
       boost::beast::http::field::host, {host.data(), host.size()});
     creds_req.method(boost::beast::http::verb::get);
     creds_req.target(
-      fmt::format("/latest/meta-data/iam/security-credentials/{}", *_role));
+      fmt::format(
+        "/latest/meta-data/iam/security-credentials/{}", _role.value()));
     co_return co_await make_request_with_token(std::move(creds_req), token);
 }
 

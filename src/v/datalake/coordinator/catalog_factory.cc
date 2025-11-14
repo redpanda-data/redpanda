@@ -216,7 +216,7 @@ rest_catalog_factory::create_catalog(ss::abort_source& as) {
 
     auto warehouse = config_->iceberg_rest_catalog_warehouse()
                        ? std::make_optional<iceberg::rest_client::warehouse>(
-                           *config_->iceberg_rest_catalog_warehouse())
+                           config_->iceberg_rest_catalog_warehouse().value())
                        : std::nullopt;
     vlog(
       datalake_log.info,

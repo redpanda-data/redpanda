@@ -222,7 +222,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
     }
 
     return _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [ntp = std::move(ntp), pid, tx_seq, transaction_timeout_ms, tm, this](
         cluster::partition_manager& mgr) mutable {
@@ -442,7 +442,7 @@ ss::future<commit_tx_reply> rm_partition_frontend::do_commit_tx(
     }
 
     return _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [pid, ntp, tx_seq, timeout](cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
@@ -591,7 +591,7 @@ ss::future<abort_tx_reply> rm_partition_frontend::do_abort_tx(
     }
 
     return _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [pid, ntp, tx_seq, timeout](cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);

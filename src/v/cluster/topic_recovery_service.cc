@@ -102,7 +102,7 @@ static ss::sstring get_value_or_throw(
         throw std::runtime_error(
           fmt::format("configuration property {} is not set", name));
     }
-    return *opt;
+    return opt.value();
 }
 
 recovery_task_config recovery_task_config::make_config() {
@@ -260,13 +260,13 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
           request.topic_names_pattern().value().data(),
           request.topic_names_pattern().value().size());
     }
-    const auto requested_topic =
-      [&requested_pattern](const model::topic_namespace& topic) {
-          if (!requested_pattern) {
-              return true;
-          }
-          return std::regex_search(topic.tp().c_str(), *requested_pattern);
-      };
+    const auto requested_topic = [&requested_pattern](
+                                   const model::topic_namespace& topic) {
+        if (!requested_pattern) {
+            return true;
+        }
+        return std::regex_search(topic.tp().c_str(), requested_pattern.value());
+    };
 
     absl::flat_hash_set<model::topic_namespace> existing_topics;
     for (auto topic : _topic_state.local().all_topics()) {

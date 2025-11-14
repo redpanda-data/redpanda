@@ -185,7 +185,7 @@ tx_gateway_frontend::do_route_locally(model::ntp tx_ntp, T&& request) {
     }
 
     co_return co_await container().invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [tm = tx_ntp.tp.partition, request = std::forward<T>(request)](
         tx_gateway_frontend& self) -> ss::future<typename T::reply> {
@@ -666,7 +666,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
     }
     retries = _metadata_dissemination_retries;
 
-    auto leader_opt = co_await wait_for_leader(*coordinator_ntp);
+    auto leader_opt = co_await wait_for_leader(coordinator_ntp.value());
     if (!leader_opt) {
         vlog(
           txlog.warn,
@@ -1180,7 +1180,7 @@ ss::future<add_partitions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
       request.producer_epoch,
       request.topics);
     co_return co_await container().invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [request = std::move(request), timeout, tm = tx_ntp.tp.partition](
         tx_gateway_frontend& self) mutable
@@ -1526,7 +1526,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
     }
 
     co_return co_await container().invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [request = std::move(request), timeout, tm = tx_ntp.tp.partition](
         tx_gateway_frontend& self) mutable -> ss::future<add_offsets_tx_reply> {
@@ -1666,7 +1666,7 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
     }
 
     co_return co_await container().invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [request = std::move(request), timeout, tm = tx_ntp.tp.partition](
         tx_gateway_frontend& self) mutable -> ss::future<end_tx_reply> {
@@ -2581,7 +2581,7 @@ ss::future<> tx_gateway_frontend::expire_old_txs(const model::ntp& tx_ntp) {
     }
 
     return container().invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [tm = tx_ntp.tp.partition](
         tx_gateway_frontend& self) -> ss::future<void> {
@@ -2692,7 +2692,7 @@ tx_gateway_frontend::get_all_transactions_for_one_tx_partition(
     }
 
     co_return co_await container().invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [tx_partition = tx_manager_ntp.tp.partition](tx_gateway_frontend& self)
         -> ss::future<tx_gateway_frontend::return_all_txs_res> {
@@ -2816,7 +2816,7 @@ tx_gateway_frontend::describe_tx(kafka::transactional_id tid) {
     }
 
     co_return co_await container().invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [tid, tm_ntp = std::move(tm_ntp)](tx_gateway_frontend& self)
         -> ss::future<result<tx_metadata, tx::errc>> {
@@ -2922,7 +2922,7 @@ ss::future<tx::errc> tx_gateway_frontend::delete_partition_from_tx(
     }
 
     co_return co_await container().invoke_on(
-      *shard, _ssg, [tid, ntp, tm_ntp](tx_gateway_frontend& self) {
+      shard.value(), _ssg, [tid, ntp, tm_ntp](tx_gateway_frontend& self) {
           auto partition = self._partition_manager.local().get(tm_ntp.value());
           if (!partition) {
               vlog(

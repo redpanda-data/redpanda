@@ -212,7 +212,7 @@ validate_audit_excluded_topics(const std::vector<ss::sstring>& vs) {
               model::kafka_audit_logging_topic);
         } else if (is_invalid_topic_name.has_value()) {
             return ss::format(
-              "{} is an invalid topic name", *is_invalid_topic_name);
+              "{} is an invalid topic name", is_invalid_topic_name.value());
         }
     }
 
@@ -413,7 +413,7 @@ validate_cloud_storage_cluster_name(const std::optional<ss::sstring>& input) {
           "Length must be at most {} characters", max_cluster_name_length);
     }
 
-    for (char c : *input) {
+    for (char c : input.value()) {
         if (!std::isalnum(c) && !(c == '-' || c == '_')) {
             return "Only alphanumeric characters, hyphens, and underscores are "
                    "allowed";

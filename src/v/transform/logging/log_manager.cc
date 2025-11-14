@@ -193,7 +193,7 @@ private:
         iobuf nb;
         nb.append(name().data(), name().size());
         co_return io::json_batch{
-          std::move(nb), std::move(ev_json), std::move(*buffer_units)};
+          std::move(nb), std::move(ev_json), std::move(buffer_units.value())};
     }
 
     ss::future<> do_flush(model::partition_id pid, io::json_batches events) {
@@ -346,8 +346,8 @@ void manager<ClockType>::enqueue_log(
     }
 
     it->second.emplace_back(
-      event{_self, event::clock_type::now(), level, std::move(*b)},
-      std::move(*units));
+      event{_self, event::clock_type::now(), level, std::move(b.value())},
+      std::move(units.value()));
 
     if (check_lwm()) {
         _flusher->wakeup();

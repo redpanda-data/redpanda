@@ -488,7 +488,7 @@ public:
     template<typename H>
     friend H AbslHashValue(H h, const acl_host& host) {
         if (host._addr) {
-            return H::combine(std::move(h), *host._addr);
+            return H::combine(std::move(h), host._addr.value());
         } else {
             return H::combine(std::move(h), ss::net::inet_address{});
         }

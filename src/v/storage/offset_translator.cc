@@ -134,9 +134,9 @@ ss::future<> offset_translator::start(must_reset reset) {
 
         if (map_buf && highest_known_offset_buf) {
             *_state = storage::offset_translator_state::from_serialized_map(
-              _state->ntp(), std::move(*map_buf));
+              _state->ntp(), std::move(map_buf.value()));
             _highest_known_offset = reflection::from_iobuf<model::offset>(
-              std::move(*highest_known_offset_buf));
+              std::move(highest_known_offset_buf.value()));
 
             // highest known offset could be more stale than the map, in
             // this case we take it from the map
@@ -363,7 +363,7 @@ ss::future<> offset_translator::do_checkpoint() {
         co_await _kvs.put(
           storage::kvstore::key_space::offset_translator,
           offsets_map_key(),
-          std::move(*map_buf));
+          std::move(map_buf.value()));
         _map_version_at_checkpoint = map_version;
     }
 

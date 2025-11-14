@@ -73,7 +73,7 @@ ss::future<uint64_t> cloud_storage_size_reducer::do_reduce() {
     uint64_t total_cloud_storage_bytes{0};
     auto batch = co_await partition_gen.next_batch();
     while (batch) {
-        requests_t request_futures = map_batch(*batch);
+        requests_t request_futures = map_batch(batch.value());
         auto results = co_await ss::when_all_succeed(
           request_futures.begin(), request_futures.end());
 
@@ -148,7 +148,7 @@ model::broker cloud_storage_size_reducer::select_replica(
         if (
           auto md = _members_table.local().get_node_metadata_ref(
             replica.node_id)) {
-            if (leader && *leader == replica.node_id) {
+            if (leader && leader.value() == replica.node_id) {
                 return md.value().get().broker;
             }
 
@@ -159,7 +159,7 @@ model::broker cloud_storage_size_reducer::select_replica(
     }
 
     if (first_live_replica) {
-        return *first_live_replica;
+        return first_live_replica.value();
     }
 
     throw cloud_storage_size_reducer_exception(

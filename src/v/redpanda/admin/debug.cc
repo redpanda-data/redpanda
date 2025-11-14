@@ -81,7 +81,7 @@ void fill_raft_state(
     raft_state.time_since_last_flush = src.time_since_last_flush / 1ms;
     raft_state.replication_monitor_state = src.replication_monitor_state;
     if (src.followers) {
-        for (const auto& f : *src.followers) {
+        for (const auto& f : src.followers.value()) {
             ss::httpd::debug_json::raft_follower_state follower_state;
             follower_state.id = f.node();
             follower_state.last_flushed_log_index = f.last_flushed_log_index();
@@ -620,7 +620,7 @@ admin_server::cpu_profile_handler(std::unique_ptr<ss::http::request> req) {
               fmt::format(
                 "Invalid parameter 'shard_id' value {{{}}}", shard_param));
         }
-        check_shard_id(*shard_id);
+        check_shard_id(shard_id.value());
     }
 
     std::optional<std::chrono::milliseconds> wait_ms;
@@ -633,11 +633,11 @@ admin_server::cpu_profile_handler(std::unique_ptr<ss::http::request> req) {
               fmt::format(
                 "Invalid parameter 'wait_ms' value {{{}}}", wait_param));
         }
-        if (*wait_ms < 1ms || *wait_ms > 15min) {
+        if (wait_ms.value() < 1ms || wait_ms.value() > 15min) {
             throw ss::httpd::bad_param_exception(
               "wait_ms must be between 1ms and 15min");
         }
-        result.wait_ms = *wait_ms / 1ms;
+        result.wait_ms = wait_ms.value() / 1ms;
     }
 
     std::vector<resources::cpu_profiler::shard_samples> profiles;
@@ -645,7 +645,7 @@ admin_server::cpu_profile_handler(std::unique_ptr<ss::http::request> req) {
         profiles = co_await _cpu_profiler.local().results(shard_id);
     } else {
         profiles = co_await _cpu_profiler.local().collect_results_for_period(
-          *wait_ms, shard_id);
+          wait_ms.value(), shard_id);
     }
 
     result.arch = ss::sstring{util::cpu_arch::current().name};
@@ -722,7 +722,7 @@ admin_server::get_local_offsets_translated_handler(
         input.emplace_back(item.GetInt());
     }
     co_return co_await _controller->get_partition_manager().invoke_on(
-      *shard,
+      shard.value(),
       [ntp, translate_to, input = std::move(input)](
         cluster::partition_manager& pm) {
           auto partition = pm.get(ntp);
@@ -824,7 +824,7 @@ admin_server::sampled_memory_profile_handler(
     }
 
     if (shard_id.has_value()) {
-        check_shard_id(*shard_id);
+        check_shard_id(shard_id.value());
     }
 
     auto profiles = co_await _memory_sampling_service.local()

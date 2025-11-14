@@ -31,7 +31,8 @@ struct membership_test_fixture : raft_fixture {
             if (!leader_id) {
                 return false;
             }
-            auto leader_offset = node(*leader_id).raft()->last_visible_index();
+            auto leader_offset
+              = node(leader_id.value()).raft()->last_visible_index();
             auto& removed_node = node(removed_id);
             return removed_node.raft()->last_leader_visible_index()
                    < leader_offset;
@@ -77,7 +78,7 @@ TEST_F(membership_test_fixture, remove_non_leader) {
                    default_timeout(),
                    [this, to_remove_id](raft_node_instance& leader) {
                        return leader.raft()->remove_member(
-                         node(*to_remove_id).get_vnode(),
+                         node(to_remove_id.value()).get_vnode(),
                          model::revision_id(0));
                    })
                    .get();
@@ -89,7 +90,7 @@ TEST_F(membership_test_fixture, remove_non_leader) {
         replicate_options(consistency_level::quorum_ack))
       .get();
 
-    verify_removed_node_is_behind(*to_remove_id);
+    verify_removed_node_is_behind(to_remove_id.value());
 }
 
 TEST_F(membership_test_fixture, remove_current_leader) {

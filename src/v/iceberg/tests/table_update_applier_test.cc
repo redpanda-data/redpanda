@@ -56,7 +56,7 @@ TEST_F(UpdateApplyingVisitorTest, TestAddSchema) {
             .identifier_field_ids = {},
           },
           .last_column_id = last_column_id
-            ? std::make_optional<nested_field::id_t>(*last_column_id)
+            ? std::make_optional<nested_field::id_t>(last_column_id.value())
             : std::nullopt,
         };
     };
@@ -192,7 +192,7 @@ TEST_F(UpdateApplyingVisitorTest, TestAddSnapshot) {
           .snapshot = snapshot{
             .id = snapshot_id{snap_id},
             .parent_snapshot_id = parent
-              ? std::make_optional<snapshot_id>(*parent)
+              ? std::make_optional<snapshot_id>(parent.value())
               : std::nullopt,
             .sequence_number = sequence_number{seq_num},
           },

@@ -503,7 +503,7 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
     if (!is_read_replica && term >= first_local_term) {
         auto last_offset = _partition->get_term_last_offset(term);
         if (last_offset) {
-            co_return _translator->from_log_offset(*last_offset);
+            co_return _translator->from_log_offset(last_offset.value());
         }
     }
     // The requested term falls below our earliest local segment.

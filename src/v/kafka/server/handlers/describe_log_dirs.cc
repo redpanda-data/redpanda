@@ -84,7 +84,7 @@ static partition_dir_set collect_mapper(
     /*
      * return only partition matching request
      */
-    for (const auto& topic : *topics) {
+    for (const auto& topic : topics.value()) {
         for (auto p_id : topic.partition_index) {
             model::ntp ntp(model::kafka_namespace, topic.topic, p_id);
             if (auto p = pm.get(ntp); p) {

@@ -110,7 +110,8 @@ public:
     std::unique_ptr<ss::http::reply> build() && {
         if (_body) {
             _rep->write_body(
-              "json", pandaproxy::json::rjson_serialize(std::move(*_body)));
+              "json",
+              pandaproxy::json::rjson_serialize(std::move(_body.value())));
         }
         return std::move(_rep);
     }

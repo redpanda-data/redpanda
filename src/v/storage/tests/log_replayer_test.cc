@@ -134,7 +134,7 @@ public:
         _seg->reader().set_file_size(_seg->appender().file_byte_offset());
     }
 
-    log_replayer& replayer() { return *replayer_opt; }
+    log_replayer& replayer() { return replayer_opt.value(); }
 };
 } // namespace storage
 

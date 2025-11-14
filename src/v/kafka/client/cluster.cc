@@ -323,7 +323,7 @@ ss::future<metadata_response> cluster::dispatch_metadata_request(
         topics_to_request->reserve(topics_request_list->size());
         std::ranges::transform(
           std::move(topics_request_list.value()),
-          std::back_inserter(*topics_to_request),
+          std::back_inserter(topics_to_request.value()),
           [](model::topic& t) {
               return metadata_request_topic{.name = std::move(t)};
           });

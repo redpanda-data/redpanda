@@ -802,7 +802,7 @@ void configuration_change_strategy_v3::abort_configuration_change(
     std::erase_if(_cfg._brokers, [&physical_node_ids](model::broker& b) {
         return !physical_node_ids.contains(b.id());
     });
-    _cfg._current = *_cfg._old;
+    _cfg._current = _cfg._old.value();
     _cfg._old.reset();
 
     // make sure that all nodes are voters
@@ -815,7 +815,7 @@ void configuration_change_strategy_v3::abort_configuration_change(
 void configuration_change_strategy_v3::cancel_configuration_change(
   model::revision_id rev) {
     auto tmp = _cfg._current;
-    _cfg._current = *_cfg._old;
+    _cfg._current = _cfg._old.value();
     _cfg._old = std::move(tmp);
     _cfg._revision = rev;
 }
@@ -1065,7 +1065,7 @@ void configuration_change_strategy_v4::cancel_update_in_joint_state() {
      * After group configuration reached the joint state we must move back to
      * transitional state and start adding nodes that are removed.
      */
-    _cfg._current = *_cfg._old;
+    _cfg._current = _cfg._old.value();
     _cfg._old.reset();
 
     auto tmp_u = _cfg._configuration_update->replicas_to_add;
@@ -1387,7 +1387,7 @@ void configuration_change_strategy_v6::cancel_update_in_joint_state() {
     std::swap(
       _cfg._configuration_update->replicas_to_add,
       _cfg._configuration_update->replicas_to_remove);
-    _cfg._current = *_cfg._old;
+    _cfg._current = _cfg._old.value();
     _cfg._old.reset();
 
     fill_learners_with_nodes_to_add();

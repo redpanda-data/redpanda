@@ -48,11 +48,11 @@ SEASTAR_THREAD_TEST_CASE(test_decode_full_abs_path) {
     auto full_cfg = read_from_yaml(with_values);
     BOOST_TEST(full_cfg.is_enabled());
     const auto& key_cert = std::get<config::key_cert>(
-      *full_cfg.get_key_cert_files());
+      full_cfg.get_key_cert_files().value());
     BOOST_TEST(key_cert.key_file == "/fake/key_file.key");
     BOOST_TEST(key_cert.cert_file == "/fake/cret_file.crt");
-    BOOST_TEST(*full_cfg.get_truststore_file() == "/fake/truststore");
-    BOOST_TEST(*full_cfg.get_crl_file() == "/fake/crl");
+    BOOST_TEST(full_cfg.get_truststore_file().value() == "/fake/truststore");
+    BOOST_TEST(full_cfg.get_crl_file().value() == "/fake/crl");
     BOOST_TEST(full_cfg.get_require_client_auth());
 }
 
@@ -67,11 +67,11 @@ SEASTAR_THREAD_TEST_CASE(test_decode_full_rel_path) {
     auto full_cfg = read_from_yaml(with_values);
     BOOST_TEST(full_cfg.is_enabled());
     const auto& key_cert = std::get<config::key_cert>(
-      *full_cfg.get_key_cert_files());
+      full_cfg.get_key_cert_files().value());
     BOOST_TEST(key_cert.key_file != "./key_file.key");
     BOOST_TEST(key_cert.cert_file != "./cret_file.crt");
-    BOOST_TEST(*full_cfg.get_truststore_file() != "./truststore");
-    BOOST_TEST(*full_cfg.get_crl_file() != "./crl");
+    BOOST_TEST(full_cfg.get_truststore_file().value() != "./truststore");
+    BOOST_TEST(full_cfg.get_crl_file().value() != "./crl");
     BOOST_TEST(full_cfg.get_require_client_auth());
 }
 
@@ -106,11 +106,11 @@ SEASTAR_THREAD_TEST_CASE(test_decode_enabled_but_contains_empty_path) {
     auto full_cfg = read_from_yaml(with_values);
     BOOST_TEST(full_cfg.is_enabled());
     const auto& key_cert = std::get<config::key_cert>(
-      *full_cfg.get_key_cert_files());
+      full_cfg.get_key_cert_files().value());
     BOOST_TEST(key_cert.key_file == "");
     BOOST_TEST(key_cert.cert_file == "");
-    BOOST_TEST(*full_cfg.get_truststore_file() == "");
-    BOOST_TEST(*full_cfg.get_crl_file() == "");
+    BOOST_TEST(full_cfg.get_truststore_file().value() == "");
+    BOOST_TEST(full_cfg.get_crl_file().value() == "");
     BOOST_TEST(!full_cfg.get_require_client_auth());
 }
 
@@ -125,11 +125,11 @@ SEASTAR_THREAD_TEST_CASE(test_decode_p12_file) {
     auto full_cfg = read_from_yaml(with_values);
     BOOST_TEST(full_cfg.is_enabled());
     const auto& p12_bag = std::get<config::p12_container>(
-      *full_cfg.get_key_cert_files());
+      full_cfg.get_key_cert_files().value());
     BOOST_TEST(p12_bag.p12_path == "/fake/temp.pfx");
     BOOST_TEST(p12_bag.p12_password == "test");
-    BOOST_TEST(*full_cfg.get_truststore_file() == "/fake/truststore");
-    BOOST_TEST(*full_cfg.get_crl_file() == "/fake/crl");
+    BOOST_TEST(full_cfg.get_truststore_file().value() == "/fake/truststore");
+    BOOST_TEST(full_cfg.get_crl_file().value() == "/fake/crl");
     BOOST_TEST(full_cfg.get_require_client_auth());
 }
 
@@ -144,11 +144,11 @@ SEASTAR_THREAD_TEST_CASE(test_decode_p12_full_rel_path) {
     auto full_cfg = read_from_yaml(with_values);
     BOOST_TEST(full_cfg.is_enabled());
     const auto& p12_bag = std::get<config::p12_container>(
-      *full_cfg.get_key_cert_files());
+      full_cfg.get_key_cert_files().value());
     BOOST_TEST(p12_bag.p12_path != "./temp.pfx");
     BOOST_TEST(p12_bag.p12_password == "test");
-    BOOST_TEST(*full_cfg.get_truststore_file() != "./truststore");
-    BOOST_TEST(*full_cfg.get_crl_file() != "./crl");
+    BOOST_TEST(full_cfg.get_truststore_file().value() != "./truststore");
+    BOOST_TEST(full_cfg.get_crl_file().value() != "./crl");
     BOOST_TEST(full_cfg.get_require_client_auth());
 }
 

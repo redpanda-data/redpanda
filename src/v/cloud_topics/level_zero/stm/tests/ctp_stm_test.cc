@@ -109,24 +109,25 @@ TEST_F_CORO(ctp_stm_fixture, test_basic) {
 
     co_await wait_for_leader(raft::default_timeout());
 
-    auto gc_epoch = co_await api(node(*get_leader())).get_inactive_epoch();
+    auto gc_epoch
+      = co_await api(node(get_leader().value())).get_inactive_epoch();
 
     ASSERT_TRUE_CORO(gc_epoch);
     ASSERT_FALSE_CORO(gc_epoch.value().has_value());
 
     auto b = make_record_batch(ct::cluster_epoch{1}, model::offset{0}, 0);
     auto res = co_await replicate_record_batch(
-      node(*get_leader()), std::move(b));
+      node(get_leader().value()), std::move(b));
     ASSERT_TRUE_CORO(res.has_value());
 
-    auto max_epoch = api(node(*get_leader())).get_max_epoch();
-    auto max_seen_epoch = api(node(*get_leader())).get_max_seen_epoch();
+    auto max_epoch = api(node(get_leader().value())).get_max_epoch();
+    auto max_seen_epoch = api(node(get_leader().value())).get_max_seen_epoch();
     ASSERT_TRUE_CORO(max_epoch.has_value());
     ASSERT_TRUE_CORO(max_seen_epoch.has_value());
     ASSERT_EQ_CORO(max_epoch.value(), ct::cluster_epoch{1});
     ASSERT_EQ_CORO(max_seen_epoch.value(), ct::cluster_epoch{1});
 
-    gc_epoch = co_await api(node(*get_leader())).get_inactive_epoch();
+    gc_epoch = co_await api(node(get_leader().value())).get_inactive_epoch();
     ASSERT_TRUE_CORO(gc_epoch);
     ASSERT_TRUE_CORO(gc_epoch.value().has_value());
     ASSERT_EQ_CORO(gc_epoch.value().value(), ct::cluster_epoch{0});
@@ -137,18 +138,19 @@ TEST_F_CORO(ctp_stm_fixture, test_fencing) {
 
     co_await wait_for_leader(raft::default_timeout());
 
-    auto gc_epoch = co_await api(node(*get_leader())).get_inactive_epoch();
+    auto gc_epoch
+      = co_await api(node(get_leader().value())).get_inactive_epoch();
 
     ASSERT_TRUE_CORO(gc_epoch);
     ASSERT_FALSE_CORO(gc_epoch->has_value());
 
     auto b1 = make_record_batch(ct::cluster_epoch{2}, model::offset{0}, 0);
     auto res = co_await replicate_record_batch(
-      node(*get_leader()), std::move(b1));
+      node(get_leader().value()), std::move(b1));
     ASSERT_TRUE_CORO(res.has_value());
 
-    auto max_epoch = api(node(*get_leader())).get_max_epoch();
-    auto max_seen_epoch = api(node(*get_leader())).get_max_seen_epoch();
+    auto max_epoch = api(node(get_leader().value())).get_max_epoch();
+    auto max_seen_epoch = api(node(get_leader().value())).get_max_seen_epoch();
     ASSERT_TRUE_CORO(max_epoch.has_value());
     ASSERT_TRUE_CORO(max_seen_epoch.has_value());
     ASSERT_EQ_CORO(max_epoch.value(), ct::cluster_epoch{2});
@@ -156,26 +158,26 @@ TEST_F_CORO(ctp_stm_fixture, test_fencing) {
 
     // Acquire the fence for epoch 2 (should succeed)
     {
-        auto fence
-          = co_await api(node(*get_leader())).fence_epoch(ct::cluster_epoch{2});
+        auto fence = co_await api(node(get_leader().value()))
+                       .fence_epoch(ct::cluster_epoch{2});
         ASSERT_TRUE_CORO(fence.unit.has_value());
     }
 
     // Acquire the fence for epoch 1 (should fail)
     {
-        auto fence
-          = co_await api(node(*get_leader())).fence_epoch(ct::cluster_epoch{1});
+        auto fence = co_await api(node(get_leader().value()))
+                       .fence_epoch(ct::cluster_epoch{1});
         ASSERT_FALSE_CORO(fence.unit.has_value());
     }
 
     // Advance max_seen_epoch to 3.
-    auto write_fence
-      = co_await api(node(*get_leader())).fence_epoch(ct::cluster_epoch{3});
+    auto write_fence = co_await api(node(get_leader().value()))
+                         .fence_epoch(ct::cluster_epoch{3});
     ASSERT_TRUE_CORO(write_fence.unit.has_value());
 
     // Out of order fence for epoch 2 (should be waiting for the fence to be
     // released)
-    auto leader_api = api(node(*get_leader()));
+    auto leader_api = api(node(get_leader().value()));
     auto fut = leader_api.fence_epoch(ct::cluster_epoch{2});
     co_await ss::sleep(100ms);
 
@@ -192,30 +194,31 @@ TEST_F_CORO(ctp_stm_fixture, test_last_reconciled_offset) {
 
     co_await wait_for_leader(raft::default_timeout());
 
-    auto gc_epoch = co_await api(node(*get_leader())).get_inactive_epoch();
+    auto gc_epoch
+      = co_await api(node(get_leader().value())).get_inactive_epoch();
 
     ASSERT_TRUE_CORO(gc_epoch);
     ASSERT_FALSE_CORO(gc_epoch->has_value());
 
     auto b1 = make_record_batch(ct::cluster_epoch{1}, model::offset{0}, 0);
     auto res1 = co_await replicate_record_batch(
-      node(*get_leader()), std::move(b1));
+      node(get_leader().value()), std::move(b1));
     ASSERT_TRUE_CORO(res1.has_value());
 
     auto b2 = make_record_batch(ct::cluster_epoch{2}, model::offset{1}, 1);
     auto res2 = co_await replicate_record_batch(
-      node(*get_leader()), std::move(b2));
+      node(get_leader().value()), std::move(b2));
     ASSERT_TRUE_CORO(res2.has_value());
 
-    auto max_epoch = api(node(*get_leader())).get_max_epoch();
-    auto max_seen_epoch = api(node(*get_leader())).get_max_seen_epoch();
+    auto max_epoch = api(node(get_leader().value())).get_max_epoch();
+    auto max_seen_epoch = api(node(get_leader().value())).get_max_seen_epoch();
     ASSERT_TRUE_CORO(max_epoch.has_value());
     ASSERT_TRUE_CORO(max_seen_epoch.has_value());
     ASSERT_EQ_CORO(max_epoch.value(), ct::cluster_epoch{2});
     ASSERT_EQ_CORO(max_seen_epoch.value(), ct::cluster_epoch{2});
 
     auto gc_epoch_before
-      = co_await api(node(*get_leader())).get_inactive_epoch();
+      = co_await api(node(get_leader().value())).get_inactive_epoch();
     ASSERT_TRUE_CORO(gc_epoch_before);
     ASSERT_TRUE_CORO(gc_epoch_before->has_value());
     ASSERT_EQ_CORO(gc_epoch_before->value(), ct::cluster_epoch{0});
@@ -223,12 +226,13 @@ TEST_F_CORO(ctp_stm_fixture, test_last_reconciled_offset) {
     // Advance reconciled offset to the first batch (b1),
     // now b1 is reconciled and can be removed alongside its epoch (1).
     // First referenced epoch is now 2.
-    co_await api(node(*get_leader()))
+    co_await api(node(get_leader().value()))
       .advance_reconciled_offset(kafka::offset{0}, model::no_timeout, as);
 
     // Check that max and max_seen_epochs remain the same
-    auto max_epoch_after = api(node(*get_leader())).get_max_epoch();
-    auto max_seen_epoch_after = api(node(*get_leader())).get_max_seen_epoch();
+    auto max_epoch_after = api(node(get_leader().value())).get_max_epoch();
+    auto max_seen_epoch_after
+      = api(node(get_leader().value())).get_max_seen_epoch();
     ASSERT_TRUE_CORO(max_epoch_after.has_value());
     ASSERT_TRUE_CORO(max_seen_epoch_after.has_value());
     ASSERT_EQ_CORO(max_epoch_after.value(), ct::cluster_epoch{2});
@@ -236,23 +240,24 @@ TEST_F_CORO(ctp_stm_fixture, test_last_reconciled_offset) {
 
     // Check that first epoch to remove has moved forward
     auto gc_epoch_after
-      = co_await api(node(*get_leader())).get_inactive_epoch();
+      = co_await api(node(get_leader().value())).get_inactive_epoch();
     ASSERT_TRUE_CORO(gc_epoch_after.has_value());
     ASSERT_TRUE_CORO(gc_epoch_after->has_value());
     ASSERT_EQ_CORO(gc_epoch_after->value(), ct::cluster_epoch{1});
 
     // Advance reconciled offset to the b2 batch.
     // Now all epochs can be discarded.
-    co_await api(node(*get_leader()))
+    co_await api(node(get_leader().value()))
       .advance_reconciled_offset(kafka::offset{1}, model::no_timeout, as);
 
-    max_epoch_after = api(node(*get_leader())).get_max_epoch();
-    max_seen_epoch_after = api(node(*get_leader())).get_max_seen_epoch();
+    max_epoch_after = api(node(get_leader().value())).get_max_epoch();
+    max_seen_epoch_after = api(node(get_leader().value())).get_max_seen_epoch();
     ASSERT_TRUE_CORO(max_epoch_after.has_value());
     ASSERT_TRUE_CORO(max_seen_epoch_after.has_value());
 
     // We know that b2 started epoch 2 but we don't yet know where it ends
-    gc_epoch_after = co_await api(node(*get_leader())).get_inactive_epoch();
+    gc_epoch_after
+      = co_await api(node(get_leader().value())).get_inactive_epoch();
     ASSERT_TRUE_CORO(gc_epoch_after.has_value());
     ASSERT_FALSE_CORO(gc_epoch_after->has_value());
 }
@@ -265,7 +270,8 @@ TEST_F_CORO(ctp_stm_fixture, test_truncate_all_epochs) {
     co_await start();
     co_await wait_for_leader(raft::default_timeout());
 
-    auto gc_epoch = co_await api(node(*get_leader())).get_inactive_epoch();
+    auto gc_epoch
+      = co_await api(node(get_leader().value())).get_inactive_epoch();
 
     ASSERT_TRUE_CORO(gc_epoch);
     ASSERT_FALSE_CORO(gc_epoch->has_value());
@@ -277,37 +283,40 @@ TEST_F_CORO(ctp_stm_fixture, test_truncate_all_epochs) {
         last_epoch = ct::cluster_epoch(i / 2);
         auto b = make_record_batch(last_epoch, last_offset, i, 10);
         auto res = co_await replicate_record_batch(
-          node(*get_leader()), std::move(b));
+          node(get_leader().value()), std::move(b));
         ASSERT_TRUE_CORO(res.has_value());
     }
 
-    auto max_epoch = api(node(*get_leader())).get_max_epoch();
-    auto max_seen_epoch = api(node(*get_leader())).get_max_seen_epoch();
+    auto max_epoch = api(node(get_leader().value())).get_max_epoch();
+    auto max_seen_epoch = api(node(get_leader().value())).get_max_seen_epoch();
     ASSERT_TRUE_CORO(max_epoch.has_value());
     ASSERT_TRUE_CORO(max_seen_epoch.has_value());
     ASSERT_EQ_CORO(max_epoch.value(), last_epoch);
     ASSERT_EQ_CORO(max_seen_epoch.value(), last_epoch);
     // Nothing yet reconciled
     auto inactive_epoch
-      = co_await api(node(*get_leader())).get_inactive_epoch();
+      = co_await api(node(get_leader().value())).get_inactive_epoch();
     ASSERT_TRUE_CORO(inactive_epoch);
     ASSERT_FALSE_CORO(inactive_epoch->has_value());
 
     // Advance reconciled offset to the middle of the first epoch
-    co_await api(node(*get_leader()))
+    co_await api(node(get_leader().value()))
       .advance_reconciled_offset(kafka::offset(50), model::no_timeout, as);
     ss::abort_source as;
-    co_await api(node(*get_leader())).sync_in_term(model::no_timeout, as);
-    inactive_epoch = co_await api(node(*get_leader())).get_inactive_epoch();
+    co_await api(node(get_leader().value()))
+      .sync_in_term(model::no_timeout, as);
+    inactive_epoch
+      = co_await api(node(get_leader().value())).get_inactive_epoch();
     ASSERT_TRUE_CORO(inactive_epoch);
     ASSERT_TRUE_CORO(inactive_epoch->has_value());
     ASSERT_EQ_CORO(inactive_epoch->value(), ct::cluster_epoch{24});
 
     // Advance reconciled offset exactly to the end of the first epoch
-    co_await api(node(*get_leader()))
+    co_await api(node(get_leader().value()))
       .advance_reconciled_offset(kafka::offset(99), model::no_timeout, as);
-    inactive_epoch = co_await api(node(*get_leader())).get_inactive_epoch();
-    max_epoch = api(node(*get_leader())).get_max_epoch();
+    inactive_epoch
+      = co_await api(node(get_leader().value())).get_inactive_epoch();
+    max_epoch = api(node(get_leader().value())).get_max_epoch();
     ASSERT_TRUE_CORO(inactive_epoch);
     ASSERT_TRUE_CORO(max_epoch);
     ASSERT_FALSE_CORO(inactive_epoch->has_value());
@@ -317,7 +326,7 @@ TEST_F_CORO(ctp_stm_fixture, test_truncate_all_epochs) {
 TEST_F_CORO(ctp_stm_fixture, test_start_offset) {
     co_await start();
     co_await wait_for_leader(raft::default_timeout());
-    auto& leader = node(*get_leader());
+    auto& leader = node(get_leader().value());
     auto leader_api = api(leader);
     auto b1 = make_record_batch(ct::cluster_epoch{1}, model::offset{0}, 0);
     auto res1 = co_await replicate_record_batch(leader, std::move(b1));
@@ -349,7 +358,7 @@ TEST_F_CORO(ctp_stm_fixture, test_start_offset) {
 TEST_F_CORO(ctp_stm_fixture, truncates_below_lro) {
     co_await start();
     co_await wait_for_leader(raft::default_timeout());
-    auto& leader = node(*get_leader());
+    auto& leader = node(get_leader().value());
     EXPECT_EQ(leader.raft()->last_snapshot_index(), model::offset::min());
     auto leader_api = api(leader);
     // Write some data

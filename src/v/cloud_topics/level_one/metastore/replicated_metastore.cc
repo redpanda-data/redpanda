@@ -123,7 +123,7 @@ replicated_object_builder::get_or_create_object_for(
           error{"could not determine metastore partition for "
                 "get_or_create_object_for()"});
     }
-    auto& partition_objects = partitions_[*metastore_pid];
+    auto& partition_objects = partitions_[metastore_pid.value()];
 
     if (partition_objects.pending_objects_.empty()) {
         auto oid = create_object_id();
@@ -163,7 +163,7 @@ replicated_object_builder::add(
         return std::unexpected(
           error{"could not determine metastore partition for add()"});
     }
-    auto& partition_objects = partitions_[*metastore_pid];
+    auto& partition_objects = partitions_[metastore_pid.value()];
     auto it = partition_objects.pending_objects_.find(oid);
     if (it == partition_objects.pending_objects_.end()) {
         return std::unexpected(
@@ -274,7 +274,7 @@ replicated_metastore::add_objects(
             vlog(cd_log.error, "Unable to get metastore partition for {}", tp);
             co_return std::unexpected(errc::transport_error);
         }
-        auto& prt_terms = partitioned_terms[*metastore_partition][tp];
+        auto& prt_terms = partitioned_terms[metastore_partition.value()][tp];
         for (const auto& t : tp_terms) {
             prt_terms.emplace_back(
               term_start{.term_id = t.term, .start_offset = t.first_offset});
@@ -399,7 +399,7 @@ replicated_metastore::remove_topics(
     chunked_hash_set<model::topic_id> not_removed;
     auto fut = co_await ss::coroutine::as_future(
       ss::max_concurrent_for_each(
-        std::views::iota(0, *num_metastore_partitions),
+        std::views::iota(0, num_metastore_partitions.value()),
         max_rpc_concurrency,
         [this, &topics, &not_removed](int pid) {
             return fe_
@@ -582,14 +582,15 @@ replicated_metastore::compact_objects(
             vlog(cd_log.warn, "Unable to get metastore partition for {}", tp);
             co_return std::unexpected(errc::transport_error);
         }
-        if (!replicated_builder.partitions_.contains(*metastore_partition)) {
+        if (!replicated_builder.partitions_.contains(
+              metastore_partition.value())) {
             vlog(
               cd_log.error,
               "Expected objects for partition {}",
               *metastore_partition);
             co_return std::unexpected(errc::invalid_request);
         }
-        compaction_updates_by_partition[*metastore_partition].emplace(
+        compaction_updates_by_partition[metastore_partition.value()].emplace(
           tp, meta_to_rpc_compact_update(update));
     }
     for (auto& [partition_id, partition_objects] :

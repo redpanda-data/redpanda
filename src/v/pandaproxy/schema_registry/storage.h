@@ -142,8 +142,8 @@ struct schema_key {
               os,
               "seq: {}, node: {}, keytype: {}, subject: {}, version: {}, "
               "magic: {}",
-              *v.seq,
-              *v.node,
+              v.seq.value(),
+              v.node.value(),
               to_string_view(v.keytype),
               v.sub,
               v.version,
@@ -219,7 +219,7 @@ public:
                                      .match("node", state::node)
                                      .default_match(std::nullopt)};
             if (s.has_value()) {
-                _state = *s;
+                _state = s.value();
             }
             return s.has_value();
         }
@@ -405,7 +405,7 @@ public:
                                      .match("references", state::references)
                                      .default_match(std::nullopt)};
             if (s.has_value()) {
-                _state = *s;
+                _state = s.value();
             }
             return s.has_value();
         }
@@ -416,7 +416,7 @@ public:
                                      .match("version", state::reference_version)
                                      .default_match(std::nullopt)};
             if (s.has_value()) {
-                _state = *s;
+                _state = s.value();
             }
             return s.has_value();
         }
@@ -508,7 +508,7 @@ public:
         case state::type: {
             auto type = from_string_view<schema_type>(sv);
             if (type.has_value()) {
-                _schema.type = *type;
+                _schema.type = type.value();
                 _state = state::object;
             }
             return type.has_value();
@@ -615,8 +615,8 @@ struct config_key {
             fmt::print(
               os,
               "seq: {} node: {} keytype: {}, subject: {}, magic: {}",
-              *v.seq,
-              *v.node,
+              v.seq.value(),
+              v.node.value(),
               to_string_view(v.keytype),
               v.sub.value_or(invalid_subject),
               v.magic);
@@ -648,11 +648,11 @@ void rjson_serialize(
     ::json::rjson_serialize(w, key.magic);
     if (key.seq.has_value()) {
         w.Key("seq");
-        ::json::rjson_serialize(w, *key.seq);
+        ::json::rjson_serialize(w, key.seq.value());
     }
     if (key.node.has_value()) {
         w.Key("node");
-        ::json::rjson_serialize(w, *key.node);
+        ::json::rjson_serialize(w, key.node.value());
     }
     w.EndObject();
 }
@@ -687,7 +687,8 @@ public:
                                  .match("subject", state::subject)
                                  .match("magic", state::magic)
                                  .default_match(std::nullopt)};
-        return s.has_value() && std::exchange(_state, *s) == state::object;
+        return s.has_value()
+               && std::exchange(_state, s.value()) == state::object;
     }
 
     bool Uint(int i) {
@@ -808,7 +809,8 @@ public:
             .match("compatibilityLevel", state::compatibility)
             .match("subject", state::subject)
             .default_match(std::nullopt)};
-        return s.has_value() && std::exchange(_state, *s) == state::object;
+        return s.has_value()
+               && std::exchange(_state, s.value()) == state::object;
     }
 
     bool String(const Ch* str, ::json::SizeType len, bool) {
@@ -816,7 +818,7 @@ public:
         if (_state == state::compatibility) {
             auto s = from_string_view<compatibility_level>(sv);
             if (s.has_value()) {
-                result.compat = *s;
+                result.compat = s.value();
                 _state = state::object;
             }
             return s.has_value();
@@ -851,8 +853,8 @@ struct mode_key {
             fmt::print(
               os,
               "seq: {} node: {} keytype: {}, subject: {}, magic: {}",
-              *v.seq,
-              *v.node,
+              v.seq.value(),
+              v.node.value(),
               to_string_view(v.keytype),
               v.sub.value_or(invalid_subject),
               v.magic);
@@ -884,11 +886,11 @@ void rjson_serialize(
     ::json::rjson_serialize(w, key.magic);
     if (key.seq.has_value()) {
         w.Key("seq");
-        ::json::rjson_serialize(w, *key.seq);
+        ::json::rjson_serialize(w, key.seq.value());
     }
     if (key.node.has_value()) {
         w.Key("node");
-        ::json::rjson_serialize(w, *key.node);
+        ::json::rjson_serialize(w, key.node.value());
     }
     w.EndObject();
 }
@@ -923,7 +925,8 @@ public:
                                  .match("subject", state::subject)
                                  .match("magic", state::magic)
                                  .default_match(std::nullopt)};
-        return s.has_value() && std::exchange(_state, *s) == state::object;
+        return s.has_value()
+               && std::exchange(_state, s.value()) == state::object;
     }
 
     bool Uint(int i) {
@@ -1043,7 +1046,8 @@ public:
                                  .match("mode", state::mode)
                                  .match("subject", state::subject)
                                  .default_match(std::nullopt)};
-        return s.has_value() && std::exchange(_state, *s) == state::object;
+        return s.has_value()
+               && std::exchange(_state, s.value()) == state::object;
     }
 
     bool String(const Ch* str, ::json::SizeType len, bool) {
@@ -1051,7 +1055,7 @@ public:
         if (_state == state::mode) {
             auto s = from_string_view<mode>(sv);
             if (s.has_value()) {
-                result.mode = *s;
+                result.mode = s.value();
                 _state = state::object;
             }
             return s.has_value();
@@ -1088,8 +1092,8 @@ struct delete_subject_key {
             fmt::print(
               os,
               "seq: {}, node: {}, keytype: {}, subject: {}, magic: {}",
-              *v.seq,
-              *v.node,
+              v.seq.value(),
+              v.node.value(),
               to_string_view(v.keytype),
               v.sub,
               v.magic);
@@ -1158,7 +1162,7 @@ public:
                                      .match("node", state::node)
                                      .default_match(std::nullopt)};
             if (s.has_value()) {
-                _state = *s;
+                _state = s.value();
             }
             return s.has_value();
         }
@@ -1282,7 +1286,7 @@ public:
                                      .match("version", state::version)
                                      .default_match(std::nullopt)};
             if (s.has_value()) {
-                _state = *s;
+                _state = s.value();
             }
             return s.has_value();
         }
@@ -1385,7 +1389,7 @@ struct consume_to_store {
             co_return;
         }
 
-        switch (*key_type) {
+        switch (key_type.value()) {
         case topic_key_type::noop:
             break;
         case topic_key_type::schema: {
@@ -1542,7 +1546,7 @@ struct consume_to_store {
                         .node = key.node,
                         .version{invalid_schema_version}, // Not applicable
                         .key_type = seq_marker_key_type::config},
-                      *key.sub);
+                      key.sub.value());
                 } else {
                     co_await _store.set_compatibility(
                       seq_marker{
@@ -1550,7 +1554,7 @@ struct consume_to_store {
                         .node = key.node,
                         .version{invalid_schema_version}, // Not applicable
                         .key_type = seq_marker_key_type::config},
-                      *key.sub,
+                      key.sub.value(),
                       val->compat);
                 }
             } else if (val.has_value()) {
@@ -1595,7 +1599,7 @@ struct consume_to_store {
                         .node = key.node,
                         .version{invalid_schema_version}, // Not applicable
                         .key_type = seq_marker_key_type::mode},
-                      *key.sub,
+                      key.sub.value(),
                       force::yes);
                 } else {
                     co_await _store.set_mode(
@@ -1604,7 +1608,7 @@ struct consume_to_store {
                         .node = key.node,
                         .version{invalid_schema_version}, // Not applicable
                         .key_type = seq_marker_key_type::mode},
-                      *key.sub,
+                      key.sub.value(),
                       val->mode,
                       force::yes);
                 }

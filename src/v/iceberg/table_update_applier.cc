@@ -117,7 +117,7 @@ struct update_applying_visitor {
         if (!meta.snapshots.has_value()) {
             meta.snapshots.emplace();
         }
-        auto s = std::ranges::find(*meta.snapshots, sid, &snapshot::id);
+        auto s = std::ranges::find(meta.snapshots.value(), sid, &snapshot::id);
         if (s != meta.snapshots->end()) {
             vlog(log.error, "Snapshot id {} already exists", sid);
             return outcome::unexpected_state;
@@ -145,7 +145,7 @@ struct update_applying_visitor {
         }
         chunked_vector<snapshot> new_list;
         new_list.reserve(meta.snapshots->size());
-        for (auto& snap : *meta.snapshots) {
+        for (auto& snap : meta.snapshots.value()) {
             if (to_remove.contains(snap.id)) {
                 continue;
             }
@@ -175,7 +175,7 @@ struct update_applying_visitor {
             vlog(log.error, "No snapshots exist, looking for {}", sid);
             return outcome::unexpected_state;
         }
-        auto s = std::ranges::find(*meta.snapshots, sid, &snapshot::id);
+        auto s = std::ranges::find(meta.snapshots.value(), sid, &snapshot::id);
         if (s == meta.snapshots->end()) {
             vlog(log.error, "Snapshot id {} doesn't exist", sid);
             return outcome::unexpected_state;

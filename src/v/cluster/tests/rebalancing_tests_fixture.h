@@ -102,7 +102,7 @@ public:
     }
 
     void create_topic(cluster::topic_configuration cfg) {
-        auto res = (*get_leader_node_application())
+        auto res = (get_leader_node_application().value())
                      ->controller->get_topics_frontend()
                      .local()
                      .autocreate_topics({std::move(cfg)}, 2s)
@@ -123,7 +123,7 @@ public:
                   }
                   auto& pm = get_partition_manager(leader_id);
                   return pm.invoke_on(
-                    *shard, [ntp](cluster::partition_manager& pm) {
+                    shard.value(), [ntp](cluster::partition_manager& pm) {
                         return pm.get(ntp)->is_elected_leader();
                     });
               })
@@ -173,7 +173,7 @@ public:
 
                 auto shard = get_shard_table(leader_id).shard_for(ntp);
                 auto& pm = get_partition_manager(leader_id);
-                ret = pm.invoke_on(*shard, single_retry).get();
+                ret = pm.invoke_on(shard.value(), single_retry).get();
             } catch (...) {
                 ss::sleep(1s).get();
                 continue;
@@ -201,8 +201,10 @@ public:
             if (!leader) {
                 return ss::make_ready_future<bool>(false);
             }
-            auto ids
-              = (*leader)->controller->get_members_table().local().node_ids();
+            auto ids = (leader.value())
+                         ->controller->get_members_table()
+                         .local()
+                         .node_ids();
             test_logger.info("current brokers: {}", ids);
             return ss::make_ready_future<bool>(
               std::find(ids.begin(), ids.end(), id) == ids.end());

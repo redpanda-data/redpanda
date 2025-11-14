@@ -239,19 +239,22 @@ quota_manager::add_quota_id(tracker_key qid, clock::time_point now) {
 
     if (limits.produce_limit.has_value()) {
         new_value->tp_produce_rate.emplace(
-          *limits.produce_limit,
-          *limits.produce_limit,
+          limits.produce_limit.value(),
+          limits.produce_limit.value(),
           replenish_threshold,
           true);
     }
     if (limits.fetch_limit.has_value()) {
         new_value->tp_fetch_rate.emplace(
-          *limits.fetch_limit, *limits.fetch_limit, replenish_threshold, true);
+          limits.fetch_limit.value(),
+          limits.fetch_limit.value(),
+          replenish_threshold,
+          true);
     }
     if (limits.partition_mutation_limit.has_value()) {
         new_value->pm_rate.emplace(
-          *limits.partition_mutation_limit,
-          *limits.partition_mutation_limit,
+          limits.partition_mutation_limit.value(),
+          limits.partition_mutation_limit.value(),
           replenish_threshold,
           true);
     }
@@ -287,7 +290,8 @@ ss::future<> quota_manager::do_update_client_quotas() {
         if (bucket.has_value() && bucket->rate() == rate) {
             return;
         }
-        bucket.emplace(*rate, *rate, replenish_threshold.value_or(1), true);
+        bucket.emplace(
+          rate.value(), rate.value(), replenish_threshold.value_or(1), true);
         return;
     };
 

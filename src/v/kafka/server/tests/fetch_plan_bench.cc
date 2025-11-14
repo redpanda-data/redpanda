@@ -98,7 +98,7 @@ struct fetch_plan : redpanda_thread_fixture {
     ss::future<fixture_state&> init_bench(test_args args) {
         if (_state) {
             vassert(_args == args, "args mismatch");
-            co_return *_state;
+            co_return _state.value();
         }
 
         _args = args;
@@ -214,7 +214,7 @@ struct fetch_plan : redpanda_thread_fixture {
           sess_id);
 
         _state->octx = std::move(octx);
-        co_return *_state;
+        co_return _state.value();
     }
 
     kafka::fetch_request make_fetch_req(kafka::api_version api_version) {

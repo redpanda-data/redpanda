@@ -106,7 +106,8 @@ public:
             model::ntp ntp{tp_ns.ns, tp_ns.tp, as.id};
             auto jitter = std::max(
               -int64_t(mean_partition_size),
-              int64_t(*stddev * dist(random_generators::global().engine())));
+              int64_t(
+                stddev.value() * dist(random_generators::global().engine())));
             auto size = mean_partition_size + jitter;
             auto partition = ss::make_lw_shared<partition_state>(ntp, size);
             _partitions.emplace(ntp, partition);
@@ -193,8 +194,9 @@ public:
 
             auto learners = get_learners(ntp);
             for (const auto& id : learners) {
-                node2pending_rs[*part->leader].push_back(
-                  recovery_stream{.ntp = ntp, .from = *part->leader, .to = id});
+                node2pending_rs[part->leader.value()].push_back(
+                  recovery_stream{
+                    .ntp = ntp, .from = part->leader.value(), .to = id});
             }
         }
 

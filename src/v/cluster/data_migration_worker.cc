@@ -368,7 +368,7 @@ ss::future<> worker::work_fiber(model::ntp ntp, ntp_state_t& ntp_state) {
         }
 
         ntp_state.running.emplace(ntp_state.last_requested->work);
-        auto ec = co_await do_work(ntp, *ntp_state.running);
+        auto ec = co_await do_work(ntp, ntp_state.running.value());
         bool still_needed = ntp_state.still_needed();
         vlog(
           dm_log.trace,

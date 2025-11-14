@@ -307,7 +307,7 @@ std::ostream& operator<<(std::ostream& os, const client_final_message&) {
 
 ss::sstring server_final_message::sasl_message() const {
     if (_error) {
-        return ssx::sformat("e={}", *_error);
+        return ssx::sformat("e={}", _error.value());
     }
     return ssx::sformat("v={}", bytes_to_base64(_signature));
 }

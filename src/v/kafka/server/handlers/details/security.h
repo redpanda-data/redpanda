@@ -219,12 +219,12 @@ inline security::acl_entry_filter
 to_acl_entry_filter(const describe_acls_request_data& request) {
     std::optional<security::acl_principal> principal;
     if (request.principal_filter) {
-        principal = to_acl_principal(*request.principal_filter);
+        principal = to_acl_principal(request.principal_filter.value());
     }
 
     std::optional<security::acl_host> host;
     if (request.host_filter) {
-        host = to_acl_host(*request.host_filter);
+        host = to_acl_host(request.host_filter.value());
     }
 
     std::optional<security::acl_operation> operation;
@@ -343,7 +343,7 @@ inline ss::sstring to_kafka_principal(const security::acl_principal& p) {
 
 inline ss::sstring to_kafka_host(security::acl_host host) {
     if (host.address()) {
-        return fmt::format("{}", *host.address());
+        return fmt::format("{}", host.address().value());
     } else {
         return "*";
     }
@@ -437,12 +437,12 @@ inline security::acl_entry_filter
 to_acl_entry_filter(const delete_acls_filter& filter) {
     std::optional<security::acl_principal> principal;
     if (filter.principal_filter) {
-        principal = to_acl_principal(*filter.principal_filter);
+        principal = to_acl_principal(filter.principal_filter.value());
     }
 
     std::optional<security::acl_host> host;
     if (filter.host_filter) {
-        host = to_acl_host(*filter.host_filter);
+        host = to_acl_host(filter.host_filter.value());
     }
 
     std::optional<security::acl_operation> operation;

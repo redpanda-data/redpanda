@@ -276,7 +276,7 @@ void leader_balancer::check_register_leadership_change_notification() {
 void leader_balancer::check_unregister_leadership_change_notification() {
     if (_leadership_change_notify_handle && _in_flight_changes.size() == 0) {
         _leaders.unregister_leadership_change_notification(
-          *_leadership_change_notify_handle);
+          _leadership_change_notify_handle.value());
         _leadership_change_notify_handle.reset();
     }
 }
@@ -716,7 +716,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
           _in_flight_changes.size());
 
         _in_flight_changes[transfer->group] = {
-          *transfer, clock_type::now() + _mute_timeout()};
+          transfer.value(), clock_type::now() + _mute_timeout()};
         check_register_leadership_change_notification();
 
         // Add the group to the muted set to avoid thrashing. If the transfer is
@@ -724,7 +724,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         _muted.try_emplace(
           transfer->group, clock_type::now() + _mute_timeout());
 
-        auto success = co_await do_transfer(*transfer);
+        auto success = co_await do_transfer(transfer.value());
         if (!success) {
             vlog(
               clusterlog.info,
@@ -752,7 +752,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         } else {
             _probe.leader_transfer_succeeded();
             num_dispatched += 1;
-            strategy->apply_movement(*transfer);
+            strategy->apply_movement(transfer.value());
         }
     }
 
@@ -793,7 +793,8 @@ leader_balancer::collect_muted_nodes(const cluster_health_report& hr) {
         }
 
         if (auto nm = _members.get_node_metadata_ref(follower.id); nm) {
-            auto maintenance_state = (*nm).get().state.get_maintenance_state();
+            auto maintenance_state
+              = (nm.value()).get().state.get_maintenance_state();
 
             if (maintenance_state == model::maintenance_state::active) {
                 nodes.insert(follower.id);
@@ -1036,7 +1037,7 @@ leader_balancer::index_type leader_balancer::build_index(
                 auto it = std::find_if(
                   replicas.cbegin(),
                   replicas.cend(),
-                  [node = *leader_node](const auto& replica) {
+                  [node = leader_node.value()](const auto& replica) {
                       return replica.node_id == node;
                   });
 
@@ -1045,7 +1046,8 @@ leader_balancer::index_type leader_balancer::build_index(
                     _last_leader.insert_or_assign(
                       partition.group,
                       last_known_leader{
-                        *leader_core, clock_type::now() + _mute_timeout()});
+                        leader_core.value(),
+                        clock_type::now() + _mute_timeout()});
                 } else {
                     vlog(
                       clusterlog.info,
@@ -1100,7 +1102,7 @@ leader_balancer::index_type leader_balancer::build_index(
                 _muted.try_emplace(partition.group, clock_type::now());
             }
 
-            index[*leader_core][partition.group] = std::move(replicas);
+            index[leader_core.value()][partition.group] = std::move(replicas);
         }
     }
 
@@ -1140,7 +1142,8 @@ leader_balancer::do_transfer_local(reassignment transfer) const {
         co_return false;
     }
 
-    auto func = [transfer, shard = *shard](cluster::partition_manager& pm) {
+    auto func = [transfer,
+                 shard = shard.value()](cluster::partition_manager& pm) {
         auto partition = pm.partition_for(transfer.group);
         if (!partition) {
             vlog(
@@ -1170,7 +1173,8 @@ leader_balancer::do_transfer_local(reassignment transfer) const {
               return ss::make_ready_future<bool>(true);
           });
     };
-    co_return co_await _partition_manager.invoke_on(*shard, std::move(func));
+    co_return co_await _partition_manager.invoke_on(
+      shard.value(), std::move(func));
 }
 
 /**

@@ -909,7 +909,7 @@ FIXTURE_TEST(test_rack_awareness_repair, partition_balancer_planner_fixture) {
         for (const auto& bs : new_replicas) {
             auto rack = workers.members.local().get_node_rack_id(bs.node_id);
             BOOST_REQUIRE(rack);
-            racks.insert(*rack);
+            racks.insert(rack.value());
         }
         BOOST_REQUIRE_EQUAL(racks.size(), 3);
     }

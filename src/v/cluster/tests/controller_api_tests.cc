@@ -40,7 +40,7 @@ FIXTURE_TEST(test_querying_ntp_status, cluster_test_fixture) {
     while (!leader_id) {
         leader_id = n1->metadata_cache.local().get_controller_leader_id();
     }
-    auto leader = get_node_application(*leader_id);
+    auto leader = get_node_application(leader_id.value());
 
     // create topic
     cluster::topic_configuration_vector topics;

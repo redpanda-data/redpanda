@@ -87,9 +87,9 @@ struct simple_kv_base : public BaseT {
             auto v = serde::from_iobuf<std::optional<ss::sstring>>(
               r.value().copy());
             if (v) {
-                auto [it, success] = state.try_emplace(k, *v);
+                auto [it, success] = state.try_emplace(k, v.value());
                 if (!success) {
-                    it->second.value = std::move(*v);
+                    it->second.value = std::move(v.value());
                     it->second.update_cnt++;
                 }
             } else {

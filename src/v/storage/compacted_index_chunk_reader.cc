@@ -218,13 +218,15 @@ compacted_index_chunk_reader::load_slice(model::timeout_clock::time_point t) {
                             || next_mem_use > _max_chunk_memory;
                  },
                  [&slice, this] {
-                     return ::read_iobuf_exactly(*_cursor, sizeof(uint16_t))
+                     return ::read_iobuf_exactly(
+                              _cursor.value(), sizeof(uint16_t))
                        .then([this](iobuf b) {
                            _byte_index += b.size_bytes();
                            iobuf_parser p(std::move(b));
                            const size_t entry_size
                              = reflection::adl<uint16_t>{}.from(p);
-                           return ::read_iobuf_exactly(*_cursor, entry_size);
+                           return ::read_iobuf_exactly(
+                             _cursor.value(), entry_size);
                        })
                        .then([this, &slice](iobuf b) {
                            _byte_index += b.size_bytes();

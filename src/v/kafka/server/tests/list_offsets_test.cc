@@ -34,7 +34,7 @@ FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(
-          *shard, [ntp](cluster::partition_manager& mgr) {
+          shard.value(), [ntp](cluster::partition_manager& mgr) {
               auto partition = mgr.get(ntp);
               return partition
                      && partition->committed_offset() >= model::offset(1);
@@ -44,7 +44,7 @@ FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
     // print the logs for manager at core
     app.partition_manager
       .invoke_on(
-        *shard,
+        shard.value(),
         [ntp](cluster::partition_manager& mgr) {
             info("Manager:{} - log:{}", mgr, *mgr.get(ntp));
         })
@@ -78,7 +78,7 @@ FIXTURE_TEST(list_offsets_earliest, redpanda_thread_fixture) {
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(
-          *shard, [ntp](cluster::partition_manager& mgr) {
+          shard.value(), [ntp](cluster::partition_manager& mgr) {
               auto partition = mgr.get(ntp);
               return partition
                      && partition->committed_offset() >= model::offset(1);
@@ -114,7 +114,7 @@ FIXTURE_TEST(list_offsets_latest, redpanda_thread_fixture) {
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(
-          *shard, [ntp](cluster::partition_manager& mgr) {
+          shard.value(), [ntp](cluster::partition_manager& mgr) {
               auto partition = mgr.get(ntp);
               return partition
                      && partition->committed_offset() >= model::offset(1);
@@ -154,7 +154,7 @@ FIXTURE_TEST(list_offsets_not_found, redpanda_thread_fixture) {
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(
-          *shard, [ntp](cluster::partition_manager& mgr) {
+          shard.value(), [ntp](cluster::partition_manager& mgr) {
               auto partition = mgr.get(ntp);
               return partition
                      && partition->committed_offset() >= model::offset(1);

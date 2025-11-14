@@ -115,7 +115,7 @@ void test_chunked_encoding_fragmentation(test_case inp_case) {
     iobuf actual;
     chunk_decoder decoder(out);
     while (auto it = decoder.get_next()) {
-        actual.append(std::move(*it));
+        actual.append(std::move(it.value()));
     }
 
     BOOST_REQUIRE(expected == actual);

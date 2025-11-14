@@ -678,7 +678,7 @@ public:
             }
             try {
                 auto offset = co_await fetch_offset_for_timestamp(
-                  rcn, ntp.tp, *ts_opt);
+                  rcn, ntp.tp, ts_opt.value());
                 if (offset) {
                     co_return offset.value();
                 }
@@ -698,7 +698,7 @@ public:
                   log_level,
                   "Exception fetching offset for timestamp {} for {}, "
                   "attempt: {}, error: {}",
-                  *ts_opt,
+                  ts_opt.value(),
                   ntp,
                   rcn.retry_count(),
                   ex);
@@ -725,7 +725,7 @@ private:
             vlog(cllog.warn, "[{}] No leader found for partition", tp);
             co_return std::nullopt;
         }
-        auto [leader_id, leader_epoch] = *leader_and_epoch;
+        auto [leader_id, leader_epoch] = leader_and_epoch.value();
         kafka::list_offsets_request req;
         req.data.replica_id = ::model::node_id{-1}; // normal consumer
         req.data.isolation_level = 1;               // read committed only
@@ -740,7 +740,7 @@ private:
           });
 
         auto resp = co_await _cluster.dispatch_to(
-          leader_id, std::move(req), *api_version);
+          leader_id, std::move(req), api_version.value());
         if (resp.data.topics.empty()) {
             vlog(cllog.warn, "[{}] No topics in ListOffsets response", tp);
             co_return std::nullopt;
@@ -1312,7 +1312,7 @@ service::node_local_shadow_topic_report(
     auto result = std::move(reducer).get();
     if (result) {
         result->node_id = _self;
-        co_return std::move(*result);
+        co_return std::move(result.value());
     }
     vlog(
       cllog.error,
@@ -1456,7 +1456,7 @@ service::node_local_shadow_link_report(
     auto result = std::move(reducer).get();
     if (result) {
         vlog(cllog.trace, "shadow link report for node {}: {}", _self, *result);
-        co_return std::move(*result);
+        co_return std::move(result.value());
     }
     vlog(
       cllog.error,

@@ -52,20 +52,20 @@ BOOST_AUTO_TEST_CASE(credential_store_test) {
     store.put(moved, std::move(cred0_copy));
 
     BOOST_REQUIRE(store.get<scram_credential>(moved));
-    BOOST_REQUIRE_EQUAL(*store.get<scram_credential>(moved), cred0);
+    BOOST_REQUIRE_EQUAL(store.get<scram_credential>(moved).value(), cred0);
 
     BOOST_REQUIRE(store.get<scram_credential>(copied));
-    BOOST_REQUIRE_EQUAL(*store.get<scram_credential>(copied), cred0);
+    BOOST_REQUIRE_EQUAL(store.get<scram_credential>(copied).value(), cred0);
 
     // update credentials
     store.put(copied, cred1);
     store.put(moved, std::move(cred1_copy));
 
     BOOST_REQUIRE(store.get<scram_credential>(moved));
-    BOOST_REQUIRE_EQUAL(*store.get<scram_credential>(moved), cred1);
+    BOOST_REQUIRE_EQUAL(store.get<scram_credential>(moved).value(), cred1);
 
     BOOST_REQUIRE(store.get<scram_credential>(copied));
-    BOOST_REQUIRE_EQUAL(*store.get<scram_credential>(copied), cred1);
+    BOOST_REQUIRE_EQUAL(store.get<scram_credential>(copied).value(), cred1);
 }
 
 BOOST_AUTO_TEST_CASE(credential_store_test_principal) {

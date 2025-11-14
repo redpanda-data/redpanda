@@ -458,7 +458,7 @@ ss::future<chunked_vector<schema_id>> sharded_store::referenced_by(
     // Ensure the subject exists
     auto versions = co_await get_versions(sub, include_deleted::no);
     if (opt_ver.has_value()) {
-        ver = *opt_ver;
+        ver = opt_ver.value();
         auto version_not_found = std::none_of(
           versions.begin(), versions.end(), [ver](const auto& v) {
               return ver == v;
