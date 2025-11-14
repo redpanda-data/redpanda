@@ -16,7 +16,7 @@ import time
 import urllib.parse
 import uuid
 from enum import Enum
-from typing import NamedTuple, Optional
+from typing import Any, NamedTuple, Optional, TypeAlias
 
 import requests
 from confluent_kafka.schema_registry import (
@@ -31,6 +31,7 @@ from confluent_kafka.schema_registry import (
 from confluent_kafka.serialization import MessageField, SerializationContext
 from ducktape.mark import matrix, parametrize
 from ducktape.services.background_thread import BackgroundThreadService
+from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkException, RpkTool
@@ -57,6 +58,8 @@ from rptest.util import expect_exception, inject_remote_script, search_logs_with
 from rptest.utils.log_utils import wait_until_nag_is_set
 from rptest.utils.mode_checks import skip_fips_mode
 
+Headers: TypeAlias = dict[str, str] | None
+
 
 class SchemaIdValidationMode(str, Enum):
     NONE = "none"
@@ -64,7 +67,7 @@ class SchemaIdValidationMode(str, Enum):
     COMPAT = "compat"
 
 
-def create_topic_names(count):
+def create_topic_names(count: int) -> list[str]:
     return list(f"pandaproxy-topic-{uuid.uuid4()}" for _ in range(count))
 
 
@@ -913,12 +916,20 @@ class SchemaRegistryRedpandaClient:
             **kwargs,
         )
 
-    def set_config_subject(self, subject, data, headers=HTTP_POST_HEADERS, **kwargs):
+    def set_config_subject(
+        self,
+        subject: str,
+        data: Any,
+        headers: Headers = HTTP_POST_HEADERS,
+        **kwargs: Any,
+    ):
         return self.request(
             "PUT", f"config/{subject}", headers=headers, data=data, **kwargs
         )
 
-    def delete_config_subject(self, subject, headers=HTTP_DELETE_HEADERS, **kwargs):
+    def delete_config_subject(
+        self, subject: str, headers: Headers = HTTP_DELETE_HEADERS, **kwargs: Any
+    ):
         return self.request("DELETE", f"config/{subject}", headers=headers, **kwargs)
 
     def get_mode(self, headers=HTTP_GET_HEADERS, **kwargs):
@@ -944,7 +955,12 @@ class SchemaRegistryRedpandaClient:
         )
 
     def set_mode_subject(
-        self, subject, data, force=False, headers=HTTP_POST_HEADERS, **kwargs
+        self,
+        subject: str,
+        data: Any,
+        force: bool = False,
+        headers: Headers = HTTP_POST_HEADERS,
+        **kwargs: Any,
     ):
         return self.request(
             "PUT",
@@ -954,7 +970,9 @@ class SchemaRegistryRedpandaClient:
             **kwargs,
         )
 
-    def delete_mode_subject(self, subject, headers=HTTP_DELETE_HEADERS, **kwargs):
+    def delete_mode_subject(
+        self, subject: str, headers: Headers = HTTP_DELETE_HEADERS, **kwargs: Any
+    ):
         return self.request("DELETE", f"mode/{subject}", headers=headers, **kwargs)
 
     def get_schemas_types(
@@ -1022,7 +1040,12 @@ class SchemaRegistryRedpandaClient:
         )
 
     def post_subjects_subject_versions(
-        self, subject, data, normalize=False, headers=HTTP_POST_HEADERS, **kwargs
+        self,
+        subject: str,
+        data: Any,
+        normalize: bool = False,
+        headers: Headers = HTTP_POST_HEADERS,
+        **kwargs: Any,
     ):
         params = {}
         if normalize:
@@ -1065,7 +1088,11 @@ class SchemaRegistryRedpandaClient:
         )
 
     def get_subjects_subject_versions_version_referenced_by(
-        self, subject, version, headers=HTTP_GET_HEADERS, **kwargs
+        self,
+        subject: str,
+        version: str,
+        headers: Headers = HTTP_GET_HEADERS,
+        **kwargs: Any,
     ):
         deprecated = self.request(
             "GET",
@@ -1083,7 +1110,11 @@ class SchemaRegistryRedpandaClient:
         return standard
 
     def get_subjects_subject_versions(
-        self, subject, deleted=False, headers=HTTP_GET_HEADERS, **kwargs
+        self,
+        subject: str,
+        deleted: bool = False,
+        headers: Headers = HTTP_GET_HEADERS,
+        **kwargs: Any,
     ):
         return self.request(
             "GET",
@@ -1093,7 +1124,11 @@ class SchemaRegistryRedpandaClient:
         )
 
     def delete_subject(
-        self, subject, permanent=False, headers=HTTP_GET_HEADERS, **kwargs
+        self,
+        subject: str,
+        permanent: bool = False,
+        headers: Headers = HTTP_GET_HEADERS,
+        **kwargs: Any,
     ):
         return self.request(
             "DELETE",
@@ -1103,7 +1138,12 @@ class SchemaRegistryRedpandaClient:
         )
 
     def delete_subject_version(
-        self, subject, version, permanent=False, headers=HTTP_DELETE_HEADERS, **kwargs
+        self,
+        subject: str,
+        version: str,
+        permanent: bool = False,
+        headers: Headers = HTTP_DELETE_HEADERS,
+        **kwargs: Any,
     ):
         return self.request(
             "DELETE",
@@ -1195,10 +1235,10 @@ class SchemaRegistryEndpoints(RedpandaTest):
 
     def __init__(
         self,
-        context,
-        schema_registry_config=SchemaRegistryConfig(),
-        num_brokers=3,
-        **kwargs,
+        context: TestContext,
+        schema_registry_config: SchemaRegistryConfig = SchemaRegistryConfig(),
+        num_brokers: int = 3,
+        **kwargs: Any,
     ):
         super(SchemaRegistryEndpoints, self).__init__(
             context,
@@ -3927,7 +3967,7 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
     Test schema registry mode against a redpanda cluster.
     """
 
-    def __init__(self, context, **kwargs):
+    def __init__(self, context: TestContext, **kwargs: Any):
         self.schema_registry_config = SchemaRegistryConfig()
         self.schema_registry_config.mode_mutability = True
         super(SchemaRegistryModeMutableTest, self).__init__(

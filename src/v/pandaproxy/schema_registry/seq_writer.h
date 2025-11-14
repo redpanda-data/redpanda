@@ -63,10 +63,10 @@ public:
     ss::future<bool>
     delete_subject_version(subject sub, schema_version version);
 
-    ss::future<std::vector<schema_version>>
+    ss::future<chunked_vector<schema_version>>
     delete_subject_impermanent(subject sub);
 
-    ss::future<std::vector<schema_version>> delete_subject_permanent(
+    ss::future<chunked_vector<schema_version>> delete_subject_permanent(
       subject sub, std::optional<schema_version> version);
 
 private:
@@ -98,10 +98,10 @@ private:
     ss::future<std::optional<bool>> do_delete_subject_version(
       subject sub, schema_version version, model::offset write_at);
 
-    ss::future<std::optional<std::vector<schema_version>>>
+    ss::future<std::optional<chunked_vector<schema_version>>>
     do_delete_subject_impermanent(subject sub, model::offset write_at);
 
-    ss::future<std::optional<std::vector<schema_version>>>
+    ss::future<std::optional<chunked_vector<schema_version>>>
     delete_subject_permanent_inner(
       subject sub, std::optional<schema_version> version);
 
@@ -168,7 +168,7 @@ private:
             co_return std::current_exception();
         }
         if (r.has_value()) {
-            co_return r.value();
+            co_return std::move(r.value());
         } else {
             throw exception(
               error_code::write_collision,

@@ -112,18 +112,19 @@ public:
     ss::future<bool> has_subjects(include_deleted inc_del);
 
     ///\brief Return a list of versions and associated schema_id.
-    ss::future<std::vector<schema_version>>
+    ss::future<chunked_vector<schema_version>>
     get_versions(subject sub, include_deleted inc_del);
 
     ///\brief Return whether there are any references to a subject version.
-    ss::future<bool> is_referenced(subject sub, schema_version ver);
+    ss::future<bool>
+    is_referenced(subject sub, std::optional<schema_version> ver);
 
     ///\brief Return the schema_ids that reference a subject version.
-    ss::future<std::vector<schema_id>>
+    ss::future<chunked_vector<schema_id>>
     referenced_by(subject sub, std::optional<schema_version> ver);
 
     ///\brief Delete a subject.
-    ss::future<std::vector<schema_version>>
+    ss::future<chunked_vector<schema_version>>
     delete_subject(seq_marker marker, subject sub, permanent_delete permanent);
 
     ss::future<is_deleted> is_subject_deleted(subject sub);
@@ -132,20 +133,20 @@ public:
     is_subject_version_deleted(subject sub, schema_version version);
 
     ///\brief Get sequence number history (errors out if not soft-deleted)
-    ss::future<std::vector<seq_marker>> get_subject_written_at(subject sub);
+    ss::future<chunked_vector<seq_marker>> get_subject_written_at(subject sub);
 
     ///\brief Get sequence number history of subject config. Subject need
     /// not be soft-deleted first
-    ss::future<std::vector<seq_marker>>
+    ss::future<chunked_vector<seq_marker>>
     get_subject_config_written_at(subject sub);
 
     ///\brief Get sequence number history of subject mode. Subject need
     /// not be soft-deleted first
-    ss::future<std::vector<seq_marker>>
+    ss::future<chunked_vector<seq_marker>>
     get_subject_mode_written_at(subject sub);
 
     ///\brief Get sequence number history (errors out if not soft-deleted)
-    ss::future<std::vector<seq_marker>>
+    ss::future<chunked_vector<seq_marker>>
     get_subject_version_written_at(subject sub, schema_version version);
 
     ///\brief Delete a subject version

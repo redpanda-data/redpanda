@@ -627,7 +627,7 @@ operator<<(std::ostream& os, const protobuf_schema_definition& def) {
 
 ss::future<protobuf_schema_definition> make_protobuf_schema_definition(
   schema_getter& store, subject_schema schema, normalize norm) {
-    auto refs = schema.def().refs();
+    auto refs = schema.def().refs().copy();
     auto impl = ss::make_shared<protobuf_schema_definition::impl>();
     impl->fdp = co_await import_schema(
       impl->_dp, store, std::move(schema), normalize(norm));
@@ -635,7 +635,7 @@ ss::future<protobuf_schema_definition> make_protobuf_schema_definition(
     if (norm) {
         std::sort(refs.begin(), refs.end());
         auto uniq = std::ranges::unique(refs);
-        refs.erase(uniq.begin(), uniq.end());
+        refs.erase_to_end(uniq.begin());
     }
     impl->fd = impl->_dp.FindFileByName(impl->fdp.name());
     co_return protobuf_schema_definition{std::move(impl), std::move(refs)};
@@ -648,7 +648,7 @@ ss::future<schema_definition> validate_protobuf_schema(
   output_format format) {
     auto res = co_await make_protobuf_schema_definition(
       store, std::move(schema), norm);
-    co_return schema_definition{res.raw(format), res.type(), res.refs()};
+    co_return schema_definition{res.raw(format), res.type(), res.refs().copy()};
 }
 
 ss::future<subject_schema> make_canonical_protobuf_schema(

@@ -151,11 +151,11 @@ public:
 
         if (!version.has_value()) {
             const auto& versions = sub_it->second.versions;
-            auto it = std::find_if(
-              versions.rbegin(), versions.rend(), [inc_del](const auto& ver) {
-                  return inc_del || !ver.deleted;
-              });
-            if (it == versions.rend()) {
+            auto reversed = versions | std::views::reverse;
+            auto it = std::ranges::find_if(
+              reversed,
+              [inc_del](const auto& ver) { return inc_del || !ver.deleted; });
+            if (it == std::ranges::end(reversed)) {
                 return not_found(sub);
             }
             return *it;
@@ -214,14 +214,14 @@ public:
     }
 
     ///\brief Return a list of versions and associated schema_id.
-    result<std::vector<schema_version>>
+    result<chunked_vector<schema_version>>
     get_versions(const subject& sub, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         const auto& versions = sub_it->second.versions;
         if (versions.empty()) {
             return not_found(sub);
         }
-        std::vector<schema_version> res;
+        chunked_vector<schema_version> res;
         res.reserve(versions.size());
         for (const auto& ver : versions) {
             if (inc_del || !ver.deleted) {
@@ -251,7 +251,7 @@ public:
     /// \brief Return the seq_marker write history of a subject
     ///
     /// \return A vector with at least one element
-    result<std::vector<seq_marker>>
+    result<chunked_vector<seq_marker>>
     get_subject_written_at(const subject& sub) const {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
@@ -269,7 +269,7 @@ public:
                 return not_found(sub);
             }
 
-            return sub_it->second.written_at;
+            return sub_it->second.written_at.copy();
         }
     }
 
@@ -277,7 +277,7 @@ public:
     /// config_keys
     ///
     /// \return A vector (possibly empty)
-    result<std::vector<seq_marker>>
+    result<chunked_vector<seq_marker>>
     get_subject_config_written_at(const subject& sub) const {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
@@ -289,7 +289,7 @@ public:
             return not_found(sub);
         }
 
-        std::vector<seq_marker> result;
+        chunked_vector<seq_marker> result;
         std::copy_if(
           sub_it->second.written_at.begin(),
           sub_it->second.written_at.end(),
@@ -305,7 +305,7 @@ public:
     /// mode_keys
     ///
     /// \return A vector (possibly empty)
-    result<std::vector<seq_marker>>
+    result<chunked_vector<seq_marker>>
     get_subject_mode_written_at(const subject& sub) const {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
@@ -317,7 +317,7 @@ public:
             return not_found(sub);
         }
 
-        std::vector<seq_marker> result;
+        chunked_vector<seq_marker> result;
         std::copy_if(
           sub_it->second.written_at.begin(),
           sub_it->second.written_at.end(),
@@ -332,7 +332,7 @@ public:
     /// \brief Return the seq_marker write history of a version.
     ///
     /// \return A vector with at least one element
-    result<std::vector<seq_marker>> get_subject_version_written_at(
+    result<chunked_vector<seq_marker>> get_subject_version_written_at(
       const subject& sub, schema_version version) const {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
@@ -347,7 +347,7 @@ public:
             return not_deleted(sub, version);
         }
 
-        std::vector<seq_marker> result;
+        chunked_vector<seq_marker> result;
         for (auto s : sub_it->second.written_at) {
             if (s.version == version) {
                 result.push_back(s);
@@ -398,11 +398,11 @@ public:
     }
 
     ///\brief Return a list of versions and associated schema_id.
-    result<std::vector<subject_version_entry>>
+    result<chunked_vector<subject_version_entry>>
     get_version_ids(const subject& sub, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
-        std::vector<subject_version_entry> res;
-        absl::c_copy_if(
+        chunked_vector<subject_version_entry> res;
+        std::ranges::copy_if(
           sub_it->second.versions,
           std::back_inserter(res),
           [inc_del](const subject_version_entry& e) {
@@ -422,11 +422,12 @@ public:
         });
     }
 
-    schema_id_set referenced_by(const subject& sub, schema_version ver) {
+    schema_id_set
+    referenced_by(const subject& sub, std::optional<schema_version> ver) {
         schema_id_set references;
         for (const auto& s : _schemas) {
             for (const auto& r : s.second.definition.refs()) {
-                if (r.sub == sub && r.version == ver) {
+                if (r.sub == sub && (!ver.has_value() || r.version == *ver)) {
                     references.insert(s.first);
                 }
             }
@@ -457,7 +458,7 @@ public:
     }
 
     ///\brief Delete a subject.
-    result<std::vector<schema_version>> delete_subject(
+    result<chunked_vector<schema_version>> delete_subject(
       seq_marker marker, const subject& sub, permanent_delete permanent) {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
@@ -474,7 +475,7 @@ public:
         sub_it->second.deleted = is_deleted::yes;
 
         auto& versions = sub_it->second.versions;
-        std::vector<schema_version> res;
+        chunked_vector<schema_version> res;
         res.reserve(versions.size());
         for (const auto& ver : versions) {
             if (permanent || !ver.deleted) {
@@ -513,18 +514,17 @@ public:
             return not_deleted(sub, version);
         }
 
-        versions.erase(v_it);
+        // chunked_vector doesn't support erase(), so we need to
+        // manually erase
+        std::shift_left(v_it, versions.end(), 1);
+        versions.pop_back();
 
         // Trim any seq_markers referring to this version, so
         // that when we later hard-delete the subject, we do not
         // emit more tombstones for versions already tombstoned
         auto& markers = sub_it->second.written_at;
-        markers.erase(
-          std::remove_if(
-            markers.begin(),
-            markers.end(),
-            [&version](auto sm) { return sm.version == version; }),
-          markers.end());
+        markers.erase_to_end(
+          std::ranges::remove(markers, version, &seq_marker::version).begin());
 
         if (versions.empty()) {
             _subjects.erase(sub_it);
@@ -569,7 +569,8 @@ public:
         BOOST_OUTCOME_TRYX(check_mode_mutability(f));
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
-        std::erase(sub_it->second.written_at, marker);
+        auto& vec = sub_it->second.written_at;
+        vec.erase_to_end(std::ranges::remove(vec, marker).begin());
         return std::exchange(sub_it->second.mode, std::nullopt) != std::nullopt;
     }
 
@@ -615,7 +616,8 @@ public:
     clear_compatibility(const seq_marker& marker, const subject& sub) {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
-        std::erase(sub_it->second.written_at, marker);
+        auto& vec = sub_it->second.written_at;
+        vec.erase_to_end(std::ranges::remove(vec, marker).begin());
         return std::exchange(sub_it->second.compatibility, std::nullopt)
                != std::nullopt;
     }
@@ -700,7 +702,12 @@ public:
         if (found) {
             *v_it = subject_version_entry(version, id, deleted);
         } else {
-            versions.emplace(v_it, version, id, deleted);
+            // chunked_vector doesn't support emplace(), so we need to manually
+            // emplace at the back and rotate it into position
+            auto idx = v_it - versions.begin();
+            versions.emplace_back(version, id, deleted);
+            std::rotate(
+              versions.begin() + idx, versions.end() - 1, versions.end());
         }
 
         const auto all_deleted = is_deleted(
@@ -802,10 +809,10 @@ private:
         explicit subject_entry(const subject& sub) { setup_metrics(sub); }
         std::optional<compatibility_level> compatibility;
         std::optional<mode> mode;
-        std::vector<subject_version_entry> versions;
+        chunked_vector<subject_version_entry> versions;
         is_deleted deleted{false};
 
-        std::vector<seq_marker> written_at;
+        chunked_vector<seq_marker> written_at;
 
     private:
         metrics::internal_metric_groups _metrics;
@@ -876,18 +883,20 @@ private:
         return sub_it;
     }
 
-    static result<std::vector<subject_version_entry>::iterator>
+    static result<chunked_vector<subject_version_entry>::iterator>
     get_version_iter(
       subject_map::value_type& sub_entry,
       schema_version version,
       include_deleted inc_del) {
         const subject_map::value_type& const_entry = sub_entry;
-        return detail::make_non_const_iterator(
-          sub_entry.second.versions,
+        // Get equivalent non-const iterator
+        auto& v = sub_entry.second.versions;
+        auto cit = BOOST_OUTCOME_TRYX(
           get_version_iter(const_entry, version, inc_del));
+        return v.begin() + std::distance(v.cbegin(), cit);
     }
 
-    static result<std::vector<subject_version_entry>::const_iterator>
+    static result<chunked_vector<subject_version_entry>::const_iterator>
     get_version_iter(
       const subject_map::value_type& sub_entry,
       schema_version version,

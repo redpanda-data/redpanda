@@ -13,6 +13,7 @@
 
 #include "base/outcome.h"
 #include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "json/iobuf_writer.h"
 #include "kafka/protocol/errors.h"
 #include "model/metadata.h"
@@ -166,7 +167,7 @@ public:
         explicit raw_string(std::string_view sv)
           : schema_definition_iobuf{iobuf::from(sv)} {}
     };
-    using references = std::vector<schema_reference>;
+    using references = chunked_vector<schema_reference>;
 
     schema_definition() = default;
     schema_definition(schema_definition&&) noexcept = default;
@@ -205,14 +206,16 @@ public:
     const references& refs() const& { return _refs; }
     references refs() && { return std::move(_refs); }
 
-    schema_definition share() const { return {shared_raw(), type(), refs()}; }
+    schema_definition share() const {
+        return {shared_raw(), type(), refs().copy()};
+    }
 
     schema_definition copy() const {
-        return {raw_string{_def().copy()}, type(), refs()};
+        return {raw_string{_def().copy()}, type(), refs().copy()};
     }
 
     auto destructure() && {
-        return make_tuple(std::move(_def), _type, std::move(_refs));
+        return std::make_tuple(std::move(_def), _type, std::move(_refs));
     }
 
 private:
@@ -241,7 +244,7 @@ public:
     constexpr schema_type type() const { return schema_type::avro; }
 
     explicit operator schema_definition() const {
-        return {raw(), type(), refs()};
+        return {raw(), type(), refs().copy()};
     }
 
     ss::sstring name() const;
@@ -276,6 +279,10 @@ public:
 
     constexpr schema_type type() const { return schema_type::protobuf; }
 
+    protobuf_schema_definition copy() const {
+        return protobuf_schema_definition{_impl, _refs.copy()};
+    }
+
     ::result<ss::sstring, kafka::error_code>
     name(const std::vector<int>& fields) const;
 
@@ -306,7 +313,7 @@ public:
     constexpr schema_type type() const { return schema_type::json; }
 
     explicit operator schema_definition() const {
-        return {raw(), type(), refs()};
+        return {raw(), type(), refs().copy()};
     }
 
     ss::sstring name() const;
@@ -365,7 +372,7 @@ public:
     }
 
     schema_definition::raw_string raw() && {
-        return visit([](auto def) {
+        return visit([](auto& def) {
             return schema_definition::raw_string{std::move(def).raw()()};
         });
     }
@@ -542,7 +549,7 @@ struct compatibility_result {
     friend std::ostream& operator<<(std::ostream&, const compatibility_result&);
 
     bool is_compat;
-    std::vector<ss::sstring> messages;
+    chunked_vector<ss::sstring> messages;
 };
 
 } // namespace pandaproxy::schema_registry

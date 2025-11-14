@@ -27,6 +27,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/bytes:iobuf_parser",
+        "//src/v/container:fragmented_vector",
         "//src/v/model",
         "//src/v/pandaproxy:error",
         "//src/v/strings:string_switch",

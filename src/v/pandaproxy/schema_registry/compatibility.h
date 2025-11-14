@@ -18,7 +18,6 @@
 
 #include <filesystem>
 #include <string_view>
-#include <vector>
 
 /**
  * compatibility.h
@@ -253,6 +252,19 @@ class raw_compatibility_result {
 public:
     raw_compatibility_result() = default;
 
+    raw_compatibility_result(const raw_compatibility_result& other)
+      : _errors(other._errors.copy()) {}
+
+    raw_compatibility_result(raw_compatibility_result&&) = default;
+    raw_compatibility_result& operator=(const raw_compatibility_result& other) {
+        if (this != &other) {
+            _errors = other._errors.copy();
+        }
+        return *this;
+    }
+    raw_compatibility_result& operator=(raw_compatibility_result&&) = default;
+    ~raw_compatibility_result() = default;
+
     template<typename T, typename... Args>
     requires std::constructible_from<T, Args&&...>
              && std::convertible_to<T, schema_incompatibility>
@@ -278,7 +290,7 @@ public:
     bool has_error() const { return !_errors.empty(); }
 
 private:
-    std::vector<schema_incompatibility> _errors{};
+    chunked_vector<schema_incompatibility> _errors{};
 };
 
 } // namespace pandaproxy::schema_registry

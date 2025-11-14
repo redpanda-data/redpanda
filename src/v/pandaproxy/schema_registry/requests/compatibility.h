@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "container/fragmented_vector.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/types.h"
 
@@ -18,7 +19,7 @@ namespace pandaproxy::schema_registry {
 
 struct post_compatibility_res {
     bool is_compat{false};
-    std::vector<ss::sstring> messages;
+    chunked_vector<ss::sstring> messages;
 
     // `is_verbose` is not rendered into the response but `messages` are
     // conditionally rendered based on `is_verbose`

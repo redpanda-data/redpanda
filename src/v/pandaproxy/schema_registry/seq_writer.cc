@@ -28,6 +28,7 @@
 #include <seastar/coroutine/as_future.hh>
 
 #include <exception>
+#include <optional>
 
 using namespace std::chrono_literals;
 
@@ -94,7 +95,7 @@ struct batch_builder : public storage::record_batch_builder {
         }
     }
 
-    void operator()(const std::vector<seq_marker>& sequences) {
+    void operator()(const chunked_vector<seq_marker>& sequences) {
         for (const seq_marker& s : sequences) {
             (*this)(s);
         }
@@ -484,7 +485,7 @@ seq_writer::delete_subject_version(subject sub, schema_version version) {
       });
 }
 
-ss::future<std::optional<std::vector<schema_version>>>
+ss::future<std::optional<chunked_vector<schema_version>>>
 seq_writer::do_delete_subject_impermanent(subject sub, model::offset write_at) {
     co_await check_mutable(sub);
 
@@ -493,16 +494,11 @@ seq_writer::do_delete_subject_impermanent(subject sub, model::offset write_at) {
 
     // Inspect the subject to see if its already deleted
     if (co_await _store.is_subject_deleted(sub)) {
-        co_return std::make_optional(versions);
+        co_return std::make_optional(std::move(versions));
     }
 
-    auto is_referenced = co_await ssx::parallel_transform(
-      versions.begin(), versions.end(), [this, &sub](const auto& ver) {
-          return _store.is_referenced(sub, ver);
-      });
-    if (std::any_of(is_referenced.begin(), is_referenced.end(), [](auto v) {
-            return v;
-        })) {
+    // Check that the subject is not referenced
+    if (co_await _store.is_referenced(sub, std::nullopt)) {
         throw as_exception(has_references(sub, versions.back()));
     }
 
@@ -536,7 +532,7 @@ seq_writer::do_delete_subject_impermanent(subject sub, model::offset write_at) {
     }
 }
 
-ss::future<std::vector<schema_version>>
+ss::future<chunked_vector<schema_version>>
 seq_writer::delete_subject_impermanent(subject sub) {
     vlog(srlog.debug, "delete_subject_impermanent sub={}", sub);
     return sequenced_write(
@@ -549,7 +545,7 @@ seq_writer::delete_subject_impermanent(subject sub) {
 /// records) do not themselves need sequence numbers.
 /// Include a version if we are only to hard delete that version, otherwise
 /// will hard-delete the whole subject.
-ss::future<std::vector<schema_version>> seq_writer::delete_subject_permanent(
+ss::future<chunked_vector<schema_version>> seq_writer::delete_subject_permanent(
   subject sub, std::optional<schema_version> version) {
     return sequenced_write(
       [sub{std::move(sub)}, version](model::offset, seq_writer& seq) {
@@ -557,10 +553,10 @@ ss::future<std::vector<schema_version>> seq_writer::delete_subject_permanent(
       });
 }
 
-ss::future<std::optional<std::vector<schema_version>>>
+ss::future<std::optional<chunked_vector<schema_version>>>
 seq_writer::delete_subject_permanent_inner(
   subject sub, std::optional<schema_version> version) {
-    std::vector<seq_marker> sequences;
+    chunked_vector<seq_marker> sequences;
     batch_builder rb{model::offset{0}, sub};
 
     /// Check for whether our victim is already soft-deleted happens

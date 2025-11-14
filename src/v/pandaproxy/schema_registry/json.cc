@@ -2379,7 +2379,7 @@ ss::future<subject_schema> make_canonical_json_schema(
     if (norm) {
         sort(ctx.doc);
         std::sort(refs.begin(), refs.end());
-        refs.erase(std::unique(refs.begin(), refs.end()), refs.end());
+        refs.erase_to_end(std::unique(refs.begin(), refs.end()));
     }
     json::chunked_buffer out;
     json::Writer<json::chunked_buffer> w{out};
