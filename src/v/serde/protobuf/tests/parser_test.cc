@@ -597,7 +597,7 @@ TEST_F(ProtobufParserFixture, RandomData) {
 
 class ProtobufParserFuzzer : public ProtobufParserFixture {
 public:
-    ProtobufParserFuzzer() { mutator_.Seed(testing::FLAGS_gtest_random_seed); }
+    ProtobufParserFuzzer() { mutator_.Seed(GTEST_FLAG_GET(random_seed)); }
 
     void mutate(pb::Message* msg) { mutator_.Mutate(msg, 3_MiB); }
 
