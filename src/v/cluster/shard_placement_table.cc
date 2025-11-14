@@ -959,6 +959,11 @@ ss::future<std::error_code> shard_placement_table::prepare_create(
     }
     auto& state = state_it->second;
 
+    if (!state.assigned()) {
+        // assignments got updated while we were waiting for the lock
+        co_return errc::waiting_for_shard_placement_update;
+    }
+
     if (state.assigned()->log_revision != expected_log_rev) {
         // assignments got updated while we were waiting for the lock
         co_return errc::waiting_for_shard_placement_update;
@@ -1404,6 +1409,11 @@ ss::future<std::error_code> shard_placement_table::set_remake_state(
 
     auto& state = it->second;
     auto& current = it->second._current.value();
+
+    if (!state.assigned()) {
+        // assignments got updated while we were waiting for the lock
+        co_return errc::waiting_for_shard_placement_update;
+    }
 
     if (state.assigned()->log_revision != expected_log_rev) {
         // assignments got updated while we were waiting for the lock
