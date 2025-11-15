@@ -685,7 +685,8 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_overlap_no_replace) {
 
         // Select a segment that is fully contained by the last segment.
         auto next_seg = make_seg(
-          last_seg->base_offset() - 5, last_seg->base_offset() + 5);
+          last_seg.value().base_offset() - 5,
+          last_seg.value().base_offset() + 5);
         metas.insert(--metas.end(), next_seg);
 
         // Flush the write buffer such that the next insert does

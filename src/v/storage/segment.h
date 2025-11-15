@@ -485,7 +485,7 @@ inline bool segment::has_clean_compact_timestamp() const {
 }
 inline ss::future<> segment::reset_batch_cache_index() {
     if (_cache.has_value()) {
-        co_await _cache->reset();
+        co_await _cache.value().reset();
     }
 }
 inline std::optional<std::reference_wrapper<batch_cache_index>>
@@ -510,7 +510,7 @@ inline batch_cache_index::read_result segment::cache_get(
   size_t max_bytes,
   bool skip_lru_promote) {
     if (likely(bool(_cache))) {
-        return _cache->read(
+        return _cache.value().read(
           offset,
           max_offset,
           type_filter,
@@ -525,7 +525,7 @@ inline batch_cache_index::read_result segment::cache_get(
 inline void segment::cache_put(
   const model::record_batch& batch, batch_cache::is_dirty_entry dirty) {
     if (likely(bool(_cache))) {
-        _cache->put(batch, dirty);
+        _cache.value().put(batch, dirty);
     }
 }
 

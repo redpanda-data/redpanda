@@ -159,7 +159,7 @@ model::record_batch make_random_batch(record_batch_spec spec) {
     for (int i = 0; i < spec.count; ++i) {
         std::optional<size_t> sz = std::nullopt;
         if (spec.record_sizes) {
-            sz = spec.record_sizes->at(i);
+            sz = spec.record_sizes.value().at(i);
         }
         if (spec.max_key_cardinality) {
             auto keystr = gen_alphanum_max_distinct(

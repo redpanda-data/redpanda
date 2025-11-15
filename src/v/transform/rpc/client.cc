@@ -851,8 +851,8 @@ ss::future<> client::update_wasm_binary_size() {
         co_return;
     }
     if (
-      config->properties.batch_max_bytes.has_value()
-      && config->properties.batch_max_bytes.value()
+      config.value().properties.batch_max_bytes.has_value()
+      && config.value().properties.batch_max_bytes.value()
            == uint32_t(_max_wasm_binary_size())) {
         // Nothing to do.
         co_return;
@@ -894,7 +894,7 @@ client::list_committed_offsets() {
     }
     using ret_t = result<model::transform_offsets_map, cluster::errc>;
     co_return co_await ss::map_reduce(
-      boost::irange(0, cfg->partition_count),
+      boost::irange(0, cfg.value().partition_count),
       [this](int32_t id) {
           auto partition = model::partition_id(id);
           return do_list_committed_offsets(partition);
@@ -979,7 +979,7 @@ client::delete_committed_offsets(absl::btree_set<model::transform_id> ids) {
         co_return cluster::errc::topic_not_exists;
     }
     co_return co_await ss::map_reduce(
-      boost::irange(0, cfg->partition_count),
+      boost::irange(0, cfg.value().partition_count),
       [this, &ids](int32_t id) {
           auto partition = model::partition_id(id);
           return do_delete_committed_offsets(partition, ids);

@@ -78,7 +78,8 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     std::optional<model::initial_revision_id> remote_revision
       = cmd.value.cfg.properties.remote_topic_properties
           ? std::make_optional(
-              cmd.value.cfg.properties.remote_topic_properties->remote_revision)
+              cmd.value.cfg.properties.remote_topic_properties.value()
+                .remote_revision)
           : std::nullopt;
     auto md = topic_metadata_item{topic_metadata(
       std::move(cmd.value), model::revision_id(offset()), remote_revision)};
@@ -892,7 +893,9 @@ std::error_code topic_table::validate_force_reconfigurable_partition(
     }
     const auto& ntp = entry.ntp;
     const auto& topic_md = get_topic_metadata_ref({ntp.ns, ntp.tp.topic});
-    if (!topic_md || topic_md->get().get_revision() != entry.topic_revision) {
+    if (
+      !topic_md
+      || topic_md.value().get().get_revision() != entry.topic_revision) {
         return errc::topic_not_exists;
     }
     const auto& current_assignment = get_partition_assignment(ntp);
@@ -900,7 +903,7 @@ std::error_code topic_table::validate_force_reconfigurable_partition(
         return errc::no_partition_assignments;
     }
     if (!are_replica_sets_equal(
-          current_assignment->replicas, entry.assignment)) {
+          current_assignment.value().replicas, entry.assignment)) {
         return errc::partition_configuration_differs;
     }
     // check if the entry is already in progress
@@ -1673,7 +1676,8 @@ ss::future<> topic_table::apply_snapshot(
 
                     const bool new_is_disabled
                       = topic_snapshot.disabled_set
-                        && topic_snapshot.disabled_set->is_disabled(p_id);
+                        && topic_snapshot.disabled_set.value().is_disabled(
+                          p_id);
                     if (old_disabled_set.is_disabled(p_id) != new_is_disabled) {
                         _pending_ntp_deltas.emplace_back(
                           ntp,
@@ -1919,7 +1923,7 @@ topic_table::topic_state topic_table::get_topic_state(
         return topic_state::indeterminate;
     }
     const auto& topic_md = get_topic_metadata_ref(tp);
-    auto exists = topic_md && topic_md->get().get_revision() == id;
+    auto exists = topic_md && topic_md.value().get().get_revision() == id;
     return exists ? topic_state::exists : topic_state::not_exists;
 }
 
@@ -1986,7 +1990,7 @@ topic_table::all_ntps_moving_per_node(model::node_id node) const {
         const auto in_previous = contains_node(
           state.get_previous_replicas(), node);
         const auto in_current = contains_node(
-          current_assignment->replicas, node);
+          current_assignment.value().replicas, node);
 
         if ((in_previous && in_current) || (!in_previous && !in_current)) {
             continue;
@@ -2009,7 +2013,7 @@ topic_table::ntps_moving_to_node(model::node_id node) const {
         if (moving_to_node(
               node,
               state.get_previous_replicas(),
-              current_assignment->replicas)) {
+              current_assignment.value().replicas)) {
             ret.push_back(ntp);
         }
     }
@@ -2028,7 +2032,7 @@ topic_table::ntps_moving_from_node(model::node_id node) const {
         if (moving_from_node(
               node,
               state.get_previous_replicas(),
-              current_assignment->replicas)) {
+              current_assignment.value().replicas)) {
             ret.push_back(ntp);
         }
     }

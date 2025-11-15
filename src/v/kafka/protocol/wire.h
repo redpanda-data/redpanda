@@ -490,8 +490,8 @@ public:
         if (!data) {
             return serialize_int<int32_t>(-1);
         }
-        auto size = serialize_int<int32_t>(data->size_bytes())
-                    + data->size_bytes();
+        auto size = serialize_int<int32_t>(data.value().size_bytes())
+                    + data.value().size_bytes();
         _out->append(std::move(data.value()));
         return size;
     }
@@ -500,8 +500,8 @@ public:
         if (!data) {
             return write_unsigned_varint(0);
         }
-        auto size = write_unsigned_varint(data->size_bytes() + 1)
-                    + data->size_bytes();
+        auto size = write_unsigned_varint(data.value().size_bytes() + 1)
+                    + data.value().size_bytes();
         _out->append(std::move(data.value()));
         return size;
     }
@@ -649,8 +649,9 @@ public:
             return write(int32_t(-1));
         }
         auto start_size = uint32_t(_out->size_bytes());
-        write(data->adapter.batch->size_bytes());
-        writer_serialize_batch(*this, std::move(data->adapter.batch.value()));
+        write(data.value().adapter.batch.value().size_bytes());
+        writer_serialize_batch(
+          *this, std::move(data.value().adapter.batch.value()));
         return _out->size_bytes() - start_size;
     }
 
@@ -659,8 +660,10 @@ public:
             return write_unsigned_varint(0);
         }
         auto start_size = uint32_t(_out->size_bytes());
-        write_unsigned_varint(data->adapter.batch->size_bytes() + 1);
-        writer_serialize_batch(*this, std::move(data->adapter.batch.value()));
+        write_unsigned_varint(
+          data.value().adapter.batch.value().size_bytes() + 1);
+        writer_serialize_batch(
+          *this, std::move(data.value().adapter.batch.value()));
         return _out->size_bytes() - start_size;
     }
 

@@ -250,7 +250,7 @@ ss::future<checked<shared_schema_t, type_resolver::errc>> get_schema(
         co_return type_resolver::errc::translation_error;
     }
     if (cache.has_value()) {
-        auto cached_schema = cache->get().get_value(id);
+        auto cached_schema = cache.value().get().get_value(id);
 
         if (cached_schema) {
             co_return std::move(*cached_schema);
@@ -272,7 +272,7 @@ ss::future<checked<shared_schema_t, type_resolver::errc>> get_schema(
     }
     auto shared_schema = ss::make_shared(std::move(resolved_schema.value()));
     if (cache.has_value()) {
-        cache->get().try_insert(id, shared_schema);
+        cache.value().get().try_insert(id, shared_schema);
     }
     co_return std::move(shared_schema);
 }

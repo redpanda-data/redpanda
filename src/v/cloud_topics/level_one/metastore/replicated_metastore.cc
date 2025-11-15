@@ -66,9 +66,9 @@ meta_to_rpc_compact_update(const metastore::compaction_update& update) {
 
     if (update.new_cleaned_range) {
         compaction_state_update::cleaned_range range;
-        range.base_offset = update.new_cleaned_range->base_offset;
-        range.last_offset = update.new_cleaned_range->last_offset;
-        range.has_tombstones = update.new_cleaned_range->has_tombstones;
+        range.base_offset = update.new_cleaned_range.value().base_offset;
+        range.last_offset = update.new_cleaned_range.value().last_offset;
+        range.has_tombstones = update.new_cleaned_range.value().has_tombstones;
         rpc_update.new_cleaned_range = std::move(range);
     }
 

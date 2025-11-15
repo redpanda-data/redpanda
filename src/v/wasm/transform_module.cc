@@ -138,7 +138,7 @@ ss::future<int32_t> transform_module::read_batch_header(
     // If we are processing a batch (this isn't the first time this is called),
     // then we need to notify that we've finished processing this batch.
     if (_call_ctx) {
-        _call_ctx->callback->post_record();
+        _call_ctx.value().callback->post_record();
     }
 
     co_await guest_wait_for_batch();
@@ -146,7 +146,7 @@ ss::future<int32_t> transform_module::read_batch_header(
     if (!_call_ctx) {
         co_return NO_ACTIVE_TRANSFORM;
     }
-    const model::record_batch_header& header = _call_ctx->batch_header;
+    const model::record_batch_header& header = _call_ctx.value().batch_header;
     *base_offset = header.base_offset();
     *record_count = header.record_count;
     *partition_leader_epoch = int32_t(header.ctx.term());
@@ -163,7 +163,7 @@ ss::future<int32_t> transform_module::read_batch_header(
         ? header.first_timestamp
         : header.max_timestamp);
 
-    co_return _call_ctx->max_input_record_size;
+    co_return _call_ctx.value().max_input_record_size;
 }
 
 ss::future<int32_t> transform_module::read_next_record(
@@ -171,21 +171,21 @@ ss::future<int32_t> transform_module::read_next_record(
   int64_t* timestamp,
   model::offset* offset,
   ffi::array<uint8_t> buf) {
-    if (!_call_ctx || _call_ctx->records.empty()) {
+    if (!_call_ctx || _call_ctx.value().records.empty()) {
         co_return NO_ACTIVE_TRANSFORM;
     }
 
     // Callback that we finished processing the previous record,
     // but don't call this the first record that has been read.
     if (
-      _call_ctx->records.size()
-      != size_t(_call_ctx->batch_header.record_count)) {
-        _call_ctx->callback->post_record();
+      _call_ctx.value().records.size()
+      != size_t(_call_ctx.value().batch_header.record_count)) {
+        _call_ctx.value().callback->post_record();
     }
 
     co_await ss::coroutine::maybe_yield();
 
-    auto record = _call_ctx->records.front();
+    auto record = _call_ctx.value().records.front();
     if (buf.size() < record.payload_size) {
         vlog(
           wasm_log.debug,
@@ -195,7 +195,7 @@ ss::future<int32_t> transform_module::read_next_record(
         // Buffer wrong size
         co_return INVALID_BUFFER;
     }
-    _call_ctx->records.pop_front();
+    _call_ctx.value().records.pop_front();
 
     _wasi_module->set_walltime(record.timestamp);
 
@@ -205,17 +205,17 @@ ss::future<int32_t> transform_module::read_next_record(
     *offset = record.offset;
 
     // Drop the metadata we already parsed
-    _call_ctx->batch_data.trim_front(record.metadata_size);
+    _call_ctx.value().batch_data.trim_front(record.metadata_size);
     // Copy out the payload
     {
-        iobuf_const_parser parser(_call_ctx->batch_data);
+        iobuf_const_parser parser(_call_ctx.value().batch_data);
         parser.consume_to(record.payload_size, buf.data());
     }
     // Skip over the payload
-    _call_ctx->batch_data.trim_front(record.payload_size);
+    _call_ctx.value().batch_data.trim_front(record.payload_size);
 
     // Call back so we can refuel.
-    _call_ctx->callback->pre_record();
+    _call_ctx.value().callback->pre_record();
 
     co_return int32_t(record.payload_size);
 }
@@ -230,7 +230,7 @@ ss::future<int32_t> transform_module::write_record(ffi::array<uint8_t> buf) {
     if (!d) {
         co_return INVALID_BUFFER;
     }
-    auto success = co_await _call_ctx->callback->emit(
+    auto success = co_await _call_ctx.value().callback->emit(
       std::nullopt, std::move(d).value());
     co_return success ? int32_t(buf.size()) : INVALID_WRITE;
 }
@@ -252,8 +252,8 @@ ss::future<int32_t> transform_module::write_record_with_options(
     if (!options) {
         co_return INVALID_BUFFER;
     }
-    auto success = co_await _call_ctx->callback->emit(
-      options->topic, std::move(d).value());
+    auto success = co_await _call_ctx.value().callback->emit(
+      options.value().topic, std::move(d).value());
     co_return success ? int32_t(buf.size()) : INVALID_WRITE;
 }
 
@@ -264,22 +264,24 @@ void transform_module::start() {
 
 void transform_module::stop(const std::exception_ptr& ex) {
     if (_guest_cond_var) {
-        _guest_cond_var->broken(ex);
+        _guest_cond_var.value().broken(ex);
     }
     if (_host_cond_var) {
-        _host_cond_var->broken(ex);
+        _host_cond_var.value().broken(ex);
     }
 }
 
 ss::future<> transform_module::host_wait_for_proccessing() {
-    _guest_cond_var->signal();
-    return _host_cond_var->wait();
+    _guest_cond_var.value().signal();
+    return _host_cond_var.value().wait();
 }
 
 ss::future<> transform_module::guest_wait_for_batch() {
-    _host_cond_var->signal();
-    return _guest_cond_var->wait();
+    _host_cond_var.value().signal();
+    return _guest_cond_var.value().wait();
 }
 
-ss::future<> transform_module::await_ready() { return _host_cond_var->wait(); }
+ss::future<> transform_module::await_ready() {
+    return _host_cond_var.value().wait();
+}
 } // namespace wasm

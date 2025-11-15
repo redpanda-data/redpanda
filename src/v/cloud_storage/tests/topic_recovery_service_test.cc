@@ -348,13 +348,14 @@ FIXTURE_TEST(recovery_where_topic_is_created, fixture) {
     auto topic = app.controller->get_topics_state().local().get_topic_cfg(
       tp_ns);
     BOOST_REQUIRE(topic.has_value());
-    BOOST_REQUIRE_EQUAL(topic->partition_count, 1);
-    BOOST_REQUIRE_EQUAL(topic->replication_factor, 1);
-    BOOST_REQUIRE(topic->is_recovery_enabled());
+    BOOST_REQUIRE_EQUAL(topic.value().partition_count, 1);
+    BOOST_REQUIRE_EQUAL(topic.value().replication_factor, 1);
+    BOOST_REQUIRE(topic.value().is_recovery_enabled());
     BOOST_REQUIRE_EQUAL(
-      topic->properties.shadow_indexing, model::shadow_indexing_mode::full);
+      topic.value().properties.shadow_indexing,
+      model::shadow_indexing_mode::full);
     BOOST_REQUIRE_EQUAL(
-      topic->properties.retention_local_target_bytes.value(),
+      topic.value().properties.retention_local_target_bytes.value(),
       config::shard_local_cfg()
         .cloud_storage_recovery_temporary_retention_bytes_default.value());
     // We will have at least three requests, there could be more depending on
@@ -444,9 +445,10 @@ FIXTURE_TEST(recovery_with_retention_ms_override, fixture) {
       tp_ns);
     BOOST_REQUIRE(topic.has_value());
     BOOST_REQUIRE(
-      topic->properties.retention_local_target_ms.has_optional_value());
+      topic.value().properties.retention_local_target_ms.has_optional_value());
     BOOST_REQUIRE_EQUAL(
-      topic->properties.retention_local_target_ms.value().count(), 10000);
+      topic.value().properties.retention_local_target_ms.value().count(),
+      10000);
 }
 
 FIXTURE_TEST(recovery_with_retention_bytes_override, fixture) {
@@ -461,9 +463,10 @@ FIXTURE_TEST(recovery_with_retention_bytes_override, fixture) {
       tp_ns);
     BOOST_REQUIRE(topic.has_value());
     BOOST_REQUIRE(
-      topic->properties.retention_local_target_bytes.has_optional_value());
+      topic.value()
+        .properties.retention_local_target_bytes.has_optional_value());
     BOOST_REQUIRE_EQUAL(
-      topic->properties.retention_local_target_bytes.value(), 10000);
+      topic.value().properties.retention_local_target_bytes.value(), 10000);
 }
 
 FIXTURE_TEST(recovery_status, fixture) {

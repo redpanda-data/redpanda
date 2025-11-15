@@ -259,7 +259,7 @@ private:
 
     ss::sstring api_info() const final {
         if (_http_request) {
-            return _http_request->url.path;
+            return _http_request.value().url.path;
         }
         return _api.operation;
     }

@@ -82,12 +82,12 @@ void rjson_serialize_impl(
 
     if (v.get_tls_v1_2_cipher_suites()) {
         w.Key("tls_v1_2_cipher_suites");
-        w.String(v.get_tls_v1_2_cipher_suites()->c_str());
+        w.String(v.get_tls_v1_2_cipher_suites().value().c_str());
     }
 
     if (v.get_tls_v1_3_cipher_suites()) {
         w.Key("tls_v1_3_cipher_suites");
-        w.String(v.get_tls_v1_3_cipher_suites()->c_str());
+        w.String(v.get_tls_v1_3_cipher_suites().value().c_str());
     }
 
     if (v.get_min_tls_version()) {

@@ -263,7 +263,7 @@ FIXTURE_TEST(offset_commit_and_fetch_request, consumer_offsets_fixture) {
               req.topics.emplace();
               for (const auto& [topic, partitions] :
                    committed_offsets.at(group_id)) {
-                  req.topics->push_back(
+                  req.topics.value().push_back(
                     {.name{topic},
                      .partition_indexes{
                        std::from_range, partitions | std::views::keys}});

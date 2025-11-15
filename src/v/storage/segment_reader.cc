@@ -261,10 +261,10 @@ ss::future<ss::temporary_buffer<char>> concat_segment_data_source_impl::get() {
         co_await next_stream();
     }
 
-    ss::temporary_buffer<char> buf = co_await _current_stream->read();
+    ss::temporary_buffer<char> buf = co_await _current_stream.value().read();
     while (buf.empty() && _current_pos != _segments.end()) {
         co_await next_stream();
-        buf = co_await _current_stream->read();
+        buf = co_await _current_stream.value().read();
     }
 
     co_return buf;
@@ -277,7 +277,7 @@ ss::future<> concat_segment_data_source_impl::next_stream() {
           "closing stream for current segment {} before switching to next "
           "segment",
           _name);
-        co_await _current_stream->close();
+        co_await _current_stream.value().close();
     }
 
     if (_current_handle) {
@@ -286,7 +286,7 @@ ss::future<> concat_segment_data_source_impl::next_stream() {
           "closing handle for current segment {} before switching to next "
           "segment",
           _name);
-        co_await _current_handle->close();
+        co_await _current_handle.value().close();
     }
 
     vlog(
@@ -308,7 +308,7 @@ ss::future<> concat_segment_data_source_impl::next_stream() {
 
     _name = segment->filename();
     _current_handle = co_await segment->reader().data_stream(start, end);
-    _current_stream = _current_handle->take_stream();
+    _current_stream = _current_handle.value().take_stream();
 
     _current_pos++;
 
@@ -320,12 +320,12 @@ ss::future<> concat_segment_data_source_impl::close() {
     co_await _gate.close();
     if (_current_stream) {
         vlog(stlog.trace, "closing stream for segment {}", _name);
-        co_await _current_stream->close();
+        co_await _current_stream.value().close();
     }
 
     if (_current_handle) {
         vlog(stlog.trace, "closing handle for segment {}", _name);
-        co_await _current_handle->close();
+        co_await _current_handle.value().close();
     }
     co_return;
 }
@@ -346,7 +346,7 @@ ss::input_stream<char> concat_segment_reader_view::take_stream() {
 
 ss::future<> concat_segment_reader_view::close() {
     if (_stream) {
-        co_return co_await _stream->close();
+        co_return co_await _stream.value().close();
     }
     co_return;
 }

@@ -149,7 +149,7 @@ registry::get_valid_schema(ppsr::schema_id schema_id) const {
             co_return std::nullopt;
         }
     }
-    switch (schema_def_opt->type()) {
+    switch (schema_def_opt.value().type()) {
     case ppsr::schema_type::json: {
         co_return co_await ppsr::make_json_schema_definition(
           *reader, {ppsr::subject("r"), std::move(schema_def_opt.value())});

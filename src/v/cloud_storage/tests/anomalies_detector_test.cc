@@ -305,8 +305,9 @@ public:
         BOOST_REQUIRE(_detector.has_value());
 
         retry_chain_node anomaly_detection_rtc(1min, 100ms, &_root_rtc);
-        auto res
-          = _detector->run(anomaly_detection_rtc, quota, start_from).get();
+        auto res = _detector.value()
+                     .run(anomaly_detection_rtc, quota, start_from)
+                     .get();
         vlog(
           test_logger.info,
           "Anomalies detector run result: status={}, detected={}, "

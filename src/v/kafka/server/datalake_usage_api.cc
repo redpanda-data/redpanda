@@ -16,7 +16,7 @@ namespace kafka {
 
 datalake_usage_api::usage_stats::usage_stats(const usage_stats& other) {
     if (other.topic_stats) {
-        topic_stats = other.topic_stats->copy();
+        topic_stats = other.topic_stats.value().copy();
     } else {
         topic_stats.reset();
     }
@@ -27,7 +27,7 @@ datalake_usage_api::usage_stats& datalake_usage_api::usage_stats::operator=(
   const datalake_usage_api::usage_stats& other) {
     if (this != &other) {
         if (other.topic_stats) {
-            topic_stats = other.topic_stats->copy();
+            topic_stats = other.topic_stats.value().copy();
         } else {
             topic_stats.reset();
         }

@@ -77,7 +77,7 @@ ss::future<report_parser::rows_t> report_parser::next() {
 ss::future<> report_parser::stop() {
     co_await _gate.close();
     if (_decompression_started) {
-        co_await _stream_inflate->stop();
+        co_await _stream_inflate.value().stop();
     }
 }
 
@@ -107,9 +107,9 @@ ss::future<std::optional<iobuf>> report_parser::fill_buffer() {
           "decompression context not initialized, cannot decompress report");
         if (unlikely(!_decompression_started)) {
             _decompression_started = true;
-            _stream_inflate->reset();
+            _stream_inflate.value().reset();
         }
-        co_return co_await _stream_inflate->next();
+        co_return co_await _stream_inflate.value().next();
     }
 
     auto buf = co_await _stream.read_up_to(_chunk_size);

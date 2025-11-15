@@ -43,7 +43,7 @@ static model::record_batch make_random_batch(
         std::optional<iobuf> result;
         if (x.has_value()) {
             iobuf buf;
-            buf.append(x->data(), x->size());
+            buf.append(x.value().data(), x.value().size());
             result = std::move(buf);
         }
         return result;

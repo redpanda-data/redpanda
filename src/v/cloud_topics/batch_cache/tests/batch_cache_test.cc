@@ -62,8 +62,9 @@ TEST_F(batch_cache_test_fixture, test_batch_cache_put_get) {
     // Get batch
     auto retrieved = _cache.get(test_ntp, model::offset(0));
     ASSERT_TRUE(retrieved.has_value());
-    ASSERT_EQ(retrieved->base_offset(), batch.base_offset());
-    ASSERT_EQ(retrieved->header().record_count, batch.header().record_count);
+    ASSERT_EQ(retrieved.value().base_offset(), batch.base_offset());
+    ASSERT_EQ(
+      retrieved.value().header().record_count, batch.header().record_count);
 }
 
 TEST_F(batch_cache_test_fixture, test_batch_cache_get_nonexistent) {
@@ -92,8 +93,8 @@ TEST_F(batch_cache_test_fixture, test_batch_cache_multiple_ntps) {
     ASSERT_TRUE(retrieved1.has_value());
     ASSERT_TRUE(retrieved2.has_value());
 
-    ASSERT_EQ(retrieved1->base_offset(), batch1.base_offset());
-    ASSERT_EQ(retrieved2->base_offset(), batch2.base_offset());
+    ASSERT_EQ(retrieved1.value().base_offset(), batch1.base_offset());
+    ASSERT_EQ(retrieved2.value().base_offset(), batch2.base_offset());
 
     // Try to get batch with wrong offset
     auto retrieved = _cache.get(ntp2, model::offset(0));

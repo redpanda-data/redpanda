@@ -59,7 +59,7 @@ prepared_writer::initialize(std::filesystem::path crash_file_path) {
 
     // Create the crash recorder file
     auto f = co_await ss::open_file_dma(
-      _crash_report_file_name->c_str(),
+      _crash_report_file_name.value().c_str(),
       ss::open_flags::create | ss::open_flags::rw | ss::open_flags::truncate
         | ss::open_flags::exclusive);
     co_await f.close();
@@ -69,7 +69,7 @@ prepared_writer::initialize(std::filesystem::path crash_file_path) {
     // API or higher-level C++ primitives because we need to be able to
     // manipulate the file using async-signal-safe, allocation-free functions
     // inside signal handlers.
-    _fd = ::open(_crash_report_file_name->c_str(), O_WRONLY);
+    _fd = ::open(_crash_report_file_name.value().c_str(), O_WRONLY);
     if (_fd == -1) {
         throw std::system_error(
           errno,
@@ -177,7 +177,7 @@ ss::future<> prepared_writer::release() {
 
     ::close(_fd);
     _fd = -1;
-    co_await ss::remove_file(_crash_report_file_name->c_str());
+    co_await ss::remove_file(_crash_report_file_name.value().c_str());
     vlog(
       ctlog.debug, "Deleted crash report file: {}", *_crash_report_file_name);
     _crash_report_file_name.reset();

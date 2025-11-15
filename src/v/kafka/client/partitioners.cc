@@ -37,7 +37,7 @@ class murmur2_key_partitioner final : public partitioner_impl {
 public:
     std::optional<model::partition_id>
     operator()(const record_essence& rec, size_t partition_count) override {
-        if (!rec.key || rec.key->empty()) {
+        if (!rec.key || rec.key.value().empty()) {
             return std::nullopt;
         }
         iobuf_const_parser p(rec.key.value());

@@ -147,8 +147,8 @@ ss::future<std::optional<api_version_range>> brokers::supported_api_versions(
         if (!v) {
             co_return std::nullopt;
         }
-        range.min = std::max(range.min, v->min);
-        range.max = std::min(range.max, v->max);
+        range.min = std::max(range.min, v.value().min);
+        range.max = std::min(range.max, v.value().max);
     }
     co_return range;
 }

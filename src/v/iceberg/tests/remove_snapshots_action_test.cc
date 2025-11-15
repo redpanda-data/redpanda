@@ -59,26 +59,26 @@ snapshot_reference& add_branch(
     if (!table->refs.has_value()) {
         table->refs.emplace();
     }
-    table->refs->emplace(
+    table->refs.value().emplace(
       branch_name,
       snapshot_reference{
         .snapshot_id = id,
         .type = snapshot_ref_type::branch,
       });
-    return table->refs->at(branch_name);
+    return table->refs.value().at(branch_name);
 }
 snapshot_reference&
 add_tag(snapshot_id id, const ss::sstring& tag_name, table_metadata* table) {
     if (!table->refs.has_value()) {
         table->refs.emplace();
     }
-    table->refs->emplace(
+    table->refs.value().emplace(
       tag_name,
       snapshot_reference{
         .snapshot_id = id,
         .type = snapshot_ref_type::branch,
       });
-    return table->refs->at(tag_name);
+    return table->refs.value().at(tag_name);
 }
 
 // Examines the updates from the transaction and checks that they match the
@@ -415,8 +415,8 @@ TEST_F(RemoveSnapshotsActionTest, TestRemoveSnapshotTransaction) {
     auto& main_ref = add_branch(highest_id, "main", &table);
     main_ref.max_snapshot_age_ms = expiry_age_ms;
 
-    ASSERT_EQ(table.snapshots->size(), default_total_snaps);
-    ASSERT_EQ(table.refs->size(), 1);
+    ASSERT_EQ(table.snapshots.value().size(), default_total_snaps);
+    ASSERT_EQ(table.refs.value().size(), 1);
 
     transaction txn(std::move(table));
     auto tx_outcome = txn.remove_expired_snapshots(now).get();
@@ -426,9 +426,9 @@ TEST_F(RemoveSnapshotsActionTest, TestRemoveSnapshotTransaction) {
     ASSERT_NO_FATAL_FAILURE(
       check_expected_updates(txn, default_total_snaps - 1, 0));
     ASSERT_EQ(
-      txn.table().snapshots->size(),
+      txn.table().snapshots.value().size(),
       remove_snapshots_action::default_min_snapshots_retained);
-    ASSERT_EQ(txn.table().refs->size(), 1);
+    ASSERT_EQ(txn.table().refs.value().size(), 1);
 }
 
 TEST_F(RemoveSnapshotsActionTest, TestRemoveSnapshotReferenceTransaction) {
@@ -441,23 +441,23 @@ TEST_F(RemoveSnapshotsActionTest, TestRemoveSnapshotReferenceTransaction) {
     tag_ref.max_snapshot_age_ms = expiry_age_ms;
     tag_ref.max_ref_age_ms = expiry_age_ms;
 
-    ASSERT_EQ(table.snapshots->size(), 1);
-    ASSERT_EQ(table.refs->size(), 1);
+    ASSERT_EQ(table.snapshots.value().size(), 1);
+    ASSERT_EQ(table.refs.value().size(), 1);
 
     transaction txn(std::move(table));
     auto tx_outcome = txn.remove_expired_snapshots(now).get();
     ASSERT_FALSE(tx_outcome.has_error());
 
     ASSERT_NO_FATAL_FAILURE(check_expected_updates(txn, 1, 1));
-    ASSERT_EQ(txn.table().snapshots->size(), 0);
-    ASSERT_EQ(txn.table().refs->size(), 0);
+    ASSERT_EQ(txn.table().snapshots.value().size(), 0);
+    ASSERT_EQ(txn.table().refs.value().size(), 0);
 }
 
 TEST_F(RemoveSnapshotsActionTest, TestTableMaxAgeProperty) {
     const auto expiry_age_ms = 1000;
     auto table = create_table();
     table.properties.emplace();
-    table.properties->emplace(
+    table.properties.value().emplace(
       max_snapshot_age_ms_prop, fmt::to_string(expiry_age_ms));
 
     const auto now = model::timestamp::now();
@@ -478,9 +478,9 @@ TEST_F(RemoveSnapshotsActionTest, TestTableMaxRefAgeProperty) {
     table.properties.emplace();
     // Set the snapshots and references to expire at the same time so snapshots
     // with expired references are removed earlier than the default.
-    table.properties->emplace(
+    table.properties.value().emplace(
       max_ref_age_ms_prop, fmt::to_string(expiry_age_ms));
-    table.properties->emplace(
+    table.properties.value().emplace(
       max_snapshot_age_ms_prop, fmt::to_string(expiry_age_ms));
 
     const auto now = model::timestamp::now();
@@ -496,7 +496,7 @@ TEST_F(RemoveSnapshotsActionTest, TestTableMinSnapsKeptProperty) {
     const auto min_to_keep = 10;
     auto table = create_table();
     table.properties.emplace();
-    table.properties->emplace(
+    table.properties.value().emplace(
       min_snapshots_to_keep_prop, fmt::to_string(min_to_keep));
 
     const auto now = model::timestamp::now();

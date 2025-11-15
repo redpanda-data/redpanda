@@ -104,9 +104,9 @@ private:
             // Do linear probing to find a non-disabled partition. The
             // expectation is that most of the times we'll need just a few
             // probes.
-            for (int32_t i = 0; i < config->partition_count; ++i) {
+            for (int32_t i = 0; i < config.value().partition_count; ++i) {
                 model::partition_id candidate(
-                  (_input_partition_id + i) % config->partition_count);
+                  (_input_partition_id + i) % config.value().partition_count);
                 if (!(disabled_set && disabled_set->is_disabled(candidate))) {
                     return candidate;
                 }
@@ -162,7 +162,7 @@ public:
         if (!result.has_value()) {
             co_return std::nullopt;
         }
-        co_return model::offset_cast(result->offset);
+        co_return model::offset_cast(result.value().offset);
     }
 
     kafka::offset start_offset() const final {
@@ -338,7 +338,7 @@ public:
                     }
                     auto value = result.value();
                     if (value) {
-                        offsets[idx] = value->offset;
+                        offsets[idx] = value.value().offset;
                     }
                     return ss::now();
                 });
@@ -865,7 +865,7 @@ model::cluster_transform_report service::compute_default_report() {
         if (!cfg) {
             continue;
         }
-        for (int32_t i = 0; i < cfg->partition_count; ++i) {
+        for (int32_t i = 0; i < cfg.value().partition_count; ++i) {
             report.add(
               id,
               transform,
@@ -946,12 +946,13 @@ ss::future<std::error_code> service::patch_transform_metadata(
           cluster::errc::transform_does_not_exist);
     }
 
-    transform->paused = patch.paused.value_or(transform->paused);
+    transform.value().paused = patch.paused.value_or(transform.value().paused);
     if (patch.env.has_value()) {
-        std::exchange(transform->environment, std::move(patch.env).value());
+        std::exchange(
+          transform.value().environment, std::move(patch.env).value());
     }
-    transform->compression_mode = patch.compression_mode.value_or(
-      transform->compression_mode);
+    transform.value().compression_mode = patch.compression_mode.value_or(
+      transform.value().compression_mode);
 
     cluster::errc ec = co_await _plugin_frontend->local().upsert_transform(
       transform.value(), model::timeout_clock::now() + metadata_timeout);

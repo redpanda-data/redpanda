@@ -2560,9 +2560,10 @@ group::handle_offset_fetch(offset_fetch_request_group r, bool require_stable) {
                 auto res = offset(tp);
                 if (res) {
                     p.partition_index = id;
-                    p.committed_offset = res->offset;
-                    p.committed_leader_epoch = res->committed_leader_epoch;
-                    p.metadata = res->metadata;
+                    p.committed_offset = res.value().offset;
+                    p.committed_leader_epoch
+                      = res.value().committed_leader_epoch;
+                    p.metadata = res.value().metadata;
                     p.error_code = error_code::none;
                 }
             }
@@ -2709,7 +2710,8 @@ ss::future<> group::remove_topic_partitions(
         _pending_offset_commits.erase(tp);
         if (auto offset = _offsets.extract(tp); offset) {
             removed.emplace_back(
-              std::move(offset->first), std::move(offset->second->metadata));
+              std::move(offset.value().first),
+              std::move(offset.value().second->metadata));
         }
     }
 

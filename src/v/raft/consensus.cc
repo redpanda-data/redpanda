@@ -294,7 +294,7 @@ ss::future<xshard_transfer_state> consensus::stop() {
     co_await _replication_monitor.stop();
     co_await _event_manager.stop();
     if (_stm_manager) {
-        co_await _stm_manager->stop();
+        co_await _stm_manager.value().stop();
     }
     co_await _append_requests_buffer.stop();
     co_await _batcher.stop();
@@ -306,7 +306,7 @@ ss::future<xshard_transfer_state> consensus::stop() {
 
     // close writer if we have to
     if (unlikely(_snapshot_writer)) {
-        co_await _snapshot_writer->close();
+        co_await _snapshot_writer.value().close();
         _snapshot_writer.reset();
     }
     /**
@@ -1340,7 +1340,7 @@ consensus::cancel_configuration_change(model::revision_id revision) {
                   *
                   */
                  if (cfg.get_state() == raft::configuration_state::joint) {
-                     if (!cfg.old_config()->learners.empty()) {
+                     if (!cfg.old_config().value().learners.empty()) {
                          vlog(
                            _ctxlog.info,
                            "not cancelling partition configuration as old "
@@ -1498,7 +1498,8 @@ consensus::do_start(std::optional<xshard_transfer_state> xst_state) {
             update_snapshot_offset(metadata.value());
             last_snapshot_index = _last_snapshot_index;
             co_await _configuration_manager.add(
-              _last_snapshot_index, std::move(metadata->latest_configuration));
+              _last_snapshot_index,
+              std::move(metadata.value().latest_configuration));
             _probe->configuration_update();
 
             start_truncate_cfg = truncation_cfg_for_snapshot(metadata.value());
@@ -1612,7 +1613,7 @@ consensus::do_start(std::optional<xshard_transfer_state> xst_state) {
         // election
         _hbeat = clock_type::time_point::min();
 
-        if (xst_state && xst_state->leader_term == _term) {
+        if (xst_state && xst_state.value().leader_term == _term) {
             // we were the leader before the x-shard transfer, try re-electing
             // immediately.
             dispatch_vote(true);
@@ -1671,7 +1672,7 @@ consensus::do_start(std::optional<xshard_transfer_state> xst_state) {
             // previously the state machine manager was started in the main
             // scheduling group, let's keep it for now
             co_await ss::coroutine::switch_to(ss::default_scheduling_group());
-            co_await _stm_manager->start();
+            co_await _stm_manager.value().start();
         }
 
         vlog(
@@ -2022,7 +2023,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     reply.last_flushed_log_index = _flushed_offset;
     reply.result = reply_result::failure;
     reply.may_recover = _follower_recovery_state
-                        && _follower_recovery_state->is_active();
+                        && _follower_recovery_state.value().is_active();
 
     if (unlikely(is_request_target_node_invalid("append_entries", r))) {
         co_return reply;
@@ -2075,7 +2076,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           last_log_offset,
           request_metadata.dirty_offset,
           request_metadata.dirty_offset > request_metadata.prev_log_index);
-        reply.may_recover = _follower_recovery_state->is_active();
+        reply.may_recover = _follower_recovery_state.value().is_active();
 
         co_return reply;
     }
@@ -2110,7 +2111,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           last_log_offset,
           request_metadata.dirty_offset,
           request_metadata.dirty_offset > request_metadata.prev_log_index);
-        reply.may_recover = _follower_recovery_state->is_active();
+        reply.may_recover = _follower_recovery_state.value().is_active();
 
         co_return reply;
     }
@@ -2215,7 +2216,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         // defer to the leader and force-enter the recovery state.
         upsert_recovery_state(
           last_log_offset, request_metadata.dirty_offset, true);
-        reply.may_recover = _follower_recovery_state->is_active();
+        reply.may_recover = _follower_recovery_state.value().is_active();
     }
 
     // section 3
@@ -2316,7 +2317,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         maybe_update_follower_commit_idx(request_metadata.commit_index);
 
         if (_follower_recovery_state) {
-            _follower_recovery_state->update_progress(
+            _follower_recovery_state.value().update_progress(
               ofs.last_offset,
               std::max(request_metadata.dirty_offset, ofs.last_offset));
 
@@ -2409,7 +2410,7 @@ ss::future<> consensus::hydrate_snapshot() {
     update_snapshot_offset(metadata.value());
     auto last_snapshot_index = _last_snapshot_index;
     co_await _configuration_manager.add(
-      _last_snapshot_index, std::move(metadata->latest_configuration));
+      _last_snapshot_index, std::move(metadata.value().latest_configuration));
     _probe->configuration_update();
     auto truncate_cfg = truncation_cfg_for_snapshot(metadata.value());
     if (truncate_cfg.has_value()) {
@@ -2483,13 +2484,13 @@ consensus::read_snapshot_metadata() {
     }
     std::exception_ptr eptr;
     try {
-        auto buf = co_await snapshot_reader->read_metadata();
+        auto buf = co_await snapshot_reader.value().read_metadata();
         auto parser = iobuf_parser(std::move(buf));
         metadata = reflection::adl<raft::snapshot_metadata>{}.from(parser);
     } catch (...) {
         eptr = std::current_exception();
     }
-    co_await snapshot_reader->close();
+    co_await snapshot_reader.value().close();
     if (eptr) {
         std::rethrow_exception(eptr);
     }
@@ -2548,7 +2549,7 @@ consensus::do_install_snapshot(install_snapshot_request r) {
     if (r.file_offset == 0) {
         // discard old chunks, previous snaphost wasn't finished
         if (_snapshot_writer) {
-            co_await _snapshot_writer->close();
+            co_await _snapshot_writer.value().close();
             co_await _snapshot_mgr.remove_partial_snapshots();
         }
 
@@ -2570,7 +2571,7 @@ consensus::do_install_snapshot(install_snapshot_request r) {
     // Write data into snapshot file at given offset (§7.3)
     size_t chunk_size = r.chunk.size_bytes();
     co_await write_iobuf_to_output_stream(
-      std::move(r.chunk), _snapshot_writer->output());
+      std::move(r.chunk), _snapshot_writer.value().output());
 
     _received_snapshot_bytes += chunk_size;
     reply.bytes_stored = _received_snapshot_bytes;
@@ -2592,7 +2593,7 @@ ss::future<install_snapshot_reply> consensus::finish_snapshot(
         return ss::make_ready_future<install_snapshot_reply>(reply);
     }
 
-    auto f = _snapshot_writer->close();
+    auto f = _snapshot_writer.value().close();
     // discard any existing or partial snapshot with a smaller index (§7.5)
     if (r.last_included_index < _last_snapshot_index) {
         vlog(
@@ -2743,7 +2744,8 @@ consensus::open_snapshot() {
     }
 
     auto metadata
-      = co_await reader->read_metadata()
+      = co_await reader.value()
+          .read_metadata()
           .then([](iobuf md_buf) {
               auto md_parser = iobuf_parser(std::move(md_buf));
               return reflection::adl<raft::snapshot_metadata>{}.from(md_parser);
@@ -2753,7 +2755,7 @@ consensus::open_snapshot() {
                   return f;
               }
 
-              return reader->close().then(
+              return reader.value().close().then(
                 [f = std::move(f)]() mutable { return std::move(f); });
           });
 
@@ -2870,7 +2872,7 @@ append_entries_reply consensus::make_append_entries_reply(
     reply.last_flushed_log_index = _flushed_offset;
     reply.result = reply_result::success;
     reply.may_recover = _follower_recovery_state
-                        && _follower_recovery_state->is_active();
+                        && _follower_recovery_state.value().is_active();
     return reply;
 }
 
@@ -3320,7 +3322,7 @@ void consensus::trigger_leadership_notification() {
         // If we are recovering and the group has lost leadership, it is unclear
         // when it will regain it. Yield the recovery slot so that other groups
         // can make progress.
-        _follower_recovery_state->yield();
+        _follower_recovery_state.value().yield();
     }
     _compaction_coordinator.on_leadership_change(_leader_id);
 }
@@ -4092,7 +4094,8 @@ reply_result consensus::lightweight_heartbeat(
      * If leader has changed force full heartbeat
      */
     if (unlikely(
-          !_leader_id.has_value() || (_leader_id->id() != source_node))) {
+          !_leader_id.has_value()
+          || (_leader_id.value().id() != source_node))) {
         vlog(
           _ctxlog.trace,
           "requesting full heartbeat from {}, leadership changed",
@@ -4114,7 +4117,8 @@ reply_result consensus::lightweight_heartbeat(
     }
 
     if (unlikely(
-          _follower_recovery_state && _follower_recovery_state->is_active())) {
+          _follower_recovery_state
+          && _follower_recovery_state.value().is_active())) {
         // If for some reason the leader is sending us lightweight heartbeats
         // after we allowed recovery, notify it by forcing a full heartbeat.
         return reply_result::failure;
@@ -4204,11 +4208,11 @@ void consensus::upsert_recovery_state(
           our_last_offset,
           _follower_recovery_state->is_active());
     } else {
-        if (force_active && !_follower_recovery_state->is_active()) {
-            _follower_recovery_state->force_active();
+        if (force_active && !_follower_recovery_state.value().is_active()) {
+            _follower_recovery_state.value().force_active();
         }
 
-        _follower_recovery_state->update_progress(
+        _follower_recovery_state.value().update_progress(
           our_last_offset, leader_last_offset);
     }
 }
@@ -4238,7 +4242,9 @@ std::optional<model::offset> consensus::get_learner_start_offset() const {
     const auto& latest_cfg = _configuration_manager.get_latest();
 
     if (latest_cfg.get_configuration_update()) {
-        return latest_cfg.get_configuration_update()->learner_start_offset;
+        return latest_cfg.get_configuration_update()
+          .value()
+          .learner_start_offset;
     }
     return std::nullopt;
 }
@@ -4443,7 +4449,7 @@ consensus::do_snapshot_and_truncate_log(model::offset truncation_point) {
       _ctxlog.debug,
       "Requesting raft snapshot with final offset: {}",
       truncation_point);
-    auto snapshot_result = co_await _stm_manager->take_snapshot(
+    auto snapshot_result = co_await _stm_manager.value().take_snapshot(
       truncation_point);
     // we need to check snapshot index again as it may already progressed after
     // snapshot is taken by stm_manager

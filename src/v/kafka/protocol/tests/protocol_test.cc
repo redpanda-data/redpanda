@@ -161,7 +161,7 @@ bool legacy_batch_failures(
                 /// parsed with no error up-until this point, all OK
                 return !pp_data.records
                          ? false
-                         : (pp_data.records->adapter.legacy_error);
+                         : (pp_data.records.value().adapter.legacy_error);
             });
       });
 }

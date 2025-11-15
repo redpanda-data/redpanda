@@ -262,7 +262,7 @@ TEST(frontend_test, object_additional_properties) {
     ASSERT_EQ(expected, ir_tree_printer::to_string(schema));
     ASSERT_TRUE(schema.root().additional_properties().has_value());
     ASSERT_EQ(
-      schema.root().additional_properties()->get().types(),
+      schema.root().additional_properties().value().get().types(),
       std::vector{json_value_type::string});
 }
 
@@ -366,7 +366,7 @@ TEST(frontend_test, array_items_and_additional_items) {
         schema.root().items()));
     ASSERT_TRUE(schema.root().additional_items().has_value());
     ASSERT_EQ(
-      schema.root().additional_items()->get().types(),
+      schema.root().additional_items().value().get().types(),
       std::vector{json_value_type::integer});
 }
 
@@ -593,7 +593,7 @@ TEST(frontend_test, supported_dialects) {
           d);
 
         ASSERT_EQ(expected, ir_tree_printer::to_string(schema.value()));
-        ASSERT_EQ(schema->root().dialect(), d);
+        ASSERT_EQ(schema.value().root().dialect(), d);
     }
 }
 

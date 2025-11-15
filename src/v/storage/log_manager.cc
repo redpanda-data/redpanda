@@ -811,7 +811,7 @@ ss::future<> log_manager::shutdown(model::ntp ntp) {
         co_return;
     }
 
-    auto close_fut = handle->second->housekeeping_gate.close();
+    auto close_fut = handle.value().second->housekeeping_gate.close();
 
     co_await clean_close(handle.value().second->handle);
 
@@ -828,7 +828,7 @@ ss::future<> log_manager::remove(model::ntp ntp) {
         co_return;
     }
 
-    auto close_fut = handle->second->housekeeping_gate.close();
+    auto close_fut = handle.value().second->housekeeping_gate.close();
 
     // 'ss::shared_ptr<>' make a copy
     auto lg = handle.value().second->handle;
@@ -891,7 +891,8 @@ ss::future<> remove_orphan_partition_files(
               return ss::now();
           }
 
-          auto ntp = model::ntp(nt.ns, nt.tp, ntp_directory_data->partition_id);
+          auto ntp = model::ntp(
+            nt.ns, nt.tp, ntp_directory_data.value().partition_id);
           if (orphan_filter(ntp, ntp_directory_data.value())) {
               auto ntp_directory = std::filesystem::path(topic_directory_path)
                                    / std::filesystem::path(entry.name);
@@ -1123,7 +1124,8 @@ gc_config log_manager::default_gc_config() const {
         collection_threshold = model::timestamp(0);
     } else {
         collection_threshold = model::timestamp(
-          model::timestamp::now().value() - _config.log_retention()->count());
+          model::timestamp::now().value()
+          - _config.log_retention().value().count());
     }
     return {collection_threshold, _config.retention_bytes()};
 }

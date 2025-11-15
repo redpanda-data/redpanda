@@ -163,11 +163,11 @@ ss::sstring throughput_control_group::validate() const {
         return {};
     }
     // regex match: check if the regex is valid
-    if (likely(client_id_matcher->v->ok())) {
+    if (likely(client_id_matcher->v.value().ok())) {
         return {};
     } else {
         return ss::format(
-          "Invalid client_id regex. {}", client_id_matcher->v->error());
+          "Invalid client_id regex. {}", client_id_matcher->v.value().error());
     }
 }
 
@@ -191,7 +191,7 @@ Node convert<config::throughput_control_group>::encode(const type& tcg) {
               "{}{}", selector_prefix, selector_empty);
         } else {
             // regex
-            client_id_node = tcg.client_id_matcher->v->pattern();
+            client_id_node = tcg.client_id_matcher->v.value().pattern();
         }
     }
 
@@ -281,7 +281,7 @@ void rjson_serialize(
             w.String(fmt::format("{}{}", selector_prefix, selector_empty));
         } else {
             // regex match
-            w.String(tcg.client_id_matcher->v->pattern());
+            w.String(tcg.client_id_matcher->v.value().pattern());
         }
     }
 

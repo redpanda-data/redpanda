@@ -27,8 +27,8 @@ get_property(const table_metadata& table, std::string_view prop) {
     if (!table.properties.has_value()) {
         return std::nullopt;
     }
-    auto it = table.properties->find(ss::sstring{prop});
-    if (it == table.properties->end()) {
+    auto it = table.properties.value().find(ss::sstring{prop});
+    if (it == table.properties.value().end()) {
         return std::nullopt;
     }
     return it->second;
@@ -84,7 +84,7 @@ chunked_hash_set<snapshot_id> collect_snap_ancestors(
   snapshot_id snap_id,
   std::optional<collection_reqs> collect_reqs) {
     chunked_hash_set<snapshot_id> ret;
-    if (!table.snapshots.has_value() || table.snapshots->empty()) {
+    if (!table.snapshots.has_value() || table.snapshots.value().empty()) {
         return ret;
     }
     auto next_snap = std::make_optional<snapshot_id>(snap_id);
@@ -96,10 +96,10 @@ chunked_hash_set<snapshot_id> collect_snap_ancestors(
         }
         auto snap_ts = snap_it->second.timestamp_ms;
         if (collect_reqs.has_value()) {
-            auto has_enough_snaps = ret.size()
-                                    >= collect_reqs->min_snapshots_to_keep;
+            auto has_enough_snaps
+              = ret.size() >= collect_reqs.value().min_snapshots_to_keep;
             auto snap_too_old = snap_ts.value()
-                                < collect_reqs->min_timestamp_to_keep_ms;
+                                < collect_reqs.value().min_timestamp_to_keep_ms;
             if (has_enough_snaps && snap_too_old) {
                 // We've satisfied the count minimum requirement, and all
                 // further ancestors are older than the oldest to keep. No more
@@ -194,7 +194,7 @@ remove_snapshots_action::remove_snapshots_action(
 void remove_snapshots_action::compute_removed_snapshots(
   chunked_vector<snapshot_id>* snaps_to_remove,
   chunked_vector<ss::sstring>* refs_to_remove) const {
-    if (!table_.snapshots.has_value() || table_.snapshots->empty()) {
+    if (!table_.snapshots.has_value() || table_.snapshots.value().empty()) {
         // Technically we could proceed to remove references still, but just
         // no-op instead. This mirrors the behavior in Apache Iceberg.
         // https://github.com/apache/iceberg/blob/df547908a9500ec5b886cfeb64ea5bf10ebde84f/core/src/main/java/org/apache/iceberg/RemoveSnapshots.java#L181-L183
@@ -282,7 +282,7 @@ void remove_snapshots_action::compute_removed_snapshots(
 
 ss::future<action::action_outcome> remove_snapshots_action::build_updates() && {
     updates_and_reqs ret;
-    if (!table_.snapshots.has_value() || table_.snapshots->empty()) {
+    if (!table_.snapshots.has_value() || table_.snapshots.value().empty()) {
         vlog(logger_.debug, "No snapshots, snapshot removal returning early");
         co_return ret;
     }

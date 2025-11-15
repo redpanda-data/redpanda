@@ -80,8 +80,8 @@ ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
   model::timestamp base_timestamp,
   should_fail_on_missing_offset fail_on_missing_offset) {
     auto ix_begin = segment->index().find_nearest(begin_inclusive);
-    size_t scan_from = ix_begin ? ix_begin->filepos : 0;
-    model::offset sto = ix_begin ? ix_begin->offset
+    size_t scan_from = ix_begin ? ix_begin.value().filepos : 0;
+    model::offset sto = ix_begin ? ix_begin.value().offset
                                  : segment->offsets().get_base_offset();
 
     model::timestamp ts = base_timestamp;
@@ -165,17 +165,17 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
     // Subsequent call to segment_reader::data_stream will fail in this
     // case. In order to avoid this we need to make another index lookup
     // to find a lower offset which is committed.
-    while (ix_end && ix_end->filepos >= fsize) {
+    while (ix_end && ix_end.value().filepos >= fsize) {
         vlog(stlog.debug, "The position is not flushed {}", *ix_end);
-        auto lookup_offset = ix_end->offset - model::offset(1);
+        auto lookup_offset = ix_end.value().offset - model::offset(1);
         ix_end = segment->index().find_nearest(lookup_offset);
         if (ix_end) {
             vlog(stlog.debug, "Re-adjusted position {}", *ix_end);
         }
     }
 
-    size_t scan_from = ix_end ? ix_end->filepos : 0;
-    model::offset fo = ix_end ? ix_end->offset
+    size_t scan_from = ix_end ? ix_end.value().filepos : 0;
+    model::offset fo = ix_end ? ix_end.value().offset
                               : segment->offsets().get_base_offset();
     vlog(
       stlog.debug,

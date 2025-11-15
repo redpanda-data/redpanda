@@ -43,7 +43,7 @@ void translation_probe::register_lag_metrics() {
       topic_label(_ntp.tp.topic()),
       partition_label(_ntp.tp.partition()),
     };
-    _public_metrics->add_group(
+    _public_metrics.value().add_group(
       prometheus_sanitize::metrics_name("iceberg"),
       {
         sm::make_gauge(
@@ -78,7 +78,7 @@ void translation_probe::register_created_files_metrics() {
       partition_label(_ntp.tp.partition()),
     };
 
-    _public_metrics->add_group(
+    _public_metrics.value().add_group(
       group_name,
       {
         sm::make_counter(
@@ -141,7 +141,7 @@ void translation_probe::register_throughput_metrics() {
       topic_label(_ntp.tp.topic()),
       partition_label(_ntp.tp.partition()),
     };
-    _public_metrics->add_group(
+    _public_metrics.value().add_group(
       group_name,
       {{
          sm::make_counter(
@@ -190,7 +190,7 @@ void translation_probe::register_invalid_record_metric() {
             prometheus_sanitize::metrics_name(fmt::format("{}", cause))),
         };
 
-        _public_metrics->add_group(
+        _public_metrics.value().add_group(
           group_name,
           {
             sm::make_counter(

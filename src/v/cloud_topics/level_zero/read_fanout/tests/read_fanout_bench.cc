@@ -90,7 +90,7 @@ struct fetch_handler {
         chunked_vector<model::record_batch> data;
         for (auto& m : meta) {
             std::ignore = m;
-            data.push_back(_batch->copy());
+            data.push_back(_batch.value().copy());
             // Simulate download
             if (_download_latency != 0ms) {
                 auto u = co_await ss::get_units(_con, 1);

@@ -75,7 +75,7 @@ public:
             // It must wait for topic in cache or init topic
             co_return std::nullopt;
         }
-        int32_t partitions_amount = cfg->partition_count;
+        int32_t partitions_amount = cfg.value().partition_count;
 
         tx_id_hash tx_id_hash = get_tx_id_hash(tx_id);
         auto partition = get_tx_coordinator_partition(

@@ -1141,7 +1141,7 @@ FIXTURE_TEST(revert_allocation_step, partition_allocator_fixture) {
         BOOST_REQUIRE(step1);
         BOOST_REQUIRE_EQUAL(step1.value().current().node_id, n(3));
         BOOST_REQUIRE(step1.value().previous());
-        BOOST_REQUIRE_EQUAL(step1.value().previous()->node_id, n(0));
+        BOOST_REQUIRE_EQUAL(step1.value().previous().value().node_id, n(0));
 
         auto step2 = allocator().reallocate_replica(
           reallocated, n(3), on_node(n(4)));

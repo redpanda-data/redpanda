@@ -322,8 +322,8 @@ struct fuzz_checker {
 
     ss::future<> start() {
         _tr.emplace(_make_offset_translator());
-        co_await _tr->start(storage::offset_translator::must_reset::yes);
-        co_await _tr->sync_with_log(*_log, std::nullopt);
+        co_await _tr.value().start(storage::offset_translator::must_reset::yes);
+        co_await _tr.value().sync_with_log(*_log, std::nullopt);
     }
 
     ss::future<> append() {
@@ -354,7 +354,7 @@ struct fuzz_checker {
                 auto ret = co_await _appender(batch);
 
                 if (_self._tr) {
-                    _self._tr->process(batch);
+                    _self._tr.value().process(batch);
                 }
 
                 for (auto o = batch.base_offset(); o <= batch.last_offset();
@@ -383,7 +383,7 @@ struct fuzz_checker {
 
         if (_tr) {
             (void)ss::with_gate(
-              _gate, [this] { return _tr->maybe_checkpoint(2_MiB); });
+              _gate, [this] { return _tr.value().maybe_checkpoint(2_MiB); });
         }
     }
 
@@ -407,7 +407,7 @@ struct fuzz_checker {
           = batch_base_offsets[random_generators::get_int(
             batch_base_offsets.size() - 1)];
 
-        co_await _tr->truncate(truncate_at);
+        co_await _tr.value().truncate(truncate_at);
 
         co_await _log->truncate(storage::truncate_config(truncate_at));
 
@@ -446,7 +446,7 @@ struct fuzz_checker {
         }
 
         if (_tr) {
-            co_await _tr->prefix_truncate(_snapshot_offset);
+            co_await _tr.value().prefix_truncate(_snapshot_offset);
         }
 
         if (std::cmp_less(new_start_offset(), _kafka_offsets.size())) {
@@ -472,10 +472,11 @@ struct fuzz_checker {
             _tr.emplace(_make_offset_translator());
             _gate = ss::gate{};
 
-            co_await _tr->start(storage::offset_translator::must_reset::no);
-            co_await _tr->prefix_truncate(
+            co_await _tr.value().start(
+              storage::offset_translator::must_reset::no);
+            co_await _tr.value().prefix_truncate(
               _snapshot_offset, model::offset_delta(_snapshot_delta));
-            co_await _tr->sync_with_log(*_log, std::nullopt);
+            co_await _tr.value().sync_with_log(*_log, std::nullopt);
         }
     }
 
@@ -487,9 +488,9 @@ struct fuzz_checker {
         // check translation for high watermark (first unoccupied offset)
         model::offset hwm_lo(_kafka_offsets.size());
         model::offset hwm_ko(_log_offsets.size());
-        EXPECT_EQ(hwm_ko, _tr->state()->from_log_offset(hwm_lo))
+        EXPECT_EQ(hwm_ko, _tr.value().state()->from_log_offset(hwm_lo))
           << fmt::format("With log offset: {}", hwm_lo);
-        EXPECT_EQ(hwm_lo, _tr->state()->to_log_offset(hwm_ko))
+        EXPECT_EQ(hwm_lo, _tr.value().state()->to_log_offset(hwm_ko))
           << fmt::format("With kafka offset: {}", hwm_ko);
 
         const auto n_kafka_offsets = static_cast<int64_t>(
@@ -503,7 +504,7 @@ struct fuzz_checker {
         for (int64_t lo = start_log_offset; lo < n_kafka_offsets; ++lo) {
             EXPECT_EQ(
               _kafka_offsets[lo],
-              _tr->state()->from_log_offset(model::offset{lo}))
+              _tr.value().state()->from_log_offset(model::offset{lo}))
               << fmt::format("With log offset: {}", lo);
         }
 
@@ -511,7 +512,8 @@ struct fuzz_checker {
         int64_t start_kafka_offset = _kafka_offsets[start_log_offset];
         for (int64_t ko = start_kafka_offset; ko < n_log_offsets; ++ko) {
             EXPECT_EQ(
-              _log_offsets[ko], _tr->state()->to_log_offset(model::offset{ko}))
+              _log_offsets[ko],
+              _tr.value().state()->to_log_offset(model::offset{ko}))
               << fmt::format("With kafka offset: {}", ko);
         }
     }

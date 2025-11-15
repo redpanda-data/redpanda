@@ -90,7 +90,7 @@ public:
         if (leader_fx == nullptr) {
             return nullptr;
         }
-        return leader_p->raft()->stm_manager()->get<l1::simple_stm>();
+        return leader_p->raft()->stm_manager().value().get<l1::simple_stm>();
     }
     std::vector<ss::noncopyable_function<void()>> cleanup;
 };

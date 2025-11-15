@@ -42,7 +42,7 @@ void partition_data_queue::reset(kafka::offset next) {
 
 void partition_data_queue::do_reset(kafka::offset next) {
     if (_waiter) {
-        _waiter->set_exception(ss::abort_requested_exception{});
+        _waiter.value().set_exception(ss::abort_requested_exception{});
     }
     _waiter = {};
     _batches.clear();
@@ -90,15 +90,15 @@ ss::future<fetch_data> partition_data_queue::fetch(ss::abort_source& as) {
         throw std::runtime_error("Only one fetch can be in progress at a time");
     }
     _waiter.emplace();
-    auto waiter_f = _waiter->get_future();
+    auto waiter_f = _waiter.value().get_future();
     auto sub = as.subscribe([this]() noexcept {
         if (_waiter) {
-            _waiter->set_exception(ss::abort_requested_exception{});
+            _waiter.value().set_exception(ss::abort_requested_exception{});
             _waiter = {};
         }
     });
     if (!sub) {
-        _waiter->set_exception(ss::abort_requested_exception{});
+        _waiter.value().set_exception(ss::abort_requested_exception{});
         _waiter = {};
         co_return co_await std::move(waiter_f);
     }
@@ -110,7 +110,7 @@ void partition_data_queue::maybe_notify_waiter() {
     if (_batches.empty() || !_waiter.has_value()) {
         return;
     }
-    _waiter->set_value(
+    _waiter.value().set_value(
       fetch_data{
         .batches = std::exchange(_batches, {}),
         .units = std::exchange(_batch_units, {})});

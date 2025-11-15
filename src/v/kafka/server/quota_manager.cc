@@ -218,10 +218,10 @@ quota_manager::add_quota_id(tracker_key qid, clock::time_point now) {
 
     // Hold to lock to not distrupt background fibres (gc and update_quotas)
     // with new entries in the map
-    auto lock = co_await _global_map_mutex->get_units();
+    auto lock = co_await _global_map_mutex.value().get_units();
 
-    auto existing_quota = _global_map->find(qid);
-    if (existing_quota != _global_map->end()) {
+    auto existing_quota = _global_map.value().find(qid);
+    if (existing_quota != _global_map.value().end()) {
         co_return existing_quota->second;
     }
 
@@ -259,7 +259,7 @@ quota_manager::add_quota_id(tracker_key qid, clock::time_point now) {
           true);
     }
 
-    auto [it, _] = _global_map->emplace(qid, std::move(new_value));
+    auto [it, _] = _global_map.value().emplace(qid, std::move(new_value));
 
     co_return it->second;
 }
@@ -271,7 +271,7 @@ void quota_manager::update_client_quotas() {
 
     // Hold to lock to ensure there are no updates to the map while iterating
     ssx::spawn_with_gate(_gate, [this] {
-        return _global_map_mutex->with(
+        return _global_map_mutex.value().with(
           [this] { return do_update_client_quotas(); });
     });
 }
@@ -287,7 +287,7 @@ ss::future<> quota_manager::do_update_client_quotas() {
             return;
         }
 
-        if (bucket.has_value() && bucket->rate() == rate) {
+        if (bucket.has_value() && bucket.value().rate() == rate) {
             return;
         }
         bucket.emplace(
@@ -296,8 +296,8 @@ ss::future<> quota_manager::do_update_client_quotas() {
     };
 
     return ssx::async_for_each(
-      _global_map->begin(),
-      _global_map->end(),
+      _global_map.value().begin(),
+      _global_map.value().end(),
       [this, &set_bucket](auto& quota) {
           auto limits = _translator.find_quota_value(quota.first);
           set_bucket(
@@ -566,9 +566,10 @@ ss::future<> quota_manager::do_global_gc() {
       "do_global_gc() should only be called on the owner shard");
 
     // Hold to lock to ensure there are no updates to the map while iterating
-    auto lock = co_await _global_map_mutex->get_units();
+    auto lock = co_await _global_map_mutex.value().get_units();
 
-    for (auto it = _global_map->begin(); it != _global_map->end();) {
+    for (auto it = _global_map.value().begin();
+         it != _global_map.value().end();) {
         auto& [key, value] = *it;
         if (value.use_count() == 1) {
             // The pointer in the global map is effectively a weak pointer in
@@ -577,7 +578,7 @@ ss::future<> quota_manager::do_global_gc() {
             // instead of a std::weak_ptr<> in the global map is to ensure that
             // deallocation happens on shard 0 (here in do_global_gc).
             vlog(client_quota_log.trace, "Global GC expiring key: {}", key);
-            it = _global_map->erase(it);
+            it = _global_map.value().erase(it);
         } else {
             ++it;
         }

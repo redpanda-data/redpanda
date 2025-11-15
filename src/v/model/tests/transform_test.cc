@@ -274,13 +274,14 @@ TEST(TransformMetadataTest, TestOffsetOptionsCompat) {
 
     // Make sure the deserialized legacy version of the struct has the same
     // data, incl offset options
-    EXPECT_EQ(lm->name, m.name);
-    EXPECT_EQ(lm->input_topic, m.input_topic);
-    EXPECT_EQ(lm->uuid, m.uuid);
+    EXPECT_EQ(lm.value().name, m.name);
+    EXPECT_EQ(lm.value().input_topic, m.input_topic);
+    EXPECT_EQ(lm.value().uuid, m.uuid);
     ASSERT_TRUE(
-      std::holds_alternative<model::timestamp>(lm->offset_options.position));
+      std::holds_alternative<model::timestamp>(
+        lm.value().offset_options.position));
     EXPECT_EQ(
-      std::get<model::timestamp>(lm->offset_options.position),
+      std::get<model::timestamp>(lm.value().offset_options.position),
       std::get<model::timestamp>(m.offset_options.position));
 }
 

@@ -757,7 +757,8 @@ cloud_storage::segment_name segment_collector::adjust_segment_name() const {
     auto first = _segments.front();
     auto file_name = first->filename();
     auto meta = storage::segment_path::parse_segment_filename(file_name);
-    auto version = meta ? meta->version : storage::record_version_type::v1;
+    auto version = meta ? meta.value().version
+                        : storage::record_version_type::v1;
 
     cloud_storage::segment_name name{};
     if (_begin_inclusive == first->offsets().get_base_offset()) {

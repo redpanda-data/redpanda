@@ -54,7 +54,7 @@ admin_server::initialize_cluster_recovery(
     if (doc.has_value()) {
         admin::apply_validator(body_validator, doc.value());
 
-        if (doc->HasMember("cluster_uuid_override")) {
+        if (doc.value().HasMember("cluster_uuid_override")) {
             cluster_uuid_override = model::cluster_uuid(
               uuid_t::from_string(
                 (doc.value())["cluster_uuid_override"].GetString()));

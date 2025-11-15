@@ -253,7 +253,7 @@ ss::future<> spill_key_index::spill(spill_payload payload) {
     }
     // Append to the file
     co_await maybe_open();
-    co_await _appender->append(payload.data);
+    co_await _appender.value().append(payload.data);
 }
 
 /// format is:
@@ -367,7 +367,7 @@ ss::future<> spill_key_index::close() {
           "Footer is bigger than expected: {}",
           footer_buf);
 
-        co_await _appender->append(footer_buf);
+        co_await _appender.value().append(footer_buf);
     } catch (...) {
         ex = std::current_exception();
     }
@@ -375,7 +375,7 @@ ss::future<> spill_key_index::close() {
     // Even if the flush failed, make sure we are closing any open file
     // handle.
     if (_appender.has_value()) {
-        co_await _appender->close();
+        co_await _appender.value().close();
     }
 
     if (ex) {
@@ -407,7 +407,7 @@ std::ostream& operator<<(std::ostream& o, const spill_key_index& k) {
 
 size_t spill_key_index::size_bytes() const {
     if (_appender.has_value()) {
-        return _appender->size_bytes();
+        return _appender.value().size_bytes();
     }
     return 0;
 }

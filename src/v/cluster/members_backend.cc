@@ -217,7 +217,7 @@ std::vector<model::ntp> members_backend::ntps_moving_from_node_older_than(
             continue;
         }
 
-        if (!contains_node(current_assignment->replicas, node)) {
+        if (!contains_node(current_assignment.value().replicas, node)) {
             ret.push_back(ntp);
         }
     }
@@ -252,7 +252,7 @@ ss::future<> members_backend::calculate_reallocations_after_recommissioned(
             continue;
         }
         partition_reallocation reallocation(
-          std::move(current_assignment->replicas),
+          std::move(current_assignment.value().replicas),
           std::move(previous_replica_set.value()),
           cancellation_state::request_cancel);
 
@@ -421,7 +421,7 @@ ss::future<> members_backend::maybe_finish_decommissioning(update_meta& meta) {
           meta.update.id);
         co_return;
     }
-    const auto is_draining = node->get().state.get_membership_state()
+    const auto is_draining = node.value().get().state.get_membership_state()
                              == model::membership_state::draining;
 
     const auto allocator_empty = _allocator.local().is_empty(meta.update.id);

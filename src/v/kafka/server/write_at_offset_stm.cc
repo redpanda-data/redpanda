@@ -268,8 +268,8 @@ kafka::offset write_at_offset_stm::expected_last_offset() const {
         return _last_offset;
     }
 
-    if (_inflight_last_offset->in_sync_term == _insync_term) {
-        return std::max(_last_offset, _inflight_last_offset->offset);
+    if (_inflight_last_offset.value().in_sync_term == _insync_term) {
+        return std::max(_last_offset, _inflight_last_offset.value().offset);
     }
 
     return _last_offset;
@@ -328,8 +328,8 @@ ss::future<> write_at_offset_stm::do_apply(const model::record_batch& b) {
 
     if (_inflight_last_offset.has_value()) {
         if (
-          _last_offset >= _inflight_last_offset->offset
-          || b.term() > _inflight_last_offset->in_sync_term) {
+          _last_offset >= _inflight_last_offset.value().offset
+          || b.term() > _inflight_last_offset.value().in_sync_term) {
             _inflight_last_offset.reset();
         }
     }

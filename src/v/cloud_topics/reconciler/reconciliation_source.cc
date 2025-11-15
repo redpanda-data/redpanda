@@ -60,13 +60,15 @@ public:
       , _partition(std::move(partition)) {}
 
     kafka::offset last_reconciled_offset() override {
-        ctp_stm_api api(_partition->raft()->stm_manager()->get<ctp_stm>());
+        ctp_stm_api api(
+          _partition->raft()->stm_manager().value().get<ctp_stm>());
         return api.get_last_reconciled_offset();
     }
 
     ss::future<std::expected<void, errc>> set_last_reconciled_offset(
       kafka::offset offset, ss::abort_source& as) override {
-        ctp_stm_api api(_partition->raft()->stm_manager()->get<ctp_stm>());
+        ctp_stm_api api(
+          _partition->raft()->stm_manager().value().get<ctp_stm>());
         auto res = co_await api.advance_reconciled_offset(
           offset, model::no_timeout, as);
         if (!res.has_value()) {

@@ -51,8 +51,8 @@ kvstore::kvstore(
       simple_snapshot_manager::default_snapshot_filename)
   , _timer([this] { _sem.signal(); }) {
     if (_conf.sanitizer_config) {
-        _ntp_sanitizer_config = _conf.sanitizer_config->get_config_for_ntp(
-          _ntpc.ntp());
+        _ntp_sanitizer_config
+          = _conf.sanitizer_config.value().get_config_for_ntp(_ntpc.ntp());
     }
 }
 
@@ -234,10 +234,10 @@ void kvstore::apply_op(
           value);
         if (found) {
             _probe.dec_cached_bytes(it->second.size_bytes());
-            _probe.add_cached_bytes(value->size_bytes());
+            _probe.add_cached_bytes(value.value().size_bytes());
             it->second = std::move(value.value());
         } else {
-            _probe.add_cached_bytes(key.size() + value->size_bytes());
+            _probe.add_cached_bytes(key.size() + value.value().size_bytes());
             _db.emplace(std::move(key), std::move(value.value()));
         }
     } else {
@@ -265,7 +265,7 @@ ss::future<> kvstore::flush_and_apply_ops() {
     for (auto& op : ops) {
         std::optional<iobuf> value;
         if (op.value) {
-            value = op.value->share(0, op.value->size_bytes());
+            value = op.value.value().share(0, op.value.value().size_bytes());
         }
         builder.add_raw_kv(
           bytes_to_iobuf(op.key), reflection::to_iobuf(std::move(value)));
@@ -452,7 +452,7 @@ ss::future<> kvstore::load_snapshot() {
         ex = std::current_exception();
     }
 
-    co_await reader->close();
+    co_await reader.value().close();
     if (ex) {
         std::rethrow_exception(ex);
     }

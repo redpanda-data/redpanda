@@ -206,12 +206,12 @@ auto get_field_value(
           fmt::format(
             "Unexpected unknown field during filtering: {}", field_numbers));
     }
-    if (!std::holds_alternative<SerdeType>(field_val->value)) {
+    if (!std::holds_alternative<SerdeType>(field_val.value().value)) {
         // TODO: unset optional fields should lead to this branch
         // For now, this should be unreachable code
         return std::nullopt;
     }
-    auto res = std::get<SerdeType>(std::move(field_val->value));
+    auto res = std::get<SerdeType>(std::move(field_val.value().value));
     if constexpr (std::is_same_v<SerdeType, serde::pb::raw_enum_value>) {
         // Remap enum fields to their string name for comparison
         return ss::sstring{res.name};

@@ -176,8 +176,9 @@ public:
           ::model::topic,
           ::cluster_link::model::mirror_topic_metadata>
           mirror_topics;
-        mirror_topics.reserve(link->get().state.mirror_topics.size());
-        for (const auto& [topic, metadata] : link->get().state.mirror_topics) {
+        mirror_topics.reserve(link.value().get().state.mirror_topics.size());
+        for (const auto& [topic, metadata] :
+             link.value().get().state.mirror_topics) {
             mirror_topics.emplace(topic, metadata.copy());
         }
         return mirror_topics;
@@ -212,7 +213,7 @@ public:
             co_return ::cluster::cluster_link::errc::does_not_exist;
         }
         chunked_vector<::model::topic> topics_to_failover;
-        for (const auto& [t, info] : link->get().state.mirror_topics) {
+        for (const auto& [t, info] : link.value().get().state.mirror_topics) {
             if (info.status == model::mirror_topic_status::active) {
                 // only active topics can be failed over.
                 topics_to_failover.push_back(t);

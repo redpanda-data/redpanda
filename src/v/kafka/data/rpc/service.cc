@@ -193,8 +193,9 @@ ss::future<result<model::offset, cluster::errc>> local_service::produce(
 
     // TODO: More validation of the batches, such as null record rejection and
     // crc checks.
-    uint32_t max_batch_size = topic_cfg->properties.batch_max_bytes.value_or(
-      _metadata_cache->get_default_batch_max_bytes());
+    uint32_t max_batch_size
+      = topic_cfg.value().properties.batch_max_bytes.value_or(
+        _metadata_cache->get_default_batch_max_bytes());
     for (const auto& batch : batches) {
         if (uint32_t(batch.size_bytes()) > max_batch_size) [[unlikely]] {
             co_return cluster::errc::invalid_request;

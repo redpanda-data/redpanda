@@ -95,18 +95,19 @@ public:
 
                     ss::net::inet_address addr;
                     try {
-                        addr = ss::net::inet_address(parsed_override->first);
+                        addr = ss::net::inet_address(
+                          parsed_override.value().first);
                     } catch (...) {
                         vassert(
                           false,
                           "Validation for redpanda config should signal "
                           "about "
                           "invalid ip: {}",
-                          parsed_override->first);
+                          parsed_override.value().first);
                     }
 
                     auto [_, res] = new_overrides.emplace(
-                      addr, parsed_override->second);
+                      addr, parsed_override.value().second);
                     vassert(
                       res,
                       "Validation for redpanda config should signal about "

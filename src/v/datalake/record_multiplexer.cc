@@ -37,8 +37,8 @@ iceberg::uri get_data_location(const schema_manager::table_info& table_info) {
     static constexpr std::string_view write_data_path_prop = "write.data.path";
 
     if (table_info.properties.has_value()) {
-        auto it = table_info.properties->find(write_data_path_prop);
-        if (it != table_info.properties->end()) {
+        auto it = table_info.properties.value().find(write_data_path_prop);
+        if (it != table_info.properties.value().end()) {
             return iceberg::uri(it->second);
         }
     }
@@ -150,8 +150,8 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
         if (offset < start_offset) {
             continue;
         }
-        int64_t estimated_size = (key ? key->size_bytes() : 0)
-                                 + (val ? val->size_bytes() : 0);
+        int64_t estimated_size = (key ? key.value().size_bytes() : 0)
+                                 + (val ? val.value().size_bytes() : 0);
         chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>
           header_kvs;
         for (auto& hdr : record.headers()) {
@@ -436,7 +436,7 @@ record_multiplexer::finish(
         // no batches were processed.
         co_return writer_error::no_data;
     }
-    _result->kafka_bytes_processed = _reader_bytes_processed;
+    _result.value().kafka_bytes_processed = _reader_bytes_processed;
 
     vlog(
       _log.trace,
@@ -468,7 +468,8 @@ size_t record_multiplexer::flushed_bytes() const {
 
 std::optional<kafka::offset>
 record_multiplexer::last_translated_offset() const {
-    return _result ? std::make_optional(_result->last_offset) : std::nullopt;
+    return _result ? std::make_optional(_result.value().last_offset)
+                   : std::nullopt;
 }
 
 ss::future<result<std::nullopt_t, writer_error>>
@@ -581,8 +582,8 @@ record_multiplexer::handle_invalid_record(
               std::move(data_remote_path.value()));
         }
 
-        int64_t estimated_size = (key ? key->size_bytes() : 0)
-                                 + (val ? val->size_bytes() : 0);
+        int64_t estimated_size = (key ? key.value().size_bytes() : 0)
+                                 + (val ? val.value().size_bytes() : 0);
 
         auto invalid_record_type_resolver = binary_type_resolver{};
         auto resolved_buf_type = co_await invalid_record_type_resolver

@@ -41,7 +41,7 @@ public:
     // Implements model::record_batch_reader::impl
     ss::future<storage_t>
     do_load_slice(model::timeout_clock::time_point t) final {
-        if (!_batch_reader || _batch_reader->is_end_of_stream()) {
+        if (!_batch_reader || _batch_reader.value().is_end_of_stream()) {
             vlog(
               _client.logger().debug,
               "fetch_batch_reader: fetch offset: {}",
@@ -64,7 +64,7 @@ public:
             }
             _batch_reader = std::move(res.begin()->partition_response->records);
         }
-        auto ret = co_await _batch_reader->do_load_slice(t);
+        auto ret = co_await _batch_reader.value().do_load_slice(t);
         using data_t = model::record_batch_reader::data_t;
         vassert(
           std::holds_alternative<data_t>(ret),

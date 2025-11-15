@@ -207,7 +207,7 @@ ss::future<consensus_ptr> partition_manager::manage(
             // Manifest is not empty since we were able to recover some data.
             auto last_segment = manifest.last_segment();
             vassert(last_segment.has_value(), "Manifest is empty");
-            auto last_included_term = last_segment->archiver_term;
+            auto last_included_term = last_segment.value().archiver_term;
 
             vlog(
               clusterlog.info,
@@ -237,7 +237,7 @@ ss::future<consensus_ptr> partition_manager::manage(
 
             dl_result.ot_state->add_absolute_delta(
               model::next_offset(manifest.get_last_offset()),
-              manifest.last_segment()->delta_offset_end);
+              manifest.last_segment().value().delta_offset_end);
 
             co_await raft::details::bootstrap_pre_existing_partition(
               _storage,
@@ -359,8 +359,8 @@ partition_manager::maybe_download_log(
 
     co_return co_await _partition_recovery_mgr.local().download_log(
       ntp_cfg,
-      rtp->remote_revision,
-      rtp->remote_partition_count,
+      rtp.value().remote_revision,
+      rtp.value().remote_partition_count,
       path_provider);
 }
 

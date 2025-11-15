@@ -277,7 +277,7 @@ void remote::notify_external_subscribers(
         vassert(
           flt._promise.has_value(),
           "Filter object is not initialized properly");
-        flt._promise->set_value(event);
+        flt._promise.value().set_value(event);
         flt._promise = std::nullopt;
         // NOTE: the filter object can be reused by the owner
     }
@@ -620,7 +620,7 @@ remote::subscribe(remote::event_filter& filter) {
     vassert(filter._hook.is_linked() == false, "Filter is already in use");
     _filters.push_back(filter);
     filter._promise.emplace();
-    return filter._promise->get_future().then(
+    return filter._promise.value().get_future().then(
       [h = std::move(holder)](api_activity_notification r) { return r; });
     ;
 }

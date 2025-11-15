@@ -851,7 +851,7 @@ group_manager::do_snapshot_groups(
         return group->partition()->ntp().tp.partition == ntp.tp.partition;
     };
     if (group_filter) {
-        groups.reserve(group_filter->size());
+        groups.reserve(group_filter.value().size());
         for (const auto& gid : group_filter.value()) {
             auto it = _groups.find(gid);
             if (it != _groups.end() && predicate(*it)) {
@@ -2158,8 +2158,10 @@ group_manager::get_group_producers_locally(
     // the stm, the list should be empty in most cases unless there is
     // a divergence in state.
     auto partition = attached_partition.second->partition;
-    auto stm
-      = partition->raft()->stm_manager()->get<kafka::group_tx_tracker_stm>();
+    auto stm = partition->raft()
+                 ->stm_manager()
+                 .value()
+                 .get<kafka::group_tx_tracker_stm>();
     if (!stm) {
         co_return reply;
     }

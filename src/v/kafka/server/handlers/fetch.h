@@ -60,7 +60,9 @@ struct op_context {
 
         const model::ktp_with_hash& ktp() { return _ktp; }
 
-        bool empty() { return _it->partition_response->records->empty(); }
+        bool empty() {
+            return _it->partition_response->records.value().empty();
+        }
         bool has_error() {
             return _it->partition_response->error_code != error_code::none;
         }
@@ -84,8 +86,9 @@ struct op_context {
 
         // Returns the number of memory units held for this ntp.
         size_t num_memory_units() const {
-            return _response_memory_units ? _response_memory_units->num_units()
-                                          : 0;
+            return _response_memory_units
+                     ? _response_memory_units.value().num_units()
+                     : 0;
         }
 
         // Adds/replaces the memory units that are held for this ntp.

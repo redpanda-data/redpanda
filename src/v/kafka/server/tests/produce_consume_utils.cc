@@ -248,7 +248,7 @@ ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
                   partition.partition_index);
                 continue;
             }
-            while (!partition.records->is_end_of_stream()) {
+            while (!partition.records.value().is_end_of_stream()) {
                 auto batch_adapter = partition.records.value().consume_batch();
                 if (!batch_adapter.batch.has_value()) {
                     vlog(
@@ -258,7 +258,7 @@ ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
                       partition.partition_index);
                     break;
                 }
-                auto records = batch_adapter.batch->copy_records();
+                auto records = batch_adapter.batch.value().copy_records();
                 vlog(
                   test_log.trace,
                   "Reading {} records, ntp {}/{}",
@@ -341,7 +341,7 @@ kafka_consume_transport::raw_consume_from_partition(
           partition.partition_index);
         co_return records;
     }
-    while (!partition.records->is_end_of_stream()) {
+    while (!partition.records.value().is_end_of_stream()) {
         auto batch_adapter = partition.records.value().consume_batch();
         if (!batch_adapter.batch.has_value()) {
             vlog(
@@ -351,7 +351,7 @@ kafka_consume_transport::raw_consume_from_partition(
               partition.partition_index);
             break;
         }
-        for (auto& record : batch_adapter.batch->copy_records()) {
+        for (auto& record : batch_adapter.batch.value().copy_records()) {
             records.push_back(std::move(record));
         }
     }

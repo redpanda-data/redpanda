@@ -76,7 +76,7 @@ offsets_lookup::lookup(offsets_lookup_request req) {
                   }
                   shard_reply.ntp_and_offset.emplace_back(
                     std::move(ntp),
-                    model::offset_cast(partition->high_watermark()));
+                    model::offset_cast(partition.value().high_watermark()));
               }
               return shard_reply;
           }));

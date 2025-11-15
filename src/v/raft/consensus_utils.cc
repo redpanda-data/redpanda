@@ -264,38 +264,38 @@ ss::future<> copy_persistent_state(
               write_futures.push_back(api.kvs().put(
                 ks,
                 serialize_group_key(gr, metadata_key::voted_for),
-                state.voted_for->copy()));
+                state.voted_for.value().copy()));
           }
           if (state.last_applied) {
               write_futures.push_back(api.kvs().put(
                 ks,
                 serialize_group_key(gr, metadata_key::last_applied_offset),
-                state.last_applied->copy()));
+                state.last_applied.value().copy()));
           }
           if (state.unique_run_id) {
               write_futures.push_back(api.kvs().put(
                 ks,
                 serialize_group_key(gr, metadata_key::unique_local_id),
-                state.unique_run_id->copy()));
+                state.unique_run_id.value().copy()));
           }
           if (state.configuration_map) {
               write_futures.push_back(api.kvs().put(
                 ks,
                 serialize_group_key(gr, metadata_key::config_map),
-                state.configuration_map->copy()));
+                state.configuration_map.value().copy()));
           }
           if (state.highest_known_offset) {
               write_futures.push_back(api.kvs().put(
                 ks,
                 serialize_group_key(
                   gr, metadata_key::config_latest_known_offset),
-                state.highest_known_offset->copy()));
+                state.highest_known_offset.value().copy()));
           }
           if (state.next_cfg_idx) {
               write_futures.push_back(api.kvs().put(
                 ks,
                 serialize_group_key(gr, metadata_key::config_next_cfg_idx),
-                state.next_cfg_idx->copy()));
+                state.next_cfg_idx.value().copy()));
           }
           return ss::when_all_succeed(std::move(write_futures));
       });

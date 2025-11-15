@@ -52,7 +52,7 @@ ss::future<> compacted_index_chunk_reader::verify_integrity() {
         options.buffer_size = 4096;
         options.read_ahead = 1;
         return ss::do_with(
-                 int64_t(_footer->size),
+                 int64_t(_footer.value().size),
                  crc::crc32c{},
                  ss::make_file_input_stream(
                    _handle, 0, _data_size.value(), std::move(options)),
@@ -83,11 +83,11 @@ ss::future<> compacted_index_chunk_reader::verify_integrity() {
                        });
                  })
           .then([this](uint32_t crcsum) {
-              if (_footer->crc != crcsum) {
+              if (_footer.value().crc != crcsum) {
                   return ss::make_exception_future<>(std::runtime_error(
                     fmt::format(
                       "Invalid file checksum. Expected: {}, but got:{} - {}",
-                      _footer->crc,
+                      _footer.value().crc,
                       crcsum,
                       *this)));
               }
@@ -178,8 +178,8 @@ compacted_index_chunk_reader::load_footer() {
 void compacted_index_chunk_reader::print(std::ostream& o) const { o << *this; }
 
 bool compacted_index_chunk_reader::is_end_of_stream() const {
-    return _end_of_stream || (_footer && _byte_index == _footer->size)
-           || (_cursor && _cursor->eof());
+    return _end_of_stream || (_footer && _byte_index == _footer.value().size)
+           || (_cursor && _cursor.value().eof());
 }
 
 void compacted_index_chunk_reader::reset() {
@@ -198,7 +198,7 @@ compacted_index_chunk_reader::load_slice(model::timeout_clock::time_point t) {
           [this, t](compacted_index::footer) { return load_slice(t); });
     }
     if (!_cursor) {
-        _cursor = ss::make_file_input_stream(_handle, 0, _footer->size);
+        _cursor = ss::make_file_input_stream(_handle, 0, _footer.value().size);
     }
     if (_as) {
         _as->check();

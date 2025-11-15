@@ -112,7 +112,7 @@ TEST_F(CatalogSchemaManagerTest, TestCreateTable) {
 
     auto schema = load_table_schema(table_ident).get();
     ASSERT_TRUE(schema.has_value());
-    EXPECT_EQ(type, schema->schema_struct);
+    EXPECT_EQ(type, schema.value().schema_struct);
 }
 
 TEST_F(CatalogSchemaManagerTest, TestFillFromExistingTable) {

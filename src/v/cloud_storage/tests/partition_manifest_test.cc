@@ -491,8 +491,8 @@ SEASTAR_THREAD_TEST_CASE(test_segment_name_parsing) {
     segment_name name{"3587-1-v1.log"};
     auto res = parse_segment_name(name);
     BOOST_REQUIRE(res);
-    BOOST_REQUIRE_EQUAL(res->base_offset(), 3587);
-    BOOST_REQUIRE_EQUAL(res->term(), 1);
+    BOOST_REQUIRE_EQUAL(res.value().base_offset(), 3587);
+    BOOST_REQUIRE_EQUAL(res.value().term(), 1);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_segment_name_parsing_failure_1) {
@@ -1779,7 +1779,7 @@ void scan_ts_segments_general(const partition_manifest& m) {
 
     // After range: should get null
     reference_check_timequery(
-      m, model::timestamp{m.last_segment()->max_timestamp() + 1});
+      m, model::timestamp{m.last_segment().value().max_timestamp() + 1});
 }
 /**
  * For a timequery() result, assert it is non-null and equal to the expected
@@ -1788,7 +1788,7 @@ void scan_ts_segments_general(const partition_manifest& m) {
 void expect_ts_segment(
   const std::optional<partition_manifest::segment_meta>& s, int base_offset) {
     BOOST_REQUIRE(s);
-    BOOST_REQUIRE_EQUAL(s->base_offset, model::offset{base_offset});
+    BOOST_REQUIRE_EQUAL(s.value().base_offset, model::offset{base_offset});
 }
 
 /**
@@ -1810,7 +1810,8 @@ void scan_ts_segments(const partition_manifest& m) {
 
     // After range: should get null
     BOOST_REQUIRE(
-      m.timequery(model::timestamp{m.last_segment()->max_timestamp() + 1})
+      m.timequery(
+        model::timestamp{m.last_segment().value().max_timestamp() + 1})
       == std::nullopt);
 
     // Also compare all results with reference implementation.
@@ -2038,7 +2039,8 @@ SEASTAR_THREAD_TEST_CASE(test_timequery_out_of_order) {
 
     // After range: should get null
     BOOST_REQUIRE(
-      m.timequery(model::timestamp{m.last_segment()->max_timestamp() + 1})
+      m.timequery(
+        model::timestamp{m.last_segment().value().max_timestamp() + 1})
       == std::nullopt);
 }
 
@@ -2534,7 +2536,7 @@ SEASTAR_THREAD_TEST_CASE(test_estimate_size_empty) {
       0, m.estimate_size_between(kafka::offset{90}, kafka::offset{89}));
 
     // Now truncate such that the whole manifest is empty.
-    m.truncate(model::next_offset(m.last_segment()->committed_offset));
+    m.truncate(model::next_offset(m.last_segment().value().committed_offset));
     BOOST_CHECK(!m.get_next_kafka_offset().has_value());
     BOOST_CHECK_EQUAL(
       0, m.estimate_size_between(kafka::offset{0}, kafka::offset{0}));

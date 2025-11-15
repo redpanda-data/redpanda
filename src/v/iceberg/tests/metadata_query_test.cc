@@ -416,7 +416,7 @@ TEST_F(MetadataQueryTest, TestCombinedQuery) {
     auto [snapshots, files, manifests] = execute_for_all_results(
       tx.table(), s_matcher, mf_matcher);
     ASSERT_EQ(snapshots.size(), 1);
-    ASSERT_EQ(snapshots[0], tx.table().snapshots->at(4));
+    ASSERT_EQ(snapshots[0], tx.table().snapshots.value().at(4));
     ASSERT_EQ(files.size(), 1);
     auto all_manifest_files = collect_all_manifest_files(tx.table()).get();
     ASSERT_EQ(files[0], all_manifest_files[2]);

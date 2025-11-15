@@ -485,7 +485,7 @@ reconciler::build_object(
         auto meta = read_result.value();
         if (meta.has_value()) {
             _probe.increment_partitions_reconciled();
-            _probe.add_batches_reconciled(meta->batch_count);
+            _probe.add_batches_reconciled(meta.value().batch_count);
             metas.emplace_back(src, std::move(meta).value(), start_offset);
         }
     }
@@ -712,7 +712,7 @@ ss::future<std::expected<void, reconcile_error>> reconciler::commit_objects(
             } else {
                 // Don't fail early, just keep going until we're done.
                 if (error) {
-                    error = error->with_context(
+                    error = error.value().with_context(
                       "failed to set LRO in L0: {}", result.error());
                 } else {
                     error = reconcile_error(
@@ -721,7 +721,7 @@ ss::future<std::expected<void, reconcile_error>> reconciler::commit_objects(
                 if (result.error() == source::errc::failure) {
                     // Other errors can be expected in normal operating
                     // conditions.
-                    error = error->non_benign();
+                    error = error.value().non_benign();
                 }
             }
         }

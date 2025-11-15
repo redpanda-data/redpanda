@@ -164,11 +164,11 @@ parse_optional_i32(const json::Value& v, std::string_view member_name) {
     if (!json.has_value()) {
         return std::nullopt;
     }
-    if (!json->get().IsInt()) {
+    if (!json.value().get().IsInt()) {
         throw std::invalid_argument(
           fmt::format("Expected integer for field '{}'", member_name));
     }
-    return json->get().GetInt();
+    return json.value().get().GetInt();
 }
 
 std::optional<int64_t>
@@ -177,11 +177,11 @@ parse_optional_i64(const json::Value& v, std::string_view member_name) {
     if (!json.has_value()) {
         return std::nullopt;
     }
-    if (!json->get().IsInt64()) {
+    if (!json.value().get().IsInt64()) {
         throw std::invalid_argument(
           fmt::format("Expected int64 for field '{}'", member_name));
     }
-    return json->get().GetInt64();
+    return json.value().get().GetInt64();
 }
 
 std::optional<ss::sstring>
@@ -190,11 +190,11 @@ parse_optional_str(const json::Value& v, std::string_view member_name) {
     if (!json.has_value()) {
         return std::nullopt;
     }
-    if (!json->get().IsString()) {
+    if (!json.value().get().IsString()) {
         throw std::invalid_argument(
           fmt::format("Expected string for field '{}'", member_name));
     }
-    return json->get().GetString();
+    return json.value().get().GetString();
 }
 
 bool parse_required_bool(const json::Value& v, std::string_view member_name) {

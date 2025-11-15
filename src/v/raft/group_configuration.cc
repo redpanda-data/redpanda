@@ -386,8 +386,8 @@ void group_configuration::update_all_replicas() {
     copy_unique(_current.voters);
     copy_unique(_current.learners);
     if (_old) {
-        copy_unique(_old->voters);
-        copy_unique(_old->learners);
+        copy_unique(_old.value().voters);
+        copy_unique(_old.value().learners);
     }
 }
 std::unique_ptr<group_configuration::configuration_change_strategy>
@@ -404,7 +404,7 @@ group_configuration::make_change_strategy() {
 }
 
 bool group_configuration::has_voters() const {
-    return !(_current.voters.empty() || (_old && _old->voters.empty()));
+    return !(_current.voters.empty() || (_old && _old.value().voters.empty()));
 }
 
 bool group_configuration::is_voter(vnode id) const {
@@ -416,9 +416,10 @@ bool group_configuration::is_voter(vnode id) const {
     if (!_old) {
         return false;
     }
-    auto old_it = std::find(_old->voters.cbegin(), _old->voters.cend(), id);
+    auto old_it = std::find(
+      _old.value().voters.cbegin(), _old.value().voters.cend(), id);
 
-    return old_it != _old->voters.cend();
+    return old_it != _old.value().voters.cend();
 }
 
 bool group_configuration::is_allowed_to_request_votes(vnode id) const {
@@ -432,16 +433,18 @@ bool group_configuration::is_allowed_to_request_votes(vnode id) const {
         return false;
     }
     // or present in old configuration
-    auto old_it = std::find(_old->voters.cbegin(), _old->voters.cend(), id);
+    auto old_it = std::find(
+      _old.value().voters.cbegin(), _old.value().voters.cend(), id);
 
     // present in old voters
-    if (old_it != _old->voters.cend()) {
+    if (old_it != _old.value().voters.cend()) {
         return true;
     }
     // look in learners
-    old_it = std::find(_old->learners.cbegin(), _old->learners.cend(), id);
+    old_it = std::find(
+      _old.value().learners.cbegin(), _old.value().learners.cend(), id);
 
-    return old_it != _old->learners.cend();
+    return old_it != _old.value().learners.cend();
 }
 
 bool group_configuration::contains_broker(model::node_id id) const {
@@ -486,11 +489,11 @@ bool group_configuration::contains(vnode id) const {
 }
 
 std::vector<vnode> group_configuration::unique_voter_ids() const {
-    auto old_voters = _old ? _old->voters : std::vector<vnode>();
+    auto old_voters = _old ? _old.value().voters : std::vector<vnode>();
     return unique_ids(_current.voters, old_voters);
 }
 std::vector<vnode> group_configuration::unique_learner_ids() const {
-    auto old_learners = _old ? _old->learners : std::vector<vnode>();
+    auto old_learners = _old ? _old.value().learners : std::vector<vnode>();
     return unique_ids(_current.learners, old_learners);
 }
 void group_configuration::add_broker(
@@ -609,22 +612,23 @@ bool group_configuration::maybe_demote_removed_voters() {
       *this);
 
     // no voters are present, do nothing
-    if (_old->voters.empty()) {
+    if (_old.value().voters.empty()) {
         return false;
     }
     // if voter was removed, make it a learner
     auto it = std::stable_partition(
-      _old->voters.begin(), _old->voters.end(), [this](const vnode& v) {
-          return _current.contains(v);
-      });
+      _old.value().voters.begin(),
+      _old.value().voters.end(),
+      [this](const vnode& v) { return _current.contains(v); });
 
     // nothing to remove
-    if (it == _old->voters.end()) {
+    if (it == _old.value().voters.end()) {
         return false;
     }
 
-    std::move(it, _old->voters.end(), std::back_inserter(_old->learners));
-    _old->voters.erase(it, _old->voters.end());
+    std::move(
+      it, _old.value().voters.end(), std::back_inserter(_old.value().learners));
+    _old.value().voters.erase(it, _old.value().voters.end());
 
     return true;
 }
@@ -745,26 +749,26 @@ void configuration_change_strategy_v3::replace_brokers(
     for (auto& br : brokers) {
         // check if broker is already a voter. voter will stay a voter
         auto v_it = std::find_if(
-          _cfg._old->voters.cbegin(),
-          _cfg._old->voters.cend(),
+          _cfg._old.value().voters.cbegin(),
+          _cfg._old.value().voters.cend(),
           [&br](const vnode& rni) {
               return rni.id() == br.broker.id() && rni.revision() == br.rev;
           });
 
-        if (v_it != _cfg._old->voters.cend()) {
+        if (v_it != _cfg._old.value().voters.cend()) {
             _cfg._current.voters.push_back(*v_it);
             continue;
         }
 
         // check if broker was a learner. learner will stay a learner
         auto l_it = std::find_if(
-          _cfg._old->learners.cbegin(),
-          _cfg._old->learners.cend(),
+          _cfg._old.value().learners.cbegin(),
+          _cfg._old.value().learners.cend(),
           [&br](const vnode& rni) {
               return rni.id() == br.broker.id() && rni.revision() == br.rev;
           });
 
-        if (l_it != _cfg._old->learners.cend()) {
+        if (l_it != _cfg._old.value().learners.cend()) {
             _cfg._current.learners.push_back(*l_it);
             continue;
         }
@@ -776,8 +780,8 @@ void configuration_change_strategy_v3::replace_brokers(
     // if both current and previous configurations are exactly the same, we do
     // not need to enter joint consensus
     if (
-      _cfg._current.voters == _cfg._old->voters
-      && _cfg._current.learners == _cfg._old->learners) {
+      _cfg._current.voters == _cfg._old.value().voters
+      && _cfg._current.learners == _cfg._old.value().learners) {
         _cfg._old.reset();
     }
 
@@ -792,11 +796,11 @@ void configuration_change_strategy_v3::abort_configuration_change(
   model::revision_id rev) {
     absl::flat_hash_set<model::node_id> physical_node_ids;
 
-    for (auto& id : _cfg._old->learners) {
+    for (auto& id : _cfg._old.value().learners) {
         physical_node_ids.insert(id.id());
     }
 
-    for (auto& id : _cfg._old->voters) {
+    for (auto& id : _cfg._old.value().voters) {
         physical_node_ids.insert(id.id());
     }
     std::erase_if(_cfg._brokers, [&physical_node_ids](model::broker& b) {
@@ -864,7 +868,8 @@ void configuration_change_strategy_v4::add_broker(
     _cfg._configuration_update = configuration_update{};
 
     _cfg._current.learners.emplace_back(broker.id(), rev);
-    _cfg._configuration_update->replicas_to_add.emplace_back(broker.id(), rev);
+    _cfg._configuration_update.value().replicas_to_add.emplace_back(
+      broker.id(), rev);
     _cfg._brokers.push_back(std::move(broker));
 }
 
@@ -889,7 +894,7 @@ void configuration_change_strategy_v4::remove_broker(model::node_id id) {
       });
 
     if (lit != new_cfg.learners.end()) {
-        _cfg._configuration_update->replicas_to_remove.push_back(*lit);
+        _cfg._configuration_update.value().replicas_to_remove.push_back(*lit);
         new_cfg.learners.erase(lit);
     }
 
@@ -899,7 +904,7 @@ void configuration_change_strategy_v4::remove_broker(model::node_id id) {
       });
 
     if (vit != new_cfg.voters.end()) {
-        _cfg._configuration_update->replicas_to_remove.push_back(*vit);
+        _cfg._configuration_update.value().replicas_to_remove.push_back(*vit);
         new_cfg.voters.erase(vit);
     }
 
@@ -947,7 +952,7 @@ void configuration_change_strategy_v4::replace_brokers(
     // add replicas to current configuration
     for (auto& br : brokers) {
         vnode vn(br.broker.id(), br.rev);
-        if (_cfg._configuration_update->is_to_add(vn)) {
+        if (_cfg._configuration_update.value().is_to_add(vn)) {
             _cfg._brokers.push_back(std::move(br.broker));
             _cfg._current.learners.push_back(vn);
         }
@@ -955,14 +960,14 @@ void configuration_change_strategy_v4::replace_brokers(
 
     // optimization: when there are only nodes to be deleted we may go straight
     // to the joint configuration
-    if (_cfg._configuration_update->replicas_to_add.empty()) {
+    if (_cfg._configuration_update.value().replicas_to_add.empty()) {
         finish_configuration_transition();
     }
 }
 
 void configuration_change_strategy_v4::finish_configuration_transition() {
     // if there are no nodes to remove there is no need to enter joint consensus
-    if (_cfg._configuration_update->replicas_to_remove.empty()) {
+    if (_cfg._configuration_update.value().replicas_to_remove.empty()) {
         _cfg._configuration_update.reset();
         return;
     }
@@ -972,7 +977,7 @@ void configuration_change_strategy_v4::finish_configuration_transition() {
 
     // remove nodes from current voters
     std::erase_if(_cfg._current.voters, [this](const vnode& voter) {
-        return _cfg._configuration_update->is_to_remove(voter);
+        return _cfg._configuration_update.value().is_to_remove(voter);
     });
 }
 
@@ -995,7 +1000,7 @@ void configuration_change_strategy_v4::abort_configuration_change(
     // rebuild configuration
 
     for (auto& vn : all_node_ids) {
-        if (!_cfg._configuration_update->is_to_add(vn)) {
+        if (!_cfg._configuration_update.value().is_to_add(vn)) {
             _cfg._current.voters.push_back(vn);
         }
     }
@@ -1036,11 +1041,12 @@ void configuration_change_strategy_v4::cancel_update_in_transitional_state() {
      * consensus.
      */
 
-    _cfg._configuration_update->replicas_to_remove.clear();
+    _cfg._configuration_update.value().replicas_to_remove.clear();
 
-    for (auto& to_add : _cfg._configuration_update->replicas_to_add) {
+    for (auto& to_add : _cfg._configuration_update.value().replicas_to_add) {
         if (_cfg.is_voter(to_add)) {
-            _cfg._configuration_update->replicas_to_remove.push_back(to_add);
+            _cfg._configuration_update.value().replicas_to_remove.push_back(
+              to_add);
         }
     }
 
@@ -1053,7 +1059,7 @@ void configuration_change_strategy_v4::cancel_update_in_transitional_state() {
 
     // all the other nodes that are to add are learners, remove them all
     _cfg._current.learners.clear();
-    _cfg._configuration_update->replicas_to_add.clear();
+    _cfg._configuration_update.value().replicas_to_add.clear();
 
     // optimization: when there are only nodes to be deleted we may go straight
     // to the joint configuration
@@ -1068,11 +1074,11 @@ void configuration_change_strategy_v4::cancel_update_in_joint_state() {
     _cfg._current = _cfg._old.value();
     _cfg._old.reset();
 
-    auto tmp_u = _cfg._configuration_update->replicas_to_add;
+    auto tmp_u = _cfg._configuration_update.value().replicas_to_add;
 
-    _cfg._configuration_update->replicas_to_add
-      = _cfg._configuration_update->replicas_to_remove;
-    _cfg._configuration_update->replicas_to_remove = std::move(tmp_u);
+    _cfg._configuration_update.value().replicas_to_add
+      = _cfg._configuration_update.value().replicas_to_remove;
+    _cfg._configuration_update.value().replicas_to_remove = std::move(tmp_u);
 }
 
 void configuration_change_strategy_v4::discard_old_config() {
@@ -1117,8 +1123,9 @@ void configuration_change_strategy_v5::add(
     _cfg._configuration_update = configuration_update{};
 
     _cfg._current.learners.push_back(node);
-    _cfg._configuration_update->replicas_to_add.push_back(node);
-    _cfg._configuration_update->learner_start_offset = learner_start_offset;
+    _cfg._configuration_update.value().replicas_to_add.push_back(node);
+    _cfg._configuration_update.value().learner_start_offset
+      = learner_start_offset;
 }
 
 void configuration_change_strategy_v5::remove(
@@ -1141,12 +1148,12 @@ void configuration_change_strategy_v5::remove(
     auto vit = std::find(new_cfg.voters.begin(), new_cfg.voters.end(), id);
 
     if (vit != new_cfg.voters.end()) {
-        _cfg._configuration_update->replicas_to_remove.push_back(*vit);
+        _cfg._configuration_update.value().replicas_to_remove.push_back(*vit);
         new_cfg.voters.erase(vit);
     }
     // if there are voters to remove we need to enter joint consensus, learners
     // can be removed immediately without the need for joint consensus step
-    if (!_cfg._configuration_update->replicas_to_remove.empty()) {
+    if (!_cfg._configuration_update.value().replicas_to_remove.empty()) {
         _cfg._old = std::move(_cfg._current);
     }
 
@@ -1178,25 +1185,26 @@ void configuration_change_strategy_v5::replace(
     _cfg._configuration_update = calculate_configuration_update(
       _cfg._current.voters, nodes);
     // set learner start offset
-    _cfg._configuration_update->learner_start_offset = learner_start_offset;
+    _cfg._configuration_update.value().learner_start_offset
+      = learner_start_offset;
 
     // add replicas to current configuration
     for (auto& vn : nodes) {
-        if (_cfg._configuration_update->is_to_add(vn)) {
+        if (_cfg._configuration_update.value().is_to_add(vn)) {
             _cfg._current.learners.push_back(vn);
         }
     }
 
     // optimization: when there are only nodes to be deleted we may go straight
     // to the joint configuration
-    if (_cfg._configuration_update->replicas_to_add.empty()) {
+    if (_cfg._configuration_update.value().replicas_to_add.empty()) {
         finish_configuration_transition();
     }
 }
 
 void configuration_change_strategy_v5::finish_configuration_transition() {
     // if there are no nodes to remove there is no need to enter joint consensus
-    if (_cfg._configuration_update->replicas_to_remove.empty()) {
+    if (_cfg._configuration_update.value().replicas_to_remove.empty()) {
         _cfg._configuration_update.reset();
         return;
     }
@@ -1206,7 +1214,7 @@ void configuration_change_strategy_v5::finish_configuration_transition() {
 
     // remove nodes from current voters
     std::erase_if(_cfg._current.voters, [this](const vnode& voter) {
-        return _cfg._configuration_update->is_to_remove(voter);
+        return _cfg._configuration_update.value().is_to_remove(voter);
     });
 }
 
@@ -1263,18 +1271,19 @@ void configuration_change_strategy_v6::replace(
     _cfg._configuration_update = calculate_configuration_update(
       _cfg._current.voters, replicas);
     // set learner start offset
-    _cfg._configuration_update->learner_start_offset = learner_start_offset;
+    _cfg._configuration_update.value().learner_start_offset
+      = learner_start_offset;
 
     // add replicas to current configuration
     for (auto& vn : replicas) {
-        if (_cfg._configuration_update->is_to_add(vn)) {
+        if (_cfg._configuration_update.value().is_to_add(vn)) {
             _cfg._current.learners.push_back(vn);
         }
     }
 
     // optimization: when there are only nodes to be deleted we may go straight
     // to the joint configuration
-    if (_cfg._configuration_update->replicas_to_add.empty()) {
+    if (_cfg._configuration_update.value().replicas_to_add.empty()) {
         finish_configuration_transition();
     }
 }
@@ -1324,7 +1333,8 @@ void configuration_change_strategy_v6::abort_configuration_change(
     _cfg.for_each_voter(
       [&all_node_ids](const vnode& voter) { all_node_ids.insert(voter); });
 
-    for (auto& to_remove : _cfg._configuration_update->replicas_to_remove) {
+    for (auto& to_remove :
+         _cfg._configuration_update.value().replicas_to_remove) {
         all_node_ids.insert(to_remove);
     }
 
@@ -1335,7 +1345,7 @@ void configuration_change_strategy_v6::abort_configuration_change(
 
     // rebuild configuration
     for (auto& vn : all_node_ids) {
-        if (!_cfg._configuration_update->is_to_add(vn)) {
+        if (!_cfg._configuration_update.value().is_to_add(vn)) {
             _cfg._current.voters.push_back(vn);
         }
     }
@@ -1365,19 +1375,19 @@ void configuration_change_strategy_v6::cancel_configuration_change(
 
 void configuration_change_strategy_v6::cancel_update_in_transitional_state() {
     std::swap(
-      _cfg._configuration_update->replicas_to_add,
-      _cfg._configuration_update->replicas_to_remove);
+      _cfg._configuration_update.value().replicas_to_add,
+      _cfg._configuration_update.value().replicas_to_remove);
 
     // remove all learners that were added
     std::erase_if(_cfg._current.learners, [this](const vnode& learner) {
-        return _cfg._configuration_update->is_to_remove(learner);
+        return _cfg._configuration_update.value().is_to_remove(learner);
     });
 
     fill_learners_with_nodes_to_add();
     finish_configuration_transition();
 }
 void configuration_change_strategy_v6::fill_learners_with_nodes_to_add() {
-    for (auto& to_add : _cfg._configuration_update->replicas_to_add) {
+    for (auto& to_add : _cfg._configuration_update.value().replicas_to_add) {
         if (!_cfg._current.contains(to_add)) {
             _cfg._current.learners.push_back(to_add);
         }
@@ -1385,8 +1395,8 @@ void configuration_change_strategy_v6::fill_learners_with_nodes_to_add() {
 }
 void configuration_change_strategy_v6::cancel_update_in_joint_state() {
     std::swap(
-      _cfg._configuration_update->replicas_to_add,
-      _cfg._configuration_update->replicas_to_remove);
+      _cfg._configuration_update.value().replicas_to_add,
+      _cfg._configuration_update.value().replicas_to_remove);
     _cfg._current = _cfg._old.value();
     _cfg._old.reset();
 
@@ -1399,8 +1409,8 @@ void configuration_change_strategy_v6::finish_configuration_transition() {
     }
 
     auto has_replicas_to_remove = std::any_of(
-      _cfg._configuration_update->replicas_to_remove.begin(),
-      _cfg._configuration_update->replicas_to_remove.end(),
+      _cfg._configuration_update.value().replicas_to_remove.begin(),
+      _cfg._configuration_update.value().replicas_to_remove.end(),
       [this](const vnode& v) { return _cfg._current.contains(v); });
 
     if (!has_replicas_to_remove) {
@@ -1411,7 +1421,7 @@ void configuration_change_strategy_v6::finish_configuration_transition() {
     _cfg._old = _cfg._current;
 
     std::erase_if(_cfg._current.voters, [this](const vnode& voter) {
-        return _cfg._configuration_update->is_to_remove(voter);
+        return _cfg._configuration_update.value().is_to_remove(voter);
     });
 }
 
@@ -1453,8 +1463,10 @@ void group_configuration::maybe_set_initial_revision(
 
         // old configuration
         if (_old) {
-            _old->voters = with_revisions_assigned(_old->voters, new_rev);
-            _old->learners = with_revisions_assigned(_old->learners, new_rev);
+            _old.value().voters = with_revisions_assigned(
+              _old.value().voters, new_rev);
+            _old.value().learners = with_revisions_assigned(
+              _old.value().learners, new_rev);
         }
     }
     update_all_replicas();
@@ -1682,7 +1694,7 @@ adl<raft::group_configuration>::from(iobuf_parser& p) {
 
         current = current_v0.to_v2();
         if (old_v0) {
-            old = old_v0->to_v2();
+            old = old_v0.value().to_v2();
         }
     }
     model::revision_id revision = raft::no_revision;

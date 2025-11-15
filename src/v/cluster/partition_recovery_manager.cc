@@ -127,16 +127,17 @@ ss::future<bool> partition_recovery_manager::is_topic_recovery_active() const {
     const auto is_initialized
       = _topic_recovery_status_frontend.has_value()
         && _topic_recovery_service.has_value()
-        && _topic_recovery_status_frontend->get().local_is_initialized()
-        && _topic_recovery_service->get().local_is_initialized();
+        && _topic_recovery_status_frontend.value().get().local_is_initialized()
+        && _topic_recovery_service.value().get().local_is_initialized();
     if (!is_initialized) {
         co_return false;
     }
 
-    co_return co_await _topic_recovery_status_frontend->get()
+    co_return co_await _topic_recovery_status_frontend.value()
+      .get()
       .local()
       .is_recovery_running(
-        _topic_recovery_service->get(),
+        _topic_recovery_service.value().get(),
         cluster::topic_recovery_status_frontend::skip_this_node::no);
 }
 
@@ -488,8 +489,8 @@ partition_downloader::download_log_with_capped_size(
         if (offsets.has_value()) {
             dloffsets.push_back(
               offset_range{
-                .min_offset = offsets->min_offset,
-                .max_offset = offsets->max_offset,
+                .min_offset = offsets.value().min_offset,
+                .max_offset = offsets.value().max_offset,
               });
         }
     }
@@ -590,8 +591,8 @@ partition_downloader::download_log_with_capped_time(
         auto offsets = co_await download_segment_file(s, dlpart);
         if (offsets.has_value()) {
             dloffsets.push_back({
-              .min_offset = offsets->min_offset,
-              .max_offset = offsets->max_offset,
+              .min_offset = offsets.value().min_offset,
+              .max_offset = offsets.value().max_offset,
             });
         }
     }

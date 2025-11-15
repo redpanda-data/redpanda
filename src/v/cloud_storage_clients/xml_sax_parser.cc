@@ -140,7 +140,7 @@ void aws_parse_impl::consume_characters() {
     switch (_current_tag) {
     case xml_tag::key:
         if (_current_item) {
-            _current_item->key = std::move(characters);
+            _current_item.value().key = std::move(characters);
         } else {
             throw xml_parse_exception{
               "Invalid state: parsing Key when not in Contents tag"};
@@ -148,7 +148,7 @@ void aws_parse_impl::consume_characters() {
         break;
     case xml_tag::size:
         if (_current_item) {
-            _current_item->size_bytes = std::stoll(characters);
+            _current_item.value().size_bytes = std::stoll(characters);
         } else {
             throw xml_parse_exception{
               "Invalid state: parsing Size when not in Contents tag"};
@@ -156,7 +156,8 @@ void aws_parse_impl::consume_characters() {
         break;
     case xml_tag::last_modified:
         if (_current_item) {
-            _current_item->last_modified = util::parse_timestamp(characters);
+            _current_item.value().last_modified = util::parse_timestamp(
+              characters);
         } else {
             throw xml_parse_exception{
               "Invalid state: parsing LastModified when not in Contents tag"};
@@ -164,7 +165,7 @@ void aws_parse_impl::consume_characters() {
         break;
     case xml_tag::etag:
         if (_current_item) {
-            _current_item->etag = std::move(characters);
+            _current_item.value().etag = std::move(characters);
         } else {
             throw xml_parse_exception{
               "Invalid state: parsing ETag when not in Contents tag"};
@@ -288,7 +289,7 @@ void abs_parse_impl::consume_characters() {
     switch (_current_tag) {
     case xml_tag::key:
         if (_current_item) {
-            _current_item->key = std::move(characters);
+            _current_item.value().key = std::move(characters);
         } else {
             throw xml_parse_exception{
               "Invalid state: parsing Name when not in Blob tag"};
@@ -296,7 +297,7 @@ void abs_parse_impl::consume_characters() {
         break;
     case xml_tag::size:
         if (_current_item) {
-            _current_item->size_bytes = std::stoll(characters);
+            _current_item.value().size_bytes = std::stoll(characters);
         } else {
             throw xml_parse_exception{
               "Invalid state: parsing Size when not in Blob tag"};
@@ -304,7 +305,8 @@ void abs_parse_impl::consume_characters() {
         break;
     case xml_tag::last_modified:
         if (_current_item) {
-            _current_item->last_modified = util::parse_timestamp(characters);
+            _current_item.value().last_modified = util::parse_timestamp(
+              characters);
         } else {
             throw xml_parse_exception{
               "Invalid state: parsing Last-Modified when not in Blob tag"};
@@ -312,7 +314,7 @@ void abs_parse_impl::consume_characters() {
         break;
     case xml_tag::etag:
         if (_current_item) {
-            _current_item->etag = std::move(characters);
+            _current_item.value().etag = std::move(characters);
         } else {
             throw xml_parse_exception{
               "Invalid state: parsing ETag when not in Blob tag"};

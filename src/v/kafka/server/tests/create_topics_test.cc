@@ -164,7 +164,7 @@ public:
         BOOST_TEST(cfg, "missing topic config");
         auto cfg_map = config_map(
           kafka::report_topic_configs(
-            app.metadata_cache.local(), cfg->properties));
+            app.metadata_cache.local(), cfg.value().properties));
         BOOST_TEST(cfg_map == resp_cfgs, "configs didn't match");
         BOOST_CHECK_EQUAL(
           topic_res.topic_config_error_code, kafka::error_code::none);
@@ -178,7 +178,7 @@ public:
         kafka::metadata_request metadata_req;
         metadata_req.data.topics
           = std::make_optional<chunked_vector<kafka::metadata_request_topic>>();
-        metadata_req.data.topics->push_back(
+        metadata_req.data.topics.value().push_back(
           kafka::metadata_request_topic{.name{request_topic.name}});
         auto metadata_resp
           = client.dispatch(std::move(metadata_req), kafka::api_version(1))
@@ -687,7 +687,7 @@ FIXTURE_TEST(create_topic_assigns_topic_id, create_topic_fixture) {
     auto md = app.controller->get_topics_state().local().get_topic_metadata(
       tpn);
     BOOST_REQUIRE(md.has_value());
-    auto tp_id = md->get_configuration().tp_id;
+    auto tp_id = md.value().get_configuration().tp_id;
     BOOST_REQUIRE(tp_id.has_value());
     BOOST_REQUIRE_EQUAL(resp.data.topics[0].topic_id, tp_id.value());
 }

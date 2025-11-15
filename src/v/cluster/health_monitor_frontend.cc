@@ -81,7 +81,8 @@ health_monitor_frontend::is_alive(model::node_id id) const {
         return std::nullopt;
     }
     return alive(
-      status->last_seen + _alive_timeout() >= model::timeout_clock::now());
+      status.value().last_seen + _alive_timeout()
+      >= model::timeout_clock::now());
 }
 ss::future<result<std::optional<cluster::drain_manager::drain_status>>>
 health_monitor_frontend::get_node_drain_status(

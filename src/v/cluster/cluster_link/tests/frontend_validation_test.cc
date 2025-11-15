@@ -1178,8 +1178,8 @@ TEST_F_CORO(frontend_validation_test, update_cluster_link_configuration) {
 
     auto meta = _table.local().find_link_by_id(id.value());
     ASSERT_TRUE_CORO(meta.has_value());
-    EXPECT_EQ(meta->get().connection, update_cmd.connection);
-    EXPECT_EQ(meta->get().configuration, update_cmd.link_config);
+    EXPECT_EQ(meta.value().get().connection, update_cmd.connection);
+    EXPECT_EQ(meta.value().get().configuration, update_cmd.link_config);
 }
 
 TEST_F_CORO(

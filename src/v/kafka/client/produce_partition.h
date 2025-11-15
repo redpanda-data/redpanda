@@ -49,7 +49,7 @@ public:
         _batcher.handle_response(std::move(res));
         _in_flight = false;
         if (_await_in_flight) {
-            _await_in_flight->set_value();
+            _await_in_flight.value().set_value();
             _await_in_flight = std::nullopt;
         }
         arm_consumer();
@@ -61,7 +61,7 @@ public:
         }
         vassert(!_await_in_flight, "Double call to await_in_flight()");
         _await_in_flight = ss::promise<>();
-        return _await_in_flight->get_future();
+        return _await_in_flight.value().get_future();
     }
 
     ss::future<> maybe_drain() {

@@ -122,7 +122,8 @@ std::optional<ss::sstring> gssapi_rule::apply(
         if (!base) {
             return std::nullopt;
         }
-        const re2::StringPiece base_piece(base->data(), base->size());
+        const re2::StringPiece base_piece(
+          base.value().data(), base.value().size());
         if (_match.empty() || re2::RE2::FullMatch(base_piece, match_regex)) {
             if (_from_pattern_str.empty()) {
                 result = base.value();

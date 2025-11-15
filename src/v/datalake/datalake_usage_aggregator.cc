@@ -111,7 +111,7 @@ default_datalake_usage_api_impl::compute_usage(ss::abort_source& as) {
     std::exception_ptr last_exception = nullptr;
     while (true) {
         auto coordinator_partitions
-          = topic->get_configuration().partition_count;
+          = topic.value().get_configuration().partition_count;
         auto usage_results_f = co_await ss::coroutine::as_future(
           dispatch_requests(_frontend->local(), coordinator_partitions));
 

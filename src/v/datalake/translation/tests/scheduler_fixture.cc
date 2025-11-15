@@ -110,7 +110,7 @@ mock_translator::mock_translator(
   , _num_writers(num_writers) {
     _translation_timer.set_callback([this] {
         if (_translation_state) {
-            _translation_state->as.request_abort();
+            _translation_state.value().as.request_abort();
         }
     });
 }
@@ -141,7 +141,7 @@ ss::future<> mock_translator::close() noexcept {
           datalake_log.debug,
           "[{}] request to stop translator, aborting translation",
           _ntp);
-        _translation_state->as.request_abort();
+        _translation_state.value().as.request_abort();
     }
     co_return co_await std::move(f);
 }
@@ -167,10 +167,10 @@ ss::future<> mock_translator::translation_loop() {
               [this] { return _translation_state.has_value(); });
             auto clear_finish_request = ss::defer(
               [this] { _finish_translation_requested = false; });
-            auto holder = _translation_state->gate.hold();
-            auto deadline = _translation_state->translate_for;
+            auto holder = _translation_state.value().gate.hold();
+            auto deadline = _translation_state.value().translate_for;
             auto start_time = clock::now();
-            _translation_state->start_time = start_time;
+            _translation_state.value().start_time = start_time;
             _translation_timer.rearm(start_time + deadline);
             static constexpr auto iteration_duration = 100ms;
             auto tput_per_iteration = _translation_tput_bytes_per_sec
@@ -179,7 +179,7 @@ ss::future<> mock_translator::translation_loop() {
             // and does not use the full window.
             auto adjustment_factor = random_generators::get_real(0.5, 0.8);
             // Factor in any checkpointing and reserve 20% time to it.
-            auto adjusted_deadline = _translation_state->start_time
+            auto adjusted_deadline = _translation_state.value().start_time
                                      + adjustment_factor * deadline;
             vlog(
               datalake_log.trace,
@@ -190,7 +190,7 @@ ss::future<> mock_translator::translation_loop() {
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 0.8f * deadline));
             try {
-                while (!_translation_state->as.abort_requested()
+                while (!_translation_state.value().as.abort_requested()
                        && clock::now() < adjusted_deadline) {
                     // split the iteration randomly among writers
                     chunked_vector<ss::future<>> writers;
@@ -200,12 +200,13 @@ ss::future<> mock_translator::translation_loop() {
                           0, remaining);
                         writers.push_back(
                           _writers[i].write(
-                            writer_bytes, _translation_state->as));
+                            writer_bytes, _translation_state.value().as));
                         remaining -= writer_bytes;
                     }
                     co_await ss::when_all_succeed(
                       writers.begin(), writers.end());
-                    co_await ss::sleep_abortable(100ms, _translation_state->as);
+                    co_await ss::sleep_abortable(
+                      100ms, _translation_state.value().as);
                 }
                 _translation_timer.cancel();
             } catch (...) {
@@ -229,7 +230,7 @@ void mock_translator::start_translation(clock::duration translate_for) {
     vassert(_started, "Translator should be started first");
     vassert(!_translation_state, "Translation already in progress");
     _translation_state = mock_inflight_translation_state{};
-    _translation_state->translate_for = translate_for;
+    _translation_state.value().translate_for = translate_for;
     _wait_for_scheduler_cb.signal();
 }
 
@@ -251,9 +252,9 @@ void mock_translator::stop_translation(translator::stop_reason) {
         return;
     }
     vlog(datalake_log.debug, "[{}] request to stop translation", _ntp);
-    _translation_state->as.request_abort();
+    _translation_state.value().as.request_abort();
     ssx::spawn_with_gate(
-      _gate, [this]() { return _translation_state->gate.close(); });
+      _gate, [this]() { return _translation_state.value().gate.close(); });
 }
 
 void delaying_translator::start_translation(clock::duration deadline) {

@@ -85,7 +85,7 @@ ss::future<> client_pool::client_self_configure(
               application_stop_signal.has_value(),
               "Application abort source not present in client pool");
 
-            application_stop_signal->get().signaled();
+            application_stop_signal.value().get().signaled();
 
             // Return in order to drop _gate which allows stop() to proceed.
             co_return;

@@ -366,7 +366,8 @@ ss::future<> recorder::recorded_crash::mark_uploaded() const {
 std::chrono::system_clock::time_point
 recorder::recorded_crash::timestamp() const {
     // Prefer the recorded timestamp, fall back to the last write time
-    return crash ? model::to_time_point(crash->crash_time) : last_write_time;
+    return crash ? model::to_time_point(crash.value().crash_time)
+                 : last_write_time;
 }
 
 namespace {
@@ -385,7 +386,8 @@ ss::future<> recorded_crashes_walker_fn(
         co_return;
     }
     if (
-      !incl_current && current_file && current_file->filename() == entry.name) {
+      !incl_current && current_file
+      && current_file.value().filename() == entry.name) {
         co_return;
     }
 

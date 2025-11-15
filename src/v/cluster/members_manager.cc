@@ -151,7 +151,7 @@ ss::future<> members_manager::maybe_update_current_node_configuration() {
       "Current broker is expected to be present in members configuration");
 
     // configuration is up to date, do nothing
-    if (current_properties->get().broker == _self) {
+    if (current_properties.value().get().broker == _self) {
         return ss::now();
     }
     vlog(
@@ -180,7 +180,7 @@ members_manager::changed_nodes members_manager::calculate_changed_nodes(
 
         if (!node) {
             ret.added.push_back(cfg_broker);
-        } else if (node->get().broker != cfg_broker) {
+        } else if (node.value().get().broker != cfg_broker) {
             ret.updated.push_back(cfg_broker);
         }
     }
@@ -320,14 +320,14 @@ members_manager::apply_update(model::record_batch b) {
           auto raft0_cfg = _raft0->config();
           if (raft0_cfg.get_state() == raft::configuration_state::joint) {
               auto it = std::find_if(
-                raft0_cfg.old_config()->learners.begin(),
-                raft0_cfg.old_config()->learners.end(),
+                raft0_cfg.old_config().value().learners.begin(),
+                raft0_cfg.old_config().value().learners.end(),
                 [id](const raft::vnode& vn) { return vn.id() == id; });
               /**
                * If a node is a demoted voter and about to be removed, do not
                * allow for recommissioning.
                */
-              if (it != raft0_cfg.old_config()->learners.end()) {
+              if (it != raft0_cfg.old_config().value().learners.end()) {
                   return ss::make_ready_future<std::error_code>(
                     errc::invalid_node_operation);
               }
@@ -658,7 +658,7 @@ ss::future<> members_manager::apply_snapshot(
         auto old_node = _members_table.local().get_node_metadata_ref(id);
         if (!old_node) {
             diff.added.push_back(new_node.broker);
-        } else if (old_node->get().broker != new_node.broker) {
+        } else if (old_node.value().get().broker != new_node.broker) {
             diff.updated.push_back(new_node.broker);
         }
     }
@@ -1181,7 +1181,7 @@ auto members_manager::dispatch_rpc_to_leader(
       _self.id(),
       _connection_cache,
       leader_id.value(),
-      leader->get().broker.rpc_address(),
+      leader.value().get().broker.rpc_address(),
       _rpc_tls_config,
       connection_timeout,
       std::forward<Func>(f));
@@ -1567,7 +1567,7 @@ members_manager::handle_configuration_update_request(
           _self.id(),
           _connection_cache,
           leader_id.value(),
-          leader->get().broker.rpc_address(),
+          leader.value().get().broker.rpc_address(),
           _rpc_tls_config,
           _join_timeout,
           [tout = ss::lowres_clock::now() + _join_timeout,

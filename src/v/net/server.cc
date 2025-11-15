@@ -72,11 +72,11 @@ void server::start() {
         _connection_rates.emplace(std::move(info), _conn_gate, *_probe);
 
         connection_rate_bindings.value().config_general_rate.watch([this] {
-            _connection_rates->update_general_rate(
+            _connection_rates.value().update_general_rate(
               connection_rate_bindings.value().config_general_rate());
         });
         connection_rate_bindings.value().config_overrides_rate.watch([this] {
-            _connection_rates->update_overrides_rate(
+            _connection_rates.value().update_overrides_rate(
               connection_rate_bindings.value().config_overrides_rate());
         });
     }
@@ -222,15 +222,15 @@ ss::future<ss::stop_iteration> server::accept_finish(
     if (cfg.tcp_keepalive_bindings.has_value()) {
         ar.connection.set_keepalive_parameters(
           seastar::net::tcp_keepalive_params{
-            .idle = cfg.tcp_keepalive_bindings->keepalive_idle_time(),
-            .interval = cfg.tcp_keepalive_bindings->keepalive_interval(),
-            .count = cfg.tcp_keepalive_bindings->keepalive_probes(),
+            .idle = cfg.tcp_keepalive_bindings.value().keepalive_idle_time(),
+            .interval = cfg.tcp_keepalive_bindings.value().keepalive_interval(),
+            .count = cfg.tcp_keepalive_bindings.value().keepalive_probes(),
           });
     }
 
     conn_quota::units cq_units;
     if (cfg.conn_quotas) {
-        cq_units = co_await cfg.conn_quotas->get().local().get(
+        cq_units = co_await cfg.conn_quotas.value().get().local().get(
           ar.remote_address.addr());
         if (!cq_units.live()) {
             // Connection limit hit, drop this connection.
@@ -245,7 +245,8 @@ ss::future<ss::stop_iteration> server::accept_finish(
 
     if (_connection_rates) {
         try {
-            co_await _connection_rates->maybe_wait(ar.remote_address.addr());
+            co_await _connection_rates.value().maybe_wait(
+              ar.remote_address.addr());
         } catch (const std::exception& e) {
             vlog(
               _log.trace,
@@ -308,7 +309,7 @@ ss::future<> server::wait_for_shutdown() {
     }
 
     if (_connection_rates.has_value()) {
-        _connection_rates->stop();
+        _connection_rates.value().stop();
     }
 
     co_return co_await _conn_gate.close().then([this] {

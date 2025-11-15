@@ -581,7 +581,7 @@ archival_metadata_stm::serialize_manifest_as_batches(
         }
         auto record_val = add_segment_cmd::value{segment_from_meta(meta)};
         iobuf val_buf = serde::to_iobuf(std::move(record_val));
-        bb->add_raw_kv(std::move(key_buf), std::move(val_buf));
+        bb.value().add_raw_kv(std::move(key_buf), std::move(val_buf));
         if (++batch_size >= records_per_batch) {
             result.push_back(std::move(bb.value()).build());
             base_offset = base_offset + model::offset(batch_size);
@@ -590,7 +590,7 @@ archival_metadata_stm::serialize_manifest_as_batches(
             batch_size = 0;
         }
     }
-    if (!bb->empty()) {
+    if (!bb.value().empty()) {
         result.push_back(std::move(bb.value()).build());
     }
     return result;
@@ -894,8 +894,9 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
     auto broken_promise_to_shutdown = [](const ss::broken_promise&) {
         return errc::shutting_down;
     };
-    auto apply_result = _active_operation_res->get_future()
-                          .handle_exception_type(broken_promise_to_shutdown);
+    auto apply_result
+      = _active_operation_res.value().get_future().handle_exception_type(
+        broken_promise_to_shutdown);
     auto op_state_reset = ss::defer([&] { _active_operation_res.reset(); });
 
     auto opts = raft::replicate_options(
@@ -1381,14 +1382,14 @@ model::offset archival_metadata_stm::max_removable_local_log_offset() {
 void archival_metadata_stm::maybe_notify_waiter(cluster::errc err) noexcept {
     if (_active_operation_res) {
         auto p = std::exchange(_active_operation_res, std::nullopt);
-        p->set_value(err);
+        p.value().set_value(err);
     }
 }
 
 void archival_metadata_stm::maybe_notify_waiter(std::exception_ptr e) noexcept {
     if (_active_operation_res) {
         auto p = std::exchange(_active_operation_res, std::nullopt);
-        p->set_exception(e);
+        p.value().set_exception(e);
     }
 }
 
@@ -1403,9 +1404,10 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
     auto add_result = _manifest->add(segment.name, meta);
     if (
       add_result.has_value()
-      && add_result->bytes_replaced_range > add_result->bytes_new_range) {
-        _compacted_replaced_bytes += add_result->bytes_replaced_range
-                                     - add_result->bytes_new_range;
+      && add_result.value().bytes_replaced_range
+           > add_result.value().bytes_new_range) {
+        _compacted_replaced_bytes += add_result.value().bytes_replaced_range
+                                     - add_result.value().bytes_new_range;
     }
 
     vlog(

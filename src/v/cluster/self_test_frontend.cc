@@ -40,14 +40,14 @@ self_test_status self_test_frontend::node_test_state::status() const {
     if (!response) {
         return self_test_status::unreachable;
     }
-    return response->status;
+    return response.value().status;
 }
 
 self_test_stage self_test_frontend::node_test_state::stage() const {
     if (!response) {
         return self_test_stage::idle;
     }
-    return response->stage;
+    return response.value().stage;
 }
 
 self_test_frontend::global_test_state::global_test_state(

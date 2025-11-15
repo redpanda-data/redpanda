@@ -44,7 +44,7 @@ ss::future<ss::file> remote_file::hydrate_readable_file() {
         // If the file is in cache, return immediately.
         auto maybe_file = co_await _cache.get(_remote_path);
         if (maybe_file.has_value()) {
-            co_return maybe_file->body;
+            co_return maybe_file.value().body;
         }
         // Otherwise, go to remote storage and put it in the cache.
         auto res = co_await _remote.download_stream(
@@ -66,7 +66,7 @@ ss::future<ss::file> remote_file::hydrate_readable_file() {
             co_await ss::sleep(_cache_backoff_jitter.next_duration());
             continue;
         }
-        co_return maybe_file->body;
+        co_return maybe_file.value().body;
     }
     throw ss::gate_closed_exception();
 }

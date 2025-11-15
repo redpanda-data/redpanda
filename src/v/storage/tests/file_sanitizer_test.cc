@@ -179,13 +179,13 @@ TEST(FileSanitizerTest, file_sanitizer_config_parse_test) {
     EXPECT_TRUE(cfg.has_value());
 
     model::ntp ntp{"kafka", "test", 1};
-    const auto& ntp_cfg = cfg->get_config_for_ntp(ntp);
+    const auto& ntp_cfg = cfg.value().get_config_for_ntp(ntp);
     EXPECT_TRUE(ntp_cfg.has_value());
 
-    EXPECT_EQ(ntp_cfg->sanitize_only, false);
-    EXPECT_EQ(ntp_cfg->finjection_cfg.has_value(), true);
+    EXPECT_EQ(ntp_cfg.value().sanitize_only, false);
+    EXPECT_EQ(ntp_cfg.value().finjection_cfg.has_value(), true);
 
-    const auto& finject_cfg = ntp_cfg->finjection_cfg.value();
+    const auto& finject_cfg = ntp_cfg.value().finjection_cfg.value();
 
     EXPECT_EQ(finject_cfg.ntp, ntp);
     EXPECT_EQ(finject_cfg.op_configs.size(), 1);

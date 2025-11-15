@@ -180,7 +180,8 @@ private:
         }
         auto stm = partition->raft()
                      ->stm_manager()
-                     ->get<transform::transform_offsets_stm_t>();
+                     .value()
+                     .get<transform::transform_offsets_stm_t>();
         if (partition->ntp().tp.partition != coordinator_partition) {
             for (const auto& key : request.keys) {
                 response.errors[key] = cluster::errc::not_leader;
@@ -212,7 +213,8 @@ private:
         }
         auto stm = partition->raft()
                      ->stm_manager()
-                     ->get<transform::transform_offsets_stm_t>();
+                     .value()
+                     .get<transform::transform_offsets_stm_t>();
         response.errc = co_await stm->put(std::move(req.kvs));
         co_return response;
     }
@@ -229,7 +231,8 @@ private:
         }
         auto stm = partition->raft()
                      ->stm_manager()
-                     ->get<transform::transform_offsets_stm_t>();
+                     .value()
+                     .get<transform::transform_offsets_stm_t>();
         for (const auto& key : request.keys) {
             auto result = co_await stm->get(key);
             if (result.has_error()) {
@@ -251,7 +254,8 @@ private:
         }
         auto stm = partition->raft()
                      ->stm_manager()
-                     ->get<transform::transform_offsets_stm_t>();
+                     .value()
+                     .get<transform::transform_offsets_stm_t>();
         co_return co_await stm->list();
     }
 
@@ -263,7 +267,8 @@ private:
         }
         auto stm = partition->raft()
                      ->stm_manager()
-                     ->get<transform::transform_offsets_stm_t>();
+                     .value()
+                     .get<transform::transform_offsets_stm_t>();
         co_return co_await stm->remove_all(
           [&ids](model::transform_offsets_key key) {
               return ids.contains(key.id);

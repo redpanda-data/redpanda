@@ -164,7 +164,7 @@ ss::future<election_success> vote_stm::vote(bool leadership_transfer) {
               _replies.emplace(_ptr->_self, *this);
 
               // vote is the only method under _op_sem
-              _config->for_each_voter(
+              _config.value().for_each_voter(
                 [this](vnode id) { _replies.emplace(id, *this); });
 
               auto lstats = _ptr->_log->offsets();
@@ -200,7 +200,8 @@ ss::future<election_success> vote_stm::vote(bool leadership_transfer) {
 
 ss::future<election_success> vote_stm::do_vote() {
     // dispatch requests to all voters
-    _config->for_each_voter([this](vnode id) { (void)dispatch_one(id); });
+    _config.value().for_each_voter(
+      [this](vnode id) { (void)dispatch_one(id); });
     _requests_dispatched_ts = clock_type::now();
     co_await process_replies();
 
@@ -268,14 +269,15 @@ ss::future<> vote_stm::process_replies() {
          * prevote phase to be successful it is enough that followers reported
          * log_ok flag. For the actual election we require that vote is granted.
          */
-        auto majority_granted = _config->majority([this](const vnode& id) {
-            const auto state = _replies.find(id)->second.get_state();
-            if (_prevote) {
-                return state == vmeta::state::log_ok
-                       || state == vmeta::state::vote_granted;
-            }
-            return state == vmeta::state::vote_granted;
-        });
+        auto majority_granted = _config.value().majority(
+          [this](const vnode& id) {
+              const auto state = _replies.find(id)->second.get_state();
+              if (_prevote) {
+                  return state == vmeta::state::log_ok
+                         || state == vmeta::state::vote_granted;
+              }
+              return state == vmeta::state::vote_granted;
+          });
 
         if (majority_granted) {
             _success = true;
@@ -284,12 +286,13 @@ ss::future<> vote_stm::process_replies() {
         }
 
         // majority votes not granted, election not successful
-        auto majority_failed = _config->majority([this](const vnode& id) {
-            auto state = _replies.find(id)->second.get_state();
-            // vote not granted and not in progress, it is failed
-            return state != vmeta::state::vote_granted
-                   && state != vmeta::state::in_progress;
-        });
+        auto majority_failed = _config.value().majority(
+          [this](const vnode& id) {
+              auto state = _replies.find(id)->second.get_state();
+              // vote not granted and not in progress, it is failed
+              return state != vmeta::state::vote_granted
+                     && state != vmeta::state::in_progress;
+          });
 
         if (majority_failed) {
             _success = false;
@@ -391,8 +394,8 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
         co_return;
     }
 
-    const auto only_voter = _config->unique_voter_count() == 1
-                            && _config->is_voter(_ptr->self());
+    const auto only_voter = _config.value().unique_voter_count() == 1
+                            && _config.value().is_voter(_ptr->self());
     /**
      * Fail election if current replica was blocked after the voting started
      */

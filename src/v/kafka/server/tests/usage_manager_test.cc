@@ -44,7 +44,7 @@ public:
               std::logic_error("Already a waiter on data fetching"));
         }
         _window_closed_promise = ss::promise<>();
-        auto f = _window_closed_promise->get_future();
+        auto f = _window_closed_promise.value().get_future();
         ss::manual_clock::advance(d);
         return ss::with_timeout(ss::lowres_clock::now() + d, std::move(f))
           .handle_exception_type([this, d](const ss::timed_out_error&) {
@@ -69,7 +69,7 @@ protected:
     void window_closed() final {
         vlog(af_logger.info, "Window closed...");
         if (_window_closed_promise) {
-            _window_closed_promise->set_value();
+            _window_closed_promise.value().set_value();
             _window_closed_promise = std::nullopt;
         }
     }

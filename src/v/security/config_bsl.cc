@@ -67,12 +67,14 @@ parse_rules(std::optional<std::vector<ss::sstring>> unparsed_rules) {
     static const std::regex rule_splitter = make_regex(rule_pattern_splitter);
     static const std::regex rule_parser = make_regex(rule_pattern);
 
-    std::string rules
-      = unparsed_rules.has_value()
-          ? fmt::format(
-              "{}",
-              fmt::join(unparsed_rules->begin(), unparsed_rules->end(), ","))
-          : "DEFAULT";
+    std::string rules = unparsed_rules.has_value()
+                          ? fmt::format(
+                              "{}",
+                              fmt::join(
+                                unparsed_rules.value().begin(),
+                                unparsed_rules.value().end(),
+                                ","))
+                          : "DEFAULT";
 
     std::vector<rule> result;
     std::cmatch rules_match;

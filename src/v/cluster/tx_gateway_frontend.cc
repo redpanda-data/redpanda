@@ -696,7 +696,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
       transaction_timeout_ms,
       timeout,
       expected_pid,
-      coordinator_ntp->tp.partition);
+      coordinator_ntp.value().tp.partition);
 }
 
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
@@ -806,9 +806,9 @@ bool is_valid_producer(
         return true;
     }
 
-    return expected_pid->get_epoch() == model::no_producer_epoch
-           || tx.pid.get_id() == expected_pid->get_id()
-           || (tx.last_pid.get_id() == expected_pid->get_id() && expected_pid->has_exhausted_epoch());
+    return expected_pid.value().get_epoch() == model::no_producer_epoch
+           || tx.pid.get_id() == expected_pid.value().get_id()
+           || (tx.last_pid.get_id() == expected_pid.value().get_id() && expected_pid.value().has_exhausted_epoch());
 }
 
 bool need_to_advance_progress(const tx_metadata& tx) {
@@ -1052,7 +1052,8 @@ tx_gateway_frontend::increase_producer_epoch(
   model::timeout_clock::duration timeout) {
     // the expected epoch can be empty then it matches everything
     const bool expected_epoch_matches = expected_pid
-                                          ? expected_pid->epoch == tx_pid.epoch
+                                          ? expected_pid.value().epoch
+                                              == tx_pid.epoch
                                           : true;
     // exhausted epoch, allocate new producer id
     if (tx_pid.has_exhausted_epoch() && expected_epoch_matches) {
@@ -2550,8 +2551,8 @@ void tx_gateway_frontend::expire_old_txs() {
         }
 
         std::vector<model::partition_id> partitions;
-        partitions.reserve(ntp_meta->get_assignments().size());
-        for (auto& [_, pa] : ntp_meta->get_assignments()) {
+        partitions.reserve(ntp_meta.value().get_assignments().size());
+        for (auto& [_, pa] : ntp_meta.value().get_assignments()) {
             partitions.push_back(pa.id);
         }
 
@@ -2767,7 +2768,7 @@ tx_gateway_frontend::get_all_transactions() {
     }
 
     tx_gateway_frontend::return_all_txs_res res{{}};
-    for (const auto& [_, pa] : ntp_meta->get_assignments()) {
+    for (const auto& [_, pa] : ntp_meta.value().get_assignments()) {
         auto tx_manager_ntp = model::ntp(
           model::tx_manager_nt.ns, model::tx_manager_nt.tp, pa.id);
         auto ntp_res = co_await get_all_transactions_for_one_tx_partition(

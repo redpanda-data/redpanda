@@ -1044,8 +1044,9 @@ ss::future<> controller::create_cluster(
                   res.value(),
                   bucket_opt.value());
                 cmd_data.recovery_state.emplace();
-                cmd_data.recovery_state->manifest = std::move(res.value());
-                cmd_data.recovery_state->bucket = bucket_opt.value();
+                cmd_data.recovery_state.value().manifest = std::move(
+                  res.value());
+                cmd_data.recovery_state.value().bucket = bucket_opt.value();
                 // Proceed with recovery via cluster bootstrap.
             } else {
                 const auto& err = res.error();

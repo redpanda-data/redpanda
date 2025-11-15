@@ -36,8 +36,8 @@ uri get_metadata_location(const table_metadata& table) {
       = "write.metadata.path";
 
     if (table.properties.has_value()) {
-        auto it = table.properties->find(write_metadata_path_prop);
-        if (it != table.properties->end()) {
+        auto it = table.properties.value().find(write_metadata_path_prop);
+        if (it != table.properties.value().end()) {
             return uri(it->second);
         }
     }
@@ -83,7 +83,7 @@ snapshot_id random_snap_id() {
 
 snapshot_id generate_unused_snap_id(const table_metadata& m) {
     auto sid = random_snap_id();
-    if (!m.snapshots.has_value() || m.snapshots->empty()) {
+    if (!m.snapshots.has_value() || m.snapshots.value().empty()) {
         return sid;
     }
     // Repeatedly try to generate a new snapshot id that isn't used already.
@@ -211,7 +211,7 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
     manifest_list mlist;
     std::optional<snapshot_id> old_snap_id;
     std::optional<snapshot_summary> old_summary;
-    if (table_.snapshots.has_value() && !table_.snapshots->empty()) {
+    if (table_.snapshots.has_value() && !table_.snapshots.value().empty()) {
         if (!table_.current_snapshot_id.has_value()) {
             // We have snapshots, but it's unclear which one to base our update
             // off of.
@@ -299,17 +299,17 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
     if (old_summary) {
         // Only update existing total metrics; otherwise we wouldn't have an
         // accurate starting point.
-        if (old_summary->total_data_files.has_value()) {
+        if (old_summary.value().total_data_files.has_value()) {
             new_summary.total_data_files
-              = added_data_files + old_summary->total_data_files.value();
+              = added_data_files + old_summary.value().total_data_files.value();
         }
-        if (old_summary->total_records.has_value()) {
-            new_summary.total_records = added_records
-                                        + old_summary->total_records.value();
+        if (old_summary.value().total_records.has_value()) {
+            new_summary.total_records
+              = added_records + old_summary.value().total_records.value();
         }
-        if (old_summary->total_files_size.has_value()) {
+        if (old_summary.value().total_files_size.has_value()) {
             new_summary.total_files_size
-              = added_files_size + old_summary->total_files_size.value();
+              = added_files_size + old_summary.value().total_files_size.value();
         }
     } else {
         // This is the first summary. The totals are just what we're adding in

@@ -482,8 +482,8 @@ private:
         auto failure_msg = offending_pair.has_value()
                              ? fmt::format(
                                  "validation failed, offending pair: {}, {}",
-                                 offending_pair->first,
-                                 offending_pair->second)
+                                 offending_pair.value().first,
+                                 offending_pair.value().second)
                              : "";
         BOOST_REQUIRE_MESSAGE(!offending_pair, failure_msg);
     }
@@ -661,7 +661,7 @@ private:
         BOOST_REQUIRE(cur_assignment);
 
         absl::flat_hash_set<model::node_id> cur_replicas;
-        for (const auto& bs : cur_assignment->replicas) {
+        for (const auto& bs : cur_assignment.value().replicas) {
             cur_replicas.insert(bs.node_id);
         }
 

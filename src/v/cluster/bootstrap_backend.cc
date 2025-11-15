@@ -78,7 +78,7 @@ ss::future<std::error_code> dispatch_updates_to_cores(
             result.value() == errc,
             "State inconsistency across shards detected, "
             "expected result: {}, have: {}",
-            result->value(),
+            result.value().value(),
             errc);
           return result;
       });
@@ -201,8 +201,8 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd, model::offset offset) {
     if (cmd.value.recovery_state.has_value()) {
         co_await _cluster_recovery_table.invoke_on_all(
           [o = offset,
-           m = cmd.value.recovery_state->manifest,
-           b = cmd.value.recovery_state->bucket](auto& recovery_table) {
+           m = cmd.value.recovery_state.value().manifest,
+           b = cmd.value.recovery_state.value().bucket](auto& recovery_table) {
               auto ec = recovery_table.apply(o, m, b, wait_for_nodes::yes);
               // We don't expect this since recoveries can only be initialized
               // at or after bootstrap time, but be conservative and handle

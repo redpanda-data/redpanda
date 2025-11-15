@@ -149,7 +149,8 @@ public:
             // level, check balancing objectives.
 
             if (_pinning_constr) {
-                auto pinning_diff = _pinning_constr->evaluate(reassignment);
+                auto pinning_diff = _pinning_constr.value().evaluate(
+                  reassignment);
                 if (pinning_diff < -error_jitter) {
                     continue;
                 } else if (pinning_diff > error_jitter) {

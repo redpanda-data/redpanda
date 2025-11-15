@@ -169,13 +169,13 @@ public:
 
     void update_produce_latency(std::chrono::steady_clock::duration x) {
         if (_qdc_mon) {
-            _qdc_mon->ema.update(x);
+            _qdc_mon.value().ema.update(x);
         }
     }
 
     ss::future<ssx::semaphore_units> get_request_unit() {
         if (_qdc_mon) {
-            return _qdc_mon->qdc.get_unit();
+            return _qdc_mon.value().qdc.get_unit();
         }
         return ss::make_ready_future<ssx::semaphore_units>(
           ssx::semaphore_units());

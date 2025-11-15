@@ -270,7 +270,8 @@ private:
             co_return;
         }
         auto domain_mgr = ss::make_lw_shared<domain_manager>(
-          (*partition)->raft()->stm_manager()->get<simple_stm>(), _object_io);
+          (*partition)->raft()->stm_manager().value().get<simple_stm>(),
+          _object_io);
         domain_mgr->start();
         _domains.emplace(dm_id, std::move(domain_mgr));
     }

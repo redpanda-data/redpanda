@@ -214,7 +214,7 @@ void group_manager::trigger_leadership_notification(
   raft::leadership_status st) {
     std::optional<model::node_id> leader_id;
     if (st.current_leader) {
-        leader_id = st.current_leader->id();
+        leader_id = st.current_leader.value().id();
     }
 
     _notifications.notify(st.group, st.term, leader_id);

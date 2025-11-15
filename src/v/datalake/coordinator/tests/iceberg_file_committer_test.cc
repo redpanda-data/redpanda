@@ -205,7 +205,7 @@ TEST_F(FileCommitterTest, TestMissingTable) {
     // The table should be created.
     ASSERT_FALSE(load_res.has_error());
     ASSERT_TRUE(load_res.value().snapshots.has_value());
-    ASSERT_EQ(0, load_res.value().snapshots->size());
+    ASSERT_EQ(0, load_res.value().snapshots.value().size());
 
     // Now try again with some data.
     state.topic_to_state[topic] = make_topic_state(
@@ -224,7 +224,7 @@ TEST_F(FileCommitterTest, TestMissingTable) {
     ASSERT_EQ(1, table.partition_specs.size());
     ASSERT_EQ(1, table.partition_specs[0].fields.size());
     ASSERT_TRUE(table.snapshots.has_value());
-    ASSERT_EQ(1, table.snapshots->size());
+    ASSERT_EQ(1, table.snapshots.value().size());
 
     // Now drop the table and try to commit. This should fail, but at least
     // shouldn't crash.

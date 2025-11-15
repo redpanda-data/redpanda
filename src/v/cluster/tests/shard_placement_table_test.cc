@@ -406,7 +406,7 @@ private:
               placement.current()->log_revision);
         }
         if (
-          placement.current()->status
+          placement.current().value().status
           != shard_placement_table::hosted_status::hosted) {
             vassert(!was_launched, "[{}] unexpected launched", ntp);
         }
@@ -474,7 +474,7 @@ private:
           });
 
         co_await _shard_placement.finish_delete(
-          ntp, placement.current()->log_revision);
+          ntp, placement.current().value().log_revision);
         co_return ec;
     }
 
@@ -681,7 +681,7 @@ public:
             auto maybe_target = _shard_placement.get_target(ntp);
             if (
               !maybe_target
-              || maybe_target->log_revision != meta.log_revision) {
+              || maybe_target.value().log_revision != meta.log_revision) {
                 assign_eventually(ntp);
             }
         }
@@ -887,9 +887,10 @@ public:
             ASSERT_TRUE_CORO(shards_it != ntp2shards.end()) << "ntp: " << ntp;
             const auto& shards = shards_it->second;
             ASSERT_TRUE_CORO(shards.target) << "ntp: " << ntp;
-            ASSERT_EQ_CORO(shards.target->log_revision, meta.log_revision)
+            ASSERT_EQ_CORO(
+              shards.target.value().log_revision, meta.log_revision)
               << "ntp: " << ntp;
-            ASSERT_EQ_CORO(shards.target->shard, target.shard)
+            ASSERT_EQ_CORO(shards.target.value().shard, target.shard)
               << "ntp: " << ntp;
             ASSERT_EQ_CORO(
               shards.shards_with_some_state,
@@ -903,16 +904,18 @@ public:
                     ASSERT_TRUE_CORO(placement.current())
                       << "ntp: " << ntp << ", shard: " << s;
                     ASSERT_EQ_CORO(
-                      placement.current()->log_revision, meta.log_revision)
+                      placement.current().value().log_revision,
+                      meta.log_revision)
                       << "ntp: " << ntp << ", shard: " << s;
                     ASSERT_EQ_CORO(
-                      placement.current()->status,
+                      placement.current().value().status,
                       shard_placement_table::hosted_status::hosted)
                       << "ntp: " << ntp << ", shard: " << s;
                     ASSERT_TRUE_CORO(placement.assigned())
                       << "ntp: " << ntp << ", shard: " << s;
                     ASSERT_EQ_CORO(
-                      placement.assigned()->log_revision, meta.log_revision)
+                      placement.assigned().value().log_revision,
+                      meta.log_revision)
                       << "ntp: " << ntp << ", shard: " << s;
                 } else {
                     ASSERT_TRUE_CORO(!placement.current())
@@ -968,15 +971,16 @@ public:
 
             // check assigned markers
             if (expected.target) {
-                ASSERT_TRUE_CORO(shard2state.contains(expected.target->shard));
+                ASSERT_TRUE_CORO(
+                  shard2state.contains(expected.target.value().shard));
             }
             for (const auto& [s, placement] : shard2state) {
-                if (expected.target && s == expected.target->shard) {
+                if (expected.target && s == expected.target.value().shard) {
                     ASSERT_TRUE_CORO(placement.assigned())
                       << "ntp: " << ntp << ", shard: " << s;
                     ASSERT_EQ_CORO(
-                      placement.assigned()->log_revision,
-                      expected.target->log_revision)
+                      placement.assigned().value().log_revision,
+                      expected.target.value().log_revision)
                       << "ntp: " << ntp << ", shard: " << s;
                 } else {
                     ASSERT_TRUE_CORO(!placement.assigned())
@@ -1074,7 +1078,7 @@ public:
             for (auto& [ntp, shards] : _ntp2shards.local()) {
                 if (
                   shards.target
-                  && !local_group2ntp.contains(shards.target->group)) {
+                  && !local_group2ntp.contains(shards.target.value().group)) {
                     // clear obsolete targets
                     shards.target = std::nullopt;
                 }

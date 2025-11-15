@@ -1132,7 +1132,7 @@ private:
         // Ensure that we only use `max_host_function_stack_usage` by
         // allocing enough to call the host function with only that much
         // stack space left.
-        std::ptrdiff_t stack_left = (&dummy_stack_var) - bounds->bottom;
+        std::ptrdiff_t stack_left = (&dummy_stack_var) - bounds.value().bottom;
         void* stack_ptr = ::alloca(stack_left - max_host_function_stack_usage);
         // Prevent the alloca from being optimized away by logging the result.
         vlog(
@@ -1175,7 +1175,7 @@ private:
         // Ensure that we only use `max_host_function_stack_usage` by
         // allocing enough to call the host function with only that much
         // stack space left.
-        std::ptrdiff_t stack_left = (&dummy_stack_var) - bounds->bottom;
+        std::ptrdiff_t stack_left = (&dummy_stack_var) - bounds.value().bottom;
         void* stack_ptr = ::alloca(stack_left - max_host_function_stack_usage);
         // Prevent the alloca from being optimized away by logging the result.
         vlog(
@@ -1595,11 +1595,12 @@ wasmtime_error_t* wasmtime_runtime::allocate_heap_memory(
           "local storage");
         return wasmtime_error_new("preserved memory was missing");
     }
-    if (memory->size < req.minimum || memory->size > req.maximum) {
+    if (
+      memory.value().size < req.minimum || memory.value().size > req.maximum) {
         auto msg = ss::format(
           "allocated memory (size={}) was not within requested bounds: [{}, "
           "{}]",
-          memory->size,
+          memory.value().size,
           req.minimum,
           req.maximum);
         // return the memory we used back to the allocator

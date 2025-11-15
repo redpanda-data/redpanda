@@ -283,7 +283,7 @@ ss::future<produce_response> client::produce_records(
         -> ss::future<produce_response::partition> {
           return produce_record_batch(
             model::topic_partition(topic, p.partition_index),
-            std::move(p.records->adapter.batch.value()));
+            std::move(p.records.value().adapter.batch.value()));
       });
 
     chunked_vector<topic_produce_response> responses_cv;

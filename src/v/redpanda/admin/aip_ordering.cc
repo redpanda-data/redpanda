@@ -191,7 +191,7 @@ bool sort_order::operator()(
         }
 
         auto cmp = compare_field_variant(
-          fa->value, fb->value, comp.field_numbers);
+          fa.value().value, fb.value().value, comp.field_numbers);
 
         if (cmp != std::strong_ordering::equal) {
             // Ascending: cmp as is. Descending: invert

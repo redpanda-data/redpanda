@@ -310,9 +310,9 @@ private:
 
     security::acl_principal get_principal() const {
         if (_mtls_state) {
-            return _mtls_state->principal();
-        } else if (_sasl && _sasl->complete()) {
-            return _sasl->principal();
+            return _mtls_state.value().principal();
+        } else if (_sasl && _sasl.value().complete()) {
+            return _sasl.value().principal();
         }
         // anonymous user
         return security::acl_principal{security::principal_type::user, {}};

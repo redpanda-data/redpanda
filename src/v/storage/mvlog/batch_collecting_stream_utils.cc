@@ -37,10 +37,10 @@ collect_batches_from_stream(entry_stream& entries, batch_collector& collector) {
         if (!entry.has_value()) {
             co_return collect_stream_outcome::end_of_stream;
         }
-        switch (entry->hdr.type) {
+        switch (entry.value().hdr.type) {
         case entry_type::record_batch: {
             auto res = collect_batch_from_buf(
-              std::move(entry->body), collector);
+              std::move(entry.value().body), collector);
             if (res.has_error()) {
                 co_return res.error();
             }

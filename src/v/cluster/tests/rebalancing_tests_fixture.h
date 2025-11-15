@@ -98,7 +98,7 @@ public:
                     .local()
                     .get_topic_metadata_ref(model::topic_namespace_view(ntp));
 
-        return md->get().get_assignments().begin()->second.replicas;
+        return md.value().get().get_assignments().begin()->second.replicas;
     }
 
     void create_topic(cluster::topic_configuration cfg) {

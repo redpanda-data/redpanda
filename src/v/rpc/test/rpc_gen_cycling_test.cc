@@ -1134,10 +1134,10 @@ FIXTURE_TEST(rpc_mt_add_service, rpc_sharded_fixture) {
         }
         // Wait for the workloads to complete.
         if (echo_loop_fut.has_value()) {
-            echo_loop_fut->get();
+            echo_loop_fut.value().get();
         }
         if (movistar_loop_fut.has_value()) {
-            movistar_loop_fut->get();
+            movistar_loop_fut.value().get();
         }
         // Stop the clients.
         echo_client.stop().get();

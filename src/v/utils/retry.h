@@ -66,7 +66,7 @@ ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
                              base_backoff]() mutable {
                      if (as.has_value()) {
                          try {
-                             as->get().check();
+                             as.value().get().check();
                          } catch (const std::exception& e) {
                              promise.set_exception(e);
                              return ss::make_ready_future<stop_iteration>(

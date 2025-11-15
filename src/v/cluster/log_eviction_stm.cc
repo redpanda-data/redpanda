@@ -285,7 +285,7 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::replicate_command(
     auto applied = co_await wait_no_throw(
       result.value().last_offset, deadline, as);
     if (!applied) {
-        if (as && as->get().abort_requested()) {
+        if (as && as.value().get().abort_requested()) {
             co_return errc::shutting_down;
         }
         co_return errc::timeout;

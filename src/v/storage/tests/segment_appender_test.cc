@@ -15,7 +15,7 @@ struct write_op {
       : size(s) {}
     explicit write_op(iobuf d)
       : data(std::move(d))
-      , size(data->size_bytes()) {}
+      , size(data.value().size_bytes()) {}
     std::optional<iobuf> data;
     size_t size;
 };

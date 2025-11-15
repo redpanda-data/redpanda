@@ -290,7 +290,7 @@ ss::future<result<id>> frontend::do_create_migration(data_migration migration) {
           "data migration {} validation error - {}",
           migration,
           v_err.value());
-        co_return v_err->ec();
+        co_return v_err.value().ec();
     }
 
     auto id = _table.local().get_next_id();
@@ -321,9 +321,9 @@ ss::future<result<migration_metadata>>
 frontend::get_migration(id migration_id) {
     return _table.invoke_on_instance([migration_id](migrations_table& table) {
         auto maybe_migration = table.get_migration(migration_id);
-        return maybe_migration
-                 ? result<migration_metadata>(maybe_migration->get().copy())
-                 : errc::data_migration_not_exists;
+        return maybe_migration ? result<migration_metadata>(
+                                   maybe_migration.value().get().copy())
+                               : errc::data_migration_not_exists;
     });
 }
 
@@ -337,7 +337,8 @@ frontend::list_mountable_topics() {
 
     auto rtc = retry_chain_node{_as.local(), 30s, 100ms};
 
-    co_return co_await _topic_mount_handler->get().list_mountable_topics(rtc);
+    co_return co_await _topic_mount_handler.value().get().list_mountable_topics(
+      rtc);
 }
 
 ss::future<std::error_code> frontend::insert_barrier() {

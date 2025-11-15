@@ -49,9 +49,9 @@ TEST(test_raft_group_configuration, test_demoting_removed_voters) {
     // finish configuration transition
 
     ASSERT_TRUE(test_grp.maybe_demote_removed_voters());
-    ASSERT_EQ(test_grp.old_config()->voters.size(), 2);
+    ASSERT_EQ(test_grp.old_config().value().voters.size(), 2);
     // node 0 was demoted since it was removed from the cluster
-    ASSERT_EQ(test_grp.old_config()->learners[0], create_vnode(1));
+    ASSERT_EQ(test_grp.old_config().value().learners[0], create_vnode(1));
     // assert that operation is idempotent
     ASSERT_FALSE(test_grp.maybe_demote_removed_voters());
 }
@@ -189,10 +189,10 @@ TEST_P(ConfigurationCancellationTest, TestEvenNumberOfCancellations) {
     test_cfg.replace(target_replicas, model::revision_id{0}, std::nullopt);
 
     ASSERT_THAT(
-      test_cfg.get_configuration_update()->replicas_to_add,
+      test_cfg.get_configuration_update().value().replicas_to_add,
       ElementsAreArray(to_add));
     ASSERT_THAT(
-      test_cfg.get_configuration_update()->replicas_to_remove,
+      test_cfg.get_configuration_update().value().replicas_to_remove,
       ElementsAreArray(to_remove));
 
     // CASE 1. Cancel right after change was requested
@@ -315,10 +315,10 @@ TEST_P(ConfigurationCancellationTest, TestOddNumberOfCancellations) {
     test_cfg.replace(target_replicas, model::revision_id{0}, std::nullopt);
 
     ASSERT_THAT(
-      test_cfg.get_configuration_update()->replicas_to_add,
+      test_cfg.get_configuration_update().value().replicas_to_add,
       ElementsAreArray(to_add));
     ASSERT_THAT(
-      test_cfg.get_configuration_update()->replicas_to_remove,
+      test_cfg.get_configuration_update().value().replicas_to_remove,
       ElementsAreArray(to_remove));
 
     // CASE 1. Cancel right after change was requested
@@ -512,7 +512,7 @@ struct configuration_advancement_state_machine {
                 current_state = state::exiting_transitional_state;
             }
         } else if (cfg.get_state() == raft::configuration_state::joint) {
-            if (cfg.old_config()->learners.empty()) {
+            if (cfg.old_config().value().learners.empty()) {
                 current_state = state::demoting_voters;
             } else {
                 current_state = state::exiting_joint_state;

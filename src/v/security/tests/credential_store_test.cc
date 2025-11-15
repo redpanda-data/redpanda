@@ -92,10 +92,10 @@ BOOST_AUTO_TEST_CASE(credential_store_test_principal) {
 
     auto r0 = store.get<scram_credential>(user0);
     auto r1 = store.get<scram_credential>(user1);
-    BOOST_REQUIRE_EQUAL(r0->principal().has_value(), false);
+    BOOST_REQUIRE_EQUAL(r0.value().principal().has_value(), false);
     BOOST_REQUIRE_EQUAL(
-      r1->principal()->type(), principal_type::ephemeral_user);
-    BOOST_REQUIRE_EQUAL(r1->principal()->name(), "ephemeral");
+      r1->principal().value().type(), principal_type::ephemeral_user);
+    BOOST_REQUIRE_EQUAL(r1->principal().value().name(), "ephemeral");
 }
 
 } // namespace security

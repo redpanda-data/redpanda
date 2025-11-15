@@ -97,13 +97,13 @@ std::optional<cluster::leader_term> get_leader_term(
         leader_term.emplace(replicas[0]);
         return leader_term;
     }
-    if (!leader_term->leader.has_value()) {
+    if (!leader_term.value().leader.has_value()) {
         const auto previous = md_cache.get_previous_leader_id(tp_ns, p_id);
-        leader_term->leader = previous;
+        leader_term.value().leader = previous;
 
         if (previous == config::node().node_id().value()) {
             auto idx = random_generators::global().get_int(replicas.size() - 1);
-            leader_term->leader = replicas[idx];
+            leader_term.value().leader = replicas[idx];
         }
     }
 
@@ -156,8 +156,8 @@ metadata_response::topic make_topic_response_from_topic_metadata(
         p.leader_id = no_leader;
         auto lt = get_leader_term(tp_ns, p_as.id, md_cache, replicas);
         if (lt && !is_node_isolated && p.error_code == error_code::none) {
-            p.leader_id = lt->leader.value_or(no_leader);
-            p.leader_epoch = leader_epoch_from_term(lt->term);
+            p.leader_id = lt.value().leader.value_or(no_leader);
+            p.leader_epoch = leader_epoch_from_term(lt.value().term);
         }
         if (is_node_isolated && p.error_code == error_code::none) {
             auto replicas_for_sfuffle = replicas;
@@ -346,7 +346,7 @@ static ss::future<chunked_vector<metadata_response::topic>> get_topic_metadata(
                   topic.topic_id, kafka::error_code::unknown_topic_id));
                 continue;
             }
-            topic.name = std::move(name)->tp;
+            topic.name = std::move(name).value().tp;
         }
 
         if (should_describe) {
@@ -567,8 +567,8 @@ fill_info_about_brokers_and_controller_id(
             reply.data.brokers.push_back(
               typename response_type::broker{
                 nm.broker.id(),
-                peer_listener->address.host(),
-                peer_listener->address.port(),
+                peer_listener.value().address.host(),
+                peer_listener.value().address.port(),
                 nm.broker.rack()});
         }
     }

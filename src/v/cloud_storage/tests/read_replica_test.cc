@@ -39,7 +39,7 @@ FIXTURE_TEST(test_read_replica_basic_sync, read_replica_e2e_fixture) {
 
     // Produce records to the source.
     auto partition = app.partition_manager.local().get(ntp).get();
-    auto& archiver = partition->archiver()->get();
+    auto& archiver = partition->archiver().value().get();
     archiver.initialize_probe();
     BOOST_REQUIRE(archiver.sync_for_tests().get());
     archiver.upload_topic_manifest().get();
@@ -64,7 +64,7 @@ FIXTURE_TEST(test_read_replica_basic_sync, read_replica_e2e_fixture) {
     auto rr_partition = rr_rp->app.partition_manager.local().get(ntp).get();
     auto rr_archiver_ref = rr_partition->archiver();
     BOOST_REQUIRE(rr_archiver_ref.has_value());
-    auto& rr_archiver = rr_partition->archiver()->get();
+    auto& rr_archiver = rr_partition->archiver().value().get();
     rr_archiver.initialize_probe();
     BOOST_REQUIRE(rr_archiver.sync_for_tests().get());
     rr_archiver.sync_manifest().get();
@@ -98,7 +98,7 @@ FIXTURE_TEST(
     wait_for_leader(ntp).get();
 
     auto partition = app.partition_manager.local().get(ntp).get();
-    auto& archiver = partition->archiver()->get();
+    auto& archiver = partition->archiver().value().get();
     archiver.initialize_probe();
     BOOST_REQUIRE(archiver.sync_for_tests().get());
     archiver.upload_topic_manifest().get();
@@ -141,7 +141,7 @@ FIXTURE_TEST(test_read_replica_delete_records, read_replica_e2e_fixture) {
 
     // Produce records to the source.
     auto partition = app.partition_manager.local().get(ntp).get();
-    auto& archiver = partition->archiver()->get();
+    auto& archiver = partition->archiver().value().get();
     archiver.initialize_probe();
     BOOST_REQUIRE(archiver.sync_for_tests().get());
     archiver.upload_topic_manifest().get();
@@ -167,7 +167,7 @@ FIXTURE_TEST(test_read_replica_delete_records, read_replica_e2e_fixture) {
       .get();
     rr_rp->wait_for_leader(ntp).get();
     auto rr_partition = rr_rp->app.partition_manager.local().get(ntp).get();
-    auto& rr_archiver = rr_partition->archiver()->get();
+    auto& rr_archiver = rr_partition->archiver().value().get();
     rr_archiver.initialize_probe();
 
     // Do an initial sync to download the manifest.
@@ -240,7 +240,7 @@ FIXTURE_TEST(
     wait_for_leader(ntp).get();
 
     auto partition = app.partition_manager.local().get(ntp).get();
-    auto& archiver = partition->archiver()->get();
+    auto& archiver = partition->archiver().value().get();
     archiver.initialize_probe();
     BOOST_REQUIRE(archiver.sync_for_tests().get());
     archiver.upload_topic_manifest().get();
@@ -295,7 +295,7 @@ FIXTURE_TEST(
       .get();
     rr_rp->wait_for_leader(ntp).get();
     auto rr_partition = rr_rp->app.partition_manager.local().get(ntp).get();
-    auto& rr_archiver = rr_partition->archiver()->get();
+    auto& rr_archiver = rr_partition->archiver().value().get();
     rr_archiver.initialize_probe();
     rr_archiver.sync_manifest().get();
 

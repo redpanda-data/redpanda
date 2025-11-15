@@ -65,26 +65,26 @@ iobuf encode(const statistics& stats) {
         encoder.write_field(
           max_value_field_id,
           thrift::field_type::binary,
-          thrift::encode_binary(stats.max->value.copy()));
+          thrift::encode_binary(stats.max.value().value.copy()));
     }
     if (stats.min) {
         encoder.write_field(
           min_value_field_id,
           thrift::field_type::binary,
-          thrift::encode_binary(stats.min->value.copy()));
+          thrift::encode_binary(stats.min.value().value.copy()));
     }
     if (stats.max) {
         encoder.write_field(
           is_max_value_exact_field_id,
-          stats.max->is_exact ? thrift::field_type::boolean_true
-                              : thrift::field_type::boolean_false,
+          stats.max.value().is_exact ? thrift::field_type::boolean_true
+                                     : thrift::field_type::boolean_false,
           bytes());
     }
     if (stats.min) {
         encoder.write_field(
           is_min_value_exact_field_id,
-          stats.min->is_exact ? thrift::field_type::boolean_true
-                              : thrift::field_type::boolean_false,
+          stats.min.value().is_exact ? thrift::field_type::boolean_true
+                                     : thrift::field_type::boolean_false,
           bytes());
     }
     return std::move(encoder).write_stop();

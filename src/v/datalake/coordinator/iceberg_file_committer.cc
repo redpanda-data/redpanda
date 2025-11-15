@@ -81,7 +81,7 @@ get_iceberg_committed_offset(
     const auto& cur_snap_id = table.current_snapshot_id.value();
     auto snap_it = std::ranges::find(
       table.snapshots.value(), cur_snap_id, &iceberg::snapshot::id);
-    while (snap_it != table.snapshots->end()) {
+    while (snap_it != table.snapshots.value().end()) {
         const auto& snap = *snap_it;
         const auto& props = snap.summary.other;
         auto prop_it = props.find(commit_meta_prop);
@@ -523,8 +523,13 @@ iceberg_file_committer::commit_topic_files_to_catalog(
                 vassert(
                   main_table_commit_builder.has_value(),
                   "Should have main table builder");
-                auto res = main_table_commit_builder->process_pending_entry(
-                  topic, topic_revision, io_, e.added_pending_at, e.data.files);
+                auto res
+                  = main_table_commit_builder.value().process_pending_entry(
+                    topic,
+                    topic_revision,
+                    io_,
+                    e.added_pending_at,
+                    e.data.files);
                 if (res.has_error()) {
                     co_return res.error();
                 }
@@ -534,12 +539,13 @@ iceberg_file_committer::commit_topic_files_to_catalog(
                 vassert(
                   dlq_table_commit_builder.has_value(),
                   "Should have DLQ table builder");
-                auto dlq_res = dlq_table_commit_builder->process_pending_entry(
-                  topic,
-                  topic_revision,
-                  io_,
-                  e.added_pending_at,
-                  e.data.dlq_files);
+                auto dlq_res
+                  = dlq_table_commit_builder.value().process_pending_entry(
+                    topic,
+                    topic_revision,
+                    io_,
+                    e.added_pending_at,
+                    e.data.dlq_files);
                 if (dlq_res.has_error()) {
                     co_return dlq_res.error();
                 }

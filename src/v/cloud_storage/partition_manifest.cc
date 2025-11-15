@@ -97,8 +97,8 @@ parse_segment_name(const segment_name& name) {
         return std::nullopt;
     }
     return segment_name_components{
-      .base_offset = parsed->base_offset,
-      .term = parsed->term,
+      .base_offset = parsed.value().base_offset,
+      .term = parsed.value().term,
     };
 }
 
@@ -191,7 +191,7 @@ std::optional<kafka::offset> partition_manifest::get_next_kafka_offset() const {
     if (!last_seg.has_value()) {
         return std::nullopt;
     }
-    return last_seg->next_kafka_offset();
+    return last_seg.value().next_kafka_offset();
 }
 
 model::offset partition_manifest::get_insync_offset() const {
@@ -486,7 +486,7 @@ bool partition_manifest::contains(const segment_name& name) const {
         throw std::runtime_error(
           fmt_with_ctx(fmt::format, "can't parse segment name \"{}\"", name));
     }
-    return _segments.contains(maybe_key->base_offset);
+    return _segments.contains(maybe_key.value().base_offset);
 }
 
 bool partition_manifest::segment_with_offset_range_exists(
@@ -863,7 +863,7 @@ partition_manifest::add(const segment_name& name, const segment_meta& meta) {
           fmt_with_ctx(fmt::format, "can't parse segment name \"{}\"", name));
     }
     auto m = meta;
-    m.segment_term = maybe_key->term;
+    m.segment_term = maybe_key.value().term;
     return add(m);
 }
 
@@ -1157,12 +1157,12 @@ segment_meta partition_manifest::make_manifest_metadata() const {
       .base_offset = get_start_offset().value(),
       .committed_offset = get_last_offset(),
       .base_timestamp = begin()->base_timestamp,
-      .max_timestamp = last_segment()->max_timestamp,
+      .max_timestamp = last_segment().value().max_timestamp,
       .delta_offset = begin()->delta_offset,
       .ntp_revision = get_revision_id(),
       .archiver_term = begin()->segment_term,
-      .segment_term = last_segment()->segment_term,
-      .delta_offset_end = last_segment()->delta_offset_end,
+      .segment_term = last_segment().value().segment_term,
+      .delta_offset_end = last_segment().value().delta_offset_end,
       .sname_format = segment_name_format::v3,
       .metadata_size_hint = segments_metadata_bytes(),
     };
@@ -1213,7 +1213,8 @@ bool partition_manifest::safe_spillover_manifest(const segment_meta& meta) {
         return true;
     }
     if (
-      model::next_offset(_spillover_manifests.last_segment()->committed_offset)
+      model::next_offset(
+        _spillover_manifests.last_segment().value().committed_offset)
       == meta.base_offset) {
         return true;
     }
@@ -1244,7 +1245,7 @@ partition_manifest::get(const segment_name& name) const {
         throw std::runtime_error(
           fmt_with_ctx(fmt::format, "can't parse segment name \"{}\"", name));
     }
-    return get(maybe_key->base_offset);
+    return get(maybe_key.value().base_offset);
 }
 
 partition_manifest::const_iterator
@@ -1375,8 +1376,8 @@ struct partition_manifest_handler
                   _segment_name));
             }
             _segment_key = {
-              .base_offset = _parsed_segment_key->base_offset,
-              .term = _parsed_segment_key->term};
+              .base_offset = _parsed_segment_key.value().base_offset,
+              .term = _parsed_segment_key.value().term};
             if (_state == state::expect_segment_path) {
                 _state = state::expect_segment_meta_start;
             } else if (_state == state::expect_replaced_path) {

@@ -974,7 +974,7 @@ BOOST_AUTO_TEST_CASE(test_ocsf_size) {
     estimated_size += sizeof(status_id);
     estimated_size
       += sizeof(std::optional<ss::sstring>)
-         + (status_detail.has_value() ? sizeof(ss::sstring) + status_detail->size() : 0);
+         + (status_detail.has_value() ? sizeof(ss::sstring) + status_detail.value().size() : 0);
     estimated_size += user.domain.size() + user.name.size() + user.uid.size()
                       + sizeof(user.type_id) + (sizeof(ss::sstring) * 3)
                       + sizeof(user.groups); // NOLINT bugprone-sizeof-container

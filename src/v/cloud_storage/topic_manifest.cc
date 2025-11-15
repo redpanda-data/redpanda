@@ -302,11 +302,11 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
       model::topic(handler._topic.value()),
       handler._partition_count.value(),
       handler._replication_factor.value()};
-    _topic_config->properties = handler._properties;
+    _topic_config.value().properties = handler._properties;
 
     if (handler.compaction_strategy_sv) {
         try {
-            _topic_config->properties.compaction_strategy
+            _topic_config.value().properties.compaction_strategy
               = boost::lexical_cast<model::compaction_strategy>(
                 handler.compaction_strategy_sv.value());
         } catch (const std::runtime_error& e) {
@@ -320,7 +320,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
     }
     if (handler.timestamp_type_sv) {
         try {
-            _topic_config->properties.timestamp_type
+            _topic_config.value().properties.timestamp_type
               = boost::lexical_cast<model::timestamp_type>(
                 handler.timestamp_type_sv.value());
         } catch (const std::runtime_error& e) {
@@ -334,7 +334,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
     }
     if (handler.compression_sv) {
         try {
-            _topic_config->properties.compression
+            _topic_config.value().properties.compression
               = boost::lexical_cast<model::compression>(
                 handler.compression_sv.value());
         } catch (const boost::bad_lexical_cast& e) {
@@ -348,7 +348,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
     }
     if (handler.cleanup_policy_bitflags_sv) {
         try {
-            _topic_config->properties.cleanup_policy_bitflags
+            _topic_config.value().properties.cleanup_policy_bitflags
               = boost::lexical_cast<model::cleanup_policy_bitflags>(
                 handler.cleanup_policy_bitflags_sv.value());
         } catch (const std::runtime_error& e) {
@@ -363,7 +363,7 @@ void topic_manifest::do_update(const topic_manifest_handler& handler) {
 
     if (handler.virtual_cluster_id_sv) {
         try {
-            _topic_config->properties.mpx_virtual_cluster_id
+            _topic_config.value().properties.mpx_virtual_cluster_id
               = boost::lexical_cast<model::vcluster_id>(
                 handler.virtual_cluster_id_sv.value());
         } catch (const std::runtime_error& e) {
@@ -444,14 +444,14 @@ ss::future<iobuf> topic_manifest::serialize_buf() const {
 ss::sstring topic_manifest::display_name() const {
     // The path is <prefix>/meta/<ns>/<topic>/topic_manifest.json
     vassert(_topic_config, "Topic config is not set");
-    return fmt::format("tp_ns: {}, rev: {}", _topic_config->tp_ns, _rev);
+    return fmt::format("tp_ns: {}, rev: {}", _topic_config.value().tp_ns, _rev);
 }
 
 remote_manifest_path topic_manifest::get_manifest_path(
   const remote_path_provider& path_provider) const {
     vassert(_topic_config, "Topic config is not set");
     return remote_manifest_path{
-      path_provider.topic_manifest_path(_topic_config->tp_ns, _rev)};
+      path_provider.topic_manifest_path(_topic_config.value().tp_ns, _rev)};
 }
 
 } // namespace cloud_storage

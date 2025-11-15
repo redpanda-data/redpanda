@@ -532,7 +532,7 @@ std::optional<ss::sstring> topic_metadata::get_remote_location_hint() const {
 
     model::initial_revision_id remote_rev = get_remote_revision().value_or(
       model::initial_revision_id{get_revision()});
-    return fmt::format("{}/{}", remote_label->cluster_uuid, remote_rev);
+    return fmt::format("{}/{}", remote_label.value().cluster_uuid, remote_rev);
 }
 
 const topic_configuration& topic_metadata::get_configuration() const {
@@ -825,7 +825,8 @@ operator<<(std::ostream& o, const topic_disabled_partitions_set& disabled) {
           o,
           "{{partitions: {}}}",
           std::vector(
-            disabled.partitions->begin(), disabled.partitions->end()));
+            disabled.partitions.value().begin(),
+            disabled.partitions.value().end()));
     } else {
         fmt::print(o, "{{partitions: all}}");
     }
@@ -834,7 +835,7 @@ operator<<(std::ostream& o, const topic_disabled_partitions_set& disabled) {
 
 void topic_disabled_partitions_set::add(model::partition_id id) {
     if (partitions) {
-        partitions->insert(id);
+        partitions.value().insert(id);
     } else {
         // do nothing, std::nullopt means all partitions are already
         // disabled.
@@ -848,12 +849,12 @@ void topic_disabled_partitions_set::remove(
     }
     if (!partitions) {
         partitions = absl::node_hash_set<model::partition_id>{};
-        partitions->reserve(all_partitions.size());
+        partitions.value().reserve(all_partitions.size());
         for (const auto& [_, p] : all_partitions) {
-            partitions->insert(p.id);
+            partitions.value().insert(p.id);
         }
     }
-    partitions->erase(id);
+    partitions.value().erase(id);
 }
 
 std::ostream& operator<<(std::ostream& o, const ntp_with_majority_loss& entry) {
@@ -1003,11 +1004,11 @@ struct adl<security::acl_host> {
         bool ipv4 = false;
         std::optional<iobuf> data;
         if (host.address()) { // wildcard
-            ipv4 = host.address()->is_ipv4();
+            ipv4 = host.address().value().is_ipv4();
             data = iobuf();
-            data->append( // NOLINTNEXTLINE
+            data.value().append( // NOLINTNEXTLINE
               (const char*)host.address()->data(),
-              host.address()->size());
+              host.address().value().size());
         }
         serialize(out, ipv4, std::move(data));
     }

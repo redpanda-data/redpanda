@@ -33,7 +33,7 @@ load_table_result parse_load_table_result(const json::Value& value) {
             sc.prefix = parse_required_str(sc_value, "prefix");
             sc.config = parse_required_string_map(sc_value, "config");
 
-            ret.storage_credentials->push_back(std::move(sc));
+            ret.storage_credentials.value().push_back(std::move(sc));
         }
     }
 

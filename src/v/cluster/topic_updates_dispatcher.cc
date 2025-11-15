@@ -160,10 +160,15 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
           "partition reallocation",
           ntp);
 
-        update_allocations_for_reconfiguration(p_as->replicas, cmd.value);
+        update_allocations_for_reconfiguration(
+          p_as.value().replicas, cmd.value);
 
         _partition_balancer_state.local().handle_ntp_move_begin_or_cancel(
-          ntp.ns, ntp.tp.topic, ntp.tp.partition, p_as->replicas, cmd.value);
+          ntp.ns,
+          ntp.tp.topic,
+          ntp.tp.partition,
+          p_as.value().replicas,
+          cmd.value);
     }
     co_return ec;
 }
@@ -181,13 +186,13 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
           ntp);
 
         update_allocations_for_reconfiguration(
-          p_as->replicas, cmd.value.replicas);
+          p_as.value().replicas, cmd.value.replicas);
 
         _partition_balancer_state.local().handle_ntp_move_begin_or_cancel(
           ntp.ns,
           ntp.tp.topic,
           ntp.tp.partition,
-          p_as->replicas,
+          p_as.value().replicas,
           cmd.value.replicas);
     }
     co_return ec;
@@ -217,13 +222,13 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
             ntp);
 
           update_final_counts(
-            current_assignment->replicas, new_target_replicas.value());
+            current_assignment.value().replicas, new_target_replicas.value());
 
           _partition_balancer_state.local().handle_ntp_move_begin_or_cancel(
             ntp.ns,
             ntp.tp.topic,
             ntp.tp.partition,
-            current_assignment->replicas,
+            current_assignment.value().replicas,
             new_target_replicas.value());
           return ec;
       });
@@ -495,20 +500,20 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
 
         // step 3:
         // update final counts.
-        update_final_counts(p_as->replicas, cmd.value.replicas);
+        update_final_counts(p_as.value().replicas, cmd.value.replicas);
 
     } else {
         // This is a force reconfiguration of a partition that was not
         // being moved before. This is equivalent to a plain (unforced) move.
         update_allocations_for_reconfiguration(
-          p_as->replicas, cmd.value.replicas);
+          p_as.value().replicas, cmd.value.replicas);
     }
 
     _partition_balancer_state.local().handle_ntp_move_begin_or_cancel(
       ntp.ns,
       ntp.tp.topic,
       ntp.tp.partition,
-      p_as->replicas,
+      p_as.value().replicas,
       cmd.value.replicas);
 
     co_return ec;

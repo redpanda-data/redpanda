@@ -131,7 +131,7 @@ std::optional<retention_calculator> retention_calculator::factory(
     if (ntp_config.retention_duration()) {
         model::timestamp oldest_allowed_timestamp{
           model::timestamp::now().value()
-          - ntp_config.retention_duration()->count()};
+          - ntp_config.retention_duration().value().count()};
 
         if (manifest.size() > 0) {
             auto first_seg = manifest.first_addressable_segment();

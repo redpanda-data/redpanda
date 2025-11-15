@@ -46,7 +46,7 @@ TEST(TransferQueue, IsFifo) {
     for (int i = 1; i <= 3; ++i) {
         auto entry = q.pop_one(&as).get();
         ASSERT_NE(entry, std::nullopt);
-        EXPECT_EQ(entry->mem, i * 1_KiB);
+        EXPECT_EQ(entry.value().mem, i * 1_KiB);
     }
     auto fut = q.pop_one(&as);
     tests::drain_task_queue().get();

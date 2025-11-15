@@ -136,11 +136,11 @@ controller_api::get_reconciliation_state(model::topic_namespace_view tp_ns) {
         co_return ret_t(errc::topic_not_exists);
     }
     chunked_vector<model::ntp> ntps;
-    ntps.reserve(metadata->get().get_assignments().size());
+    ntps.reserve(metadata.value().get().get_assignments().size());
 
     std::transform(
-      metadata->get().get_assignments().begin(),
-      metadata->get().get_assignments().end(),
+      metadata.value().get().get_assignments().begin(),
+      metadata.value().get().get_assignments().end(),
       std::back_inserter(ntps),
       [tp_ns](const assignments_set::value_type& p_as) {
           return model::ntp(tp_ns.ns, tp_ns.tp, p_as.second.id);
@@ -178,11 +178,11 @@ controller_api::get_current_op(model::ntp ntp, ss::shard_id shard) {
     if (cur_op) {
         co_return backend_operation{
           .source_shard = shard,
-          .p_as = std::move(cur_op->assignment),
-          .type = cur_op->type,
-          .current_retry = cur_op->retries,
-          .last_operation_result = cur_op->last_error,
-          .revision_of_operation = cur_op->revision,
+          .p_as = std::move(cur_op.value().assignment),
+          .type = cur_op.value().type,
+          .current_retry = cur_op.value().retries,
+          .last_operation_result = cur_op.value().last_error,
+          .revision_of_operation = cur_op.value().revision,
           .recovery_state = r_state,
         };
     }
@@ -317,7 +317,7 @@ ss::future<std::error_code> controller_api::wait_for_topic(
             continue;
         }
         std::deque<model::ntp> all_ntps;
-        for (const auto& [_, p_as] : metadata->get().get_assignments()) {
+        for (const auto& [_, p_as] : metadata.value().get().get_assignments()) {
             all_ntps.emplace_back(tp_ns.ns, tp_ns.tp, p_as.id);
         }
 
@@ -351,7 +351,7 @@ controller_api::get_partitions_reconfiguration_state(
         partition_reconfiguration_state state;
         state.ntp = ntp;
 
-        state.current_assignment = std::move(p_as->replicas);
+        state.current_assignment = std::move(p_as.value().replicas);
         state.previous_assignment = progress_it->second.get_previous_replicas();
         state.state = progress_it->second.get_state();
         state.policy = progress_it->second.get_reconfiguration_policy();
@@ -360,9 +360,9 @@ controller_api::get_partitions_reconfiguration_state(
         for (auto& operation : reconciliation_state.pending_operations()) {
             if (operation.recovery_state) {
                 state.current_partition_size
-                  = operation.recovery_state->local_size;
+                  = operation.recovery_state.value().local_size;
                 for (auto& [id, recovery_state] :
-                     operation.recovery_state->replicas) {
+                     operation.recovery_state.value().replicas) {
                     state.replicas.push_back(
                       replica_bytes{
                         .node = id,

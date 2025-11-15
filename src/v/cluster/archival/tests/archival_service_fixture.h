@@ -282,7 +282,7 @@ public:
             BOOST_REQUIRE(pa.has_value());
         }
         std::vector<model::broker_shard> result;
-        for (const auto& r : pa->replicas) {
+        for (const auto& r : pa.value().replicas) {
             result.push_back(r);
         }
         return result;

@@ -81,7 +81,8 @@ public:
         _expiry->set_callback([this] {
             if (_promise.has_value()) {
                 _hook.unlink();
-                _promise->set_value(event{.type = event_type::err_timedout});
+                _promise.value().set_value(
+                  event{.type = event_type::err_timedout});
                 _promise = std::nullopt;
             }
         });
@@ -110,13 +111,15 @@ public:
             return false;
         }
         if (_promise.has_value()) {
-            _promise->set_value(e);
+            _promise.value().set_value(e);
             _promise = std::nullopt;
         }
         return true;
     }
 
-    ss::future<event> get_future() noexcept { return _promise->get_future(); }
+    ss::future<event> get_future() noexcept {
+        return _promise.value().get_future();
+    }
 
 private:
     intrusive_list_hook _hook;

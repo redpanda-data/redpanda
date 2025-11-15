@@ -148,15 +148,15 @@ TEST(TableMetadataJsonSerde, TestUCMetadata) {
     ASSERT_EQ(0, parsed.sort_orders[0].order_id());
     ASSERT_EQ(0, parsed.sort_orders[0].fields.size());
     ASSERT_TRUE(parsed.properties.has_value());
-    ASSERT_EQ(4, parsed.properties->size());
+    ASSERT_EQ(4, parsed.properties.value().size());
 
     // Regression test for not handling "null".
     ASSERT_FALSE(parsed.current_snapshot_id.has_value());
 
     ASSERT_TRUE(parsed.snapshots.has_value());
-    ASSERT_EQ(0, parsed.snapshots->size());
+    ASSERT_EQ(0, parsed.snapshots.value().size());
     ASSERT_TRUE(parsed.refs.has_value());
-    ASSERT_TRUE(parsed.refs->empty());
+    ASSERT_TRUE(parsed.refs.value().empty());
 }
 
 TEST(TableMetadataJsonSerde, TestTableMetadata) {
@@ -186,14 +186,14 @@ TEST(TableMetadataJsonSerde, TestTableMetadata) {
     ASSERT_EQ(3, parsed.sort_orders[0].order_id());
     ASSERT_EQ(2, parsed.sort_orders[0].fields.size());
     ASSERT_TRUE(parsed.properties.has_value());
-    ASSERT_EQ(1, parsed.properties->size());
+    ASSERT_EQ(1, parsed.properties.value().size());
     ASSERT_TRUE(parsed.current_snapshot_id.has_value());
     ASSERT_EQ(3055729675574597004, parsed.current_snapshot_id.value()());
     ASSERT_TRUE(parsed.snapshots.has_value());
-    ASSERT_EQ(2, parsed.snapshots->size());
+    ASSERT_EQ(2, parsed.snapshots.value().size());
     ASSERT_TRUE(parsed.refs.has_value());
-    ASSERT_TRUE(parsed.refs->contains("main"));
-    ASSERT_TRUE(parsed.refs->contains("foo"));
+    ASSERT_TRUE(parsed.refs.value().contains("main"));
+    ASSERT_TRUE(parsed.refs.value().contains("foo"));
 
     const auto parsed_orig_as_str = iceberg::to_json_str(parsed);
     json::Document parsed_roundtrip_json;

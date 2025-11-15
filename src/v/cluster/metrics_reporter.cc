@@ -253,7 +253,7 @@ metrics_reporter::build_metrics_snapshot() {
         if (!nm) {
             continue;
         }
-        metrics.cpu_count = nm->get().broker.properties().cores;
+        metrics.cpu_count = nm.value().get().broker.properties().cores;
         metrics.is_alive = _health_monitor.local().is_alive(report->id)
                            == cluster::alive::yes;
         metrics.version = report->local_state.redpanda_version;
@@ -270,7 +270,7 @@ metrics_reporter::build_metrics_snapshot() {
 
         metrics.uptime_ms = report->local_state.uptime / 1ms;
         auto& advertised_listeners
-          = nm->get().broker.kafka_advertised_listeners();
+          = nm.value().get().broker.kafka_advertised_listeners();
         metrics.advertised_listeners.reserve(advertised_listeners.size());
         std::transform(
           advertised_listeners.begin(),
@@ -340,7 +340,7 @@ metrics_reporter::build_metrics_snapshot() {
 
     auto license = _feature_table.local().get_license();
     if (license.has_value()) {
-        snapshot.id_hash = license->checksum;
+        snapshot.id_hash = license.value().checksum;
     }
 
     snapshot.has_valid_license = license.has_value()

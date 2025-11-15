@@ -172,7 +172,7 @@ void scrubber::acquire() {
 void scrubber::release() {
     vassert(
       _holder.has_value(), "scrubber::release called before scrubber::acquire");
-    _holder->release();
+    _holder.value().release();
 }
 
 ss::future<> scrubber::stop() {

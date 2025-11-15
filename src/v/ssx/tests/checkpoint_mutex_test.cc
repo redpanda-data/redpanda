@@ -34,9 +34,9 @@ TEST(CheckpointMutex, checkpoint_mutex_lock) {
     auto units = mutex.get_units().get();
     EXPECT_TRUE(mutex.has_units() == false);
     EXPECT_EQ(
-      mutex.get_blocking_checkpoint()->line.filename,
+      mutex.get_blocking_checkpoint().value().line.filename,
       ss::sstring("checkpoint_mutex_test.cc"));
-    EXPECT_EQ(mutex.get_blocking_checkpoint()->line.line, line.line + 1);
+    EXPECT_EQ(mutex.get_blocking_checkpoint().value().line.line, line.line + 1);
 
     line = vlog::file_line::current();
     auto fut = mutex.get_units();
@@ -49,9 +49,9 @@ TEST(CheckpointMutex, checkpoint_mutex_lock) {
     // Another waiter should be able to acquire the mutex.
     auto units2 = std::move(fut).get();
     EXPECT_EQ(
-      mutex.get_blocking_checkpoint()->line.filename,
+      mutex.get_blocking_checkpoint().value().line.filename,
       ss::sstring("checkpoint_mutex_test.cc"));
-    EXPECT_EQ(mutex.get_blocking_checkpoint()->line.line, line.line + 1);
+    EXPECT_EQ(mutex.get_blocking_checkpoint().value().line.line, line.line + 1);
 
     units2.release();
     EXPECT_TRUE(mutex.has_units() == true);
@@ -67,9 +67,9 @@ TEST(CheckpointMutex, checkpoint_mutex_broken) {
     auto units = mutex.get_units().get();
     EXPECT_TRUE(mutex.has_units() == false);
     EXPECT_EQ(
-      mutex.get_blocking_checkpoint()->line.filename,
+      mutex.get_blocking_checkpoint().value().line.filename,
       ss::sstring("checkpoint_mutex_test.cc"));
-    EXPECT_EQ(mutex.get_blocking_checkpoint()->line.line, line.line + 1);
+    EXPECT_EQ(mutex.get_blocking_checkpoint().value().line.line, line.line + 1);
 
     auto units2 = mutex.get_units(); // async
 
@@ -100,9 +100,9 @@ TEST(CheckpointMutex, checkpoint_mutex_aborted) {
     auto units = mutex.get_units().get();
     EXPECT_TRUE(mutex.has_units() == false);
     EXPECT_EQ(
-      mutex.get_blocking_checkpoint()->line.filename,
+      mutex.get_blocking_checkpoint().value().line.filename,
       ss::sstring("checkpoint_mutex_test.cc"));
-    EXPECT_EQ(mutex.get_blocking_checkpoint()->line.line, line.line + 1);
+    EXPECT_EQ(mutex.get_blocking_checkpoint().value().line.line, line.line + 1);
 
     ss::abort_source as;
     auto units2 = mutex.get_units(as); // async
@@ -153,9 +153,9 @@ TEST(CheckpointMutex, checkpoint_mutex_timed_out) {
     auto units = mutex.get_units().get();
     EXPECT_TRUE(mutex.has_units() == false);
     EXPECT_EQ(
-      mutex.get_blocking_checkpoint()->line.filename,
+      mutex.get_blocking_checkpoint().value().line.filename,
       ss::sstring("checkpoint_mutex_test.cc"));
-    EXPECT_EQ(mutex.get_blocking_checkpoint()->line.line, line.line + 1);
+    EXPECT_EQ(mutex.get_blocking_checkpoint().value().line.line, line.line + 1);
 
     // Check with the deadline
     auto deadline = std::chrono::steady_clock::now() + 1ms;

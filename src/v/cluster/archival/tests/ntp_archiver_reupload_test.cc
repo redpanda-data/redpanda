@@ -236,7 +236,7 @@ struct reupload_fixture : public archiver_fixture {
           app.shadow_index_cache.local(),
           *part,
           manifest_view);
-        archiver->initialize_probe();
+        archiver.value().initialize_probe();
     }
 
     ss::lw_shared_ptr<storage::segment> run_disk_log_housekeeping(
@@ -316,7 +316,7 @@ FIXTURE_TEST(test_upload_compacted_segments, reupload_fixture) {
     };
 
     initialize(segments);
-    auto action = ss::defer([this] { archiver->stop().get(); });
+    auto action = ss::defer([this] { archiver.value().stop().get(); });
 
     auto part = app.partition_manager.local().get(manifest_ntp);
     listen();
@@ -389,7 +389,7 @@ FIXTURE_TEST(test_upload_compacted_segments_concat, reupload_fixture) {
     };
 
     initialize(segments);
-    auto action = ss::defer([this] { archiver->stop().get(); });
+    auto action = ss::defer([this] { archiver.value().stop().get(); });
 
     auto part = app.partition_manager.local().get(manifest_ntp);
     listen();
@@ -443,7 +443,7 @@ FIXTURE_TEST(
     };
 
     initialize(segments);
-    auto action = ss::defer([this] { archiver->stop().get(); });
+    auto action = ss::defer([this] { archiver.value().stop().get(); });
 
     auto part = app.partition_manager.local().get(manifest_ntp);
     cluster::details::archival_metadata_stm_accessor stm_acc{
@@ -480,7 +480,7 @@ FIXTURE_TEST(test_upload_compacted_segments_fill_gap, reupload_fixture) {
     };
 
     initialize(segments);
-    auto action = ss::defer([this] { archiver->stop().get(); });
+    auto action = ss::defer([this] { archiver.value().stop().get(); });
 
     auto part = app.partition_manager.local().get(manifest_ntp);
     cluster::details::archival_metadata_stm_accessor stm_acc{
@@ -517,7 +517,7 @@ FIXTURE_TEST(test_upload_both_compacted_and_non_compacted, reupload_fixture) {
     };
 
     initialize(segments);
-    auto action = ss::defer([this] { archiver->stop().get(); });
+    auto action = ss::defer([this] { archiver.value().stop().get(); });
 
     auto part = app.partition_manager.local().get(manifest_ntp);
     listen();
@@ -587,7 +587,7 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
     };
 
     initialize(segments);
-    auto action = ss::defer([this] { archiver->stop().get(); });
+    auto action = ss::defer([this] { archiver.value().stop().get(); });
 
     auto part = app.partition_manager.local().get(manifest_ntp);
     listen();
@@ -669,7 +669,7 @@ FIXTURE_TEST(test_upload_when_compaction_disabled, reupload_fixture) {
 
     // Disable compaction
     initialize(segments, false);
-    auto action = ss::defer([this] { archiver->stop().get(); });
+    auto action = ss::defer([this] { archiver.value().stop().get(); });
 
     auto part = app.partition_manager.local().get(manifest_ntp);
     listen();
@@ -712,7 +712,7 @@ FIXTURE_TEST(test_upload_when_reupload_disabled, reupload_fixture) {
     };
 
     initialize(segments);
-    auto action = ss::defer([this] { archiver->stop().get(); });
+    auto action = ss::defer([this] { archiver.value().stop().get(); });
 
     auto part = app.partition_manager.local().get(manifest_ntp);
     listen();
@@ -771,7 +771,7 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
     };
 
     initialize(segments);
-    auto action = ss::defer([this] { archiver->stop().get(); });
+    auto action = ss::defer([this] { archiver.value().stop().get(); });
 
     auto part = app.partition_manager.local().get(manifest_ntp);
     listen();
@@ -860,7 +860,7 @@ FIXTURE_TEST(test_upload_compacted_segments_cross_term, reupload_fixture) {
     };
 
     initialize(segments);
-    auto action = ss::defer([this] { archiver->stop().get(); });
+    auto action = ss::defer([this] { archiver.value().stop().get(); });
 
     auto part = app.partition_manager.local().get(manifest_ntp);
     listen();
@@ -910,16 +910,16 @@ FIXTURE_TEST(test_upload_compacted_segments_cross_term, reupload_fixture) {
 
     {
         auto it = stm_manifest.get(model::offset(0));
-        BOOST_REQUIRE_EQUAL(it->base_offset, model::offset(0));
-        BOOST_REQUIRE_EQUAL(it->committed_offset, model::offset(999));
-        BOOST_REQUIRE_EQUAL(it->segment_term, model::term_id(1));
+        BOOST_REQUIRE_EQUAL(it.value().base_offset, model::offset(0));
+        BOOST_REQUIRE_EQUAL(it.value().committed_offset, model::offset(999));
+        BOOST_REQUIRE_EQUAL(it.value().segment_term, model::term_id(1));
     }
 
     {
         auto it = stm_manifest.get(model::offset(1000));
-        BOOST_REQUIRE_EQUAL(it->base_offset, model::offset(1000));
-        BOOST_REQUIRE_EQUAL(it->committed_offset, model::offset(1009));
-        BOOST_REQUIRE_EQUAL(it->segment_term, model::term_id(4));
+        BOOST_REQUIRE_EQUAL(it.value().base_offset, model::offset(1000));
+        BOOST_REQUIRE_EQUAL(it.value().committed_offset, model::offset(1009));
+        BOOST_REQUIRE_EQUAL(it.value().segment_term, model::term_id(4));
     }
 }
 

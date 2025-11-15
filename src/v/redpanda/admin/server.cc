@@ -2762,13 +2762,13 @@ void admin_server::register_features_routes() {
               res.loaded = true;
               ss::httpd::features_json::license_contents lc;
               if (auth_result.is_authenticated()) {
-                  lc.format_version = license->format_version;
-                  lc.org = license->organization;
+                  lc.format_version = license.value().format_version;
+                  lc.org = license.value().organization;
               }
-              lc.type = license->get_type();
-              lc.expires = license->expiry.count();
-              lc.sha256 = license->checksum;
-              lc.products = license->products;
+              lc.type = license.value().get_type();
+              lc.expires = license.value().expiry.count();
+              lc.sha256 = license.value().checksum;
+              lc.products = license.value().products;
               res.license = lc;
           }
           return ss::make_ready_future<ss::json::json_return_type>(
@@ -2802,21 +2802,21 @@ admin_server::get_broker_handler(std::unique_ptr<ss::http::request> req) {
                                   id, model::time_from_now(5s));
 
     ss::httpd::broker_json::broker ret;
-    ret.node_id = node_meta->broker.id();
-    ret.internal_rpc_address = node_meta->broker.rpc_address().host();
-    ret.internal_rpc_port = node_meta->broker.rpc_address().port();
-    ret.num_cores = node_meta->broker.properties().cores;
-    if (node_meta->broker.rack()) {
-        ret.rack = node_meta->broker.rack().value();
+    ret.node_id = node_meta.value().broker.id();
+    ret.internal_rpc_address = node_meta.value().broker.rpc_address().host();
+    ret.internal_rpc_port = node_meta.value().broker.rpc_address().port();
+    ret.num_cores = node_meta.value().broker.properties().cores;
+    if (node_meta.value().broker.rack()) {
+        ret.rack = node_meta.value().broker.rack().value();
     }
     ret.membership_status = fmt::format(
-      "{}", node_meta->state.get_membership_state());
-    ret.maintenance_status = fill_maintenance_status(node_meta->state);
+      "{}", node_meta.value().state.get_membership_state());
+    ret.maintenance_status = fill_maintenance_status(node_meta.value().state);
     if (
       !maybe_drain_status.has_error()
       && maybe_drain_status.value().has_value()) {
         ret.maintenance_status = fill_maintenance_status(
-          node_meta->state, maybe_drain_status.value().value());
+          node_meta.value().state, maybe_drain_status.value().value());
     }
 
     co_return ret;
@@ -3138,19 +3138,19 @@ void admin_server::register_broker_routes() {
                 ss::httpd::broker_json::maintenance_status res;
                 res.draining = status.has_value();
                 if (status.has_value()) {
-                    res.finished = status->finished;
-                    res.errors = status->errors;
-                    if (status->partitions.has_value()) {
-                        res.partitions = status->partitions.value();
+                    res.finished = status.value().finished;
+                    res.errors = status.value().errors;
+                    if (status.value().partitions.has_value()) {
+                        res.partitions = status.value().partitions.value();
                     }
-                    if (status->eligible.has_value()) {
-                        res.eligible = status->eligible.value();
+                    if (status.value().eligible.has_value()) {
+                        res.eligible = status.value().eligible.value();
                     }
-                    if (status->transferring.has_value()) {
-                        res.transferring = status->transferring.value();
+                    if (status.value().transferring.has_value()) {
+                        res.transferring = status.value().transferring.value();
                     }
-                    if (status->failed.has_value()) {
-                        res.failed = status->failed.value();
+                    if (status.value().failed.has_value()) {
+                        res.failed = status.value().failed.value();
                     }
                 }
                 return ss::json::json_return_type(res);
@@ -3443,7 +3443,7 @@ admin_server::self_test_get_results_handler(
         nr.status = cluster::self_test_status_as_string(participant.status());
         nr.stage = cluster::self_test_stage_as_string(participant.stage());
         if (participant.response) {
-            for (const auto& r : participant.response->results) {
+            for (const auto& r : participant.response.value().results) {
                 nr.results.push(self_test_result_to_json(r));
             }
         }
@@ -3632,10 +3632,10 @@ admin_server::get_partition_balancer_status_handler(
 
     if (overview.violations) {
         ss::httpd::cluster_json::partition_balancer_violations ret_violations;
-        for (const auto& n : overview.violations->unavailable_nodes) {
+        for (const auto& n : overview.violations.value().unavailable_nodes) {
             ret_violations.unavailable_nodes.push(n.id);
         }
-        for (const auto& n : overview.violations->full_nodes) {
+        for (const auto& n : overview.violations.value().full_nodes) {
             ret_violations.over_disk_limit_nodes.push(n.id);
         }
         ret.violations = ret_violations;
@@ -4199,7 +4199,7 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
         vlog(adminlog.info, "Requested bucket syncup completed");
         if (result) {
             std::stringstream sts;
-            result->serialize_json(sts);
+            result.value().serialize_json(sts);
             vlog(adminlog.info, "Requested bucket syncup result {}", sts.str());
         } else {
             vlog(adminlog.info, "Requested bucket syncup result empty");
@@ -4380,15 +4380,15 @@ map_status_to_json(cluster::partition_cloud_storage_status status) {
 
     if (status.since_last_manifest_upload) {
         json.ms_since_last_manifest_upload
-          = status.since_last_manifest_upload->count();
+          = status.since_last_manifest_upload.value().count();
     }
     if (status.since_last_segment_upload) {
         json.ms_since_last_segment_upload
-          = status.since_last_segment_upload->count();
+          = status.since_last_segment_upload.value().count();
     }
     if (status.since_last_manifest_sync) {
         json.ms_since_last_manifest_sync
-          = status.since_last_manifest_sync->count();
+          = status.since_last_manifest_sync.value().count();
     }
 
     json.metadata_update_pending = status.cloud_metadata_update_pending;
@@ -4477,7 +4477,7 @@ map_metadata_anomaly_to_json(const cloud_storage::anomaly_meta& meta) {
         json.explanation = ssx::sformat(
           "Segment has lower delta than previous: {} < {}",
           meta.at.delta_offset,
-          meta.previous->delta_offset);
+          meta.previous.value().delta_offset);
         json.at_segment = map_segment_meta_to_json(meta.at);
         json.previous_segment = map_segment_meta_to_json(meta.previous.value());
 
@@ -4516,7 +4516,7 @@ map_metadata_anomaly_to_json(const cloud_storage::anomaly_meta& meta) {
         json.type = "offset_gap";
         json.explanation = ssx::sformat(
           "Gap between offsets in interval ({}, {})",
-          meta.previous->committed_offset(),
+          meta.previous.value().committed_offset(),
           meta.at.base_offset());
         json.at_segment = map_segment_meta_to_json(meta.at);
         json.previous_segment = map_segment_meta_to_json(meta.previous.value());
@@ -4537,7 +4537,7 @@ map_metadata_anomaly_to_json(const cloud_storage::anomaly_meta& meta) {
         json.explanation = ssx::sformat(
           "Overlapping offset in interval [{}, {}]",
           meta.at.base_offset(),
-          meta.previous->committed_offset());
+          meta.previous.value().committed_offset());
         json.at_segment = map_segment_meta_to_json(meta.at);
         json.previous_segment = map_segment_meta_to_json(meta.previous.value());
 
@@ -4561,7 +4561,8 @@ map_anomalies_to_json(
     json.revision_id = initial_rev();
 
     if (detected.last_complete_scrub) {
-        json.last_complete_scrub_at = detected.last_complete_scrub->value();
+        json.last_complete_scrub_at
+          = detected.last_complete_scrub.value().value();
     }
 
     if (detected.num_discarded_missing_spillover_manifests) {
@@ -4829,8 +4830,8 @@ admin_server::get_cloud_storage_anomalies(
     }
 
     cloud_storage::remote_path_provider path_provider(
-      tp->properties.remote_label,
-      tp->properties.remote_topic_namespace_override);
+      tp.value().properties.remote_label,
+      tp.value().properties.remote_topic_namespace_override);
     auto status = co_await _partition_manager.invoke_on(
       shard.value(),
       [&ntp](const auto& pm) -> std::optional<cloud_storage::anomalies> {

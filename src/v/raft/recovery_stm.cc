@@ -210,7 +210,7 @@ recovery_stm::should_flush(model::offset follower_committed_match_index) const {
 
 bool recovery_stm::is_snapshot_at_offset_supported() const {
     return !_ptr->stm_manager().has_value()
-           || _ptr->stm_manager()->supports_snapshot_at_offset();
+           || _ptr->stm_manager().value().supports_snapshot_at_offset();
 }
 
 recovery_stm::required_snapshot_type recovery_stm::get_required_snapshot_type(
@@ -301,7 +301,8 @@ recovery_stm::read_range_for_recovery(
               "Requesting throttle for {} bytes, available in throttle: {}",
               size,
               _ptr->_recovery_throttle->get().available());
-            co_await _ptr->_recovery_throttle->get()
+            co_await _ptr->_recovery_throttle.value()
+              .get()
               .throttle(size, _ptr->_as)
               .handle_exception_type([this](const ss::broken_semaphore&) {
                   vlog(_ctxlog.info, "Recovery throttling has stopped");
@@ -475,7 +476,7 @@ recovery_stm::take_on_demand_snapshot(model::offset last_included_offset) {
     iobuf snapshot_data;
 
     if (_ptr->stm_manager()) {
-        snapshot_data = (co_await _ptr->stm_manager()->take_snapshot(
+        snapshot_data = (co_await _ptr->stm_manager().value().take_snapshot(
                            last_included_offset))
                           .data;
     }

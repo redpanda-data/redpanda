@@ -401,9 +401,9 @@ ss::future<response_ptr> describe_client_quotas_handler::handle(
           return !strict || std::ranges::all_of(key.parts, reverse_predicate);
       });
 
-    res.data.entries->reserve(quotas.size());
+    res.data.entries.value().reserve(quotas.size());
     for (const auto& q : quotas) {
-        res.data.entries->emplace_back(
+        res.data.entries.value().emplace_back(
           get_entity_data(q.first), get_value_data(q.second));
     }
 

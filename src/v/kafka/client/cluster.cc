@@ -166,7 +166,9 @@ ss::future<> cluster::dispatch_and_apply_metadata_updates(
               std::move(metadata_resp), topic_metadata_included_t::no);
         }
 
-        if (!topics_request_list.has_value() || !topics_request_list->empty()) {
+        if (
+          !topics_request_list.has_value()
+          || !topics_request_list.value().empty()) {
             // If there are topics to request, then do another metadata request
             // with the most up-to-date version
             auto metadata_resp = co_await dispatch_metadata_request(
@@ -197,7 +199,7 @@ ss::future<api_version> get_required_api_version(
   api_version min_required) {
     auto supported_versions = co_await broker->get_supported_versions(
       Api::key, as);
-    if (!supported_versions || supported_versions->max < min_required) {
+    if (!supported_versions || supported_versions.value().max < min_required) {
         throw broker_error(
           broker->id(),
           error_code::unsupported_version,
@@ -210,7 +212,7 @@ ss::future<api_version> get_required_api_version(
             Api::name,
             min_required));
     }
-    co_return std::min(supported_versions->max, Api::max_valid);
+    co_return std::min(supported_versions.value().max, Api::max_valid);
 }
 
 ss::future<api_version> get_metadata_request_version(
@@ -320,7 +322,7 @@ ss::future<metadata_response> cluster::dispatch_metadata_request(
       = std::nullopt;
     if (topics_request_list.has_value()) {
         topics_to_request.emplace();
-        topics_to_request->reserve(topics_request_list->size());
+        topics_to_request.value().reserve(topics_request_list.value().size());
         std::ranges::transform(
           std::move(topics_request_list.value()),
           std::back_inserter(topics_to_request.value()),

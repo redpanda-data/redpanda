@@ -136,7 +136,7 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
         if (spill) {
             // Check adjacent segments which have a manifest
             // boundary between them.
-            if (auto last_in_spill = spill->last_segment();
+            if (auto last_in_spill = spill.value().last_segment();
                 last_in_spill && first_seg_previous_manifest) {
                 scrub_segment_meta(
                   first_seg_previous_manifest.value(),
@@ -151,8 +151,8 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
                 co_return _result;
             }
 
-            if (!spill->empty()) {
-                first_seg_previous_manifest = *spill->begin();
+            if (!spill.value().empty()) {
+                first_seg_previous_manifest = *spill.value().begin();
             } else {
                 vlog(
                   _logger.warn, "Empty spillover manifest at {}", spill_path);
@@ -365,9 +365,9 @@ existence_query_context::existence_query_context(
 
 ss::future<> existence_query_context::load_from_disk() {
     if (hashes.has_value()) {
-        co_await hashes->load_hashes();
-        is_inv_data_available = hashes->loaded();
-        co_await hashes->stop();
+        co_await hashes.value().load_hashes();
+        is_inv_data_available = hashes.value().loaded();
+        co_await hashes.value().stop();
     }
 }
 
@@ -386,7 +386,7 @@ bool existence_query_context::should_lookup_in_cloud_storage(
 
     // if data is available and segment is missing there, check cloud storage
     if (is_inv_data_available) {
-        return hashes->exists(p) != inventory::lookup_result::exists;
+        return hashes.value().exists(p) != inventory::lookup_result::exists;
     }
 
     // inv. based scrub is enabled but data not available, do not lookup in

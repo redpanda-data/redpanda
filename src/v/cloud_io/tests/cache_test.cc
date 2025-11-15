@@ -55,9 +55,9 @@ FIXTURE_TEST(get_after_put, cache_test_fixture) {
     std::optional<cloud_io::cache_item> returned_item
       = sharded_cache.local().get(KEY).get();
     BOOST_REQUIRE(returned_item);
-    BOOST_CHECK_EQUAL(returned_item->size, data_string.length());
+    BOOST_CHECK_EQUAL(returned_item.value().size, data_string.length());
 
-    auto stream = ss::make_file_input_stream(returned_item->body);
+    auto stream = ss::make_file_input_stream(returned_item.value().body);
 
     auto read_buf = stream.read_exactly(data_string.length()).get();
     BOOST_CHECK_EQUAL(
@@ -72,13 +72,14 @@ FIXTURE_TEST(stremaing_get_after_put, cache_test_fixture) {
 
     auto stream = sharded_cache.local().get_stream(KEY).get();
     BOOST_REQUIRE(stream);
-    BOOST_CHECK_EQUAL(stream->size, data_string.length());
+    BOOST_CHECK_EQUAL(stream.value().size, data_string.length());
 
-    auto read_buf = stream->body.read_exactly(data_string.length()).get();
+    auto read_buf
+      = stream.value().body.read_exactly(data_string.length()).get();
     BOOST_CHECK_EQUAL(
       std::string_view(read_buf.get(), read_buf.size()), data_string);
-    BOOST_CHECK(!stream->body.read().get().get());
-    stream->body.close().get();
+    BOOST_CHECK(!stream.value().body.read().get().get());
+    stream.value().body.close().get();
 }
 
 FIXTURE_TEST(put_rewrites_file, cache_test_fixture) {
@@ -91,9 +92,9 @@ FIXTURE_TEST(put_rewrites_file, cache_test_fixture) {
     std::optional<cloud_io::cache_item> returned_item
       = sharded_cache.local().get(KEY).get();
     BOOST_REQUIRE(returned_item);
-    BOOST_CHECK_EQUAL(returned_item->size, data_string2.length());
+    BOOST_CHECK_EQUAL(returned_item.value().size, data_string2.length());
 
-    auto body = ss::make_file_input_stream(returned_item->body);
+    auto body = ss::make_file_input_stream(returned_item.value().body);
 
     auto read_buf = body.read_exactly(data_string2.length()).get();
     BOOST_CHECK_EQUAL(
@@ -368,8 +369,8 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker) {
     for (unsigned i = 0; i < 10; i++) {
         auto ts = cm.get(names[i]);
         BOOST_REQUIRE(ts.has_value());
-        BOOST_REQUIRE(ts->time_point() == timestamps[i]);
-        BOOST_REQUIRE(ts->size == i);
+        BOOST_REQUIRE(ts.value().time_point() == timestamps[i]);
+        BOOST_REQUIRE(ts.value().size == i);
     }
 }
 
@@ -434,8 +435,8 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_serializer) {
     for (unsigned i = 0; i < timestamps.size(); i++) {
         auto ts = out.get(names[i]);
         BOOST_REQUIRE(ts.has_value());
-        BOOST_REQUIRE(ts->time_point() == timestamps[i]);
-        BOOST_REQUIRE(ts->size == i);
+        BOOST_REQUIRE(ts.value().time_point() == timestamps[i]);
+        BOOST_REQUIRE(ts.value().size == i);
     }
 }
 
@@ -454,8 +455,8 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_serializer_large) {
     for (size_t i = 0; i < item_count; ++i) {
         const auto entry = in.get(fmt::format("key{:08x}", i));
         BOOST_REQUIRE(entry.has_value());
-        BOOST_REQUIRE_EQUAL(entry->size, i);
-        BOOST_REQUIRE_EQUAL(entry->atime_sec, i);
+        BOOST_REQUIRE_EQUAL(entry.value().size, i);
+        BOOST_REQUIRE_EQUAL(entry.value().atime_sec, i);
     }
 }
 
@@ -655,7 +656,7 @@ FIXTURE_TEST(test_cache_carryover_trim, cache_test_fixture) {
     for (const auto& key : object_keys) {
         // Touch every object so they have access times assigned to them
         auto item = sharded_cache.local().get(key).get();
-        item->body.close().get();
+        item.value().body.close().get();
     }
 
     // Force trim to create a carryover list.
@@ -758,7 +759,7 @@ FIXTURE_TEST(test_background_maybe_trim, cache_test_fixture) {
     for (const auto& key : object_keys) {
         // Touch every object so they have access times assigned to them
         auto item = sharded_cache.local().get(key).get();
-        item->body.close().get();
+        item.value().body.close().get();
     }
     BOOST_REQUIRE_EQUAL(get_object_count(), 100);
 
@@ -789,7 +790,7 @@ FIXTURE_TEST(test_tracker_sync_only_remove, cache_test_fixture) {
     {
         const auto entry = t.get(full_key_path.native());
         BOOST_REQUIRE(entry.has_value());
-        BOOST_REQUIRE_EQUAL(entry->size, 1_KiB);
+        BOOST_REQUIRE_EQUAL(entry.value().size, 1_KiB);
         BOOST_REQUIRE_EQUAL(cache.get_usage_bytes(), 1_KiB);
         BOOST_REQUIRE_EQUAL(cache.get_usage_objects(), 1);
     }
@@ -799,7 +800,7 @@ FIXTURE_TEST(test_tracker_sync_only_remove, cache_test_fixture) {
     {
         const auto entry = t.get(full_key_path.native());
         BOOST_REQUIRE(entry.has_value());
-        BOOST_REQUIRE_EQUAL(entry->size, 1_KiB);
+        BOOST_REQUIRE_EQUAL(entry.value().size, 1_KiB);
         BOOST_REQUIRE_EQUAL(cache.get_usage_bytes(), 1_KiB);
         BOOST_REQUIRE_EQUAL(cache.get_usage_objects(), 1);
     }

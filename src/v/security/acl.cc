@@ -87,10 +87,10 @@ std::optional<std::reference_wrapper<const acl_entry>> acl_entry_set::find(
 }
 
 bool acl_matches::empty() const {
-    if (wildcards && !wildcards->acl_entry_set.get().empty()) {
+    if (wildcards && !wildcards.value().acl_entry_set.get().empty()) {
         return false;
     }
-    if (literals && !literals->acl_entry_set.get().empty()) {
+    if (literals && !literals.value().acl_entry_set.get().empty()) {
         return false;
     }
     return std::all_of(
@@ -113,18 +113,18 @@ std::optional<security::acl_match> acl_matches::find(
     }
 
     if (wildcards) {
-        if (auto entry = wildcards->acl_entry_set.get().find(
+        if (auto entry = wildcards.value().acl_entry_set.get().find(
               operation, principal, host, perm);
             entry.has_value()) {
-            return {{wildcards->resource, entry.value()}};
+            return {{wildcards.value().resource, entry.value()}};
         }
     }
 
     if (literals) {
-        if (auto entry = literals->acl_entry_set.get().find(
+        if (auto entry = literals.value().acl_entry_set.get().find(
               operation, principal, host, perm);
             entry.has_value()) {
-            return {{literals->resource, entry.value()}};
+            return {{literals.value().resource, entry.value()}};
         }
     }
 

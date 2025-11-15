@@ -238,7 +238,7 @@ public:
         for (const auto& meta : segs) {
             stm_manifest.add(meta);
             if (all_segments.has_value()) {
-                all_segments->get().push_back(
+                all_segments.value().get().push_back(
                   stm_manifest.last_segment().value());
             }
         }
@@ -440,8 +440,8 @@ FIXTURE_TEST(test_async_manifest_view_truncate, async_manifest_view_fixture) {
     generate_manifest_section(100);
     generate_manifest_section(100);
     auto new_so = model::next_offset(
-      stm_manifest.last_segment()->committed_offset);
-    auto new_delta = stm_manifest.last_segment()->delta_offset_end;
+      stm_manifest.last_segment().value().committed_offset);
+    auto new_delta = stm_manifest.last_segment().value().delta_offset_end;
     std::vector<segment_meta> removed;
     std::swap(expected, removed);
     generate_manifest_section(100);

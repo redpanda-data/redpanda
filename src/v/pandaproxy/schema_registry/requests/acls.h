@@ -69,8 +69,8 @@ void rjson_serialize(::json::Writer<Buffer>& w, const acl& entry) {
 
     if (entry.host) {
         w.Key("host");
-        if (entry.host->address()) {
-            w.String(fmt::format("{}", entry.host->address().value()));
+        if (entry.host.value().address()) {
+            w.String(fmt::format("{}", entry.host.value().address().value()));
         } else {
             w.String("*");
         }

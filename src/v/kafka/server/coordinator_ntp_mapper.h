@@ -57,7 +57,7 @@ public:
         inc.update(group);
         return model::partition_id(
           static_cast<model::partition_id::type>(
-            jump_consistent_hash(inc.digest(), cfg->partition_count)));
+            jump_consistent_hash(inc.digest(), cfg.value().partition_count)));
     }
 
     bool topic_exists() const {

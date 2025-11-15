@@ -216,7 +216,7 @@ static void set_local_kafka_client_config(
         // a client.
         return;
     }
-    client_config->brokers.set_value(
+    client_config.value().brokers.set_value(
       std::vector<net::unresolved_address>{kafka_api[0].address});
     const auto& kafka_api_tls = config::node().kafka_api_tls.value();
     auto tls_it = std::find_if(
@@ -226,7 +226,7 @@ static void set_local_kafka_client_config(
           return tls.name == kafka_api[0].name;
       });
     if (tls_it != kafka_api_tls.end()) {
-        client_config->broker_tls.set_value(tls_it->config);
+        client_config.value().broker_tls.set_value(tls_it->config);
     }
 }
 
@@ -633,7 +633,7 @@ void application::initialize(
     // execute the callback to apply the initial value
     oom_config_watch();
 
-    _abort_on_oom->watch(oom_config_watch);
+    _abort_on_oom.value().watch(oom_config_watch);
 
     construct_service(
       _cpu_profiler,
@@ -708,14 +708,14 @@ void application::initialize(
 
     if (proxy_cfg) {
         _proxy_config.emplace(proxy_cfg.value());
-        for (const auto& e : _proxy_config->errors()) {
+        for (const auto& e : _proxy_config.value().errors()) {
             vlog(
               _log.warn,
               "Pandaproxy property '{}' validation error: {}",
               e.first,
               e.second);
         }
-        if (_proxy_config->errors().size() > 0) {
+        if (_proxy_config.value().errors().size() > 0) {
             throw std::invalid_argument(
               "Validation errors in pandaproxy config");
         }
@@ -970,14 +970,14 @@ void application::hydrate_config(const po::variables_map& cfg) {
 
     if (config["pandaproxy"]) {
         _proxy_config.emplace(config["pandaproxy"]);
-        for (const auto& e : _proxy_config->errors()) {
+        for (const auto& e : _proxy_config.value().errors()) {
             vlog(
               _log.warn,
               "Pandaproxy property '{}' validation error: {}",
               e.first,
               e.second);
         }
-        if (_proxy_config->errors().size() > 0) {
+        if (_proxy_config.value().errors().size() > 0) {
             throw std::invalid_argument(
               "Validation errors in pandaproxy config");
         }

@@ -93,8 +93,9 @@ ss::future<> remote_broker::maybe_reconnect(
      * TODO: consider moving authentication into the broker, to avoid going
      * through the external broker api and tracking the authentication state.
      */
-    auto u = as.has_value() ? co_await _reconnect_mutex.get_units(as->get())
-                            : co_await _reconnect_mutex.get_units();
+    auto u = as.has_value()
+               ? co_await _reconnect_mutex.get_units(as.value().get())
+               : co_await _reconnect_mutex.get_units();
 
     co_await connect_with_retries(as);
 }
@@ -119,7 +120,7 @@ ss::future<> remote_broker::connect_with_retries(
     const auto retry_interval = _config->connection_timeout / 5;
     while (!_gate.is_closed()) {
         if (as) {
-            as->get().check();
+            as.value().get().check();
         }
         _reconnect_as.check();
         if (model::timeout_clock::now() >= deadline) {
@@ -145,7 +146,7 @@ ss::future<> remote_broker::connect_with_retries(
 
         co_await ss::sleep_abortable(
           backoff_policy.current_backoff_duration(),
-          as.has_value() ? as->get() : _reconnect_as);
+          as.has_value() ? as.value().get() : _reconnect_as);
         backoff_policy.next_backoff();
     }
 }
@@ -299,8 +300,8 @@ ss::future<shared_broker_t> remote_broker_factory::create_broker(
       addr.port());
     if (_config.broker_tls) {
         transport_cfg.credentials
-          = co_await _config.broker_tls->build_credentials();
-        if (_config.broker_tls->provide_sni_hostname) {
+          = co_await _config.broker_tls.value().build_credentials();
+        if (_config.broker_tls.value().provide_sni_hostname) {
             transport_cfg.tls_sni_hostname = addr.host();
         }
     }
@@ -315,7 +316,7 @@ ss::future<> remote_broker::do_authenticate() {
     if (!_config->sasl_cfg.has_value()) {
         co_return;
     }
-    const auto& mechanism = _config->sasl_cfg->mechanism;
+    const auto& mechanism = _config->sasl_cfg.value().mechanism;
 
     if (
       mechanism != security::scram_sha256_authenticator::name
@@ -327,8 +328,8 @@ ss::future<> remote_broker::do_authenticate() {
           fmt_with_ctx(ssx::sformat, "Unknown mechanism: {}", mechanism)};
     }
 
-    const auto& username = _config->sasl_cfg->username;
-    const auto& password = _config->sasl_cfg->password;
+    const auto& username = _config->sasl_cfg.value().username;
+    const auto& password = _config->sasl_cfg.value().password;
 
     vlog(
       _logger.debug,

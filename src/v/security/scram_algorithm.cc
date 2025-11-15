@@ -216,19 +216,20 @@ client_first_message::client_first_message(bytes_view data) {
           ssx::sformat, "Invalid SCRAM client first message: {}", view));
     }
 
-    _authzid = std::move(match->authzid);
-    _username = std::move(match->username);
-    _nonce = std::move(match->nonce);
+    _authzid = std::move(match.value().authzid);
+    _username = std::move(match.value().username);
+    _nonce = std::move(match.value().nonce);
 
-    if (match->extensions.empty()) {
+    if (match.value().extensions.empty()) {
         return;
     }
 
     // split on "," following the "," prefix
     std::vector<std::string> extension_pairs;
-    boost::split(extension_pairs, match->extensions.substr(1), [](char c) {
-        return c == ',';
-    });
+    boost::split(
+      extension_pairs, match.value().extensions.substr(1), [](char c) {
+          return c == ',';
+      });
 
     // split pairs on first "=". the value part may also contain "="
     for (const auto& pair : extension_pairs) {
@@ -289,10 +290,10 @@ client_final_message::client_final_message(bytes_view data) {
           ssx::sformat, "Invalid SCRAM client final message: {}", view));
     }
 
-    _channel_binding = std::move(match->channel_binding);
-    _nonce = std::move(match->nonce);
-    _extensions = std::move(match->extensions);
-    _proof = std::move(match->proof);
+    _channel_binding = std::move(match.value().channel_binding);
+    _nonce = std::move(match.value().nonce);
+    _extensions = std::move(match.value().extensions);
+    _proof = std::move(match.value().proof);
 }
 
 ss::sstring client_final_message::msg_no_proof() const {
@@ -330,9 +331,9 @@ server_first_message::server_first_message(bytes_view data) {
           ssx::sformat, "Invalid SCRAM server first message: {}", view));
     }
 
-    _nonce = std::move(match->nonce);
-    _salt = std::move(match->salt);
-    _iterations = match->iterations;
+    _nonce = std::move(match.value().nonce);
+    _salt = std::move(match.value().salt);
+    _iterations = match.value().iterations;
 
     if (unlikely(_iterations <= 0)) {
         throw scram_exception(fmt_with_ctx(
@@ -354,8 +355,8 @@ server_final_message::server_final_message(bytes_view data) {
           ssx::sformat, "Invalid SCRAM server final message: {}", view));
     }
 
-    _error = std::move(match->error);
-    _signature = std::move(match->signature);
+    _error = std::move(match.value().error);
+    _signature = std::move(match.value().signature);
 }
 
 bool validate_scram_username(std::string_view username) {

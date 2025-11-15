@@ -44,7 +44,7 @@ struct metadata_request {
                   "Null topics received for version 0 of metadata request");
             }
             // For metadata API version 0, empty array requests all topics
-            list_all_topics = data.topics->empty();
+            list_all_topics = data.topics.value().empty();
         }
     }
 
@@ -58,7 +58,7 @@ struct metadata_request {
             .topics
             = data.topics.has_value()
                 ? std::make_optional<chunked_vector<metadata_request_topic>>(
-                    data.topics->copy())
+                    data.topics.value().copy())
                 : std::nullopt,
             .allow_auto_topic_creation = data.allow_auto_topic_creation,
             .include_cluster_authorized_operations

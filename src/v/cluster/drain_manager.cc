@@ -102,22 +102,23 @@ ss::future<std::optional<drain_manager::drain_status>> drain_manager::status() {
                 .errors = false,
               };
           }
-          res->finished &= update->finished;
-          res->errors |= update->errors;
-          if (update->partitions.has_value()) {
-              res->partitions = res->partitions.value_or(0)
-                                + update->partitions.value();
+          res.value().finished &= update.value().finished;
+          res.value().errors |= update.value().errors;
+          if (update.value().partitions.has_value()) {
+              res.value().partitions = res.value().partitions.value_or(0)
+                                       + update.value().partitions.value();
           }
-          if (update->eligible.has_value()) {
-              res->eligible = res->eligible.value_or(0)
-                              + update->eligible.value();
+          if (update.value().eligible.has_value()) {
+              res.value().eligible = res.value().eligible.value_or(0)
+                                     + update.value().eligible.value();
           }
-          if (update->transferring.has_value()) {
-              res->transferring = res->transferring.value_or(0)
-                                  + update->transferring.value();
+          if (update.value().transferring.has_value()) {
+              res.value().transferring = res.value().transferring.value_or(0)
+                                         + update.value().transferring.value();
           }
-          if (update->failed.has_value()) {
-              res->failed = res->failed.value_or(0) + update->failed.value();
+          if (update.value().failed.has_value()) {
+              res.value().failed = res.value().failed.value_or(0)
+                                   + update.value().failed.value();
           }
           return res;
       });

@@ -38,7 +38,7 @@ replicate_batcher::item::item(
         _timeout_timer.arm(_replicate_opts.timeout.value());
     }
     if (_replicate_opts.as) [[unlikely]] {
-        _abort_sub = _replicate_opts.as->get().subscribe(
+        _abort_sub = _replicate_opts.as.value().get().subscribe(
           [this] noexcept { mark_as_aborted(); });
         if (!_abort_sub) {
             mark_as_aborted();
@@ -89,7 +89,7 @@ replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
 replicate_stages replicate_batcher::replicate(
   chunked_vector<model::record_batch> batches, replicate_options opts) {
     if (opts.as) [[unlikely]] {
-        if (opts.as->get().abort_requested()) {
+        if (opts.as.value().get().abort_requested()) {
             return replicate_stages{
               ss::make_exception_future<>(ss::abort_requested_exception()),
               ss::make_ready_future<result<replicate_result>>(

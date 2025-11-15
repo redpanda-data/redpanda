@@ -89,7 +89,7 @@ std::
       encoder.get_initial_value(), encoder.get_row_count(), encoder.share());
     auto max_index = encoder.get_row_count() * details::FOR_buffer_depth - 1;
     auto maybe_ix = _find_under(std::move(decoder), upper_bound);
-    if (!maybe_ix || maybe_ix->ix == max_index) {
+    if (!maybe_ix || maybe_ix.value().ix == max_index) {
         auto ixend = _pos & index_mask;
         std::optional<find_result> candidate;
         for (size_t i = 0; i < ixend; i++) {
@@ -472,19 +472,19 @@ void remote_segment_index_builder::consume_batch_start(
     // Update stats
     if (_stats.has_value()) {
         if (is_config) {
-            _stats->get().total_conf_records += delta;
+            _stats.value().get().total_conf_records += delta;
         } else {
-            _stats->get().total_data_records += delta;
+            _stats.value().get().total_data_records += delta;
         }
-        if (_stats->get().base_rp_offset == model::offset{}) {
-            _stats->get().base_rp_offset = hdr.base_offset;
+        if (_stats.value().get().base_rp_offset == model::offset{}) {
+            _stats.value().get().base_rp_offset = hdr.base_offset;
         }
-        _stats->get().last_rp_offset = hdr.last_offset();
-        if (_stats->get().base_timestamp == model::timestamp{}) {
-            _stats->get().base_timestamp = hdr.first_timestamp;
+        _stats.value().get().last_rp_offset = hdr.last_offset();
+        if (_stats.value().get().base_timestamp == model::timestamp{}) {
+            _stats.value().get().base_timestamp = hdr.first_timestamp;
         }
-        _stats->get().last_timestamp = hdr.max_timestamp;
-        _stats->get().size_bytes += hdr.size_bytes;
+        _stats.value().get().last_timestamp = hdr.max_timestamp;
+        _stats.value().get().size_bytes += hdr.size_bytes;
     }
 }
 

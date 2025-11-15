@@ -231,7 +231,7 @@ FIXTURE_TEST(test_adding_partition, topic_table_fixture) {
 
     auto md = table.local().get_topic_metadata(make_tp_ns("test_tp_2"));
 
-    BOOST_REQUIRE_EQUAL(md->get_assignments().size(), 15);
+    BOOST_REQUIRE_EQUAL(md.value().get_assignments().size(), 15);
     // require 3 partition additions
     BOOST_REQUIRE_EQUAL(topic_deltas.size(), 0);
     validate_ntp_deltas(deltas, 3, 0);
@@ -556,7 +556,8 @@ FIXTURE_TEST(test_topic_with_schema_id_validation_ops, topic_table_fixture) {
 
     auto cfg = topics.get_topic_cfg(tp_ns);
     BOOST_REQUIRE(cfg.has_value());
-    BOOST_REQUIRE(!cfg->properties.record_key_schema_id_validation.has_value());
+    BOOST_REQUIRE(
+      !cfg.value().properties.record_key_schema_id_validation.has_value());
 
     // enable record_key_schema_id_validation
     cluster::incremental_topic_updates update;
@@ -571,7 +572,8 @@ FIXTURE_TEST(test_topic_with_schema_id_validation_ops, topic_table_fixture) {
     BOOST_REQUIRE_EQUAL(ec, cluster::errc::success);
     cfg = topics.get_topic_cfg(tp_ns);
     BOOST_REQUIRE(cfg.has_value());
-    BOOST_REQUIRE_EQUAL(cfg->properties.record_key_schema_id_validation, true);
+    BOOST_REQUIRE_EQUAL(
+      cfg.value().properties.record_key_schema_id_validation, true);
 
     // remove record_key_schema_id_validation
     update.record_key_schema_id_validation.op
@@ -585,14 +587,17 @@ FIXTURE_TEST(test_topic_with_schema_id_validation_ops, topic_table_fixture) {
     BOOST_REQUIRE_EQUAL(ec, cluster::errc::success);
     cfg = topics.get_topic_cfg(tp_ns);
     BOOST_REQUIRE(cfg.has_value());
-    BOOST_REQUIRE(!cfg->properties.record_key_schema_id_validation.has_value());
+    BOOST_REQUIRE(
+      !cfg.value().properties.record_key_schema_id_validation.has_value());
 
     // Ensure that an invalid update cmd does not get persisted in the topic
     // table.
     // Sanity check before starting.
-    BOOST_REQUIRE(!cfg->properties.record_key_schema_id_validation.has_value());
     BOOST_REQUIRE(
-      !cfg->properties.record_key_schema_id_validation_compat.has_value());
+      !cfg.value().properties.record_key_schema_id_validation.has_value());
+    BOOST_REQUIRE(
+      !cfg.value()
+         .properties.record_key_schema_id_validation_compat.has_value());
 
     update.record_key_schema_id_validation.op
       = cluster::incremental_update_operation::set;
@@ -611,9 +616,11 @@ FIXTURE_TEST(test_topic_with_schema_id_validation_ops, topic_table_fixture) {
     BOOST_REQUIRE(cfg.has_value());
 
     // Properties from invalid configuration should not have been persisted.
-    BOOST_REQUIRE(!cfg->properties.record_key_schema_id_validation.has_value());
     BOOST_REQUIRE(
-      !cfg->properties.record_key_schema_id_validation_compat.has_value());
+      !cfg.value().properties.record_key_schema_id_validation.has_value());
+    BOOST_REQUIRE(
+      !cfg.value()
+         .properties.record_key_schema_id_validation_compat.has_value());
 }
 
 FIXTURE_TEST(test_topic_id_assignment, topic_table_fixture) {

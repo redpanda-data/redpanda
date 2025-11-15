@@ -487,7 +487,7 @@ admin_server::force_set_partition_replicas_handler(
 
     const auto current_assignment = topics.get_partition_assignment(ntp);
     if (current_assignment) {
-        const auto& current_replicas = current_assignment->replicas;
+        const auto& current_replicas = current_assignment.value().replicas;
         if (
           current_replicas == replicas && in_progress_it == in_progress.end()) {
             vlog(
@@ -581,7 +581,7 @@ admin_server::set_partition_replicas_handler(
     // For a no-op change, just return success here, to avoid doing
     // all the raft writes and consensus restarts for a config change
     // that will do nothing.
-    if (current_assignment && current_assignment->replicas == replicas) {
+    if (current_assignment && current_assignment.value().replicas == replicas) {
         vlog(
           adminlog.info,
           "Request to change ntp {} replica set to {}, no change",
@@ -723,8 +723,8 @@ admin_server::offset_for_leader_epoch_handler(
                         "Partition {} not found on this node",
                         ntp)));
                 }
-                auto current_epoch = proxy->leader_epoch();
-                return proxy->get_leader_epoch_last_offset(epoch).then(
+                auto current_epoch = proxy.value().leader_epoch();
+                return proxy.value().get_leader_epoch_last_offset(epoch).then(
                   [current_epoch](std::optional<model::offset> offset) {
                       return std::make_pair(offset, current_epoch);
                   });
@@ -1006,13 +1006,13 @@ admin_server::get_partition_handler(std::unique_ptr<ss::http::request> req) {
             ntp);
 
         if (assignment) {
-            for (auto& r : assignment->replicas) {
+            for (auto& r : assignment.value().replicas) {
                 ss::httpd::partition_json::assignment a;
                 a.node_id = r.node_id;
                 a.core = r.shard;
                 p.replicas.push(a);
             }
-            p.raft_group_id = assignment->group;
+            p.raft_group_id = assignment.value().group;
         }
         auto leader = _metadata_cache.local().get_leader_id(ntp);
         if (leader) {
@@ -1054,7 +1054,7 @@ admin_server::get_topic_partitions_handler(
     }
     using partition_t = ss::httpd::partition_json::partition;
     chunked_vector<partition_t> partitions;
-    const auto& assignments = tp_md->get().get_assignments();
+    const auto& assignments = tp_md.value().get().get_assignments();
     partitions.reserve(assignments.size());
 
     const auto* disabled_set

@@ -370,15 +370,15 @@ static cluster::topic_configuration make_topic_config(
     }
 
     cluster::topic_configuration topic_to_create_cfg(
-      topic_config->tp_ns.ns,
-      topic_config->tp_ns.tp,
-      topic_config->partition_count,
-      topic_config->replication_factor,
-      topic_config->tp_id);
+      topic_config.value().tp_ns.ns,
+      topic_config.value().tp_ns.tp,
+      topic_config.value().partition_count,
+      topic_config.value().replication_factor,
+      topic_config.value().tp_id);
     auto& topic_properties = topic_to_create_cfg.properties;
 
     // copy all properties
-    topic_properties = topic_config->properties;
+    topic_properties = topic_config.value().properties;
 
     // override specific ones
     topic_properties.retention_local_target_bytes = tristate<size_t>{
@@ -408,11 +408,11 @@ static cluster::topic_configuration make_topic_config(
 ss::future<std::vector<cluster::topic_result>>
 topic_recovery_service::create_topics(const recovery_request& request) {
     cluster::topic_configuration_vector topic_configs;
-    topic_configs.reserve(_downloaded_manifests->size());
+    topic_configs.reserve(_downloaded_manifests.value().size());
 
     std::transform(
-      _downloaded_manifests->cbegin(),
-      _downloaded_manifests->cend(),
+      _downloaded_manifests.value().cbegin(),
+      _downloaded_manifests.value().cend(),
       std::back_inserter(topic_configs),
       [&request](const auto& m) { return make_topic_config(m, request); });
 
@@ -438,14 +438,14 @@ ss::future<> topic_recovery_service::reset_topic_configurations() {
     }
 
     cluster::topic_properties_update_vector updates;
-    updates.reserve(_downloaded_manifests->size());
+    updates.reserve(_downloaded_manifests.value().size());
     std::transform(
-      std::make_move_iterator(_downloaded_manifests->begin()),
-      std::make_move_iterator(_downloaded_manifests->end()),
+      std::make_move_iterator(_downloaded_manifests.value().begin()),
+      std::make_move_iterator(_downloaded_manifests.value().end()),
       std::back_inserter(updates),
       [](auto&& tm) {
           auto update = cluster::topic_properties_update{
-            tm.get_topic_config()->tp_ns};
+            tm.get_topic_config().value().tp_ns};
 
           update.properties.retention_local_target_ms.op
             = cluster::incremental_update_operation::set;
@@ -578,10 +578,11 @@ void topic_recovery_service::populate_recovery_status() {
               m.display_name());
             continue;
         }
-        auto topic = ntp_cfg->tp_ns.tp;
-        auto expected = ntp_cfg->partition_count * ntp_cfg->replication_factor;
+        auto topic = ntp_cfg.value().tp_ns.tp;
+        auto expected = ntp_cfg.value().partition_count
+                        * ntp_cfg.value().replication_factor;
         _download_counts.emplace(
-          ntp_cfg->tp_ns, topic_download_counts{expected, 0, 0});
+          ntp_cfg.value().tp_ns, topic_download_counts{expected, 0, 0});
     }
 }
 

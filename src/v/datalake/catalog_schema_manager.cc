@@ -373,7 +373,7 @@ catalog_schema_manager::get_table_info(
 
     const auto* cur_schema = writer_struct_type.has_value()
                                ? table.get_equivalent_schema(
-                                   writer_struct_type->get())
+                                   writer_struct_type.value().get())
                                : table.get_schema(table.current_schema_id);
     if (!cur_schema) {
         vlog(

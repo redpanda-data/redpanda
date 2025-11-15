@@ -223,8 +223,8 @@ ss::future<> usage_aggregator<clock_type>::start() {
     bool successfully_restored = false;
     if (state) {
         if (
-          state->configured_period != _usage_window_width_interval
-          || state->configured_windows != _usage_num_windows) {
+          state.value().configured_period != _usage_window_width_interval
+          || state.value().configured_windows != _usage_num_windows) {
             vlog(
               klog.info,
               "Persisted usage state had been configured with different "
@@ -233,7 +233,7 @@ ss::future<> usage_aggregator<clock_type>::start() {
             co_await clear_persisted_state(_kvstore);
         } else {
             successfully_restored = true;
-            reset_state(std::move(state->current_state));
+            reset_state(std::move(state.value().current_state));
         }
     }
 

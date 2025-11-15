@@ -85,13 +85,13 @@ chunked_vector<replica_state_anomaly> replica_state_validator::validate() {
               // cases 3 and 4
               return true;
           }
-          if (manifest_range->overlaps(local_offset_range.value())) {
+          if (manifest_range.value().overlaps(local_offset_range.value())) {
               // case 1.
               return true;
           }
           if (
-            model::next_offset(manifest_range->max())
-            == local_offset_range->min()) {
+            model::next_offset(manifest_range.value().max())
+            == local_offset_range.value().min()) {
               // case 2.
               return true;
           }
@@ -116,12 +116,12 @@ chunked_vector<replica_state_anomaly> replica_state_validator::validate() {
     auto last_segment = _manifest->last_segment();
     if (
       last_segment.has_value() && local_interval.has_value()
-      && local_interval->contains(last_segment.value().base_offset)) {
+      && local_interval.value().contains(last_segment.value().base_offset)) {
         // Last segment exists in the manifest and can be translated using
         // local offset translation state.
 
-        auto expected_delta = last_segment->delta_offset;
-        auto log_delta = _log->offset_delta(last_segment->base_offset);
+        auto expected_delta = last_segment.value().delta_offset;
+        auto log_delta = _log->offset_delta(last_segment.value().base_offset);
 
         vlog(
           archival_log.debug,
@@ -140,7 +140,7 @@ chunked_vector<replica_state_anomaly> replica_state_validator::validate() {
                 .message = ssx::sformat(
                   "Offset translation anomaly detected for offset {}, expected "
                   "delta {}, actual delta {}, segment_meta: {}",
-                  last_segment->base_offset,
+                  last_segment.value().base_offset,
                   expected_delta,
                   log_delta,
                   last_segment)});

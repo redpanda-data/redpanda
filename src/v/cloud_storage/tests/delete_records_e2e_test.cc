@@ -118,10 +118,10 @@ public:
 
     // Truncates by space, expecting the override offset is removed.
     void check_truncate_removes_override(size_t bytes) {
-        auto props = partition->get_topic_config()->get().properties;
+        auto props = partition->get_topic_config().value().get().properties;
         props.retention_bytes = tristate<size_t>(bytes);
         partition->update_configuration(std::move(props)).get();
-        auto& new_archiver = partition->archiver()->get();
+        auto& new_archiver = partition->archiver().value().get();
         new_archiver.initialize_probe();
         new_archiver.housekeeping().get();
         BOOST_REQUIRE_EQUAL(
@@ -192,7 +192,8 @@ FIXTURE_TEST(test_timequery_below_deleted_offset, delete_records_e2e_fixture) {
     BOOST_REQUIRE_EQUAL(second_seg_end_offset, post_delete_offset);
 
     // Now trim again, but this time, trim the entire cloud range.
-    auto first_local_offset = stm_manifest.last_segment()->next_kafka_offset();
+    auto first_local_offset
+      = stm_manifest.last_segment().value().next_kafka_offset();
     lwm = deleter
             .delete_records_from_partition(
               topic_name,
@@ -297,7 +298,7 @@ FIXTURE_TEST(test_delete_from_stm_consume, delete_records_e2e_fixture) {
 // Test consuming after truncating the archive manifests.
 FIXTURE_TEST(test_delete_from_archive_consume, delete_records_e2e_fixture) {
     auto partition = app.partition_manager.local().get(ntp);
-    auto& archiver = partition->archiver()->get();
+    auto& archiver = partition->archiver().value().get();
     archiver.initialize_probe();
     archiver.sync_for_tests().get();
 

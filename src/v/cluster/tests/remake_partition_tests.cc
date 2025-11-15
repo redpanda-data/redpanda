@@ -31,7 +31,7 @@ public:
         tests::cooperative_spin_wait_with_timeout(2s, [&controller, &ntp] {
             auto& spt = controller.get_shard_placement_table().local();
             auto state = spt.state_on_this_shard(ntp);
-            auto group = state->assigned()->group;
+            auto group = state->assigned().value().group;
 
             auto& kvstore = controller.get_storage().local().kvs();
             auto marker_opt = kvstore.get(
@@ -138,9 +138,9 @@ FIXTURE_TEST(
     auto& kvstore = controller->get_storage().local().kvs();
 
     auto state = spt.local().state_on_this_shard(test_ntp);
-    auto log_revision = state->assigned()->log_revision;
-    auto shard_revision = state->assigned()->shard_revision;
-    auto group = state->assigned()->group;
+    auto log_revision = state->assigned().value().log_revision;
+    auto shard_revision = state->assigned().value().shard_revision;
+    auto group = state->assigned().value().group;
 
     auto marker_buf = serde::to_iobuf(
       cluster::current_state_marker{
@@ -178,9 +178,9 @@ FIXTURE_TEST(
     auto& kvstore = controller->get_storage().local().kvs();
 
     auto state = spt.local().state_on_this_shard(test_ntp);
-    auto log_revision = state->assigned()->log_revision;
-    auto shard_revision = state->assigned()->shard_revision;
-    auto group = state->assigned()->group;
+    auto log_revision = state->assigned().value().log_revision;
+    auto shard_revision = state->assigned().value().shard_revision;
+    auto group = state->assigned().value().group;
 
     auto marker_buf = serde::to_iobuf(
       cluster::current_state_marker{

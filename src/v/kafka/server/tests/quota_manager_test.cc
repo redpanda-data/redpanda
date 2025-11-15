@@ -169,19 +169,19 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
     auto& buckets_map = f.sqm.local().get_global_map_for_testing();
     const auto now = quota_manager::clock::now();
 
-    BOOST_REQUIRE_EQUAL(buckets_map->size(), 0);
+    BOOST_REQUIRE_EQUAL(buckets_map.value().size(), 0);
 
     {
         ss::sstring client_id = "franz-go";
         f.sqm.local().record_fetch_tp(client_id, 1, now).get();
         f.sqm.local().record_produce_tp_and_throttle(client_id, 1, now).get();
         f.sqm.local().record_partition_mutations(client_id, 1, now).get();
-        auto it = buckets_map->find(k_group_name{client_id});
-        BOOST_REQUIRE(it != buckets_map->end());
+        auto it = buckets_map.value().find(k_group_name{client_id});
+        BOOST_REQUIRE(it != buckets_map.value().end());
         BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 4096);
+        BOOST_CHECK_EQUAL(it->second->tp_produce_rate.value().rate(), 4096);
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 4097);
+        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate.value().rate(), 4097);
         BOOST_REQUIRE(!it->second->pm_rate.has_value());
     }
     {
@@ -189,12 +189,12 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
         f.sqm.local().record_fetch_tp(client_id, 1, now).get();
         f.sqm.local().record_produce_tp_and_throttle(client_id, 1, now).get();
         f.sqm.local().record_partition_mutations(client_id, 1, now).get();
-        auto it = buckets_map->find(k_group_name{client_id});
-        BOOST_REQUIRE(it != buckets_map->end());
+        auto it = buckets_map.value().find(k_group_name{client_id});
+        BOOST_REQUIRE(it != buckets_map.value().end());
         BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 2048);
+        BOOST_CHECK_EQUAL(it->second->tp_produce_rate.value().rate(), 2048);
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 2049);
+        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate.value().rate(), 2049);
         BOOST_REQUIRE(!it->second->pm_rate.has_value());
     }
     {
@@ -202,14 +202,14 @@ SEASTAR_THREAD_TEST_CASE(static_config_test) {
         f.sqm.local().record_fetch_tp(client_id, 1, now).get();
         f.sqm.local().record_produce_tp_and_throttle(client_id, 1, now).get();
         f.sqm.local().record_partition_mutations(client_id, 1, now).get();
-        auto it = buckets_map->find(k_client_id{client_id});
-        BOOST_REQUIRE(it != buckets_map->end());
+        auto it = buckets_map.value().find(k_client_id{client_id});
+        BOOST_REQUIRE(it != buckets_map.value().end());
         BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_produce_rate->rate(), 1024);
+        BOOST_CHECK_EQUAL(it->second->tp_produce_rate.value().rate(), 1024);
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 1025);
+        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate.value().rate(), 1025);
         BOOST_REQUIRE(it->second->pm_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->pm_rate->rate(), 1026);
+        BOOST_CHECK_EQUAL(it->second->pm_rate.value().rate(), 1026);
     }
 }
 
@@ -237,13 +237,13 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
 
         // Sanity check that the fetch quotas are present
         auto has_fetch_quota = [](const auto& qv) {
-            return qv.has_value() && qv->consumer_byte_rate.has_value();
+            return qv.has_value() && qv.value().consumer_byte_rate.has_value();
         };
         BOOST_REQUIRE(has_fetch_quota(franz_go_values));
         BOOST_REQUIRE(has_fetch_quota(not_franz_go_values));
 
-        franz_go_values->consumer_byte_rate.value() += 1;
-        not_franz_go_values->consumer_byte_rate.value() += 1;
+        franz_go_values.value().consumer_byte_rate.value() += 1;
+        not_franz_go_values.value().consumer_byte_rate.value() += 1;
 
         f.quota_store.local().set_quota(franz_go_key, franz_go_values.value());
         f.quota_store.local().set_quota(
@@ -253,10 +253,10 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         ss::sleep(std::chrono::milliseconds(1)).get();
 
         // Check the rate has been updated
-        auto it = buckets_map->find(k_group_name{client_id});
-        BOOST_REQUIRE(it != buckets_map->end());
+        auto it = buckets_map.value().find(k_group_name{client_id});
+        BOOST_REQUIRE(it != buckets_map.value().end());
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 4098);
+        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate.value().rate(), 4098);
 
         // Check produce is the same bucket
         BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
@@ -277,16 +277,16 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         auto franz_go_values = f.quota_store.local().get_quota(franz_go_key);
         BOOST_REQUIRE(
           franz_go_values.has_value()
-          && franz_go_values->producer_byte_rate.has_value());
-        franz_go_values->producer_byte_rate = std::nullopt;
+          && franz_go_values.value().producer_byte_rate.has_value());
+        franz_go_values.value().producer_byte_rate = std::nullopt;
         f.quota_store.local().set_quota(franz_go_key, franz_go_values.value());
 
         // Wait for the quota update to propagate
         ss::sleep(std::chrono::milliseconds(1)).get();
 
         // Check the produce rate has been updated on the group
-        auto it = buckets_map->find(k_group_name{client_id});
-        BOOST_REQUIRE(it != buckets_map->end());
+        auto it = buckets_map.value().find(k_group_name{client_id});
+        BOOST_REQUIRE(it != buckets_map.value().end());
         BOOST_CHECK(!it->second->tp_produce_rate.has_value());
 
         // Check fetch is the same bucket
@@ -298,10 +298,11 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         f.sqm.local()
           .record_produce_tp_and_throttle(client_id, 8192, now)
           .get();
-        auto client_it = buckets_map->find(k_client_id{client_id});
-        BOOST_REQUIRE(client_it != buckets_map->end());
+        auto client_it = buckets_map.value().find(k_client_id{client_id});
+        BOOST_REQUIRE(client_it != buckets_map.value().end());
         BOOST_REQUIRE(client_it->second->tp_produce_rate.has_value());
-        BOOST_CHECK_EQUAL(client_it->second->tp_produce_rate->rate(), 1024);
+        BOOST_CHECK_EQUAL(
+          client_it->second->tp_produce_rate.value().rate(), 1024);
     }
 
     {
@@ -315,10 +316,10 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         ss::sleep(std::chrono::milliseconds(1)).get();
 
         // Check the rate has been updated
-        auto it = buckets_map->find(k_client_id{client_id});
-        BOOST_REQUIRE(it != buckets_map->end());
+        auto it = buckets_map.value().find(k_client_id{client_id});
+        BOOST_REQUIRE(it != buckets_map.value().end());
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 16384);
+        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate.value().rate(), 16384);
     }
 }
 } // namespace kafka

@@ -254,7 +254,7 @@ void group_recovery_consumer::handle_offset_metadata(offset_metadata_kv md) {
         auto [group_it, _] = _state.groups.try_emplace(
           md.key.group_id, md.key.group_id);
         if (_state.has_offset_retention_feature_fence) {
-            md.value->non_reclaimable = false;
+            md.value.value().non_reclaimable = false;
         }
         group_it->second.update_offset(
           tp, _batch_base_offset, std::move(md.value.value()));

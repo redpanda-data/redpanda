@@ -602,7 +602,7 @@ void link::handle_new_topics_to_replicate(
               topic);
             continue;
         }
-        auto partition_count = topic_cfg->partition_count;
+        auto partition_count = topic_cfg.value().partition_count;
         for (auto p : std::views::iota(int32_t{0}, partition_count)) {
             auto part_id = ::model::partition_id{p};
             auto ntp = ::model::ntp(::model::kafka_namespace, topic, part_id);

@@ -617,7 +617,7 @@ source_topic_syncer::find_candidate_topics_for_update(
       kafka::topic_property_replication_factor);
 
     candidate_update_map candidate_topics;
-    candidate_topics.reserve(mirror_topics->size());
+    candidate_topics.reserve(mirror_topics.value().size());
 
     for (auto& [topic, mirror_metadata] : mirror_topics.value()) {
         vlog(logger().trace, "Checking metadata cache for topic {}", topic);

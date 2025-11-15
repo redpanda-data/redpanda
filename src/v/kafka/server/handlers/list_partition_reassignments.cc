@@ -52,8 +52,8 @@ ongoing_partition_reassignment compare_replica_sets(
 
     if (previous_replica_set.has_value()) {
         std::for_each(
-          previous_replica_set->cbegin(),
-          previous_replica_set->cend(),
+          previous_replica_set.value().cbegin(),
+          previous_replica_set.value().cend(),
           [&reassignments,
            &current_assignment](const model::broker_shard& bshard) {
               if (!in_broker_list(bshard, current_assignment.replicas)) {
@@ -163,7 +163,7 @@ ss::future<response_ptr> list_partition_reassignments_handler::handle(
         co_return co_await ctx.respond(std::move(resp));
     }
 
-    resp.data.topics.reserve(request.data.topics->size());
+    resp.data.topics.reserve(request.data.topics.value().size());
     for (const list_partition_reassignments_topics& tp :
          request.data.topics.value()) {
         ongoing_topic_reassignment topic_reassignment{.name = tp.name};

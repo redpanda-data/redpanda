@@ -48,7 +48,7 @@ inline model::record_batch make_record_batch(
     key_buf.append(key.data(), key.size());
     if (val) {
         val_buf = iobuf();
-        val_buf->append(val->data(), val->size());
+        val_buf.value().append(val.value().data(), val.value().size());
     }
     rb.add_raw_kv(std::move(key_buf), std::move(val_buf));
     return std::move(rb).build();

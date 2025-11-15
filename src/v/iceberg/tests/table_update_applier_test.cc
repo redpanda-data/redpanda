@@ -204,14 +204,14 @@ TEST_F(UpdateApplyingVisitorTest, TestAddSnapshot) {
           make_update(12345, std::nullopt, 1), table);
         ASSERT_EQ(outcome, table_update::outcome::success);
         ASSERT_TRUE(table.snapshots.has_value());
-        ASSERT_EQ(table.snapshots->size(), 1);
+        ASSERT_EQ(table.snapshots.value().size(), 1);
         ASSERT_EQ(table.last_sequence_number(), 1);
 
         outcome = table_update::apply(
           make_update(54321, std::nullopt, 2), table);
         ASSERT_EQ(outcome, table_update::outcome::success);
         ASSERT_TRUE(table.snapshots.has_value());
-        ASSERT_EQ(table.snapshots->size(), 2);
+        ASSERT_EQ(table.snapshots.value().size(), 2);
         ASSERT_EQ(table.last_sequence_number(), 2);
 
         // Adding a snapshot that already exists should fail.
@@ -225,7 +225,7 @@ TEST_F(UpdateApplyingVisitorTest, TestAddSnapshot) {
           make_update(12345, std::nullopt, 1), table);
         ASSERT_EQ(outcome, table_update::outcome::success);
         ASSERT_TRUE(table.snapshots.has_value());
-        ASSERT_EQ(table.snapshots->size(), 1);
+        ASSERT_EQ(table.snapshots.value().size(), 1);
         ASSERT_EQ(table.last_sequence_number(), 1);
 
         // Sequence number should not decrease.
@@ -258,17 +258,17 @@ TEST_F(UpdateApplyingVisitorTest, TestRemoveSnapshots) {
     // Now actually remove some snapshots.
     table.snapshots.emplace();
     for (int64_t i = 0; i < 100; ++i) {
-        table.snapshots->emplace_back(
+        table.snapshots.value().emplace_back(
           snapshot{
             .id = snapshot_id{i},
           });
     }
     ASSERT_TRUE(table.snapshots.has_value());
-    ASSERT_EQ(table.snapshots->size(), 100);
+    ASSERT_EQ(table.snapshots.value().size(), 100);
     outcome = table_update::apply(make_update({0, 1, 2, 3}), table);
     ASSERT_EQ(outcome, table_update::outcome::success);
-    ASSERT_EQ(table.snapshots->size(), 96);
-    ASSERT_EQ(table.snapshots->front().id(), 4);
+    ASSERT_EQ(table.snapshots.value().size(), 96);
+    ASSERT_EQ(table.snapshots.value().front().id(), 4);
 }
 
 TEST_F(UpdateApplyingVisitorTest, TestSetSnapshotReference) {
@@ -284,7 +284,7 @@ TEST_F(UpdateApplyingVisitorTest, TestSetSnapshotReference) {
     auto table = create_table();
     table.snapshots.emplace();
     for (int64_t i = 0; i < 100; ++i) {
-        table.snapshots->emplace_back(
+        table.snapshots.value().emplace_back(
           snapshot{
             .id = snapshot_id{i},
           });
@@ -293,21 +293,21 @@ TEST_F(UpdateApplyingVisitorTest, TestSetSnapshotReference) {
     ASSERT_TRUE(table.snapshots.has_value());
     ASSERT_FALSE(table.current_snapshot_id.has_value());
     ASSERT_FALSE(table.refs.has_value());
-    ASSERT_EQ(table.snapshots->size(), 100);
+    ASSERT_EQ(table.snapshots.value().size(), 100);
 
     // Add a tag that isn't 'main'.
     auto outcome = table_update::apply(make_update("tag1", 99), table);
     ASSERT_EQ(outcome, table_update::outcome::success);
     ASSERT_FALSE(table.current_snapshot_id.has_value());
     ASSERT_TRUE(table.refs.has_value());
-    ASSERT_EQ(table.refs->size(), 1);
-    ASSERT_TRUE(table.refs->contains("tag1"));
+    ASSERT_EQ(table.refs.value().size(), 1);
+    ASSERT_TRUE(table.refs.value().contains("tag1"));
 
     // Add a 'main' tag and check that the current snapshot gets set.
     outcome = table_update::apply(make_update("main", 99), table);
     ASSERT_EQ(outcome, table_update::outcome::success);
-    ASSERT_EQ(table.refs->size(), 2);
-    ASSERT_TRUE(table.refs->contains("main"));
+    ASSERT_EQ(table.refs.value().size(), 2);
+    ASSERT_TRUE(table.refs.value().contains("main"));
     ASSERT_TRUE(table.current_snapshot_id.has_value());
     ASSERT_EQ(table.current_snapshot_id.value()(), 99);
 
@@ -326,7 +326,7 @@ TEST_F(UpdateApplyingVisitorTest, TestRemoveSnapshotReference) {
     table.refs.emplace();
     for (int64_t i = 0; i < 100; ++i) {
         auto ref_name = fmt::format("ref-{}", i);
-        table.refs->emplace(
+        table.refs.value().emplace(
           ref_name,
           snapshot_reference{
             .snapshot_id = snapshot_id{i},
@@ -338,33 +338,33 @@ TEST_F(UpdateApplyingVisitorTest, TestRemoveSnapshotReference) {
     // Simple removal.
     auto outcome = table_update::apply(make_update("ref-0"), table);
     ASSERT_EQ(outcome, table_update::outcome::success);
-    ASSERT_EQ(99, table.refs->size());
+    ASSERT_EQ(99, table.refs.value().size());
 
     // Removing non-existent references should no-op.
     outcome = table_update::apply(make_update("missing-ref"), table);
     ASSERT_EQ(outcome, table_update::outcome::success);
-    ASSERT_EQ(99, table.refs->size());
+    ASSERT_EQ(99, table.refs.value().size());
     ASSERT_EQ(table.current_snapshot_id.value()(), 99);
 
     // Removing 'main', even if it doesn't exist, will reset the current
     // snapshot id.
     outcome = table_update::apply(make_update("main"), table);
     ASSERT_EQ(outcome, table_update::outcome::success);
-    ASSERT_EQ(99, table.refs->size());
+    ASSERT_EQ(99, table.refs.value().size());
     ASSERT_FALSE(table.current_snapshot_id.has_value());
 
     // Removing 'main' whe it does exist will also reset the current snapshot.
     table.current_snapshot_id = snapshot_id{99};
-    table.refs->emplace(
+    table.refs.value().emplace(
       "main",
       snapshot_reference{
         .snapshot_id = snapshot_id{99},
         .type = snapshot_ref_type::branch,
       });
-    ASSERT_EQ(100, table.refs->size());
+    ASSERT_EQ(100, table.refs.value().size());
     outcome = table_update::apply(make_update("main"), table);
     ASSERT_EQ(outcome, table_update::outcome::success);
-    ASSERT_EQ(99, table.refs->size());
+    ASSERT_EQ(99, table.refs.value().size());
     ASSERT_FALSE(table.current_snapshot_id.has_value());
 }
 

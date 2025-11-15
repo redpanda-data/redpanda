@@ -96,7 +96,7 @@ ss::future<result<bytes>> plain_authenticator::authenticate(bytes auth_bytes) {
 
     make_failed.cancel();
 
-    _principal = cred->principal().value_or(
+    _principal = cred.value().principal().value_or(
       acl_principal{principal_type::user, username()});
     _audit_user.name = _principal.name();
     _audit_user.type_id = audit::user::type::user;

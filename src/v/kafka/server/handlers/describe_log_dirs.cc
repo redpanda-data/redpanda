@@ -104,8 +104,8 @@ static ss::future<partition_dir_set> collect(
     std::optional<std::vector<describable_log_dir_topic>> filter_v;
     if (filter) {
         filter_v.emplace(
-          std::make_move_iterator(filter->begin()),
-          std::make_move_iterator(filter->end()));
+          std::make_move_iterator(filter.value().begin()),
+          std::make_move_iterator(filter.value().end()));
     }
     return ctx.partition_manager().map_reduce0(
       [filter{std::move(filter_v)}](cluster::partition_manager& pm) {

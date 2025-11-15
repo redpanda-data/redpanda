@@ -117,7 +117,7 @@ public:
         }
         for (const auto& field : {"issuer", "jwks_uri"}) {
             auto f = detail::string_view(doc, field);
-            if (!f || f->empty()) {
+            if (!f || f.value().empty()) {
                 return errc::metadata_invalid;
             }
         }
@@ -217,7 +217,7 @@ public:
              {std::make_pair("alg", errc::jwt_invalid_alg),
               std::make_pair("kid", errc::jwt_invalid_kid)}) {
             auto f = detail::string_view(header, field.first);
-            if (!f || f->empty()) {
+            if (!f || f.value().empty()) {
                 return field.second;
             }
         }

@@ -343,7 +343,7 @@ void partition_balancer_planner::init_per_node_state(
         if (!node_status) {
             continue;
         }
-        auto time_since_last_seen = now - node_status->last_seen;
+        auto time_since_last_seen = now - node_status.value().last_seen;
 
         vlog(
           clusterlog.debug,
@@ -597,12 +597,13 @@ public:
     const model::ntp& ntp() const { return _ntp; }
     const std::vector<model::broker_shard>& replicas() const {
         return (
-          _reallocated ? _reallocated->partition.replicas() : _orig_replicas);
+          _reallocated ? _reallocated.value().partition.replicas()
+                       : _orig_replicas);
     };
 
     bool is_original(model::node_id replica) const {
         if (_reallocated) {
-            return _reallocated->partition.is_original(replica);
+            return _reallocated.value().partition.is_original(replica);
         } else {
             return contains_node(_orig_replicas, replica);
         }
@@ -633,7 +634,7 @@ private:
       , _ctx(ctx) {}
 
     bool has_changes() const {
-        return _reallocated && _reallocated->partition.has_changes();
+        return _reallocated && _reallocated.value().partition.has_changes();
     }
 
     allocation_constraints
@@ -1185,8 +1186,8 @@ ss::future<> partition_balancer_planner::request_context::with_partition(
         vlog(clusterlog.warn, "topic {} not found", topic);
         co_return;
     }
-    auto it = topic_meta->get().get_assignments().find(ntp.tp.partition);
-    if (it == topic_meta->get().get_assignments().end()) {
+    auto it = topic_meta.value().get().get_assignments().find(ntp.tp.partition);
+    if (it == topic_meta.value().get().get_assignments().end()) {
         vlog(
           clusterlog.warn,
           "partition {} of topic {} not found",
@@ -1261,14 +1262,14 @@ partition_balancer_planner::reassignable_partition::move_replica(
     // simplifies the code considerably (although in the future nothing stops us
     // from supporting moving already moved replicas several times).
     vassert(
-      _reallocated->partition.is_original(replica),
+      _reallocated.value().partition.is_original(replica),
       "ntp {}: trying to move replica {} which was already reassigned earlier",
       _ntp,
       replica);
 
     auto constraints = get_allocation_constraints(max_disk_usage_ratio);
     auto moved = _ctx._parent._partition_allocator.reallocate_replica(
-      _reallocated->partition, replica, std::move(constraints));
+      _reallocated.value().partition, replica, std::move(constraints));
     if (!moved) {
         if (_ctx.increment_failure_count()) {
             vlog(
@@ -1302,9 +1303,9 @@ partition_balancer_planner::reassignable_partition::move_replica(
          * Reallocation may require policy update as previous reason might have
          * been different.
          */
-        _reallocated->reconfiguration_policy
+        _reallocated.value().reconfiguration_policy
           = request_context::update_reconfiguration_policy(
-            _reallocated->reconfiguration_policy, reason);
+            _reallocated.value().reconfiguration_policy, reason);
 
         {
             // adjust topic node counts
@@ -1331,7 +1332,7 @@ partition_balancer_planner::reassignable_partition::move_replica(
 
         auto to_it = _ctx.node_disk_reports.find(new_node);
         if (to_it != _ctx.node_disk_reports.end()) {
-            if (_reallocated->partition.is_original(new_node)) {
+            if (_reallocated.value().partition.is_original(new_node)) {
                 to_it->second.released -= _sizes.get_current(new_node);
             } else {
                 to_it->second.assigned += _sizes.non_reclaimable;
@@ -1356,13 +1357,14 @@ void partition_balancer_planner::reassignable_partition::revert(
       "ntp {}: trying to revert move without previous replica",
       _ntp);
     vassert(
-      _reallocated->partition.is_original(move.previous()->node_id),
+      _reallocated.value().partition.is_original(
+        move.previous().value().node_id),
       "ntp {}: move {}->{} should have been from original node",
       _ntp,
       move.previous(),
       move.current());
 
-    auto err = _reallocated->partition.try_revert(move);
+    auto err = _reallocated.value().partition.try_revert(move);
     vassert(err == errc::success, "ntp {}: revert error: {}", _ntp, err);
     vlog(
       clusterlog.info,
@@ -1380,15 +1382,15 @@ void partition_balancer_planner::reassignable_partition::revert(
         if (cur_count == 0) {
             node_counts.erase(move.current().node_id);
         }
-        node_counts[move.previous()->node_id] += 1;
+        node_counts[move.previous().value().node_id] += 1;
     }
 
     // adjust partition disk contribution
 
-    auto from_it = _ctx.node_disk_reports.find(move.previous()->node_id);
+    auto from_it = _ctx.node_disk_reports.find(move.previous().value().node_id);
     if (from_it != _ctx.node_disk_reports.end()) {
         from_it->second.released -= _sizes.get_current(
-          move.previous()->node_id);
+          move.previous().value().node_id);
 
         vlog(
           clusterlog.trace,
@@ -1399,7 +1401,8 @@ void partition_balancer_planner::reassignable_partition::revert(
 
     auto to_it = _ctx.node_disk_reports.find(move.current().node_id);
     if (to_it != _ctx.node_disk_reports.end()) {
-        if (_reallocated->partition.is_original(move.current().node_id)) {
+        if (_reallocated.value().partition.is_original(
+              move.current().node_id)) {
             to_it->second.released += _sizes.get_current(
               move.current().node_id);
         } else {

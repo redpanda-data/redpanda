@@ -277,13 +277,13 @@ SEASTAR_THREAD_TEST_CASE(test_retention_strategies) {
           m, config, pinned_offset);
         if (next_start_offset.has_value()) {
             BOOST_REQUIRE(retention_calculator.has_value());
-            auto next_so = retention_calculator->next_start_offset();
+            auto next_so = retention_calculator.value().next_start_offset();
             BOOST_REQUIRE(next_so.has_value());
             BOOST_REQUIRE(next_so == next_start_offset);
         } else {
             if (
               retention_calculator
-              && retention_calculator->next_start_offset().has_value()) {
+              && retention_calculator.value().next_start_offset().has_value()) {
                 vlog(
                   test_log.error,
                   "next offset computed: {}",
@@ -291,7 +291,7 @@ SEASTAR_THREAD_TEST_CASE(test_retention_strategies) {
             }
             BOOST_REQUIRE(
               !retention_calculator
-              || !retention_calculator->next_start_offset());
+              || !retention_calculator.value().next_start_offset());
         }
     };
 }
@@ -316,7 +316,8 @@ SEASTAR_THREAD_TEST_CASE(test_retention_after_truncation) {
     const auto calculate_next_truncated_offset = [&]() -> model::offset {
         auto retention_calculator = retention_calculator::factory(m, config);
         BOOST_REQUIRE(retention_calculator.has_value());
-        auto next_start_offset = retention_calculator->next_start_offset();
+        auto next_start_offset
+          = retention_calculator.value().next_start_offset();
         BOOST_REQUIRE(next_start_offset.has_value());
         BOOST_REQUIRE_NE(next_start_offset.value(), model::offset{});
         return next_start_offset.value();

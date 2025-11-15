@@ -389,17 +389,17 @@ TEST_F(feature_table_fixture, feature_table_trial_license_test) {
 
     ft.set_builtin_trial_license(model::timestamp::now());
     EXPECT_EQ(ft.get_license().has_value(), true);
-    EXPECT_EQ(ft.get_license()->is_expired(), false);
+    EXPECT_EQ(ft.get_license().value().is_expired(), false);
     EXPECT_EQ(ft.should_sanction(), false);
 
     ft.set_license(expired_license);
     EXPECT_EQ(ft.get_license().has_value(), true);
-    EXPECT_EQ(ft.get_license()->is_expired(), true);
+    EXPECT_EQ(ft.get_license().value().is_expired(), true);
     EXPECT_EQ(ft.should_sanction(), true);
 
     ft.set_license(license);
     EXPECT_EQ(ft.get_license().has_value(), true);
-    EXPECT_EQ(ft.get_license()->is_expired(), false);
+    EXPECT_EQ(ft.get_license().value().is_expired(), false);
     EXPECT_EQ(ft.should_sanction(), false);
 
     ft.revoke_license();

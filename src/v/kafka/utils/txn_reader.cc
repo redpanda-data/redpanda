@@ -134,7 +134,7 @@ private:
                 _result.txn_range.emplace(
                   batch.base_offset(), batch.last_offset());
             }
-            _result.txn_range->second = batch.last_offset();
+            _result.txn_range.value().second = batch.last_offset();
         }
         _result.batches.push_back(std::move(batch));
     }

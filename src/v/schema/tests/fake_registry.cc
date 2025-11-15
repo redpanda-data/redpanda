@@ -43,7 +43,7 @@ ss::future<ppsr::stored_schema> schema::fake_store::get_subject_schema(
         if (version && version.value() != s.version) {
             continue;
         }
-        if (found && found->version > s.version) {
+        if (found && found.value().version > s.version) {
             continue;
         }
         found.emplace(s.share());

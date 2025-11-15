@@ -408,14 +408,14 @@ ss::future<> offset_translator::copy_persistent_state(
               write_futures.push_back(api.kvs().put(
                 ks,
                 serialize_kvstore_key(gr, kvstore_key_type::offsets_map),
-                state.offset_map->copy()));
+                state.offset_map.value().copy()));
           }
           if (state.highest_known_offset) {
               write_futures.push_back(api.kvs().put(
                 ks,
                 serialize_kvstore_key(
                   gr, kvstore_key_type::highest_known_offset),
-                state.highest_known_offset->copy()));
+                state.highest_known_offset.value().copy()));
           }
 
           return ss::when_all_succeed(std::move(write_futures));

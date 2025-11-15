@@ -40,7 +40,7 @@ coordinators_on_current_shard(link& link, ss::shard_id, ::model::node_id) {
         return ret;
     }
     for (::model::partition_id p_id{0};
-         p_id < ::model::partition_id(topic_cfg->partition_count);
+         p_id < ::model::partition_id(topic_cfg.value().partition_count);
          ++p_id) {
         ::model::ktp ktp(::model::kafka_consumer_offsets_topic, p_id);
         const auto is_leader = link.partition_manager().is_current_shard_leader(

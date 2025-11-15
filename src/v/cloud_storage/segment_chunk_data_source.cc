@@ -60,12 +60,12 @@ ss::future<ss::temporary_buffer<char>> chunk_data_source_impl::get() {
           _current_chunk_start);
     }
 
-    auto buf = co_await _current_stream->read();
+    auto buf = co_await _current_stream.value().read();
     while (buf.empty() && _current_chunk_start < _last_chunk_start) {
         _current_chunk_start = _chunks.get_next_chunk_start(
           _current_chunk_start);
         co_await load_stream_for_chunk(_current_chunk_start);
-        buf = co_await _current_stream->read();
+        buf = co_await _current_stream.value().read();
     }
 
     co_return buf;
@@ -129,7 +129,7 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
       _current_chunk_start, _last_chunk_start);
 
     if (_current_stream) {
-        co_await _current_stream->close();
+        co_await _current_stream.value().close();
     }
 
     // The first read of the data source begins at _begin_stream_at. This is
@@ -159,7 +159,7 @@ ss::future<> chunk_data_source_impl::close() {
 
 ss::future<> chunk_data_source_impl::maybe_close_stream() {
     if (_current_stream) {
-        co_await _current_stream->close();
+        co_await _current_stream.value().close();
         _current_stream = std::nullopt;
     }
 }

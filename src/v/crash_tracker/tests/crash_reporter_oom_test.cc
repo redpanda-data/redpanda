@@ -74,7 +74,7 @@ If you work at Redpanda please refer to https://vectorizedio.atlassian.net/l/cp/
     ASSERT_FALSE(crashes.empty());
     ASSERT_EQ(crashes.size(), 1);
     const auto& crash = crashes[0];
-    EXPECT_EQ(crash.crash->type, crash_type::oom);
-    EXPECT_EQ(crash.crash->crash_message.c_str(), expected);
+    EXPECT_EQ(crash.crash.value().type, crash_type::oom);
+    EXPECT_EQ(crash.crash.value().crash_message.c_str(), expected);
 }
 } // namespace crash_tracker

@@ -62,10 +62,10 @@ namespace {
 std::optional<kafka::leader_id_and_epoch> get_leader_id_and_epoch(
   const cluster::metadata_cache& md_cache, const model::ktp& ktp) {
     auto lt = md_cache.get_leader_term(ktp.as_tn_view(), ktp.get_partition());
-    if (lt && lt->leader) {
+    if (lt && lt.value().leader) {
         return kafka::leader_id_and_epoch{
-          .leader_id = lt->leader.value(),
-          .leader_epoch = kafka::leader_epoch_from_term(lt->term)};
+          .leader_id = lt.value().leader.value(),
+          .leader_epoch = kafka::leader_epoch_from_term(lt.value().term)};
     }
     return std::nullopt;
 }
@@ -245,7 +245,9 @@ static ss::future<read_result> do_read_from_ntp(
         co_return make_errored_read_result(
           md_cache, ntp_config.ktp(), error_code::unknown_topic_or_partition);
     }
-    if (!ntp_config.cfg.read_from_follower && !kafka_partition->is_leader()) {
+    if (
+      !ntp_config.cfg.read_from_follower
+      && !kafka_partition.value().is_leader()) {
         co_return make_errored_read_result(
           md_cache, ntp_config.ktp(), error_code::not_leader_for_partition);
     }
@@ -259,12 +261,12 @@ static ss::future<read_result> do_read_from_ntp(
         co_return make_errored_read_result(
           md_cache, ntp_config.ktp(), leader_epoch_err);
     }
-    auto offset_ec = co_await kafka_partition->validate_fetch_offset(
+    auto offset_ec = co_await kafka_partition.value().validate_fetch_offset(
       ntp_config.cfg.start_offset,
       ntp_config.cfg.read_from_follower,
       default_fetch_timeout + model::timeout_clock::now());
 
-    auto maybe_lso = kafka_partition->last_stable_offset();
+    auto maybe_lso = kafka_partition.value().last_stable_offset();
     if (unlikely(!maybe_lso)) {
         // partition is still bootstrapping
         co_return read_result(maybe_lso.error());
@@ -281,14 +283,15 @@ static ss::future<read_result> do_read_from_ntp(
     if (offset_ec != error_code::none) {
         co_return read_result(
           offset_ec,
-          kafka_partition->start_offset(),
-          kafka_partition->high_watermark(),
+          kafka_partition.value().start_offset(),
+          kafka_partition.value().high_watermark(),
           maybe_lso.value());
     }
     if (
       config::shard_local_cfg().enable_rack_awareness.value()
-      && ntp_config.cfg.consumer_rack_id && kafka_partition->is_leader()) {
-        auto p_info_res = kafka_partition->get_partition_info();
+      && ntp_config.cfg.consumer_rack_id
+      && kafka_partition.value().is_leader()) {
+        auto p_info_res = kafka_partition.value().get_partition_info();
         if (p_info_res.has_error()) {
             // TODO: add mapping here
             co_return read_result(error_code::not_leader_for_partition);
@@ -307,8 +310,8 @@ static ss::future<read_result> do_read_from_ntp(
               *ntp_config.cfg.consumer_rack_id,
               preferred_replica.value());
             co_return read_result(
-              kafka_partition->start_offset(),
-              kafka_partition->high_watermark(),
+              kafka_partition.value().start_offset(),
+              kafka_partition.value().high_watermark(),
               maybe_lso.value(),
               preferred_replica);
         }
@@ -1271,7 +1274,8 @@ class simple_fetch_planner final : public fetch_planner::impl {
                     error_code::unknown_topic_or_partition);
               }
 
-              const auto& topic_cfg = topic_md->get().get_configuration();
+              const auto& topic_cfg
+                = topic_md.value().get().get_configuration();
               // Max batch size or `message.max.bytes` is a user configurable
               // topic property that defines the max size of a batch that can be
               // produced to any partition in the topic.
@@ -1336,8 +1340,8 @@ class simple_fetch_planner final : public fetch_planner::impl {
                   auto max_bytes = std::min(
                     bytes_left_in_plan, size_t(fp.max_bytes));
                   auto avg_batch_size
-                    = fetch_md && (fetch_md->avg_bytes_per_batch > 0)
-                        ? fetch_md->avg_bytes_per_batch
+                    = fetch_md && (fetch_md.value().avg_bytes_per_batch > 0)
+                        ? fetch_md.value().avg_bytes_per_batch
                         : 1_MiB;
                   /**
                    * If the fetch offest is less than the hwm for the partition
@@ -1346,11 +1350,14 @@ class simple_fetch_planner final : public fetch_planner::impl {
                    * enough information in the md cache to estimate this then we
                    * assume the `max_bytes` can be read.
                    */
-                  if (fetch_md && fetch_md->high_watermark > fp.fetch_offset) {
-                      const auto offset_count
-                        = (fetch_md->high_watermark - fp.fetch_offset)() + 1;
+                  if (
+                    fetch_md
+                    && fetch_md.value().high_watermark > fp.fetch_offset) {
+                      const auto offset_count = (fetch_md.value().high_watermark
+                                                 - fp.fetch_offset)()
+                                                + 1;
                       const auto est_read_size
-                        = offset_count * fetch_md->avg_bytes_per_offset;
+                        = offset_count * fetch_md.value().avg_bytes_per_offset;
                       if (est_read_size > 0) {
                           bytes_left_in_plan -= std::min(
                             est_read_size, max_bytes);
@@ -1475,7 +1482,7 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
         const auto set_topic = [this](auto& t) {
             auto tp_ns = rctx.metadata_cache().get_name_by_id(t.topic_id);
             if (tp_ns.has_value()) {
-                t.topic = std::move(tp_ns->tp);
+                t.topic = std::move(tp_ns.value().tp);
             } else {
                 // An empty topic name will be translated to unknown_topic_id
                 // during plan creation
@@ -1559,7 +1566,7 @@ bool update_fetch_partition(
   const fetch_response::partition_response& resp,
   fetch_session_partition& partition) {
     bool include = false;
-    if (resp.records && resp.records->size_bytes() > 0) {
+    if (resp.records && resp.records.value().size_bytes() > 0) {
         // Partitions with new data are always included in the response.
         include = true;
     }
@@ -1607,7 +1614,7 @@ ss::future<response_ptr> op_context::send_response() && {
 
         for (const auto& part : topic.partitions) {
             if (part.records) {
-                auto part_size = part.records->size_bytes();
+                auto part_size = part.records.value().size_bytes();
                 fetched_data_size += part_size;
 
                 /// Account for special internal topic bytes for usage
@@ -1709,8 +1716,8 @@ void op_context::response_placeholder::set(
       _it->partition_response->partition_index,
       response.partition_index);
     dassert(
-      (response.records ? response.records->size_bytes() : 0)
-        == (response_memory_units ? response_memory_units->num_units() : 0),
+      (response.records ? response.records.value().size_bytes() : 0)
+        == (response_memory_units ? response_memory_units.value().num_units() : 0),
       "Response units should equal the number of bytes in the response its "
       "self.");
 
@@ -1726,13 +1733,13 @@ void op_context::response_placeholder::set(
 
     auto& current_resp_data = _it->partition_response->records;
     if (current_resp_data) {
-        auto sz = current_resp_data->size_bytes();
+        auto sz = current_resp_data.value().size_bytes();
         _ctx->response_size -= sz;
         _ctx->bytes_left += sz;
     }
 
     if (response.records) {
-        auto sz = response.records->size_bytes();
+        auto sz = response.records.value().size_bytes();
         _ctx->response_size += sz;
         _ctx->bytes_left -= std::min(_ctx->bytes_left, sz);
     }
@@ -1764,7 +1771,7 @@ void op_context::response_placeholder::set(
              */
             if (
               _it->partition_response->records
-              && _it->partition_response->records->size_bytes() > 0) {
+              && _it->partition_response->records.value().size_bytes() > 0) {
                 // move both session partition and response placeholder to the
                 // end of fetch queue
                 session_partitions.move_to_end(it);

@@ -36,7 +36,7 @@ FIXTURE_TEST(test_successful_generation, topic_table_fixture) {
     do {
         next_batch = gen.next_batch().get();
         if (next_batch) {
-            BOOST_REQUIRE(next_batch->size() <= 5);
+            BOOST_REQUIRE(next_batch.value().size() <= 5);
             for (auto& p_replicas : next_batch.value()) {
                 vlog(test_log.debug, "{}", p_replicas.partition);
                 result[p_replicas.partition] = std::move(p_replicas.replicas);
@@ -81,7 +81,7 @@ FIXTURE_TEST(test_topic_table_mutated, topic_table_fixture) {
 
     auto res = gen.next_batch().get();
     BOOST_REQUIRE(res.has_value());
-    BOOST_REQUIRE(res->size() == 3);
+    BOOST_REQUIRE(res.value().size() == 3);
 
     auto cmd_2 = make_create_topic_cmd("test_tp_2", 10, 3);
     auto res_2 = table.local().apply(std::move(cmd_2), model::offset(2)).get();

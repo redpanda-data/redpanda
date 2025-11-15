@@ -137,7 +137,7 @@ ss::future<> credential_manager::stop() {
     auth_refresh_as_.request_abort();
     credentials_available_cv_.broken();
     if (auth_refresh_bg_op_) {
-        co_await auth_refresh_bg_op_->stop();
+        co_await auth_refresh_bg_op_.value().stop();
         auth_refresh_bg_op_.reset();
     }
     if (!gate_.is_closed()) {
@@ -250,7 +250,7 @@ void credential_manager::start_auth_refresh_if_needed() {
       std::move(client_config.value()),
       get_credentials_source(cfg));
 
-    auth_refresh_bg_op_->maybe_start_auth_refresh_op(
+    auth_refresh_bg_op_.value().maybe_start_auth_refresh_op(
       [this](cloud_roles::credentials creds) -> ss::future<> {
           return propagate_credentials(std::move(creds));
       },

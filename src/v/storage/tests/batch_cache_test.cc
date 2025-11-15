@@ -302,8 +302,8 @@ TEST_F(batch_cache_test_fixture, test_random_batch_sizes) {
     for (auto& b : batches) {
         auto from_cache = index.get(b.base_offset());
         ASSERT_TRUE(from_cache.has_value());
-        EXPECT_EQ(from_cache->header(), b.header());
-        EXPECT_EQ(from_cache->data(), b.data());
+        EXPECT_EQ(from_cache.value().header(), b.header());
+        EXPECT_EQ(from_cache.value().data(), b.data());
     }
     double max_waste = ((double)storage::batch_cache::range::max_waste_bytes
                         / storage::batch_cache::range::range_size)

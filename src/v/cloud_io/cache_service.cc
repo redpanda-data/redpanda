@@ -1126,10 +1126,10 @@ ss::future<std::optional<cloud_io::cache_item_stream>> cache::get_stream(
     options.buffer_size = read_buffer_size;
     options.read_ahead = read_ahead;
     auto stream = ss::make_file_input_stream(
-      std::move(get_res->body), 0, std::move(options));
+      std::move(get_res.value().body), 0, std::move(options));
     co_return cloud_io::cache_item_stream{
       .body = std::move(stream),
-      .size = get_res->size,
+      .size = get_res.value().size,
     };
 }
 
@@ -1539,8 +1539,8 @@ cache::trim_carryover(uint64_t delete_bytes, uint64_t delete_objects) {
         co_return result;
     }
     probe.carryover_trim();
-    auto it = _last_trim_carryover->begin();
-    for (; it < _last_trim_carryover->end(); it++) {
+    auto it = _last_trim_carryover.value().begin();
+    for (; it < _last_trim_carryover.value().end(); it++) {
         vlog(
           log.trace,
           "carryover trim: check object {} ({})",
@@ -1581,7 +1581,7 @@ cache::trim_carryover(uint64_t delete_bytes, uint64_t delete_objects) {
 
         if (auto estimate = _access_time_tracker.get(rel_path.native());
             estimate.has_value()
-            && estimate->time_point() != file_stat.access_time) {
+            && estimate.value().time_point() != file_stat.access_time) {
             vlog(
               log.trace,
               "carryover file {} was accessed ({}) since the last trim ({}), "
@@ -1602,13 +1602,14 @@ cache::trim_carryover(uint64_t delete_bytes, uint64_t delete_objects) {
       result.deleted_size,
       result.deleted_count);
 
-    if (it == _last_trim_carryover->end()) {
+    if (it == _last_trim_carryover.value().end()) {
         _last_trim_carryover = std::nullopt;
     } else {
         chunked_vector<file_list_item> tmp;
-        size_t estimate = _last_trim_carryover->end() - it;
+        size_t estimate = _last_trim_carryover.value().end() - it;
         tmp.reserve(estimate);
-        std::copy(it, _last_trim_carryover->end(), std::back_inserter(tmp));
+        std::copy(
+          it, _last_trim_carryover.value().end(), std::back_inserter(tmp));
         _last_trim_carryover = std::move(tmp);
     }
 

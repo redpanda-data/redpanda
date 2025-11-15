@@ -35,7 +35,7 @@ namespace kafka {
 group_metadata_kv group_metadata_kv::copy() const {
     group_metadata_kv cp{.key = key};
     if (value) {
-        cp.value = value->copy();
+        cp.value = value.value().copy();
     }
     return cp;
 }

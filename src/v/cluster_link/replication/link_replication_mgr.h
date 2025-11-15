@@ -91,7 +91,7 @@ private:
         bool
         set_desired(const ::model::ntp& ntp, ntp_target_state new_desired) {
             if (desired) {
-                return desired->merge(ntp, new_desired);
+                return desired.value().merge(ntp, new_desired);
             }
             desired = new_desired;
             return true;

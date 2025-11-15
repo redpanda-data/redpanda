@@ -113,8 +113,9 @@ void fill_raft_state(
     }
     if (src.recovery_state) {
         ss::httpd::debug_json::follower_recovery_state frs;
-        frs.is_active = src.recovery_state->is_active;
-        frs.pending_offset_count = src.recovery_state->pending_offset_count;
+        frs.is_active = src.recovery_state.value().is_active;
+        frs.pending_offset_count
+          = src.recovery_state.value().pending_offset_count;
         raft_state.follower_recovery_state = std::move(frs);
     }
     replica.raft_state = std::move(raft_state);
@@ -349,7 +350,7 @@ void admin_server::register_debug_routes() {
           }
 
           auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(
-            rpc::clock_type::now() - node_status->last_seen);
+            rpc::clock_type::now() - node_status.value().last_seen);
 
           seastar::httpd::debug_json::peer_status ret;
           ret.since_last_status = delta.count();

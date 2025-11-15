@@ -116,8 +116,8 @@ ss::future<> backend::start() {
       ss::this_shard_id() == data_migrations_shard, "Called on wrong shard");
 
     auto leader_term = _leaders_table.get_leader_term(model::controller_ntp);
-    if (leader_term && leader_term->leader == _self) {
-        _raft0_leader_term = _coordinator_term = leader_term->term;
+    if (leader_term && leader_term.value().leader == _self) {
+        _raft0_leader_term = _coordinator_term = leader_term.value().term;
     }
 
     _plt_raft0_leadership_notification_id
@@ -227,7 +227,7 @@ backend::get_entities_status(id migration_id) {
             vlog(dm_log.trace, "migration {} gone, ignoring", migration_id);
             co_return errc::data_migration_not_exists;
         }
-        const auto& meta = maybe_meta->get();
+        const auto& meta = maybe_meta.value().get();
 
         if (!std::holds_alternative<outbound_migration>(meta.migration)) {
             vlog(dm_log.warn, "migration {} is not outbound", migration_id);
@@ -335,7 +335,7 @@ backend::set_entities_status(id migration_id, entities_status status) {
             vlog(dm_log.trace, "migration {} gone, ignoring", migration_id);
             co_return errc::data_migration_not_exists;
         }
-        const auto& meta = maybe_meta->get();
+        const auto& meta = maybe_meta.value().get();
 
         if (!std::holds_alternative<inbound_migration>(meta.migration)) {
             vlog(dm_log.warn, "migration {} is not inbound", migration_id);
@@ -390,7 +390,7 @@ backend::set_entities_status(id migration_id, entities_status status) {
 
                 chunked_hash_map<model::partition_id, group_offsets_snapshot>
                   requests;
-                requests.reserve(mrstate.partition_group_map->size());
+                requests.reserve(mrstate.partition_group_map.value().size());
                 for (auto p :
                      mrstate.partition_group_map.value() | std::views::keys) {
                     requests[p].offsets_topic_pid = p;
@@ -766,7 +766,7 @@ void backend::schedule_topic_work(model::topic_namespace nt) {
     topic_work tw{
       .migration_id = migration_id,
       .sought_state = mrstate.scope.sought_state.value(),
-      .info = get_topic_work_info(nt, maybe_migration->get())};
+      .info = get_topic_work_info(nt, maybe_migration.value().get())};
 
     ssx::spawn_with_gate(
       _gate, [this, nt = std::move(nt), tw = std::move(tw)]() mutable {
@@ -1019,10 +1019,11 @@ backend::maybe_download_topic_manifest(
     }
     cloud_storage::topic_manifest_downloader tmd(
       cloud_storage_clients::bucket_name{maybe_bucket.value()},
-      storage_location ? std::make_optional(storage_location->hint)
+      storage_location ? std::make_optional(storage_location.value().hint)
                        : std::nullopt,
       original_nt.value_or(nt),
-      _cloud_storage_api->get()); // checked in frontend::data_migrations_active
+      _cloud_storage_api.value()
+        .get()); // checked in frontend::data_migrations_active
 
     auto backoff = std::chrono::duration_cast<model::timestamp_clock::duration>(
       tsws->rcn().get_backoff());
@@ -1076,13 +1077,13 @@ ss::future<errc> backend::create_topic(
     cluster::topic_configuration topic_to_create_cfg(
       local_nt.ns,
       local_nt.tp,
-      maybe_cfg->partition_count,
-      maybe_cfg->replication_factor,
-      maybe_cfg->tp_id);
+      maybe_cfg.value().partition_count,
+      maybe_cfg.value().replication_factor,
+      maybe_cfg.value().tp_id);
     auto& topic_properties = topic_to_create_cfg.properties;
 
     // copy all properties
-    topic_properties = maybe_cfg->properties;
+    topic_properties = maybe_cfg.value().properties;
 
     // override specific ones
     topic_to_create_cfg.is_migrated = true;
@@ -1090,7 +1091,7 @@ ss::future<errc> backend::create_topic(
         topic_properties.remote_topic_namespace_override = original_nt;
     }
     topic_properties.remote_topic_properties.emplace(
-      manifest.get_revision(), maybe_cfg->partition_count);
+      manifest.get_revision(), maybe_cfg.value().partition_count);
     topic_properties.shadow_indexing = model::shadow_indexing_mode::full;
     topic_properties.recovery = true;
     topic_properties.read_replica = {};
@@ -1130,8 +1131,9 @@ ss::future<errc> backend::prepare_mount_topic(
       "trying to prepare mount topic, cfg={}, rev_id={}",
       manifest.get_topic_config(),
       manifest.get_revision());
-    auto mnt_res = co_await _topic_mount_handler->get().prepare_mount_topic(
-      cfg.value(), manifest.get_revision(), rcn);
+    auto mnt_res
+      = co_await _topic_mount_handler.value().get().prepare_mount_topic(
+        cfg.value(), manifest.get_revision(), rcn);
     if (mnt_res == cloud_storage::topic_mount_result::mount_manifest_exists) {
         co_return errc::success;
     }
@@ -1162,8 +1164,9 @@ ss::future<errc> backend::confirm_mount_topic(
       "trying to confirm mount topic, cfg={}, rev_id={}",
       manifest.get_topic_config(),
       manifest.get_revision());
-    auto mnt_res = co_await _topic_mount_handler->get().confirm_mount_topic(
-      cfg.value(), manifest.get_revision(), rcn);
+    auto mnt_res
+      = co_await _topic_mount_handler.value().get().confirm_mount_topic(
+        cfg.value(), manifest.get_revision(), rcn);
     if (
       mnt_res
       != cloud_storage::topic_mount_result::mount_manifest_not_deleted) {
@@ -1212,7 +1215,7 @@ ss::future<errc> backend::do_unmount_not_existing_topic(
 
     auto rev_id = manifest.get_revision();
 
-    auto umnt_res = co_await _topic_mount_handler->get().unmount_topic(
+    auto umnt_res = co_await _topic_mount_handler.value().get().unmount_topic(
       cfg.value(), rev_id, rcn);
     if (umnt_res == cloud_storage::topic_unmount_result::success) {
         co_return errc::success;
@@ -1242,7 +1245,7 @@ ss::future<errc> backend::do_unmount_topic(
         co_return errc::success;
     }
 
-    auto umnt_res = co_await _topic_mount_handler->get().unmount_topic(
+    auto umnt_res = co_await _topic_mount_handler.value().get().unmount_topic(
       cfg.value(), rev_id.value(), rcn);
     if (umnt_res == cloud_storage::topic_unmount_result::success) {
         co_return errc::success;
@@ -1502,7 +1505,7 @@ ss::future<> backend::process_delta(cluster::topic_table_ntp_delta&& delta) {
 void backend::handle_shard_update(
   const model::ntp& ntp, raft::group_id, std::optional<ss::shard_id> shard) {
     if (auto maybe_rwstate = get_replica_work_state(ntp)) {
-        auto& rwstate = maybe_rwstate->get();
+        auto& rwstate = maybe_rwstate.value().get();
         if (rwstate.status == migrated_replica_status::can_run) {
             update_partition_shard(ntp, rwstate, shard);
         }
@@ -1533,7 +1536,7 @@ backend::check_ntp_states_locally(check_ntp_states_request&& req) {
             continue;
         }
 
-        const auto& metadata = maybe_migration->get();
+        const auto& metadata = maybe_migration.value().get();
         if (metadata.state >= ntp_req.state) {
             vlog(
               dm_log.trace,
@@ -1936,7 +1939,8 @@ inbound_partition_work_info backend::get_partition_work_info(
     if (model::topic_namespace_view{ntp} == model::kafka_consumer_offsets_nt) {
         const auto& mrstate = _migration_states.find(migration_id)->second;
         return {
-          .groups = mrstate.partition_group_map->at(ntp.tp.partition).copy()};
+          .groups
+          = mrstate.partition_group_map.value().at(ntp.tp.partition).copy()};
     }
     const auto& inbound_topic = get_inbound_topic(
       {ntp.ns, ntp.tp.topic}, im, migration_id);
@@ -1951,7 +1955,8 @@ outbound_partition_work_info backend::get_partition_work_info(
 
     if (model::topic_namespace_view{ntp} == model::kafka_consumer_offsets_nt) {
         const auto& mrstate = _migration_states.find(migration_id)->second;
-        ret.groups = mrstate.partition_group_map->at(ntp.tp.partition).copy();
+        ret.groups
+          = mrstate.partition_group_map.value().at(ntp.tp.partition).copy();
     }
 
     return ret;
@@ -2015,7 +2020,7 @@ void backend::start_partition_work(
     partition_work work{
       .migration_id = rwstate.migration_id,
       .sought_state = rwstate.sought_state,
-      .info = get_partition_work_info(ntp, maybe_migration->get())};
+      .info = get_partition_work_info(ntp, maybe_migration.value().get())};
 
     ssx::spawn_with_gate(
       _gate, [this, &ntp, &rwstate, work = std::move(work)]() mutable {
@@ -2083,7 +2088,7 @@ void backend::on_partition_work_completed(
     if (!maybe_rwstate) {
         return;
     }
-    auto& rwstate = maybe_rwstate->get();
+    auto& rwstate = maybe_rwstate.value().get();
     if (rwstate.migration_id == migration && rwstate.sought_state == state) {
         rwstate.status = migrated_replica_status::done;
         rwstate.shard = std::nullopt;
@@ -2095,7 +2100,7 @@ bool backend::has_local_replica(const model::ntp& ntp) {
     if (!maybe_assignment) {
         return false;
     }
-    for (const auto& replica : maybe_assignment->replicas) {
+    for (const auto& replica : maybe_assignment.value().replicas) {
         if (_self == replica.node_id) {
             return true;
         }

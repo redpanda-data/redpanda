@@ -217,7 +217,7 @@ SEASTAR_THREAD_TEST_CASE(serde_flex_types) {
         std::for_each(
           boost::counting_iterator<int>(0),
           boost::counting_iterator<int>(100),
-          [&v](int) { v->push_back(test_struct::make_random()); });
+          [&v](int) { v.value().push_back(test_struct::make_random()); });
         BOOST_CHECK(v == serde_flex(v));
 
         {

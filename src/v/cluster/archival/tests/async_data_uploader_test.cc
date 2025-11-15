@@ -465,7 +465,7 @@ TEST_F(
             continue;
         }
 
-        auto i_range = actual->range;
+        auto i_range = actual.value().range;
         auto expected = load_log_segment_concat(i_range);
 
         ASSERT_TRUE(actual.has_value());

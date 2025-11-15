@@ -54,7 +54,7 @@ struct offset_fetch_response final {
     static auto get_topics(auto topics) {
         Topics result;
         if (topics.has_value()) {
-            result.reserve(topics->size());
+            result.reserve(topics.value().size());
             for (auto& topic : topics.value()) {
                 decltype(Topics::value_type::partitions) partitions;
                 partitions.reserve(topic.partition_indexes.size());

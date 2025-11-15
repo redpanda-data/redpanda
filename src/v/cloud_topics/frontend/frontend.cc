@@ -128,7 +128,7 @@ static void update_batches(
 
 static ss::lw_shared_ptr<cloud_topics::ctp_stm_api>
 make_ctp_stm_api(ss::lw_shared_ptr<cluster::partition> p) {
-    auto stm = p->raft()->stm_manager()->get<cloud_topics::ctp_stm>();
+    auto stm = p->raft()->stm_manager().value().get<cloud_topics::ctp_stm>();
     if (!stm) {
         throw std::runtime_error(
           fmt::format("ctp_stm not found for partition {}", p->ntp()));
@@ -314,11 +314,11 @@ frontend::ntp_to_topic_id_partition(const model::ntp& ntp) const {
     auto metadata_cache = ct_state->local().get_metadata_cache();
     auto topic_cfg = metadata_cache->get_topic_cfg(
       model::topic_namespace_view(ntp));
-    if (!topic_cfg || !topic_cfg->tp_id) {
+    if (!topic_cfg || !topic_cfg.value().tp_id) {
         return std::nullopt;
     }
     return model::topic_id_partition{
-      topic_cfg->tp_id.value(), ntp.tp.partition};
+      topic_cfg.value().tp_id.value(), ntp.tp.partition};
 }
 
 std::unique_ptr<model::record_batch_reader::impl>
@@ -427,10 +427,10 @@ frontend::l0_timequery(storage::timequery_config cfg) {
     });
     auto gen = std::move(reader).generator(model::no_timeout);
     while (auto batch = co_await gen()) {
-        if (!std::ranges::contains(type_filter, batch->header().type)) {
+        if (!std::ranges::contains(type_filter, batch.value().header().type)) {
             continue;
         }
-        if (batch->header().max_timestamp < cfg.time) {
+        if (batch.value().header().max_timestamp < cfg.time) {
             continue;
         }
         // NOTE: we can't just return this offset verbatim, since we don't
@@ -440,9 +440,9 @@ frontend::l0_timequery(storage::timequery_config cfg) {
         co_return coarse_grained_timequery_result{
           .time = cfg.time,
           .start_offset = model::offset_cast(
-            ot_state->from_log_offset(batch->base_offset())),
+            ot_state->from_log_offset(batch.value().base_offset())),
           .last_offset = model::offset_cast(
-            ot_state->from_log_offset(batch->last_offset())),
+            ot_state->from_log_offset(batch.value().last_offset())),
         };
     }
     co_return std::nullopt;
@@ -468,14 +468,14 @@ frontend::refine_timequery_result(
       kafka::offset_cast(input.last_offset));
     while (auto batch = co_await generator()) {
         auto batch_interval = model::bounded_offset_interval::checked(
-          batch->base_offset(), batch->last_offset());
+          batch.value().base_offset(), batch.value().last_offset());
         if (!query_interval.overlaps(batch_interval)) {
             if (batch_interval.min() > query_interval.max()) {
                 break;
             }
             continue;
         }
-        if (input.time > batch->header().max_timestamp) {
+        if (input.time > batch.value().header().max_timestamp) {
             continue;
         }
         co_return co_await storage::batch_timequery(

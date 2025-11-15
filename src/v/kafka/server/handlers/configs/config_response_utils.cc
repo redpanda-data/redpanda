@@ -130,10 +130,10 @@ bool config_property_requested(
   const std::string_view property_name) {
     return !configuration_keys.has_value()
            || std::find(
-                configuration_keys->begin(),
-                configuration_keys->end(),
+                configuration_keys.value().begin(),
+                configuration_keys.value().end(),
                 property_name)
-                != configuration_keys->end();
+                != configuration_keys.value().end();
 }
 
 template<typename T>

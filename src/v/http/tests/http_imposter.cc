@@ -98,12 +98,13 @@ void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
         -> ss::sstring {
           if (_masking_active) {
               if (
-                ss::lowres_clock::now() - _masking_active->started
-                > _masking_active->duration) {
+                ss::lowres_clock::now() - _masking_active.value().started
+                > _masking_active.value().duration) {
                   _masking_active.reset();
               } else {
-                  repl.set_status(_masking_active->canned_response.status);
-                  return _masking_active->canned_response.body;
+                  repl.set_status(
+                    _masking_active.value().canned_response.status);
+                  return _masking_active.value().canned_response.body;
               }
           }
 

@@ -120,7 +120,7 @@ std::optional<duration_type> partition_transaction_info::get_staleness() const {
     }
 
     auto now = ss::lowres_clock::now();
-    return now - info->last_update;
+    return now - info.value().last_update;
 }
 
 std::optional<duration_type> partition_transaction_info::get_timeout() const {
@@ -128,7 +128,7 @@ std::optional<duration_type> partition_transaction_info::get_timeout() const {
         return std::nullopt;
     }
 
-    return info->timeout;
+    return info.value().timeout;
 }
 
 std::ostream& operator<<(std::ostream& o, const abort_snapshot& as) {
@@ -329,17 +329,18 @@ tx_snapshot_v6::tx_snapshot_v6(tx_snapshot_v5 snap_v5, raft::group_id group)
         state.id = pid;
         state.group = group;
         state.transaction_state = producer_partition_transaction_state{};
-        state.transaction_state->first = data.first;
-        state.transaction_state->last = data.last;
-        state.transaction_state->sequence = model::tx_seq{-1};
+        state.transaction_state.value().first = data.first;
+        state.transaction_state.value().last = data.last;
+        state.transaction_state.value().sequence = model::tx_seq{-1};
         auto it = tx_data.find(pid);
         if (it != tx_data.end()) {
-            state.transaction_state->sequence = it->second.tx_seq;
-            state.transaction_state->coordinator_partition = it->second.tm;
+            state.transaction_state.value().sequence = it->second.tx_seq;
+            state.transaction_state.value().coordinator_partition
+              = it->second.tm;
         }
         auto ex_it = expiration.find(pid);
         if (ex_it != expiration.end()) {
-            state.transaction_state->timeout
+            state.transaction_state.value().timeout
               = std::chrono::duration_cast<std::chrono::milliseconds>(
                 ex_it->second.timeout);
         }

@@ -401,7 +401,7 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
                   });
                 BOOST_REQUIRE(part_it != fetch_responses[i].end());
                 auto expected_offset
-                  = part_it->partition_response->records->last_offset();
+                  = part_it->partition_response->records.value().last_offset();
                 BOOST_REQUIRE_EQUAL(p.committed_offset(), expected_offset);
             }
         }

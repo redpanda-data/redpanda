@@ -103,8 +103,9 @@ partitions_request_iterator validate_partitions(
       error_code::invalid_replica_assignment,
       "Empty replica list specified in partition reassignment.",
       [](const reassignable_partition& partition) {
-          return !partition.replicas.has_value() ? true
-                                                 : !partition.replicas->empty();
+          return !partition.replicas.has_value()
+                   ? true
+                   : !partition.replicas.value().empty();
       });
 
     valid_partitions_end = validate_replicas(
@@ -138,10 +139,10 @@ partitions_request_iterator validate_partitions(
           }
 
           auto negative_node_id_it = std::find_if(
-            partition.replicas->begin(),
-            partition.replicas->end(),
+            partition.replicas.value().begin(),
+            partition.replicas.value().end(),
             [](const model::node_id& node_id) { return node_id < 0; });
-          return negative_node_id_it == partition.replicas->end();
+          return negative_node_id_it == partition.replicas.value().end();
       });
 
     valid_partitions_end = validate_replicas(
@@ -156,15 +157,15 @@ partitions_request_iterator validate_partitions(
           }
 
           auto unkown_broker_id_it = std::find_if(
-            partition.replicas->begin(),
-            partition.replicas->end(),
+            partition.replicas.value().begin(),
+            partition.replicas.value().end(),
             [alive_nodes](const model::node_id& node_id) {
                 return std::find(
                          alive_nodes.begin(), alive_nodes.end(), node_id)
                        == alive_nodes.end();
             });
 
-          return unkown_broker_id_it == partition.replicas->end();
+          return unkown_broker_id_it == partition.replicas.value().end();
       });
 
     // Check for undefined topic here instead of outside
@@ -204,7 +205,7 @@ partitions_request_iterator validate_partitions(
                 tp_replication_factor,
                 *partition.replicas);
               return size_t(tp_replication_factor)
-                     == partition.replicas->size();
+                     == partition.replicas.value().size();
           });
     }
 
@@ -242,8 +243,8 @@ ss::future<std::error_code> handle_partition(
         return octx.rctx.topics_frontend().move_partition_replicas(
           ntp,
           std::vector<model::node_id>{
-            std::make_move_iterator(partition.replicas->begin()),
-            std::make_move_iterator(partition.replicas->end())},
+            std::make_move_iterator(partition.replicas.value().begin()),
+            std::make_move_iterator(partition.replicas.value().end())},
           cluster::reconfiguration_policy::full_local_retention,
           model::timeout_clock::now() + octx.request.data.timeout_ms);
 

@@ -69,7 +69,7 @@ public:
         client.connect().get();
         if (suser.has_value()) {
             authn_kafka_client<security::scram_sha256_authenticator>(
-              client, suser->username, suser->password);
+              client, suser.value().username, suser.value().password);
         }
 
         return client.dispatch(std::move(req), v).get();
@@ -106,7 +106,7 @@ public:
     std::optional<model::topic_id> get_app_topic_id(const model::topic& tp) {
         auto md = app.metadata_cache.local().get_topic_cfg(
           model::topic_namespace_view{model::kafka_namespace, tp});
-        return md ? md->tp_id : std::nullopt;
+        return md ? md.value().tp_id : std::nullopt;
     }
 
     ss::future<kafka::metadata_response> get_all_metadata() {

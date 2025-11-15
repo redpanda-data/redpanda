@@ -156,9 +156,9 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
 
               for ([[maybe_unused]] auto& r : part.partitions) {
                   const auto& data = part.partitions.begin()->records;
-                  if (data && !data->empty()) {
+                  if (data && !data.value().empty()) {
                       // update next fetch offset the same way as Kafka clients
-                      fetch_offsets[p_id()] = ++data->last_offset();
+                      fetch_offsets[p_id()] = ++data.value().last_offset();
                   }
               }
               return resp;
@@ -224,7 +224,10 @@ FIXTURE_TEST(test_produce_consume_small_batches, prod_consume_fixture) {
       resp_1.data.responses.begin()->partitions.begin()->error_code,
       kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(
-      resp_1.data.responses.begin()->partitions.begin()->records->last_offset(),
+      resp_1.data.responses.begin()
+        ->partitions.begin()
+        ->records.value()
+        .last_offset(),
       offset_1);
     BOOST_REQUIRE_EQUAL(
       resp_2.data.responses.begin()->partitions.empty(), false);
@@ -232,7 +235,10 @@ FIXTURE_TEST(test_produce_consume_small_batches, prod_consume_fixture) {
       resp_2.data.responses.begin()->partitions.begin()->error_code,
       kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(
-      resp_2.data.responses.begin()->partitions.begin()->records->last_offset(),
+      resp_2.data.responses.begin()
+        ->partitions.begin()
+        ->records.value()
+        .last_offset(),
       offset_2);
 };
 
@@ -1059,7 +1065,7 @@ FIXTURE_TEST(test_produce_unset_max_timestamp_legacy, prod_consume_fixture) {
                 BOOST_REQUIRE_EQUAL(
                   partition.error_code, kafka::error_code::none);
                 BOOST_REQUIRE(partition.records.has_value());
-                while (!partition.records->is_end_of_stream()) {
+                while (!partition.records.value().is_end_of_stream()) {
                     auto batch_adapter
                       = partition.records.value().consume_batch();
                     BOOST_REQUIRE(batch_adapter.batch.has_value());
@@ -1166,7 +1172,7 @@ FIXTURE_TEST(test_produce_unset_max_timestamp_relaxed, prod_consume_fixture) {
                 BOOST_REQUIRE_EQUAL(
                   partition.error_code, kafka::error_code::none);
                 BOOST_REQUIRE(partition.records.has_value());
-                while (!partition.records->is_end_of_stream()) {
+                while (!partition.records.value().is_end_of_stream()) {
                     auto batch_adapter
                       = partition.records.value().consume_batch();
                     BOOST_REQUIRE(batch_adapter.batch.has_value());
@@ -1266,7 +1272,7 @@ FIXTURE_TEST(test_produce_unset_timestamps_relaxed, prod_consume_fixture) {
                 BOOST_REQUIRE_EQUAL(
                   partition.error_code, kafka::error_code::none);
                 BOOST_REQUIRE(partition.records.has_value());
-                while (!partition.records->is_end_of_stream()) {
+                while (!partition.records.value().is_end_of_stream()) {
                     auto batch_adapter
                       = partition.records.value().consume_batch();
                     BOOST_REQUIRE(batch_adapter.batch.has_value());

@@ -442,8 +442,9 @@ void ntp_archiver::log_collected_traces() noexcept {
               _last_segment_upload_time.time_since_epoch(),
               _last_marked_clean_time.time_since_epoch(),
               _last_upload_time.time_since_epoch(),
-              _last_sync_time.has_value() ? _last_sync_time->time_since_epoch()
-                                          : ss::lowres_clock::duration{});
+              _last_sync_time.has_value()
+                ? _last_sync_time.value().time_since_epoch()
+                : ss::lowres_clock::duration{});
 
             // Log mutexes
             auto mutex_cp = _mutex.get_blocking_checkpoint();
@@ -1731,7 +1732,7 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
     // As noted above, check whether 'get_stream' was called. If not, close the
     // upload stream.
     if (stream_state.has_value()) {
-        co_await stream_state->close();
+        co_await stream_state.value().close();
     }
 
     // This future should be ready at the moment or will
@@ -2278,7 +2279,7 @@ ntp_archiver::wait_uploads_complete(
 
         if (segment_kind == segment_upload_kind::non_compacted) {
             _probe.value().uploaded(upload.delta.value());
-            _probe.value().uploaded_bytes(upload.meta->size_bytes);
+            _probe.value().uploaded_bytes(upload.meta.value().size_bytes);
 
             model::offset expected_base_offset;
             if (manifest().get_last_offset() < model::offset{0}) {
@@ -3311,7 +3312,7 @@ ss::future<> ntp_archiver::apply_retention() {
         co_return;
     }
 
-    auto next_start_offset = retention_calculator->next_start_offset();
+    auto next_start_offset = retention_calculator.value().next_start_offset();
     if (next_start_offset) {
         vlog(
           _rtclog.info,
@@ -3509,18 +3510,18 @@ ntp_archiver::find_reupload_candidate(
         vlog(_rtclog.debug, "Scan result: {}", run);
     }
     auto units = co_await _mutex.get_units(cas.as());
-    if (run->meta.base_offset >= _parent.raft_start_offset()) {
+    if (run.value().meta.base_offset >= _parent.raft_start_offset()) {
         auto log_generic = _parent.log();
         auto& log = *log_generic;
         segment_collector collector(
           segment_collector_mode::non_compacted_reupload,
-          run->meta.base_offset,
+          run.value().meta.base_offset,
           manifest(),
           log,
           // We want to upload exactly the same range as in the run we got based
           // on the manifest so do not limit collected range on the size.
           std::numeric_limits<size_t>::max(),
-          run->meta.committed_offset);
+          run.value().meta.committed_offset);
         collector.collect_segments();
         auto candidate = co_await collector.make_upload_candidate_stream(
           _conf->segment_upload_timeout());
@@ -3536,8 +3537,9 @@ ntp_archiver::find_reupload_candidate(
             segment_collector_stream& collector_stream) mutable
             -> find_reupload_candidate_result {
               if (
-                collector_stream.start_offset != run->meta.base_offset
-                || collector_stream.end_offset != run->meta.committed_offset) {
+                collector_stream.start_offset != run.value().meta.base_offset
+                || collector_stream.end_offset
+                     != run.value().meta.committed_offset) {
                   vlog(
                     _rtclog.error,
                     "Failed to make reupload candidate to match the run, "
@@ -3546,7 +3548,7 @@ ntp_archiver::find_reupload_candidate(
                     run->meta);
                   return {};
               }
-              if (collector_stream.size != run->meta.size_bytes) {
+              if (collector_stream.size != run.value().meta.size_bytes) {
                   vlog(
                     _rtclog.debug,
                     "Failed to make reupload candidate due to size mismatch, "

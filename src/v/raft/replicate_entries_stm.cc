@@ -252,10 +252,10 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
     _units = ss::make_lw_shared<units_t>(std::move(u));
     _append_result = co_await append_to_self();
 
-    if (!_append_result || _append_result->has_error()) {
+    if (!_append_result || _append_result.value().has_error()) {
         co_return build_replicate_result();
     }
-    _dirty_offset = _append_result->value().last_offset;
+    _dirty_offset = _append_result.value().value().last_offset;
     // store committed offset to check if it advanced
     _initial_committed_offset = _ptr->committed_offset();
     // dispatch requests to followers & leader flush
@@ -297,13 +297,13 @@ result<replicate_result> replicate_entries_stm::build_replicate_result() const {
       "Leader append result must be present before returning any result to "
       "caller");
 
-    if (_append_result->has_error()) {
-        return _append_result->error();
+    if (_append_result.value().has_error()) {
+        return _append_result.value().error();
     }
 
     return replicate_result{
-      .last_offset = _append_result->value().last_offset,
-      .last_term = _append_result->value().last_term,
+      .last_offset = _append_result.value().value().last_offset,
+      .last_term = _append_result.value().value().last_term,
     };
 }
 
@@ -312,7 +312,7 @@ replicate_entries_stm::wait_for_majority() {
     if (!_append_result) {
         co_return build_replicate_result();
     }
-    auto& append_result = _append_result->value();
+    auto& append_result = _append_result.value().value();
     auto appended_offset = append_result.last_offset;
     auto appended_term = append_result.last_term;
     auto result = _is_flush_required

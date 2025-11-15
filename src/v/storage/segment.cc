@@ -240,7 +240,7 @@ ss::future<> segment::do_close() {
     // only after appender flush
     f = f.then([this] { return _idx.flush(); });
     if (_cache) {
-        f = f.then([this] { return _cache->clear_async(); });
+        f = f.then([this] { return _cache.value().clear_async(); });
     }
     return f;
 }
@@ -486,7 +486,7 @@ ss::future<bool> segment::materialize_index() {
 void segment::cache_truncate(model::offset offset) {
     check_segment_not_closed("cache_truncate()");
     if (likely(bool(_cache))) {
-        _cache->truncate(offset);
+        _cache.value().truncate(offset);
     }
 }
 ss::future<> segment::do_compaction_index_batch(const model::record_batch& b) {
@@ -683,7 +683,7 @@ ss::future<segment_reader_handle> segment::offset_data_stream(model::offset o) {
     auto nearest = _idx.find_nearest(o);
     size_t position = 0;
     if (nearest) {
-        position = nearest->filepos;
+        position = nearest.value().filepos;
     }
 
     // This could be a corruption (bad index) or a runtime defect (bad file
@@ -718,7 +718,7 @@ void segment::advance_stable_offset(size_t filepos) {
         std::max(it->second, _tracker.get_dirty_offset())});
 
     if (_cache) {
-        _cache->mark_clean(_tracker.get_stable_offset());
+        _cache.value().mark_clean(_tracker.get_stable_offset());
     }
 
     _inflight.erase(_inflight.begin(), std::next(it));
@@ -873,7 +873,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                           std::move(a),
                           std::nullopt,
                           seg->has_cache()
-                            ? std::optional(std::move(seg->cache()->get()))
+                            ? std::optional(
+                                std::move(seg->cache().value().get()))
                             : std::nullopt,
                           resources));
                   });
@@ -903,7 +904,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                     seg->release_appender(),
                     std::move(compact),
                     seg->has_cache()
-                      ? std::optional(std::move(seg->cache()->get()))
+                      ? std::optional(std::move(seg->cache().value().get()))
                       : std::nullopt,
                     resources));
             });

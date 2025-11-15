@@ -311,7 +311,7 @@ ss::future<> processor::run_transform_loop() {
         if (!batch) {
             continue;
         }
-        auto offset = model::offset_cast(batch->last_offset());
+        auto offset = model::offset_cast(batch.value().last_offset());
         ss::chunked_fifo<model::transformed_data> transformed;
         vlog(_logger.trace, "transforming offset {}", offset);
         co_await _engine->transform(

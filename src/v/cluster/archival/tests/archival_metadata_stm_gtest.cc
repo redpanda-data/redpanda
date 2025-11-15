@@ -149,7 +149,7 @@ public:
           10s, [](auto& node) { return node.raft()->committed_offset(); });
 
         co_await parallel_for_each_node([committed_offset](auto& node) {
-            return node.raft()->stm_manager()->wait(
+            return node.raft()->stm_manager().value().wait(
               committed_offset, model::no_timeout);
         });
         co_return;

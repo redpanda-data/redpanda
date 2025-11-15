@@ -897,9 +897,9 @@ void check_licence(const server::request_t& rq) {
     if (ft.should_sanction()) {
         const auto& license = ft.get_license();
         auto status = [&license]() {
-            return !license.has_value()    ? "not present"
-                   : license->is_expired() ? "expired"
-                                           : "unknown error";
+            return !license.has_value()           ? "not present"
+                   : license.value().is_expired() ? "expired"
+                                                  : "unknown error";
         };
         throw ss::httpd::base_exception(
           fmt::format("Invalid license: {}", status()),

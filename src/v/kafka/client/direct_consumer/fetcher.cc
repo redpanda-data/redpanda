@@ -291,7 +291,7 @@ bool fetcher::maybe_update_fetch_offset(
         return false;
     }
 
-    auto& fetch_state = maybe_fetch_state->get();
+    auto& fetch_state = maybe_fetch_state.value().get();
     vlog(
       logger().trace,
       "[broker: {}] Updating {}/{} fetch offset from {} to {} {{hwm: {}}}",
@@ -581,11 +581,11 @@ fetcher::process_fetch_response(
 
                 if (
                   !part_response.records.has_value()
-                  || part_response.records->is_end_of_stream()) {
+                  || part_response.records.value().is_end_of_stream()) {
                     continue;
                 }
                 auto partition_response_size
-                  = part_response.records->size_bytes();
+                  = part_response.records.value().size_bytes();
                 part_data.size_bytes = partition_response_size;
                 topic_data.total_bytes += partition_response_size;
                 part_data.data = co_await reader_to_chunked_vector(
@@ -647,7 +647,7 @@ fetcher::process_fetch_response(
                 }
 
                 auto& fetcher_state
-                  = find_fetcher_state(topic, p.partition_id)->get();
+                  = find_fetcher_state(topic, p.partition_id).value().get();
 
                 fetcher_state.incremental_include = false;
             }
@@ -788,7 +788,7 @@ ss::future<kafka::error_code> fetcher::maybe_initialise_fetch_offsets(
             vassert(
               maybe_fetch_state.has_value(),
               "fetch state should be found if the tp is consistent");
-            auto& fetch_state = maybe_fetch_state->get();
+            auto& fetch_state = maybe_fetch_state.value().get();
 
             vlog(
               logger().info,
@@ -812,7 +812,7 @@ ss::future<api_version> fetcher::get_fetch_request_version() const {
     auto version = co_await _parent->_cluster->supported_api_versions(
       _id, kafka::fetch_api::key);
     if (version) {
-        co_return std::min(version->max, max_client_version);
+        co_return std::min(version.value().max, max_client_version);
     }
     // if the version is not supported, we fallback to the minimum version
     // which is 1, this is the first version of the Fetch API that use the new
@@ -824,7 +824,8 @@ ss::future<api_version> fetcher::get_list_offsets_request_version() const {
     auto version = co_await _parent->_cluster->supported_api_versions(
       _id, kafka::list_offsets_api::key);
     if (version) {
-        co_return std::min(version->max, kafka::list_offsets_api::max_valid);
+        co_return std::min(
+          version.value().max, kafka::list_offsets_api::max_valid);
     }
     co_return kafka::list_offsets_api::min_valid;
 }
@@ -845,7 +846,7 @@ ss::future<> fetcher::assign_partition(
 
     auto maybe_existing_assignment = find_fetcher_state(tp.topic, tp.partition);
     if (maybe_existing_assignment) {
-        auto& existing_assignment = maybe_existing_assignment->get();
+        auto& existing_assignment = maybe_existing_assignment.value().get();
         vlog(
           logger().warn,
           "[broker: {}] "
@@ -1004,7 +1005,7 @@ bool fetcher::is_consistent_fetcher_epoch(
     if (!maybe_fetch_state) {
         return false;
     }
-    auto& fetch_state = maybe_fetch_state->get();
+    auto& fetch_state = maybe_fetch_state.value().get();
     return fetch_state.fetcher_epoch == epoch_set.fetcher_epoch;
 }
 

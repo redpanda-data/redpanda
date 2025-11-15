@@ -586,7 +586,7 @@ result<reallocation_step> partition_allocator::do_allocate_replica(
     auto new_replica = partition.add_replica(node.value(), prev);
     std::optional<model::broker_shard> prev_replica;
     if (prev) {
-        prev_replica = prev->bs;
+        prev_replica = prev.value().bs;
     }
     return reallocation_step(new_replica, prev_replica);
 }

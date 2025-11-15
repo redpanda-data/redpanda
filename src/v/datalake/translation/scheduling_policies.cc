@@ -458,8 +458,8 @@ fair_scheduling_policy::choose_translator_to_finish(executor& executor) {
     }
 
     if (choice.has_value()) {
-        translators_to_finish.erase(choice->finish_key);
-        return choice->info;
+        translators_to_finish.erase(choice.value().finish_key);
+        return choice.value().info;
     }
 
     return std::nullopt;

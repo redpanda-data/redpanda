@@ -147,7 +147,7 @@ cluster_health_report health_monitor_backend::build_cluster_report(
         if (it != _status.end()) {
             statuses.emplace_back(
               node_id,
-              node_metadata->get().state.get_membership_state(),
+              node_metadata.value().get().state.get_membership_state(),
               it->second.is_alive);
         }
     }
@@ -742,7 +742,7 @@ result<node_health_report> map_reply_result(
     if (!reply.value().report.has_value()) {
         return {reply.value().error};
     }
-    if (reply.value().report->id != target_node_id) {
+    if (reply.value().report.value().id != target_node_id) {
         return {errc::invalid_target_node_id};
     }
     return {std::move(reply.value().report.value()).to_in_memory()};
@@ -968,13 +968,13 @@ partition_status build_partition_status(const partition& p) {
             }
             if (fm.is_live) {
                 if (fm.under_replicated) {
-                    status.followers_stats->out_of_sync.push_back(fm.id);
+                    status.followers_stats.value().out_of_sync.push_back(fm.id);
                     ++status.under_replicated_replicas.value();
                 } else {
-                    ++status.followers_stats->in_sync;
+                    ++status.followers_stats.value().in_sync;
                 }
             } else {
-                status.followers_stats->down.push_back(fm.id);
+                status.followers_stats.value().down.push_back(fm.id);
                 if (fm.under_replicated) {
                     ++status.under_replicated_replicas.value();
                 }

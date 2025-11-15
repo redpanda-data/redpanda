@@ -1504,12 +1504,12 @@ struct consume_to_store {
                   seq_marker{
                     .seq = key.seq,
                     .node = key.node,
-                    .version = val->version,
+                    .version = val.value().version,
                     .key_type = seq_marker_key_type::schema},
-                  std::move(val->schema),
-                  val->id,
-                  val->version,
-                  val->deleted);
+                  std::move(val.value().schema),
+                  val.value().id,
+                  val.value().version,
+                  val.value().deleted);
             }
         } catch (const exception& e) {
             vlog(srlog.debug, "Error replaying: {}: {}", key, e.what());
@@ -1555,10 +1555,10 @@ struct consume_to_store {
                         .version{invalid_schema_version}, // Not applicable
                         .key_type = seq_marker_key_type::config},
                       key.sub.value(),
-                      val->compat);
+                      val.value().compat);
                 }
             } else if (val.has_value()) {
-                co_await _store.set_compatibility(val->compat);
+                co_await _store.set_compatibility(val.value().compat);
             } else {
                 vlog(
                   srlog.warn,
@@ -1609,11 +1609,11 @@ struct consume_to_store {
                         .version{invalid_schema_version}, // Not applicable
                         .key_type = seq_marker_key_type::mode},
                       key.sub.value(),
-                      val->mode,
+                      val.value().mode,
                       force::yes);
                 }
             } else if (val.has_value()) {
-                co_await _store.set_mode(val->mode, force::yes);
+                co_await _store.set_mode(val.value().mode, force::yes);
             } else {
                 vlog(
                   srlog.warn,

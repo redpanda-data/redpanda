@@ -254,7 +254,8 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
     const auto& topic_id = app.metadata_cache.local()
                              .get_topic_metadata_ref(
                                model::topic_namespace_view(ntp))
-                             ->get()
+                             .value()
+                             .get()
                              .get_configuration()
                              .tp_id;
 
@@ -302,7 +303,8 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
           resp.data.responses[0].partitions[0].partition_index == pid);
         BOOST_REQUIRE(resp.data.responses[0].partitions[0].records);
         BOOST_REQUIRE(
-          resp.data.responses[0].partitions[0].records->size_bytes() > 0);
+          resp.data.responses[0].partitions[0].records.value().size_bytes()
+          > 0);
     }
 }
 
@@ -749,7 +751,7 @@ FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
         BOOST_REQUIRE(resp.data.responses[0].partitions[i].records);
 
         total_size
-          += resp.data.responses[0].partitions[i].records->size_bytes();
+          += resp.data.responses[0].partitions[i].records.value().size_bytes();
     }
     BOOST_REQUIRE_GT(total_size, 0);
 }
@@ -815,7 +817,7 @@ FIXTURE_TEST(fetch_leader_ack, redpanda_thread_fixture) {
     BOOST_REQUIRE(resp.data.responses[0].partitions[0].partition_index == pid);
     BOOST_REQUIRE(resp.data.responses[0].partitions[0].records);
     BOOST_REQUIRE(
-      resp.data.responses[0].partitions[0].records->size_bytes() > 0);
+      resp.data.responses[0].partitions[0].records.value().size_bytes() > 0);
 }
 
 FIXTURE_TEST(fetch_one_debounce, redpanda_thread_fixture) {
@@ -877,7 +879,7 @@ FIXTURE_TEST(fetch_one_debounce, redpanda_thread_fixture) {
     BOOST_REQUIRE(resp.data.responses[0].partitions[0].partition_index == pid);
     BOOST_REQUIRE(resp.data.responses[0].partitions[0].records);
     BOOST_REQUIRE(
-      resp.data.responses[0].partitions[0].records->size_bytes() > 0);
+      resp.data.responses[0].partitions[0].records.value().size_bytes() > 0);
 }
 
 FIXTURE_TEST(fetch_multi_topics, redpanda_thread_fixture) {
@@ -970,7 +972,7 @@ FIXTURE_TEST(fetch_multi_topics, redpanda_thread_fixture) {
         BOOST_REQUIRE(resp.data.responses[0].partitions[i].records);
 
         total_size
-          += resp.data.responses[0].partitions[i].records->size_bytes();
+          += resp.data.responses[0].partitions[i].records.value().size_bytes();
     }
     BOOST_REQUIRE_GT(total_size, 0);
 }
@@ -1040,7 +1042,11 @@ FIXTURE_TEST(fetch_request_max_bytes, redpanda_thread_fixture) {
       fetch_one_byte.data.responses[0].partitions[0].partition_index == pid);
     BOOST_REQUIRE(fetch_one_byte.data.responses[0].partitions[0].records);
     BOOST_REQUIRE(
-      fetch_one_byte.data.responses[0].partitions[0].records->size_bytes() > 0);
+      fetch_one_byte.data.responses[0]
+        .partitions[0]
+        .records.value()
+        .size_bytes()
+      > 0);
 }
 
 FIXTURE_TEST(fetch_offset_out_of_range, redpanda_thread_fixture) {

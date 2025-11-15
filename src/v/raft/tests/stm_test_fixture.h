@@ -130,7 +130,8 @@ public:
         auto start_offset = raft_node.raft()->start_offset();
         if (snap) {
             auto data = co_await read_iobuf_exactly(
-              snap->reader.input(), co_await snap->reader.get_snapshot_size());
+              snap.value().reader.input(),
+              co_await snap.value().reader.get_snapshot_size());
             inc_state = serde::from_iobuf<state_t>(std::move(data));
         }
 
@@ -253,7 +254,7 @@ struct state_machine_fixture : raft_fixture {
 
         co_await parallel_for_each_node(
           [committed_offset](raft_node_instance& node) {
-              return node.raft()->stm_manager()->wait(
+              return node.raft()->stm_manager().value().wait(
                 committed_offset, default_timeout());
           });
     }

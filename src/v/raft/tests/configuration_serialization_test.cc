@@ -68,7 +68,7 @@ raft::group_configuration random_configuration() {
         update = raft::configuration_update{};
 
         std::generate_n(
-          std::back_inserter(update->replicas_to_add),
+          std::back_inserter(update.value().replicas_to_add),
           random_generators::get_int(1, 10),
           []() {
               return raft::vnode(
@@ -76,7 +76,7 @@ raft::group_configuration random_configuration() {
                 tests::random_named_int<model::revision_id>());
           });
         std::generate_n(
-          std::back_inserter(update->replicas_to_remove),
+          std::back_inserter(update.value().replicas_to_remove),
           random_generators::get_int(1, 10),
           []() {
               return raft::vnode(
@@ -221,7 +221,7 @@ iobuf serialize_v0() {
 
     std::optional<group_nodes_v0> old;
     old.emplace();
-    old->voters.push_back(node_2.id);
+    old.value().voters.push_back(node_2.id);
 
     reflection::serialize(
       buffer,
@@ -242,7 +242,7 @@ iobuf serialize_v1() {
 
     std::optional<group_nodes_v0> old;
     old.emplace();
-    old->voters.push_back(node_2.id);
+    old.value().voters.push_back(node_2.id);
 
     reflection::serialize(
       buffer,
@@ -263,7 +263,7 @@ iobuf serialize_v2() {
     current.voters.emplace_back(node_1.id, model::revision_id(10));
 
     std::optional<raft::group_nodes> old = raft::group_nodes{};
-    old->voters.emplace_back(node_2.id, model::revision_id(5));
+    old.value().voters.emplace_back(node_2.id, model::revision_id(5));
 
     reflection::serialize(
       buffer,
@@ -283,7 +283,7 @@ iobuf serialize_v3() {
     current.voters.emplace_back(node_1.id, model::revision_id(10));
 
     std::optional<raft::group_nodes> old = raft::group_nodes{};
-    old->voters.emplace_back(node_2.id, model::revision_id(5));
+    old.value().voters.emplace_back(node_2.id, model::revision_id(5));
 
     reflection::serialize(
       buffer,
@@ -305,7 +305,7 @@ iobuf serialize_v4() {
     current.voters.emplace_back(node_1.id, model::revision_id(10));
 
     std::optional<raft::group_nodes> old = raft::group_nodes{};
-    old->voters.emplace_back(node_2.id, model::revision_id(5));
+    old.value().voters.emplace_back(node_2.id, model::revision_id(5));
 
     raft::configuration_update update{};
 
@@ -335,7 +335,7 @@ iobuf serialize_v5() {
     current.voters.emplace_back(node_1.id, model::revision_id(10));
 
     std::optional<raft::group_nodes> old = raft::group_nodes{};
-    old->voters.emplace_back(node_2.id, model::revision_id(5));
+    old.value().voters.emplace_back(node_2.id, model::revision_id(5));
 
     raft::configuration_update update{};
 
@@ -418,18 +418,24 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
       cfg_v5.current_config().voters.size());
 
     BOOST_REQUIRE_EQUAL(
-      cfg_v0.old_config()->voters.size(), cfg_v1.old_config()->voters.size());
+      cfg_v0.old_config().value().voters.size(),
+      cfg_v1.old_config().value().voters.size());
     BOOST_REQUIRE_EQUAL(
-      cfg_v1.old_config()->voters.size(), cfg_v2.old_config()->voters.size());
+      cfg_v1.old_config().value().voters.size(),
+      cfg_v2.old_config().value().voters.size());
     BOOST_REQUIRE_EQUAL(
-      cfg_v2.old_config()->voters.size(), cfg_v3.old_config()->voters.size());
+      cfg_v2.old_config().value().voters.size(),
+      cfg_v3.old_config().value().voters.size());
     BOOST_REQUIRE_EQUAL(
-      cfg_v3.old_config()->voters.size(), cfg_v4.old_config()->voters.size());
+      cfg_v3.old_config().value().voters.size(),
+      cfg_v4.old_config().value().voters.size());
     BOOST_REQUIRE_EQUAL(
-      cfg_v4.old_config()->voters.size(), cfg_v5.old_config()->voters.size());
+      cfg_v4.old_config().value().voters.size(),
+      cfg_v5.old_config().value().voters.size());
 
     BOOST_REQUIRE_EQUAL(
-      cfg_v0.old_config()->voters[0].id(), cfg_v1.old_config()->voters[0].id());
+      cfg_v0.old_config().value().voters[0].id(),
+      cfg_v1.old_config().value().voters[0].id());
 
     BOOST_REQUIRE_EQUAL(
       cfg_v0.current_config().learners[0].id(),

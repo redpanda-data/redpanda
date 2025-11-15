@@ -256,15 +256,16 @@ void kafka_batch_adapter::convert_message_set(
             return;
         }
 
-        if (batch->timestamp) {
-            builder.set_timestamp(batch->timestamp.value());
+        if (batch.value().timestamp) {
+            builder.set_timestamp(batch.value().timestamp.value());
         }
 
         /*
          * if no compression then take the key/value and move on
          */
-        if (batch->compression() == model::compression::none) {
-            builder.add_raw_kv(std::move(batch->key), std::move(batch->value));
+        if (batch.value().compression() == model::compression::none) {
+            builder.add_raw_kv(
+              std::move(batch.value().key), std::move(batch.value().value));
             continue;
         }
 
@@ -275,8 +276,8 @@ void kafka_batch_adapter::convert_message_set(
          * simply disallow lz4 for versions that require magic_0.
          */
         if (
-          batch->magic == 0
-          && batch->compression() == model::compression::lz4) {
+          batch.value().magic == 0
+          && batch.value().compression() == model::compression::lz4) {
             vlog(
               klog.error,
               "Producing with magic=0 and lz4 compression is not supported");
@@ -284,21 +285,22 @@ void kafka_batch_adapter::convert_message_set(
             return;
         }
 
-        builder.set_compression(batch->compression());
+        builder.set_compression(batch.value().compression());
         if (expect_uncompressed) {
             vlog(klog.error, "MessageSet contains more than one nesting level");
             legacy_error = true;
             return;
         }
 
-        if (!batch->value) {
+        if (!batch.value().value) {
             vlog(klog.error, "Compressed legacy does not contain a value");
             legacy_error = true;
             return;
         }
 
         auto batch_data = compression::compressor::uncompress(
-          batch->value.value(), to_compression_type(batch->compression()));
+          batch.value().value.value(),
+          to_compression_type(batch.value().compression()));
 
         convert_message_set(builder, std::move(batch_data), true);
     }

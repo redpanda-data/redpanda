@@ -208,7 +208,8 @@ struct WriteAtOffsetStmFixture
         return node(leader_id.value())
           .raft()
           ->stm_manager()
-          ->get<kafka::write_at_offset_stm>();
+          .value()
+          .get<kafka::write_at_offset_stm>();
     }
 };
 
@@ -227,7 +228,7 @@ TEST_F(WriteAtOffsetStmFixture, test_write_at_offset_happy_path) {
           model::next_offset(data.back().back().last_offset()));
         for (auto& batches : data) {
             auto expected_offsets = start_offsets(batches);
-            auto stages = stm->get()->replicate(
+            auto stages = stm.value().get()->replicate(
               std::move(batches),
               std::move(expected_offsets),
               std::nullopt,
@@ -335,7 +336,8 @@ TEST_F(WriteAtOffsetStmFixture, test_writes_out_of_order) {
     auto stm = node(leader_id)
                  .raft()
                  ->stm_manager()
-                 ->get<kafka::write_at_offset_stm>();
+                 .value()
+                 .get<kafka::write_at_offset_stm>();
 
     auto num_records_per_batch = random_generators::get_int(1, 10);
     constexpr auto num_batches = 30;
@@ -545,8 +547,10 @@ TEST_F(WriteAtOffsetStmFixture, test_recovery_from_snapshot) {
       = leader_stm.value()->get_expected_last_offset(10s).get();
     ASSERT_FALSE(leader_last_offset.has_error());
     for (auto& [id, node] : nodes()) {
-        auto stm
-          = node->raft()->stm_manager()->get<kafka::write_at_offset_stm>();
+        auto stm = node->raft()
+                     ->stm_manager()
+                     .value()
+                     .get<kafka::write_at_offset_stm>();
         stm->wait(node->raft()->committed_offset(), model::no_timeout).get();
         auto last_offset
           = kafka::write_at_offset_stm_accessor::get_expected_last_offset(*stm);
@@ -576,7 +580,7 @@ TEST_F(WriteAtOffsetStmFixture, test_failed_replication) {
           model::next_offset(data.back().back().last_offset()));
         for (auto& batches : data) {
             auto expected_offsets = start_offsets(batches);
-            auto stages = stm->get()->replicate(
+            auto stages = stm.value().get()->replicate(
               std::move(batches),
               std::move(expected_offsets),
               std::nullopt,
@@ -605,7 +609,7 @@ TEST_F(WriteAtOffsetStmFixture, test_failed_replication) {
     std::vector<ss::future<result<raft::replicate_result>>> results;
     for (auto& batches : data) {
         auto expected_offsets = start_offsets(batches);
-        auto stages = stm->get()->replicate(
+        auto stages = stm.value().get()->replicate(
           std::move(batches), std::move(expected_offsets), std::nullopt, 10s);
         stages.request_enqueued.get();
         results.push_back(std::move(stages.replicate_finished));
@@ -635,7 +639,7 @@ TEST_F(WriteAtOffsetStmFixture, test_failed_replication) {
 
     for (auto& batches : new_data) {
         auto expected_offsets = start_offsets(batches);
-        auto stages = stm->get()->replicate(
+        auto stages = stm.value().get()->replicate(
           std::move(batches), std::move(expected_offsets), std::nullopt, 10s);
         stages.request_enqueued.get();
         auto res = stages.replicate_finished.get();

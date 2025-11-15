@@ -99,7 +99,7 @@ contains(const partition_manifest& m, const async_view_search_query_t& query) {
                                      >= kafka_start_offset.value();
 
           return range_overlaps && ts_query.ts >= m.begin()->base_timestamp
-                 && ts_query.ts <= m.last_segment()->max_timestamp;
+                 && ts_query.ts <= m.last_segment().value().max_timestamp;
       });
 }
 
@@ -555,9 +555,9 @@ async_manifest_view::get_term_last_offset(model::term_id term) noexcept {
           "The manifest for {} is not expected to be empty",
           get_ntp());
 
-        if (last->segment_term == term) {
+        if (last.value().segment_term == term) {
             // Fast path, most requests should query the last term
-            co_return last->next_kafka_offset() - kafka::offset(1);
+            co_return last.value().next_kafka_offset() - kafka::offset(1);
         } else {
             // look for first segment in next term, segments are sorted by
             // base_offset and term
@@ -730,7 +730,8 @@ bool async_manifest_view::in_archive(async_view_search_query_t o) {
           return range_overlaps
                  && _stm_manifest.get_spillover_map()
                         .last_segment()
-                        ->max_timestamp
+                        .value()
+                        .max_timestamp
                       >= ts_query.ts;
       });
 }
@@ -772,7 +773,8 @@ bool async_manifest_view::in_stm(async_view_search_query_t o) {
           return range_overlaps
                  && _stm_manifest.get_spillover_map()
                         .last_segment()
-                        ->max_timestamp
+                        .value()
+                        .max_timestamp
                       < ts_query.ts;
       });
 }
@@ -1384,7 +1386,7 @@ std::optional<segment_meta> async_manifest_view::search_spillover_manifests(
             *manifests.begin(),
             *manifests.last_segment());
 
-          auto max_t = manifests.last_segment()->max_timestamp;
+          auto max_t = manifests.last_segment().value().max_timestamp;
 
           // Edge cases
           if (ts_query.ts > max_t) {

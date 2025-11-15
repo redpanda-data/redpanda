@@ -393,16 +393,19 @@ void redpanda_thread_fixture::configure(
         if (s3_config) {
             config.get("cloud_storage_enabled").set_value(true);
             config.get("cloud_storage_region")
-              .set_value(std::make_optional(s3_config->region()));
+              .set_value(std::make_optional(s3_config.value().region()));
             config.get("cloud_storage_access_key")
-              .set_value(std::make_optional((s3_config->access_key.value())()));
+              .set_value(
+                std::make_optional((s3_config.value().access_key.value())()));
             config.get("cloud_storage_secret_key")
-              .set_value(std::make_optional((s3_config->secret_key.value())()));
+              .set_value(
+                std::make_optional((s3_config.value().secret_key.value())()));
             config.get("cloud_storage_api_endpoint")
-              .set_value(std::make_optional(s3_config->server_addr.host()));
+              .set_value(
+                std::make_optional(s3_config.value().server_addr.host()));
             config.get("cloud_storage_url_style")
               .set_value(std::make_optional([&] {
-                  switch (s3_config->url_style) {
+                  switch (s3_config.value().url_style) {
                   case cloud_storage_clients::s3_url_style::virtual_host:
                       return config::s3_url_style::virtual_host;
                   case cloud_storage_clients::s3_url_style::path:
@@ -410,7 +413,8 @@ void redpanda_thread_fixture::configure(
                   }
               }()));
             config.get("cloud_storage_api_endpoint_port")
-              .set_value(static_cast<int16_t>(s3_config->server_addr.port()));
+              .set_value(
+                static_cast<int16_t>(s3_config.value().server_addr.port()));
         }
         if (archival_cfg) {
             // Copy archival config to this shard to avoid `config::binding`
@@ -420,29 +424,30 @@ void redpanda_thread_fixture::configure(
 
             config.get("cloud_storage_disable_tls").set_value(true);
             config.get("cloud_storage_bucket")
-              .set_value(std::make_optional(local_cfg->bucket_name()));
+              .set_value(std::make_optional(local_cfg.value().bucket_name()));
             config.get("cloud_storage_initial_backoff_ms")
               .set_value(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
-                  local_cfg->cloud_storage_initial_backoff()));
+                  local_cfg.value().cloud_storage_initial_backoff()));
             config.get("cloud_storage_manifest_upload_timeout_ms")
               .set_value(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
-                  local_cfg->manifest_upload_timeout()));
+                  local_cfg.value().manifest_upload_timeout()));
             config.get("cloud_storage_segment_upload_timeout_ms")
               .set_value(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
-                  local_cfg->segment_upload_timeout()));
+                  local_cfg.value().segment_upload_timeout()));
             config.get("cloud_storage_garbage_collect_timeout_ms")
               .set_value(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
-                  local_cfg->garbage_collect_timeout()));
+                  local_cfg.value().garbage_collect_timeout()));
         }
         if (cloud_cfg) {
             config.get("cloud_storage_enable_remote_read").set_value(true);
             config.get("cloud_storage_enable_remote_write").set_value(true);
             config.get("cloud_storage_max_connections")
-              .set_value(static_cast<int16_t>(cloud_cfg->connection_limit()));
+              .set_value(
+                static_cast<int16_t>(cloud_cfg.value().connection_limit()));
         }
 
         config.get("data_transforms_enabled")
@@ -583,8 +588,8 @@ ss::future<> redpanda_thread_fixture::wait_for_topics(
               auto md = app.metadata_cache.local().get_topic_metadata(r.tp_ns);
               return md
                      && std::all_of(
-                       md->get_assignments().begin(),
-                       md->get_assignments().end(),
+                       md.value().get_assignments().begin(),
+                       md.value().get_assignments().end(),
                        [this,
                         &r](const cluster::assignments_set::value_type& p) {
                            return app.shard_table.local().shard_for(
@@ -777,7 +782,7 @@ redpanda_thread_fixture::make_data(std::optional<model::timestamp> base_ts) {
         assert(topic_meta);
         // Check if the topic revision matches the desired revision, if not
         // delete and recreate the topic.
-        if (topic_meta->get_revision() == rev) {
+        if (topic_meta.value().get_revision() == rev) {
             break;
         }
     }

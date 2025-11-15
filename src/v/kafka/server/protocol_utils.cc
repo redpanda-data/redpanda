@@ -103,15 +103,15 @@ parse_header(ss::input_stream<char>& src) {
     auto header = co_await parse_v1_header(src);
     if (header) {
         /// Conditionally handle v1 (flex) header
-        if (!flex_versions::is_api_in_schema(header->key)) {
+        if (!flex_versions::is_api_in_schema(header.value().key)) {
             /// User provided unsupported an invalid key that does not map
             /// to any known kafka requests, code will throw when it eventually
             /// reaches the request router
         } else if (flex_versions::is_flexible_request(
-                     header->key, header->version)) {
+                     header.value().key, header.value().version)) {
             auto [tags, bytes_read] = co_await parse_tags(src);
-            header->tags = std::move(tags);
-            header->tags_size_bytes = bytes_read;
+            header.value().tags = std::move(tags);
+            header.value().tags_size_bytes = bytes_read;
         }
     }
     co_return header;

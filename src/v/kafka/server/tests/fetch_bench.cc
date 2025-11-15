@@ -110,7 +110,8 @@ struct fetch_bench_fixture : redpanda_thread_fixture {
                                      model::topic_namespace_view(
                                        model::kafka_namespace,
                                        topic_fetch.name))
-                                   ->get()
+                                   .value()
+                                   .get()
                                    .get_configuration()
                                    .tp_id.value();
                     ft.topic_id = tp_id;

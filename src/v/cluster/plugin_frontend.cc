@@ -219,7 +219,7 @@ ss::future<mutation_result> plugin_frontend::do_local_mutation(
       [](const transform_update_cmd& cmd) { return cmd.value.uuid; },
       [this](const transform_remove_cmd& cmd) {
           // This is safe because we've validated the mutation above.
-          return _table->find_by_name(cmd.key)->uuid;
+          return _table->find_by_name(cmd.key).value().uuid;
       });
     auto b = std::visit(
       [](auto cmd) { return serde_serialize_cmd(std::move(cmd)); },
@@ -389,7 +389,7 @@ errc plugin_frontend::validator::validate_mutation(const transform_cmd& cmd) {
           if (existing.has_value()) {
               // update!
               // Only the offset pointer and environment can change.
-              if (existing->input_topic != cmd.value.input_topic) {
+              if (existing.value().input_topic != cmd.value.input_topic) {
                   vlog(
                     clusterlog.info,
                     "deploy of transform {} attempted to change the input "
@@ -399,7 +399,7 @@ errc plugin_frontend::validator::validate_mutation(const transform_cmd& cmd) {
                     loggable_string(cmd.value.input_topic.tp()));
                   return errc::transform_invalid_update;
               }
-              if (existing->output_topics != cmd.value.output_topics) {
+              if (existing.value().output_topics != cmd.value.output_topics) {
                   vlog(
                     clusterlog.info,
                     "deploy of transform {} attempted to change the output "
@@ -467,7 +467,7 @@ errc plugin_frontend::validator::validate_mutation(const transform_cmd& cmd) {
                 loggable_string(cmd.value.input_topic.tp()));
               return errc::topic_not_exists;
           }
-          const auto& input_config = input_topic->get_configuration();
+          const auto& input_config = input_topic.value().get_configuration();
           if (input_config.is_internal()) {
               vlog(
                 clusterlog.info,
@@ -552,7 +552,8 @@ errc plugin_frontend::validator::validate_mutation(const transform_cmd& cmd) {
                     loggable_string(out_name.tp()));
                   return errc::topic_not_exists;
               }
-              const auto& output_config = output_topic->get_configuration();
+              const auto& output_config
+                = output_topic.value().get_configuration();
               if (output_config.is_internal()) {
                   vlog(
                     clusterlog.info,

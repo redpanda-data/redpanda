@@ -217,8 +217,8 @@ ss::future<result<iobuf>> materialize_from_cache(
     }
 
     auto target = make_iobuf_ref_output_stream(result_buf);
-    co_await ss::copy(sz_stream->body, target);
-    co_await sz_stream->body.close();
+    co_await ss::copy(sz_stream.value().body, target);
+    co_await sz_stream.value().body.close();
     co_return result_buf;
 }
 

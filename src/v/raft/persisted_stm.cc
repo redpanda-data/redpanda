@@ -401,7 +401,7 @@ ss::future<> persisted_stm_base<BaseT, T>::wait_offset_committed(
     auto deadline = model::timeout_clock::now() + timeout;
     if (as) {
         co_await _raft->commit_index_updated().wait(
-          deadline, as->get(), stop_cond);
+          deadline, as.value().get(), stop_cond);
     } else {
         co_await _raft->commit_index_updated().wait(deadline, stop_cond);
     }
@@ -669,7 +669,9 @@ ss::future<> do_copy_persistent_stm_state(
         co_await api.invoke_on(
           target_shard, [key, &snapshot](storage::api& api) {
               return api.kvs().put(
-                storage::kvstore::key_space::stms, key, snapshot->copy());
+                storage::kvstore::key_space::stms,
+                key,
+                snapshot.value().copy());
           });
     }
 }

@@ -738,7 +738,7 @@ TEST_P(TransformRpcTest, TestTransformOffsetRPCs) {
               << "request (" << i << "," << j << ")";
             read_result = client()->offset_fetch(request_key).get();
             ASSERT_TRUE(!read_result.has_error());
-            ASSERT_EQ(read_result.value()->offset, request_val.offset);
+            ASSERT_EQ(read_result.value().value().offset, request_val.offset);
         }
     }
     auto offsets = client()->list_committed_offsets().get().value();

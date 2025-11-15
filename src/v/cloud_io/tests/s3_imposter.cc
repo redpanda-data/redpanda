@@ -234,8 +234,8 @@ struct s3_imposter_fixture::content_handler {
               request.content_length,
               request._method,
               maybe_resp->status);
-            repl.set_status(maybe_resp->status);
-            return maybe_resp->body;
+            repl.set_status(maybe_resp.value().status);
+            return maybe_resp.value().body;
         }
 
         auto expect_iter = expectations.find(request._url);
@@ -329,7 +329,7 @@ struct s3_imposter_fixture::content_handler {
                 repl.add_header("ETag", "placeholder-etag");
                 repl.add_header(
                   "Content-Length",
-                  ssx::sformat("{}", expect_iter->second.body->size()));
+                  ssx::sformat("{}", expect_iter->second.body.value().size()));
                 repl.set_status(reply::status_type::ok);
             }
             vlog(

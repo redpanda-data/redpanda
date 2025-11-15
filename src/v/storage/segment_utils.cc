@@ -758,7 +758,7 @@ ss::future<compacted_index::recovery_state> maybe_rebuild_compaction_index(
 
     // Compaction index was successfully built, remove it from files to clean.
     if (to_clean.has_value()) {
-        to_clean->clear();
+        to_clean.value().clear();
     }
 
     co_return state;

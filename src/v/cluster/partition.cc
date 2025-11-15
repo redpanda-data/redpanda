@@ -459,25 +459,26 @@ ss::future<> partition::start(
 
     std::optional<raft::xshard_transfer_state> raft_xst_state;
     if (xst_state) {
-        raft_xst_state = xst_state->raft;
+        raft_xst_state = xst_state.value().raft;
     }
     co_await _raft->start(std::move(stm_builder), std::move(raft_xst_state));
     // store rm_stm pointer in partition as this is commonly used stm
-    _rm_stm = _raft->stm_manager()->get<cluster::rm_stm>();
-    _log_eviction_stm = _raft->stm_manager()->get<cluster::log_eviction_stm>();
+    _rm_stm = _raft->stm_manager().value().get<cluster::rm_stm>();
+    _log_eviction_stm
+      = _raft->stm_manager().value().get<cluster::log_eviction_stm>();
     // store _archival_meta_stm pointer in partition as this is commonly used
     // stm (in future we may decide to remove it from partition)
     _archival_meta_stm
-      = _raft->stm_manager()->get<cluster::archival_metadata_stm>();
+      = _raft->stm_manager().value().get<cluster::archival_metadata_stm>();
 
     // store partition properties stm offset for fast access
     _partition_properties_stm
-      = _raft->stm_manager()->get<cluster::partition_properties_stm>();
+      = _raft->stm_manager().value().get<cluster::partition_properties_stm>();
 
     // the cloud topics stm provides access to garbage collection metadata. this
     // metadata is collected into cluster health reports as a way to disseminate
     // this information to the garbage collection process.
-    _ctp_stm = _raft->stm_manager()->get<cloud_topics::ctp_stm>();
+    _ctp_stm = _raft->stm_manager().value().get<cloud_topics::ctp_stm>();
 
     // Start the probe after the partition is fully initialised
     _probe.setup_metrics(ntp);
@@ -725,7 +726,7 @@ ss::future<std::optional<storage::timequery_result>> partition::local_timequery(
 
             if (
               _raft->log()->start_timestamp() <= cfg.time
-              && result->time > cfg.time) {
+              && result.value().time > cfg.time) {
                 // start_timestamp() points to the beginning of the oldest
                 // segment, but start_offset points to somewhere within a
                 // segment.  If our timequery hits the range between the start
@@ -747,7 +748,7 @@ ss::future<std::optional<storage::timequery_result>> partition::local_timequery(
             }
         }
 
-        if (result->offset == _raft->log()->offsets().start_offset) {
+        if (result.value().offset == _raft->log()->offsets().start_offset) {
             // If we hit at the start of the local log, this is ambiguous:
             // there could be earlier batches prior to start_offset which
             // have the same timestamp and are present in cloud storage.
@@ -776,7 +777,8 @@ ss::future<std::optional<storage::timequery_result>> partition::local_timequery(
           _raft->ntp(),
           cfg,
           result->offset);
-        result->offset = _raft->log()->from_log_offset(result->offset);
+        result.value().offset = _raft->log()->from_log_offset(
+          result.value().offset);
     }
 
     co_return result;
@@ -823,7 +825,7 @@ void partition::maybe_construct_archiver() {
 uint64_t partition::non_log_disk_size_bytes() const {
     uint64_t raft_size = _raft->get_snapshot_size();
     uint64_t stm_local_size = 0;
-    _raft->stm_manager()->for_each_stm(
+    _raft->stm_manager().value().for_each_stm(
       [this, &stm_local_size](
         const ss::sstring& name, const raft::state_machine_base& stm) {
           const auto sz = stm.get_local_state_size();
@@ -982,7 +984,7 @@ partition::get_cloud_term_last_offset(model::term_id term) const {
 
 ss::future<> partition::remove_persistent_state() {
     _cloud_storage_probe->clear_metrics();
-    co_await _raft->stm_manager()->remove_local_state();
+    co_await _raft->stm_manager().value().remove_local_state();
 }
 
 /**
@@ -1543,14 +1545,14 @@ std::optional<model::offset> partition::eviction_requested_offset() {
 }
 
 ss::shared_ptr<cluster::id_allocator_stm> partition::id_allocator_stm() const {
-    return _raft->stm_manager()->get<cluster::id_allocator_stm>();
+    return _raft->stm_manager().value().get<cluster::id_allocator_stm>();
 }
 
 std::ostream& operator<<(std::ostream& o, const partition& x) {
     return o << x._raft;
 }
 ss::shared_ptr<cluster::tm_stm> partition::tm_stm() {
-    return _raft->stm_manager()->get<cluster::tm_stm>();
+    return _raft->stm_manager().value().get<cluster::tm_stm>();
 }
 
 ss::future<chunked_vector<tx::tx_range>>

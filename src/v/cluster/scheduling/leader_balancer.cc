@@ -136,7 +136,7 @@ void leader_balancer::on_leadership_change(
         return;
     }
 
-    const auto& group = assignment->group;
+    const auto& group = assignment.value().group;
 
     // Update in flight state
     if (auto it = _in_flight_changes.find(group);
@@ -236,17 +236,19 @@ void leader_balancer::handle_topic_deltas(
         auto maybe_md = _topics.get_topic_metadata_ref(d.ns_tp);
         if (
           maybe_md
-          && maybe_md->get()
+          && maybe_md.value()
+               .get()
                .get_configuration()
                .properties.leaders_preference) {
-            new_lp = &maybe_md->get()
+            new_lp = &maybe_md.value()
+                        .get()
                         .get_configuration()
                         .properties.leaders_preference.value();
         }
 
         leader_balancer_types::topic_id_t topic_id{d.creation_revision};
-        auto cache_it = _last_seen_preferences->find(topic_id);
-        if (cache_it != _last_seen_preferences->end()) {
+        auto cache_it = _last_seen_preferences.value().find(topic_id);
+        if (cache_it != _last_seen_preferences.value().end()) {
             if (!new_lp || *new_lp != cache_it->second) {
                 vlog(
                   clusterlog.trace,
@@ -715,14 +717,14 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
           num_dispatched,
           _in_flight_changes.size());
 
-        _in_flight_changes[transfer->group] = {
+        _in_flight_changes[transfer.value().group] = {
           transfer.value(), clock_type::now() + _mute_timeout()};
         check_register_leadership_change_notification();
 
         // Add the group to the muted set to avoid thrashing. If the transfer is
         // successful, it will soon be removed by the leadership notification.
         _muted.try_emplace(
-          transfer->group, clock_type::now() + _mute_timeout());
+          transfer.value().group, clock_type::now() + _mute_timeout());
 
         auto success = co_await do_transfer(transfer.value());
         if (!success) {
@@ -735,7 +737,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
               transfer->to,
               num_dispatched);
 
-            _in_flight_changes.erase(transfer->group);
+            _in_flight_changes.erase(transfer.value().group);
             check_unregister_leadership_change_notification();
 
             /*
@@ -887,7 +889,7 @@ leader_balancer::build_preference_index() {
       _default_preference.binding()()};
 
     if (_last_seen_preferences) {
-        _last_seen_preferences->clear();
+        _last_seen_preferences.value().clear();
     } else {
         _last_seen_preferences.emplace();
     }
@@ -930,7 +932,7 @@ leader_balancer::collect_group_replicas_from_health_report(
             if (!maybe_meta) {
                 continue;
             }
-            const auto& meta = maybe_meta->get();
+            const auto& meta = maybe_meta.value().get();
 
             co_await ssx::async_for_each_counter(
               counter,
@@ -985,8 +987,8 @@ leader_balancer::index_type leader_balancer::build_index(
 
             replicas_t replicas;
             if (group_replicas) {
-                auto it = group_replicas->find(partition.group);
-                if (it == group_replicas->end()) {
+                auto it = group_replicas.value().find(partition.group);
+                if (it == group_replicas.value().end()) {
                     vlog(
                       clusterlog.info,
                       "skipping partition without replicas in health report: "

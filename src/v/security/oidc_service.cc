@@ -215,7 +215,7 @@ struct service::impl {
         auto update = std::move(url_res).assume_value();
 
         auto& p = get_probe_for(update);
-        if (!existing.has_value() || existing->host != update.host) {
+        if (!existing.has_value() || existing.value().host != update.host) {
             p.setup_metrics(update.host, "oidc");
             p.setup_public_metrics(update.host, "oidc");
         }

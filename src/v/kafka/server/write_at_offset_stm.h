@@ -163,7 +163,7 @@ private:
 
     bool inflight_last_offset_needs_reset(model::term_id insync_term) const {
         return _inflight_last_offset.has_value()
-               && _inflight_last_offset->in_sync_term == insync_term;
+               && _inflight_last_offset.value().in_sync_term == insync_term;
     }
 
     std::vector<model::record_batch_type> _offset_translated_batches;

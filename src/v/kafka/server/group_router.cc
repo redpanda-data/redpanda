@@ -38,9 +38,9 @@ auto group_router::route(Request&& r, FwdFunc func) {
         return ss::make_ready_future<resp_type>(
           resp_type(r, error_code::not_coordinator));
     }
-    r.ntp = std::move(m->first);
+    r.ntp = std::move(m.value().first);
     return with_scheduling_group(
-      _sg, [this, func, shard = m->second, r = std::move(r)]() mutable {
+      _sg, [this, func, shard = m.value().second, r = std::move(r)]() mutable {
           return get_group_manager().invoke_on(shard, _ssg, func, std::move(r));
       });
 }
@@ -64,9 +64,9 @@ auto group_router::route_tx(Request&& r, FwdFunc func) {
         reply.ec = cluster::tx::errc::not_coordinator;
         return ss::make_ready_future<resp_type>(reply);
     }
-    r.ntp = std::move(m->first);
+    r.ntp = std::move(m.value().first);
     return with_scheduling_group(
-      _sg, [this, func, shard = m->second, r = std::move(r)]() mutable {
+      _sg, [this, func, shard = m.value().second, r = std::move(r)]() mutable {
           return get_group_manager().invoke_on(shard, _ssg, func, std::move(r));
       });
 }
@@ -82,10 +82,10 @@ auto group_router::route_stages(Request r, FwdFunc func) {
     if (!m) {
         return group::stages(resp_type(r, error_code::not_coordinator));
     }
-    r.ntp = std::move(m->first);
+    r.ntp = std::move(m.value().first);
     auto dispatched = std::make_unique<ss::promise<>>();
     auto dispatched_f = dispatched->get_future();
-    auto coordinator_shard = m->second;
+    auto coordinator_shard = m.value().second;
 
     auto f = with_scheduling_group(
       _sg,
@@ -207,8 +207,8 @@ group_router::delete_groups(chunked_vector<group_id> groups) {
     sharded_groups groups_by_shard;
     for (auto& group : groups) {
         if (auto m = shard_for(group); m) {
-            groups_by_shard[m->second].emplace_back(
-              std::make_pair(std::move(m->first), std::move(group)));
+            groups_by_shard[m.value().second].emplace_back(
+              std::make_pair(std::move(m.value().first), std::move(group)));
         } else {
             results.push_back(
               deletable_group_result{
@@ -232,10 +232,10 @@ ss::future<described_group> group_router::describe_group(kafka::group_id g) {
     return with_scheduling_group(
       _sg, [this, g = std::move(g), m = std::move(m)]() mutable {
           return get_group_manager().invoke_on(
-            m->second,
+            m.value().second,
             _ssg,
             [g = std::move(g),
-             ntp = std::move(m->first)](group_manager& mgr) mutable {
+             ntp = std::move(m.value().first)](group_manager& mgr) mutable {
                 return mgr.describe_group(ntp, g);
             });
       });

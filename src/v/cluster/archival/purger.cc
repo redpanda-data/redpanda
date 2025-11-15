@@ -88,13 +88,13 @@ ss::future<purger::purge_result> purger::purge_partition(
     if (!collected) {
         co_return purge_result{
           .status = purge_status::retryable_failure, .ops = 0};
-    } else if (collected->empty()) {
+    } else if (collected.value().empty()) {
         vlog(ctxlog.debug, "Nothing to purge for {}", ntp);
         co_return purge_result{.status = purge_status::success, .ops = 0};
     }
 
     const auto [manifests_to_purge, legacy_manifest_path]
-      = collected->flatten();
+      = collected.value().flatten();
 
     size_t ops_performed = 0;
     size_t permanent_failure = 0;

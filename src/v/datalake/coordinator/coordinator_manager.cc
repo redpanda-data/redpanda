@@ -132,7 +132,7 @@ void coordinator_manager::start_managing(cluster::partition& p) {
     if (coordinators_.contains(ntp)) {
         return;
     }
-    auto stm = p.raft()->stm_manager()->get<coordinator_stm>();
+    auto stm = p.raft()->stm_manager().value().get<coordinator_stm>();
     if (stm == nullptr) {
         return;
     }

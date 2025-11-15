@@ -107,7 +107,7 @@ private:
           std::optional<std::reference_wrapper<ss::abort_source>> as)
           : mon(mon) {
             if (as) {
-                auto opt_sub = as->get().subscribe(
+                auto opt_sub = as.value().get().subscribe(
                   [this]() noexcept { handle_abort(false); });
                 if (opt_sub) {
                     sub = std::move(*opt_sub);

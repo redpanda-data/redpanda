@@ -222,7 +222,8 @@ ss::future<response_ptr> create_partitions_handler::handle(
                               .get_topic_cfg(
                                 model::topic_namespace_view(
                                   model::kafka_namespace, tp.name))
-                              ->partition_count;
+                              .value()
+                              .partition_count;
       });
 
     // validate custom assignment
@@ -287,9 +288,9 @@ ss::future<response_ptr> create_partitions_handler::handle(
             model::topic_namespace_view(model::kafka_namespace, tp.name));
           vassert(cfg, "Topic exist check has already occurred");
           vassert(
-            tp.count > cfg->partition_count,
+            tp.count > cfg.value().partition_count,
             "Sanity check for request increase partition count failed");
-          const auto mutations = (tp.count - cfg->partition_count);
+          const auto mutations = (tp.count - cfg.value().partition_count);
           return ctx.quota_mgr()
             .record_partition_mutations(ctx.header().client_id, mutations, now)
             .then([&resp](std::chrono::milliseconds delay) {

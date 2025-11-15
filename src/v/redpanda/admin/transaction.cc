@@ -162,9 +162,9 @@ admin_server::find_tx_coordinator_handler(
     }
     if (r.ntp) {
         ss::httpd::transaction_json::ntp ntp;
-        ntp.ns = r.ntp->ns();
-        ntp.topic = r.ntp->tp.topic();
-        ntp.partition = r.ntp->tp.partition();
+        ntp.ns = r.ntp.value().ns();
+        ntp.topic = r.ntp.value().tp.topic();
+        ntp.partition = r.ntp.value().tp.partition();
         reply.ntp = ntp;
     }
     reply.ec = static_cast<int>(r.ec);

@@ -130,13 +130,13 @@ TEST_F_CORO(cluster_link_table_test, upsert_success_test) {
 
     auto found_link = _table.local().find_link_by_name(name_t("link1"));
     ASSERT_TRUE_CORO(found_link.has_value());
-    EXPECT_EQ(found_link->get(), link.copy());
+    EXPECT_EQ(found_link.value().get(), link.copy());
     auto found_id = _table.local().find_id_by_name(name_t("link1"));
     ASSERT_TRUE_CORO(found_id.has_value());
     EXPECT_EQ(found_id.value(), id_t(1));
     found_link = _table.local().find_link_by_id(id_t(1));
     ASSERT_TRUE_CORO(found_link.has_value());
-    EXPECT_EQ(found_link->get(), link.copy());
+    EXPECT_EQ(found_link.value().get(), link.copy());
 
     ASSERT_NO_THROW_CORO(
       co_await _table.local().apply_update(
@@ -167,7 +167,7 @@ TEST_F_CORO(cluster_link_table_test, upsert_update) {
     ASSERT_EQ_CORO(_table.local().size(), 1);
     auto found_link = _table.local().find_link_by_name(name_t("link1"));
     ASSERT_TRUE_CORO(found_link.has_value());
-    EXPECT_EQ(found_link->get(), link.copy());
+    EXPECT_EQ(found_link.value().get(), link.copy());
 
     ASSERT_NO_THROW_CORO(
       co_await _table.local().apply_update(
@@ -175,7 +175,7 @@ TEST_F_CORO(cluster_link_table_test, upsert_update) {
     EXPECT_EQ(_table.local().size(), 1);
     found_link = _table.local().find_link_by_name(name_t("link1"));
     ASSERT_TRUE_CORO(found_link.has_value());
-    EXPECT_EQ(found_link->get(), updated_link);
+    EXPECT_EQ(found_link.value().get(), updated_link);
 }
 
 TEST_F_CORO(cluster_link_table_test, upsert_duplicate_name) {
@@ -908,9 +908,9 @@ TEST_F_CORO(cluster_link_table_test, update_cluster_link_configuration) {
 
     auto found_link = _table.local().find_link_by_id(id_t{1});
     ASSERT_TRUE_CORO(found_link.has_value());
-    EXPECT_EQ(found_link->get().connection, update_cmd.connection);
-    EXPECT_EQ(found_link->get().state, link.state);
-    EXPECT_EQ(found_link->get().configuration, update_cmd.link_config);
+    EXPECT_EQ(found_link.value().get().connection, update_cmd.connection);
+    EXPECT_EQ(found_link.value().get().state, link.state);
+    EXPECT_EQ(found_link.value().get().configuration, update_cmd.link_config);
 }
 
 TEST_F_CORO(cluster_link_table_test, update_non_existent_link) {

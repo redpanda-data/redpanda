@@ -391,8 +391,8 @@ TEST_F(cluster_metadata_uploader_fixture, test_upload_in_term) {
     const auto get_local_snap_offset = [&] {
         auto snap = raft0->open_snapshot().get();
         EXPECT_TRUE(snap.has_value());
-        auto ret = snap->metadata.last_included_index;
-        snap->close().get();
+        auto ret = snap.value().metadata.last_included_index;
+        snap.value().close().get();
         return ret;
     };
     const auto snap_offset = get_local_snap_offset();

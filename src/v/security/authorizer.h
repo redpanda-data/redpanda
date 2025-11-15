@@ -188,9 +188,9 @@ struct auth_result {
           .authorized = match.has_value(),
           .empty_matches = !match.has_value(),
           .resource_pattern = match.has_value()
-                                ? std::make_optional(match->resource)
+                                ? std::make_optional(match.value().resource)
                                 : std::nullopt,
-          .acl = match.has_value() ? std::make_optional(match->acl)
+          .acl = match.has_value() ? std::make_optional(match.value().acl)
                                    : std::nullopt,
           .principal = principal,
           .host = host,

@@ -234,7 +234,7 @@ public:
         }
 
         std::optional<std::vector<int32_t>> proto_offsets;
-        if (schema->type() == schema_type::protobuf) {
+        if (schema.value().type() == schema_type::protobuf) {
             auto offsets = get_proto_offsets(parser);
             if (offsets.empty()) {
                 vlog(

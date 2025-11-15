@@ -168,7 +168,8 @@ convert(conversion_context& ctx, const conversion::json_schema::subschema& s) {
 
           if (
             s.additional_properties()
-            && s.additional_properties()->get().boolean_subschema() != false) {
+            && s.additional_properties().value().get().boolean_subschema()
+                 != false) {
               return conversion_exception(
                 "Only 'false' subschema is supported "
                 "for additionalProperties keyword");

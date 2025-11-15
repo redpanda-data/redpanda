@@ -182,7 +182,7 @@ private:
             if (!buffer_units) {
                 buffer_units.emplace(std::move(e.units));
             } else {
-                buffer_units->adopt(std::move(e.units));
+                buffer_units.value().adopt(std::move(e.units));
             }
 
             // reactor will stall if we try to serialize a whole lot of

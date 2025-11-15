@@ -293,7 +293,7 @@ void refresh_stats(StatsWrapper& stats, ss::logger& logger, ParseF parsef) {
         // dma_reads into /proc. Reading from /proc should never block so this
         // should be ~fine~. From tracing the calls take less than 100us
         // generally.
-        auto bytes_read = stats.fd->pread(
+        auto bytes_read = stats.fd.value().pread(
           read_buffer.data(), read_buffer.size(), 0);
         auto lines = std::string_view(read_buffer.data(), bytes_read);
 

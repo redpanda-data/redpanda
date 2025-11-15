@@ -123,16 +123,16 @@ ss::future<> clear_recovery_results(
         items_to_delete.emplace(std::move(r));
     }
 
-    if (items_to_delete->empty()) {
+    if (items_to_delete.value().empty()) {
         vlog(cst_log.info, "skipping clear recovery results, nothing to clear");
         co_return;
     }
 
     std::vector<cloud_storage_clients::object_key> keys;
-    keys.reserve(items_to_delete->size());
+    keys.reserve(items_to_delete.value().size());
     std::transform(
-      std::make_move_iterator(items_to_delete->begin()),
-      std::make_move_iterator(items_to_delete->end()),
+      std::make_move_iterator(items_to_delete.value().begin()),
+      std::make_move_iterator(items_to_delete.value().end()),
       std::back_inserter(keys),
       [](auto&& item) { return make_result_path(item); });
 

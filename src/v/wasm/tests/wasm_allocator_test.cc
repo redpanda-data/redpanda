@@ -44,7 +44,7 @@ TEST(HeapAllocatorParamsTest, SizeIsAligned) {
                     .maximum = std::numeric_limits<size_t>::max()})
                  .get();
     ASSERT_TRUE(mem.has_value());
-    EXPECT_EQ(mem->size, page_size * 2);
+    EXPECT_EQ(mem.value().size, page_size * 2);
 }
 
 TEST(HeapAllocatorTest, CanAllocateOne) {
@@ -58,7 +58,7 @@ TEST(HeapAllocatorTest, CanAllocateOne) {
     auto mem
       = allocator.allocate({.minimum = page_size, .maximum = page_size}).get();
     ASSERT_TRUE(mem.has_value());
-    EXPECT_EQ(mem->size, page_size);
+    EXPECT_EQ(mem.value().size, page_size);
 }
 
 TEST(HeapAllocatorTest, MustAllocateWithinBounds) {
@@ -211,7 +211,7 @@ TEST(HeapAllocatorTest, MemoryIsZeroFilled) {
     auto allocated = allocator.allocate(req).get();
     ASSERT_TRUE(allocated.has_value());
     EXPECT_THAT(allocated, Optional(HeapIsZeroed()));
-    std::fill_n(allocated->data.get(), 4, 1);
+    std::fill_n(allocated.value().data.get(), 4, 1);
     allocator.deallocate(std::move(allocated).value(), 4);
 
     allocated = allocator.allocate(req).get();

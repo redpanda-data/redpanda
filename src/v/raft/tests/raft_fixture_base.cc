@@ -245,7 +245,7 @@ channel& in_memory_test_protocol::get_channel(model::node_id id) {
               fmt::format("unable to find node {} in node map", id));
         }
         auto [new_it, _] = _channels.try_emplace(
-          id, std::make_unique<channel>(node->get()));
+          id, std::make_unique<channel>(node.value().get()));
         it = new_it;
         it->second->start();
     }
@@ -309,7 +309,7 @@ ss::future<result<RespT>> in_memory_test_protocol::dispatch(
             co_return errc::node_does_not_exists;
         }
         auto [new_it, _] = _channels.try_emplace(
-          id, std::make_unique<channel>(node->get()));
+          id, std::make_unique<channel>(node.value().get()));
         it = new_it;
         it->second->start();
     }
@@ -820,7 +820,7 @@ std::optional<model::node_id> raft_fixture_base::get_leader() const {
     std::optional<model::node_id> leader;
     for (auto& [_, l_st] : _leaders_view) {
         if (l_st.term >= current_term && l_st.current_leader) {
-            leader = l_st.current_leader->id();
+            leader = l_st.current_leader.value().id();
             current_term = l_st.term;
         }
     }

@@ -145,8 +145,8 @@ append_topic_configs(request_context& ctx, create_topics_response& response) {
         auto cfg = ctx.metadata_cache().get_topic_cfg(
           model::topic_namespace_view{model::kafka_namespace, ct_result.name});
         if (cfg) {
-            ct_result.configs = std::make_optional(
-              report_topic_configs(ctx.metadata_cache(), cfg->properties));
+            ct_result.configs = std::make_optional(report_topic_configs(
+              ctx.metadata_cache(), cfg.value().properties));
             ct_result.topic_config_error_code = kafka::error_code::none;
         } else {
             // Topic was sucessfully created but metadata request did not
@@ -164,8 +164,8 @@ static void append_topic_properties(
         auto cfg = ctx.metadata_cache().get_topic_cfg(
           model::topic_namespace_view{model::kafka_namespace, ct_result.name});
         if (cfg) {
-            ct_result.num_partitions = cfg->partition_count;
-            ct_result.replication_factor = cfg->replication_factor;
+            ct_result.num_partitions = cfg.value().partition_count;
+            ct_result.replication_factor = cfg.value().replication_factor;
         }
     };
 }
@@ -462,7 +462,8 @@ ss::future<response_ptr> create_topics_handler::handle(
                                .transform([](const auto& md) {
                                    return md.get().get_configuration().tp_id;
                                })
-                               ->value_or(model::topic_id{});
+                               .value()
+                               .value_or(model::topic_id{});
         }
     }
 

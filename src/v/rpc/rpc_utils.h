@@ -36,13 +36,14 @@ maybe_build_reloadable_certificate_credentials(config::tls_config tls_config) {
       .get_credentials_builder()
       .then([](std::optional<ss::tls::credentials_builder> credentials) {
           if (credentials) {
-              return credentials->build_reloadable_certificate_credentials(
-                [](
-                  const std::unordered_set<ss::sstring>& updated,
-                  const std::exception_ptr& eptr) {
-                    log_certificate_reload_event(
-                      rpclog, "Client TLS", updated, eptr);
-                });
+              return credentials.value()
+                .build_reloadable_certificate_credentials(
+                  [](
+                    const std::unordered_set<ss::sstring>& updated,
+                    const std::exception_ptr& eptr) {
+                      log_certificate_reload_event(
+                        rpclog, "Client TLS", updated, eptr);
+                  });
           }
           return ss::make_ready_future<
             ss::shared_ptr<ss::tls::certificate_credentials>>(nullptr);

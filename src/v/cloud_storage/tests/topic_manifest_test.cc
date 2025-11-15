@@ -422,9 +422,9 @@ SEASTAR_THREAD_TEST_CASE(test_negative_property_manifest) {
       .get();
     auto tp_cfg = m.get_topic_config();
     BOOST_REQUIRE(tp_cfg.has_value());
-    BOOST_REQUIRE_EQUAL(64, tp_cfg->partition_count);
-    BOOST_REQUIRE_EQUAL(6, tp_cfg->replication_factor);
-    auto tp_props = tp_cfg->properties;
+    BOOST_REQUIRE_EQUAL(64, tp_cfg.value().partition_count);
+    BOOST_REQUIRE_EQUAL(6, tp_cfg.value().replication_factor);
+    auto tp_props = tp_cfg.value().properties;
 
     // The unsigned types that were passed in negative values shouldn't be set.
     BOOST_REQUIRE(tp_props.retention_duration.is_disabled());

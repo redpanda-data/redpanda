@@ -246,9 +246,9 @@ ss::future<result<void>> segment_upload::initialize(
     // params.offsets.last on success.
     _params = params.value();
     vassert(
-      _params->offsets == range,
+      _params.value().offsets == range,
       "Unexpected offset range {}, expected {}",
-      _params->offsets,
+      _params.value().offsets,
       range);
     // Create a log reader config to scan the uploaded offset
     // range. We should skip the batch cache.
@@ -296,7 +296,7 @@ ss::future<result<void>> segment_upload::initialize(
 
 ss::future<> segment_upload::close() {
     if (_stream.has_value()) {
-        co_await _stream->close();
+        co_await _stream.value().close();
     }
     co_await _gate.close();
 
@@ -332,15 +332,15 @@ segment_upload::compute_upload_parameters(
             co_return make_error_code(error_outcome::not_enough_data);
         }
         upload_reconciliation_result result{
-          .size_bytes = sz->on_disk_size,
+          .size_bytes = sz.value().on_disk_size,
           .is_compacted = _part->log()->is_compacted(
-            range_base, sz->last_offset),
+            range_base, sz.value().last_offset),
           .eligible_for_compacted_reupload
           = _part->log()->eligible_for_compacted_reupload(
-            range_base, sz->last_offset),
-          .offsets = inclusive_offset_range(range_base, sz->last_offset),
-          .base_timestamp = sz->first_timestamp,
-          .max_timestamp = sz->last_timestamp,
+            range_base, sz.value().last_offset),
+          .offsets = inclusive_offset_range(range_base, sz.value().last_offset),
+          .base_timestamp = sz.value().first_timestamp,
+          .max_timestamp = sz.value().last_timestamp,
         };
         co_return result;
     } catch (const std::invalid_argument&) {

@@ -62,7 +62,7 @@ static ss::future<std::vector<epoch_end_offset>> fetch_offsets(
         auto p = make_partition_proxy(r.ktp, ctx.partition_manager().local());
         // offsets_for_leader_epoch request should only be answered by
         // leader
-        if (!p || !p->is_leader()) {
+        if (!p || !p.value().is_leader()) {
             ret.push_back(
               response_t::make_epoch_end_offset(
                 r.ktp.get_partition(), error_code::not_leader_for_partition));

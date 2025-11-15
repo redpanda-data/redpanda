@@ -158,7 +158,7 @@ void test_http_request(
   const Func& check_reply) {
     iobuf body;
     if (request_data) {
-        body.append(request_data->data(), request_data->size());
+        body.append(request_data.value().data(), request_data.value().size());
     }
 
     // Send request
@@ -238,7 +238,7 @@ void test_http_streaming_request(
     http::client::response_stream_ref response;
     if (request_data) {
         iobuf body;
-        body.append(request_data->data(), request_data->size());
+        body.append(request_data.value().data(), request_data.value().size());
         auto body_stream = make_iobuf_input_stream(std::move(body));
         response = client->request(std::move(header), body_stream).get();
     } else {

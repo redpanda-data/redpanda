@@ -460,7 +460,8 @@ domain_manager::set_start_offset(rpc::set_start_offset_request req) {
     }
     auto prt_ref = stm_->state().partition_state(req.tp);
     if (
-      !prt_ref.has_value() || prt_ref->get().start_offset != req.start_offset) {
+      !prt_ref.has_value()
+      || prt_ref.value().get().start_offset != req.start_offset) {
         co_return rpc::set_start_offset_reply{
           .ec = rpc::errc::concurrent_requests,
         };

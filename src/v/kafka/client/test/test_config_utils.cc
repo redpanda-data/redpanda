@@ -120,11 +120,11 @@ FIXTURE_TEST(test_config_utils, redpanda_thread_fixture) {
         auto sasl_cfg = create_credentials().get();
         BOOST_REQUIRE(sasl_cfg.has_value());
         BOOST_REQUIRE_EQUAL(
-          sasl_cfg->mechanism, client_cfg.sasl_mechanism.value());
+          sasl_cfg.value().mechanism, client_cfg.sasl_mechanism.value());
         BOOST_REQUIRE_EQUAL(
-          sasl_cfg->username, client_cfg.scram_username.value());
+          sasl_cfg.value().username, client_cfg.scram_username.value());
         BOOST_REQUIRE_EQUAL(
-          sasl_cfg->password, client_cfg.scram_password.value());
+          sasl_cfg.value().password, client_cfg.scram_password.value());
         BOOST_REQUIRE(!ec_store.has(ec_store.find(principal)));
 
         // reset the credentials
@@ -141,9 +141,10 @@ FIXTURE_TEST(test_config_utils, redpanda_thread_fixture) {
         auto sasl_cfg = create_credentials().get();
         BOOST_REQUIRE(sasl_cfg.has_value());
         BOOST_REQUIRE_EQUAL(
-          sasl_cfg->mechanism, security::scram_sha512_authenticator::name);
-        BOOST_REQUIRE_NE(sasl_cfg->username, "");
-        BOOST_REQUIRE_NE(sasl_cfg->password, "");
+          sasl_cfg.value().mechanism,
+          security::scram_sha512_authenticator::name);
+        BOOST_REQUIRE_NE(sasl_cfg.value().username, "");
+        BOOST_REQUIRE_NE(sasl_cfg.value().password, "");
         BOOST_REQUIRE(ec_store.has(ec_store.find(principal)));
     }
 }

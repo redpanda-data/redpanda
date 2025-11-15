@@ -334,7 +334,7 @@ TEST_F_CORO(data_migration_table_fixture, test_crud_operations) {
     EXPECT_EQ(notifications.back(), id_2);
 
     EXPECT_EQ(
-      table->get_migration(id_2)->get().state,
+      table->get_migration(id_2).value().get().state,
       cluster::data_migrations::state::preparing);
 }
 

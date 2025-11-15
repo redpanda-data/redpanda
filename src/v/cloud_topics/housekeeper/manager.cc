@@ -52,7 +52,8 @@ public:
 private:
     ctp_stm_api get_api(const model::topic_id_partition& tidp) {
         auto& state = _state->at(tidp);
-        auto stm = state.partition->raft()->stm_manager()->get<ctp_stm>();
+        auto stm
+          = state.partition->raft()->stm_manager().value().get<ctp_stm>();
         if (!stm) {
             throw std::runtime_error(fmt::format("no ctp_stm for {}", tidp));
         }

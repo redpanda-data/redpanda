@@ -62,7 +62,7 @@ bool datalake_throttle_manager::needs_throttling() const {
     }
     return _translation_status.max_shares_assigned
            && _translation_status.total_translation_backlog
-                > ratio.value() * _disk_space_info->total;
+                > ratio.value() * _disk_space_info.value().total;
 }
 
 std::ostream&
