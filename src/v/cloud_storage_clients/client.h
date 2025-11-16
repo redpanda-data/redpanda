@@ -92,15 +92,15 @@ public:
       = 0;
 
     struct list_bucket_item {
-        ss::sstring key;
+        ss::sstring key{};
         std::chrono::system_clock::time_point last_modified;
         size_t size_bytes;
-        ss::sstring etag;
+        ss::sstring etag{};
     };
     struct list_bucket_result {
         bool is_truncated = false;
-        ss::sstring prefix;
-        ss::sstring next_continuation_token;
+        ss::sstring prefix{};
+        ss::sstring next_continuation_token{};
         std::vector<list_bucket_item> contents;
         std::vector<ss::sstring> common_prefixes;
     };
