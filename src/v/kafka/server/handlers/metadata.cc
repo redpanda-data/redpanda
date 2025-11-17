@@ -16,6 +16,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "container/chunked_vector.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/metadata_response.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/errors.h"
@@ -158,6 +159,19 @@ metadata_response::topic make_topic_response_from_topic_metadata(
         if (lt && !is_node_isolated && p.error_code == error_code::none) {
             p.leader_id = lt->leader.value_or(no_leader);
             p.leader_epoch = leader_epoch_from_term(lt->term);
+            if (!lt->term.has_value()) {
+                // The Java client treats this metadata as unreliable and
+                // forgets about any cached epochs, regardless of the error.
+                // https://github.com/apache/kafka/blob/9529003fffd93a9d7e3f6ff7ab081ed84942fd13/clients/src/main/java/org/apache/kafka/clients/Metadata.java#L596-L601
+
+                // Franz go skips processing the partition altogether if there
+                // is an error, regardless of whether there is a missing term,
+                // opting to retry later. This is preferrable over accepting
+                // the missing term (-1) as a valid term and treating it as a
+                // term moving backwards.
+                // https://github.com/twmb/franz-go/blob/3affad808a82ebfe1555d01d27732431093ac8e1/pkg/kgo/metadata.go#L811-L857
+                p.error_code = error_code::leader_not_available;
+            }
         }
         if (is_node_isolated && p.error_code == error_code::none) {
             auto replicas_for_sfuffle = replicas;
