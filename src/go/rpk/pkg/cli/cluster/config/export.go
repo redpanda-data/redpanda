@@ -147,6 +147,7 @@ to include all properties including these low level tunables.
 		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
+			config.WarnIfMisconfiguredCloudProfile(p)
 			config.CheckExitCloudAdmin(p)
 
 			client, err := adminapi.NewClient(cmd.Context(), fs, p)

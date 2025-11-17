@@ -327,3 +327,44 @@ func ParseAdditionalStartFlags(flags []string) map[string]string {
 	}
 	return parsed
 }
+
+// isLikelyCloudCluster checks if the broker URLs indicate this is a cloud cluster.
+func isLikelyCloudCluster(p *RpkProfile) bool {
+	// Check KafkaAPI brokers
+	for _, broker := range p.KafkaAPI.Brokers {
+		if isLikelyCloudBrokerURL(broker) {
+			return true
+		}
+	}
+	// Check AdminAPI addresses
+	for _, addr := range p.AdminAPI.Addresses {
+		if isLikelyCloudBrokerURL(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+// isLikelyCloudBrokerURL checks if a broker URL matches known cloud cluster patterns.
+func isLikelyCloudBrokerURL(url string) bool {
+	return strings.Contains(strings.ToLower(url), ".cloud.redpanda.com")
+}
+
+// WarnIfMisconfiguredCloudProfile checks if the cluster appears to be a cloud cluster
+// but the profile is not properly configured with FromCloud=true. If so, it prints
+// a helpful warning message and exits.
+func WarnIfMisconfiguredCloudProfile(p *RpkProfile) {
+	if !p.FromCloud && isLikelyCloudCluster(p) {
+		fmt.Println(`This appears to be a Redpanda Cloud cluster, but your rpk profile is not aware of it.
+
+Please configure rpk to use Redpanda Cloud by running:
+
+  rpk cloud login
+
+Then create or select a cloud profile with:
+
+  rpk cloud cluster profile use <cluster-name>
+
+For more information, visit: https://docs.redpanda.com/redpanda-cloud/reference/rpk/rpk-cloud/rpk-cloud-cluster`)
+	}
+}

@@ -56,6 +56,7 @@ central configuration store (and via 'rpk cluster config edit').
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			p := cfg.VirtualProfile()
+			config.WarnIfMisconfiguredCloudProfile(p)
 			config.CheckExitCloudAdmin(p)
 
 			client, err := adminapi.NewClient(cmd.Context(), fs, p)

@@ -68,6 +68,7 @@ is offline.`,
 					}{op.OperationID, op.Status, op.Started, op.Completed})
 				}
 			} else {
+				config.WarnIfMisconfiguredCloudProfile(vp)
 				client, err := adminapi.NewClient(cmd.Context(), fs, vp)
 				out.MaybeDie(err, "unable to initialize admin client: %v", err)
 

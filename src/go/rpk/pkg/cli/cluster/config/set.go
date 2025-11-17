@@ -99,6 +99,8 @@ Use the flag '--no-confirm' to avoid the confirmation prompt.`,
 				fmt.Print("Processing configuration, this operation may take up to 10 minutes. To check the status, run 'rpk cluster config status'\n\n")
 				fmt.Printf("Operation ID: %s \n", operation.GetOperation().GetId())
 			} else {
+				config.WarnIfMisconfiguredCloudProfile(vp)
+
 				client, err := adminapi.NewClient(cmd.Context(), fs, vp)
 				out.MaybeDie(err, "unable to initialize admin client: %v", err)
 

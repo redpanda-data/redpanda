@@ -305,6 +305,7 @@ from the YAML file, it is reset to its default value.  `,
 		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
+			config.WarnIfMisconfiguredCloudProfile(p)
 			config.CheckExitCloudAdmin(p)
 
 			client, err := adminapi.NewClient(cmd.Context(), fs, p)
