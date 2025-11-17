@@ -17,6 +17,7 @@ redpanda_cc_gtest(
         "//src/v/model",
         "//src/v/model/tests:random",
         "//src/v/net",
+        "//src/v/net:types",
         "//src/v/random:generators",
         "//src/v/rpc",
         "//src/v/test_utils:gtest",
