@@ -21,11 +21,10 @@
 
 namespace cluster::cloud_metadata {
 
-inline security::acl_binding binding_for_user(const ss::sstring& user) {
-    const security::acl_principal principal{
-      security::principal_type::ephemeral_user, user};
+inline security::acl_binding
+binding_for_principal(security::acl_principal principal) {
     security::acl_entry acl_entry{
-      principal,
+      std::move(principal),
       security::acl_host::wildcard_host(),
       security::acl_operation::all,
       security::acl_permission::allow};
@@ -36,6 +35,16 @@ inline security::acl_binding binding_for_user(const ss::sstring& user) {
         security::pattern_type::literal},
       acl_entry};
     return binding;
+}
+
+inline security::acl_binding binding_for_user(const ss::sstring& user) {
+    return binding_for_principal(
+      security::acl_principal{security::principal_type::ephemeral_user, user});
+}
+
+inline security::acl_binding binding_for_role(const ss::sstring& role_name) {
+    return binding_for_principal(
+      security::acl_principal{security::principal_type::role, role_name});
 }
 
 inline topic_properties uploadable_topic_properties() {

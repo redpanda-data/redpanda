@@ -32,6 +32,7 @@
 #include "model/namespace.h"
 #include "redpanda/application.h"
 #include "redpanda/tests/fixture.h"
+#include "security/role_store.h"
 #include "security/scram_credential.h"
 #include "security/tests/license_utils.h"
 #include "security/types.h"
@@ -139,11 +140,26 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
         model::timeout_clock::now() + 30s)
       .get();
 
-    // Create an ACL.
+    // Create a Role.
+    security::role_name role_name{"test_role"};
+    app.controller->get_security_frontend()
+      .local()
+      .create_role(
+        role_name,
+        security::role({{security::role_member_type::user, "userguy"}}),
+        model::timeout_clock::now() + 30s)
+      .get();
+
+    // Create ACLs
     auto binding = binding_for_user("__pandaproxy");
     app.controller->get_security_frontend()
       .local()
       .create_acls({binding}, 5s)
+      .get();
+    auto role_binding = binding_for_role(role_name);
+    app.controller->get_security_frontend()
+      .local()
+      .create_acls({role_binding}, 5s)
       .get();
 
     // Create some topics, but disable the upload loop so we can manually flush
@@ -266,11 +282,32 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
                       .has_value());
         ASSERT_EQ(
           1, config::shard_local_cfg().log_segment_size_jitter_percent.value());
+
+        // Validate User restoration.
         ASSERT_TRUE(app.controller->get_credential_store().local().contains(
           security::credential_user{"userguy"}));
+
+        // Validate Role restoration.
+        const auto& role_store = app.controller->get_role_store().local();
+        ASSERT_TRUE(role_store.contains(role_name));
+        auto role = role_store.get(role_name);
+        ASSERT_TRUE(role.has_value());
+        const auto& role_members = role.value().members();
+        ASSERT_EQ(role_members.size(), 1);
         ASSERT_EQ(
-          1,
-          app.controller->get_authorizer().local().all_bindings().get().size());
+          role_members.contains(
+            security::role_member{security::role_member_type::user, "userguy"}),
+          true);
+
+        // Validate ACL restoration.
+        auto acl_bindings
+          = app.controller->get_authorizer().local().all_bindings().get();
+        ASSERT_EQ(acl_bindings.size(), 2);
+        absl::flat_hash_set<security::acl_binding> bindings_set(
+          acl_bindings.begin(), acl_bindings.end());
+        ASSERT_TRUE(bindings_set.contains(binding));
+        ASSERT_TRUE(bindings_set.contains(role_binding));
+
         // NOTE: internal topics may be created.
         auto topic_count
           = app.controller->get_topics_state().local().all_topics_count();
