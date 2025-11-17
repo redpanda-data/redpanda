@@ -16,6 +16,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "container/chunked_vector.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/metadata_response.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/errors.h"
@@ -157,7 +158,24 @@ metadata_response::topic make_topic_response_from_topic_metadata(
         auto lt = get_leader_term(tp_ns, p_as.id, md_cache, replicas);
         if (lt && !is_node_isolated && p.error_code == error_code::none) {
             p.leader_id = lt->leader.value_or(no_leader);
-            p.leader_epoch = leader_epoch_from_term(lt->term);
+
+            // If we don't have term information for the given partition,
+            // submit a stale guess. If we are wrong, the client is expected to
+            // fence this and eventually attempt to get metadata again.
+            p.leader_epoch = leader_epoch_from_term(
+              lt->term.value_or(model::term_id(0)));
+
+            if (!lt->term.has_value()) {
+                // Franz go skips processing the partition altogether if there
+                // is an error, regardless of the term, opting to retry later.
+                // https://github.com/twmb/franz-go/blob/3affad808a82ebfe1555d01d27732431093ac8e1/pkg/kgo/metadata.go#L811-L857
+                //
+                // The Java client still parses the stale guess from above, but
+                // also treats this error a signal to request another update
+                // immediately.
+                // https://github.com/apache/kafka/blob/5db02ead60fbc937b3c51a51ecd6e93936dddf88/clients/src/main/java/org/apache/kafka/clients/Metadata.java#L306-L310
+                p.error_code = error_code::leader_not_available;
+            }
         }
         if (is_node_isolated && p.error_code == error_code::none) {
             auto replicas_for_sfuffle = replicas;
