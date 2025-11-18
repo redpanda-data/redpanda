@@ -3352,7 +3352,9 @@ ntp_archiver::find_reupload_candidate(
           run->meta.base_offset,
           manifest(),
           log,
-          run->meta.size_bytes,
+          // We want to upload exactly the same range as in the run we got based
+          // on the manifest so do not limit collected range on the size.
+          std::numeric_limits<size_t>::max(),
           run->meta.committed_offset);
         collector.collect_segments();
         auto candidate = co_await collector.make_upload_candidate_stream(
