@@ -147,6 +147,14 @@ private:
       cloud_storage_clients::bucket_name bucket,
       size_t num_objects = num_default_objects);
 
+    struct verify_cas_result {
+        self_test_result test_result;
+    };
+
+    // Verify that compare and swap operations in cloud storage works.
+    ss::future<verify_cas_result>
+    verify_cas(cloud_storage_clients::bucket_name bucket);
+
 private:
     static constexpr size_t num_default_objects = 5;
     bool _cancelled{false};

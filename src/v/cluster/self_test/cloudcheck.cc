@@ -13,6 +13,7 @@
 
 #include "base/vlog.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/types.h"
 #include "cluster/logger.h"
 #include "cluster/self_test/metrics.h"
 #include "config/configuration.h"
@@ -229,6 +230,11 @@ ss::future<std::vector<self_test_result>> cloudcheck::run_benchmarks() {
     auto deletes_test_result = co_await do_run_test(
       &cloudcheck::verify_deletes, bucket, num_default_objects);
     results.push_back(std::move(deletes_test_result.test_result));
+
+    // Test CAS
+    auto cas_test_result = co_await do_run_test(
+      &cloudcheck::verify_cas, bucket);
+    results.push_back(std::move(cas_test_result.test_result));
 
     co_await clear_self_test_folder(bucket);
 
@@ -527,6 +533,159 @@ ss::future<cloudcheck::verify_deletes_result> cloudcheck::verify_deletes(
         }
     } catch (const std::exception& e) {
         result.error = e.what();
+    }
+
+    co_return result;
+}
+
+namespace {
+
+ss::future<cloud_storage::upload_result> upload_with_precondition(
+  cloud_storage::remote* remote,
+  cloud_storage_clients::bucket_name bucket,
+  cloud_storage_clients::object_key key,
+  iobuf payload,
+  cloud_storage_clients::precondition precondition,
+  retry_chain_node& rtc) {
+    try {
+        co_return co_await remote->upload_object({
+          .transfer_details = {
+            .bucket = std::move(bucket),
+            .key = std::move(key),
+            .precondition = precondition,
+            .parent_rtc = rtc,
+          },
+          .type = cloud_storage::upload_type::object,
+          .payload = std::move(payload),
+        });
+    } catch (const std::exception& e) {
+        co_return cloud_storage::upload_result::failed;
+    }
+}
+
+ss::future<result<ss::sstring, cloud_storage_clients::error_outcome>> get_etag(
+  cloud_storage::remote* remote,
+  cloud_storage_clients::bucket_name bucket,
+  cloud_storage_clients::object_key key,
+  retry_chain_node& rtc) {
+    try {
+        auto result = co_await remote->list_objects(bucket, rtc, key);
+        if (result.has_error()) {
+            co_return result.error();
+        }
+        for (const auto& item : result.value().contents) {
+            if (item.key == key()) {
+                co_return item.etag;
+            }
+        }
+        co_return cloud_storage_clients::error_outcome::key_not_found;
+    } catch (const std::exception& e) {
+        co_return cloud_storage_clients::error_outcome::fail;
+    }
+}
+
+} // namespace
+
+ss::future<cloudcheck::verify_cas_result>
+cloudcheck::verify_cas(cloud_storage_clients::bucket_name bucket) {
+    auto result = self_test_result{
+      .name = _opts.name, .info = "Compare and Swap", .test_type = "cloud"};
+
+    if (_cancelled) {
+        result.warning = "Run was manually cancelled.";
+        co_return result;
+    }
+    auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
+
+    using namespace cloud_storage_clients;
+
+    auto* remote = &_cloud_storage_api.local();
+    auto key1 = object_key{
+      self_test_prefix / object_key{ss::sstring{uuid_t::create()}}};
+    auto payload1 = make_random_payload();
+    auto payload2 = make_random_payload();
+    auto upload_result = co_await upload_with_precondition(
+      remote,
+      bucket,
+      key1,
+      payload1.copy(),
+      precondition{if_none_match{}},
+      rtc);
+    switch (upload_result) {
+    case cloud_storage::upload_result::success:
+        break;
+    case cloud_storage::upload_result::precondition_failed:
+    case cloud_storage::upload_result::timedout:
+    case cloud_storage::upload_result::failed:
+    case cloud_storage::upload_result::cancelled:
+        result.error = "Failed to upload to cloud storage with If-None-Match.";
+        co_return result;
+    }
+    upload_result = co_await upload_with_precondition(
+      remote,
+      bucket,
+      key1,
+      payload2.copy(),
+      precondition{if_none_match{}},
+      rtc);
+    switch (upload_result) {
+    case cloud_storage::upload_result::precondition_failed:
+        break;
+    case cloud_storage::upload_result::success:
+        result.warning = "Expected If-None-Match to fail with existing key.";
+        co_return result;
+    case cloud_storage::upload_result::timedout:
+    case cloud_storage::upload_result::failed:
+    case cloud_storage::upload_result::cancelled:
+        result.error = "Expected precondition failure to upload to cloud "
+                       "storage with If-None-Match and existing object.";
+        co_return result;
+    }
+
+    auto etag_payload1_result = co_await get_etag(remote, bucket, key1, rtc);
+    if (etag_payload1_result.has_error()) {
+        result.warning
+          = "Unable to find etag while listing objects in cloud storage.";
+        co_return result;
+    }
+    upload_result = co_await upload_with_precondition(
+      remote,
+      bucket,
+      key1,
+      payload2.copy(),
+      precondition{if_match{etag_payload1_result.value()}},
+      rtc);
+    switch (upload_result) {
+    case cloud_storage::upload_result::success:
+        break;
+    case cloud_storage::upload_result::precondition_failed:
+    case cloud_storage::upload_result::timedout:
+    case cloud_storage::upload_result::failed:
+    case cloud_storage::upload_result::cancelled:
+        result.error = "Expected success when uploading to cloud "
+                       "storage with If-Match and existing object etag.";
+        co_return result;
+    }
+
+    upload_result = co_await upload_with_precondition(
+      remote,
+      bucket,
+      key1,
+      payload1.copy(),
+      precondition{if_match{etag_payload1_result.value()}},
+      rtc);
+    switch (upload_result) {
+    case cloud_storage::upload_result::precondition_failed:
+        break;
+    case cloud_storage::upload_result::success:
+        result.warning = "Expected If-Match to fail with wrong payload key.";
+        co_return result;
+    case cloud_storage::upload_result::timedout:
+    case cloud_storage::upload_result::failed:
+    case cloud_storage::upload_result::cancelled:
+        result.error = "Expected precondition failure when uploading to cloud "
+                       "storage with If-Match and wrong object etag.";
+        co_return result;
     }
 
     co_return result;
