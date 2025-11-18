@@ -51,7 +51,8 @@ public:
     result<http::client::request_header> make_unsigned_put_object_request(
       const bucket_name& name,
       const object_key& key,
-      size_t payload_size_bytes);
+      size_t payload_size_bytes,
+      precondition precondition);
 
     /// \brief Create a 'GetObject' request header
     ///
@@ -62,7 +63,8 @@ public:
     result<http::client::request_header> make_get_object_request(
       const bucket_name& name,
       const object_key& key,
-      std::optional<http_byte_range> byte_range = std::nullopt);
+      std::optional<http_byte_range> byte_range,
+      precondition precondition);
 
     /// \brief Create a 'HeadObject' request header
     ///

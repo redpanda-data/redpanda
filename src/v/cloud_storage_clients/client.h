@@ -35,11 +35,13 @@ using http_byte_range = std::pair<uint64_t, uint64_t>;
 struct get_object_options {
     bool expect_no_such_key = false;
     std::optional<http_byte_range> byte_range;
+    precondition precondition;
 };
 
 // Options for putting an object.
 struct put_object_options {
     bool accept_no_content = false;
+    precondition precondition;
 };
 
 class client {

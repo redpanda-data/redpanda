@@ -293,7 +293,10 @@ ss::future<upload_result> remote::upload_stream(
           path,
           content_length,
           reader_handle->take_stream(),
-          fib.get_timeout());
+          fib.get_timeout(),
+          {
+            .precondition = transfer_details.precondition,
+          });
 
         // `put_object` closed the encapsulated input_stream, but we must
         // call close() on the segment_reader_handle to release the FD.
@@ -394,7 +397,11 @@ ss::future<download_result> remote::download_stream(
           bucket,
           path,
           fib.get_timeout(),
-          {.expect_no_such_key = false, .byte_range = byte_range});
+          {
+            .expect_no_such_key = false,
+            .byte_range = byte_range,
+            .precondition = transfer_details.precondition,
+          });
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
@@ -517,7 +524,10 @@ remote::download_object(download_request download_request) {
           bucket,
           path,
           fib.get_timeout(),
-          {.expect_no_such_key = download_request.expect_missing});
+          {
+            .expect_no_such_key = download_request.expect_missing,
+            .precondition = download_request.transfer_details.precondition,
+          });
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
@@ -1174,7 +1184,10 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
           content_length,
           make_iobuf_input_stream(std::move(to_upload)),
           fib.get_timeout(),
-          {.accept_no_content = upload_request.accept_no_content_response});
+          {
+            .accept_no_content = upload_request.accept_no_content_response,
+            .precondition = upload_request.transfer_details.precondition,
+          });
 
         if (res) {
             transfer_details.on_success();

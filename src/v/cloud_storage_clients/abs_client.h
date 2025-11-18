@@ -37,7 +37,8 @@ public:
     result<http::client::request_header> make_put_blob_request(
       const bucket_name& name,
       const object_key& key,
-      size_t payload_size_bytes);
+      size_t payload_size_bytes,
+      precondition precondition);
 
     /// \brief Create a 'Get Blob' request header
     ///
@@ -47,7 +48,8 @@ public:
     result<http::client::request_header> make_get_blob_request(
       const bucket_name& name,
       const object_key& key,
-      std::optional<http_byte_range> byte_range = std::nullopt);
+      std::optional<http_byte_range> byte_range,
+      precondition precondition);
 
     /// \brief Create a 'Get Blob Metadata' request header
     ///

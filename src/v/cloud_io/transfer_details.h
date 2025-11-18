@@ -33,6 +33,8 @@ struct basic_transfer_details {
     cloud_storage_clients::bucket_name bucket;
     cloud_storage_clients::object_key key;
 
+    cloud_storage_clients::precondition precondition;
+
     basic_retry_chain_node<Clock>& parent_rtc;
 
     std::optional<probe_callback_t> success_cb{std::nullopt};

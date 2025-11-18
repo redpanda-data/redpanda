@@ -42,12 +42,6 @@ class remote final
   : public remote_api<>
   , public ss::peering_sharded_service<remote> {
 public:
-    /// Functor that should be provided by user when list_objects api is called.
-    /// It receives every key that matches the query as well as it's modifiation
-    /// time, size in bytes, and etag.
-    using list_objects_consumer = std::function<ss::stop_iteration(
-      ss::sstring, std::chrono::system_clock::time_point, size_t, ss::sstring)>;
-
     /// \brief Initialize 'remote'
     ///
     /// \param limit is a number of simultaneous connections

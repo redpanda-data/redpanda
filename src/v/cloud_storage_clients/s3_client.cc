@@ -86,7 +86,8 @@ request_creator::request_creator(
 result<http::client::request_header> request_creator::make_get_object_request(
   const bucket_name& name,
   const object_key& key,
-  std::optional<http_byte_range> byte_range) {
+  std::optional<http_byte_range> byte_range,
+  precondition precondition) {
     http::client::request_header header{};
     // Virtual Style:
     // GET /{object-id} HTTP/1.1
@@ -114,6 +115,16 @@ result<http::client::request_header> request_creator::make_get_object_request(
             byte_range.value().first,
             byte_range.value().second));
     }
+    ss::visit(
+      precondition,
+      [](const std::monostate&) {},
+      [&header](const if_none_match&) {
+          header.insert(boost::beast::http::field::if_none_match, "*");
+      },
+      [&header](const if_match& value) {
+          header.insert(
+            boost::beast::http::field::if_match, std::string_view(value.etag));
+      });
     auto ec = _apply_credentials->add_auth(header);
     if (ec) {
         return ec;
@@ -153,7 +164,10 @@ result<http::client::request_header> request_creator::make_head_object_request(
 
 result<http::client::request_header>
 request_creator::make_unsigned_put_object_request(
-  const bucket_name& name, const object_key& key, size_t payload_size_bytes) {
+  const bucket_name& name,
+  const object_key& key,
+  size_t payload_size_bytes,
+  precondition precondition) {
     // Virtual Style:
     // PUT /my-image.jpg HTTP/1.1
     // Host: {bucket-name}.s3.{region}.amazonaws.com
@@ -181,6 +195,16 @@ request_creator::make_unsigned_put_object_request(
     header.insert(
       boost::beast::http::field::content_length,
       std::to_string(payload_size_bytes));
+    ss::visit(
+      precondition,
+      [](const std::monostate&) {},
+      [&header](const if_none_match&) {
+          header.insert(boost::beast::http::field::if_none_match, "*");
+      },
+      [&header](const if_match& value) {
+          header.insert(
+            boost::beast::http::field::if_match, std::string_view(value.etag));
+      });
 
     auto ec = _apply_credentials->add_auth(header);
     if (ec) {
@@ -725,7 +749,8 @@ s3_client::get_object(
   const object_key& key,
   ss::lowres_clock::duration timeout,
   get_object_options options) {
-    return send_request(do_get_object(name, key, timeout, options), name, key);
+    return send_request(
+      do_get_object(name, key, timeout, std::move(options)), name, key);
 }
 
 ss::future<http::client::response_stream_ref> s3_client::do_get_object(
@@ -735,7 +760,10 @@ ss::future<http::client::response_stream_ref> s3_client::do_get_object(
   get_object_options options) {
     bool is_byte_range_requested = options.byte_range.has_value();
     auto header = _requestor.make_get_object_request(
-      name, key, std::move(options.byte_range));
+      name,
+      key,
+      std::move(options.byte_range),
+      std::move(options.precondition));
     if (!header) {
         return ss::make_exception_future<http::client::response_stream_ref>(
           std::system_error(header.error()));
@@ -868,7 +896,8 @@ ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
   ss::lowres_clock::duration timeout,
   put_object_options options) {
     return send_request(
-      do_put_object(name, key, payload_size, std::move(body), timeout, options)
+      do_put_object(
+        name, key, payload_size, std::move(body), timeout, std::move(options))
         .then(
           []() { return ss::make_ready_future<no_response>(no_response{}); }),
       name,
@@ -883,7 +912,7 @@ ss::future<> s3_client::do_put_object(
   ss::lowres_clock::duration timeout,
   put_object_options options) {
     auto header = _requestor.make_unsigned_put_object_request(
-      name, id, payload_size);
+      name, id, payload_size, std::move(options.precondition));
     if (!header) {
         return body.close().then([header] {
             return ss::make_exception_future<>(

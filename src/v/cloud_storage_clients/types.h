@@ -28,6 +28,16 @@ using endpoint_url = named_type<ss::sstring, struct s3_endpoint_url>;
 using ca_trust_file
   = named_type<std::filesystem::path, struct s3_ca_trust_file>;
 
+// If none match ensures that put requests have no content
+struct if_none_match {};
+// If match ensures that the put request have specific content
+struct if_match {
+    ss::sstring etag;
+};
+// A precondition for GET/PUT requests that translate into conditional
+// operations.
+using precondition = std::variant<std::monostate, if_none_match, if_match>;
+
 enum class error_outcome {
     retry,
     /// Error condition that couldn't be retried
@@ -36,7 +46,9 @@ enum class error_outcome {
     key_not_found,
     /// Currently used for directory deletion errors in ABS, typically treated
     /// as regular failure outcomes.
-    operation_not_supported
+    operation_not_supported,
+    // The precondition failed (ie. if-match or if-none-match)
+    // precondition_failed,
 };
 
 struct error_outcome_category final : public std::error_category {
