@@ -25,6 +25,8 @@ download_exception::download_exception(
 
 const char* download_exception::what() const noexcept {
     switch (result) {
+    case download_result::precondition_failed:
+        return "PreconditionFailed";
     case download_result::failed:
         return "Failed";
     case download_result::notfound:

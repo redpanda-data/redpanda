@@ -114,6 +114,7 @@ table_io::delete_all_metadata(const metadata_location_path& path) {
             co_return errc::timedout;
         case cloud_io::upload_result::cancelled:
             co_return errc::shutting_down;
+        case cloud_io::upload_result::precondition_failed:
         case cloud_io::upload_result::failed:
             co_return errc::failed;
         }

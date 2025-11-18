@@ -48,7 +48,7 @@ enum class error_outcome {
     /// as regular failure outcomes.
     operation_not_supported,
     // The precondition failed (ie. if-match or if-none-match)
-    // precondition_failed,
+    precondition_failed,
 };
 
 struct error_outcome_category final : public std::error_category {
@@ -66,6 +66,8 @@ struct error_outcome_category final : public std::error_category {
             return "Key not found error";
         case error_outcome::operation_not_supported:
             return "Operation not supported error";
+        case error_outcome::precondition_failed:
+            return "Precondition failed";
         default:
             return "Undefined error_outcome encountered";
         }

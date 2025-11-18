@@ -333,6 +333,9 @@ ss::future<upload_result> remote::upload_stream(
         case cloud_storage_clients::error_outcome::fail:
             result = upload_result::failed;
             break;
+        case cloud_storage_clients::error_outcome::precondition_failed:
+            result = upload_result::precondition_failed;
+            break;
         }
     }
 
@@ -470,6 +473,9 @@ ss::future<download_result> remote::download_stream(
         case cloud_storage_clients::error_outcome::key_not_found:
             result = download_result::notfound;
             break;
+        case cloud_storage_clients::error_outcome::precondition_failed:
+            result = download_result::precondition_failed;
+            break;
         }
     }
     transfer_details.on_failure();
@@ -568,6 +574,9 @@ remote::download_object(download_request download_request) {
         case cloud_storage_clients::error_outcome::key_not_found:
             result = download_result::notfound;
             break;
+        case cloud_storage_clients::error_outcome::precondition_failed:
+            result = download_result::precondition_failed;
+            break;
         }
     }
     transfer_details.on_failure();
@@ -648,6 +657,9 @@ ss::future<download_result> remote::object_exists(
         case cloud_storage_clients::error_outcome::key_not_found:
             result = download_result::notfound;
             break;
+        case cloud_storage_clients::error_outcome::precondition_failed:
+            result = download_result::precondition_failed;
+            break;
         }
     }
     if (!result) {
@@ -721,6 +733,9 @@ remote::delete_object(transfer_details transfer_details) {
             [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = upload_result::failed;
+            break;
+        case cloud_storage_clients::error_outcome::precondition_failed:
+            result = upload_result::precondition_failed;
             break;
         case cloud_storage_clients::error_outcome::key_not_found:
             vassert(
@@ -887,6 +902,9 @@ ss::future<upload_result> remote::delete_object_batch(
             [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = upload_result::failed;
+            break;
+        case cloud_storage_clients::error_outcome::precondition_failed:
+            result = upload_result::precondition_failed;
             break;
         case cloud_storage_clients::error_outcome::key_not_found:
             vassert(
@@ -1124,6 +1142,9 @@ ss::future<list_result> remote::list_objects(
         case cloud_storage_clients::error_outcome::fail:
             result = cloud_storage_clients::error_outcome::fail;
             break;
+        case cloud_storage_clients::error_outcome::precondition_failed:
+            result = cloud_storage_clients::error_outcome::precondition_failed;
+            break;
         case cloud_storage_clients::error_outcome::key_not_found:
             vassert(
               false,
@@ -1215,6 +1236,9 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
             [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = upload_result::failed;
+            break;
+        case cloud_storage_clients::error_outcome::precondition_failed:
+            result = upload_result::precondition_failed;
             break;
         }
     }

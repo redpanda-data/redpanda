@@ -294,6 +294,8 @@ ss::future<cloudcheck::verify_upload_result> cloudcheck::verify_upload(
         switch (upload_result) {
         case cloud_storage::upload_result::success:
             break;
+        case cloud_storage::upload_result::precondition_failed:
+            [[fallthrough]];
         case cloud_storage::upload_result::timedout:
             [[fallthrough]];
         case cloud_storage::upload_result::failed:
@@ -369,6 +371,8 @@ ss::future<cloudcheck::verify_head_result> cloudcheck::verify_head(
         switch (head_result) {
         case cloud_storage::download_result::success:
             break;
+        case cloud_storage::download_result::precondition_failed:
+            [[fallthrough]];
         case cloud_storage::download_result::timedout:
             [[fallthrough]];
         case cloud_storage::download_result::failed:
@@ -419,6 +423,8 @@ ss::future<cloudcheck::verify_download_result> cloudcheck::verify_download(
         case cloud_storage::download_result::success:
             result_payload = std::move(download_payload);
             break;
+        case cloud_storage::download_result::precondition_failed:
+            [[fallthrough]];
         case cloud_storage::download_result::timedout:
             [[fallthrough]];
         case cloud_storage::download_result::failed:
@@ -454,6 +460,8 @@ ss::future<cloudcheck::verify_delete_result> cloudcheck::verify_delete(
         switch (delete_result) {
         case cloud_storage::upload_result::success:
             break;
+        case cloud_storage::upload_result::precondition_failed:
+            [[fallthrough]];
         case cloud_storage::upload_result::timedout:
             [[fallthrough]];
         case cloud_storage::upload_result::failed:
@@ -497,6 +505,8 @@ ss::future<cloudcheck::verify_deletes_result> cloudcheck::verify_deletes(
         switch (delete_result) {
         case cloud_storage::upload_result::success:
             break;
+        case cloud_storage::upload_result::precondition_failed:
+            [[fallthrough]];
         case cloud_storage::upload_result::timedout:
             [[fallthrough]];
         case cloud_storage::upload_result::failed:

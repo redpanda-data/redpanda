@@ -148,6 +148,7 @@ file_io::put_object(object_id oid, staging_file* file, ss::abort_source* as) {
     case cloud_io::upload_result::timedout:
     case cloud_io::upload_result::cancelled:
         co_return std::unexpected(io::errc::cloud_op_timeout);
+    case cloud_io::upload_result::precondition_failed:
     case cloud_io::upload_result::failed:
         co_return std::unexpected(io::errc::cloud_op_error);
     }
@@ -245,6 +246,7 @@ file_io::read_object(object_extent extent, ss::abort_source* as) {
         case cloud_io::download_result::timedout:
             co_return std::unexpected(io::errc::cloud_op_timeout);
         case cloud_io::download_result::failed:
+        case cloud_io::download_result::precondition_failed:
             co_return std::unexpected(io::errc::cloud_op_error);
         }
         std::unreachable();
@@ -280,6 +282,7 @@ file_io::delete_objects(chunked_vector<object_id> ids, ss::abort_source* as) {
     case cloud_io::upload_result::cancelled:
         co_return std::unexpected(io::errc::cloud_op_timeout);
     case cloud_io::upload_result::failed:
+    case cloud_io::upload_result::precondition_failed:
         co_return std::unexpected(io::errc::cloud_op_error);
     }
     std::unreachable();

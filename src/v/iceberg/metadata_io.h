@@ -105,6 +105,7 @@ public:
         case timedout:
             co_return errc::timedout;
         case failed:
+        case precondition_failed:
             co_return errc::failed;
         }
     }
@@ -152,6 +153,7 @@ protected:
             // Not found is not a retriable error.
             [[fallthrough]];
         case failed:
+        case precondition_failed:
             co_return errc::failed;
         }
         try {
@@ -208,6 +210,7 @@ protected:
         case cancelled:
             co_return errc::shutting_down;
         case failed:
+        case precondition_failed:
             co_return errc::failed;
         case timedout:
             co_return errc::timedout;
@@ -248,6 +251,7 @@ protected:
         case notfound:
             co_return false;
         case failed:
+        case precondition_failed:
             co_return errc::failed;
         }
     }

@@ -1797,6 +1797,7 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
     auto upload_result = upload_segment_ready.get();
     switch (upload_result) {
     case cloud_storage::upload_result::failed:
+    case cloud_storage::upload_result::precondition_failed:
     case cloud_storage::upload_result::timedout:
         vlog(
           ctxlog.info,

@@ -110,6 +110,7 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
             err = errc::timeout;
             break;
         case cloud_io::upload_result::failed:
+        case cloud_io::upload_result::precondition_failed:
             err = errc::upload_failure;
         }
     } catch (...) {
