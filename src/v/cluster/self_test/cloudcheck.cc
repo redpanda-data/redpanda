@@ -95,7 +95,7 @@ cloudcheck::run(cloudcheck_opts opts) {
 ss::future<>
 cloudcheck::clear_self_test_folder(cloud_storage_clients::bucket_name bucket) {
     auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
-    const cloud_storage::remote::list_result object_list
+    cloud_storage::remote::list_result object_list
       = co_await _cloud_storage_api.local().list_objects(
         bucket, rtc, self_test_prefix);
 
@@ -103,8 +103,7 @@ cloudcheck::clear_self_test_folder(cloud_storage_clients::bucket_name bucket) {
         std::vector<cloud_storage_clients::object_key> objects_to_delete;
         objects_to_delete.reserve(object_list.value().contents.size());
         for (auto& object : object_list.value().contents) {
-            objects_to_delete.push_back(
-              cloud_storage_clients::object_key{std::move(object.key)});
+            objects_to_delete.emplace_back(std::move(object.key));
         }
 
         std::ignore = co_await _cloud_storage_api.local().delete_objects(
@@ -165,10 +164,8 @@ ss::future<std::vector<self_test_result>> cloudcheck::run_benchmarks() {
     if (is_uploaded && object_list) {
         // Check that uploaded object exists in object_list contents.
         auto& object_list_contents = object_list.value().contents;
-        auto payload_item_it = std::find_if(
-          object_list_contents.begin(),
-          object_list_contents.end(),
-          [self_test_key](const auto& item) {
+        auto payload_item_it = std::ranges::find_if(
+          object_list_contents, [self_test_key](const auto& item) {
               return item.key == self_test_key();
           });
 
@@ -196,10 +193,8 @@ ss::future<std::vector<self_test_result>> cloudcheck::run_benchmarks() {
         }
 
         // Get the smallest file from object_list.
-        auto smallest_object = *std::min_element(
-          object_list_contents.begin(),
-          object_list_contents.end(),
-          [](const auto& a, const auto& b) {
+        auto smallest_object = *std::ranges::min_element(
+          object_list_contents, [](const auto& a, const auto& b) {
               return a.size_bytes < b.size_bytes;
           });
         return cloud_storage_clients::object_key{smallest_object.key};
@@ -320,7 +315,9 @@ ss::future<cloudcheck::verify_list_result> cloudcheck::verify_list(
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
         co_return verify_list_result{
-          cloud_storage_clients::error_outcome::fail, result};
+          .list_result = cloud_storage_clients::error_outcome::fail,
+          .test_result = result,
+        };
     }
 
     try {
@@ -333,13 +330,18 @@ ss::future<cloudcheck::verify_list_result> cloudcheck::verify_list(
             result.error = "Failed to list objects in cloud storage.";
         }
 
-        co_return verify_list_result{std::move(object_list), std::move(result)};
+        co_return verify_list_result{
+          .list_result = std::move(object_list),
+          .test_result = std::move(result),
+        };
     } catch (const std::exception& e) {
         result.error = e.what();
     }
 
     co_return verify_list_result{
-      cloud_storage_clients::error_outcome::fail, std::move(result)};
+      .list_result = cloud_storage_clients::error_outcome::fail,
+      .test_result = std::move(result),
+    };
 }
 
 ss::future<cloudcheck::verify_head_result> cloudcheck::verify_head(
@@ -397,13 +399,19 @@ ss::future<cloudcheck::verify_download_result> cloudcheck::verify_download(
 
     if (_cancelled) {
         result.warning = "Run was manually cancelled.";
-        co_return verify_download_result{std::nullopt, result};
+        co_return verify_download_result{
+          .buf = std::nullopt,
+          .test_result = result,
+        };
     }
 
     if (!key) {
         result.warning = "Could not download from cloud storage (no file was "
                          "found in the bucket).";
-        co_return verify_download_result{std::nullopt, result};
+        co_return verify_download_result{
+          .buf = std::nullopt,
+          .test_result = result,
+        };
     }
 
     std::optional<iobuf> result_payload = std::nullopt;
@@ -438,7 +446,9 @@ ss::future<cloudcheck::verify_download_result> cloudcheck::verify_download(
     }
 
     co_return verify_download_result{
-      std::move(result_payload), std::move(result)};
+      .buf = std::move(result_payload),
+      .test_result = std::move(result),
+    };
 }
 
 ss::future<cloudcheck::verify_delete_result> cloudcheck::verify_delete(
@@ -488,7 +498,7 @@ ss::future<cloudcheck::verify_deletes_result> cloudcheck::verify_deletes(
     }
 
     std::vector<cloud_storage_clients::object_key> keys(num_objects);
-    std::generate(keys.begin(), keys.end(), []() {
+    std::ranges::generate(keys, []() {
         return cloud_storage_clients::object_key{ss::sstring{uuid_t::create()}};
     });
 
