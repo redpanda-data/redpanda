@@ -605,6 +605,9 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
               key,
               bucket);
             outcome = error_outcome::retry;
+        } else if (err.code() == s3_error_code::precondition_failed) {
+            vlog(s3_log.debug, "PreconditionFailed response recieved {}", key);
+            outcome = error_outcome::precondition_failed;
         } else {
             // Unexpected REST API error, we can't recover from this
             // because the issue is not temporary (e.g. bucket doesn't
