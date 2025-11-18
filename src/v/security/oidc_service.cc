@@ -190,8 +190,8 @@ struct service::impl {
     }
 
     ss::future<> start() {
-        auto holder = _gate.hold();
-        co_await update();
+        ssx::spawn_with_gate(_gate, [this] { return update(); });
+        return ss::now();
     }
     ss::future<> stop() {
         _jwks_refresh.cancel();
