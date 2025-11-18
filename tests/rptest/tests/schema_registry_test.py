@@ -3745,6 +3745,14 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
             == "Invalid mode. Valid values are READWRITE, READONLY, IMPORT"
         )
 
+    @cluster(num_nodes=1)
+    def test_new_client(self):
+        from rptest.clients.schema_registry import SchemaRegistryClient
+
+        client = SchemaRegistryClient(self.redpanda)
+        mode = client.api.get_mode()
+        assert mode.mode == "READWRITE"
+
     @cluster(num_nodes=3)
     def test_mode_readonly(self):
         """

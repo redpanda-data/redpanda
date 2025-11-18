@@ -247,6 +247,7 @@ results
 tests/docker/build
 vbuild/
 tests/java/iceberg-rest-catalog/.gradle
+tests/rptest/clients/schema_registry/generated/.openapi-generator/
 
 /.vtools.yml
 /vtools

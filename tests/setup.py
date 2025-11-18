@@ -64,6 +64,7 @@ setup(
         "duckdb==1.3.1",
         "connect-python==0.4.2",
         "avro==1.12.0",
+        "pydantic>=2.0.0",
     ],
     scripts=[],
 )
