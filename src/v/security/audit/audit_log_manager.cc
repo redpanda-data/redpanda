@@ -47,6 +47,8 @@
 
 namespace security::audit {
 
+using auth_misconfigured_t = ss::bool_class<struct auth_misconfigured_tag>;
+
 namespace {
 struct partition_batch {
     model::partition_id pid;
@@ -123,6 +125,7 @@ private:
       audit_probe&,
       ss::timer<>::time_point timeout = ss::timer<>::time_point::max());
     ss::future<> update_status(kafka::error_code);
+    ss::future<> do_update_status(auth_misconfigured_t);
     ss::future<> update_status(kafka::produce_response);
     ss::future<> configure();
     ss::future<> mitigate_error(std::exception_ptr);
@@ -133,7 +136,7 @@ private:
     ss::future<> set_client_credentials();
 
 private:
-    kafka::error_code _last_errc{kafka::error_code::unknown_server_error};
+    auth_misconfigured_t _misconfigured{auth_misconfigured_t::no};
     ss::abort_source _as;
     ss::gate _gate;
     bool _is_initialized{false};
@@ -151,8 +154,6 @@ private:
 /// started/stopped on demand.
 class audit_sink {
 public:
-    using auth_misconfigured_t = ss::bool_class<struct auth_misconfigured_tag>;
-
     audit_sink(
       audit_log_manager* audit_mgr,
       cluster::controller* controller,
@@ -312,28 +313,34 @@ ss::future<> audit_client::set_auditing_permissions() {
       5s);
 }
 
+ss::future<>
+audit_client::do_update_status(auth_misconfigured_t misconfigured) {
+    _misconfigured = misconfigured;
+    return _sink->update_auth_status(misconfigured);
+}
+
 /// `update_auth_status` should not be called frequently since this method
 /// occurs on the hot path and calls to `update_auth_status` call will boil down
 /// to an invoke_on_all() call. Conditionals are wrapped around the call to
 /// `update_auth_status` so that its only called when the errc changes to/from
 /// a desired condition.
 ss::future<> audit_client::update_status(kafka::error_code errc) {
-    /// If the status changed to erraneous from anything else
-    if (errc == kafka::error_code::illegal_sasl_state) {
-        if (_last_errc != kafka::error_code::illegal_sasl_state) {
-            co_await _sink->update_auth_status(
-              audit_sink::auth_misconfigured_t::yes);
-        }
-    } else if (_last_errc == kafka::error_code::illegal_sasl_state) {
-        /// The status changed from erraneous to anything else
-        if (
-          errc != kafka::error_code::illegal_sasl_state
-          && errc != kafka::error_code::broker_not_available) {
-            co_await _sink->update_auth_status(
-              audit_sink::auth_misconfigured_t::no);
-        }
+    /// If the status changed to erroneous from anything else
+    if (errc == kafka::error_code::illegal_sasl_state && !_misconfigured) {
+        return do_update_status(auth_misconfigured_t::yes);
     }
-    _last_errc = errc;
+
+    constexpr auto failed_codes = std::to_array(
+      {kafka::error_code::illegal_sasl_state,
+       kafka::error_code::broker_not_available});
+    const bool success = !std::ranges::contains(failed_codes, errc);
+    if (success && _misconfigured) {
+        /// The status changed from erroneous to anything else
+        return do_update_status(auth_misconfigured_t::no);
+    }
+
+    /// No change in status
+    return ss::make_ready_future();
 }
 
 ss::future<> audit_client::update_status(kafka::produce_response response) {
