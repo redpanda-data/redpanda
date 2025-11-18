@@ -31,6 +31,17 @@ namespace cloud_storage_clients {
 // of the requested range.
 using http_byte_range = std::pair<uint64_t, uint64_t>;
 
+// Options for getting an object.
+struct get_object_options {
+    bool expect_no_such_key = false;
+    std::optional<http_byte_range> byte_range;
+};
+
+// Options for putting an object.
+struct put_object_options {
+    bool accept_no_content = false;
+};
+
 class client {
 public:
     struct no_response {};
@@ -51,15 +62,13 @@ public:
     /// \param name is a bucket name
     /// \param key is an object key
     /// \param timeout is a timeout of the operation
-    /// \param expect_no_such_key log missing key events as warnings if false
     /// \return future that becomes ready after request was sent
     virtual ss::future<result<http::client::response_stream_ref, error_outcome>>
     get_object(
       const bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout,
-      bool expect_no_such_key = false,
-      std::optional<http_byte_range> byte_range = std::nullopt)
+      get_object_options options = {})
       = 0;
 
     struct head_object_result {
@@ -94,7 +103,7 @@ public:
       size_t payload_size,
       ss::input_stream<char> body,
       ss::lowres_clock::duration timeout,
-      bool accept_no_content = false)
+      put_object_options options = {})
       = 0;
 
     struct list_bucket_item {

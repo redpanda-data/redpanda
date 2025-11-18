@@ -17,6 +17,7 @@
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
 #include "bytes/streambuf.h"
+#include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/s3_error.h"
 #include "cloud_storage_clients/util.h"
@@ -723,32 +724,27 @@ s3_client::get_object(
   const bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout,
-  bool expect_no_such_key,
-  std::optional<http_byte_range> byte_range) {
-    return send_request(
-      do_get_object(
-        name, key, timeout, expect_no_such_key, std::move(byte_range)),
-      name,
-      key);
+  get_object_options options) {
+    return send_request(do_get_object(name, key, timeout, options), name, key);
 }
 
 ss::future<http::client::response_stream_ref> s3_client::do_get_object(
   const bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout,
-  bool expect_no_such_key,
-  std::optional<http_byte_range> byte_range) {
-    bool is_byte_range_requested = byte_range.has_value();
+  get_object_options options) {
+    bool is_byte_range_requested = options.byte_range.has_value();
     auto header = _requestor.make_get_object_request(
-      name, key, std::move(byte_range));
+      name, key, std::move(options.byte_range));
     if (!header) {
         return ss::make_exception_future<http::client::response_stream_ref>(
           std::system_error(header.error()));
     }
     vlog(s3_log.trace, "send https request:\n{}", header.value());
     return _client.request(std::move(header.value()), timeout)
-      .then([expect_no_such_key, is_byte_range_requested, key](
-              http::client::response_stream_ref&& ref) {
+      .then([expect_no_such_key = options.expect_no_such_key,
+             is_byte_range_requested,
+             key](http::client::response_stream_ref&& ref) {
           // here we didn't receive any bytes from the socket and
           // ref->is_header_done() is 'false', we need to prefetch
           // the header first
@@ -870,10 +866,9 @@ ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
   size_t payload_size,
   ss::input_stream<char> body,
   ss::lowres_clock::duration timeout,
-  bool accept_no_content) {
+  put_object_options options) {
     return send_request(
-      do_put_object(
-        name, key, payload_size, std::move(body), timeout, accept_no_content)
+      do_put_object(name, key, payload_size, std::move(body), timeout, options)
         .then(
           []() { return ss::make_ready_future<no_response>(no_response{}); }),
       name,
@@ -886,7 +881,7 @@ ss::future<> s3_client::do_put_object(
   size_t payload_size,
   ss::input_stream<char> body,
   ss::lowres_clock::duration timeout,
-  bool accept_no_content) {
+  put_object_options options) {
     auto header = _requestor.make_unsigned_put_object_request(
       name, id, payload_size);
     if (!header) {
@@ -898,7 +893,11 @@ ss::future<> s3_client::do_put_object(
     vlog(s3_log.trace, "send https request:\n{}", header.value());
     return ss::do_with(
       std::move(body),
-      [this, timeout, header = std::move(header), id, accept_no_content](
+      [this,
+       timeout,
+       header = std::move(header),
+       id,
+       accept_no_content = options.accept_no_content](
         ss::input_stream<char>& body) mutable {
           auto make_request = [this, &header, &body, &timeout]() {
               return _client.request(std::move(header.value()), body, timeout);

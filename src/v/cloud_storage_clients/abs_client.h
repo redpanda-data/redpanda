@@ -149,8 +149,7 @@ public:
       const bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout,
-      bool expect_no_such_key = false,
-      std::optional<http_byte_range> byte_range = std::nullopt) override;
+      get_object_options options = {}) override;
 
     /// Send Get Blob Metadata request.
     /// \param name is a container name
@@ -175,7 +174,7 @@ public:
       size_t payload_size,
       ss::input_stream<char> body,
       ss::lowres_clock::duration timeout,
-      bool accept_no_content = false) override;
+      put_object_options options = {}) override;
 
     /// Send List Blobs request
     /// \param name is a container name
@@ -255,8 +254,7 @@ private:
       const bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout,
-      bool expect_no_such_key = false,
-      std::optional<http_byte_range> byte_range = std::nullopt);
+      get_object_options);
 
     ss::future<> do_put_object(
       const bucket_name& name,
@@ -264,7 +262,7 @@ private:
       size_t payload_size,
       ss::input_stream<char> body,
       ss::lowres_clock::duration timeout,
-      bool accept_no_content = false);
+      put_object_options);
 
     ss::future<head_object_result> do_head_object(
       const bucket_name& name,

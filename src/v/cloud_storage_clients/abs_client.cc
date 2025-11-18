@@ -14,6 +14,7 @@
 #include "bytes/iostream.h"
 #include "bytes/streambuf.h"
 #include "cloud_storage_clients/abs_error.h"
+#include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/util.h"
@@ -569,24 +570,19 @@ abs_client::get_object(
   const bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout,
-  bool expect_no_such_key,
-  std::optional<http_byte_range> byte_range) {
+  get_object_options options) {
     return send_request(
-      do_get_object(
-        name, key, timeout, expect_no_such_key, std::move(byte_range)),
-      key,
-      op_type_tag::download);
+      do_get_object(name, key, timeout, options), key, op_type_tag::download);
 }
 
 ss::future<http::client::response_stream_ref> abs_client::do_get_object(
   const bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout,
-  bool expect_no_such_key,
-  std::optional<http_byte_range> byte_range) {
-    bool is_byte_range_requested = byte_range.has_value();
+  get_object_options options) {
+    bool is_byte_range_requested = options.byte_range.has_value();
     auto header = _requestor.make_get_blob_request(
-      name, key, std::move(byte_range));
+      name, key, std::move(options.byte_range));
     if (!header) {
         vlog(
           abs_log.warn, "Failed to create request header: {}", header.error());
@@ -608,7 +604,7 @@ ss::future<http::client::response_stream_ref> abs_client::do_get_object(
     }
     if (request_failed) {
         if (
-          expect_no_such_key
+          options.expect_no_such_key
           && status == boost::beast::http::status::not_found) {
             vlog(
               abs_log.debug,
@@ -638,10 +634,9 @@ abs_client::put_object(
   size_t payload_size,
   ss::input_stream<char> body,
   ss::lowres_clock::duration timeout,
-  bool accept_no_content) {
+  put_object_options options) {
     return send_request(
-      do_put_object(
-        name, key, payload_size, std::move(body), timeout, accept_no_content)
+      do_put_object(name, key, payload_size, std::move(body), timeout, options)
         .then(
           []() { return ss::make_ready_future<no_response>(no_response{}); }),
       key,
@@ -654,7 +649,7 @@ ss::future<> abs_client::do_put_object(
   size_t payload_size,
   ss::input_stream<char> body,
   ss::lowres_clock::duration timeout,
-  bool accept_no_content) {
+  put_object_options options) {
     auto header = _requestor.make_put_blob_request(name, key, payload_size);
     if (!header) {
         co_await body.close();
@@ -676,7 +671,7 @@ ss::future<> abs_client::do_put_object(
     const auto status = response_stream->get_headers().result();
     using enum boost::beast::http::status;
 
-    if (const auto is_no_content_and_accepted = accept_no_content
+    if (const auto is_no_content_and_accepted = options.accept_no_content
                                                 && status == no_content;
         status != created && !is_no_content_and_accepted) {
         const auto content_type = util::get_response_content_type(

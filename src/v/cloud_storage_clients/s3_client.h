@@ -155,8 +155,7 @@ public:
       const bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout,
-      bool expect_no_such_key = false,
-      std::optional<http_byte_range> byte_range = std::nullopt) override;
+      get_object_options options = {}) override;
 
     /// HeadObject request.
     /// \param name is a bucket name
@@ -179,7 +178,7 @@ public:
       size_t payload_size,
       ss::input_stream<char> body,
       ss::lowres_clock::duration timeout,
-      bool accept_no_content = false) override;
+      put_object_options options = {}) override;
 
     ss::future<result<list_bucket_result, error_outcome>> list_objects(
       const bucket_name& name,
@@ -211,8 +210,7 @@ private:
       const bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout,
-      bool expect_no_such_key = false,
-      std::optional<http_byte_range> byte_range = std::nullopt);
+      get_object_options);
 
     ss::future<> do_put_object(
       const bucket_name& name,
@@ -220,7 +218,7 @@ private:
       size_t payload_size,
       ss::input_stream<char> body,
       ss::lowres_clock::duration timeout,
-      bool accept_no_content = false);
+      put_object_options);
 
     ss::future<list_bucket_result> do_list_objects_v2(
       const bucket_name& name,

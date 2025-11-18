@@ -812,7 +812,7 @@ ss::future<> do_test_put_object_no_response(bool acceptable) {
                 expected_payload_size,
                 std::move(payload_stream),
                 100ms,
-                acceptable)
+                {.accept_no_content = acceptable})
               .get();
         if (acceptable) {
             BOOST_REQUIRE(response);
@@ -842,7 +842,7 @@ ss::future<> do_test_no_such_configuration(bool acceptable) {
                                   "test-bucket"),
                                 cloud_storage_clients::object_key("no-config"),
                                 100ms,
-                                acceptable)
+                                {.expect_no_such_key = acceptable})
                               .get();
         // acceptable only affects the log level, the end response is always 404
         BOOST_REQUIRE(!result);

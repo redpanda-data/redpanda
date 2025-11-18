@@ -391,7 +391,10 @@ ss::future<download_result> remote::download_stream(
         auto download_latency_measure
           = transfer_details.scoped_latency_measurement();
         auto resp = co_await lease.client->get_object(
-          bucket, path, fib.get_timeout(), false, byte_range);
+          bucket,
+          path,
+          fib.get_timeout(),
+          {.expect_no_such_key = false, .byte_range = byte_range});
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
@@ -511,7 +514,10 @@ remote::download_object(download_request download_request) {
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         download_request.transfer_details.on_request(fib.retry_count());
         auto resp = co_await lease.client->get_object(
-          bucket, path, fib.get_timeout(), download_request.expect_missing);
+          bucket,
+          path,
+          fib.get_timeout(),
+          {.expect_no_such_key = download_request.expect_missing});
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
@@ -1168,7 +1174,7 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
           content_length,
           make_iobuf_input_stream(std::move(to_upload)),
           fib.get_timeout(),
-          upload_request.accept_no_content_response);
+          {.accept_no_content = upload_request.accept_no_content_response});
 
         if (res) {
             transfer_details.on_success();
