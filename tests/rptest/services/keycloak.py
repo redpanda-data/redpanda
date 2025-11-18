@@ -18,7 +18,7 @@ KC_CFG = "keycloak.conf"
 KC_TLS_KEY_FILE = os.path.join(KC_CONF_DIR, "key.pem")
 KC_TLS_CRT_FILE = os.path.join(KC_CONF_DIR, "crt.pem")
 KC_TLS_CA_CRT_FILE = os.path.join(KC_CONF_DIR, "ca.crt")
-KC_TLS_TRUST_STORE = os.path.join(KC_CONF_DIR, "kcTrustStore")
+KC_TLS_TRUST_STORE = os.path.join(KC_CONF_DIR, "kcTrustStore.jks")
 KC_ADMIN = "admin"
 KC_ADMIN_PASSWORD = "admin"
 KC_ROOT_LOG_LEVEL = "INFO"
@@ -36,8 +36,8 @@ DEFAULT_AT_LIFESPAN_S = 600
 
 START_CMD_TMPL = """
 LAUNCH_JBOSS_IN_BACKGROUND=1 \
-KEYCLOAK_ADMIN={admin} \
-KEYCLOAK_ADMIN_PASSWORD={pw} \
+KC_BOOTSTRAP_ADMIN_USERNAME={admin} \
+KC_BOOTSTRAP_ADMIN_PASSWORD={pw} \
 {kc} start-dev &
 """
 
@@ -118,9 +118,10 @@ class KeycloakAdminClient:
                 "realm": realm,
                 "enabled": True,
                 "accessTokenLifespan": access_token_lifespan_s,
+                "requiredActions": [],
             }
         )
-        self.kc_admin.realm_name = realm
+        self.kc_admin.change_current_realm(realm_name=realm)
 
     def config(self, server_url, username, password, realm):
         self.kc_admin = KeycloakAdmin(
@@ -143,10 +144,12 @@ class KeycloakAdminClient:
 
     def generate_client_secret(self, client_id):
         id = self.kc_admin.get_client_id(client_id)
+        assert id is not None, f"Client {client_id} not found"
         self.kc_admin.generate_client_secrets(id)
 
     def get_client_secret(self, client_id):
         id = self.kc_admin.get_client_id(client_id)
+        assert id is not None, f"Client {client_id} not found"
         secret = self.kc_admin.get_client_secrets(id)
         return secret["value"]
 
@@ -168,13 +171,15 @@ class KeycloakAdminClient:
 
         if realm_admin:
             client_id = self.kc_admin.get_client_id("realm-management")
+            assert client_id is not None, "Client realm-management not found"
             role_id = self.kc_admin.get_client_role_id(
                 client_id=client_id, role_name="realm-admin"
             )
+            assert role_id is not None, "Role realm-admin not found"
             self.kc_admin.assign_client_role(
                 user_id=user_id,
                 client_id=client_id,
-                roles={"name": "realm-admin", "id": role_id},
+                roles=[{"name": "realm-admin", "id": role_id}],
             )
         return user_id
 
@@ -303,8 +308,9 @@ class KeycloakService(Service):
         }
 
     def start_node(self, node, access_token_lifespan_s=DEFAULT_AT_LIFESPAN_S, **kwargs):
+        scheme = "https" if self.using_tls else "http"
         extra_cfg = {
-            "hostname": self.host(node),
+            "hostname": f"{scheme}://{self.host(node)}:{self.hostname_port}",
             "hostname-port": self.hostname_port,
             "http-port": self.http_port,
             "log-level": self.log_level,
@@ -320,7 +326,7 @@ class KeycloakService(Service):
         with node.account.monitor_log(KC_LOG_FILE) as monitor:
             node.account.ssh(f"{KC} build", allow_fail=False)
             node.account.ssh_capture(self._start_cmd(), allow_fail=False)
-            monitor.wait_until("Running the server in", timeout_sec=300)
+            monitor.wait_until("(main) Profile dev activated.", timeout_sec=30)
 
         self.logger.debug(f"Keycloak PIDs: {self.pids(node)}")
 
