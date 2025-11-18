@@ -1,4 +1,15 @@
-
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Redpanda Schema Registry API",
+    "version": "1.1.1"
+  },
+  "host": "{{Host}}",
+  "basePath": "/",
+  "schemes": [
+    "http"
+  ],
+  "paths": {
     "/config/{subject}": {
       "get": {
         "summary": "Get the compatibility level for a subject.",
@@ -1288,14 +1299,20 @@
             "name": "resource_type",
             "in": "query",
             "type": "string",
-            "enum": ["REGISTRY", "SUBJECT"],
+            "enum": [
+              "REGISTRY",
+              "SUBJECT"
+            ],
             "description": "The type of resource being secured. The REGISTRY type maps to top-level operations such as `GET /mode` and `GET /config`. The SUBJECT type maps to operations on the subject level, such as `GET /subjects` and `GET /config/{subject}`."
           },
           {
             "name": "pattern_type",
             "in": "query",
             "type": "string",
-            "enum": ["LITERAL", "PREFIXED"],
+            "enum": [
+              "LITERAL",
+              "PREFIXED"
+            ],
             "description": "Pattern match type for the resource. Only applies when `resource_type` is SUBJECT."
           },
           {
@@ -1308,14 +1325,25 @@
             "name": "operation",
             "in": "query",
             "type": "string",
-            "enum": ["ALL", "READ", "WRITE", "DELETE", "DESCRIBE", "DESCRIBE_CONFIGS", "ALTER_CONFIGS"],
+            "enum": [
+              "ALL",
+              "READ",
+              "WRITE",
+              "DELETE",
+              "DESCRIBE",
+              "DESCRIBE_CONFIGS",
+              "ALTER_CONFIGS"
+            ],
             "description": "The operation to allow or deny."
           },
           {
             "name": "permission",
             "in": "query",
             "type": "string",
-            "enum": ["ALLOW", "DENY"],
+            "enum": [
+              "ALLOW",
+              "DENY"
+            ],
             "description": "Specifies whether the operation is allowed or denied."
           }
         ],
@@ -1472,3 +1500,211 @@
         }
       }
     }
+  },
+  "definitions": {
+    "error_body": {
+      "type": "object",
+      "properties": {
+        "error_code": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "schema_def": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string"
+        },
+        "schemaType": {
+          "type": "string"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      }
+    },
+    "stored_schema": {
+      "type": "object",
+      "properties": {
+        "subject": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "schemaType": {
+          "type": "string"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "get_compatibility": {
+      "type": "object",
+      "properties": {
+        "compatibilityLevel": {
+          "type": "string",
+          "description": "Compatibility level",
+          "example": "FULL_TRANSITIVE",
+          "enum": [
+            "BACKWARD",
+            "BACKWARD_TRANSITIVE",
+            "FORWARD",
+            "FORWARD_TRANSITIVE",
+            "FULL",
+            "FULL_TRANSITIVE",
+            "NONE"
+          ]
+        }
+      }
+    },
+    "put_compatibility": {
+      "type": "object",
+      "properties": {
+        "compatibility": {
+          "type": "string",
+          "description": "Compatibility level",
+          "example": "FULL_TRANSITIVE",
+          "enum": [
+            "BACKWARD",
+            "BACKWARD_TRANSITIVE",
+            "FORWARD",
+            "FORWARD_TRANSITIVE",
+            "FULL",
+            "FULL_TRANSITIVE",
+            "NONE"
+          ]
+        }
+      }
+    },
+    "mode": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "READWRITE",
+            "READONLY",
+            "IMPORT"
+          ]
+        }
+      }
+    },
+    "is_compatibile": {
+      "type": "object",
+      "properties": {
+        "is_compatible": {
+          "type": "boolean"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "security_acl": {
+      "type": "object",
+      "required": [
+        "principal",
+        "resource",
+        "resource_type",
+        "pattern_type",
+        "host",
+        "operation",
+        "permission"
+      ],
+      "properties": {
+        "principal": {
+          "type": "string",
+          "description": "The name of the principal, for example, User:alice or RedpandaRole:admin. Use \"*\" to represent a wildcard."
+        },
+        "resource": {
+          "type": "string",
+          "description": "The name of the resource. Use \"*\" to represent a wildcard."
+        },
+        "resource_type": {
+          "type": "string",
+          "enum": [
+            "REGISTRY",
+            "SUBJECT"
+          ],
+          "description": "The type of resource being secured."
+        },
+        "pattern_type": {
+          "type": "string",
+          "enum": [
+            "LITERAL",
+            "PREFIXED"
+          ],
+          "description": "Pattern match type for the resource. Only applies when `resource_type` is SUBJECT."
+        },
+        "host": {
+          "type": "string",
+          "description": "Originating host for which this rule applies. Use \"*\" to represent a wildcard."
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "ALL",
+            "READ",
+            "WRITE",
+            "DELETE",
+            "DESCRIBE",
+            "DESCRIBE_CONFIGS",
+            "ALTER_CONFIGS"
+          ],
+          "description": "The operation to allow or deny."
+        },
+        "permission": {
+          "type": "string",
+          "enum": [
+            "ALLOW",
+            "DENY"
+          ],
+          "description": "Specifies whether the operation is allowed or denied."
+        }
+      }
+    }
+  }
+}

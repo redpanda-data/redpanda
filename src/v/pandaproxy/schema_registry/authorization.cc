@@ -10,8 +10,8 @@
 
 #include "pandaproxy/schema_registry/authorization.h"
 
-#include "pandaproxy/api/api-doc/schema_registry.json.hh"
 #include "pandaproxy/parsing/httpd.h"
+#include "pandaproxy/schema_registry.json.hh"
 #include "pandaproxy/schema_registry/service.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "security/acl.h"

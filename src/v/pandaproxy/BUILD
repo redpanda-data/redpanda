@@ -1,5 +1,6 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 load("//bazel/thirdparty:seastar.bzl", "seastar_cc_swagger_library")
+load("//bazel:swagger.bzl", "split_swagger_json")
 
 seastar_cc_swagger_library(
     name = "rest_swagger",
@@ -18,15 +19,21 @@ redpanda_cc_library(
     ],
 )
 
+split_swagger_json(
+    name = "split_schema_registry_json",
+    src = "api/api-doc/schema_registry.json",
+    output_basename = "schema_registry",
+)
+
 seastar_cc_swagger_library(
     name = "schema_registry_swagger",
-    src = "api/api-doc/schema_registry.json",
+    src = "schema_registry.json",
 )
 
 redpanda_cc_library(
     name = "schema_registry_swagger_definitions",
     hdrs = [
-        "api/api-doc/schema_registry.json.hh",
+        "schema_registry.json.hh",
     ],
     visibility = ["//visibility:public"],
     deps = [

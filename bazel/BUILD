@@ -1,4 +1,5 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("@rules_python//python:defs.bzl", "py_binary")
 
 bool_flag(
     name = "gofips",
@@ -34,5 +35,11 @@ config_setting(
 filegroup(
     name = "bench_wrapper",
     srcs = ["bench_wrapper.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "split_swagger_json",
+    srcs = ["split_swagger_json.py"],
     visibility = ["//visibility:public"],
 )
