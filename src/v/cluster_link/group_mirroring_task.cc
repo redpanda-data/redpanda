@@ -647,7 +647,9 @@ group_mirroring_task::list_groups_from_broker(::model::node_id broker_id) {
               broker_id,
               reply.data.error_code);
             co_return std::unexpected<error>(ssx::sformat(
-              "Failed to list groups from {}", reply.data.error_code));
+              "Failed to list groups from broker {}: {}",
+              broker_id,
+              reply.data.error_code));
         }
         chunked_vector<kafka::group_id> groups;
         groups.reserve(reply.data.groups.size());
