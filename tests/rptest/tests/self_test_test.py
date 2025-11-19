@@ -13,9 +13,14 @@ from collections import defaultdict
 from math import comb
 
 from ducktape.utils.util import wait_until
+from ducktape.mark import matrix
 
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
+from rptest.services.redpanda import (
+    RESTART_LOG_ALLOW_LIST,
+    SISettings,
+    get_cloud_storage_type,
+)
 from rptest.services.redpanda_installer import InstallOptions, RedpandaVersionLine
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import wait_until_result
@@ -47,8 +52,10 @@ class SelfTestTest(EndToEndTest):
         return wait_until_result(all_idle, timeout_sec=90, backoff_sec=1)
 
     @cluster(num_nodes=3)
-    def test_self_test(self):
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_self_test(self, cloud_storage_type):
         """Assert the self test starts/completes with success."""
+        _ = cloud_storage_type
         num_nodes = 3
         self.start_redpanda(
             num_nodes=num_nodes, si_settings=SISettings(test_context=self.test_context)
@@ -62,8 +69,8 @@ class SelfTestTest(EndToEndTest):
             assert node["status"] == "idle"
             assert node.get("results") is not None
             for report in node["results"]:
-                assert "error" not in report
-                assert "warning" not in report
+                assert "error" not in report, report.get("error")
+                assert "warning" not in report, report.get("warning")
 
         # Ensure the results appear as expected. Assertions aren't performed
         # on specific results, but rather what tests are oberved to have run
@@ -82,7 +89,7 @@ class SelfTestTest(EndToEndTest):
         cloud_results = [r for r in reports if r["test_type"] == "cloud"]
 
         read_tests = ["List", "Head", "Get"]
-        write_tests = ["Put", "Delete", "Plural Delete"]
+        write_tests = ["Put", "Delete", "Plural Delete", "Compare and Swap"]
 
         num_expected_cloud_storage_read_tests = num_nodes * len(read_tests)
         num_expected_cloud_storage_write_tests = num_nodes * len(write_tests)
@@ -260,10 +267,10 @@ class SelfTestTest(EndToEndTest):
         assert len(reports) > 0
         for report in reports:
             if report["test_type"] in unknown_report_types:
-                assert "error" in report
+                assert "error" in report, report
             else:
-                assert "error" not in report
-                assert "warning" not in report
+                assert "error" not in report, report.get("error", None)
+                assert "warning" not in report, report.get("warning", None)
 
     @cluster(num_nodes=3)
     def test_self_test_mixed_node_controller_lower_version(self):
@@ -342,7 +349,7 @@ class SelfTestTest(EndToEndTest):
             assert len(results) > 0
             for result in results:
                 if result["test_type"] in unknown_checks_map[node]:
-                    assert "error" in result
+                    assert "error" in result, result
                 else:
                     if "error" in result:
                         if (
