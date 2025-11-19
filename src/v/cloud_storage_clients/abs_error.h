@@ -41,7 +41,10 @@ enum class abs_error_code {
     container_not_found,
     directory_not_empty,
     path_not_found,
-    operation_not_supported_on_directory
+    operation_not_supported_on_directory,
+    condition_not_met,
+    source_condition_not_met,
+    target_condition_not_met,
 };
 
 /// Operators to use with lexical_cast

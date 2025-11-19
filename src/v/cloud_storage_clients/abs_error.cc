@@ -49,6 +49,11 @@ std::istream& operator>>(std::istream& i, abs_error_code& code) {
           .match(
             "OperationNotSupportedOnDirectory",
             abs_error_code::operation_not_supported_on_directory)
+          .match("ConditionNotMet", abs_error_code::condition_not_met)
+          .match(
+            "SourceConditionNotMet", abs_error_code::source_condition_not_met)
+          .match(
+            "TargetConditionNotMet", abs_error_code::target_condition_not_met)
           .default_match(abs_error_code::_unknown);
 
     return i;

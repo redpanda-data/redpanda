@@ -65,11 +65,7 @@ constexpr std::string_view set_expiry_test_file = "testsetexpiry";
 
 bool is_error_retryable(
   const cloud_storage_clients::abs_rest_error_response& err) {
-    return std::find(
-             retryable_http_codes.begin(),
-             retryable_http_codes.end(),
-             err.http_code())
-           != retryable_http_codes.end();
+    return std::ranges::contains(retryable_http_codes, err.http_code());
 }
 } // namespace
 
@@ -568,6 +564,12 @@ ss::future<result<T, error_outcome>> abs_client::send_request(
               "OperationNotSupportedOnDirectory response received {}",
               key);
             outcome = error_outcome::operation_not_supported;
+            _probe->register_failure(err.code());
+        } else if (
+          err.code() == abs_error_code::condition_not_met
+          || err.code() == abs_error_code::blob_already_exists) {
+            vlog(abs_log.debug, "ConditionNotMet response received {}", key);
+            outcome = error_outcome::precondition_failed;
             _probe->register_failure(err.code());
         } else {
             vlog(
