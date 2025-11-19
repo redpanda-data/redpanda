@@ -6,6 +6,10 @@ on:
     paths:
       - 'MODULE.bazel'
       - 'bazel/repositories.bzl'
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   gh:
     runs-on: ubuntu-24.04
