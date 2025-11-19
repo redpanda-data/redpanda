@@ -42,6 +42,7 @@
 #include <seastar/util/defer.hh>
 
 #include <chrono>
+#include <optional>
 
 namespace cluster {
 
@@ -609,6 +610,10 @@ ss::future<> partition::stop() {
 
 ss::future<std::optional<storage::timequery_result>>
 partition::timequery(storage::timequery_config cfg) {
+    if (cfg.min_offset > cfg.max_offset) {
+        co_return std::nullopt;
+    }
+
     // Read replicas never consider local raft data
     if (_raft->log_config().is_read_replica_mode_enabled()) {
         co_return co_await cloud_storage_timequery(cfg);
@@ -620,58 +625,54 @@ partition::timequery(storage::timequery_config cfg) {
         && cfg.min_offset < kafka::offset_cast(
              _cloud_storage_partition->next_kafka_offset());
 
-    if (_raft->log()->start_timestamp() <= cfg.time) {
-        // The query is ahead of the local data's start_timestamp: this
-        // means it _might_ hit on local data: start_timestamp is not
-        // precise, so once we query we might still fall back to cloud
-        // storage
+    const bool local_covers_timestamp = _raft->log()->start_timestamp()
+                                        <= cfg.time;
+    auto local_start_offset = log()->from_log_offset(_raft->start_offset());
+    const bool local_covers_offsets = local_start_offset <= cfg.max_offset;
+    const bool may_answer_from_local = local_covers_timestamp
+                                       && local_covers_offsets;
+    if (may_answer_from_local) {
+        // The query is ahead of the local data's start_timestamp and
+        // potentially overlaps with the local data offset range: this means it
+        // _might_ hit on local data: start_timestamp is not precise, so once we
+        // query we might still fall back to cloud storage
         //
         // We also need to adjust the lower bound for the local query as the
         // min_offset corresponds to the full log (including tiered storage).
         auto local_query_cfg = cfg;
         local_query_cfg.min_offset = std::max(
-          log()->from_log_offset(_raft->start_offset()),
-          local_query_cfg.min_offset);
-
-        // If the min_offset is ahead of max_offset, the local log is empty
-        // or was truncated since the timequery_config was created.
-        if (local_query_cfg.min_offset > local_query_cfg.max_offset) {
-            co_return std::nullopt;
-        }
+          local_start_offset, local_query_cfg.min_offset);
 
         auto result = co_await local_timequery(
           local_query_cfg, may_answer_from_cloud);
         if (result.has_value()) {
             co_return result;
-        } else {
-            // The local storage hit a case where it needs to fall back
-            // to querying cloud storage.
-            co_return co_await cloud_storage_timequery(cfg);
-        }
-    } else {
-        if (may_answer_from_cloud) {
-            // Timestamp is before local storage but within cloud storage
-            co_return co_await cloud_storage_timequery(cfg);
-        } else {
-            // No cloud data OR not allowed to read from cloud: queries earlier
-            // than the start of the log will hit on the start of the log.
-            //
-            // Adjust the lower bound for the local query as the min_offset
-            // corresponds to the full log (including tiered storage).
-            auto local_query_cfg = cfg;
-            local_query_cfg.min_offset = std::max(
-              log()->from_log_offset(_raft->start_offset()),
-              local_query_cfg.min_offset);
-
-            // If the min_offset is ahead of max_offset, the local log is empty
-            // or was truncated since the timequery_config was created.
-            if (local_query_cfg.min_offset > local_query_cfg.max_offset) {
-                co_return std::nullopt;
-            }
-
-            co_return co_await local_timequery(local_query_cfg, false);
         }
     }
+
+    if (may_answer_from_cloud) {
+        // Timestamp is before local storage but within cloud storage.
+        co_return co_await cloud_storage_timequery(cfg);
+    }
+
+    // If the timequery doesn't have an answer yet, then either
+    // 1. The local timequery returned no result, or
+    // 2. the local log starts after the timequery's offset range, or
+    // 3. the local log start timestamp is after the timequery's timestamp.
+    // If 1 or 2 hold, there is no offset to return. Otherwise, fall back
+    // to a local timequery, which should return the start of the log.
+    if (may_answer_from_local || !local_covers_offsets) {
+        co_return std::nullopt;
+    }
+
+    // Adjust the lower bound for the local query as the min_offset
+    // corresponds to the full log (including tiered storage).
+    auto local_query_cfg = cfg;
+    local_query_cfg.min_offset = std::max(
+      log()->from_log_offset(_raft->start_offset()),
+      local_query_cfg.min_offset);
+
+    co_return co_await local_timequery(local_query_cfg, false);
 }
 
 bool partition::may_read_from_cloud() const {
