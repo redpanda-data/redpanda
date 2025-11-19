@@ -12,6 +12,7 @@
 #include "kafka/protocol/messages.h"
 #include "kafka/protocol/types.h"
 #include "kafka/protocol/wire.h"
+#include "net/types.h"
 #include "utils/vint_iostream.h"
 
 #include <seastar/core/iostream.hh>
@@ -105,13 +106,19 @@ parse_tags(ss::input_stream<char>& src) {
 }
 
 namespace {
+struct invalid_buffer_size_exception : public net::parsing_exception {
+public:
+    explicit invalid_buffer_size_exception(const std::string& m)
+      : net::parsing_exception(m) {}
+};
 size_t parse_size_buffer(ss::temporary_buffer<char> buf) {
     iobuf data;
     data.append(std::move(buf));
     protocol::decoder reader(std::move(data));
     auto size = reader.read_int32();
     if (size < 0) {
-        throw std::runtime_error("kafka::parse_size_buffer is negative");
+        throw invalid_buffer_size_exception(
+          "kafka::parse_size_buffer is negative");
     }
     return size_t(size);
 }

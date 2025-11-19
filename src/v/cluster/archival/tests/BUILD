@@ -142,6 +142,7 @@ redpanda_cc_btest(
         "//src/v/config",
         "//src/v/model",
         "//src/v/net",
+        "//src/v/net:types",
         "//src/v/ssx:sformat",
         "//src/v/storage",
         "//src/v/storage:resources",

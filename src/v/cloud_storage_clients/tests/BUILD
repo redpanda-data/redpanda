@@ -46,6 +46,7 @@ redpanda_cc_btest(
         "//src/v/hashing:secure",
         "//src/v/http/tests:utils",
         "//src/v/net",
+        "//src/v/net:types",
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:base64",
         "//src/v/utils:unresolved_address",

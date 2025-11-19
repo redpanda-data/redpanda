@@ -54,6 +54,7 @@ redpanda_cc_library(
         "//src/v/metrics",
         "//src/v/model",
         "//src/v/net",
+        "//src/v/net:types",
         "//src/v/reflection:adl",
         "//src/v/serde",
         "//src/v/ssx:future_util",

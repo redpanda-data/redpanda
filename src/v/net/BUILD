@@ -1,6 +1,18 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
 redpanda_cc_library(
+    name = "types",
+    hdrs = [
+        "types.h",
+    ],
+    include_prefix = "net",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "net",
     srcs = [
         "batched_output_stream.cc",
@@ -27,7 +39,6 @@ redpanda_cc_library(
         "tls.h",
         "tls_certificate_probe.h",
         "transport.h",
-        "types.h",
     ],
     implementation_deps = [
         "//src/v/strings:utf8",
@@ -35,6 +46,7 @@ redpanda_cc_library(
     include_prefix = "net",
     visibility = ["//visibility:public"],
     deps = [
+        ":types",
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/config",

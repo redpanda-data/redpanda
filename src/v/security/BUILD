@@ -146,6 +146,7 @@ redpanda_cc_library(
         "//src/v/metrics",
         "//src/v/model",
         "//src/v/net",
+        "//src/v/net:types",
         "//src/v/pandaproxy/schema_registry:types",
         "//src/v/random:generators",
         "//src/v/reflection:adl",
