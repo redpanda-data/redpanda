@@ -273,6 +273,32 @@ class chunked_vector:
     def size_bytes(self):
         return len(self) * self.element_size_bytes
 
+    def __str__(self):
+        return f"chunked_vector(size={len(self)})"
+
+    def __iter__(self):
+        return chunked_vector_iterator(self.ref["_frags"])
+
+
+class chunked_vector_iterator:
+    def __init__(self, ref):
+        self.ref = ref
+        self.frag = self.ref["__begin_"]
+        self.frag_end = self.ref["__end_"]
+        self.vector_it = std_vector(self.frag.dereference()).__iter__()
+
+    def __next__(self):
+        while True:
+            el = next(self.vector_it, None)
+            if el is not None:
+                return el
+            elif self.frag + 1 != self.frag_end:
+                self.frag += 1
+                self.vector_it = std_vector(self.frag.dereference()).__iter__()
+                # Continue the loop to try the next fragment
+            else:
+                raise StopIteration
+
 
 class std_vector:
     def __init__(self, ref):
@@ -1715,6 +1741,9 @@ class abortable_fifo:
             self.index = 0
             self.it = iter(self.fifo.list)
 
+        def __iter__(self):
+            return self
+
         def __next__(self):
             if self.fifo.size == 0:
                 raise StopIteration
@@ -1725,7 +1754,7 @@ class abortable_fifo:
                 return abortable_fifo.entry(next(self.it))
 
     def __iter__(self):
-        return self.iterator(self)
+        return abortable_fifo.iterator(self)
 
 
 class named_samaphore:
@@ -2042,10 +2071,9 @@ class cloud_client_pool:
 class cloud_storage_remote:
     def __init__(self, ref):
         self.ref = ref
-        self.gate_count = ref["_gate"]["_count"]
 
     def __repr__(self):
-        return f"cloud_storage_remote(gate_count={self.gate_count})"
+        return "cloud_storage_remote()"
 
 
 class ntp_archiver:
@@ -2138,7 +2166,10 @@ def parse_shard_arg(arg):
 class redpanda_partition:
     def __init__(self, ptr):
         self.ptr = ptr
-        self.archiver = ntp_archiver(std_unique_ptr(ptr["_archiver"]).dereference())
+        if std_unique_ptr(ptr["_archiver"]):
+            self.archiver = ntp_archiver(std_unique_ptr(ptr["_archiver"]).dereference())
+        else:
+            self.archiver = None
         self.archival_meta = archival_metadata_stm(
             seastar_shared_ptr(ptr["_archival_meta_stm"]).get()
         )
@@ -2163,12 +2194,10 @@ class redpanda_partitions(gdb.Command):
             print(f"# Partitions on shard {i}")
             pm_ptr = find_partition_manager(i)
 
-            for v in absl_get_nodes(pm_ptr["_ntp_table"]):
+            for v in chunked_vector(pm_ptr["_ntp_table"]["m_values"]):
                 try:
-                    ntp = v["value"]["first"]
-                    p = redpanda_partition(
-                        seastar_lw_shared_ptr(v["value"]["second"]).get()
-                    )
+                    ntp = v["first"]
+                    p = redpanda_partition(seastar_lw_shared_ptr(v["second"]).get())
                     print(
                         "ntp: {}\n {}\n, {}\n, {}\n, {}\n, {}\n".format(
                             model_ntp(ntp),
@@ -2180,7 +2209,7 @@ class redpanda_partitions(gdb.Command):
                         )
                     )
                 except Exception as e:
-                    ntp = v["value"]["first"]
+                    ntp = v["first"]
                     print("Skipping ntp {}: {}".format(model_ntp(ntp), e))
 
     def invoke(self, arg, from_tty):
