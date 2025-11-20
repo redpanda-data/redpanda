@@ -113,7 +113,8 @@ cpu_profiler::shard_samples cpu_profiler::shard_results(
     size_t dropped_samples = 0, total_samples = 0;
     chunked_hash_map<single_sample, size_t> backtraces;
     for (auto& results_buffer : _results_buffers) {
-        if (filter_before && results_buffer.polled_time < *filter_before) {
+        if (
+          filter_before && results_buffer.polled_time < filter_before.value()) {
             continue;
         }
 

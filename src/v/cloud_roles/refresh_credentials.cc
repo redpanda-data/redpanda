@@ -315,7 +315,7 @@ refresh_credentials::impl::handle_response(api_response resp) {
 
 ss::future<> refresh_credentials::impl::sleep_until_expiry() const {
     if (_sleep_duration) {
-        co_await ss::sleep_abortable(*_sleep_duration, _as);
+        co_await ss::sleep_abortable(_sleep_duration.value(), _as);
     }
 }
 

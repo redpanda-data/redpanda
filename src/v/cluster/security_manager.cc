@@ -220,7 +220,7 @@ security_manager::fill_snapshot(controller_snapshot& controller_snap) const {
     snapshot.roles.reserve(roles.size());
     for (const auto& role : roles) {
         security::role_name name{role};
-        snapshot.roles.emplace_back(name, *_roles.local().get(name));
+        snapshot.roles.emplace_back(name, _roles.local().get(name).value());
     }
 
     co_return;

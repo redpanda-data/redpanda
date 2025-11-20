@@ -36,7 +36,7 @@ from_string_view<rest_authn_method>(std::string_view sv) {
 std::ostream& operator<<(std::ostream& os, const rest_authn_endpoint& ep) {
     std::string_view authn_method_str{"<nullopt>"};
     if (ep.authn_method) {
-        authn_method_str = to_string_view(*ep.authn_method);
+        authn_method_str = to_string_view(ep.authn_method.value());
     }
 
     fmt::print(os, "{{{}:{}:{}}}", ep.name, ep.address, authn_method_str);
@@ -63,7 +63,7 @@ Node convert<config::rest_authn_endpoint>::encode(const type& rhs) {
     node["port"] = rhs.address.port();
     if (rhs.authn_method) {
         node["authentication_method"] = ss::sstring(
-          to_string_view(*rhs.authn_method));
+          to_string_view(rhs.authn_method.value()));
     }
     return node;
 }
@@ -106,7 +106,7 @@ void json::rjson_serialize(
     w.Uint(ep.address.port());
     if (ep.authn_method) {
         w.Key("authentication_method");
-        auto authn_method = to_string_view(*ep.authn_method);
+        auto authn_method = to_string_view(ep.authn_method.value());
         w.String(authn_method.data(), authn_method.length());
     }
     w.EndObject();

@@ -101,8 +101,8 @@ public:
         auto existing = lookup_by_name(meta.name);
         state& new_state = _states.emplace_back(_states.back());
         if (existing) {
-            new_state.transforms[existing->first] = meta;
-            return existing->first;
+            new_state.transforms[existing.value().first] = meta;
+            return existing.value().first;
         } else {
             _names.emplace(meta.name);
             new_state.transforms.emplace(++_next_id, meta);
@@ -116,8 +116,8 @@ public:
               ss::format("trying to delete non-existant transform {}", name));
         }
         state& new_state = _states.emplace_back(_states.back());
-        new_state.transforms.erase(existing->first);
-        return existing->first;
+        new_state.transforms.erase(existing.value().first);
+        return existing.value().first;
     }
     void add_leader(model::ntp ntp) {
         state& new_state = _states.emplace_back(_states.back());
@@ -347,7 +347,7 @@ public:
                 "unknown transform to report an error for: {}", meta.name()));
         }
         _manager->on_transform_state_change(
-          entry->first, ntp, processor::state::errored);
+          entry.value().first, ntp, processor::state::errored);
     }
     void drain_queue() {
         // Drain the seastar task queue to ensure manual clock tasks have

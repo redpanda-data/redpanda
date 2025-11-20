@@ -274,8 +274,8 @@ ss::future<> state_machine_manager::apply_initial_recovery_policy() {
     }
     vlog(_log.debug, "Starting with initial recovery snapshot: {}", *snapshot);
     for (auto& [name, entry] : _machines) {
-        auto it = snapshot->initial_recovery_next_offsets.find(name);
-        if (it != snapshot->initial_recovery_next_offsets.end()) {
+        auto it = snapshot.value().initial_recovery_next_offsets.find(name);
+        if (it != snapshot.value().initial_recovery_next_offsets.end()) {
             const auto init_recovery_offset = it->second;
             vlog(
               _log.debug,
@@ -308,7 +308,7 @@ ss::future<> state_machine_manager::apply_initial_recovery_policy() {
           name);
         switch (policy) {
         case stm_initial_recovery_policy::read_everything:
-            snapshot->initial_recovery_next_offsets.emplace(
+            snapshot.value().initial_recovery_next_offsets.emplace(
               name, model::offset{0});
             continue;
         case stm_initial_recovery_policy::skip_to_end:
@@ -322,7 +322,7 @@ ss::future<> state_machine_manager::apply_initial_recovery_policy() {
                   "State machine '{}' already has next offset set to {}",
                   name,
                   entry->stm->next());
-                snapshot->initial_recovery_next_offsets.emplace(
+                snapshot.value().initial_recovery_next_offsets.emplace(
                   name, model::offset{0});
                 continue;
             }
@@ -355,7 +355,7 @@ ss::future<> state_machine_manager::apply_initial_recovery_policy() {
             /**
              * Initial recovery finished, marked as done in the snapshot.
              */
-            snapshot->initial_recovery_next_offsets.emplace(
+            snapshot.value().initial_recovery_next_offsets.emplace(
               name, entry->stm->next());
         }
     }
@@ -363,10 +363,10 @@ ss::future<> state_machine_manager::apply_initial_recovery_policy() {
     // clean up offsets from state machines that are not longer present in the
     // manager but are still in the initial recovery snapshot.
     absl::erase_if(
-      snapshot->initial_recovery_next_offsets,
+      snapshot.value().initial_recovery_next_offsets,
       [this](const auto& pair) { return !_machines.contains(pair.first); });
 
-    co_await write_initial_recovery_snapshot(std::move(*snapshot));
+    co_await write_initial_recovery_snapshot(std::move(snapshot.value()));
 }
 
 std::vector<state_machine_manager::entry_ptr>
@@ -387,14 +387,14 @@ ss::future<> state_machine_manager::apply_raft_snapshot() {
       acquire_background_apply_mutexes().then([&, this](auto units) mutable {
           return do_apply_raft_snapshot(
             all_state_machines(),
-            std::move(snapshot->metadata),
-            snapshot->reader,
+            std::move(snapshot.value().metadata),
+            snapshot.value().reader,
             std::move(units));
       }));
     // update the _next offset to the max of the state machines applied offset
     // as some of them might have thrown
     _next = std::max(max_next_offset(), _next);
-    co_await snapshot->reader.close();
+    co_await snapshot.value().reader.close();
     if (fut.failed()) {
         const auto e = fut.get_exception();
         // do not log known shutdown exceptions as errors
@@ -647,10 +647,10 @@ ss::future<> state_machine_manager::background_apply_fiber(
 
             auto fut = co_await ss::coroutine::as_future(do_apply_raft_snapshot(
               {entry},
-              std::move(snapshot->metadata),
-              snapshot->reader,
+              std::move(snapshot.value().metadata),
+              snapshot.value().reader,
               std::vector<ssx::semaphore_units>{}));
-            co_await snapshot->reader.close();
+            co_await snapshot.value().reader.close();
             if (fut.failed()) {
                 const auto e = fut.get_exception();
                 // do not log known shutdown exceptions as errors
@@ -820,7 +820,7 @@ state_machine_manager::read_initial_recovery_snapshot() {
     }
 
     auto md_buffer_f = co_await ss::coroutine::as_future(
-      reader->read_metadata());
+      reader.value().read_metadata());
 
     if (md_buffer_f.failed()) {
         auto e = md_buffer_f.get_exception();
@@ -828,29 +828,29 @@ state_machine_manager::read_initial_recovery_snapshot() {
           _log.error,
           "failed to read initial recovery snapshot metadata: {}",
           e);
-        co_await reader->close();
+        co_await reader.value().close();
         std::rethrow_exception(e);
     }
 
     auto snap_sz_f = co_await ss::coroutine::as_future(
-      reader->get_snapshot_size());
+      reader.value().get_snapshot_size());
     if (snap_sz_f.failed()) {
         auto e = snap_sz_f.get_exception();
         vlog(
           _log.error, "failed to read initial recovery snapshot size: {}", e);
-        co_await reader->close();
+        co_await reader.value().close();
         std::rethrow_exception(e);
     }
     auto snapshot_content_f = co_await ss::coroutine::as_future(
-      read_iobuf_exactly(reader->input(), snap_sz_f.get()));
+      read_iobuf_exactly(reader.value().input(), snap_sz_f.get()));
 
     if (snapshot_content_f.failed()) {
         auto e = snapshot_content_f.get_exception();
         vlog(_log.error, "failed to read recovery snapshot: {}", e);
-        co_await reader->close();
+        co_await reader.value().close();
         std::rethrow_exception(e);
     }
-    co_await reader->close();
+    co_await reader.value().close();
 
     co_await _initial_recovery_snapshot_mgr.remove_partial_snapshots();
     co_return serde::from_iobuf<initial_recovery_snapshot>(

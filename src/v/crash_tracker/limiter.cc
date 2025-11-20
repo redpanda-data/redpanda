@@ -63,7 +63,8 @@ describe_crashes(const std::vector<recorder::recorded_crash>& crashes) {
           "\nCrash #{} at {} - {}",
           i + 1,
           format_time(crashes[i].timestamp()),
-          crash ? fmt::format("{}", *crash) : "Crash reason not recorded");
+          crash ? fmt::format("{}", crash.value())
+                : "Crash reason not recorded");
     }
 
     return ss.str();
@@ -139,7 +140,7 @@ ss::future<> limiter::check_for_crash_loop(ss::abort_source& as) const {
                   ctlog.info,
                   "Sleeping for {} seconds before terminating...",
                   *crash_loop_sleep_val / 1s);
-                co_await ss::sleep_abortable(*crash_loop_sleep_val, as);
+                co_await ss::sleep_abortable(crash_loop_sleep_val.value(), as);
             }
 
             throw crash_loop_limit_reached();

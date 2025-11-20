@@ -52,8 +52,8 @@ public:
         auto o = model::offset(offset);
         auto p = _idx->find_nearest(o);
         ASSERT_TRUE(bool(p));
-        ASSERT_EQ(p->offset, o);
-        ASSERT_EQ(p->filepos, filepos);
+        ASSERT_EQ(p.value().offset, o);
+        ASSERT_EQ(p.value().filepos, filepos);
     }
 
     model::offset _base_offset;
@@ -115,8 +115,8 @@ TEST_F(offset_index_utils_fixture, bucket_bug1) {
     {
         auto p = _idx->find_nearest(model::offset(947));
         ASSERT_TRUE(bool(p));
-        ASSERT_EQ(p->offset, model::offset(926));
-        ASSERT_EQ(p->filepos, 600121);
+        ASSERT_EQ(p.value().offset, model::offset(926));
+        ASSERT_EQ(p.value().filepos, 600121);
     }
 }
 TEST_F(offset_index_utils_fixture, bucket_truncate) {
@@ -148,14 +148,14 @@ TEST_F(offset_index_utils_fixture, bucket_truncate) {
     {
         auto p = _idx->find_nearest(model::offset(926));
         ASSERT_TRUE(bool(p));
-        ASSERT_EQ(p->offset, model::offset(901));
-        ASSERT_EQ(p->filepos, 458048);
+        ASSERT_EQ(p.value().offset, model::offset(901));
+        ASSERT_EQ(p.value().filepos, 458048);
     }
     {
         auto p = _idx->find_nearest(model::offset(947));
         ASSERT_TRUE(bool(p));
-        ASSERT_EQ(p->offset, model::offset(901));
-        ASSERT_EQ(p->filepos, 458048);
+        ASSERT_EQ(p.value().offset, model::offset(901));
+        ASSERT_EQ(p.value().filepos, 458048);
     }
 
     ASSERT_TRUE(_idx->max_timestamp() == model::timestamp{100});

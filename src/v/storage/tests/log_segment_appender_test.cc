@@ -431,7 +431,7 @@ static void run_concurrent_append_flush(
                 all_actions.pop_back();
                 continue;
             }
-            last_append->get();
+            last_append.value().get();
             last_append.reset();
             break;
         case action::SLEEP: {
@@ -454,7 +454,7 @@ static void run_concurrent_append_flush(
 
     // now we need to wait for the last append, if any
     if (last_append) {
-        last_append->get();
+        last_append.value().get();
     }
 
     // append a final flush, so we are in a known flushed state for the

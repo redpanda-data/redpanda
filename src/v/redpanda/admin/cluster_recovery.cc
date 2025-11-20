@@ -52,11 +52,12 @@ admin_server::initialize_cluster_recovery(
 
     auto doc = co_await parse_optional_json_body(request.get());
     if (doc.has_value()) {
-        admin::apply_validator(body_validator, *doc);
+        admin::apply_validator(body_validator, doc.value());
 
-        if (doc->HasMember("cluster_uuid_override")) {
+        if (doc.value().HasMember("cluster_uuid_override")) {
             cluster_uuid_override = model::cluster_uuid(
-              uuid_t::from_string((*doc)["cluster_uuid_override"].GetString()));
+              uuid_t::from_string(
+                (doc.value())["cluster_uuid_override"].GetString()));
             if (!cluster_uuid_override.has_value()) {
                 throw ss::httpd::bad_request_exception("Invalid UUID format");
             }

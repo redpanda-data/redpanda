@@ -146,7 +146,7 @@ public:
         }
 
         auto v_it = BOOST_OUTCOME_TRYX(
-          get_version_iter(*sub_it, *version, inc_del));
+          get_version_iter(*sub_it, version.value(), inc_del));
         return *v_it;
     }
 
@@ -411,7 +411,9 @@ public:
         schema_id_set references;
         for (const auto& s : _schemas) {
             for (const auto& r : s.second.definition.refs()) {
-                if (r.sub == sub && (!ver.has_value() || r.version == *ver)) {
+                if (
+                  r.sub == sub
+                  && (!ver.has_value() || r.version == ver.value())) {
                     references.insert(s.first);
                 }
             }

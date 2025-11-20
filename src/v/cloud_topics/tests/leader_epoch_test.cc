@@ -171,7 +171,7 @@ public:
                                         .get_sharded_l1_metastore_router()
                                         ->local());
         auto l1_offset = co_await meta.get_offsets(
-          model::topic_id_partition(*tp_id, model::partition_id{0}));
+          model::topic_id_partition(tp_id.value(), model::partition_id{0}));
         if (!l1_offset.has_value()) {
             co_return std::nullopt;
         }
@@ -256,7 +256,7 @@ TEST_F(LeaderEpochTest, TestGetLeaderEpochWhileReconciling) {
             }
             auto l1_o = get_last_l1_offset().get();
             if (l1_o.has_value() && l1_o > last_l1_offset) {
-                last_l1_offset = *l1_o;
+                last_l1_offset = l1_o.value();
                 break;
             }
             ss::sleep(50ms).get();
@@ -269,9 +269,9 @@ TEST_F(LeaderEpochTest, TestGetLeaderEpochWhileReconciling) {
     gate_fut.get();
 
     ASSERT_FALSE(producer_error.has_value())
-      << "Producer fiber failed with exception " << *producer_error;
+      << "Producer fiber failed with exception " << producer_error.value();
     ASSERT_FALSE(validator_error.has_value())
-      << "Validator fiber failed with exception " << *validator_error;
+      << "Validator fiber failed with exception " << validator_error.value();
 
     // One more validation.
     auto p = wait_for_leadership().get();

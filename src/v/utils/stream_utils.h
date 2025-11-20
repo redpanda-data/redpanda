@@ -56,7 +56,7 @@ public:
       std::optional<size_t> max_size)
       : _num_clients(num_clients)
       , _bitmask(0)
-      , _max_size(max_size ? *max_size / read_ahead : 0)
+      , _max_size(max_size ? max_size.value() / read_ahead : 0)
       , _in(std::move(i))
       , _sem(read_ahead, "stream-fanout") {
         vassert(

@@ -83,7 +83,7 @@ struct value_converting_visitor {
                 group.emplace_back(serde::parquet::null_value{});
                 continue;
             }
-            auto result = co_await to_parquet_value(std::move(*field));
+            auto result = co_await to_parquet_value(std::move(field.value()));
             if (result.has_error()) {
                 co_return result.error();
             }
@@ -101,7 +101,8 @@ struct value_converting_visitor {
             if (!element.has_value()) {
                 element_wrapper.emplace_back(serde::parquet::null_value{});
             } else {
-                auto result = co_await to_parquet_value(std::move(*element));
+                auto result = co_await to_parquet_value(
+                  std::move(element.value()));
                 if (result.has_error()) {
                     co_return result.error();
                 }

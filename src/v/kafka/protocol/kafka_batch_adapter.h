@@ -89,7 +89,7 @@ struct produce_request_record_data {
     explicit produce_request_record_data(
       std::optional<iobuf>&& data, api_version version) {
         if (data) {
-            adapter.adapt_with_version(std::move(*data), version);
+            adapter.adapt_with_version(std::move(data.value()), version);
         }
     }
 
@@ -105,8 +105,9 @@ struct produce_request_record_data {
         fmt::print(
           os,
           "batch {{records: {}, size: {}}} v2_format {} valid_crc {}",
-          data.adapter.batch ? data.adapter.batch->header().record_count : -1,
-          data.adapter.batch ? data.adapter.batch->size_bytes() : -1,
+          data.adapter.batch ? data.adapter.batch.value().header().record_count
+                             : -1,
+          data.adapter.batch ? data.adapter.batch.value().size_bytes() : -1,
           data.adapter.v2_format,
           data.adapter.valid_crc);
         return os;

@@ -379,7 +379,7 @@ TEST_F(feature_table_fixture, feature_table_trial_license_test) {
         GTEST_SKIP() << security::testing::skip_no_license_msg;
         return;
     }
-    auto& license = *opt_license;
+    auto& license = opt_license.value();
 
     auto expired_license = license;
     expired_license.expiry = 0s;
@@ -389,17 +389,17 @@ TEST_F(feature_table_fixture, feature_table_trial_license_test) {
 
     ft.set_builtin_trial_license(model::timestamp::now());
     EXPECT_EQ(ft.get_license().has_value(), true);
-    EXPECT_EQ(ft.get_license()->is_expired(), false);
+    EXPECT_EQ(ft.get_license().value().is_expired(), false);
     EXPECT_EQ(ft.should_sanction(), false);
 
     ft.set_license(expired_license);
     EXPECT_EQ(ft.get_license().has_value(), true);
-    EXPECT_EQ(ft.get_license()->is_expired(), true);
+    EXPECT_EQ(ft.get_license().value().is_expired(), true);
     EXPECT_EQ(ft.should_sanction(), true);
 
     ft.set_license(license);
     EXPECT_EQ(ft.get_license().has_value(), true);
-    EXPECT_EQ(ft.get_license()->is_expired(), false);
+    EXPECT_EQ(ft.get_license().value().is_expired(), false);
     EXPECT_EQ(ft.should_sanction(), false);
 
     ft.revoke_license();
@@ -415,7 +415,7 @@ TEST_F(FeatureTableTest, feature_table_probe_expiry_metric_test) {
         GTEST_SKIP() << security::testing::skip_no_license_msg;
         return;
     }
-    auto& license = *opt_license;
+    auto& license = opt_license.value();
 
     auto expiry = security::license::clock::time_point{4813252273s};
 

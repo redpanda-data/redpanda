@@ -85,7 +85,7 @@ iceberg_snapshot_remover::remove_expired_snapshots(
         }
     }
     if (error.has_value()) {
-        co_return *error;
+        co_return error.value();
     }
     co_return std::nullopt;
 }
@@ -111,7 +111,7 @@ iceberg_snapshot_remover::remove_expired_snapshots(
     chunked_hash_map<iceberg::snapshot_id, iceberg::uri> before_snapshots;
     auto& before_table = table_res.value();
     if (before_table.snapshots.has_value()) {
-        for (const auto& s : *before_table.snapshots) {
+        for (const auto& s : before_table.snapshots.value()) {
             before_snapshots.emplace(s.id, s.manifest_list_path);
         }
     }
@@ -143,7 +143,7 @@ iceberg_snapshot_remover::remove_expired_snapshots(
     auto& after_table = after_table_res.value();
     auto snapshots_pending_removal = std::move(before_snapshots);
     if (after_table.snapshots.has_value()) {
-        for (const auto& s : *after_table.snapshots) {
+        for (const auto& s : after_table.snapshots.value()) {
             snapshots_pending_removal.erase(s.id);
         }
     }

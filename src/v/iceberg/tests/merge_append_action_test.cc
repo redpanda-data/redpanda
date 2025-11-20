@@ -102,9 +102,10 @@ public:
             ret.emplace_back(
               file_to_append{
                 .file = std::move(file),
-                .schema_id = (schema_id ? *schema_id : md.current_schema_id),
+                .schema_id
+                = (schema_id ? schema_id.value() : md.current_schema_id),
                 .partition_spec_id
-                = (partition_spec_id ? *partition_spec_id : md.default_spec_id),
+                = (partition_spec_id ? partition_spec_id.value() : md.default_spec_id),
               });
         }
         ret[0].file.record_count += leftover_records;
@@ -393,7 +394,8 @@ TEST_F(MergeAppendActionTest, TestUniqueSnapshotIds) {
         ASSERT_TRUE(table.snapshots.has_value());
         ASSERT_TRUE(table.current_snapshot_id.has_value());
         ASSERT_EQ(table.snapshots.value().size(), expected_snapshots);
-        ASSERT_EQ(table.snapshots->back().id, *table.current_snapshot_id);
+        ASSERT_EQ(
+          table.snapshots.value().back().id, table.current_snapshot_id.value());
 
         // Each snapshot should get a unique snapshot id.
         ASSERT_TRUE(snap_ids.emplace(table.current_snapshot_id.value()).second);
@@ -544,16 +546,16 @@ TEST_F(MergeAppendActionTest, TestTagSnapshot) {
 
     auto snap_id = table.current_snapshot_id.value();
     ASSERT_TRUE(table.refs.has_value());
-    ASSERT_TRUE(table.refs->contains("main"));
-    ASSERT_TRUE(table.refs->contains("tag"));
+    ASSERT_TRUE(table.refs.value().contains("main"));
+    ASSERT_TRUE(table.refs.value().contains("tag"));
 
     // Sanity check, main is always updated.
-    auto main_snap = table.refs->at("main");
+    auto main_snap = table.refs.value().at("main");
     ASSERT_EQ(snap_id, main_snap.snapshot_id);
     ASSERT_EQ(main_snap.type, snapshot_ref_type::branch);
 
     // Since we passed a tag, it should exist.
-    auto tag_snap = table.refs->at("tag");
+    auto tag_snap = table.refs.value().at("tag");
     ASSERT_EQ(snap_id, tag_snap.snapshot_id);
     ASSERT_EQ(tag_snap.type, snapshot_ref_type::tag);
 
@@ -569,7 +571,7 @@ TEST_F(MergeAppendActionTest, TestTagSnapshot) {
     snap_id = table.current_snapshot_id.value();
 
     // The snapshot references should follow.
-    tag_snap = table.refs->at("tag");
+    tag_snap = table.refs.value().at("tag");
     ASSERT_EQ(snap_id, tag_snap.snapshot_id);
     ASSERT_EQ(tag_snap.type, snapshot_ref_type::tag);
 
@@ -587,12 +589,12 @@ TEST_F(MergeAppendActionTest, TestTagSnapshot) {
     ASSERT_NE(old_snap_id, snap_id);
 
     // The new tag should have a new snapshot id.
-    auto other_snap = table.refs->at("other");
+    auto other_snap = table.refs.value().at("other");
     ASSERT_EQ(snap_id, other_snap.snapshot_id);
     ASSERT_EQ(other_snap.type, snapshot_ref_type::tag);
 
     // The old tag should refer to the last snapshot that was appended with it.
-    tag_snap = table.refs->at("tag");
+    tag_snap = table.refs.value().at("tag");
     ASSERT_EQ(old_snap_id, tag_snap.snapshot_id);
     ASSERT_EQ(tag_snap.type, snapshot_ref_type::tag);
 }
@@ -613,10 +615,10 @@ TEST_F(MergeAppendActionTest, TestTagWithExpiration) {
 
     auto snap_id = table.current_snapshot_id.value();
     ASSERT_TRUE(table.refs.has_value());
-    ASSERT_TRUE(table.refs->contains("tag"));
+    ASSERT_TRUE(table.refs.value().contains("tag"));
 
     // Sanity check, no snapshot reference properties are set.
-    auto tag_snap = table.refs->at("tag");
+    auto tag_snap = table.refs.value().at("tag");
     ASSERT_EQ(snap_id, tag_snap.snapshot_id);
     ASSERT_EQ(tag_snap.type, snapshot_ref_type::tag);
     ASSERT_FALSE(tag_snap.max_snapshot_age_ms.has_value());
@@ -637,10 +639,10 @@ TEST_F(MergeAppendActionTest, TestTagWithExpiration) {
 
     snap_id = table.current_snapshot_id.value();
     ASSERT_TRUE(table.refs.has_value());
-    ASSERT_TRUE(table.refs->contains("tag"));
+    ASSERT_TRUE(table.refs.value().contains("tag"));
 
     // Sanity check, just the reference expiration is set.
-    tag_snap = table.refs->at("tag");
+    tag_snap = table.refs.value().at("tag");
     ASSERT_EQ(snap_id, tag_snap.snapshot_id);
     ASSERT_EQ(tag_snap.type, snapshot_ref_type::tag);
     ASSERT_FALSE(tag_snap.max_snapshot_age_ms.has_value());
@@ -874,10 +876,10 @@ TEST_F(MergeAppendActionTest, TestWriteMetadataPathProperty) {
 
     const auto& updated_table = tx.table();
     ASSERT_TRUE(updated_table.snapshots.has_value());
-    ASSERT_EQ(updated_table.snapshots->size(), 1);
+    ASSERT_EQ(updated_table.snapshots.value().size(), 1);
 
     // Check that the manifest list path uses the custom metadata location
-    const auto& snapshot = updated_table.snapshots->back();
+    const auto& snapshot = updated_table.snapshots.value().back();
     const auto& manifest_list_path = snapshot.manifest_list_path;
     ASSERT_TRUE(manifest_list_path().starts_with(custom_path));
 
@@ -902,7 +904,7 @@ TEST_F(MergeAppendActionTest, TestSnapshotSummaryFirstSnapshot) {
 
     const auto& table = tx.table();
     ASSERT_TRUE(table.snapshots.has_value());
-    const auto& summary = table.snapshots->back().summary;
+    const auto& summary = table.snapshots.value().back().summary;
 
     // First snapshot: totals should equal added values
     const size_t file_size = 1_KiB * files_count;
@@ -935,7 +937,7 @@ TEST_F(MergeAppendActionTest, TestSnapshotSummaryAdds) {
     ASSERT_FALSE(res2.has_error());
 
     const auto& table = tx.table();
-    const auto& latest_summary = table.snapshots->back().summary;
+    const auto& latest_summary = table.snapshots.value().back().summary;
 
     // The second snapshot should add onto existing totals.
     ASSERT_EQ(latest_summary.added_data_files, second_files);
@@ -968,7 +970,7 @@ TEST_F(MergeAppendActionTest, TestSnapshotSummaryMissingMetrics) {
     ASSERT_TRUE(up_res.has_value());
 
     table.snapshots = chunked_vector<snapshot>{};
-    table.snapshots->emplace_back(std::move(initial_snap));
+    table.snapshots.value().emplace_back(std::move(initial_snap));
     table.current_snapshot_id = snapshot_id{1};
     table.last_sequence_number = sequence_number{1};
 
@@ -978,7 +980,7 @@ TEST_F(MergeAppendActionTest, TestSnapshotSummaryMissingMetrics) {
     ASSERT_FALSE(res.has_error()) << res.error();
 
     const auto& updated_table = tx.table();
-    const auto& latest_summary = updated_table.snapshots->back().summary;
+    const auto& latest_summary = updated_table.snapshots.value().back().summary;
 
     // We should only update the total_records metric, since the others were
     // missing.

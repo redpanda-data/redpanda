@@ -72,13 +72,13 @@ FIXTURE_TEST(test_ephemeral_credential_frontend, cluster_test_fixture) {
     {
         auto cred_1 = cs_1.get<security::scram_credential>(user_0);
         BOOST_REQUIRE(cred_1.has_value());
-        BOOST_REQUIRE_EQUAL(cred_1->principal(), principal);
+        BOOST_REQUIRE_EQUAL(cred_1.value().principal(), principal);
 
         bool check_password = security::scram_sha512::validate_password(
           cred_0.credential.password(),
-          cred_1->stored_key(),
-          cred_1->salt(),
-          cred_1->iterations());
+          cred_1.value().stored_key(),
+          cred_1.value().salt(),
+          cred_1.value().iterations());
         BOOST_REQUIRE(check_password);
     }
 }

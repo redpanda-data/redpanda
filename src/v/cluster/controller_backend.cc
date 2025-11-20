@@ -229,7 +229,7 @@ struct controller_backend::ntp_reconciliation_state {
     }
 
     void mark_properties_reconciled(model::revision_id rev) {
-        if (properties_changed_at && *properties_changed_at <= rev) {
+        if (properties_changed_at && properties_changed_at.value() <= rev) {
             properties_changed_at = std::nullopt;
         }
     }
@@ -241,9 +241,9 @@ struct controller_backend::ntp_reconciliation_state {
         if (!cur_operation) {
             cur_operation = in_progress_operation{};
         }
-        cur_operation->revision = rev;
-        cur_operation->type = type;
-        cur_operation->assignment = std::move(p_as);
+        cur_operation.value().revision = rev;
+        cur_operation.value().type = type;
+        cur_operation.value().assignment = std::move(p_as);
     }
 
     friend std::ostream&
@@ -287,7 +287,7 @@ controller_backend::controller_backend(
   , _topics_frontend(frontend)
   , _storage(storage)
   , _features(features)
-  , _self(*config::node().node_id())
+  , _self(config::node().node_id().value())
   , _data_directory(config::node().data_directory().as_sstring())
   , _housekeeping_interval(std::move(housekeeping_interval))
   , _housekeeping_jitter(_housekeeping_interval())
@@ -367,9 +367,9 @@ create_topic_table_snapshot(
         if (!ntp_meta) {
             continue;
         }
-        for (const auto& [_, p] : ntp_meta->get_assignments()) {
+        for (const auto& [_, p] : ntp_meta.value().get_assignments()) {
             auto ntp = model::ntp(nt.ns, nt.tp, p.id);
-            auto revision_id = ntp_meta->get_revision();
+            auto revision_id = ntp_meta.value().get_revision();
             if (cluster::contains_node(p.replicas, current_node)) {
                 snapshot.emplace(ntp, revision_id);
                 continue;
@@ -378,7 +378,8 @@ create_topic_table_snapshot(
               ntp);
             if (
               target_replica_set
-              && cluster::contains_node(*target_replica_set, current_node)) {
+              && cluster::contains_node(
+                target_replica_set.value(), current_node)) {
                 snapshot.emplace(ntp, revision_id);
                 continue;
             }
@@ -386,7 +387,8 @@ create_topic_table_snapshot(
               ntp);
             if (
               previous_replica_set
-              && cluster::contains_node(*previous_replica_set, current_node)) {
+              && cluster::contains_node(
+                previous_replica_set.value(), current_node)) {
                 snapshot.emplace(ntp, revision_id);
                 continue;
             }
@@ -506,7 +508,7 @@ controller_backend::calculate_learner_initial_offset(
      * storage data
      */
     if (auto tp_cfg = p->get_topic_config();
-        tp_cfg.has_value() && tp_cfg->get().is_internal()) {
+        tp_cfg.has_value() && tp_cfg.value().get().is_internal()) {
         vlog(clusterlog.trace, "{} is part of an internal topic", p->ntp());
         return std::nullopt;
     }
@@ -607,7 +609,8 @@ controller_backend::calculate_learner_initial_offset(
     model::timestamp retention_timestamp_threshold(0);
     if (initial_retention_ms) {
         retention_timestamp_threshold = model::timestamp(
-          model::timestamp::now().value() - initial_retention_ms->count());
+          model::timestamp::now().value()
+          - initial_retention_ms.value().count());
     }
 
     auto retention_offset = log->retention_offset(
@@ -654,7 +657,7 @@ controller_backend::calculate_learner_initial_offset(
       max_removable_local_log_offset);
 
     return model::next_offset(
-      std::min(max_removable_local_log_offset, *retention_offset));
+      std::min(max_removable_local_log_offset, retention_offset.value()));
 }
 
 void controller_backend::process_delta(const topic_table::ntp_delta& d) {
@@ -961,8 +964,8 @@ ss::future<> controller_backend::try_reconcile_ntp(
 
         if (last_error != errc::success) {
             if (rs.cur_operation) {
-                rs.cur_operation->last_error = last_error;
-                rs.cur_operation->retries += 1;
+                rs.cur_operation.value().last_error = last_error;
+                rs.cur_operation.value().retries += 1;
             }
             vlog(
               clusterlog.trace,
@@ -1063,14 +1066,14 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
           "[{}] placement must be present if partition is",
           ntp);
         vassert(
-          maybe_placement->current()
+          maybe_placement.value().current()
             && partition->get_log_revision_id()
-                 == maybe_placement->current()->log_revision
-            && maybe_placement->current()->status
+                 == maybe_placement->current().value().log_revision
+            && maybe_placement->current().value().status
                  == shard_placement_table::hosted_status::hosted,
           "[{}] unexpected local state: {} (partition log revision: {})",
           ntp,
-          maybe_placement->current(),
+          maybe_placement.value().current(),
           partition->get_log_revision_id());
     }
 
@@ -1085,9 +1088,13 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
             co_return ss::stop_iteration::yes;
         }
 
-        rs.set_cur_operation(*rs.removed_at, partition_operation_type::remove);
+        rs.set_cur_operation(
+          rs.removed_at.value(), partition_operation_type::remove);
         auto ec = co_await delete_partition(
-          ntp, maybe_placement, *rs.removed_at, partition_removal_mode::global);
+          ntp,
+          maybe_placement,
+          rs.removed_at.value(),
+          partition_removal_mode::global);
         if (ec) {
             co_return ec;
         }
@@ -1103,7 +1110,7 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
     raft::group_id group_id = replicas_view.assignment.group;
     vlog(clusterlog.trace, "[{}] replicas view: {}", ntp, maybe_replicas_view);
 
-    auto placement = *maybe_placement;
+    auto placement = maybe_placement.value();
     vlog(
       clusterlog.trace,
       "[{}] placement state on this shard: {}",
@@ -1231,14 +1238,14 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
           force_reconfiguration{
             replicas_view.update
             && replicas_view.update->is_force_reconfiguration()},
-          topic_md->get());
+          topic_md.value().get());
         if (ec) {
             co_return ec;
         }
 
         if (
           placement.current().has_value()
-          && placement.current()->remake_state
+          && placement.current().value().remake_state
                != shard_placement_table::remake_partition_state::none) {
             ec = co_await _shard_placement.set_remake_state(
               ntp,
@@ -1262,7 +1269,7 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
 
     if (rs.properties_changed_at) {
         rs.set_cur_operation(
-          *rs.properties_changed_at,
+          rs.properties_changed_at.value(),
           partition_operation_type::update_properties);
 
         auto tt_prop_revision = _topics.local().last_applied_revision();
@@ -1869,7 +1876,7 @@ ss::future<std::error_code> controller_backend::transfer_partition(
     if (xst_state) {
         co_await container().invoke_on(
           destination, [&ntp, &xst_state](controller_backend& dest) {
-              dest._xst_states[ntp] = *xst_state;
+              dest._xst_states[ntp] = xst_state.value();
           });
     }
 
@@ -1920,7 +1927,7 @@ ss::future<> controller_backend::transfer_partition_from_extra_shard(
     if (!target) {
         co_return;
     }
-    model::revision_id log_rev = target->log_revision;
+    model::revision_id log_rev = target.value().log_revision;
 
     using reconciliation_action = shard_placement_table::reconciliation_action;
 
@@ -1949,7 +1956,8 @@ ss::future<> controller_backend::transfer_partition_from_extra_shard(
               auto dest_placement = dest._shard_placement.state_on_this_shard(
                 ntp);
               vassert(dest_placement, "[{}] expected placement", ntp);
-              switch (dest_placement->get_reconciliation_action(log_rev)) {
+              switch (
+                dest_placement.value().get_reconciliation_action(log_rev)) {
               case reconciliation_action::create:
               case reconciliation_action::transfer:
               case reconciliation_action::wait_for_target_update:
@@ -1958,7 +1966,7 @@ ss::future<> controller_backend::transfer_partition_from_extra_shard(
                     false,
                     "[{}] unexpected reconciliation action, placement: {}",
                     ntp,
-                    *dest_placement);
+                    dest_placement.value());
               case reconciliation_action::remove_partition:
                   // TODO: remove obsolete log directory
               case reconciliation_action::remove_kvstore_state:
@@ -1966,7 +1974,7 @@ ss::future<> controller_backend::transfer_partition_from_extra_shard(
               }
               return remove_persistent_state(
                        ntp,
-                       dest_placement->current().value().group,
+                       dest_placement.value().current().value().group,
                        dest._storage.local().kvs())
                 .then([&dest, &ntp, log_rev] {
                     return dest._shard_placement.finish_delete(ntp, log_rev);
@@ -1989,7 +1997,7 @@ ss::future<> controller_backend::transfer_partition_from_extra_shard(
 
     ss::shard_id destination = transfer_info.destination.value();
     co_await copy_persistent_state(
-      ntp, target->group, extra_kvs, destination, _storage);
+      ntp, target.value().group, extra_kvs, destination, _storage);
 
     co_await extra_spt.finish_transfer(
       ntp, log_rev, _shard_placement.container(), [](const model::ntp&) {});
@@ -2056,12 +2064,12 @@ ss::future<std::error_code> controller_backend::delete_partition(
         co_return ec;
     }
 
-    if (!placement->current()) {
+    if (!placement.value().current()) {
         // nothing to delete
         co_return errc::success;
     }
 
-    auto log_revision = placement->current()->log_revision;
+    auto log_revision = placement->current().value().log_revision;
     if (log_revision >= cmd_revision) {
         // Perform an extra revision check to be on the safe side, if the
         // partition has already been re-created with greater revision, do
@@ -2077,7 +2085,7 @@ ss::future<std::error_code> controller_backend::delete_partition(
         // TODO: delete log directory even when there is no partition object
         _xst_states.erase(ntp);
         co_await remove_persistent_state(
-          ntp, placement->current()->group, _storage.local().kvs());
+          ntp, placement->current().value().group, _storage.local().kvs());
     }
 
     co_await _shard_placement.finish_delete(ntp, log_revision);
@@ -2170,20 +2178,20 @@ controller_backend::do_remake_partition(const model::ntp& ntp) {
         co_return errc::partition_not_exists;
     }
 
-    auto& current = maybe_placement->current();
+    auto& current = maybe_placement.value().current();
 
     if (!current.has_value()) {
         co_return errc::waiting_for_shard_placement_update;
     }
 
     if (
-      current->remake_state
+      current.value().remake_state
       == shard_placement_table::remake_partition_state::none) {
         co_return errc::waiting_for_shard_placement_update;
     }
 
     if (
-      current->remake_state
+      current.value().remake_state
       < shard_placement_table::remake_partition_state::deleted) {
         auto p = _partition_manager.local().get(ntp);
         if (p) {
@@ -2192,13 +2200,13 @@ controller_backend::do_remake_partition(const model::ntp& ntp) {
         }
 
         co_await remove_persistent_state(
-          ntp, current->group, _storage.local().kvs());
+          ntp, current.value().group, _storage.local().kvs());
     }
 
     auto ec = co_await _shard_placement.set_remake_state(
       ntp,
       shard_placement_table::remake_partition_state::deleted,
-      current->log_revision);
+      current.value().log_revision);
 
     if (ec) {
         co_return ec;
@@ -2215,7 +2223,7 @@ controller_backend::remake_partition(const model::ntp& ntp) {
         co_return errc::partition_not_exists;
     }
 
-    auto& current = maybe_placement->current();
+    auto& current = maybe_placement.value().current();
 
     if (!current.has_value()) {
         co_return errc::waiting_for_shard_placement_update;
@@ -2224,7 +2232,7 @@ controller_backend::remake_partition(const model::ntp& ntp) {
     auto ec = co_await _shard_placement.set_remake_state(
       ntp,
       shard_placement_table::remake_partition_state::initiated,
-      current->log_revision);
+      current.value().log_revision);
 
     if (ec) {
         co_return ec;

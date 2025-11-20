@@ -16,9 +16,9 @@ namespace cluster {
 void recovery_request_params::populate(
   const std::optional<cloud_storage::recovery_request>& r) {
     if (r.has_value()) {
-        topic_names_pattern = r->topic_names_pattern();
-        retention_bytes = r->retention_bytes();
-        retention_ms = r->retention_ms();
+        topic_names_pattern = r.value().topic_names_pattern();
+        retention_bytes = r.value().retention_bytes();
+        retention_ms = r.value().retention_ms();
     }
 }
 

@@ -944,7 +944,8 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
            {s2name, segments[1].base_offset},
            {oldname, old_meta.base_offset}}) {
         BOOST_CHECK(stm_manifest.get(name));
-        BOOST_CHECK_EQUAL(stm_manifest.get(name)->base_offset, base_offset);
+        BOOST_CHECK_EQUAL(
+          stm_manifest.get(name).value().base_offset, base_offset);
     }
 }
 

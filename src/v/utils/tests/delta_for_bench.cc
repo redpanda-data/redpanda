@@ -124,7 +124,7 @@ void append_tx_test(StoreT& store, int test_scale) {
     perf_tests::start_measuring_time();
     auto tx = store.append_tx(tail);
     if (tx) {
-        std::move(*tx).commit();
+        std::move(tx.value()).commit();
     } else {
         assert(false);
     }
@@ -134,7 +134,7 @@ void append_tx_test(StoreT& store, int test_scale) {
 template<class StoreT>
 void find_test(StoreT& store) {
     perf_tests::start_measuring_time();
-    auto it = store.find(*store.last_value());
+    auto it = store.find(store.last_value().value());
     perf_tests::do_not_optimize(it);
     perf_tests::stop_measuring_time();
 }

@@ -45,7 +45,7 @@ bool archival_policy::upload_deadline_reached() {
     auto now = ss::lowres_clock::now();
 
     if (!_upload_deadline.has_value()) {
-        _upload_deadline = now + (*_upload_limit)();
+        _upload_deadline = now + (_upload_limit.value())();
     }
     return _upload_deadline < now;
 }

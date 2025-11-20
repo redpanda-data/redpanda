@@ -206,9 +206,9 @@ table::find_mirror_topic_status(model::topic_view tp) const {
       tp,
       id.value());
 
-    auto it = meta->get().state.mirror_topics.find(tp);
+    auto it = meta.value().get().state.mirror_topics.find(tp);
     vassert(
-      it != meta->get().state.mirror_topics.end(),
+      it != meta.value().get().state.mirror_topics.end(),
       "Inconsistent topic index for {} expected to exist in metadata id {}",
       tp,
       id.value());

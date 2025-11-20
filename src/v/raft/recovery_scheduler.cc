@@ -250,7 +250,7 @@ void recovery_scheduler_base::activate_some() {
         }
 
         priority2items[priority].push_back(
-          item{.leader_id = *leader_id, .frs = &frs});
+          item{.leader_id = leader_id.value(), .frs = &frs});
     }
 
     // 2. Schedule each sub-queue fairly - by trying to allocate roughly equal
@@ -263,7 +263,7 @@ void recovery_scheduler_base::activate_some() {
             leaderless_count += 1;
             continue;
         }
-        node2active_count[*leader_id] += 1;
+        node2active_count[leader_id.value()] += 1;
     }
 
     auto fairly_schedule = [&](const ss::chunked_fifo<item>& items) {

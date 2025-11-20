@@ -604,7 +604,7 @@ application_lifecycle application_lifecycle::construct(
   std::optional<ss::sstring> feature_name) {
     auto product = redpanda_product();
     if (feature_name) {
-        product.feature = feature{.name = std::move(*feature_name)};
+        product.feature = feature{.name = std::move(feature_name.value())};
     }
     product.uid = ss::to_sstring(
       config::node().node_id().value_or(model::node_id{0}));

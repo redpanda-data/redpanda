@@ -224,7 +224,8 @@ ss::future<> segment_chunks::trim_chunk_files() {
         const auto& metadata = it->second;
         if (metadata.current_state == chunk_state::hydrated) {
             hydrated_chunks += 1;
-            if (metadata.handle.has_value() && metadata.handle->owned()) {
+            if (
+              metadata.handle.has_value() && metadata.handle.value().owned()) {
                 to_release.push_back(it);
             }
         }

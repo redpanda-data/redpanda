@@ -255,10 +255,12 @@ FIXTURE_TEST(basic_cache_ops, rpc_integration_fixture) {
         auto con_shard = cc.invoke_on(
                              shard,
                              [](auto& c) {
-                                 return *c.shard_for(
-                                   model::node_id(),
-                                   ss::shard_id(),
-                                   model::node_id(1));
+                                 return c
+                                   .shard_for(
+                                     model::node_id(),
+                                     ss::shard_id(),
+                                     model::node_id(1))
+                                   .value();
                              })
                            .get();
         shards_with_con[con_shard]++;
@@ -619,7 +621,7 @@ FIXTURE_TEST(test_cleanup_on_timeout_before_sending, rpc_integration_fixture) {
         auto units = lock->try_get_units();
         BOOST_REQUIRE(units);
         std::vector<ssx::semaphore_units> units_vec;
-        units_vec.push_back(std::move(*units));
+        units_vec.push_back(std::move(units.value()));
         auto opts = rpc::client_opts(rpc::clock_type::now());
         opts.resource_units = ss::make_foreign(
           ss::make_lw_shared(std::move(units_vec)));
@@ -1132,10 +1134,10 @@ FIXTURE_TEST(rpc_mt_add_service, rpc_sharded_fixture) {
         }
         // Wait for the workloads to complete.
         if (echo_loop_fut.has_value()) {
-            echo_loop_fut->get();
+            echo_loop_fut.value().get();
         }
         if (movistar_loop_fut.has_value()) {
-            movistar_loop_fut->get();
+            movistar_loop_fut.value().get();
         }
         // Stop the clients.
         echo_client.stop().get();

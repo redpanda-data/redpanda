@@ -87,7 +87,7 @@ memory_sampling::get_oom_diagnostics_callback() {
             auto total_mem = stats.total_memory();
             auto free_mem = stats.free_memory();
             auto failed_allocs = stats.failed_allocations();
-            (*oom_recorder)("Dumping seastar memory diagnostics\n");
+            (oom_recorder.value())("Dumping seastar memory diagnostics\n");
             auto bytes_written = fmt::format_to_n(
                                    format_buf.begin(),
                                    format_buf.size(),
@@ -95,7 +95,7 @@ memory_sampling::get_oom_diagnostics_callback() {
                                    human::bytes(
                                      static_cast<double>(total_mem - free_mem)))
                                    .size;
-            (*oom_recorder)(std::string_view(
+            (oom_recorder.value())(std::string_view(
               format_buf.data(), std::min(bytes_written, format_buf.size())));
             bytes_written = fmt::format_to_n(
                               format_buf.begin(),
@@ -103,7 +103,7 @@ memory_sampling::get_oom_diagnostics_callback() {
                               "Free memory:   {}\n",
                               human::bytes(static_cast<double>(free_mem)))
                               .size;
-            (*oom_recorder)(std::string_view(
+            (oom_recorder.value())(std::string_view(
               format_buf.data(), std::min(bytes_written, format_buf.size())));
             bytes_written = fmt::format_to_n(
                               format_buf.begin(),
@@ -111,7 +111,7 @@ memory_sampling::get_oom_diagnostics_callback() {
                               "Total memory:  {}\n",
                               human::bytes(static_cast<double>(total_mem)))
                               .size;
-            (*oom_recorder)(std::string_view(
+            (oom_recorder.value())(std::string_view(
               format_buf.data(), std::min(bytes_written, format_buf.size())));
             bytes_written = fmt::format_to_n(
                               format_buf.begin(),
@@ -119,7 +119,7 @@ memory_sampling::get_oom_diagnostics_callback() {
                               "Hard failures: {}\n\n",
                               failed_allocs)
                               .size;
-            (*oom_recorder)(std::string_view(
+            (oom_recorder.value())(std::string_view(
               format_buf.data(), std::min(bytes_written, format_buf.size())));
         }
         auto num_sites = ss::memory::sampled_memory_profile(
@@ -138,8 +138,8 @@ memory_sampling::get_oom_diagnostics_callback() {
         writer(diagnostics_header());
         writer("\n");
         if (oom_recorder.has_value()) {
-            (*oom_recorder)(diagnostics_header());
-            (*oom_recorder)("\n");
+            (oom_recorder.value())(diagnostics_header());
+            (oom_recorder.value())("\n");
         }
 
         for (size_t i = 0; i < top_n; ++i) {
@@ -154,7 +154,7 @@ memory_sampling::get_oom_diagnostics_callback() {
               std::string_view(
                 format_buf.data(), std::min(bytes_written, format_buf.size())));
             if (oom_recorder.has_value()) {
-                (*oom_recorder)(std::string_view(
+                (oom_recorder.value())(std::string_view(
                   format_buf.data(),
                   std::min(bytes_written, format_buf.size())));
             }
@@ -162,7 +162,7 @@ memory_sampling::get_oom_diagnostics_callback() {
 
         writer(confluence_reference());
         if (oom_recorder.has_value()) {
-            (*oom_recorder)(confluence_reference());
+            (oom_recorder.value())(confluence_reference());
         }
     };
 }
@@ -307,9 +307,10 @@ memory_sampling::get_sampled_memory_profiles(std::optional<size_t> shard_id) {
     std::vector<result_t> resp;
 
     if (shard_id.has_value()) {
-        resp.push_back(co_await container().invoke_on(*shard_id, [](auto&) {
-            return memory_sampling::get_sampled_memory_profile();
-        }));
+        resp.push_back(
+          co_await container().invoke_on(shard_id.value(), [](auto&) {
+              return memory_sampling::get_sampled_memory_profile();
+          }));
     } else {
         resp = co_await container().map_reduce0(
           [](auto&) { return memory_sampling::get_sampled_memory_profile(); },

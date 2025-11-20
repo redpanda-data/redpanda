@@ -32,8 +32,8 @@ std::ostream& operator<<(std::ostream& os, const seq_marker& v) {
         fmt::print(
           os,
           "seq={} node={} version={} key_type={}",
-          *v.seq,
-          *v.node,
+          v.seq.value(),
+          v.node.value(),
           v.version,
           to_string_view(v.key_type));
     } else {

@@ -409,8 +409,8 @@ void parse_and_set_property(
     if (op == config_resource_operation::set && value) {
         property.op = cluster::incremental_update_operation::set;
         try {
-            auto v = parse(*value);
-            auto v_error = validator(tn, *value, v);
+            auto v = parse(value.value());
+            auto v_error = validator(tn, value.value(), v);
             if (v_error) {
                 throw validation_error(*v_error);
             }
@@ -451,8 +451,8 @@ void parse_and_set_optional(
     if (op == config_resource_operation::set && value) {
         property.op = cluster::incremental_update_operation::set;
         try {
-            auto v = parse(*value);
-            auto v_error = validator(*value, v);
+            auto v = parse(value.value());
+            auto v_error = validator(value.value(), v);
             if (v_error) {
                 throw validation_error(*v_error);
             }
@@ -487,7 +487,7 @@ inline void parse_and_set_optional_duration(
     if (op == config_resource_operation::set && value) {
         property.op = cluster::incremental_update_operation::set;
         try {
-            auto parsed = boost::lexical_cast<typename Dur::rep>(*value);
+            auto parsed = boost::lexical_cast<typename Dur::rep>(value.value());
             // Certain Kafka clients have LONG_MAX duration to represent
             // maximum duration but that overflows during serde serialization
             // to nanos. Clamping to max allowed duration gives the same
@@ -497,7 +497,7 @@ inline void parse_and_set_optional_duration(
               std::chrono::nanoseconds::max());
             auto v = clamp_to_duration_max ? Dur(std::min(parsed, max.count()))
                                            : Dur(parsed);
-            auto v_error = validator(*value, v);
+            auto v_error = validator(value.value(), v);
             if (v_error) {
                 throw validation_error(*v_error);
             }
@@ -521,7 +521,7 @@ inline void parse_and_set_optional_bool_alpha(
     // set property value if preset, otherwise do nothing
     if (op == config_resource_operation::set && value) {
         try {
-            property.value = string_switch<bool>(*value)
+            property.value = string_switch<bool>(value.value())
                                .match("true", true)
                                .match("false", false);
         } catch (const std::runtime_error&) {
@@ -563,7 +563,7 @@ inline void parse_and_set_bool(
     if (op == config_resource_operation::set && value) {
         try {
             // Ignore case.
-            auto str_value = std::move(*value);
+            auto str_value = std::move(value.value());
             std::transform(
               str_value.begin(),
               str_value.end(),
@@ -607,14 +607,14 @@ void parse_and_set_tristate(
     if (op == config_resource_operation::set) {
         using config_t
           = std::conditional_t<std::is_floating_point_v<T>, T, int64_t>;
-        auto parsed = boost::lexical_cast<config_t>(*value);
+        auto parsed = boost::lexical_cast<config_t>(value.value());
         if (parsed <= 0) {
             property.value = tristate<T>{};
         } else {
             property.value = tristate<T>(std::make_optional<T>(parsed));
         }
 
-        auto v_error = validator(*value, property.value);
+        auto v_error = validator(value.value(), property.value);
         if (v_error) {
             throw validation_error(*v_error);
         }
@@ -645,8 +645,8 @@ inline void parse_and_set_topic_replication_factor(
     if (op == config_resource_operation::set) {
         property.value = std::nullopt;
         if (value) {
-            auto v = cluster::parsing_replication_factor(*value);
-            auto v_error = validator(tns, *value, v);
+            auto v = cluster::parsing_replication_factor(value.value());
+            auto v_error = validator(tns, value.value(), v);
             if (v_error) {
                 throw validation_error(*v_error);
             }

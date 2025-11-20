@@ -217,7 +217,7 @@ SEASTAR_THREAD_TEST_CASE(serde_flex_types) {
         std::for_each(
           boost::counting_iterator<int>(0),
           boost::counting_iterator<int>(100),
-          [&v](int) { v->push_back(test_struct::make_random()); });
+          [&v](int) { v.value().push_back(test_struct::make_random()); });
         BOOST_CHECK(v == serde_flex(v));
 
         {
@@ -238,6 +238,6 @@ SEASTAR_THREAD_TEST_CASE(serde_flex_types) {
         kafka::protocol::decoder reader(std::move(writers_buf));
         auto result = reader.read_fragmented_nullable_flex_bytes();
         BOOST_REQUIRE(result.has_value());
-        BOOST_CHECK_EQUAL(iobuf_to_bytes(*result), iobuf_to_bytes(copy));
+        BOOST_CHECK_EQUAL(iobuf_to_bytes(result.value()), iobuf_to_bytes(copy));
     }
 }

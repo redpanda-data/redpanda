@@ -95,9 +95,10 @@ SEASTAR_THREAD_TEST_CASE(cache_make_client_scram_sha_256) {
         auto [client, guard] = client_cache.make_client_with_guard(
           user, config::rest_authn_method::http_basic);
         BOOST_TEST(
-          client->get_credentials()->mechanism == ss::sstring{"SCRAM-SHA-256"});
-        BOOST_TEST(client->get_credentials()->username == user.name);
-        BOOST_TEST(client->get_credentials()->password == user.pass);
+          client->get_credentials().value().mechanism
+          == ss::sstring{"SCRAM-SHA-256"});
+        BOOST_TEST(client->get_credentials().value().username == user.name);
+        BOOST_TEST(client->get_credentials().value().password == user.pass);
     }
 }
 
@@ -120,9 +121,10 @@ SEASTAR_THREAD_TEST_CASE(cache_make_client_scram_sha_512) {
         auto [client, guard] = client_cache.make_client_with_guard(
           user, config::rest_authn_method::http_basic);
         BOOST_TEST(
-          client->get_credentials()->mechanism == ss::sstring{"SCRAM-SHA-512"});
-        BOOST_TEST(client->get_credentials()->username == user.name);
-        BOOST_TEST(client->get_credentials()->password == user.pass);
+          client->get_credentials().value().mechanism
+          == ss::sstring{"SCRAM-SHA-512"});
+        BOOST_TEST(client->get_credentials().value().username == user.name);
+        BOOST_TEST(client->get_credentials().value().password == user.pass);
     }
 }
 
@@ -140,17 +142,19 @@ SEASTAR_THREAD_TEST_CASE(cache_fetch_or_insert) {
       user, config::rest_authn_method::http_basic);
     pp::client_ptr client = item.first;
     BOOST_TEST(
-      client->get_credentials()->mechanism == ss::sstring{"SCRAM-SHA-256"});
-    BOOST_TEST(client->get_credentials()->username == user.name);
-    BOOST_TEST(client->get_credentials()->password == user.pass);
+      client->get_credentials().value().mechanism
+      == ss::sstring{"SCRAM-SHA-256"});
+    BOOST_TEST(client->get_credentials().value().username == user.name);
+    BOOST_TEST(client->get_credentials().value().password == user.pass);
 
     // Second fetch tests found path: user password did not change
     item = client_cache.get_client(user, config::rest_authn_method::http_basic);
     client = item.first;
     BOOST_TEST(
-      client->get_credentials()->mechanism == ss::sstring{"SCRAM-SHA-256"});
-    BOOST_TEST(client->get_credentials()->username == user.name);
-    BOOST_TEST(client->get_credentials()->password == user.pass);
+      client->get_credentials().value().mechanism
+      == ss::sstring{"SCRAM-SHA-256"});
+    BOOST_TEST(client->get_credentials().value().username == user.name);
+    BOOST_TEST(client->get_credentials().value().password == user.pass);
 
     pp::credential_t user2{user};
     user2.pass = "parrot";
@@ -160,13 +164,15 @@ SEASTAR_THREAD_TEST_CASE(cache_fetch_or_insert) {
       user2, config::rest_authn_method::http_basic);
     pp::client_ptr client2 = item.first;
     BOOST_TEST(
-      client2->get_credentials()->mechanism == ss::sstring{"SCRAM-SHA-256"});
-    BOOST_TEST(client2->get_credentials()->username == user.name);
-    BOOST_TEST(client2->get_credentials()->password == user2.pass);
+      client2->get_credentials().value().mechanism
+      == ss::sstring{"SCRAM-SHA-256"});
+    BOOST_TEST(client2->get_credentials().value().username == user.name);
+    BOOST_TEST(client2->get_credentials().value().password == user2.pass);
     BOOST_TEST(
-      client->get_credentials()->mechanism == ss::sstring{"SCRAM-SHA-256"});
-    BOOST_TEST(client->get_credentials()->username == user.name);
-    BOOST_TEST(client->get_credentials()->password == user2.pass);
+      client->get_credentials().value().mechanism
+      == ss::sstring{"SCRAM-SHA-256"});
+    BOOST_TEST(client->get_credentials().value().username == user.name);
+    BOOST_TEST(client->get_credentials().value().password == user2.pass);
 
     user2.name = "party";
     // Fourth fetch tests not-found path: cache.size == cache.max_size and cache
@@ -176,9 +182,10 @@ SEASTAR_THREAD_TEST_CASE(cache_fetch_or_insert) {
       user2, config::rest_authn_method::http_basic);
     client2 = item.first;
     BOOST_TEST(
-      client2->get_credentials()->mechanism == ss::sstring{"SCRAM-SHA-256"});
-    BOOST_TEST(client2->get_credentials()->username == user2.name);
-    BOOST_TEST(client2->get_credentials()->password == user2.pass);
+      client2->get_credentials().value().mechanism
+      == ss::sstring{"SCRAM-SHA-256"});
+    BOOST_TEST(client2->get_credentials().value().username == user2.name);
+    BOOST_TEST(client2->get_credentials().value().password == user2.pass);
     BOOST_TEST(client_cache.size() == s);
     BOOST_TEST(client_cache.max_size() == max_s);
 }

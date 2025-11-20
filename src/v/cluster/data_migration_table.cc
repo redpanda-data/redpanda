@@ -195,7 +195,7 @@ migrations_table::apply(create_data_migration_cmd cmd) {
     auto err = validate_migrated_resources(migration);
     if (err) {
         vlog(dm_log.info, "migration validation error: {}", err.value());
-        co_return err->ec();
+        co_return err.value().ec();
     }
 
     if (auto* odm = std::get_if<outbound_migration>(&migration)) {
@@ -295,7 +295,7 @@ migrations_table::validate_migrated_resources(
         }
 
         if (!model::is_archival_enabled(
-              maybe_topic_cfg->properties.shadow_indexing.value_or(
+              maybe_topic_cfg.value().properties.shadow_indexing.value_or(
                 model::shadow_indexing_mode::disabled))) {
             return {
               {errc::data_migration_invalid_resources,
@@ -327,7 +327,7 @@ void migrations_table::fill_topic_locations(outbound_migration& odm) const {
         // Validated by validate_migrated_resources earlier.
         vassert(
           maybe_topic_md, "expecting topic {} to be present in topic table", t);
-        const auto& topic_md = maybe_topic_md->get();
+        const auto& topic_md = maybe_topic_md.value().get();
 
         auto location = topic_md.get_remote_location_hint().transform(
           [](ss::sstring hint) {

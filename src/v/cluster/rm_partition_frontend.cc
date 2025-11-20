@@ -222,7 +222,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
     }
 
     return _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [ntp = std::move(ntp), pid, tx_seq, transaction_timeout_ms, tm, this](
         cluster::partition_manager& mgr) mutable {
@@ -306,7 +306,7 @@ rm_partition_frontend::do_begin_tx_on_partition_shard(
         co_return begin_tx_reply{
           std::move(ntp), tx::errc::partition_not_exists};
     }
-    auto topic_revision = topic_md->get_revision();
+    auto topic_revision = topic_md.value().get_revision();
 
     auto etag = co_await stm->begin_tx(pid, tx_seq, transaction_timeout_ms, tm);
     if (!etag.has_value()) {
@@ -442,7 +442,7 @@ ss::future<commit_tx_reply> rm_partition_frontend::do_commit_tx(
     }
 
     return _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [pid, ntp, tx_seq, timeout](cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
@@ -591,7 +591,7 @@ ss::future<abort_tx_reply> rm_partition_frontend::do_abort_tx(
     }
 
     return _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [pid, ntp, tx_seq, timeout](cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
@@ -623,7 +623,7 @@ rm_partition_frontend::get_producers_locally(get_producers_request request) {
         co_return reply;
     }
     reply.error_code = tx::errc::none;
-    auto stm = partition->raft()->stm_manager()->get<rm_stm>();
+    auto stm = partition->raft()->stm_manager().value().get<rm_stm>();
     if (!stm) {
         // maybe an internal (non data) partition
         co_return reply;

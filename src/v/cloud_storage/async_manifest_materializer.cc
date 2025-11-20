@@ -285,7 +285,7 @@ async_manifest_materializer::do_materialize_manifest(
                   .read_ahead = static_cast<uint32_t>(_readahead_size()),
                 };
                 auto data_stream = ss::make_file_input_stream(
-                  res->body, 0, std::move(options));
+                  res.value().body, 0, std::move(options));
                 co_await manifest.update(std::move(data_stream));
                 vlog(
                   _ctxlog.debug,
@@ -299,7 +299,7 @@ async_manifest_materializer::do_materialize_manifest(
                   std::current_exception());
                 update_err = std::current_exception();
             }
-            co_await res->body.close();
+            co_await res.value().body.close();
             if (update_err) {
                 std::rethrow_exception(update_err);
             }

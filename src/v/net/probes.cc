@@ -243,7 +243,7 @@ build_reloadable_server_credentials_with_probe(
     }
     co_return co_await build_reloadable_credentials_with_probe<
       ss::tls::server_credentials>(
-      std::move(*builder),
+      std::move(builder.value()),
       std::move(service),
       std::move(listener_name),
       std::move(cb));
@@ -326,7 +326,7 @@ void tls_certificate_probe::loaded(
     for (auto& info : certs_info.value()) {
         auto exp = clock_type::from_time_t(info.expiry);
         auto srl = to_tls_serial(info.serial);
-        if (!_cert || exp < _cert->expiry) {
+        if (!_cert || exp < _cert.value().expiry) {
             _cert.emplace(cert{.expiry = exp, .serial = srl});
         }
     }
@@ -334,7 +334,7 @@ void tls_certificate_probe::loaded(
     for (auto& info : ts_info.value()) {
         auto exp = clock_type::from_time_t(info.expiry);
         auto srl = to_tls_serial(info.serial);
-        if (!_ca || exp < _ca->expiry) {
+        if (!_ca || exp < _ca.value().expiry) {
             _ca.emplace(cert{.expiry = exp, .serial = srl});
         }
     }

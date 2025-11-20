@@ -33,9 +33,10 @@ scram_authenticator<T>::handle_client_first(bytes_view auth_bytes) {
     if (!credential) {
         return errc::invalid_credentials;
     }
-    _principal = credential->principal().value_or(
+    _principal = credential.value().principal().value_or(
       acl_principal{principal_type::user, authid});
-    _credential = std::make_unique<scram_credential>(std::move(*credential));
+    _credential = std::make_unique<scram_credential>(
+      std::move(credential.value()));
     _audit_user.name = _principal.name();
     const auto principal_type_to_audit_type = [](principal_type type) {
         switch (type) {

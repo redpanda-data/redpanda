@@ -191,7 +191,7 @@ void link_replication_manager::stop_replicators(
         return;
     }
     for (const auto& [ntp, _] : _replicators) {
-        if (!topic || ntp.tp.topic == *topic) {
+        if (!topic || ntp.tp.topic == topic.value()) {
             stop_replicator(ntp, std::nullopt);
         }
     }
@@ -294,12 +294,12 @@ ss::future<> link_replication_manager::reconcile_ntp_once(
             // if there is a start from higher term, we need to restart
             // so stop if first.
             needs_stop = target_state.term
-                         && (replicator_term < *target_state.term);
+                         && (replicator_term < target_state.term.value());
             break;
         case op_type::stop:
             // If the stop is from higher or equal term, we need to stop
             needs_stop = !target_state.term
-                         || (replicator_term <= *target_state.term);
+                         || (replicator_term <= target_state.term.value());
             break;
         }
         // If the shutdown has already been initiated it is possible that a stop

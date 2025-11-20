@@ -37,10 +37,10 @@ class murmur2_key_partitioner final : public partitioner_impl {
 public:
     std::optional<model::partition_id>
     operator()(const record_essence& rec, size_t partition_count) override {
-        if (!rec.key || rec.key->empty()) {
+        if (!rec.key || rec.key.value().empty()) {
             return std::nullopt;
         }
-        iobuf_const_parser p(*rec.key);
+        iobuf_const_parser p(rec.key.value());
         auto key = p.read_bytes(p.bytes_left());
         auto hash = murmur2(key.data(), key.size());
         return model::partition_id(hash % partition_count);
@@ -117,11 +117,11 @@ void partitioners_cache::apply_metadata(const metadata_update& data) {
         return;
     }
     chunked_hash_set<model::topic> metadata_topics;
-    for (const auto& t : *data.topics) {
+    for (const auto& t : data.topics.value()) {
         static_assert(
           api_version_for(metadata_request::api_type::key) < api_version(12),
           "topic::name is nullable in v12+");
-        const auto& t_name = *t.name;
+        const auto& t_name = t.name.value();
         metadata_topics.emplace(t_name);
         auto it = _partitioners.find(t_name);
         if (
@@ -154,7 +154,7 @@ model::partition_id partitioners_cache::partition_for(
         auto& entry = topic_it->second;
         auto partition_opt = entry.partitioner(rec, entry.partition_count);
         if (partition_opt) {
-            return *partition_opt;
+            return partition_opt.value();
         }
     }
     throw topic_error(tv, error_code::unknown_topic_or_partition);

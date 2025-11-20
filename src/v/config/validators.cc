@@ -69,15 +69,15 @@ validate_connection_rate(const std::vector<ss::sstring>& ips_with_limit) {
 
         ss::net::inet_address addr;
         try {
-            addr = ss::net::inet_address(parsing_setting->first);
+            addr = ss::net::inet_address(parsing_setting.value().first);
         } catch (...) {
             return fmt::format(
-              "Looks like {} is not ip", parsing_setting->first);
+              "Looks like {} is not ip", parsing_setting.value().first);
         }
 
         if (!ip_set.insert(addr).second) {
             return fmt::format(
-              "Duplicate setting for ip: {}", parsing_setting->first);
+              "Duplicate setting for ip: {}", parsing_setting.value().first);
         }
     }
 
@@ -212,7 +212,7 @@ validate_audit_excluded_topics(const std::vector<ss::sstring>& vs) {
               model::kafka_audit_logging_topic);
         } else if (is_invalid_topic_name.has_value()) {
             return ss::format(
-              "{} is an invalid topic name", *is_invalid_topic_name);
+              "{} is an invalid topic name", is_invalid_topic_name.value());
         }
     }
 
@@ -266,7 +266,7 @@ validate_iceberg_partition_spec(const ss::sstring& value) {
 
 std::optional<ss::sstring> validate_iceberg_topic_name_dot_replacement(
   const std::optional<ss::sstring>& value) {
-    if (value.has_value() && value->find('.') != ss::sstring::npos) {
+    if (value.has_value() && value.value().find('.') != ss::sstring::npos) {
         return "iceberg_topic_name_dot_replacement cannot contain dots";
     }
     return std::nullopt;
@@ -408,12 +408,12 @@ validate_cloud_storage_cluster_name(const std::optional<ss::sstring>& input) {
         return non_empty_string_opt;
     }
 
-    if (input->length() > max_cluster_name_length) {
+    if (input.value().length() > max_cluster_name_length) {
         return fmt::format(
           "Length must be at most {} characters", max_cluster_name_length);
     }
 
-    for (char c : *input) {
+    for (char c : input.value()) {
         if (!std::isalnum(c) && !(c == '-' || c == '_')) {
             return "Only alphanumeric characters, hyphens, and underscores are "
                    "allowed";

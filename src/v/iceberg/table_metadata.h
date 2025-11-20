@@ -113,7 +113,7 @@ struct table_metadata {
         if (!snapshots.has_value()) {
             return snaps_by_id;
         }
-        for (const auto& s : *snapshots) {
+        for (const auto& s : snapshots.value()) {
             snaps_by_id.emplace(s.id, s);
         }
         return snaps_by_id;

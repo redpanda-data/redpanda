@@ -268,9 +268,9 @@ BOOST_AUTO_TEST_CASE(random_reassignments_generation) {
           all_reassignments.begin(),
           all_reassignments.end(),
           [&](const auto& r) {
-              return current_reassignment_opt->group == r.group
-                     && current_reassignment_opt->from == r.from
-                     && current_reassignment_opt->to == r.to;
+              return current_reassignment_opt.value().group == r.group
+                     && current_reassignment_opt.value().from == r.from
+                     && current_reassignment_opt.value().to == r.to;
           });
 
         BOOST_REQUIRE(it != all_reassignments.end());
@@ -330,11 +330,11 @@ BOOST_AUTO_TEST_CASE(topic_skew_error) {
         if (!movement_opt) {
             break;
         }
-        rhc.apply_movement(*movement_opt);
-        even_shard_con.update_index(*movement_opt);
-        even_topic_con.update_index(*movement_opt);
-        shard_index.update_index(*movement_opt);
-        muted_groups.add(static_cast<uint64_t>(movement_opt->group));
+        rhc.apply_movement(movement_opt.value());
+        even_shard_con.update_index(movement_opt.value());
+        even_topic_con.update_index(movement_opt.value());
+        shard_index.update_index(movement_opt.value());
+        muted_groups.add(static_cast<uint64_t>(movement_opt.value().group));
 
         auto new_error = rhc.error();
         BOOST_REQUIRE(new_error <= current_error);
@@ -404,8 +404,8 @@ BOOST_AUTO_TEST_CASE(even_shard_uneven_node_load) {
     // that the balancing strategy fixes this.
 
     while (auto movement_opt = strategy.find_movement({})) {
-        strategy.apply_movement(*movement_opt);
-        shard_idx.update_index(*movement_opt);
+        strategy.apply_movement(movement_opt.value());
+        shard_idx.update_index(movement_opt.value());
     }
 
     std::map<model::node_id, size_t> node_stats;

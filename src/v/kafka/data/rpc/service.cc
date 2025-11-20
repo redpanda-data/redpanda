@@ -138,7 +138,7 @@ local_service::get_partition_offsets(
         co_return cluster::errc::topic_not_exists;
     }
     co_return co_await _partition_manager->get_offsets_from_shard(
-      *shard, ktp, [](kafka::partition_proxy* partition) {
+      shard.value(), ktp, [](kafka::partition_proxy* partition) {
           using ret_t = result<partition_offsets, cluster::errc>;
           if (!partition->is_leader()) {
               return ssx::now<ret_t>(cluster::errc::not_leader);
@@ -193,15 +193,16 @@ ss::future<result<model::offset, cluster::errc>> local_service::produce(
 
     // TODO: More validation of the batches, such as null record rejection and
     // crc checks.
-    uint32_t max_batch_size = topic_cfg->properties.batch_max_bytes.value_or(
-      _metadata_cache->get_default_batch_max_bytes());
+    uint32_t max_batch_size
+      = topic_cfg.value().properties.batch_max_bytes.value_or(
+        _metadata_cache->get_default_batch_max_bytes());
     for (const auto& batch : batches) {
         if (uint32_t(batch.size_bytes()) > max_batch_size) [[unlikely]] {
             co_return cluster::errc::invalid_request;
         }
     }
     co_return co_await _partition_manager->invoke_on_shard(
-      *shard,
+      shard.value(),
       ntp,
       [timeout,
        batches = chunked_vector<model::record_batch>(

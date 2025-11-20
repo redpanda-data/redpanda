@@ -187,7 +187,8 @@ public:
 
     std::optional<validation_error> validate(const value_type& v) const {
         if (auto err = _validator(v); err) {
-            return std::make_optional<validation_error>(name().data(), *err);
+            return std::make_optional<validation_error>(
+              name().data(), err.value());
         }
         return std::nullopt;
     }

@@ -113,9 +113,9 @@ base_exception::handle(std::unique_ptr<ss::http::reply> reply) const {
             w.key("type");
             w.string("google.rpc.ErrorInfo");
             w.key("value");
-            w.base64_string(error_info_to_proto(*_error_info));
+            w.base64_string(error_info_to_proto(_error_info.value()));
             w.key("debug");
-            error_info_to_json(*_error_info, &w);
+            error_info_to_json(_error_info.value(), &w);
             w.end_object();
         }
         w.end_array();

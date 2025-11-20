@@ -18,7 +18,7 @@ void check_any_vs_static() {
     BOOST_TEST_INFO("Testing " << H::api::name);
     auto hopt = kafka::handler_for_key(H::api::key);
     BOOST_REQUIRE(hopt.has_value());
-    auto h = *hopt;
+    auto h = hopt.value();
     BOOST_CHECK_EQUAL(h->min_supported(), H::min_supported);
     BOOST_CHECK_EQUAL(h->max_supported(), H::max_supported);
     BOOST_CHECK_EQUAL(h->key(), H::api::key);

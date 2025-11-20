@@ -107,7 +107,7 @@ public:
             auto sub = as->subscribe(
               [this](const std::optional<std::exception_ptr>& ex) noexcept {
                   if (ex) {
-                      _as.request_abort_ex(*ex);
+                      _as.request_abort_ex(ex.value());
                   } else {
                       _as.request_abort();
                   }

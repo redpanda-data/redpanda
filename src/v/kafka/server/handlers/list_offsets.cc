@@ -79,7 +79,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
     // using linearizable_barrier instead of is_leader to check that
     // current node is/was a leader at the moment it received the request
     // since the former uses cache and may return stale data
-    auto err = co_await kafka_partition->linearizable_barrier();
+    auto err = co_await kafka_partition.value().linearizable_barrier();
     if (err) {
         co_return list_offsets_response::make_partition(
           ktp.get_partition(), error_code::not_leader_for_partition);
@@ -89,15 +89,15 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
      * validate leader epoch. for more details see KIP-320
      */
     auto leader_epoch_err = details::check_leader_epoch(
-      current_leader_epoch, *kafka_partition);
+      current_leader_epoch, kafka_partition.value());
     if (leader_epoch_err != error_code::none) {
         co_return list_offsets_response::make_partition(
           ktp.get_partition(), leader_epoch_err);
     }
 
-    auto offset = kafka_partition->high_watermark();
+    auto offset = kafka_partition.value().high_watermark();
     if (isolation_lvl == model::isolation_level::read_committed) {
-        auto maybe_lso = kafka_partition->last_stable_offset();
+        auto maybe_lso = kafka_partition.value().last_stable_offset();
         if (unlikely(!maybe_lso)) {
             co_return list_offsets_response::make_partition(
               ktp.get_partition(), maybe_lso.error());
@@ -112,7 +112,8 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
     if (timestamp == list_offsets_request::earliest_timestamp) {
         // verify that the leader is up to date so that it is guaranteed to be
         // working with the most up to date value of start offset
-        auto maybe_start_ofs = co_await kafka_partition->sync_effective_start();
+        auto maybe_start_ofs
+          = co_await kafka_partition.value().sync_effective_start();
         if (!maybe_start_ofs) {
             co_return list_offsets_response::make_partition(
               ktp.get_partition(), maybe_start_ofs.error());
@@ -122,16 +123,16 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
           ktp.get_partition(),
           model::timestamp(-1),
           maybe_start_ofs.value(),
-          kafka_partition->leader_epoch());
+          kafka_partition.value().leader_epoch());
 
     } else if (timestamp == list_offsets_request::latest_timestamp) {
         co_return list_offsets_response::make_partition(
           ktp.get_partition(),
           model::timestamp(-1),
           offset,
-          kafka_partition->leader_epoch());
+          kafka_partition.value().leader_epoch());
     }
-    auto min_offset = kafka_partition->start_offset();
+    auto min_offset = kafka_partition.value().start_offset();
     auto max_offset = model::prev_offset(offset);
 
     // Empty partition.
@@ -140,16 +141,17 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
           ktp.get_partition(),
           model::timestamp(-1),
           model::offset(-1),
-          kafka_partition->leader_epoch());
+          kafka_partition.value().leader_epoch());
     }
 
-    auto res_fut = co_await ss::coroutine::as_future(kafka_partition->timequery(
-      storage::timequery_config{
-        min_offset,
-        timestamp,
-        max_offset,
-        {model::record_batch_type::raft_data},
-        octx.rctx.abort_source().local()}));
+    auto res_fut = co_await ss::coroutine::as_future(
+      kafka_partition.value().timequery(
+        storage::timequery_config{
+          min_offset,
+          timestamp,
+          max_offset,
+          {model::record_batch_type::raft_data},
+          octx.rctx.abort_source().local()}));
     if (res_fut.failed()) {
         auto ex = res_fut.get_exception();
         if (ssx::is_shutdown_exception(ex)) {
@@ -163,7 +165,10 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
     auto res = res_fut.get();
     if (res) {
         co_return list_offsets_response::make_partition(
-          id, res->time, res->offset, kafka_partition->leader_epoch());
+          id,
+          res.value().time,
+          res.value().offset,
+          kafka_partition.value().leader_epoch());
     }
     co_return list_offsets_response::make_partition(id, error_code::none);
 }
@@ -183,7 +188,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
     }
 
     return octx.rctx.partition_manager().invoke_on(
-      *shard,
+      shard.value(),
       octx.ssg,
       [timestamp,
        &octx,

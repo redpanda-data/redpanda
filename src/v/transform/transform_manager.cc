@@ -345,18 +345,21 @@ ss::future<> manager<ClockType>::handle_plugin_change(model::transform_id id) {
     // Note that this has implications for how we model processor state in the
     // cluster-wide transform report.
     // see `transform::service::compute_default_report` for detail.
-    if (!transform || transform->paused) {
+    if (!transform || transform.value().paused) {
         co_return;
     }
 
     // Otherwise, start a processor for every partition we're a leader of.
-    auto partitions = _registry->get_leader_partitions(transform->input_topic);
+    auto partitions = _registry->get_leader_partitions(
+      transform.value().input_topic);
     for (model::partition_id partition : partitions) {
         auto ntp = model::ntp(
-          transform->input_topic.ns, transform->input_topic.tp, partition);
+          transform.value().input_topic.ns,
+          transform.value().input_topic.tp,
+          partition);
         // It's safe to directly create processors, because we deleted them
         // for a full restart from this deploy
-        co_await create_processor(std::move(ntp), id, *transform);
+        co_await create_processor(std::move(ntp), id, transform.value());
     }
 }
 
@@ -418,7 +421,7 @@ manager<ClockType>::start_processor(model::ntp ntp, model::transform_id id) {
         entry->mark_start_attempt();
         co_await entry->processor()->start();
     } else {
-        co_await create_processor(ntp, id, *std::move(transform));
+        co_await create_processor(ntp, id, std::move(transform).value());
     }
 }
 

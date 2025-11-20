@@ -160,7 +160,7 @@ void handle_get_schemas_ids_id_authz(
         return;
     }
 
-    check_authenticated(rq, operation_name, op, *auth_result);
+    check_authenticated(rq, operation_name, op, auth_result.value());
 
     auto params = detail::auth_params{rq};
 
@@ -198,7 +198,7 @@ void handle_get_schemas_ids_id_authz(
     }
 
     if (authorizing_result.has_value()) {
-        audit_authz(rq, operation_name, std::move(*authorizing_result));
+        audit_authz(rq, operation_name, std::move(authorizing_result.value()));
     } else {
         audit_authz(
           rq,
@@ -224,7 +224,7 @@ void handle_get_subjects_authz(
         return;
     }
 
-    check_authenticated(rq, operation_name, op, *auth_result);
+    check_authenticated(rq, operation_name, op, auth_result.value());
 
     auto params = detail::auth_params{rq};
 

@@ -186,7 +186,8 @@ public:
             return std::nullopt;
         }
         return batch_reader(
-          std::move(*io), batch_reader::tolerate_partial_last_batch::yes);
+          std::move(io.value()),
+          batch_reader::tolerate_partial_last_batch::yes);
     }
 
     std::optional<batch_reader> read_nullable_flex_batch_reader() {
@@ -195,7 +196,8 @@ public:
             return std::nullopt;
         }
         return batch_reader(
-          std::move(*io), batch_reader::tolerate_partial_last_batch::yes);
+          std::move(io.value()),
+          batch_reader::tolerate_partial_last_batch::yes);
     }
 
     template<
@@ -433,28 +435,28 @@ public:
         if (!v) {
             return write_unsigned_varint(0);
         }
-        return write_flex(*v);
+        return write_flex(v.value());
     }
 
     uint32_t write_flex(const std::optional<ss::sstring>& v) {
         if (!v) {
             return write_unsigned_varint(0);
         }
-        return write_flex(std::string_view(*v));
+        return write_flex(std::string_view(v.value()));
     }
 
     uint32_t write(std::optional<std::string_view> v) {
         if (!v) {
             return serialize_int<int16_t>(-1);
         }
-        return write(*v);
+        return write(v.value());
     }
 
     uint32_t write(const std::optional<ss::sstring>& v) {
         if (!v) {
             return serialize_int<int16_t>(-1);
         }
-        return write(std::string_view(*v));
+        return write(std::string_view(v.value()));
     }
 
     uint32_t write(uuid_t id) {
@@ -488,9 +490,9 @@ public:
         if (!data) {
             return serialize_int<int32_t>(-1);
         }
-        auto size = serialize_int<int32_t>(data->size_bytes())
-                    + data->size_bytes();
-        _out->append(std::move(*data));
+        auto size = serialize_int<int32_t>(data.value().size_bytes())
+                    + data.value().size_bytes();
+        _out->append(std::move(data.value()));
         return size;
     }
 
@@ -498,9 +500,9 @@ public:
         if (!data) {
             return write_unsigned_varint(0);
         }
-        auto size = write_unsigned_varint(data->size_bytes() + 1)
-                    + data->size_bytes();
-        _out->append(std::move(*data));
+        auto size = write_unsigned_varint(data.value().size_bytes() + 1)
+                    + data.value().size_bytes();
+        _out->append(std::move(data.value()));
         return size;
     }
 
@@ -508,28 +510,28 @@ public:
         if (!rdr) {
             return write(std::optional<iobuf>());
         }
-        return write(std::move(*rdr).release());
+        return write(std::move(rdr.value()).release());
     }
 
     uint32_t write(std::optional<batch_reader>& rdr) {
         if (!rdr) {
             return write(std::optional<iobuf>());
         }
-        return write(std::move(*rdr).release());
+        return write(std::move(rdr.value()).release());
     }
 
     uint32_t write_flex(std::optional<batch_reader>&& rdr) {
         if (!rdr) {
             return write_flex(std::optional<iobuf>());
         }
-        return write_flex(std::move(*rdr).release());
+        return write_flex(std::move(rdr.value()).release());
     }
 
     uint32_t write_flex(std::optional<batch_reader>& rdr) {
         if (!rdr) {
             return write_flex(std::optional<iobuf>());
         }
-        return write_flex(std::move(*rdr).release());
+        return write_flex(std::move(rdr.value()).release());
     }
 
     // write bytes directly to output without a length prefix
@@ -647,8 +649,9 @@ public:
             return write(int32_t(-1));
         }
         auto start_size = uint32_t(_out->size_bytes());
-        write(data->adapter.batch->size_bytes());
-        writer_serialize_batch(*this, std::move(data->adapter.batch.value()));
+        write(data.value().adapter.batch.value().size_bytes());
+        writer_serialize_batch(
+          *this, std::move(data.value().adapter.batch.value()));
         return _out->size_bytes() - start_size;
     }
 
@@ -657,8 +660,10 @@ public:
             return write_unsigned_varint(0);
         }
         auto start_size = uint32_t(_out->size_bytes());
-        write_unsigned_varint(data->adapter.batch->size_bytes() + 1);
-        writer_serialize_batch(*this, std::move(data->adapter.batch.value()));
+        write_unsigned_varint(
+          data.value().adapter.batch.value().size_bytes() + 1);
+        writer_serialize_batch(
+          *this, std::move(data.value().adapter.batch.value()));
         return _out->size_bytes() - start_size;
     }
 

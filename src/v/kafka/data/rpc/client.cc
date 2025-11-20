@@ -182,8 +182,9 @@ ss::future<cluster::errc> client::do_produce_once(produce_request req) {
     }
     vlog(log.trace, "do_produce_once_request(node={}): {}", *leader, req);
     auto reply = co_await (
-      *leader == _self ? do_local_produce(std::move(req))
-                       : do_remote_produce(*leader, std::move(req)));
+      leader.value() == _self
+        ? do_local_produce(std::move(req))
+        : do_remote_produce(leader.value(), std::move(req)));
     vlog(log.trace, "do_produce_once_reply(node={}): {}", *leader, req);
     vassert(
       reply.results.size() == 1,
@@ -362,7 +363,7 @@ client::get_partition_offsets(
                   results[topic.topic][partition] = partition_offset_result(
                     cluster::errc::not_leader);
               } else {
-                  per_node_partitions[*leader][topic.topic].push_back(
+                  per_node_partitions[leader.value()][topic.topic].push_back(
                     partition);
               }
           });

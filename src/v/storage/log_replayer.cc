@@ -120,13 +120,13 @@ log_replayer::checkpoint log_replayer::recover_in_thread() {
 std::ostream& operator<<(std::ostream& o, const log_replayer::checkpoint& c) {
     o << "{ last_offset: ";
     if (c.last_offset) {
-        o << *c.last_offset;
+        o << c.last_offset.value();
     } else {
         o << "null";
     }
     o << ", truncate_file_pos:";
     if (c.truncate_file_pos) {
-        o << *c.truncate_file_pos;
+        o << c.truncate_file_pos.value();
     } else {
         o << "null";
     }

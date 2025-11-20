@@ -27,7 +27,7 @@ namespace features {
 
 ss::future<> feature_migrator::stop() {
     if (_as) {
-        ss::abort_source& as = *_as;
+        ss::abort_source& as = _as.value();
         vassert(as.abort_requested(), "Stopped without requesting abort");
     }
     return _gate.close();
@@ -48,7 +48,7 @@ ss::future<> feature_migrator::do_migrate() {
         co_return;
     }
 
-    co_await ft.await_feature_preparing(get_feature(), *_as);
+    co_await ft.await_feature_preparing(get_feature(), _as.value());
 
     while (ft.is_preparing(get_feature())
            && !abort_source().abort_requested()) {

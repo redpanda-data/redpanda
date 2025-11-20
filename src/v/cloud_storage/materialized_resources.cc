@@ -97,19 +97,19 @@ materialized_resources::materialized_resources()
             // We're using best effort approach here. Under memory pressure we
             // might not be able to change reservation
             auto current_units = _carryover_units.has_value()
-                                   ? _carryover_units->count()
+                                   ? _carryover_units.value().count()
                                    : 0;
             auto upd = _cache_carryover_bytes();
             if (upd < current_units) {
                 // Free units that represent memory used by carryover cache
                 // trim. It's guaranteed that optional is not null.
-                _carryover_units->return_units(current_units - upd);
+                _carryover_units.value().return_units(current_units - upd);
             } else {
                 // Acquire new units
                 auto tmp = _mem_units.try_get_units(upd - current_units);
                 if (tmp.has_value()) {
                     if (_carryover_units.has_value()) {
-                        _carryover_units->adopt(std::move(tmp.value()));
+                        _carryover_units.value().adopt(std::move(tmp.value()));
                     } else {
                         _carryover_units = std::move(tmp.value());
                     }

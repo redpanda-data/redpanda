@@ -66,7 +66,7 @@ ss::future<> cloud_topics_manager::start() {
                     return topic_table_->local().get_topic_cfg(
                       {ntp.ns, ntp.tp.topic});
                 });
-          if (!config || !config->tp_id) {
+          if (!config || !config.value().tp_id) {
               auto it = topic_id_mapping_.find(ntp);
               if (it == topic_id_mapping_.end()) {
                   // This can happen if a topic is deleted and it wasn't a cloud
@@ -82,7 +82,7 @@ ss::future<> cloud_topics_manager::start() {
               return;
           }
           if (
-            !config->properties.cloud_topic_enabled
+            !config.value().properties.cloud_topic_enabled
             && model::topic_namespace_view(ntp) != model::l1_metastore_nt) {
               return;
           }
@@ -90,12 +90,12 @@ ss::future<> cloud_topics_manager::start() {
               // Always ensure that if there is a leadership notification
               // emitted, that we also emit a no leader notification, even if
               // the topic is deleted and we no longer have the topic ID.
-              topic_id_mapping_.try_emplace(ntp, config->tp_id.value());
+              topic_id_mapping_.try_emplace(ntp, config.value().tp_id.value());
           } else {
               topic_id_mapping_.erase(ntp);
           }
           model::topic_id_partition tidp{
-            config->tp_id.value(), ntp.tp.partition};
+            config.value().tp_id.value(), ntp.tp.partition};
           on_leadership_change(ntp, tidp, is_leader);
       },
       notify_current_state::yes);

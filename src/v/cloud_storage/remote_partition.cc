@@ -129,9 +129,11 @@ remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
         // This code path is only used for the first lookup. It
         // could be either lookup by kafka offset or by timestamp.
         if (config.first_timestamp) {
-            auto maybe_meta = manifest.timequery(*config.first_timestamp);
+            auto maybe_meta = manifest.timequery(
+              config.first_timestamp.value());
             if (maybe_meta) {
-                mit = manifest.segment_containing(maybe_meta->base_offset);
+                mit = manifest.segment_containing(
+                  maybe_meta.value().base_offset);
             }
         } else {
             // In this case the lookup is performed by kafka offset.
@@ -248,10 +250,10 @@ public:
         if (config.abort_source) {
             vlog(_ctxlog.debug, "abort_source is set");
             _partition_reader_as = config.abort_source;
-            auto sub = config.abort_source->get().subscribe(
+            auto sub = config.abort_source.value().get().subscribe(
               [this](const std::optional<std::exception_ptr>& eptr) noexcept {
                   auto reason = eptr.has_value()
-                                  ? net::is_disconnect_exception(*eptr)
+                                  ? net::is_disconnect_exception(eptr.value())
                                   : "shutdown";
                   if (reason) {
                       vlog(
@@ -594,7 +596,8 @@ private:
                             .full_log_start_kafka_offset();
 
                       if (
-                        log_start_offset && query_offset < *log_start_offset) {
+                        log_start_offset
+                        && query_offset < log_start_offset.value()) {
                           vlog(
                             _ctxlog.warn,
                             "Manifest query below the log's start Kafka "

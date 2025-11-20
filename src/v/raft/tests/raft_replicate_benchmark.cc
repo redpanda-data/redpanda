@@ -34,7 +34,7 @@ public:
             vassert(
               leader_id.has_value(),
               "Leader must be present during the benchmark execution");
-            auto& leader_node = _fixture->node(*leader_id);
+            auto& leader_node = _fixture->node(leader_id.value());
             auto batches = _fixture->make_batches(
               params.batch_count, 1, params.batch_size);
 

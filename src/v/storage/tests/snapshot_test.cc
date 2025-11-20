@@ -42,14 +42,14 @@ TEST(SnapshotTest, ReadingFromEmptySnapshotIsError) {
     auto reader = mgr.open_snapshot().get();
     ASSERT_TRUE(reader);
     ASSERT_THROWS_WITH_PREDICATE(
-      reader->read_metadata().get(),
+      reader.value().read_metadata().get(),
       std::runtime_error,
       [](const std::runtime_error& e) {
           return std::string(e.what()).find(
                    "Snapshot file does not contain full header")
                  != std::string::npos;
       });
-    reader->close().get();
+    reader.value().close().get();
 }
 
 TEST(SnapshotTest, ReaderVerifiesHeaderCrc) {
@@ -78,13 +78,13 @@ TEST(SnapshotTest, ReaderVerifiesHeaderCrc) {
     auto reader = mgr.open_snapshot().get();
     ASSERT_TRUE(reader);
     ASSERT_THROWS_WITH_PREDICATE(
-      reader->read_metadata().get(),
+      reader.value().read_metadata().get(),
       std::runtime_error,
       [](const std::runtime_error& e) {
           return std::string(e.what()).find("Failed to verify header crc")
                  != std::string::npos;
       });
-    reader->close().get();
+    reader.value().close().get();
 }
 
 TEST(SnapshotTest, ReaderVerifiesMetadataCrc) {
@@ -115,13 +115,13 @@ TEST(SnapshotTest, ReaderVerifiesMetadataCrc) {
     auto reader = mgr.open_snapshot().get();
     ASSERT_TRUE(reader);
     ASSERT_THROWS_WITH_PREDICATE(
-      reader->read_metadata().get(),
+      reader.value().read_metadata().get(),
       std::runtime_error,
       [](const std::runtime_error& e) {
           return std::string(e.what()).find("Failed to verify metadata crc")
                  != std::string::npos;
       });
-    reader->close().get();
+    reader.value().close().get();
 }
 
 TEST(SnapshotTest, ReadWrite) {
@@ -144,11 +144,12 @@ TEST(SnapshotTest, ReadWrite) {
 
     auto reader = mgr.open_snapshot().get();
     ASSERT_TRUE(reader);
-    auto read_metadata = reader->read_metadata().get();
+    auto read_metadata = reader.value().read_metadata().get();
     EXPECT_EQ(read_metadata, metadata_orig);
-    auto blob_read = reader->input().read_exactly(blob.size()).get();
-    EXPECT_EQ(reader->get_snapshot_size().get(), mgr.get_snapshot_size().get());
-    reader->close().get();
+    auto blob_read = reader.value().input().read_exactly(blob.size()).get();
+    EXPECT_EQ(
+      reader.value().get_snapshot_size().get(), mgr.get_snapshot_size().get());
+    reader.value().close().get();
     EXPECT_EQ(blob_read.size(), 1234);
     EXPECT_EQ(blob, ss::to_sstring(blob_read.clone()));
 }

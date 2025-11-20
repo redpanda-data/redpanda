@@ -92,8 +92,9 @@ parse_v1_header(ss::input_stream<char>& src) {
     header.client_id_buffer = std::move(buf);
     header.client_id = std::string_view(
       header.client_id_buffer.get(), header.client_id_buffer.size());
-    validate_utf8(*header.client_id, header_parsing_error_utf8{});
-    validate_no_control(*header.client_id, header_parsing_error_control{});
+    validate_utf8(header.client_id.value(), header_parsing_error_utf8{});
+    validate_no_control(
+      header.client_id.value(), header_parsing_error_control{});
     co_return header;
 }
 
@@ -102,15 +103,15 @@ parse_header(ss::input_stream<char>& src) {
     auto header = co_await parse_v1_header(src);
     if (header) {
         /// Conditionally handle v1 (flex) header
-        if (!flex_versions::is_api_in_schema(header->key)) {
+        if (!flex_versions::is_api_in_schema(header.value().key)) {
             /// User provided unsupported an invalid key that does not map
             /// to any known kafka requests, code will throw when it eventually
             /// reaches the request router
         } else if (flex_versions::is_flexible_request(
-                     header->key, header->version)) {
+                     header.value().key, header.value().version)) {
             auto [tags, bytes_read] = co_await parse_tags(src);
-            header->tags = std::move(tags);
-            header->tags_size_bytes = bytes_read;
+            header.value().tags = std::move(tags);
+            header.value().tags_size_bytes = bytes_read;
         }
     }
     co_return header;
@@ -127,7 +128,7 @@ ss::scattered_message<char> response_as_scattered(response_ptr response) {
     if (response->is_flexible()) {
         protocol::encoder writer(tags_header);
         vassert(response->tags(), "If flexible, tags should be filled");
-        writer.write_tags(std::move(*response->tags()));
+        writer.write_tags(std::move(response->tags().value()));
     }
     const auto size = static_cast<int32_t>(
       sizeof(response->correlation()) + tags_header.size_bytes()

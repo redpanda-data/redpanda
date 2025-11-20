@@ -57,7 +57,7 @@ FIXTURE_TEST(produce_reconnect, kafka_client_fixture) {
       kafka::client::api_version_for(kafka::metadata_request::api_type::key)
         < kafka::api_version(12),
       "topic::name is nullable in v12+");
-    BOOST_REQUIRE_EQUAL((*res.data.topics[0].name)(), "t");
+    BOOST_REQUIRE_EQUAL((res.data.topics[0].name.value())(), "t");
 
     client.set_batch_record_count(3);
     client.set_batch_size_bytes(1024);

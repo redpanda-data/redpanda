@@ -66,7 +66,7 @@ ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
                              base_backoff]() mutable {
                      if (as.has_value()) {
                          try {
-                             as->get().check();
+                             as.value().get().check();
                          } catch (const std::exception& e) {
                              promise.set_exception(e);
                              return ss::make_ready_future<stop_iteration>(
@@ -101,7 +101,8 @@ ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
                              auto next = backoff_policy.next_backoff();
                              auto sleep_dur = base_backoff * next;
                              auto f = (as.has_value())
-                                        ? ss::sleep_abortable(sleep_dur, *as)
+                                        ? ss::sleep_abortable(
+                                            sleep_dur, as.value())
                                         : ss::sleep(sleep_dur * next);
                              return f.then([] { return stop_iteration::no; })
                                .handle_exception(

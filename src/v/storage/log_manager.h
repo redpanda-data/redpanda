@@ -120,7 +120,7 @@ struct log_config {
     std::optional<ntp_sanitizer_config>
     maybe_get_ntp_sanitizer_config(const model::ntp& ntp) const {
         if (file_config) {
-            return file_config->get_config_for_ntp(ntp);
+            return file_config.value().get_config_for_ntp(ntp);
         }
 
         return std::nullopt;

@@ -89,7 +89,7 @@ FIXTURE_TEST(test_describe_with_configuration_keys, describe_topic_fixture) {
         const auto found = find_config(
           resp.data.results[0].configs, custom_config.name);
         BOOST_REQUIRE(found);
-        BOOST_REQUIRE(found->value == custom_config.value);
+        BOOST_REQUIRE(found.value().value == custom_config.value);
     }
 
     {

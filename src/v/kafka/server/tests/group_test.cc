@@ -218,7 +218,7 @@ SEASTAR_THREAD_TEST_CASE(add_member_sets_leader) {
 
     BOOST_TEST(g.is_leader(kafka::member_id("m")));
     BOOST_TEST(g.leader());
-    BOOST_TEST(*g.leader() == "m");
+    BOOST_TEST(g.leader().value() == "m");
 }
 
 SEASTAR_THREAD_TEST_CASE(add_member_sets_protocol_type) {
@@ -229,7 +229,7 @@ SEASTAR_THREAD_TEST_CASE(add_member_sets_protocol_type) {
     (void)g.add_member(m);
 
     BOOST_TEST(g.protocol_type());
-    BOOST_TEST(*g.protocol_type() == "p");
+    BOOST_TEST(g.protocol_type().value() == "p");
 }
 
 SEASTAR_THREAD_TEST_CASE(add_missing_assignments) {
@@ -307,7 +307,7 @@ SEASTAR_THREAD_TEST_CASE(advance_generation_non_empty) {
     BOOST_TEST(g.in_state(group_state::completing_rebalance));
     BOOST_TEST(g.generation() == 1);
     BOOST_TEST(g.protocol());
-    BOOST_TEST(*g.protocol() == "n0");
+    BOOST_TEST(g.protocol().value() == "n0");
 }
 
 SEASTAR_THREAD_TEST_CASE(member_metadata) {

@@ -169,7 +169,7 @@ struct inbound_topic
 
     const model::topic_namespace& effective_topic_name() const {
         if (alias.has_value()) {
-            return *alias;
+            return alias.value();
         }
         return source_topic_name;
     }

@@ -198,7 +198,8 @@ struct connection_attributes {
 
         proto::admin::in_flight_requests to_proto(clock::time_point now) const;
         clock::duration get_idle_duration(clock::time_point now) const {
-            return _idle_since ? (now - *_idle_since) : clock::duration::zero();
+            return _idle_since ? (now - _idle_since.value())
+                               : clock::duration::zero();
         }
 
     private:
@@ -309,9 +310,9 @@ private:
 
     security::acl_principal get_principal() const {
         if (_mtls_state) {
-            return _mtls_state->principal();
-        } else if (_sasl && _sasl->complete()) {
-            return _sasl->principal();
+            return _mtls_state.value().principal();
+        } else if (_sasl && _sasl.value().complete()) {
+            return _sasl.value().principal();
         }
         // anonymous user
         return security::acl_principal{security::principal_type::user, {}};

@@ -245,7 +245,7 @@ channel& in_memory_test_protocol::get_channel(model::node_id id) {
               fmt::format("unable to find node {} in node map", id));
         }
         auto [new_it, _] = _channels.try_emplace(
-          id, std::make_unique<channel>(node->get()));
+          id, std::make_unique<channel>(node.value().get()));
         it = new_it;
         it->second->start();
     }
@@ -309,7 +309,7 @@ ss::future<result<RespT>> in_memory_test_protocol::dispatch(
             co_return errc::node_does_not_exists;
         }
         auto [new_it, _] = _channels.try_emplace(
-          id, std::make_unique<channel>(node->get()));
+          id, std::make_unique<channel>(node.value().get()));
         it = new_it;
         it->second->start();
     }
@@ -338,7 +338,7 @@ ss::future<result<RespT>> in_memory_test_protocol::dispatch(
         RespT reply = co_await serde::read_async<RespT>(parser);
         // intercept the reply if the interceptor is set
         if (_reply_interceptor) {
-            auto intercepted = co_await (*_reply_interceptor)(
+            auto intercepted = co_await (_reply_interceptor.value())(
               reply_variant{std::move(reply)}, id);
             co_return std::get<RespT>(std::move(intercepted));
         }
@@ -761,8 +761,8 @@ ss::future<model::node_id>
 raft_fixture_base::wait_for_leader(model::timeout_clock::time_point deadline) {
     auto has_stable_leader = [this] {
         auto leader_id = get_leader();
-        return leader_id && _nodes.contains(*leader_id)
-               && node(*leader_id).raft()->is_leader();
+        return leader_id && _nodes.contains(leader_id.value())
+               && node(leader_id.value()).raft()->is_leader();
     };
     while (!has_stable_leader()) {
         if (model::timeout_clock::now() > deadline) {
@@ -793,8 +793,8 @@ ss::future<model::node_id> raft_fixture_base::wait_for_leader_change(
   model::timeout_clock::time_point deadline, model::term_id term) {
     auto has_new_leader = [this, term] {
         auto leader_id = get_leader();
-        if (leader_id && _nodes.contains(*leader_id)) {
-            auto& leader_node = node(*leader_id);
+        if (leader_id && _nodes.contains(leader_id.value())) {
+            auto& leader_node = node(leader_id.value());
             return leader_node.raft()->is_leader()
                    && leader_node.raft()->term() > term;
         }
@@ -820,7 +820,7 @@ std::optional<model::node_id> raft_fixture_base::get_leader() const {
     std::optional<model::node_id> leader;
     for (auto& [_, l_st] : _leaders_view) {
         if (l_st.term >= current_term && l_st.current_leader) {
-            leader = l_st.current_leader->id();
+            leader = l_st.current_leader.value().id();
             current_term = l_st.term;
         }
     }

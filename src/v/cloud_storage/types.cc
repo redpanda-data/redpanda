@@ -124,7 +124,7 @@ void scrub_segment_meta(
     // After one segment has a delta offset, all subsequent segments
     // should have a delta offset too.
     if (
-      previous && previous->delta_offset != model::offset_delta{}
+      previous && previous.value().delta_offset != model::offset_delta{}
       && current.delta_offset == model::offset_delta{}) {
         detected.insert(
           anomaly_meta{
@@ -136,9 +136,9 @@ void scrub_segment_meta(
     // The delta offset field of a segment should always be greater or
     // equal to that of the previous one.
     if (
-      previous && previous->delta_offset != model::offset_delta{}
+      previous && previous.value().delta_offset != model::offset_delta{}
       && current.delta_offset != model::offset_delta{}
-      && previous->delta_offset > current.delta_offset) {
+      && previous.value().delta_offset > current.delta_offset) {
         detected.insert(
           anomaly_meta{
             .type = anomaly_type::non_monotonical_delta,
@@ -168,7 +168,8 @@ void scrub_segment_meta(
     // greater, we have a gap in the log.
     if (
       previous
-      && model::next_offset(previous->committed_offset) < current.base_offset) {
+      && model::next_offset(previous.value().committed_offset)
+           < current.base_offset) {
         detected.insert(
           anomaly_meta{
             .type = anomaly_type::offset_gap,
@@ -181,7 +182,8 @@ void scrub_segment_meta(
     // lower, we have overlapping segments in the log.
     if (
       previous
-      && model::next_offset(previous->committed_offset) > current.base_offset) {
+      && model::next_offset(previous.value().committed_offset)
+           > current.base_offset) {
         detected.insert(
           anomaly_meta{
             .type = anomaly_type::offset_overlap,

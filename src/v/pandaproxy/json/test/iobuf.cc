@@ -24,7 +24,7 @@ SEASTAR_THREAD_TEST_CASE(test_iobuf_parse_binary) {
       ppj::serialization_format::binary_v2}("cGFuZGFwcm94eQ==");
     BOOST_REQUIRE(res);
     BOOST_REQUIRE(!!buf);
-    iobuf_parser p(std::move(*buf));
+    iobuf_parser p(std::move(buf.value()));
     BOOST_TEST(p.read_string(p.bytes_left()) == "pandaproxy");
 }
 

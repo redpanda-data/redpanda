@@ -33,7 +33,7 @@ members_frontend::members_frontend(
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_leaders_table>& leaders,
   ss::sharded<ss::abort_source>& as)
-  : _self(*config::node().node_id())
+  : _self(config::node().node_id().value())
   , _node_op_timeout(
       config::shard_local_cfg().node_management_operation_timeout_ms)
   , _stm(stm)
@@ -62,7 +62,7 @@ members_frontend::decommission_node(model::node_id id) {
                  .with_node_client<cluster::controller_client_protocol>(
                    _self,
                    ss::this_shard_id(),
-                   *leader,
+                   leader.value(),
                    timeout,
                    [id, timeout](controller_client_protocol cp) mutable {
                        return cp.decommission_node(
@@ -91,7 +91,7 @@ members_frontend::recommission_node(model::node_id id) {
                  .with_node_client<cluster::controller_client_protocol>(
                    _self,
                    ss::this_shard_id(),
-                   *leader,
+                   leader.value(),
                    timeout,
                    [id, timeout](controller_client_protocol cp) mutable {
                        return cp.recommission_node(
@@ -127,7 +127,7 @@ members_frontend::set_maintenance_mode(model::node_id id, bool enabled) {
           .with_node_client<cluster::controller_client_protocol>(
             _self,
             ss::this_shard_id(),
-            *leader,
+            leader.value(),
             timeout,
             [id, enabled, timeout](controller_client_protocol cp) mutable {
                 return cp.set_maintenance_mode(

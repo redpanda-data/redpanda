@@ -300,12 +300,12 @@ TEST(StateUpdateTest, TestOverlapSomePartitions) {
     // The bad update shouldn't be applied.
     auto p_a = s.partition_state(model::topic_id_partition::from(tidp_a));
     ASSERT_TRUE(p_a.has_value());
-    EXPECT_EQ(1, p_a->get().extents.size());
+    EXPECT_EQ(1, p_a.value().get().extents.size());
 
     // But the good update should be there.
     auto p_b = s.partition_state(model::topic_id_partition::from(tidp_b));
     ASSERT_TRUE(p_b.has_value());
-    EXPECT_EQ(2, p_b->get().extents.size());
+    EXPECT_EQ(2, p_b.value().get().extents.size());
 
     // The accounting for the object should reflect this.
     EXPECT_EQ(2, s.objects.size());
@@ -360,18 +360,24 @@ TEST(StateUpdateTest, TestReplaceBasic) {
     ASSERT_TRUE(replace_res.has_value());
 
     // Fully replaced.
-    const auto& prt_a
-      = s.partition_state(model::topic_id_partition::from(tidp_a))->get();
+    const auto& prt_a = s.partition_state(
+                           model::topic_id_partition::from(tidp_a))
+                          .value()
+                          .get();
     EXPECT_THAT(prt_a.extents, ElementsAre(MatchesRange(oid3, 0_o, 20_o)));
 
     // Not replaced.
-    const auto& prt_b
-      = s.partition_state(model::topic_id_partition::from(tidp_b))->get();
+    const auto& prt_b = s.partition_state(
+                           model::topic_id_partition::from(tidp_b))
+                          .value()
+                          .get();
     EXPECT_THAT(prt_b.extents, ElementsAre(MatchesRange(oid1, 0_o, 10_o)));
 
     // Partially replaced.
-    const auto& prt_c
-      = s.partition_state(model::topic_id_partition::from(tidp_c))->get();
+    const auto& prt_c = s.partition_state(
+                           model::topic_id_partition::from(tidp_c))
+                          .value()
+                          .get();
     EXPECT_THAT(
       prt_c.extents,
       ElementsAre(
@@ -532,15 +538,17 @@ TEST(StateUpdateTest, TestReplaceWithCompaction) {
     ASSERT_TRUE(replace_res.has_value());
 
     // Compact an extent, marking [5, 10] cleaned with tombstones.
-    const auto& prt_a
-      = s.partition_state(model::topic_id_partition::from(tidp_a))->get();
+    const auto& prt_a = s.partition_state(
+                           model::topic_id_partition::from(tidp_a))
+                          .value()
+                          .get();
     ASSERT_TRUE(prt_a.compaction_state.has_value());
     EXPECT_THAT(prt_a.extents, ElementsAre(MatchesRange(oid2, 0_o, 10_o)));
     EXPECT_THAT(
-      prt_a.compaction_state->cleaned_ranges.to_vec(),
+      prt_a.compaction_state.value().cleaned_ranges.to_vec(),
       ElementsAre(MatchesRange(5_o, 10_o)));
     EXPECT_THAT(
-      prt_a.compaction_state->cleaned_ranges_with_tombstones,
+      prt_a.compaction_state.value().cleaned_ranges_with_tombstones,
       ElementsAre(MatchesRange(5_o, 10_o)));
 
     // Compact an extent, marking [3, 4] cleaned with tombstones.
@@ -560,10 +568,10 @@ TEST(StateUpdateTest, TestReplaceWithCompaction) {
 
     EXPECT_THAT(prt_a.extents, ElementsAre(MatchesRange(oid3, 0_o, 10_o)));
     EXPECT_THAT(
-      prt_a.compaction_state->cleaned_ranges.to_vec(),
+      prt_a.compaction_state.value().cleaned_ranges.to_vec(),
       ElementsAre(MatchesRange(3_o, 10_o)));
     EXPECT_THAT(
-      prt_a.compaction_state->cleaned_ranges_with_tombstones,
+      prt_a.compaction_state.value().cleaned_ranges_with_tombstones,
       ElementsAre(MatchesRange(3_o, 4_o), MatchesRange(5_o, 10_o)));
 
     // Now mark [3, 8] as having removed tombstones.
@@ -578,10 +586,10 @@ TEST(StateUpdateTest, TestReplaceWithCompaction) {
 
     EXPECT_THAT(prt_a.extents, ElementsAre(MatchesRange(oid4, 0_o, 10_o)));
     EXPECT_THAT(
-      prt_a.compaction_state->cleaned_ranges.to_vec(),
+      prt_a.compaction_state.value().cleaned_ranges.to_vec(),
       ElementsAre(MatchesRange(3_o, 10_o)));
     EXPECT_THAT(
-      prt_a.compaction_state->cleaned_ranges_with_tombstones,
+      prt_a.compaction_state.value().cleaned_ranges_with_tombstones,
       ElementsAre(MatchesRange(9_o, 10_o)));
 }
 
@@ -844,10 +852,10 @@ TEST(StateUpdateTest, TestAddIncreasingTerms) {
 
     auto p_state = s.partition_state(model::topic_id_partition::from(tidp_a));
     ASSERT_TRUE(p_state.has_value());
-    EXPECT_EQ(2, p_state->get().extents.size());
-    EXPECT_EQ(4, p_state->get().term_starts.size());
+    EXPECT_EQ(2, p_state.value().get().extents.size());
+    EXPECT_EQ(4, p_state.value().get().term_starts.size());
     EXPECT_THAT(
-      p_state->get().term_starts,
+      p_state.value().get().term_starts,
       testing::ElementsAre(
         MatchesTermStart(1_tm, 0_o),
         MatchesTermStart(2_tm, 1_o),
@@ -869,10 +877,10 @@ TEST(StateUpdateTest, TestAddSameSubsequentTerm) {
     EXPECT_EQ(1, s.topic_to_state.size());
     auto p_state = s.partition_state(model::topic_id_partition::from(tidp_a));
     ASSERT_TRUE(p_state.has_value());
-    EXPECT_EQ(1, p_state->get().extents.size());
-    EXPECT_EQ(2, p_state->get().term_starts.size());
+    EXPECT_EQ(1, p_state.value().get().extents.size());
+    EXPECT_EQ(2, p_state.value().get().term_starts.size());
     EXPECT_THAT(
-      p_state->get().term_starts,
+      p_state.value().get().term_starts,
       testing::ElementsAre(
         MatchesTermStart(1_tm, 0_o), MatchesTermStart(2_tm, 1_o)));
 
@@ -888,10 +896,10 @@ TEST(StateUpdateTest, TestAddSameSubsequentTerm) {
     EXPECT_TRUE(res.has_value());
 
     ASSERT_TRUE(p_state.has_value());
-    EXPECT_EQ(2, p_state->get().extents.size());
-    EXPECT_EQ(3, p_state->get().term_starts.size());
+    EXPECT_EQ(2, p_state.value().get().extents.size());
+    EXPECT_EQ(3, p_state.value().get().term_starts.size());
     EXPECT_THAT(
-      p_state->get().term_starts,
+      p_state.value().get().term_starts,
       testing::ElementsAre(
         MatchesTermStart(1_tm, 0_o),
         MatchesTermStart(2_tm, 1_o),
@@ -1083,7 +1091,7 @@ TEST(StateUpdateTest, TestSetStartOffsetAlignedWithExtent) {
     auto tp = model::topic_id_partition::from(tidp_a);
     auto p_state = s.partition_state(tp);
     ASSERT_TRUE(p_state.has_value());
-    EXPECT_EQ(3, p_state->get().extents.size());
+    EXPECT_EQ(3, p_state.value().get().extents.size());
 
     // Set start offset to be aligned with the second extent (starts at 11)
     auto set_start_update = set_start_offset_update::build(s, tp, 11_o);
@@ -1095,12 +1103,12 @@ TEST(StateUpdateTest, TestSetStartOffsetAlignedWithExtent) {
     // Verify that the state has been updated correctly
     p_state = s.partition_state(tp);
     ASSERT_TRUE(p_state.has_value());
-    EXPECT_EQ(11_o, p_state->get().start_offset);
-    EXPECT_EQ(31_o, p_state->get().next_offset);
+    EXPECT_EQ(11_o, p_state.value().get().start_offset);
+    EXPECT_EQ(31_o, p_state.value().get().next_offset);
 
     // The first extent should be fully removed from accounting
     // Only extents 2 and 3 should remain
-    EXPECT_EQ(2, p_state->get().extents.size());
+    EXPECT_EQ(2, p_state.value().get().extents.size());
 }
 
 TEST(StateUpdateTest, TestSetStartOffsetNotAlignedWithExtent) {
@@ -1124,7 +1132,7 @@ TEST(StateUpdateTest, TestSetStartOffsetNotAlignedWithExtent) {
     auto tp = model::topic_id_partition::from(tidp_a);
     auto p_state = s.partition_state(tp);
     ASSERT_TRUE(p_state.has_value());
-    EXPECT_EQ(3, p_state->get().extents.size());
+    EXPECT_EQ(3, p_state.value().get().extents.size());
 
     // Set start offset to be not aligned with any extent (offset 15 is in the
     // middle of second extent)
@@ -1137,12 +1145,12 @@ TEST(StateUpdateTest, TestSetStartOffsetNotAlignedWithExtent) {
     // Verify that the state has been updated correctly
     p_state = s.partition_state(tp);
     ASSERT_TRUE(p_state.has_value());
-    EXPECT_EQ(15_o, p_state->get().start_offset);
-    EXPECT_EQ(31_o, p_state->get().next_offset);
+    EXPECT_EQ(15_o, p_state.value().get().start_offset);
+    EXPECT_EQ(31_o, p_state.value().get().next_offset);
 
     // The first extent should be fully removed, but the second and third should
     // remain even though start is not aligned with the second extent's boundary
-    EXPECT_EQ(2, p_state->get().extents.size());
+    EXPECT_EQ(2, p_state.value().get().extents.size());
 }
 
 TEST(StateUpdateTest, TestSetStartOffsetEmptyWithTerms) {
@@ -1162,8 +1170,8 @@ TEST(StateUpdateTest, TestSetStartOffsetEmptyWithTerms) {
     auto tp = model::topic_id_partition::from(tidp_a);
     auto p_state = s.partition_state(tp);
     ASSERT_TRUE(p_state.has_value());
-    EXPECT_EQ(1, p_state->get().extents.size());
-    EXPECT_EQ(3, p_state->get().term_starts.size());
+    EXPECT_EQ(1, p_state.value().get().extents.size());
+    EXPECT_EQ(3, p_state.value().get().term_starts.size());
 
     // Set start offset beyond the end of all extents to make log empty.
     auto set_start_update = set_start_offset_update::build(s, tp, 10_o);
@@ -1174,15 +1182,15 @@ TEST(StateUpdateTest, TestSetStartOffsetEmptyWithTerms) {
 
     p_state = s.partition_state(tp);
     ASSERT_TRUE(p_state.has_value());
-    EXPECT_EQ(10_o, p_state->get().start_offset);
-    EXPECT_EQ(10_o, p_state->get().next_offset);
+    EXPECT_EQ(10_o, p_state.value().get().start_offset);
+    EXPECT_EQ(10_o, p_state.value().get().next_offset);
 
     // All extents should be removed since start is beyond them.
-    EXPECT_EQ(0, p_state->get().extents.size());
+    EXPECT_EQ(0, p_state.value().get().extents.size());
 
     // One term information should still be preserved to be able to serve term
     // queries at the next offset.
-    EXPECT_EQ(1, p_state->get().term_starts.size());
+    EXPECT_EQ(1, p_state.value().get().term_starts.size());
 }
 
 TEST(StateUpdateTest, TestSetStartOffsetWithCompactionState) {
@@ -1218,14 +1226,14 @@ TEST(StateUpdateTest, TestSetStartOffsetWithCompactionState) {
     auto tp = model::topic_id_partition::from(tidp_a);
     auto p_state = s.partition_state(tp);
     ASSERT_TRUE(p_state.has_value());
-    ASSERT_TRUE(p_state->get().compaction_state.has_value());
+    ASSERT_TRUE(p_state.value().get().compaction_state.has_value());
 
     // Verify initial compaction state
     EXPECT_THAT(
-      p_state->get().compaction_state->cleaned_ranges.to_vec(),
+      p_state->get().compaction_state.value().cleaned_ranges.to_vec(),
       ElementsAre(MatchesRange(5_o, 15_o)));
     EXPECT_THAT(
-      p_state->get().compaction_state->cleaned_ranges_with_tombstones,
+      p_state->get().compaction_state.value().cleaned_ranges_with_tombstones,
       ElementsAre(MatchesRange(5_o, 15_o)));
 
     // Set start offset to fall within the cleaned range (offset 10)
@@ -1238,17 +1246,17 @@ TEST(StateUpdateTest, TestSetStartOffsetWithCompactionState) {
     // Verify that the state has been updated correctly
     p_state = s.partition_state(tp);
     ASSERT_TRUE(p_state.has_value());
-    EXPECT_EQ(10_o, p_state->get().start_offset);
-    EXPECT_EQ(21_o, p_state->get().next_offset);
+    EXPECT_EQ(10_o, p_state.value().get().start_offset);
+    EXPECT_EQ(21_o, p_state.value().get().next_offset);
 
     // Check that compaction state reflects the new start
     // The cleaned ranges should be adjusted to reflect the new start
-    ASSERT_TRUE(p_state->get().compaction_state.has_value());
+    ASSERT_TRUE(p_state.value().get().compaction_state.has_value());
     EXPECT_THAT(
-      p_state->get().compaction_state->cleaned_ranges.to_vec(),
+      p_state->get().compaction_state.value().cleaned_ranges.to_vec(),
       ElementsAre(MatchesRange(10_o, 15_o)));
     EXPECT_THAT(
-      p_state->get().compaction_state->cleaned_ranges_with_tombstones,
+      p_state->get().compaction_state.value().cleaned_ranges_with_tombstones,
       ElementsAre(MatchesRange(10_o, 15_o)));
 }
 

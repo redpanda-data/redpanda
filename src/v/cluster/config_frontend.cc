@@ -27,7 +27,7 @@ config_frontend::config_frontend(
   , _connections(connections)
   , _leaders(leaders)
   , _as(as)
-  , _self(*config::node().node_id()) {}
+  , _self(config::node().node_id().value()) {}
 
 /**
  * RPC wrapper on do_patch, to dispatch to the controller leader
@@ -52,7 +52,7 @@ ss::future<config_frontend::patch_result> config_frontend::patch(
                      .with_node_client<cluster::controller_client_protocol>(
                        _self,
                        ss::this_shard_id(),
-                       *leader,
+                       leader.value(),
                        timeout,
                        [update = std::move(update),
                         timeout](controller_client_protocol cp) mutable {

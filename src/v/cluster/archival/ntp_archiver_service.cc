@@ -442,8 +442,9 @@ void ntp_archiver::log_collected_traces() noexcept {
               _last_segment_upload_time.time_since_epoch(),
               _last_marked_clean_time.time_since_epoch(),
               _last_upload_time.time_since_epoch(),
-              _last_sync_time.has_value() ? _last_sync_time->time_since_epoch()
-                                          : ss::lowres_clock::duration{});
+              _last_sync_time.has_value()
+                ? _last_sync_time.value().time_since_epoch()
+                : ss::lowres_clock::duration{});
 
             // Log mutexes
             auto mutex_cp = _mutex.get_blocking_checkpoint();
@@ -564,7 +565,8 @@ ss::future<> ntp_archiver::start() {
 }
 
 void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
-    bool is_leader = leader_id && *leader_id == _parent.raft()->self().id();
+    bool is_leader = leader_id
+                     && leader_id.value() == _parent.raft()->self().id();
     vlog(
       _rtclog.debug,
       "notify_leadership: is_leader={}, leader_id={}, raft group id={}",
@@ -846,7 +848,7 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
         co_return;
     }
 
-    auto& topic_cfg = *topic_cfg_opt;
+    auto& topic_cfg = topic_cfg_opt.value();
 
     vlog(
       _rtclog.debug,
@@ -1730,7 +1732,7 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
     // As noted above, check whether 'get_stream' was called. If not, close the
     // upload stream.
     if (stream_state.has_value()) {
-        co_await stream_state->close();
+        co_await stream_state.value().close();
     }
 
     // This future should be ready at the moment or will
@@ -2119,7 +2121,7 @@ ntp_archiver::wait_uploads_complete(
     std::vector<size_t> ixupload;
     for (size_t ix = 0; ix < scheduled.size(); ix++) {
         if (scheduled[ix].result) {
-            flist.emplace_back(std::move(*scheduled[ix].result));
+            flist.emplace_back(std::move(scheduled[ix].result.value()));
             ixupload.push_back(ix);
         }
     }
@@ -2265,7 +2267,7 @@ ntp_archiver::wait_uploads_complete(
               upload.upload_kind == segment_upload_kind::non_compacted
               && upload.meta.has_value()) {
                 if (!segment_meta_matches_stats(
-                      *upload.meta,
+                      upload.meta.value(),
                       stats,
                       _rtclog,
                       _parent.get_ntp_config()
@@ -2276,8 +2278,8 @@ ntp_archiver::wait_uploads_complete(
         }
 
         if (segment_kind == segment_upload_kind::non_compacted) {
-            _probe.value().uploaded(*upload.delta);
-            _probe.value().uploaded_bytes(upload.meta->size_bytes);
+            _probe.value().uploaded(upload.delta.value());
+            _probe.value().uploaded_bytes(upload.meta.value().size_bytes);
 
             model::offset expected_base_offset;
             if (manifest().get_last_offset() < model::offset{0}) {
@@ -2288,7 +2290,7 @@ ntp_archiver::wait_uploads_complete(
             }
         }
 
-        result.meta.push_back(*upload.meta);
+        result.meta.push_back(upload.meta.value());
     }
     if (result.num_succeeded > result.meta.size()) {
         vlog(
@@ -2523,7 +2525,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
   archival_stm_fence fence,
   std::optional<model::offset> unsafe_max_offset_override_exclusive) {
     auto max_offset_exclusive = unsafe_max_offset_override_exclusive
-                                  ? *unsafe_max_offset_override_exclusive
+                                  ? unsafe_max_offset_override_exclusive.value()
                                   : max_uploadable_offset_exclusive();
     vlog(
       _rtclog.debug,
@@ -3310,7 +3312,7 @@ ss::future<> ntp_archiver::apply_retention() {
         co_return;
     }
 
-    auto next_start_offset = retention_calculator->next_start_offset();
+    auto next_start_offset = retention_calculator.value().next_start_offset();
     if (next_start_offset) {
         vlog(
           _rtclog.info,
@@ -3333,7 +3335,7 @@ ss::future<> ntp_archiver::apply_retention() {
               fence.read_write_fence);
             builder.read_write_fence(fence.read_write_fence);
         }
-        builder.truncate(*next_start_offset);
+        builder.truncate(next_start_offset.value());
 
         auto error = co_await builder.replicate();
 
@@ -3468,7 +3470,7 @@ ss::future<> ntp_archiver::garbage_collect() {
 const cloud_storage_clients::bucket_name&
 ntp_archiver::get_bucket_name() const {
     if (_bucket_override) {
-        return *_bucket_override;
+        return _bucket_override.value();
     } else {
         return _conf->bucket_name;
     }
@@ -3508,18 +3510,18 @@ ntp_archiver::find_reupload_candidate(
         vlog(_rtclog.debug, "Scan result: {}", run);
     }
     auto units = co_await _mutex.get_units(cas.as());
-    if (run->meta.base_offset >= _parent.raft_start_offset()) {
+    if (run.value().meta.base_offset >= _parent.raft_start_offset()) {
         auto log_generic = _parent.log();
         auto& log = *log_generic;
         segment_collector collector(
           segment_collector_mode::non_compacted_reupload,
-          run->meta.base_offset,
+          run.value().meta.base_offset,
           manifest(),
           log,
           // We want to upload exactly the same range as in the run we got based
           // on the manifest so do not limit collected range on the size.
           std::numeric_limits<size_t>::max(),
-          run->meta.committed_offset);
+          run.value().meta.committed_offset);
         collector.collect_segments();
         auto candidate = co_await collector.make_upload_candidate_stream(
           _conf->segment_upload_timeout());
@@ -3535,8 +3537,9 @@ ntp_archiver::find_reupload_candidate(
             segment_collector_stream& collector_stream) mutable
             -> find_reupload_candidate_result {
               if (
-                collector_stream.start_offset != run->meta.base_offset
-                || collector_stream.end_offset != run->meta.committed_offset) {
+                collector_stream.start_offset != run.value().meta.base_offset
+                || collector_stream.end_offset
+                     != run.value().meta.committed_offset) {
                   vlog(
                     _rtclog.error,
                     "Failed to make reupload candidate to match the run, "
@@ -3545,7 +3548,7 @@ ntp_archiver::find_reupload_candidate(
                     run->meta);
                   return {};
               }
-              if (collector_stream.size != run->meta.size_bytes) {
+              if (collector_stream.size != run.value().meta.size_bytes) {
                   vlog(
                     _rtclog.debug,
                     "Failed to make reupload candidate due to size mismatch, "

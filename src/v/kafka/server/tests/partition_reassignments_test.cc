@@ -56,7 +56,7 @@ public:
         if (topic_name.has_value()) {
             req.data.topics = chunked_vector<kafka::reassignable_topic>{
               kafka::reassignable_topic{
-                .name = *topic_name,
+                .name = topic_name.value(),
                 .partitions = std::move(reassignable_partitions)}};
         }
         return client.dispatch(std::move(req), kafka::api_version(0)).get();
@@ -115,7 +115,7 @@ FIXTURE_TEST(
                   p_resp.error_code,
                   kafka::error_code::invalid_replica_assignment);
                 BOOST_CHECK(
-                  *p_resp.error_message
+                  p_resp.error_message.value()
                   == ss::sstring{
                     "Empty replica list specified in partition reassignment."});
             }
@@ -142,7 +142,7 @@ FIXTURE_TEST(
                   p_resp.error_code,
                   kafka::error_code::invalid_replica_assignment);
                 BOOST_CHECK(
-                  *p_resp.error_message
+                  p_resp.error_message.value()
                   == ss::sstring{"Duplicate replica ids in partition "
                                  "reassignment replica list"});
             }
@@ -168,7 +168,7 @@ FIXTURE_TEST(
                   p_resp.error_code,
                   kafka::error_code::invalid_replica_assignment);
                 BOOST_CHECK(
-                  *p_resp.error_message
+                  p_resp.error_message.value()
                   == ss::sstring{"Invalid broker id in replica list"});
             }
         }
@@ -193,7 +193,7 @@ FIXTURE_TEST(
                   p_resp.error_code,
                   kafka::error_code::invalid_replica_assignment);
                 BOOST_CHECK(
-                  *p_resp.error_message
+                  p_resp.error_message.value()
                   == ss::sstring{
                     "Replica assignment has brokers that are not alive"});
             }
@@ -218,7 +218,7 @@ FIXTURE_TEST(
                   p_resp.error_code,
                   kafka::error_code::no_reassignment_in_progress);
                 BOOST_CHECK(
-                  *p_resp.error_message
+                  p_resp.error_message.value()
                   == ss::sstring{"no_reassignment_in_progress"});
             }
         }
@@ -244,7 +244,7 @@ FIXTURE_TEST(
                   p_resp.error_code,
                   kafka::error_code::unknown_topic_or_partition);
                 BOOST_CHECK(
-                  *p_resp.error_message
+                  p_resp.error_message.value()
                   == ss::sstring{"Topic or partition is undefined"});
             }
         }

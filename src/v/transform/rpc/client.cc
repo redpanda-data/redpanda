@@ -233,8 +233,9 @@ ss::future<cluster::errc> client::do_produce_once(produce_request req) {
     }
     vlog(log.trace, "do_produce_once_request(node={}): {}", *leader, req);
     auto reply = co_await (
-      *leader == _self ? do_local_produce(std::move(req))
-                       : do_remote_produce(*leader, std::move(req)));
+      leader.value() == _self
+        ? do_local_produce(std::move(req))
+        : do_remote_produce(leader.value(), std::move(req)));
     vlog(log.trace, "do_produce_once_reply(node={}): {}", *leader, req);
     vassert(
       reply.results.size() == 1,
@@ -315,9 +316,9 @@ client::do_store_wasm_binary_once(
       *leader,
       data()->size_bytes());
     auto reply = co_await (
-      leader == _self
-        ? do_local_store_wasm_binary(std::move(data), timeout)
-        : do_remote_store_wasm_binary(*leader, std::move(data), timeout));
+      leader == _self ? do_local_store_wasm_binary(std::move(data), timeout)
+                      : do_remote_store_wasm_binary(
+                          leader.value(), std::move(data), timeout));
     vlog(
       log.trace,
       "do_store_wasm_binary_once_response(node={}): {}",
@@ -380,8 +381,9 @@ ss::future<cluster::errc> client::do_delete_wasm_binary_once(
       *leader,
       key);
     auto reply = co_await (
-      leader == _self ? do_local_delete_wasm_binary(key, timeout)
-                      : do_remote_delete_wasm_binary(*leader, key, timeout));
+      leader == _self
+        ? do_local_delete_wasm_binary(key, timeout)
+        : do_remote_delete_wasm_binary(leader.value(), key, timeout));
     vlog(
       log.trace,
       "do_delete_wasm_binary_once_response(node={}): {}",
@@ -437,8 +439,9 @@ client::do_load_wasm_binary_once(
       *leader,
       offset);
     auto reply = co_await (
-      leader == _self ? do_local_load_wasm_binary(offset, timeout)
-                      : do_remote_load_wasm_binary(*leader, offset, timeout));
+      leader == _self
+        ? do_local_load_wasm_binary(offset, timeout)
+        : do_remote_load_wasm_binary(leader.value(), offset, timeout));
     vlog(
       log.trace,
       "do_load_wasm_binary_once_response(node={}): {}",
@@ -592,9 +595,9 @@ client::find_coordinator_once(model::transform_offsets_key key) {
     request.add(key);
     vlog(log.trace, "find_coordinator_request(node={}): {}", *leader, key);
     auto response = co_await (
-      *leader == _self
+      leader.value() == _self
         ? do_local_find_coordinator(std::move(request))
-        : do_remote_find_coordinator(*leader, std::move(request)));
+        : do_remote_find_coordinator(leader.value(), std::move(request)));
     vlog(
       log.trace, "find_coordinator_response(node={}): {}", *leader, response);
     auto it = response.coordinators.find(key);
@@ -664,8 +667,9 @@ ss::future<cluster::errc> client::batch_offset_commit_once(
     vlog(
       log.trace, "offset_commit_once_request(node={}): {}", *leader, request);
     auto resp = co_await (
-      *leader == _self ? do_local_offset_commit(std::move(request))
-                       : do_remote_offset_commit(*leader, std::move(request)));
+      leader.value() == _self
+        ? do_local_offset_commit(std::move(request))
+        : do_remote_offset_commit(leader.value(), std::move(request)));
     vlog(log.trace, "offset_commit_once_response(node={}): {}", *leader, resp);
     co_return resp.errc;
 }
@@ -720,8 +724,9 @@ client::offset_fetch_once(model::transform_offsets_key key) {
     offset_fetch_request request{key, coordinator.value()};
     vlog(log.trace, "offset_fetch_once_request(node={}): {}", *leader, request);
     auto resp = co_await (
-      *leader == _self ? do_local_offset_fetch(request)
-                       : do_remote_offset_fetch(*leader, request));
+      leader.value() == _self
+        ? do_local_offset_fetch(request)
+        : do_remote_offset_fetch(leader.value(), request));
     vlog(log.trace, "offset_fetch_once_response(node={}): {}", *leader, resp);
 
     {
@@ -846,8 +851,8 @@ ss::future<> client::update_wasm_binary_size() {
         co_return;
     }
     if (
-      config->properties.batch_max_bytes.has_value()
-      && config->properties.batch_max_bytes.value()
+      config.value().properties.batch_max_bytes.has_value()
+      && config.value().properties.batch_max_bytes.value()
            == uint32_t(_max_wasm_binary_size())) {
         // Nothing to do.
         co_return;
@@ -889,7 +894,7 @@ client::list_committed_offsets() {
     }
     using ret_t = result<model::transform_offsets_map, cluster::errc>;
     co_return co_await ss::map_reduce(
-      boost::irange(0, cfg->partition_count),
+      boost::irange(0, cfg.value().partition_count),
       [this](int32_t id) {
           auto partition = model::partition_id(id);
           return do_list_committed_offsets(partition);
@@ -923,7 +928,7 @@ client::do_list_committed_offsets_once(model::partition_id partition) {
         co_return co_await do_local_list_committed_offsets(partition);
     } else {
         co_return co_await do_remote_list_committed_offsets(
-          *leader, partition, timeout);
+          leader.value(), partition, timeout);
     }
 }
 
@@ -974,7 +979,7 @@ client::delete_committed_offsets(absl::btree_set<model::transform_id> ids) {
         co_return cluster::errc::topic_not_exists;
     }
     co_return co_await ss::map_reduce(
-      boost::irange(0, cfg->partition_count),
+      boost::irange(0, cfg.value().partition_count),
       [this, &ids](int32_t id) {
           auto partition = model::partition_id(id);
           return do_delete_committed_offsets(partition, ids);
@@ -1006,7 +1011,7 @@ ss::future<cluster::errc> client::do_delete_committed_offsets_once(
           partition, std::move(ids));
     } else {
         co_return co_await do_remote_delete_committed_offsets(
-          *leader, partition, std::move(ids), timeout);
+          leader.value(), partition, std::move(ids), timeout);
     }
 }
 

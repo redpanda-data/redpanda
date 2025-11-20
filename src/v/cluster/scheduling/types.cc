@@ -88,20 +88,20 @@ model::broker_shard allocated_partition::add_replica(
     if (!_original_node2shard) {
         _original_node2shard.emplace();
         for (const auto& bs : _replicas) {
-            _original_node2shard->emplace(bs.node_id, bs.shard);
+            _original_node2shard.value().emplace(bs.node_id, bs.shard);
         }
     }
 
     if (prev) {
-        if (!_original_node2shard->contains(prev->bs.node_id)) {
-            _state->remove_allocation(prev->bs);
+        if (!_original_node2shard.value().contains(prev.value().bs.node_id)) {
+            _state->remove_allocation(prev.value().bs);
         }
-        _state->remove_final_count(prev->bs);
+        _state->remove_final_count(prev.value().bs);
     }
 
     model::broker_shard replica{.node_id = node};
-    if (auto it = _original_node2shard->find(node);
-        it != _original_node2shard->end()) {
+    if (auto it = _original_node2shard.value().find(node);
+        it != _original_node2shard.value().end()) {
         // this is an original replica, preserve the shard
         replica.shard = it->second;
         _state->add_final_count(replica);
@@ -111,7 +111,7 @@ model::broker_shard allocated_partition::add_replica(
     }
 
     if (prev) {
-        std::swap(_replicas[prev->idx], _replicas.back());
+        std::swap(_replicas[prev.value().idx], _replicas.back());
         _replicas.back() = replica;
     } else {
         _replicas.push_back(replica);
@@ -124,7 +124,7 @@ replicas_t allocated_partition::release_new_partition(
     for (const auto& bs : _replicas) {
         if (
           !_original_node2shard
-          || !_original_node2shard->contains(bs.node_id)) {
+          || !_original_node2shard.value().contains(bs.node_id)) {
             added_replicas.push_back(bs);
         }
     }
@@ -137,11 +137,11 @@ bool allocated_partition::has_changes() const {
     if (!_original_node2shard) {
         return false;
     }
-    if (_replicas.size() != _original_node2shard->size()) {
+    if (_replicas.size() != _original_node2shard.value().size()) {
         return true;
     }
     for (const auto& bs : _replicas) {
-        if (!_original_node2shard->contains(bs.node_id)) {
+        if (!_original_node2shard.value().contains(bs.node_id)) {
             return true;
         }
     }
@@ -150,7 +150,7 @@ bool allocated_partition::has_changes() const {
 
 bool allocated_partition::is_original(model::node_id node) const {
     if (_original_node2shard) {
-        return _original_node2shard->contains(node);
+        return _original_node2shard.value().contains(node);
     }
     return std::find_if(
              _replicas.begin(),
@@ -176,25 +176,26 @@ errc allocated_partition::try_revert(const reallocation_step& step) {
 
     if (step.previous()) {
         auto prev_it = std::find(
-          _replicas.begin(), _replicas.end(), *step.previous());
+          _replicas.begin(), _replicas.end(), step.previous().value());
         if (prev_it != _replicas.end()) {
             return errc::invalid_request;
         }
-        *it = *step.previous();
+        *it = step.previous().value();
     } else {
         std::swap(*it, _replicas.back());
         _replicas.pop_back();
     }
 
     _state->remove_final_count(step.current());
-    if (!_original_node2shard->contains(step.current().node_id)) {
+    if (!_original_node2shard.value().contains(step.current().node_id)) {
         _state->remove_allocation(step.current());
     }
 
     if (step.previous()) {
-        _state->add_final_count(*step.previous());
-        if (!_original_node2shard->contains(step.previous()->node_id)) {
-            _state->add_allocation(*step.previous());
+        _state->add_final_count(step.previous().value());
+        if (!_original_node2shard.value().contains(
+              step.previous().value().node_id)) {
+            _state->add_allocation(step.previous().value());
         }
     }
 
@@ -210,19 +211,19 @@ allocated_partition::~allocated_partition() {
     }
 
     for (const auto& bs : _replicas) {
-        auto orig_it = _original_node2shard->find(bs.node_id);
-        if (orig_it == _original_node2shard->end()) {
+        auto orig_it = _original_node2shard.value().find(bs.node_id);
+        if (orig_it == _original_node2shard.value().end()) {
             // new replica
             _state->remove_allocation(bs);
             _state->remove_final_count(bs);
         } else {
             // original replica that didn't change, erase from the map in
             // preparation for the loop below
-            _original_node2shard->erase(orig_it);
+            _original_node2shard.value().erase(orig_it);
         }
     }
 
-    for (const auto& kv : *_original_node2shard) {
+    for (const auto& kv : _original_node2shard.value()) {
         model::broker_shard bs{kv.first, kv.second};
         _state->add_final_count(bs);
     }

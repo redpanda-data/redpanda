@@ -136,7 +136,7 @@ void leader_balancer::on_leadership_change(
         return;
     }
 
-    const auto& group = assignment->group;
+    const auto& group = assignment.value().group;
 
     // Update in flight state
     if (auto it = _in_flight_changes.find(group);
@@ -236,17 +236,19 @@ void leader_balancer::handle_topic_deltas(
         auto maybe_md = _topics.get_topic_metadata_ref(d.ns_tp);
         if (
           maybe_md
-          && maybe_md->get()
+          && maybe_md.value()
+               .get()
                .get_configuration()
                .properties.leaders_preference) {
-            new_lp = &maybe_md->get()
+            new_lp = &maybe_md.value()
+                        .get()
                         .get_configuration()
                         .properties.leaders_preference.value();
         }
 
         leader_balancer_types::topic_id_t topic_id{d.creation_revision};
-        auto cache_it = _last_seen_preferences->find(topic_id);
-        if (cache_it != _last_seen_preferences->end()) {
+        auto cache_it = _last_seen_preferences.value().find(topic_id);
+        if (cache_it != _last_seen_preferences.value().end()) {
             if (!new_lp || *new_lp != cache_it->second) {
                 vlog(
                   clusterlog.trace,
@@ -276,7 +278,7 @@ void leader_balancer::check_register_leadership_change_notification() {
 void leader_balancer::check_unregister_leadership_change_notification() {
     if (_leadership_change_notify_handle && _in_flight_changes.size() == 0) {
         _leaders.unregister_leadership_change_notification(
-          *_leadership_change_notify_handle);
+          _leadership_change_notify_handle.value());
         _leadership_change_notify_handle.reset();
     }
 }
@@ -715,16 +717,16 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
           num_dispatched,
           _in_flight_changes.size());
 
-        _in_flight_changes[transfer->group] = {
-          *transfer, clock_type::now() + _mute_timeout()};
+        _in_flight_changes[transfer.value().group] = {
+          transfer.value(), clock_type::now() + _mute_timeout()};
         check_register_leadership_change_notification();
 
         // Add the group to the muted set to avoid thrashing. If the transfer is
         // successful, it will soon be removed by the leadership notification.
         _muted.try_emplace(
-          transfer->group, clock_type::now() + _mute_timeout());
+          transfer.value().group, clock_type::now() + _mute_timeout());
 
-        auto success = co_await do_transfer(*transfer);
+        auto success = co_await do_transfer(transfer.value());
         if (!success) {
             vlog(
               clusterlog.info,
@@ -735,7 +737,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
               transfer->to,
               num_dispatched);
 
-            _in_flight_changes.erase(transfer->group);
+            _in_flight_changes.erase(transfer.value().group);
             check_unregister_leadership_change_notification();
 
             /*
@@ -752,7 +754,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         } else {
             _probe.leader_transfer_succeeded();
             num_dispatched += 1;
-            strategy->apply_movement(*transfer);
+            strategy->apply_movement(transfer.value());
         }
     }
 
@@ -793,7 +795,8 @@ leader_balancer::collect_muted_nodes(const cluster_health_report& hr) {
         }
 
         if (auto nm = _members.get_node_metadata_ref(follower.id); nm) {
-            auto maintenance_state = (*nm).get().state.get_maintenance_state();
+            auto maintenance_state
+              = (nm.value()).get().state.get_maintenance_state();
 
             if (maintenance_state == model::maintenance_state::active) {
                 nodes.insert(follower.id);
@@ -886,7 +889,7 @@ leader_balancer::build_preference_index() {
       _default_preference.binding()()};
 
     if (_last_seen_preferences) {
-        _last_seen_preferences->clear();
+        _last_seen_preferences.value().clear();
     } else {
         _last_seen_preferences.emplace();
     }
@@ -929,7 +932,7 @@ leader_balancer::collect_group_replicas_from_health_report(
             if (!maybe_meta) {
                 continue;
             }
-            const auto& meta = maybe_meta->get();
+            const auto& meta = maybe_meta.value().get();
 
             co_await ssx::async_for_each_counter(
               counter,
@@ -984,8 +987,8 @@ leader_balancer::index_type leader_balancer::build_index(
 
             replicas_t replicas;
             if (group_replicas) {
-                auto it = group_replicas->find(partition.group);
-                if (it == group_replicas->end()) {
+                auto it = group_replicas.value().find(partition.group);
+                if (it == group_replicas.value().end()) {
                     vlog(
                       clusterlog.info,
                       "skipping partition without replicas in health report: "
@@ -1036,7 +1039,7 @@ leader_balancer::index_type leader_balancer::build_index(
                 auto it = std::find_if(
                   replicas.cbegin(),
                   replicas.cend(),
-                  [node = *leader_node](const auto& replica) {
+                  [node = leader_node.value()](const auto& replica) {
                       return replica.node_id == node;
                   });
 
@@ -1045,7 +1048,8 @@ leader_balancer::index_type leader_balancer::build_index(
                     _last_leader.insert_or_assign(
                       partition.group,
                       last_known_leader{
-                        *leader_core, clock_type::now() + _mute_timeout()});
+                        leader_core.value(),
+                        clock_type::now() + _mute_timeout()});
                 } else {
                     vlog(
                       clusterlog.info,
@@ -1100,7 +1104,7 @@ leader_balancer::index_type leader_balancer::build_index(
                 _muted.try_emplace(partition.group, clock_type::now());
             }
 
-            index[*leader_core][partition.group] = std::move(replicas);
+            index[leader_core.value()][partition.group] = std::move(replicas);
         }
     }
 
@@ -1140,7 +1144,8 @@ leader_balancer::do_transfer_local(reassignment transfer) const {
         co_return false;
     }
 
-    auto func = [transfer, shard = *shard](cluster::partition_manager& pm) {
+    auto func = [transfer,
+                 shard = shard.value()](cluster::partition_manager& pm) {
         auto partition = pm.partition_for(transfer.group);
         if (!partition) {
             vlog(
@@ -1170,7 +1175,8 @@ leader_balancer::do_transfer_local(reassignment transfer) const {
               return ss::make_ready_future<bool>(true);
           });
     };
-    co_return co_await _partition_manager.invoke_on(*shard, std::move(func));
+    co_return co_await _partition_manager.invoke_on(
+      shard.value(), std::move(func));
 }
 
 /**

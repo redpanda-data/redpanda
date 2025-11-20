@@ -66,11 +66,11 @@ struct hash<datalake::record_schema_components> {
         size_t h = 0;
         if (c.key_identifier.has_value()) {
             boost::hash_combine(
-              h, hash<datalake::schema_identifier>()(*c.key_identifier));
+              h, hash<datalake::schema_identifier>()(c.key_identifier.value()));
         }
         if (c.val_identifier.has_value()) {
             boost::hash_combine(
-              h, hash<datalake::schema_identifier>()(*c.val_identifier));
+              h, hash<datalake::schema_identifier>()(c.val_identifier.value()));
         }
         return h;
     }

@@ -105,13 +105,13 @@ record_generator::add_random_protobuf_record(
         co_return error{
           fmt::format("Unable to find schema def for id: {}", schema_id)};
     }
-    if (schema_def->type() != schema_type::protobuf) {
+    if (schema_def.value().type() != schema_type::protobuf) {
         co_return error{fmt::format(
-          "Schema {} has wrong type: {}", name, schema_def->type())};
+          "Schema {} has wrong type: {}", name, schema_def.value().type())};
     }
 
-    auto protobuf_def = schema_def
-                          ->visit(
+    auto protobuf_def = schema_def.value()
+                          .visit(
                             ss::make_visitor(
                               [](const avro_schema_definition&)
                                 -> std::optional<protobuf_schema_definition> {

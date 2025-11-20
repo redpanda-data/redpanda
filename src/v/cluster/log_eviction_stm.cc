@@ -255,7 +255,7 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::replicate_command(
     try {
         if (as) {
             result = co_await ssx::with_timeout_abortable(
-              std::move(fut), deadline, *as);
+              std::move(fut), deadline, as.value());
         } else {
             result = co_await ss::with_timeout(deadline, std::move(fut));
         }
@@ -285,7 +285,7 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::replicate_command(
     auto applied = co_await wait_no_throw(
       result.value().last_offset, deadline, as);
     if (!applied) {
-        if (as && as->get().abort_requested()) {
+        if (as && as.value().get().abort_requested()) {
             co_return errc::shutting_down;
         }
         co_return errc::timeout;

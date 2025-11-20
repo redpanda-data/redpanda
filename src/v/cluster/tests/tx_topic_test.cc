@@ -32,11 +32,11 @@ FIXTURE_TEST(test_tm_stm_new_tx, redpanda_thread_fixture) {
       model::tx_manager_nt);
 
     BOOST_REQUIRE(
-      cfg->properties.retention_duration.value()
+      cfg.value().properties.retention_duration.value()
       == config::shard_local_cfg()
            .transaction_coordinator_delete_retention_ms());
     BOOST_REQUIRE(
-      cfg->properties.segment_size.value()
+      cfg.value().properties.segment_size.value()
       == config::shard_local_cfg().transaction_coordinator_log_segment_size());
 
     /**
@@ -50,7 +50,7 @@ FIXTURE_TEST(test_tm_stm_new_tx, redpanda_thread_fixture) {
         auto cfg = app.controller->get_topics_state().local().get_topic_cfg(
           model::tx_manager_nt);
 
-        return new_segment_size == cfg->properties.segment_size.value();
+        return new_segment_size == cfg.value().properties.segment_size.value();
     });
 
     static std::chrono::milliseconds new_retention_ms(100000);
@@ -61,13 +61,15 @@ FIXTURE_TEST(test_tm_stm_new_tx, redpanda_thread_fixture) {
         auto cfg = app.controller->get_topics_state().local().get_topic_cfg(
           model::tx_manager_nt);
 
-        return new_retention_ms == cfg->properties.retention_duration.value();
+        return new_retention_ms
+               == cfg.value().properties.retention_duration.value();
     });
 
     cfg = app.controller->get_topics_state().local().get_topic_cfg(
       model::tx_manager_nt);
     // segment size should state the same
-    BOOST_REQUIRE_EQUAL(new_segment_size, cfg->properties.segment_size.value());
+    BOOST_REQUIRE_EQUAL(
+      new_segment_size, cfg.value().properties.segment_size.value());
     /**
      * Change both properties at once
      */
@@ -83,8 +85,10 @@ FIXTURE_TEST(test_tm_stm_new_tx, redpanda_thread_fixture) {
         auto cfg = app.controller->get_topics_state().local().get_topic_cfg(
           model::tx_manager_nt);
 
-        return newer_retention_ms == cfg->properties.retention_duration.value()
-               && cfg->properties.segment_size.value() == newer_segment_size;
+        return newer_retention_ms
+                 == cfg.value().properties.retention_duration.value()
+               && cfg.value().properties.segment_size.value()
+                    == newer_segment_size;
     });
 }
 
@@ -104,7 +108,8 @@ FIXTURE_TEST(test_tm_stm_eviction, redpanda_thread_fixture) {
     BOOST_REQUIRE(tx_mgr_prt != nullptr);
 
     // Start a tx and roll to the next segment.
-    auto tx_stm = tx_mgr_prt->raft()->stm_manager()->get<cluster::tm_stm>();
+    auto tx_stm
+      = tx_mgr_prt->raft()->stm_manager().value().get<cluster::tm_stm>();
     auto pid = model::producer_identity{1, 0};
     auto op_code = tx_stm
                      ->register_new_producer(

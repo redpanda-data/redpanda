@@ -342,11 +342,11 @@ public:
             auto md = app_0.metadata_cache.local().get_topic_metadata(
               result.tp_ns);
             return md
-                   && md->get_assignments().size()
+                   && md.value().get_assignments().size()
                         == static_cast<size_t>(partitions)
                    && std::all_of(
-                     md->get_assignments().begin(),
-                     md->get_assignments().end(),
+                     md.value().get_assignments().begin(),
+                     md.value().get_assignments().end(),
                      [&](const cluster::assignments_set::value_type& p) {
                          return leaders.get_leader(tp_ns, p.second.id);
                      });
@@ -376,7 +376,7 @@ public:
         if (!current_leader) {
             co_return;
         }
-        auto& leader_app = _instances.at(*current_leader).get()->app;
+        auto& leader_app = _instances.at(current_leader.value()).get()->app;
         auto partition = leader_app.partition_manager.local().get(ntp);
         RPTEST_REQUIRE_CORO(partition);
         auto current_leader_id = current_leader.value()();

@@ -54,7 +54,7 @@ ss::future<> wait_for_leaders(
          * Partition space is contiguous, use integer range to iterate over all
          * topic partitions.
          */
-        int32_t partition_count = md->get().get_assignments().size();
+        int32_t partition_count = md.value().get().get_assignments().size();
         co_await ss::max_concurrent_for_each(
           std::views::iota(0, partition_count),
           64,

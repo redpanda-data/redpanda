@@ -51,7 +51,7 @@ admin_server::get_transactions_handler(std::unique_ptr<ss::http::request> req) {
     }
 
     co_return co_await _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       [ntp = std::move(ntp), req = std::move(req), this](
         cluster::partition_manager& pm) mutable {
           return get_transactions_inner_handler(
@@ -166,7 +166,7 @@ admin_server::mark_transaction_expired_handler(
     }
 
     co_return co_await _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       [_ntp = std::move(ntp), pid, _req = std::move(req), this](
         cluster::partition_manager& pm) mutable
         -> ss::future<ss::json::json_return_type> {
@@ -487,7 +487,7 @@ admin_server::force_set_partition_replicas_handler(
 
     const auto current_assignment = topics.get_partition_assignment(ntp);
     if (current_assignment) {
-        const auto& current_replicas = current_assignment->replicas;
+        const auto& current_replicas = current_assignment.value().replicas;
         if (
           current_replicas == replicas && in_progress_it == in_progress.end()) {
             vlog(
@@ -548,7 +548,7 @@ admin_server::toggle_append_entries_error_injection(
     }
 
     co_return co_await _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       [ntp = std::move(ntp), inject](cluster::partition_manager& pm) mutable
         -> ss::future<ss::json::json_return_type> {
           auto partition = pm.get(ntp);
@@ -581,7 +581,7 @@ admin_server::set_partition_replicas_handler(
     // For a no-op change, just return success here, to avoid doing
     // all the raft writes and consensus restarts for a config change
     // that will do nothing.
-    if (current_assignment && current_assignment->replicas == replicas) {
+    if (current_assignment && current_assignment.value().replicas == replicas) {
         vlog(
           adminlog.info,
           "Request to change ntp {} replica set to {}, no change",
@@ -707,7 +707,7 @@ admin_server::offset_for_leader_epoch_handler(
           fmt::format, "Partition {} not found on this node", ntp));
     }
     auto [offset, current_epoch] = co_await _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       [ntp = std::move(ntp), epoch](cluster::partition_manager& pm) mutable {
           return ss::do_with(
             kafka::make_partition_proxy(ntp, pm),
@@ -723,8 +723,8 @@ admin_server::offset_for_leader_epoch_handler(
                         "Partition {} not found on this node",
                         ntp)));
                 }
-                auto current_epoch = proxy->leader_epoch();
-                return proxy->get_leader_epoch_last_offset(epoch).then(
+                auto current_epoch = proxy.value().leader_epoch();
+                return proxy.value().get_leader_epoch_last_offset(epoch).then(
                   [current_epoch](std::optional<model::offset> offset) {
                       return std::make_pair(offset, current_epoch);
                   });
@@ -956,7 +956,7 @@ build_controller_partition(cluster::metadata_cache& cache) {
         a.node_id = leader_opt.value();
         a.core = cluster::controller_stm_shard;
         p.replicas.push(a);
-        p.leader_id = *leader_opt;
+        p.leader_id = leader_opt.value();
     }
     // special case, controller is raft group 0
     p.raft_group_id = 0;
@@ -1006,17 +1006,17 @@ admin_server::get_partition_handler(std::unique_ptr<ss::http::request> req) {
             ntp);
 
         if (assignment) {
-            for (auto& r : assignment->replicas) {
+            for (auto& r : assignment.value().replicas) {
                 ss::httpd::partition_json::assignment a;
                 a.node_id = r.node_id;
                 a.core = r.shard;
                 p.replicas.push(a);
             }
-            p.raft_group_id = assignment->group;
+            p.raft_group_id = assignment.value().group;
         }
         auto leader = _metadata_cache.local().get_leader_id(ntp);
         if (leader) {
-            p.leader_id = *leader;
+            p.leader_id = leader.value();
         }
 
         p.disabled = _controller->get_topics_state().local().is_disabled(ntp);
@@ -1054,7 +1054,7 @@ admin_server::get_topic_partitions_handler(
     }
     using partition_t = ss::httpd::partition_json::partition;
     chunked_vector<partition_t> partitions;
-    const auto& assignments = tp_md->get().get_assignments();
+    const auto& assignments = tp_md.value().get().get_assignments();
     partitions.reserve(assignments.size());
 
     const auto* disabled_set
@@ -1075,7 +1075,7 @@ admin_server::get_topic_partitions_handler(
         }
         auto leader = _metadata_cache.local().get_leader_id(tp_ns, p_as.id);
         if (leader) {
-            p.leader_id = *leader;
+            p.leader_id = leader.value();
         }
         p.disabled = disabled_set && disabled_set->is_disabled(p_as.id);
         partitions.push_back(std::move(p));

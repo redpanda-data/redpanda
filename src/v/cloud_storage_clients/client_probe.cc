@@ -58,9 +58,9 @@ void client_probe::register_failure(
   s3_error_code err, std::optional<op_type_tag> op_type) {
     if (err == s3_error_code::slow_down) {
         if (op_type) {
-            if (*op_type == op_type_tag::upload) {
+            if (op_type.value() == op_type_tag::upload) {
                 _total_upload_slowdowns += 1;
-            } else if (*op_type == op_type_tag::download) {
+            } else if (op_type.value() == op_type_tag::download) {
                 _total_download_slowdowns += 1;
             }
         }
@@ -81,9 +81,9 @@ void client_probe::register_failure(abs_error_code err) {
 void client_probe::register_retryable_failure(
   std::optional<op_type_tag> op_type) {
     if (op_type) {
-        if (*op_type == op_type_tag::upload) {
+        if (op_type.value() == op_type_tag::upload) {
             _total_upload_slowdowns += 1;
-        } else if (*op_type == op_type_tag::download) {
+        } else if (op_type.value() == op_type_tag::download) {
             _total_download_slowdowns += 1;
         }
     }

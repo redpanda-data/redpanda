@@ -126,7 +126,7 @@ public:
         chunked_hash_set<ss::sstring> paths;
         chunked_vector<iceberg::manifest_file> files;
 
-        for (auto& s : *table.snapshots) {
+        for (auto& s : table.snapshots.value()) {
             auto m_list = co_await io.download_manifest_list(
               s.manifest_list_path);
             for (auto& f : m_list.assume_value().files) {
@@ -326,9 +326,9 @@ TEST_F(MetadataQueryTest, TestQueryManifests) {
     // it should only contain 3 snapshots as they contain manifest we are
     // looking for
     ASSERT_EQ(snapshots.size(), 3);
-    ASSERT_EQ(snapshots[0], (*tx.table().snapshots)[2]);
-    ASSERT_EQ(snapshots[1], (*tx.table().snapshots)[3]);
-    ASSERT_EQ(snapshots[2], (*tx.table().snapshots)[4]);
+    ASSERT_EQ(snapshots[0], (tx.table().snapshots.value())[2]);
+    ASSERT_EQ(snapshots[1], (tx.table().snapshots.value())[3]);
+    ASSERT_EQ(snapshots[2], (tx.table().snapshots.value())[4]);
 
     auto all_manifest_files = collect_all_manifest_files(tx.table()).get();
 
@@ -416,7 +416,7 @@ TEST_F(MetadataQueryTest, TestCombinedQuery) {
     auto [snapshots, files, manifests] = execute_for_all_results(
       tx.table(), s_matcher, mf_matcher);
     ASSERT_EQ(snapshots.size(), 1);
-    ASSERT_EQ(snapshots[0], tx.table().snapshots->at(4));
+    ASSERT_EQ(snapshots[0], tx.table().snapshots.value().at(4));
     ASSERT_EQ(files.size(), 1);
     auto all_manifest_files = collect_all_manifest_files(tx.table()).get();
     ASSERT_EQ(files[0], all_manifest_files[2]);

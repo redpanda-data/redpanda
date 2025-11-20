@@ -105,7 +105,9 @@ ss::future<> snapshot_manager::remove_partial_snapshots() {
         R"(^{}\.partial\.(\d+)\.([a-zA-Z0-9]{{4}})$)", _partial_prefix));
     return directory_walker::walk(
       _dir.string(), [this, re = std::move(re)](ss::directory_entry ent) {
-          if (!ent.type || *ent.type != ss::directory_entry_type::regular) {
+          if (
+            !ent.type
+            || ent.type.value() != ss::directory_entry_type::regular) {
               return ss::now();
           }
           std::cmatch match;

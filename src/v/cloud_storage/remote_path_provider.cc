@@ -38,7 +38,7 @@ ss::sstring remote_path_provider::topic_manifest_prefix(
   const model::topic_namespace& topic) const {
     const auto& tp_ns = _topic_namespace_override.value_or(topic);
     if (label_.has_value()) {
-        return labeled_topic_manifest_prefix(*label_, tp_ns);
+        return labeled_topic_manifest_prefix(label_.value(), tp_ns);
     }
     return prefixed_topic_manifest_prefix(tp_ns);
 }
@@ -47,7 +47,7 @@ ss::sstring remote_path_provider::topic_manifest_path(
   const model::topic_namespace& topic, model::initial_revision_id rev) const {
     const auto& tp_ns = _topic_namespace_override.value_or(topic);
     if (label_.has_value()) {
-        return labeled_topic_manifest_path(*label_, tp_ns, rev);
+        return labeled_topic_manifest_path(label_.value(), tp_ns, rev);
     }
     return prefixed_topic_manifest_bin_path(tp_ns);
 }
@@ -66,14 +66,14 @@ ss::sstring remote_path_provider::partition_manifest_prefix(
     std::optional<model::ntp> ntp_override;
     if (_topic_namespace_override.has_value()) {
         ntp_override = model::ntp(
-          _topic_namespace_override->ns,
-          _topic_namespace_override->tp,
+          _topic_namespace_override.value().ns,
+          _topic_namespace_override.value().tp,
           ntp.tp.partition);
     }
     const auto& maybe_overridden_ntp = ntp_override.value_or(ntp);
     if (label_.has_value()) {
         return labeled_partition_manifest_prefix(
-          *label_, maybe_overridden_ntp, rev);
+          label_.value(), maybe_overridden_ntp, rev);
     }
     return prefixed_partition_manifest_prefix(maybe_overridden_ntp, rev);
 }
@@ -102,8 +102,8 @@ std::optional<ss::sstring> remote_path_provider::partition_manifest_path_json(
     std::optional<model::ntp> ntp_override;
     if (_topic_namespace_override.has_value()) {
         ntp_override = model::ntp(
-          _topic_namespace_override->ns,
-          _topic_namespace_override->tp,
+          _topic_namespace_override.value().ns,
+          _topic_namespace_override.value().tp,
           ntp.tp.partition);
     }
     const auto& maybe_overridden_ntp = ntp_override.value_or(ntp);
@@ -138,14 +138,14 @@ ss::sstring remote_path_provider::segment_path(
     std::optional<model::ntp> ntp_override;
     if (_topic_namespace_override.has_value()) {
         ntp_override = model::ntp(
-          _topic_namespace_override->ns,
-          _topic_namespace_override->tp,
+          _topic_namespace_override.value().ns,
+          _topic_namespace_override.value().tp,
           ntp.tp.partition);
     }
     const auto& maybe_overridden_ntp = ntp_override.value_or(ntp);
     if (label_.has_value()) {
         return labeled_segment_path(
-          *label_,
+          label_.value(),
           maybe_overridden_ntp,
           rev,
           segment_name,
@@ -165,7 +165,7 @@ ss::sstring remote_path_provider::topic_lifecycle_marker_path(
   const model::topic_namespace& topic, model::initial_revision_id rev) const {
     const auto& tp_ns = _topic_namespace_override.value_or(topic);
     if (label_.has_value()) {
-        return labeled_topic_lifecycle_marker_path(*label_, tp_ns, rev);
+        return labeled_topic_lifecycle_marker_path(label_.value(), tp_ns, rev);
     }
     return prefixed_topic_lifecycle_marker_path(tp_ns, rev);
 }

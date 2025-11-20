@@ -21,9 +21,9 @@ void check_license(const features::feature_table& ft) {
     if (ft.should_sanction()) {
         const auto& license = ft.get_license();
         auto status = [&license]() {
-            return !license.has_value()    ? "not present"
-                   : license->is_expired() ? "expired"
-                                           : "unknown error";
+            return !license.has_value()           ? "not present"
+                   : license.value().is_expired() ? "expired"
+                                                  : "unknown error";
         };
         throw serde::pb::rpc::failed_precondition_exception(
           fmt::format("Invalid license: {}", status()));
@@ -40,11 +40,11 @@ std::optional<model::node_id> redirect_to_leader(
           ssx::sformat("Partition {} does not have a leader", ntp)};
     }
 
-    if (*leader_node == self) {
+    if (leader_node.value() == self) {
         return std::nullopt;
     }
 
-    return *leader_node;
+    return leader_node.value();
 }
 
 } // namespace admin::utils

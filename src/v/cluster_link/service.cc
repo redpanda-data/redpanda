@@ -52,22 +52,23 @@ struct shard_report_reducer {
             result = std::move(shard_result);
             return;
         }
-        if (result->err_code != ::cluster_link::errc::success) {
+        if (result.value().err_code != ::cluster_link::errc::success) {
             // once we have an error, we just keep it
             return;
         }
         if (shard_result.err_code != ::cluster_link::errc::success) {
-            result->err_code = shard_result.err_code;
+            result.value().err_code = shard_result.err_code;
             // no need to populate further results
             return;
         }
         // capture the minimum revision seen across the shards. Usually all
         // shards should have the same revision, so this is a conservative
         // check.
-        result->link_update_revision = std::min(
-          result->link_update_revision, shard_result.link_update_revision);
+        result.value().link_update_revision = std::min(
+          result.value().link_update_revision,
+          shard_result.link_update_revision);
         for (auto& leader : shard_result.leaders) {
-            result->leaders.push_back(std::move(leader));
+            result.value().leaders.push_back(std::move(leader));
         }
         return;
     }
@@ -76,9 +77,9 @@ struct shard_report_reducer {
         if (!result) {
             return std::nullopt;
         }
-        if (result->err_code != ::cluster_link::errc::success) {
-            result->leaders.clear();
-            result->link_update_revision = {};
+        if (result.value().err_code != ::cluster_link::errc::success) {
+            result.value().leaders.clear();
+            result.value().link_update_revision = {};
         }
         return std::move(result);
     }
@@ -94,19 +95,19 @@ struct shard_link_report_reducer {
         }
         if (
           shard_result.err_code != ::cluster_link::errc::success
-          && result->err_code == ::cluster_link::errc::success) {
+          && result.value().err_code == ::cluster_link::errc::success) {
             // Keep the first error we see
-            result->err_code = shard_result.err_code;
+            result.value().err_code = shard_result.err_code;
         }
         for (auto& [topic, response] : shard_result.topic_responses) {
-            auto& existing = result->topic_responses[topic];
+            auto& existing = result.value().topic_responses[topic];
             existing.status = response.status;
             for (auto& [pid, report] : response.partition_reports) {
                 existing.partition_reports.emplace(pid, std::move(report));
             }
         }
         for (auto& [task_name, reports] : shard_result.task_status_reports) {
-            auto& existing = result->task_status_reports[task_name];
+            auto& existing = result.value().task_status_reports[task_name];
             for (auto& report : reports) {
                 existing.push_back(std::move(report));
             }
@@ -335,10 +336,10 @@ public:
             return std::nullopt;
         }
         return data_source::source_partition_offsets_report{
-          .source_start_offset = offsets->log_start_offset,
-          .source_hwm = offsets->high_watermark,
-          .source_lso = offsets->last_stable_offset,
-          .update_time = offsets->last_offset_update_timestamp,
+          .source_start_offset = offsets.value().log_start_offset,
+          .source_hwm = offsets.value().high_watermark,
+          .source_lso = offsets.value().last_stable_offset,
+          .update_time = offsets.value().last_offset_update_timestamp,
         };
     }
 
@@ -403,7 +404,8 @@ public:
       , _id_allocator_frontend(id_alloc)
       , _stm(_partition->raft()
                ->stm_manager()
-               ->get<kafka::write_at_offset_stm>()) {
+               .value()
+               .get<kafka::write_at_offset_stm>()) {
         vassert(
           _stm,
           "write_at_offset_stm not attached to partition {}",
@@ -678,7 +680,7 @@ public:
             }
             try {
                 auto offset = co_await fetch_offset_for_timestamp(
-                  rcn, ntp.tp, *ts_opt);
+                  rcn, ntp.tp, ts_opt.value());
                 if (offset) {
                     co_return offset.value();
                 }
@@ -698,7 +700,7 @@ public:
                   log_level,
                   "Exception fetching offset for timestamp {} for {}, "
                   "attempt: {}, error: {}",
-                  *ts_opt,
+                  ts_opt.value(),
                   ntp,
                   rcn.retry_count(),
                   ex);
@@ -725,7 +727,7 @@ private:
             vlog(cllog.warn, "[{}] No leader found for partition", tp);
             co_return std::nullopt;
         }
-        auto [leader_id, leader_epoch] = *leader_and_epoch;
+        auto [leader_id, leader_epoch] = leader_and_epoch.value();
         kafka::list_offsets_request req;
         req.data.replica_id = ::model::node_id{-1}; // normal consumer
         req.data.isolation_level = 1;               // read committed only
@@ -740,7 +742,7 @@ private:
           });
 
         auto resp = co_await _cluster.dispatch_to(
-          leader_id, std::move(req), *api_version);
+          leader_id, std::move(req), api_version.value());
         if (resp.data.topics.empty()) {
             vlog(cllog.warn, "[{}] No topics in ListOffsets response", tp);
             co_return std::nullopt;
@@ -836,7 +838,7 @@ private:
         if (!link_md_opt) {
             return std::nullopt;
         }
-        const auto& link_md = link_md_opt->get();
+        const auto& link_md = link_md_opt.value().get();
         auto mirror_it = link_md.state.mirror_topics.find(ntp.tp.topic);
         if (mirror_it == link_md.state.mirror_topics.end()) {
             return std::nullopt;
@@ -1124,9 +1126,10 @@ void service::register_notifications() {
           const ::model::ntp& ntp,
           std::optional<cluster::partition_change_notifier::partition_state>
             partition) {
-            auto is_leader = partition && partition->is_leader ? ntp_leader::yes
-                                                               : ntp_leader::no;
-            auto term = partition ? std::make_optional(partition->term)
+            auto is_leader = partition && partition.value().is_leader
+                               ? ntp_leader::yes
+                               : ntp_leader::no;
+            auto term = partition ? std::make_optional(partition.value().term)
                                   : std::nullopt;
             using ntype = cluster::partition_change_notifier::notification_type;
             switch (type) {
@@ -1252,7 +1255,7 @@ rpc::shadow_topic_report_response service::shard_local_topic_report(
         return ::cluster_link::rpc::shadow_topic_report_response{
           .err_code = errc::link_id_not_found};
     }
-    const auto& topics = md->get().state.mirror_topics;
+    const auto& topics = md.value().get().state.mirror_topics;
     if (topics.find(topic) == topics.end()) {
         return ::cluster_link::rpc::shadow_topic_report_response{
           .err_code = errc::topic_not_being_mirrored};
@@ -1311,8 +1314,8 @@ service::node_local_shadow_topic_report(
       topic);
     auto result = std::move(reducer).get();
     if (result) {
-        result->node_id = _self;
-        co_return std::move(*result);
+        result.value().node_id = _self;
+        co_return std::move(result.value());
     }
     vlog(
       cllog.error,
@@ -1456,7 +1459,7 @@ service::node_local_shadow_link_report(
     auto result = std::move(reducer).get();
     if (result) {
         vlog(cllog.trace, "shadow link report for node {}: {}", _self, *result);
-        co_return std::move(*result);
+        co_return std::move(result.value());
     }
     vlog(
       cllog.error,

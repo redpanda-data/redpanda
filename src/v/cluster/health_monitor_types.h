@@ -553,7 +553,8 @@ struct get_node_health_reply
     get_node_health_reply copy() const {
         return {
           .error = error,
-          .report = report ? std::optional{report->copy()} : std::nullopt,
+          .report = report ? std::optional{report.value().copy()}
+                           : std::nullopt,
         };
     }
 

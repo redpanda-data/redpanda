@@ -127,8 +127,9 @@ public:
             co_return std::move(empty);
         }
         auto& table = load_res.value();
-        co_return table.snapshots.has_value() ? std::move(*table.snapshots)
-                                              : std::move(empty);
+        co_return table.snapshots.has_value()
+          ? std::move(table.snapshots.value())
+          : std::move(empty);
     }
 
     bool has_object(const iceberg::uri& uri) const {

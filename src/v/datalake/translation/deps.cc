@@ -287,7 +287,8 @@ std::chrono::milliseconds calculate_target_lag(
     if (!topic_cfg.has_value()) {
         return default_lag;
     }
-    return topic_cfg->properties.iceberg_target_lag_ms.value_or(default_lag);
+    return topic_cfg.value().properties.iceberg_target_lag_ms.value_or(
+      default_lag);
 }
 kafka::offset calculate_min_offset_for_translation(
   bool read_replica_mode, const kafka::partition_proxy& partition_proxy) {
@@ -321,7 +322,7 @@ public:
     explicit partition_data_source(
       ss::lw_shared_ptr<cluster::partition> partition)
       : _partition(std::move(partition))
-      , _stm(_partition->raft()->stm_manager()->get<translation_stm>())
+      , _stm(_partition->raft()->stm_manager().value().get<translation_stm>())
       , _partition_proxy(
           std::make_unique<kafka::partition_proxy>(
             kafka::make_partition_proxy(_partition)))
@@ -512,21 +513,21 @@ public:
                 _location_provider,
                 *_probe});
         }
-        return _in_progress_translation->translate_once(
+        return _in_progress_translation.value().translate_once(
           std::move(reader), start_offset, as);
     }
 
     size_t flushed_bytes() const final {
         size_t result = 0;
         if (_in_progress_translation) {
-            result = _in_progress_translation->flushed_bytes();
+            result = _in_progress_translation.value().flushed_bytes();
         }
         return result;
     }
 
     std::optional<kafka::offset> last_translated_offset() const final {
         return _in_progress_translation
-                 ? _in_progress_translation->last_translated_offset()
+                 ? _in_progress_translation.value().last_translated_offset()
                  : std::nullopt;
     }
 
@@ -543,7 +544,8 @@ public:
             // improvement could be to account for the fixed reservation cost
             // across flush calls and only release on finish.
             vlog(datalake_log.trace, "[{}] flushing writers", _ntp);
-            return _in_progress_translation->flush()
+            return _in_progress_translation.value()
+              .flush()
               .then_wrapped([](auto result_f) {
                   if (result_f.failed()) {
                       return ss::make_exception_future(
@@ -641,8 +643,8 @@ private:
         if (!topic_cfg) {
             return default_action;
         }
-        return topic_cfg->properties.iceberg_invalid_record_action.value_or(
-          default_action);
+        return topic_cfg.value()
+          .properties.iceberg_invalid_record_action.value_or(default_action);
     }
 
     local_path _writer_scratch_space;
@@ -705,7 +707,8 @@ public:
           std::make_unique<kafka::partition_proxy>(
             kafka::make_partition_proxy(_partition)))
       , _topics(topics)
-      , _stm(_partition->raft()->stm_manager()->get<translation_stm>()) {}
+      , _stm(_partition->raft()->stm_manager().value().get<translation_stm>()) {
+    }
 
     bool should_finish_inflight_translation() final {
         // we finish inflight translation if the lag greater than 90% of the
@@ -754,8 +757,8 @@ public:
             if (!_translation_target.has_value()) {
                 return no_lag;
             }
-            return std::chrono::milliseconds{
-              std::max<int64_t>(0, (now - _translation_target->ts).value())};
+            return std::chrono::milliseconds{std::max<int64_t>(
+              0, (now - _translation_target.value().ts).value())};
         }
 
         vlog(
@@ -809,7 +812,7 @@ public:
           _translation_target);
         if (
           _translation_target.has_value()
-          && translated_offset >= _translation_target->offset) {
+          && translated_offset >= _translation_target.value().offset) {
             _translation_target.reset();
         }
         // Reset inflight translation lto. The lag tracker is notified about
@@ -846,7 +849,7 @@ public:
               : kafka::next_offset(checkpointed_lto);
         if (_inflight_translation_lto) {
             next_to_translate = std::max(
-              kafka::next_offset(*_inflight_translation_lto),
+              kafka::next_offset(_inflight_translation_lto.value()),
               next_to_translate);
         }
         return _partition_proxy->estimate_size_between(
@@ -859,8 +862,8 @@ public:
             return std::nullopt;
         }
 
-        if (last_translated_offset >= _translation_target->offset) {
-            return _translation_target->ts;
+        if (last_translated_offset >= _translation_target.value().offset) {
+            return _translation_target.value().ts;
         }
 
         return std::nullopt;

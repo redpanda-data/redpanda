@@ -99,7 +99,7 @@ convert(conversion_context& ctx, const conversion::json_schema::subschema& s) {
         if (res.has_error()) {
             return res.error();
         } else if (res.value().has_value()) {
-            t = std::move(*res.value());
+            t = std::move(res.value().value());
         }
     }
 
@@ -108,7 +108,7 @@ convert(conversion_context& ctx, const conversion::json_schema::subschema& s) {
           fmt::format("Unsupported JSON conversion: missing type keyword"));
     }
 
-    if (*t == iceberg::string_type{} && s.format().has_value()) {
+    if (t.value() == iceberg::string_type{} && s.format().has_value()) {
         // If the type is string, we can have a format.
         switch (s.format().value()) {
         case conversion::json_schema::format::date_time:
@@ -119,11 +119,11 @@ convert(conversion_context& ctx, const conversion::json_schema::subschema& s) {
             return iceberg::time_type{};
         }
 
-        return std::move(*t);
+        return std::move(t.value());
     }
 
     return ss::visit(
-      *t,
+      t.value(),
       [](const iceberg::primitive_type& t)
         -> conversion_outcome<iceberg::field_type> { return t; },
       [&ctx, &s](
@@ -168,7 +168,8 @@ convert(conversion_context& ctx, const conversion::json_schema::subschema& s) {
 
           if (
             s.additional_properties()
-            && s.additional_properties()->get().boolean_subschema() != false) {
+            && s.additional_properties().value().get().boolean_subschema()
+                 != false) {
               return conversion_exception(
                 "Only 'false' subschema is supported "
                 "for additionalProperties keyword");
@@ -211,13 +212,13 @@ convert(conversion_context& ctx, const conversion::json_schema::subschema& s) {
 
                     if (!resolved_type.has_value()) {
                         resolved_type = std::move(item_res.value());
-                    } else if (*resolved_type != item_res.value()) {
+                    } else if (resolved_type.value() != item_res.value()) {
                         return conversion_exception(
                           fmt::format(
                             "List type items must have the same type, but "
                             "found "
                             "{} and {}",
-                            *resolved_type,
+                            resolved_type.value(),
                             item_res.value()));
                     }
                 }
@@ -230,14 +231,15 @@ convert(conversion_context& ctx, const conversion::json_schema::subschema& s) {
                     }
                     if (!resolved_type.has_value()) {
                         resolved_type = std::move(additional_item_res.value());
-                    } else if (*resolved_type != additional_item_res.value()) {
+                    } else if (
+                      resolved_type.value() != additional_item_res.value()) {
                         return conversion_exception(
                           fmt::format(
                             "List type items must have the same type, but "
                             "found "
                             "{} "
                             "and {}",
-                            *resolved_type,
+                            resolved_type.value(),
                             additional_item_res.value()));
                     }
                 }
@@ -251,7 +253,7 @@ convert(conversion_context& ctx, const conversion::json_schema::subschema& s) {
                 return iceberg::list_type::create(
                   placeholder_field_id,
                   iceberg::field_required::yes,
-                  std::move(*resolved_type));
+                  std::move(resolved_type.value()));
             });
       },
       [](iceberg::map_type&) -> conversion_outcome<iceberg::field_type> {

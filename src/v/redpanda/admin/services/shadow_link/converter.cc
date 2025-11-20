@@ -884,13 +884,13 @@ void starting_offset_to_proto(
         return;
     }
 
-    if (*ts == cluster_link::model::earliest_offset_ts) {
+    if (ts.value() == cluster_link::model::earliest_offset_ts) {
         options.set_start_at_earliest(
           topic_metadata_sync_options_earliest_offset{});
         return;
     }
 
-    if (*ts == cluster_link::model::latest_offset_ts) {
+    if (ts.value() == cluster_link::model::latest_offset_ts) {
         options.set_start_at_latest(
           topic_metadata_sync_options_latest_offset{});
         return;
@@ -945,7 +945,7 @@ schema_registry_sync_options create_schema_registry_sync_options(
     schema_registry_sync_options options;
     if (cfg.sync_schema_registry_topic_mode.has_value()) {
         ss::visit(
-          *cfg.sync_schema_registry_topic_mode,
+          cfg.sync_schema_registry_topic_mode.value(),
           [&options](
             const cluster_link::model::schema_registry_sync_config::
               shadow_entire_schema_registry&) {
@@ -1131,7 +1131,7 @@ void update_timestamps(
             return;
         }
         ss::visit(
-          *to.connection.authn_config,
+          to.connection.authn_config.value(),
           [&from](cluster_link::model::scram_credentials& c) {
               // If from does not hold SCRAM credentials, then update the
               // timestamp of when then password was set
@@ -1139,7 +1139,7 @@ void update_timestamps(
                 !from.connection.authn_config.has_value()
                 || !std::holds_alternative<
                    cluster_link::model::scram_credentials>(
-                  *from.connection.authn_config)) {
+                  from.connection.authn_config.value())) {
                   if (c.password.empty()) {
                       return;
                   }
@@ -1148,7 +1148,7 @@ void update_timestamps(
               }
               const auto& from_creds
                 = std::get<cluster_link::model::scram_credentials>(
-                  *from.connection.authn_config);
+                  from.connection.authn_config.value());
               // If the passwords do not match, then update the timestamp of
               // when the password was set
               if (from_creds.password != c.password) {
@@ -1165,7 +1165,7 @@ void update_timestamps(cluster_link::model::metadata& to) {
         return;
     }
     ss::visit(
-      *to.connection.authn_config,
+      to.connection.authn_config.value(),
       [](cluster_link::model::scram_credentials& c) {
           if (c.password.empty()) {
               return;

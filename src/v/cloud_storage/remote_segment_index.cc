@@ -89,7 +89,7 @@ std::
       encoder.get_initial_value(), encoder.get_row_count(), encoder.share());
     auto max_index = encoder.get_row_count() * details::FOR_buffer_depth - 1;
     auto maybe_ix = _find_under(std::move(decoder), upper_bound);
-    if (!maybe_ix || maybe_ix->ix == max_index) {
+    if (!maybe_ix || maybe_ix.value().ix == max_index) {
         auto ixend = _pos & index_mask;
         std::optional<find_result> candidate;
         for (size_t i = 0; i < ixend; i++) {
@@ -109,14 +109,14 @@ std::
         // we can't find anything inside the buffer.
         // maybe_ix will be null if the compressed chunk is empty.
         if (candidate) {
-            return *candidate;
+            return candidate.value();
         }
         if (!maybe_ix) {
             return std::monostate();
         }
     }
     // Invariant: maybe_ix here can't be nullopt
-    return *maybe_ix;
+    return maybe_ix.value();
 }
 
 std::optional<offset_index::find_result>
@@ -139,14 +139,14 @@ offset_index::find_rp_offset(model::offset upper_bound) {
             _kaf_index.copy());
           auto kaf_offset = _fetch_ix(std::move(kaf_dec), ix);
           vassert(kaf_offset.has_value(), "Inconsistent index state");
-          res.kaf_offset = kafka::offset(*kaf_offset);
+          res.kaf_offset = kafka::offset(kaf_offset.value());
           foffset_decoder_t file_dec(
             _file_index.get_initial_value(),
             _file_index.get_row_count(),
             _file_index.copy(),
             delta_delta_t(_min_file_pos_step));
           auto file_pos = _fetch_ix(std::move(file_dec), ix);
-          res.file_pos = *file_pos;
+          res.file_pos = file_pos.value();
           return res;
       });
 }
@@ -171,14 +171,14 @@ offset_index::find_kaf_offset(kafka::offset upper_bound) {
             _rp_index.copy());
           auto rp_offset = _fetch_ix(std::move(rp_dec), ix);
           vassert(rp_offset.has_value(), "Inconsistent index state");
-          res.rp_offset = model::offset(*rp_offset);
+          res.rp_offset = model::offset(rp_offset.value());
           foffset_decoder_t file_dec(
             _file_index.get_initial_value(),
             _file_index.get_row_count(),
             _file_index.copy(),
             delta_delta_t(_min_file_pos_step));
           auto file_pos = _fetch_ix(std::move(file_dec), ix);
-          res.file_pos = *file_pos;
+          res.file_pos = file_pos.value();
           return res;
       });
 }
@@ -225,9 +225,9 @@ offset_index::find_timestamp(model::timestamp upper_bound) {
           vassert(file_pos.has_value(), "Inconsistent index state");
 
           return offset_index::find_result{
-            .rp_offset = model::offset(*rp_offset),
-            .kaf_offset = kafka::offset(*kaf_offset),
-            .file_pos = *file_pos};
+            .rp_offset = model::offset(rp_offset.value()),
+            .kaf_offset = kafka::offset(kaf_offset.value()),
+            .file_pos = file_pos.value()};
       });
 }
 
@@ -472,19 +472,19 @@ void remote_segment_index_builder::consume_batch_start(
     // Update stats
     if (_stats.has_value()) {
         if (is_config) {
-            _stats->get().total_conf_records += delta;
+            _stats.value().get().total_conf_records += delta;
         } else {
-            _stats->get().total_data_records += delta;
+            _stats.value().get().total_data_records += delta;
         }
-        if (_stats->get().base_rp_offset == model::offset{}) {
-            _stats->get().base_rp_offset = hdr.base_offset;
+        if (_stats.value().get().base_rp_offset == model::offset{}) {
+            _stats.value().get().base_rp_offset = hdr.base_offset;
         }
-        _stats->get().last_rp_offset = hdr.last_offset();
-        if (_stats->get().base_timestamp == model::timestamp{}) {
-            _stats->get().base_timestamp = hdr.first_timestamp;
+        _stats.value().get().last_rp_offset = hdr.last_offset();
+        if (_stats.value().get().base_timestamp == model::timestamp{}) {
+            _stats.value().get().base_timestamp = hdr.first_timestamp;
         }
-        _stats->get().last_timestamp = hdr.max_timestamp;
-        _stats->get().size_bytes += hdr.size_bytes;
+        _stats.value().get().last_timestamp = hdr.max_timestamp;
+        _stats.value().get().size_bytes += hdr.size_bytes;
     }
 }
 

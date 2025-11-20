@@ -114,12 +114,12 @@ level_zero_log_reader_impl::maybe_load_slices_from_cache() {
             break;
         }
         vassert(
-          batch->base_offset() <= kafka::offset_cast(current)
-            && kafka::offset_cast(current) <= batch->last_offset(),
+          batch.value().base_offset() <= kafka::offset_cast(current)
+            && kafka::offset_cast(current) <= batch.value().last_offset(),
           "Unexpected batch for {}, got range: [{},{}] for offset {}",
           _ctp->ntp(),
-          batch->base_offset(),
-          batch->last_offset(),
+          batch.value().base_offset(),
+          batch.value().last_offset(),
           current);
         ret.push_back(std::move(batch.value()));
         materialized_bytes += batch_size;

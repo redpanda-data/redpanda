@@ -43,31 +43,31 @@ bool compaction_state::erase_contiguous_range_with_tombstones(
     }
     std::optional<compaction_state::cleaned_range_with_tombstones>
       replacement_begin;
-    if (tombstone_ranges->begin->base_offset != base_offset) {
+    if (tombstone_ranges.value().begin->base_offset != base_offset) {
         replacement_begin = compaction_state::cleaned_range_with_tombstones{
-          .base_offset = tombstone_ranges->begin->base_offset,
+          .base_offset = tombstone_ranges.value().begin->base_offset,
           .last_offset = kafka::prev_offset(base_offset),
           .cleaned_with_tombstones_at
-          = tombstone_ranges->begin->cleaned_with_tombstones_at,
+          = tombstone_ranges.value().begin->cleaned_with_tombstones_at,
         };
     }
     std::optional<compaction_state::cleaned_range_with_tombstones>
       replacement_last;
-    if (tombstone_ranges->last->last_offset != last_offset) {
+    if (tombstone_ranges.value().last->last_offset != last_offset) {
         replacement_last = compaction_state::cleaned_range_with_tombstones{
           .base_offset = kafka::next_offset(last_offset),
-          .last_offset = tombstone_ranges->last->last_offset,
+          .last_offset = tombstone_ranges.value().last->last_offset,
           .cleaned_with_tombstones_at
-          = tombstone_ranges->last->cleaned_with_tombstones_at,
+          = tombstone_ranges.value().last->cleaned_with_tombstones_at,
         };
     }
     cleaned_ranges_with_tombstones.erase(
-      tombstone_ranges->begin, std::next(tombstone_ranges->last));
+      tombstone_ranges.value().begin, std::next(tombstone_ranges.value().last));
     if (replacement_begin.has_value()) {
-        cleaned_ranges_with_tombstones.insert(*replacement_begin);
+        cleaned_ranges_with_tombstones.insert(replacement_begin.value());
     }
     if (replacement_last.has_value()) {
-        cleaned_ranges_with_tombstones.insert(*replacement_last);
+        cleaned_ranges_with_tombstones.insert(replacement_last.value());
     }
     return true;
 }
@@ -197,9 +197,9 @@ partition_state partition_state::copy() const {
       .extents = extents,
       .start_offset = start_offset,
       .next_offset = next_offset,
-      .compaction_state = compaction_state
-                            ? std::make_optional(compaction_state->copy())
-                            : std::nullopt,
+      .compaction_state = compaction_state ? std::make_optional(
+                                               compaction_state.value().copy())
+                                           : std::nullopt,
     };
     return res;
 }

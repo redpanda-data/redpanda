@@ -275,8 +275,8 @@ TEST(IndexState, IndexOverflow) {
     state.max_offset = model::offset{uint32_max + 10};
     auto res = state.find_nearest(model::offset(100));
     ASSERT_TRUE(res.has_value());
-    EXPECT_EQ(res->offset, model::offset{0});
-    EXPECT_EQ(res->filepos, 1);
+    EXPECT_EQ(res.value().offset, model::offset{0});
+    EXPECT_EQ(res.value().filepos, 1);
 }
 
 TEST(IndexState, NonDataTimestampsWithOverflow) {
@@ -339,6 +339,6 @@ TEST(IndexState, IndexOverflowTruncate) {
     // Queries for the offset should start from the beginning of the segment.
     auto res = state.find_nearest(model::offset(uint32_max + 1));
     ASSERT_TRUE(res.has_value());
-    EXPECT_EQ(res->offset, model::offset{0});
-    EXPECT_EQ(res->filepos, 1);
+    EXPECT_EQ(res.value().offset, model::offset{0});
+    EXPECT_EQ(res.value().filepos, 1);
 }

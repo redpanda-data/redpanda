@@ -52,13 +52,13 @@ partition_leaders_table::find_leader_meta(
 std::optional<model::node_id> partition_leaders_table::get_previous_leader(
   model::topic_namespace_view tp_ns, model::partition_id pid) const {
     const auto meta = find_leader_meta(tp_ns, pid);
-    return meta ? meta->get().previous_leader : std::nullopt;
+    return meta ? meta.value().get().previous_leader : std::nullopt;
 }
 
 std::optional<model::node_id> partition_leaders_table::get_leader(
   model::topic_namespace_view tp_ns, model::partition_id pid) const {
     const auto meta = find_leader_meta(tp_ns, pid);
-    return meta ? meta->get().current_leader : std::nullopt;
+    return meta ? meta.value().get().current_leader : std::nullopt;
 }
 
 std::optional<model::node_id>
@@ -75,8 +75,8 @@ std::optional<leader_term> partition_leaders_table::get_leader_term(
   model::topic_namespace_view tp_ns, model::partition_id pid) const {
     const auto meta = find_leader_meta(tp_ns, pid);
     return meta ? std::make_optional<leader_term>(
-                    meta->get().current_leader,
-                    meta->get().last_stable_leader_term)
+                    meta.value().get().current_leader,
+                    meta.value().get().last_stable_leader_term)
                 : std::nullopt;
 }
 
@@ -264,7 +264,7 @@ void partition_leaders_table::do_update_partition_leader(
           p_id,
           model::ntp(t_it->first.ns, t_it->first.tp, p_id),
           term,
-          *leader_id);
+          leader_id.value());
     }
 }
 
@@ -310,7 +310,7 @@ ss::future<model::node_id> partition_leaders_table::wait_for_leader(
   ss::lowres_clock::time_point timeout,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
     if (auto leader = get_leader(ntp); leader.has_value()) {
-        return ss::make_ready_future<model::node_id>(*leader);
+        return ss::make_ready_future<model::node_id>(leader.value());
     }
     auto holder = _gate.hold();
     auto promise = ss::make_lw_shared<expiring_promise<model::node_id>>();

@@ -271,7 +271,7 @@ sharded_store::has_schema(subject_schema schema, include_deleted inc_del) {
         try {
             auto res = co_await get_subject_schema(schema.sub(), ver, inc_del);
             if (
-              (!found || res.id > found->id)
+              (!found || res.id > found.value().id)
               && schema.def() == res.schema.def()) {
                 auto id = res.id;
                 found.emplace(match{.sub_schema = std::move(res), .id = id});
@@ -296,7 +296,7 @@ sharded_store::has_schema(subject_schema schema, include_deleted inc_del) {
     if (!found.has_value()) {
         throw as_exception(schema_not_found());
     }
-    co_return std::move(found->sub_schema);
+    co_return std::move(found.value().sub_schema);
 }
 
 ss::future<std::optional<schema_definition>>
@@ -458,7 +458,7 @@ ss::future<chunked_vector<schema_id>> sharded_store::referenced_by(
     // Ensure the subject exists
     auto versions = co_await get_versions(sub, include_deleted::no);
     if (opt_ver.has_value()) {
-        ver = *opt_ver;
+        ver = opt_ver.value();
         auto version_not_found = std::none_of(
           versions.begin(), versions.end(), [ver](const auto& v) {
               return ver == v;

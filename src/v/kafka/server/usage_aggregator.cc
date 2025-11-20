@@ -76,10 +76,11 @@ restore_from_disk(storage::kvstore& kvstore) {
     }
     return persisted_state{
       .configured_period = serde::from_iobuf<std::chrono::seconds>(
-        std::move(*period)),
-      .configured_windows = serde::from_iobuf<size_t>(std::move(*windows)),
+        std::move(period.value())),
+      .configured_windows = serde::from_iobuf<size_t>(
+        std::move(windows.value())),
       .current_state = serde::from_iobuf<chunked_vector<usage_window>>(
-        std::move(*data))};
+        std::move(data.value()))};
 }
 
 static ss::future<> clear_persisted_state(storage::kvstore& kvstore) {
@@ -222,8 +223,8 @@ ss::future<> usage_aggregator<clock_type>::start() {
     bool successfully_restored = false;
     if (state) {
         if (
-          state->configured_period != _usage_window_width_interval
-          || state->configured_windows != _usage_num_windows) {
+          state.value().configured_period != _usage_window_width_interval
+          || state.value().configured_windows != _usage_num_windows) {
             vlog(
               klog.info,
               "Persisted usage state had been configured with different "
@@ -232,7 +233,7 @@ ss::future<> usage_aggregator<clock_type>::start() {
             co_await clear_persisted_state(_kvstore);
         } else {
             successfully_restored = true;
-            reset_state(std::move(state->current_state));
+            reset_state(std::move(state.value().current_state));
         }
     }
 
@@ -391,19 +392,20 @@ void usage_aggregator<clock_type>::reset_state(
             }
         }
         vassert(open_index, "Data serialization was incorrect");
-        _current_window = *open_index;
+        _current_window = open_index.value();
         /// Optimization to begin picking up if wall time is within
         /// window interval
-        const auto begin = std::chrono::seconds(buckets[*open_index].begin);
+        const auto begin = std::chrono::seconds(
+          buckets[open_index.value()].begin);
         const auto now_ts = timestamp_t::now();
         const auto now = std::chrono::seconds(epoch_time_secs(now_ts));
         const auto delta = now - begin;
         if (delta >= _usage_window_width_interval) {
             /// Close window and open a new one
             const auto begin_ts = typename timestamp_t::time_point(begin);
-            buckets[*open_index].end = epoch_time_secs(
+            buckets[open_index.value()].end = epoch_time_secs(
               begin_ts + _usage_window_width_interval);
-            _current_window = (*open_index + 1) % buckets.size();
+            _current_window = (open_index.value() + 1) % buckets.size();
             const auto diff_secs = std::chrono::seconds(
               epoch_time_secs(now_ts) % _usage_window_width_interval.count());
             buckets[_current_window].reset(epoch_time_secs(now_ts - diff_secs));

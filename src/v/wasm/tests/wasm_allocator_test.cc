@@ -44,7 +44,7 @@ TEST(HeapAllocatorParamsTest, SizeIsAligned) {
                     .maximum = std::numeric_limits<size_t>::max()})
                  .get();
     ASSERT_TRUE(mem.has_value());
-    EXPECT_EQ(mem->size, page_size * 2);
+    EXPECT_EQ(mem.value().size, page_size * 2);
 }
 
 TEST(HeapAllocatorTest, CanAllocateOne) {
@@ -58,7 +58,7 @@ TEST(HeapAllocatorTest, CanAllocateOne) {
     auto mem
       = allocator.allocate({.minimum = page_size, .maximum = page_size}).get();
     ASSERT_TRUE(mem.has_value());
-    EXPECT_EQ(mem->size, page_size);
+    EXPECT_EQ(mem.value().size, page_size);
 }
 
 TEST(HeapAllocatorTest, MustAllocateWithinBounds) {
@@ -110,13 +110,13 @@ TEST(HeapAllocatorTest, CanReturnMemoryToThePool) {
     for (int i = 0; i < 3; ++i) {
         auto mem = allocator.allocate(req).get();
         ASSERT_TRUE(mem.has_value());
-        allocated.push_back(std::move(*mem));
+        allocated.push_back(std::move(mem.value()));
     }
     auto mem = allocator.allocate(req).get();
     EXPECT_FALSE(mem.has_value());
     mem = std::move(allocated.back());
     allocated.pop_back();
-    allocator.deallocate(std::move(*mem), /*used_amount=*/0);
+    allocator.deallocate(std::move(mem.value()), /*used_amount=*/0);
     mem = allocator.allocate(req).get();
     EXPECT_TRUE(mem.has_value());
     mem = allocator.allocate(req).get();
@@ -211,8 +211,8 @@ TEST(HeapAllocatorTest, MemoryIsZeroFilled) {
     auto allocated = allocator.allocate(req).get();
     ASSERT_TRUE(allocated.has_value());
     EXPECT_THAT(allocated, Optional(HeapIsZeroed()));
-    std::fill_n(allocated->data.get(), 4, 1);
-    allocator.deallocate(*std::move(allocated), 4);
+    std::fill_n(allocated.value().data.get(), 4, 1);
+    allocator.deallocate(std::move(allocated).value(), 4);
 
     allocated = allocator.allocate(req).get();
     ASSERT_TRUE(allocated.has_value());

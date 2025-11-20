@@ -279,7 +279,7 @@ cluster_health_report cluster_health_report::copy() const {
 get_cluster_health_reply get_cluster_health_reply::copy() const {
     get_cluster_health_reply reply{.error = error};
     if (report.has_value()) {
-        reply.report = report->copy();
+        reply.report = report.value().copy();
     }
     return reply;
 }

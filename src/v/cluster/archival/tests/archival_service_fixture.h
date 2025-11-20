@@ -282,7 +282,7 @@ public:
             BOOST_REQUIRE(pa.has_value());
         }
         std::vector<model::broker_shard> result;
-        for (const auto& r : pa->replicas) {
+        for (const auto& r : pa.value().replicas) {
             result.push_back(r);
         }
         return result;
@@ -560,7 +560,7 @@ public:
             vlog(arch_fixture_log.warn, "Partition {} is leaderless", ntp);
             return;
         }
-        auto leader_node = get(*current_leader);
+        auto leader_node = get(current_leader.value());
         leader_node->partition_manager
           .invoke_on_all([ntp](cluster::partition_manager& pm) {
               auto part = pm.get(ntp);

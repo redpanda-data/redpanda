@@ -244,8 +244,8 @@ public:
         }
         opt_ref leader;
         wait_for_leader(leader).get();
-        leader->get().crd.notify_leadership(
-          leader->get().stm.raft()->self().id());
+        leader.value().get().crd.notify_leadership(
+          leader.value().get().stm.raft()->self().id());
     }
     void TearDown() override {
         ss::parallel_for_each(crds, [](auto& crd) {
@@ -302,7 +302,7 @@ public:
         }
 
         co_await parallel_for_each_node([committed_offset](auto& node) {
-            return node.raft()->stm_manager()->wait(
+            return node.raft()->stm_manager().value().wait(
               committed_offset, model::no_timeout);
         });
     }
@@ -316,14 +316,13 @@ public:
             co_await ss::sleep(10ms);
             opt_ref leader_opt;
             ASSERT_NO_FATAL_FAILURE_CORO(co_await wait_for_leader(leader_opt));
-            auto& leader_stm = leader_opt->get().stm;
-            leader_opt->get().crd.notify_leadership(
+            auto& leader_stm = leader_opt.value().get().stm;
+            leader_opt.value().get().crd.notify_leadership(
               leader_stm.raft()->self().id());
             auto prt_state = leader_stm.state().partition_state(tp);
-            auto num_entries = prt_state
-                                 ? prt_state->get().pending_entries.size()
-                                 : 0;
-            auto committed = prt_state ? prt_state->get().last_committed
+            auto num_entries
+              = prt_state ? prt_state.value().get().pending_entries.size() : 0;
+            auto committed = prt_state ? prt_state.value().get().last_committed
                                        : std::nullopt;
             if (param().noop_commits) {
                 // If we're not committing, wwe can expect the list of entries
@@ -358,7 +357,7 @@ public:
 TEST_F(CoordinatorTest, TestAddFilesHappyPath) {
     opt_ref leader_opt;
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
-    auto& leader = leader_opt->get();
+    auto& leader = leader_opt.value().get();
     const auto tp00 = tp(0, 0);
     const auto tp01 = tp(0, 1);
     const model::revision_id rev0{1};
@@ -428,7 +427,7 @@ TEST_F(CoordinatorTest, TestAddFilesHappyPath) {
 TEST_F(CoordinatorTest, TestLastAddedHappyPath) {
     opt_ref leader_opt;
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
-    auto& leader = leader_opt->get();
+    auto& leader = leader_opt.value().get();
     const auto tp00 = tp(0, 0);
     const auto tp01 = tp(0, 1);
     const model::revision_id rev{1};
@@ -463,7 +462,7 @@ TEST_F(CoordinatorTest, TestNotLeader) {
         }
     }
     ASSERT_TRUE(non_leader_opt.has_value());
-    auto& non_leader = non_leader_opt->get();
+    auto& non_leader = non_leader_opt.value().get();
     const auto tp00 = tp(0, 0);
     const model::revision_id rev{1};
     register_in_topic_tables(tp00.topic, rev);
@@ -520,7 +519,7 @@ TEST_P(CoordinatorTestWithParams, TestConcurrentAddFiles) {
             f.get();
         }
         if (chaos) {
-            chaos->get();
+            chaos.value().get();
         }
     });
     RPTEST_REQUIRE_EVENTUALLY(60s, [&done] { return done; });
@@ -528,13 +527,13 @@ TEST_P(CoordinatorTestWithParams, TestConcurrentAddFiles) {
         EXPECT_NO_FATAL_FAILURE(f.get());
     }
     if (chaos) {
-        EXPECT_NO_FATAL_FAILURE(chaos->get());
+        EXPECT_NO_FATAL_FAILURE(chaos.value().get());
     }
     stop.cancel();
     opt_ref leader_opt;
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
-    leader_opt->get().crd.notify_leadership(
-      leader_opt->get().stm.raft()->self().id());
+    leader_opt.value().get().crd.notify_leadership(
+      leader_opt.value().get().stm.raft()->self().id());
     if (args.noop_commits) {
         // Since there's no commits, we should have no committed offset, and
         // all our files should be pending.
@@ -550,7 +549,7 @@ TEST_P(CoordinatorTestWithParams, TestConcurrentAddFiles) {
         RPTEST_REQUIRE_EVENTUALLY(60s, [&] {
             for (auto& crd : crds) {
                 auto tp_state = crd->stm.state().partition_state(tp00);
-                if (tp_state->get().last_committed == back_offset) {
+                if (tp_state.value().get().last_committed == back_offset) {
                     return true;
                 }
             }
@@ -601,7 +600,7 @@ public:
 TEST_F(CoordinatorLoopTest, TestCommitFilesHappyPath) {
     opt_ref leader_opt;
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
-    auto& leader = leader_opt->get();
+    auto& leader = leader_opt.value().get();
     const auto tp00 = tp(0, 0);
     const model::revision_id rev0{1};
     register_in_topic_tables(tp00.topic, rev0);
@@ -614,10 +613,10 @@ TEST_F(CoordinatorLoopTest, TestCommitFilesHappyPath) {
     RPTEST_REQUIRE_EVENTUALLY(1s, [&] {
         auto tp_state = leader.stm.state().partition_state(tp00);
         return tp_state.has_value()
-               && tp_state->get().last_committed == kafka::offset{100};
+               && tp_state.value().get().last_committed == kafka::offset{100};
     });
     ASSERT_NO_FATAL_FAILURE(
-      check_partition(leader_opt->get().stm.state(), tp00, 100, {}));
+      check_partition(leader_opt.value().get().stm.state(), tp00, 100, {}));
     wait_for_apply().get();
     // The same state should be on all replicas.
     for (auto& c : crds) {
@@ -629,10 +628,10 @@ TEST_F(CoordinatorLoopTest, TestCommitFilesNotLeader) {
     // Stop leadership, to end the ongoing background loop.
     opt_ref leader_opt;
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
-    leader_opt->get().stm.raft()->step_down("test").get();
+    leader_opt.value().get().stm.raft()->step_down("test").get();
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
 
-    auto& leader = leader_opt->get();
+    auto& leader = leader_opt.value().get();
     const auto tp00 = tp(0, 0);
     const model::revision_id rev0{1};
     register_in_topic_tables(tp00.topic, rev0);
@@ -647,18 +646,18 @@ TEST_F(CoordinatorLoopTest, TestCommitFilesNotLeader) {
     // We're leader, but we haven't kicked off the leadership notification, so
     // no commits should happen.
     ASSERT_NO_FATAL_FAILURE(check_partition(
-      leader_opt->get().stm.state(), tp00, std::nullopt, {{0, 100}}));
+      leader_opt.value().get().stm.state(), tp00, std::nullopt, {{0, 100}}));
 
     // The background loop should mark the files as committed in the STM.
-    leader_opt->get().crd.notify_leadership(
-      leader_opt->get().stm.raft()->self().id());
+    leader_opt.value().get().crd.notify_leadership(
+      leader_opt.value().get().stm.raft()->self().id());
     RPTEST_REQUIRE_EVENTUALLY(1s, [&] {
         auto tp_state = leader.stm.state().partition_state(tp00);
         return tp_state.has_value()
-               && tp_state->get().last_committed == kafka::offset{100};
+               && tp_state.value().get().last_committed == kafka::offset{100};
     });
     ASSERT_NO_FATAL_FAILURE(
-      check_partition(leader_opt->get().stm.state(), tp00, 100, {}));
+      check_partition(leader_opt.value().get().stm.state(), tp00, 100, {}));
     wait_for_apply().get();
     // The same state should be on all replicas.
     for (auto& c : crds) {
@@ -675,26 +674,26 @@ TEST_F(CoordinatorLoopTest, TestCommitFilesNotLeader) {
     RPTEST_REQUIRE_EVENTUALLY(1s, [&] {
         auto tp_state = leader.stm.state().partition_state(tp00);
         return tp_state.has_value()
-               && tp_state->get().last_committed == kafka::offset{200};
+               && tp_state.value().get().last_committed == kafka::offset{200};
     });
 
     // The background work stops though once we aren't the leader, provided we
     // don't notify the leader again.
     leader.stm.raft()->step_down("test").get();
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
-    auto& new_leader = leader_opt->get();
+    auto& new_leader = leader_opt.value().get();
     add_res = new_leader.crd
                 .sync_add_files(tp00, rev0, make_pending_files({{201, 300}}))
                 .get();
     ASSERT_FALSE(add_res.has_error()) << add_res.error();
     wait_for_apply().get();
-    ASSERT_NO_FATAL_FAILURE(
-      check_partition(leader_opt->get().stm.state(), tp00, 200, {{201, 300}}));
+    ASSERT_NO_FATAL_FAILURE(check_partition(
+      leader_opt.value().get().stm.state(), tp00, 200, {{201, 300}}));
 
     // No background work!
     ss::sleep(500ms).get();
-    ASSERT_NO_FATAL_FAILURE(
-      check_partition(leader_opt->get().stm.state(), tp00, 200, {{201, 300}}));
+    ASSERT_NO_FATAL_FAILURE(check_partition(
+      leader_opt.value().get().stm.state(), tp00, 200, {{201, 300}}));
 }
 
 class CoordinatorSleepingLoopTest : public CoordinatorTest {
@@ -713,7 +712,7 @@ public:
 TEST_F(CoordinatorSleepingLoopTest, TestQuickShutdownOnLeadershipChange) {
     opt_ref leader_opt;
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
-    auto& leader = leader_opt->get();
+    auto& leader = leader_opt.value().get();
     for (int i = 0; i < 100; i++) {
         auto t = tp(i, 0);
         auto rev = model::revision_id{i};

@@ -54,11 +54,11 @@ public:
         const auto fs = *begin();
         spillover_manifest_path_components c{
           .base = fs.base_offset,
-          .last = ls->committed_offset,
+          .last = ls.value().committed_offset,
           .base_kafka = fs.base_kafka_offset(),
-          .next_kafka = ls->next_kafka_offset(),
+          .next_kafka = ls.value().next_kafka_offset(),
           .base_ts = fs.base_timestamp,
-          .last_ts = ls->max_timestamp,
+          .last_ts = ls.value().max_timestamp,
         };
         return filename(c);
     }

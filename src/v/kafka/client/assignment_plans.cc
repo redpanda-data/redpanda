@@ -79,7 +79,7 @@ assignments assignment_range::plan(
               api_version_for(metadata_request::api_type::key)
                 < api_version(12),
               "topic::name is nullable in v12+");
-            auto& rtm = assignments[*mem_it][*t.name];
+            auto& rtm = assignments[*mem_it][t.name.value()];
             rtm.reserve(std::distance(p_begin, p_end));
             std::transform(
               p_begin, p_end, std::back_inserter(rtm), [](auto& p) {

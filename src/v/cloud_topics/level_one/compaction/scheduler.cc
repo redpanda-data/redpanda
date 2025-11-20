@@ -100,7 +100,7 @@ compaction_scheduler::unmanage_partition(model::ntp ntp, std::string_view ctx) {
           ntp);
     }
 
-    auto& tidp = tidp_entry->second;
+    auto& tidp = tidp_entry.value().second;
 
     vlog(
       compaction_log.info,

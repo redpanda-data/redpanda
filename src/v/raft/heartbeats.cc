@@ -21,7 +21,7 @@ namespace raft {
 void heartbeat_request_v2::add(const group_heartbeat& hb) {
     if (hb.data) {
         _full_heartbeats.push_back(
-          full_heartbeat{.group = hb.group, .data = *hb.data});
+          full_heartbeat{.group = hb.group, .data = hb.data.value()});
     } else {
         _lw_heartbeats.add(hb.group);
     }

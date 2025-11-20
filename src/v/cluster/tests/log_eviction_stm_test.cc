@@ -20,7 +20,7 @@ public:
       : cluster::log_eviction_stm(c, logger, kvs) {}
 
     ss::future<> stop() override {
-        p->set_exception(ss::abort_requested_exception());
+        p.value().set_exception(ss::abort_requested_exception());
         return cluster::log_eviction_stm::stop();
     }
 
@@ -39,7 +39,7 @@ public:
         logger.info("eviction_stm waiting on storage event");
         vassert(!p.has_value(), "Cannot have value");
         p = ss::promise<model::offset>();
-        return p->get_future();
+        return p.value().get_future();
     }
 
     void drive_eviction_loop(model::offset o) {
@@ -50,7 +50,7 @@ public:
         tests::cooperative_spin_wait_with_timeout(5s, [this] {
             return p.has_value();
         }).get();
-        p->set_value(o);
+        p.value().set_value(o);
         p.reset();
     }
 
@@ -92,7 +92,7 @@ TEST_F(eviction_stm_fixture, test_eviction_stm_deadlock) {
     /// Fufills the promise causing the monitor_log_eviction loop to continue
     const auto highest_term0_offset = offsets[0].dirty_offset;
     auto eviction_stm
-      = leader.raft()->stm_manager()->get<test_log_eviction_stm>();
+      = leader.raft()->stm_manager().value().get<test_log_eviction_stm>();
     eviction_stm->drive_eviction_loop(highest_term0_offset);
     auto next_start_offset = highest_term0_offset + model::offset(1);
     /// Wait until the effect has proceeded, i.e. a snapshot has been taken

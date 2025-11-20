@@ -93,7 +93,7 @@ public:
 TEST_F(e2e_fixture, test_create_cloud_topic) {
     auto partition = app.partition_manager.local().get(ntp);
     ASSERT_TRUE(
-      partition->raft()->stm_manager()->get<cloud_topics::ctp_stm>()
+      partition->raft()->stm_manager().value().get<cloud_topics::ctp_stm>()
       != nullptr);
 }
 
@@ -220,13 +220,13 @@ TEST_F(e2e_fixture, timequery) {
     auto partition = app.partition_manager.local().get(ntp);
     auto state = partition->get_cloud_topics_state();
     ASSERT_NE(state, nullptr);
-    auto topic_id = partition->get_topic_config()->get().tp_id;
+    auto topic_id = partition->get_topic_config().value().get().tp_id;
     ASSERT_NE(topic_id, std::nullopt);
     RPTEST_REQUIRE_EVENTUALLY(30s, [this, state, topic_id]() {
         // Expect eventually we don't get a missing ntp error.
         return state->local()
           .get_l1_metastore()
-          ->get_offsets({*topic_id, ntp.tp.partition})
+          ->get_offsets({topic_id.value(), ntp.tp.partition})
           .then([](auto result) { return result.has_value(); });
     });
     // Retry now that the data is in L1

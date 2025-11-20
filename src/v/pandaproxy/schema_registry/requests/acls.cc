@@ -43,7 +43,7 @@ T parse_security_enum(std::string_view value, std::string_view type_name) {
           error_code::acl_invalid,
           fmt::format("Invalid {}: {}", type_name, value));
     }
-    return *result;
+    return result.value();
 }
 
 } // namespace

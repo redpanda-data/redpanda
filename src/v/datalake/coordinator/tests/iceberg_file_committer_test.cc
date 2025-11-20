@@ -144,7 +144,7 @@ public:
         const auto& table = load_res.value();
         ASSERT_TRUE(table.current_snapshot_id.has_value());
         auto cur_snap = table.get_snapshots_by_id().at(
-          *table.current_snapshot_id);
+          table.current_snapshot_id.value());
         ASSERT_NO_FATAL_FAILURE(get_snap_data_files(cur_snap, uris));
     }
 
@@ -205,7 +205,7 @@ TEST_F(FileCommitterTest, TestMissingTable) {
     // The table should be created.
     ASSERT_FALSE(load_res.has_error());
     ASSERT_TRUE(load_res.value().snapshots.has_value());
-    ASSERT_EQ(0, load_res.value().snapshots->size());
+    ASSERT_EQ(0, load_res.value().snapshots.value().size());
 
     // Now try again with some data.
     state.topic_to_state[topic] = make_topic_state(
@@ -224,7 +224,7 @@ TEST_F(FileCommitterTest, TestMissingTable) {
     ASSERT_EQ(1, table.partition_specs.size());
     ASSERT_EQ(1, table.partition_specs[0].fields.size());
     ASSERT_TRUE(table.snapshots.has_value());
-    ASSERT_EQ(1, table.snapshots->size());
+    ASSERT_EQ(1, table.snapshots.value().size());
 
     // Now drop the table and try to commit. This should fail, but at least
     // shouldn't crash.
@@ -658,7 +658,7 @@ TEST_F(FileCommitterTest, TestDeduplicateConcurrently) {
 
     // Check that each snapshot does not contain duplicates.
     size_t max_num_files = 0;
-    for (const auto& snap : *table.snapshots) {
+    for (const auto& snap : table.snapshots.value()) {
         chunked_vector<ss::sstring> uris;
         ASSERT_NO_FATAL_FAILURE(get_snap_data_files(snap, &uris));
 

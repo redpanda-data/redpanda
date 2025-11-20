@@ -143,7 +143,7 @@ table_metadata parse_table_meta(const json::Value& v) {
                     m.value.GetType()));
             }
             const auto& val_str = m.value.GetString();
-            properties->emplace(m.name.GetString(), val_str);
+            properties.value().emplace(m.name.GetString(), val_str);
         }
     }
     std::optional<snapshot_id> current_snapshot_id;
@@ -157,7 +157,7 @@ table_metadata parse_table_meta(const json::Value& v) {
     if (snapshots_json.has_value()) {
         snapshots.emplace();
         for (const auto& s : snapshots_json.value()) {
-            snapshots->emplace_back(parse_snapshot(s));
+            snapshots.value().emplace_back(parse_snapshot(s));
         }
     }
     chunked_vector<sort_order> sort_orders;
@@ -179,7 +179,7 @@ table_metadata parse_table_meta(const json::Value& v) {
                     r.value.GetType()));
             }
             auto ref = parse_snapshot_ref(r.value);
-            refs->emplace(r.name.GetString(), ref);
+            refs.value().emplace(r.name.GetString(), ref);
         }
     }
 

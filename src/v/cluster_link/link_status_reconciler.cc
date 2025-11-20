@@ -195,7 +195,7 @@ link_status_reconciler::per_link_reconciler::reconcile_status_changes() {
         if (!link_md) {
             continue;
         }
-        const auto& md = link_md->get();
+        const auto& md = link_md.value().get();
         // check if there are any topics still not failing over
         chunked_vector<::model::topic> pending_failover_topics;
         const auto& mirror_topics = md.state.mirror_topics;
@@ -219,7 +219,7 @@ bool link_status_reconciler::per_link_reconciler::has_pending_reconciliations()
         // link no longer exists, will be cleaned up via notification
         return false;
     }
-    const auto& md = link_md->get();
+    const auto& md = link_md.value().get();
     const auto& mirror_topics = md.state.mirror_topics;
     for (const auto& [_, mt] : mirror_topics) {
         switch (mt.status) {

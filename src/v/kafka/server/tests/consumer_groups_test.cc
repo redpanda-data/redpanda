@@ -263,7 +263,7 @@ FIXTURE_TEST(offset_commit_and_fetch_request, consumer_offsets_fixture) {
               req.topics.emplace();
               for (const auto& [topic, partitions] :
                    committed_offsets.at(group_id)) {
-                  req.topics->push_back(
+                  req.topics.value().push_back(
                     {.name{topic},
                      .partition_indexes{
                        std::from_range, partitions | std::views::keys}});
@@ -394,7 +394,7 @@ FIXTURE_TEST(block_test, consumer_offsets_fixture) {
     model::ntp gntp(
       model::kafka_namespace,
       model::kafka_consumer_offsets_topic,
-      *g_partition);
+      g_partition.value());
 
     auto can_commit_offset = [&] {
         for (int _ : std::views::iota(0, 5)) {

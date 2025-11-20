@@ -66,7 +66,7 @@ apply_aws_credentials::apply_aws_credentials(aws_credentials credentials)
 std::error_code
 apply_aws_credentials::add_auth(http::client::request_header& header) const {
     if (_session_token) {
-        std::string_view token = (*_session_token)();
+        std::string_view token = (_session_token.value())();
         if (!is_test_token(token)) {
             header.insert(
               aws_header_names::x_amz_security_token,

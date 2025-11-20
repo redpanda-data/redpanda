@@ -56,7 +56,7 @@ public:
     ss::future<> stop() {
         if (ss::this_shard_id() == 0 && _loop) {
             _as.request_abort();
-            co_await *std::exchange(_loop, std::nullopt);
+            co_await std::exchange(_loop, std::nullopt).value();
         }
         co_await _queue.shutdown();
         chunked_vector<ss::future<std::monostate>> stop_futs;
@@ -148,7 +148,7 @@ private:
         }
         auto target_rf = cluster::replication_factor(
           _controller->internal_topic_replication());
-        if (*rf != target_rf) {
+        if (rf.value() != target_rf) {
             vlog(
               cd_log.info,
               "updating {} replication factor to {}",
@@ -270,7 +270,8 @@ private:
             co_return;
         }
         auto domain_mgr = ss::make_lw_shared<domain_manager>(
-          (*partition)->raft()->stm_manager()->get<simple_stm>(), _object_io);
+          (*partition)->raft()->stm_manager().value().get<simple_stm>(),
+          _object_io);
         domain_mgr->start();
         _domains.emplace(dm_id, std::move(domain_mgr));
     }

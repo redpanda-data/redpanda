@@ -119,7 +119,7 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
     }
     auto err = app.controller->get_feature_manager()
                  .local()
-                 .update_license(std::move(*opt_license))
+                 .update_license(std::move(opt_license.value()))
                  .get();
     ASSERT_TRUE(!err);
 
@@ -481,22 +481,24 @@ TEST_F(ClusterRecoveryBackendTest, TestRecoverMissingTopicManifest) {
           = app.controller->get_topics_state().local().get_topic_metadata(
             remote_tp_ns);
         ASSERT_TRUE(tp_meta.has_value());
-        const auto& tp_cfg = tp_meta->get_configuration();
+        const auto& tp_cfg = tp_meta.value().get_configuration();
         ASSERT_EQ(1, tp_cfg.partition_count);
         ASSERT_TRUE(tp_cfg.is_recovery_enabled());
 
         // The restored cluster has a different history recorded in its
         // controller than the original cluster; the revision id assigned to
         // the topic should be different.
-        ASSERT_NE(tp_meta->get_revision(), orig_tp_revision);
+        ASSERT_NE(tp_meta.value().get_revision(), orig_tp_revision);
 
         // The remove properties, however, should be the same as the original.
         ASSERT_TRUE(tp_cfg.properties.remote_topic_properties.has_value());
         ASSERT_EQ(
           orig_tp_revision,
-          tp_cfg.properties.remote_topic_properties->remote_revision());
+          tp_cfg.properties.remote_topic_properties.value().remote_revision());
         ASSERT_EQ(
-          1, tp_cfg.properties.remote_topic_properties->remote_partition_count);
+          1,
+          tp_cfg.properties.remote_topic_properties.value()
+            .remote_partition_count);
 
         // Even though we didn't upload any partition manifests, the restored
         // partitions should exist and have appropriate remote properties.

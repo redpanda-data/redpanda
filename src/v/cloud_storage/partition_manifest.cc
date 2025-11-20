@@ -97,8 +97,8 @@ parse_segment_name(const segment_name& name) {
         return std::nullopt;
     }
     return segment_name_components{
-      .base_offset = parsed->base_offset,
-      .term = parsed->term,
+      .base_offset = parsed.value().base_offset,
+      .term = parsed.value().term,
     };
 }
 
@@ -179,11 +179,11 @@ model::offset partition_manifest::get_last_offset() const {
 
 std::optional<kafka::offset> partition_manifest::get_last_kafka_offset() const {
     const auto next_kafka_offset = get_next_kafka_offset();
-    if (!next_kafka_offset || *next_kafka_offset == kafka::offset{0}) {
+    if (!next_kafka_offset || next_kafka_offset.value() == kafka::offset{0}) {
         return std::nullopt;
     }
 
-    return *next_kafka_offset - kafka::offset{1};
+    return next_kafka_offset.value() - kafka::offset{1};
 }
 
 std::optional<kafka::offset> partition_manifest::get_next_kafka_offset() const {
@@ -191,7 +191,7 @@ std::optional<kafka::offset> partition_manifest::get_next_kafka_offset() const {
     if (!last_seg.has_value()) {
         return std::nullopt;
     }
-    return last_seg->next_kafka_offset();
+    return last_seg.value().next_kafka_offset();
 }
 
 model::offset partition_manifest::get_insync_offset() const {
@@ -486,7 +486,7 @@ bool partition_manifest::contains(const segment_name& name) const {
         throw std::runtime_error(
           fmt_with_ctx(fmt::format, "can't parse segment name \"{}\"", name));
     }
-    return _segments.contains(maybe_key->base_offset);
+    return _segments.contains(maybe_key.value().base_offset);
 }
 
 bool partition_manifest::segment_with_offset_range_exists(
@@ -627,14 +627,14 @@ void partition_manifest::set_archive_clean_offset(
 
         if (truncation_point) {
             vassert(
-              _archive_clean_offset >= *truncation_point,
+              _archive_clean_offset >= truncation_point.value(),
               "[{}] Attempt to prefix truncate the spillover manifest list "
               "above "
               "the archive clean offest: {} > {}",
               display_name(),
-              *truncation_point,
+              truncation_point.value(),
               _archive_clean_offset);
-            _spillover_manifests.prefix_truncate(*truncation_point);
+            _spillover_manifests.prefix_truncate(truncation_point.value());
         }
     }
 
@@ -863,7 +863,7 @@ partition_manifest::add(const segment_name& name, const segment_meta& meta) {
           fmt_with_ctx(fmt::format, "can't parse segment name \"{}\"", name));
     }
     auto m = meta;
-    m.segment_term = maybe_key->term;
+    m.segment_term = maybe_key.value().term;
     return add(m);
 }
 
@@ -1157,12 +1157,12 @@ segment_meta partition_manifest::make_manifest_metadata() const {
       .base_offset = get_start_offset().value(),
       .committed_offset = get_last_offset(),
       .base_timestamp = begin()->base_timestamp,
-      .max_timestamp = last_segment()->max_timestamp,
+      .max_timestamp = last_segment().value().max_timestamp,
       .delta_offset = begin()->delta_offset,
       .ntp_revision = get_revision_id(),
       .archiver_term = begin()->segment_term,
-      .segment_term = last_segment()->segment_term,
-      .delta_offset_end = last_segment()->delta_offset_end,
+      .segment_term = last_segment().value().segment_term,
+      .delta_offset_end = last_segment().value().delta_offset_end,
       .sname_format = segment_name_format::v3,
       .metadata_size_hint = segments_metadata_bytes(),
     };
@@ -1213,7 +1213,8 @@ bool partition_manifest::safe_spillover_manifest(const segment_meta& meta) {
         return true;
     }
     if (
-      model::next_offset(_spillover_manifests.last_segment()->committed_offset)
+      model::next_offset(
+        _spillover_manifests.last_segment().value().committed_offset)
       == meta.base_offset) {
         return true;
     }
@@ -1244,7 +1245,7 @@ partition_manifest::get(const segment_name& name) const {
         throw std::runtime_error(
           fmt_with_ctx(fmt::format, "can't parse segment name \"{}\"", name));
     }
-    return get(maybe_key->base_offset);
+    return get(maybe_key.value().base_offset);
 }
 
 partition_manifest::const_iterator
@@ -1375,8 +1376,8 @@ struct partition_manifest_handler
                   _segment_name));
             }
             _segment_key = {
-              .base_offset = _parsed_segment_key->base_offset,
-              .term = _parsed_segment_key->term};
+              .base_offset = _parsed_segment_key.value().base_offset,
+              .term = _parsed_segment_key.value().term};
             if (_state == state::expect_segment_path) {
                 _state = state::expect_segment_meta_start;
             } else if (_state == state::expect_replaced_path) {
@@ -2017,7 +2018,7 @@ void partition_manifest::do_update(partition_manifest_handler&& handler) {
     }
 
     if (handler._archive_size_bytes) {
-        _archive_size_bytes = *handler._archive_size_bytes;
+        _archive_size_bytes = handler._archive_size_bytes.value();
     }
 
     if (handler._spillover) {
@@ -2178,7 +2179,7 @@ void partition_manifest::serialize_begin(
     }
     if (_last_scrubbed_offset != std::nullopt) {
         w.Key("last_scrubbed_offset");
-        w.Int64(static_cast<int64_t>(*_last_scrubbed_offset));
+        w.Int64(static_cast<int64_t>(_last_scrubbed_offset.value()));
     }
     if (_highest_producer_id != model::producer_id{}) {
         w.Key("highest_producer_id");
@@ -2546,7 +2547,7 @@ size_t partition_manifest::estimate_size_between(
         return 0;
     }
     size_t spillover_sz = 0;
-    if (begin < *stm_start_offset) {
+    if (begin < stm_start_offset.value()) {
         // 'begin' falls below the STM manifest, meaning the range includes
         // part of the spillover region: aggregate them.
         for (const auto& m : _spillover_manifests) {
@@ -2556,7 +2557,7 @@ size_t partition_manifest::estimate_size_between(
             }
         }
     }
-    if (end < *stm_start_offset) {
+    if (end < stm_start_offset.value()) {
         // 'end' falls below the STM manifest, mening the entire range was in
         // the spillover region and we can just return what we have.
         return spillover_sz;
@@ -2565,8 +2566,8 @@ size_t partition_manifest::estimate_size_between(
     // the STM manifest.
 
     size_t stm_sz = 0;
-    auto stm_end_offset = kafka::prev_offset(*stm_next_offset);
-    if (begin <= *stm_start_offset && end >= stm_end_offset) {
+    auto stm_end_offset = kafka::prev_offset(stm_next_offset.value());
+    if (begin <= stm_start_offset.value() && end >= stm_end_offset) {
         // The range covers the entire STM manifest -- no need to iterate.
         stm_sz = stm_region_size_bytes();
     } else {

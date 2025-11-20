@@ -205,46 +205,54 @@ auth_result authorizer::do_authorized(
           bool(_allow_empty_matches));
     }
 
-    auto check_access =
-      [this, &acls, &operation, &host, &resource_name](
-        acl_permission perm,
-        const security::acl_principal& user,
-        std::optional<const security::acl_principal_base*> role
-        = std::nullopt) -> std::optional<auth_result> {
-        vassert(
+    auto check_access
+      = [this, &acls, &operation, &host, &resource_name](
+          acl_permission perm,
+          const security::acl_principal& user,
+          std::optional<const security::acl_principal_base*> role
+          = std::nullopt) -> std::
+                            optional<auth_result> {
+                                vassert(
           !role
-            || (*role != nullptr && (*role)->type() == principal_type::role),
+            || (role.value() != nullptr && (role.value())->type() == principal_type::role),
           "Role principal should be non-null and have 'role' type if "
           "present");
-        const acl_principal_base& to_check = *role.value_or(&user);
-        bool is_allow = perm == acl_permission::allow;
-        std::optional<security::acl_match> entry;
-        if (is_allow) {
-            entry = acl_any_implied_ops_allowed(
-              acls, to_check, host, operation);
-        } else {
-            entry = acls.find(operation, to_check, host, perm);
-        }
-        if (!entry) {
-            return std::nullopt;
-        }
-        switch (to_check.type()) {
-        case principal_type::user:
-        case principal_type::ephemeral_user:
-            return auth_result::acl_match(
-              user, host, operation, resource_name, is_allow, *entry);
-        case principal_type::role:
-            return auth_result::role_acl_match(
-              user,
-              security::role_name{to_check.name_view()},
-              host,
-              operation,
-              resource_name,
-              is_allow,
-              *entry);
-        }
-        __builtin_unreachable();
-    };
+                                const acl_principal_base& to_check
+                                  = *role.value_or(&user);
+                                bool is_allow = perm == acl_permission::allow;
+                                std::optional<security::acl_match> entry;
+                                if (is_allow) {
+                                    entry = acl_any_implied_ops_allowed(
+                                      acls, to_check, host, operation);
+                                } else {
+                                    entry = acls.find(
+                                      operation, to_check, host, perm);
+                                }
+                                if (!entry) {
+                                    return std::nullopt;
+                                }
+                                switch (to_check.type()) {
+                                case principal_type::user:
+                                case principal_type::ephemeral_user:
+                                    return auth_result::acl_match(
+                                      user,
+                                      host,
+                                      operation,
+                                      resource_name,
+                                      is_allow,
+                                      entry.value());
+                                case principal_type::role:
+                                    return auth_result::role_acl_match(
+                                      user,
+                                      security::role_name{to_check.name_view()},
+                                      host,
+                                      operation,
+                                      resource_name,
+                                      is_allow,
+                                      entry.value());
+                                }
+                                __builtin_unreachable();
+                            };
 
     auto check_role_access =
       [this, &principal, &check_access](

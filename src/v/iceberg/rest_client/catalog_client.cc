@@ -188,7 +188,7 @@ catalog_client::maybe_configure(retry_chain_node& rtc) {
         }
     }
     if (!prefix && _warehouse) {
-        prefix = prefix_path{*_warehouse};
+        prefix = prefix_path{_warehouse.value()};
     }
     // TODO: use the config for more than just prefix setting.
     _path_components.reset_prefix(std::move(prefix));
@@ -234,7 +234,7 @@ catalog_client::acquire_token(retry_chain_node& rtc) {
     auto req_res = co_await perform_request(
       rtc,
       token_request,
-      custom_oauth2_server ? *creds.oauth2_server_uri : _endpoint,
+      custom_oauth2_server ? creds.oauth2_server_uri.value() : _endpoint,
       client_probe::endpoint::oauth_token,
       std::move(payload));
     if (!req_res.has_value()) {
@@ -263,7 +263,7 @@ ss::future<> catalog_client::shutdown() {
 ss::future<expected<ss::sstring>>
 catalog_client::ensure_token(retry_chain_node& rtc) {
     const bool need_token = !_oauth_token.has_value()
-                            || _oauth_token->expires_at
+                            || _oauth_token.value().expires_at
                                  < ss::lowres_clock::now();
     if (need_token) {
         co_return (co_await acquire_token(rtc))
@@ -272,7 +272,7 @@ catalog_client::ensure_token(retry_chain_node& rtc) {
               return t.access_token;
           });
     }
-    co_return _oauth_token->access_token;
+    co_return _oauth_token.value().access_token;
 }
 
 ss::future<expected<std::monostate>> catalog_client::maybe_add_bearer_auth(
@@ -287,7 +287,7 @@ ss::future<expected<std::monostate>> catalog_client::maybe_add_bearer_auth(
           _oauth_token.has_value(),
           "_oauth_token should have a value in auth mode {}",
           _auth_mode);
-        request.with_bearer_auth(_oauth_token->access_token);
+        request.with_bearer_auth(_oauth_token.value().access_token);
         break;
     }
     case config::datalake_catalog_auth_mode::oauth2: {
@@ -378,7 +378,7 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
         auto response_f = co_await ss::coroutine::as_future(
           _http_client->request_and_collect_response(
             std::move(request.value()),
-            payload.has_value() ? std::make_optional(payload->copy())
+            payload.has_value() ? std::make_optional(payload.value().copy())
                                 : std::nullopt));
 
         auto call_res = _retry_policy->should_retry(std::move(response_f));
@@ -548,7 +548,8 @@ ss::future<expected<std::monostate>> catalog_client::drop_table(
     http::rest_client::rest_entity::optional_query_params params;
     if (purge_requested.has_value()) {
         params.emplace();
-        params.value()["purgeRequested"] = *purge_requested ? "true" : "false";
+        params.value()["purgeRequested"] = purge_requested.value() ? "true"
+                                                                   : "false";
     }
 
     auto http_request = table(root_path(), ns)

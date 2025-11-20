@@ -98,7 +98,7 @@ void auth_refresh_bg_op::do_start_auth_refresh_op(
               "source {}: {}",
               _cloud_credentials_source,
               *_refresh_credentials);
-            _refresh_credentials->start();
+            _refresh_credentials.value().start();
         } catch (const std::exception& ex) {
             vlog(
               log.error,

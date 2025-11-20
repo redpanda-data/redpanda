@@ -49,8 +49,8 @@ stress_payload::stress_payload(stress_config cfg) {
             ssx::spawn_with_gate(_gate, [cfg, this] {
                 return run_count_fiber(
                   cfg.stack_depth.value_or(0),
-                  *cfg.min_spins_per_scheduling_point,
-                  *cfg.max_spins_per_scheduling_point);
+                  cfg.min_spins_per_scheduling_point.value(),
+                  cfg.max_spins_per_scheduling_point.value());
             });
         }
     }
@@ -60,8 +60,8 @@ stress_payload::stress_payload(stress_config cfg) {
         for (size_t i = 0; i < cfg.num_fibers; i++) {
             ssx::spawn_with_gate(_gate, [cfg, this] {
                 return run_delay_fiber(
-                  *cfg.min_ms_per_scheduling_point,
-                  *cfg.max_ms_per_scheduling_point);
+                  cfg.min_ms_per_scheduling_point.value(),
+                  cfg.max_ms_per_scheduling_point.value());
             });
         }
     }

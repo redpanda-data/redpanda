@@ -234,13 +234,13 @@ ss::sstring expect_movement(
         return "no reassignment occurred";
     }
 
-    check_valid(index, *reassignment);
+    check_valid(index, reassignment.value());
 
-    if (!(*reassignment == expected)) {
+    if (!(reassignment.value() == expected)) {
         return fmt::format(
           "Reassignment not as expected.\nExpected: {}\nActual:   {}\n",
           to_string(expected),
-          to_string(*reassignment));
+          to_string(reassignment.value()));
     }
 
     return "";

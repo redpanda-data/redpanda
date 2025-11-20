@@ -120,18 +120,19 @@ struct_accessor::get(const struct_value& parent_val) const {
     }
     if (inner_) {
         if (!std::holds_alternative<std::unique_ptr<struct_value>>(
-              *child_val)) {
+              child_val.value())) {
             throw std::invalid_argument("Unexpected non-struct value");
         }
         const auto& child_as_struct = std::get<std::unique_ptr<struct_value>>(
-          *child_val);
+          child_val.value());
         return inner_->get(*child_as_struct);
     }
-    if (!std::holds_alternative<primitive_value>(*child_val)) {
+    if (!std::holds_alternative<primitive_value>(child_val.value())) {
         throw std::invalid_argument(
-          fmt::format("Unexpected non-primitive value: {}", *child_val));
+          fmt::format("Unexpected non-primitive value: {}", child_val.value()));
     }
-    const primitive_value& prim_val = std::get<primitive_value>(*child_val);
+    const primitive_value& prim_val = std::get<primitive_value>(
+      child_val.value());
     if (!value_matches_type(prim_val, type_)) {
         throw std::invalid_argument(
           fmt::format("Expected value of {} type, got {}", type_, prim_val));

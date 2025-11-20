@@ -272,7 +272,7 @@ TEST_F_CORO(state_machine_fixture, test_recovery_without_snapshot) {
       10s,
       [](raft_node_instance& node) { return node.raft()->committed_offset(); });
 
-    co_await new_node.raft()->stm_manager()->wait(
+    co_await new_node.raft()->stm_manager().value().wait(
       committed_offset, model::no_timeout);
 
     ASSERT_EQ_CORO(kv_stm->state, expected);
@@ -325,7 +325,8 @@ TEST_F_CORO(state_machine_fixture, test_recovery_from_snapshot) {
     co_await parallel_for_each_node([snapshot_offset](raft_node_instance& n) {
         return n.raft()
           ->stm_manager()
-          ->take_snapshot(snapshot_offset)
+          .value()
+          .take_snapshot(snapshot_offset)
           .then([raft = n.raft(), snapshot_offset](
                   state_machine_manager::snapshot_result snapshot_result) {
               return raft->write_snapshot(
@@ -349,7 +350,7 @@ TEST_F_CORO(state_machine_fixture, test_recovery_from_snapshot) {
           return node.raft()->add_group_member(vn, model::revision_id{0});
       });
 
-    co_await new_node.raft()->stm_manager()->wait(
+    co_await new_node.raft()->stm_manager().value().wait(
       committed_offset, model::timeout_clock::now() + 20s);
 
     ASSERT_EQ_CORO(kv_stm->state, expected);
@@ -421,7 +422,7 @@ TEST_F_CORO(
           return node.raft()->add_group_member(vn, model::revision_id{0});
       });
     // wait for the state to be applied
-    co_await new_node.raft()->stm_manager()->wait(
+    co_await new_node.raft()->stm_manager().value().wait(
       committed_offset, model::timeout_clock::now() + 20s);
 
     simple_kv::state_t partial_expected_state;
@@ -505,15 +506,18 @@ TEST_F_CORO(state_machine_fixture, test_all_machines_throw) {
     for (auto& [id, node] : nodes()) {
         node->raft()
           ->stm_manager()
-          ->get<controllable_throwing_kv>()
+          .value()
+          .get<controllable_throwing_kv>()
           ->allow_apply_to(model::offset(100));
         node->raft()
           ->stm_manager()
-          ->get<controllable_throwing_kv_2>()
+          .value()
+          .get<controllable_throwing_kv_2>()
           ->allow_apply_to(model::offset(100));
         node->raft()
           ->stm_manager()
-          ->get<controllable_throwing_kv_3>()
+          .value()
+          .get<controllable_throwing_kv_3>()
           ->allow_apply_to(model::offset(150));
     }
     vlog(logger().info, "Generating state for test");
@@ -526,7 +530,8 @@ TEST_F_CORO(state_machine_fixture, test_all_machines_throw) {
           [&](std::unique_ptr<raft_node_instance>& node) {
               auto la = node->raft()
                           ->stm_manager()
-                          ->get<controllable_throwing_kv_3>()
+                          .value()
+                          .get<controllable_throwing_kv_3>()
                           ->last_applied_offset();
               return la >= model::offset(150);
           });
@@ -535,7 +540,8 @@ TEST_F_CORO(state_machine_fixture, test_all_machines_throw) {
     for (auto& [id, node] : nodes()) {
         node->raft()
           ->stm_manager()
-          ->get<controllable_throwing_kv_2>()
+          .value()
+          .get<controllable_throwing_kv_2>()
           ->allow_apply_to(model::offset(160));
     }
     RPTEST_REQUIRE_EVENTUALLY_CORO(15s, [&] {
@@ -544,7 +550,8 @@ TEST_F_CORO(state_machine_fixture, test_all_machines_throw) {
           [&](std::unique_ptr<raft_node_instance>& node) {
               auto la = node->raft()
                           ->stm_manager()
-                          ->get<controllable_throwing_kv_2>()
+                          .value()
+                          .get<controllable_throwing_kv_2>()
                           ->last_applied_offset();
               return la >= model::offset(160);
           });
@@ -553,15 +560,18 @@ TEST_F_CORO(state_machine_fixture, test_all_machines_throw) {
     for (auto& [id, node] : nodes()) {
         node->raft()
           ->stm_manager()
-          ->get<controllable_throwing_kv>()
+          .value()
+          .get<controllable_throwing_kv>()
           ->allow_apply_to(model::offset(1000));
         node->raft()
           ->stm_manager()
-          ->get<controllable_throwing_kv_2>()
+          .value()
+          .get<controllable_throwing_kv_2>()
           ->allow_apply_to(model::offset(1000));
         node->raft()
           ->stm_manager()
-          ->get<controllable_throwing_kv_3>()
+          .value()
+          .get<controllable_throwing_kv_3>()
           ->allow_apply_to(model::offset(1000));
     }
 
@@ -601,7 +611,7 @@ TEST_F_CORO(state_machine_fixture, test_opt_out_from_snapshot_at_offset) {
 
     for (auto& [_, node] : nodes()) {
         ASSERT_FALSE_CORO(
-          node->raft()->stm_manager()->supports_snapshot_at_offset());
+          node->raft()->stm_manager().value().supports_snapshot_at_offset());
     }
 
     auto expected = co_await build_random_state(1000);
@@ -609,16 +619,17 @@ TEST_F_CORO(state_machine_fixture, test_opt_out_from_snapshot_at_offset) {
     // take snapshots on all of the nodes
     absl::flat_hash_map<model::node_id, model::offset> offsets;
     for (auto& [id, node] : nodes()) {
-        auto o = co_await node->raft()->stm_manager()->take_snapshot().then(
-          [raft = node->raft()](
-            state_machine_manager::snapshot_result snapshot_data) {
-              return raft
-                ->write_snapshot(
-                  raft::write_snapshot_cfg(
-                    snapshot_data.last_included_offset,
-                    std::move(snapshot_data.data)))
-                .then([o = snapshot_data.last_included_offset] { return o; });
-          });
+        auto o
+          = co_await node->raft()->stm_manager().value().take_snapshot().then(
+            [raft = node->raft()](
+              state_machine_manager::snapshot_result snapshot_data) {
+                return raft
+                  ->write_snapshot(
+                    raft::write_snapshot_cfg(
+                      snapshot_data.last_included_offset,
+                      std::move(snapshot_data.data)))
+                  .then([o = snapshot_data.last_included_offset] { return o; });
+            });
         offsets[id] = o;
     }
 

@@ -27,13 +27,13 @@ cloud_storage_clients::default_overrides get_default_overrides() {
     if (auto optep
         = config::shard_local_cfg().cloud_storage_api_endpoint.value();
         optep.has_value()) {
-        overrides.endpoint = cloud_storage_clients::endpoint_url(*optep);
+        overrides.endpoint = cloud_storage_clients::endpoint_url(optep.value());
     }
     overrides.disable_tls = config::shard_local_cfg().cloud_storage_disable_tls;
     if (auto cert = config::shard_local_cfg().cloud_storage_trust_file.value();
         cert.has_value()) {
         overrides.trust_file = cloud_storage_clients::ca_trust_file(
-          std::filesystem::path(*cert));
+          std::filesystem::path(cert.value()));
     }
     overrides.port = config::shard_local_cfg().cloud_storage_api_endpoint_port;
 
@@ -53,7 +53,7 @@ static ss::sstring get_value_or_throw(
         throw std::runtime_error(
           fmt::format("configuration property {} is not set", name));
     }
-    return *opt;
+    return opt.value();
 }
 
 ss::future<configuration> configuration::get_config() {

@@ -44,11 +44,11 @@ bool fetch_session::apply(fetch_response& res) {
         const auto& topic = part.partition->topic;
         const auto p_id = part.partition_response->partition_index;
         auto& record_set = part.partition_response->records;
-        if (!record_set || record_set->empty()) {
+        if (!record_set || record_set.value().empty()) {
             continue;
         }
 
-        _offsets[topic][p_id] = ++record_set->last_offset();
+        _offsets[topic][p_id] = ++record_set.value().last_offset();
     }
     for (auto& topic : _offsets) {
         topic.second.rehash(topic.second.size());

@@ -112,7 +112,7 @@ public:
             .has_tombstones = with_tombstones_ts.has_value(),
           };
         if (with_tombstones_ts) {
-            cmp_meta.cleaned_at = *with_tombstones_ts;
+            cmp_meta.cleaned_at = with_tombstones_ts.value();
         }
         return *this;
     }

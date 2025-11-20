@@ -313,7 +313,7 @@ void archiver_fixture::initialize_shard(
             storage::ntp_config(
               ntp.first, data_dir.string(), std::move(defaults)),
             raft::group_id(1),
-            {raft::vnode(nm->broker.id(), model::revision_id(0))},
+            {raft::vnode(nm.value().broker.id(), model::revision_id(0))},
             raft::with_learner_recovery_throttle::yes,
             raft::keep_snapshotted_log::no,
             std::nullopt)
@@ -390,17 +390,17 @@ void segment_matcher<Fixture>::verify_index(
     auto pos = segment->offsets().get_base_offset();
     auto reader_handle = segment->offset_data_stream(pos).get();
     cloud_storage::offset_index ix{
-      meta->base_offset,
-      meta->base_kafka_offset(),
+      meta.value().base_offset,
+      meta.value().base_kafka_offset(),
       0,
       cloud_storage::remote_segment_sampling_step_bytes,
-      meta->base_timestamp};
+      meta.value().base_timestamp};
 
     auto builder = cloud_storage::make_remote_segment_index_builder(
       ntp,
       reader_handle.take_stream(),
       ix,
-      meta->delta_offset,
+      meta.value().delta_offset,
       cloud_storage::remote_segment_sampling_step_bytes);
 
     builder->consume().finally([&builder] { return builder->close(); }).get();
@@ -475,10 +475,10 @@ void segment_matcher<Fixture>::verify_manifest(
         auto comp = s->has_self_compact_timestamp();
         auto m = man.get(sname);
         BOOST_REQUIRE(m.has_value());
-        BOOST_REQUIRE_EQUAL(base, m->base_offset);
-        BOOST_REQUIRE_EQUAL(comm, m->committed_offset);
-        BOOST_REQUIRE_EQUAL(size, m->size_bytes);
-        BOOST_REQUIRE_EQUAL(comp, m->is_compacted);
+        BOOST_REQUIRE_EQUAL(base, m.value().base_offset);
+        BOOST_REQUIRE_EQUAL(comm, m.value().committed_offset);
+        BOOST_REQUIRE_EQUAL(size, m.value().size_bytes);
+        BOOST_REQUIRE_EQUAL(comp, m.value().is_compacted);
     }
 }
 
@@ -508,7 +508,7 @@ archival::remote_segment_path get_segment_path(
     BOOST_REQUIRE(meta);
     auto key = cloud_storage::parse_segment_name(name);
     BOOST_REQUIRE(key);
-    return manifest.generate_segment_path(*meta, path_provider);
+    return manifest.generate_segment_path(meta.value(), path_provider);
 }
 
 archival::remote_segment_path get_segment_index_path(

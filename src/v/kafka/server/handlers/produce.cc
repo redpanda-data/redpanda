@@ -224,11 +224,11 @@ ss::future<produce_response::partition> do_produce_topic_partition(
 
     if (validate_batch_res.has_value()) {
         co_return finalize_request_with_error_code(
-          validate_batch_res->err,
+          validate_batch_res.value().err,
           std::move(dispatched),
           req.ntp,
           ss::this_shard_id(),
-          std::move(validate_batch_res->msg));
+          std::move(validate_batch_res.value().msg));
     }
 
     auto batch_size = req.batch->size_bytes();
@@ -246,14 +246,14 @@ ss::future<produce_response::partition> do_produce_topic_partition(
     }
 
     if (auto& validator = req.schema_id_validator) {
-        auto ec = co_await (*validator)(*req.batch);
+        auto ec = co_await (validator.value())(*req.batch);
         if (ec != error_code::none) {
             // TODO: It's a bit much to post this to the partition probe for
             // this metric. We should probably move the metric.
             auto shard = octx.rctx.shards().shard_for(req.ntp);
             if (shard) {
                 co_await octx.rctx.partition_manager().invoke_on(
-                  *shard,
+                  shard.value(),
                   [](cluster::partition_manager& pm, const model::ntp& ntp) {
                       if (auto p = pm.get(ntp)) {
                           p->probe().add_schema_id_validation_failed();
@@ -293,7 +293,7 @@ ss::future<produce_response::partition> do_produce_topic_partition(
     }
 
     auto p = co_await octx.rctx.partition_manager().invoke_on(
-      *shard,
+      shard.value(),
       octx.ssg,
       [batch = std::move(req.batch),
        ntp = std::move(req.ntp),
@@ -303,7 +303,7 @@ ss::future<produce_response::partition> do_produce_topic_partition(
        source_shard = ss::this_shard_id()](
         cluster::partition_manager& mgr) mutable {
           auto partition = kafka::make_partition_proxy(ntp, mgr);
-          if (!partition || !partition->is_leader()) {
+          if (!partition || !partition.value().is_leader()) {
               return ss::as_ready_future(finalize_request_with_error_code(
                 error_code::not_leader_for_partition,
                 std::move(dispatch),
@@ -316,7 +316,7 @@ ss::future<produce_response::partition> do_produce_topic_partition(
           auto batch_size = batch->size_bytes();
           auto stages = partition_append(
             ntp.tp.partition,
-            std::move(*partition),
+            std::move(partition.value()),
             bid,
             std::move(batch),
             acks,
@@ -378,7 +378,7 @@ partition_produce_stages produce_topic_partition(
         octx.rctx.schema_registry(), topic.name, *cfg_ctx.properties);
     // steal the batch from the adapter
     auto batch = std::make_unique<model::record_batch>(
-      std::move(part.records->adapter.batch.value()));
+      std::move(part.records.value().adapter.batch.value()));
     auto dispatch = std::make_unique<ss::promise<>>();
     auto dispatch_f = dispatch->get_future();
     auto f = do_produce_topic_partition(
@@ -466,7 +466,7 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
         return topic_produce_error(
           topic, error_code::unknown_topic_or_partition);
     }
-    const auto& topic_cfg = topic_md->get().get_configuration();
+    const auto& topic_cfg = topic_md.value().get().get_configuration();
     topic_configuration_context cfg_ctx{
       .batch_max_bytes = topic_cfg.properties.batch_max_bytes.value_or(
         octx.rctx.metadata_cache().get_default_batch_max_bytes()),
@@ -511,12 +511,12 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
         }
 
         // an error occurred handling legacy messages (magic 0 or 1)
-        if (unlikely(part.records->adapter.legacy_error)) {
+        if (unlikely(part.records.value().adapter.legacy_error)) {
             push_error_response(error_code::invalid_record);
             continue;
         }
 
-        if (unlikely(!part.records->adapter.valid_crc)) {
+        if (unlikely(!part.records.value().adapter.valid_crc)) {
             push_error_response(error_code::corrupt_message);
             continue;
         }
@@ -529,8 +529,8 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
         // the batch into an v2 batch and sets the v2_format flag. conversion
         // also produces a single record batch by accumulating legacy messages.
         if (unlikely(
-              !part.records->adapter.v2_format
-              || !part.records->adapter.batch)) {
+              !part.records.value().adapter.v2_format
+              || !part.records.value().adapter.batch)) {
             push_error_response(error_code::invalid_record);
             continue;
         }
@@ -609,7 +609,7 @@ partition_produce_stages produce_single_partition(
   produce_request::partition& part) {
     const auto& topic_md = octx.rctx.metadata_cache().get_topic_metadata_ref(
       model::topic_namespace_view{model::kafka_namespace, topic.name});
-    const auto& topic_cfg = topic_md->get().get_configuration();
+    const auto& topic_cfg = topic_md.value().get().get_configuration();
     topic_configuration_context cfg_ctx{
       .batch_max_bytes = topic_cfg.properties.batch_max_bytes.value_or(
         octx.rctx.metadata_cache().get_default_batch_max_bytes()),
@@ -669,9 +669,9 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
             for (const auto& part : topic.partitions) {
                 if (part.records) {
                     const auto& records = part.records;
-                    if (records->adapter.batch) {
+                    if (records.value().adapter.batch) {
                         resp.internal_topic_bytes
-                          += records->adapter.batch->size_bytes();
+                          += records.value().adapter.batch.value().size_bytes();
                     }
                 }
             }
@@ -682,8 +682,9 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     for (auto& topic : request.data.topics) {
         for (auto& part : topic.partitions) {
             if (part.records) {
-                if (part.records->adapter.batch) {
-                    const auto& hdr = part.records->adapter.batch->header();
+                if (part.records.value().adapter.batch) {
+                    const auto& hdr
+                      = part.records.value().adapter.batch.value().header();
                     request.has_transactional = request.has_transactional
                                                 || hdr.attrs.is_transactional();
                     request.has_idempotent = request.has_idempotent
@@ -704,7 +705,7 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           !request.data.transactional_id
           || !ctx.authorized(
             security::acl_operation::write,
-            transactional_id(*request.data.transactional_id))) {
+            transactional_id(request.data.transactional_id.value()))) {
             auto ec = error_code::transactional_id_authorization_failed;
 
             if (!ctx.audit()) [[unlikely]] {

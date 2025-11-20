@@ -71,7 +71,8 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
                                return ss::make_ready_future<bool>(false);
                            }
                            return app.partition_manager.invoke_on(
-                             *shard, [ntp](cluster::partition_manager& pm) {
+                             shard.value(),
+                             [ntp](cluster::partition_manager& pm) {
                                  return pm.get(ntp)->is_leader();
                              });
                        }))
@@ -155,9 +156,9 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
 
               for ([[maybe_unused]] auto& r : part.partitions) {
                   const auto& data = part.partitions.begin()->records;
-                  if (data && !data->empty()) {
+                  if (data && !data.value().empty()) {
                       // update next fetch offset the same way as Kafka clients
-                      fetch_offsets[p_id()] = ++data->last_offset();
+                      fetch_offsets[p_id()] = ++data.value().last_offset();
                   }
               }
               return resp;
@@ -223,7 +224,10 @@ FIXTURE_TEST(test_produce_consume_small_batches, prod_consume_fixture) {
       resp_1.data.responses.begin()->partitions.begin()->error_code,
       kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(
-      resp_1.data.responses.begin()->partitions.begin()->records->last_offset(),
+      resp_1.data.responses.begin()
+        ->partitions.begin()
+        ->records.value()
+        .last_offset(),
       offset_1);
     BOOST_REQUIRE_EQUAL(
       resp_2.data.responses.begin()->partitions.empty(), false);
@@ -231,7 +235,10 @@ FIXTURE_TEST(test_produce_consume_small_batches, prod_consume_fixture) {
       resp_2.data.responses.begin()->partitions.begin()->error_code,
       kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(
-      resp_2.data.responses.begin()->partitions.begin()->records->last_offset(),
+      resp_2.data.responses.begin()
+        ->partitions.begin()
+        ->records.value()
+        .last_offset(),
       offset_2);
 };
 
@@ -645,7 +652,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
         // Refresh leadership.
         app.partition_manager
           .invoke_on(
-            *shard,
+            shard.value(),
             [ntp](cluster::partition_manager& mgr) {
                 auto raft = mgr.get(ntp)->raft();
                 raft->step_down("force_step_down").get();
@@ -656,7 +663,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
           .get();
         app.partition_manager
           .invoke_on(
-            *shard,
+            shard.value(),
             [this, ntp](cluster::partition_manager& mgr) {
                 auto partition = mgr.get(ntp);
                 produce([this](size_t cnt) {
@@ -668,7 +675,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
     // Prefix truncate the log so the beginning of the log moves forward.
     app.partition_manager
       .invoke_on(
-        *shard,
+        shard.value(),
         [ntp](cluster::partition_manager& mgr) {
             auto partition = mgr.get(ntp);
             auto local_kafka_start_offset = partition->log()->from_log_offset(
@@ -687,7 +694,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
     auto& client = consumers.front();
     auto current_term = app.partition_manager
                           .invoke_on(
-                            *shard,
+                            shard.value(),
                             [ntp](cluster::partition_manager& mgr) {
                                 return mgr.get(ntp)->raft()->term();
                             })
@@ -714,7 +721,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
     auto earliest_kafka_offset
       = app.partition_manager
           .invoke_on(
-            *shard,
+            shard.value(),
             [ntp](cluster::partition_manager& mgr) {
                 auto partition = mgr.get(ntp);
                 auto start_offset = partition->log()->offsets().start_offset;
@@ -1058,7 +1065,7 @@ FIXTURE_TEST(test_produce_unset_max_timestamp_legacy, prod_consume_fixture) {
                 BOOST_REQUIRE_EQUAL(
                   partition.error_code, kafka::error_code::none);
                 BOOST_REQUIRE(partition.records.has_value());
-                while (!partition.records->is_end_of_stream()) {
+                while (!partition.records.value().is_end_of_stream()) {
                     auto batch_adapter
                       = partition.records.value().consume_batch();
                     BOOST_REQUIRE(batch_adapter.batch.has_value());
@@ -1165,7 +1172,7 @@ FIXTURE_TEST(test_produce_unset_max_timestamp_relaxed, prod_consume_fixture) {
                 BOOST_REQUIRE_EQUAL(
                   partition.error_code, kafka::error_code::none);
                 BOOST_REQUIRE(partition.records.has_value());
-                while (!partition.records->is_end_of_stream()) {
+                while (!partition.records.value().is_end_of_stream()) {
                     auto batch_adapter
                       = partition.records.value().consume_batch();
                     BOOST_REQUIRE(batch_adapter.batch.has_value());
@@ -1265,7 +1272,7 @@ FIXTURE_TEST(test_produce_unset_timestamps_relaxed, prod_consume_fixture) {
                 BOOST_REQUIRE_EQUAL(
                   partition.error_code, kafka::error_code::none);
                 BOOST_REQUIRE(partition.records.has_value());
-                while (!partition.records->is_end_of_stream()) {
+                while (!partition.records.value().is_end_of_stream()) {
                     auto batch_adapter
                       = partition.records.value().consume_batch();
                     BOOST_REQUIRE(batch_adapter.batch.has_value());

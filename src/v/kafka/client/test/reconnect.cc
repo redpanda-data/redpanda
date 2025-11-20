@@ -59,7 +59,7 @@ FIXTURE_TEST(reconnect, kafka_client_fixture) {
           kc::api_version_for(kafka::metadata_request::api_type::key)
             < kafka::api_version(12),
           "topic::name is nullable in v12+");
-        BOOST_REQUIRE_EQUAL((*res.data.topics[0].name)(), "t");
+        BOOST_REQUIRE_EQUAL((res.data.topics[0].name.value())(), "t");
     }
 
     {
@@ -76,7 +76,7 @@ FIXTURE_TEST(reconnect, kafka_client_fixture) {
           kc::api_version_for(kafka::metadata_request::api_type::key)
             < kafka::api_version(12),
           "topic::name is nullable in v12+");
-        BOOST_REQUIRE_EQUAL((*res.data.topics[0].name)(), "t");
+        BOOST_REQUIRE_EQUAL((res.data.topics[0].name.value())(), "t");
     }
 
     info("Stopping client");
@@ -143,7 +143,7 @@ FIXTURE_TEST(password_change_live_client, kafka_client_fixture) {
           kc::api_version_for(kafka::metadata_request::api_type::key)
             < kafka::api_version(12),
           "topic::name is nullable in v12+");
-        BOOST_REQUIRE_EQUAL((*res.data.topics[0].name)(), "t");
+        BOOST_REQUIRE_EQUAL((res.data.topics[0].name.value())(), "t");
     }
 
     {
@@ -166,7 +166,7 @@ FIXTURE_TEST(password_change_live_client, kafka_client_fixture) {
           kc::api_version_for(kafka::metadata_request::api_type::key)
             < kafka::api_version(12),
           "topic::name is nullable in v12+");
-        BOOST_REQUIRE_EQUAL((*res.data.topics[0].name)(), "t");
+        BOOST_REQUIRE_EQUAL((res.data.topics[0].name.value())(), "t");
     }
 
     info("Stopping kafka client");

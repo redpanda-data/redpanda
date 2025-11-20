@@ -72,7 +72,7 @@ shadow_link_internal_service_impl::remove_shadow_topic(
         co_return co_await _proxy_client
           .make_client_for_node<proto::admin::internal::shadow_link::
                                   shadow_link_internal_service_client>(
-            *redirect_node)
+            redirect_node.value())
           .remove_shadow_topic(std::move(ctx), std::move(req));
     }
 
@@ -99,7 +99,7 @@ shadow_link_internal_service_impl::force_update_shadow_topic_state(
         co_return co_await _proxy_client
           .make_client_for_node<proto::admin::internal::shadow_link::
                                   shadow_link_internal_service_client>(
-            *redirect_node)
+            redirect_node.value())
           .force_update_shadow_topic_state(std::move(ctx), std::move(req));
     }
 

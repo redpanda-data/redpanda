@@ -46,29 +46,31 @@ void rjson_serialize(::json::Writer<Buffer>& w, const acl& entry) {
 
     if (entry.principal) {
         w.Key("principal");
-        w.String(fmt::format("{:a}", *entry.principal));
+        w.String(fmt::format("{:a}", entry.principal.value()));
     }
 
     if (entry.resource) {
         w.Key("resource");
-        w.String(*entry.resource);
+        w.String(entry.resource.value());
     }
 
     if (entry.resource_type) {
         w.Key("resource_type");
         w.String(
-          absl::AsciiStrToUpper(fmt::format("{}", *entry.resource_type)));
+          absl::AsciiStrToUpper(
+            fmt::format("{}", entry.resource_type.value())));
     }
 
     if (entry.pattern_type) {
         w.Key("pattern_type");
-        w.String(absl::AsciiStrToUpper(fmt::format("{}", *entry.pattern_type)));
+        w.String(
+          absl::AsciiStrToUpper(fmt::format("{}", entry.pattern_type.value())));
     }
 
     if (entry.host) {
         w.Key("host");
-        if (entry.host->address()) {
-            w.String(fmt::format("{}", *entry.host->address()));
+        if (entry.host.value().address()) {
+            w.String(fmt::format("{}", entry.host.value().address().value()));
         } else {
             w.String("*");
         }
@@ -76,12 +78,14 @@ void rjson_serialize(::json::Writer<Buffer>& w, const acl& entry) {
 
     if (entry.operation) {
         w.Key("operation");
-        w.String(absl::AsciiStrToUpper(fmt::format("{}", *entry.operation)));
+        w.String(
+          absl::AsciiStrToUpper(fmt::format("{}", entry.operation.value())));
     }
 
     if (entry.permission) {
         w.Key("permission");
-        w.String(absl::AsciiStrToUpper(fmt::format("{}", *entry.permission)));
+        w.String(
+          absl::AsciiStrToUpper(fmt::format("{}", entry.permission.value())));
     }
 
     w.EndObject();

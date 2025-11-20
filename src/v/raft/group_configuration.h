@@ -488,20 +488,20 @@ auto group_configuration::quorum_match(Func&& f) const {
      * have any voters
      */
     if (_current.voters.empty()) {
-        return details::quorum_match(f, _old->voters);
+        return details::quorum_match(f, _old.value().voters);
     }
 
     /**
      * we must check if old voters are there, if not we do not include old
      * quorum into decision about majority
      */
-    if (_old->voters.empty()) {
+    if (_old.value().voters.empty()) {
         return details::quorum_match(f, _current.voters);
     }
 
     return std::min(
       details::quorum_match(f, _current.voters),
-      details::quorum_match(f, _old->voters));
+      details::quorum_match(f, _old.value().voters));
 }
 
 template<typename Predicate>
@@ -511,7 +511,7 @@ bool group_configuration::majority(Predicate&& f) const {
         return details::majority(std::forward<Predicate>(f), _current.voters);
     }
     return details::majority(f, _current.voters)
-           && details::majority(f, _old->voters);
+           && details::majority(f, _old.value().voters);
 }
 
 template<typename Func>

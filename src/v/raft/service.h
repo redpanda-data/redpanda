@@ -453,17 +453,17 @@ private:
       model::node_id target_node,
       const group_heartbeat& hb) {
         return {
-          raft::vnode(source_node, hb.data->source_revision),
-          raft::vnode(target_node, hb.data->target_revision),
+          raft::vnode(source_node, hb.data.value().source_revision),
+          raft::vnode(target_node, hb.data.value().target_revision),
           raft::protocol_metadata{
             .group = hb.group,
-            .commit_index = hb.data->commit_index,
-            .prev_log_index = hb.data->prev_log_index,
-            .prev_log_term = hb.data->prev_log_term,
-            .last_visible_index = hb.data->last_visible_index,
+            .commit_index = hb.data.value().commit_index,
+            .prev_log_index = hb.data.value().prev_log_index,
+            .prev_log_term = hb.data.value().prev_log_term,
+            .last_visible_index = hb.data.value().last_visible_index,
             // for heartbeats dirty_offset and prev_log_index are always the
             // same
-            .dirty_offset = hb.data->prev_log_index,
+            .dirty_offset = hb.data.value().prev_log_index,
           },
           {},
           0,

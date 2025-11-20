@@ -115,16 +115,18 @@ bool needs_manifest(const metadata_query<ResultT>& query) {
 
 template<result_type ResultT>
 bool matches(const metadata_query<ResultT>& query, const snapshot& s) {
-    return !query.snapshot_matcher.has_value() || (*query.snapshot_matcher)(s);
+    return !query.snapshot_matcher.has_value()
+           || (query.snapshot_matcher.value())(s);
 }
 template<result_type ResultT>
 bool matches(const metadata_query<ResultT>& query, const manifest_file& s) {
     return !query.manifest_file_matcher.has_value()
-           || (*query.manifest_file_matcher)(s);
+           || (query.manifest_file_matcher.value())(s);
 }
 template<result_type ResultT>
 bool matches(const metadata_query<ResultT>& query, const manifest& s) {
-    return !query.manifest_matcher.has_value() || (*query.manifest_matcher)(s);
+    return !query.manifest_matcher.has_value()
+           || (query.manifest_matcher.value())(s);
 }
 
 } // namespace

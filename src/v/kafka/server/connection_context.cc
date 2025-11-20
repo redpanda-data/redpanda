@@ -133,7 +133,7 @@ parse_virtual_connection_id(const kafka::request_header& header) {
           "virtual connection client id can not be empty");
     }
 
-    if (header.client_id->size() < v_connection_id_size) {
+    if (header.client_id.value().size() < v_connection_id_size) {
         throw invalid_virtual_connection_id(
           fmt::format(
             "virtual connection client id size must contain at least {} "
@@ -144,7 +144,7 @@ parse_virtual_connection_id(const kafka::request_header& header) {
     try {
         virtual_connection_id connection_id{
           .virtual_cluster_id = xid::from_string(
-            std::string_view(header.client_id->begin(), xid::str_size)),
+            std::string_view(header.client_id.value().begin(), xid::str_size)),
           .connection_id = parse_vcluster_connection_id(
             std::string(
               std::next(header.client_id_buffer.begin(), xid::str_size),
@@ -398,13 +398,14 @@ connection_context::authorized_user<security::acl_cluster_name>(
 ss::future<> connection_context::revoke_credentials(std::string_view name) {
     if (
       !_as.local_is_initialized() || _as.abort_requested() || !_sasl.has_value()
-      || !_sasl->has_mechanism()
-      || _sasl->mechanism().mechanism_name() != name) {
+      || !_sasl.value().has_mechanism()
+      || _sasl.value().mechanism().mechanism_name() != name) {
         return ss::now();
     }
-    auto msg = _sasl->mechanism().complete()
+    auto msg = _sasl.value().mechanism().complete()
                  ? fmt::format(
-                     "Session for principal '{}' revoked", _sasl->principal())
+                     "Session for principal '{}' revoked",
+                     _sasl.value().principal())
                  : "Session for unknown client revoked";
     vlog(klog.info, "{}", msg);
     _server.sasl_probe().session_revoked();
@@ -455,10 +456,11 @@ ss::future<> connection_context::process_one_request() {
      */
     if (unlikely(
           sasl()
-          && sasl()->state() == security::sasl_server::sasl_state::authenticate
-          && sasl()->handshake_v0())) {
+          && sasl().value().state()
+               == security::sasl_server::sasl_state::authenticate
+          && sasl().value().handshake_v0())) {
         try {
-            co_return co_await handle_auth_v0(*sz);
+            co_return co_await handle_auth_v0(sz.value());
         } catch (...) {
             vlog(
               klog.info,
@@ -475,10 +477,10 @@ ss::future<> connection_context::process_one_request() {
         _server.probe().header_corrupted();
         co_return;
     }
-    _server.handler_probe(h->key).add_bytes_received(sz.value());
-    _attributes.last_client_id.update(h->client_id);
-    _attributes.record_api_version(h->key, h->version);
-    _attributes.in_flight_requests.record_begin_request(h->key);
+    _server.handler_probe(h.value().key).add_bytes_received(sz.value());
+    _attributes.last_client_id.update(h.value().client_id);
+    _attributes.record_api_version(h.value().key, h.value().version);
+    _attributes.in_flight_requests.record_begin_request(h.value().key);
     /**
      * An entry point for the MPX serverless extensions. If the first request
      * for a given connection has a special client_id then MPX extensions are
@@ -487,7 +489,7 @@ ss::future<> connection_context::process_one_request() {
     if (_server.enable_mpx_extensions()) {
         if (unlikely(
               is_first_request()
-              && h->client_id == multi_proxy_initial_client_id)) {
+              && h.value().client_id == multi_proxy_initial_client_id)) {
             vlog(
               klog.debug, "enabling virtualized connections on {}", conn->addr);
             _is_virtualized_connection = true;
@@ -594,7 +596,7 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
           response.data.error_message));
     }
 
-    if (sasl()->state() == security::sasl_server::sasl_state::failed) {
+    if (sasl().value().state() == security::sasl_server::sasl_state::failed) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format, "Auth (handshake v0) failed with unknown error"));
     }
@@ -737,8 +739,9 @@ connection_context::reserve_request_units(api_key key, size_t size) {
     // case the request is likely for an API we don't support or malformed, so
     // it is likely to fail shortly anyway).
     auto handler = handler_for_key(key);
-    auto mem_estimate = handler ? (*handler)->memory_estimate(size, *this)
-                                : default_memory_estimate(size);
+    auto mem_estimate = handler
+                          ? (handler.value())->memory_estimate(size, *this)
+                          : default_memory_estimate(size);
     if (unlikely(mem_estimate >= (size_t)std::numeric_limits<int32_t>::max())) {
         // TODO: Create error response using the specific API?
         throw std::runtime_error(
@@ -746,7 +749,7 @@ connection_context::reserve_request_units(api_key key, size_t size) {
             "request too large > 1GB (size: {}, estimate: {}, API: {})",
             size,
             mem_estimate,
-            handler ? (*handler)->name() : "<bad key>"));
+            handler ? (handler.value())->name() : "<bad key>"));
     }
     auto fut = ss::get_units(_server.memory(), mem_estimate);
     if (_server.memory().waiters()) {
@@ -762,7 +765,7 @@ connection_context::get_scheduling_group_override(api_key api_key) const {
         return std::nullopt;
     }
 
-    return (*handler)->scheduling_group_override(*this);
+    return (handler.value())->scheduling_group_override(*this);
 }
 
 ss::future<>
@@ -770,14 +773,14 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
     auto r_data = request_data{
       .request_key = hdr.key,
       .client_id = hdr.client_id
-                     ? std::make_optional<ss::sstring>(*hdr.client_id)
+                     ? std::make_optional<ss::sstring>(hdr.client_id.value())
                      : std::nullopt,
     };
 
     auto sg_override = get_scheduling_group_override(hdr.key);
     // If handler provides an override, swith scheduling group
     if (sg_override) {
-        co_await ss::coroutine::switch_to(*sg_override);
+        co_await ss::coroutine::switch_to(sg_override.value());
     } else if (!_server.get_request_handler_sg().active()) {
         // if a handler does not provide an override, check if the default
         // scheduling group is active, and switch the group if needed
@@ -886,7 +889,7 @@ proto::admin::kafka_connection connection_context::to_proto() const {
         if (_mtls_state) {
             return proto::admin::authentication_state::success;
         } else if (_sasl) {
-            switch (_sasl->state()) {
+            switch (_sasl.value().state()) {
             case security::sasl_server::sasl_state::initial:
             case security::sasl_server::sasl_state::handshake:
             case security::sasl_server::sasl_state::authenticate:
@@ -902,9 +905,9 @@ proto::admin::kafka_connection connection_context::to_proto() const {
     auto auth_mechanism = [this]() -> proto::admin::authentication_mechanism {
         if (_mtls_state) {
             return proto::admin::authentication_mechanism::mtls;
-        } else if (_sasl && _sasl->has_mechanism()) {
+        } else if (_sasl && _sasl.value().has_mechanism()) {
             return string_switch<proto::admin::authentication_mechanism>(
-                     _sasl->mechanism().mechanism_name())
+                     _sasl.value().mechanism().mechanism_name())
               .match(
                 security::scram_sha256_authenticator::name,
                 proto::admin::authentication_mechanism::sasl_scram)
@@ -1219,8 +1222,8 @@ std::ostream& operator<<(std::ostream& o, const virtual_connection_id& id) {
 }
 
 void last_value::update(std::optional<std::string_view> new_value) {
-    if (new_value && value != *new_value) {
-        value = ss::sstring{*new_value};
+    if (new_value && value != new_value.value()) {
+        value = ss::sstring{new_value.value()};
     }
 }
 

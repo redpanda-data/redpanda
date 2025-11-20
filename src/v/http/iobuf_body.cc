@@ -43,7 +43,7 @@ void iobuf_body::value_type::append(boost::asio::const_buffer buf) {
     if (_zc_source) {
         // check that the buffer is inside the _zc_source
         std::string_view vbuf(static_cast<const char*>(buf.data()), buf.size());
-        for (auto& frag : _zc_source->get()) {
+        for (auto& frag : _zc_source.value().get()) {
             std::string_view vsrc(frag.get(), frag.size());
             auto [incl, offset, length] = range_to_offset(vsrc, vbuf);
             if (incl) {

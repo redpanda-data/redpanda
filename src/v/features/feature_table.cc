@@ -743,7 +743,7 @@ const std::optional<security::license>& feature_table::get_license() const {
     if (_license) {
         return _license;
     } else if (
-      _builtin_trial_license && !_builtin_trial_license->is_expired()) {
+      _builtin_trial_license && !_builtin_trial_license.value().is_expired()) {
         // Don't not show the evaluation period license after it expired
         return _builtin_trial_license;
     } else {
@@ -758,9 +758,9 @@ feature_table::get_configured_license() const {
 
 bool feature_table::should_sanction() const {
     if (_license) {
-        return _license->is_expired();
+        return _license.value().is_expired();
     } else if (_builtin_trial_license) {
-        return _builtin_trial_license->is_expired();
+        return _builtin_trial_license.value().is_expired();
     }
 
     // While we are yet to initialize _builtin_trial_license on cluster
@@ -884,7 +884,7 @@ long long feature_table::calculate_expiry_metric(
         return -1;
     }
 
-    auto rem = license->expiration() - now;
+    auto rem = license.value().expiration() - now;
     auto rem_capped = std::max(rem.zero(), rem);
     return rem_capped / 1s;
 }

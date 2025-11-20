@@ -556,8 +556,8 @@ TEST(converter_test, create_with_metadata_sync_options) {
     EXPECT_TRUE(
       std::holds_alternative<cluster_link::model::schema_registry_sync_config::
                                shadow_entire_schema_registry>(
-        *md.configuration.schema_registry_sync_cfg
-           .sync_schema_registry_topic_mode));
+        md.configuration.schema_registry_sync_cfg
+          .sync_schema_registry_topic_mode.value()));
 
     chunked_vector<cluster_link::model::resource_name_filter_pattern> expected{
       cluster_link::model::resource_name_filter_pattern{
@@ -1197,13 +1197,16 @@ TEST(converter_test, test_update_tls_value) {
       std::move(req), current_md.copy());
 
     EXPECT_EQ(
-      std::get<cluster_link::model::tls_value>(*update_cmd.connection.ca),
+      std::get<cluster_link::model::tls_value>(
+        update_cmd.connection.ca.value()),
       "new-ca");
     EXPECT_EQ(
-      std::get<cluster_link::model::tls_value>(*update_cmd.connection.key),
+      std::get<cluster_link::model::tls_value>(
+        update_cmd.connection.key.value()),
       "new-key");
     EXPECT_EQ(
-      std::get<cluster_link::model::tls_value>(*update_cmd.connection.cert),
+      std::get<cluster_link::model::tls_value>(
+        update_cmd.connection.cert.value()),
       "new-cert");
 }
 

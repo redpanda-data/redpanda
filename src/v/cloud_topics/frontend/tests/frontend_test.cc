@@ -118,7 +118,7 @@ TEST_F(frontend_fixture, test_replicate_epoch) {
 
     auto partition = app.partition_manager.local().get(ntp);
     ASSERT_TRUE(
-      partition->raft()->stm_manager()->get<cloud_topics::ctp_stm>()
+      partition->raft()->stm_manager().value().get<cloud_topics::ctp_stm>()
       != nullptr);
 
     cloud_topics::frontend frontend(std::move(partition), _data_plane.get());

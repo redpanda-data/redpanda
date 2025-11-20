@@ -130,7 +130,7 @@ public:
     /// Get precise content length for the upload
     size_t get_size_bytes() const {
         throw_if_not_initialized("get_size_bytes");
-        return _params->size_bytes;
+        return _params.value().size_bytes;
     }
 
     /// Get upload metadata

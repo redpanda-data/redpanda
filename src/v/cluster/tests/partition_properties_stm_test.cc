@@ -83,7 +83,7 @@ struct partition_properties_stm_fixture : raft::raft_fixture {
     }
 
     static ss::shared_ptr<stm_t> get_stm(raft::raft_node_instance& rni) {
-        return rni.raft()->stm_manager()->get<stm_t>();
+        return rni.raft()->stm_manager().value().get<stm_t>();
     }
 
     ss::shared_ptr<stm_t> get_leader_stm() {
@@ -303,8 +303,9 @@ TEST_F_CORO(
         auto base_offset = co_await node->random_batch_base_offset(
           node->raft()->committed_offset(), model::offset(100));
         auto snapshot_offset = model::prev_offset(base_offset);
-        auto result = co_await node->raft()->stm_manager()->take_snapshot(
-          snapshot_offset);
+        auto result
+          = co_await node->raft()->stm_manager().value().take_snapshot(
+            snapshot_offset);
         co_await node->raft()->write_snapshot(
           raft::write_snapshot_cfg(snapshot_offset, std::move(result.data)));
     }

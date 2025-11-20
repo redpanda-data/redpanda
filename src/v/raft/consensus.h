@@ -193,7 +193,8 @@ public:
     }
     bool is_candidate() const { return _vstate == vote_state::candidate; }
     std::optional<model::node_id> get_leader_id() const {
-        return _leader_id ? std::make_optional(_leader_id->id()) : std::nullopt;
+        return _leader_id ? std::make_optional(_leader_id.value().id())
+                          : std::nullopt;
     }
 
     /**

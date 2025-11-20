@@ -231,7 +231,7 @@ ss::future<> remote_segment::stop() {
 
     if (_chunks_api) {
         vlog(_ctxlog.debug, "waiting for chunk api to stop");
-        co_await _chunks_api->stop();
+        co_await _chunks_api.value().stop();
         vlog(_ctxlog.debug, "chunk api stopped");
     }
     _stopped = true;
@@ -273,7 +273,7 @@ remote_segment::offset_data_stream(
         // scan is comparatively small.
 
         prefetch_override = 0;
-        indexed_pos = maybe_get_offsets(*first_timestamp);
+        indexed_pos = maybe_get_offsets(first_timestamp.value());
     } else {
         indexed_pos = maybe_get_offsets(start);
     }
@@ -327,7 +327,7 @@ remote_segment::maybe_get_offsets(kafka::offset kafka_offset) {
     if (!_index) {
         return {};
     }
-    auto pos = _index->find_kaf_offset(kafka_offset);
+    auto pos = _index.value().find_kaf_offset(kafka_offset);
     if (!pos) {
         return {};
     }
@@ -348,7 +348,7 @@ size_t remote_segment::estimate_memory_use() const {
     // things (e.g. chunks api)
     size_t res = sizeof(remote_segment);
     if (_index) {
-        res += _index->estimate_memory_use();
+        res += _index.value().estimate_memory_use();
     }
     return res;
 }
@@ -358,7 +358,7 @@ remote_segment::maybe_get_offsets(model::timestamp ts) {
     if (!_index) {
         return {};
     }
-    auto pos = _index->find_timestamp(ts);
+    auto pos = _index.value().find_timestamp(ts);
     if (!pos) {
         return {};
     }
@@ -525,9 +525,9 @@ ss::future<> remote_segment::do_hydrate_index() {
 
     _index = std::move(ix);
     _coarse_index.emplace(
-      _index->build_coarse_index(_chunk_size, _index_path.native()));
-    co_await _chunks_api->start();
-    auto buf = _index->to_iobuf();
+      _index.value().build_coarse_index(_chunk_size, _index_path.native()));
+    co_await _chunks_api.value().start();
+    auto buf = _index.value().to_iobuf();
 
     auto reservation = co_await _cache.reserve_space(buf.size_bytes(), 1);
     auto str = make_iobuf_input_stream(std::move(buf));
@@ -610,7 +610,7 @@ ss::future<bool> remote_segment::do_materialize_segment() {
 
         co_return false;
     }
-    _data_file = maybe_file->body;
+    _data_file = maybe_file.value().body;
     if (!_index) {
         // Materialize index state if it's not materialized yet.
         // If do_hydrate_segment was called _index will be populated
@@ -649,7 +649,7 @@ ss::future<bool> remote_segment::do_materialize_txrange() {
             options.read_ahead
               = config::shard_local_cfg().storage_read_readahead_count;
             auto inp_stream = ss::make_file_input_stream(
-              cache_item->body, options);
+              cache_item.value().body, options);
             co_await manifest.update(std::move(inp_stream));
             _tx_range = std::move(manifest).get_tx_range();
             vlog(
@@ -663,7 +663,7 @@ ss::future<bool> remote_segment::do_materialize_txrange() {
               path,
               std::current_exception());
         }
-        co_await cache_item->body.close();
+        co_await cache_item.value().body.close();
     } else {
         vlog(
           _ctxlog.debug,
@@ -701,7 +701,7 @@ ss::future<bool> remote_segment::maybe_materialize_index() {
             options.read_ahead
               = config::shard_local_cfg().storage_read_readahead_count;
             auto inp_stream = ss::make_file_input_stream(
-              cache_item->body, options);
+              cache_item.value().body, options);
             iobuf state;
             auto out_stream = make_iobuf_ref_output_stream(state);
             co_await ss::copy(inp_stream, out_stream).finally([&inp_stream] {
@@ -709,9 +709,9 @@ ss::future<bool> remote_segment::maybe_materialize_index() {
             });
             ix.from_iobuf(std::move(state));
             _index = std::move(ix);
-            _coarse_index.emplace(
-              _index->build_coarse_index(_chunk_size, _index_path.native()));
-            co_await _chunks_api->start();
+            _coarse_index.emplace(_index.value().build_coarse_index(
+              _chunk_size, _index_path.native()));
+            co_await _chunks_api.value().start();
         } catch (...) {
             // In case of any failure during index materialization just continue
             // without the index.
@@ -722,7 +722,7 @@ ss::future<bool> remote_segment::maybe_materialize_index() {
               std::current_exception());
             co_return false;
         }
-        co_await cache_item->body.close();
+        co_await cache_item.value().body.close();
         co_return true;
     } else {
         vlog(_ctxlog.info, "Index '{}' is not available", path);
@@ -997,7 +997,7 @@ void log_hydration_abort_cause(
   model::opt_abort_source_t as) {
     if (ss::lowres_clock::now() > deadline) {
         vlog(logger.warn, "timed out while waiting for hydration");
-    } else if (as.has_value() && as->get().abort_requested()) {
+    } else if (as.has_value() && as.value().get().abort_requested()) {
         // TODO it might be useful to be able to log the client info here
         // from log reader config.
         vlog(logger.debug, "consumer disconnected during hydration");
@@ -1101,7 +1101,7 @@ ss::future<> remote_segment::hydrate_chunk(chunk_start_offset_t start_offset) {
       cloud_io::cache_hydration_backoff,
       &_rtc};
 
-    auto byte_range = _chunks_api->get_byte_range_for_chunk(
+    auto byte_range = _chunks_api.value().get_byte_range_for_chunk(
       start_offset, _size - 1);
 
     const auto space_required = byte_range.second - byte_range.first + 1;
@@ -1151,7 +1151,7 @@ remote_segment::aborted_transactions(model::offset from, model::offset to) {
         vlog(_ctxlog.debug, "no tx-metadata available");
         co_return result;
     }
-    for (const auto& it : *_tx_range) {
+    for (const auto& it : _tx_range.value()) {
         if (it.last < from) {
             continue;
         }
@@ -1183,15 +1183,15 @@ remote_segment::get_chunk_start_for_kafka_offset(kafka::offset koff) const {
 
     vlog(_ctxlog.trace, "get_chunk_start_for_kafka_offset {}", koff);
 
-    if (unlikely(_coarse_index->empty())) {
+    if (unlikely(_coarse_index.value().empty())) {
         return 0;
     }
 
     // TODO (abhijat) assert that koff >= segment base kafka && koff <= segment
     // end kafka
-    auto it = _coarse_index->upper_bound(koff);
+    auto it = _coarse_index.value().upper_bound(koff);
     // The kafka offset lies in the first chunk of the file.
-    if (it == _coarse_index->begin()) {
+    if (it == _coarse_index.value().begin()) {
         return 0;
     }
 
@@ -1393,7 +1393,7 @@ public:
               header.last_offset(),
               _seg_reader._cur_ot_state);
 
-            _seg_reader._cur_ot_state->get().add_gap(
+            _seg_reader._cur_ot_state.value().get().add_gap(
               header.base_offset, header.last_offset());
             _seg_reader._cur_delta += header.last_offset_delta
                                       + model::offset(1);

@@ -52,7 +52,7 @@ partition_manifest_downloader::download_manifest(
     if (!json_str.has_value()) {
         co_return find_partition_manifest_outcome::no_matching_manifest;
     }
-    auto json_path = remote_manifest_path{*json_str};
+    auto json_path = remote_manifest_path{json_str.value()};
     auto json_res = co_await remote_.download_manifest_json(
       bucket_, json_path, *manifest, retry_node);
     if (json_res == download_result::success) {

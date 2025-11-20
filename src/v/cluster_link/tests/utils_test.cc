@@ -104,8 +104,8 @@ TEST(cluster_link_utils_test, test_sasl_config) {
 
     auto cfg = metadata_to_kafka_config(md);
     ASSERT_TRUE(cfg.sasl_cfg.has_value());
-    EXPECT_EQ(cfg.sasl_cfg->mechanism, "SCRAM-SHA-256");
-    EXPECT_EQ(cfg.sasl_cfg->username, "user");
-    EXPECT_EQ(cfg.sasl_cfg->password, "pass");
+    EXPECT_EQ(cfg.sasl_cfg.value().mechanism, "SCRAM-SHA-256");
+    EXPECT_EQ(cfg.sasl_cfg.value().username, "user");
+    EXPECT_EQ(cfg.sasl_cfg.value().password, "pass");
 }
 } // namespace cluster_link::tests

@@ -277,7 +277,7 @@ leader_router<req_t, resp_t, handler_t>::find_shard_and_process(
         }
         _as.check();
     }
-    co_return co_await _handler.process(*shard, std::move(req));
+    co_return co_await _handler.process(shard.value(), std::move(req));
 }
 
 } // namespace cluster

@@ -79,21 +79,21 @@ values_data get_value_data(const entity_value& val) {
         ret.emplace_back(
           ss::sstring(
             to_string_view(entity_value_diff::key::producer_byte_rate)),
-          *val.producer_byte_rate);
+          val.producer_byte_rate.value());
     }
 
     if (val.consumer_byte_rate) {
         ret.emplace_back(
           ss::sstring(
             to_string_view(entity_value_diff::key::consumer_byte_rate)),
-          *val.consumer_byte_rate);
+          val.consumer_byte_rate.value());
     }
 
     if (val.controller_mutation_rate) {
         ret.emplace_back(
           ss::sstring(
             to_string_view(entity_value_diff::key::controller_mutation_rate)),
-          *val.controller_mutation_rate);
+          val.controller_mutation_rate.value());
     }
     return ret;
 }
@@ -106,11 +106,12 @@ exact_match_key(const component_data& component) {
              component.entity_type)
       .match(
         "client-id",
-        entity_key::part{.part = entity_key::client_id_match{*component.match}})
+        entity_key::part{
+          .part = entity_key::client_id_match{component.match.value()}})
       .match(
         "client-id-prefix",
         entity_key::part{
-          .part = entity_key::client_id_prefix_match{*component.match}})
+          .part = entity_key::client_id_prefix_match{component.match.value()}})
       .match_all(
         "user",
         "ip",
@@ -377,9 +378,9 @@ ss::future<response_ptr> describe_client_quotas_handler::handle(
           // Each predicate in the request needs to have at least one key part
           // that matches it (regardless of strict mode)
           const auto& key = kv.first;
-          auto each_predicate_has_a_match = !client_predicate
-                                            || std::ranges::any_of(
-                                              key.parts, *client_predicate);
+          auto each_predicate_has_a_match
+            = !client_predicate
+              || std::ranges::any_of(key.parts, client_predicate.value());
           // && (!user_predicate || std::ranges::any_of(key.parts,
           // *user_predicate))
           // && (!ip_predicate || std::ranges::any_of(key.parts,
@@ -393,16 +394,16 @@ ss::future<response_ptr> describe_client_quotas_handler::handle(
           // predicate
           auto reverse_predicate =
             [&client_predicate](const entity_key::part& part) {
-                return client_predicate && (*client_predicate)(part);
+                return client_predicate && (client_predicate.value())(part);
                 //  || (user_predicate && (*user_predicate)(part))
                 //  || (ip_predicate && (*ip_predicate)(part));
             };
           return !strict || std::ranges::all_of(key.parts, reverse_predicate);
       });
 
-    res.data.entries->reserve(quotas.size());
+    res.data.entries.value().reserve(quotas.size());
     for (const auto& q : quotas) {
-        res.data.entries->emplace_back(
+        res.data.entries.value().emplace_back(
           get_entity_data(q.first), get_value_data(q.second));
     }
 
@@ -468,7 +469,7 @@ ss::future<response_ptr> alter_client_quotas_handler::handle(
             auto cqt
               = cluster::client_quota::from_string_view<entity_value_diff::key>(
                 op.key);
-            if (!cqt || !valid_key_combination(key, *cqt)) {
+            if (!cqt || !valid_key_combination(key, cqt.value())) {
                 entry_res.error_code = kafka::error_code::invalid_request;
                 entry_res.error_message = fmt::format(
                   "Invalid configuration key {}", op.key);
@@ -477,7 +478,7 @@ ss::future<response_ptr> alter_client_quotas_handler::handle(
             diff.entries.emplace(
               op.remove ? entity_value_diff::operation::remove
                         : entity_value_diff::operation::upsert,
-              *cqt,
+              cqt.value(),
               op.value);
         }
         if (entry_res.error_code == error_code::none) {

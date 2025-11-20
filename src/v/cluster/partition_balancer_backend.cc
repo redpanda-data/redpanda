@@ -123,12 +123,12 @@ ss::future<std::error_code> partition_balancer_backend::request_rebalance() {
         co_return errc::not_leader;
     }
 
-    if (!_cur_term || _raft0->term() != _cur_term->id) {
+    if (!_cur_term || _raft0->term() != _cur_term.value().id) {
         _cur_term = per_term_state(_raft0->term());
     }
 
     if (
-      _cur_term->_ondemand_rebalance_requested
+      _cur_term.value()._ondemand_rebalance_requested
       || !_state.nodes_to_rebalance().empty()) {
         vlog(
           clusterlog.info,
@@ -140,7 +140,7 @@ ss::future<std::error_code> partition_balancer_backend::request_rebalance() {
     }
 
     vlog(clusterlog.info, "requesting on demand rebalance");
-    _cur_term->_ondemand_rebalance_requested = true;
+    _cur_term.value()._ondemand_rebalance_requested = true;
     maybe_rearm_timer(/*now=*/true);
     co_return errc::success;
 }
@@ -184,7 +184,7 @@ void partition_balancer_backend::on_members_update(
       state == model::membership_state::active
       || state == model::membership_state::draining) {
         if (_tick_in_progress) {
-            _tick_in_progress->request_abort_ex(
+            _tick_in_progress.value().request_abort_ex(
               balancer_tick_aborted_exception{
                 fmt::format("new membership update: {}", state)});
         }
@@ -219,12 +219,13 @@ void partition_balancer_backend::on_topic_table_update() {
         return;
     }
 
-    if (!_cur_term || _raft0->term() != _cur_term->id) {
+    if (!_cur_term || _raft0->term() != _cur_term.value().id) {
         // don't try to check how in-progress updates count dropped before doing
         // a single tick in this term.
         return;
     }
-    auto last_in_progress_updates = _cur_term->last_tick_in_progress_updates;
+    auto last_in_progress_updates
+      = _cur_term.value().last_tick_in_progress_updates;
 
     auto current_in_progress_updates
       = _state.topics().updates_in_progress().size();
@@ -284,7 +285,8 @@ void partition_balancer_backend::tick() {
               return do_tick().finally([this] {
                   _tick_in_progress = {};
                   maybe_rearm_timer(
-                    _cur_term && _cur_term->_force_health_report_refresh);
+                    _cur_term
+                    && _cur_term.value()._force_health_report_refresh);
               });
           })
           .handle_exception_type([](balancer_tick_aborted_exception& e) {
@@ -319,7 +321,7 @@ ss::future<> partition_balancer_backend::stop() {
     _timer.cancel();
     _lock.broken();
     if (_tick_in_progress) {
-        _tick_in_progress->request_abort_ex(
+        _tick_in_progress.value().request_abort_ex(
           balancer_tick_aborted_exception{"shutting down"});
     }
     return _gate.close();
@@ -340,7 +342,7 @@ ss::future<> partition_balancer_backend::do_tick() {
 
     vlog(clusterlog.debug, "tick");
 
-    if (!_cur_term || _raft0->term() != _cur_term->id) {
+    if (!_cur_term || _raft0->term() != _cur_term.value().id) {
         _cur_term = per_term_state(_raft0->term());
     }
 
@@ -348,19 +350,19 @@ ss::future<> partition_balancer_backend::do_tick() {
       _raft0->committed_offset(),
       model::timeout_clock::now() + controller_stm_sync_timeout);
 
-    if (_raft0->term() != _cur_term->id) {
+    if (_raft0->term() != _cur_term.value().id) {
         vlog(clusterlog.debug, "lost leadership, exiting");
         // TODO: add term checks to planner
         co_return;
     }
 
     const bool force_refresh_this_tick
-      = _cur_term->_force_health_report_refresh;
+      = _cur_term.value()._force_health_report_refresh;
     auto health_report = co_await _health_monitor.get_cluster_health(
       cluster_report_filter{},
       force_refresh(force_refresh_this_tick),
       model::timeout_clock::now() + controller_stm_sync_timeout);
-    _cur_term->_force_health_report_refresh = false;
+    _cur_term.value()._force_health_report_refresh = false;
 
     if (!health_report) {
         vlog(
@@ -370,7 +372,7 @@ ss::future<> partition_balancer_backend::do_tick() {
         co_return;
     }
 
-    if (_raft0->term() != _cur_term->id) {
+    if (_raft0->term() != _cur_term.value().id) {
         vlog(clusterlog.debug, "lost leadership, exiting");
         co_return;
     }
@@ -405,7 +407,7 @@ ss::future<> partition_balancer_backend::do_tick() {
         .max_concurrent_actions = _max_concurrent_actions(),
         .node_availability_timeout_sec = _availability_timeout(),
         .ondemand_rebalance_requested
-        = _cur_term->_ondemand_rebalance_requested,
+        = _cur_term.value()._ondemand_rebalance_requested,
         .segment_fallocation_step = _segment_fallocation_step(),
         .min_partition_size_threshold = get_min_partition_size_threshold(),
         .node_responsiveness_timeout = node_responsiveness_timeout,
@@ -418,30 +420,30 @@ ss::future<> partition_balancer_backend::do_tick() {
     auto plan_data = co_await planner.plan_actions(
       health_report.value(), _tick_in_progress.value());
 
-    _cur_term->last_tick_time = clock_t::now();
-    _cur_term->last_violations = std::move(plan_data.violations);
-    _cur_term->last_tick_reallocation_failures = std::move(
+    _cur_term.value().last_tick_time = clock_t::now();
+    _cur_term.value().last_violations = std::move(plan_data.violations);
+    _cur_term.value().last_tick_reallocation_failures = std::move(
       plan_data.reallocation_failures);
     if (
       _state.topics().has_updates_in_progress()
       || plan_data.status == planner_status::actions_planned) {
-        _cur_term->last_status = partition_balancer_status::in_progress;
+        _cur_term.value().last_status = partition_balancer_status::in_progress;
     } else if (
       plan_data.status == planner_status::missing_sizes
       && !force_refresh_this_tick) {
         // If we are missing partition sizes and haven't yet force-refreshed the
         // health monitor, do it immediately on the next tick.
-        _cur_term->_force_health_report_refresh = true;
-        _cur_term->last_status = partition_balancer_status::in_progress;
+        _cur_term.value()._force_health_report_refresh = true;
+        _cur_term.value().last_status = partition_balancer_status::in_progress;
     } else if (plan_data.status == planner_status::waiting_for_reports) {
-        _cur_term->last_status = partition_balancer_status::starting;
+        _cur_term.value().last_status = partition_balancer_status::starting;
     } else if (plan_data.failed_actions_count > 0) {
-        _cur_term->last_status = partition_balancer_status::stalled;
+        _cur_term.value().last_status = partition_balancer_status::stalled;
     } else {
-        _cur_term->last_status = partition_balancer_status::ready;
+        _cur_term.value().last_status = partition_balancer_status::ready;
     }
 
-    if (_cur_term->last_status != partition_balancer_status::ready) {
+    if (_cur_term.value().last_status != partition_balancer_status::ready) {
         vlog(
           clusterlog.info,
           "last status: {}; "
@@ -466,16 +468,16 @@ ss::future<> partition_balancer_backend::do_tick() {
     auto moves_before = _state.topics().updates_in_progress().size();
 
     if (moves_before == 0 && plan_data.counts_rebalancing_finished) {
-        _cur_term->_ondemand_rebalance_requested = false;
+        _cur_term.value()._ondemand_rebalance_requested = false;
 
         // make a copy in case the collection is modified concurrently.
         auto nodes_to_finish = _state.nodes_to_rebalance();
         co_await ss::max_concurrent_for_each(
           nodes_to_finish, 32, [this](model::node_id node) {
-              _tick_in_progress->check();
+              _tick_in_progress.value().check();
 
               return _members_frontend
-                .finish_node_reallocations(node, _cur_term->id)
+                .finish_node_reallocations(node, _cur_term.value().id)
                 .then([node](auto errc) {
                     if (errc) {
                         vlog(
@@ -491,11 +493,11 @@ ss::future<> partition_balancer_backend::do_tick() {
 
     co_await ss::max_concurrent_for_each(
       plan_data.cancellations, 32, [this](model::ntp& ntp) {
-          _tick_in_progress->check();
+          _tick_in_progress.value().check();
           auto f = _topics_frontend.cancel_moving_partition_replicas(
             ntp,
             model::timeout_clock::now() + add_move_cmd_timeout,
-            _cur_term->id);
+            _cur_term.value().id);
 
           return f.then([ntp = std::move(ntp)](auto errc) {
               if (errc) {
@@ -510,7 +512,7 @@ ss::future<> partition_balancer_backend::do_tick() {
 
     co_await ss::max_concurrent_for_each(
       plan_data.reassignments, 32, [this](ntp_reassignment& reassignment) {
-          _tick_in_progress->check();
+          _tick_in_progress.value().check();
           auto f = ss::make_ready_future<std::error_code>();
           switch (reassignment.type) {
           case regular:
@@ -519,7 +521,7 @@ ss::future<> partition_balancer_backend::do_tick() {
                 reassignment.allocated.replicas(),
                 reassignment.reconfiguration_policy,
                 model::timeout_clock::now() + add_move_cmd_timeout,
-                _cur_term->id);
+                _cur_term.value().id);
               break;
           case force:
               f = _topics_frontend.force_update_partition_replicas(
@@ -546,9 +548,9 @@ ss::future<> partition_balancer_backend::do_tick() {
             });
       });
 
-    _cur_term->last_tick_in_progress_updates = moves_before
-                                               + plan_data.cancellations.size()
-                                               + plan_data.reassignments.size();
+    _cur_term.value().last_tick_in_progress_updates
+      = moves_before + plan_data.cancellations.size()
+        + plan_data.reassignments.size();
 }
 
 partition_balancer_overview_reply partition_balancer_backend::overview() const {
@@ -567,7 +569,7 @@ partition_balancer_overview_reply partition_balancer_backend::overview() const {
         return ret;
     }
 
-    if (!_cur_term || _raft0->term() != _cur_term->id) {
+    if (!_cur_term || _raft0->term() != _cur_term.value().id) {
         // we haven't done a single tick in this term yet, return empty response
         ret.status = partition_balancer_status::starting;
         ret.partitions_pending_force_recovery_count = -1;
@@ -575,9 +577,10 @@ partition_balancer_overview_reply partition_balancer_backend::overview() const {
         return ret;
     }
 
-    ret.status = _cur_term->last_status;
-    ret.violations = _cur_term->last_violations;
-    ret.set_reallocation_failures(_cur_term->last_tick_reallocation_failures);
+    ret.status = _cur_term.value().last_status;
+    ret.violations = _cur_term.value().last_violations;
+    ret.set_reallocation_failures(
+      _cur_term.value().last_tick_reallocation_failures);
     ret.partitions_pending_force_recovery_count
       = _state.topics().partitions_to_force_recover().size();
     if (ret.partitions_pending_force_recovery_count > 0) {
@@ -598,7 +601,7 @@ partition_balancer_overview_reply partition_balancer_backend::overview() const {
     }
 
     auto now = clock_t::now();
-    auto time_since_last_tick = now - _cur_term->last_tick_time;
+    auto time_since_last_tick = now - _cur_term.value().last_tick_time;
     ret.last_tick_time = model::to_timestamp(
       model::timestamp_clock::now()
       - std::chrono::duration_cast<model::timestamp_clock::duration>(

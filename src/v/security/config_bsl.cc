@@ -67,12 +67,14 @@ parse_rules(std::optional<std::vector<ss::sstring>> unparsed_rules) {
     static const std::regex rule_splitter = make_regex(rule_pattern_splitter);
     static const std::regex rule_parser = make_regex(rule_pattern);
 
-    std::string rules
-      = unparsed_rules.has_value()
-          ? fmt::format(
-              "{}",
-              fmt::join(unparsed_rules->begin(), unparsed_rules->end(), ","))
-          : "DEFAULT";
+    std::string rules = unparsed_rules.has_value()
+                          ? fmt::format(
+                              "{}",
+                              fmt::join(
+                                unparsed_rules.value().begin(),
+                                unparsed_rules.value().end(),
+                                ","))
+                          : "DEFAULT";
 
     std::vector<rule> result;
     std::cmatch rules_match;
@@ -80,7 +82,8 @@ parse_rules(std::optional<std::vector<ss::sstring>> unparsed_rules) {
         const auto& rule{rules_match[1]};
 
         std::cmatch components_match;
-        if (!regex_search(*make_sv(rule), components_match, rule_parser)) {
+        if (!regex_search(
+              make_sv(rule).value(), components_match, rule_parser)) {
             throw std::runtime_error("Invalid rule: " + rule.str());
         }
         if (components_match.prefix().matched) {
@@ -97,7 +100,7 @@ parse_rules(std::optional<std::vector<ss::sstring>> unparsed_rules) {
         } else if (components_match[2].matched) {
             const auto adjust_case = make_sv(components_match[6]);
             result.emplace_back(
-              *make_sv(components_match[2]),
+              make_sv(components_match[2]).value(),
               make_sv(components_match[4]),
               rule::make_lower{adjust_case == "L"},
               rule::make_upper{adjust_case == "U"});

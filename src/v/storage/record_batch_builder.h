@@ -62,13 +62,13 @@ private:
           = std::vector<model::record_header>())
           : headers(std::move(hdrs)) {
             if (k) {
-                key = std::move(*k);
+                key = std::move(k.value());
                 encoded_key_size = key.size_bytes();
             } else {
                 encoded_key_size = -1;
             }
             if (likely(v)) {
-                value = std::move(*v);
+                value = std::move(v.value());
                 encoded_value_size = value.size_bytes();
             } else {
                 encoded_value_size = -1;

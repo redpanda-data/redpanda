@@ -433,7 +433,7 @@ public:
         ss::future<result<R, cluster::errc>>(kafka::partition_proxy*)> fn,
       require_leader = require_leader::yes) {
         auto owner = shard_owner(ntp);
-        if (!owner || shard_id != *owner) {
+        if (!owner || shard_id != owner.value()) {
             co_return cluster::errc::not_leader;
         }
         if (_errors_to_inject > 0) {

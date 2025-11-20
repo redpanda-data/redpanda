@@ -894,7 +894,7 @@ ss::future<storage::append_result> append_exactly(
     iobuf key_buf{};
 
     if (key) {
-        key_buf = bytes_to_iobuf(*key);
+        key_buf = bytes_to_iobuf(key.value());
     }
 
     auto real_batch_size = sizeof(model::record_attributes::type) // attributes
@@ -2028,8 +2028,8 @@ TEST_F(storage_test_fixture, adjacent_segment_compaction_range_u32_bounds) {
       storage::segment::offset_tracker::dirty_offset_t{u32_max});
     ranges = disk_log->find_adjacent_compaction_ranges(cfg);
     ASSERT_TRUE(ranges.has_value());
-    ASSERT_EQ(ranges->size(), 1);
-    auto& range = ranges->front();
+    ASSERT_EQ(ranges.value().size(), 1);
+    auto& range = ranges.value().front();
 
     auto range_segments = std::vector<ss::lw_shared_ptr<storage::segment>>(
       range.first, range.second);
@@ -4140,7 +4140,7 @@ struct record_batch_reader_accessor {
     static private_flags get_flags(model::record_batch_reader& r) {
         auto flags = r._impl->get_flags();
         EXPECT_TRUE(flags.has_value()) << "private flags unset";
-        return *flags;
+        return flags.value();
     };
 };
 } // namespace model
@@ -4377,14 +4377,15 @@ TEST_F(storage_test_fixture, test_offset_range_size) {
           expected_size,
           result->on_disk_size);
 
-        ASSERT_EQ(expected_size, result->on_disk_size);
-        ASSERT_EQ(last, result->last_offset);
-        ASSERT_EQ(base_ts, result->first_timestamp);
-        ASSERT_EQ(max_ts, result->last_timestamp);
+        ASSERT_EQ(expected_size, result.value().on_disk_size);
+        ASSERT_EQ(last, result.value().last_offset);
+        ASSERT_EQ(base_ts, result.value().first_timestamp);
+        ASSERT_EQ(max_ts, result.value().last_timestamp);
 
         // Validate using the segment reader
         size_t consumed_size = 0;
-        storage::local_log_reader_config reader_cfg(base, result->last_offset);
+        storage::local_log_reader_config reader_cfg(
+          base, result.value().last_offset);
         reader_cfg.skip_readers_cache = true;
         reader_cfg.skip_batch_cache = true;
         auto log_rdr = log->make_reader(std::move(reader_cfg)).get();
@@ -4392,7 +4393,7 @@ TEST_F(storage_test_fixture, test_offset_range_size) {
           .size_bytes = &consumed_size,
         };
         std::move(log_rdr).consume(size_acc, model::no_timeout).get();
-        ASSERT_EQ(expected_size, result->on_disk_size);
+        ASSERT_EQ(expected_size, result.value().on_disk_size);
     }
 
     auto new_start_offset = model::next_offset(first_segment_last_offset);
@@ -4488,7 +4489,7 @@ TEST_F(storage_test_fixture, test_offset_range_size2) {
                         .get();
 
         ASSERT_TRUE(result.has_value());
-        auto last_offset = result->last_offset;
+        auto last_offset = result.value().last_offset;
         size_t result_ix = 0;
         for (auto s : summaries) {
             if (s.last == last_offset) {
@@ -4497,13 +4498,14 @@ TEST_F(storage_test_fixture, test_offset_range_size2) {
             result_ix++;
         }
         auto expected_size = acc.acc_size[result_ix] - acc.prev_size[base_ix];
-        ASSERT_EQ(expected_size, result->on_disk_size);
-        ASSERT_EQ(base_ts, result->first_timestamp);
-        ASSERT_EQ(summaries[result_ix].max_ts, result->last_timestamp);
+        ASSERT_EQ(expected_size, result.value().on_disk_size);
+        ASSERT_EQ(base_ts, result.value().first_timestamp);
+        ASSERT_EQ(summaries[result_ix].max_ts, result.value().last_timestamp);
 
         // Validate using the segment reader
         size_t consumed_size = 0;
-        storage::local_log_reader_config reader_cfg(base, result->last_offset);
+        storage::local_log_reader_config reader_cfg(
+          base, result.value().last_offset);
         reader_cfg.skip_readers_cache = true;
         reader_cfg.skip_batch_cache = true;
         auto log_rdr = log->make_reader(std::move(reader_cfg)).get();
@@ -4511,7 +4513,7 @@ TEST_F(storage_test_fixture, test_offset_range_size2) {
           .size_bytes = &consumed_size,
         };
         std::move(log_rdr).consume(size_acc, model::no_timeout).get();
-        ASSERT_EQ(expected_size, result->on_disk_size);
+        ASSERT_EQ(expected_size, result.value().on_disk_size);
     }
 
     auto new_start_offset = model::next_offset(first_segment_last_offset);
@@ -4572,8 +4574,9 @@ TEST_F(storage_test_fixture, test_offset_range_size2) {
                  .get();
 
     // Only one batch is returned
-    ASSERT_EQ(res->last_offset, lstat.committed_offset);
-    ASSERT_EQ(res->on_disk_size, acc.acc_size.back() - acc.prev_size.back());
+    ASSERT_EQ(res.value().last_offset, lstat.committed_offset);
+    ASSERT_EQ(
+      res.value().on_disk_size, acc.acc_size.back() - acc.prev_size.back());
 
     // Check that we can measure the size of the log tail. This is needed for
     // timed uploads.
@@ -4590,9 +4593,10 @@ TEST_F(storage_test_fixture, test_offset_range_size2) {
                   })
                 .get();
 
-        ASSERT_EQ(res->last_offset, lstat.committed_offset);
+        ASSERT_EQ(res.value().last_offset, lstat.committed_offset);
         ASSERT_EQ(
-          res->on_disk_size, acc.acc_size.back() - acc.prev_size.at(ix_batch));
+          res.value().on_disk_size,
+          acc.acc_size.back() - acc.prev_size.at(ix_batch));
     }
 
     // Check that the min_size is respected
@@ -4766,12 +4770,12 @@ TEST_F(storage_test_fixture, test_offset_range_size_compacted) {
           expected_size,
           result->on_disk_size);
 
-        ASSERT_EQ(expected_size, result->on_disk_size);
-        ASSERT_EQ(last, result->last_offset);
+        ASSERT_EQ(expected_size, result.value().on_disk_size);
+        ASSERT_EQ(last, result.value().last_offset);
 
         size_t consumed_size = 0;
         storage::local_log_reader_config c_reader_cfg(
-          base, result->last_offset);
+          base, result.value().last_offset);
         c_reader_cfg.skip_readers_cache = true;
         c_reader_cfg.skip_batch_cache = true;
         auto c_log_rdr = log->make_reader(std::move(c_reader_cfg)).get();
@@ -4779,7 +4783,7 @@ TEST_F(storage_test_fixture, test_offset_range_size_compacted) {
           .size_bytes = &consumed_size,
         };
         std::move(c_log_rdr).consume(c_size_acc, model::no_timeout).get();
-        ASSERT_EQ(expected_size, result->on_disk_size);
+        ASSERT_EQ(expected_size, result.value().on_disk_size);
     }
 
     auto new_start_offset = model::next_offset(first_segment_last_offset);
@@ -4957,7 +4961,7 @@ TEST_F(storage_test_fixture, test_offset_range_size2_compacted) {
                           })
                         .get();
         ASSERT_TRUE(result.has_value());
-        auto last_offset = result->last_offset;
+        auto last_offset = result.value().last_offset;
 
         size_t expected_size = 0;
 
@@ -4969,8 +4973,8 @@ TEST_F(storage_test_fixture, test_offset_range_size2_compacted) {
           .size_bytes = &expected_size,
         };
         std::move(c_log_rdr).consume(c_size_acc, model::no_timeout).get();
-        ASSERT_EQ(expected_size, result->on_disk_size);
-        ASSERT_TRUE(result->on_disk_size >= target_size);
+        ASSERT_EQ(expected_size, result.value().on_disk_size);
+        ASSERT_TRUE(result.value().on_disk_size >= target_size);
     }
 
     SUCCEED() << fmt::format("Prefix truncating");
@@ -5034,8 +5038,8 @@ TEST_F(storage_test_fixture, test_offset_range_size2_compacted) {
                  .get();
 
     // Only one batch is returned
-    ASSERT_EQ(res->last_offset, lstat.committed_offset);
-    ASSERT_EQ(res->on_disk_size, c_acc_size.back() - c_prev_size.back());
+    ASSERT_EQ(res.value().last_offset, lstat.committed_offset);
+    ASSERT_EQ(res.value().on_disk_size, c_acc_size.back() - c_prev_size.back());
 
     // Check that we can measure the size of the log tail. This is needed for
     // timed uploads.
@@ -5053,9 +5057,10 @@ TEST_F(storage_test_fixture, test_offset_range_size2_compacted) {
                   })
                 .get();
 
-        ASSERT_EQ(res->last_offset, lstat.committed_offset);
+        ASSERT_EQ(res.value().last_offset, lstat.committed_offset);
         ASSERT_EQ(
-          res->on_disk_size, c_acc_size.back() - c_prev_size.at(ix_batch));
+          res.value().on_disk_size,
+          c_acc_size.back() - c_prev_size.at(ix_batch));
     }
 
     // Check that the min_size is respected
@@ -5211,7 +5216,7 @@ TEST_F(storage_test_fixture, test_offset_range_size_incremental) {
                            })
                          .get();
             ASSERT_TRUE(res.has_value());
-            last_offset = res->last_offset;
+            last_offset = res.value().last_offset;
             done = last_offset == log->offsets().committed_offset;
             vlog(
               e2e_test_log.info,
@@ -5221,8 +5226,8 @@ TEST_F(storage_test_fixture, test_offset_range_size_incremental) {
               max_size,
               res->on_disk_size,
               res->last_offset);
-            ASSERT_TRUE(res->on_disk_size > min_size);
-            ASSERT_TRUE(res->on_disk_size < max_size);
+            ASSERT_TRUE(res.value().on_disk_size > min_size);
+            ASSERT_TRUE(res.value().on_disk_size < max_size);
 
             // scan the range using the storage reader and compare
 
@@ -5230,7 +5235,8 @@ TEST_F(storage_test_fixture, test_offset_range_size_incremental) {
             batch_size_accumulator acc{};
             acc.size_bytes = &measured_size;
 
-            storage::local_log_reader_config reader_cfg(base, res->last_offset);
+            storage::local_log_reader_config reader_cfg(
+              base, res.value().last_offset);
             reader_cfg.skip_readers_cache = true;
             reader_cfg.skip_batch_cache = true;
             auto reader = log->make_reader(reader_cfg).get();
@@ -5240,7 +5246,7 @@ TEST_F(storage_test_fixture, test_offset_range_size_incremental) {
               "Expected size: {}, actual size: {}",
               measured_size,
               res->on_disk_size);
-            ASSERT_EQ(measured_size, res->on_disk_size);
+            ASSERT_EQ(measured_size, res.value().on_disk_size);
         }
     }
 };
@@ -6387,13 +6393,13 @@ TEST_F(storage_test_fixture, find_sliding_ranges) {
                 // Override the dirty offset of the segment, if specified
                 ot.set_offset(
                   storage::segment::offset_tracker::dirty_offset_t{
-                    *segment_fields[i].dirty_offset_override});
+                    segment_fields[i].dirty_offset_override.value()});
             }
             if (segment_fields[i].base_offset_override.has_value()) {
                 // Override the base offset of the segment, if specified
                 storage::testing_details::offset_tracker_accessor::base_offset(
                   ot)
-                  = *segment_fields[i].base_offset_override;
+                  = segment_fields[i].base_offset_override.value();
             }
         }
 
@@ -6406,9 +6412,9 @@ TEST_F(storage_test_fixture, find_sliding_ranges) {
           cfg, test_case.new_start_offset);
         if (!expected_ranges.empty()) {
             ASSERT_TRUE(adjacent_ranges.has_value());
-            ASSERT_EQ(adjacent_ranges->size(), expected_ranges.size());
+            ASSERT_EQ(adjacent_ranges.value().size(), expected_ranges.size());
             for (size_t expected_ranges_index = 0;
-                 const auto& seg_it : *adjacent_ranges) {
+                 const auto& seg_it : adjacent_ranges.value()) {
                 auto first_index = segment_filename_index_map.at(
                   (*seg_it.first)->filename());
                 ASSERT_EQ(

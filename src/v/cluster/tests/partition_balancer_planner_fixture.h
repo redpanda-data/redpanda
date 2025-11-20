@@ -336,7 +336,7 @@ struct partition_balancer_planner_fixture {
         BOOST_REQUIRE(cur_assignment);
 
         cluster::finish_moving_partition_replicas_cmd cmd{
-          std::move(ntp), cur_assignment->replicas};
+          std::move(ntp), cur_assignment.value().replicas};
 
         workers.dispatch_topic_command(std::move(cmd));
     }

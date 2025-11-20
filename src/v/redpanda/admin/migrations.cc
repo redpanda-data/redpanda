@@ -57,7 +57,7 @@ ss::httpd::migration_json::namespaced_topic to_admin_type(
     ret.topic = cloud_storage_location
                   ? ss::sstring(
                       fmt::format(
-                        "{}/{}", tp_ns.tp, cloud_storage_location->hint))
+                        "{}/{}", tp_ns.tp, cloud_storage_location.value().hint))
                   : tp_ns.tp;
     return ret;
 }
@@ -70,7 +70,7 @@ ss::httpd::migration_json::outbound_topic to_admin_type(
     ret.topic = tp_ns.tp;
     if (tp_loc && tp_loc->location) {
         ret.remote_location = ssx::sformat(
-          "{}/{}", tp_loc->remote_topic.tp, tp_loc->location->hint);
+          "{}/{}", tp_loc->remote_topic.tp, tp_loc->location.value().hint);
     }
     return ret;
 }
@@ -86,7 +86,7 @@ to_admin_type(const cluster::data_migrations::inbound_migration& idm) {
         inbound_tp.source_topic_reference = to_admin_type(
           inbound_t.source_topic_name, inbound_t.cloud_storage_location);
         if (inbound_t.alias) {
-            inbound_tp.alias = to_admin_type(*inbound_t.alias);
+            inbound_tp.alias = to_admin_type(inbound_t.alias.value());
         }
         migration.topics.push(inbound_tp);
     }

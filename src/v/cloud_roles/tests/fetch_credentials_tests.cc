@@ -579,7 +579,7 @@ FIXTURE_TEST(test_imdsv2_fallback, fixture) {
       cloud_role_tests::aws_role_query_url);
     BOOST_REQUIRE(role_q.has_value());
     BOOST_REQUIRE(
-      !role_q->get().header("X-aws-ec2-metadata-token").has_value());
+      !role_q.value().get().header("X-aws-ec2-metadata-token").has_value());
 
     auto log = wrapper.string();
 

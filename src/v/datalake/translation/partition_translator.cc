@@ -168,7 +168,8 @@ partition_translator::fetch_translation_offsets(retry_chain_node& rcn) {
     }
 
     auto next_start_offset = result.last_added_offset
-                               ? kafka::next_offset(*result.last_added_offset)
+                               ? kafka::next_offset(
+                                   result.last_added_offset.value())
                                : _data_source->min_offset_for_translation();
 
     // Replicate an initialized last translated offset to unblock the max
@@ -253,7 +254,7 @@ partition_translator::run_one_translation_iteration(
     try {
         co_await _ready_to_translate.wait(
           [this] { return _inflight_translation_state.has_value(); });
-        auto& as = _inflight_translation_state->as;
+        auto& as = _inflight_translation_state.value().as;
         /*
          * before going to the trouble of building a reader and poking the
          * translation context, check if an abort has been requested. this
@@ -281,14 +282,15 @@ partition_translator::run_one_translation_iteration(
                                ->translate_now(
                                  std::move(reader.value()),
                                  begin_offset,
-                                 _inflight_translation_state->as)
+                                 _inflight_translation_state.value().as)
                                .finally(
                                  [this] { return _translation_ctx->flush(); });
-        cancellation_timer.arm(_inflight_translation_state->translate_for);
+        cancellation_timer.arm(
+          _inflight_translation_state.value().translate_for);
         co_await std::move(translation_f).finally([&cancellation_timer] {
             cancellation_timer.cancel();
         });
-        _inflight_translation_state->as.check();
+        _inflight_translation_state.value().as.check();
     } catch (const translator_out_of_memory_error&) {
         // We just swallow the exception because the underlying result state
         // is still safe to be flushed.
@@ -459,11 +461,11 @@ ss::future<> partition_translator::translate_until_stopped() {
         if (!offsets && !finish_now) {
             continue;
         }
-        if (offsets->next_translation_begin_offset && !finish_now) {
+        if (offsets.value().next_translation_begin_offset && !finish_now) {
             // new data is available to translate
             auto translate_f = co_await ss::coroutine::as_future(
               run_one_translation_iteration(
-                offsets->next_translation_begin_offset.value()));
+                offsets.value().next_translation_begin_offset.value()));
             if (translate_f.failed()) {
                 translate_f.ignore_ready_future();
                 continue;
@@ -494,7 +496,7 @@ ss::future<> partition_translator::translate_until_stopped() {
             });
 
             auto success = co_await finish_inflight_translation(
-              offsets->coordinator_lto, finish_rcn);
+              offsets.value().coordinator_lto, finish_rcn);
             if (!success) {
                 continue;
             }
@@ -551,7 +553,7 @@ ss::future<> partition_translator::close() noexcept {
     _as.request_abort();
     _ready_to_translate.broken();
     if (_inflight_translation_state) {
-        _inflight_translation_state->as.request_abort_ex(
+        _inflight_translation_state.value().as.request_abort_ex(
           translator_shutdown_error{});
     }
     _data_source->close();
@@ -595,11 +597,11 @@ void partition_translator::stop_translation(translator::stop_reason reason) {
 
     switch (reason) {
     case stop_reason::oom:
-        _inflight_translation_state->as.request_abort_ex(
+        _inflight_translation_state.value().as.request_abort_ex(
           translator_out_of_memory_error{});
         break;
     case stop_reason::out_of_disk:
-        _inflight_translation_state->as.request_abort_ex(
+        _inflight_translation_state.value().as.request_abort_ex(
           translator_out_of_disk_error{});
         break;
     }

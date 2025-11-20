@@ -99,7 +99,7 @@ BOOST_DATA_TEST_CASE(
          "RULE:^cn=(.*?),ou=(.*?),dc=(.*?),dc=(.*?)$/$1@$2/U, "
          "RULE:^.*[Cc][Nn]=([a-zA-Z0-9.]*).*$/$1/U, "
          "DEFAULT"}})};
-    BOOST_REQUIRE_EQUAL(c.expected, *mapper.apply(c.input));
+    BOOST_REQUIRE_EQUAL(c.expected, mapper.apply(c.input).value());
 }
 
 static std::array<record, 18> mtls_rule_splitting_data{

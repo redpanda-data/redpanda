@@ -140,18 +140,18 @@ public:
             // TODO: consider truncating large values instead of writing them
             // (is_exact=false)
             max_bound.emplace(
-              /*value=*/encode_for_stats(*max),
+              /*value=*/encode_for_stats(max.value()),
               /*is_exact=*/true);
-            _flushed_stats.record_value(*max);
+            _flushed_stats.record_value(max.value());
         }
         std::optional<statistics::bound> min_bound;
         if (bound_type min = _current_page_stats.min()) {
             // TODO: consider truncating large values instead of writing them
             // (is_exact=false)
             min_bound.emplace(
-              /*value=*/encode_for_stats(*min),
+              /*value=*/encode_for_stats(min.value()),
               /*is_exact=*/true);
-            _flushed_stats.record_value(*min);
+            _flushed_stats.record_value(min.value());
         }
         _flushed_stats.record_null(_current_page_stats.null_count());
         page_header header{
@@ -219,12 +219,12 @@ public:
         using bound_type = decltype(_flushed_stats)::bound_ref_type;
         if (bound_type max = _flushed_stats.max()) {
             full_stats.max.emplace(
-              /*value=*/encode_for_stats(*max),
+              /*value=*/encode_for_stats(max.value()),
               /*is_exact=*/true);
         }
         if (bound_type min = _flushed_stats.min()) {
             full_stats.min.emplace(
-              /*value=*/encode_for_stats(*min),
+              /*value=*/encode_for_stats(min.value()),
               /*is_exact=*/true);
         }
         _flushed_stats.reset();

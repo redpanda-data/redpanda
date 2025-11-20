@@ -102,7 +102,7 @@ public:
         } else {
             if (auto val = should_enqueue_audit_event(api, result.principal);
                 val.has_value()) {
-                return (bool)*val;
+                return (bool)val.value();
             }
         }
 
@@ -129,7 +129,7 @@ public:
         } else {
             if (auto val = should_enqueue_audit_event(api, result.principal);
                 val.has_value()) {
-                return (bool)*val;
+                return (bool)val.value();
             }
         }
         return do_enqueue_audit_event<api_activity>(
@@ -147,7 +147,7 @@ public:
       security::auth_result&& result) {
         if (auto val = should_enqueue_audit_event(event_type, result.principal);
             val.has_value()) {
-            return (bool)*val;
+            return (bool)val.value();
         }
         return do_enqueue_audit_event<api_activity>(
           svc_name, req, operation_name, std::move(result));
@@ -165,7 +165,7 @@ public:
         if (auto val = should_enqueue_audit_event(
               event_type, auth_result.get_username());
             val.has_value()) {
-            return (bool)*val;
+            return (bool)val.value();
         }
         return do_enqueue_audit_event<api_activity>(
           svc_name,
@@ -190,7 +190,7 @@ public:
         if (auto val = should_enqueue_audit_event(
               event_type, auth_result.get_username());
             val.has_value()) {
-            return (bool)*val;
+            return (bool)val.value();
         }
         return do_enqueue_audit_event<api_activity>(
           svc_name,
@@ -207,7 +207,7 @@ public:
         if (auto val = should_enqueue_audit_event(
               event_type::authenticate, options.user);
             val.has_value()) {
-            return (bool)*val;
+            return (bool)val.value();
         }
         return do_enqueue_audit_event<authentication>(std::move(options));
     }
@@ -215,7 +215,7 @@ public:
     template<typename... Args>
     bool enqueue_app_lifecycle_event(Args&&... args) {
         if (auto val = should_enqueue_audit_event(); val.has_value()) {
-            return (bool)*val;
+            return (bool)val.value();
         }
         return do_enqueue_audit_event<application_lifecycle>(
           std::forward<Args>(args)...);
@@ -231,7 +231,7 @@ public:
         if (auto val = should_enqueue_audit_event(
               type, auth_result.get_username());
             val.has_value()) {
-            return (bool)*val;
+            return (bool)val.value();
         }
         return do_enqueue_audit_event<api_activity>(
           req, auth_result, svc_name, authorized, reason);
@@ -244,7 +244,7 @@ public:
       const ss::sstring& svc_name) {
         if (auto val = should_enqueue_audit_event(type, user);
             val.has_value()) {
-            return (bool)*val;
+            return (bool)val.value();
         }
         return do_enqueue_audit_event<api_activity>(req, user, svc_name);
     }
@@ -356,7 +356,7 @@ private:
               *msg,
               _queue_bytes_sem.available_units());
             list.push_back(
-              audit_msg(hash_key, std::move(msg), std::move(*units)));
+              audit_msg(hash_key, std::move(msg), std::move(units.value())));
         } else {
             vlog(
               adtlog.trace, "Incrementing count of event {}", it->ocsf_msg());

@@ -109,28 +109,28 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
 
     for (unsigned ix = 0; ix < rp_offsets.size(); ix++) {
         auto opt = index.find_rp_offset(rp_offsets[ix] + model::offset(1));
-        auto [rp, kaf, fpos] = *opt;
+        auto [rp, kaf, fpos] = opt.value();
         BOOST_REQUIRE_EQUAL(rp, rp_offsets[ix]);
         BOOST_REQUIRE_EQUAL(kaf, kaf_offsets[ix]);
         BOOST_REQUIRE_EQUAL(fpos, file_offsets[ix]);
 
         auto kopt = index.find_kaf_offset(kaf_offsets[ix] + model::offset(1));
-        BOOST_REQUIRE_EQUAL(kopt->rp_offset, rp_offsets[ix]);
-        BOOST_REQUIRE_EQUAL(kopt->kaf_offset, kaf_offsets[ix]);
-        BOOST_REQUIRE_EQUAL(kopt->file_pos, file_offsets[ix]);
+        BOOST_REQUIRE_EQUAL(kopt.value().rp_offset, rp_offsets[ix]);
+        BOOST_REQUIRE_EQUAL(kopt.value().kaf_offset, kaf_offsets[ix]);
+        BOOST_REQUIRE_EQUAL(kopt.value().file_pos, file_offsets[ix]);
     }
 
     // Query after the last element
     auto opt_last = index.find_rp_offset(last + model::offset(1));
-    auto [rp_last, kaf_last, file_last] = *opt_last;
+    auto [rp_last, kaf_last, file_last] = opt_last.value();
     BOOST_REQUIRE_EQUAL(rp_last, last);
     BOOST_REQUIRE_EQUAL(kaf_last, klast);
     BOOST_REQUIRE_EQUAL(file_last, flast);
 
     auto kopt_last = index.find_kaf_offset(klast + kafka::offset(1));
-    BOOST_REQUIRE_EQUAL(kopt_last->rp_offset, last);
-    BOOST_REQUIRE_EQUAL(kopt_last->kaf_offset, klast);
-    BOOST_REQUIRE_EQUAL(kopt_last->file_pos, flast);
+    BOOST_REQUIRE_EQUAL(kopt_last.value().rp_offset, last);
+    BOOST_REQUIRE_EQUAL(kopt_last.value().kaf_offset, klast);
+    BOOST_REQUIRE_EQUAL(kopt_last.value().file_pos, flast);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_remote_segment_index_builder) {
@@ -166,8 +166,8 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_index_builder) {
     for (const auto& batch : batches) {
         auto res = ix.find_rp_offset(offset + model::offset(1));
         BOOST_REQUIRE(res.has_value());
-        BOOST_REQUIRE_EQUAL(res->rp_offset, offset);
-        BOOST_REQUIRE_EQUAL(res->kaf_offset, koffset);
+        BOOST_REQUIRE_EQUAL(res.value().rp_offset, offset);
+        BOOST_REQUIRE_EQUAL(res.value().kaf_offset, koffset);
 
         offset += batch.num_records;
         koffset += batch.num_records;

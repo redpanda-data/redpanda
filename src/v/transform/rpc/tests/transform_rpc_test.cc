@@ -237,7 +237,7 @@ public:
       find_coordinator_request req) final {
         auto owner = shard_owner(ntp);
         find_coordinator_response resp;
-        if (!owner || shard_id != *owner) {
+        if (!owner || shard_id != owner.value()) {
             for (auto k : req.keys) {
                 resp.errors[k] = cluster::errc::not_leader;
             }
@@ -262,7 +262,7 @@ public:
       offset_commit_request req) final {
         offset_commit_response resp;
         auto owner = shard_owner(ntp);
-        if (!owner || shard_id != *owner) {
+        if (!owner || shard_id != owner.value()) {
             resp.errc = cluster::errc::not_leader;
             co_return resp;
         }
@@ -289,7 +289,7 @@ public:
       offset_fetch_request req) final {
         offset_fetch_response resp;
         auto owner = shard_owner(ntp);
-        if (!owner || shard_id != *owner) {
+        if (!owner || shard_id != owner.value()) {
             for (auto key : req.keys) {
                 resp.errors[key] = cluster::errc::not_leader;
             }
@@ -309,7 +309,7 @@ public:
             }
             auto value = _offset_tracker->get(key);
             if (value) {
-                resp.results[key] = *value;
+                resp.results[key] = value.value();
             }
         }
         co_return resp;
@@ -319,7 +319,7 @@ public:
     list_committed_offsets_on_shard(
       ss::shard_id shard_id, const model::ntp& ntp) override {
         auto owner = shard_owner(ntp);
-        if (!owner || shard_id != *owner) {
+        if (!owner || shard_id != owner.value()) {
             co_return cluster::errc::not_leader;
         }
         if (_errors_to_inject > 0) {
@@ -334,7 +334,7 @@ public:
       const model::ntp& ntp,
       absl::btree_set<model::transform_id> ids) override {
         auto owner = shard_owner(ntp);
-        if (!owner || shard_id != *owner) {
+        if (!owner || shard_id != owner.value()) {
             co_return cluster::errc::not_leader;
         }
         if (_errors_to_inject > 0) {
@@ -738,7 +738,7 @@ TEST_P(TransformRpcTest, TestTransformOffsetRPCs) {
               << "request (" << i << "," << j << ")";
             read_result = client()->offset_fetch(request_key).get();
             ASSERT_TRUE(!read_result.has_error());
-            ASSERT_EQ(read_result.value()->offset, request_val.offset);
+            ASSERT_EQ(read_result.value().value().offset, request_val.offset);
         }
     }
     auto offsets = client()->list_committed_offsets().get().value();

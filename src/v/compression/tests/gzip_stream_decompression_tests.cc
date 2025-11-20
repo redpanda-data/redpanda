@@ -36,7 +36,7 @@ ss::sstring consume(gzip_stream_decompressor& gsd) {
         if (!buffer) {
             break;
         }
-        for (const auto& frag : *buffer) {
+        for (const auto& frag : buffer.value()) {
             output.append(frag.get(), frag.size());
         }
     }

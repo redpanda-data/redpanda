@@ -38,8 +38,9 @@ node_config::node_config() noexcept
       {.visibility = visibility::user},
       std::nullopt,
       [](std::optional<model::node_id> id) -> std::optional<ss::sstring> {
-          if (id && (*id)() < 0) {
-              return fmt::format("Negative node_id ({}) not allowed", *id);
+          if (id && (id.value())() < 0) {
+              return fmt::format(
+                "Negative node_id ({}) not allowed", id.value());
           }
           return std::nullopt;
       })
@@ -315,7 +316,7 @@ void validate_multi_node_property_config(
                         "equivalent kafka_api_tls config that requires client "
                         "auth.",
                         n,
-                        to_string_view(*authn_method)));
+                        to_string_view(authn_method.value())));
                 }
             }
         }
@@ -324,7 +325,8 @@ void validate_multi_node_property_config(
     for (const auto& ep : cfg.advertised_kafka_api()) {
         auto err = model::broker_endpoint::validate_not_is_addr_any(ep);
         if (err) {
-            errors.emplace("advertised_kafka_api", ssx::sformat("{}", *err));
+            errors.emplace(
+              "advertised_kafka_api", ssx::sformat("{}", err.value()));
         }
     }
 
@@ -332,7 +334,8 @@ void validate_multi_node_property_config(
       model::broker_endpoint{"", cfg.advertised_rpc_api()});
 
     if (rpc_err) {
-        errors.emplace("advertised_rpc_api", ssx::sformat("{}", *rpc_err));
+        errors.emplace(
+          "advertised_rpc_api", ssx::sformat("{}", rpc_err.value()));
     }
 }
 

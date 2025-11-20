@@ -120,7 +120,7 @@ void client::set_credentials(std::optional<sasl_configuration> creds) {
 
 ss::future<> client::external_mitigate_error(std::exception_ptr ex) const {
     if (_external_mitigate) {
-        return (*_external_mitigate)(ex);
+        return (_external_mitigate.value())(ex);
     }
     return ss::make_exception_future(ex);
 }
@@ -250,11 +250,11 @@ ss::future<produce_response> client::produce_records(
                 return model::partition_id{0};
             });
         }
-        auto it = partition_builders.find(*p_id);
+        auto it = partition_builders.find(p_id.value());
         if (it == partition_builders.end()) {
             it = partition_builders
                    .emplace(
-                     *p_id,
+                     p_id.value(),
                      storage::record_batch_builder(
                        model::record_batch_type::raft_data, model::offset(0)))
                    .first;
@@ -283,7 +283,7 @@ ss::future<produce_response> client::produce_records(
         -> ss::future<produce_response::partition> {
           return produce_record_batch(
             model::topic_partition(topic, p.partition_index),
-            std::move(*p.records->adapter.batch));
+            std::move(p.records.value().adapter.batch.value()));
       });
 
     chunked_vector<topic_produce_response> responses_cv;
@@ -412,7 +412,7 @@ client::do_list_offsets(const list_offsets_request& unsharded_req) {
                   tp, error_code::unknown_topic_or_partition);
             }
             auto& topics
-              = reqs.try_emplace(*node_id, kafka::list_offsets_request{})
+              = reqs.try_emplace(node_id.value(), kafka::list_offsets_request{})
                   .first->second.data.topics;
             auto topic_it = std::ranges::find(
               topics, tp.topic, &list_offset_topic::name);
@@ -515,12 +515,12 @@ ss::future<fetch_response> client::fetch_partition(
                      }
                      return _cluster
                        ->dispatch_to(
-                         *leader_id,
+                         leader_id.value(),
                          build_request(tp),
                          api_version_for(fetch_api::key))
                        .then([leader_id, &tp](fetch_response res) {
                            return maybe_throw_exception(
-                             *leader_id, tp, std::move(res));
+                             leader_id.value(), tp, std::move(res));
                        });
                  })
             .handle_exception([&tp](std::exception_ptr ex) {

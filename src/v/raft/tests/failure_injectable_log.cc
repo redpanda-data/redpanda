@@ -72,7 +72,8 @@ failure_injectable_log::make_appender(storage::log_append_config cfg) {
     if (_append_delay_generator) {
         return storage::log_appender(
           std::make_unique<delay_introducing_appender>(
-            _underlying_log->make_appender(cfg), *_append_delay_generator));
+            _underlying_log->make_appender(cfg),
+            _append_delay_generator.value()));
     }
 
     return _underlying_log->make_appender(cfg);

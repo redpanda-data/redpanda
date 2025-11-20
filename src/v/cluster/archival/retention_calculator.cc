@@ -113,8 +113,8 @@ std::optional<retention_calculator> retention_calculator::factory(
         auto total_retention_bytes = ntp_config.retention_bytes();
 
         auto stm_region_size = manifest.stm_region_size_bytes();
-        if (stm_region_size > *total_retention_bytes) {
-            auto overshot_by = stm_region_size - *total_retention_bytes;
+        if (stm_region_size > total_retention_bytes.value()) {
+            auto overshot_by = stm_region_size - total_retention_bytes.value();
             strats.push_back(
               std::make_unique<size_based_strategy>(overshot_by));
             vlog(
@@ -131,7 +131,7 @@ std::optional<retention_calculator> retention_calculator::factory(
     if (ntp_config.retention_duration()) {
         model::timestamp oldest_allowed_timestamp{
           model::timestamp::now().value()
-          - ntp_config.retention_duration()->count()};
+          - ntp_config.retention_duration().value().count()};
 
         if (manifest.size() > 0) {
             auto first_seg = manifest.first_addressable_segment();
@@ -194,7 +194,9 @@ std::optional<model::offset> retention_calculator::next_start_offset() {
     auto end_it = _manifest.end();
     for (; it != end_it; ++it) {
         const auto& entry = *it;
-        if (_pinned_offset && entry.last_kafka_offset() >= *_pinned_offset) {
+        if (
+          _pinned_offset
+          && entry.last_kafka_offset() >= _pinned_offset.value()) {
             // The pin is blocking us from removing this segment and beyond.
             vlog(
               archival_log.debug,

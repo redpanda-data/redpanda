@@ -32,7 +32,7 @@ partition_key partition_key::create(
             ret_val->fields.emplace_back(std::nullopt);
             continue;
         }
-        const auto& field_val = *field_val_opt;
+        const auto& field_val = field_val_opt.value();
         const auto& transform = partition_field.transform;
         ret_val->fields.push_back(apply_transform(field_val, transform));
     }

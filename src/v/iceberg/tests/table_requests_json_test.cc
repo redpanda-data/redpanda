@@ -313,10 +313,10 @@ TEST(table_requests, parsing_load_table_result) {
       uuid_t::from_string("56c3ec0c-3e3b-4369-bfe0-59e74e37f560"));
     ASSERT_EQ(result.metadata_location, "string");
     ASSERT_TRUE(result.config.has_value());
-    ASSERT_EQ(result.config->size(), 3);
+    ASSERT_EQ(result.config.value().size(), 3);
     ASSERT_TRUE(result.storage_credentials.has_value());
     ASSERT_THAT(
-      *result.storage_credentials,
+      result.storage_credentials.value(),
       ElementsAre(AllOf(
         Field(&iceberg::storage_credentials::prefix, Eq("string")),
         Field(

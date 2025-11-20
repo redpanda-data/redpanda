@@ -142,8 +142,9 @@ std::ostream& operator<<(std::ostream& os, const recovery_request& r) {
       r.retention_bytes().has_value()
         ? std::to_string(r.retention_bytes().value())
         : "none",
-      r.retention_ms().has_value() ? std::to_string(r.retention_ms()->count())
-                                   : "none");
+      r.retention_ms().has_value()
+        ? std::to_string(r.retention_ms().value().count())
+        : "none");
     return os;
 }
 

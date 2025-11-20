@@ -143,7 +143,7 @@ FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
         .ntp_revision = manifest_revision});
 
     retry_chain_node fib(never_abort, 100ms, 20ms);
-    auto meta = *m.get(name);
+    auto meta = m.get(name).value();
     partition_probe probe{manifest_ntp};
     auto& ts_probe = api.local().materialized().get_read_path_probe();
     remote_segment segment(

@@ -137,13 +137,13 @@ inline ss::future<> drain_task_queue() {
         // callbacks.
         std::optional<ss::promise<>> p;
         p.emplace();
-        auto fut = p->get_future();
+        auto fut = p.value().get_future();
         ss::set_idle_cpu_handler(
           [p = std::move(p)](ss::work_waiting_on_reactor) mutable {
               if (!p) {
                   return ss::idle_cpu_handler_result::no_more_work;
               }
-              p->set_value();
+              p.value().set_value();
               p.reset();
               // this tells the reactor loop to go back and check
               // for more work, which we should have just enqueued because of

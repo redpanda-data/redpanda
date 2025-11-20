@@ -86,9 +86,9 @@ public:
       , _val_size(v_len)
       , _value(std::move(v)) {}
     record_header(std::optional<iobuf> k, std::optional<iobuf> v)
-      : _key_size(k ? static_cast<int32_t>(k->size_bytes()) : -1)
+      : _key_size(k ? static_cast<int32_t>(k.value().size_bytes()) : -1)
       , _key(std::move(k).value_or(iobuf{}))
-      , _val_size(v ? static_cast<int32_t>(v->size_bytes()) : -1)
+      , _val_size(v ? static_cast<int32_t>(v.value().size_bytes()) : -1)
       , _value(std::move(v).value_or(iobuf{})) {}
 
     size_t memory_usage() const {
@@ -192,9 +192,9 @@ public:
       : _attributes(attributes)
       , _timestamp_delta(timestamp_delta)
       , _offset_delta(offset_delta)
-      , _key_size(key ? static_cast<int32_t>(key->size_bytes()) : -1)
+      , _key_size(key ? static_cast<int32_t>(key.value().size_bytes()) : -1)
       , _key(std::move(key).value_or(iobuf{}))
-      , _val_size(value ? static_cast<int32_t>(value->size_bytes()) : -1)
+      , _val_size(value ? static_cast<int32_t>(value.value().size_bytes()) : -1)
       , _value(std::move(value).value_or(iobuf{}))
       , _headers(std::move(hdrs)) {
         _size_bytes = static_cast<int32_t>(

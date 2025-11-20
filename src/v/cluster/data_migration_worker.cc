@@ -70,7 +70,7 @@ void worker::abort_all() noexcept {
     while (it != _managed_ntps.end()) {
         auto& ntp_state = *it->second;
         if (ntp_state.running) {
-            ntp_state.running->as.request_abort();
+            ntp_state.running.value().as.request_abort();
         }
         if (ntp_state.last_requested) {
             ntp_state.report_back(errc::shutting_down);
@@ -109,9 +109,9 @@ worker::perform_partition_work(model::ntp&& ntp, partition_work&& work) {
         auto& ntp_state = *it->second;
         if (auto& r = ntp_state.running) {
             if (
-              r->work->migration_id != work.migration_id
-              && r->work->sought_state != work.sought_state) {
-                r->as.request_abort();
+              r.value().work->migration_id != work.migration_id
+              && r.value().work->sought_state != work.sought_state) {
+                r.value().as.request_abort();
             }
         }
         if (ntp_state.last_requested) {
@@ -120,7 +120,7 @@ worker::perform_partition_work(model::ntp&& ntp, partition_work&& work) {
         ntp_state.last_requested.emplace(std::move(work));
     }
 
-    auto f = it->second->last_requested->promise.get_future();
+    auto f = it->second->last_requested.value().promise.get_future();
     spawn_work_fiber_if_needed(it);
 
     return f;
@@ -136,15 +136,15 @@ void worker::abort_partition_work(
     auto& ntp_state = *it->second;
     if (auto& r = ntp_state.running) {
         if (
-          r->work->migration_id == migration_id
-          && r->work->sought_state == sought_state) {
-            r->as.request_abort();
+          r.value().work->migration_id == migration_id
+          && r.value().work->sought_state == sought_state) {
+            r.value().as.request_abort();
         }
     }
     if (auto& lr = ntp_state.last_requested) {
         if (
-          lr->work->migration_id == migration_id
-          && lr->work->sought_state == sought_state) {
+          lr.value().work->migration_id == migration_id
+          && lr.value().work->sought_state == sought_state) {
             ntp_state.report_back(errc::invalid_data_migration_state);
             if (!ntp_state.running) {
                 // no requested and no running work, entry should go
@@ -160,14 +160,16 @@ worker::ntp_state_t::requested_t::requested_t(partition_work&& w)
 bool worker::ntp_state_t::still_needed() const {
     vassert(running, "non running work");
     return last_requested
-           && last_requested->work->sought_state == running->work->sought_state
-           && last_requested->work->migration_id == running->work->migration_id
-           && !running->as.abort_requested();
+           && last_requested.value().work->sought_state
+                == running.value().work->sought_state
+           && last_requested.value().work->migration_id
+                == running.value().work->migration_id
+           && !running.value().as.abort_requested();
 }
 
 void worker::ntp_state_t::report_back(errc ec) {
     vassert(last_requested, "no requested work");
-    last_requested->promise.set_value(ec);
+    last_requested.value().promise.set_value(ec);
     last_requested = std::nullopt;
 }
 
@@ -367,8 +369,8 @@ ss::future<> worker::work_fiber(model::ntp ntp, ntp_state_t& ntp_state) {
             co_return;
         }
 
-        ntp_state.running.emplace(ntp_state.last_requested->work);
-        auto ec = co_await do_work(ntp, *ntp_state.running);
+        ntp_state.running.emplace(ntp_state.last_requested.value().work);
+        auto ec = co_await do_work(ntp, ntp_state.running.value());
         bool still_needed = ntp_state.still_needed();
         vlog(
           dm_log.trace,
@@ -400,7 +402,7 @@ ss::future<> worker::work_fiber(model::ntp ntp, ntp_state_t& ntp_state) {
                 // don't hammer the system with the same work
                 try {
                     co_await ss::sleep_abortable(
-                      _cooldown_period, ntp_state.running->as);
+                      _cooldown_period, ntp_state.running.value().as);
                 } catch (const ss::sleep_aborted&) {
                 }
             }

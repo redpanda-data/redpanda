@@ -59,7 +59,7 @@ public:
     result<model::partition_id, errc>
     compute_output_partition(model::transform_name_view name) override {
         if (_partition_ec.has_value()) {
-            return *_partition_ec;
+            return _partition_ec.value();
         }
         size_t h = std::hash<model::transform_name>{}(
           model::transform_name{name().data(), name().size()});

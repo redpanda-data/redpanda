@@ -39,7 +39,7 @@ ss::future<ss::temporary_buffer<char>> skipping_data_source::get() noexcept {
         }
         // Keep using the stream until it hits the end of the stream and the
         // returned reads are empty.
-        auto buf = co_await cur_stream_->read();
+        auto buf = co_await cur_stream_.value().read();
         if (buf.empty()) {
             cur_stream_.reset();
             continue;

@@ -60,10 +60,11 @@ struct kv_state
     bool apply(const kv_operation& op) {
         if (op.expected_value) {
             // CAS
-            return compare_and_swap(op.key, *op.expected_value, op.value);
+            return compare_and_swap(
+              op.key, op.expected_value.value(), op.value);
         } else {
             if (op.value) {
-                put(op.key, *op.value);
+                put(op.key, op.value.value());
             } else {
                 remove(op.key);
             }
@@ -100,7 +101,7 @@ struct kv_state
 
         if (it->second.value == expected_value) {
             if (new_value) {
-                it->second.value = std::move(*new_value);
+                it->second.value = std::move(new_value.value());
                 it->second.update_cnt++;
             } else {
                 kv_map.erase(it);
@@ -208,14 +209,14 @@ public:
                   it->second.value,
                   op.expected_value);
                 if (op.value) {
-                    it->second.value = *op.value;
+                    it->second.value = op.value.value();
                     it->second.update_cnt++;
                 } else {
                     state.kv_map.erase(it);
                 }
             } else {
                 if (op.value) {
-                    state.put(op.key, *op.value);
+                    state.put(op.key, op.value.value());
                 } else {
                     state.remove(op.key);
                 }
@@ -232,7 +233,7 @@ public:
         auto last_op = apply_to_state(batch, state);
         if (last_op) {
             apply_count++;
-            last_operation = std::move(*last_op);
+            last_operation = std::move(last_op.value());
         }
         co_return;
     }
@@ -250,7 +251,8 @@ public:
         auto start_offset = raft_node.raft()->start_offset();
         if (snap) {
             auto data = co_await read_iobuf_exactly(
-              snap->reader.input(), co_await snap->reader.get_snapshot_size());
+              snap.value().reader.input(),
+              co_await snap.value().reader.get_snapshot_size());
             inc_state = serde::from_iobuf<kv_state>(std::move(data));
         }
 
@@ -469,7 +471,8 @@ struct persisted_stm_test_fixture : state_machine_fixture {
                                           raft_node_instance& n) {
             return n.raft()
               ->stm_manager()
-              ->take_snapshot(snapshot_offset)
+              .value()
+              .take_snapshot(snapshot_offset)
               .then([raft = n.raft(), snapshot_offset](
                       state_machine_manager::snapshot_result snapshot_result) {
                   return raft->write_snapshot(
@@ -870,8 +873,11 @@ TEST_F_CORO(persisted_stm_test_fixture, test_snapshot_in_background_apply) {
     // take snapshot on one of the nodes that state machine is fully up to date.
     for (auto& [id, stm] : node_stms) {
         if (stm->last_applied() == offset) {
-            snapshot
-              = co_await node(id.id()).raft()->stm_manager()->take_snapshot();
+            snapshot = co_await node(id.id())
+                         .raft()
+                         ->stm_manager()
+                         .value()
+                         .take_snapshot();
             break;
         }
     }
@@ -881,7 +887,7 @@ TEST_F_CORO(persisted_stm_test_fixture, test_snapshot_in_background_apply) {
         auto committed = n.raft()->committed_offset();
 
         return n.raft()->write_snapshot(
-          raft::write_snapshot_cfg(committed, snapshot->data.copy()));
+          raft::write_snapshot_cfg(committed, snapshot.value().data.copy()));
     });
     throwing_stm->set_throw_on_apply(false);
 

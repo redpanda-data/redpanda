@@ -85,13 +85,13 @@ ss::future<> client_pool::client_self_configure(
               application_stop_signal.has_value(),
               "Application abort source not present in client pool");
 
-            application_stop_signal->get().signaled();
+            application_stop_signal.value().get().signaled();
 
             // Return in order to drop _gate which allows stop() to proceed.
             co_return;
         }
 
-        self_config_output = *result;
+        self_config_output = result.value();
         vlog(
           pool_log.info,
           "Client self configuration completed with result {}",
@@ -159,7 +159,7 @@ ss::future<> client_pool::accept_self_configure_result(
 
     if (result) {
         cloud_storage_clients::apply_self_configuration_result(
-          _config, *result);
+          _config, result.value());
     }
 
     populate_client_pool();

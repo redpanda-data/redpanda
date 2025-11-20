@@ -88,7 +88,7 @@ BOOST_DATA_TEST_CASE(test_gssapi_name, bdata::make(gssapi_name_test_data), c) {
         BOOST_REQUIRE_EQUAL(c.gssapi_principal_name, fmt::format("{}", name));
         auto result_name = mapper.apply(DEFAULT_REALM, name);
         BOOST_REQUIRE(result_name.has_value());
-        BOOST_REQUIRE_EQUAL(c.expected_name, *result_name);););
+        BOOST_REQUIRE_EQUAL(c.expected_name, result_name.value());););
 }
 
 static std::array<gssapi_test_record, 5> gssapi_lower_case_test_data{
@@ -128,7 +128,7 @@ BOOST_DATA_TEST_CASE(
         BOOST_REQUIRE_EQUAL(c.gssapi_principal_name, fmt::format("{}", name));
         auto result_name = mapper.apply(DEFAULT_REALM, name);
         BOOST_REQUIRE(result_name.has_value());
-        BOOST_REQUIRE_EQUAL(c.expected_name, *result_name);););
+        BOOST_REQUIRE_EQUAL(c.expected_name, result_name.value());););
 }
 
 static std::array<gssapi_test_record, 5> gssapi_upper_case_test_data{
@@ -168,7 +168,7 @@ BOOST_DATA_TEST_CASE(
         BOOST_REQUIRE_EQUAL(c.gssapi_principal_name, fmt::format("{}", name));
         auto result_name = mapper.apply(DEFAULT_REALM, name);
         BOOST_REQUIRE(result_name.has_value());
-        BOOST_REQUIRE_EQUAL(c.expected_name, *result_name);););
+        BOOST_REQUIRE_EQUAL(c.expected_name, result_name.value());););
 }
 
 std::array<ss::sstring, 11> gssapi_invalid_rules{
@@ -220,7 +220,7 @@ BOOST_AUTO_TEST_CASE(test_only_primary) {
         BOOST_REQUIRE_EQUAL(TEST_NAME, name.primary());
         auto result = mapper.apply(DEFAULT_REALM, name);
         BOOST_REQUIRE(result.has_value());
-        BOOST_REQUIRE_EQUAL(TEST_NAME, *result);););
+        BOOST_REQUIRE_EQUAL(TEST_NAME, result.value());););
 }
 
 struct gssapi_default_mapper_record {
@@ -238,7 +238,7 @@ struct gssapi_default_mapper_record {
     operator<<(std::ostream& os, const gssapi_default_mapper_record& r) {
         fmt::print(os, "kerberos_principal: '{}'", r.kerberos_principal);
         if (r.mapped_name) {
-            fmt::print(os, ", mapped_name: '{}'", *(r.mapped_name));
+            fmt::print(os, ", mapped_name: '{}'", (r.mapped_name).value());
         }
         return os;
     }
@@ -274,7 +274,7 @@ struct gssapi_mapping_rules_test {
     operator<<(std::ostream& os, const gssapi_mapping_rules_test& r) {
         fmt::print(os, "rules: '[{}]'", fmt::join(r.rules, ", "));
         if (r.error_message) {
-            fmt::print(os, ", error_message: '{}'", *(r.error_message));
+            fmt::print(os, ", error_message: '{}'", (r.error_message).value());
         }
         return os;
     }

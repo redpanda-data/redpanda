@@ -320,7 +320,7 @@ ss::future<std::error_code> tx_manager_migrator::migrate() {
         current_step = migration_step::create_new_tx_manager_topic;
     }
     const auto current_partition_count
-      = current_topic_md->get().get_assignments().size();
+      = current_topic_md.value().get().get_assignments().size();
 
     /**
      * Both the original one and temporary topic exists, if original topic is
@@ -332,8 +332,8 @@ ss::future<std::error_code> tx_manager_migrator::migrate() {
         // original topic is older than temporary, rehash once again to fresh
         // topic
         if (
-          temp_topic_md->get().get_revision()
-          > current_topic_md->get().get_revision()) {
+          temp_topic_md.value().get().get_revision()
+          > current_topic_md.value().get().get_revision()) {
             current_step = migration_step::create_new_temp_topic;
         } else {
             // otherwise copying to new tx manager topic may failed, create it

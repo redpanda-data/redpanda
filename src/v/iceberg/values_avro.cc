@@ -246,7 +246,7 @@ val_to_avro(const std::optional<value>& val, const avro::NodePtr& avro_schema) {
             "Value is null but expected {} type",
             avro::toString(avro_schema->type())));
     }
-    return base_val_to_avro(*val, avro_schema);
+    return base_val_to_avro(val.value(), avro_schema);
 }
 
 } // namespace
@@ -434,8 +434,10 @@ struct value_parsing_visitor {
             const auto& k_record = kv_record.fieldAt(0);
             const auto& v_record = kv_record.fieldAt(1);
             kv_value kv_val{
-              .key = std::move(*val_from_avro(
-                k_record, t.key_field->type, t.key_field->required)),
+              .key = std::move(
+                val_from_avro(
+                  k_record, t.key_field->type, t.key_field->required)
+                  .value()),
               .val = val_from_avro(
                 v_record, t.value_field->type, t.value_field->required),
             };

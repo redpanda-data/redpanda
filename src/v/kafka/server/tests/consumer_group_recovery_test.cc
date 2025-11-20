@@ -251,7 +251,7 @@ struct cg_recovery_test_fixture : seastar_test {
           model::timestamp::now(),
           std::vector<member_state>{});
 
-        g_1_metadata.value->members.push_back(make_member_state(
+        g_1_metadata.value.value().members.push_back(make_member_state(
           member_id("m-1"),
           std::nullopt,
           client_id("cid-m1"),
@@ -311,7 +311,7 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tombstone_recovery) {
       model::timestamp::now(),
       std::vector<member_state>{});
 
-    g_2_metadata.value->members.push_back(make_member_state(
+    g_2_metadata.value.value().members.push_back(make_member_state(
       member_id("m-1"),
       std::nullopt,
       client_id("cid-m1"),

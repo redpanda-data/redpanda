@@ -218,7 +218,7 @@ ss::future<optional_value_outcome> convert_map(
 
         ret->kvs.push_back(
           iceberg::kv_value{
-            .key = std::move(*key_result.value()),
+            .key = std::move(key_result.value().value()),
             .val = std::move(value_result.value())});
     }
 
@@ -253,7 +253,7 @@ ss::future<result<std::monostate, value_conversion_exception>>
 serialize_protobuf_list_to_json(
   serde::json::writer& writer, const parsed::message& list, int depth) {
     if (auto err = check_recursion_depth(depth); err.has_value()) {
-        co_return *err;
+        co_return err.value();
     }
 
     writer.begin_array();
@@ -279,7 +279,7 @@ ss::future<result<std::monostate, value_conversion_exception>>
 serialize_protobuf_map_to_json(
   serde::json::writer& writer, const parsed::message& map, int depth) {
     if (auto err = check_recursion_depth(depth); err.has_value()) {
-        co_return *err;
+        co_return err.value();
     }
 
     writer.begin_object();
@@ -306,7 +306,7 @@ ss::future<result<std::monostate, value_conversion_exception>>
 serialize_protobuf_value_to_json(
   serde::json::writer& writer, const parsed::message& value_msg, int depth) {
     if (auto err = check_recursion_depth(depth); err.has_value()) {
-        co_return *err;
+        co_return err.value();
     }
 
     for (const auto& [field_num, field_value] : value_msg.fields) {

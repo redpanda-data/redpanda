@@ -250,7 +250,7 @@ ss::future<checked<shared_schema_t, type_resolver::errc>> get_schema(
         co_return type_resolver::errc::translation_error;
     }
     if (cache.has_value()) {
-        auto cached_schema = cache->get().get_value(id);
+        auto cached_schema = cache.value().get().get_value(id);
 
         if (cached_schema) {
             co_return std::move(*cached_schema);
@@ -272,7 +272,7 @@ ss::future<checked<shared_schema_t, type_resolver::errc>> get_schema(
     }
     auto shared_schema = ss::make_shared(std::move(resolved_schema.value()));
     if (cache.has_value()) {
-        cache->get().try_insert(id, shared_schema);
+        cache.value().get().try_insert(id, shared_schema);
     }
     co_return std::move(shared_schema);
 }
@@ -365,7 +365,7 @@ binary_type_resolver::resolve_identifier(schema_identifier) const {
 ss::future<checked<type_and_buf, type_resolver::errc>>
 test_binary_type_resolver::resolve_buf_type(std::optional<iobuf> b) const {
     if (injected_error_.has_value()) {
-        co_return *injected_error_;
+        co_return injected_error_.value();
     }
     co_return co_await binary_type_resolver::resolve_buf_type(std::move(b));
 }
@@ -373,7 +373,7 @@ test_binary_type_resolver::resolve_buf_type(std::optional<iobuf> b) const {
 ss::future<checked<resolved_type, type_resolver::errc>>
 test_binary_type_resolver::resolve_identifier(schema_identifier id) const {
     if (injected_error_.has_value()) {
-        co_return *injected_error_;
+        co_return injected_error_.value();
     }
     co_return co_await binary_type_resolver::resolve_identifier(std::move(id));
 }
@@ -388,7 +388,7 @@ record_schema_resolver::resolve_buf_type(std::optional<iobuf> b) const {
     // indicate if we have a schema. This has room for false positives, and
     // we can't say for sure if an error is the result of the record not
     // having a schema. Just translate to binary.
-    auto res = get_value_schema_id(*b);
+    auto res = get_value_schema_id(b.value());
     if (res.has_error()) {
         vlog(datalake_log.trace, "Error parsing schema ID: {}", res.error());
         co_return errc::bad_input;
@@ -523,7 +523,8 @@ latest_subject_schema_resolver::resolve_buf_type(std::optional<iobuf> b) const {
           -> checked<resolved_type, type_resolver::errc> {
             std::vector<int32_t> offsets;
             if (const auto& explicit_name = protobuf_message_name_) {
-                auto res = compute_message_offsets(pb_def, *explicit_name);
+                auto res = compute_message_offsets(
+                  pb_def, explicit_name.value());
                 if (res.has_error()) {
                     return res.error();
                 }

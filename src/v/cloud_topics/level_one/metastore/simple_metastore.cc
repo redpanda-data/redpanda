@@ -143,7 +143,7 @@ simple_metastore::get_offsets(
         vlog(cd_log.debug, "Partition {} not tracked", tpr);
         return std::unexpected(metastore::errc::missing_ntp);
     }
-    const auto& prt = prt_ref->get();
+    const auto& prt = prt_ref.value().get();
     return offsets_response{
       .start_offset = prt.start_offset,
       .next_offset = prt.next_offset,
@@ -281,7 +281,7 @@ simple_metastore::get_first_ge(
         vlog(cd_log.debug, "Partition {} not tracked", tpr);
         return std::unexpected(metastore::errc::missing_ntp);
     }
-    auto& prt = prt_ref->get();
+    auto& prt = prt_ref.value().get();
     auto it = std::ranges::lower_bound(
       prt.extents, o, std::less<>{}, &extent::last_offset);
     if (it != prt.extents.end()) {
@@ -319,7 +319,7 @@ simple_metastore::get_first_ge(
         vlog(cd_log.debug, "Partition {} not tracked", tpr);
         return std::unexpected(metastore::errc::missing_ntp);
     }
-    auto& prt = prt_ref->get();
+    auto& prt = prt_ref.value().get();
     for (const auto& obj : prt.extents) {
         if (o > obj.last_offset) {
             continue;
@@ -357,7 +357,7 @@ simple_metastore::get_first_offset_for_bytes(
         vlog(cd_log.debug, "Partition {} not tracked", tpr);
         return std::unexpected(metastore::errc::missing_ntp);
     }
-    auto& prt = prt_ref->get();
+    auto& prt = prt_ref.value().get();
     kafka::offset offset = prt.next_offset;
     if (size == 0) {
         return offset;
@@ -387,7 +387,7 @@ simple_metastore::get_end_offset_for_term(
         vlog(cd_log.debug, "Partition {} not tracked", tp);
         return std::unexpected(metastore::errc::missing_ntp);
     }
-    auto& prt = prt_ref->get();
+    auto& prt = prt_ref.value().get();
     if (prt.term_starts.empty()) {
         return std::unexpected(metastore::errc::missing_ntp);
     }
@@ -434,7 +434,7 @@ simple_metastore::get_term_for_offset(
         vlog(cd_log.debug, "Partition {} not tracked", tp);
         return std::unexpected(metastore::errc::missing_ntp);
     }
-    auto& prt = prt_ref->get();
+    auto& prt = prt_ref.value().get();
     if (prt.term_starts.empty()) {
         return std::unexpected(metastore::errc::missing_ntp);
     }
@@ -471,9 +471,9 @@ simple_metastore::compact_objects(
         if (cm.new_cleaned_range.has_value()) {
             p_update.new_cleaned_range.emplace(
               compaction_state_update::cleaned_range{
-                .base_offset = cm.new_cleaned_range->base_offset,
-                .last_offset = cm.new_cleaned_range->last_offset,
-                .has_tombstones = cm.new_cleaned_range->has_tombstones,
+                .base_offset = cm.new_cleaned_range.value().base_offset,
+                .last_offset = cm.new_cleaned_range.value().last_offset,
+                .has_tombstones = cm.new_cleaned_range.value().has_tombstones,
               });
         }
         p_update.removed_tombstones_ranges = cm.removed_tombstones_ranges;
@@ -526,7 +526,7 @@ simple_metastore::get_compaction_offsets(
         vlog(cd_log.debug, "Partition {} not tracked", tp);
         return std::unexpected(metastore::errc::missing_ntp);
     }
-    auto& prt = prt_ref->get();
+    auto& prt = prt_ref.value().get();
     compaction_offsets_response resp;
     if (prt.start_offset >= prt.next_offset) {
         // The log is empty, nothing to compact.
@@ -540,7 +540,7 @@ simple_metastore::get_compaction_offsets(
     }
 
     // Iterate through the clean ranges to produce the dirty ranges.
-    const auto& cmp_state = *prt.compaction_state;
+    const auto& cmp_state = prt.compaction_state.value();
     auto offsets_stream = cmp_state.cleaned_ranges.make_stream();
     auto dirty_base_candidate = prt.start_offset;
     while (offsets_stream.has_next()) {
@@ -575,7 +575,7 @@ std::expected<double, metastore::errc> simple_metastore::get_dirty_ratio(
         return std::unexpected(errc::missing_ntp);
     }
 
-    const auto& prt = prt_ref->get();
+    const auto& prt = prt_ref.value().get();
 
     const auto& compaction_state = prt.compaction_state;
 
@@ -586,7 +586,7 @@ std::expected<double, metastore::errc> simple_metastore::get_dirty_ratio(
     // Compute
     size_t total_size{0};
     size_t dirty_size{0};
-    const auto& cleaned_ranges = compaction_state->cleaned_ranges;
+    const auto& cleaned_ranges = compaction_state.value().cleaned_ranges;
     for (const auto& extent : prt.extents) {
         total_size += extent.len;
         auto b = extent.base_offset;
@@ -610,7 +610,7 @@ simple_metastore::get_earliest_dirty_ts(
         return std::unexpected(errc::missing_ntp);
     }
 
-    const auto& prt = prt_ref->get();
+    const auto& prt = prt_ref.value().get();
 
     const auto& compaction_state = prt.compaction_state;
 
@@ -620,7 +620,7 @@ simple_metastore::get_earliest_dirty_ts(
     // offset.
     kafka::offset first_dirty_offset{prt.start_offset};
     if (compaction_state.has_value()) {
-        const auto& clean_ranges = compaction_state->cleaned_ranges;
+        const auto& clean_ranges = compaction_state.value().cleaned_ranges;
         auto clean_ranges_strm = clean_ranges.make_stream();
         while (clean_ranges_strm.has_next()) {
             auto clean_interval = clean_ranges_strm.next();

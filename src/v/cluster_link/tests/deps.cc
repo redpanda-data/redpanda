@@ -275,7 +275,7 @@ void cluster_link_manager_test_fixture::set_partition_hwm(
     if (!cur_offsets.has_value()) {
         throw std::runtime_error("unknown ntp");
     }
-    cur_offsets->high_watermark = kafka::offset_cast(hwm);
+    cur_offsets.value().high_watermark = kafka::offset_cast(hwm);
     _tmc->set_partition_offsets(
       ::model::ntp(::model::kafka_namespace, tp.topic, tp.partition),
       cur_offsets.value());
@@ -327,7 +327,7 @@ ss::future<result<kafka::data::rpc::partition_offsets_map, cluster::errc>>
 test_kafka_rpc_client_service::get_partition_offsets(
   chunked_vector<kafka::data::rpc::topic_partitions> tps) {
     if (inserted_get_partition_offsets_error.has_value()) {
-        auto err = *inserted_get_partition_offsets_error;
+        auto err = inserted_get_partition_offsets_error.value();
         inserted_get_partition_offsets_error.reset();
         co_return err;
     }
@@ -352,7 +352,8 @@ test_kafka_rpc_client_service::get_partition_offsets(
             }
             topic_results[pid].err = cluster::errc::success;
             topic_results[pid].offsets = kafka::data::rpc::partition_offsets{
-              .high_watermark = ::model::offset_cast(offsets->high_watermark),
+              .high_watermark = ::model::offset_cast(
+                offsets.value().high_watermark),
               .last_stable_offset = kafka::offset{-1},
             };
         }

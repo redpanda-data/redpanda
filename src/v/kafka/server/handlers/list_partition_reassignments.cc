@@ -44,7 +44,7 @@ ongoing_partition_reassignment compare_replica_sets(
        &previous_replica_set](const model::broker_shard& bshard) {
           reassignments.replicas.push_back(bshard.node_id);
           if (previous_replica_set.has_value()) {
-              if (!in_broker_list(bshard, *previous_replica_set)) {
+              if (!in_broker_list(bshard, previous_replica_set.value())) {
                   reassignments.adding_replicas.push_back(bshard.node_id);
               }
           }
@@ -52,8 +52,8 @@ ongoing_partition_reassignment compare_replica_sets(
 
     if (previous_replica_set.has_value()) {
         std::for_each(
-          previous_replica_set->cbegin(),
-          previous_replica_set->cend(),
+          previous_replica_set.value().cbegin(),
+          previous_replica_set.value().cend(),
           [&reassignments,
            &current_assignment](const model::broker_shard& bshard) {
               if (!in_broker_list(bshard, current_assignment.replicas)) {
@@ -76,7 +76,7 @@ ongoing_partition_reassignment list_partition_reassignments(
     }
 
     return compare_replica_sets(
-      *current_assignment, md_cache.get_previous_replica_set(ntp));
+      current_assignment.value(), md_cache.get_previous_replica_set(ntp));
 }
 
 // Returns all reassignments currently in progress
@@ -97,7 +97,7 @@ std::vector<ongoing_topic_reassignment> all_in_progress_partition_reassignments(
         }
 
         auto partition_reassignment = compare_replica_sets(
-          *current_assignment, status.get_previous_replicas());
+          current_assignment.value(), status.get_previous_replicas());
         partition_reassignment.partition_index = ntp.tp.partition;
         if (reassignments_by_topic.contains(ntp.tp.topic)) {
             reassignments_by_topic[ntp.tp.topic].partitions.push_back(
@@ -163,8 +163,9 @@ ss::future<response_ptr> list_partition_reassignments_handler::handle(
         co_return co_await ctx.respond(std::move(resp));
     }
 
-    resp.data.topics.reserve(request.data.topics->size());
-    for (const list_partition_reassignments_topics& tp : *request.data.topics) {
+    resp.data.topics.reserve(request.data.topics.value().size());
+    for (const list_partition_reassignments_topics& tp :
+         request.data.topics.value()) {
         ongoing_topic_reassignment topic_reassignment{.name = tp.name};
 
         for (const model::partition_id& pid : tp.partition_indexes) {

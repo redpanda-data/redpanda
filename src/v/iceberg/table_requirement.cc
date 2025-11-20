@@ -112,8 +112,8 @@ struct check_visitor {
         if (req.ref == "main") {
             cur_snapshot_id = opt_metadata->current_snapshot_id;
         } else if (opt_metadata->refs) {
-            auto it = opt_metadata->refs->find(req.ref);
-            if (it != opt_metadata->refs->end()) {
+            auto it = opt_metadata->refs.value().find(req.ref);
+            if (it != opt_metadata->refs.value().end()) {
                 cur_snapshot_id = it->second.snapshot_id;
             }
         }

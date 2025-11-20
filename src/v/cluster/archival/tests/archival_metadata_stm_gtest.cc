@@ -135,10 +135,10 @@ public:
             throw std::runtime_error{"No leader"};
         }
 
-        auto ptr = _archival_stm_nodes.at(*leader).archival_stm;
+        auto ptr = _archival_stm_nodes.at(leader.value()).archival_stm;
         if (!ptr) {
-            throw std::runtime_error{
-              ssx::sformat("Achival stm for node {} not initialised", *leader)};
+            throw std::runtime_error{ssx::sformat(
+              "Achival stm for node {} not initialised", leader.value())};
         }
 
         return *ptr;
@@ -149,7 +149,7 @@ public:
           10s, [](auto& node) { return node.raft()->committed_offset(); });
 
         co_await parallel_for_each_node([committed_offset](auto& node) {
-            return node.raft()->stm_manager()->wait(
+            return node.raft()->stm_manager().value().wait(
               committed_offset, model::no_timeout);
         });
         co_return;

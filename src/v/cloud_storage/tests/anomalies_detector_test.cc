@@ -305,8 +305,9 @@ public:
         BOOST_REQUIRE(_detector.has_value());
 
         retry_chain_node anomaly_detection_rtc(1min, 100ms, &_root_rtc);
-        auto res
-          = _detector->run(anomaly_detection_rtc, quota, start_from).get();
+        auto res = _detector.value()
+                     .run(anomaly_detection_rtc, quota, start_from)
+                     .get();
         vlog(
           test_logger.info,
           "Anomalies detector run result: status={}, detected={}, "
@@ -858,7 +859,7 @@ FIXTURE_TEST(test_metadata_anomalies, bucket_view_fixture) {
     expected.segment_metadata_anomalies.insert(
       cloud_storage::anomaly_meta{
         .type = cloud_storage::anomaly_type::non_monotonical_delta,
-        .at = *get_stm_manifest().last_segment(),
+        .at = get_stm_manifest().last_segment().value(),
         .previous = *get_stm_manifest().begin()});
 
     // Overlap between spillover and STM manifest

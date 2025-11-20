@@ -167,8 +167,8 @@ ss::future<error_outcome> uploader::upload_next_metadata(
       model::kafka_consumer_offsets_nt);
     if (offsets_nt_cfg.has_value()) {
         std::vector<std::vector<ss::sstring>> uploaded_offset_paths(
-          offsets_nt_cfg->partition_count);
-        for (int i = 0; i < offsets_nt_cfg->partition_count; i++) {
+          offsets_nt_cfg.value().partition_count);
+        for (int i = 0; i < offsets_nt_cfg.value().partition_count; i++) {
             offsets_upload_request req;
             const auto& nt = model::kafka_consumer_offsets_nt;
             req.offsets_ntp = model::ntp{nt.ns, nt.tp, model::partition_id{i}};
@@ -270,7 +270,9 @@ ss::future<error_outcome> uploader::maybe_upload_controller_snapshot(
     auto reader = storage::snapshot_reader(
       controller_snap_file.value(),
       ss::make_file_input_stream(
-        *controller_snap_file, 0, co_await controller_snap_file->size()),
+        controller_snap_file.value(),
+        0,
+        co_await controller_snap_file.value().size()),
       _raft0->get_snapshot_path());
     model::offset local_last_included_offset;
     std::exception_ptr err;

@@ -151,7 +151,7 @@ sort_order sort_order::parse(const aip_ordering_config& config) {
                 "Invalid field path in ordering expression: '{}'", field));
         }
 
-        auto field_type = config.field_type_getter(*field_nums);
+        auto field_type = config.field_type_getter(field_nums.value());
         if (!is_type_supported(field_type)) {
             throw serde::pb::rpc::invalid_argument_exception(
               fmt::format("Unsupported field type for field: '{}'", field));
@@ -166,7 +166,7 @@ sort_order sort_order::parse(const aip_ordering_config& config) {
         }
 
         result.emplace_back(
-          component{.field_numbers = *field_nums, .ord = *ord});
+          component{.field_numbers = field_nums.value(), .ord = ord.value()});
     }
 
     if (result.empty()) {
@@ -191,7 +191,7 @@ bool sort_order::operator()(
         }
 
         auto cmp = compare_field_variant(
-          fa->value, fb->value, comp.field_numbers);
+          fa.value().value, fb.value().value, comp.field_numbers);
 
         if (cmp != std::strong_ordering::equal) {
             // Ascending: cmp as is. Descending: invert

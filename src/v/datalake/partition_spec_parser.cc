@@ -91,17 +91,17 @@ protected:
 
         T value() && {
             vassert(res, "attempted to treat error as success");
-            return std::move(*res).val;
+            return std::move(res.value()).val;
         }
 
         T& mutable_value() & {
             vassert(res, "attempted to treat error as success");
-            return res->val;
+            return res.value().val;
         }
 
         position after() const {
             vassert(res, "attempted to treat error as success");
-            return res->next;
+            return res.value().next;
         }
 
         operator bool() const { return res.has_value(); }

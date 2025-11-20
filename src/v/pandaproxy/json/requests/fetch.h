@@ -107,18 +107,18 @@ public:
             auto r = std::move(*v.partition_response);
             model::topic_partition_view tpv(
               v.partition->topic, r.partition_index);
-            while (r.records && !r.records->empty()) {
-                auto adapter = r.records->consume_batch();
+            while (r.records && !r.records.value().empty()) {
+                auto adapter = r.records.value().consume_batch();
                 if (
                   !adapter.batch
-                  || adapter.batch->header().attrs.is_control()) {
+                  || adapter.batch.value().header().attrs.is_control()) {
                     continue;
                 }
 
                 auto rjs = rjson_serialize_impl<model::record>(
-                  _fmt, tpv, adapter.batch->base_offset());
+                  _fmt, tpv, adapter.batch.value().base_offset());
 
-                auto batch = std::move(*adapter.batch);
+                auto batch = std::move(adapter.batch.value());
 
                 if (batch.compressed()) {
                     batch = model::decompress_batch_sync(batch);

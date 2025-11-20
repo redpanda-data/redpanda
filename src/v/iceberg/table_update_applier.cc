@@ -117,8 +117,8 @@ struct update_applying_visitor {
         if (!meta.snapshots.has_value()) {
             meta.snapshots.emplace();
         }
-        auto s = std::ranges::find(*meta.snapshots, sid, &snapshot::id);
-        if (s != meta.snapshots->end()) {
+        auto s = std::ranges::find(meta.snapshots.value(), sid, &snapshot::id);
+        if (s != meta.snapshots.value().end()) {
             vlog(log.error, "Snapshot id {} already exists", sid);
             return outcome::unexpected_state;
         }
@@ -131,7 +131,7 @@ struct update_applying_visitor {
             return outcome::unexpected_state;
         }
 
-        meta.snapshots->emplace_back(update.snapshot);
+        meta.snapshots.value().emplace_back(update.snapshot);
         meta.last_sequence_number = update.snapshot.sequence_number;
         return outcome::success;
     }
@@ -144,8 +144,8 @@ struct update_applying_visitor {
             to_remove.emplace(id);
         }
         chunked_vector<snapshot> new_list;
-        new_list.reserve(meta.snapshots->size());
-        for (auto& snap : *meta.snapshots) {
+        new_list.reserve(meta.snapshots.value().size());
+        for (auto& snap : meta.snapshots.value()) {
             if (to_remove.contains(snap.id)) {
                 continue;
             }
@@ -160,12 +160,12 @@ struct update_applying_visitor {
             meta.current_snapshot_id.reset();
             // Intentional fallthrough to remove from the refs container.
         }
-        if (!meta.refs.has_value() || meta.refs->empty()) {
+        if (!meta.refs.has_value() || meta.refs.value().empty()) {
             return outcome::success;
         }
-        auto ref_it = meta.refs->find(update.ref_name);
-        if (ref_it != meta.refs->end()) {
-            meta.refs->erase(ref_it);
+        auto ref_it = meta.refs.value().find(update.ref_name);
+        if (ref_it != meta.refs.value().end()) {
+            meta.refs.value().erase(ref_it);
         }
         return outcome::success;
     }
@@ -175,8 +175,8 @@ struct update_applying_visitor {
             vlog(log.error, "No snapshots exist, looking for {}", sid);
             return outcome::unexpected_state;
         }
-        auto s = std::ranges::find(*meta.snapshots, sid, &snapshot::id);
-        if (s == meta.snapshots->end()) {
+        auto s = std::ranges::find(meta.snapshots.value(), sid, &snapshot::id);
+        if (s == meta.snapshots.value().end()) {
             vlog(log.error, "Snapshot id {} doesn't exist", sid);
             return outcome::unexpected_state;
         }
@@ -187,13 +187,13 @@ struct update_applying_visitor {
             meta.current_snapshot_id = sid;
             meta.last_updated_ms = model::timestamp::now();
         }
-        auto ref_iter = meta.refs->find(update.ref_name);
-        if (ref_iter == meta.refs->end()) {
-            meta.refs->emplace(update.ref_name, update.ref);
+        auto ref_iter = meta.refs.value().find(update.ref_name);
+        if (ref_iter == meta.refs.value().end()) {
+            meta.refs.value().emplace(update.ref_name, update.ref);
         } else {
             ref_iter->second = update.ref;
         }
-        meta.refs->emplace(update.ref_name, update.ref);
+        meta.refs.value().emplace(update.ref_name, update.ref);
         return outcome::success;
     }
 };

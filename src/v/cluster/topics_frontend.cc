@@ -129,7 +129,8 @@ std::vector<std::string_view> get_enterprise_features(
         return {};
     }
 
-    const auto& properties = tp_metadata->get().get_configuration().properties;
+    const auto& properties
+      = tp_metadata.value().get().get_configuration().properties;
     auto updated_properties = cluster::topic_table::update_topic_properties(
       properties, {update.tp_ns, update.properties});
 
@@ -508,7 +509,7 @@ topics_frontend::update_topic_properties(
       .with_node_client<controller_client_protocol>(
         _self,
         ss::this_shard_id(),
-        *cluster_leader,
+        cluster_leader.value(),
         timeout,
         [updates{std::move(updates)},
          timeout](controller_client_protocol client) mutable {
@@ -693,7 +694,7 @@ ss::future<topic_result> topics_frontend::do_create_topic(
                                   model::non_user_topics.size())
                                 - model::non_user_topics.size();
         if (
-          user_topic_count >= *max_user_topics_opt
+          user_topic_count >= max_user_topics_opt.value()
           && model::is_user_topic(tp_ns)) {
             vlog(
               clusterlog.warn,
@@ -764,8 +765,8 @@ ss::future<topic_result> topics_frontend::do_create_topic(
               "valid topic manifest");
         }
         assignable_config.cfg.partition_count
-          = assignable_config.cfg.properties.remote_topic_properties
-              ->remote_partition_count;
+          = assignable_config.cfg.properties.remote_topic_properties.value()
+              .remote_partition_count;
     }
 
     if (assignable_config.is_recovery_enabled()) {
@@ -950,7 +951,7 @@ ss::future<std::vector<topic_result>> topics_frontend::dispatch_delete_topics(
               .with_node_client<cluster::controller_client_protocol>(
                 _self,
                 ss::this_shard_id(),
-                *controller_leader,
+                controller_leader.value(),
                 timeout,
                 [topics, timeout](controller_client_protocol cp) mutable {
                     return cp.delete_topics(
@@ -1431,7 +1432,7 @@ topics_frontend::force_recover_partitions_from_nodes(
         auto current_assignment = topics.get_partition_assignment(entry.ntp);
         auto assignment_match = current_assignment
                                 && are_replica_sets_equal(
-                                  current_assignment->replicas,
+                                  current_assignment.value().replicas,
                                   entry.assignment);
         if (!assignment_match) {
             vlog(
@@ -1546,7 +1547,7 @@ ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
       .with_node_client<controller_client_protocol>(
         _self,
         ss::this_shard_id(),
-        *leader,
+        leader.value(),
         tout,
         [ntp = std::move(ntp), replicas = std::move(new_replica_set), tout](
           controller_client_protocol client) mutable {
@@ -1588,7 +1589,7 @@ ss::future<std::error_code> topics_frontend::revert_cancel_partition_move(
       .with_node_client<controller_client_protocol>(
         _self,
         ss::this_shard_id(),
-        *leader,
+        leader.value(),
         tout,
         [ntp = std::move(ntp),
          tout](controller_client_protocol client) mutable {
@@ -1664,10 +1665,10 @@ ss::future<std::error_code> topics_frontend::set_topic_partitions_disabled(
     // pre-replicate checks
 
     if (p_id) {
-        if (!_topics.local().contains(ns_tp, *p_id)) {
+        if (!_topics.local().contains(ns_tp, p_id.value())) {
             co_return errc::partition_not_exists;
         }
-        if (_topics.local().is_disabled(ns_tp, *p_id) == disabled) {
+        if (_topics.local().is_disabled(ns_tp, p_id.value()) == disabled) {
             // no-op
             co_return errc::success;
         }
@@ -1727,7 +1728,7 @@ ss::future<topic_result> topics_frontend::do_create_partition(
     }
 
     // we only support increasing number of partitions
-    if (p_cfg.new_total_partition_count <= tp_cfg->partition_count) {
+    if (p_cfg.new_total_partition_count <= tp_cfg.value().partition_count) {
         co_return make_error_result(
           p_cfg.tp_ns, errc::topic_invalid_partitions_decreased);
     }
@@ -1735,8 +1736,10 @@ ss::future<topic_result> topics_frontend::do_create_partition(
         co_return make_error_result(p_cfg.tp_ns, errc::topic_disabled);
     }
 
-    if (_features.local().should_sanction() && is_user_topic(tp_cfg->tp_ns)) {
-        if (auto f = get_enterprise_features(*tp_cfg); !f.empty()) {
+    if (
+      _features.local().should_sanction()
+      && is_user_topic(tp_cfg.value().tp_ns)) {
+        if (auto f = get_enterprise_features(tp_cfg.value()); !f.empty()) {
             auto msg = features::enterprise_error_message::create_partition(f);
             vlog(clusterlog.warn, "{}", msg);
             co_return make_error_result(
@@ -1752,7 +1755,7 @@ ss::future<topic_result> topics_frontend::do_create_partition(
         }
 
         node2count_t node2count;
-        for (const auto& [_, p_as] : md_ref->get().get_assignments()) {
+        for (const auto& [_, p_as] : md_ref.value().get().get_assignments()) {
             for (const auto& r : p_as.replicas) {
                 node2count[r.node_id] += 1;
             }
@@ -1763,7 +1766,7 @@ ss::future<topic_result> topics_frontend::do_create_partition(
     auto units = co_await _allocator.invoke_on(
       partition_allocator::shard,
       [p_cfg,
-       current = tp_cfg->partition_count,
+       current = tp_cfg.value().partition_count,
        existing_rc = std::move(existing_replica_counts),
        rf = replication_factor.value()](partition_allocator& al) mutable {
           const auto new_partitions_cnt = p_cfg.new_total_partition_count
@@ -1832,7 +1835,7 @@ topics_frontend::cancel_moving_partition_replicas_node(
       .with_node_client<controller_client_protocol>(
         _self,
         ss::this_shard_id(),
-        *leader,
+        leader.value(),
         timeout,
         [timeout, node_id, dir](controller_client_protocol client) mutable {
             return client
@@ -1867,7 +1870,7 @@ topics_frontend::cancel_moving_all_partition_replicas(
       .with_node_client<controller_client_protocol>(
         _self,
         ss::this_shard_id(),
-        *leader,
+        leader.value(),
         timeout,
         [timeout](controller_client_protocol client) mutable {
             return client
@@ -2065,7 +2068,8 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
         co_return errc::topic_disabled;
     }
 
-    auto partition_count = tp_metadata->get_configuration().partition_count;
+    auto partition_count
+      = tp_metadata.value().get_configuration().partition_count;
 
     auto health_report = co_await get_health_info(topic, partition_count);
 
@@ -2075,7 +2079,7 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
     std::optional<node2count_t> existing_replica_counts;
     if (_partition_autobalancing_topic_aware()) {
         node2count_t node2count;
-        for (const auto& [_, p_as] : tp_metadata->get_assignments()) {
+        for (const auto& [_, p_as] : tp_metadata.value().get_assignments()) {
             for (const auto& bs : p_as.replicas) {
                 node2count[bs.node_id] += 1;
             }
@@ -2095,7 +2099,7 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
         partition_allocator& al) mutable {
           return do_increase_replication_factor(
             topic,
-            tp_metadata->get_assignments(),
+            tp_metadata.value().get_assignments(),
             al,
             new_replication_factor,
             hard_max_disk_usage_ratio,
@@ -2134,7 +2138,7 @@ ss::future<std::error_code> topics_frontend::decrease_replication_factor(
     std::optional<std::error_code> error;
 
     co_await ss::max_concurrent_for_each(
-      tp_metadata->get_assignments(),
+      tp_metadata.value().get_assignments(),
       32,
       [&new_assignments, &error, topic, new_replication_factor](
         assignments_set::value_type& assignment) {
@@ -2237,7 +2241,7 @@ topics_frontend::do_get_partition_state(model::node_id node, model::ntp ntp) {
             return ss::make_ready_future<result<partition_state_reply>>(reply);
         }
         return _pm.invoke_on(
-          *shard,
+          shard.value(),
           [ntp = std::move(ntp),
            reply = std::move(reply)](partition_manager& pm) mutable {
               auto partition = pm.get(ntp);
@@ -2276,7 +2280,7 @@ topics_frontend::get_partition_state(model::ntp ntp) {
     std::set<model::node_id> nodes_to_query;
     const auto& current = topics.get_partition_assignment(ntp);
     if (current) {
-        const auto& bss = current->replicas;
+        const auto& bss = current.value().replicas;
         std::for_each(
           bss.begin(),
           bss.end(),
@@ -2337,7 +2341,7 @@ topics_frontend::get_partition_state(model::ntp ntp) {
               res.error_code);
             continue;
         }
-        results.push_back(std::move(*res.state));
+        results.push_back(std::move(res.state.value()));
     }
     co_return results;
 }

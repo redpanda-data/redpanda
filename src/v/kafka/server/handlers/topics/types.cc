@@ -55,7 +55,7 @@ config_map_t make_config_map(const T& config) {
     ret.reserve(config.size());
     for (const auto& c : config) {
         if (c.value) {
-            ret.emplace(c.name, *c.value);
+            ret.emplace(c.name, c.value.value());
         }
     }
     return ret;
@@ -137,10 +137,10 @@ get_shadow_indexing_mode(const config_map_t& config) {
     }
 
     model::shadow_indexing_mode mode = model::shadow_indexing_mode::disabled;
-    if (*arch_enabled) {
+    if (arch_enabled.value()) {
         mode = model::shadow_indexing_mode::archival;
     }
-    if (*si_enabled) {
+    if (si_enabled.value()) {
         mode = mode == model::shadow_indexing_mode::archival
                  ? model::shadow_indexing_mode::full
                  : model::shadow_indexing_mode::fetch;
@@ -156,7 +156,7 @@ get_enum_value(const config_map_t& config, std::string_view key) {
     if (!s_opt) {
         return std::nullopt;
     }
-    auto is = std::istringstream(*s_opt);
+    auto is = std::istringstream(s_opt.value());
     is >> ret;
     if (is.fail()) {
         return std::nullopt;

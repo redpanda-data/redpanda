@@ -24,9 +24,11 @@ ss::future<cluster::errc> frontend::alter_quotas(
     auto cluster_leader = _leaders.local().get_leader(model::controller_ntp);
     if (!cluster_leader) {
         return ss::make_ready_future<cluster::errc>(errc::no_leader_controller);
-    } else if (*cluster_leader != _self) {
+    } else if (cluster_leader.value() != _self) {
         return dispatch_alter_to_remote(
-          *cluster_leader, std::move(data), tout - model::timeout_clock::now());
+          cluster_leader.value(),
+          std::move(data),
+          tout - model::timeout_clock::now());
     } else {
         return do_alter_quotas(std::move(data), tout);
     }

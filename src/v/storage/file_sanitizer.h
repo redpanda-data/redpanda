@@ -66,7 +66,7 @@ public:
         if (!_config.sanitize_only && _config.finjection_cfg) {
             // Combine the global failure injection seed with the file path
             // hash to get a unique sequence of failures for every file handle.
-            auto file_seed = _config.finjection_cfg->seed;
+            auto file_seed = _config.finjection_cfg.value().seed;
             boost::hash_combine(file_seed, std::hash<std::string>()(_path));
 
             _random_gen = std::mt19937(file_seed);
@@ -303,13 +303,13 @@ private:
         auto f = ss::now();
 
         if (
-          fail_cfg->delay_probability && fail_cfg->max_delay_ms
-          && fail_cfg->min_delay_ms) {
+          fail_cfg.value().delay_probability && fail_cfg.value().max_delay_ms
+          && fail_cfg.value().min_delay_ms) {
             const auto roll = distrib(_random_gen.value());
-            if (roll <= fail_cfg->delay_probability) {
+            if (roll <= fail_cfg.value().delay_probability) {
                 std::uniform_int_distribution<> delay_distrib(
-                  fail_cfg->min_delay_ms.value(),
-                  fail_cfg->max_delay_ms.value());
+                  fail_cfg.value().min_delay_ms.value(),
+                  fail_cfg.value().max_delay_ms.value());
                 auto delay = delay_distrib(_random_gen.value());
 
                 vlog(
@@ -325,9 +325,9 @@ private:
             }
         }
 
-        if (fail_cfg->failure_probability) {
+        if (fail_cfg.value().failure_probability) {
             const auto roll = distrib(_random_gen.value());
-            if (roll <= fail_cfg->failure_probability) {
+            if (roll <= fail_cfg.value().failure_probability) {
                 vlog(
                   finjectlog.trace,
                   "Injecting EIO for {} operation on file {} of ntp {}",
@@ -386,17 +386,19 @@ private:
                 if (!final_config.has_value()) {
                     final_config = fail_cfg;
                 } else {
-                    final_config->failure_probability = std::max(
-                      final_config->failure_probability,
+                    final_config.value().failure_probability = std::max(
+                      final_config.value().failure_probability,
                       fail_cfg.failure_probability);
 
                     if (
-                      final_config->delay_probability
+                      final_config.value().delay_probability
                       < fail_cfg.delay_probability) {
-                        final_config->delay_probability
+                        final_config.value().delay_probability
                           = fail_cfg.delay_probability;
-                        final_config->min_delay_ms = fail_cfg.min_delay_ms;
-                        final_config->max_delay_ms = fail_cfg.max_delay_ms;
+                        final_config.value().min_delay_ms
+                          = fail_cfg.min_delay_ms;
+                        final_config.value().max_delay_ms
+                          = fail_cfg.max_delay_ms;
                     }
                 }
             }

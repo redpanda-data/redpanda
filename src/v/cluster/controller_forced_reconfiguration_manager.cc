@@ -53,7 +53,7 @@ auto controller_forced_reconfiguration_manager::gather_holders()
         return std::unexpected{cluster::error_info{
           .err = cluster::errc::shutting_down, .message = "shutting down"}};
     }
-    auto gate_holder = *std::move(maybe_gate_holder);
+    auto gate_holder = std::move(maybe_gate_holder).value();
 
     // hold lock
     auto maybe_lock_holder = _execution_lock.try_get_units();
@@ -67,7 +67,7 @@ auto controller_forced_reconfiguration_manager::gather_holders()
 
     return holder_bundle{
       .gate_holder = std::move(gate_holder),
-      .lock_holder = std::move(*maybe_lock_holder),
+      .lock_holder = std::move(maybe_lock_holder.value()),
     };
 }
 
@@ -168,7 +168,7 @@ ss::future<cluster::error_info> controller_forced_reconfiguration_manager::
                 "controller forced recovery is a last resort, use the "
                 "existing controller leader: {} to repair the cluster with "
                 "node-wise recovery",
-                *maybe_leader)};
+                maybe_leader.value())};
         }
     }
 
@@ -260,7 +260,7 @@ ss::future<cluster::error_info> controller_forced_reconfiguration_manager::
             }
 
             // leader determined
-            leader = *maybe_leader;
+            leader = maybe_leader.value();
             break;
         }
 

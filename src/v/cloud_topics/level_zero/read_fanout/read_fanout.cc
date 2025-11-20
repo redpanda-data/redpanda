@@ -95,14 +95,16 @@ ss::future<> read_fanout::process_single_request(l0::read_request<>* req) {
         auto timeout = req->expiration_time;
         for (const auto& meta : metadata) {
             if (
-              curr_query->meta.empty()
-              || curr_query->meta.back().id == meta.id) {
-                curr_query->output_size_estimate += meta.byte_range_size();
-                curr_query->meta.push_back(meta);
+              curr_query.value().meta.empty()
+              || curr_query.value().meta.back().id == meta.id) {
+                curr_query.value().output_size_estimate
+                  += meta.byte_range_size();
+                curr_query.value().meta.push_back(meta);
                 continue;
             }
             vassert(
-              !curr_query->meta.empty(), "extent list shouldn't be empty");
+              !curr_query.value().meta.empty(),
+              "extent list shouldn't be empty");
 
             auto proxy = ss::make_lw_shared<l0::read_request<>>(
               req->ntp,
@@ -118,10 +120,10 @@ ss::future<> read_fanout::process_single_request(l0::read_request<>* req) {
 
             futures.emplace_back(std::move(fut));
             curr_query.emplace();
-            curr_query->output_size_estimate = meta.byte_range_size();
-            curr_query->meta.push_back(meta);
+            curr_query.value().output_size_estimate = meta.byte_range_size();
+            curr_query.value().meta.push_back(meta);
         }
-        if (!curr_query->meta.empty()) {
+        if (!curr_query.value().meta.empty()) {
             auto proxy = ss::make_lw_shared<l0::read_request<>>(
               req->ntp,
               std::move(curr_query.value()),

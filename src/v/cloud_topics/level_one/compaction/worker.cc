@@ -156,7 +156,7 @@ ss::future<> compaction_worker::compact_log(log_compaction_meta* log) {
     _inflight_ntp = ntp;
 
     // Copy
-    auto compaction_offsets = log->info_and_ts->info.offsets_response;
+    auto compaction_offsets = log->info_and_ts.value().info.offsets_response;
 
     // Lazy initialization of offset map.
     if (!_map) {

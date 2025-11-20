@@ -112,7 +112,7 @@ scan_remote_partition_incrementally_with_reuploads(
           segments.size());
         auto merge_segments = [&segments, &manifest](int begin, int end) {
             auto meta_ptr = manifest.get(segments[begin].base_offset);
-            if (meta_ptr->is_compacted) {
+            if (meta_ptr.value().is_compacted) {
                 vlog(
                   test_log.debug,
                   "segment {}-{} is already compacted, skipping",

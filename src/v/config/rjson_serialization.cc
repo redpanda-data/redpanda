@@ -72,32 +72,32 @@ void rjson_serialize_impl(
 
     if (v.get_truststore_file()) {
         w.Key("truststore_file");
-        w.String((*(v.get_truststore_file())).c_str());
+        w.String(((v.get_truststore_file()).value()).c_str());
     }
 
     if (v.get_crl_file()) {
         w.Key("crl_file");
-        w.String((*(v.get_crl_file())).c_str());
+        w.String(((v.get_crl_file()).value()).c_str());
     }
 
     if (v.get_tls_v1_2_cipher_suites()) {
         w.Key("tls_v1_2_cipher_suites");
-        w.String(v.get_tls_v1_2_cipher_suites()->c_str());
+        w.String(v.get_tls_v1_2_cipher_suites().value().c_str());
     }
 
     if (v.get_tls_v1_3_cipher_suites()) {
         w.Key("tls_v1_3_cipher_suites");
-        w.String(v.get_tls_v1_3_cipher_suites()->c_str());
+        w.String(v.get_tls_v1_3_cipher_suites().value().c_str());
     }
 
     if (v.get_min_tls_version()) {
         w.Key("min_tls_version");
-        w.String(to_string_view(*v.get_min_tls_version()).data());
+        w.String(to_string_view(v.get_min_tls_version().value()).data());
     }
 
     if (v.get_enable_renegotiation()) {
         w.Key("enable_renegotiation");
-        w.Bool(*v.get_enable_renegotiation());
+        w.Bool(v.get_enable_renegotiation().value());
     }
 }
 

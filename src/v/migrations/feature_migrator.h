@@ -49,7 +49,7 @@ protected:
     virtual ss::future<> do_migrate();
     virtual ss::future<> do_mutate() { return ss::now(); }
 
-    ss::abort_source& abort_source() { return _as->get(); }
+    ss::abort_source& abort_source() { return _as.value().get(); }
 
     cluster::controller& _controller;
     ss::gate _gate;

@@ -414,7 +414,7 @@ private:
                   "'audit_enabled'");
             }
             const auto msg = topic.error_message.has_value()
-                               ? *topic.error_message
+                               ? topic.error_message.value()
                                : "<no_err_msg>";
             throw std::runtime_error(
               fmt::format("{} - error_code: {}", msg, topic.error_code));
@@ -589,8 +589,9 @@ ss::future<> audit_client::produce(
       records.size(),
       total_size);
 
-    auto timepoint = timeout.has_value() ? ss::timer<>::clock::now() + *timeout
-                                         : ss::timer<>::time_point::max();
+    auto timepoint = timeout.has_value()
+                       ? ss::timer<>::clock::now() + timeout.value()
+                       : ss::timer<>::time_point::max();
     auto reserved = co_await ss::get_units(_send_sem, total_size, timepoint);
 
     std::ranges::for_each(records, [&reserved](partition_batch& pb) {
@@ -743,7 +744,7 @@ ss::future<> audit_sink::do_toggle(bool enabled) {
             /// This special future allows the shutdown method to still execute
             /// under the scope the mutex, even though it was initiated outside
             /// outside the scope of the mutex.
-            co_await std::move(*_early_exit_future);
+            co_await std::move(_early_exit_future.value());
             _early_exit_future = std::nullopt;
             reset_client();
         } else {

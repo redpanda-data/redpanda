@@ -423,8 +423,9 @@ abs_client::abs_client(
   , _requestor(conf, std::move(apply_credentials))
   , _client(conf)
   , _adls_client(
-      conf.is_hns_enabled ? std::make_optional(*_data_lake_v2_client_config)
-                          : std::nullopt)
+      conf.is_hns_enabled
+        ? std::make_optional(_data_lake_v2_client_config.value())
+        : std::nullopt)
   , _probe(conf._probe) {
     vlog(abs_log.trace, "Created client with config:{}", conf);
 }
@@ -440,8 +441,9 @@ abs_client::abs_client(
   , _requestor(conf, std::move(apply_credentials))
   , _client(conf, &as, conf._probe, conf.max_idle_time)
   , _adls_client(
-      conf.is_hns_enabled ? std::make_optional(*_data_lake_v2_client_config)
-                          : std::nullopt)
+      conf.is_hns_enabled
+        ? std::make_optional(_data_lake_v2_client_config.value())
+        : std::nullopt)
   , _probe(conf._probe) {
     vlog(abs_log.trace, "Created client with config:{}", conf);
 }
@@ -474,8 +476,8 @@ ss::future<> abs_client::stop() {
     co_await _client.wait_input_shutdown();
 
     if (_adls_client) {
-        co_await _adls_client->stop();
-        co_await _adls_client->wait_input_shutdown();
+        co_await _adls_client.value().stop();
+        co_await _adls_client.value().wait_input_shutdown();
     }
 
     vlog(abs_log.debug, "Stopped ABS client");
@@ -1003,7 +1005,7 @@ ss::future<> abs_client::do_delete_file(
       "Attempt to use ADLSv2 endpoint without having created a client");
 
     auto header = _requestor.make_delete_file_request(
-      _data_lake_v2_client_config->uri, name, path);
+      _data_lake_v2_client_config.value().uri, name, path);
     if (!header) {
         vlog(
           abs_log.warn, "Failed to create request header: {}", header.error());
@@ -1012,7 +1014,7 @@ ss::future<> abs_client::do_delete_file(
 
     vlog(abs_log.trace, "send https request:\n{}", header.value());
 
-    auto response_stream = co_await _adls_client->request(
+    auto response_stream = co_await _adls_client.value().request(
       std::move(header.value()), timeout);
 
     co_await response_stream->prefetch_headers();

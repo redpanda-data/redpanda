@@ -577,7 +577,9 @@ acl_principal gssapi_authenticator::impl::get_principal_from_name(
     _rp_audit_user.domain = parsed_name.value().realm();
 
     auto mapped_name = gssapi_principal_mapper::apply(
-      std::string_view{default_realm.assume_value()}, *parsed_name, _rules);
+      std::string_view{default_realm.assume_value()},
+      parsed_name.value(),
+      _rules);
 
     if (!mapped_name) {
         vlog(seclog.warn, "Failed to apply rules to {}", parsed_name);
@@ -587,7 +589,7 @@ acl_principal gssapi_authenticator::impl::get_principal_from_name(
     vlog(seclog.debug, "Mapped '{}' to '{}'", source_name, *mapped_name);
     _rp_audit_user.name = _rp_user_principal.name();
     _rp_audit_user.type_id = audit::user::type::user;
-    return {principal_type::user, *mapped_name};
+    return {principal_type::user, mapped_name.value()};
 }
 
 } // namespace security

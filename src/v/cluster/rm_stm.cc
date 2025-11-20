@@ -647,10 +647,10 @@ abort_origin rm_stm::get_abort_origin(
         return abort_origin::present;
     }
 
-    if (expected_tx_seq < *current_tx_seq) {
+    if (expected_tx_seq < current_tx_seq.value()) {
         return abort_origin::past;
     }
-    if (*current_tx_seq < expected_tx_seq) {
+    if (current_tx_seq.value() < expected_tx_seq) {
         return abort_origin::future;
     }
     return abort_origin::present;
@@ -1443,7 +1443,7 @@ rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
     for (const auto& idx : intersecting_idxes) {
         auto opt = co_await load_abort_snapshot(idx);
         if (opt) {
-            filter_intersecting(result, opt->aborted, from, to);
+            filter_intersecting(result, opt.value().aborted, from, to);
         }
     }
     vlog(
@@ -2232,7 +2232,7 @@ rm_stm::load_abort_snapshot(abort_index index) {
         co_return std::nullopt;
     }
 
-    auto meta_buf = co_await reader->read_metadata();
+    auto meta_buf = co_await reader.value().read_metadata();
     iobuf_parser meta_parser(std::move(meta_buf));
 
     auto version = reflection::adl<int8_t>{}.from(meta_parser);
@@ -2250,8 +2250,9 @@ rm_stm::load_abort_snapshot(abort_index index) {
       filename,
       meta_parser.bytes_left());
 
-    auto data_buf = co_await read_iobuf_exactly(reader->input(), snapshot_size);
-    co_await reader->close();
+    auto data_buf = co_await read_iobuf_exactly(
+      reader.value().input(), snapshot_size);
+    co_await reader.value().close();
     co_await _abort_snapshot_mgr.remove_partial_snapshots();
 
     iobuf_parser data_parser(std::move(data_buf));

@@ -43,9 +43,9 @@ inline bool needs_compaction(
           ? topic_mcl.value()
           : config::shard_local_cfg().max_compaction_lag_ms();
     return compaction::log_needs_compaction(
-      log.info_and_ts->info.dirty_ratio,
+      log.info_and_ts.value().info.dirty_ratio,
       min_cleanable_dirty_ratio,
-      log.info_and_ts->info.earliest_dirty_ts,
+      log.info_and_ts.value().info.earliest_dirty_ts,
       max_compaction_lag_ms);
 }
 
@@ -114,7 +114,7 @@ log_info_collector::get_logs_to_collect(
             auto sample_interval
               = config::shard_local_cfg().log_compaction_interval_ms();
             auto delta = to_time_point(collection_timestamp)
-                         - to_time_point(log.info_and_ts->collected_at);
+                         - to_time_point(log.info_and_ts.value().collected_at);
             if (delta <= sample_interval) {
                 vlog(
                   compaction_log.debug,
@@ -152,7 +152,7 @@ log_info_collector::get_logs_to_collect(
 
             return delete_retention_ms.has_value()
                      ? collection_timestamp
-                         - model::timestamp(delete_retention_ms->count())
+                         - model::timestamp(delete_retention_ms.value().count())
                      : model::timestamp::max();
         }();
         vlog(compaction_log.debug, "Sampling CTP {}", log.ntp);

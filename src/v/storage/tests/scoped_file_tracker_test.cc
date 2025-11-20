@@ -71,7 +71,7 @@ TEST(ScopedFileTrackerTest, TestOptional) {
         // Move construct and clear a tracker. Note that this creates a
         // temporary.
         cleanup.emplace(scoped_file_tracker{&tracked, {"foo"}});
-        cleanup->clear();
+        cleanup.value().clear();
     }
     // Upon destructing the tracker, this should leave nothing behind.
     ASSERT_EQ(0, tracked.size());

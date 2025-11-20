@@ -100,7 +100,7 @@ struct hashing_visitor {
             if (!e) {
                 continue;
             }
-            boost::hash_combine(h, std::hash<value>()(*e));
+            boost::hash_combine(h, std::hash<value>()(e.value()));
         }
         return h;
     }
@@ -112,7 +112,7 @@ struct hashing_visitor {
         for (const auto& kv : v->kvs) {
             boost::hash_combine(h, std::hash<value>()(kv.key));
             if (kv.val) {
-                boost::hash_combine(h, std::hash<value>()(*kv.val));
+                boost::hash_combine(h, std::hash<value>()(kv.val.value()));
             }
         }
         return h;
@@ -121,7 +121,7 @@ struct hashing_visitor {
 
 void ostream_val_ptr(std::ostream& o, const std::optional<value>& v) {
     if (v) {
-        o << *v;
+        o << v.value();
         return;
     }
     o << "none";
@@ -172,7 +172,7 @@ struct copying_visitor {
                 ret->fields.push_back(std::nullopt);
                 continue;
             }
-            ret->fields.push_back(make_copy(*f));
+            ret->fields.push_back(make_copy(f.value()));
         }
         return ret;
     }
@@ -184,7 +184,7 @@ struct copying_visitor {
                 ret->elements.push_back(std::nullopt);
                 continue;
             }
-            ret->elements.push_back(make_copy(*e));
+            ret->elements.push_back(make_copy(e.value()));
         }
         return ret;
     }
@@ -197,7 +197,7 @@ struct copying_visitor {
             if (!kv.val) {
                 kv_copy.val = std::nullopt;
             } else {
-                kv_copy.val = make_copy(*kv.val);
+                kv_copy.val = make_copy(kv.val.value());
             }
             ret->kvs.push_back(std::move(kv_copy));
         }
@@ -235,7 +235,7 @@ bool operator==(const struct_value& lhs, const struct_value& rhs) {
             // Both are null.
             continue;
         }
-        if (*lhs.fields[i] != *rhs.fields[i]) {
+        if (lhs.fields[i].value() != rhs.fields[i].value()) {
             return false;
         }
     }
@@ -268,7 +268,7 @@ bool operator==(const list_value& lhs, const list_value& rhs) {
             // Both are null.
             continue;
         }
-        if (*lhs.elements[i] != *rhs.elements[i]) {
+        if (lhs.elements[i].value() != rhs.elements[i].value()) {
             return false;
         }
     }
@@ -296,7 +296,7 @@ bool operator==(const kv_value& lhs, const kv_value& rhs) {
     if (lhs.key != rhs.key) {
         return false;
     }
-    if (has_lhs_val && *lhs.val != *rhs.val) {
+    if (has_lhs_val && lhs.val.value() != rhs.val.value()) {
         return false;
     }
     return true;
@@ -521,7 +521,7 @@ size_t value_hash(const struct_value& v) {
         if (!f) {
             continue;
         }
-        boost::hash_combine(h, std::hash<value>()(*f));
+        boost::hash_combine(h, std::hash<value>()(f.value()));
     }
     return h;
 }

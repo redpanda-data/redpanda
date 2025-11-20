@@ -219,7 +219,7 @@ parse_principal_mapping_rule(std::string_view mapping) {
         }
         const auto adjust_case = make_sv(components_match[5]);
         rule = {
-          *make_sv(components_match[1]),
+          make_sv(components_match[1]).value(),
           make_sv(components_match[3]),
           tls::rule::make_lower{adjust_case == "L"},
           tls::rule::make_upper{adjust_case == "U"}};

@@ -70,7 +70,7 @@ feature_manager::feature_manager(
   , _topic_table(topic_table)
   , _raft0_group(raft0_group)
   , _barrier_state(
-      *config::node().node_id(),
+      config::node().node_id().value(),
       members.local(),
       as.local(),
       _gate,
@@ -141,7 +141,8 @@ feature_manager::start(std::vector<model::node_id>&& cluster_founder_nodes) {
 
             vlog(
               clusterlog.debug, "Controller leader notification term {}", term);
-            _am_controller_leader = leader_id == *config::node().node_id();
+            _am_controller_leader = leader_id
+                                    == config::node().node_id().value();
 
             // This hook avoids the need for the controller leader to receive
             // its own health report to generate a call to update_node_version.
@@ -160,7 +161,7 @@ feature_manager::start(std::vector<model::node_id>&& cluster_founder_nodes) {
                   leader_id.value(),
                   features::feature_table::get_latest_logical_version());
                 update_node_version(
-                  *config::node().node_id(),
+                  config::node().node_id().value(),
                   features::feature_table::get_latest_logical_version());
             } else if (_am_controller_leader) {
                 // In any case, kick the background update loop when
@@ -375,7 +376,7 @@ void feature_manager::verify_enterprise_license() {
     }
 
     auto invalid = [](const std::optional<security::license>& license) {
-        return !license || license->is_expired();
+        return !license || license.value().is_expired();
     };
     auto license_missing_or_expired = _feature_table.local().should_sanction()
                                       && invalid(fallback_license);

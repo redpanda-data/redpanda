@@ -120,7 +120,7 @@ constexpr auto to_optional_model_timestamp(std::optional<broker_timestamp_t> in)
     // conversion from broker_timestamp_t to system_clock in this way it's
     // possible because they share the same epoch
     return model::to_timestamp(
-      std::chrono::system_clock::time_point{in->time_since_epoch()});
+      std::chrono::system_clock::time_point{in.value().time_since_epoch()});
 }
 
 void segment_index::maybe_track(
@@ -262,7 +262,7 @@ std::ostream& operator<<(std::ostream& o, const segment_index_ptr& i) {
 std::ostream&
 operator<<(std::ostream& o, const std::optional<segment_index::entry>& e) {
     if (e) {
-        return o << *e;
+        return o << e.value();
     }
     return o << "{empty segment_index::entry}";
 }

@@ -98,7 +98,7 @@ struct fetch_plan : redpanda_thread_fixture {
     ss::future<fixture_state&> init_bench(test_args args) {
         if (_state) {
             vassert(_args == args, "args mismatch");
-            co_return *_state;
+            co_return _state.value();
         }
 
         _args = args;
@@ -115,7 +115,7 @@ struct fetch_plan : redpanda_thread_fixture {
             name += std::string(topic_name_length - name.size(), 'x');
             vassert(name.size() == topic_name_length, "huh");
             model::topic topic{name};
-            _state->topics.push_back(topic);
+            _state.value().topics.push_back(topic);
             return add_topic(
               model::topic_namespace_view(model::kafka_namespace, topic),
               pcount);
@@ -180,9 +180,9 @@ struct fetch_plan : redpanda_thread_fixture {
 
         // add all partitions to fetch metadata
         auto& mdc = rctx.get_fetch_metadata_cache();
-        _state->mdc = &mdc;
+        _state.value().mdc = &mdc;
 
-        for (auto& topic : _state->topics) {
+        for (auto& topic : _state.value().topics) {
             for (unsigned i = 0; i < args.partitions_per_topic; i++) {
                 mdc.insert_or_assign(
                   {topic, model::partition_id(i)},
@@ -213,8 +213,8 @@ struct fetch_plan : redpanda_thread_fixture {
           octx->session_ctx.session()->id(),
           sess_id);
 
-        _state->octx = std::move(octx);
-        co_return *_state;
+        _state.value().octx = std::move(octx);
+        co_return _state.value();
     }
 
     kafka::fetch_request make_fetch_req(kafka::api_version api_version) {
@@ -228,14 +228,15 @@ struct fetch_plan : redpanda_thread_fixture {
         frq_data.session_id = kafka::invalid_fetch_session_id;
         frq_data.session_epoch = kafka::initial_fetch_session_epoch;
 
-        for (auto& topic : _state->topics) {
+        for (auto& topic : _state.value().topics) {
             // make the fetch topic
             kafka::fetch_topic ft;
             if (api_version >= kafka::api_version{13}) {
                 ft.topic_id = app.metadata_cache.local()
                                 .get_topic_metadata_ref(
                                   {model::kafka_namespace, topic})
-                                ->get()
+                                .value()
+                                .get()
                                 .get_configuration()
                                 .tp_id.value();
             } else {

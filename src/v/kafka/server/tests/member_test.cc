@@ -57,7 +57,7 @@ SEASTAR_THREAD_TEST_CASE(constructor) {
 
     BOOST_TEST(m.id() == "m");
     BOOST_TEST(m.group_id() == "g");
-    BOOST_TEST(*m.group_instance_id() == "i");
+    BOOST_TEST(m.group_instance_id().value() == "i");
     BOOST_TEST(m.session_timeout() == std::chrono::milliseconds(1000));
     BOOST_TEST(m.rebalance_timeout() == std::chrono::milliseconds(2));
     BOOST_TEST(m.protocol_type() == "p");

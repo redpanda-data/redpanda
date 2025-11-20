@@ -96,13 +96,14 @@ ss::future<> coordinator_manager::start() {
 ss::future<> coordinator_manager::shutdown() {
     as_.request_abort();
     if (manage_notifications_) {
-        pm_.unregister_manage_notification(*manage_notifications_);
+        pm_.unregister_manage_notification(manage_notifications_.value());
     }
     if (unmanage_notifications_) {
-        pm_.unregister_unmanage_notification(*unmanage_notifications_);
+        pm_.unregister_unmanage_notification(unmanage_notifications_.value());
     }
     if (leadership_notifications_) {
-        gm_.unregister_leadership_notification(*leadership_notifications_);
+        gm_.unregister_leadership_notification(
+          leadership_notifications_.value());
     }
 
     auto gate_close = gate_.close();
@@ -131,7 +132,7 @@ void coordinator_manager::start_managing(cluster::partition& p) {
     if (coordinators_.contains(ntp)) {
         return;
     }
-    auto stm = p.raft()->stm_manager()->get<coordinator_stm>();
+    auto stm = p.raft()->stm_manager().value().get<coordinator_stm>();
     if (stm == nullptr) {
         return;
     }

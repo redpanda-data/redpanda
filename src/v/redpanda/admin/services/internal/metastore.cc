@@ -43,13 +43,14 @@ metastore_service_impl::get_offsets(
     if (!topic_metadata) {
         throw serde::pb::rpc::not_found_exception("topic not found");
     }
-    auto topic_id = topic_metadata->get().get_configuration().tp_id;
+    auto topic_id = topic_metadata.value().get().get_configuration().tp_id;
     if (!topic_id) {
         throw serde::pb::rpc::not_found_exception("topic missing id");
     }
     proto::admin::metastore::get_offsets_response response;
     auto result = co_await _metastore->local().get_offsets(
-      {*topic_id, model::partition_id{req.get_partition().get_partition()}});
+      {topic_id.value(),
+       model::partition_id{req.get_partition().get_partition()}});
     if (!result) {
         check_errc(result.error());
     }

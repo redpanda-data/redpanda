@@ -74,8 +74,8 @@ TEST(ReconciliationConsumerTest, BuildObject) {
                            tidp1, std::move(reader1), builder.get(), &probe)
                            .get();
         ASSERT_TRUE(metadata1.has_value());
-        ASSERT_EQ(metadata1->base_offset(), 100);
-        ASSERT_EQ(metadata1->last_offset(), 109);
+        ASSERT_EQ(metadata1.value().base_offset(), 100);
+        ASSERT_EQ(metadata1.value().last_offset(), 109);
     }
 
     // Consumer 2: Partition 1 of topic1, offset range 200-204.
@@ -85,8 +85,8 @@ TEST(ReconciliationConsumerTest, BuildObject) {
                            tidp2, std::move(reader2), builder.get(), &probe)
                            .get();
         ASSERT_TRUE(metadata2.has_value());
-        ASSERT_EQ(metadata2->base_offset(), 200);
-        ASSERT_EQ(metadata2->last_offset(), 204);
+        ASSERT_EQ(metadata2.value().base_offset(), 200);
+        ASSERT_EQ(metadata2.value().last_offset(), 204);
     }
 
     // Consumer 3: Partition 0 of topic2, offset range 300-311.
@@ -96,8 +96,8 @@ TEST(ReconciliationConsumerTest, BuildObject) {
                            tidp3, std::move(reader3), builder.get(), &probe)
                            .get();
         ASSERT_TRUE(metadata3.has_value());
-        ASSERT_EQ(metadata3->base_offset(), 300);
-        ASSERT_EQ(metadata3->last_offset(), 311);
+        ASSERT_EQ(metadata3.value().base_offset(), 300);
+        ASSERT_EQ(metadata3.value().last_offset(), 311);
     }
 
     auto info = builder->finish().get();

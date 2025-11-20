@@ -132,15 +132,15 @@ handle_auth_handshake(request_context&& ctx, ss::smp_service_group g) {
          * is set the input connection is assumed to contain raw authentication
          * tokens not wrapped in a normal kafka request envelope.
          */
-        conn->sasl()->set_handshake_v0();
+        conn->sasl().value().set_handshake_v0();
     }
     return do_process<sasl_handshake_handler>(std::move(ctx), g)
       .response.then([conn = std::move(conn)](response_ptr r) {
-          if (conn->sasl()->has_mechanism()) {
-              conn->sasl()->set_state(
+          if (conn->sasl().value().has_mechanism()) {
+              conn->sasl().value().set_state(
                 security::sasl_server::sasl_state::authenticate);
           } else {
-              conn->sasl()->set_state(
+              conn->sasl().value().set_state(
                 security::sasl_server::sasl_state::failed);
           }
           return r;
@@ -157,7 +157,8 @@ handle_auth_initial(request_context&& ctx, ss::smp_service_group g) {
     case api_versions_api::key: {
         auto r = api_versions_handler::handle_raw(ctx);
         if (r.data.error_code == error_code::none) {
-            ctx.sasl()->set_state(security::sasl_server::sasl_state::handshake);
+            ctx.sasl().value().set_state(
+              security::sasl_server::sasl_state::handshake);
         }
         return ctx.respond(std::move(r));
     }
@@ -180,7 +181,7 @@ handle_auth_initial(request_context&& ctx, ss::smp_service_group g) {
 
 static ss::future<response_ptr>
 handle_auth(request_context&& ctx, ss::smp_service_group g) {
-    switch (ctx.sasl()->state()) {
+    switch (ctx.sasl().value().state()) {
     case security::sasl_server::sasl_state::initial:
         return handle_auth_initial(std::move(ctx), g);
 
@@ -229,11 +230,11 @@ handle_auth(request_context&& ctx, ss::smp_service_group g) {
                * there may be multiple authentication round-trips so it is fine
                * to return without entering an end state like complete/failed.
                */
-              if (conn->sasl()->mechanism().complete()) {
-                  conn->sasl()->set_state(
+              if (conn->sasl().value().mechanism().complete()) {
+                  conn->sasl().value().set_state(
                     security::sasl_server::sasl_state::complete);
-              } else if (conn->sasl()->mechanism().failed()) {
-                  conn->sasl()->set_state(
+              } else if (conn->sasl().value().mechanism().failed()) {
+                  conn->sasl().value().set_state(
                     security::sasl_server::sasl_state::failed);
               }
               return ss::make_ready_future<response_ptr>(std::move(r));
@@ -278,26 +279,26 @@ process_result_stages process_request(
     auto key = ctx.header().key;
 
     if (
-      ctx.sasl() && ctx.sasl()->complete()
+      ctx.sasl() && ctx.sasl().value().complete()
       && key == sasl_handshake_handler::api::key) [[unlikely]] {
         // This is a client-driven reauthentication
         vlog(
           klog.debug,
           "SASL reauthentication detected - resetting authn server");
         ctx.sasl_probe().session_reauth();
-        ctx.sasl()->reset();
+        ctx.sasl().value().reset();
     }
     /*
      * requests are handled as normal when auth is disabled. otherwise no
      * request is handled until the auth process has completed.
      */
-    if (unlikely(ctx.sasl() && !ctx.sasl()->complete())) {
+    if (unlikely(ctx.sasl() && !ctx.sasl().value().complete())) {
         auto conn = ctx.connection();
         return process_result_stages::single_stage(
           handle_auth(std::move(ctx), g)
             .then_wrapped([conn](ss::future<response_ptr> f) {
                 if (f.failed()) {
-                    conn->sasl()->set_state(
+                    conn->sasl().value().set_state(
                       security::sasl_server::sasl_state::failed);
                 }
                 return f;
@@ -329,16 +330,16 @@ process_result_stages process_request(
           ctx.respond(sasl_authenticate_response(std::move(data))));
     }
 
-    if (ctx.sasl() && ctx.sasl()->expired()) [[unlikely]] {
+    if (ctx.sasl() && ctx.sasl().value().expired()) [[unlikely]] {
         throw sasl_session_expired_exception(
           fmt::format(
             "Session for client '{}' expired after {}",
             ctx.header().client_id.value_or(""),
-            ctx.sasl()->max_reauth()));
+            ctx.sasl().value().max_reauth()));
     }
 
     if (auto handler = handler_for_key(key)) {
-        return process_generic(*handler, std::move(ctx), g, rres);
+        return process_generic(handler.value(), std::move(ctx), g, rres);
     }
 
     throw std::runtime_error(
@@ -354,7 +355,7 @@ std::ostream& operator<<(std::ostream& os, const request_header& header) {
       header.version,
       header.correlation,
       header.client_id.value_or(std::string_view("nullopt")),
-      (header.tags ? (*header.tags)().size() : 0),
+      (header.tags ? (header.tags.value())().size() : 0),
       header.tags_size_bytes);
     return os;
 }

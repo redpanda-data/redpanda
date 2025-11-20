@@ -115,7 +115,7 @@ ss::future<std::optional<ss::sstring>> get_record_name(
         }
         auto s = co_await make_protobuf_schema_definition(
           store, {subject("r"), {std::move(schema).raw(), schema_type}});
-        auto r = s.name(*offsets);
+        auto r = s.name(offsets.value());
         if (!r) {
             co_return std::nullopt;
         }
@@ -234,7 +234,7 @@ public:
         }
 
         std::optional<std::vector<int32_t>> proto_offsets;
-        if (schema->type() == schema_type::protobuf) {
+        if (schema.value().type() == schema_type::protobuf) {
             auto offsets = get_proto_offsets(parser);
             if (offsets.empty()) {
                 vlog(
@@ -260,7 +260,7 @@ public:
         }
 
         auto record_name = co_await get_record_name(
-          *_api->_store, sns, *std::move(schema), proto_offsets);
+          *_api->_store, sns, std::move(schema).value(), proto_offsets);
         if (!record_name) {
             vlog(
               srlog.debug,
@@ -270,7 +270,7 @@ public:
             co_return false;
         }
 
-        auto sub = make_subject(sns, topic, field, *record_name);
+        auto sub = make_subject(sns, topic, field, record_name.value());
 
         auto has_id = co_await _api->_store->has_version(
           sub, id, include_deleted::yes);

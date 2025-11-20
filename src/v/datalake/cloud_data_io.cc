@@ -33,7 +33,7 @@ struct one_time_stream_provider : public stream_provider {
     }
     ss::future<> close() override {
         if (_st.has_value()) {
-            return _st->close().then([this] { _st = std::nullopt; });
+            return _st.value().close().then([this] { _st = std::nullopt; });
         }
         return ss::now();
     }

@@ -420,7 +420,7 @@ result<void> sanitize(json::Value::Object& o, sanitize_context& ctx) {
         }
 
         if (new_namespace.has_value() && ctx.ns.top() != new_namespace) {
-            ctx.ns.emplace(*new_namespace);
+            ctx.ns.emplace(new_namespace.value());
             pop_ns.emplace(std::move(pop_ns_impl));
             if (auto it = o.FindMember("namespace"); it != o.MemberEnd()) {
                 if (!it->value.IsString()) {
@@ -432,15 +432,17 @@ result<void> sanitize(json::Value::Object& o, sanitize_context& ctx) {
                   it->value.GetString(), it->value.GetStringLength()};
                 if (existing_namespace != new_namespace) {
                     it->value.SetString(
-                      new_namespace->data(),
-                      new_namespace->length(),
+                      new_namespace.value().data(),
+                      new_namespace.value().length(),
                       ctx.alloc);
                 }
             } else {
                 o.AddMember(
                   json::Value("namespace"),
                   json::Value(
-                    new_namespace->data(), new_namespace->length(), ctx.alloc),
+                    new_namespace.value().data(),
+                    new_namespace.value().length(),
+                    ctx.alloc),
                   ctx.alloc);
             }
         } else {
@@ -597,7 +599,7 @@ make_avro_schema_definition(schema_getter& store, subject_schema schema) {
       std::make_exception_ptr(as_exception(
         error_info{
           error_code::schema_invalid,
-          fmt::format("Invalid schema {}", ex->what())})));
+          fmt::format("Invalid schema {}", ex.value().what())})));
 }
 
 result<schema_definition>

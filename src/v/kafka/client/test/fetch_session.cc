@@ -30,7 +30,8 @@ make_record_set(model::offset offset, std::optional<size_t> count) {
     }
     iobuf record_set;
     auto writer{kafka::protocol::encoder(record_set)};
-    kafka::protocol::writer_serialize_batch(writer, make_batch(offset, *count));
+    kafka::protocol::writer_serialize_batch(
+      writer, make_batch(offset, count.value()));
     return kafka::batch_reader{std::move(record_set)};
 }
 

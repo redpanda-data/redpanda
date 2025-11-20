@@ -48,7 +48,7 @@ void partition_balancer_state::handle_ntp_move_begin_or_cancel(
         for (const auto& bs : next) {
             auto rack = _members_table.get_node_rack_id(bs.node_id);
             if (rack) {
-                auto res = racks.insert(std::move(*rack));
+                auto res = racks.insert(std::move(rack.value()));
                 if (!res.second) {
                     is_rack_constraint_violated = true;
                     break;
@@ -94,7 +94,7 @@ partition_balancer_state::apply_snapshot(const controller_snapshot& snap) {
     absl::flat_hash_map<model::node_id, model::rack_id> node2rack;
     for (const auto& [id, node] : snap.members.nodes) {
         if (node.broker.rack()) {
-            node2rack[id] = *node.broker.rack();
+            node2rack[id] = node.broker.rack().value();
         }
     }
 

@@ -87,9 +87,9 @@ struct simple_kv_base : public BaseT {
             auto v = serde::from_iobuf<std::optional<ss::sstring>>(
               r.value().copy());
             if (v) {
-                auto [it, success] = state.try_emplace(k, *v);
+                auto [it, success] = state.try_emplace(k, v.value());
                 if (!success) {
-                    it->second.value = std::move(*v);
+                    it->second.value = std::move(v.value());
                     it->second.update_cnt++;
                 }
             } else {
@@ -130,7 +130,8 @@ public:
         auto start_offset = raft_node.raft()->start_offset();
         if (snap) {
             auto data = co_await read_iobuf_exactly(
-              snap->reader.input(), co_await snap->reader.get_snapshot_size());
+              snap.value().reader.input(),
+              co_await snap.value().reader.get_snapshot_size());
             inc_state = serde::from_iobuf<state_t>(std::move(data));
         }
 
@@ -253,7 +254,7 @@ struct state_machine_fixture : raft_fixture {
 
         co_await parallel_for_each_node(
           [committed_offset](raft_node_instance& node) {
-              return node.raft()->stm_manager()->wait(
+              return node.raft()->stm_manager().value().wait(
                 committed_offset, default_timeout());
           });
     }

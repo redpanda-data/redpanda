@@ -134,7 +134,7 @@ public:
                 break;
             }
 
-            auto reassignment = *reassignment_opt;
+            auto reassignment = reassignment_opt.value();
             if (
               skip.contains(static_cast<uint64_t>(reassignment.group))
               || _mi->muted_nodes().contains(reassignment.from.node_id)
@@ -149,7 +149,8 @@ public:
             // level, check balancing objectives.
 
             if (_pinning_constr) {
-                auto pinning_diff = _pinning_constr->evaluate(reassignment);
+                auto pinning_diff = _pinning_constr.value().evaluate(
+                  reassignment);
                 if (pinning_diff < -error_jitter) {
                     continue;
                 } else if (pinning_diff > error_jitter) {

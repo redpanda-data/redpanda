@@ -308,8 +308,9 @@ ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
     _closed = true;
     if (
       _eviction_monitor
-      && !_eviction_monitor->promise.get_future().available()) {
-        _eviction_monitor->promise.set_exception(segment_closed_exception());
+      && !_eviction_monitor.value().promise.get_future().available()) {
+        _eviction_monitor.value().promise.set_exception(
+          segment_closed_exception());
     }
 
     // wait for compaction to finish
@@ -481,7 +482,7 @@ disk_log_impl::monitor_eviction(ss::abort_source& as) {
     }
 
     auto opt_sub = as.subscribe([this]() noexcept {
-        _eviction_monitor->promise.set_exception(
+        _eviction_monitor.value().promise.set_exception(
           ss::abort_requested_exception());
         _eviction_monitor.reset();
     });
@@ -510,7 +511,7 @@ disk_log_impl::request_eviction_until_offset(model::offset max_offset) {
                                         && min_offset.value() <= max_offset;
 
     if (_eviction_monitor && have_segments_to_evict) {
-        _eviction_monitor->promise.set_value(max_offset);
+        _eviction_monitor.value().promise.set_value(max_offset);
         _eviction_monitor.reset();
 
         vlog(
@@ -562,7 +563,7 @@ ss::future<> disk_log_impl::adjacent_merge_compact(
     auto offsets_compactible = [&cfg, &new_start_offset, this](segment& s) {
         if (
           new_start_offset
-          && s.offsets().get_base_offset() < *new_start_offset) {
+          && s.offsets().get_base_offset() < new_start_offset.value()) {
             vlog(
               gclog.trace,
               "[{}] segment {} base offs {}, new start offset {}, "
@@ -1062,8 +1063,8 @@ disk_log_impl::compact_adjacent_segment_ranges(
         // _segs vector.
         using vec_t = chunked_vector<ss::lw_shared_ptr<segment>>;
         chunked_vector<vec_t> seg_ranges;
-        seg_ranges.reserve(ranges->size());
-        for (auto& range : *ranges) {
+        seg_ranges.reserve(ranges.value().size());
+        for (auto& range : ranges.value()) {
             seg_ranges.emplace_back(range.first, range.second);
         }
         for (auto& range : seg_ranges) {
@@ -1177,7 +1178,7 @@ ss::future<compaction_result> disk_log_impl::do_compact_adjacent_segments(
     }
 
     // This is guaranteed to have a value.
-    auto ret = *opt_ret;
+    auto ret = opt_ret.value();
 
     // remove the now redundant segments, if they haven't already been removed.
     // this could occur if racing with functions like truncate which manipulate
@@ -1808,7 +1809,7 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
     auto max_offset = co_await maybe_adjusted_retention_offset(cfg);
 
     if (max_offset) {
-        co_return request_eviction_until_offset(*max_offset);
+        co_return request_eviction_until_offset(max_offset.value());
     }
 
     co_return std::nullopt;
@@ -2117,7 +2118,7 @@ size_t disk_log_impl::max_segment_size() const {
     // override for segment size
     size_t result;
     if (config().has_overrides() && config().get_overrides().segment_size) {
-        result = *config().get_overrides().segment_size;
+        result = config().get_overrides().segment_size.value();
     } else {
         // no overrides use defaults
         result = config().is_locally_compacted()
@@ -2131,10 +2132,10 @@ size_t disk_log_impl::max_segment_size() const {
     auto min_limit = config::shard_local_cfg().log_segment_size_min();
     auto max_limit = config::shard_local_cfg().log_segment_size_max();
     if (min_limit) {
-        result = std::max(*min_limit, result);
+        result = std::max(min_limit.value(), result);
     }
     if (max_limit) {
-        result = std::min(*max_limit, result);
+        result = std::min(max_limit.value(), result);
     }
 
     return result;
@@ -2159,7 +2160,7 @@ uint64_t disk_log_impl::size_bytes_after_offset(model::offset o) const {
             // entry buffer size which is currently equal to 32KiB.
             auto entry = seg->index().find_nearest(o);
             if (entry) {
-                size += seg->size_bytes() - entry->filepos;
+                size += seg->size_bytes() - entry.value().filepos;
             }
             return size;
         }
@@ -2373,7 +2374,7 @@ disk_log_impl::make_cached_reader(local_log_reader_config config) {
     auto rdr = _readers_cache->get_reader(config);
     if (rdr) {
         return ss::make_ready_future<model::record_batch_reader>(
-          std::move(*rdr));
+          std::move(rdr.value()));
     }
     return _lock_mngr.range_lock(config)
       .then([this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
@@ -2532,7 +2533,7 @@ bool disk_log_impl::log_contains_offset(model::offset o) const noexcept {
         return false;
     }
 
-    return log_interval->contains(o);
+    return log_interval.value().contains(o);
 }
 
 bool disk_log_impl::log_contains_offset_range(
@@ -2546,7 +2547,8 @@ bool disk_log_impl::log_contains_offset_range(
         return false;
     }
 
-    return log_interval->contains(first) && log_interval->contains(last);
+    return log_interval.value().contains(first)
+           && log_interval.value().contains(last);
 }
 
 ss::future<std::optional<log::offset_range_size_result_t>>
@@ -2927,7 +2929,7 @@ disk_log_impl::offset_range_size(
               truncate_after);
             if (
               last_index_entry.has_value()
-              && last_index_entry->offset > committed_offset) {
+              && last_index_entry.value().offset > committed_offset) {
                 // The index entry overshoots the committed offset
                 vlog(
                   stlog.debug,
@@ -2940,7 +2942,7 @@ disk_log_impl::offset_range_size(
             }
             if (
               last_index_entry.has_value()
-              && model::prev_offset(last_index_entry->offset) > first) {
+              && model::prev_offset(last_index_entry.value().offset) > first) {
                 vlog(
                   stlog.debug,
                   "Setting offset range to {} - {}, {} bytes of the last "
@@ -2950,12 +2952,12 @@ disk_log_impl::offset_range_size(
                   last_index_entry->filepos);
 
                 last_included_offset = model::prev_offset(
-                  last_index_entry->offset);
+                  last_index_entry.value().offset);
 
                 // We're including only part of the file so the total size
                 // of the range has to be adjusted
                 current_size
-                  -= (it->get()->file_size() - last_index_entry->filepos);
+                  -= (it->get()->file_size() - last_index_entry.value().filepos);
             } else {
                 // There is no index entry that we can use to find the size
                 // of the offset range in this case
@@ -3138,7 +3140,7 @@ disk_log_impl::make_reader(timequery_config config) {
               }
 
               auto offset_within_segment
-                = index_entry ? index_entry->offset
+                = index_entry ? index_entry.value().offset
                               : segment->offsets().get_base_offset();
 
               // adjust for partial visibility of segment prefix
@@ -3210,7 +3212,7 @@ disk_log_impl::index_lower_bound(model::offset o) const {
         return o;
     }
     if (auto entry = idx.find_nearest(o)) {
-        return model::prev_offset(entry->offset);
+        return model::prev_offset(entry.value().offset);
     }
     return std::nullopt;
 }
@@ -3230,7 +3232,7 @@ disk_log_impl::index_batch_base_offset_lower_bound(model::offset o) const {
     auto& idx = (*it)->index();
     // find nearest always returns a base offset.
     if (auto entry = idx.find_nearest(o)) {
-        return entry->offset;
+        return entry.value().offset;
     }
     return std::nullopt;
 }
@@ -3549,9 +3551,9 @@ ss::future<> disk_log_impl::do_truncate(
     size_t initial_size = 0;
     model::timestamp initial_timestamp = last->index().max_timestamp();
     if (pidx) {
-        start = pidx->offset;
-        initial_size = pidx->filepos;
-        initial_timestamp = pidx->timestamp;
+        start = pidx.value().offset;
+        initial_size = pidx.value().filepos;
+        initial_timestamp = pidx.value().timestamp;
     }
 
     auto initial_generation_id = last->get_generation_id();
@@ -3660,7 +3662,8 @@ model::offset disk_log_impl::read_start_offset() const {
     auto value = _kvstore.get(
       kvstore::key_space::storage, internal::start_offset_key(config().ntp()));
     if (value) {
-        auto offset = reflection::adl<model::offset>{}.from(std::move(*value));
+        auto offset = reflection::adl<model::offset>{}.from(
+          std::move(value.value()));
         return offset;
     }
     return model::offset{};
@@ -4507,11 +4510,15 @@ ss::future<> disk_log_impl::copy_kvstore_state(
         write_futures.reserve(3);
         if (start_offset) {
             write_futures.push_back(api.kvs().put(
-              ks, internal::start_offset_key(ntp), start_offset->copy()));
+              ks,
+              internal::start_offset_key(ntp),
+              start_offset.value().copy()));
         }
         if (clean_segment) {
             write_futures.push_back(api.kvs().put(
-              ks, internal::clean_segment_key(ntp), clean_segment->copy()));
+              ks,
+              internal::clean_segment_key(ntp),
+              clean_segment.value().copy()));
         }
         return ss::when_all_succeed(std::move(write_futures));
     });

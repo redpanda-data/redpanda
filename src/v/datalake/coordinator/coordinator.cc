@@ -108,7 +108,7 @@ ss::future<> coordinator::stop_and_wait() {
     as_.request_abort();
     leader_cond_.broken();
     if (term_as_.has_value()) {
-        term_as_->get().request_abort();
+        term_as_.value().get().request_abort();
     }
     co_await gate_.close();
     vlog(datalake_log.debug, "Coordinator stopped...");
@@ -330,7 +330,7 @@ coordinator::do_ensure_table_exists(
 
     auto topic_md = topic_table_.get_topic_metadata_ref(
       model::topic_namespace_view{model::kafka_namespace, topic});
-    if (!topic_md || topic_md->get().get_revision() != topic_revision) {
+    if (!topic_md || topic_md.value().get().get_revision() != topic_revision) {
         vlog(
           datalake_log.debug,
           "Rejecting {} for {} rev {}, topic table revision {}",
@@ -343,7 +343,7 @@ coordinator::do_ensure_table_exists(
     }
 
     auto partition_spec_str = schema_provider.get_partition_spec(
-      topic_md->get());
+      topic_md.value().get());
     auto partition_spec = parse_partition_spec(partition_spec_str);
     if (!partition_spec.has_value()) {
         vlog(
@@ -465,7 +465,7 @@ coordinator::sync_ensure_table_exists(
       .topic = topic, .topic_revision = topic_revision, .record_comps = comps};
     auto waiter_fut = maybe_add_waiter(key, in_flight_main_);
     if (waiter_fut.has_value()) {
-        co_return co_await std::move(*waiter_fut);
+        co_return co_await std::move(waiter_fut.value());
     }
     auto res_fut = co_await ss::coroutine::as_future(do_ensure_table_exists(
       topic,
@@ -513,7 +513,7 @@ coordinator::sync_ensure_dlq_table_exists(
       .topic = topic, .topic_revision = topic_revision, .record_comps = {}};
     auto waiter_fut = maybe_add_waiter(key, in_flight_dlq_);
     if (waiter_fut.has_value()) {
-        co_return co_await std::move(*waiter_fut);
+        co_return co_await std::move(waiter_fut.value());
     }
     auto res_fut = co_await ss::coroutine::as_future(do_ensure_table_exists(
       topic,
@@ -612,8 +612,8 @@ coordinator::sync_add_files(
 
     auto prt_opt = stm_->state().partition_state(tp);
     if (
-      !prt_opt.has_value() || prt_opt->get().pending_entries.empty()
-      || prt_opt->get().pending_entries.back().data.last_offset
+      !prt_opt.has_value() || prt_opt.value().get().pending_entries.empty()
+      || prt_opt.value().get().pending_entries.back().data.last_offset
            != added_last_offset) {
         vlog(
           datalake_log.debug,
@@ -690,7 +690,8 @@ coordinator::sync_get_last_added_offsets(
 
 void coordinator::notify_leadership(std::optional<model::node_id> leader_id) {
     auto node_id = stm_->raft()->self().id();
-    bool is_leader = leader_id && *leader_id == stm_->raft()->self().id();
+    bool is_leader = leader_id
+                     && leader_id.value() == stm_->raft()->self().id();
     vlog(
       datalake_log.debug,
       "Coordinator leadership notification: is_leader: {}, leader_id: {}, self "
@@ -701,7 +702,7 @@ void coordinator::notify_leadership(std::optional<model::node_id> leader_id) {
     if (is_leader) {
         leader_cond_.signal();
     } else if (term_as_.has_value()) {
-        term_as_->get().request_abort();
+        term_as_.value().get().request_abort();
     }
 }
 
@@ -725,7 +726,7 @@ coordinator::update_lifecycle_state(
     case topic_state::lifecycle_state_t::live: {
         auto topic_md = topic_table_.get_topic_metadata_ref(
           model::topic_namespace_view{model::kafka_namespace, t});
-        if (topic_md && revision >= topic_md->get().get_revision()) {
+        if (topic_md && revision >= topic_md.value().get().get_revision()) {
             // topic still exists
             co_return ss::stop_iteration::yes;
         }

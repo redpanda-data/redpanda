@@ -208,13 +208,13 @@ partition_replicator::get_partition_offsets_report() const {
 
     return {
       .source_start_offset = source_info.has_value()
-                               ? source_info->source_start_offset
+                               ? source_info.value().source_start_offset
                                : kafka::offset{},
-      .source_hwm = source_info.has_value() ? source_info->source_hwm
+      .source_hwm = source_info.has_value() ? source_info.value().source_hwm
                                             : kafka::offset{},
-      .source_lso = source_info.has_value() ? source_info->source_lso
+      .source_lso = source_info.has_value() ? source_info.value().source_lso
                                             : kafka::offset{},
-      .update_time = source_info.has_value() ? source_info->update_time
+      .update_time = source_info.has_value() ? source_info.value().update_time
                                              : ss::lowres_clock::time_point{},
       .shadow_hwm = sink_info,
     };
@@ -234,7 +234,7 @@ kafka::offset partition_replicator::get_partition_lag() const {
         return invalid;
     }
 
-    auto lso = source_info->source_lso;
+    auto lso = source_info.value().source_lso;
     if (lso == kafka::offset{-1}) {
         return invalid;
     }
@@ -328,7 +328,7 @@ void partition_replicator::maybe_synchronize_start_offset() {
         return;
     }
 
-    auto source_start_offset = source_offsets->source_start_offset;
+    auto source_start_offset = source_offsets.value().source_start_offset;
 
     if (source_start_offset <= shadow_partition_start_offset) {
         vlog(

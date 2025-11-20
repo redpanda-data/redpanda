@@ -129,7 +129,8 @@ TEST(ValuesTest, TestStructEquality) {
     v1_nested.fields.emplace_back(
       std::make_unique<struct_value>(std::move(v1_copy)));
     ASSERT_EQ(
-      v1, *std::get<std::unique_ptr<struct_value>>(*v1_nested.fields[0]));
+      v1,
+      *std::get<std::unique_ptr<struct_value>>(v1_nested.fields[0].value()));
     ASSERT_NE(v1, v1_nested);
     // NOLINTNEXTLINE(bugprone-use-after-move)
     ASSERT_NE(v1, v1_copy);
@@ -175,7 +176,8 @@ TEST(ValuesTest, TestListEquality) {
     v1_nested.elements.emplace_back(
       std::make_unique<list_value>(std::move(v1_copy)));
     ASSERT_EQ(
-      v1, *std::get<std::unique_ptr<list_value>>(*v1_nested.elements[0]));
+      v1,
+      *std::get<std::unique_ptr<list_value>>(v1_nested.elements[0].value()));
     ASSERT_NE(v1, v1_nested);
     // NOLINTNEXTLINE(bugprone-use-after-move)
     ASSERT_NE(v1, v1_copy);

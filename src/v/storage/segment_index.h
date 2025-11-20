@@ -114,13 +114,13 @@ struct time_based_retention_cfg {
         }
 
         if (likely(use_broker_time && broker_ts.has_value())) {
-            return *broker_ts;
+            return broker_ts.value();
         }
         // don't use broker time or no broker time available. fallback
         if (unlikely(
               use_escape_hatch_for_timestamps_in_the_future
               && alternative_retention_ts.has_value())) {
-            return *alternative_retention_ts;
+            return alternative_retention_ts.value();
         }
         // If storage_ignore_timestamps_in_future_sec is disabled, then
         // we should not respect _retention_timestamp even if it has

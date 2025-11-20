@@ -56,10 +56,10 @@ fmt::formatter<security::tls::rule, char, void>::format<
     }
     fmt::format_to(ctx.out(), "RULE:");
     if (r._pattern.has_value()) {
-        fmt::format_to(ctx.out(), "{}", *r._pattern);
+        fmt::format_to(ctx.out(), "{}", r._pattern.value());
     }
     if (r._replacement.has_value()) {
-        fmt::format_to(ctx.out(), "/{}", *r._replacement);
+        fmt::format_to(ctx.out(), "/{}", r._replacement.value());
     }
     if (r._to_lower) {
         fmt::format_to(ctx.out(), "/L");

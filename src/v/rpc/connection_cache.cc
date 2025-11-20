@@ -199,10 +199,10 @@ ss::future<> connection_cache::apply_changes(
     // Add connections we have the config for.
     if (config) {
         for (auto& con_add : changes.add_connections) {
-            if (con_add.node == config->dest_node) {
+            if (con_add.node == config.value().dest_node) {
                 co_await container().invoke_on(
                   con_add.shard,
-                  [cfg = *config](connection_cache& cache) mutable {
+                  [cfg = config.value()](connection_cache& cache) mutable {
                       if (cache.is_shutting_down()) {
                           return ss::now();
                       }
@@ -341,7 +341,7 @@ ss::future<> connection_cache::reset_client_backoff(
 
     return ss::with_gate(_gate, [this, node_id, shard] {
         return container().invoke_on(
-          *shard, [node_id](rpc::connection_cache& cache) mutable {
+          shard.value(), [node_id](rpc::connection_cache& cache) mutable {
               if (cache.is_shutting_down()) {
                   return;
               }

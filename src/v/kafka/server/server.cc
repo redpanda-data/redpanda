@@ -228,7 +228,7 @@ server::server(
       "Starting kafka server with {} byte limit on fetch requests",
       _memory_fetch_sem.available_units());
     if (qdc_config) {
-        _qdc_mon.emplace(*qdc_config);
+        _qdc_mon.emplace(qdc_config.value());
     }
     setup_metrics();
     _probe->setup_metrics();
@@ -323,14 +323,14 @@ ss::future<security::tls::mtls_state> get_mtls_principal_state(
               return security::tls::mtls_state{
                 anonymous_principal, std::nullopt};
           }
-          auto principal = pm.apply(dn->subject);
+          auto principal = pm.apply(dn.value().subject);
           if (!principal) {
               vlog(
                 klog.info,
                 "failed to extract principal from distinguished name: {}",
                 dn->subject);
               return security::tls::mtls_state{
-                anonymous_principal, dn->subject};
+                anonymous_principal, dn.value().subject};
           }
 
           vlog(
@@ -338,7 +338,8 @@ ss::future<security::tls::mtls_state> get_mtls_principal_state(
             "got principal: {}, from distinguished name: {}",
             *principal,
             dn->subject);
-          return security::tls::mtls_state{*principal, dn->subject};
+          return security::tls::mtls_state{
+            principal.value(), dn.value().subject};
       });
 }
 
@@ -348,7 +349,7 @@ ss::future<security::tls::mtls_state> get_mtls_principal_state(
     res.resize(max_api_key() + 1);
     for (const ss::sstring& api_name : api_names) {
         if (const auto api_key = api_name_to_key(api_name); api_key) {
-            res.at(*api_key) = true;
+            res.at(api_key.value()) = true;
             continue;
         }
         vlog(klog.warn, "Unrecognized Kafka API name: {}", api_name);
@@ -550,19 +551,19 @@ ss::future<response_ptr> sasl_authenticate_handler::handle(
     std::error_code ec;
 
     try {
-        auto result = co_await ctx.sasl()->authenticate(
+        auto result = co_await ctx.sasl().value().authenticate(
           std::move(request.data.auth_bytes));
         if (likely(result)) {
-            if (ctx.sasl()->mechanism().complete()) {
+            if (ctx.sasl().value().mechanism().complete()) {
                 vlog(
                   klog.debug,
                   "session_lifetime for principal '{}': {}",
                   ctx.sasl()->principal(),
                   ctx.sasl()->session_lifetime_ms());
                 if (!ctx.audit_authn_success(
-                      ctx.sasl()->mechanism().mechanism_name(),
-                      ctx.sasl()->mechanism().audit_user())) {
-                    ctx.sasl()->set_state(
+                      ctx.sasl().value().mechanism().mechanism_name(),
+                      ctx.sasl().value().mechanism().audit_user())) {
+                    ctx.sasl().value().set_state(
                       security::sasl_server::sasl_state::failed);
                     sasl_authenticate_response_data data{
                       .error_code = error_code::broker_not_available,
@@ -578,7 +579,8 @@ ss::future<response_ptr> sasl_authenticate_handler::handle(
               .error_code = error_code::none,
               .error_message = std::nullopt,
               .auth_bytes = std::move(result.value()),
-              .session_lifetime_ms = ctx.sasl()->session_lifetime_ms().count(),
+              .session_lifetime_ms
+              = ctx.sasl().value().session_lifetime_ms().count(),
             };
             co_return co_await ctx.respond(
               sasl_authenticate_response(std::move(data)));
@@ -601,8 +603,8 @@ ss::future<response_ptr> sasl_authenticate_handler::handle(
 
     if (!ctx.audit_authn_failure(
           fmt::format("SASL authentication failed: {}", ec.message()),
-          ctx.sasl()->mechanism().mechanism_name(),
-          ctx.sasl()->mechanism().audit_user())) {
+          ctx.sasl().value().mechanism().mechanism_name(),
+          ctx.sasl().value().mechanism().audit_user())) {
         data.error_code = error_code::broker_not_available;
         data.error_message = "Broker not available - audit system failure";
     } else {
@@ -704,7 +706,7 @@ ss::future<response_ptr> list_groups_handler::handle(
             if (!parsed) {
                 return std::make_pair(true, list_groups_filter_data{});
             } else {
-                filter.states_filter.insert(*parsed);
+                filter.states_filter.insert(parsed.value());
             }
         }
         return std::make_pair(false, std::move(filter));
@@ -784,14 +786,14 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
         if (
           request.data.mechanism
           == security::scram_sha256_authenticator::name) {
-            ctx.sasl()->set_mechanism(
+            ctx.sasl().value().set_mechanism(
               std::make_unique<security::scram_sha256_authenticator::auth>(
                 ctx.credentials()));
 
         } else if (
           request.data.mechanism
           == security::scram_sha512_authenticator::name) {
-            ctx.sasl()->set_mechanism(
+            ctx.sasl().value().set_mechanism(
               std::make_unique<security::scram_sha512_authenticator::auth>(
                 ctx.credentials()));
         }
@@ -801,7 +803,7 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
         supported_sasl_mechanisms.emplace_back(
           security::plain_authenticator::name);
         if (request.data.mechanism == security::plain_authenticator::name) {
-            ctx.sasl()->set_mechanism(
+            ctx.sasl().value().set_mechanism(
               std::make_unique<security::plain_authenticator>(
                 ctx.credentials()));
         }
@@ -812,7 +814,7 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
           security::gssapi_authenticator::name);
 
         if (request.data.mechanism == security::gssapi_authenticator::name) {
-            ctx.sasl()->set_mechanism(
+            ctx.sasl().value().set_mechanism(
               std::make_unique<security::gssapi_authenticator>(
                 ctx.connection()->server().thread_worker(),
                 ctx.connection()->server().gssapi_principal_mapper().rules(),
@@ -827,13 +829,13 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
 
         if (
           request.data.mechanism == security::oidc::sasl_authenticator::name) {
-            ctx.sasl()->set_mechanism(
+            ctx.sasl().value().set_mechanism(
               std::make_unique<security::oidc::sasl_authenticator>(
                 ctx.connection()->server().oidc_service().local()));
         }
     }
 
-    if (!ctx.sasl()->has_mechanism()) {
+    if (!ctx.sasl().value().has_mechanism()) {
         if (!ctx.audit_authn_failure(
               "Unsupported SASL mechanism", request.data.mechanism.c_str())) {
             error = error_code::broker_not_available;
@@ -854,7 +856,7 @@ process_result_stages join_group_handler::handle(
     request.version = ctx.header().version;
     if (ctx.header().client_id) {
         request.client_id = kafka::client_id(
-          ss::sstring(*ctx.header().client_id));
+          ss::sstring(ctx.header().client_id.value()));
     }
     request.client_host = kafka::client_host(
       fmt::format("{}", ctx.connection()->client_host()));
@@ -1169,9 +1171,9 @@ void convert_to_latest(offset_fetch_request& req, api_version current_version) {
     group.group_id = std::move(req.data.group_id);
     if (req.data.topics.has_value()) {
         group.topics = chunked_vector<offset_fetch_request_topics>{};
-        group.topics->reserve(req.data.topics->size());
-        for (auto& topic : *req.data.topics) {
-            group.topics->push_back(
+        group.topics.value().reserve(req.data.topics.value().size());
+        for (auto& topic : req.data.topics.value()) {
+            group.topics.value().push_back(
               offset_fetch_request_topics{
                 .name = std::move(topic.name),
                 .partition_indexes{
@@ -1263,7 +1265,7 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
           std::from_range, unauthorized_rng | std::views::as_rvalue};
 
         // remove unauthorized topics from request
-        group.topics->erase_to_end(unauthorized_rng.begin());
+        group.topics.value().erase_to_end(unauthorized_rng.begin());
 
         // add requested (but unauthorized) topics into response
         for (auto& req_topic : unauthorized) {
@@ -1536,14 +1538,14 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
     chunked_hash_map<model::topic_id, model::topic> id_to_name;
     for (const auto& id : provided_ids) {
         auto tp_ns = ctx.metadata_cache().get_name_by_id(id);
-        if (!tp_ns.has_value() || tp_ns->ns != model::kafka_namespace) {
+        if (!tp_ns.has_value() || tp_ns.value().ns != model::kafka_namespace) {
             resp.data.responses.push_back(
               {.topic_id = id,
                .error_code = error_code::unknown_topic_id,
                .error_message = "This server does not host this topic ID."});
         } else {
-            to_authenticate.push_back(tp_ns->tp);
-            id_to_name.emplace(id, std::move(tp_ns->tp));
+            to_authenticate.push_back(tp_ns.value().tp);
+            id_to_name.emplace(id, std::move(tp_ns.value().tp));
         }
     }
     provided_ids.clear();
@@ -1576,7 +1578,7 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
     for (const auto& name : provided_names) {
         auto tp_ns{as_tp_ns_view(name)};
         const auto cfg = ctx.metadata_cache().get_topic_metadata_ref(tp_ns);
-        const auto id = cfg ? cfg->get().get_configuration().tp_id
+        const auto id = cfg ? cfg.value().get().get_configuration().tp_id
                             : std::nullopt;
 
         if (!ctx.authorized(security::acl_operation::describe, name)) {
@@ -1591,14 +1593,15 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
                .error_message
                = "This server does not host this topic-partition."});
         } else if (ctx.authorized(security::acl_operation::remove, name)) {
-            auto failed = duplicate_provided_ids.contains(*id)
-                          || !id_to_name.insert_or_assign(*id, name).second;
+            auto failed
+              = duplicate_provided_ids.contains(id.value())
+                || !id_to_name.insert_or_assign(id.value(), name).second;
             if (failed) {
-                duplicate_provided_ids.emplace(*id);
-                id_to_name.erase(*id);
+                duplicate_provided_ids.emplace(id.value());
+                id_to_name.erase(id.value());
                 resp.data.responses.push_back(
                   {.name = name,
-                   .topic_id = *id,
+                   .topic_id = id.value(),
                    .error_code = error_code::invalid_request,
                    .error_message = "The provided topic name maps to an ID "
                                     "that was already supplied."});
@@ -1682,7 +1685,7 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
       valid_topic_names.end(),
       [&ctx, &resp_delay, now](const model::topic& t) {
           const auto cfg = ctx.metadata_cache().get_topic_cfg(as_tp_ns_view(t));
-          const auto mutations = cfg ? cfg->partition_count : 0;
+          const auto mutations = cfg ? cfg.value().partition_count : 0;
           /// Capture before next scheduling point below
           auto& resp_delay_ref = resp_delay;
           return ctx.quota_mgr()
@@ -1815,7 +1818,7 @@ ss::future<response_ptr> init_producer_id_handler::handle(
         if (request.data.transactional_id) {
             if (!ctx.authorized(
                   security::acl_operation::write,
-                  transactional_id(*request.data.transactional_id))) {
+                  transactional_id(request.data.transactional_id.value()))) {
                 init_producer_id_response reply;
                 if (!ctx.audit()) {
                     reply.data.error_code = error_code::broker_not_available;

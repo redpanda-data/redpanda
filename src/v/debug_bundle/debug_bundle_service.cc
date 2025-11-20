@@ -642,22 +642,23 @@ result<std::vector<ss::sstring>> service::build_rpk_arguments(
         rv.emplace_back(
           ssx::sformat("{}", fmt::join(params.partition.value(), " ")));
     }
-    if (params.tls_enabled.has_value() && *params.tls_enabled) {
+    if (params.tls_enabled.has_value() && params.tls_enabled.value()) {
         // Only add `-Xtls.enabled=true` if it's selected.  RPK ignores
         // the boolean value and will enable TLS if the option is present
         rv.emplace_back(
-          ssx::sformat("{}={}", tls_enabled_variable, *params.tls_enabled));
+          ssx::sformat(
+            "{}={}", tls_enabled_variable, params.tls_enabled.value()));
     }
     if (params.tls_insecure_skip_verify.has_value()) {
         rv.emplace_back(
           ssx::sformat(
             "{}={}",
             tls_insecure_skip_verify_variable,
-            *params.tls_insecure_skip_verify));
+            params.tls_insecure_skip_verify.value()));
     }
     if (params.k8s_namespace.has_value()) {
         rv.emplace_back(k8s_namespace_variable);
-        rv.emplace_back(*params.k8s_namespace);
+        rv.emplace_back(params.k8s_namespace.value());
     }
     if (
       params.label_selector.has_value()
@@ -820,7 +821,7 @@ ss::future<> service::maybe_reload_previous_run() {
         co_return;
     }
 
-    iobuf_parser p(std::move(*md_buf));
+    iobuf_parser p(std::move(md_buf.value()));
     auto md = serde::read<metadata>(p);
 
     auto run_was_successful = was_run_successful(md.get_wait_status());

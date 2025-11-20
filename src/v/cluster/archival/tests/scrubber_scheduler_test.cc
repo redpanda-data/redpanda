@@ -61,7 +61,7 @@ BOOST_AUTO_TEST_CASE(test_scrubber_scheduling) {
             BOOST_REQUIRE(!sched.should_scrub());
         }
 
-        ss::manual_clock::advance(*until_next);
+        ss::manual_clock::advance(until_next.value());
         BOOST_REQUIRE(sched.should_scrub());
 
         last_scrub_time = model::to_timestamp(ss::manual_clock::now());
@@ -78,7 +78,7 @@ BOOST_AUTO_TEST_CASE(test_scrubber_scheduling) {
         BOOST_REQUIRE_LE(until_next, partial_interval() + jitter());
         BOOST_REQUIRE(!sched.should_scrub());
 
-        ss::manual_clock::advance(*until_next);
+        ss::manual_clock::advance(until_next.value());
         BOOST_REQUIRE(sched.should_scrub());
 
         last_scrub_time = model::to_timestamp(ss::manual_clock::now());
@@ -97,7 +97,7 @@ BOOST_AUTO_TEST_CASE(test_scrubber_scheduling) {
         BOOST_REQUIRE_LE(until_next, full_interval() + jitter());
         BOOST_REQUIRE(!sched.should_scrub());
 
-        ss::manual_clock::advance(*until_next);
+        ss::manual_clock::advance(until_next.value());
         BOOST_REQUIRE(sched.should_scrub());
 
         last_scrub_time = model::to_timestamp(ss::manual_clock::now());
@@ -175,7 +175,7 @@ BOOST_AUTO_TEST_CASE(test_update_jitter) {
 
         BOOST_REQUIRE_LE(until_next_after_jitter_change, updated_jitter);
 
-        ss::manual_clock::advance(*until_next_after_jitter_change);
+        ss::manual_clock::advance(until_next_after_jitter_change.value());
         BOOST_REQUIRE(sched.should_scrub());
 
         last_scrub_time = model::to_timestamp(ss::manual_clock::now());
@@ -193,7 +193,7 @@ BOOST_AUTO_TEST_CASE(test_update_jitter) {
         BOOST_REQUIRE_LE(until_next, partial_interval() + updated_jitter);
         BOOST_REQUIRE(!sched.should_scrub());
 
-        ss::manual_clock::advance(*until_next);
+        ss::manual_clock::advance(until_next.value());
         BOOST_REQUIRE(sched.should_scrub());
 
         last_scrub_time = model::to_timestamp(ss::manual_clock::now());
@@ -211,7 +211,7 @@ BOOST_AUTO_TEST_CASE(test_update_jitter) {
         BOOST_REQUIRE_LE(until_next, full_interval() + updated_jitter);
         BOOST_REQUIRE(!sched.should_scrub());
 
-        ss::manual_clock::advance(*until_next);
+        ss::manual_clock::advance(until_next.value());
         BOOST_REQUIRE(sched.should_scrub());
 
         last_scrub_time = model::to_timestamp(ss::manual_clock::now());
@@ -268,7 +268,8 @@ BOOST_AUTO_TEST_CASE(test_update_interval) {
 
         BOOST_REQUIRE_LE(until_next_after_after_interval_change, jitter());
 
-        ss::manual_clock::advance(*until_next_after_after_interval_change);
+        ss::manual_clock::advance(
+          until_next_after_after_interval_change.value());
         BOOST_REQUIRE(sched.should_scrub());
 
         last_scrub_time = model::to_timestamp(ss::manual_clock::now());
@@ -294,7 +295,8 @@ BOOST_AUTO_TEST_CASE(test_update_interval) {
         BOOST_REQUIRE_LE(
           until_next_after_after_interval_change, updated_interval + jitter());
 
-        ss::manual_clock::advance(*until_next_after_after_interval_change);
+        ss::manual_clock::advance(
+          until_next_after_after_interval_change.value());
         BOOST_REQUIRE(sched.should_scrub());
 
         last_scrub_time = model::to_timestamp(ss::manual_clock::now());

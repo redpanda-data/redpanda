@@ -128,7 +128,7 @@ static void update_batches(
 
 static ss::lw_shared_ptr<cloud_topics::ctp_stm_api>
 make_ctp_stm_api(ss::lw_shared_ptr<cluster::partition> p) {
-    auto stm = p->raft()->stm_manager()->get<cloud_topics::ctp_stm>();
+    auto stm = p->raft()->stm_manager().value().get<cloud_topics::ctp_stm>();
     if (!stm) {
         throw std::runtime_error(
           fmt::format("ctp_stm not found for partition {}", p->ntp()));
@@ -314,10 +314,11 @@ frontend::ntp_to_topic_id_partition(const model::ntp& ntp) const {
     auto metadata_cache = ct_state->local().get_metadata_cache();
     auto topic_cfg = metadata_cache->get_topic_cfg(
       model::topic_namespace_view(ntp));
-    if (!topic_cfg || !topic_cfg->tp_id) {
+    if (!topic_cfg || !topic_cfg.value().tp_id) {
         return std::nullopt;
     }
-    return model::topic_id_partition{*topic_cfg->tp_id, ntp.tp.partition};
+    return model::topic_id_partition{
+      topic_cfg.value().tp_id.value(), ntp.tp.partition};
 }
 
 std::unique_ptr<model::record_batch_reader::impl>
@@ -337,7 +338,7 @@ frontend::make_l1_reader(const cloud_topic_log_reader_config& cfg) const {
       tidp.has_value(), "No topic id for cloud topic {}", _partition->ntp());
 
     return std::make_unique<level_one_log_reader_impl>(
-      cfg, _partition->ntp(), *tidp, l1_metastore, l1_io);
+      cfg, _partition->ntp(), tidp.value(), l1_metastore, l1_io);
 }
 
 ss::future<std::optional<storage::timequery_result>>
@@ -361,11 +362,11 @@ frontend::timequery(storage::timequery_config cfg) {
       l0_result);
     if (l1_result) {
         co_return co_await refine_timequery_result(
-          *l1_result, cfg.abort_source);
+          l1_result.value(), cfg.abort_source);
     }
     if (l0_result) {
         co_return co_await refine_timequery_result(
-          *l0_result, cfg.abort_source);
+          l0_result.value(), cfg.abort_source);
     }
     co_return std::nullopt;
 }
@@ -379,7 +380,7 @@ frontend::l1_timequery(storage::timequery_config cfg) {
       maybe_tidp.has_value(),
       "No topic id for cloud topic {}",
       _partition->ntp());
-    const auto& tidp = *maybe_tidp;
+    const auto& tidp = maybe_tidp.value();
     // I don't love this, but we clamp min/max offsets by the kafka start offset
     // and the LSO/HWM, but we can ignore the max offset for L1 because we never
     // upload anything less than LSO to L1.
@@ -426,10 +427,10 @@ frontend::l0_timequery(storage::timequery_config cfg) {
     });
     auto gen = std::move(reader).generator(model::no_timeout);
     while (auto batch = co_await gen()) {
-        if (!std::ranges::contains(type_filter, batch->header().type)) {
+        if (!std::ranges::contains(type_filter, batch.value().header().type)) {
             continue;
         }
-        if (batch->header().max_timestamp < cfg.time) {
+        if (batch.value().header().max_timestamp < cfg.time) {
             continue;
         }
         // NOTE: we can't just return this offset verbatim, since we don't
@@ -439,9 +440,9 @@ frontend::l0_timequery(storage::timequery_config cfg) {
         co_return coarse_grained_timequery_result{
           .time = cfg.time,
           .start_offset = model::offset_cast(
-            ot_state->from_log_offset(batch->base_offset())),
+            ot_state->from_log_offset(batch.value().base_offset())),
           .last_offset = model::offset_cast(
-            ot_state->from_log_offset(batch->last_offset())),
+            ot_state->from_log_offset(batch.value().last_offset())),
         };
     }
     co_return std::nullopt;
@@ -467,18 +468,18 @@ frontend::refine_timequery_result(
       kafka::offset_cast(input.last_offset));
     while (auto batch = co_await generator()) {
         auto batch_interval = model::bounded_offset_interval::checked(
-          batch->base_offset(), batch->last_offset());
+          batch.value().base_offset(), batch.value().last_offset());
         if (!query_interval.overlaps(batch_interval)) {
             if (batch_interval.min() > query_interval.max()) {
                 break;
             }
             continue;
         }
-        if (input.time > batch->header().max_timestamp) {
+        if (input.time > batch.value().header().max_timestamp) {
             continue;
         }
         co_return co_await storage::batch_timequery(
-          std::move(*batch),
+          std::move(batch.value()),
           kafka::offset_cast(input.start_offset),
           input.time,
           kafka::offset_cast(input.last_offset));
@@ -815,7 +816,7 @@ frontend::get_leader_epoch_last_offset(model::term_id term) const {
     if (term >= first_local_term) {
         auto last_offset = _partition->get_term_last_offset(term);
         if (last_offset) {
-            co_return ot_state->from_log_offset(*last_offset);
+            co_return ot_state->from_log_offset(last_offset.value());
         }
     }
 
@@ -825,7 +826,8 @@ frontend::get_leader_epoch_last_offset(model::term_id term) const {
     auto tidp = ntp_to_topic_id_partition(_partition->ntp());
     vassert(
       tidp.has_value(), "No topic id for cloud topic {}", _partition->ntp());
-    auto l1_res = co_await l1_metastore->get_end_offset_for_term(*tidp, term);
+    auto l1_res = co_await l1_metastore->get_end_offset_for_term(
+      tidp.value(), term);
     if (!l1_res.has_value()) {
         switch (l1_res.error()) {
         case l1::metastore::errc::out_of_range:
@@ -917,7 +919,7 @@ frontend::validate_fetch_offset(
               leader_hwm,
               log_end_offset,
               ec);
-            co_return std::unexpected(*ec);
+            co_return std::unexpected(ec.value());
         }
         co_return std::monostate{};
     }

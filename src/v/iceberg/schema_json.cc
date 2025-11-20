@@ -29,11 +29,12 @@ schema parse_schema(const json::Value& v) {
     auto identifier_fids_json = parse_optional(v, "identifier-field-ids");
     absl::btree_set<nested_field::id_t> identifier_fids;
     if (identifier_fids_json.has_value()) {
-        if (!identifier_fids_json->get().IsArray()) {
+        if (!identifier_fids_json.value().get().IsArray()) {
             throw std::invalid_argument(
               fmt::format("Schema has type '{}' instead of 'array'", type));
         }
-        for (const auto& id_json : identifier_fids_json->get().GetArray()) {
+        for (const auto& id_json :
+             identifier_fids_json.value().get().GetArray()) {
             if (!id_json.IsInt()) {
                 throw std::invalid_argument(
                   fmt::format(

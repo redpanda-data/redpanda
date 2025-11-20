@@ -56,7 +56,8 @@ static std::unique_ptr<type_resolver> make_type_resolver(
         auto subject = pandaproxy::schema_registry::subject(
           fmt::format("{}-value", topic_name));
         if (auto explicit_subject = mode.subject_name()) {
-            subject = pandaproxy::schema_registry::subject(*explicit_subject);
+            subject = pandaproxy::schema_registry::subject(
+              explicit_subject.value());
         }
         return std::make_unique<latest_subject_schema_resolver>(
           sr,
@@ -607,11 +608,11 @@ ss::future<> datalake_manager::handle_translator_state_change(
     }
 
     auto requires_active_translator
-      = partition               // valid partition on the shard
-        && partition->is_leader // currently the leader
+      = partition                      // valid partition on the shard
+        && partition.value().is_leader // currently the leader
         // iceberg is enabled in the topic configuration
-        && partition->topic_cfg
-        && partition->topic_cfg->properties.iceberg_mode
+        && partition.value().topic_cfg
+        && partition->topic_cfg.value().properties.iceberg_mode
              != model::iceberg_mode::disabled;
 
     if (!requires_active_translator) {
@@ -621,7 +622,7 @@ ss::future<> datalake_manager::handle_translator_state_change(
 
     // otherwise we need to set up a translator
 
-    auto mode = partition->topic_cfg->properties.iceberg_mode;
+    auto mode = partition->topic_cfg.value().properties.iceberg_mode;
     auto type_resolver = make_type_resolver(
       mode, ntp.tp.topic, *_schema_registry, *_schema_cache);
     auto record_translator = make_record_translator(mode);

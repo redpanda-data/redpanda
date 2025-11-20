@@ -146,7 +146,7 @@ public:
            shard,
            f = std::forward<Func>(f)]() mutable {
               return container().invoke_on(
-                *shard,
+                shard.value(),
                 [node_id, f = std::forward<Func>(f), connection_timeout](
                   connection_cache& cache) mutable {
                     if (cache.is_shutting_down()) {

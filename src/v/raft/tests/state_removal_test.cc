@@ -44,7 +44,9 @@ struct state_removal_test : public raft::raft_fixture {
         directory_walker::walk(
           n.raft()->log()->config().work_directory(),
           [&snapshot_exists](ss::directory_entry ent) {
-              if (!ent.type || *ent.type != ss::directory_entry_type::regular) {
+              if (
+                !ent.type
+                || ent.type.value() != ss::directory_entry_type::regular) {
                   return ss::now();
               }
 

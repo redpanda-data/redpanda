@@ -282,7 +282,8 @@ value generate_required(const schema_element& root) {
       [](const byte_array_type& t) -> value {
           if (t.fixed_length) {
               return fixed_byte_array_value{iobuf::from(
-                random_generators::gen_alphanum_string(*t.fixed_length))};
+                random_generators::gen_alphanum_string(
+                  t.fixed_length.value()))};
           }
           auto size = random_generators::get_int<size_t>(64);
           return byte_array_value{

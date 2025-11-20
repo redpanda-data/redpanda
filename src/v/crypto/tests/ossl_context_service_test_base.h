@@ -66,7 +66,9 @@ protected:
             module_dir = override;
         }
         auto dir_type = co_await ss::file_type(module_dir);
-        if (!dir_type || *dir_type != ss::directory_entry_type::directory) {
+        if (
+          !dir_type
+          || dir_type.value() != ss::directory_entry_type::directory) {
             co_return false;
         } else {
             auto fips_file = module_dir + "/fips.so";

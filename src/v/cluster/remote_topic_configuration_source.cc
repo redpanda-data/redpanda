@@ -74,8 +74,9 @@ remote_topic_configuration_source::set_remote_properties_in_config(
     } else {
         const auto& dl_cfg = manifest.get_topic_config();
         cfg.cfg.properties.remote_topic_properties = remote_topic_properties(
-          manifest.get_revision(), dl_cfg->partition_count);
-        cfg.cfg.properties.remote_label = dl_cfg->properties.remote_label;
+          manifest.get_revision(), dl_cfg.value().partition_count);
+        cfg.cfg.properties.remote_label
+          = dl_cfg.value().properties.remote_label;
     }
     co_return errc::success;
 }
@@ -114,14 +115,14 @@ remote_topic_configuration_source::set_recovered_topic_properties(
     } else {
         // Update all topic properties
         const auto& rc = manifest.get_topic_config();
-        cfg.cfg.partition_count = rc->partition_count;
-        apply_retention_defaults(cfg.cfg.properties, rc->properties);
+        cfg.cfg.partition_count = rc.value().partition_count;
+        apply_retention_defaults(cfg.cfg.properties, rc.value().properties);
 
         // Use remote_topic_properties to pass revision id from the
         // topic_manifest.json
         cfg.cfg.properties.remote_topic_properties = remote_topic_properties(
           manifest.get_revision(),
-          manifest.get_topic_config()->partition_count);
+          manifest.get_topic_config().value().partition_count);
         cfg.cfg.properties.remote_label = rc.value().properties.remote_label;
     }
     co_return errc::success;

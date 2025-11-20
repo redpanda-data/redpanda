@@ -243,7 +243,7 @@ ss::future<std::expected<int64_t, std::error_code>> do_fetch_leader_epoch_impl(
                             .with_node_client<controller_client_protocol>(
                               self,
                               ss::this_shard_id(),
-                              *raft0_leader,
+                              raft0_leader.value(),
                               rpc_timeout,
                               [](controller_client_protocol client) {
                                   return client.get_current_cluster_epoch(
@@ -374,7 +374,7 @@ cluster_epoch_service<Clock>::get_cached_epoch(seastar::abort_source* as) {
         auto maybe_units = _mu.try_get_units();
         if (maybe_units) {
             ssx::spawn_with_gate(
-              _gate, [this, units = std::move(*maybe_units)]() mutable {
+              _gate, [this, units = std::move(maybe_units.value())]() mutable {
                   return do_update_epoch(&_abort_source)
                     .then([](std::error_code ec) {
                         if (ec) {

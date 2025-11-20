@@ -31,7 +31,7 @@ FIXTURE_TEST(test_creating_partitions, rebalancing_tests_fixture) {
     cluster::create_partitions_configuration cfg_test_2(
       make_tp_ns("test-2"), 9);
 
-    auto res = (*get_leader_node_application())
+    auto res = (get_leader_node_application().value())
                  ->controller->get_topics_frontend()
                  .local()
                  .create_partitions({cfg_test_1, cfg_test_2}, model::no_timeout)
@@ -41,22 +41,22 @@ FIXTURE_TEST(test_creating_partitions, rebalancing_tests_fixture) {
     BOOST_REQUIRE_EQUAL(
       res[0].ec, cluster::make_error_code(cluster::errc::success));
     auto& topics
-      = (*get_leader_node_application())->controller->get_topics_state();
+      = (get_leader_node_application().value())->controller->get_topics_state();
     auto tp_1_md = topics.local().get_topic_metadata(make_tp_ns("test-1"));
     auto tp_2_md = topics.local().get_topic_metadata(make_tp_ns("test-2"));
 
     // total 6 partitions
-    BOOST_REQUIRE_EQUAL(tp_1_md->get_assignments().size(), 6);
+    BOOST_REQUIRE_EQUAL(tp_1_md.value().get_assignments().size(), 6);
     for (auto i = 0; i < 6; ++i) {
         BOOST_REQUIRE(
-          tp_1_md->get_assignments().contains(model::partition_id(i)));
+          tp_1_md.value().get_assignments().contains(model::partition_id(i)));
     }
 
     // total 9 partitions
-    BOOST_REQUIRE_EQUAL(tp_2_md->get_assignments().size(), 9);
+    BOOST_REQUIRE_EQUAL(tp_2_md.value().get_assignments().size(), 9);
     for (auto i = 0; i < 9; ++i) {
         BOOST_REQUIRE(
-          tp_2_md->get_assignments().contains(model::partition_id(i)));
+          tp_2_md.value().get_assignments().contains(model::partition_id(i)));
     }
 }
 
@@ -72,7 +72,7 @@ FIXTURE_TEST(test_error_handling, rebalancing_tests_fixture) {
     cluster::create_partitions_configuration cfg_test_1(
       make_tp_ns("test-1"), 2);
 
-    auto res = (*get_leader_node_application())
+    auto res = (get_leader_node_application().value())
                  ->controller->get_topics_frontend()
                  .local()
                  .create_partitions({cfg_test_1}, model::no_timeout)

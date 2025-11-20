@@ -56,7 +56,7 @@ public:
         if (_state == state::mode) {
             auto s = from_string_view<mode>(sv);
             if (s.has_value()) {
-                result.mode = *s;
+                result.mode = s.value();
                 _state = state::object;
             } else {
                 auto code = error_code::mode_invalid;

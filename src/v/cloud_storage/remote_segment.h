@@ -137,7 +137,7 @@ public:
         if (is_legacy_mode_engaged()) {
             return !_wait_list.empty();
         } else {
-            return _chunks_api->downloads_in_progress();
+            return _chunks_api.value().downloads_in_progress();
         }
     }
 

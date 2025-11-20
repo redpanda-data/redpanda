@@ -202,7 +202,7 @@ TEST_F(ClusterFixture, TestDispatchingMultipleRequests) {
      */
     RPTEST_REQUIRE_EVENTUALLY(10s, [this, shard, ntp] {
         return app.partition_manager.invoke_on(
-          *shard, [ntp](::cluster::partition_manager& mgr) {
+          shard.value(), [ntp](::cluster::partition_manager& mgr) {
               auto partition = mgr.get(ntp);
 
               return partition->is_leader();
@@ -214,19 +214,19 @@ TEST_F(ClusterFixture, TestDispatchingMultipleRequests) {
     /**
      * Run concurrent produce requests
      */
-    auto range = std::ranges::iota_view(0, 10)
-                 | std::views::transform([&](int i) {
-                       return make_produce_request(
-                         model::topic_partition(tp, model::partition_id(0)),
-                         test_batch(i),
-                         acks_all);
-                   })
-                 | std::views::transform([&](kafka::produce_request req) {
-                       return cluster
-                         .dispatch_to(
-                           *leader_id, std::move(req), kafka::api_version{7})
-                         .discard_result();
-                   });
+    auto range
+      = std::ranges::iota_view(0, 10) | std::views::transform([&](int i) {
+            return make_produce_request(
+              model::topic_partition(tp, model::partition_id(0)),
+              test_batch(i),
+              acks_all);
+        })
+        | std::views::transform([&](kafka::produce_request req) {
+              return cluster
+                .dispatch_to(
+                  leader_id.value(), std::move(req), kafka::api_version{7})
+                .discard_result();
+          });
     ss::when_all_succeed(std::ranges::to<std::vector<ss::future<>>>(range))
       .get();
     /**
@@ -234,7 +234,7 @@ TEST_F(ClusterFixture, TestDispatchingMultipleRequests) {
      */
     auto batches = app.partition_manager
                      .invoke_on(
-                       *shard,
+                       shard.value(),
                        [ntp](::cluster::partition_manager& mgr) {
                            auto partition = mgr.get(ntp);
                            return read_partition_data(partition);

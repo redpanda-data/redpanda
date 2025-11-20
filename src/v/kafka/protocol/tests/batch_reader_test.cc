@@ -117,7 +117,7 @@ SEASTAR_THREAD_TEST_CASE(consumer_records_consume_batch) {
         BOOST_REQUIRE(kba.v2_format);
         BOOST_REQUIRE(kba.valid_crc);
         BOOST_REQUIRE(kba.batch);
-        last_offset = kba.batch->last_offset();
+        last_offset = kba.batch.value().last_offset();
     }
 
     BOOST_REQUIRE_EQUAL(last_offset, ctx.last_offset);

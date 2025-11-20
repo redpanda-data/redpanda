@@ -35,7 +35,7 @@ namespace kafka {
 group_metadata_kv group_metadata_kv::copy() const {
     group_metadata_kv cp{.key = key};
     if (value) {
-        cp.value = value->copy();
+        cp.value = value.value().copy();
     }
     return cp;
 }
@@ -135,7 +135,7 @@ member_state member_state::decode(protocol::decoder& reader) {
     if (version >= group_metadata_version{3}) {
         auto v = reader.read_nullable_string();
         if (v) {
-            ret.instance_id = group_instance_id(std::move(*v));
+            ret.instance_id = group_instance_id(std::move(v.value()));
         }
     }
     ret.client_id = kafka::client_id(reader.read_string());
@@ -251,7 +251,7 @@ std::optional<T> read_optional_value(std::optional<protocol::decoder>& reader) {
     if (!reader) {
         return std::nullopt;
     }
-    return T::decode(*reader);
+    return T::decode(reader.value());
 }
 
 template<typename T>
@@ -371,7 +371,7 @@ key_value to_kv(group_metadata_kv md) {
     key_value ret;
     ret.key = metadata_to_iobuf(md.key);
     if (md.value) {
-        ret.value = metadata_to_iobuf(*md.value);
+        ret.value = metadata_to_iobuf(md.value.value());
     }
 
     return ret;
@@ -381,7 +381,7 @@ key_value to_kv(offset_metadata_kv md) {
     group_metadata_serializer::key_value ret;
     ret.key = metadata_to_iobuf(md.key);
     if (md.value) {
-        ret.value = metadata_to_iobuf(*md.value);
+        ret.value = metadata_to_iobuf(md.value.value());
     }
 
     return ret;

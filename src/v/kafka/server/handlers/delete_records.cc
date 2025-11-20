@@ -65,7 +65,7 @@ validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
             return true;
         }
         const auto& bitflags = cfg.properties.cleanup_policy_bitflags;
-        return model::is_deletion_enabled(*bitflags);
+        return model::is_deletion_enabled(bitflags.value());
     };
     const auto is_nodelete_topic = [](const delete_records_topic& t) {
         const auto& nodelete_topics
@@ -81,7 +81,7 @@ validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
       model::topic_namespace_view(model::kafka_namespace, t.name));
     if (!cfg) {
         return make_partition_errors(t, error_code::unknown_topic_or_partition);
-    } else if (!is_deletable(*cfg)) {
+    } else if (!is_deletable(cfg.value())) {
         return make_partition_errors(t, error_code::policy_violation);
     } else if (is_nodelete_topic(t)) {
         vlog(
@@ -128,13 +128,13 @@ ss::future<result_t> prefix_truncate(
           ktp, error_code::unknown_topic_or_partition);
     }
     auto partition = make_partition_proxy(ktp, pm);
-    if (!partition->is_leader()) {
+    if (!partition.value().is_leader()) {
         co_return make_partition_error(
           ktp, error_code::not_leader_for_partition);
     }
     if (kafka_truncation_offset == at_current_high_watermark) {
         /// User is requesting to truncate all data
-        kafka_truncation_offset = partition->high_watermark();
+        kafka_truncation_offset = partition.value().high_watermark();
     }
     if (kafka_truncation_offset < model::offset(0)) {
         co_return make_partition_error(ktp, error_code::offset_out_of_range);
@@ -144,7 +144,7 @@ ss::future<result_t> prefix_truncate(
     /// written to the log, eventually consumed by replicas via the
     /// new_log_eviction_stm, which will perform a prefix truncation at the
     /// given offset
-    auto errc = co_await partition->prefix_truncate(
+    auto errc = co_await partition.value().prefix_truncate(
       kafka_truncation_offset, ss::lowres_clock::now() + timeout_ms);
     if (errc != error_code::none) {
         vlog(
@@ -157,7 +157,7 @@ ss::future<result_t> prefix_truncate(
     /// Its ok to not call sync_start_offset() over start_offset() here because
     /// prefix_truncate() was called on the leader (this node) and it waits
     /// until the local start offset was updated
-    const auto kafka_start_offset = partition->start_offset();
+    const auto kafka_start_offset = partition.value().start_offset();
     vlog(
       klog.debug,
       "Truncated partition: {} to offset: {}",
@@ -261,7 +261,7 @@ delete_records_handler::handle(request_context ctx, ss::smp_service_group) {
               auto f
                 = ctx.partition_manager()
                     .invoke_on(
-                      *shard,
+                      shard.value(),
                       [ktp,
                        timeout = request.data.timeout_ms,
                        o = partition.offset](cluster::partition_manager& pm) {

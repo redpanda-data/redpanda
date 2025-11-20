@@ -203,7 +203,7 @@ ss::future<> simple_stm::maybe_write_snapshot() {
     if (_raft->last_snapshot_index() >= last_applied()) {
         co_return;
     }
-    auto snapshot = co_await _raft->stm_manager()->take_snapshot();
+    auto snapshot = co_await _raft->stm_manager().value().take_snapshot();
     vlog(
       _log.debug,
       "creating snapshot at offset: {}",

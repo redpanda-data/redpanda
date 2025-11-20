@@ -111,7 +111,7 @@ crash_reporter::rate_limiter::wait_time() {
     }
     try {
         auto md = serde::from_iobuf<crash_reporter_rate_limiting_metadata>(
-          std::move(*buf));
+          std::move(buf.value()));
         auto rate_limit_time = model::to_time_point(md.last_upload_time)
                                + upload_rate;
         auto remaining = rate_limit_time - clock::now();
@@ -139,16 +139,16 @@ crash_reporter::build_crash_report_payload(
           model::unassigned_node_id);
         r.timestamp = report.timestamp().time_since_epoch() / 1ms;
         if (report.crash) {
-            r.stacktrace = ss::sstring{report.crash->stacktrace.c_str()};
-            r.reason = fmt::format("{}", report.crash->type);
-            r.app_version = report.crash->app_version;
-            r.arch = report.crash->arch;
+            r.stacktrace = ss::sstring{report.crash.value().stacktrace.c_str()};
+            r.reason = fmt::format("{}", report.crash.value().type);
+            r.app_version = report.crash.value().app_version;
+            r.arch = report.crash.value().arch;
 
             if (
-              report.crash->type
+              report.crash.value().type
               != crash_tracker::crash_type::startup_exception) {
                 r.description = fmt::format(
-                  "{}", report.crash->crash_message.c_str());
+                  "{}", report.crash.value().crash_message.c_str());
             }
         }
         result.items.emplace_back(std::move(r));

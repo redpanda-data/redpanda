@@ -652,7 +652,7 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_overlap_no_replace) {
           .is_compacted = false,
           .size_bytes = 812,
           .base_offset = model::offset(base),
-          .committed_offset = model::offset(last ? *last : base + 9),
+          .committed_offset = model::offset(last ? last.value() : base + 9),
           .base_timestamp = model::timestamp(1646430092103),
           .max_timestamp = model::timestamp(1646430092103),
           .delta_offset = model::offset_delta(0),
@@ -685,7 +685,8 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_overlap_no_replace) {
 
         // Select a segment that is fully contained by the last segment.
         auto next_seg = make_seg(
-          last_seg->base_offset() - 5, last_seg->base_offset() + 5);
+          last_seg.value().base_offset() - 5,
+          last_seg.value().base_offset() + 5);
         metas.insert(--metas.end(), next_seg);
 
         // Flush the write buffer such that the next insert does
@@ -715,7 +716,7 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_overlap_with_replace) {
           .is_compacted = false,
           .size_bytes = 812,
           .base_offset = model::offset(base),
-          .committed_offset = model::offset(last ? *last : base + 9),
+          .committed_offset = model::offset(last ? last.value() : base + 9),
           .base_timestamp = model::timestamp(1646430092103),
           .max_timestamp = model::timestamp(1646430092103),
           .delta_offset = model::offset_delta(0),

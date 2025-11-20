@@ -50,12 +50,12 @@ SEASTAR_THREAD_TEST_CASE(test_produce_binary_request) {
     BOOST_TEST(records.size() == 2);
     BOOST_TEST(!!records[0].value);
 
-    auto parser = iobuf_parser(std::move(*records[0].value));
+    auto parser = iobuf_parser(std::move(records[0].value.value()));
     auto value = parser.read_string(parser.bytes_left());
     BOOST_TEST(value == "vectorized");
     BOOST_TEST(records[0].partition_id == model::partition_id(0));
 
-    parser = iobuf_parser(std::move(*records[1].value));
+    parser = iobuf_parser(std::move(records[1].value.value()));
     value = parser.read_string(parser.bytes_left());
     BOOST_TEST(value == "pandaproxy");
     BOOST_TEST(records[1].partition_id == model::partition_id(1));
@@ -82,18 +82,18 @@ SEASTAR_THREAD_TEST_CASE(test_produce_json_request) {
     BOOST_REQUIRE_EQUAL(records[0].partition_id, model::partition_id(0));
     BOOST_REQUIRE(!records[0].key);
     BOOST_REQUIRE(!!records[0].value);
-    auto parser = iobuf_parser(std::move(*records[0].value));
+    auto parser = iobuf_parser(std::move(records[0].value.value()));
     auto value = parser.read_string(parser.bytes_left());
     BOOST_REQUIRE_EQUAL(value, R"(42)");
 
     BOOST_REQUIRE_EQUAL(records[1].partition_id, model::partition_id(1));
     BOOST_REQUIRE(!!records[1].key);
-    parser = iobuf_parser(std::move(*records[1].key));
+    parser = iobuf_parser(std::move(records[1].key.value()));
     value = parser.read_string(parser.bytes_left());
     BOOST_REQUIRE_EQUAL(value, R"("json_test")");
 
     BOOST_REQUIRE(!!records[1].value);
-    parser = iobuf_parser(std::move(*records[1].value));
+    parser = iobuf_parser(std::move(records[1].value.value()));
     value = parser.read_string(parser.bytes_left());
     BOOST_REQUIRE_EQUAL(
       value, R"({"integer":-5,"string":"str","array":["element"]})");

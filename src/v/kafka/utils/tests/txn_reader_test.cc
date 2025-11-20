@@ -172,7 +172,7 @@ public:
                 auto& selected = random_generators::random_choice(producers);
                 auto batch = make_batch(selected.pid, selected.data.back());
                 if (batch) {
-                    batches.push_back(std::move(*batch));
+                    batches.push_back(std::move(batch.value()));
                 }
                 selected.data.pop_back();
                 std::erase_if(

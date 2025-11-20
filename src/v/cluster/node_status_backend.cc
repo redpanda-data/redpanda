@@ -229,7 +229,7 @@ ss::future<result<node_status>> node_status_backend::send_node_status_request(
         co_return make_error_code(errc::node_does_not_exists);
     }
 
-    co_await maybe_update_client(target, nm->get().broker.rpc_address());
+    co_await maybe_update_client(target, nm.value().get().broker.rpc_address());
 
     // auto send_by = rpc::clock_type::now() + _period();
     auto opts = rpc::client_opts(_period());
@@ -349,7 +349,8 @@ node_status_backend::process_request(node_status_request request) {
       sender_md
       // Check if the peer has atleast 2 missed heart beats. This avoids
       // a cross shard invoke in happy path when no reset is needed.
-      && ss::lowres_clock::now() - sender_md->last_seen > 2 * _period()) {
+      && ss::lowres_clock::now() - sender_md.value().last_seen
+           > 2 * _period()) {
         _node_connection_set.reset_client_backoff(sender);
     }
 

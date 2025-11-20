@@ -40,8 +40,8 @@ private:
         static bool operator()(
           const log_compaction_meta_ptr& a,
           const log_compaction_meta_ptr& b) noexcept {
-            return a->info_and_ts->info.dirty_ratio
-                   > b->info_and_ts->info.dirty_ratio;
+            return a->info_and_ts.value().info.dirty_ratio
+                   > b->info_and_ts.value().info.dirty_ratio;
         }
     };
 };
@@ -57,8 +57,8 @@ private:
         static bool operator()(
           const log_compaction_meta_ptr& a,
           const log_compaction_meta_ptr& b) noexcept {
-            return a->info_and_ts->info.earliest_dirty_ts
-                   < b->info_and_ts->info.earliest_dirty_ts;
+            return a->info_and_ts.value().info.earliest_dirty_ts
+                   < b->info_and_ts.value().info.earliest_dirty_ts;
         }
     };
 };

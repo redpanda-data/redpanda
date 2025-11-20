@@ -575,7 +575,7 @@ public:
         wait_for_leader(ntp).get();
         partition = app.partition_manager.local().get(ntp).get();
         log = partition->log();
-        archiver = &partition->archiver()->get();
+        archiver = &partition->archiver().value().get();
         archiver->initialize_probe();
     }
 
@@ -865,7 +865,7 @@ TEST_F(CloudStorageManualMultiNodeTestBase, ReclaimableReportedInHealthReport) {
         }
 
         // drive the uploading
-        auto& archiver = prt_l->archiver()->get();
+        auto& archiver = prt_l->archiver().value().get();
         archiver.initialize_probe();
         archiver.sync_for_tests().get();
         archiver
@@ -880,10 +880,11 @@ TEST_F(CloudStorageManualMultiNodeTestBase, ReclaimableReportedInHealthReport) {
 
         auto sizes = get_reclaimable();
         if (sizes.has_value()) {
-            ASSERT_TRUE(!sizes->empty());
-            if (std::all_of(sizes->begin(), sizes->end(), [](size_t s) {
-                    return s > 0;
-                })) {
+            ASSERT_TRUE(!sizes.value().empty());
+            if (std::all_of(
+                  sizes.value().begin(), sizes.value().end(), [](size_t s) {
+                      return s > 0;
+                  })) {
                 return; // test success
             }
         }
@@ -1114,7 +1115,7 @@ TEST_F(ReadReplicaFixture, TestCloudStorageTimequeryReadReplicaMode) {
     auto rr_partition = rr_rp->app.partition_manager.local().get(ntp).get();
     auto rr_archiver_ref = rr_partition->archiver();
     ASSERT_TRUE(rr_archiver_ref.has_value());
-    auto& rr_archiver = rr_partition->archiver()->get();
+    auto& rr_archiver = rr_partition->archiver().value().get();
     rr_archiver.initialize_probe();
     ASSERT_TRUE(rr_archiver.sync_for_tests().get());
     rr_archiver.sync_manifest().get();

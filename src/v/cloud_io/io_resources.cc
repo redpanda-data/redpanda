@@ -222,7 +222,7 @@ ss::future<> io_resources::stop() {
 ss::future<> io_resources::start() {
     auto tput = co_await get_storage_device_throughput();
     if (tput.has_value()) {
-        _device_throughput = tput->write;
+        _device_throughput = tput.value().write;
     }
     co_await update_throughput();
 

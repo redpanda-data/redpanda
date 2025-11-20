@@ -147,9 +147,9 @@ SEASTAR_THREAD_TEST_CASE(ssx_composite_abort_source_source_destroyed) {
 
     // We can't abort it sources anymore but it still should be valid to
     // interact with the composite source
-    BOOST_TEST(!cas_opt->as().abort_requested());
-    cas_opt->as().request_abort();
-    BOOST_TEST(cas_opt->as().abort_requested());
+    BOOST_TEST(!cas_opt.value().as().abort_requested());
+    cas_opt.value().as().request_abort();
+    BOOST_TEST(cas_opt.value().as().abort_requested());
 }
 
 SEASTAR_THREAD_TEST_CASE(ssx_subscribe_or_trigger_test) {

@@ -298,19 +298,19 @@ public:
             // is also true.
             if (base_offset_hint.has_value()) {
                 auto tup = hint_vec_t{
-                  *_is_compacted.get_current_stream_pos(),
-                  *_size_bytes.get_current_stream_pos(),
-                  *base_offset_hint,
-                  *_committed_offset.get_current_stream_pos(),
-                  *_base_timestamp.get_current_stream_pos(),
-                  *_max_timestamp.get_current_stream_pos(),
-                  *_delta_offset.get_current_stream_pos(),
-                  *_ntp_revision.get_current_stream_pos(),
-                  *_archiver_term.get_current_stream_pos(),
-                  *_segment_term.get_current_stream_pos(),
-                  *_delta_offset_end.get_current_stream_pos(),
-                  *_sname_format.get_current_stream_pos(),
-                  *_metadata_size_hint.get_current_stream_pos()};
+                  _is_compacted.get_current_stream_pos().value(),
+                  _size_bytes.get_current_stream_pos().value(),
+                  base_offset_hint.value(),
+                  _committed_offset.get_current_stream_pos().value(),
+                  _base_timestamp.get_current_stream_pos().value(),
+                  _max_timestamp.get_current_stream_pos().value(),
+                  _delta_offset.get_current_stream_pos().value(),
+                  _ntp_revision.get_current_stream_pos().value(),
+                  _archiver_term.get_current_stream_pos().value(),
+                  _segment_term.get_current_stream_pos().value(),
+                  _delta_offset_end.get_current_stream_pos().value(),
+                  _sname_format.get_current_stream_pos().value(),
+                  _metadata_size_hint.get_current_stream_pos().value()};
                 _hints.insert(std::make_pair(meta.base_offset(), tup));
             } else {
                 _hints.insert(std::make_pair(meta.base_offset(), std::nullopt));
@@ -492,23 +492,27 @@ public:
             return std::nullopt;
         }
         segment_meta meta = {
-          .is_compacted = static_cast<bool>(*_is_compacted.last_value()),
-          .size_bytes = static_cast<size_t>(*_size_bytes.last_value()),
-          .base_offset = model::offset(*_base_offset.last_value()),
-          .committed_offset = model::offset(*_committed_offset.last_value()),
-          .base_timestamp = model::timestamp(*_base_timestamp.last_value()),
-          .max_timestamp = model::timestamp(*_max_timestamp.last_value()),
-          .delta_offset = model::offset_delta(*_delta_offset.last_value()),
+          .is_compacted = static_cast<bool>(_is_compacted.last_value().value()),
+          .size_bytes = static_cast<size_t>(_size_bytes.last_value().value()),
+          .base_offset = model::offset(_base_offset.last_value().value()),
+          .committed_offset = model::offset(
+            _committed_offset.last_value().value()),
+          .base_timestamp = model::timestamp(
+            _base_timestamp.last_value().value()),
+          .max_timestamp = model::timestamp(
+            _max_timestamp.last_value().value()),
+          .delta_offset = model::offset_delta(
+            _delta_offset.last_value().value()),
           .ntp_revision = model::initial_revision_id(
-            *_ntp_revision.last_value()),
-          .archiver_term = model::term_id(*_archiver_term.last_value()),
-          .segment_term = model::term_id(*_segment_term.last_value()),
+            _ntp_revision.last_value().value()),
+          .archiver_term = model::term_id(_archiver_term.last_value().value()),
+          .segment_term = model::term_id(_segment_term.last_value().value()),
           .delta_offset_end = model::offset_delta(
-            *_delta_offset_end.last_value()),
+            _delta_offset_end.last_value().value()),
           .sname_format = static_cast<segment_name_format>(
-            *_sname_format.last_value()),
+            _sname_format.last_value().value()),
           .metadata_size_hint = static_cast<uint64_t>(
-            *_metadata_size_hint.last_value()),
+            _metadata_size_hint.last_value().value()),
         };
         return meta;
     }
@@ -517,7 +521,7 @@ public:
         if (_base_offset.size() == 0) {
             return std::nullopt;
         }
-        return model::offset(*_committed_offset.last_value());
+        return model::offset(_committed_offset.last_value().value());
     }
 
     /// Return iterator to the end of the sequence

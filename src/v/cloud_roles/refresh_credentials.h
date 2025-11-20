@@ -184,7 +184,7 @@ refresh_credentials make_refresh_credentials(
       CredentialsProvider::default_host.data(),
       CredentialsProvider::default_host.size()};
     if (endpoint) {
-        host = endpoint->host();
+        host = endpoint.value().host();
     }
     if (auto cfg_host
         = config::shard_local_cfg().cloud_storage_credentials_host();
@@ -197,7 +197,8 @@ refresh_credentials make_refresh_credentials(
           cfg_host.value());
         host = cfg_host.value();
     }
-    auto port = endpoint ? endpoint->port() : CredentialsProvider::default_port;
+    auto port = endpoint ? endpoint.value().port()
+                         : CredentialsProvider::default_port;
     auto impl = std::make_unique<CredentialsProvider>(
       net::unresolved_address{{host.data(), host.size()}, port},
       service,

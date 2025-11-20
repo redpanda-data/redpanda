@@ -443,7 +443,8 @@ void transport::setup_metrics(
     std::vector<sm::label_instance> labels = {target(
       ssx::sformat("{}:{}", server_address().host(), server_address().port()))};
     if (label) {
-        labels.push_back(sm::label("connection_cache_label")((*label)()));
+        labels.push_back(
+          sm::label("connection_cache_label")((label.value())()));
     }
     std::vector<sm::label> aggregate_labels;
     // Label the metrics for a given server with the node ID so Seastar can
@@ -452,7 +453,7 @@ void transport::setup_metrics(
     // the user is presented metrics for each server regardless of node ID.
     if (node_id) {
         auto node_id_label = sm::label("node_id");
-        labels.push_back(node_id_label(*node_id));
+        labels.push_back(node_id_label(node_id.value()));
         aggregate_labels.push_back(node_id_label);
     }
     _probe->setup_metrics(

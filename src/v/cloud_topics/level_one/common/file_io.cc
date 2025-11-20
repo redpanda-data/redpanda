@@ -80,7 +80,7 @@ struct one_time_stream_provider : public stream_provider {
     }
     ss::future<> close() override {
         if (_st.has_value()) {
-            return _st->close().then([this] { _st = std::nullopt; });
+            return _st.value().close().then([this] { _st = std::nullopt; });
         }
         return ss::now();
     }
@@ -196,7 +196,7 @@ file_io::read_object(object_extent extent, ss::abort_source* as) {
         }
         auto stream = stream_fut.get();
         if (stream) {
-            co_return std::move(stream->body);
+            co_return std::move(stream.value().body);
         }
         // TODO(cloud_topics): reserving space should also take an abort_source
         auto reservation_fut = co_await ss::coroutine::as_future<

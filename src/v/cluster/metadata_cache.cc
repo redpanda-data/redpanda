@@ -75,9 +75,9 @@ std::optional<model::topic_metadata> metadata_cache::get_model_topic_metadata(
         return std::nullopt;
     }
 
-    model::topic_metadata metadata(md->get_configuration().tp_ns);
-    metadata.partitions.reserve(md->get_assignments().size());
-    for (const auto& [_, p_as] : md->get_assignments()) {
+    model::topic_metadata metadata(md.value().get_configuration().tp_ns);
+    metadata.partitions.reserve(md.value().get_assignments().size());
+    for (const auto& [_, p_as] : md.value().get_assignments()) {
         metadata.partitions.push_back(p_as.create_partition_metadata());
     }
 
@@ -109,7 +109,7 @@ std::optional<model::rack_id>
 metadata_cache::get_node_rack_id(model::node_id nid) const {
     auto ref = _members_table.local().get_node_metadata_ref(nid);
     if (ref) {
-        return ref->get().broker.rack();
+        return ref.value().get().broker.rack();
     }
     return std::nullopt;
 }
@@ -431,7 +431,7 @@ metadata_cache::get_topic_write_caching_mode(
       == model::write_caching_mode::disabled) {
         return model::write_caching_mode::disabled;
     }
-    return topic->properties.write_caching;
+    return topic.value().properties.write_caching;
 }
 
 } // namespace cluster

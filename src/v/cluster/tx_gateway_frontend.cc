@@ -185,7 +185,7 @@ tx_gateway_frontend::do_route_locally(model::ntp tx_ntp, T&& request) {
     }
 
     co_return co_await container().invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [tm = tx_ntp.tp.partition, request = std::forward<T>(request)](
         tx_gateway_frontend& self) -> ss::future<typename T::reply> {
@@ -666,7 +666,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
     }
     retries = _metadata_dissemination_retries;
 
-    auto leader_opt = co_await wait_for_leader(*coordinator_ntp);
+    auto leader_opt = co_await wait_for_leader(coordinator_ntp.value());
     if (!leader_opt) {
         vlog(
           txlog.warn,
@@ -696,7 +696,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
       transaction_timeout_ms,
       timeout,
       expected_pid,
-      coordinator_ntp->tp.partition);
+      coordinator_ntp.value().tp.partition);
 }
 
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
@@ -806,9 +806,9 @@ bool is_valid_producer(
         return true;
     }
 
-    return expected_pid->get_epoch() == model::no_producer_epoch
-           || tx.pid.get_id() == expected_pid->get_id()
-           || (tx.last_pid.get_id() == expected_pid->get_id() && expected_pid->has_exhausted_epoch());
+    return expected_pid.value().get_epoch() == model::no_producer_epoch
+           || tx.pid.get_id() == expected_pid.value().get_id()
+           || (tx.last_pid.get_id() == expected_pid.value().get_id() && expected_pid.value().has_exhausted_epoch());
 }
 
 bool need_to_advance_progress(const tx_metadata& tx) {
@@ -1052,7 +1052,8 @@ tx_gateway_frontend::increase_producer_epoch(
   model::timeout_clock::duration timeout) {
     // the expected epoch can be empty then it matches everything
     const bool expected_epoch_matches = expected_pid
-                                          ? expected_pid->epoch == tx_pid.epoch
+                                          ? expected_pid.value().epoch
+                                              == tx_pid.epoch
                                           : true;
     // exhausted epoch, allocate new producer id
     if (tx_pid.has_exhausted_epoch() && expected_epoch_matches) {
@@ -1180,7 +1181,7 @@ ss::future<add_partitions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
       request.producer_epoch,
       request.topics);
     co_return co_await container().invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [request = std::move(request), timeout, tm = tx_ntp.tp.partition](
         tx_gateway_frontend& self) mutable
@@ -1526,7 +1527,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
     }
 
     co_return co_await container().invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [request = std::move(request), timeout, tm = tx_ntp.tp.partition](
         tx_gateway_frontend& self) mutable -> ss::future<add_offsets_tx_reply> {
@@ -1666,7 +1667,7 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
     }
 
     co_return co_await container().invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [request = std::move(request), timeout, tm = tx_ntp.tp.partition](
         tx_gateway_frontend& self) mutable -> ss::future<end_tx_reply> {
@@ -2550,8 +2551,8 @@ void tx_gateway_frontend::expire_old_txs() {
         }
 
         std::vector<model::partition_id> partitions;
-        partitions.reserve(ntp_meta->get_assignments().size());
-        for (auto& [_, pa] : ntp_meta->get_assignments()) {
+        partitions.reserve(ntp_meta.value().get_assignments().size());
+        for (auto& [_, pa] : ntp_meta.value().get_assignments()) {
             partitions.push_back(pa.id);
         }
 
@@ -2581,7 +2582,7 @@ ss::future<> tx_gateway_frontend::expire_old_txs(const model::ntp& tx_ntp) {
     }
 
     return container().invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [tm = tx_ntp.tp.partition](
         tx_gateway_frontend& self) -> ss::future<void> {
@@ -2692,7 +2693,7 @@ tx_gateway_frontend::get_all_transactions_for_one_tx_partition(
     }
 
     co_return co_await container().invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [tx_partition = tx_manager_ntp.tp.partition](tx_gateway_frontend& self)
         -> ss::future<tx_gateway_frontend::return_all_txs_res> {
@@ -2767,7 +2768,7 @@ tx_gateway_frontend::get_all_transactions() {
     }
 
     tx_gateway_frontend::return_all_txs_res res{{}};
-    for (const auto& [_, pa] : ntp_meta->get_assignments()) {
+    for (const auto& [_, pa] : ntp_meta.value().get_assignments()) {
         auto tx_manager_ntp = model::ntp(
           model::tx_manager_nt.ns, model::tx_manager_nt.tp, pa.id);
         auto ntp_res = co_await get_all_transactions_for_one_tx_partition(
@@ -2816,7 +2817,7 @@ tx_gateway_frontend::describe_tx(kafka::transactional_id tid) {
     }
 
     co_return co_await container().invoke_on(
-      *shard,
+      shard.value(),
       _ssg,
       [tid, tm_ntp = std::move(tm_ntp)](tx_gateway_frontend& self)
         -> ss::future<result<tx_metadata, tx::errc>> {
@@ -2922,7 +2923,7 @@ ss::future<tx::errc> tx_gateway_frontend::delete_partition_from_tx(
     }
 
     co_return co_await container().invoke_on(
-      *shard, _ssg, [tid, ntp, tm_ntp](tx_gateway_frontend& self) {
+      shard.value(), _ssg, [tid, ntp, tm_ntp](tx_gateway_frontend& self) {
           auto partition = self._partition_manager.local().get(tm_ntp.value());
           if (!partition) {
               vlog(

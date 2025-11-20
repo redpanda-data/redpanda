@@ -379,7 +379,7 @@ batch_cache_index::read_result batch_cache_index::read(
         auto batch = it->second.batch();
 
         auto take = !type_filter || type_filter == batch.header().type;
-        take &= !first_ts || batch.header().max_timestamp >= *first_ts;
+        take &= !first_ts || batch.header().max_timestamp >= first_ts.value();
         offset = batch.last_offset() + model::offset(1);
         if (take) {
             batch_cache::range::lock_guard g(*it->second.range());
@@ -547,7 +547,7 @@ operator<<(std::ostream& o, const batch_cache_index::read_result& c) {
     o << "{batches:" << c.batches.size() << ", memory_usage:" << c.memory_usage
       << ", next_batch:" << c.next_batch << ", next_cache_batch:";
     if (c.next_cached_batch) {
-        o << *c.next_cached_batch;
+        o << c.next_cached_batch.value();
     } else {
         o << "nullopt";
     }

@@ -196,7 +196,7 @@ std::optional<system_memory_groups>& memory_groups_holder() {
 system_memory_groups& memory_groups() {
     auto& groups = memory_groups_holder();
     if (groups) {
-        return *groups;
+        return groups.value();
     }
     size_t total = ss::memory::stats().total_memory();
     bool wasm = wasm_enabled();
@@ -221,5 +221,5 @@ system_memory_groups& memory_groups() {
       datalake_enabled(),
       cloud_topics_enabled(),
       partitions);
-    return *groups;
+    return groups.value();
 }

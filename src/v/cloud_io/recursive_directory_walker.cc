@@ -47,8 +47,8 @@ struct walk_accumulator {
             std::chrono::system_clock::time_point atime;
             if (const auto tracker_entry = tracker.get(entry_path);
                 tracker_entry.has_value()) {
-                file_size = tracker_entry->size;
-                atime = tracker_entry->time_point();
+                file_size = tracker_entry.value().size;
+                atime = tracker_entry.value().time_point();
             } else {
                 auto file_stats = co_await ss::file_stat(entry_path);
                 file_size = file_stats.size;

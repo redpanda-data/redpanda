@@ -90,7 +90,8 @@ public:
         }
         auto stm = partition->raft()
                      ->stm_manager()
-                     ->get<datalake::coordinator::coordinator_stm>();
+                     .value()
+                     .get<datalake::coordinator::coordinator_stm>();
         if (!stm) {
             co_return datalake::coordinator::errc::not_leader;
         }

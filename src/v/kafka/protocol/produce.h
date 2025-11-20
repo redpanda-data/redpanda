@@ -42,7 +42,7 @@ struct produce_request final {
     produce_request(
       std::optional<ss::sstring> t_id, int16_t acks, topics topics) {
         if (t_id) {
-            data.transactional_id = transactional_id(std::move(*t_id));
+            data.transactional_id = transactional_id(std::move(t_id.value()));
         }
         data.acks = acks;
         data.topics = std::move(topics);

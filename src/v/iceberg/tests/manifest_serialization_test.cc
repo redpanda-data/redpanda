@@ -254,8 +254,8 @@ TEST(ManifestSerializationTest, TestManifestAvroReaderWriter) {
       std::move(in), manifest_file_schema);
     avrogen::manifest_file dmanifest;
     reader.read(dmanifest);
-    EXPECT_STREQ(reader.getMetadata("f1")->c_str(), f1);
-    EXPECT_STREQ(reader.getMetadata("f2")->c_str(), f2);
+    EXPECT_STREQ(reader.getMetadata("f1").value().c_str(), f1);
+    EXPECT_STREQ(reader.getMetadata("f2").value().c_str(), f2);
     EXPECT_EQ(manifest.manifest_path, dmanifest.manifest_path);
     EXPECT_EQ(manifest.partition_spec_id, dmanifest.partition_spec_id);
     EXPECT_EQ(manifest.content, dmanifest.content);

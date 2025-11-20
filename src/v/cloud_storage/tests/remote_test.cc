@@ -1110,7 +1110,7 @@ TEST_P(all_types_remote_fixture, test_filter_lifetime_1) { // NOLINT
 
     std::optional<remote::event_filter> flt;
     flt.emplace();
-    auto subscription = remote.local().subscribe(*flt);
+    auto subscription = remote.local().subscribe(flt.value());
     retry_chain_node child_rtc(&root_rtc);
     auto res = remote.local()
                  .download_manifest(
@@ -1128,7 +1128,7 @@ TEST_P(all_types_remote_fixture, test_filter_lifetime_1) { // NOLINT
 TEST_P(all_types_remote_fixture, test_filter_lifetime_2) { // NOLINT
     std::optional<remote::event_filter> flt;
     flt.emplace();
-    auto subscription = remote.local().subscribe(*flt);
+    auto subscription = remote.local().subscribe(flt.value());
     flt.reset();
     ASSERT_THROW(subscription.get(), ss::broken_promise);
 }

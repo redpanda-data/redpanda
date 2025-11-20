@@ -184,7 +184,8 @@ TEST(ProtobufCompat, RandomizedConformanceTest) {
         if (!serde) {
             continue;
         }
-        auto serde_serialized = serde->to_proto().get().linearize_to_string();
+        auto serde_serialized
+          = serde.value().to_proto().get().linearize_to_string();
         protobuf_test_messages::editions::TestAllTypesEdition2023 libpb_parsed;
         if (!libpb_parsed.ParseFromString(serde_serialized)) {
             FAIL() << "Failed to parse libpb from serde serialized data";

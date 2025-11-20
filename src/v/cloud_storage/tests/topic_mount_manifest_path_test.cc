@@ -34,9 +34,9 @@ TEST(TestTopicMountManifestPath, RoundTrip) {
 
     auto parsed = topic_mount_manifest_path::parse(str);
     ASSERT_TRUE(parsed.has_value());
-    ASSERT_EQ(*parsed, path);
+    ASSERT_EQ(parsed.value(), path);
 
-    ASSERT_EQ(str, ss::sstring(*parsed));
+    ASSERT_EQ(str, ss::sstring(parsed.value()));
 }
 
 // Test that we return empty parse result for invalid topic mount manifest
@@ -62,6 +62,6 @@ TEST(TestTopicMountManifestPath, ParsingBogusPaths) {
         ASSERT_FALSE(tmp.has_value()) << fmt::format(
           R"(Expected to fail parsing "{}" but parsed as "{}")",
           path,
-          ss::sstring(*tmp));
+          ss::sstring(tmp.value()));
     }
 }

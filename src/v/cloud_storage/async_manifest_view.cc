@@ -99,7 +99,7 @@ contains(const partition_manifest& m, const async_view_search_query_t& query) {
                                      >= kafka_start_offset.value();
 
           return range_overlaps && ts_query.ts >= m.begin()->base_timestamp
-                 && ts_query.ts <= m.last_segment()->max_timestamp;
+                 && ts_query.ts <= m.last_segment().value().max_timestamp;
       });
 }
 
@@ -555,9 +555,9 @@ async_manifest_view::get_term_last_offset(model::term_id term) noexcept {
           "The manifest for {} is not expected to be empty",
           get_ntp());
 
-        if (last->segment_term == term) {
+        if (last.value().segment_term == term) {
             // Fast path, most requests should query the last term
-            co_return last->next_kafka_offset() - kafka::offset(1);
+            co_return last.value().next_kafka_offset() - kafka::offset(1);
         } else {
             // look for first segment in next term, segments are sorted by
             // base_offset and term
@@ -588,7 +588,8 @@ async_manifest_view::get_term_last_offset(model::term_id term) noexcept {
           *spill_index,
           term());
 
-        auto spill = stm_manifest().get_spillover_map().at_index(*spill_index);
+        auto spill = stm_manifest().get_spillover_map().at_index(
+          spill_index.value());
         if (spill.is_end()) {
             vlog(
               _ctxlog.error,
@@ -729,7 +730,8 @@ bool async_manifest_view::in_archive(async_view_search_query_t o) {
           return range_overlaps
                  && _stm_manifest.get_spillover_map()
                         .last_segment()
-                        ->max_timestamp
+                        .value()
+                        .max_timestamp
                       >= ts_query.ts;
       });
 }
@@ -771,7 +773,8 @@ bool async_manifest_view::in_stm(async_view_search_query_t o) {
           return range_overlaps
                  && _stm_manifest.get_spillover_map()
                         .last_segment()
-                        ->max_timestamp
+                        .value()
+                        .max_timestamp
                       < ts_query.ts;
       });
 }
@@ -841,13 +844,13 @@ async_manifest_view::compute_retention(
           "Found offset {} to advance start offset to",
           result.offset);
     }
-    if (pinned_offset && result.offset - result.delta > *pinned_offset) {
+    if (pinned_offset && result.offset - result.delta > pinned_offset.value()) {
         vlog(
           _ctxlog.debug,
           "Computed retention Kafka offset {} is above the pinned offset {}",
           result.offset - result.delta,
           *pinned_offset);
-        auto r = co_await next_possible_start_offset_le(*pinned_offset);
+        auto r = co_await next_possible_start_offset_le(pinned_offset.value());
         if (r.has_error()) {
             co_return r;
         }
@@ -1284,7 +1287,7 @@ async_manifest_view::get_manifest(async_view_search_query_t q) noexcept {
             co_return error_outcome::out_of_range;
         }
         vlog(_ctxlog.debug, "Found spillover manifest meta: {}", meta);
-        auto m = co_await _materializer.materialize_manifest(*meta);
+        auto m = co_await _materializer.materialize_manifest(meta.value());
         if (m.has_failure()) {
             vlogl(
               _ctxlog,
@@ -1383,7 +1386,7 @@ std::optional<segment_meta> async_manifest_view::search_spillover_manifests(
             *manifests.begin(),
             *manifests.last_segment());
 
-          auto max_t = manifests.last_segment()->max_timestamp;
+          auto max_t = manifests.last_segment().value().max_timestamp;
 
           // Edge cases
           if (ts_query.ts > max_t) {

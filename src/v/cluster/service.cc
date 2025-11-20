@@ -707,7 +707,7 @@ service::do_cloud_storage_usage(cloud_storage_usage_request req) {
         if (!shard) {
             missing_ntps.push_back(ntp);
         } else {
-            ntps_by_shard[*shard].push_back(ntp);
+            ntps_by_shard[shard.value()].push_back(ntp);
         }
     }
 
@@ -792,7 +792,7 @@ service::do_get_partition_state(partition_state_request req) {
     }
 
     co_return co_await _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       [req = std::move(req),
        reply = std::move(reply)](cluster::partition_manager& pm) mutable {
           auto partition = pm.get(req.ntp);

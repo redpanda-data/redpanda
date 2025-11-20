@@ -555,7 +555,7 @@ rjson_serialize(Writer<StringBuffer>& w, const sa::resource_detail& resource) {
     rjson_serialize(w, resource.type);
     if (resource.data.has_value()) {
         w.Key("data");
-        rjson_serialize(w, *resource.data);
+        rjson_serialize(w, resource.data.value());
     }
     w.EndObject();
 }

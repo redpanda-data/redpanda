@@ -199,7 +199,7 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(
-          *shard, [ntp](cluster::partition_manager& mgr) {
+          shard.value(), [ntp](cluster::partition_manager& mgr) {
               auto partition = mgr.get(ntp);
               return partition
                      && partition->last_stable_offset() >= model::offset(1);
@@ -244,7 +244,7 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
 
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp] {
         return app.partition_manager.invoke_on(
-          *shard, [ntp](cluster::partition_manager& mgr) {
+          shard.value(), [ntp](cluster::partition_manager& mgr) {
               auto partition = mgr.get(ntp);
               return partition
                      && partition->committed_offset() >= model::offset(1);
@@ -254,7 +254,8 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
     const auto& topic_id = app.metadata_cache.local()
                              .get_topic_metadata_ref(
                                model::topic_namespace_view(ntp))
-                             ->get()
+                             .value()
+                             .get()
                              .get_configuration()
                              .tp_id;
 
@@ -277,7 +278,7 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
             }},
           });
         if (version >= kafka::api_version{13}) {
-            req.data.topics.back().topic_id = *topic_id;
+            req.data.topics.back().topic_id = topic_id.value();
         } else {
             req.data.topics.back().topic = topic;
         }
@@ -289,7 +290,8 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
 
         BOOST_REQUIRE(resp.data.responses.size() == 1);
         if (version >= kafka::api_version{13}) {
-            BOOST_REQUIRE_EQUAL(resp.data.responses[0].topic_id, *topic_id);
+            BOOST_REQUIRE_EQUAL(
+              resp.data.responses[0].topic_id, topic_id.value());
         } else {
             BOOST_REQUIRE(resp.data.responses[0].topic == topic());
         }
@@ -301,7 +303,8 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
           resp.data.responses[0].partitions[0].partition_index == pid);
         BOOST_REQUIRE(resp.data.responses[0].partitions[0].records);
         BOOST_REQUIRE(
-          resp.data.responses[0].partitions[0].records->size_bytes() > 0);
+          resp.data.responses[0].partitions[0].records.value().size_bytes()
+          > 0);
     }
 }
 
@@ -481,7 +484,7 @@ FIXTURE_TEST(fetch_leader_epoch, redpanda_thread_fixture) {
     const auto shard = app.shard_table.local().shard_for(ntp);
     app.partition_manager
       .invoke_on(
-        *shard,
+        shard.value(),
         [ntp, this](cluster::partition_manager& mgr) {
             auto partition = mgr.get(ntp);
             {
@@ -566,7 +569,7 @@ FIXTURE_TEST(fetch_current_leader_v12, cluster_test_fixture) {
     auto publish_some = [ntp](redpanda_thread_fixture* app_ptr) {
         app_ptr->app.partition_manager
           .invoke_on(
-            *app_ptr->app.shard_table.local().shard_for(ntp),
+            app_ptr->app.shard_table.local().shard_for(ntp).value(),
             [ntp](cluster::partition_manager& mgr) {
                 auto partition = mgr.get(ntp);
 
@@ -715,7 +718,7 @@ FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
         auto shard = app.shard_table.local().shard_for(ntp);
         app.partition_manager
           .invoke_on(
-            *shard,
+            shard.value(),
             [ntp](cluster::partition_manager& mgr) {
                 return model::test::make_random_batches(model::offset(0), 5)
                   .then([ntp, &mgr](auto batches) {
@@ -748,7 +751,7 @@ FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
         BOOST_REQUIRE(resp.data.responses[0].partitions[i].records);
 
         total_size
-          += resp.data.responses[0].partitions[i].records->size_bytes();
+          += resp.data.responses[0].partitions[i].records.value().size_bytes();
     }
     BOOST_REQUIRE_GT(total_size, 0);
 }
@@ -786,7 +789,7 @@ FIXTURE_TEST(fetch_leader_ack, redpanda_thread_fixture) {
     auto shard = app.shard_table.local().shard_for(ntp);
     app.partition_manager
       .invoke_on(
-        *shard,
+        shard.value(),
         [ntp](cluster::partition_manager& mgr) {
             return model::test::make_random_batches(model::offset(0), 5)
               .then([ntp, &mgr](auto batches) {
@@ -814,7 +817,7 @@ FIXTURE_TEST(fetch_leader_ack, redpanda_thread_fixture) {
     BOOST_REQUIRE(resp.data.responses[0].partitions[0].partition_index == pid);
     BOOST_REQUIRE(resp.data.responses[0].partitions[0].records);
     BOOST_REQUIRE(
-      resp.data.responses[0].partitions[0].records->size_bytes() > 0);
+      resp.data.responses[0].partitions[0].records.value().size_bytes() > 0);
 }
 
 FIXTURE_TEST(fetch_one_debounce, redpanda_thread_fixture) {
@@ -848,7 +851,7 @@ FIXTURE_TEST(fetch_one_debounce, redpanda_thread_fixture) {
     auto shard = app.shard_table.local().shard_for(ntp);
     app.partition_manager
       .invoke_on(
-        *shard,
+        shard.value(),
         [ntp](cluster::partition_manager& mgr) {
             return model::test::make_random_batches(model::offset(0), 5)
               .then([ntp, &mgr](auto batches) {
@@ -876,7 +879,7 @@ FIXTURE_TEST(fetch_one_debounce, redpanda_thread_fixture) {
     BOOST_REQUIRE(resp.data.responses[0].partitions[0].partition_index == pid);
     BOOST_REQUIRE(resp.data.responses[0].partitions[0].records);
     BOOST_REQUIRE(
-      resp.data.responses[0].partitions[0].records->size_bytes() > 0);
+      resp.data.responses[0].partitions[0].records.value().size_bytes() > 0);
 }
 
 FIXTURE_TEST(fetch_multi_topics, redpanda_thread_fixture) {
@@ -933,7 +936,7 @@ FIXTURE_TEST(fetch_multi_topics, redpanda_thread_fixture) {
         auto shard = app.shard_table.local().shard_for(ntp);
         app.partition_manager
           .invoke_on(
-            *shard,
+            shard.value(),
             [ntp](cluster::partition_manager& mgr) {
                 return model::test::make_random_batches(model::offset(0), 5)
                   .then([ntp, &mgr](auto batches) {
@@ -969,7 +972,7 @@ FIXTURE_TEST(fetch_multi_topics, redpanda_thread_fixture) {
         BOOST_REQUIRE(resp.data.responses[0].partitions[i].records);
 
         total_size
-          += resp.data.responses[0].partitions[i].records->size_bytes();
+          += resp.data.responses[0].partitions[i].records.value().size_bytes();
     }
     BOOST_REQUIRE_GT(total_size, 0);
 }
@@ -987,7 +990,7 @@ FIXTURE_TEST(fetch_request_max_bytes, redpanda_thread_fixture) {
     auto shard = app.shard_table.local().shard_for(ntp);
     app.partition_manager
       .invoke_on(
-        *shard,
+        shard.value(),
         [ntp](cluster::partition_manager& mgr) {
             return model::test::make_random_batches(model::offset(0), 20)
               .then([ntp, &mgr](auto batches) {
@@ -1039,7 +1042,11 @@ FIXTURE_TEST(fetch_request_max_bytes, redpanda_thread_fixture) {
       fetch_one_byte.data.responses[0].partitions[0].partition_index == pid);
     BOOST_REQUIRE(fetch_one_byte.data.responses[0].partitions[0].records);
     BOOST_REQUIRE(
-      fetch_one_byte.data.responses[0].partitions[0].records->size_bytes() > 0);
+      fetch_one_byte.data.responses[0]
+        .partitions[0]
+        .records.value()
+        .size_bytes()
+      > 0);
 }
 
 FIXTURE_TEST(fetch_offset_out_of_range, redpanda_thread_fixture) {
@@ -1055,7 +1062,7 @@ FIXTURE_TEST(fetch_offset_out_of_range, redpanda_thread_fixture) {
     auto shard = app.shard_table.local().shard_for(ntp);
     app.partition_manager
       .invoke_on(
-        *shard,
+        shard.value(),
         [ntp](cluster::partition_manager& mgr) {
             return model::test::make_random_batches(model::offset(0), 20)
               .then([ntp, &mgr](auto batches) {
@@ -1072,7 +1079,7 @@ FIXTURE_TEST(fetch_offset_out_of_range, redpanda_thread_fixture) {
 
     auto trunc_err = app.partition_manager
                        .invoke_on(
-                         *shard,
+                         shard.value(),
                          [ntp](cluster::partition_manager& mgr) {
                              auto partition = mgr.get(ntp);
                              auto k_trunc_offset = kafka::offset(5);
@@ -1089,7 +1096,7 @@ FIXTURE_TEST(fetch_offset_out_of_range, redpanda_thread_fixture) {
 
     auto hwm = app.partition_manager
                  .invoke_on(
-                   *shard,
+                   shard.value(),
                    [ntp](cluster::partition_manager& mgr) {
                        auto partition = mgr.get(ntp);
                        return partition->log()->from_log_offset(
@@ -1148,7 +1155,7 @@ FIXTURE_TEST(fetch_response_bytes_eq_units, redpanda_thread_fixture) {
     auto shard = app.shard_table.local().shard_for(ntp);
     app.partition_manager
       .invoke_on(
-        *shard,
+        shard.value(),
         [ntp](cluster::partition_manager& mgr) {
             return model::test::make_random_batches(model::offset(0), 20)
               .then([ntp, &mgr](auto batches) {

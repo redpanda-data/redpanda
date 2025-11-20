@@ -435,7 +435,7 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
     std::vector<cloud_storage_fixture::expectation> results;
     for (const auto& s : segments) {
         auto url = m.generate_segment_path(
-          *m.get(s.base_offset), path_provider);
+          m.get(s.base_offset).value(), path_provider);
         results.push_back(
           cloud_storage_fixture::expectation{
             .url = url().string(), .body = s.bytes});
@@ -499,7 +499,7 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
         delta = delta
                 + model::offset(s.num_config_records - s.delta_offset_overlap);
         auto url = m.generate_segment_path(
-          *m.get(meta.base_offset), path_provider);
+          m.get(meta.base_offset).value(), path_provider);
         results.push_back(
           cloud_storage_fixture::expectation{
             .url = url().string(), .body = body});
@@ -986,7 +986,7 @@ void reupload_compacted_segments(
             m.add(s.sname, meta);
 
             auto url = m.generate_segment_path(
-              *m.get(meta.base_offset), path_provider);
+              m.get(meta.base_offset).value(), path_provider);
             vlog(test_util_log.debug, "reuploading segment {}", url);
             retry_chain_node rtc(never_abort, 60s, 1s);
             bytes bb;
@@ -1022,13 +1022,13 @@ void topic_manifest_serialize_v1_json(
     w.Key("version");
     w.Int(static_cast<int>(topic_manifest::first_version()));
     w.Key("namespace");
-    w.String(m._topic_config->tp_ns.ns());
+    w.String(m._topic_config.value().tp_ns.ns());
     w.Key("topic");
-    w.String(m._topic_config->tp_ns.tp());
+    w.String(m._topic_config.value().tp_ns.tp());
     w.Key("partition_count");
-    w.Int(m._topic_config->partition_count);
+    w.Int(m._topic_config.value().partition_count);
     w.Key("replication_factor");
-    w.Int(m._topic_config->replication_factor);
+    w.Int(m._topic_config.value().replication_factor);
     w.Key("revision_id");
     w.Int(m._rev());
 
@@ -1036,40 +1036,42 @@ void topic_manifest_serialize_v1_json(
     // - key set to null - optional is nullopt
     // - key is not null - optional has value
     w.Key("compression");
-    if (m._topic_config->properties.compression.has_value()) {
+    if (m._topic_config.value().properties.compression.has_value()) {
         w.String(
           boost::lexical_cast<std::string>(
-            *m._topic_config->properties.compression));
+            m._topic_config.value().properties.compression.value()));
     } else {
         w.Null();
     }
     w.Key("cleanup_policy_bitflags");
-    if (m._topic_config->properties.cleanup_policy_bitflags.has_value()) {
+    if (m._topic_config.value()
+          .properties.cleanup_policy_bitflags.has_value()) {
         w.String(
           boost::lexical_cast<std::string>(
-            *m._topic_config->properties.cleanup_policy_bitflags));
+            m._topic_config.value()
+              .properties.cleanup_policy_bitflags.value()));
     } else {
         w.Null();
     }
     w.Key("compaction_strategy");
-    if (m._topic_config->properties.compaction_strategy.has_value()) {
+    if (m._topic_config.value().properties.compaction_strategy.has_value()) {
         w.String(
           boost::lexical_cast<std::string>(
-            *m._topic_config->properties.compaction_strategy));
+            m._topic_config.value().properties.compaction_strategy.value()));
     } else {
         w.Null();
     }
     w.Key("timestamp_type");
-    if (m._topic_config->properties.timestamp_type.has_value()) {
+    if (m._topic_config.value().properties.timestamp_type.has_value()) {
         w.String(
           boost::lexical_cast<std::string>(
-            *m._topic_config->properties.timestamp_type));
+            m._topic_config.value().properties.timestamp_type.value()));
     } else {
         w.Null();
     }
     w.Key("segment_size");
-    if (m._topic_config->properties.segment_size.has_value()) {
-        w.Uint64(*m._topic_config->properties.segment_size);
+    if (m._topic_config.value().properties.segment_size.has_value()) {
+        w.Uint64(m._topic_config.value().properties.segment_size.value());
     } else {
         w.Null();
     }
@@ -1079,20 +1081,23 @@ void topic_manifest_serialize_v1_json(
     // - key not present - tristate is disabled
     // - key set to null - tristate is enabled but not set
     // - key is not null - tristate is enabled and set
-    if (!m._topic_config->properties.retention_bytes.is_disabled()) {
+    if (!m._topic_config.value().properties.retention_bytes.is_disabled()) {
         w.Key("retention_bytes");
-        if (m._topic_config->properties.retention_bytes.has_optional_value()) {
-            w.Uint64(m._topic_config->properties.retention_bytes.value());
+        if (m._topic_config.value()
+              .properties.retention_bytes.has_optional_value()) {
+            w.Uint64(
+              m._topic_config.value().properties.retention_bytes.value());
         } else {
             w.Null();
         }
     }
-    if (!m._topic_config->properties.retention_duration.is_disabled()) {
+    if (!m._topic_config.value().properties.retention_duration.is_disabled()) {
         w.Key("retention_duration");
-        if (m._topic_config->properties.retention_duration
-              .has_optional_value()) {
-            w.Int64(
-              m._topic_config->properties.retention_duration.value().count());
+        if (m._topic_config.value()
+              .properties.retention_duration.has_optional_value()) {
+            w.Int64(m._topic_config.value()
+                      .properties.retention_duration.value()
+                      .count());
         } else {
             w.Null();
         }
@@ -1100,11 +1105,12 @@ void topic_manifest_serialize_v1_json(
 
     // do not serialize fields that are not deserializable by previous versions
     // of redpanda
-    if (m._topic_config->properties.mpx_virtual_cluster_id) {
+    if (m._topic_config.value().properties.mpx_virtual_cluster_id) {
         w.Key("virtual_cluster_id");
         w.String(
           fmt::format(
-            "{}", m._topic_config->properties.mpx_virtual_cluster_id.value()));
+            "{}",
+            m._topic_config.value().properties.mpx_virtual_cluster_id.value()));
     }
     w.EndObject();
 }

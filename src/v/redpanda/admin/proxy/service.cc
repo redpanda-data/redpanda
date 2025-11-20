@@ -29,10 +29,10 @@ void handle_exception(
     resp->payload = iobuf::from(ex.message());
     if (const auto& ei = ex.info()) {
         proxy_response::error_info copy{
-          .reason = ei->reason,
-          .domain = ei->domain,
+          .reason = ei.value().reason,
+          .domain = ei.value().domain,
         };
-        for (const auto& [k, v] : ei->metadata) {
+        for (const auto& [k, v] : ei.value().metadata) {
             copy.metadata.emplace(k, v);
         }
         resp->info = std::move(copy);

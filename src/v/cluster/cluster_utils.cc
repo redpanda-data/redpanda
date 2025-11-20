@@ -69,7 +69,7 @@ model::broker make_self_broker(const config::node_config& node_cfg) {
     // that needs to be assigned a node ID when it first starts up.
     model::node_id node_id = node_cfg.node_id() == std::nullopt
                                ? model::unassigned_node_id
-                               : *node_cfg.node_id();
+                               : node_cfg.node_id().value();
     return model::broker(
       node_id,
       kafka_addr,
@@ -361,8 +361,8 @@ partition_raft_state get_partition_raft_state(consensus_ptr ptr) {
     if (frs) {
         raft_state.recovery_state
           = partition_raft_state::follower_recovery_state{
-            .is_active = frs->is_active(),
-            .pending_offset_count = frs->pending_offset_count(),
+            .is_active = frs.value().is_active(),
+            .pending_offset_count = frs.value().pending_offset_count(),
           };
     }
 

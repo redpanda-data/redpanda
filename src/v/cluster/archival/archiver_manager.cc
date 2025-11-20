@@ -417,7 +417,7 @@ public:
               f.error);
             prev.clear();
             if (next.completed_shutdown) {
-                next.completed_shutdown->set_exception(f.error);
+                next.completed_shutdown.value().set_exception(f.error);
             }
         }
     };
@@ -461,7 +461,7 @@ public:
             vlog(fsm._ctxlog.info, "ntp_archiver stopped");
             prev.clear();
             if (next.completed_shutdown) {
-                next.completed_shutdown->set_value();
+                next.completed_shutdown.value().set_value();
             }
         }
         void operator()(
@@ -473,7 +473,7 @@ public:
               fsm._ctxlog.error, "ntp_archiver failed to shutdown {}", f.error);
             prev.clear();
             if (next.completed_shutdown) {
-                next.completed_shutdown->set_exception(f.error);
+                next.completed_shutdown.value().set_exception(f.error);
             }
         }
     };
@@ -691,7 +691,7 @@ struct managed_partition : public managed_partition_fsm::state_machine_t {
         auto& st = get_state<st_passive&>();
         st.completed_shutdown = ss::promise<>();
         process_event(ev_shutdown{});
-        co_await st.completed_shutdown->get_future();
+        co_await st.completed_shutdown.value().get_future();
     }
 
     bool is_active() {

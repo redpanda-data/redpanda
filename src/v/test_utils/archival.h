@@ -92,7 +92,7 @@ inline void populate_manifest(
           {.size_bytes = spec.size_bytes,
            .base_offset = spec.start_offset,
            .committed_offset = spec.end_offset,
-           .max_timestamp = spec.timestamp ? *spec.timestamp
+           .max_timestamp = spec.timestamp ? spec.timestamp.value()
                                            : model::timestamp::now(),
            .delta_offset = model::offset_delta(
              spec.start_offset - spec.start_kafka_offset),

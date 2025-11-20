@@ -124,9 +124,9 @@ private:
             model::ntp ntp(
               model::kafka_namespace,
               model::kafka_consumer_offsets_topic,
-              *p_id);
+              p_id.value());
             if (auto shard_id = _shards.local().shard_for(ntp); shard_id) {
-                return std::make_pair(std::move(ntp), *shard_id);
+                return std::make_pair(std::move(ntp), shard_id.value());
             }
         }
         return std::nullopt;

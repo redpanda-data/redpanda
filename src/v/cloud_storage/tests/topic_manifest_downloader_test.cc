@@ -99,7 +99,7 @@ public:
     void upload_labeled_bin_manifest(const topic_manifest& tm) {
         retry_chain_node retry(never_abort, 1s, 10ms);
         auto labeled_path = labeled_topic_manifest_path(
-          test_label, tm.get_topic_config()->tp_ns, test_rev);
+          test_label, tm.get_topic_config().value().tp_ns, test_rev);
         auto upload_res
           = remote_.local()
               .upload_manifest(
@@ -111,7 +111,7 @@ public:
     void upload_prefixed_bin_manifest(const topic_manifest& tm) {
         retry_chain_node retry(never_abort, 1s, 10ms);
         auto hashed_path = prefixed_topic_manifest_bin_path(
-          tm.get_topic_config()->tp_ns);
+          tm.get_topic_config().value().tp_ns);
         auto upload_res
           = remote_.local()
               .upload_manifest(
@@ -130,7 +130,7 @@ public:
         cloud_storage::testing::topic_manifest_serialize_v1_json(os, tm);
 
         auto hashed_path = prefixed_topic_manifest_json_path(
-          tm.get_topic_config()->tp_ns);
+          tm.get_topic_config().value().tp_ns);
         upload_request json_req{
             .transfer_details = {
                 .bucket = bucket_name,
@@ -444,7 +444,7 @@ TEST_F(TopicManifestDownloaderTest, TestFindManifests) {
     ASSERT_EQ(find_res.value(), find_topic_manifest_outcome::success);
     ASSERT_EQ(3, tms.size());
     for (const auto& tm : tms) {
-        ASSERT_TRUE(zero_filter(tm.get_topic_config()->tp_ns))
+        ASSERT_TRUE(zero_filter(tm.get_topic_config().value().tp_ns))
           << tm.get_topic_config();
     }
     tms.clear();

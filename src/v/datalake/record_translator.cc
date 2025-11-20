@@ -96,11 +96,11 @@ std::unique_ptr<iceberg::struct_value> build_rp_struct(
             auto header_kv_struct = std::make_unique<iceberg::struct_value>();
             header_kv_struct->fields.emplace_back(
               k ? std::make_optional<iceberg::value>(
-                    iceberg::string_value(k->copy()))
+                    iceberg::string_value(k.value().copy()))
                 : std::nullopt);
             header_kv_struct->fields.emplace_back(
               v ? std::make_optional<iceberg::value>(
-                    iceberg::binary_value(v->copy()))
+                    iceberg::binary_value(v.value().copy()))
                 : std::nullopt);
             headers_list->elements.emplace_back(std::move(header_kv_struct));
         }
@@ -109,7 +109,7 @@ std::unique_ptr<iceberg::struct_value> build_rp_struct(
 
     system_data->fields.emplace_back(
       key ? std::make_optional<iceberg::value>(
-              iceberg::binary_value(std::move(*key)))
+              iceberg::binary_value(std::move(key.value())))
           : std::nullopt);
 
     system_data->fields.emplace_back(
@@ -208,7 +208,7 @@ key_value_translator::translate_data(
     ret_data.fields.emplace_back(std::move(system_data));
     ret_data.fields.emplace_back(
       parsable_val ? std::make_optional<iceberg::value>(
-                       iceberg::binary_value(std::move(*parsable_val)))
+                       iceberg::binary_value(std::move(parsable_val.value())))
                    : std::nullopt);
     co_return ret_data;
 }
@@ -218,8 +218,9 @@ structured_data_translator::build_type(std::optional<resolved_type> val_type) {
     auto ret_type = schemaless_struct_type();
     std::optional<schema_identifier> val_id;
     if (val_type.has_value()) {
-        val_id = std::move(val_type->id);
-        auto& struct_type = std::get<iceberg::struct_type>(val_type->type);
+        val_id = std::move(val_type.value().id);
+        auto& struct_type = std::get<iceberg::struct_type>(
+          val_type.value().type);
         // The various schema languages differ significantly in their semantics
         // and best practices around required fields, and Iceberg has its own.
         // By forcing all schema fields to non-required, we provide a maximally
@@ -297,8 +298,9 @@ structured_data_translator::translate_data(
     ret_data.fields.emplace_back(std::move(system_data));
 
     auto translated_val = co_await std::visit(
-      value_translating_visitor{std::move(*parsable_val), val_type->type},
-      val_type->schema.get_schema_ref());
+      value_translating_visitor{
+        std::move(parsable_val.value()), val_type.value().type},
+      val_type.value().schema.get_schema_ref());
     if (translated_val.has_error()) {
         vlog(
           datalake_log.warn,
@@ -308,7 +310,7 @@ structured_data_translator::translate_data(
     }
 
     auto redpanda_field_idx = get_redpanda_idx(
-      std::get<iceberg::struct_type>(val_type->type));
+      std::get<iceberg::struct_type>(val_type.value().type));
     // Unwrap the struct fields.
     auto& val_struct = std::get<std::unique_ptr<iceberg::struct_value>>(
       translated_val.value().value());

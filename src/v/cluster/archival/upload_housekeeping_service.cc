@@ -470,7 +470,7 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
             exec_timer.reset();
             quota = _quota;
             if (_probe.has_value()) {
-                _probe->get().housekeeping_rounds(1);
+                _probe.value().get().housekeeping_rounds(1);
             }
         }
     }
@@ -481,7 +481,7 @@ void housekeeping_workflow::maybe_update_probe(
     if (!_probe.has_value()) {
         return;
     }
-    auto& probe = _probe->get();
+    auto& probe = _probe.value().get();
     int is_ok = 0;
     switch (res.status) {
     case housekeeping_job::run_status::ok:
@@ -511,12 +511,12 @@ void housekeeping_workflow::resume(bool drain) {
     if (drain == true) {
         _state = housekeeping_state::draining;
         if (_probe.has_value()) {
-            _probe->get().housekeeping_drains(1);
+            _probe.value().get().housekeeping_drains(1);
         }
     } else {
         _state = housekeeping_state::active;
         if (_probe.has_value()) {
-            _probe->get().housekeeping_resumes(1);
+            _probe.value().get().housekeeping_resumes(1);
         }
     }
     vlog(
@@ -531,7 +531,7 @@ void housekeeping_workflow::pause() {
     if (_state == housekeeping_state::active) {
         _state = housekeeping_state::pause;
         if (_probe.has_value()) {
-            _probe->get().housekeeping_pauses(1);
+            _probe.value().get().housekeeping_pauses(1);
         }
     }
     // Can't pause draining or stopping states.

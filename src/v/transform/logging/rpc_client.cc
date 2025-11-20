@@ -37,7 +37,7 @@ rpc_client::write(model::partition_id pid, io::json_batches batches) {
         co_return errc::topic_not_found;
     }
 
-    auto max_batch_size = cfg->properties.batch_max_bytes.value_or(
+    auto max_batch_size = cfg.value().properties.batch_max_bytes.value_or(
       config::shard_local_cfg().kafka_batch_max_bytes());
 
     kafka::data::record_batcher batcher{max_batch_size, &tlg_log};
@@ -84,7 +84,7 @@ rpc_client::compute_output_partition(model::transform_name_view name) {
     if (!config) {
         return errc::topic_not_found;
     }
-    auto n_partitions = static_cast<uint32_t>(config->partition_count);
+    auto n_partitions = static_cast<uint32_t>(config.value().partition_count);
     if (n_partitions == 0) {
         return errc::partition_lookup_failure;
     }

@@ -67,7 +67,7 @@ TEST_F(RecorderTest, TestLargeException) {
     ASSERT_EQ(crashes.size(), 1);
     ASSERT_TRUE(crashes[0].crash.has_value());
     ASSERT_EQ(
-      crashes[0].crash->crash_message.length(),
+      crashes[0].crash.value().crash_message.length(),
       crash_description::string_buffer_reserve);
 }
 

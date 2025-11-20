@@ -82,7 +82,7 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
             continue;
         }
         auto& tp = model::kafka_consumer_offsets_nt;
-        if (!_metadata_cache.local().contains(tp, *partition_opt)) {
+        if (!_metadata_cache.local().contains(tp, partition_opt.value())) {
             vlog(
               cluster::txlog.trace,
               "can't find meta info for {}/{}, retrying",
@@ -92,7 +92,7 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
             continue;
         }
 
-        leader_opt = _leaders.local().get_leader(tp, *partition_opt);
+        leader_opt = _leaders.local().get_leader(tp, partition_opt.value());
         if (!leader_opt) {
             vlog(
               cluster::txlog.trace,
@@ -214,14 +214,14 @@ ss::future<cluster::commit_group_tx_reply> rm_group_frontend::commit_group_tx(
 
     auto& nt = model::kafka_consumer_offsets_nt;
 
-    if (!_metadata_cache.local().contains(nt, *p_id_opt)) {
+    if (!_metadata_cache.local().contains(nt, p_id_opt.value())) {
         vlog(
           cluster::txlog.warn, "can' find meta info for {}/{}", nt, *p_id_opt);
         co_return cluster::commit_group_tx_reply{
           cluster::tx::errc::partition_not_exists};
     }
 
-    auto leader_opt = _leaders.local().get_leader(nt, *p_id_opt);
+    auto leader_opt = _leaders.local().get_leader(nt, p_id_opt.value());
     if (!leader_opt) {
         vlog(
           cluster::txlog.warn, "can't find a leader for {}/{}", nt, *p_id_opt);
@@ -328,14 +328,14 @@ ss::future<cluster::abort_group_tx_reply> rm_group_frontend::abort_group_tx(
     }
     auto& nt = model::kafka_consumer_offsets_nt;
 
-    if (!_metadata_cache.local().contains(nt, *p_id_opt)) {
+    if (!_metadata_cache.local().contains(nt, p_id_opt.value())) {
         vlog(
           cluster::txlog.warn, "can't find meta info for {}/{}", nt, *p_id_opt);
         co_return cluster::abort_group_tx_reply{
           cluster::tx::errc::partition_not_exists};
     }
 
-    auto leader_opt = _leaders.local().get_leader(nt, *p_id_opt);
+    auto leader_opt = _leaders.local().get_leader(nt, p_id_opt.value());
     if (!leader_opt) {
         vlog(
           cluster::txlog.warn, "can't find a leader for  {}/{}", nt, *p_id_opt);

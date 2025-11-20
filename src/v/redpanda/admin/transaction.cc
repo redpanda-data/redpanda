@@ -162,9 +162,9 @@ admin_server::find_tx_coordinator_handler(
     }
     if (r.ntp) {
         ss::httpd::transaction_json::ntp ntp;
-        ntp.ns = r.ntp->ns();
-        ntp.topic = r.ntp->tp.topic();
-        ntp.partition = r.ntp->tp.partition();
+        ntp.ns = r.ntp.value().ns();
+        ntp.topic = r.ntp.value().tp.topic();
+        ntp.partition = r.ntp.value().tp.partition();
         reply.ntp = ntp;
     }
     reply.ec = static_cast<int>(r.ec);
@@ -184,8 +184,8 @@ admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
     if (!r.ntp) {
         throw ss::httpd::bad_request_exception("Coordinator not available");
     }
-    if (need_redirect_to_leader(*r.ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, *r.ntp);
+    if (need_redirect_to_leader(r.ntp.value(), _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, r.ntp.value());
     }
 
     auto tx_ntp = _tx_gateway_frontend.local().ntp_for_tx_id(tid);
@@ -304,6 +304,6 @@ admin_server::unsafe_abort_group_transaction(
       model::ntp(
         model::kafka_namespace,
         model::kafka_consumer_offsets_topic,
-        *group_partition));
+        group_partition.value()));
     co_return ss::json::json_return_type(ss::json::json_void());
 }

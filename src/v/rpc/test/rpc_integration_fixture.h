@@ -49,10 +49,11 @@ public:
       = std::nullopt) const {
         return rpc::transport_configuration{
           .server_addr = _listen_address,
-          .credentials
-          = credentials
-              ? credentials->build_reloadable_certificate_credentials().get()
-              : nullptr};
+          .credentials = credentials
+                           ? credentials.value()
+                               .build_reloadable_certificate_credentials()
+                               .get()
+                           : nullptr};
     }
 
 protected:
@@ -91,10 +92,10 @@ public:
         auto resolved = net::resolve_dns(_listen_address).get();
         scfg.addrs.emplace_back(
           resolved,
-          credentials
-            ? credentials->build_reloadable_server_credentials(std::move(cb))
-                .get()
-            : nullptr);
+          credentials ? credentials.value()
+                          .build_reloadable_server_credentials(std::move(cb))
+                          .get()
+                      : nullptr);
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
         if constexpr (std::is_same_v<T, rpc::rpc_server>) {
@@ -152,10 +153,10 @@ public:
         auto resolved = net::resolve_dns(_listen_address).get();
         scfg.addrs.emplace_back(
           resolved,
-          credentials
-            ? credentials->build_reloadable_server_credentials(std::move(cb))
-                .get()
-            : nullptr);
+          credentials ? credentials.value()
+                          .build_reloadable_server_credentials(std::move(cb))
+                          .get()
+                      : nullptr);
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
         _server.start(std::move(scfg)).get();

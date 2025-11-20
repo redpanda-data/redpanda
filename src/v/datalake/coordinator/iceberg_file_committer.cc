@@ -78,10 +78,10 @@ get_iceberg_committed_offset(
         return std::nullopt;
     }
 
-    const auto& cur_snap_id = *table.current_snapshot_id;
+    const auto& cur_snap_id = table.current_snapshot_id.value();
     auto snap_it = std::ranges::find(
       table.snapshots.value(), cur_snap_id, &iceberg::snapshot::id);
-    while (snap_it != table.snapshots->end()) {
+    while (snap_it != table.snapshots.value().end()) {
         const auto& snap = *snap_it;
         const auto& props = snap.summary.other;
         auto prop_it = props.find(commit_meta_prop);
@@ -97,7 +97,7 @@ get_iceberg_committed_offset(
             // Otherwise, we should only honor the metadata if it was from this
             // cluster, since it refers to an offset of this cluster's datalake
             // control topic.
-            if (!meta.cluster.has_value() || *meta.cluster == cluster) {
+            if (!meta.cluster.has_value() || meta.cluster.value() == cluster) {
                 return meta.offset;
             }
             // The metadata wasn't written by this cluster. Keep looking for
@@ -109,7 +109,7 @@ get_iceberg_committed_offset(
         }
         snap_it = std::ranges::find(
           table.snapshots.value(),
-          *snap.parent_snapshot_id,
+          snap.parent_snapshot_id.value(),
           &iceberg::snapshot::id);
     }
     return std::nullopt;
@@ -334,7 +334,7 @@ public:
           new_committed_offset_.has_value(),
           "New Iceberg files implies new commit metadata");
         const auto commit_meta = commit_offset_metadata{
-          .offset = *new_committed_offset_,
+          .offset = new_committed_offset_.value(),
           .cluster = cluster_,
         };
 
@@ -395,7 +395,7 @@ private:
 private:
     bool should_skip_entry(model::offset added_pending_at) const {
         return table_commit_offset_.has_value()
-               && added_pending_at <= *table_commit_offset_;
+               && added_pending_at <= table_commit_offset_.value();
     }
 
 private:
@@ -523,8 +523,13 @@ iceberg_file_committer::commit_topic_files_to_catalog(
                 vassert(
                   main_table_commit_builder.has_value(),
                   "Should have main table builder");
-                auto res = main_table_commit_builder->process_pending_entry(
-                  topic, topic_revision, io_, e.added_pending_at, e.data.files);
+                auto res
+                  = main_table_commit_builder.value().process_pending_entry(
+                    topic,
+                    topic_revision,
+                    io_,
+                    e.added_pending_at,
+                    e.data.files);
                 if (res.has_error()) {
                     co_return res.error();
                 }
@@ -534,12 +539,13 @@ iceberg_file_committer::commit_topic_files_to_catalog(
                 vassert(
                   dlq_table_commit_builder.has_value(),
                   "Should have DLQ table builder");
-                auto dlq_res = dlq_table_commit_builder->process_pending_entry(
-                  topic,
-                  topic_revision,
-                  io_,
-                  e.added_pending_at,
-                  e.data.dlq_files);
+                auto dlq_res
+                  = dlq_table_commit_builder.value().process_pending_entry(
+                    topic,
+                    topic_revision,
+                    io_,
+                    e.added_pending_at,
+                    e.data.dlq_files);
                 if (dlq_res.has_error()) {
                     co_return dlq_res.error();
                 }
@@ -577,7 +583,8 @@ iceberg_file_committer::commit_topic_files_to_catalog(
     }
 
     if (dlq_table_commit_builder) {
-        auto dlq_commit_res = co_await std::move(*dlq_table_commit_builder)
+        auto dlq_commit_res = co_await std::move(
+                                dlq_table_commit_builder.value())
                                 .commit(topic, topic_revision, catalog_, io_);
         if (dlq_commit_res.has_error()) {
             co_return dlq_commit_res.error();
@@ -586,7 +593,7 @@ iceberg_file_committer::commit_topic_files_to_catalog(
 
     if (main_table_commit_builder) {
         auto main_table_commit_res
-          = co_await std::move(*main_table_commit_builder)
+          = co_await std::move(main_table_commit_builder.value())
               .commit(topic, topic_revision, catalog_, io_);
         if (main_table_commit_res.has_error()) {
             co_return main_table_commit_res.error();

@@ -210,7 +210,7 @@ leader_router::process(req_t req, bool local_only) {
               req_name);
             co_return resp_t{.ec = rpc::errc::not_leader};
         }
-        metastore_pid = *pid_opt;
+        metastore_pid = pid_opt.value();
     } else {
         metastore_pid = req.metastore_partition;
     }
@@ -358,7 +358,7 @@ leader_router::metastore_partition(const model::topic_id_partition& tp) const {
     write(temp, tp);
     auto bytes = iobuf_to_bytes(temp);
     auto partition = murmur2(bytes.data(), bytes.size())
-                     % md->get().get_configuration().partition_count;
+                     % md.value().get().get_configuration().partition_count;
     return model::partition_id{static_cast<int32_t>(partition)};
 }
 
@@ -368,7 +368,7 @@ std::optional<int> leader_router::num_metastore_partitions() const {
     if (!md) {
         return std::nullopt;
     }
-    return md->get().get_configuration().partition_count;
+    return md.value().get().get_configuration().partition_count;
 }
 
 ss::future<rpc::add_objects_reply> leader_router::add_objects_locally(

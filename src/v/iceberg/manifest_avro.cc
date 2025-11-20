@@ -113,7 +113,7 @@ manifest_metadata metadata_from_reader(avro::DataFileReaderBase& rdr) {
             throw std::invalid_argument(
               fmt::format("Manifest metadata missing field '{}'", key));
         }
-        return *val;
+        return val.value();
     };
     manifest_metadata m;
     m.manifest_content_type = content_type_from_str(
@@ -191,7 +191,7 @@ manifest parse_manifest(iobuf buf) {
             break;
         }
         auto parsed_struct = std::get<std::unique_ptr<struct_value>>(
-          *val_from_avro(d, entry_type, field_required::yes));
+          val_from_avro(d, entry_type, field_required::yes).value());
         entries.emplace_back(
           manifest_entry_from_value(std::move(*parsed_struct)));
     }

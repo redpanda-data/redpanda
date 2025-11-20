@@ -218,10 +218,10 @@ quota_manager::add_quota_id(tracker_key qid, clock::time_point now) {
 
     // Hold to lock to not distrupt background fibres (gc and update_quotas)
     // with new entries in the map
-    auto lock = co_await _global_map_mutex->get_units();
+    auto lock = co_await _global_map_mutex.value().get_units();
 
-    auto existing_quota = _global_map->find(qid);
-    if (existing_quota != _global_map->end()) {
+    auto existing_quota = _global_map.value().find(qid);
+    if (existing_quota != _global_map.value().end()) {
         co_return existing_quota->second;
     }
 
@@ -239,24 +239,27 @@ quota_manager::add_quota_id(tracker_key qid, clock::time_point now) {
 
     if (limits.produce_limit.has_value()) {
         new_value->tp_produce_rate.emplace(
-          *limits.produce_limit,
-          *limits.produce_limit,
+          limits.produce_limit.value(),
+          limits.produce_limit.value(),
           replenish_threshold,
           true);
     }
     if (limits.fetch_limit.has_value()) {
         new_value->tp_fetch_rate.emplace(
-          *limits.fetch_limit, *limits.fetch_limit, replenish_threshold, true);
+          limits.fetch_limit.value(),
+          limits.fetch_limit.value(),
+          replenish_threshold,
+          true);
     }
     if (limits.partition_mutation_limit.has_value()) {
         new_value->pm_rate.emplace(
-          *limits.partition_mutation_limit,
-          *limits.partition_mutation_limit,
+          limits.partition_mutation_limit.value(),
+          limits.partition_mutation_limit.value(),
           replenish_threshold,
           true);
     }
 
-    auto [it, _] = _global_map->emplace(qid, std::move(new_value));
+    auto [it, _] = _global_map.value().emplace(qid, std::move(new_value));
 
     co_return it->second;
 }
@@ -268,7 +271,7 @@ void quota_manager::update_client_quotas() {
 
     // Hold to lock to ensure there are no updates to the map while iterating
     ssx::spawn_with_gate(_gate, [this] {
-        return _global_map_mutex->with(
+        return _global_map_mutex.value().with(
           [this] { return do_update_client_quotas(); });
     });
 }
@@ -284,16 +287,17 @@ ss::future<> quota_manager::do_update_client_quotas() {
             return;
         }
 
-        if (bucket.has_value() && bucket->rate() == rate) {
+        if (bucket.has_value() && bucket.value().rate() == rate) {
             return;
         }
-        bucket.emplace(*rate, *rate, replenish_threshold.value_or(1), true);
+        bucket.emplace(
+          rate.value(), rate.value(), replenish_threshold.value_or(1), true);
         return;
     };
 
     return ssx::async_for_each(
-      _global_map->begin(),
-      _global_map->end(),
+      _global_map.value().begin(),
+      _global_map.value().end(),
       [this, &set_bucket](auto& quota) {
           auto limits = _translator.find_quota_value(quota.first);
           set_bucket(
@@ -562,9 +566,10 @@ ss::future<> quota_manager::do_global_gc() {
       "do_global_gc() should only be called on the owner shard");
 
     // Hold to lock to ensure there are no updates to the map while iterating
-    auto lock = co_await _global_map_mutex->get_units();
+    auto lock = co_await _global_map_mutex.value().get_units();
 
-    for (auto it = _global_map->begin(); it != _global_map->end();) {
+    for (auto it = _global_map.value().begin();
+         it != _global_map.value().end();) {
         auto& [key, value] = *it;
         if (value.use_count() == 1) {
             // The pointer in the global map is effectively a weak pointer in
@@ -573,7 +578,7 @@ ss::future<> quota_manager::do_global_gc() {
             // instead of a std::weak_ptr<> in the global map is to ensure that
             // deallocation happens on shard 0 (here in do_global_gc).
             vlog(client_quota_log.trace, "Global GC expiring key: {}", key);
-            it = _global_map->erase(it);
+            it = _global_map.value().erase(it);
         } else {
             ++it;
         }

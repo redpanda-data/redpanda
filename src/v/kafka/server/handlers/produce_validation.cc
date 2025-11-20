@@ -285,7 +285,8 @@ std::optional<error_code_and_msg> validate_batch(
         // 2. Check batch header timestamps.
         std::optional<model::timestamp> max_ts{std::nullopt};
         if (has_iterable_batch) {
-            auto max_ts_res = compute_max_timestamp(iterable_batch_ref->get());
+            auto max_ts_res = compute_max_timestamp(
+              iterable_batch_ref.value().get());
             if (!max_ts_res.has_value()) {
                 return max_ts_res.error();
             } else {
@@ -357,7 +358,7 @@ std::optional<error_code_and_msg> validate_batch(
             // Validate records and compute max timestamp in one pass.
             auto max_ts_res = validate_records_and_compute_max_timestamp(
               batch,
-              iterable_batch_ref->get(),
+              iterable_batch_ref.value().get(),
               broker_time,
               timestamp_type,
               message_timestamp_before_max_ms,
@@ -408,7 +409,7 @@ std::optional<error_code_and_msg> validate_batch(
         std::optional<model::timestamp> max_ts{std::nullopt};
         auto max_ts_res = validate_records_and_compute_max_timestamp(
           batch,
-          iterable_batch_ref->get(),
+          iterable_batch_ref.value().get(),
           broker_time,
           timestamp_type,
           message_timestamp_before_max_ms,

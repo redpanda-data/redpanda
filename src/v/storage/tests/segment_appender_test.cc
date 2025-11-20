@@ -15,7 +15,7 @@ struct write_op {
       : size(s) {}
     explicit write_op(iobuf d)
       : data(std::move(d))
-      , size(data->size_bytes()) {}
+      , size(data.value().size_bytes()) {}
     std::optional<iobuf> data;
     size_t size;
 };
@@ -119,7 +119,7 @@ public:
     ss::future<> do_write(const write_op& w) {
         vlog(tst_log.debug, "[write] {} bytes", w.size);
         if (w.data) {
-            co_await append_data(*w.data);
+            co_await append_data(w.data.value());
         } else {
             co_await append_data(tests::random_iobuf(w.size));
         }

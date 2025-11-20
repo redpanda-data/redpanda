@@ -421,7 +421,7 @@ ss::future<http::downloaded_response> handle_commit_table_txn(
   std::optional<iobuf> payload,
   [[maybe_unused]] ss::lowres_clock::duration timeout) {
     EXPECT_TRUE(payload.has_value());
-    auto json_str = payload->linearize_to_string();
+    auto json_str = payload.value().linearize_to_string();
     json::Document doc;
     doc.Parse(json_str);
     // validate that the request is a valid json

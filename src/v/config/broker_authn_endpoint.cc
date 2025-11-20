@@ -68,7 +68,7 @@ broker_authn_method get_authn_method(std::string_view connection_name) {
         authn_method = ep_it->authn_method;
     }
     if (authn_method.has_value()) {
-        return *authn_method;
+        return authn_method.value();
     }
     const auto& config = config::shard_local_cfg();
     // if kafka_enable_authorization is not set, use sasl iff enable_sasl
@@ -91,7 +91,7 @@ Node convert<config::broker_authn_endpoint>::encode(const type& rhs) {
     node["port"] = rhs.address.port();
     if (rhs.authn_method) {
         node["authentication_method"] = ss::sstring(
-          to_string_view(*rhs.authn_method));
+          to_string_view(rhs.authn_method.value()));
     }
     return node;
 }
@@ -136,7 +136,7 @@ void json::rjson_serialize(
     w.Uint(ep.address.port());
     if (ep.authn_method) {
         w.Key("authentication_method");
-        auto method = to_string_view(*ep.authn_method);
+        auto method = to_string_view(ep.authn_method.value());
         w.String(method.data(), method.length());
     }
     w.EndObject();

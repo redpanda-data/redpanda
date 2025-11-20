@@ -100,7 +100,7 @@ std::expected<std::monostate, stm_update_error> add_objects_update::can_apply(
         // TODO: maybe we need some mount operation that adopts a partition log
         // and allows it to start a specific offset.
         auto p_state = state.partition_state(tidp);
-        auto expected_next = p_state ? p_state->get().next_offset
+        auto expected_next = p_state ? p_state.value().get().next_offset
                                      : kafka::offset{0};
 
         if (extents.begin()->base_offset != expected_next) {
@@ -168,8 +168,8 @@ std::expected<std::monostate, stm_update_error> add_objects_update::can_apply(
         auto p_state = state.partition_state(tp);
         // First do a basic check that the incoming term entries can be
         // appended to our state without violating ordering requirements.
-        if (p_state.has_value() && !p_state->get().term_starts.empty()) {
-            auto p_last_entry = *p_state->get().term_starts.rbegin();
+        if (p_state.has_value() && !p_state.value().get().term_starts.empty()) {
+            auto p_last_entry = *p_state.value().get().term_starts.rbegin();
             auto req_first_entry = req_entries.begin();
 
             // NOTE: it's valid for the first requested term to be equal to the
@@ -240,7 +240,7 @@ add_objects_update::apply(state& state) {
     }
     for (const auto& [tidp, extents] : extents_by_tp) {
         auto p_state = state.partition_state(tidp);
-        auto expected_next = p_state ? p_state->get().next_offset
+        auto expected_next = p_state ? p_state.value().get().next_offset
                                      : kafka::offset{0};
         if (extents.begin()->base_offset == expected_next) {
             auto& t_state = state.topic_to_state[tidp.topic_id];
@@ -331,7 +331,7 @@ replace_objects_update::can_apply(const state& state) {
         }
 
         // Check that the new range's offset aligns with existing extents.
-        const auto& prt = p_state->get();
+        const auto& prt = p_state.value().get();
         auto iters = get_range(prt.extents, req_base, req_last);
         if (!iters.has_value()) {
             return std::unexpected(stm_update_error(
@@ -345,7 +345,7 @@ replace_objects_update::can_apply(const state& state) {
 
         // Check that the new range of extents is contiguous, which in turn
         // ensures the resulting total set of extents will be contiguous.
-        const auto& [base_it, last_it] = *iters;
+        const auto& [base_it, last_it] = iters.value();
         auto expected_next = base_it->base_offset;
         for (const auto& new_extent : new_prt_extents) {
             if (new_extent.base_offset != expected_next) {
@@ -368,7 +368,7 @@ replace_objects_update::can_apply(const state& state) {
         for (const auto& [p, compaction_update] : t_req) {
             model::topic_id_partition tidp{t, p};
             auto p_ref = state.partition_state(tidp);
-            const auto& p_state = p_ref->get();
+            const auto& p_state = p_ref.value().get();
             // Validate that any cleaned ranges actually correspond to the new
             // extents.
             auto new_extent_iter = new_extents_by_tp.find(tidp);
@@ -382,7 +382,7 @@ replace_objects_update::can_apply(const state& state) {
             }
             if (compaction_update.new_cleaned_range.has_value()) {
                 const auto& req_cleaned_range
-                  = *compaction_update.new_cleaned_range;
+                  = compaction_update.new_cleaned_range.value();
 
                 // Check that the new extents span the start of the log to the
                 // end of the new clean range.
@@ -426,7 +426,7 @@ replace_objects_update::can_apply(const state& state) {
                 if (
                   req_cleaned_range.has_tombstones
                   && p_state.compaction_state.has_value()
-                  && !p_state.compaction_state->may_add(
+                  && !p_state.compaction_state.value().may_add(
                     compaction_state::cleaned_range_with_tombstones{
                       .base_offset = req_cleaned_range.base_offset,
                       .last_offset = req_cleaned_range.last_offset,
@@ -451,8 +451,8 @@ replace_objects_update::can_apply(const state& state) {
                 auto req_range = req_range_removed_tombstones.next();
                 if (
                   !p_state.compaction_state.has_value()
-                  || !p_state.compaction_state
-                        ->has_contiguous_range_with_tombstones(
+                  || !p_state.compaction_state.value()
+                        .has_contiguous_range_with_tombstones(
                           req_range.base_offset, req_range.last_offset)) {
                     return std::unexpected(stm_update_error(
                       fmt::format(
@@ -493,7 +493,7 @@ replace_objects_update::apply(state& state) {
         auto requested_base = new_extents.begin()->base_offset;
         auto requested_last = new_extents.rbegin()->last_offset;
         auto iters = get_range(p_state.extents, requested_base, requested_last);
-        auto [base_it, last_it] = *iters;
+        auto [base_it, last_it] = iters.value();
         auto end_it = std::next(last_it);
         for (auto iter = base_it; iter != end_it; ++iter) {
             auto& old_extent = *iter;
@@ -535,9 +535,9 @@ replace_objects_update::apply(state& state) {
             }
             if (compaction_update.new_cleaned_range.has_value()) {
                 const auto& req_cleaned_range
-                  = *compaction_update.new_cleaned_range;
+                  = compaction_update.new_cleaned_range.value();
                 [[maybe_unused]] auto inserted
-                  = p_state.compaction_state->cleaned_ranges.insert(
+                  = p_state.compaction_state.value().cleaned_ranges.insert(
                     req_cleaned_range.base_offset,
                     req_cleaned_range.last_offset);
                 dassert(
@@ -547,7 +547,7 @@ replace_objects_update::apply(state& state) {
                   req_cleaned_range.last_offset);
                 if (req_cleaned_range.has_tombstones) {
                     [[maybe_unused]] auto inserted
-                      = p_state.compaction_state->add(
+                      = p_state.compaction_state.value().add(
                         compaction_state::cleaned_range_with_tombstones{
                           .base_offset = req_cleaned_range.base_offset,
                           .last_offset = req_cleaned_range.last_offset,
@@ -563,7 +563,7 @@ replace_objects_update::apply(state& state) {
                 }
             }
 
-            auto& cstate = *p_state.compaction_state;
+            auto& cstate = p_state.compaction_state.value();
             auto req_range_removed_tombstones
               = compaction_update.removed_tombstones_ranges.make_stream();
             while (req_range_removed_tombstones.has_next()) {
@@ -627,7 +627,7 @@ set_start_offset_update::can_apply(const state& state) {
         return std::unexpected(stm_update_error(
           fmt::format("Partition {} not tracked by state", tp)));
     }
-    auto& prt = prt_ref->get();
+    auto& prt = prt_ref.value().get();
     if (new_start_offset < prt.start_offset) {
         return std::unexpected(stm_update_error(
           fmt::format(
@@ -692,7 +692,7 @@ set_start_offset_update::apply(state& state) {
     }
     // Finally, remove any compaction state that falls below the start offset.
     if (p_state.compaction_state.has_value()) {
-        auto& c_state = *p_state.compaction_state;
+        auto& c_state = p_state.compaction_state.value();
         c_state.truncate_with_new_start_offset(new_start_offset);
     }
     return std::monostate{};
@@ -703,7 +703,7 @@ bool set_start_offset_update::is_no_op(const state& state) const {
     if (!prt_ref.has_value()) {
         return false;
     }
-    const auto& prt = prt_ref->get();
+    const auto& prt = prt_ref.value().get();
     return prt.start_offset >= new_start_offset;
 }
 

@@ -127,9 +127,9 @@ ss::future<ss::stop_iteration> filter::filter_and_rewrite_with_sink(
     auto to_copy = co_await filter_batch(std::move(b));
     if (to_copy.has_value()) {
         const auto records_to_remove = record_count_before
-                                       - to_copy->record_count();
+                                       - to_copy.value().record_count();
         _stats.records_discarded += records_to_remove;
-        bool compactible_batch = is_compactible(to_copy->header());
+        bool compactible_batch = is_compactible(to_copy.value().header());
         if (!compactible_batch) {
             ++_stats.non_compactible_batches;
         }

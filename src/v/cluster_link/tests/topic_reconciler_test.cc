@@ -225,12 +225,12 @@ TEST_F_CORO(topic_reconciler_test, test_topic_creation_and_property_updates) {
           if (!topic_cfg.has_value()) {
               return false;
           }
-          return topic_cfg->partition_count == 3
-                 && topic_cfg->replication_factor == 3
-                 && topic_cfg->properties.batch_max_bytes == 2097152
-                 && topic_cfg->properties.cleanup_policy_bitflags
+          return topic_cfg.value().partition_count == 3
+                 && topic_cfg.value().replication_factor == 3
+                 && topic_cfg.value().properties.batch_max_bytes == 2097152
+                 && topic_cfg.value().properties.cleanup_policy_bitflags
                       == ::model::cleanup_policy_bitflags::compaction
-                 && topic_cfg->properties.timestamp_type
+                 && topic_cfg.value().properties.timestamp_type
                       == ::model::timestamp_type::append_time;
       });
 }
@@ -264,7 +264,7 @@ TEST_F_CORO(topic_reconciler_test, test_topic_failure) {
     RPTEST_REQUIRE_EVENTUALLY_CORO(
       10s, [this, topic = ::model::topic_namespace_view{topic}] {
           auto link = link_registry()->find_link_by_name(default_link_name);
-          const auto& mirror_topics = link->get().state.mirror_topics;
+          const auto& mirror_topics = link.value().get().state.mirror_topics;
           return mirror_topics.contains(topic.tp)
                  && mirror_topics.at(topic.tp).status
                       == model::mirror_topic_status::failed;
@@ -286,7 +286,7 @@ TEST_F_CORO(topic_reconciler_test, test_topic_failure) {
     co_await ss::sleep(2s);
     const auto topic_cfg = metadata_cache()->find_topic_cfg(topic);
     ASSERT_TRUE_CORO(topic_cfg.has_value());
-    EXPECT_EQ(topic_cfg->replication_factor, 1);
+    EXPECT_EQ(topic_cfg.value().replication_factor, 1);
 }
 
 TEST_F_CORO(topic_reconciler_test, test_no_rf_set) {

@@ -198,7 +198,7 @@ void rjson_serialize(iceberg::json_writer& w, const iceberg::snapshot& s) {
               return;
           }
           w.Key(ss::sstring(metric_name));
-          w.String(fmt::to_string(*metric));
+          w.String(fmt::to_string(metric.value()));
 
           // TODO: is it important to make sure we don't double-serialize if
           // it's in `other`?

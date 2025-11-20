@@ -147,7 +147,7 @@ TEST_F(ReconcilerMetricsTest, ThroughputCounters) {
     EXPECT_THAT(get_object_upload_failed(), Optional(0));
     EXPECT_THAT(get_empty_objects_skipped(), Optional(0));
 
-    auto bytes_after_first = *get_bytes_reconciled();
+    auto bytes_after_first = get_bytes_reconciled().value();
 
     reconcile();
 

@@ -102,8 +102,8 @@ TEST_F(cluster_mock_fixture, TestApiVersionDiscovery) {
           .get();
     ASSERT_TRUE(cluster_versions.has_value());
     ASSERT_TRUE(broker_versions.has_value());
-    ASSERT_EQ(cluster_versions->min, kafka::api_version(0));
-    ASSERT_EQ(cluster_versions->max, kafka::api_version(8));
+    ASSERT_EQ(cluster_versions.value().min, kafka::api_version(0));
+    ASSERT_EQ(cluster_versions.value().max, kafka::api_version(8));
     ASSERT_EQ(cluster_versions.value(), broker_versions.value());
 
     // Add a second broker with different API versions
@@ -129,10 +129,10 @@ TEST_F(cluster_mock_fixture, TestApiVersionDiscovery) {
           .get();
     ASSERT_TRUE(cluster_versions.has_value());
     ASSERT_TRUE(broker_versions.has_value());
-    ASSERT_EQ(cluster_versions->min, kafka::api_version(1));
-    ASSERT_EQ(cluster_versions->max, kafka::api_version(8));
-    ASSERT_EQ(broker_versions->min, kafka::api_version(1));
-    ASSERT_EQ(broker_versions->max, kafka::api_version(10));
+    ASSERT_EQ(cluster_versions.value().min, kafka::api_version(1));
+    ASSERT_EQ(cluster_versions.value().max, kafka::api_version(8));
+    ASSERT_EQ(broker_versions.value().min, kafka::api_version(1));
+    ASSERT_EQ(broker_versions.value().max, kafka::api_version(10));
 }
 
 TEST_F(cluster_mock_fixture, TestTopicMetadata) {

@@ -870,7 +870,7 @@ void admin_server::log_exception(
           username,
           url.substr(0, url.find('?')));
         if (status) {
-            fmt::print(os, " http_return_status[{}]", *status);
+            fmt::print(os, " http_return_status[{}]", status.value());
         }
         fmt::print(os, " reason - {}", eptr);
         return os.str();
@@ -949,7 +949,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
           ss::http::reply::status_type::service_unavailable);
     }
 
-    if (leader_id_opt.value() == *config::node().node_id()) {
+    if (leader_id_opt.value() == config::node().node_id().value()) {
         vlog(
           adminlog.info,
           "Can't redirect to leader from leader node ({})",
@@ -1124,7 +1124,7 @@ bool admin_server::need_redirect_to_leader(
           ss::http::reply::status_type::service_unavailable);
     }
 
-    return leader_id_opt.value() != *config::node().node_id();
+    return leader_id_opt.value() != config::node().node_id().value();
 }
 
 model::node_id admin_server::parse_broker_id(const ss::http::request& req) {
@@ -1215,7 +1215,7 @@ get_brokers(cluster::controller* const controller) {
               b.node_id = id;
               b.num_cores = nm.broker.properties().cores;
               if (nm.broker.rack()) {
-                  b.rack = *nm.broker.rack();
+                  b.rack = nm.broker.rack().value();
               }
               b.membership_status = fmt::format(
                 "{}", nm.state.get_membership_state());
@@ -2388,9 +2388,9 @@ admin_server::raft_transfer_leadership_handler(
             throw ss::httpd::bad_param_exception(
               fmt::format("Target node id must be an integer: {}", node));
         }
-        if (*target < 0) {
+        if (target.value() < 0) {
             throw ss::httpd::bad_param_exception(
-              fmt::format("Invalid target node id {}", *target));
+              fmt::format("Invalid target node id {}", target.value()));
         }
     }
 
@@ -2401,7 +2401,7 @@ admin_server::raft_transfer_leadership_handler(
       target);
 
     co_return co_await _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       [group_id, target, this, req = std::move(req)](
         cluster::partition_manager& pm) mutable {
           auto partition = pm.partition_for(group_id);
@@ -2613,7 +2613,7 @@ admin_server::put_license_handler(std::unique_ptr<ss::http::request> req) {
 
         const auto& ft = _controller->get_feature_table().local();
         const auto& loaded_license = ft.get_license();
-        if (loaded_license && (*loaded_license == license)) {
+        if (loaded_license && (loaded_license.value() == license)) {
             /// Loaded license is idential to license in request, do
             /// nothing and return 200(OK) for idempotence
             vlog(
@@ -2762,13 +2762,13 @@ void admin_server::register_features_routes() {
               res.loaded = true;
               ss::httpd::features_json::license_contents lc;
               if (auth_result.is_authenticated()) {
-                  lc.format_version = license->format_version;
-                  lc.org = license->organization;
+                  lc.format_version = license.value().format_version;
+                  lc.org = license.value().organization;
               }
-              lc.type = license->get_type();
-              lc.expires = license->expiry.count();
-              lc.sha256 = license->checksum;
-              lc.products = license->products;
+              lc.type = license.value().get_type();
+              lc.expires = license.value().expiry.count();
+              lc.sha256 = license.value().checksum;
+              lc.products = license.value().products;
               res.license = lc;
           }
           return ss::make_ready_future<ss::json::json_return_type>(
@@ -2802,21 +2802,21 @@ admin_server::get_broker_handler(std::unique_ptr<ss::http::request> req) {
                                   id, model::time_from_now(5s));
 
     ss::httpd::broker_json::broker ret;
-    ret.node_id = node_meta->broker.id();
-    ret.internal_rpc_address = node_meta->broker.rpc_address().host();
-    ret.internal_rpc_port = node_meta->broker.rpc_address().port();
-    ret.num_cores = node_meta->broker.properties().cores;
-    if (node_meta->broker.rack()) {
-        ret.rack = node_meta->broker.rack().value();
+    ret.node_id = node_meta.value().broker.id();
+    ret.internal_rpc_address = node_meta.value().broker.rpc_address().host();
+    ret.internal_rpc_port = node_meta.value().broker.rpc_address().port();
+    ret.num_cores = node_meta.value().broker.properties().cores;
+    if (node_meta.value().broker.rack()) {
+        ret.rack = node_meta.value().broker.rack().value();
     }
     ret.membership_status = fmt::format(
-      "{}", node_meta->state.get_membership_state());
-    ret.maintenance_status = fill_maintenance_status(node_meta->state);
+      "{}", node_meta.value().state.get_membership_state());
+    ret.maintenance_status = fill_maintenance_status(node_meta.value().state);
     if (
       !maybe_drain_status.has_error()
       && maybe_drain_status.value().has_value()) {
         ret.maintenance_status = fill_maintenance_status(
-          node_meta->state, *maybe_drain_status.value());
+          node_meta.value().state, maybe_drain_status.value().value());
     }
 
     co_return ret;
@@ -3138,19 +3138,19 @@ void admin_server::register_broker_routes() {
                 ss::httpd::broker_json::maintenance_status res;
                 res.draining = status.has_value();
                 if (status.has_value()) {
-                    res.finished = status->finished;
-                    res.errors = status->errors;
-                    if (status->partitions.has_value()) {
-                        res.partitions = status->partitions.value();
+                    res.finished = status.value().finished;
+                    res.errors = status.value().errors;
+                    if (status.value().partitions.has_value()) {
+                        res.partitions = status.value().partitions.value();
                     }
-                    if (status->eligible.has_value()) {
-                        res.eligible = status->eligible.value();
+                    if (status.value().eligible.has_value()) {
+                        res.eligible = status.value().eligible.value();
                     }
-                    if (status->transferring.has_value()) {
-                        res.transferring = status->transferring.value();
+                    if (status.value().transferring.has_value()) {
+                        res.transferring = status.value().transferring.value();
                     }
-                    if (status->failed.has_value()) {
-                        res.failed = status->failed.value();
+                    if (status.value().failed.has_value()) {
+                        res.failed = status.value().failed.value();
                     }
                 }
                 return ss::json::json_return_type(res);
@@ -3411,10 +3411,10 @@ self_test_result_to_json(const cluster::self_test_result& str) {
                    .count();
     r.timeouts = str.timeouts;
     if (str.warning) {
-        r.warning = *str.warning;
+        r.warning = str.warning.value();
     }
     if (str.error) {
-        r.error = *str.error;
+        r.error = str.error.value();
         return r;
     }
     r.p50 = str.p50;
@@ -3443,7 +3443,7 @@ admin_server::self_test_get_results_handler(
         nr.status = cluster::self_test_status_as_string(participant.status());
         nr.stage = cluster::self_test_stage_as_string(participant.stage());
         if (participant.response) {
-            for (const auto& r : participant.response->results) {
+            for (const auto& r : participant.response.value().results) {
                 nr.results.push(self_test_result_to_json(r));
             }
         }
@@ -3632,10 +3632,10 @@ admin_server::get_partition_balancer_status_handler(
 
     if (overview.violations) {
         ss::httpd::cluster_json::partition_balancer_violations ret_violations;
-        for (const auto& n : overview.violations->unavailable_nodes) {
+        for (const auto& n : overview.violations.value().unavailable_nodes) {
             ret_violations.unavailable_nodes.push(n.id);
         }
-        for (const auto& n : overview.violations->full_nodes) {
+        for (const auto& n : overview.violations.value().full_nodes) {
             ret_violations.over_disk_limit_nodes.push(n.id);
         }
         ret.violations = ret_violations;
@@ -3827,7 +3827,7 @@ cluster_partitions_t topic2cluster_partitions(
       && disabled_set->partitions) {
         // special handling for disabled=true filter, as we hope that iterating
         // over the disabled set is more optimal.
-        for (const auto& id : *disabled_set->partitions) {
+        for (const auto& id : disabled_set->partitions.value()) {
             auto as_it = assignments.find(id);
             vassert(
               as_it != assignments.end(),
@@ -3849,7 +3849,7 @@ cluster_partitions_t topic2cluster_partitions(
         for (const auto& [_, p_as] : assignments) {
             bool disabled = disabled_set && disabled_set->is_disabled(p_as.id);
 
-            if (disabled_filter && *disabled_filter != disabled) {
+            if (disabled_filter && disabled_filter.value() != disabled) {
                 continue;
             }
 
@@ -3922,7 +3922,7 @@ admin_server::get_cluster_partitions_handler(
         }
     };
 
-    if (disabled_filter && *disabled_filter) {
+    if (disabled_filter && disabled_filter.value()) {
         // optimization: if disabled filter is on, iterate only over disabled
         // topics;
         fill_topics(topics_state.get_disabled_partitions());
@@ -4199,7 +4199,7 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
         vlog(adminlog.info, "Requested bucket syncup completed");
         if (result) {
             std::stringstream sts;
-            result->serialize_json(sts);
+            result.value().serialize_json(sts);
             vlog(adminlog.info, "Requested bucket syncup result {}", sts.str());
         } else {
             vlog(adminlog.info, "Requested bucket syncup result empty");
@@ -4237,13 +4237,14 @@ admin_server::unsafe_reset_metadata(
 
     try {
         co_await _partition_manager.invoke_on(
-          *shard,
+          shard.value(),
           [ntp = std::move(ntp), content = std::move(content), shard](
             auto& pm) mutable {
               auto partition = pm.get(ntp);
               if (!partition) {
                   throw ss::httpd::not_found_exception(
-                    fmt::format("Could not find {} on shard {}", ntp, *shard));
+                    fmt::format(
+                      "Could not find {} on shard {}", ntp, shard.value()));
               }
 
               iobuf buf;
@@ -4379,15 +4380,15 @@ map_status_to_json(cluster::partition_cloud_storage_status status) {
 
     if (status.since_last_manifest_upload) {
         json.ms_since_last_manifest_upload
-          = status.since_last_manifest_upload->count();
+          = status.since_last_manifest_upload.value().count();
     }
     if (status.since_last_segment_upload) {
         json.ms_since_last_segment_upload
-          = status.since_last_segment_upload->count();
+          = status.since_last_segment_upload.value().count();
     }
     if (status.since_last_manifest_sync) {
         json.ms_since_last_manifest_sync
-          = status.since_last_manifest_sync->count();
+          = status.since_last_manifest_sync.value().count();
     }
 
     json.metadata_update_pending = status.cloud_metadata_update_pending;
@@ -4456,7 +4457,8 @@ map_metadata_anomaly_to_json(const cloud_storage::anomaly_meta& meta) {
         json.explanation = "Segment is missing delta offset";
         json.at_segment = map_segment_meta_to_json(meta.at);
         if (meta.previous) {
-            json.previous_segment = map_segment_meta_to_json(*meta.previous);
+            json.previous_segment = map_segment_meta_to_json(
+              meta.previous.value());
         }
 
         break;
@@ -4475,9 +4477,9 @@ map_metadata_anomaly_to_json(const cloud_storage::anomaly_meta& meta) {
         json.explanation = ssx::sformat(
           "Segment has lower delta than previous: {} < {}",
           meta.at.delta_offset,
-          meta.previous->delta_offset);
+          meta.previous.value().delta_offset);
         json.at_segment = map_segment_meta_to_json(meta.at);
-        json.previous_segment = map_segment_meta_to_json(*meta.previous);
+        json.previous_segment = map_segment_meta_to_json(meta.previous.value());
 
         break;
     }
@@ -4514,10 +4516,10 @@ map_metadata_anomaly_to_json(const cloud_storage::anomaly_meta& meta) {
         json.type = "offset_gap";
         json.explanation = ssx::sformat(
           "Gap between offsets in interval ({}, {})",
-          meta.previous->committed_offset(),
+          meta.previous.value().committed_offset(),
           meta.at.base_offset());
         json.at_segment = map_segment_meta_to_json(meta.at);
-        json.previous_segment = map_segment_meta_to_json(*meta.previous);
+        json.previous_segment = map_segment_meta_to_json(meta.previous.value());
 
         break;
     }
@@ -4535,9 +4537,9 @@ map_metadata_anomaly_to_json(const cloud_storage::anomaly_meta& meta) {
         json.explanation = ssx::sformat(
           "Overlapping offset in interval [{}, {}]",
           meta.at.base_offset(),
-          meta.previous->committed_offset());
+          meta.previous.value().committed_offset());
         json.at_segment = map_segment_meta_to_json(meta.at);
-        json.previous_segment = map_segment_meta_to_json(*meta.previous);
+        json.previous_segment = map_segment_meta_to_json(meta.previous.value());
 
         break;
     }
@@ -4559,7 +4561,8 @@ map_anomalies_to_json(
     json.revision_id = initial_rev();
 
     if (detected.last_complete_scrub) {
-        json.last_complete_scrub_at = detected.last_complete_scrub->value();
+        json.last_complete_scrub_at
+          = detected.last_complete_scrub.value().value();
     }
 
     if (detected.num_discarded_missing_spillover_manifests) {
@@ -4632,7 +4635,7 @@ admin_server::get_partition_cloud_storage_status(
     }
 
     auto status = co_await _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       [&ntp](const auto& pm)
         -> std::optional<cluster::partition_cloud_storage_status> {
           const auto& partitions = pm.partitions();
@@ -4647,10 +4650,11 @@ admin_server::get_partition_cloud_storage_status(
 
     if (!status) {
         throw ss::httpd::not_found_exception(
-          fmt::format("{} could not be found on shard {}.", ntp, *shard));
+          fmt::format(
+            "{} could not be found on shard {}.", ntp, shard.value()));
     }
 
-    co_return map_status_to_json(*status);
+    co_return map_status_to_json(status.value());
 }
 
 ss::future<ss::json::json_return_type>
@@ -4757,12 +4761,13 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::get_manifest(
     }
 
     co_return co_await _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       [rep = std::move(rep), ntp = std::move(ntp), shard](auto& pm) mutable {
           auto partition = pm.get(ntp);
           if (!partition) {
               throw ss::httpd::not_found_exception(
-                fmt::format("Could not find {} on shard {}", ntp, *shard));
+                fmt::format(
+                  "Could not find {} on shard {}", ntp, shard.value()));
           }
 
           if (!partition->remote_partition()) {
@@ -4776,8 +4781,8 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::get_manifest(
           // all access to the pointer happens on its home shard.
           rep->write_body(
             "json",
-            [part = std::move(partition),
-             sid = *shard](ss::output_stream<char>&& output_stream) mutable {
+            [part = std::move(partition), sid = shard.value()](
+              ss::output_stream<char>&& output_stream) mutable {
                 return ss::smp::submit_to(
                   sid,
                   [os = std::move(output_stream),
@@ -4825,10 +4830,10 @@ admin_server::get_cloud_storage_anomalies(
     }
 
     cloud_storage::remote_path_provider path_provider(
-      tp->properties.remote_label,
-      tp->properties.remote_topic_namespace_override);
+      tp.value().properties.remote_label,
+      tp.value().properties.remote_topic_namespace_override);
     auto status = co_await _partition_manager.invoke_on(
-      *shard,
+      shard.value(),
       [&ntp](const auto& pm) -> std::optional<cloud_storage::anomalies> {
           const auto& partitions = pm.partitions();
           auto partition_iter = partitions.find(ntp);
@@ -4843,10 +4848,13 @@ admin_server::get_cloud_storage_anomalies(
     if (!status) {
         throw ss::httpd::not_found_exception(
           fmt::format(
-            "Cloud partition {} could not be found on shard {}.", ntp, *shard));
+            "Cloud partition {} could not be found on shard {}.",
+            ntp,
+            shard.value()));
     }
 
-    co_return map_anomalies_to_json(path_provider, ntp, *initial_rev, *status);
+    co_return map_anomalies_to_json(
+      path_provider, ntp, initial_rev.value(), status.value());
 }
 
 ss::future<std::unique_ptr<ss::http::reply>>
@@ -4876,11 +4884,12 @@ admin_server::unsafe_reset_metadata_from_cloud(
 
     try {
         co_await _partition_manager.invoke_on(
-          *shard, [ntp = std::move(ntp), shard, force](auto& pm) {
+          shard.value(), [ntp = std::move(ntp), shard, force](auto& pm) {
               auto partition = pm.get(ntp);
               if (!partition) {
                   throw ss::httpd::not_found_exception(
-                    fmt::format("Could not find {} on shard {}", ntp, *shard));
+                    fmt::format(
+                      "Could not find {} on shard {}", ntp, shard.value()));
               }
 
               return partition
@@ -4913,19 +4922,21 @@ admin_server::reset_scrubbing_metadata(std::unique_ptr<ss::http::request> req) {
     }
 
     auto status = co_await _partition_manager.invoke_on(
-      *shard, [&ntp, shard](const auto& pm) {
+      shard.value(), [&ntp, shard](const auto& pm) {
           const auto& partitions = pm.partitions();
           auto partition_iter = partitions.find(ntp);
 
           if (partition_iter == partitions.end()) {
               throw ss::httpd::not_found_exception(
-                fmt::format("{} could not be found on shard {}.", ntp, *shard));
+                fmt::format(
+                  "{} could not be found on shard {}.", ntp, shard.value()));
           }
 
           auto archiver = partition_iter->second->archiver();
           if (!archiver) {
               throw ss::httpd::not_found_exception(
-                fmt::format("{} has no archiver on shard {}.", ntp, *shard));
+                fmt::format(
+                  "{} has no archiver on shard {}.", ntp, shard.value()));
           }
 
           return archiver.value().get().reset_scrubbing_metadata();
@@ -5087,6 +5098,6 @@ admin_server::restart_service_handler(std::unique_ptr<ss::http::request> req) {
 
     vlog(
       adminlog.info, "Restart redpanda service: {}", to_string_view(*service));
-    co_await restart_redpanda_service(*service);
+    co_await restart_redpanda_service(service.value());
     co_return ss::json::json_return_type(ss::json::json_void());
 }

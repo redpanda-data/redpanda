@@ -30,7 +30,7 @@ protected:
     void TearDown() override {
         // Restore original environment state
         if (saved_test_tmpdir_) {
-            setenv("TEST_TMPDIR", saved_test_tmpdir_->c_str(), 1);
+            setenv("TEST_TMPDIR", saved_test_tmpdir_.value().c_str(), 1);
         } else {
             unsetenv("TEST_TMPDIR");
         }

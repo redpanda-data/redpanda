@@ -120,7 +120,7 @@ ss::future<api_response> aws_refresh_impl::fetch_credentials() {
         _role.emplace(read_string_from_response(std::move(response)));
 
         vlog(clrl_log.info, "fetched iam role name [{}]", *_role);
-        if (_role->empty()) {
+        if (_role.value().empty()) {
             // TODO (abhijat) create a new error kind for bad system state
             co_return api_request_error{
               .reason = "empty role name set on instance",
@@ -128,7 +128,7 @@ ss::future<api_response> aws_refresh_impl::fetch_credentials() {
         }
     }
 
-    if (_role->empty()) {
+    if (_role.value().empty()) {
         vlog(
           clrl_log.error,
           "IAM role name not populated, cannot fetch credentials");
@@ -144,7 +144,8 @@ ss::future<api_response> aws_refresh_impl::fetch_credentials() {
       boost::beast::http::field::host, {host.data(), host.size()});
     creds_req.method(boost::beast::http::verb::get);
     creds_req.target(
-      fmt::format("/latest/meta-data/iam/security-credentials/{}", *_role));
+      fmt::format(
+        "/latest/meta-data/iam/security-credentials/{}", _role.value()));
     co_return co_await make_request_with_token(std::move(creds_req), token);
 }
 

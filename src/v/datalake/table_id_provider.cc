@@ -23,7 +23,7 @@ model::topic table_id_provider::sanitize_topic_name(const model::topic& topic) {
         return topic;
     }
     return model::topic(
-      boost::replace_all_copy(topic(), ".", *dot_replacement));
+      boost::replace_all_copy(topic(), ".", dot_replacement.value()));
 }
 
 iceberg::table_identifier table_id_provider::table_id(const model::topic& t) {

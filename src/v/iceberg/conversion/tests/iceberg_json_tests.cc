@@ -947,7 +947,7 @@ TEST_CORO(IcebergValues, ValuePrimitives) {
         auto result_value = std::get<std::unique_ptr<struct_value>>(
           std::move(result.value()));
 
-        EXPECT_EQ(*result_value->fields[0], expected);
+        EXPECT_EQ(result_value->fields[0].value(), expected);
     }
 }
 
@@ -1188,10 +1188,10 @@ TEST_CORO(IcebergValues, Format) {
           std::move(result.value()));
 
         const auto& list = std::get<std::unique_ptr<iceberg::list_value>>(
-          *result_value->fields[0]);
+          result_value->fields[0].value());
 
         EXPECT_EQ(list->elements.at(0), expected) << fmt::format(
-          "Expected: {}, got: {}", expected, *list->elements.at(0));
+          "Expected: {}, got: {}", expected, list->elements.at(0).value());
     }
 
     SCOPED_TRACE("Testing invalid format");

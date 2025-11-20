@@ -136,23 +136,23 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
         if (spill) {
             // Check adjacent segments which have a manifest
             // boundary between them.
-            if (auto last_in_spill = spill->last_segment();
+            if (auto last_in_spill = spill.value().last_segment();
                 last_in_spill && first_seg_previous_manifest) {
                 scrub_segment_meta(
-                  *first_seg_previous_manifest,
+                  first_seg_previous_manifest.value(),
                   last_in_spill,
                   _result.detected.segment_metadata_anomalies);
             }
 
             const auto stop_at_spill = co_await check_manifest(
-              *spill, scrub_from, rtc_node, query_ctx);
+              spill.value(), scrub_from, rtc_node, query_ctx);
             if (stop_at_spill == stop_detector::yes) {
                 _result.status = scrub_status::partial;
                 co_return _result;
             }
 
-            if (!spill->empty()) {
-                first_seg_previous_manifest = *spill->begin();
+            if (!spill.value().empty()) {
+                first_seg_previous_manifest = *spill.value().begin();
             } else {
                 vlog(
                   _logger.warn, "Empty spillover manifest at {}", spill_path);
@@ -206,7 +206,7 @@ anomalies_detector::check_manifest(
       manifest.get_manifest_path(_remote_path_provider));
     if (
       scrub_from
-      && (manifest.get_start_offset() > *scrub_from || manifest.get_last_offset() == scrub_from)) {
+      && (manifest.get_start_offset() > scrub_from.value() || manifest.get_last_offset() == scrub_from)) {
         vlog(
           _logger.debug,
           "Manifest with offset range [{}, {}] ({}) is above the scrub "
@@ -246,7 +246,7 @@ anomalies_detector::check_manifest(
     std::optional<segment_meta> previous_seg_meta;
     auto manifest_end = manifest.end();
     if (scrub_from && manifest.get_last_offset() > scrub_from) {
-        if (auto iter = manifest.segment_containing(*scrub_from);
+        if (auto iter = manifest.segment_containing(scrub_from.value());
             iter != manifest_end) {
             previous_seg_meta = *iter;
             seg_iter = std::move(++iter);
@@ -365,9 +365,9 @@ existence_query_context::existence_query_context(
 
 ss::future<> existence_query_context::load_from_disk() {
     if (hashes.has_value()) {
-        co_await hashes->load_hashes();
-        is_inv_data_available = hashes->loaded();
-        co_await hashes->stop();
+        co_await hashes.value().load_hashes();
+        is_inv_data_available = hashes.value().loaded();
+        co_await hashes.value().stop();
     }
 }
 
@@ -386,7 +386,7 @@ bool existence_query_context::should_lookup_in_cloud_storage(
 
     // if data is available and segment is missing there, check cloud storage
     if (is_inv_data_available) {
-        return hashes->exists(p) != inventory::lookup_result::exists;
+        return hashes.value().exists(p) != inventory::lookup_result::exists;
     }
 
     // inv. based scrub is enabled but data not available, do not lookup in

@@ -61,7 +61,7 @@ void pid_file::remove() {
         return;
     }
 
-    ret = ::lseek(fd->get(), 0, SEEK_SET);
+    ret = ::lseek(fd.value().get(), 0, SEEK_SET);
     if (ret < 0) {
         checklog.warn("Failed to seek pid file whle removing {}:{}", ret, path);
         return;
@@ -71,7 +71,7 @@ void pid_file::remove() {
     memset(buf, 0, sizeof(buf));
 
     try {
-        fd->read(buf, sizeof(buf));
+        fd.value().read(buf, sizeof(buf));
     } catch (...) {
         checklog.warn(
           "Failed to read pid file {}:{}", path, std::current_exception());
@@ -79,7 +79,7 @@ void pid_file::remove() {
     }
 
     try {
-        fd->close();
+        fd.value().close();
     } catch (...) {
         // that's ok
     }
@@ -115,7 +115,7 @@ void pid_file::create() {
     // try to lock
     struct flock lock = {
       .l_type = F_WRLCK, .l_whence = SEEK_SET, .l_start = 0, .l_len = 0};
-    ret = ::fcntl(fd->get(), F_SETLK, &lock);
+    ret = ::fcntl(fd.value().get(), F_SETLK, &lock);
     if (ret < 0) {
         if (errno == EAGAIN || errno == EACCES) {
             throw std::runtime_error("failed to lock pidfile. already locked");
@@ -124,7 +124,7 @@ void pid_file::create() {
         }
     }
 
-    fd->truncate(0);
+    fd.value().truncate(0);
 
     // write pid
     char buf[32];
@@ -134,10 +134,10 @@ void pid_file::create() {
     size_t left = len;
     size_t offset = 0;
     while (left) {
-        auto written = fd->write(buf + offset, left);
+        auto written = fd.value().write(buf + offset, left);
         vassert(written, "fd is not open as non-blocking");
-        offset += *written;
-        left -= *written;
+        offset += written.value();
+        left -= written.value();
     }
 }
 
