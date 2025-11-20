@@ -4,6 +4,7 @@ on:
   push:
     branches: [dev, 'v*', '!v24.*']
     paths:
+      - '.github/workflows/trigger-snyk.yml'
       - 'MODULE.bazel'
       - 'bazel/repositories.bzl'
 permissions:
