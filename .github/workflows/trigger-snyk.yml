@@ -25,4 +25,4 @@ jobs:
           parse-json-secrets: true
       - run: gh workflow run --repo redpanda-data/vtools --raw-field redpanda-branches='["${{ github.ref_name }}"]' snyk-redpanda.yml
         env:
-          GH_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          GH_TOKEN: ${{ env.ACTIONS_BOT_TOKEN }}
