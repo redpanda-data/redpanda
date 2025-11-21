@@ -16,26 +16,30 @@ import (
 )
 
 type GroupReadConfig struct {
-	workerCfg      worker.WorkerConfig
-	groupName      string
-	nPartitions    int32
-	nReaders       int
-	maxReadCount   int
-	rateLimitBytes int
-	maxUncommitted int
+	workerCfg        worker.WorkerConfig
+	groupName        string
+	nPartitions      int32
+	nReaders         int
+	maxReadCount     int
+	rateLimitBytes   int
+	maxUncommitted   int
+	sessionTimeout   time.Duration
+	rebalanceTimeout time.Duration
 }
 
 func NewGroupReadConfig(
 	wc worker.WorkerConfig, name string, nPartitions int32, nReaders int,
-	maxReadCount int, rateLimitBytes int, maxUncommitted int) GroupReadConfig {
+	maxReadCount int, rateLimitBytes int, maxUncommitted int, sessionTimeout time.Duration, rebalanceTimeout time.Duration) GroupReadConfig {
 	return GroupReadConfig{
-		workerCfg:      wc,
-		groupName:      name,
-		nPartitions:    nPartitions,
-		nReaders:       nReaders,
-		maxReadCount:   maxReadCount,
-		rateLimitBytes: rateLimitBytes,
-		maxUncommitted: maxUncommitted,
+		workerCfg:        wc,
+		groupName:        name,
+		nPartitions:      nPartitions,
+		nReaders:         nReaders,
+		maxReadCount:     maxReadCount,
+		rateLimitBytes:   rateLimitBytes,
+		maxUncommitted:   maxUncommitted,
+		sessionTimeout:   sessionTimeout,
+		rebalanceTimeout: rebalanceTimeout,
 	}
 }
 
@@ -228,6 +232,8 @@ func (grw *GroupReadWorker) consumerGroupReadInner(
 	opts = append(opts, []kgo.Opt{
 		kgo.ConsumeTopics(grw.config.workerCfg.Topic),
 		kgo.ConsumerGroup(groupName),
+		kgo.SessionTimeout(grw.config.sessionTimeout),
+		kgo.RebalanceTimeout(grw.config.rebalanceTimeout),
 	}...)
 	if grw.config.rateLimitBytes > 0 {
 		// reduce batch size for smoother rate limiting

@@ -51,6 +51,8 @@ var (
 	cgReaders           = flag.Int("consumer_group_readers", 0, "Number of parallel readers in the consumer group")
 	cgName              = flag.String("consumer_group_name", "", "The name of the consumer group. Generated randomly if not set.")
 	cgMaxUncommitted    = flag.Int("max-uncommitted", -1, "Negative means rely on auto-commit. For positive, commit consumer group offsets after fetching this many records. Limits discrepancy between read statistics and committed offsets.")
+	cgSessionTimeout    = flag.Duration("consumer-group-session-timeout-s", 45*time.Second, "Consumer group session timeout")
+	cgRebalanceTimeout  = flag.Duration("consumer-group-rebalance-timeout-s", 60*time.Second, "Consumer group rebalance timeout")
 	linger              = flag.Duration("linger", 0, "if non-zero, linger to use when producing")
 	maxBufferedRecords  = flag.Uint("max-buffered-records", 1024, "Producer buffer size: the default of 1 is makes roughly one event per batch, useful for measurement.  Set to something higher to make it easier to max out bandwidth.")
 	remote              = flag.Bool("remote", false, "Remote control mode, driven by HTTP calls, for use in automated tests")
@@ -379,7 +381,7 @@ func main() {
 		grw := verifier.NewGroupReadWorker(
 			verifier.NewGroupReadConfig(
 				makeWorkerConfig(), *cgName, nPartitions, *cgReaders,
-				*seqConsumeCount, (*consumeTputMb)*1024*1024, *cgMaxUncommitted), verifier.NewValidatorStatus(*compacted, *validateLatestValues, *topic, nPartitions))
+				*seqConsumeCount, (*consumeTputMb)*1024*1024, *cgMaxUncommitted, *cgSessionTimeout, *cgRebalanceTimeout), verifier.NewValidatorStatus(*compacted, *validateLatestValues, *topic, nPartitions))
 		workers.Add(&grw)
 		workers.SetReady()
 
