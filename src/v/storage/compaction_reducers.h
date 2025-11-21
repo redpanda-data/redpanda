@@ -256,13 +256,13 @@ public:
       ss::lw_shared_ptr<storage::stm_manager> stm_mgr,
       chunked_vector<model::tx_range>&& txs,
       compacted_index_writer* w,
-      ss::sharded<features::feature_table>& feature_table) noexcept
+      bool tx_batch_compaction_enabled) noexcept
       : _ntp(std::move(ntp))
       , _delegate(index_rebuilder_reducer(w))
       , _aborted_txs(model::tx_range_cmp(), std::move(txs))
       , _stm_mgr(stm_mgr)
       , _transactional_stm_type(stm_mgr->transactional_stm_type())
-      , _feature_table(feature_table) {
+      , _tx_batch_compaction_enabled(tx_batch_compaction_enabled) {
         _stats.num_aborted_txes = _aborted_txs.size();
     }
     ss::future<ss::stop_iteration> operator()(model::record_batch&&);
@@ -313,7 +313,7 @@ private:
     // Set if a transactional stm is attached to this partition.
     std::optional<storage::stm_type> _transactional_stm_type;
 
-    ss::sharded<features::feature_table>& _feature_table;
+    bool _tx_batch_compaction_enabled;
 };
 
 // Builds up a key_offset_map for a segment, starting from the offset

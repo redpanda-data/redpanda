@@ -878,7 +878,10 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
 
         const bool segment_needs_rewrite
           = internal::may_have_removable_tombstones(seg, cfg)
-            || internal::has_removable_transaction_batches(seg, cfg)
+            || internal::has_removable_transaction_batches(
+              seg,
+              cfg,
+              compaction::is_tx_batch_compaction_enabled(_feature_table))
             || co_await segment_needs_rewrite_with_offset_map(cfg, seg, map);
         if (!segment_needs_rewrite) {
             vlog(
@@ -1520,7 +1523,10 @@ ss::future<bool> disk_log_impl::chunked_sliding_window_compact(
 
             const bool segment_needs_rewrite
               = internal::may_have_removable_tombstones(s, compact_cfg)
-                || internal::has_removable_transaction_batches(s, compact_cfg)
+                || internal::has_removable_transaction_batches(
+                  s,
+                  compact_cfg,
+                  compaction::is_tx_batch_compaction_enabled(_feature_table))
                 || co_await segment_needs_rewrite_with_offset_map(
                   compact_cfg, s, map);
             if (!segment_needs_rewrite) {

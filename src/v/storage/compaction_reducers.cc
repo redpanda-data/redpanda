@@ -478,7 +478,7 @@ bool tx_reducer::can_discard_consumer_offsets_batch(
     // batches, so no need to retain originally written group_prepare_tx
     // batches while the transaction is in progress.
     return compaction::is_removable_control_batch(
-      _ntp, b.header().type, _feature_table);
+      _ntp, b.header().type, _tx_batch_compaction_enabled);
 }
 
 ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {

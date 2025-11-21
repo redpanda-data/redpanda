@@ -50,7 +50,7 @@ ss::future<compacted_index::recovery_state> maybe_rebuild_compaction_index(
   ss::rwlock::holder& read_holder,
   storage_resources& resources,
   storage::probe& pb,
-  ss::sharded<features::feature_table>& feature_table);
+  bool tx_batch_compaction_enabled);
 
 /// \brief, this method will acquire it's own locks on the segment
 ///
@@ -72,7 +72,7 @@ ss::future<> rebuild_compaction_index(
   compaction::compaction_config cfg,
   storage::probe& pb,
   storage_resources& resources,
-  ss::sharded<features::feature_table>&);
+  bool tx_batch_compaction_enabled);
 
 /*
  * Concatentate segments into a minimal new segment.
@@ -278,10 +278,14 @@ bool may_have_removable_tombstones(
   ss::lw_shared_ptr<segment> seg, const compaction::compaction_config& cfg);
 
 bool is_past_transaction_batch_delete_horizon(
-  ss::lw_shared_ptr<segment> seg, const compaction::compaction_config& cfg);
+  ss::lw_shared_ptr<segment> seg,
+  const compaction::compaction_config& cfg,
+  bool tx_batch_compaction_enabled);
 
 bool has_removable_transaction_batches(
-  ss::lw_shared_ptr<segment> seg, const compaction::compaction_config& cfg);
+  ss::lw_shared_ptr<segment> seg,
+  const compaction::compaction_config& cfg,
+  bool tx_batch_compaction_enabled);
 
 // Mark a segment as completed window compaction, and whether it is "clean" (in
 // which case the `clean_compact_timestamp` is set in the segment's index).
@@ -319,7 +323,7 @@ auto with_segment_reader_handle(segment_reader_handle handle, Func func) {
 //      __consumer_offsets topic).
 //   2. Expired tombstone records past the removal horizon set by
 //      `delete.retention.ms`
-//   2. Expired control batches past the removal horizon set by
+//   3. Expired control batches past the removal horizon set by
 //      `delete.retention.ms`
 // In all other cases, return `false`.
 inline bool can_discard(
@@ -328,9 +332,9 @@ inline bool can_discard(
   const model::ntp& ntp,
   bool past_tombstone_delete_horizon,
   bool past_tx_delete_horizon,
-  ss::sharded<features::feature_table>& feature_table) {
+  bool tx_batch_compaction_enabled) {
     if (compaction::is_removable_control_batch(
-          ntp, b.header().type, feature_table)) {
+          ntp, b.header().type, tx_batch_compaction_enabled)) {
         return true;
     }
 
@@ -339,7 +343,9 @@ inline bool can_discard(
         return true;
     }
 
-    // Deal with transactional control batch removal
+    // Deal with transactional control batch removal.
+    // `tx_batch_compaction_enabled` is already considered in the variable
+    // `past_tx_delete_horizon`, so it does not need to be queried again here.
     if (b.header().attrs.is_control() && past_tx_delete_horizon) {
         return true;
     }
@@ -361,7 +367,8 @@ ss::future<bool> should_keep(
   bool& may_have_tombstone_records,
   bool past_tx_delete_horizon,
   bool& has_tx_control_batches,
-  bool& has_tx_data_or_fence_batches) {
+  bool& has_tx_data_or_fence_batches,
+  bool tx_batch_compaction_enabled) {
     const auto compaction_placeholder_enabled = feature_table.local().is_active(
       features::feature::compaction_placeholder_batch);
     const auto is_compactible = compaction::is_compactible(b.header());
@@ -407,7 +414,7 @@ ss::future<bool> should_keep(
           ntp,
           past_tombstone_delete_horizon,
           past_tx_delete_horizon,
-          feature_table)) {
+          tx_batch_compaction_enabled)) {
         if (is_tombstone) {
             pb.add_removed_tombstone();
         }
