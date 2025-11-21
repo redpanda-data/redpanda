@@ -30,6 +30,25 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
     Check offset for leader epoch handling
     """
 
+    def _get_offsets_and_epochs(self, rpk: RpkTool, topic_name: str):
+        offsets = []
+
+        def refresh():
+            result = rpk.describe_topic(topic_name)
+            offsets.clear()
+            offsets.extend(result)
+
+        def all_offsets_valid():
+            refresh()
+            # metadata request may return INVALID_EPOCH aka -1
+            # this should not be used because INVALID_EPOCH maps to latest available
+            # epoch in OffsetForLeaderEpochRequest
+            return all([p.high_watermark >= 0 and p.leader_epoch >= 0 for p in offsets])
+
+        wait_until(all_offsets_valid, 30, 1)
+
+        return offsets
+
     def _all_have_leaders(self):
         admin = Admin(self.redpanda)
 
@@ -146,8 +165,8 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
         )
         rpk = RpkTool(self.redpanda)
         for t in topics:
-            tp_desc = rpk.describe_topic(t.name)
-            for p in tp_desc:
+            partition_descriptions = self._get_offsets_and_epochs(rpk, t.name)
+            for p in partition_descriptions:
                 for o in kcl.offset_for_leader_epoch(
                     topics=f"{t.name}:{p.id}",
                     leader_epoch=p.leader_epoch,
@@ -226,22 +245,6 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
 
         rpk = RpkTool(self.redpanda)
 
-        def get_offsets_and_epochs():
-            offsets = []
-
-            def refresh():
-                result = rpk.describe_topic(topic.name)
-                offsets.clear()
-                offsets.extend(result)
-
-            def all_offsets_valid():
-                refresh()
-                return all([p.high_watermark >= 0 for p in offsets])
-
-            wait_until(all_offsets_valid, 30, 1)
-
-            return offsets
-
         # store offsets after each epoch change
         offsets_after_epochs = []
 
@@ -249,7 +252,7 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
         for _ in range(5):
             produce_some()
             # store partition epoch and offsets
-            offsets = get_offsets_and_epochs()
+            offsets = self._get_offsets_and_epochs(rpk, topic.name)
             offsets_after_epochs.append(list(offsets))
 
             for p in offsets_after_epochs[-1]:
