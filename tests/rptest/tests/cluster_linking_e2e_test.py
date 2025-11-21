@@ -2280,8 +2280,17 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
         topic_1 = TopicSpec(
             name="source-topic-1", partition_count=3, replication_factor=1
         )
+        consumer_properties = {
+            "session_timeout_s": 10,
+            "rebalance_timeout_s": 10,
+        }
         self.source_default_client().create_topic(topic_1)
-        with self.producer_consumer(topic=topic_1.name, msg_size=128, msg_cnt=100000):
+        with self.producer_consumer(
+            topic=topic_1.name,
+            msg_size=128,
+            msg_cnt=100000,
+            consumer_properties=consumer_properties,
+        ):
             restart_nodes(self.target_cluster_service)
             self.verify()
 
@@ -2289,7 +2298,12 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
             name="source-topic-2", partition_count=3, replication_factor=1
         )
         self.source_default_client().create_topic(topic_2)
-        with self.producer_consumer(topic=topic_2.name, msg_size=128, msg_cnt=100000):
+        with self.producer_consumer(
+            topic=topic_2.name,
+            msg_size=128,
+            msg_cnt=100000,
+            consumer_properties=consumer_properties,
+        ):
             restart_nodes(self.source_cluster_service)
             self.verify()
 
