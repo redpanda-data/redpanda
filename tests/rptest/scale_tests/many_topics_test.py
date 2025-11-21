@@ -504,7 +504,7 @@ class ManyTopicsTest(RedpandaTest):
         self.logger.debug(f"Adding node {node_to_decom.name} to the cluster")
         self.redpanda.clean_node(node_to_decom)
         self.redpanda.start_node(
-            node_to_decom, first_start=True, auto_assign_node_id=True
+            node_to_decom, auto_assign_node_id=True, omit_seeds_on_idx_one=False
         )
         self.node_ops_exec.decommission(
             self.redpanda.idx(node_to_decom), node_id=node_id
