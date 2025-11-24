@@ -2283,6 +2283,7 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
         consumer_properties = {
             "session_timeout_s": 10,
             "rebalance_timeout_s": 10,
+            "exactly_once": False,
         }
         self.source_default_client().create_topic(topic_1)
         with self.producer_consumer(
