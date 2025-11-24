@@ -11,12 +11,13 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-func NewValidatorStatus(compacted bool, expectFullyCompacted bool, topic string, nPartitions int32) ValidatorStatus {
+func NewValidatorStatus(compacted bool, expectFullyCompacted bool, expectExactlyOnceConsumption bool, topic string, nPartitions int32) ValidatorStatus {
 	return ValidatorStatus{
-		MaxOffsetsConsumed:   make(map[int32]int64),
-		lastCheckpoint:       time.Now(),
-		compacted:            compacted,
-		expectFullyCompacted: expectFullyCompacted,
+		MaxOffsetsConsumed:     make(map[int32]int64),
+		lastCheckpoint:         time.Now(),
+		compacted:              compacted,
+		expectFullyCompacted:   expectFullyCompacted,
+		exactlyOnceConsumption: expectExactlyOnceConsumption,
 	}
 }
 
@@ -69,6 +70,9 @@ type ValidatorStatus struct {
 
 	// Whether the values consumed should be verified against the last produced value for a given key in the log.
 	expectFullyCompacted bool
+
+	// expect data to be be read exactly once
+	exactlyOnceConsumption bool
 }
 
 func (cs *ValidatorStatus) ValidateRecord(r *kgo.Record, validRanges *TopicOffsetRanges, latestValuesProduced *LatestValueMap) {
@@ -97,7 +101,7 @@ func (cs *ValidatorStatus) ValidateRecord(r *kgo.Record, validRanges *TopicOffse
 				cs.OffsetGaps += 1
 				log.Warnf("Gap detected in consumed offsets. Expected %d, but got %d", expected, r.Offset)
 			}
-		} else {
+		} else if cs.exactlyOnceConsumption {
 			log.Panicf("Out of order read. Max consumed offset(partition=%d)=%d; Current record offset=%d", r.Partition, currentMax, r.Offset)
 		}
 	}

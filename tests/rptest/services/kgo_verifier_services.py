@@ -1149,6 +1149,7 @@ class KgoVerifierConsumerGroupConsumer(AbstractConsumer):
         validate_latest_values: bool = False,
         session_timeout_s: int | None = None,
         rebalance_timeout_s: int | None = None,
+        exactly_once: bool = True,
     ):
         super().__init__(
             context,
@@ -1178,6 +1179,7 @@ class KgoVerifierConsumerGroupConsumer(AbstractConsumer):
         self._validate_latest_values = validate_latest_values
         self._session_timeout_s = session_timeout_s
         self._rebalance_timeout_s = rebalance_timeout_s
+        self._exactly_once = exactly_once
 
     def start_node(self, node: ClusterNode, clean: bool = False, **kwargs: Any) -> None:
         if clean:
@@ -1215,6 +1217,8 @@ class KgoVerifierConsumerGroupConsumer(AbstractConsumer):
             cmd += f" --consumer-group-session-timeout-s {self._session_timeout_s}s"
         if self._rebalance_timeout_s is not None:
             cmd += f" --consumer-group-rebalance-timeout-s {self._rebalance_timeout_s}s"
+        if self._exactly_once:
+            cmd += " --consume-exactly-once"
 
         self.spawn(cmd, node)
 
