@@ -1,0 +1,32 @@
+---
+name: Pre-commit ruff-check
+on:
+  push:
+    branches: [dev]
+    paths: &ruff_paths
+      - '**.py'
+      - '**.pyi'
+      - '.pre-commit-config.yaml'
+      - '.github/workflows/pre-commit-ruff-check.yml'
+      - '.ruff.toml'
+    tags-ignore:
+      - '**'
+  pull_request:
+    paths: *ruff_paths
+  merge_group:
+    types: [checks_requested]
+jobs:
+  ruff-check:
+    name: Run pre-commit ruff-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install pre-commit
+        run: pip install pre-commit
+      - name: Run pre-commit ruff-check
+        run: pre-commit run --all-files ruff-check

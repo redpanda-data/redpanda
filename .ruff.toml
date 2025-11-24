@@ -4,5 +4,5 @@ exclude = ["*_pb2.pyi", "*_pb2.py", "*_pb2_connect.py"]
 [lint.isort]
 case-sensitive = true
 [lint]
-ignore = ["E741"]
-exclude = ["*_pb2.pyi", "*_pb2.py", "*_pb2_connect.py"]
+ignore = ["E741", "E712"]
+exclude = ["*_pb2.pyi", "*_pb2.py", "*_pb2_connect.py", "__init__.pyi"]

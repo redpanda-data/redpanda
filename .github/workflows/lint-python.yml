@@ -16,12 +16,18 @@ on:
     types: [checks_requested]
 jobs:
   py:
-    name: Lint python files
+    name: Format, lint python
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
+      - name: Ruff format --check
+        uses: astral-sh/ruff-action@v3
         with:
           args: "format --check --diff"
+          version: "0.12.10"
+      - name: Ruff check tests
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "check tests --output-format=github"
           version: "0.12.10"

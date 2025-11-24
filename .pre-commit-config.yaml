@@ -10,9 +10,9 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.10
     hooks:
-      # we can't enable this one yet because we aren't ruff-check clean
-      # - id: ruff-check
-      #   args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-check
+        args: [--fix, --exit-non-zero-on-fix]
+        files: '^tests/.*\.py$'
       - id: ruff-format
 
   # Shell script formatting
