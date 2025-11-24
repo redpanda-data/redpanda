@@ -27,7 +27,11 @@ buildifier(
 
 native_binary(
     name = "minio",
-    src = "@minio//file",
+    src = select({
+        "@platforms//cpu:x86_64": "@minio_amd64//file",
+        "@platforms//cpu:aarch64": "@minio_arm64//file",
+        "//conditions:default": "@minio_amd64//file",
+    }),
 )
 
 # Run a dev_cluster, by default the data directory is in the repository root.
@@ -47,8 +51,8 @@ py_binary(
         "-e $(rootpath //src/v/redpanda:redpanda)",
         "-o $(rootpath :minio)",
         "--rpk $(rootpath //src/go/rpk/cmd/rpk)",
-        "--prometheus $(rootpath @prometheus//:prometheus)",
-        "--grafana $(rootpath @grafana//:grafana)",
+        "--prometheus $(rootpath //bazel/thirdparty:prometheus)",
+        "--grafana $(rootpath //bazel/thirdparty:grafana)",
         "--lsan_suppression_file $(rootpath //:lsan_suppressions)",
         "--ubsan_suppression_file $(rootpath //:ubsan_suppressions)",
     ],
@@ -58,8 +62,8 @@ py_binary(
         "//:ubsan_suppressions",
         "//src/go/rpk/cmd/rpk",
         "//src/v/redpanda",
-        "@grafana",
-        "@prometheus",
+        "//bazel/thirdparty:grafana",
+        "//bazel/thirdparty:prometheus",
     ],
     visibility = ["//visibility:public"],
     deps = [

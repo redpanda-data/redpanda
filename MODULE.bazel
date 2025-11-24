@@ -410,14 +410,23 @@ http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_file(
-    name = "minio",
+    name = "minio_amd64",
+    downloaded_file_path = "minio",
     executable = True,
     integrity = "sha256-zr1iiuhZtGcN6cBLDL9WAKSYFm2iAxrWNMmHII2JrpQ=",
     urls = ["https://dl.min.io/server/minio/release/linux-amd64/archive/minio.RELEASE.2025-04-03T14-56-28Z"],
 )
 
+http_file(
+    name = "minio_arm64",
+    downloaded_file_path = "minio",
+    executable = True,
+    integrity = "sha256-Xs94kSmK6+SVko+E5urztZy33dtJnHrdjFAn6wuo8Ok=",
+    urls = ["https://dl.min.io/server/minio/release/linux-arm64/archive/minio.RELEASE.2025-04-03T14-56-28Z"],
+)
+
 http_archive(
-    name = "prometheus",
+    name = "prometheus_amd64",
     add_prefix = "prom",
     build_file = "//bazel/thirdparty:prometheus.BUILD",
     integrity = "sha256-ouionAmxSyJ35hUeh/yO0YhYSGy/iTcmVtcfzWZrUdo=",
@@ -426,9 +435,26 @@ http_archive(
 )
 
 http_archive(
-    name = "grafana",
+    name = "prometheus_arm64",
+    add_prefix = "prom",
+    build_file = "//bazel/thirdparty:prometheus.BUILD",
+    integrity = "sha256-ft4/PwVBub/SzMqc71evgFVPExuOeviQCJbG5J7S1O8=",
+    strip_prefix = "prometheus-3.7.1.linux-arm64",
+    urls = ["https://github.com/prometheus/prometheus/releases/download/v3.7.1/prometheus-3.7.1.linux-arm64.tar.gz"],
+)
+
+http_archive(
+    name = "grafana_amd64",
     build_file = "//bazel/thirdparty:grafana.BUILD",
     integrity = "sha256-L+f4mkpjbAHVS6BQnkLZnrirmH8tEeJcxcVeaAkBa/c=",
     strip_prefix = "grafana-12.2.1",
     urls = ["https://dl.grafana.com/grafana/release/12.2.1/grafana_12.2.1_18655849634_linux_amd64.tar.gz"],
+)
+
+http_archive(
+    name = "grafana_arm64",
+    build_file = "//bazel/thirdparty:grafana.BUILD",
+    integrity = "sha256-bWTD/jaZs7sukoMUvCqWhSCQnaR+qrx1W4Z1YOOlc98=",
+    strip_prefix = "grafana-12.2.1",
+    urls = ["https://dl.grafana.com/grafana/release/12.2.1/grafana_12.2.1_18655849634_linux_arm64.tar.gz"],
 )

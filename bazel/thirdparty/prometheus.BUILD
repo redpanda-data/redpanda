@@ -2,19 +2,31 @@ load("@bazel_skylib//rules:native_binary.bzl", "native_binary")
 
 filegroup(
     name = "prometheus_bin",
-    srcs = ["prom/prometheus"],
+    srcs = select({
+        "@platforms//cpu:x86_64": ["@prometheus_amd64//:prom/prometheus"],
+        "@platforms//cpu:aarch64": ["@prometheus_arm64//:prom/prometheus"],
+        "//conditions:default": ["@prometheus_amd64//:prom/prometheus"],
+    }),
     visibility = ["//visibility:public"],
 )
 
 filegroup(
     name = "promtool",
-    srcs = ["prom/promtool"],
+    srcs = select({
+        "@platforms//cpu:x86_64": ["@prometheus_amd64//:prom/promtool"],
+        "@platforms//cpu:aarch64": ["@prometheus_arm64//:prom/promtool"],
+        "//conditions:default": ["@prometheus_amd64//:prom/promtool"],
+    }),
     visibility = ["//visibility:public"],
 )
 
 filegroup(
     name = "prometheus_config",
-    srcs = ["prom/prometheus.yml"],
+    srcs = select({
+        "@platforms//cpu:x86_64": ["@prometheus_amd64//:prom/prometheus.yml"],
+        "@platforms//cpu:aarch64": ["@prometheus_arm64//:prom/prometheus.yml"],
+        "//conditions:default": ["@prometheus_amd64//:prom/prometheus.yml"],
+    }),
     visibility = ["//visibility:public"],
 )
 
