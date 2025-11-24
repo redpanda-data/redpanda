@@ -24,20 +24,21 @@ from ducktape.tests.test import TestContext
 from ducktape.cluster.cluster import ClusterNode
 from rptest.clients.offline_log_viewer import OfflineLogViewer
 from ducktape.cluster.remoteaccount import RemoteCommandError
-from rptest.utils.mode_checks import skip_debug_mode
+from rptest.utils.mode_checks import is_debug_mode, skip_debug_mode
 
 
 class TombstoneRemovalTest(RedpandaTest):
     topic_name = "tr_test_topic"
-    data_msg_count = 256 * 1024
-    data_msg_size = 1024
 
     def __init__(self, test_context: TestContext):
+        coeff = 1 if is_debug_mode() else 100
+        self.data_msg_size = 1024
+        self.data_msg_count = 2500 * coeff
         extra_rp_conf = dict(
             enable_leader_balancer=False,
             partition_autobalancing_mode="off",
             health_monitor_max_metadata_age=100,  # ms
-            raft_learner_recovery_rate=10 * 1024 * 1024,  # 10MB/s
+            raft_learner_recovery_rate=100 * 1024 * coeff,  # 10MB/s
             tombstone_retention_ms=1000,  # 1 second
         )
         super(TombstoneRemovalTest, self).__init__(
@@ -140,7 +141,6 @@ class TombstoneRemovalTest(RedpandaTest):
         self.redpanda.logger.debug("partition is empty")
         return -1
 
-    @skip_debug_mode
     @cluster(num_nodes=6)  # 5 for cluster + 1 for producer
     def test_single_slow_follower(self):
         """
