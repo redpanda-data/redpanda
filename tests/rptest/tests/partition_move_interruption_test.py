@@ -381,70 +381,93 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
         self._wait_post_move(self.test_topic, partition, assignments, 60)
 
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_forced_cancellation(self):
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
+    def test_forced_cancellation(self, cloud_storage_type):
         partitions = 4
 
-        spec = TopicSpec(
-            name="panda-test-topic", partition_count=partitions, replication_factor=3
-        )
+        kgo_params = [
+            KgoVerifierParams(
+                TopicSpec(
+                    name="panda-test-topic",
+                    partition_count=partitions,
+                    replication_factor=3,
+                ),
+                self.msg_size,
+                self.min_records,
+                key_set_cardinality=500,
+                tolerate_data_loss=True,
+                group_name="pmi-consumer",
+            ),
+            KgoVerifierParams(
+                TopicSpec(
+                    name="cloud-topic-test-topic",
+                    partition_count=partitions,
+                    replication_factor=3,
+                    cloud_topics_enabled=True,
+                ),
+                self.msg_size,
+                self.min_records,
+                key_set_cardinality=500,
+                tolerate_data_loss=True,
+                group_name="pmi-consumer",
+            ),
+        ]
+        self._create_topics(kgo_params)
 
-        self.client().create_topic(spec)
-        self.test_topic = spec.name
-
-        self.start_producer()
-        self.start_consumer(compacted=False, tolerate_data_loss=True)
+        self.start_multi_producer(kgo_params)
+        self.start_multi_consumer(kgo_params)
 
         admin = Admin(self.redpanda)
-        partition = random.randint(0, partitions - 1)
 
-        # get current assignments
-        assignment = self._get_node_assignments(
-            admin, self.test_topic, partition=partition
-        )
+        for topic in [p.topic_spec.name for p in kgo_params]:
+            partition = random.randint(0, partitions - 1)
+            # get current assignments
+            assignment = self._get_node_assignments(admin, topic, partition=partition)
 
-        # drop one of the replicas, new quorum requires both of them to be up
-        new_assignment = assignment[0:2]
+            # drop one of the replicas, new quorum requires both of them to be up
+            new_assignment = assignment[0:2]
 
-        self.logger.info(
-            f"new assignment for {self.test_topic}/{partition}: {new_assignment}"
-        )
-        # throttle recovery to prevent partition move from finishing
-        # self._throttle_recovery(10)
-        # at this point both of the replicas should be voters, stop one of the
-        # nodes form new assignment to make sure that new quorum is no
-        # longer available
-        to_stop = random.choice(new_assignment)["node_id"]
-        self.redpanda.stop_node(self.redpanda.get_node(to_stop))
+            self.logger.info(
+                f"new assignment for {topic}/{partition}: {new_assignment}"
+            )
+            # throttle recovery to prevent partition move from finishing
+            # self._throttle_recovery(10)
+            # at this point both of the replicas should be voters, stop one of the
+            # nodes form new assignment to make sure that new quorum is no
+            # longer available
+            to_stop = random.choice(new_assignment)["node_id"]
+            self.logger.info(f"{topic=}: {to_stop=}")
+            self.redpanda.stop_node(self.redpanda.get_node(to_stop))
 
-        # wait for new controller to be elected
-        def new_controller():
-            return self.redpanda.idx(self.redpanda.controller()) != to_stop
+            # wait for new controller to be elected
+            def new_controller():
+                return self.redpanda.idx(self.redpanda.controller()) != to_stop
 
-        wait_until(new_controller, 10, 1)
+            wait_until(new_controller, 10, 1)
 
-        # update replica set
-        self._set_partition_assignments(
-            self.test_topic, partition, new_assignment, admin
-        )
+            # update replica set
+            self._set_partition_assignments(topic, partition, new_assignment, admin)
 
-        self._wait_for_move_in_progress(self.test_topic, partition)
+            self._wait_for_move_in_progress(topic, partition)
 
-        # abort moving partition
-        admin.cancel_partition_move(self.test_topic, partition=partition)
-        admin.force_abort_partition_move(self.test_topic, partition=partition)
+            # abort moving partition
+            admin.cancel_partition_move(topic, partition=partition)
+            admin.force_abort_partition_move(topic, partition=partition)
 
-        # # restart the node
-        # self.redpanda.start_node(self.redpanda.get_node(to_stop))
+            # wait for previous assignment to be set
+            def cancelled():
+                info = admin.get_partitions(topic, partition)
 
-        # wait for previous assignment to be set
-        def cancelled():
-            info = admin.get_partitions(self.test_topic, partition)
+                converged = self._equal_assignments(info["replicas"], assignment)
+                return converged and info["status"] == "done"
 
-            converged = self._equal_assignments(info["replicas"], assignment)
-            return converged and info["status"] == "done"
+            # wait until redpanda reports complete
+            wait_until(cancelled, timeout_sec=30, backoff_sec=2)
 
-        # wait until redpanda reports complete
-        wait_until(cancelled, timeout_sec=30, backoff_sec=2)
+            # restart the node
+            self.redpanda.start_node(self.redpanda.get_node(to_stop))
 
         self.producer.wait()
         self.consumer.wait()
