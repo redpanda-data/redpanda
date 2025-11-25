@@ -4243,7 +4243,10 @@ class RedpandaService(RedpandaServiceBase):
                 return False
             if file.parents[-2].name in ["cloud_storage_cache", "debug-bundle"]:
                 return False
-            if "compaction.staging" in file.name:
+            if (
+                "compaction.staging" in file.name
+                or "compaction.compaction_index" in file.name
+            ):
                 # compaction staging files are temporary and are generally
                 # cleaned up after compaction finishes, or at next round of
                 # compaction if a file was stranded. during shutdown of any
