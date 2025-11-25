@@ -120,9 +120,9 @@ def data_dependency():
     # simply "openssl", may reference any desired version of OpenSSL 3.0.0 and above.
     #
     # The second archive retrieved is named "openssl-fips", and *MUST* reference
-    # the specific version of OpenSSL, 3.0.9, which is the latest FIPS approved
-    # version as of 2/26/24. Do not change this version. For more info visit:
-    # https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/4282
+    # the specific version of OpenSSL, 3.1.2, which is the latest FIPS approved
+    # version as of 3/11/2025. Do not change this version. For more info visit:
+    # https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/4985
     #
     # This 2 build approach is described in more detail in the FIPS README here:
     # https://github.com/openssl/openssl/blob/master/README-FIPS.md
@@ -138,9 +138,9 @@ def data_dependency():
     http_archive(
         name = "openssl-fips",
         build_file = "//bazel/thirdparty:openssl-fips.BUILD",
-        sha256 = "eb1ab04781474360f77c318ab89d8c5a03abc38e63d65a603cabbf1b00a1dc90",
-        strip_prefix = "openssl-3.0.9",
-        url = "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/openssl-3.0.9.tar.gz",
+        sha256 = "a0ce69b8b97ea6a35b96875235aa453b966ba3cba8af2de23657d8b6767d6539",
+        strip_prefix = "openssl-3.1.2",
+        url = "https://github.com/openssl/openssl/releases/download/openssl-3.1.2/openssl-3.1.2.tar.gz",
     )
 
     http_archive(
