@@ -4241,7 +4241,7 @@ class RedpandaService(RedpandaServiceBase):
             file, size = fstat
             if len(file.parents) == 1:
                 return False
-            if file.parents[-2].name == "cloud_storage_cache":
+            if file.parents[-2].name in ["cloud_storage_cache", "debug-bundle"]:
                 return False
             if "compaction.staging" in file.name:
                 # compaction staging files are temporary and are generally
