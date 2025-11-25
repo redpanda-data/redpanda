@@ -34,11 +34,18 @@ class TombstoneRemovalTest(RedpandaTest):
         coeff = 1 if is_debug_mode() else 100
         self.data_msg_size = 1024
         self.data_msg_count = 2500 * coeff
+        recovery_concurrency = 64
+        raft_learner_recovery_rate = (
+            self.data_msg_count * self.data_msg_size // 25
+        )  # 100kb/s or 10MB/s
+        raft_max_recovery_memory = raft_learner_recovery_rate // recovery_concurrency
         extra_rp_conf = dict(
             enable_leader_balancer=False,
             partition_autobalancing_mode="off",
             health_monitor_max_metadata_age=100,  # ms
-            raft_learner_recovery_rate=100 * 1024 * coeff,  # 10MB/s
+            raft_learner_recovery_rate=raft_learner_recovery_rate,
+            raft_max_recovery_memory=raft_max_recovery_memory,
+            raft_recovery_concurrency_per_shard=recovery_concurrency,
             tombstone_retention_ms=1000,  # 1 second
         )
         super(TombstoneRemovalTest, self).__init__(
