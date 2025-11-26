@@ -603,6 +603,10 @@ struct configuration final : public config_store {
       partition_autobalancing_mode;
     property<std::chrono::seconds>
       partition_autobalancing_node_availability_timeout_sec;
+
+    property<std::chrono::seconds>
+      partition_autobalancing_node_autodecommission_time;
+
     bounded_property<unsigned> partition_autobalancing_max_disk_usage_percent;
     property<std::chrono::milliseconds>
       partition_autobalancing_tick_interval_ms;
