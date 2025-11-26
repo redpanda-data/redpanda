@@ -14,6 +14,8 @@ cc_binary(
     name = "plugins.so",
     srcs = [
         "redpanda_noop_check.h",
+        "redpanda_optional_check.cc",
+        "redpanda_optional_check.h",
         "redpanda_tidy_module.cc",
     ],
     copts = redpanda_copts() + [
@@ -31,5 +33,6 @@ cc_binary(
     ],
     deps = [
         ":libclang_hdrs",
+        "@fmt",
     ],
 )

@@ -1,4 +1,5 @@
 #include "redpanda_noop_check.h"
+#include "redpanda_optional_check.h"
 
 #include <clang-tidy/ClangTidyModule.h>
 #include <clang-tidy/ClangTidyModuleRegistry.h>
@@ -20,6 +21,10 @@ public:
     void addCheckFactories(ClangTidyCheckFactories& check_factories) override {
         // register checks here. for example:
         check_factories.registerCheck<NoopCheck>("redpanda-noop");
+        check_factories.registerCheck<AvoidOptionalOperatorStar>(
+          "redpanda-avoid-optional-op-star");
+        check_factories.registerCheck<AvoidOptionalOperatorArrow>(
+          "redpanda-avoid-optional-op-arrow");
     }
 
     // this is where you might set default options for any configurable checks
