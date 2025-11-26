@@ -4251,6 +4251,11 @@ class RedpandaService(RedpandaServiceBase):
                 # happen without placing a lot of restrictions on shutdown. for
                 # the time being just ignore these.
                 return False
+            if file.suffix == ".cannotrecover":
+                # Unrecoverable segments aren't included in the disk usage report.
+                # Since we don't remove them automatically and they don't get
+                # cleaned up automatically, we can ignore them here for now.
+                return False
             return True
 
         def inspect_node(node):
