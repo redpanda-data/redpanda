@@ -796,6 +796,8 @@ ss::future<> controller::start(
       config::shard_local_cfg()
         .partition_autobalancing_node_availability_timeout_sec.bind(),
       config::shard_local_cfg()
+        .partition_autobalancing_node_autodecommission_time.bind(),
+      config::shard_local_cfg()
         .partition_autobalancing_max_disk_usage_percent.bind(),
       config::shard_local_cfg().partition_autobalancing_tick_interval_ms.bind(),
       config::shard_local_cfg().partition_autobalancing_concurrent_moves.bind(),

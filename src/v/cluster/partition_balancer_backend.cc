@@ -54,6 +54,7 @@ partition_balancer_backend::partition_balancer_backend(
   ss::sharded<topics_frontend>& topics_frontend,
   ss::sharded<members_frontend>& members_frontend,
   config::binding<std::chrono::seconds>&& availability_timeout,
+  config::binding<std::chrono::seconds>&& decommission_timeout,
   config::binding<unsigned> max_disk_usage_percent,
   config::binding<std::chrono::milliseconds>&& tick_interval,
   config::binding<size_t>&& max_concurrent_actions,
@@ -76,6 +77,7 @@ partition_balancer_backend::partition_balancer_backend(
         features::license_required_feature::
           partition_auto_balancing_continuous>())
   , _availability_timeout(std::move(availability_timeout))
+  , _decommission_timeout(std::move(decommission_timeout))
   , _max_disk_usage_percent(std::move(max_disk_usage_percent))
   , _tick_interval(std::move(tick_interval))
   , _max_concurrent_actions(std::move(max_concurrent_actions))
@@ -448,7 +450,8 @@ ss::future<> partition_balancer_backend::do_tick() {
           "violations: unavailable nodes: {}, full nodes: {}; "
           "nodes to rebalance count: {}; on demand rebalance requested: {}; "
           "updates in progress: {}; "
-          "action counts: reassignments: {}, cancellations: {}, failed: {}; "
+          "action counts: reassignments: {}, cancellations: {}, nodes to "
+          "decommission: {}, failed: {}; "
           "counts rebalancing finished: {}, force refresh health report: {}",
           _cur_term->last_status,
           _cur_term->last_violations.unavailable_nodes.size(),
@@ -458,6 +461,7 @@ ss::future<> partition_balancer_backend::do_tick() {
           _state.topics().updates_in_progress().size(),
           plan_data.reassignments.size(),
           plan_data.cancellations.size(),
+          plan_data.decommissions.size(),
           plan_data.failed_actions_count,
           plan_data.counts_rebalancing_finished,
           _cur_term->_force_health_report_refresh);
@@ -549,6 +553,24 @@ ss::future<> partition_balancer_backend::do_tick() {
     _cur_term->last_tick_in_progress_updates = moves_before
                                                + plan_data.cancellations.size()
                                                + plan_data.reassignments.size();
+
+    for (auto node_to_decommission : plan_data.decommissions) {
+        vlog(
+          clusterlog.info,
+          "submitting decommission on unresponsive node: {}",
+          node_to_decommission);
+
+        auto decom_error = co_await _members_frontend.decommission_node(
+          node_to_decommission);
+
+        if (decom_error) {
+            vlog(
+              clusterlog.warn,
+              "node: {}, failed to decommission with error: {}",
+              node_to_decommission,
+              decom_error);
+        }
+    }
 }
 
 partition_balancer_overview_reply partition_balancer_backend::overview() const {

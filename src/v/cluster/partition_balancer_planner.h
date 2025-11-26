@@ -42,7 +42,12 @@ struct planner_config {
     double max_disk_usage_ratio;
     // Max number of actions that can be scheduled in one planning iteration
     size_t max_concurrent_actions;
+    // If a node is unresponsive for more than node_availability_timeout_sec,
+    // begin moving partitions off of that node
     std::chrono::seconds node_availability_timeout_sec;
+    // If a node is unresponsive for more than decommission timeout, launch a
+    // decommission operation against it
+    std::chrono::seconds decommission_timeout;
     // If the user manually requested a rebalance (not connected to node
     // addition)
     bool ondemand_rebalance_requested = false;
@@ -86,6 +91,7 @@ public:
         chunked_vector<model::ntp> cancellations;
         chunked_hash_map<model::ntp, reallocation_failure_details>
           reallocation_failures;
+        chunked_vector<model::node_id> decommissions;
         bool counts_rebalancing_finished = false;
         size_t failed_actions_count = 0;
         status status = status::empty;

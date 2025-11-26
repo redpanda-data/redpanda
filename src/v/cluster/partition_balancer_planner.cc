@@ -23,6 +23,7 @@
 #include "cluster/scheduling/types.h"
 #include "cluster/types.h"
 #include "container/chunked_hash_map.h"
+#include "model/metadata.h"
 #include "model/namespace.h"
 #include "random/generators.h"
 #include "ssx/sformat.h"
@@ -31,8 +32,11 @@
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/defer.hh>
 
+#include <algorithm>
 #include <functional>
+#include <iterator>
 #include <optional>
+#include <ranges>
 
 namespace cluster {
 
@@ -260,6 +264,9 @@ private:
       _topic2node_counts;
     absl::node_hash_map<model::ntp, reassignment_info> _reassignments;
     absl::node_hash_map<model::ntp, allocated_partition> _force_reassignments;
+    // nodes to request to decommission, not nodes which are currently
+    // decommissioning
+    absl::flat_hash_set<model::node_id> _decommissionable_nodes;
     size_t _failed_actions_count = 0;
     // we track missing partition size info separately as it requires force
     // refresh of health report
@@ -362,11 +369,10 @@ void partition_balancer_planner::init_per_node_state(
             ctx.all_unavailable_nodes.insert(id);
         }
 
-        if (time_since_last_seen > _config.node_availability_timeout_sec) {
-            ctx.timed_out_unavailable_nodes.insert(id);
-
-            if (
-              _config.mode == model::partition_autobalancing_mode::continuous) {
+        if (_config.mode == model::partition_autobalancing_mode::continuous) {
+            // get all the nodes which are unresponsive enough to drain
+            if (time_since_last_seen > _config.node_availability_timeout_sec) {
+                ctx.timed_out_unavailable_nodes.insert(id);
                 model::timestamp unavailable_since = model::to_timestamp(
                   model::timestamp_clock::now()
                   - std::chrono::duration_cast<
@@ -375,52 +381,61 @@ void partition_balancer_planner::init_per_node_state(
                 result.violations.unavailable_nodes.emplace_back(
                   id, unavailable_since);
             }
-        }
-    }
 
-    for (const auto& node_report : health_report.node_reports) {
-        if (
-          ctx.config().space_management_enabled
-          && !node_report->local_state.log_data_size) {
-            // Since space management is enabled, we expect log_data_size to be
-            // present in the health report. If it is not present, probably the
-            // node was recently restarted and hasn't yet had time to calculate
-            // it for the first time. To avoid possible skew caused by using raw
-            // disk usage numbers for some nodes and not the others, we skip
-            // this disk report.
-            continue;
+            // get all nodes which are unresponsive enough to decom
+            if (time_since_last_seen > _config.decommission_timeout) {
+                if (!ctx.decommissioning_nodes.contains(id)) {
+                    ctx._decommissionable_nodes.insert(id);
+                }
+            }
         }
 
-        const auto [total, free] = get_node_bytes_info(
-          node_report->local_state);
-        auto disk_info = node_disk_space{node_report->id, total, total - free};
-        const bool is_full = disk_info.original_used_ratio()
-                             > _config.max_disk_usage_ratio;
-        vlogl(
-          clusterlog,
-          is_full ? ss::log_level::info : ss::log_level::debug,
-          "node {} disk used: {}, total: {} (ratio: {:.4}, is_full: {}), "
-          "node report: {}",
-          node_report->id,
-          human::bytes(disk_info.used),
-          human::bytes(disk_info.total),
-          disk_info.original_used_ratio(),
-          is_full,
-          node_report->local_state);
-        ctx.node_disk_reports.emplace(node_report->id, disk_info);
+        for (const auto& node_report : health_report.node_reports) {
+            if (
+              ctx.config().space_management_enabled
+              && !node_report->local_state.log_data_size) {
+                // Since space management is enabled, we expect log_data_size to
+                // be present in the health report. If it is not present,
+                // probably the node was recently restarted and hasn't yet had
+                // time to calculate it for the first time. To avoid possible
+                // skew caused by using raw disk usage numbers for some nodes
+                // and not the others, we skip this disk report.
+                continue;
+            }
 
-        if (
-          is_full
-          && _config.mode == model::partition_autobalancing_mode::continuous) {
-            result.violations.full_nodes.emplace_back(
+            const auto [total, free] = get_node_bytes_info(
+              node_report->local_state);
+            auto disk_info = node_disk_space{
+              node_report->id, total, total - free};
+            const bool is_full = disk_info.original_used_ratio()
+                                 > _config.max_disk_usage_ratio;
+            vlogl(
+              clusterlog,
+              is_full ? ss::log_level::info : ss::log_level::debug,
+              "node {} disk used: {}, total: {} (ratio: {:.4}, is_full: {}), "
+              "node report: {}",
               node_report->id,
-              uint32_t(disk_info.original_used_ratio() * 100.0));
-        }
-    }
+              human::bytes(disk_info.used),
+              human::bytes(disk_info.total),
+              disk_info.original_used_ratio(),
+              is_full,
+              node_report->local_state);
+            ctx.node_disk_reports.emplace(node_report->id, disk_info);
 
-    for (model::node_id id : ctx.all_nodes) {
-        if (!ctx.node_disk_reports.contains(id)) {
-            vlog(clusterlog.info, "node {}: no disk report", id);
+            if (
+              is_full
+              && _config.mode
+                   == model::partition_autobalancing_mode::continuous) {
+                result.violations.full_nodes.emplace_back(
+                  node_report->id,
+                  uint32_t(disk_info.original_used_ratio() * 100.0));
+            }
+        }
+
+        for (model::node_id id : ctx.all_nodes) {
+            if (!ctx.node_disk_reports.contains(id)) {
+                vlog(clusterlog.info, "node {}: no disk report", id);
+            }
         }
     }
 }
@@ -453,8 +468,8 @@ ss::future<> partition_balancer_planner::init_ntp_sizes_from_health_report(
                     non_reclaimable = ctx.config().segment_fallocation_step;
                 }
 
-                // assume that the "true" non-reclaimable size is the max of all
-                // replicas.
+                // assume that the "true" non-reclaimable size is the max of
+                // all replicas.
                 sizes.non_reclaimable = std::max(
                   sizes.non_reclaimable, non_reclaimable);
             }
@@ -532,8 +547,8 @@ partition_balancer_planner::init_topic_node_counts(request_context& ctx) {
                 counts[bs.node_id] += 1;
             }
             // NOTE: we can't use ssx::async_for_each_counter here, as there
-            // would be no way to call it.check() immediately after maybe_yield
-            // (and before we check the range bounds).
+            // would be no way to call it.check() immediately after
+            // maybe_yield (and before we check the range bounds).
             co_await ss::coroutine::maybe_yield();
             it.check();
         }
@@ -792,7 +807,8 @@ public:
     }
 
     enum class immutability_reason {
-        // not enough replicas on live nodes, reassignment unlikely to succeed
+        // not enough replicas on live nodes, reassignment unlikely to
+        // succeed
         no_quorum,
         // no partition size information
         no_size_info,
@@ -978,8 +994,8 @@ auto partition_balancer_planner::request_context::do_with_partition(
         }
 
         if (state == reconfiguration_state::in_progress) {
-            // partition is dead in the water, it lost quorum in the middle of
-            // moving
+            // partition is dead in the water, it lost quorum in the middle
+            // of moving
             if (!has_quorum(all_unavailable_nodes, orig_replicas)) {
                 partition part{immutable_partition{
                   ntp,
@@ -1111,8 +1127,8 @@ auto partition_balancer_planner::request_context::do_with_partition(
                   ntp, std::move(*reassignable._reallocated));
             }
         } else if (reassignment_it != _reassignments.end()) {
-            // We no longer need to reassign this partition (presumably due to
-            // revert)
+            // We no longer need to reassign this partition (presumably due
+            // to revert)
             _reassignments.erase(reassignment_it);
         }
     });
@@ -1270,11 +1286,13 @@ partition_balancer_planner::reassignable_partition::move_replica(
     }
 
     // Verify that we are moving only original replicas. This assumption
-    // simplifies the code considerably (although in the future nothing stops us
-    // from supporting moving already moved replicas several times).
+    // simplifies the code considerably (although in the future nothing
+    // stops us from supporting moving already moved replicas several
+    // times).
     vassert(
       _reallocated->partition.is_original(replica),
-      "ntp {}: trying to move replica {} which was already reassigned earlier",
+      "ntp {}: trying to move replica {} which was already reassigned "
+      "earlier",
       _ntp,
       replica);
 
@@ -1311,8 +1329,8 @@ partition_balancer_planner::reassignable_partition::move_replica(
           reason);
 
         /**
-         * Reallocation may require policy update as previous reason might have
-         * been different.
+         * Reallocation may require policy update as previous reason might
+         * have been different.
          */
         _reallocated->reconfiguration_policy
           = request_context::update_reconfiguration_policy(
@@ -1542,7 +1560,8 @@ void partition_balancer_planner::force_reassignable_partition::
 
 /*
  * Function is trying to move ntp out of unavailable nodes
- * It can move to nodes that are violating soft_max_disk_usage_ratio constraint
+ * It can move to nodes that are violating soft_max_disk_usage_ratio
+ * constraint
  */
 ss::future<> partition_balancer_planner::get_node_drain_actions(
   request_context& ctx,
@@ -1618,15 +1637,15 @@ ss::future<> partition_balancer_planner::get_node_drain_actions(
 }
 
 /// Try to fix ntps that have several replicas in one rack (these ntps can
-/// appear because rack awareness constraint is not a hard constraint, e.g. when
-/// a rack dies and we move all replicas that resided on dead nodes to live
-/// ones).
+/// appear because rack awareness constraint is not a hard constraint, e.g.
+/// when a rack dies and we move all replicas that resided on dead nodes to
+/// live ones).
 ///
-/// We go over all such ntps (a list maintained by partition_balancer_state) and
-/// if the number of currently live racks is more than the number of racks that
-/// the ntp is replicated to, we try to schedule a move. For each rack we
-/// arbitrarily choose the first appearing replica to remain there (note: this
-/// is probably not optimal choice).
+/// We go over all such ntps (a list maintained by partition_balancer_state)
+/// and if the number of currently live racks is more than the number of
+/// racks that the ntp is replicated to, we try to schedule a move. For each
+/// rack we arbitrarily choose the first appearing replica to remain there
+/// (note: this is probably not optimal choice).
 ss::future<> partition_balancer_planner::get_rack_constraint_repair_actions(
   request_context& ctx) {
     if (ctx.state().ntps_with_broken_rack_constraint().empty()) {
@@ -1706,8 +1725,8 @@ ss::future<> partition_balancer_planner::get_rack_constraint_repair_actions(
 }
 
 /**
- * This is the place where we decide about the order in which partitions will be
- * moved in the case when node disk is being full.
+ * This is the place where we decide about the order in which partitions
+ * will be moved in the case when node disk is being full.
  */
 size_t partition_balancer_planner::calculate_full_disk_partition_move_priority(
   model::node_id node_id,
@@ -1724,7 +1743,8 @@ size_t partition_balancer_planner::calculate_full_disk_partition_move_priority(
      *      (min_default_priority, min_internal_partition_priority]
      *
      *  - small partition (which size is bellow the size threshold)
-     *        (min_internal_partition_priority, min_small_partition_priority]
+     *        (min_internal_partition_priority,
+     * min_small_partition_priority]
      */
     enum priority_tiers : size_t {
         max_priority = 1000000,
@@ -1743,9 +1763,9 @@ size_t partition_balancer_planner::calculate_full_disk_partition_move_priority(
       = priority_tiers::max_priority - priority_tiers::min_default_priority;
 
     // clamp partition size with the total disk space to have well defined
-    // behavior in case the size is incorrectly reported, this is required as we
-    // normalize the size with disk capacity and we do not want the ration of
-    // p_size/disk_capacity to be larger than 1.0.
+    // behavior in case the size is incorrectly reported, this is required
+    // as we normalize the size with disk capacity and we do not want the
+    // ration of p_size/disk_capacity to be larger than 1.0.
     const size_t partition_size = std::min(
       p.sizes().get_current(node_id), it->second.total);
 
@@ -1760,8 +1780,8 @@ size_t partition_balancer_planner::calculate_full_disk_partition_move_priority(
                + min_small_partition_priority;
     }
     /**
-     * Assign internal partitions to its priority tier, order from smallest to
-     * largest one (the same as all other partitions)
+     * Assign internal partitions to its priority tier, order from smallest
+     * to largest one (the same as all other partitions)
      */
     if (
       p.ntp().ns == model::kafka_internal_namespace
@@ -1774,19 +1794,19 @@ size_t partition_balancer_planner::calculate_full_disk_partition_move_priority(
                + priority_tiers::min_internal_partition_priority;
     }
 
-    // normalize and offset to match the default partition priority tier, where
-    // max value would represent a partition that is of the full disk capacity
-    // size. We subtract it from the max priority to prioritize smallest
-    // partitions.
+    // normalize and offset to match the default partition priority tier,
+    // where max value would represent a partition that is of the full disk
+    // capacity size. We subtract it from the max priority to prioritize
+    // smallest partitions.
     return (default_range - (default_range * partition_size) / it->second.total)
            + priority_tiers::min_default_priority;
 }
 
 /*
  * Function is trying to move ntps out of node that are violating
- * soft_max_disk_usage_ratio. It takes nodes in reverse used space ratio order.
- * For each node it is trying to collect set of partitions to move. Partitions
- * are selected in ascending order of their size.
+ * soft_max_disk_usage_ratio. It takes nodes in reverse used space ratio
+ * order. For each node it is trying to collect set of partitions to move.
+ * Partitions are selected in ascending order of their size.
  *
  * If more than one replica in a group is on a node violating disk usage
  * constraints, we try to reallocate all such replicas. Some of reallocation
@@ -1824,7 +1844,8 @@ partition_balancer_planner::get_full_node_actions(request_context& ctx) {
         }
     };
 
-    // build an index of move candidates: full node -> movement priority -> ntp
+    // build an index of move candidates: full node -> movement priority ->
+    // ntp
     absl::flat_hash_map<
       model::node_id,
       absl::btree_multimap<size_t, model::ntp, std::greater<>>>
@@ -1852,8 +1873,8 @@ partition_balancer_planner::get_full_node_actions(request_context& ctx) {
         return ss::stop_iteration::no;
     });
 
-    // move partitions, starting from partitions with replicas on the most full
-    // node
+    // move partitions, starting from partitions with replicas on the most
+    // full node
     for (const auto* node_disk : sorted_full_nodes) {
         if (!ctx.can_add_reassignment()) {
             co_return;
@@ -1901,8 +1922,8 @@ partition_balancer_planner::get_full_node_actions(request_context& ctx) {
                           }
                       }
 
-                      // Try to reallocate replicas starting from the most full
-                      // node
+                      // Try to reallocate replicas starting from the most
+                      // full node
                       std::sort(
                         full_node_replicas.begin(),
                         full_node_replicas.end(),
@@ -2017,20 +2038,20 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
 
     double orig_objective = calc_objective();
 
-    // The algorithm is simple: just go over all replicas and try to move them
-    // to a better node (this is driven by allocation constraints). If we
-    // haven't been able to improve the objective, this means that we've reached
-    // (local) optimum and rebalance can be finished.
+    // The algorithm is simple: just go over all replicas and try to move
+    // them to a better node (this is driven by allocation constraints). If
+    // we haven't been able to improve the objective, this means that we've
+    // reached (local) optimum and rebalance can be finished.
 
     bool should_stop = true;
     co_await ctx.for_each_replica_random_order(
       [&](partition& part, model::node_id node) {
           if (!ctx.can_add_reassignment()) {
-              // Finish early, even though in theory we could add more replica
-              // moves to existing reassignments. The reason is that this will
-              // bias the algorithm towards adding more moves to partitions
-              // that we already reassigned, which we want to avoid (to avoid
-              // formation of isolated replica subsets).
+              // Finish early, even though in theory we could add more
+              // replica moves to existing reassignments. The reason is that
+              // this will bias the algorithm towards adding more moves to
+              // partitions that we already reassigned, which we want to
+              // avoid (to avoid formation of isolated replica subsets).
               should_stop = false;
               return ss::stop_iteration::yes;
           }
@@ -2173,6 +2194,11 @@ void partition_balancer_planner::request_context::collect_actions(
       || result.counts_rebalancing_finished) {
         result.status = status::actions_planned;
     }
+
+    result.decommissions.reserve(_decommissionable_nodes.size());
+    std::ranges::move(
+      std::move(_decommissionable_nodes),
+      std::back_inserter(result.decommissions));
 }
 
 ss::future<partition_balancer_planner::plan_data>
@@ -2211,7 +2237,10 @@ partition_balancer_planner::plan_actions(
           change_reason::node_unavailable);
         co_await get_full_node_actions(ctx);
         co_await get_rack_constraint_repair_actions(ctx);
+        // get node decommission actions is already part of
+        // init_per_node_state
     }
+
     co_await get_counts_rebalancing_actions(ctx);
     co_await get_force_repair_actions(ctx);
 

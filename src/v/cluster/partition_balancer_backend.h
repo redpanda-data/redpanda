@@ -43,6 +43,7 @@ public:
       ss::sharded<topics_frontend>&,
       ss::sharded<members_frontend>&,
       config::binding<std::chrono::seconds>&& availability_timeout,
+      config::binding<std::chrono::seconds>&& decommission_timeout,
       config::binding<unsigned> max_disk_usage_percent,
       config::binding<std::chrono::milliseconds>&& tick_interval,
       config::binding<size_t>&& max_concurrent_actions,
@@ -102,6 +103,7 @@ private:
       config::enum_property<model::partition_autobalancing_mode>>
       _mode;
     config::binding<std::chrono::seconds> _availability_timeout;
+    config::binding<std::chrono::seconds> _decommission_timeout;
     config::binding<unsigned> _max_disk_usage_percent;
     config::binding<std::chrono::milliseconds> _tick_interval;
     config::binding<size_t> _max_concurrent_actions;
