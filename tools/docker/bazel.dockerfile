@@ -5,7 +5,8 @@ ARG TARGETARCH
 
 COPY --chown=0:0 bazel/install-deps.sh /
 
-RUN apt-get update && apt install -y wget python3 python3-venv curl pigz patchelf devscripts debhelper rpm zip
+RUN apt-get update && apt install -y wget python3 python3-venv curl pigz patchelf devscripts debhelper rpm zip default-jdk maven linux-tools-common linux-tools-generic
+RUN rm -rf /usr/bin/perf && ln -s $(ls /usr/lib/linux-tools/*/perf) /usr/bin/perf
 RUN wget -O /usr/local/bin/bazel \
         https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-${TARGETARCH} && \
         chmod +x /usr/local/bin/bazel
