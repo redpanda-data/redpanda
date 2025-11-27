@@ -83,9 +83,16 @@ FIXTURE_TEST(test_compaction_segment_ms, storage_e2e_fixture) {
     vlog(test_logger.info, "Applied segment_ms {} times", retention_rounds);
 
     // Ensure all produces completed successfully.
+    std::exception_ptr error;
     for (auto&& p : produces) {
-        std::move(p).get();
+        try {
+            std::move(p).get();
+        } catch (...) {
+            error = std::current_exception();
+            vlog(test_logger.info, "Error from produce: {}", error);
+        }
     }
+    BOOST_REQUIRE(!error);
     app.stress_fiber_manager.local().stop().get();
 }
 
