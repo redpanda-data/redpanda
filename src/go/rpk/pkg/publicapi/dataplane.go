@@ -39,6 +39,7 @@ type DataPlaneClientSet struct {
 	Security      dataplanev1connect.SecurityServiceClient
 	Monitoring    dataplanev1connect.MonitoringServiceClient
 	KnowledgeBase dataplanev1alpha3connect.KnowledgeBaseServiceClient
+	ShadowLink    dataplanev1alpha3connect.ShadowLinkServiceClient
 
 	m         sync.RWMutex
 	authToken string
@@ -120,6 +121,7 @@ func NewDataPlaneClientSet(host, authToken string, opts ...connect.ClientOption)
 	dpCl.Security = dataplanev1connect.NewSecurityServiceClient(httpCl, host, opts...)
 	dpCl.Monitoring = dataplanev1connect.NewMonitoringServiceClient(httpCl, host, opts...)
 	dpCl.KnowledgeBase = dataplanev1alpha3connect.NewKnowledgeBaseServiceClient(httpCl, host, opts...)
+	dpCl.ShadowLink = dataplanev1alpha3connect.NewShadowLinkServiceClient(httpCl, host, opts...)
 
 	return dpCl, nil
 }

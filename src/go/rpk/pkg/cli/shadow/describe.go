@@ -16,6 +16,7 @@ import (
 
 	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
 	corecommonv1 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/common/v1"
+	dataplanev1alpha3 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1alpha3"
 	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -151,6 +152,14 @@ func printOverview(link *adminv2.ShadowLink) {
 	if status := link.GetStatus(); status != nil {
 		tw.Print("STATE", strings.TrimPrefix(status.GetState().String(), "SHADOW_LINK_STATE_"))
 	}
+}
+
+func printCloudOverview(link *dataplanev1alpha3.ShadowLink) {
+	tw := out.NewTabWriter()
+	defer tw.Flush()
+	tw.Print("NAME", link.GetName())
+	tw.Print("UID", link.GetUid())
+	tw.Print("STATE", strings.TrimPrefix(link.GetState().String(), "SHADOW_LINK_STATE_"))
 }
 
 func printClient(opts *adminv2.ShadowLinkClientOptions) {
