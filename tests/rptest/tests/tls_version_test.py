@@ -54,7 +54,10 @@ PERMITTED_ERROR_MESSAGE = [
     "seastar::tls::verification_error",
     "SSL routines::no shared cipher",
     "SSL routines::unsupported protocol",
+    #Error as reported before openssl-3.2.0 (needed for fips mode)
     "sslv3 alert handshake failure",
+    #Error as reported since openssl-3.2.0
+    "ssl/tls alert handshake failure",
 ]
 
 
