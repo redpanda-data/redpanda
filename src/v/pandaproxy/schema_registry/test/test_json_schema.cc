@@ -15,6 +15,7 @@
 #include "pandaproxy/schema_registry/json.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/test/compatibility_common.h"
+#include "pandaproxy/schema_registry/test/store_fixture.h"
 #include "pandaproxy/schema_registry/types.h"
 
 #include <seastar/core/sstring.hh>
@@ -30,6 +31,7 @@ namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
 using incompat_t = pps::json_incompatibility_type;
 using incompatibility = pps::json_incompatibility;
+using pps::test_utils::store_fixture;
 
 bool check_compatible(
   const pps::json_schema_definition& reader_schema,
@@ -51,16 +53,6 @@ pps::compatibility_result check_compatible_verbose(
         .get(),
       pps::verbose::yes);
 }
-
-struct store_fixture {
-    store_fixture() {
-        store.start(pps::is_mutable::yes, ss::default_smp_service_group())
-          .get();
-    }
-    ~store_fixture() { store.stop().get(); }
-
-    pps::sharded_store store;
-};
 
 struct error_test_case {
     ss::sstring def;
@@ -190,7 +182,7 @@ SEASTAR_THREAD_TEST_CASE(test_make_invalid_json_schema) {
         BOOST_TEST_CONTEXT(data) {
             try {
                 pps::make_canonical_json_schema(
-                  f.store,
+                  f.store(),
                   {pps::subject{"test"}, {data.def, pps::schema_type::json}})
                   .get();
                 BOOST_CHECK_MESSAGE(
@@ -286,9 +278,9 @@ SEASTAR_THREAD_TEST_CASE(test_make_valid_json_schema) {
         BOOST_TEST_CONTEXT(data) {
             try {
                 pps::make_json_schema_definition(
-                  f.store,
+                  f.store(),
                   pps::make_canonical_json_schema(
-                    f.store,
+                    f.store(),
                     {pps::subject{"test"}, {data, pps::schema_type::json}})
                     .get())
                   .get();
@@ -380,7 +372,8 @@ SEASTAR_THREAD_TEST_CASE(test_json_schema_references) {
             pps::schema_version ver{0};
             pps::subject_schema canonical{};
             auto make_canonical = [&]() {
-                canonical = f.store.make_canonical_schema(schema.share()).get();
+                canonical
+                  = f.store().make_canonical_schema(schema.share()).get();
             };
 
             if (result.code() == pps::error_code{}) {
@@ -393,7 +386,7 @@ SEASTAR_THREAD_TEST_CASE(test_json_schema_references) {
                       return ex.code() == ec;
                   });
             }
-            f.store
+            f.store()
               .upsert(
                 pps::seq_marker{},
                 canonical.share(),
@@ -2190,9 +2183,9 @@ SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
     store_fixture f;
     auto make_json_schema = [&](std::string_view schema) {
         return pps::make_json_schema_definition(
-                 f.store,
+                 f.store(),
                  pps::make_canonical_json_schema(
-                   f.store,
+                   f.store(),
                    {pps::subject{"test"}, {schema, pps::schema_type::json}})
                    .get())
           .get();
@@ -2406,9 +2399,9 @@ SEASTAR_THREAD_TEST_CASE(test_refs_fixing) {
     // in-memory where refs are resolved
     auto json_schema_def
       = pps::make_json_schema_definition(
-          f.store,
+          f.store(),
           pps::make_canonical_json_schema(
-            f.store,
+            f.store(),
             {pps::subject{"test"},
              {fmt::format("{}", jsoncons::print(input_schema)),
               pps::schema_type::json}})

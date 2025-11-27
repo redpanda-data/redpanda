@@ -11,6 +11,20 @@ redpanda_test_cc_library(
 )
 
 redpanda_test_cc_library(
+    name = "store_fixture",
+    srcs = [
+        "store_fixture.cc",
+    ],
+    hdrs = [
+        "store_fixture.h",
+    ],
+    deps = [
+        "//src/v/pandaproxy/schema_registry:core",
+        "@seastar",
+    ],
+)
+
+redpanda_test_cc_library(
     name = "client_utils",
     hdrs = [
         "client_utils.h",
@@ -40,6 +54,7 @@ redpanda_test_cc_library(
         "compatibility_protobuf.h",
     ],
     deps = [
+        ":store_fixture",
         "//src/v/pandaproxy/schema_registry:core",
     ],
 )
@@ -63,6 +78,7 @@ redpanda_test_cc_library(
         "protobuf_utils.h",
     ],
     deps = [
+        ":store_fixture",
         "//src/v/pandaproxy/schema_registry:core",
     ],
 )
@@ -232,6 +248,7 @@ redpanda_cc_btest(
     ],
     cpu = 1,
     deps = [
+        ":store_fixture",
         ":utils",
         "//src/v/model",
         "//src/v/pandaproxy/schema_registry:core",
@@ -255,6 +272,7 @@ redpanda_cc_btest(
         ":compatibility_common",
         ":compatibility_protobuf",
         ":protobuf_utils",
+        ":store_fixture",
         "//src/v/bytes:iobuf_parser",
         "//src/v/pandaproxy/schema_registry:core",
         "//src/v/test_utils:seastar_boost",
@@ -295,6 +313,7 @@ redpanda_cc_btest(
     cpu = 1,
     deps = [
         ":compatibility_common",
+        ":store_fixture",
         "//src/v/pandaproxy/schema_registry:core",
         "//src/v/test_utils:seastar_boost",
         "@abseil-cpp//absl/container:flat_hash_set",
@@ -411,6 +430,7 @@ redpanda_cc_gtest(
     memory = "256MiB",
     deps = [
         ":protobuf_utils",
+        ":store_fixture",
         "//src/v/base",
         "//src/v/pandaproxy/schema_registry:core",
         "//src/v/test_utils:gtest",

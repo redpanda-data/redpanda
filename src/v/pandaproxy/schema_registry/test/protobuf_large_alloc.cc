@@ -11,6 +11,7 @@
 #include "base/units.h"
 #include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/test/protobuf_utils.h"
+#include "pandaproxy/schema_registry/test/store_fixture.h"
 #include "pandaproxy/schema_registry/types.h"
 
 #include <seastar/core/memory.hh>
@@ -74,7 +75,7 @@ TEST(ProtoLargeAlloc, test_protobuf_memory_stuff) {
     auto allocation_failure_guard = ss::defer(
       []() { ss::memory::set_abort_on_allocation_failure(true); });
 
-    pps::test_utils::simple_sharded_store s;
+    pps::test_utils::store_fixture s;
 
     // Size of these schemas is set to around half-megabyte. The exact value is
     // not important, as long as it is significantly larger than the
@@ -89,7 +90,7 @@ TEST(ProtoLargeAlloc, test_protobuf_memory_stuff) {
         const ss::memory::statistics start_stats = ss::memory::stats();
         auto canocal_schema
           = pps::make_canonical_protobuf_schema(
-              s.store,
+              s.store(),
               pps::subject_schema{
                 sub,
                 pps::schema_definition{

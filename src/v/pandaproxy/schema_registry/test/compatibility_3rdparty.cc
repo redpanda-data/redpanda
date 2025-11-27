@@ -13,9 +13,9 @@
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/storage.h"
+#include "pandaproxy/schema_registry/test/store_fixture.h"
 #include "pandaproxy/schema_registry/test/utils.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "pandaproxy/schema_registry/util.h"
 
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
@@ -76,9 +76,8 @@ constexpr std::string_view del_sub_value_0{
   R"({"subject":"subject_0","version":2})"};
 
 SEASTAR_THREAD_TEST_CASE(test_consume_to_store_3rdparty) {
-    pps::sharded_store s;
-    s.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
-    auto stop_store = ss::defer([&s]() { s.stop().get(); });
+    auto fixture = pandaproxy::schema_registry::test_utils::store_fixture{};
+    auto& s = fixture.store();
 
     // This kafka client will not be used by the sequencer
     // (which itself is only instantiated to receive consume_to_store's
