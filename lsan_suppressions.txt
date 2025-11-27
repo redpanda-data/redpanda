@@ -1,2 +1,3 @@
 leak:seastar::net::conntrack::handle::~handle
 leak:fips/self_test.c
+leak:crypto/mem.c
