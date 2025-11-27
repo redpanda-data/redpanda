@@ -294,6 +294,7 @@ redpanda_cc_btest(
     deps = [
         ":compatibility_avro",
         ":compatibility_common",
+        ":store_fixture",
         "//src/v/pandaproxy/schema_registry:core",
         "//src/v/test_utils:seastar_boost",
         "@abseil-cpp//absl/container:flat_hash_set",
@@ -301,6 +302,22 @@ redpanda_cc_btest(
         "@boost//:test",
         "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "avro_schema_references_test",
+    timeout = "short",
+    srcs = [
+        "avro_schema_references.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":store_fixture",
+        "//src/v/pandaproxy/schema_registry:core",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
     ],
 )
 
