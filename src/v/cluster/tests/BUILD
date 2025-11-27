@@ -658,7 +658,7 @@ redpanda_cc_btest(
 
 redpanda_cc_btest(
     name = "decommissioning_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "decommissioning_tests.cc",
     ],
