@@ -203,6 +203,7 @@ class RpkClusterTest(RedpandaTest):
         expected_features.extend(
             ["core_balancing_continuous", "partition_auto_balancing_continuous"]
         )
+        expected_features.sort()
         expected_license = {
             "expires": "Jul 11 2122",
             "organization": "redpanda-testing",
@@ -221,7 +222,10 @@ class RpkClusterTest(RedpandaTest):
             if license is None or license == "{}":
                 return False
 
-            return json.loads(license) == expected_license
+            license_json = json.loads(license)
+            if "enterprise_features_in_use" in license_json:
+                license_json["enterprise_features_in_use"].sort()
+            return license_json == expected_license
 
         wait_until(
             compare_license,
