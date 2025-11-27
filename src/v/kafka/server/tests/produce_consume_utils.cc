@@ -53,7 +53,7 @@ kafka_produce_transport::produce(
     chunked_vector<kafka::produce_request::topic> topics;
     topics.push_back(std::move(tp));
     kafka::produce_request req(std::nullopt, -1, std::move(topics));
-    req.data.timeout_ms = std::chrono::seconds(10);
+    req.data.timeout_ms = std::chrono::seconds(15);
     req.has_idempotent = false;
     req.has_transactional = false;
     auto resp = co_await _transport.dispatch(
@@ -151,7 +151,7 @@ ss::future<kafka::offset> kafka_produce_transport::produce_to_partition(
     chunked_vector<kafka::produce_request::topic> topics;
     topics.push_back(std::move(tp));
     kafka::produce_request req(std::nullopt, -1, std::move(topics));
-    req.data.timeout_ms = std::chrono::seconds(10);
+    req.data.timeout_ms = std::chrono::seconds(15);
     req.has_idempotent = false;
     req.has_transactional = false;
     auto resp = co_await _transport.dispatch(
