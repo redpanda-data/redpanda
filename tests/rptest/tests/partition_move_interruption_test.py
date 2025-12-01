@@ -223,8 +223,10 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
             lambda: self.metrics_correct(prev_assignment, assignmets), timeout_sec=10
         )
 
-    def _random_move_and_cancel(self, unclean_abort, force_back):
-        metadata = self.client().describe_topics()
+    def _random_move_and_cancel(
+        self, unclean_abort, force_back, topics: list[str] | None = None
+    ):
+        metadata = self.client().describe_topics(topics)
         topic, partition = self._random_partition(metadata)
         prev_assignment, assignments = self._dispatch_random_partition_move(
             topic=topic, partition=partition, allow_no_op=False
@@ -266,40 +268,73 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
         unclean_abort=[True, False],
         force_back=[True, False],
         compacted=[False, True],
+        cloud_storage_type=get_cloud_storage_type(
+            applies_only_on=[CloudStorageType.S3]
+        ),
     )
     def test_cancelling_partition_move(
-        self, replication_factor, unclean_abort, force_back, compacted
+        self,
+        replication_factor,
+        unclean_abort,
+        force_back,
+        compacted,
+        cloud_storage_type,
     ):
         """
         Cancel partition moving with active consumer / producer
         """
-        spec = TopicSpec(
-            partition_count=self.partition_count,
-            replication_factor=replication_factor,
-            cleanup_policy=TopicSpec.CLEANUP_COMPACT
-            if compacted
-            else TopicSpec.CLEANUP_DELETE,
-        )
+        kgo_params = [
+            KgoVerifierParams(
+                TopicSpec(
+                    name="panda-test-topic",
+                    partition_count=self.partition_count,
+                    replication_factor=replication_factor,
+                    cleanup_policy=TopicSpec.CLEANUP_COMPACT
+                    if compacted
+                    else TopicSpec.CLEANUP_DELETE,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=compacted,
+                tolerate_data_loss=unclean_abort,
+            ),
+            KgoVerifierParams(
+                TopicSpec(
+                    name="cloud-topic-test-topic",
+                    partition_count=self.partition_count,
+                    replication_factor=replication_factor,
+                    cleanup_policy=TopicSpec.CLEANUP_COMPACT
+                    if compacted
+                    else TopicSpec.CLEANUP_DELETE,
+                    cloud_topics_enabled=True,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=compacted,
+                tolerate_data_loss=unclean_abort,
+            ),
+        ]
 
-        self.client().create_topic(spec)
-        self.test_topic = spec.name
+        self._create_topics(kgo_params)
 
-        self.start_producer()
+        self.start_multi_producer(kgo_params)
         if not compacted:
-            self.start_consumer(compacted=compacted, tolerate_data_loss=unclean_abort)
+            self.start_multi_consumer(kgo_params)
         # throttle recovery to prevent partition move from finishing
         self._throttle_recovery(0)
 
         for i in range(self.moves):
             self._random_move_and_cancel(
-                unclean_abort=unclean_abort, force_back=force_back
+                unclean_abort=unclean_abort,
+                force_back=force_back,
+                topics=[p.topic_spec.name for p in kgo_params],
             )
             if i % 2 == 0:
                 # restart one of the nodes after each move
                 self.redpanda.restart_nodes([random.choice(self.redpanda.nodes)])
         # start consumer late in the process for the compaction to trigger
         if compacted:
-            self.start_consumer(compacted=compacted, tolerate_data_loss=unclean_abort)
+            self.start_multi_consumer(kgo_params)
 
         self.producer.wait()
         self.consumer.wait()
