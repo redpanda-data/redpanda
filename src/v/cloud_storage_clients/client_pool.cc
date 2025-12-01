@@ -13,6 +13,7 @@
 #include "cloud_storage_clients/abs_client.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/s3_client.h"
+#include "crash_tracker/recorder.h"
 #include "model/timeout_clock.h"
 #include "ssx/future-util.h"
 
@@ -23,6 +24,7 @@
 #include <chrono>
 #include <optional>
 #include <random>
+#include <stdexcept>
 #include <utility>
 
 using namespace std::chrono_literals;
@@ -83,6 +85,12 @@ ss::future<> client_pool::client_self_configure(
             vassert(
               application_stop_signal.has_value(),
               "Application abort source not present in client pool");
+
+            crash_tracker::get_recorder().record_crash_exception(
+              std::make_exception_ptr(
+                std::runtime_error(
+                  "Cloud storage client self-configuration failed. "
+                  "Check your cloud storage credentials and configuration.")));
 
             application_stop_signal->get().signaled();
 

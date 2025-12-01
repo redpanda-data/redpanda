@@ -39,6 +39,7 @@ redpanda_cc_library(
         "//src/v/cloud_roles:types",
         "//src/v/config",
         "//src/v/container:intrusive",
+        "//src/v/crash_tracker",
         "//src/v/hashing:secure",
         "//src/v/http",
         "//src/v/http:utils",

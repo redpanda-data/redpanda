@@ -17,6 +17,7 @@ v_cc_library(
     Seastar::seastar
     v::bytes
     v::cloud_roles
+    v::crash_tracker
     v::net
     LibXml2::LibXml2
   DEFINES
