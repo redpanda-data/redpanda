@@ -1,4 +1,5 @@
 import random
+from itertools import product
 from typing import Sequence, cast
 
 from ducktape.mark import matrix
@@ -343,37 +344,62 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
     @matrix(
         replication_factor=[1, 3],
         unclean_abort=[True, False],
+        cloud_storage_type=get_cloud_storage_type(
+            applies_only_on=[CloudStorageType.S3]
+        ),
     )
-    def test_cancelling_partition_move_x_core(self, replication_factor, unclean_abort):
+    def test_cancelling_partition_move_x_core(
+        self, replication_factor, unclean_abort, cloud_storage_type
+    ):
         """
         Cancel partition moving with active consumer / producer
         """
 
-        spec = TopicSpec(
-            partition_count=self.partition_count,
-            replication_factor=replication_factor,
-            cleanup_policy=TopicSpec.CLEANUP_COMPACT,
-        )
+        kgo_params = [
+            KgoVerifierParams(
+                TopicSpec(
+                    partition_count=self.partition_count,
+                    replication_factor=replication_factor,
+                    cleanup_policy=TopicSpec.CLEANUP_COMPACT,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=True,
+                tolerate_data_loss=unclean_abort,
+            ),
+            KgoVerifierParams(
+                TopicSpec(
+                    partition_count=self.partition_count,
+                    replication_factor=replication_factor,
+                    cleanup_policy=TopicSpec.CLEANUP_COMPACT,
+                    cloud_topics_enabled=True,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=True,
+                tolerate_data_loss=unclean_abort,
+            ),
+        ]
 
-        self.client().create_topic(spec)
-        self.test_topic = spec.name
+        self._create_topics(kgo_params)
 
-        self.start_producer()
-        self.start_consumer(compacted=True, tolerate_data_loss=unclean_abort)
+        self.start_multi_producer(kgo_params)
+        self.start_multi_consumer(kgo_params)
         # throttle recovery to prevent partition move from finishing
         self._throttle_recovery(0)
 
         partition = random.randint(0, self.partition_count - 1)
-        for i in range(self.moves):
+        for p, i in product(kgo_params, range(self.moves)):
+            topic = p.topic_spec.name
             # move partition between cores first
             x_core = i < self.moves / 2
 
             prev_assignment, new_assignment = self._dispatch_random_partition_move(
-                topic=self.test_topic, partition=partition, x_core_only=x_core
+                topic=topic, partition=partition, x_core_only=x_core
             )
             if x_core:
                 self._wait_post_move(
-                    topic=self.test_topic,
+                    topic=topic,
                     partition=partition,
                     assignments=new_assignment,
                     timeout_sec=60,
@@ -381,7 +407,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
             else:
                 self._request_move_cancel(
                     unclean_abort=unclean_abort,
-                    topic=self.test_topic,
+                    topic=topic,
                     partition=partition,
                     previous_assignment=prev_assignment,
                 )
