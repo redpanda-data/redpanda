@@ -1,9 +1,10 @@
 import random
-from typing import cast
+from typing import Sequence, cast
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -14,7 +15,14 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierMultiProducer,
     KgoVerifierProducer,
 )
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, MetricsEndpoint
+from rptest.services.redpanda import (
+    get_cloud_storage_type,
+    CloudStorageType,
+    CLOUD_TOPICS_CONFIG_STR,
+    MetricsEndpoint,
+    RESTART_LOG_ALLOW_LIST,
+    SISettings,
+)
 
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
@@ -36,6 +44,13 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
     """
 
     def __init__(self, test_context, *args, **kwargs):
+        si_settings = SISettings(
+            test_context,
+            cloud_storage_max_connections=10,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+            fast_uploads=True,
+        )
         super(PartitionMoveInterruption, self).__init__(
             test_context,
             *args,
@@ -48,8 +63,11 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
                 "default_topic_replications": 3,
                 "compacted_log_segment_size": 1 * (2**20),
                 "controller_snapshot_max_age_sec": 3,
+                CLOUD_TOPICS_CONFIG_STR: True,
+                "enable_cluster_metadata_upload_loop": False,
             },
             node_prealloc_count=1,
+            si_settings=si_settings,
             **kwargs,
         )
         self.test_topic: str = ""
@@ -66,6 +84,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
         self.consumer: (
             KgoVerifierConsumerGroupConsumer | KgoVerifierMultiConsumerGroupConsumer
         )
+
+        self.rpk = RpkTool(self.redpanda)
 
     def start_producer(self):
         self.producer = KgoVerifierProducer(
@@ -224,6 +244,21 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
     def _throttle_recovery(self, new_rate: int):
         self.redpanda.set_cluster_config({"raft_learner_recovery_rate": str(new_rate)})
         wait_for_recovery_throttle_rate(redpanda=self.redpanda, new_rate=new_rate)
+
+    def _create_topics(self, kgo_params: Sequence[KgoVerifierParams]) -> None:
+        for p in kgo_params:
+            spec = p.topic_spec
+            self.rpk.create_topic(
+                topic=spec.name,
+                partitions=spec.partition_count,
+                replicas=spec.replication_factor,
+                config={
+                    TopicSpec.PROPERTY_CLOUD_TOPIC_ENABLE: "true"
+                    if spec.cloud_topics_enabled
+                    else "false",
+                    TopicSpec.PROPERTY_CLEANUP_POLICY: spec.cleanup_policy,
+                },
+            )
 
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(
