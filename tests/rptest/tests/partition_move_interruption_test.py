@@ -534,27 +534,52 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
         self.consumer.wait()
 
     @cluster(num_nodes=5)
-    def test_cancelling_all_moves_in_cluster(self):
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
+    def test_cancelling_all_moves_in_cluster(self, cloud_storage_type):
         """
         Cancel all partition moves in the cluster
         """
 
-        spec = TopicSpec(partition_count=self.partition_count, replication_factor=3)
+        kgo_params = [
+            KgoVerifierParams(
+                TopicSpec(
+                    partition_count=self.partition_count,
+                    replication_factor=3,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=False,
+                tolerate_data_loss=False,
+            ),
+            KgoVerifierParams(
+                TopicSpec(
+                    partition_count=self.partition_count,
+                    replication_factor=3,
+                    cloud_topics_enabled=True,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=False,
+                tolerate_data_loss=False,
+            ),
+        ]
 
-        self.client().create_topic(spec)
-        self.test_topic = spec.name
+        self._create_topics(kgo_params)
 
-        self.start_producer()
-        self.start_consumer(compacted=False, tolerate_data_loss=False)
+        self.start_multi_producer(kgo_params)
+        self.start_multi_consumer(kgo_params)
         # throttle recovery to prevent partition move from finishing
         self._throttle_recovery(0)
         current_movements = {}
         partitions = list(range(0, self.partition_count))
-        for _ in range(self.partition_count - 1):
+        for i in range(self.partition_count - 1):
+            topic = kgo_params[i % 2].topic_spec.name
             partition = random.choice(partitions)
             partitions.remove(partition)
             current_movements[partition] = self._dispatch_random_partition_move(
-                self.test_topic, partition
+                topic, partition
             )
 
         self.logger.info(f"moving {current_movements}")
