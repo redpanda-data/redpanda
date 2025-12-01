@@ -41,6 +41,13 @@ HOSTNAME_ERRORS = [
     ".*Failure during startup: std::__1::system_error \(error C-Ares:11, unreachable_host.com: Connection refused\)",
 ]
 
+CLOUD_STORAGE_CLIENT_CONFIG_ERRORS = [
+    ".*[Ss]elf.configuration.*",
+    ".*Cloud storage client self-configuration failed.*",
+    ".*InvalidAccessKeyId.*",
+    ".*Couldn't reach S3.*",
+]
+
 
 class CrashLoopChecksTest(RedpandaTest):
     "Checks crash loop detection works as expected."
@@ -331,4 +338,36 @@ class CrashLoopChecksTest(RedpandaTest):
         assert 5 == report["type"], f"Unexpected crash type: {report['type']}"
         assert f"{msg} on shard {signal_shard}." == report["crash_message"], (
             f"Unexpected crash message: {report['crash_message']}"
+        )
+
+    @cluster(num_nodes=1, log_allow_list=CLOUD_STORAGE_CLIENT_CONFIG_ERRORS)
+    def test_cloud_storage_client_misconfiguration(self):
+        """
+        Test that cloud storage self-configuration failures are recorded
+        in the crash tracker.
+        """
+        broker = self.redpanda.nodes[0]
+
+        self.redpanda.stop_node(broker)
+        self.redpanda.clean_node(broker)
+
+        self.redpanda.add_extra_rp_conf(
+            {
+                "cloud_storage_enabled": True,
+                "cloud_storage_access_key": "FAKEACCESSKEYID",
+                "cloud_storage_secret_key": "fakesecretaccesskey0123456789ABCDEFGHIJK",
+                "cloud_storage_region": "us-east-1",
+                "cloud_storage_bucket": "test-bucket",
+                "cloud_storage_api_endpoint": "s3.us-east-1.amazonaws.com",
+            }
+        )
+        self.redpanda.write_bootstrap_cluster_config()
+
+        self.redpanda.start_node(broker, first_start=True, skip_readiness_check=True)
+        self.wait_for_redpanda_stop(broker, timeout=60)
+
+        self.expect_crash_count(1)
+        report = self.read_first_crash_report()
+        assert (
+            "Cloud storage client self-configuration failed" in report["crash_message"]
         )
