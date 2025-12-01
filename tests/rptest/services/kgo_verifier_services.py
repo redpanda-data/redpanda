@@ -1299,7 +1299,6 @@ class KgoVerifierMultiService(Service):
         if clean:
             self.clean_node(node, **kwargs)
         for s in self._assigned_services(node):
-            print(f"start {s._topic}")
             s.start_node(node, clean=False, **kwargs)
 
     def wait_node(self, node: ClusterNode, timeout_sec: float | None = None) -> Any:
