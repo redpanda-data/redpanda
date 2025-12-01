@@ -75,7 +75,9 @@ class PartitionMovementMixin:
         return selected, replacements
 
     @staticmethod
-    def _get_node_assignments(admin, topic, partition):
+    def _get_node_assignments(
+        admin: Admin, topic: str, partition: int
+    ) -> list[dict[str, Any]]:
         def try_get_partitions():
             try:
                 res = admin.get_partitions(topic, partition)
