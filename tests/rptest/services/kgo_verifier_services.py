@@ -98,6 +98,13 @@ class KgoVerifierParams:
         self.consumer_group_readers: int | None = consumer_group_readers
         self.max_uncommitted: int | None = max_uncommitted
 
+    @property
+    def topic_spec(self) -> TopicSpec:
+        assert isinstance(self.topic, TopicSpec), (
+            f"{type(self.topic)=}, expected TopicSpec"
+        )
+        return cast(TopicSpec, self.topic)
+
 
 class KgoVerifierService(Service):
     """
