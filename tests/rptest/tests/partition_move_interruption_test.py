@@ -1,4 +1,5 @@
 import random
+from typing import cast
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
@@ -6,10 +7,15 @@ from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierParams,
+    KgoVerifierConsumerGroupConsumer,
+    KgoVerifierMultiConsumerGroupConsumer,
+    KgoVerifierMultiProducer,
+    KgoVerifierProducer,
+)
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, MetricsEndpoint
 
-from rptest.tests.nodes_decommissioning_test import KgoVerifierProducer
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 
@@ -56,6 +62,11 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
         else:
             self.min_records = 100000
 
+        self.producer: KgoVerifierProducer | KgoVerifierMultiProducer
+        self.consumer: (
+            KgoVerifierConsumerGroupConsumer | KgoVerifierMultiConsumerGroupConsumer
+        )
+
     def start_producer(self):
         self.producer = KgoVerifierProducer(
             self.test_context,
@@ -86,6 +97,34 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
             compacted=compacted,
             group_name="pmi-consumer",
             tolerate_data_loss=tolerate_data_loss,
+        )
+
+        self.consumer.start(clean=False)
+
+    def start_multi_producer(self, kgo_params: list[KgoVerifierParams]):
+        self.producer = KgoVerifierMultiProducer(
+            self.test_context,
+            self.redpanda,
+            kgo_params,
+            custom_node=self.preallocated_nodes,
+        )
+        self.producer.start(clean=False)
+        # wait for an arbitrary number of acks here.
+        # value cargo culted from start_producer, which waits for acks > 10.
+        cast(KgoVerifierMultiProducer, self.producer).wait_for_acks(
+            [11, 11], timeout_sec=120, backoff_sec=1
+        )
+
+    def start_multi_consumer(
+        self,
+        kgo_params: list[KgoVerifierParams],
+    ):
+        self.consumer = KgoVerifierMultiConsumerGroupConsumer(
+            self.test_context,
+            self.redpanda,
+            kgo_params,
+            readers=5,
+            custom_node=self.preallocated_nodes,
         )
 
         self.consumer.start(clean=False)
