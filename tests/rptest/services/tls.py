@@ -366,12 +366,11 @@ class TLSCertManager:
         self._logger.info(f"Running command: {cmd}")
         retries = 0
         output = None
-        while retries < 3:
+        while True:
             try:
                 output = subprocess.check_output(
                     cmd.split(), cwd=self._dir.name, stderr=subprocess.STDOUT
                 )
-                retries = 3  # Stop retry
                 return output.decode("utf-8")
             except subprocess.CalledProcessError as e:
                 self._logger.error(f"openssl error: {e.output}")
