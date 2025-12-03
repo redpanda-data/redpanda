@@ -9,6 +9,7 @@ require (
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.11.1
+	// franz-go is replaced below, keep it in sync, see CORE-14849
 	github.com/twmb/franz-go v1.20.2
 	github.com/twmb/franz-go/pkg/kadm v1.17.1
 	github.com/twmb/franz-go/pkg/kmsg v1.12.0
@@ -16,6 +17,9 @@ require (
 	golang.org/x/sync v0.17.0
 	golang.org/x/time v0.9.0
 )
+
+// temporary workaround for CORE-14849/CORE-13402
+replace github.com/twmb/franz-go v1.20.2 => github.com/travisdowns/franz-go v1.20.2-CORE-14849-fix
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
