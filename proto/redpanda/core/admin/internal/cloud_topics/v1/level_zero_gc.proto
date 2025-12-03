@@ -1,0 +1,115 @@
+// Copyright 2025 Redpanda Data, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package redpanda.core.admin.internal.cloud_topics.v1;
+
+import "proto/redpanda/core/pbgen/options.proto";
+import "proto/redpanda/core/pbgen/rpc.proto";
+import "proto/redpanda/core/common/v1/ntp.proto";
+
+option (pbgen.cpp_namespace) = "proto::admin::level_zero_gc";
+
+// Admin endpoints to interact with L0 garbage collection for Cloud Topics.
+
+service LevelZeroGcService {
+    // Try to advance the L0 GC epoch for a sequence of topic partitions. Each
+    // partition fails or succeeds based on whether the current L0 GC epoch
+    // matches the expected current epoch for that partition.
+    rpc AdvanceEpoch(AdvanceEpochRequest) returns (AdvanceEpochResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // Get the current L0 GC epoch for a sequence of topic partitions. Each
+    // partition fails or succeeds based on whether the partition exists.
+    rpc GetEpoch(GetEpochRequest) returns (GetEpochResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+}
+
+// AdvanceEpochRequest is the request for advancing the LO epoch for one or more
+// partitions.
+message AdvanceEpochRequest {
+    // Topic partitions to advance the epoch for
+    repeated TopicPartitionEpoch partitions = 1;
+}
+
+// AdvanceEpochResponse is the result of trying to advance the L0 epoch for one
+// or more partitions
+message AdvanceEpochResponse {
+    // The per-partition results
+    repeated TopicPartitionAdvanceEpochResult partitions = 1;
+}
+
+// TopicPartitionEpoch is an aggregate of a single topic partition and the
+// expected current epoch for that partition.
+message TopicPartitionEpoch {
+    // The partition to advance
+    common.v1.TopicPartition partition = 1;
+    // The expected current epoch of partition
+    int64 epoch = 2;
+}
+
+// TopicPartitionAdvanceEpochResult is an aggregate of a single topic partition
+// and the result (success or failure) of trying to advance its epoch.
+message TopicPartitionAdvanceEpochResult {
+    // The partition we tried to advance
+    common.v1.TopicPartition partition = 1;
+    // The result of the advance attempt
+    oneof result {
+        int64 epoch = 2;
+        Error error = 3;
+    }
+}
+
+// GetEpochRequest is the request for getting the L0 epoch for one or more
+// partitions.
+message GetEpochRequest {
+    // Topic partitions to get the epoch for
+    repeated common.v1.TopicPartition partitions = 1;
+}
+
+// GetEpochResponse is the result of trying to get the L0 epoch for one
+// or more partitions
+message GetEpochResponse {
+    // The per-partition results
+    repeated TopicPartitionGetEpochResult partitions = 1;
+}
+
+// TopicPartitionGetEpochResult is an aggregate of a single topic partition
+// and the result (success or failure) of trying to get its epoch.
+message TopicPartitionGetEpochResult {
+    // The partition we tried to get the epoch for
+    common.v1.TopicPartition partition = 1;
+    // The result of the get attempt
+    oneof result {
+        int64 epoch = 2;
+        Error error = 3;
+    }
+}
+
+// Error indicates success or failure for an attempt to advance the
+// epoch of some partition.
+enum Error {
+    L0_GC_ERROR_SUCCESS = 0;
+    L0_GC_ERROR_FAILED = 1;
+    L0_GC_ERROR_TOPIC_NOT_FOUND = 2;
+    L0_GC_ERROR_INVALID_PARTITION = 3;
+    L0_GC_ERROR_NOT_CLOUD_TOPIC = 4;
+}

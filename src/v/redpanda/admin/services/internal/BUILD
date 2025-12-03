@@ -11,6 +11,7 @@ redpanda_cc_library(
     deps = [
         "//proto/redpanda/core/admin/internal/v1:debug_redpanda_proto",
         "//src/v/base",
+        "//src/v/container:chunked_hash_map",
         "//src/v/finjector",
         "//src/v/redpanda/admin/proxy:client",
         "//src/v/serde/protobuf:rpc",
@@ -47,6 +48,21 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/cloud_topics/level_one/metastore:replicated_metastore",
         "//src/v/cluster",
+        "//src/v/serde/protobuf:rpc",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "level_zero_gc",
+    srcs = ["level_zero_gc.cc"],
+    hdrs = ["level_zero_gc.h"],
+    deps = [
+        "//proto/redpanda/core/admin/internal/cloud_topics/v1:level_zero_gc_redpanda_proto",
+        "//src/v/base",
+        "//src/v/cluster",
+        "//src/v/model",
         "//src/v/serde/protobuf:rpc",
         "@fmt",
         "@seastar",
