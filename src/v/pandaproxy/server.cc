@@ -212,6 +212,11 @@ server::server(
     _api20.register_api_file(_server._routes, header);
     _api20.add_definitions_file(_server._routes, definitions);
     _server.set_content_streaming(true);
+    _server.set_keepalive_parameters(ss::net::tcp_keepalive_params{
+      .idle = std::chrono::seconds{120},
+      .interval = std::chrono::seconds{60},
+      .count = 3,
+    });
 }
 
 /*
