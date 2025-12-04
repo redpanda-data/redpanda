@@ -655,6 +655,12 @@ partition::cloud_storage_timequery(storage::timequery_config cfg) {
     // find the earliest data that has timestamp >= the query time.
     vlog(clusterlog.debug, "timequery (cloud) {} cfg(k)={}", _raft->ntp(), cfg);
 
+    // Test before translation to handle empty log cases where
+    // max_offset is before min_offset = start_offset.
+    if (cfg.min_offset > cfg.max_offset) {
+        co_return std::nullopt;
+    }
+
     // remote_partition pre-translates offsets for us, so no call into
     // the offset translator here
     auto result = co_await _cloud_storage_partition->timequery(cfg);
@@ -673,6 +679,12 @@ partition::cloud_storage_timequery(storage::timequery_config cfg) {
 ss::future<std::optional<storage::timequery_result>> partition::local_timequery(
   storage::timequery_config cfg, bool allow_cloud_fallback) {
     vlog(clusterlog.debug, "timequery (raft) {} cfg(k)={}", _raft->ntp(), cfg);
+
+    // Test before translation to handle empty log cases where
+    // max_offset is before min_offset = start_offset.
+    if (cfg.min_offset > cfg.max_offset) {
+        co_return std::nullopt;
+    }
 
     cfg.min_offset = _raft->log()->to_log_offset(cfg.min_offset);
     cfg.max_offset = _raft->log()->to_log_offset(cfg.max_offset);
