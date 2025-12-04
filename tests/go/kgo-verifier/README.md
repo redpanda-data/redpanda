@@ -89,12 +89,73 @@ The tool is meant to be chaos-tolerant, i.e. it should not drop out when brokers
 unavailable or cannot respond to requests, and it should continue to be able to validate
 its own output if that output was written in bad conditions (e.g. with producer retries).
 
-Additionally verify content of reads, to check for offset translation issues:
-the key of each message includes the offset where the producer expects it to land.
-The producer keeps track of which messages were successfully committed at the expected
-offset, and writes it out to a file.  Consumers then consult this file while reading,
-to check whether a particular offset is expected to contain a valid message (i.e. key
-matches offset) or not.
+### How Validation Works
+
+kgo-verifier validates data integrity by embedding metadata in each message and tracking
+which offsets contain valid data:
+
+**Message Structure**: Each produced record includes a header `KGO_VERIFIER_RECORD_ID`
+with format `producerId.offset` containing the offset where the producer expects the
+message to land. The message key typically matches this value (unless using
+`--key-set-cardinality` for compactible data).
+
+**Valid Offset Tracking**: The producer tracks which messages successfully committed at
+their expected offsets and writes this to `valid_offsets_{topic}.json`. This file contains
+offset ranges per partition that are known to contain valid data. Consumers load this file
+and use it to distinguish between validation failures (bugs) and expected anomalies
+(retried messages landing at different offsets).
+
+**Validation on Read**: Consumers validate each record by:
+- Checking that the header value matches the expected format for that offset
+- Verifying monotonicity: offsets and leader epochs must increase
+- Detecting gaps in offset sequences (unless topic is compacted)
+- Counting valid reads, invalid reads, and out-of-scope invalid reads (expected anomalies)
+
+**Compacted Topic Support**: For compacted topics (`--compacted`), offset gaps are tolerated.
+With `--validate-latest-values`, the producer also writes `latest_value_{topic}.json`
+containing the most recent value for each key, and consumers verify that consumed values
+match the latest produced values.
+
+### Worker Types
+
+kgo-verifier operates in different modes via worker types:
+
+**Producer Worker** (`--produce_msgs N`): Produces N messages with validation metadata.
+Supports transactional production (`--use-transactions`), tombstones
+(`--tombstone-probability`), configurable key cardinality for compaction testing
+(`--key-set-cardinality`), and producer ID churning (`--msgs-per-producer-id`).
+
+**Sequential Read Worker** (`--seq_read`): Consumes the entire topic sequentially from
+beginning to end, validating each message. Can be combined with `--loop` to continuously
+re-read from the start, or `--continuous` to wait for new messages after reaching the end.
+
+**Random Read Worker** (`--rand_read_msgs N`): Performs N random reads from random
+offsets and partitions. Can run multiple workers in parallel with `--parallel`.
+Particularly useful for stressing tiered storage caches.
+
+**Consumer Group Worker** (`--consumer_group_readers N`): Runs N consumers in a
+consumer group, distributing partition consumption across the members. Supports
+offset committing with `--max-uncommitted` to control commit frequency.
+
+### Key Features
+
+- **Transaction Support**: Use `--use-transactions` to enable transactional production
+  with configurable abort rate (`--transaction-abort-rate`) and batch size
+  (`--msgs-per-transaction`). Messages in aborted transactions are marked and validated
+  as unreadable.
+
+- **Throughput Control**: Rate limit producer with `--produce-throughput-bps` or
+  consumers with `--consume-throughput-mb`.
+
+- **Chaos Tolerance**: With `--tolerate-data-loss` and `--tolerate-failed-produce`,
+  the tool can continue operating and validating through cluster instability.
+
+- **Remote Control**: Use `--remote` to enable HTTP control endpoints for automated
+  testing: `/status` (get metrics), `/reset` (reset statistics), `/shutdown` (stop
+  gracefully), `/last_pass` (finish current pass), `/print_stack` (debug output).
+
+- **Compression Testing**: Use `--compression-type` to test specific codecs, or `mixed`
+  to randomly vary compression per producer.
 
 ### Usage
 
@@ -134,5 +195,24 @@ reads of 1GB segments, when the cache size limit is only 50GB).
 Keep rand_read_msgs at 1 to constrain memory usage.
 
     kgo-verifier --brokers $BROKERS --username $SASL_USER --password $SASL_PASSWORD --topic $TOPIC --msg_size 128000 --produce_msgs 0 --rand_read_msgs 1 --seq_read=0 --parallel 64
+
+#### 6. Consumer group with multiple members
+Run multiple consumers in a consumer group, committing offsets after every 1000 records
+
+    kgo-verifier --brokers $BROKERS --username $SASL_USER --password $SASL_PASSWORD --topic $TOPIC --msg_size 128000 --produce_msgs 0 --consumer_group_readers 4 --consumer_group_name mygroup --max-uncommitted 1000
+
+#### 7. Testing compacted topics
+Produce data with limited key cardinality and tombstones, then validate latest values
+
+    # Produce with 100 unique keys and 10% tombstones
+    kgo-verifier --brokers $BROKERS --topic $TOPIC --produce_msgs 10000 --key-set-cardinality 100 --tombstone-probability 0.1 --compacted
+
+    # After compaction, validate that consumed values match latest produced
+    kgo-verifier --brokers $BROKERS --topic $TOPIC --seq_read --compacted --validate-latest-values
+
+#### 8. Testing transactions
+Produce with transactions, aborting 20% of them
+
+    kgo-verifier --brokers $BROKERS --topic $TOPIC --produce_msgs 10000 --use-transactions --transaction-abort-rate 0.2 --msgs-per-transaction 10
 
 ``` 
