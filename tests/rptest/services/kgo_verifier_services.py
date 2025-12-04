@@ -1218,7 +1218,7 @@ class KgoVerifierConsumerGroupConsumer(AbstractConsumer):
         if self._rebalance_timeout_s is not None:
             cmd += f" --consumer-group-rebalance-timeout-s {self._rebalance_timeout_s}s"
         if self._exactly_once:
-            cmd += " --consume-exactly-once"
+            cmd += " --group-consume-exactly-once"
 
         self.spawn(cmd, node)
 
