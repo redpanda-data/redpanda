@@ -271,8 +271,13 @@ ss::future<purger::purge_result> purger::purge_manifest(
       bucket, {format, manifest_key}, manifest, manifest_purge_rtc);
 
     if (manifest_get_result == download_result::notfound) {
-        vlog(ctxlog.debug, "Partition manifest get {} not found", manifest_key);
-        result.status = purge_status::permanent_failure;
+        vlog(
+          ctxlog.debug,
+          "Partition manifest get {} not found, assuming success",
+          manifest_key);
+        // It's possible multiple purgers raced and a different node succeeded
+        // in purging the manifest, so treat this as a success.
+        result.status = purge_status::success;
         co_return result;
     } else if (manifest_get_result != download_result::success) {
         vlog(
