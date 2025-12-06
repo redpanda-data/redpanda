@@ -40,7 +40,6 @@ from typing import (
     Literal,
     Mapping,
     NamedTuple,
-    Protocol,
     Set,
     Tuple,
     TypedDict,
@@ -53,7 +52,7 @@ from signal import SIGKILL, SIGTERM, Signals
 import requests
 import yaml
 from ducktape.cluster.cluster import ClusterNode
-from ducktape.cluster.remoteaccount import RemoteAccount, RemoteCommandError
+from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.errors import TimeoutError
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
@@ -329,13 +328,6 @@ OIDC_ALLOW_LIST = [
 ]
 
 CLOUD_TOPICS_CONFIG_STR = "unstable_beta_feature_cloud_topics_enabled"
-
-
-class RemoteClusterNode(Protocol):
-    account: RemoteAccount
-
-    @property
-    def name(self) -> str: ...
 
 
 @dataclass
@@ -2186,7 +2178,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             return "unknown_version"
         return self._cloud_cluster.get_install_pack_version()
 
-    def sockets_clear(self, node: RemoteClusterNode) -> bool:
+    def sockets_clear(self, node: ClusterNode) -> bool:
         return True
 
     def all_up(self) -> bool:
@@ -3643,7 +3635,7 @@ class RedpandaService(Service, RedpandaServiceABC):
             self.signal_redpanda(node, signal=signal.SIGCONT)
             self.add_to_started_nodes(node)
 
-    def sockets_clear(self, node: RemoteClusterNode):
+    def sockets_clear(self, node: ClusterNode):
         """
         Check that high-numbered redpanda ports (in practice, just the internal
         RPC port) are clear on the node, to avoid TIME_WAIT sockets from previous
