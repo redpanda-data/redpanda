@@ -3660,6 +3660,7 @@ class RedpandaService(Service, RedpandaServiceABC):
                 self.logger.info(
                     f"Port collision on node {node.name}: {src}->{dst} {state}"
                 )
+                self._log_node_process_state(node)
                 return False
 
         # Fall through: no problematic lines found
