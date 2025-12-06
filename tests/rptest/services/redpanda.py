@@ -4867,13 +4867,17 @@ class RedpandaService(Service, RedpandaServiceABC):
 
                 raise e
 
-    def clean_node(
+    def clean_node_state(
         self,
         node: ClusterNode,
         preserve_logs: bool = False,
         preserve_current_install: bool = False,
         **kwargs: Any,
     ):
+        """
+        Cleans the node state such as killing processes and removing persistent
+        state on disk.
+        """
         assert not kwargs, f"Unknown args {kwargs}"
         # These are allow_fail=True to allow for a race where kill_process finds
         # the PID, but then the process has died before it sends the SIGKILL.  This
@@ -4915,6 +4919,17 @@ class RedpandaService(Service, RedpandaServiceABC):
             # installation to preserve!
             self._installer.reset_current_install([node])
 
+    def clean_node(
+        self,
+        node: ClusterNode,
+        preserve_logs: bool = False,
+        preserve_current_install: bool = False,
+        **kwargs: Any,
+    ):
+        """
+        Cleans both the physical node and service metadata about the node.
+        """
+        self.clean_node_state(node, preserve_logs, preserve_current_install, **kwargs)
         self.clear_cached_broker_metadata(node)
 
     def remove_local_data(self, node: ClusterNode):

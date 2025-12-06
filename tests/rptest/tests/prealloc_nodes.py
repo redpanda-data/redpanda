@@ -53,6 +53,22 @@ class PreallocNodesTest(RedpandaTest):
             for node in self._preallocated_nodes:
                 self.logger.debug(f"Allocated node {node.name}")
 
+            # preallocated nodes may be used by any service (e.g. redpanda
+            # broker, OMB worker, etc.). However, note below in
+            # free_preallocated_nodes that clean-up specific to a redpanda
+            # broker is performed (RedpandaService::sockets_clear), which waits
+            # for Redpanda broker ports to be cleaned up. We've seen that fail
+            # on a pre-allocated node which was using a non-Redpanda broker
+            # service, suggesting that a previous user of the node was a
+            # Redpanda broker and it failed to clean up, and that most likely
+            # that broker was still running and listening on the port. So before
+            # we use the preallocated node, clean off the node for leftovers of a
+            # previous Redpanda broker service even if it is not the service
+            # which will be using this node.
+            for node in self._preallocated_nodes:
+                self.logger.debug(f"Cleaning node {node.name}")
+                self.redpanda.clean_node_state(node)
+
         return self._preallocated_nodes
 
     def free_nodes(self):
