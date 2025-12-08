@@ -756,7 +756,6 @@ TEST_P(
     const auto batches_per_segment = 200;
     const auto num_segs = 3;
     tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
-    auto deferred_g_close = ss::defer([&gen] { gen.stop().get(); });
     auto total_records = gen.num_segments(num_segs)
                            .batches_per_segment(batches_per_segment)
                            .base_timestamp(model::timestamp{0})
@@ -826,9 +825,8 @@ TEST_P(
                                ->take_raft_snapshot(target_snapshot_offset)
                                .get();
         partition->raft()
-          ->write_snapshot(
-            raft::write_snapshot_cfg(
-              target_snapshot_offset, std::move(snapshot_data)))
+          ->write_snapshot(raft::write_snapshot_cfg(
+            target_snapshot_offset, std::move(snapshot_data)))
           .get();
     }
 
@@ -836,7 +834,6 @@ TEST_P(
     // active segment.
     tests::kafka_list_offsets_transport lister(make_kafka_client().get());
     lister.start().get();
-    auto deferred_l_close = ss::defer([&lister] { lister.stop().get(); });
 
     auto offset
       = lister.list_offset_for_partition(topic_name, model::partition_id(0), ts)
