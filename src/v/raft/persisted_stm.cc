@@ -575,7 +575,9 @@ ss::future<> persisted_stm_base<BaseT, T>::start() {
     if (maybe_snapshot) {
         stm_snapshot& snapshot = *maybe_snapshot;
         auto next_offset = model::next_offset(snapshot.header.offset);
-        if (next_offset >= _raft->start_offset()) {
+        if (
+          next_offset >= _raft->start_offset()
+          && snapshot.header.offset <= _raft->dirty_offset()) {
             auto snapshot_applied = co_await apply_local_snapshot(
               snapshot.header, std::move(snapshot.data));
             if (snapshot_applied == local_snapshot_applied::yes) {
@@ -600,8 +602,11 @@ ss::future<> persisted_stm_base<BaseT, T>::start() {
             // it in the apply fiber by calling handle_eviction.
             vlog(
               _log.warn,
-              "Skipping snapshot {} since it's out of sync with the log",
-              _snapshot_backend.store_path());
+              "Skipping snapshot {} since it's out of sync with the log. Log "
+              "offsets: {}, last included snapshot offset: {}",
+              _snapshot_backend.store_path(),
+              _raft->log()->offsets(),
+              snapshot.header.offset);
         }
 
     } else {
