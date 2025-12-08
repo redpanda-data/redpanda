@@ -64,18 +64,8 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_blocked_on_another_shard) {
         cloud_storage_clients::client_pool_overdraft_policy::borrow_if_empty)
       .get();
 
-    pool
-      .invoke_on_all([](cloud_storage_clients::client_pool& p) {
-          auto tcfg = transport_configuration();
-          auto cred = cloud_roles::aws_credentials{
-            tcfg.access_key.value(),
-            tcfg.secret_key.value(),
-            std::nullopt,
-            tcfg.region,
-            cloud_roles::aws_service_name{"s3"}};
-          p.load_credentials(cred);
-      })
-      .get();
+    pool.invoke_on_all(&cloud_storage_clients::client_pool::start).get();
+
     auto pool_stop = ss::defer([&pool] { pool.stop().get(); });
 
     ss::abort_source as;
@@ -160,18 +150,8 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_blocked_on_this_shard) {
         cloud_storage_clients::client_pool_overdraft_policy::borrow_if_empty)
       .get();
 
-    pool
-      .invoke_on_all([](cloud_storage_clients::client_pool& p) {
-          auto tcfg = transport_configuration();
-          auto cred = cloud_roles::aws_credentials{
-            tcfg.access_key.value(),
-            tcfg.secret_key.value(),
-            std::nullopt,
-            tcfg.region,
-            cloud_roles::aws_service_name{"s3"}};
-          p.load_credentials(cred);
-      })
-      .get();
+    pool.invoke_on_all(&cloud_storage_clients::client_pool::start).get();
+
     auto pool_stop = ss::defer([&pool] { pool.stop().get(); });
 
     ss::abort_source as;
@@ -228,18 +208,8 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_after_leasing_all) {
         cloud_storage_clients::client_pool_overdraft_policy::borrow_if_empty)
       .get();
 
-    pool
-      .invoke_on_all([](cloud_storage_clients::client_pool& p) {
-          auto tcfg = transport_configuration();
-          auto cred = cloud_roles::aws_credentials{
-            tcfg.access_key.value(),
-            tcfg.secret_key.value(),
-            std::nullopt,
-            tcfg.region,
-            cloud_roles::aws_service_name{"s3"}};
-          p.load_credentials(cred);
-      })
-      .get();
+    pool.invoke_on_all(&cloud_storage_clients::client_pool::start).get();
+
     auto pool_stop = ss::defer([&pool] { pool.stop().get(); });
     auto pool_no_bg_ops = [&pool] {
         return pool.invoke_on_all([](cloud_storage_clients::client_pool& pool) {

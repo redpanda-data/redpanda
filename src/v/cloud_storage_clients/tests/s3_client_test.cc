@@ -870,13 +870,7 @@ public:
             cloud_storage_clients::client_pool_overdraft_policy::wait_if_empty)
           .get();
 
-        auto credentials = cloud_roles::aws_credentials{
-          s3_conf.access_key.value(),
-          s3_conf.secret_key.value(),
-          std::nullopt,
-          s3_conf.region};
-
-        pool.local().load_credentials(std::move(credentials));
+        pool.invoke_on_all(&cloud_storage_clients::client_pool::start).get();
 
         server->start().get();
         server->set_routes(set_routes).get();
