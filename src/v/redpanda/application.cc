@@ -1699,28 +1699,16 @@ void application::wire_up_redpanda_services(
     });
 
     model::cloud_storage_backend backend{model::cloud_storage_backend::unknown};
-    cloud_storage_clients::bucket_name bucket{};
-    ss::sharded<cloud_storage::configuration> cloud_configs;
-    auto stop_config = ss::defer(
-      [&cloud_configs] { cloud_configs.stop().get(); });
+    std::optional<cloud_storage::configuration> cloud_config;
     if (requires_cloud_io()) {
         syschecks::systemd_message("Starting cloud IO").get();
-        cloud_configs.start().get();
-        cloud_configs
-          .invoke_on_all([](cloud_storage::configuration& c) {
-              return cloud_storage::configuration::get_config().then(
-                [&c](cloud_storage::configuration cfg) { c = std::move(cfg); });
-          })
-          .get();
+        cloud_config = cloud_storage::configuration::get_config().get();
         backend = cloud_storage_clients::infer_backend_from_configuration(
-          cloud_configs.local().client_config,
-          cloud_configs.local().cloud_credentials_source);
-        bucket = cloud_configs.local().bucket_name;
+          cloud_config->client_config, cloud_config->cloud_credentials_source);
         construct_service(
           cloud_storage_clients,
-          cloud_configs.local().connection_limit,
-          ss::sharded_parameter(
-            [&cloud_configs] { return cloud_configs.local().client_config; }),
+          cloud_config->connection_limit,
+          cloud_config->client_config,
           cloud_storage_clients::client_pool_overdraft_policy::borrow_if_empty,
           ss::sharded_parameter(
             [&app_signal]()
@@ -1740,31 +1728,25 @@ void application::wire_up_redpanda_services(
         construct_service(
           cloud_io,
           std::ref(cloud_storage_clients),
-          ss::sharded_parameter(
-            [&cloud_configs] { return cloud_configs.local().client_config; }),
-          ss::sharded_parameter([&cloud_configs] {
-              return cloud_configs.local().cloud_credentials_source;
-          }),
+          cloud_config->client_config,
+          cloud_config->cloud_credentials_source,
           ss::sharded_parameter(
             [] { return scheduling_groups::instance().ts_read_sg(); }))
           .get();
         cloud_io.invoke_on_all(&cloud_io::remote::start).get();
-        bucket_name = cloud_configs.local().bucket_name;
+        bucket_name = cloud_config->bucket_name;
     }
 
     if (archival_storage_enabled()) {
         syschecks::systemd_message("Starting cloud storage api").get();
         construct_service(
-          cloud_storage_api,
-          std::ref(cloud_io),
-          ss::sharded_parameter(
-            [&cloud_configs] { return cloud_configs.local(); }))
+          cloud_storage_api, std::ref(cloud_io), cloud_config.value())
           .get();
         cloud_storage_api.invoke_on_all(&cloud_storage::remote::start).get();
 
         construct_service(
           partition_recovery_manager,
-          cloud_configs.local().bucket_name,
+          cloud_config->bucket_name,
           std::ref(cloud_storage_api))
           .get();
 
@@ -1782,7 +1764,7 @@ void application::wire_up_redpanda_services(
 
         construct_service(
           offsets_uploader,
-          cloud_configs.local().bucket_name,
+          cloud_config->bucket_name,
           std::ref(_group_manager),
           std::ref(cloud_storage_api))
           .get();
@@ -2188,7 +2170,7 @@ void application::wire_up_redpanda_services(
                 cloud_storage_api);
             auto inv_ops
               = cloud_storage::inventory::make_inv_ops(
-                  bucket,
+                  bucket_name.value(),
                   cloud_storage::inventory::inventory_config_id{
                     config::shard_local_cfg().cloud_storage_inventory_id()},
                   config::shard_local_cfg()
@@ -2244,7 +2226,7 @@ void application::wire_up_redpanda_services(
             &shadow_index_cache,
             &metadata_cache,
             &_connection_cache,
-            bucket,
+            bucket_name.value(),
             &storage)
           .get();
     }

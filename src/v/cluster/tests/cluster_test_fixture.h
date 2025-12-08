@@ -59,11 +59,6 @@ get_cloud_storage_configurations(std::string_view hosthame, uint16_t port) {
     s3_conf.secret_key = cloud_roles::private_key_str("secret-key");
     s3_conf.region = cloud_roles::aws_region_name("us-east-1");
     s3_conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
-    s3_conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
-      net::metrics_disabled::yes,
-      net::public_metrics_disabled::yes,
-      cloud_roles::aws_region_name{},
-      cloud_storage_clients::endpoint_url{});
     s3_conf.server_addr = server_addr;
 
     archival::configuration a_conf{

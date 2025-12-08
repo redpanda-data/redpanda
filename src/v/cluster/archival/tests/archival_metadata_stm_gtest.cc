@@ -53,11 +53,6 @@ cloud_storage_clients::s3_configuration get_configuration() {
     conf.server_addr = server_addr;
     conf.disable_metrics = net::metrics_disabled::yes;
     conf.disable_public_metrics = net::public_metrics_disabled::yes;
-    conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
-      net::metrics_disabled::yes,
-      net::public_metrics_disabled::yes,
-      cloud_roles::aws_region_name{"us-east-1"},
-      cloud_storage_clients::endpoint_url{httpd_host_name});
     return conf;
 }
 

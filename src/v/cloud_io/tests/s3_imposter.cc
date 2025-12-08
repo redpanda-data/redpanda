@@ -392,11 +392,6 @@ s3_imposter_fixture::get_configuration() {
     conf.service = cloud_roles::aws_service_name("s3");
     conf.url_style = url_style;
     conf.server_addr = server_addr;
-    conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
-      net::metrics_disabled::yes,
-      net::public_metrics_disabled::yes,
-      cloud_roles::aws_region_name{"us-east-1"},
-      cloud_storage_clients::endpoint_url{httpd_host_name});
     return conf;
 }
 

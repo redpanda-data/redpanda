@@ -43,7 +43,7 @@ client_pool::client_pool(
   std::optional<std::reference_wrapper<stop_signal>> application_stop_signal)
   : _capacity(size)
   , _config(std::move(conf))
-  , _probe(std::visit([](auto&& p) { return p._probe; }, _config))
+  , _probe(std::visit([](auto&& p) { return p.make_probe(); }, _config))
   , _policy(policy)
   , _credential_manager(
       *this, _config, ss::visit(_config, [](const common_configuration& c) {
@@ -563,10 +563,10 @@ client_pool::http_client_ptr client_pool::make_client() noexcept {
           using cfg_type = std::decay_t<decltype(cfg)>;
           if constexpr (std::is_same_v<s3_configuration, cfg_type>) {
               return ss::make_shared<s3_client>(
-                weak_from_this(), cfg, _as, _apply_credentials);
+                weak_from_this(), cfg, _as, _probe, _apply_credentials);
           } else if constexpr (std::is_same_v<abs_configuration, cfg_type>) {
               return ss::make_shared<abs_client>(
-                weak_from_this(), cfg, _as, _apply_credentials);
+                weak_from_this(), cfg, _as, _probe, _apply_credentials);
           } else {
               static_assert(always_false_v<cfg_type>, "Unknown client type");
           }

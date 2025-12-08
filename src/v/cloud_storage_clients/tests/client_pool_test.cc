@@ -26,9 +26,6 @@
 
 #include <boost/test/tools/interface.hpp>
 
-#include <chrono>
-#include <exception>
-
 using namespace std::chrono_literals;
 
 ss::logger test_log("test-log");
@@ -45,11 +42,6 @@ static cloud_storage_clients::s3_configuration transport_configuration() {
     conf.service = cloud_roles::aws_service_name("s3");
     conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
     conf.server_addr = server_addr;
-    conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
-      net::metrics_disabled::yes,
-      net::public_metrics_disabled::yes,
-      cloud_roles::aws_region_name{"region"},
-      cloud_storage_clients::endpoint_url{"endpoint"});
     return conf;
 }
 

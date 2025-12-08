@@ -57,13 +57,6 @@ create_aws_sigv4_configuration(const config::configuration& cfg) {
                     : cfg.cloud_storage_region();
     s3_config.region = cloud_roles::aws_region_name{region.value_or("")};
 
-    s3_config._probe = ss::make_shared<cloud_storage_clients::client_probe>(
-      net::metrics_disabled::yes,
-      net::public_metrics_disabled::yes,
-      cloud_roles::aws_region_name{region.value_or("")},
-      cloud_storage_clients::endpoint_url{
-        cfg.iceberg_rest_catalog_endpoint().value_or("")});
-
     return cloud_storage_clients::client_configuration{std::move(s3_config)};
 }
 

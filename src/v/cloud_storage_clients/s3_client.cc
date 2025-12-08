@@ -623,21 +623,23 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
 s3_client::s3_client(
   ss::weak_ptr<client_pool> pool_ptr,
   const s3_configuration& conf,
+  ss::shared_ptr<client_probe> probe,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
   : client(std::move(pool_ptr))
   , _requestor(conf, std::move(apply_credentials))
-  , _client(conf)
-  , _probe(conf._probe) {}
+  , _client(conf, nullptr, probe)
+  , _probe(std::move(probe)) {}
 
 s3_client::s3_client(
   ss::weak_ptr<client_pool> pool_ptr,
   const s3_configuration& conf,
   const ss::abort_source& as,
+  ss::shared_ptr<client_probe> probe,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
   : client(std::move(pool_ptr))
   , _requestor(conf, std::move(apply_credentials))
-  , _client(conf, &as, conf._probe, conf.max_idle_time)
-  , _probe(conf._probe) {}
+  , _client(conf, &as, probe, conf.max_idle_time)
+  , _probe(std::move(probe)) {}
 
 ss::future<result<client_self_configuration_output, error_outcome>>
 s3_client::self_configure() {

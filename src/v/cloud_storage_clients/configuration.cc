@@ -134,15 +134,18 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
       ss::net::inet_address::family::INET);
     client_cfg.disable_metrics = disable_metrics;
     client_cfg.disable_public_metrics = disable_public_metrics;
-    client_cfg._probe = ss::make_shared<client_probe>(
-      disable_metrics,
-      disable_public_metrics,
-      region,
-      endpoint_url{complete_endpoint_uri});
     client_cfg.max_idle_time = overrides.max_idle_time
                                  ? *overrides.max_idle_time
                                  : default_max_idle_time;
     co_return client_cfg;
+}
+
+ss::shared_ptr<client_probe> s3_configuration::make_probe() const {
+    return ss::make_shared<client_probe>(
+      disable_metrics,
+      disable_public_metrics,
+      region,
+      endpoint_url{server_addr.host()});
 }
 
 std::ostream& operator<<(std::ostream& o, const s3_configuration& c) {
@@ -197,15 +200,18 @@ ss::future<abs_configuration> abs_configuration::make_configuration(
       ss::net::inet_address::family::INET);
     client_cfg.disable_metrics = disable_metrics;
     client_cfg.disable_public_metrics = disable_public_metrics;
-    client_cfg._probe = ss::make_shared<client_probe>(
-      disable_metrics,
-      disable_public_metrics,
-      storage_account_name,
-      endpoint_url{endpoint_uri});
     client_cfg.max_idle_time = overrides.max_idle_time
                                  ? *overrides.max_idle_time
                                  : default_max_idle_time;
     co_return client_cfg;
+}
+
+ss::shared_ptr<client_probe> abs_configuration::make_probe() const {
+    return ss::make_shared<client_probe>(
+      disable_metrics,
+      disable_public_metrics,
+      storage_account_name,
+      endpoint_url{server_addr.host()});
 }
 
 abs_configuration abs_configuration::make_adls_configuration() const {
