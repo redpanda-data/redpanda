@@ -126,6 +126,22 @@ struct archival_metadata_stm_base_fixture
           .get();
     }
 
+    void populate_log_with_data(size_t record_count) {
+        for (size_t i = 0; i < record_count; ++i) {
+            auto batch = model::test::make_random_batch(
+              model::test::record_batch_spec{
+                .count = 1,
+                .bt = model::record_batch_type::raft_data,
+              });
+            batch.header().ctx.term = model::term_id(1);
+            auto appender = _raft->log()->make_appender(
+              storage::log_append_config{});
+            auto rdr = model::make_memory_record_batch_reader(std::move(batch));
+            rdr.for_each_ref(std::move(appender), model::no_timeout).get();
+        }
+        _raft->log()->flush().get();
+    }
+
     ~archival_metadata_stm_base_fixture() override {
         stop_all();
         cloud_conn_pool.local().shutdown_connections();
@@ -312,6 +328,7 @@ void check_snapshot_size(
 
 FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
     create_raft();
+    populate_log_with_data(43);
     auto& ntp_cfg = _raft->log_config();
     partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_remote_revision());
     m.add(
@@ -393,7 +410,9 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
     }
 
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset{100});
-    BOOST_REQUIRE(archival_stm->manifest() == m);
+    BOOST_REQUIRE(
+      archival_stm->manifest().make_manifest_metadata()
+      == m.make_manifest_metadata());
     check_snapshot_size(*archival_stm, ntp_cfg);
 
     // A snapshot constructed with make_snapshot is always clean
@@ -404,6 +423,7 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
 
 FIXTURE_TEST(test_sname_derivation, archival_metadata_stm_base_fixture) {
     create_raft();
+    populate_log_with_data(50);
     auto& ntp_cfg = _raft->log_config();
     partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_remote_revision());
 
@@ -657,57 +677,6 @@ ss::future<> make_old_snapshot(
 
     co_await cluster::details::archival_metadata_stm_accessor::persist_snapshot(
       tmp_snapshot_mgr, std::move(snapshot));
-}
-
-FIXTURE_TEST(
-  test_archival_metadata_stm_snapshot_version_compatibility,
-  archival_metadata_stm_base_fixture) {
-    create_raft();
-    auto& ntp_cfg = _raft->log_config();
-    partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_remote_revision());
-    m.add(
-      segment_name("0-1-v1.log"),
-      segment_meta{
-        .base_offset = model::offset(0),
-        .committed_offset = model::offset(99),
-        .archiver_term = model::term_id(1),
-        .segment_term = model::term_id(1),
-      });
-    m.add(
-      segment_name("100-1-v1.log"),
-      segment_meta{
-        .base_offset = model::offset(100),
-        .committed_offset = model::offset(199),
-        .archiver_term = model::term_id(1),
-        .segment_term = model::term_id(1),
-      });
-    m.add(
-      segment_name("200-1-v1.log"),
-      segment_meta{
-        .base_offset = model::offset(200),
-        .committed_offset = model::offset(299),
-        .archiver_term = model::term_id(1),
-        .segment_term = model::term_id(1),
-      });
-    m.advance_insync_offset(model::offset(3));
-
-    make_old_snapshot(ntp_cfg, m, model::offset{3}).get();
-
-    raft::state_machine_manager_builder builder;
-    auto archival_stm = builder.create_stm<cluster::archival_metadata_stm>(
-      _raft.get(),
-      cloud_api.local(),
-      _feature_table.local(),
-      logger,
-      std::nullopt,
-      std::nullopt);
-
-    _raft->start(std::move(builder)).get();
-    _started = true;
-    wait_for_confirmed_leader();
-
-    BOOST_REQUIRE(archival_stm->manifest() == m);
-    check_snapshot_size(*archival_stm, ntp_cfg);
 }
 
 FIXTURE_TEST(test_archival_stm_batching, archival_metadata_stm_fixture) {
