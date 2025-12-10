@@ -1,4 +1,4 @@
-name: bolt-training
+name: pgo-bl3-like
 driverClass: io.openmessaging.benchmark.driver.redpanda.RedpandaBenchmarkDriver
 
 replicationFactor: 3
