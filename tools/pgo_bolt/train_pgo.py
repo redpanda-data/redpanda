@@ -7,6 +7,7 @@ import subprocess
 import os
 import signal
 import asyncio
+import sys
 import tarfile
 import tempfile
 from typing import Any
@@ -130,21 +131,25 @@ def check_omb(omb_target: OmbTarget):
         raise RuntimeError("OMB consumed too few messages")
 
 
-async def terminate(proc: asyncio.subprocess.Process, name: str):
+async def terminate(proc: asyncio.subprocess.Process, name: str) -> int:
     if not proc:
-        return
+        return 0
     try:
         print(f"Terminating {name} (pid {proc.pid})")
         os.killpg(proc.pid, signal.SIGINT)
-        await proc.wait()
+    except ProcessLookupError:
+        # process might have already exited (naturally or not)
+        pass
     except Exception as e:
         print(f"Error terminating {name}: {e}")
+    return await proc.wait()
 
 
 async def profile(args: argparse.Namespace, tmpdir: str, redpanda_bin: str):
     cluster_proc: asyncio.subprocess.Process | None = None
     omb_proc: asyncio.subprocess.Process | None = None
     cluster_task: asyncio.Task[None] | None = None
+    failed = False
     try:
         cluster_proc = await start_dev_cluster(
             args.dev_cluster_py,
@@ -160,11 +165,16 @@ async def profile(args: argparse.Namespace, tmpdir: str, redpanda_bin: str):
 
     finally:
         if omb_proc:
-            await terminate(omb_proc, "omb")
+            omb_status = await terminate(omb_proc, "omb")
+            failed = failed or omb_status != 0
         if cluster_proc:
-            await terminate(cluster_proc, "cluster")
+            cluster_status = await terminate(cluster_proc, "cluster")
+            failed = failed or cluster_status != 0
         if cluster_task:
             await cluster_task
+
+    if failed:
+        sys.exit(1)
 
 
 def combine_profiles(
