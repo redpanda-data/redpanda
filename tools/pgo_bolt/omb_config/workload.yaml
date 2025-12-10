@@ -17,7 +17,7 @@ producerRate: 20000
 
 consumerBacklogSizeGB: 0
 
-warmupDurationMinutes: 1
+warmupDurationMinutes: 0
 testDurationMinutes: 1
 
 keyDistributor: NO_KEY
